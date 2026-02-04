@@ -393,7 +393,9 @@ export default {
 
     // Frontend store naming
     const singularCamelName = camelCase(name); // "dealState" from "deal_state"
+    const pluralCamelName = camelCase(plural); // "dealStates" from "deal_states"
     const collectionVarName = singularCamelName + "Collection"; // "dealStateCollection"
+    const collectionVarNamePlural = pluralCamelName + "Collection"; // "dealStatesCollection"
 
     // Layout configuration (folder structure + file grouping)
     // See tools/codegen/config/paths.js for options
@@ -891,7 +893,9 @@ export default {
 
       // Frontend store naming
       singularCamelName,
+      pluralCamelName,
       collectionVarName,
+      collectionVarNamePlural,
 
       // Fields
       fields: processedFields,
@@ -984,6 +988,16 @@ export default {
         // concern-first: generated/types/{entity}.ts, collections/{entity}.ts...
         // monolithic: generated/{entity}.ts (single file per entity)
         structure: getProjectConfig()?.generate?.structure ?? 'monolithic',
+        // Type naming: 'entity' = OpportunityEntity, 'plain' = Opportunity
+        typeNaming: getProjectConfig()?.generate?.typeNaming ?? 'entity',
+        // FK resolution: true = import related collections, false = skip (useful when collections don't exist)
+        fkResolution: getProjectConfig()?.generate?.fkResolution ?? true,
+        // Collection variable naming: 'singular' = opportunityCollection, 'plural' = opportunitiesCollection
+        collectionNaming: getProjectConfig()?.generate?.collectionNaming ?? 'singular',
+        // File naming: 'singular' = opportunity.ts, 'plural' = opportunities.ts
+        fileNaming: getProjectConfig()?.generate?.fileNaming ?? 'singular',
+        // Hook return style: 'generic' = { data }, 'named' = { opportunities }
+        hookReturnStyle: getProjectConfig()?.generate?.hookReturnStyle ?? 'generic',
       },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)

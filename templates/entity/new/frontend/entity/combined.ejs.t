@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.structure === 'monolithic' ? `${locations.frontendGenerated.path}/${name}.ts` : '' %>"
+to: "<%= generate.structure === 'monolithic' ? `${locations.frontendGenerated.path}/${generate.fileNaming === 'plural' ? plural : name}.ts` : '' %>"
 skip_if: <%= generate.structure !== 'monolithic' %>
 force: true
 ---
@@ -17,10 +17,19 @@ force: true
  * - Field metadata (for DataGrid, forms, admin)
  */
 
+<%
+// Type import depends on typeNaming config - source exports {ClassName}Entity
+const importedTypeName = className + 'Entity';
+// Collection variable name depends on collectionNaming config
+const collectionVar = generate.collectionNaming === 'plural' ? collectionVarNamePlural : collectionVarName;
+// Hook return key depends on hookReturnStyle config
+const returnKey = generate.hookReturnStyle === 'named' ? pluralCamelName : 'data';
+const returnKeySingular = generate.hookReturnStyle === 'named' ? camelName : 'data';
+-%>
 <% if (frontend.sync.columnMapper) { -%>
 import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
 <% } -%>
-import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
+import { <%= camelName %>Schema, type <%= importedTypeName %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
 <% if (exposeTrpc) { -%>
 import { trpc } from '<%= locations.trpcClient.import %>';
 <% } -%>
@@ -37,21 +46,29 @@ import { API_BASE_URL } from '<%= frontend.sync.apiBaseUrlImport %>';
 <% } -%>
 <%
 // Collect unique belongs_to targets for imports (FK resolution)
-// Only import collections that actually exist (existingBelongsTo filters by targetExists)
+// Only import if fkResolution is enabled (default: true)
 const importedEntities = new Set();
-existingBelongsTo.forEach((rel) => {
-  if (rel.target !== name) {
-    importedEntities.add(rel.target);
-  }
-});
+if (generate.fkResolution !== false) {
+  existingBelongsTo.forEach((rel) => {
+    if (rel.target !== name) {
+      importedEntities.add(rel.target);
+    }
+  });
+}
 -%>
 <% if (importedEntities.size > 0) { -%>
 
 // Import related collections for FK resolution
 <% importedEntities.forEach((target) => {
   const targetCamel = target.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  // Simple pluralization matching prompt.js pluralize function
+  const targetPlural = target.endsWith('y') ? target.slice(0, -1) + 'ies' :
+    (target.endsWith('s') || target.endsWith('x') || target.endsWith('ch') || target.endsWith('sh')) ? target + 'es' : target + 's';
+  const targetFileName = generate.fileNaming === 'plural' ? targetPlural : target;
+  const targetCamelPlural = targetCamel.endsWith('y') ? targetCamel.slice(0, -1) + 'ies' : targetCamel + 's';
+  const targetCollectionVar = generate.collectionNaming === 'plural' ? targetCamelPlural : targetCamel;
 -%>
-import { <%= targetCamel %>Collection } from './<%= target %>';
+import { <%= targetCollectionVar %>Collection } from './<%= targetFileName %>';
 <% }); -%>
 <% importedEntities.forEach((target) => {
   const targetClass = target.charAt(0).toUpperCase() + target.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -65,14 +82,15 @@ import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %
 // ============================================================================
 
 /** Base entity from database */
-export type <%= className %> = <%= className %>Entity;
+export type <%= className %> = <%= importedTypeName %>;
 <% if (existingBelongsTo.length > 0) { -%>
 
 /** Entity with resolved FK relations (only includes relations with existing targets) */
 export interface <%= className %>Resolved extends <%= className %> {
 <% existingBelongsTo.forEach((rel) => { -%>
 <% // Use local type for self-referential, imported type for others -%>
-	<%= rel.name %>?: <%= rel.target === name ? className : rel.targetClass + 'Entity' %>;
+<%   const relTypeName = rel.target === name ? className : (generate.typeNaming === 'plain' ? rel.targetClass : rel.targetClass + 'Entity'); -%>
+	<%= rel.name %>?: <%= relTypeName %>;
 <% }); -%>
 }
 <% } else { -%>
@@ -91,7 +109,7 @@ export type <%= className %>Resolved = <%= className %>;
 // Without this filter, soft-deleted records will reappear after Electric sync.
 <% } -%>
 
-export const <%= camelName %>Collection = createCollection(
+export const <%= collectionVar %> = createCollection(
 	electricCollectionOptions({
 		id: '<%= plural %>',
 		shapeOptions: {
@@ -110,7 +128,16 @@ export const <%= camelName %>Collection = createCollection(
 				table: '<%= plural %>',
 			},
 <% } else { -%>
+<% if (frontend.sync.wrapInUrlConstructor !== false) { -%>
+			url: new URL(
+				`<%= frontend.sync.shapeUrl %>/<%= plural %>`,
+				typeof window !== 'undefined'
+					? window.location.origin
+					: 'http://localhost:5173',
+			).toString(),
+<% } else { -%>
 			url: `<%= frontend.sync.shapeUrl %>/<%= plural %>`,
+<% } -%>
 <% } -%>
 <% if (frontend.auth.function) { -%>
 			headers: {
@@ -157,14 +184,18 @@ export const <%= camelName %>Collection = createCollection(
 // ============================================================================
 // Resolution (FK lookup - internal use)
 // ============================================================================
-<% if (existingBelongsTo.length > 0) { -%>
+<% if (existingBelongsTo.length > 0 && generate.fkResolution !== false) { -%>
 
 function resolveRelations(entity: <%= className %>): <%= className %>Resolved {
 	return {
 		...entity,
-<% existingBelongsTo.forEach((rel) => { -%>
+<% existingBelongsTo.forEach((rel) => {
+  const targetCamel = rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  const targetCamelPlural = targetCamel.endsWith('y') ? targetCamel.slice(0, -1) + 'ies' : targetCamel + 's';
+  const targetCollectionVar = generate.collectionNaming === 'plural' ? targetCamelPlural : targetCamel;
+-%>
 		<%= rel.name %>: entity.<%= rel.foreignKeyCamel %>
-			? <%= rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) %>Collection.state.get(entity.<%= rel.foreignKeyCamel %>)
+			? <%= targetCollectionVar %>Collection.state.get(entity.<%= rel.foreignKeyCamel %>)
 			: undefined,
 <% }); -%>
 	};
@@ -183,9 +214,9 @@ function resolveRelations(entity: <%= className %>): <%= className %>Resolved {
 
 /** Get all <%= plural %> with relations resolved */
 export function use<%= classNamePlural %>() {
-	const result = useLiveQuery((q) => q.from({ <%= camelName %>Collection }), []);
+	const result = useLiveQuery((q) => q.from({ <%= collectionVar %> }), []);
 	return {
-		data: result.data?.map(resolveRelations) ?? [],
+		<%= returnKey %>: result.data?.map(resolveRelations) ?? [],
 		isLoading: result.isLoading,
 	};
 }
@@ -196,14 +227,14 @@ export function use<%= className %>(id: string | undefined) {
 		(q) => {
 			if (!id) return undefined;
 			return q
-				.from({ <%= camelName %>Collection })
-				.where(({ <%= camelName %>Collection }) => eq(<%= camelName %>Collection.id, id));
+				.from({ <%= collectionVar %> })
+				.where(({ <%= collectionVar %> }) => eq(<%= collectionVar %>.id, id));
 		},
 		[id],
 	);
 	const entity = result.data?.[0];
 	return {
-		data: entity ? resolveRelations(entity) : undefined,
+		<%= returnKeySingular %>: entity ? resolveRelations(entity) : undefined,
 		isLoading: result.isLoading,
 	};
 }
@@ -211,13 +242,13 @@ export function use<%= className %>(id: string | undefined) {
 
 /** Get all <%= plural %> with relations resolved */
 export function use<%= classNamePlural %>(): <%= className %>Resolved[] {
-	const raw = <%= camelName %>Collection.useMany();
+	const raw = <%= collectionVar %>.useMany();
 	return raw.map(resolveRelations);
 }
 
 /** Get single <%= camelName %> by ID with relations resolved */
 export function use<%= className %>(id: string | undefined): <%= className %>Resolved | undefined {
-	const raw = <%= camelName %>Collection.useOne(id);
+	const raw = <%= collectionVar %>.useOne(id);
 	return raw ? resolveRelations(raw) : undefined;
 }
 <% } -%>
@@ -228,7 +259,7 @@ export function use<%= className %>(id: string | undefined): <%= className %>Res
 // ============================================================================
 
 export function insert<%= className %>(data: Omit<<%= className %>, 'id'<% if (hasTimestamps) { %> | 'createdAt' | 'updatedAt'<% } %>>) {
-	return <%= camelName %>Collection.insert({
+	return <%= collectionVar %>.insert({
 		id: crypto.randomUUID(),
 <% if (hasTimestamps) { -%>
 		createdAt: new Date(),
@@ -239,11 +270,11 @@ export function insert<%= className %>(data: Omit<<%= className %>, 'id'<% if (h
 }
 
 export function update<%= className %>(id: string, fn: (draft: <%= className %>) => void) {
-	return <%= camelName %>Collection.update(id, fn);
+	return <%= collectionVar %>.update(id, fn);
 }
 
 export function delete<%= className %>(id: string) {
-	return <%= camelName %>Collection.delete(id);
+	return <%= collectionVar %>.delete(id);
 }
 <% } -%>
 <% if (generate.fieldMetadata) { -%>
@@ -345,7 +376,7 @@ export const <%= camelName %>Metadata = {
 
 export const <%= camelName %> = {
 	// Collection
-	collection: <%= camelName %>Collection,
+	collection: <%= collectionVar %>,
 
 	// Hooks
 	useMany: use<%= classNamePlural %>,

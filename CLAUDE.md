@@ -138,8 +138,20 @@ generate:
   hooks: true              # Generate standalone hooks files (default: true)
   mutations: true          # Generate mutation functions (default: true)
   structure: 'monolithic'  # Output structure mode (default: monolithic)
+  typeNaming: 'entity'     # 'entity' = OpportunityEntity, 'plain' = Opportunity (default: entity)
+  fkResolution: true       # Import related collections for FK resolution (default: true)
+  collectionNaming: 'singular'  # 'singular' = opportunityCollection, 'plural' = opportunitiesCollection
+  fileNaming: 'singular'   # 'singular' = opportunity.ts, 'plural' = opportunities.ts
+  hookReturnStyle: 'generic'  # 'generic' = { data }, 'named' = { opportunities }
 ```
 Set any toggle to `false` to skip generating that output. Useful when you have manual `fields.tsx` files or custom hook implementations you want to preserve.
+
+**Naming Convention Options**:
+- `typeNaming`: Controls the exported type name. `'entity'` (default) exports `OpportunityEntity`, `'plain'` exports `Opportunity`
+- `collectionNaming`: Controls the collection variable name. `'singular'` (default) = `opportunityCollection`, `'plural'` = `opportunitiesCollection`
+- `fileNaming`: Controls the output file names. `'singular'` (default) = `opportunity.ts`, `'plural'` = `opportunities.ts`
+- `hookReturnStyle`: Controls hook return shape. `'generic'` (default) = `{ data, isLoading }`, `'named'` = `{ opportunities, isLoading }`
+- `fkResolution`: When `false`, skips importing related collections and simplifies `resolveRelations()` to identity function. Useful when related collections don't exist yet.
 
 **Output Structure Modes** (`generate.structure`):
 - `monolithic` (default): Single file per entity - `generated/{entity}.ts`

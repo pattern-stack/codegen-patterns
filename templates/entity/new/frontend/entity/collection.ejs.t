@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${name}/collection.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/collections/${name}.ts` : '' %>"
+to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${generate.fileNaming === 'plural' ? plural : name}/collection.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/collections/${generate.fileNaming === 'plural' ? plural : name}.ts` : '' %>"
 skip_if: <%= generate.structure === 'monolithic' %>
 force: true
 ---
@@ -25,6 +25,12 @@ import { <%= frontend.auth.function %> } from '<%= locations.frontendCollections
 <% if (frontend.sync.apiBaseUrlImport) { -%>
 import { API_BASE_URL } from '<%= frontend.sync.apiBaseUrlImport %>';
 <% } -%>
+<%
+// Collection variable name depends on collectionNaming config
+const collectionVar = generate.collectionNaming === 'plural' ? collectionVarNamePlural : collectionVarName;
+// File name for imports depends on fileNaming config
+const fileName = generate.fileNaming === 'plural' ? plural : name;
+-%>
 <% if (hasSoftDelete) { -%>
 
 // TODO: Backend Electric shape endpoint should filter soft-deleted records
@@ -32,7 +38,7 @@ import { API_BASE_URL } from '<%= frontend.sync.apiBaseUrlImport %>';
 // Without this filter, soft-deleted records will reappear after Electric sync.
 <% } -%>
 
-export const <%= camelName %>Collection = createCollection(
+export const <%= collectionVar %> = createCollection(
 	electricCollectionOptions({
 		id: '<%= plural %>',
 		shapeOptions: {
@@ -51,7 +57,16 @@ export const <%= camelName %>Collection = createCollection(
 				table: '<%= plural %>',
 			},
 <% } else { -%>
+<% if (frontend.sync.wrapInUrlConstructor !== false) { -%>
+			url: new URL(
+				`<%= frontend.sync.shapeUrl %>/<%= plural %>`,
+				typeof window !== 'undefined'
+					? window.location.origin
+					: 'http://localhost:5173',
+			).toString(),
+<% } else { -%>
 			url: `<%= frontend.sync.shapeUrl %>/<%= plural %>`,
+<% } -%>
 <% } -%>
 <% if (frontend.auth.function) { -%>
 			headers: {
@@ -96,20 +111,28 @@ export const <%= camelName %>Collection = createCollection(
 );
 <%
 // Collect unique belongs_to targets for imports (FK resolution)
+// Only import if fkResolution is enabled (default: true)
 const importedEntities = new Set();
-existingBelongsTo.forEach((rel) => {
-  if (rel.target !== name) {
-    importedEntities.add(rel.target);
-  }
-});
+if (generate.fkResolution !== false) {
+  existingBelongsTo.forEach((rel) => {
+    if (rel.target !== name) {
+      importedEntities.add(rel.target);
+    }
+  });
+}
 -%>
 <% if (importedEntities.size > 0) { -%>
 
 // Import related collections for FK resolution
 <% importedEntities.forEach((target) => {
   const targetCamel = target.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  // Simple pluralization matching prompt.js pluralize function
+  const targetPlural = target.endsWith('y') ? target.slice(0, -1) + 'ies' :
+    (target.endsWith('s') || target.endsWith('x') || target.endsWith('ch') || target.endsWith('sh')) ? target + 'es' : target + 's';
+  const targetFileName = generate.fileNaming === 'plural' ? targetPlural : target;
+  const targetCamelPlural = targetCamel.endsWith('y') ? targetCamel.slice(0, -1) + 'ies' : targetCamel + 's';
 -%>
-import { <%= targetCamel %>Collection } from '<% if (generate.structure === 'entity-first') { %>./<%= target %>/collection<% } else { %>./<%= target %><% } %>';
+import { <%= generate.collectionNaming === 'plural' ? targetCamelPlural : targetCamel %>Collection } from '<% if (generate.structure === 'entity-first') { %>./<%= targetFileName %>/collection<% } else { %>./<%= targetFileName %><% } %>';
 <% }); -%>
 <% } -%>
 <% if (generate.structure === 'entity-first') { -%>
@@ -119,20 +142,24 @@ import type { <%= className %>, <%= className %>Resolved } from './types';
 <% } else { -%>
 
 // Import types
-import type { <%= className %>, <%= className %>Resolved } from '<% if (generate.structure === 'concern-first') { %>../types/<%= name %><% } %>';
+import type { <%= className %>, <%= className %>Resolved } from '<% if (generate.structure === 'concern-first') { %>../types/<%= fileName %><% } %>';
 <% } -%>
 
 // ============================================================================
 // Resolution (FK lookup - internal use)
 // ============================================================================
-<% if (existingBelongsTo.length > 0) { -%>
+<% if (existingBelongsTo.length > 0 && generate.fkResolution !== false) { -%>
 
 export function resolveRelations(entity: <%= className %>): <%= className %>Resolved {
 	return {
 		...entity,
-<% existingBelongsTo.forEach((rel) => { -%>
+<% existingBelongsTo.forEach((rel) => {
+  const targetCamel = rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  const targetCamelPlural = targetCamel.endsWith('y') ? targetCamel.slice(0, -1) + 'ies' : targetCamel + 's';
+  const targetCollectionVar = generate.collectionNaming === 'plural' ? targetCamelPlural : targetCamel;
+-%>
 		<%= rel.name %>: entity.<%= rel.foreignKeyCamel %>
-			? <%= rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) %>Collection.state.get(entity.<%= rel.foreignKeyCamel %>)
+			? <%= targetCollectionVar %>Collection.state.get(entity.<%= rel.foreignKeyCamel %>)
 			: undefined,
 <% }); -%>
 	};

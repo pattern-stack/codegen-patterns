@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${name}/types.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/types/${name}.ts` : '' %>"
+to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${generate.fileNaming === 'plural' ? plural : name}/types.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/types/${generate.fileNaming === 'plural' ? plural : name}.ts` : '' %>"
 skip_if: <%= generate.structure === 'monolithic' %>
 force: true
 ---
@@ -10,7 +10,11 @@ force: true
  * Type definitions for <%= className %> entity with resolved relations
  */
 
-import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
+<%
+// Type import: source always exports {ClassName}Entity, we re-export as {ClassName}
+const importedTypeName = className + 'Entity';
+-%>
+import { <%= camelName %>Schema, type <%= importedTypeName %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
 <% if (existingBelongsTo.length > 0) { -%>
 <%
 // Import related entity types for FK resolution
@@ -33,14 +37,15 @@ import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %
 <% } -%>
 
 /** Base entity from database */
-export type <%= className %> = <%= className %>Entity;
+export type <%= className %> = <%= importedTypeName %>;
 <% if (existingBelongsTo.length > 0) { -%>
 
 /** Entity with resolved FK relations (only includes relations with existing targets) */
 export interface <%= className %>Resolved extends <%= className %> {
 <% existingBelongsTo.forEach((rel) => { -%>
 <% // Use local type for self-referential, imported type for others -%>
-	<%= rel.name %>?: <%= rel.target === name ? className : rel.targetClass + 'Entity' %>;
+<%   const relTypeName = rel.target === name ? className : (generate.typeNaming === 'plain' ? rel.targetClass : rel.targetClass + 'Entity'); -%>
+	<%= rel.name %>?: <%= relTypeName %>;
 <% }); -%>
 }
 <% } else { -%>

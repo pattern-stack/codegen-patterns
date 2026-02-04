@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${name}/hooks.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/hooks/${name}.ts` : '' %>"
+to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${generate.fileNaming === 'plural' ? plural : name}/hooks.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/hooks/${generate.fileNaming === 'plural' ? plural : name}.ts` : '' %>"
 skip_if: <%= generate.structure === 'monolithic' %>
 force: true
 ---
@@ -10,23 +10,32 @@ force: true
  * React hooks returning resolved entities with relations
  */
 
+<%
+// Collection variable name depends on collectionNaming config
+const collectionVar = generate.collectionNaming === 'plural' ? collectionVarNamePlural : collectionVarName;
+// File name for imports depends on fileNaming config
+const fileName = generate.fileNaming === 'plural' ? plural : name;
+// Hook return key depends on hookReturnStyle config
+const returnKey = generate.hookReturnStyle === 'named' ? pluralCamelName : 'data';
+const returnKeySingular = generate.hookReturnStyle === 'named' ? camelName : 'data';
+-%>
 <% if (generate.hookStyle === 'useLiveQuery') { -%>
 import { useLiveQuery, eq } from '@tanstack/react-db';
 <% } -%>
 <% if (generate.structure === 'entity-first') { -%>
-import { <%= camelName %>Collection, resolveRelations } from './collection';
+import { <%= collectionVar %>, resolveRelations } from './collection';
 import type { <%= className %>Resolved } from './types';
 <% } else if (generate.structure === 'concern-first') { -%>
-import { <%= camelName %>Collection, resolveRelations } from '../collections/<%= name %>';
-import type { <%= className %>Resolved } from '../types/<%= name %>';
+import { <%= collectionVar %>, resolveRelations } from '../collections/<%= fileName %>';
+import type { <%= className %>Resolved } from '../types/<%= fileName %>';
 <% } -%>
 <% if (generate.hookStyle === 'useLiveQuery') { -%>
 
 /** Get all <%= plural %> with relations resolved */
 export function use<%= classNamePlural %>() {
-	const result = useLiveQuery((q) => q.from({ <%= camelName %>Collection }), []);
+	const result = useLiveQuery((q) => q.from({ <%= collectionVar %> }), []);
 	return {
-		data: result.data?.map(resolveRelations) ?? [],
+		<%= returnKey %>: result.data?.map(resolveRelations) ?? [],
 		isLoading: result.isLoading,
 	};
 }
@@ -37,14 +46,14 @@ export function use<%= className %>(id: string | undefined) {
 		(q) => {
 			if (!id) return undefined;
 			return q
-				.from({ <%= camelName %>Collection })
-				.where(({ <%= camelName %>Collection }) => eq(<%= camelName %>Collection.id, id));
+				.from({ <%= collectionVar %> })
+				.where(({ <%= collectionVar %> }) => eq(<%= collectionVar %>.id, id));
 		},
 		[id],
 	);
 	const entity = result.data?.[0];
 	return {
-		data: entity ? resolveRelations(entity) : undefined,
+		<%= returnKeySingular %>: entity ? resolveRelations(entity) : undefined,
 		isLoading: result.isLoading,
 	};
 }
@@ -52,13 +61,13 @@ export function use<%= className %>(id: string | undefined) {
 
 /** Get all <%= plural %> with relations resolved */
 export function use<%= classNamePlural %>(): <%= className %>Resolved[] {
-	const raw = <%= camelName %>Collection.useMany();
+	const raw = <%= collectionVar %>.useMany();
 	return raw.map(resolveRelations);
 }
 
 /** Get single <%= camelName %> by ID with relations resolved */
 export function use<%= className %>(id: string | undefined): <%= className %>Resolved | undefined {
-	const raw = <%= camelName %>Collection.useOne(id);
+	const raw = <%= collectionVar %>.useOne(id);
 	return raw ? resolveRelations(raw) : undefined;
 }
 <% } -%>
