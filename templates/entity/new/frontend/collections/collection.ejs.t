@@ -1,5 +1,6 @@
 ---
 to: <%= locations.frontendCollections.path %>/<%= name %>.ts
+skip_if: <%= !generate.collections %>
 force: true
 ---
 /**
@@ -12,14 +13,15 @@ force: true
 import { <%= camelName %>Schema } from '<%= locations.dbEntities.import %>/<%= name %>';
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
-import { getAuthorizationHeader } from './auth';
+import { <%= frontend.auth.function %> } from './auth';
 
 export const <%= camelName %>Collection = createCollection(
 	electricCollectionOptions({
 		id: '<%= plural %>',
 		shapeOptions: {
+<% if (frontend.sync.useTableParam) { -%>
 			url: new URL(
-				'/v1/shape',
+				'<%= frontend.sync.shapeUrl %>',
 				typeof window !== 'undefined'
 					? window.location.origin
 					: 'http://localhost:5173',
@@ -27,11 +29,16 @@ export const <%= camelName %>Collection = createCollection(
 			params: {
 				table: '<%= plural %>',
 			},
+<% } else { -%>
+			url: `<%= frontend.sync.shapeUrl %>/<%= plural %>`,
+<% } -%>
 			headers: {
-				Authorization: getAuthorizationHeader,
+				Authorization: <%= frontend.auth.function %>,
 			},
 			parser: {
-				timestamptz: (date: string) => new Date(date),
+<% Object.entries(frontend.parsers).forEach(([type, fn]) => { -%>
+				<%= type %>: <%= fn %>,
+<% }); -%>
 			},
 		},
 		schema: <%= camelName %>Schema,

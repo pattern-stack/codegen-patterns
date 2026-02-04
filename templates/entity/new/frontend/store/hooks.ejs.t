@@ -1,5 +1,6 @@
 ---
 to: <%= locations.frontendStoreEntities.path %>/<%= name %>.ts
+skip_if: <%= !generate.hooks %>
 force: true
 ---
 /**

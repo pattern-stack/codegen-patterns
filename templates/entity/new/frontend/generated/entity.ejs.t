@@ -20,8 +20,10 @@ import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locatio
 import { trpc } from '<%= locations.trpcClient.import %>';
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
+<% if (generate.fieldMetadata) { -%>
 import type { FieldMeta, FieldType, FieldImportance } from '<%= locations.frontendFieldMetaTypes.import %>/field-meta';
-import { getAuthorizationHeader } from '<%= locations.frontendCollectionsAuth.import %>';
+<% } -%>
+import { <%= frontend.auth.function %> } from '<%= locations.frontendCollectionsAuth.import %>';
 <%
 // Collect unique belongs_to targets for imports (FK resolution)
 const importedEntities = new Set();
@@ -83,8 +85,9 @@ export const <%= camelName %>Collection = createCollection(
 	electricCollectionOptions({
 		id: '<%= plural %>',
 		shapeOptions: {
+<% if (frontend.sync.useTableParam) { -%>
 			url: new URL(
-				'/v1/shape',
+				'<%= frontend.sync.shapeUrl %>',
 				typeof window !== 'undefined'
 					? window.location.origin
 					: 'http://localhost:5173',
@@ -92,11 +95,16 @@ export const <%= camelName %>Collection = createCollection(
 			params: {
 				table: '<%= plural %>',
 			},
+<% } else { -%>
+			url: `<%= frontend.sync.shapeUrl %>/<%= plural %>`,
+<% } -%>
 			headers: {
-				Authorization: getAuthorizationHeader,
+				Authorization: <%= frontend.auth.function %>,
 			},
 			parser: {
-				timestamptz: (date: string) => new Date(date),
+<% Object.entries(frontend.parsers).forEach(([type, fn]) => { -%>
+				<%= type %>: <%= fn %>,
+<% }); -%>
 			},
 		},
 		schema: <%= camelName %>Schema,
@@ -181,6 +189,7 @@ export function update<%= className %>(id: string, fn: (draft: <%= className %>)
 export function delete<%= className %>(id: string) {
 	return <%= camelName %>Collection.delete(id);
 }
+<% if (generate.fieldMetadata) { -%>
 
 // ============================================================================
 // Field Metadata (for DataGrid, forms, admin)
@@ -271,6 +280,7 @@ export const <%= camelName %>Metadata = {
 		get: true,
 	},
 } as const;
+<% } -%>
 
 // ============================================================================
 // Export bundle for registry
@@ -288,8 +298,10 @@ export const <%= camelName %> = {
 	insert: insert<%= className %>,
 	update: update<%= className %>,
 	delete: delete<%= className %>,
+<% if (generate.fieldMetadata) { -%>
 
 	// Metadata
 	fields: <%= camelName %>Fields,
 	metadata: <%= camelName %>Metadata,
+<% } -%>
 } as const;

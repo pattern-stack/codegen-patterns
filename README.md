@@ -81,6 +81,32 @@ paths:
   manifest_dir: .codegen
 ```
 
+### Locations (Path + Import Mapping)
+
+Each location defines both where files are written and how to import them:
+
+```yaml
+# Override default locations in codegen.config.yaml
+locations:
+  # Shared packages
+  dbEntities:
+    path: packages/db/src/entities        # filesystem path
+    import: "@repo/db/entities"           # TypeScript import alias
+
+  # Frontend
+  frontendCollections:
+    path: apps/frontend/src/lib/collections
+    import: "@/lib/collections"
+
+  frontendStore:
+    path: apps/frontend/src/lib/store
+    import: "@/lib/store"
+
+  # Add any location to override defaults
+```
+
+See `config/locations.mjs` for all available locations and their defaults.
+
 ### Environment Variables
 
 Override config at runtime:

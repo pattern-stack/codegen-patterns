@@ -62,7 +62,7 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated
 - **schema/** - Zod schemas for entity definitions and relationship types
 - **behaviors/** - Shared entity behaviors (timestamps, soft-delete, user-tracking)
 - **templates/** - Hygen EJS templates for code generation
-- **config/** - Path configuration and project settings
+- **config/** - Shared config loader (`config-loader.mjs`), path configuration (`paths.mjs`), location mapping (`locations.mjs`)
 
 ### Template System
 
@@ -96,7 +96,37 @@ database:
 paths:
   backend_src: app/backend/src
   frontend_src: app/frontend/src
+locations:
+  dbEntities:
+    path: packages/db/src/entities
+    import: "@repo/db/entities"
+frontend:
+  auth:
+    function: getToken  # Auth function name (default: getAuthorizationHeader)
+  sync:
+    shapeUrl: '/v1/shape'  # Base URL for Electric SQL shapes (default: /v1/shape)
+    useTableParam: true    # true = ?table=X (Electric pattern), false = /plural appended
+  parsers:
+    timestamptz: '(d: string) => new Date(d)'
+    date: '(d: string) => new Date(d + "T00:00:00")'
 ```
+
+**Frontend Parsers**: Custom parser functions for Electric SQL shape data. Each key is a PostgreSQL type, and the value is a JavaScript function string that will be output directly in generated code. Default: `{ timestamptz: '(date: string) => new Date(date)' }`.
+
+**Frontend Sync Patterns**: The `frontend.sync` config controls how shape URLs are generated:
+- `useTableParam: true` (default): Electric SQL pattern - `/v1/shape?table=opportunities`
+- `useTableParam: false`: REST-style pattern - `${shapeUrl}/opportunities`
+
+**Generation Toggles**: Control which outputs are generated:
+```yaml
+generate:
+  fieldMetadata: true   # Generate field metadata in entity.ejs.t (default: true)
+  collections: true     # Generate standalone collection files (default: true)
+  hooks: true           # Generate standalone hooks files (default: true)
+```
+Set any toggle to `false` to skip generating that output. Useful when you have manual `fields.tsx` files or custom hook implementations you want to preserve.
+
+**Locations** (`config/locations.mjs`): Each location defines both `path` (where files go) and `import` (TypeScript alias). Templates use `locations.X.path` for output and `locations.X.import` for imports.
 
 Override with environment variables: `CODEGEN_TEMPLATES_DIR`, `CODEGEN_ENTITIES_DIR`, `CODEGEN_MANIFEST_DIR`
 

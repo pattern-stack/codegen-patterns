@@ -17,6 +17,7 @@ import {
   getImportPaths,
   getLayoutConfig,
   getDatabaseDialect,
+  getProjectConfig,
 } from "../../../config/paths.mjs";
 
 // ============================================================================
@@ -939,6 +940,27 @@ export default {
       // Unified locations (path + import alias)
       // Usage: locations.dbEntities.path, locations.dbEntities.import
       locations: LOCATIONS,
+
+      // Frontend configuration
+      frontend: {
+        auth: {
+          function: getProjectConfig()?.frontend?.auth?.function ?? 'getAuthorizationHeader',
+        },
+        sync: {
+          shapeUrl: getProjectConfig()?.frontend?.sync?.shapeUrl ?? '/v1/shape',
+          useTableParam: getProjectConfig()?.frontend?.sync?.useTableParam ?? true,
+        },
+        parsers: getProjectConfig()?.frontend?.parsers ?? {
+          timestamptz: '(date: string) => new Date(date)',
+        },
+      },
+
+      // Generation toggles (what to generate)
+      generate: {
+        fieldMetadata: getProjectConfig()?.generate?.fieldMetadata ?? true,
+        collections: getProjectConfig()?.generate?.collections ?? true,
+        hooks: getProjectConfig()?.generate?.hooks ?? true,
+      },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
       outputPaths,
