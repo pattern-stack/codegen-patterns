@@ -945,9 +945,13 @@ export default {
       locations: LOCATIONS,
 
       // Frontend configuration
+      // Note: Use hasOwnProperty checks for values where null is meaningful (disables the feature)
       frontend: {
         auth: {
-          function: getProjectConfig()?.frontend?.auth?.function ?? 'getAuthorizationHeader',
+          // null means "no auth function" - don't fall back to default
+          function: getProjectConfig()?.frontend?.auth?.hasOwnProperty?.('function')
+            ? getProjectConfig().frontend.auth.function
+            : 'getAuthorizationHeader',
         },
         sync: {
           shapeUrl: getProjectConfig()?.frontend?.sync?.shapeUrl ?? '/v1/shape',
