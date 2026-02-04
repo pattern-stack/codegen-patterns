@@ -9,7 +9,7 @@ force: true
 
 import { z } from 'zod';
 <% if (hasEntityRefFields) { -%>
-import { entityTypeSchema } from '@repo/db/context-engine';
+import { entityTypeSchema } from '<%= locations.dbContextEngine.import %>';
 <% } -%>
 
 export const create<%= className %>Schema = z.object({

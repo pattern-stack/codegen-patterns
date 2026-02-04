@@ -11,6 +11,7 @@ import {
   BASE_PATHS,
   FOLDER_STRUCTURES,
   FILE_GROUPINGS,
+  LOCATIONS,
   getEntityPaths,
   getEntityFileNames,
   getImportPaths,
@@ -934,6 +935,10 @@ export default {
 
       // Base paths for templates (from centralized config)
       basePaths: BASE_PATHS,
+
+      // Unified locations (path + import alias)
+      // Usage: locations.dbEntities.path, locations.dbEntities.import
+      locations: LOCATIONS,
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
       outputPaths,

@@ -1,5 +1,5 @@
 ---
-to: apps/frontend/src/lib/store/index.ts
+to: <%= locations.frontendStore.path %>/index.ts
 inject: true
 after: "// Lookup entries"
 skip_if: "<%= plural %>: <%= collectionVarName %>\\.state"

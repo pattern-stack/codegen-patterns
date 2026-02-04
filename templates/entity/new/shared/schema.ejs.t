@@ -1,5 +1,5 @@
 ---
-to: packages/db/src/entities/<%= name %>.ts
+to: <%= locations.dbEntities.path %>/<%= name %>.ts
 force: true
 ---
 /**

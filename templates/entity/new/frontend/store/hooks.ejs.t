@@ -1,5 +1,5 @@
 ---
-to: apps/frontend/src/lib/store/entities/<%= name %>.ts
+to: <%= locations.frontendStoreEntities.path %>/<%= name %>.ts
 force: true
 ---
 /**
@@ -12,7 +12,7 @@ force: true
 import { useLiveQuery } from '@tanstack/react-db';
 import { eq } from '@tanstack/react-db';
 import { <%= camelName %>Collection } from '../../collections/<%= name %>';
-import type { <%= className %>Entity } from '@repo/db/entities/<%= name %>';
+import type { <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
 
 /**
  * Hook to get all <%= plural %>

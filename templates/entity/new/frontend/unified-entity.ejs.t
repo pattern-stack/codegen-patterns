@@ -1,5 +1,5 @@
 ---
-to: apps/frontend/src/lib/entities/<%= name %>.ts
+to: <%= locations.frontendEntities.path %>/<%= name %>.ts
 force: true
 ---
 /**
@@ -11,10 +11,10 @@ force: true
 
 import { createUnifiedEntity } from './create-unified-entity';
 import { <%= camelName %>Hooks } from '../store/entities/<%= name %>';
-import { <%= camelName %>Metadata } from '@/generated/entity-metadata';
+import { <%= camelName %>Metadata } from '<%= locations.frontendEntityMetadata.import %>';
 import { <%= camelName %>Collection } from '../collections/<%= name %>';
 import { store } from '../store';
-import type { <%= className %>Entity } from '@repo/db/entities/<%= name %>';
+import type { <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
 
 export const <%= plural %> = createUnifiedEntity<<%= className %>Entity>({
   hooks: <%= camelName %>Hooks,

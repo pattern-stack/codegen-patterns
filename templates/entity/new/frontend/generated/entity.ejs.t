@@ -1,5 +1,5 @@
 ---
-to: apps/frontend/src/generated/<%= name %>.ts
+to: <%= locations.frontendGenerated.path %>/<%= name %>.ts
 force: true
 ---
 /**
@@ -16,12 +16,12 @@ force: true
  * - Field metadata (for DataGrid, forms, admin)
  */
 
-import { <%= camelName %>Schema, type <%= className %>Entity } from '@repo/db/entities/<%= name %>';
-import { trpc } from '@repo/trpc/client';
+import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
+import { trpc } from '<%= locations.trpcClient.import %>';
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
-import type { FieldMeta, FieldType, FieldImportance } from '@/lib/types/field-meta';
-import { getAuthorizationHeader } from '@/lib/collections/auth';
+import type { FieldMeta, FieldType, FieldImportance } from '<%= locations.frontendFieldMetaTypes.import %>/field-meta';
+import { getAuthorizationHeader } from '<%= locations.frontendCollectionsAuth.import %>';
 <%
 // Collect unique belongs_to targets for imports (FK resolution)
 const importedEntities = new Set();
@@ -43,7 +43,7 @@ import { <%= targetCamel %>Collection } from './<%= target %>';
 <% importedEntities.forEach((target) => {
   const targetClass = target.charAt(0).toUpperCase() + target.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 -%>
-import type { <%= targetClass %>Entity } from '@repo/db/entities/<%= target %>';
+import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %>/<%= target %>';
 <% }); -%>
 <% } -%>
 <% } -%>

@@ -1,0 +1,44 @@
+# Test configuration for codegen baseline tests
+# This config specifies paths matching the test/baseline/ structure
+
+paths:
+  backend_src: packages/api/src
+  frontend_src: apps/frontend/src
+
+locations:
+  # Shared packages
+  dbEntities:
+    path: packages/db/src/entities
+    import: "@repo/db/entities"
+
+  # Backend locations (packages/api structure)
+  backendSrc:
+    path: packages/api/src
+    import: "@api"
+  backendDomain:
+    path: packages/api/src/domain
+    import: "@api/domain"
+  backendCommands:
+    path: packages/api/src/application/commands
+    import: "@api/application/commands"
+  backendQueries:
+    path: packages/api/src/application/queries
+    import: "@api/application/queries"
+  backendSchemas:
+    path: packages/api/src/application/schemas
+    import: "@api/application/schemas"
+  backendDrizzle:
+    path: packages/api/src/infrastructure/persistence/drizzle
+    import: "@api/infrastructure/persistence/drizzle"
+  backendRepositories:
+    path: packages/api/src/infrastructure/persistence/repositories
+    import: "@api/infrastructure/persistence/repositories"
+  backendControllers:
+    path: packages/api/src/presentation/rest
+    import: "@api/presentation/rest"
+  backendModules:
+    path: packages/api/src/modules
+    import: "@api/modules"
+  backendConstants:
+    path: packages/api/src/constants
+    import: "@api/constants"

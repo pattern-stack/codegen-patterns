@@ -1,5 +1,5 @@
 ---
-to: apps/frontend/src/lib/collections/<%= name %>.ts
+to: <%= locations.frontendCollections.path %>/<%= name %>.ts
 force: true
 ---
 /**
@@ -9,7 +9,7 @@ force: true
  * Real-time synced collection using TanStack DB + Electric SQL
  */
 
-import { <%= camelName %>Schema } from '@repo/db/entities/<%= name %>';
+import { <%= camelName %>Schema } from '<%= locations.dbEntities.import %>/<%= name %>';
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
 import { getAuthorizationHeader } from './auth';

@@ -4,40 +4,17 @@
  * All generated file paths are defined here to make it easy to update
  * the architecture structure without hunting through multiple files.
  *
+ * NEW: For path + import alias pairs, see ./locations.mjs
+ * The LOCATIONS export provides both filesystem paths and TypeScript import aliases.
+ *
  * Usage:
- *   import { paths, getPath } from '../config/paths.js';
+ *   import { paths, getPath, LOCATIONS } from '../config/paths.js';
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import yaml from 'yaml';
+import { projectConfig } from './config-loader.mjs';
 
-// ============================================================================
-// Config Loading
-// ============================================================================
-
-/**
- * Load project-specific codegen configuration from codegen.config.yaml
- * Returns null if config file doesn't exist (falls back to defaults)
- */
-function loadProjectConfig(cwd = process.cwd()) {
-  const configPath = path.resolve(cwd, 'codegen.config.yaml');
-
-  if (!fs.existsSync(configPath)) {
-    return null;
-  }
-
-  try {
-    const content = fs.readFileSync(configPath, 'utf-8');
-    return yaml.parse(content);
-  } catch (error) {
-    console.warn(`Warning: Failed to load codegen.config.yaml: ${error.message}`);
-    return null;
-  }
-}
-
-// Load project config once at module initialization
-const projectConfig = loadProjectConfig();
+// Re-export LOCATIONS for unified path + import configuration
+export { LOCATIONS, getLocation, getLocationPath, getLocationImport } from './locations.mjs';
 
 // ============================================================================
 // Layout Options
@@ -368,6 +345,9 @@ export function getProjectConfig() {
   return projectConfig;
 }
 
+// Import LOCATIONS for default export
+import { LOCATIONS } from './locations.mjs';
+
 // Default export for convenience
 export default {
   // Layout options
@@ -382,6 +362,8 @@ export default {
   FILE_NAMING,
   TEST_OUTPUT_PATHS,
   INJECTABLE_FILES,
+  // NEW: Unified locations (path + import)
+  LOCATIONS,
   // Database configuration
   DATABASE_CONFIG,
   // Helper functions

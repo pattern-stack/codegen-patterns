@@ -12,21 +12,27 @@
 import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
-import {
-  TEST_OUTPUT_PATHS,
-  INJECTABLE_FILES,
-} from '../config/paths.mjs';
-
 const ROOT = resolve(import.meta.dir, '../../..');
 const CODEGEN_DIR = resolve(import.meta.dir, '..');
 const TEST_DIR = import.meta.dir;
 const FIXTURES_DIR = join(TEST_DIR, 'fixtures');
 const BASELINE_DIR = join(TEST_DIR, 'baseline');
 const GEN_DIR = join(TEST_DIR, 'gen');
+const TEST_CONFIG = join(FIXTURES_DIR, 'codegen.config.yaml');
+const ROOT_CONFIG = join(ROOT, 'codegen.config.yaml');
 
-// Use centralized path configuration
-// See tools/codegen/config/paths.js for definitions
-const OUTPUT_PATHS = TEST_OUTPUT_PATHS;
+// Test-specific output paths (must match test/fixtures/codegen.config.yaml)
+// These are hardcoded here to avoid circular dependency with config loading
+const OUTPUT_PATHS = [
+  // Backend paths (packages/api structure from test config)
+  'packages/api/src/domain',
+  'packages/api/src/application',
+  'packages/api/src/infrastructure/persistence',
+  'packages/api/src/modules',
+  'packages/api/src/presentation',
+  // Shared packages
+  'packages/db/src/entities',
+];
 
 function getAllFiles(dir: string, files: string[] = []): string[] {
   if (!existsSync(dir)) return files;
@@ -48,6 +54,20 @@ function cleanGenDir() {
     rmSync(GEN_DIR, { recursive: true });
   }
   mkdirSync(GEN_DIR, { recursive: true });
+}
+
+function setupTestConfig() {
+  // Copy test config to ROOT so hygen can find it
+  if (existsSync(TEST_CONFIG)) {
+    cpSync(TEST_CONFIG, ROOT_CONFIG);
+  }
+}
+
+function cleanupTestConfig() {
+  // Remove test config from ROOT
+  if (existsSync(ROOT_CONFIG)) {
+    rmSync(ROOT_CONFIG);
+  }
 }
 
 function captureOutputState(targetDir: string) {
@@ -81,24 +101,32 @@ function captureOutputState(targetDir: string) {
 function runCodegen() {
   console.log('🔧 Running codegen for all fixtures...');
 
-  const fixtures = readdirSync(FIXTURES_DIR).filter(f => f.endsWith('.yaml'));
+  // Set up test config at ROOT
+  setupTestConfig();
+
+  const fixtures = readdirSync(FIXTURES_DIR).filter(f => f.endsWith('.yaml') && f !== 'codegen.config.yaml');
 
   // Use env var or compute from script location (works when running from any directory)
   const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(CODEGEN_DIR, 'templates');
 
-  for (const fixture of fixtures) {
-    const yamlPath = join(FIXTURES_DIR, fixture);
-    console.log(`   Generating: ${fixture}`);
+  try {
+    for (const fixture of fixtures) {
+      const yamlPath = join(FIXTURES_DIR, fixture);
+      console.log(`   Generating: ${fixture}`);
 
-    try {
-      execSync(`HYGEN_TMPLS="${templatesDir}" bunx hygen entity new --yaml "${yamlPath}"`, {
-        cwd: ROOT,
-        stdio: 'pipe',
-      });
-    } catch (error) {
-      console.error(`   ❌ Failed: ${fixture}`);
-      throw error;
+      try {
+        execSync(`HYGEN_TMPLS="${templatesDir}" bunx hygen entity new --yaml "${yamlPath}"`, {
+          cwd: ROOT,
+          stdio: 'pipe',
+        });
+      } catch (error) {
+        console.error(`   ❌ Failed: ${fixture}`);
+        throw error;
+      }
     }
+  } finally {
+    // Always clean up test config
+    cleanupTestConfig();
   }
 
   console.log('✅ Codegen complete');

@@ -1,5 +1,5 @@
 ---
-to: packages/db/src/entities/index.ts
+to: <%= locations.dbEntities.path %>/index.ts
 inject: true
 after: "// codegen:exports"
 skip_if: "from './<%= name %>'"

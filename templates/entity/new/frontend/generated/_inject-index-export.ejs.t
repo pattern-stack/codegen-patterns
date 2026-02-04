@@ -1,5 +1,5 @@
 ---
-to: apps/frontend/src/generated/index.ts
+to: <%= locations.frontendGenerated.path %>/index.ts
 inject: true
 skip_if: "from './<%= name %>'"
 after: "// Entity exports"

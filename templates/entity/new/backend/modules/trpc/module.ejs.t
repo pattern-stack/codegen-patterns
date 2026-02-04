@@ -19,7 +19,7 @@ import {
 	<%= camelName %>Schema,
 	create<%= className %>Schema,
 	update<%= className %>Schema,
-} from '@repo/db/entities/<%= name %>';
+} from '<%= locations.dbEntities.import %>/<%= name %>';
 import { Get<%= className %>ByIdQuery } from '<%= imports.moduleToGetByIdQuery %>';
 import { List<%= classNamePlural %>Query } from '<%= imports.moduleToListQuery %>';
 import { Create<%= className %>Command } from '<%= imports.moduleToCreateCommand %>';

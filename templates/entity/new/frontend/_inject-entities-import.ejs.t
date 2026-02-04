@@ -1,6 +1,6 @@
 ---
 inject: true
-to: apps/frontend/src/lib/entities/index.ts
+to: <%= locations.frontendEntities.path %>/index.ts
 after: "// \\[CODEGEN:ENTITY_IMPORTS\\]"
 skip_if: "from './<%= name %>'"
 ---
