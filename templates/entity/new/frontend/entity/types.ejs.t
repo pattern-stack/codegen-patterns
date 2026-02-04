@@ -11,8 +11,9 @@ force: true
  */
 
 <%
-// Type import: source always exports {ClassName}Entity, we re-export as {ClassName}
-const importedTypeName = className + 'Entity';
+// Type import: depends on typeNaming config
+// 'entity' = source exports OpportunityEntity, 'plain' = source exports Opportunity
+const importedTypeName = generate.typeNaming === 'plain' ? className : className + 'Entity';
 -%>
 import { <%= camelName %>Schema, type <%= importedTypeName %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
 <% if (existingBelongsTo.length > 0) { -%>
@@ -31,7 +32,7 @@ existingBelongsTo.forEach((rel) => {
 <% importedEntities.forEach((target) => {
   const targetClass = target.charAt(0).toUpperCase() + target.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 -%>
-import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= target %><% } %>';
+import type { <%= generate.typeNaming === 'plain' ? targetClass : targetClass + 'Entity' %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= target %><% } %>';
 <% }); -%>
 <% } -%>
 <% } -%>

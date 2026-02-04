@@ -147,7 +147,7 @@ generate:
 Set any toggle to `false` to skip generating that output. Useful when you have manual `fields.tsx` files or custom hook implementations you want to preserve.
 
 **Naming Convention Options**:
-- `typeNaming`: Controls the exported type name. `'entity'` (default) exports `OpportunityEntity`, `'plain'` exports `Opportunity`
+- `typeNaming`: Controls the type name imported from source and exported locally. `'entity'` (default) expects source to export `OpportunityEntity`, `'plain'` expects source to export `Opportunity`
 - `collectionNaming`: Controls the collection variable name. `'singular'` (default) = `opportunityCollection`, `'plural'` = `opportunitiesCollection`
 - `fileNaming`: Controls the output file names. `'singular'` (default) = `opportunity.ts`, `'plural'` = `opportunities.ts`
 - `hookReturnStyle`: Controls hook return shape. `'generic'` (default) = `{ data, isLoading }`, `'named'` = `{ opportunities, isLoading }`

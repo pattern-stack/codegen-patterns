@@ -18,8 +18,9 @@ force: true
  */
 
 <%
-// Type import depends on typeNaming config - source exports {ClassName}Entity
-const importedTypeName = className + 'Entity';
+// Type import: depends on typeNaming config
+// 'entity' = source exports OpportunityEntity, 'plain' = source exports Opportunity
+const importedTypeName = generate.typeNaming === 'plain' ? className : className + 'Entity';
 // Collection variable name depends on collectionNaming config
 const collectionVar = generate.collectionNaming === 'plural' ? collectionVarNamePlural : collectionVarName;
 // Hook return key depends on hookReturnStyle config
@@ -73,7 +74,7 @@ import { <%= targetCollectionVar %>Collection } from './<%= targetFileName %>';
 <% importedEntities.forEach((target) => {
   const targetClass = target.charAt(0).toUpperCase() + target.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 -%>
-import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= target %><% } %>';
+import type { <%= generate.typeNaming === 'plain' ? targetClass : targetClass + 'Entity' %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= target %><% } %>';
 <% }); -%>
 <% } -%>
 

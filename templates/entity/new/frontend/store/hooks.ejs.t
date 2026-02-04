@@ -13,7 +13,10 @@ force: true
 import { useLiveQuery } from '@tanstack/react-db';
 import { eq } from '@tanstack/react-db';
 import { <%= camelName %>Collection } from '../../collections/<%= name %>';
-import type { <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
+<%
+const entityTypeName = generate.typeNaming === 'plain' ? className : className + 'Entity';
+-%>
+import type { <%= entityTypeName %> } from '<%= locations.dbEntities.import %>/<%= name %>';
 
 /**
  * Hook to get all <%= plural %>
@@ -41,16 +44,16 @@ export function use<%= className %>ById(id: string | undefined) {
  * Mutation functions for <%= className %>
  */
 export const <%= camelName %>Mutations = {
-	insert: (data: Omit<<%= className %>Entity, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
+	insert: (data: Omit<<%= entityTypeName %>, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
 		return <%= camelName %>Collection.insert({
 			id: data.id ?? crypto.randomUUID(),
 			...data,
 			createdAt: new Date(),
 			updatedAt: new Date(),
-		} as <%= className %>Entity);
+		} as <%= entityTypeName %>);
 	},
 
-	update: (id: string, updater: (draft: <%= className %>Entity) => void) => {
+	update: (id: string, updater: (draft: <%= entityTypeName %>) => void) => {
 		return <%= camelName %>Collection.update(id, updater);
 	},
 

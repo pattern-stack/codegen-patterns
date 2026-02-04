@@ -14,9 +14,12 @@ import { <%= camelName %>Hooks } from '../store/entities/<%= name %>';
 import { <%= camelName %>Metadata } from '<%= locations.frontendEntityMetadata.import %>';
 import { <%= camelName %>Collection } from '../collections/<%= name %>';
 import { store } from '../store';
-import type { <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
+<%
+const entityTypeName = generate.typeNaming === 'plain' ? className : className + 'Entity';
+-%>
+import type { <%= entityTypeName %> } from '<%= locations.dbEntities.import %>/<%= name %>';
 
-export const <%= plural %> = createUnifiedEntity<<%= className %>Entity>({
+export const <%= plural %> = createUnifiedEntity<<%= entityTypeName %>>({
   hooks: <%= camelName %>Hooks,
   metadata: <%= camelName %>Metadata,
   collection: <%= camelName %>Collection,
