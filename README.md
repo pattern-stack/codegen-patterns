@@ -100,6 +100,13 @@ Override config at runtime:
 bun codegen entity entities/opportunity.yaml   # Generate single entity
 bun codegen all                                # Generate all entities
 bun codegen all --entities-dir path/to/yaml    # Custom entities directory
+bun codegen broadcast                          # Generate WebSocket infrastructure
+
+# ═══════════════════════════════════════════════════════════════
+# PROJECT SCANNING
+# ═══════════════════════════════════════════════════════════════
+bun codegen scan .                          # Scan project, generate config
+bun codegen scan . -v                       # Verbose output with evidence
 
 # ═══════════════════════════════════════════════════════════════
 # DOMAIN ANALYSIS
@@ -110,17 +117,23 @@ bun codegen stats entities/                 # Statistics only
 bun codegen doc entities/ -o domain.md      # Generate documentation
 
 # ═══════════════════════════════════════════════════════════════
-# MANIFEST (tracks entity changes)
+# MANIFEST & TRANSITIVE SUGGESTIONS
 # ═══════════════════════════════════════════════════════════════
 bun codegen manifest entities/              # Update .codegen/manifest.json
-bun codegen suggestions                     # Review relationship suggestions
+bun codegen manifest entities/ --force      # Force re-scan even if fresh
+bun codegen suggestions                     # Review pending suggestions
+bun codegen suggestions --accept <id>       # Accept a suggestion
+bun codegen suggestions --skip <id>         # Skip a suggestion
+bun codegen suggestions --accept-all        # Accept all pending
 
-# Analysis options
+# Options
 -f, --format <format>     # Output: console (default), json, markdown
 -o, --output <file>       # Write to file instead of stdout
 -s, --strict              # Treat warnings as errors (exit 1)
 -e, --entity <name>       # Focus on specific entity
+-v, --verbose             # Show detailed detection results
 --entities-dir <path>     # Override entities directory
+--force                   # Force re-scan (manifest command)
 ```
 
 ## YAML Schema
@@ -243,6 +256,51 @@ Running codegen generates files following Clean Architecture:
 {packages}/db/src/entities/
 └── {entity}.ts                         # Shared Zod schema
 ```
+
+## WebSocket Broadcast Infrastructure
+
+Generate real-time broadcast infrastructure for entity updates:
+
+```bash
+bun codegen broadcast
+```
+
+Creates a NestJS module with WebSocket gateway, channel abstraction, and pluggable backends (memory, WebSocket). Useful for pushing entity changes to connected clients.
+
+## Project Scanning
+
+The `scan` command auto-detects your project's patterns and generates a config file:
+
+```bash
+bun codegen scan .
+```
+
+Detects:
+- **Framework**: NestJS, Express, Fastify, etc.
+- **ORM**: Drizzle, Prisma, TypeORM, etc.
+- **Architecture**: Clean Architecture, MVC, layered, etc.
+- **Naming conventions**: File casing, suffixes, etc.
+
+Outputs a `codegen.config.yaml` with confidence scores for each detection.
+
+## Transitive Relationship Suggestions
+
+The manifest tracks your domain model and suggests "through" relationships when it detects multi-hop paths between entities.
+
+```bash
+# Scan entities and update manifest
+bun codegen manifest entities/
+
+# Review suggestions (e.g., if Person → Organization → Opportunity exists,
+# suggests Person → Opportunity through Organization)
+bun codegen suggestions
+
+# Accept or skip suggestions
+bun codegen suggestions --accept "person->opportunity"
+bun codegen suggestions --skip-all
+```
+
+Suggestions include YAML snippets to add to your entity files.
 
 ## Architecture
 
