@@ -13,10 +13,12 @@ force: true
 <% if (frontend.sync.columnMapper) { -%>
 import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
 <% } -%>
-import { <%= camelName %>Schema } from '<%= locations.dbEntities.import %>/<%= name %>';
+import { <%= camelName %>Schema } from '<%= locations.dbEntities.import %><% if (locations.dbEntities.appendEntityName !== false) { %>/<%= name %><% } %>';
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
-import { <%= frontend.auth.function %> } from './auth';
+<% if (frontend.auth.function) { -%>
+import { <%= frontend.auth.function %> } from '<%= locations.frontendCollectionsAuth.import %>';
+<% } -%>
 
 export const <%= camelName %>Collection = createCollection(
 	electricCollectionOptions({
@@ -35,16 +37,18 @@ export const <%= camelName %>Collection = createCollection(
 <% } else { -%>
 			url: `<%= frontend.sync.shapeUrl %>/<%= plural %>`,
 <% } -%>
+<% if (frontend.auth.function) { -%>
 			headers: {
 				Authorization: <%= frontend.auth.function %>,
 			},
+<% } -%>
 			parser: {
 <% Object.entries(frontend.parsers).forEach(([type, fn]) => { -%>
-				<%= type %>: <%= fn %>,
+				<%- type %>: <%- fn %>,
 <% }); -%>
 			},
 <% if (frontend.sync.columnMapper) { -%>
-			columnMapper: <%= frontend.sync.columnMapper %>,
+			columnMapper: <%= frontend.sync.columnMapper %>(),
 <% } -%>
 		},
 		schema: <%= camelName %>Schema,

@@ -19,7 +19,7 @@ force: true
 <% if (frontend.sync.columnMapper) { -%>
 import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
 <% } -%>
-import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
+import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locations.dbEntities.import %><% if (locations.dbEntities.appendEntityName !== false) { %>/<%= name %><% } %>';
 <% if (exposeTrpc) { -%>
 import { trpc } from '<%= locations.trpcClient.import %>';
 <% } -%>
@@ -28,7 +28,9 @@ import { createCollection } from '@tanstack/react-db';
 <% if (generate.fieldMetadata) { -%>
 import type { FieldMeta, FieldType, FieldImportance } from '<%= locations.frontendFieldMetaTypes.import %>/field-meta';
 <% } -%>
+<% if (frontend.auth.function) { -%>
 import { <%= frontend.auth.function %> } from '<%= locations.frontendCollectionsAuth.import %>';
+<% } -%>
 <%
 // Collect unique belongs_to targets for imports (FK resolution)
 // Only import collections that actually exist (existingBelongsTo filters by targetExists)
@@ -50,7 +52,7 @@ import { <%= targetCamel %>Collection } from './<%= target %>';
 <% importedEntities.forEach((target) => {
   const targetClass = target.charAt(0).toUpperCase() + target.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 -%>
-import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %>/<%= target %>';
+import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %><% if (locations.dbEntities.appendEntityName !== false) { %>/<%= target %><% } %>';
 <% }); -%>
 <% } -%>
 
@@ -102,16 +104,18 @@ export const <%= camelName %>Collection = createCollection(
 <% } else { -%>
 			url: `<%= frontend.sync.shapeUrl %>/<%= plural %>`,
 <% } -%>
+<% if (frontend.auth.function) { -%>
 			headers: {
 				Authorization: <%= frontend.auth.function %>,
 			},
+<% } -%>
 			parser: {
 <% Object.entries(frontend.parsers).forEach(([type, fn]) => { -%>
-				<%= type %>: <%= fn %>,
+				<%- type %>: <%- fn %>,
 <% }); -%>
 			},
 <% if (frontend.sync.columnMapper) { -%>
-			columnMapper: <%= frontend.sync.columnMapper %>,
+			columnMapper: <%= frontend.sync.columnMapper %>(),
 <% } -%>
 		},
 		schema: <%= camelName %>Schema,
@@ -174,6 +178,7 @@ export function use<%= className %>(id: string | undefined): <%= className %>Res
 	return raw ? resolveRelations(raw) : undefined;
 }
 
+<% if (generate.mutations) { -%>
 // ============================================================================
 // Mutations (Optimistic updates)
 // ============================================================================
@@ -196,6 +201,7 @@ export function update<%= className %>(id: string, fn: (draft: <%= className %>)
 export function delete<%= className %>(id: string) {
 	return <%= camelName %>Collection.delete(id);
 }
+<% } -%>
 <% if (generate.fieldMetadata) { -%>
 
 // ============================================================================
@@ -300,11 +306,13 @@ export const <%= camelName %> = {
 	// Hooks
 	useMany: use<%= classNamePlural %>,
 	useOne: use<%= className %>,
+<% if (generate.mutations) { -%>
 
 	// Mutations
 	insert: insert<%= className %>,
 	update: update<%= className %>,
 	delete: delete<%= className %>,
+<% } -%>
 <% if (generate.fieldMetadata) { -%>
 
 	// Metadata

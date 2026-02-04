@@ -966,6 +966,7 @@ export default {
         fieldMetadata: getProjectConfig()?.generate?.fieldMetadata ?? true,
         collections: getProjectConfig()?.generate?.collections ?? true,
         hooks: getProjectConfig()?.generate?.hooks ?? true,
+        mutations: getProjectConfig()?.generate?.mutations ?? true,
       },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
