@@ -14,18 +14,18 @@ force: true
 // Type import: depends on typeNaming config
 // 'entity' = source exports OpportunityEntity, 'plain' = source exports Opportunity
 const importedTypeName = generate.typeNaming === 'plain' ? className : className + 'Entity';
--%>
-import { <%= camelName %>Schema, type <%= importedTypeName %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
-<% if (existingBelongsTo.length > 0) { -%>
-<%
-// Import related entity types for FK resolution
+// Collect unique belongs_to targets for imports (FK resolution)
+// Only import if fkResolution is enabled (default: true)
 const importedEntities = new Set();
-existingBelongsTo.forEach((rel) => {
-  if (rel.target !== name) {
-    importedEntities.add(rel.target);
-  }
-});
+if (generate.fkResolution !== false) {
+  existingBelongsTo.forEach((rel) => {
+    if (rel.target !== name) {
+      importedEntities.add(rel.target);
+    }
+  });
+}
 -%>
+import type { <%= importedTypeName %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
 <% if (importedEntities.size > 0) { -%>
 
 // Import related entity types for FK resolution
@@ -35,11 +35,14 @@ existingBelongsTo.forEach((rel) => {
 import type { <%= generate.typeNaming === 'plain' ? targetClass : targetClass + 'Entity' %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= target %><% } %>';
 <% }); -%>
 <% } -%>
-<% } -%>
 
 /** Base entity from database */
+<% if (generate.typeNaming === 'plain') { -%>
+export type { <%= className %> };
+<% } else { -%>
 export type <%= className %> = <%= importedTypeName %>;
-<% if (existingBelongsTo.length > 0) { -%>
+<% } -%>
+<% if (existingBelongsTo.length > 0 && generate.fkResolution !== false) { -%>
 
 /** Entity with resolved FK relations (only includes relations with existing targets) */
 export interface <%= className %>Resolved extends <%= className %> {

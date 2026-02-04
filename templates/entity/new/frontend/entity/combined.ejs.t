@@ -83,8 +83,12 @@ import type { <%= generate.typeNaming === 'plain' ? targetClass : targetClass + 
 // ============================================================================
 
 /** Base entity from database */
+<% if (generate.typeNaming === 'plain') { -%>
+export type { <%= className %> };
+<% } else { -%>
 export type <%= className %> = <%= importedTypeName %>;
-<% if (existingBelongsTo.length > 0) { -%>
+<% } -%>
+<% if (existingBelongsTo.length > 0 && generate.fkResolution !== false) { -%>
 
 /** Entity with resolved FK relations (only includes relations with existing targets) */
 export interface <%= className %>Resolved extends <%= className %> {
