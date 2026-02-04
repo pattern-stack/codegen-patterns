@@ -1,0 +1,38 @@
+{
+  "name": "@anthropic/codegen",
+  "version": "0.1.0",
+  "description": "Entity-driven code generation for full-stack TypeScript applications",
+  "type": "module",
+  "main": "index.ts",
+  "bin": {
+    "codegen": "./cli.ts"
+  },
+  "scripts": {
+    "codegen": "bun cli.ts",
+    "test": "bun test/run-test.ts full"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "yaml": "^2.3.4",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "hygen": "^6.2.11"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "keywords": [
+    "codegen",
+    "code-generation",
+    "typescript",
+    "nestjs",
+    "drizzle",
+    "entity",
+    "yaml"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,303 @@
+# Entity Code Generation System
+
+Generate full-stack entity scaffolding from YAML definitions. Creates domain entities, repositories, use cases, queries, DTOs, Drizzle schemas, REST controllers, and NestJS modules.
+
+## Installation
+
+```bash
+# Install dependencies
+bun install
+
+# Peer dependency
+bun add -d hygen
+```
+
+## Quick Start
+
+```bash
+# 1. Create codegen.config.yaml in your project root (see Configuration below)
+
+# 2. Define your entity in YAML
+cat > entities/opportunity.yaml << 'EOF'
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+
+fields:
+  id:
+    type: uuid
+    required: false
+  name:
+    type: string
+    required: true
+    max_length: 255
+  amount:
+    type: decimal
+    nullable: true
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+EOF
+
+# 3. Generate the entity
+bun codegen entity entities/opportunity.yaml
+
+# 4. Run database migration (project-specific)
+bun run db:generate --name add-opportunity
+bun run db:migrate
+```
+
+## Configuration
+
+Create `codegen.config.yaml` in your project root to configure output paths:
+
+```yaml
+# Database dialect
+database:
+  dialect: postgres  # postgres | sqlite
+
+# Output paths (relative to project root)
+paths:
+  # Backend source directory
+  backend_src: app/backend/src
+
+  # Frontend source directory (set to null to skip frontend generation)
+  frontend_src: app/frontend/src
+
+  # Shared packages directory
+  packages: packages
+
+  # Schema directory (relative to backend_src)
+  schema_dir: infrastructure/persistence/drizzle
+
+  # Entity definitions directory
+  entities_dir: entities
+
+  # Manifest output directory
+  manifest_dir: .codegen
+```
+
+### Environment Variables
+
+Override config at runtime:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `CODEGEN_TEMPLATES_DIR` | Path to Hygen templates | `<codegen>/templates` |
+| `CODEGEN_ENTITIES_DIR` | Path to entity YAML files | `entities/` |
+| `CODEGEN_MANIFEST_DIR` | Directory for manifest.json | `.codegen/` |
+
+## CLI Commands
+
+```bash
+# ═══════════════════════════════════════════════════════════════
+# CODE GENERATION
+# ═══════════════════════════════════════════════════════════════
+bun codegen entity entities/opportunity.yaml   # Generate single entity
+bun codegen all                                # Generate all entities
+bun codegen all --entities-dir path/to/yaml    # Custom entities directory
+
+# ═══════════════════════════════════════════════════════════════
+# DOMAIN ANALYSIS
+# ═══════════════════════════════════════════════════════════════
+bun codegen validate entities/              # Validate YAML files only
+bun codegen analyze entities/               # Full analysis with graph & issues
+bun codegen stats entities/                 # Statistics only
+bun codegen doc entities/ -o domain.md      # Generate documentation
+
+# ═══════════════════════════════════════════════════════════════
+# MANIFEST (tracks entity changes)
+# ═══════════════════════════════════════════════════════════════
+bun codegen manifest entities/              # Update .codegen/manifest.json
+bun codegen suggestions                     # Review relationship suggestions
+
+# Analysis options
+-f, --format <format>     # Output: console (default), json, markdown
+-o, --output <file>       # Write to file instead of stdout
+-s, --strict              # Treat warnings as errors (exit 1)
+-e, --entity <name>       # Focus on specific entity
+--entities-dir <path>     # Override entities directory
+```
+
+## YAML Schema
+
+```yaml
+# Entity metadata
+entity:
+  name: opportunity          # Singular name (snake_case)
+  plural: opportunities      # Plural form
+  table: opportunities       # Database table name
+  folder_structure: nested   # 'nested' or 'flat'
+
+# Field definitions
+fields:
+  id:
+    type: uuid
+    required: false
+
+  account_id:
+    type: uuid
+    required: true
+    foreign_key: accounts.id  # FK reference (table.column)
+    index: true               # Create database index
+
+  name:
+    type: string
+    required: true
+    max_length: 255           # String length constraint
+
+  amount:
+    type: decimal
+    nullable: true            # Allow NULL in database
+
+  probability:
+    type: integer
+    nullable: true
+    min: 0                    # Validation constraint
+    max: 100
+
+  status:
+    type: enum
+    choices: [open, won, lost]
+    required: true
+
+# Relationship definitions
+relationships:
+  account:
+    type: belongs_to          # belongs_to, has_many, has_one
+    target: account           # Target entity name
+    foreign_key: account_id   # FK field in this entity
+
+  deals:
+    type: has_many
+    target: deal
+    foreign_key: opportunity_id  # FK in the related entity
+```
+
+## Field Types
+
+| YAML Type  | TypeScript | Drizzle          | Zod                 |
+|------------|------------|------------------|---------------------|
+| `string`   | `string`   | `varchar`        | `z.string()`        |
+| `integer`  | `number`   | `integer`        | `z.number().int()`  |
+| `decimal`  | `number`   | `doublePrecision`| `z.number()`        |
+| `boolean`  | `boolean`  | `boolean`        | `z.boolean()`       |
+| `uuid`     | `string`   | `uuid`           | `z.string().uuid()` |
+| `date`     | `Date`     | `date`           | `z.coerce.date()`   |
+| `datetime` | `Date`     | `timestamp`      | `z.coerce.date()`   |
+| `json`     | `unknown`  | `jsonb`          | `z.unknown()`       |
+| `enum`     | union      | `varchar`        | `z.enum()`          |
+
+## UI Metadata
+
+Fields can include optional UI metadata for automatic admin panel generation:
+
+```yaml
+fields:
+  name:
+    type: string
+    required: true
+
+    # UI metadata (all optional - sensible defaults inferred)
+    ui_label: "Opportunity Name"     # Display label
+    ui_type: text                    # Input type
+    ui_importance: primary           # primary | secondary | tertiary
+    ui_group: identification         # Logical grouping for forms
+    ui_sortable: true                # Enable column sorting
+    ui_filterable: true              # Enable column filtering
+    ui_visible: true                 # Show in UI
+    ui_placeholder: "Enter name..."  # Input placeholder
+    ui_help: "The display name"      # Help text
+```
+
+## Generated Output Structure
+
+Running codegen generates files following Clean Architecture:
+
+```
+{backend_src}/
+├── domain/{entity}/
+│   ├── {entity}.entity.ts              # Domain entity
+│   └── {entity}.repository.interface.ts # Repository contract
+├── application/
+│   ├── commands/{entity}/              # Create, Update, Delete
+│   ├── queries/{entity}/               # GetById, List
+│   └── schemas/{entity}.dto.ts         # Zod DTOs
+├── infrastructure/persistence/
+│   ├── {schema_dir}/{entity}.schema.ts # Drizzle schema
+│   └── repositories/{entity}.repository.ts
+├── presentation/rest/
+│   └── {plural}.controller.ts          # REST endpoints
+└── modules/
+    └── {plural}.module.ts              # NestJS module
+
+{frontend_src}/
+├── lib/collections/{entity}.ts         # Electric collection
+├── lib/store/entities/{entity}.ts      # Entity hooks
+└── lib/entities/{entity}.ts            # Entity metadata
+
+{packages}/db/src/entities/
+└── {entity}.ts                         # Shared Zod schema
+```
+
+## Architecture
+
+The generator follows layered Clean Architecture:
+
+```
+Presentation → Application → Domain ← Infrastructure
+     │              │           │            │
+ Controllers    Commands    Entities    Repositories
+     │          Queries    Interfaces   Drizzle Schemas
+     └──────────────┴───────────┴────────────┘
+                        ↓
+                  NestJS Module
+```
+
+## Testing
+
+```bash
+# Capture current output as baseline
+bun test/run-test.ts baseline
+
+# Run full test (generate + compare to baseline)
+bun test/run-test.ts full
+
+# Generate only (without comparison)
+bun test/run-test.ts generate
+
+# Compare gen/ to baseline/ (without regenerating)
+bun test/run-test.ts compare
+```
+
+## Customization
+
+### Adding a new field type
+
+Edit `templates/entity/new/prompt.js` and add mappings to `tsTypes`, `drizzleTypes`, and `zodTypes`.
+
+### Modifying generated code
+
+Edit the relevant `.ejs.t` template:
+
+| Layer | Template Location |
+|-------|------------------|
+| Domain entities | `templates/entity/new/backend/domain/` |
+| Database schemas | `templates/entity/new/backend/database/` |
+| Commands (CRUD) | `templates/entity/new/backend/application/commands/` |
+| Queries | `templates/entity/new/backend/application/queries/` |
+| DTOs | `templates/entity/new/backend/application/schemas/` |
+| Controllers | `templates/entity/new/backend/presentation/` |
+| NestJS modules | `templates/entity/new/backend/modules/` |
+| Frontend | `templates/entity/new/frontend/` |
+| Shared schemas | `templates/entity/new/shared/` |
+
+Templates prefixed with `_inject-` modify existing files. Others create new files.
+
+## License
+
+MIT

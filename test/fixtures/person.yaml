@@ -1,0 +1,34 @@
+# Person Entity Definition
+# A human being in the sales ecosystem (buyer, contact, stakeholder)
+
+entity:
+  name: person
+  plural: persons
+  table: persons
+  folder_structure: nested
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: tenants.id
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+    index: true
+
+  first_name:
+    type: string
+    required: true
+    max_length: 100
+
+  last_name:
+    type: string
+    required: true
+    max_length: 100
+
+# Relationships handled via junction tables (employment, deal roles, etc.)
+# Not defined here - those are separate entities

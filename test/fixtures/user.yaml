@@ -1,0 +1,38 @@
+# User Entity Definition
+# Someone who logs into the application (distinct from Person)
+
+entity:
+  name: user
+  plural: users
+  table: users
+  folder_structure: nested
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: tenants.id
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+    index: true
+
+  # Optional link to Person (if tracking internal team as relationship entities)
+  person_id:
+    type: uuid
+    nullable: true
+    foreign_key: persons.id
+
+relationships:
+  person:
+    type: belongs_to
+    target: person
+    foreign_key: person_id
+
+  owned_opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: owner_id

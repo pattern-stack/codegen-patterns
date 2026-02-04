@@ -1,0 +1,75 @@
+# Opportunity Entity Definition
+# A finite sales motion with a beginning and an end
+
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+  folder_structure: nested
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: tenants.id
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  # Core relationships (current snapshot)
+  organization_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: organizations.id
+
+  owner_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: users.id
+
+  state_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: deal_states.id
+
+  # Core financials
+  amount:
+    type: decimal
+    nullable: true
+
+  currency:
+    type: string
+    nullable: true
+    max_length: 3
+    default: "USD"
+
+  # Core timeline
+  expected_close_date:
+    type: date
+    nullable: true
+
+  closed_at:
+    type: datetime
+    nullable: true
+
+relationships:
+  organization:
+    type: belongs_to
+    target: organization
+    foreign_key: organization_id
+
+  owner:
+    type: belongs_to
+    target: user
+    foreign_key: owner_id
+
+  state:
+    type: belongs_to
+    target: deal_state
+    foreign_key: state_id

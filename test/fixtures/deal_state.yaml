@@ -1,0 +1,56 @@
+# Deal State Entity Definition
+# Configurable sales stages (Prospecting, Negotiation, Closed Won, etc.)
+
+entity:
+  name: deal_state
+  plural: deal_states
+  table: deal_states
+  folder_structure: nested
+
+fields:
+  tenant_id:
+    type: uuid
+    nullable: true
+    index: true
+    foreign_key: tenants.id
+
+  name:
+    type: string
+    required: true
+    max_length: 50
+
+  display_name:
+    type: string
+    required: true
+    max_length: 100
+
+  state_type:
+    type: string
+    required: true
+    max_length: 20
+    choices:
+      - open
+      - won
+      - lost
+      - stalled
+
+  sort_order:
+    type: integer
+    required: true
+
+  probability_default:
+    type: integer
+    nullable: true
+    min: 0
+    max: 100
+
+  color:
+    type: string
+    nullable: true
+    max_length: 20
+
+relationships:
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: state_id

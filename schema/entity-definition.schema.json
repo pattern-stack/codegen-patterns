@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Entity Definition",
+  "description": "Schema for entity YAML definitions. Defines domain entities with fields, relationships, behaviors, and layout options.",
+  "type": "object",
+  "properties": {
+    "entity": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Entity name in snake_case (e.g., 'opportunity')"
+        },
+        "plural": {
+          "type": "string",
+          "description": "Plural form in snake_case (e.g., 'opportunities')"
+        },
+        "table": {
+          "type": "string",
+          "description": "Database table name"
+        },
+        "folder_structure": {
+          "description": "Directory structure: nested (domain/entity/) or flat (domain/)",
+          "type": "string",
+          "enum": [
+            "nested",
+            "flat"
+          ]
+        },
+        "file_grouping": {
+          "description": "File organization: separate (entity.ts, repository.ts) or grouped (index.ts)",
+          "type": "string",
+          "enum": [
+            "separate",
+            "grouped"
+          ]
+        },
+        "behavior_strategy": {
+          "description": "Repository pattern: base_class (DRY) or inline (explicit)",
+          "type": "string",
+          "enum": [
+            "base_class",
+            "inline"
+          ]
+        },
+        "expose": {
+          "description": "Which layers to generate",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "repository",
+              "rest",
+              "trpc"
+            ]
+          }
+        }
+      },
+      "required": [
+        "name",
+        "plural",
+        "table"
+      ],
+      "description": "Entity configuration"
+    },
+    "fields": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "string",
+              "integer",
+              "decimal",
+              "boolean",
+              "uuid",
+              "date",
+              "datetime",
+              "json",
+              "entity_ref",
+              "string_array",
+              "enum"
+            ],
+            "description": "Field data type"
+          },
+          "required": {
+            "description": "Field must be provided on CREATE",
+            "type": "boolean"
+          },
+          "nullable": {
+            "description": "Database column allows NULL",
+            "type": "boolean"
+          },
+          "max_length": {
+            "description": "Max string length",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "min_length": {
+            "description": "Min string length",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "min": {
+            "description": "Minimum numeric value",
+            "type": "number"
+          },
+          "max": {
+            "description": "Maximum numeric value",
+            "type": "number"
+          },
+          "choices": {
+            "description": "Enum values for this field",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "choices_from": {
+            "description": "Load enum values from external YAML file",
+            "type": "string"
+          },
+          "allowed_types": {
+            "description": "Allowed entity types for entity_ref",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {
+            "description": "Default value"
+          },
+          "index": {
+            "description": "Create database index",
+            "type": "boolean"
+          },
+          "unique": {
+            "description": "Unique constraint",
+            "type": "boolean"
+          },
+          "foreign_key": {
+            "description": "Foreign key reference (e.g., 'accounts.id')",
+            "type": "string"
+          },
+          "ui_label": {
+            "description": "Display label",
+            "type": "string"
+          },
+          "ui_type": {
+            "description": "UI input type",
+            "type": "string",
+            "enum": [
+              "text",
+              "textarea",
+              "number",
+              "money",
+              "percentage",
+              "email",
+              "url",
+              "date",
+              "datetime",
+              "boolean",
+              "enum",
+              "reference",
+              "json",
+              "badge",
+              "password"
+            ]
+          },
+          "ui_importance": {
+            "description": "Field importance for display",
+            "type": "string",
+            "enum": [
+              "primary",
+              "secondary",
+              "tertiary"
+            ]
+          },
+          "ui_group": {
+            "description": "UI grouping",
+            "type": "string"
+          },
+          "ui_sortable": {
+            "description": "Allow sorting by this field",
+            "type": "boolean"
+          },
+          "ui_filterable": {
+            "description": "Allow filtering by this field",
+            "type": "boolean"
+          },
+          "ui_visible": {
+            "description": "Show in UI by default",
+            "type": "boolean"
+          },
+          "ui_placeholder": {
+            "description": "Input placeholder text",
+            "type": "string"
+          },
+          "ui_help": {
+            "description": "Help text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "description": "Field definitions"
+    },
+    "relationships": {
+      "description": "Entity relationships",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "belongs_to",
+              "has_many",
+              "has_one"
+            ],
+            "description": "Relationship type"
+          },
+          "target": {
+            "type": "string",
+            "description": "Target entity name (e.g., 'account')"
+          },
+          "foreign_key": {
+            "type": "string",
+            "description": "FK field name (e.g., 'account_id')"
+          }
+        },
+        "required": [
+          "type",
+          "target",
+          "foreign_key"
+        ]
+      }
+    },
+    "behaviors": {
+      "description": "Cross-cutting behaviors",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "timestamps",
+            "description": "Adds created_at, updated_at"
+          },
+          {
+            "type": "string",
+            "const": "soft_delete",
+            "description": "Adds deleted_at for soft deletes"
+          },
+          {
+            "type": "string",
+            "const": "user_tracking",
+            "description": "Adds created_by, updated_by"
+          },
+          {
+            "type": "string",
+            "const": "temporal_validity",
+            "description": "Adds valid_from, valid_to, is_active"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Behavior name"
+              },
+              "options": {
+                "description": "Behavior options",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "entity",
+    "fields"
+  ]
+}

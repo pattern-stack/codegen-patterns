@@ -1,0 +1,49 @@
+# Organization Entity Definition
+# An entity that can purchase something (company, account, buying entity)
+
+entity:
+  name: organization
+  plural: organizations
+  table: organizations
+  folder_structure: nested
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: tenants.id
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  domain:
+    type: string
+    nullable: true
+    max_length: 255
+    index: true
+
+  # Self-referential hierarchy (Amazon → AWS)
+  parent_id:
+    type: uuid
+    nullable: true
+    index: true
+    foreign_key: organizations.id
+
+relationships:
+  parent:
+    type: belongs_to
+    target: organization
+    foreign_key: parent_id
+
+  children:
+    type: has_many
+    target: organization
+    foreign_key: parent_id
+
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: organization_id
