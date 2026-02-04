@@ -20,7 +20,9 @@ force: true
 import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
 <% } -%>
 import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
+<% if (exposeTrpc) { -%>
 import { trpc } from '<%= locations.trpcClient.import %>';
+<% } -%>
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
 <% if (generate.fieldMetadata) { -%>
@@ -29,8 +31,9 @@ import type { FieldMeta, FieldType, FieldImportance } from '<%= locations.fronte
 import { <%= frontend.auth.function %> } from '<%= locations.frontendCollectionsAuth.import %>';
 <%
 // Collect unique belongs_to targets for imports (FK resolution)
+// Only import collections that actually exist (existingBelongsTo filters by targetExists)
 const importedEntities = new Set();
-belongsToRelations.forEach((rel) => {
+existingBelongsTo.forEach((rel) => {
   if (rel.target !== name) {
     importedEntities.add(rel.target);
   }
@@ -44,13 +47,11 @@ belongsToRelations.forEach((rel) => {
 -%>
 import { <%= targetCamel %>Collection } from './<%= target %>';
 <% }); -%>
-<% if (importedEntities.size > 0) { -%>
 <% importedEntities.forEach((target) => {
   const targetClass = target.charAt(0).toUpperCase() + target.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 -%>
 import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %>/<%= target %>';
 <% }); -%>
-<% } -%>
 <% } -%>
 
 // ============================================================================
@@ -59,11 +60,11 @@ import type { <%= targetClass %>Entity } from '<%= locations.dbEntities.import %
 
 /** Base entity from database */
 export type <%= className %> = <%= className %>Entity;
-<% if (belongsToRelations.length > 0) { -%>
+<% if (existingBelongsTo.length > 0) { -%>
 
-/** Entity with resolved FK relations */
+/** Entity with resolved FK relations (only includes relations with existing targets) */
 export interface <%= className %>Resolved extends <%= className %> {
-<% belongsToRelations.forEach((rel) => { -%>
+<% existingBelongsTo.forEach((rel) => { -%>
 <% // Use local type for self-referential, imported type for others -%>
 	<%= rel.name %>?: <%= rel.target === name ? className : rel.targetClass + 'Entity' %>;
 <% }); -%>
@@ -138,12 +139,12 @@ export const <%= camelName %>Collection = createCollection(
 // ============================================================================
 // Resolution (FK lookup - internal use)
 // ============================================================================
-<% if (belongsToRelations.length > 0) { -%>
+<% if (existingBelongsTo.length > 0) { -%>
 
 function resolveRelations(entity: <%= className %>): <%= className %>Resolved {
 	return {
 		...entity,
-<% belongsToRelations.forEach((rel) => { -%>
+<% existingBelongsTo.forEach((rel) => { -%>
 		<%= rel.name %>: entity.<%= rel.foreignKeyCamel %>
 			? <%= rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) %>Collection.state.get(entity.<%= rel.foreignKeyCamel %>)
 			: undefined,
