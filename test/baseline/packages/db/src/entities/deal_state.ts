@@ -17,7 +17,7 @@ export const dealStateSchema = z.object({
 	color: z.string().max(20).nullable(),
 });
 
-export type DealStateEntity = z.infer<typeof dealStateSchema>;
+export type DealState = z.infer<typeof dealStateSchema>;
 
 // Create schema (for mutations)
 export const createDealStateSchema = z.object({

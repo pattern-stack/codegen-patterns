@@ -988,8 +988,8 @@ export default {
         // concern-first: generated/types/{entity}.ts, collections/{entity}.ts...
         // monolithic: generated/{entity}.ts (single file per entity)
         structure: getProjectConfig()?.generate?.structure ?? 'monolithic',
-        // Type naming: 'entity' = OpportunityEntity, 'plain' = Opportunity
-        typeNaming: getProjectConfig()?.generate?.typeNaming ?? 'entity',
+        // Type naming: 'plain' = Opportunity, 'entity' = OpportunityEntity
+        typeNaming: getProjectConfig()?.generate?.typeNaming ?? 'plain',
         // FK resolution: true = import related collections, false = skip (useful when collections don't exist)
         fkResolution: getProjectConfig()?.generate?.fkResolution ?? true,
         // Collection variable naming: 'singular' = opportunityCollection, 'plural' = opportunitiesCollection

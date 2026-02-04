@@ -14,7 +14,7 @@ export const personSchema = z.object({
 	lastName: z.string().max(100),
 });
 
-export type PersonEntity = z.infer<typeof personSchema>;
+export type Person = z.infer<typeof personSchema>;
 
 // Create schema (for mutations)
 export const createPersonSchema = z.object({

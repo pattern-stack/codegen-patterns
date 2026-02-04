@@ -19,7 +19,7 @@ export const opportunitySchema = z.object({
 	closedAt: z.coerce.date().nullable(),
 });
 
-export type OpportunityEntity = z.infer<typeof opportunitySchema>;
+export type Opportunity = z.infer<typeof opportunitySchema>;
 
 // Create schema (for mutations)
 export const createOpportunitySchema = z.object({

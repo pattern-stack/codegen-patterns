@@ -14,7 +14,7 @@ export const organizationSchema = z.object({
 	parentId: z.string().uuid().nullable(),
 });
 
-export type OrganizationEntity = z.infer<typeof organizationSchema>;
+export type Organization = z.infer<typeof organizationSchema>;
 
 // Create schema (for mutations)
 export const createOrganizationSchema = z.object({

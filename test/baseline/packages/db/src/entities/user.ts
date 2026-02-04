@@ -13,7 +13,7 @@ export const userSchema = z.object({
 	personId: z.string().uuid().nullable(),
 });
 
-export type UserEntity = z.infer<typeof userSchema>;
+export type User = z.infer<typeof userSchema>;
 
 // Create schema (for mutations)
 export const createUserSchema = z.object({
