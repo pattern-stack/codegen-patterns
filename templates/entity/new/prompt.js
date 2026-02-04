@@ -19,6 +19,7 @@ import {
   getDatabaseDialect,
   getProjectConfig,
 } from "../../../config/paths.mjs";
+import { getNamingConfig } from "../../../config/naming-config.mjs";
 
 // ============================================================================
 // Behavior Registry (inline to avoid import issues with Hygen)
@@ -414,8 +415,23 @@ export default {
     // See tools/codegen/config/paths.js for path definitions
     const paths = getEntityPaths({ name, plural, isNested, isGrouped });
 
-    // File names using centralized config
-    const fileNames = getEntityFileNames({ name, plural, isNested, isGrouped });
+    // Load naming configuration for file naming
+    const namingConfig = getNamingConfig();
+
+    // File names using centralized config with naming configuration
+    const fileNames = getEntityFileNames({ name, plural, isNested, isGrouped, namingConfig });
+
+    // Terminology-aware class name suffixes
+    // Supports 'command' vs 'use-case' naming for application layer
+    const applicationLayerSuffix = namingConfig.terminology.command === 'use-case' ? 'UseCase' : 'Command';
+    const queryLayerSuffix = namingConfig.terminology.query === 'use-case' ? 'UseCase' : 'Query';
+
+    // Pre-computed class names using configured terminology
+    const createCommandClass = `Create${className}${applicationLayerSuffix}`;
+    const updateCommandClass = `Update${className}${applicationLayerSuffix}`;
+    const deleteCommandClass = `Delete${className}${applicationLayerSuffix}`;
+    const getByIdQueryClass = `Get${className}ById${queryLayerSuffix}`;
+    const listQueryClass = `List${classNamePlural}${queryLayerSuffix}`;
 
     // Step 1: Compute all possible output paths
     const src = BASE_PATHS.backendSrc;
@@ -974,6 +990,18 @@ export default {
           timestamptz: '(date: string) => new Date(date)',
         },
       },
+
+      // Naming configuration (for templates that need it)
+      namingConfig,
+      applicationLayerSuffix,
+      queryLayerSuffix,
+
+      // Pre-computed class names with configured terminology
+      createCommandClass,
+      updateCommandClass,
+      deleteCommandClass,
+      getByIdQueryClass,
+      listQueryClass,
 
       // Generation toggles (what to generate)
       generate: {

@@ -7,11 +7,17 @@
  * NEW: For path + import alias pairs, see ./locations.mjs
  * The LOCATIONS export provides both filesystem paths and TypeScript import aliases.
  *
+ * NEW: For configurable naming conventions, see ./naming-config.mjs
+ * The naming config supports fileCase, suffixStyle, entityInclusion, and terminology options.
+ *
  * Usage:
  *   import { paths, getPath, LOCATIONS } from '../config/paths.js';
  */
 
 import { projectConfig } from './config-loader.mjs';
+import { getNamingConfig } from './naming-config.mjs';
+import { applyCase, toPascalCase, getCaseSeparator } from './case-converters.mjs';
+import { FILE_TYPE_SUFFIXES } from '../schema/naming-config.schema.ts';
 
 // Re-export LOCATIONS for unified path + import configuration
 export { LOCATIONS, getLocation, getLocationPath, getLocationImport } from './locations.mjs';
@@ -138,10 +144,12 @@ export function getFrontendPath(layer, subpath = "") {
 }
 
 /**
- * File naming conventions
+ * File naming conventions (legacy constant for backward compatibility)
+ *
+ * @deprecated Use computeFileNaming() or computeFileName() for config-driven naming
  */
 export const FILE_NAMING = {
-  // File suffixes
+  // File suffixes (dotted style - default)
   entity: ".entity.ts",
   repositoryInterface: ".repository.interface.ts",
   repository: ".repository.ts",
@@ -152,6 +160,138 @@ export const FILE_NAMING = {
   module: ".module.ts",
   schema: ".schema.ts",
 };
+
+// ============================================================================
+// Config-Driven File Naming
+// ============================================================================
+
+/**
+ * Compute file suffix based on file type and suffix style
+ *
+ * @param {string} fileType - File type from FILE_TYPE_SUFFIXES
+ * @param {'dotted' | 'suffixed' | 'worded'} suffixStyle - How to apply suffix
+ * @param {'kebab-case' | 'snake_case' | 'camelCase' | 'PascalCase'} fileCase - For worded style separator
+ * @returns {string} Suffix without .ts extension (e.g., ".entity" or "Entity" or "-entity")
+ */
+function computeSuffix(fileType, suffixStyle, fileCase) {
+  const suffixInfo = FILE_TYPE_SUFFIXES[fileType];
+  if (!suffixInfo) {
+    console.warn(`Unknown file type: ${fileType}, using .${fileType}`);
+    return `.${fileType}`;
+  }
+
+  switch (suffixStyle) {
+    case 'dotted':
+      return suffixInfo.dotted;
+    case 'suffixed':
+      return suffixInfo.suffixed;
+    case 'worded':
+      // Use the case-appropriate separator
+      const separator = getCaseSeparator(fileCase);
+      if (separator) {
+        return `${separator}${suffixInfo.word}`;
+      }
+      // For camelCase/PascalCase, capitalize the suffix word
+      return toPascalCase(suffixInfo.word);
+    default:
+      return suffixInfo.dotted;
+  }
+}
+
+/**
+ * Compute a single file name from entity name, type, and config
+ *
+ * @param {string} entityName - Entity name (typically snake_case from YAML)
+ * @param {string} fileType - File type key (entity, repository, command, etc.)
+ * @param {Object} namingConfig - Naming configuration
+ * @param {Object} options - Additional options
+ * @param {boolean} options.isNested - Whether using nested folder structure
+ * @param {string} options.plural - Plural form of entity name
+ * @param {string} options.action - Action prefix for commands/queries (create, update, delete, etc.)
+ * @returns {string} Complete file name with .ts extension
+ */
+export function computeFileName(entityName, fileType, namingConfig = null, options = {}) {
+  const config = namingConfig || getNamingConfig();
+  const { fileCase, suffixStyle, entityInclusion, terminology } = config;
+  const { isNested = true, plural, action } = options;
+
+  // Determine the base name
+  let baseName = entityName;
+
+  // Compute the suffix based on style and terminology
+  // For commands/queries with use-case terminology, override the default suffix
+  const useUseCaseSuffix =
+    (fileType === 'command' && terminology.command === 'use-case') ||
+    (fileType === 'query' && terminology.query === 'use-case');
+
+  let suffix;
+  if (useUseCaseSuffix) {
+    // Use-case terminology: generate .use-case / UseCase / -use-case suffix
+    const separator = getCaseSeparator(fileCase);
+    suffix = suffixStyle === 'dotted' ? '.use-case' :
+             suffixStyle === 'suffixed' ? 'UseCase' :
+             separator ? `${separator}use-case` : 'UseCase';
+  } else {
+    suffix = computeSuffix(fileType, suffixStyle, fileCase);
+  }
+
+  // For command/query files with action prefix
+  if (action) {
+    // Determine if entity name should be included
+    const includeEntity =
+      entityInclusion === 'always' ||
+      (entityInclusion === 'flat-only' && !isNested);
+
+    if (includeEntity) {
+      // Include entity: create-opportunity.command.ts
+      baseName = `${action}-${entityName}`;
+    } else {
+      // Exclude entity: create.command.ts
+      baseName = action;
+    }
+  }
+
+  // For controller/module, use plural form
+  if ((fileType === 'controller' || fileType === 'module') && plural) {
+    baseName = plural;
+  }
+
+  // Apply case transformation to base name
+  const casedName = applyCase(baseName, fileCase);
+
+  // Build final file name
+  if (suffixStyle === 'suffixed') {
+    // For suffixed style, base should also be PascalCase
+    const pascalBase = toPascalCase(baseName);
+    return `${pascalBase}${suffix}.ts`;
+  }
+
+  return `${casedName}${suffix}.ts`;
+}
+
+/**
+ * Compute FILE_NAMING map from configuration
+ *
+ * Returns same shape as legacy FILE_NAMING constant but computed from config.
+ * Useful for backward compatibility with existing code.
+ *
+ * @param {Object} namingConfig - Optional naming configuration (uses default if not provided)
+ * @returns {Object} FILE_NAMING-compatible object
+ */
+export function computeFileNaming(namingConfig = null) {
+  const config = namingConfig || getNamingConfig();
+  const { suffixStyle, fileCase } = config;
+
+  const result = {};
+  const fileTypes = ['entity', 'repositoryInterface', 'repository', 'command', 'query', 'dto', 'controller', 'module', 'schema'];
+
+  for (const type of fileTypes) {
+    const suffix = computeSuffix(type, suffixStyle, fileCase);
+    result[type] = `${suffix}.ts`;
+  }
+
+  return result;
+}
 
 /**
  * Get dynamic paths based on entity configuration
@@ -191,29 +331,35 @@ export function getEntityPaths({ name, plural, isNested = true, isGrouped = fals
  * Layout options:
  * - isNested: controls folder nesting (domain/opportunity/ vs domain/)
  * - isGrouped: controls file grouping (index.ts vs separate files)
+ * - namingConfig: optional naming configuration (uses default if not provided)
  *
  * @param {Object} options
  * @param {string} options.name - Entity name (snake_case)
  * @param {string} options.plural - Plural form of entity name
  * @param {boolean} options.isNested - Whether to use nested folder structure
  * @param {boolean} options.isGrouped - Whether to group related files together
+ * @param {Object} options.namingConfig - Optional naming configuration
  * @returns {Object} Computed file names for this entity
  */
-export function getEntityFileNames({ name, plural, isNested = true, isGrouped = false }) {
+export function getEntityFileNames({ name, plural, isNested = true, isGrouped = false, namingConfig = null }) {
+  // Use config-driven naming if available, otherwise use legacy hardcoded values
+  const config = namingConfig || getNamingConfig();
+  const opts = { isNested, plural };
+
   // Base file names (always computed for import path generation)
   const baseNames = {
-    entity: `${name}${FILE_NAMING.entity}`,
-    repositoryInterface: `${name}${FILE_NAMING.repositoryInterface}`,
-    repository: `${name}${FILE_NAMING.repository}`,
-    createCommand: isNested ? `create${FILE_NAMING.command}` : `create-${name}${FILE_NAMING.command}`,
-    updateCommand: isNested ? `update${FILE_NAMING.command}` : `update-${name}${FILE_NAMING.command}`,
-    deleteCommand: isNested ? `delete${FILE_NAMING.command}` : `delete-${name}${FILE_NAMING.command}`,
-    getByIdQuery: isNested ? `get-by-id${FILE_NAMING.query}` : `get-${name}-by-id${FILE_NAMING.query}`,
-    listQuery: isNested ? `list${FILE_NAMING.query}` : `list-${plural}${FILE_NAMING.query}`,
-    dto: `${name}${FILE_NAMING.dto}`,
-    controller: `${plural}${FILE_NAMING.controller}`,
-    module: `${plural}${FILE_NAMING.module}`,
-    schema: `${name}${FILE_NAMING.schema}`,
+    entity: computeFileName(name, 'entity', config, opts),
+    repositoryInterface: computeFileName(name, 'repositoryInterface', config, opts),
+    repository: computeFileName(name, 'repository', config, opts),
+    createCommand: computeFileName(name, 'command', config, { ...opts, action: 'create' }),
+    updateCommand: computeFileName(name, 'command', config, { ...opts, action: 'update' }),
+    deleteCommand: computeFileName(name, 'command', config, { ...opts, action: 'delete' }),
+    getByIdQuery: computeFileName(name, 'query', config, { ...opts, action: 'get-by-id' }),
+    listQuery: computeFileName(plural, 'query', config, { ...opts, action: 'list' }),
+    dto: computeFileName(name, 'dto', config, opts),
+    controller: computeFileName(name, 'controller', config, { ...opts, plural }),
+    module: computeFileName(name, 'module', config, { ...opts, plural }),
+    schema: computeFileName(name, 'schema', config, opts),
   };
 
   // When grouped, add index file names for combined output
@@ -375,4 +521,7 @@ export default {
   getLayoutConfig,
   getDatabaseDialect,
   getProjectConfig,
+  // NEW: Config-driven naming functions
+  computeFileName,
+  computeFileNaming,
 };

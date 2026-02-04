@@ -1,0 +1,35 @@
+# Custom Naming Configuration - Test Fixture
+#
+# This configuration demonstrates non-default naming conventions:
+# - PascalCase file names with suffixed style
+# - UseCase terminology instead of Command
+# - Always include entity name in file names
+#
+# Use this to test that custom naming configurations are properly applied.
+
+database:
+  dialect: postgres
+
+# Custom naming conventions (different from defaults)
+naming:
+  fileCase: PascalCase
+  suffixStyle: suffixed
+  entityInclusion: always
+  terminology:
+    command: use-case
+    query: use-case
+
+# Standard paths
+paths:
+  backend_src: packages/api/src
+  frontend_src: apps/frontend/src
+
+# Standard generation settings
+generate:
+  fieldMetadata: true
+  collections: true
+  hooks: true
+  mutations: true
+  structure: monolithic
+  typeNaming: plain
+  fkResolution: true
