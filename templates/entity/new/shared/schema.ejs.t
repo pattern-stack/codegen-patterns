@@ -50,7 +50,7 @@ export const <%= camelName %>Schema = z.object({
 <% } -%>
 });
 
-export type <%= className %>Entity = z.infer<typeof <%= camelName %>Schema>;
+export type <%= generate.typeNaming === 'plain' ? className : className + 'Entity' %> = z.infer<typeof <%= camelName %>Schema>;
 
 // Create schema (for mutations)
 export const create<%= className %>Schema = z.object({
