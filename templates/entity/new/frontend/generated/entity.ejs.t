@@ -16,6 +16,9 @@ force: true
  * - Field metadata (for DataGrid, forms, admin)
  */
 
+<% if (frontend.sync.columnMapper) { -%>
+import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
+<% } -%>
 import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locations.dbEntities.import %>/<%= name %>';
 import { trpc } from '<%= locations.trpcClient.import %>';
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
@@ -106,6 +109,9 @@ export const <%= camelName %>Collection = createCollection(
 				<%= type %>: <%= fn %>,
 <% }); -%>
 			},
+<% if (frontend.sync.columnMapper) { -%>
+			columnMapper: <%= frontend.sync.columnMapper %>,
+<% } -%>
 		},
 		schema: <%= camelName %>Schema,
 		getKey: (item) => item.id,

@@ -106,6 +106,7 @@ frontend:
   sync:
     shapeUrl: '/v1/shape'  # Base URL for Electric SQL shapes (default: /v1/shape)
     useTableParam: true    # true = ?table=X (Electric pattern), false = /plural appended
+    columnMapper: snakeCamelMapper  # For snake_case DB columns → camelCase JS (default: null)
   parsers:
     timestamptz: '(d: string) => new Date(d)'
     date: '(d: string) => new Date(d + "T00:00:00")'
@@ -116,6 +117,7 @@ frontend:
 **Frontend Sync Patterns**: The `frontend.sync` config controls how shape URLs are generated:
 - `useTableParam: true` (default): Electric SQL pattern - `/v1/shape?table=opportunities`
 - `useTableParam: false`: REST-style pattern - `${shapeUrl}/opportunities`
+- `columnMapper`: Set to `snakeCamelMapper` to convert snake_case DB columns to camelCase JS properties. Leave unset (default: `null`) if your DB columns already match your JS property names.
 
 **Generation Toggles**: Control which outputs are generated:
 ```yaml

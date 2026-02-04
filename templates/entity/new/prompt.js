@@ -585,6 +585,9 @@ export default {
     const entityRefFields = []; // Track entity_ref fields for special handling
 
     for (const [fieldName, field] of Object.entries(fields)) {
+      // Skip 'id' field - it's always added explicitly in templates to avoid duplicates
+      if (fieldName === 'id') continue;
+
       // Handle entity_ref type specially - generates TWO fields
       if (field.type === "entity_ref") {
         const allowedTypes = field.allowed_types || [];
@@ -949,6 +952,9 @@ export default {
         sync: {
           shapeUrl: getProjectConfig()?.frontend?.sync?.shapeUrl ?? '/v1/shape',
           useTableParam: getProjectConfig()?.frontend?.sync?.useTableParam ?? true,
+          // Column mapper for snake_case to camelCase conversion (e.g., 'snakeCamelMapper')
+          // Set to null/undefined if DB columns already match JS property names
+          columnMapper: getProjectConfig()?.frontend?.sync?.columnMapper ?? null,
         },
         parsers: getProjectConfig()?.frontend?.parsers ?? {
           timestamptz: '(date: string) => new Date(date)',

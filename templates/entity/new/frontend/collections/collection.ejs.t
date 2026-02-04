@@ -10,6 +10,9 @@ force: true
  * Real-time synced collection using TanStack DB + Electric SQL
  */
 
+<% if (frontend.sync.columnMapper) { -%>
+import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
+<% } -%>
 import { <%= camelName %>Schema } from '<%= locations.dbEntities.import %>/<%= name %>';
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
 import { createCollection } from '@tanstack/react-db';
@@ -40,6 +43,9 @@ export const <%= camelName %>Collection = createCollection(
 				<%= type %>: <%= fn %>,
 <% }); -%>
 			},
+<% if (frontend.sync.columnMapper) { -%>
+			columnMapper: <%= frontend.sync.columnMapper %>,
+<% } -%>
 		},
 		schema: <%= camelName %>Schema,
 		getKey: (item) => item.id,
