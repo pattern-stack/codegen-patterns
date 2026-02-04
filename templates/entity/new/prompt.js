@@ -955,6 +955,12 @@ export default {
           // Column mapper for snake_case to camelCase conversion (e.g., 'snakeCamelMapper')
           // Set to null/undefined if DB columns already match JS property names
           columnMapper: getProjectConfig()?.frontend?.sync?.columnMapper ?? null,
+          // Whether to wrap shapeUrl in new URL() constructor
+          wrapInUrlConstructor: getProjectConfig()?.frontend?.sync?.wrapInUrlConstructor ?? true,
+          // Whether columnMapper needs () to call (true for functions, false for objects)
+          columnMapperNeedsCall: getProjectConfig()?.frontend?.sync?.columnMapperNeedsCall ?? true,
+          // Import path for API_BASE_URL (if needed)
+          apiBaseUrlImport: getProjectConfig()?.frontend?.sync?.apiBaseUrlImport ?? null,
         },
         parsers: getProjectConfig()?.frontend?.parsers ?? {
           timestamptz: '(date: string) => new Date(date)',
@@ -969,6 +975,11 @@ export default {
         mutations: getProjectConfig()?.generate?.mutations ?? true,
         // Hook style: 'collection' uses collection.useMany(), 'useLiveQuery' uses TanStack DB pattern
         hookStyle: getProjectConfig()?.generate?.hookStyle ?? 'collection',
+        // Output structure mode: 'entity-first' | 'concern-first' | 'monolithic'
+        // entity-first: generated/{entity}/types.ts, collection.ts, hooks.ts...
+        // concern-first: generated/types/{entity}.ts, collections/{entity}.ts...
+        // monolithic: generated/{entity}.ts (single file per entity)
+        structure: getProjectConfig()?.generate?.structure ?? 'monolithic',
       },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)

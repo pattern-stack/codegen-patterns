@@ -1,10 +1,8 @@
 ---
-to: <%= locations.frontendGenerated.path %>/<%= name %>.ts
-skip_if: true
+to: "<%= generate.structure === 'monolithic' ? `${locations.frontendGenerated.path}/${name}.ts` : '' %>"
+skip_if: <%= generate.structure !== 'monolithic' %>
 force: true
 ---
-<%# DEPRECATED: Use templates/entity/new/frontend/entity/combined.ejs.t instead %>
-<%# This template is kept for reference but will be removed in a future version %>
 /**
  * <%= className %> - Generated Entity Module
  *

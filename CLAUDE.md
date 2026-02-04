@@ -100,16 +100,24 @@ locations:
   dbEntities:
     path: packages/db/src/entities
     import: "@repo/db/entities"
+locations:
+  dbEntities:
+    barrelExport: true  # Skip entity suffix in imports (default: false)
 frontend:
   auth:
-    function: getToken  # Auth function name (default: getAuthorizationHeader)
+    function: getToken  # Auth function name, or null to skip auth header entirely
   sync:
     shapeUrl: '/v1/shape'  # Base URL for Electric SQL shapes (default: /v1/shape)
     useTableParam: true    # true = ?table=X (Electric pattern), false = /plural appended
     columnMapper: snakeCamelMapper  # For snake_case DB columns → camelCase JS (default: null)
+    columnMapperNeedsCall: true     # true = mapper(), false = mapper (default: true)
+    wrapInUrlConstructor: true      # Wrap shapeUrl in new URL().toString() (default: true)
+    apiBaseUrlImport: '@/lib/config' # Import path for API_BASE_URL (default: null)
   parsers:
     timestamptz: '(d: string) => new Date(d)'
     date: '(d: string) => new Date(d + "T00:00:00")'
+generate:
+  structure: 'monolithic'  # Output structure: monolithic | entity-first | concern-first
 ```
 
 **Frontend Parsers**: Custom parser functions for Electric SQL shape data. Each key is a PostgreSQL type, and the value is a JavaScript function string that will be output directly in generated code. Default: `{ timestamptz: '(date: string) => new Date(date)' }`.
@@ -118,15 +126,25 @@ frontend:
 - `useTableParam: true` (default): Electric SQL pattern - `/v1/shape?table=opportunities`
 - `useTableParam: false`: REST-style pattern - `${shapeUrl}/opportunities`
 - `columnMapper`: Set to `snakeCamelMapper` to convert snake_case DB columns to camelCase JS properties. Leave unset (default: `null`) if your DB columns already match your JS property names.
+- `columnMapperNeedsCall`: Set to `true` if mapper is a function (`mapper()`), `false` if it's an object (`mapper`).
+- `wrapInUrlConstructor`: Wraps shapeUrl in `new URL(url, origin).toString()` for proper URL resolution.
+- `apiBaseUrlImport`: Import path for `API_BASE_URL` constant (e.g., `'@/lib/config'`). Set to `null` to skip.
 
 **Generation Toggles**: Control which outputs are generated:
 ```yaml
 generate:
-  fieldMetadata: true   # Generate field metadata in entity.ejs.t (default: true)
-  collections: true     # Generate standalone collection files (default: true)
-  hooks: true           # Generate standalone hooks files (default: true)
+  fieldMetadata: true      # Generate field metadata (default: true)
+  collections: true        # Generate standalone collection files (default: true)
+  hooks: true              # Generate standalone hooks files (default: true)
+  mutations: true          # Generate mutation functions (default: true)
+  structure: 'monolithic'  # Output structure mode (default: monolithic)
 ```
 Set any toggle to `false` to skip generating that output. Useful when you have manual `fields.tsx` files or custom hook implementations you want to preserve.
+
+**Output Structure Modes** (`generate.structure`):
+- `monolithic` (default): Single file per entity - `generated/{entity}.ts`
+- `entity-first`: Group by entity - `generated/{entity}/types.ts`, `collection.ts`, `hooks.ts`, etc.
+- `concern-first`: Group by concern - `generated/types/{entity}.ts`, `collections/{entity}.ts`, etc.
 
 **Locations** (`config/locations.mjs`): Each location defines both `path` (where files go) and `import` (TypeScript alias). Templates use `locations.X.path` for output and `locations.X.import` for imports.
 
