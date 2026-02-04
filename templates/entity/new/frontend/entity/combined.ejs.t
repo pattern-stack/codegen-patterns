@@ -27,6 +27,9 @@ const collectionVar = generate.collectionNaming === 'plural' ? collectionVarName
 const returnKey = generate.hookReturnStyle === 'named' ? pluralCamelName : 'data';
 const returnKeySingular = generate.hookReturnStyle === 'named' ? camelName : 'data';
 -%>
+<% if (generate.mutations && (exposeTrpc || exposeRepository)) { -%>
+import { useState, useCallback } from 'react';
+<% } -%>
 <% if (frontend.sync.columnMapper) { -%>
 import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
 <% } -%>
@@ -281,6 +284,70 @@ export function update<%= className %>(id: string, fn: (draft: <%= className %>)
 export function delete<%= className %>(id: string) {
 	return <%= collectionVar %>.delete(id);
 }
+
+// ============================================================================
+// Mutation Hooks (Error tracking wrappers)
+// ============================================================================
+
+type MutationHookResult<TFn extends (...args: any[]) => any> = {
+	mutate: TFn;
+	error: Error | null;
+	clearError: () => void;
+};
+
+export function useCreate<%= className %>(): MutationHookResult<typeof insert<%= className %>> {
+	const [error, setError] = useState<Error | null>(null);
+
+	const mutate = useCallback<typeof insert<%= className %>>((data) => {
+		try {
+			insert<%= className %>(data);
+			setError(null);
+		} catch (err) {
+			const error = err instanceof Error ? err : new Error(String(err));
+			setError(error);
+			throw error;
+		}
+	}, []);
+
+	const clearError = useCallback(() => setError(null), []);
+	return { mutate, error, clearError };
+}
+
+export function useUpdate<%= className %>(): MutationHookResult<typeof update<%= className %>> {
+	const [error, setError] = useState<Error | null>(null);
+
+	const mutate = useCallback<typeof update<%= className %>>((id, fn) => {
+		try {
+			update<%= className %>(id, fn);
+			setError(null);
+		} catch (err) {
+			const error = err instanceof Error ? err : new Error(String(err));
+			setError(error);
+			throw error;
+		}
+	}, []);
+
+	const clearError = useCallback(() => setError(null), []);
+	return { mutate, error, clearError };
+}
+
+export function useDelete<%= className %>(): MutationHookResult<typeof delete<%= className %>> {
+	const [error, setError] = useState<Error | null>(null);
+
+	const mutate = useCallback<typeof delete<%= className %>>((id) => {
+		try {
+			delete<%= className %>(id);
+			setError(null);
+		} catch (err) {
+			const error = err instanceof Error ? err : new Error(String(err));
+			setError(error);
+			throw error;
+		}
+	}, []);
+
+	const clearError = useCallback(() => setError(null), []);
+	return { mutate, error, clearError };
+}
 <% } -%>
 <% if (generate.fieldMetadata) { -%>
 
@@ -392,6 +459,11 @@ export const <%= camelName %> = {
 	insert: insert<%= className %>,
 	update: update<%= className %>,
 	delete: delete<%= className %>,
+
+	// Mutation Hooks
+	useCreate: useCreate<%= className %>,
+	useUpdate: useUpdate<%= className %>,
+	useDelete: useDelete<%= className %>,
 <% } -%>
 <% if (generate.fieldMetadata) { -%>
 
