@@ -24,7 +24,7 @@ import { <%= camelName %>Schema, type <%= className %>Entity } from '<%= locatio
 import { trpc } from '<%= locations.trpcClient.import %>';
 <% } -%>
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
-import { createCollection } from '@tanstack/react-db';
+import { createCollection<% if (generate.hookStyle === 'useLiveQuery') { %>, useLiveQuery<% } %> } from '@tanstack/react-db';
 <% if (generate.fieldMetadata) { -%>
 import type { FieldMeta, FieldType, FieldImportance } from '<%= locations.frontendFieldMetaTypes.import %>/field-meta';
 <% } -%>
@@ -165,6 +165,31 @@ function resolveRelations(entity: <%= className %>): <%= className %>Resolved {
 // ============================================================================
 // Hooks (React hooks returning resolved entities)
 // ============================================================================
+<% if (generate.hookStyle === 'useLiveQuery') { -%>
+
+/** Get all <%= plural %> with relations resolved */
+export function use<%= classNamePlural %>() {
+	const { data, isLoading } = useLiveQuery((q) =>
+		q.from({ <%= camelName %>Collection }),
+	);
+	return {
+		data: data?.map(resolveRelations) ?? [],
+		isLoading,
+	};
+}
+
+/** Get single <%= camelName %> by ID with relations resolved */
+export function use<%= className %>(id: string | undefined) {
+	const { data, isLoading } = useLiveQuery((q) =>
+		q.from({ <%= camelName %>Collection }),
+	);
+	const entity = data?.find((item) => item.id === id);
+	return {
+		data: entity ? resolveRelations(entity) : undefined,
+		isLoading,
+	};
+}
+<% } else { -%>
 
 /** Get all <%= plural %> with relations resolved */
 export function use<%= classNamePlural %>(): <%= className %>Resolved[] {
@@ -177,6 +202,7 @@ export function use<%= className %>(id: string | undefined): <%= className %>Res
 	const raw = <%= camelName %>Collection.useOne(id);
 	return raw ? resolveRelations(raw) : undefined;
 }
+<% } -%>
 
 <% if (generate.mutations) { -%>
 // ============================================================================

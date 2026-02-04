@@ -967,6 +967,8 @@ export default {
         collections: getProjectConfig()?.generate?.collections ?? true,
         hooks: getProjectConfig()?.generate?.hooks ?? true,
         mutations: getProjectConfig()?.generate?.mutations ?? true,
+        // Hook style: 'collection' uses collection.useMany(), 'useLiveQuery' uses TanStack DB pattern
+        hookStyle: getProjectConfig()?.generate?.hookStyle ?? 'collection',
       },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
