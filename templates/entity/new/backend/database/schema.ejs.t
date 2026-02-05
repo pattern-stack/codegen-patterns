@@ -22,7 +22,7 @@ const sqliteImportMap = {
   'pgEnum': 'text', // SQLite doesn't have native enums
   'uuid': 'text',
   'varchar': 'text',
-  'doublePrecision': 'real',
+  'numeric': 'real',
   'timestamp': 'integer', // Use Unix timestamps for SQLite
   'date': 'text', // ISO 8601 date strings
   'jsonb': 'text', // JSON as text in SQLite
@@ -126,7 +126,7 @@ export const <%= plural %> = <%= tableFunc %>('<%= table %>', {
 	<%= field.camelName %>: integer('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %>,
 <% } else if (field.drizzleType === 'decimal') { -%>
 <% if (isPostgres) { -%>
-	<%= field.camelName %>: doublePrecision('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %>,
+	<%= field.camelName %>: numeric('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %>,
 <% } else { -%>
 	<%= field.camelName %>: real('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %>,
 <% } -%>

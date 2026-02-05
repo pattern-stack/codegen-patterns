@@ -10,6 +10,7 @@ force: false
 import { createSelectSchema } from 'drizzle-zod';
 import { relations } from 'drizzle-orm';
 import {
+	getTableConfig,
 	pgTable,
 	uuid,
 	text,
@@ -19,7 +20,7 @@ import {
 	timestamp,
 	date,
 	jsonb,
-	doublePrecision,
+	numeric,
 	pgEnum,
 	index,
 } from 'drizzle-orm/pg-core';

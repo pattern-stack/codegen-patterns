@@ -18,7 +18,7 @@ import {
 	timestamp,
 	date,
 	jsonb,
-	doublePrecision,
+	numeric,
 	pgEnum,
 	index,
 } from 'drizzle-orm/pg-core';

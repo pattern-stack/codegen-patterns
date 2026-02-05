@@ -34,7 +34,7 @@ export const <%= plural %> = pgTable('<%= table %>', {
 <% } else if (field.drizzleType === 'integer') { -%>
 	<%= field.camelName %>: integer('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %>,
 <% } else if (field.drizzleType === 'decimal') { -%>
-	<%= field.camelName %>: doublePrecision('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %>,
+	<%= field.camelName %>: numeric('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %>,
 <% } else if (field.drizzleType === 'boolean') { -%>
 	<%= field.camelName %>: boolean('<%= colName %>')<%= field.required && !field.nullable ? '.notNull()' : '' %><%= field.default !== undefined ? `.default(${field.default})` : '' %>,
 <% } else if (field.drizzleType === 'date') { -%>
@@ -85,4 +85,6 @@ const hasTableConfig = hasEntityRefFields || allIndexes.length > 0;
 	<%= idx.name %>Idx: index('idx_<%= table %>_<%= idx.colName %>').on(table.<%= idx.name %>),
 <% }) -%>
 })<% } -%>);
+
+export const <%= plural %>Columns = getTableConfig(<%= plural %>).columns;
 <% } -%>

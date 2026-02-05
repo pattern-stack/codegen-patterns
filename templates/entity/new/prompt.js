@@ -884,7 +884,7 @@ export default {
       const importMap = {
         varchar: "varchar",
         integer: "integer",
-        decimal: "doublePrecision",
+        decimal: "numeric",
         boolean: "boolean",
         uuid: "uuid",
         date: "date",
