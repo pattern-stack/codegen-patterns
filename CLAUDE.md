@@ -208,5 +208,23 @@ locations:
 
 Override with environment variables: `CODEGEN_TEMPLATES_DIR`, `CODEGEN_ENTITIES_DIR`, `CODEGEN_MANIFEST_DIR`
 
+### Import Dependencies (TODO)
+
+**Schema injection templates assume Drizzle imports already exist** in target schema files. The codegen does NOT inject missing imports - it relies on the project having common imports pre-configured.
+
+Required imports for `packages/db/src/server/schema.ts`:
+```typescript
+import { boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
+```
+
+Required imports for `packages/db/src/client/schema.ts`:
+```typescript
+import { boolean, date, getTableConfig, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+```
+
+**If an entity uses a Drizzle type not imported**, TypeScript will error. This is a one-time project setup fix, not a per-entity issue.
+
+**TODO**: Consider adding import injection templates that detect and add missing imports. For now, this is acceptable as a project setup concern.
+
 ### Testing Approach
 Baseline testing: generates entities from `test/fixtures/*.yaml`, compares output to `test/baseline/`. Run `bun test/run-test.ts baseline` after intentional template changes.

@@ -6,11 +6,12 @@ skip_if: <%= camelName %>Collection
 ---
 <% if (generate.collections) { -%>
 <%
-// Determine the base URL expression
+// Determine the URL expression based on config
 const hasApiBaseUrl = !!frontend.sync.apiBaseUrlImport;
-const baseUrlExpr = hasApiBaseUrl
-  ? 'API_BASE_URL'
-  : "typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'";
+// For the URL path, use API_BASE_URL if configured
+const shapeUrlExpr = hasApiBaseUrl
+  ? '`${API_BASE_URL}/' + plural + '`'
+  : '`' + frontend.sync.shapeUrl + '/' + plural + '`';
 -%>
 export const <%= camelName %>Collection = createCollection(
 	electricCollectionOptions({
@@ -19,7 +20,7 @@ export const <%= camelName %>Collection = createCollection(
 <% if (frontend.sync.useTableParam) { -%>
 			url: new URL(
 				'<%= frontend.sync.shapeUrl %>',
-				<%= baseUrlExpr %>,
+				window.location.origin,
 			).toString(),
 			params: {
 				table: '<%= plural %>',
@@ -27,11 +28,11 @@ export const <%= camelName %>Collection = createCollection(
 <% } else { -%>
 <% if (frontend.sync.wrapInUrlConstructor !== false) { -%>
 			url: new URL(
-				`<%= frontend.sync.shapeUrl %>/<%= plural %>`,
-				<%= baseUrlExpr %>,
+				<%- shapeUrlExpr %>,
+				window.location.origin,
 			).toString(),
 <% } else { -%>
-			url: `<%= frontend.sync.shapeUrl %>/<%= plural %>`,
+			url: <%- shapeUrlExpr %>,
 <% } -%>
 <% } -%>
 <% if (frontend.auth.function) { -%>
@@ -52,7 +53,8 @@ export const <%= camelName %>Collection = createCollection(
 <% } -%>
 <% } -%>
 		},
-		schema: schema.<%= camelName %>Schema,
+<% const schemaPrefix = frontend.collections?.schemaPrefix ?? 'schema.'; -%>
+		schema: <%= schemaPrefix %><%= camelName %>Schema,
 		getKey: (item) => item.id,
 	}),
 );

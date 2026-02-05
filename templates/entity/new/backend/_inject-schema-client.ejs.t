@@ -9,5 +9,5 @@ skip_if: <%= camelName %>Schema
 const typeName = generate.typeNaming === 'plain' ? className : `${className}Entity`;
 -%>
 export const <%= camelName %>Schema = createSelectSchema(<%= plural %>);
-export type <%= typeName %> = typeof <%= plural %>.$inferSelect;
+export type <%= typeName %> = z.infer<typeof <%= camelName %>Schema>;
 <% } -%>
