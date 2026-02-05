@@ -148,7 +148,7 @@ export class <%= className %>Repository
 
 import { Inject, Injectable } from '@nestjs/common';
 import { eq<%= hasSoftDelete ? ', isNull, isNotNull' : '' %><%= hasEntityRefFields ? ', and' : '' %> } from 'drizzle-orm';
-import { DRIZZLE } from '<%= locations.backendConstants.import %>';
+import { DRIZZLE } from '<%= imports.repositoryToConstants %>';
 <% if (hasEntityRefFields) { -%>
 import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>

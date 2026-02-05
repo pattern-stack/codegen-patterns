@@ -1,9 +1,5 @@
 ---
-to: "<%= exposeTrpc ? `${basePaths.backendSrc}/app.module.ts` : '' %>"
-inject: true
-skip_if: <%= className %>TrpcModule,
-after: "imports: \\["
+to: ""
 ---
-<% if (exposeTrpc) { -%>
-    <%= className %>TrpcModule,
-<% } -%>
+<%# tRPC Router is added to TrpcModule providers manually, not as a separate module -%>
+<%# This template is intentionally disabled -%>

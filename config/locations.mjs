@@ -165,6 +165,12 @@ const DEFAULT_LOCATIONS = {
     import: '@backend/infrastructure/persistence/repositories',
   },
 
+  /** Infrastructure - Database module (for dependency injection) */
+  backendDatabaseModule: {
+    path: `${backendSrcPath}/infrastructure/database`,
+    import: '@backend/infrastructure/database',
+  },
+
   /** Presentation - REST controllers */
   backendControllers: {
     path: `${backendSrcPath}/presentation/rest`,

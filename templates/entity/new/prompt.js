@@ -531,6 +531,8 @@ export default {
       // From app.module.ts to modules
       appModuleToModule: importHelpers.appModuleToModule(fileNames.module.replace('.ts', '')),
       appModuleToTrpcModule: importHelpers.appModuleToTrpcModule(`${name}-trpc.module`),
+      // From repository to constants (relative path)
+      repositoryToConstants: importHelpers.repositoryToConstants(),
       // For domain/index.ts export
       domainExport: isNested ? `./${name}` : null,
     };
@@ -1006,6 +1008,10 @@ export default {
         },
         parsers: frontendConfig.parsers ?? {
           timestamptz: '(date: string) => new Date(date)',
+        },
+        collections: {
+          // Schema prefix: 'schema.' for namespace import, '' for direct import
+          schemaPrefix: frontendConfig.collections?.schemaPrefix ?? 'schema.',
         },
       },
 

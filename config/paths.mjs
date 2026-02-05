@@ -447,8 +447,15 @@ export function getImportPaths({ isNested }) {
   const queryDir = (name) => joinPath(BACKEND_LAYERS.queries, isNested ? name : "");
   const controllerDir = BACKEND_LAYERS.controllers;
   const moduleDir = BACKEND_LAYERS.modules;
+  const repositoriesDir = BACKEND_LAYERS.repositories;
   const appModuleDir = ".";
-  const databaseModulePath = joinPath(posixPath.dirname(BACKEND_LAYERS.drizzle), "database.module");
+  // Database module location - use locations config if available, otherwise fall back to sibling of drizzle
+  const databaseModuleBase = LOCATIONS.backendDatabaseModule?.path
+    ? posixPath.relative(BASE_PATHS.backendSrc, LOCATIONS.backendDatabaseModule.path)
+    : posixPath.dirname(BACKEND_LAYERS.drizzle);
+  const databaseModulePath = joinPath(databaseModuleBase, "database.module");
+  // Constants token path (not barrel export)
+  const constantsTokenPath = joinPath(BACKEND_LAYERS.constants, "tokens");
 
   return {
     // From commands/queries to other locations
@@ -468,10 +475,13 @@ export function getImportPaths({ isNested }) {
     // From module to repositories/constants/database module
     moduleToRepository: (repositoryFile) =>
       relativeImport(moduleDir, joinPath(BACKEND_LAYERS.repositories, repositoryFile)),
-    moduleToConstants: () => relativeImport(moduleDir, BACKEND_LAYERS.constants),
+    moduleToConstants: () => relativeImport(moduleDir, constantsTokenPath),
     moduleToDatabaseModule: () => relativeImport(moduleDir, databaseModulePath),
     moduleToController: (controllerFile) =>
       relativeImport(moduleDir, joinPath(BACKEND_LAYERS.controllers, controllerFile)),
+
+    // From repository to constants (relative path)
+    repositoryToConstants: () => relativeImport(repositoriesDir, constantsTokenPath),
 
     // From controller to commands/queries
     controllerToQuery: (name, queryFile) =>
