@@ -146,12 +146,52 @@ generate:
 ```
 Set any toggle to `false` to skip generating that output. Useful when you have manual `fields.tsx` files or custom hook implementations you want to preserve.
 
-**Naming Convention Options**:
+**Naming Convention Options** (Frontend):
 - `typeNaming`: Controls the type name imported from source and exported locally. `'plain'` (default) expects source to export `Opportunity`, `'entity'` expects source to export `OpportunityEntity`
 - `collectionNaming`: Controls the collection variable name. `'singular'` (default) = `opportunityCollection`, `'plural'` = `opportunitiesCollection`
 - `fileNaming`: Controls the output file names. `'singular'` (default) = `opportunity.ts`, `'plural'` = `opportunities.ts`
 - `hookReturnStyle`: Controls hook return shape. `'generic'` (default) = `{ data, isLoading }`, `'named'` = `{ opportunities, isLoading }`
 - `fkResolution`: When `false`, skips importing related collections and simplifies `resolveRelations()` to identity function. Useful when related collections don't exist yet.
+
+**Backend Naming Configuration** (`naming:`):
+Controls file and class naming patterns for backend code generation:
+```yaml
+naming:
+  fileCase: kebab-case       # kebab-case | camelCase | snake_case | PascalCase
+  suffixStyle: dotted        # dotted (.entity.ts) | suffixed (Entity.ts) | worded (-entity.ts)
+  entityInclusion: always    # always | never | flat-only
+  terminology:
+    command: use-case        # command | use-case
+    query: query             # query | use-case
+```
+
+- `fileCase`: How file names are cased. Default: `kebab-case`
+- `suffixStyle`: How type suffixes are applied. Default: `dotted`
+- `entityInclusion`: When entity name appears in command/query filenames. Default: `flat-only`
+- `terminology.command`: Class suffix for write operations. `command` → `CreateOpportunityCommand`, `use-case` → `CreateOpportunityUseCase`
+- `terminology.query`: Class suffix for read operations. `query` → `GetOpportunityByIdQuery`, `use-case` → `GetOpportunityByIdUseCase`
+
+**Example: Dealbrain-style configuration**:
+```yaml
+naming:
+  fileCase: kebab-case
+  suffixStyle: dotted
+  entityInclusion: always
+  terminology:
+    command: use-case    # → create-user.use-case.ts, CreateUserUseCase
+    query: query         # → get-user-by-id.query.ts, GetUserByIdQuery
+
+locations:
+  backendCommands:
+    path: src/applications/use-cases
+    import: '@backend/applications/use-cases'
+  backendQueries:
+    path: src/applications/queries
+    import: '@backend/applications/queries'
+  backendModules:
+    path: src/infrastructure/modules
+    import: '@backend/infrastructure/modules'
+```
 
 **Output Structure Modes** (`generate.structure`):
 - `monolithic` (default): Single file per entity - `generated/{entity}.ts`
