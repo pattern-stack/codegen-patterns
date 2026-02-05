@@ -496,6 +496,34 @@ export function getImportPaths({ isNested }) {
       relativeImport(appModuleDir, joinPath(BACKEND_LAYERS.modules, moduleFile)),
     appModuleToTrpcModule: (moduleFile) =>
       relativeImport(appModuleDir, joinPath(BACKEND_LAYERS.modules, moduleFile)),
+
+    // From controller to Electric-related imports
+    controllerToAuthGuard: () => {
+      const authGuardPath = LOCATIONS.backendAuthGuard?.path
+        ? posixPath.relative(BASE_PATHS.backendSrc, LOCATIONS.backendAuthGuard.path)
+        : 'core/guards';
+      return relativeImport(controllerDir, authGuardPath);
+    },
+    controllerToCurrentUser: () => {
+      const currentUserPath = LOCATIONS.backendCurrentUserDecorator?.path
+        ? posixPath.relative(BASE_PATHS.backendSrc, LOCATIONS.backendCurrentUserDecorator.path)
+        : 'core/decorators';
+      return relativeImport(controllerDir, currentUserPath);
+    },
+    controllerToElectricService: () => {
+      const electricServicePath = LOCATIONS.backendElectricService?.path
+        ? posixPath.relative(BASE_PATHS.backendSrc, LOCATIONS.backendElectricService.path)
+        : 'core/services';
+      return relativeImport(controllerDir, electricServicePath);
+    },
+
+    // From module to Electric module
+    moduleToElectricModule: () => {
+      const electricModulePath = LOCATIONS.backendElectricModule?.path
+        ? posixPath.relative(BASE_PATHS.backendSrc, LOCATIONS.backendElectricModule.path)
+        : 'infrastructure/electric';
+      return relativeImport(moduleDir, electricModulePath);
+    },
   };
 }
 

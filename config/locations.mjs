@@ -194,6 +194,30 @@ const DEFAULT_LOCATIONS = {
     path: `${backendSrcPath}/constants`,
     import: '@backend/constants',
   },
+
+  /** Core guards (AuthGuard) */
+  backendAuthGuard: {
+    path: `${backendSrcPath}/core/guards`,
+    import: '@backend/core/guards',
+  },
+
+  /** Core decorators (CurrentUser) */
+  backendCurrentUserDecorator: {
+    path: `${backendSrcPath}/core/decorators`,
+    import: '@backend/core/decorators',
+  },
+
+  /** Core services (Electric) */
+  backendElectricService: {
+    path: `${backendSrcPath}/core/services`,
+    import: '@backend/core/services',
+  },
+
+  /** Electric module */
+  backendElectricModule: {
+    path: `${backendSrcPath}/infrastructure/electric`,
+    import: '@backend/infrastructure/electric',
+  },
 };
 
 // ============================================================================

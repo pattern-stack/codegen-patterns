@@ -20,7 +20,7 @@ import {
 import type { Request, Response } from 'express';
 import { AuthGuard } from '../../core/guards/auth.guard';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
-import type { User } from '../../core/interfaces/user.interface';
+import { User } from '../../domain/user';
 import { ElectricService } from '../../core/services/electric.service';
 import { organizationsColumns } from '@repo/db/client/schema';
 import {

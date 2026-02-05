@@ -535,6 +535,11 @@ export default {
       repositoryToConstants: importHelpers.repositoryToConstants(),
       // For domain/index.ts export
       domainExport: isNested ? `./${name}` : null,
+      // Electric-related imports
+      controllerToAuthGuard: importHelpers.controllerToAuthGuard(),
+      controllerToCurrentUser: importHelpers.controllerToCurrentUser(),
+      controllerToElectricService: importHelpers.controllerToElectricService(),
+      moduleToElectricModule: importHelpers.moduleToElectricModule(),
     };
 
     // Type mappings
@@ -910,6 +915,28 @@ export default {
     // Get database dialect from config
     const databaseDialect = getDatabaseDialect();
 
+    // Derive Electric where clause FK field from entity fields
+    // Look for foreign_key to users or tenants
+    let electricWhereColumn = 'tenant_id'; // fallback
+    let electricWhereValue = 'user.tenantId'; // fallback
+
+    for (const field of processedFields) {
+      if (field.foreignKey) {
+        // Check if it references users table
+        if (field.foreignKey.startsWith('users.')) {
+          electricWhereColumn = field.name;
+          electricWhereValue = `user.${field.camelName}`;
+          break;
+        }
+        // Check if it references tenants table
+        if (field.foreignKey.startsWith('tenants.')) {
+          electricWhereColumn = field.name;
+          electricWhereValue = `user.${field.camelName}`;
+          // Don't break - users FK takes precedence
+        }
+      }
+    }
+
     return {
       // Database configuration
       databaseDialect,
@@ -1090,6 +1117,10 @@ export default {
       exposeElectric: (
         entity.expose || ["repository", "rest", "trpc"]
       ).includes("electric"),
+
+      // Electric SQL where clause (derived from entity FK fields)
+      electricWhereColumn,
+      electricWhereValue,
     };
   },
 };

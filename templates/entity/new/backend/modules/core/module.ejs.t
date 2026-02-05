@@ -18,7 +18,7 @@ import { <%= deleteCommandClass %> } from '<%= imports.moduleToDeleteCommand %>'
 import { <%= updateCommandClass %> } from '<%= imports.moduleToUpdateCommand %>';
 import { DatabaseModule } from '<%= imports.moduleToDatabaseModule %>';
 <% if (exposeElectric) { -%>
-import { ElectricModule } from '<%= imports.moduleToDatabaseModule.replace("database.module", "electric.module") %>';
+import { ElectricModule } from '<%= imports.moduleToElectricModule %>/electric.module';
 <% } -%>
 import { <%= className %>Repository } from '<%= imports.moduleToRepository %>';
 <% if (exposeRest || exposeElectric) { -%>

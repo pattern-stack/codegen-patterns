@@ -129,10 +129,10 @@ import {
 	UsePipes,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AuthGuard } from '../../core/guards/auth.guard';
-import { CurrentUser } from '../../core/decorators/current-user.decorator';
-import type { User } from '../../core/interfaces/user.interface';
-import { ElectricService } from '../../core/services/electric.service';
+import { AuthGuard } from '<%= imports.controllerToAuthGuard %>/auth.guard';
+import { CurrentUser } from '<%= imports.controllerToCurrentUser %>/current-user.decorator';
+import { User } from '<%= imports.controllerToDomain %>/user';
+import { ElectricService } from '<%= imports.controllerToElectricService %>/electric.service';
 import { <%= plural %>Columns } from '<%= locations.dbSchemaClient.import %>';
 import {
 	type Create<%= className %>Dto,
@@ -169,7 +169,7 @@ export class <%= classNamePlural %>Controller {
 			res,
 			table: '<%= table %>',
 			columns: <%= plural %>Columns,
-			where: `"tenant_id" = '${user.tenantId}'`,
+			where: `"<%= electricWhereColumn %>" = '${<%= electricWhereValue %>}'`,
 		});
 	}
 

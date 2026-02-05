@@ -10,7 +10,7 @@ import { CreateOrganizationCommand } from '../application/commands/organization/
 import { DeleteOrganizationCommand } from '../application/commands/organization/delete.command';
 import { UpdateOrganizationCommand } from '../application/commands/organization/update.command';
 import { DatabaseModule } from '../infrastructure/database/database.module';
-import { ElectricModule } from '../infrastructure/database/electric.module';
+import { ElectricModule } from '../infrastructure/electric/electric.module';
 import { OrganizationRepository } from '../infrastructure/persistence/repositories/organization.repository';
 import { OrganizationsController } from '../presentation/rest/organizations.controller';
 
