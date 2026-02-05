@@ -208,23 +208,37 @@ locations:
 
 Override with environment variables: `CODEGEN_TEMPLATES_DIR`, `CODEGEN_ENTITIES_DIR`, `CODEGEN_MANIFEST_DIR`
 
-### Import Dependencies (TODO)
+### Automatic Import Management
 
-**Schema injection templates assume Drizzle imports already exist** in target schema files. The codegen does NOT inject missing imports - it relies on the project having common imports pre-configured.
+**Drizzle imports are automatically injected** into schema files as entities are generated. The codegen analyzes each entity's fields and behaviors to determine required Drizzle types, then injects them into the target schema files.
 
-Required imports for `packages/db/src/server/schema.ts`:
+**How it works:**
+1. When generating an entity, the codegen computes `drizzleImports` array based on field types and behaviors
+2. Import injection templates (`_inject-schema-server-imports.ejs.t`, `_inject-schema-client-imports.ejs.t`) add missing imports
+3. Uses marker comment `// Codegen imports managed` to prevent duplicate injections
+
+**Initial schema setup:**
+Schema files need minimal starting structure with the Drizzle import statement and table marker:
+
+`packages/db/src/server/schema.ts`:
 ```typescript
-import { boolean, date, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
+import {
+} from 'drizzle-orm/pg-core';
+
+// Codegen tables
 ```
 
-Required imports for `packages/db/src/client/schema.ts`:
+`packages/db/src/client/schema.ts`:
 ```typescript
-import { boolean, date, getTableConfig, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import {
+} from 'drizzle-orm/pg-core';
+
+// Codegen tables
 ```
 
-**If an entity uses a Drizzle type not imported**, TypeScript will error. This is a one-time project setup fix, not a per-entity issue.
+**Important:** The opening brace `{` must be on the same line as `import`, with the closing brace `}` on a new line. This allows the injection template to insert imports inside the braces.
 
-**TODO**: Consider adding import injection templates that detect and add missing imports. For now, this is acceptable as a project setup concern.
+The codegen will populate the imports automatically as entities are generated. Common imports like `pgTable`, `uuid`, `varchar`, `timestamp`, `jsonb`, `boolean`, `numeric`, etc. are added on-demand based on entity definitions. The first entity generated will inject all needed imports with a marker comment; subsequent runs will skip injection due to the marker.
 
 ### Testing Approach
 Baseline testing: generates entities from `test/fixtures/*.yaml`, compares output to `test/baseline/`. Run `bun test/run-test.ts baseline` after intentional template changes.
