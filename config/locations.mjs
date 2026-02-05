@@ -49,6 +49,12 @@ const DEFAULT_LOCATIONS = {
     import: '@repo/db/client/schema',
   },
 
+  /** Database migrations directory */
+  dbMigrations: {
+    path: 'packages/db/src/server/migrations',
+    import: null, // Migrations are not imported
+  },
+
   /** Context engine (polymorphic relationships, facts) */
   dbContextEngine: {
     path: 'packages/db/src/context-engine',
