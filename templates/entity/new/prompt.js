@@ -1087,6 +1087,9 @@ export default {
       exposeTrpc: (entity.expose || ["repository", "rest", "trpc"]).includes(
         "trpc",
       ),
+      exposeElectric: (
+        entity.expose || ["repository", "rest", "trpc"]
+      ).includes("electric"),
     };
   },
 };

@@ -10,26 +10,33 @@ force: true
 import { Module } from '@nestjs/common';
 import { <%= repositoryToken %> } from '<%= imports.moduleToConstants %>';
 import { <%= getByIdQueryClass %> } from '<%= imports.moduleToGetByIdQuery %>';
+<% if (!exposeElectric) { -%>
 import { <%= listQueryClass %> } from '<%= imports.moduleToListQuery %>';
+<% } -%>
 import { <%= createCommandClass %> } from '<%= imports.moduleToCreateCommand %>';
 import { <%= deleteCommandClass %> } from '<%= imports.moduleToDeleteCommand %>';
 import { <%= updateCommandClass %> } from '<%= imports.moduleToUpdateCommand %>';
 import { DatabaseModule } from '<%= imports.moduleToDatabaseModule %>';
+<% if (exposeElectric) { -%>
+import { ElectricModule } from '<%= imports.moduleToDatabaseModule.replace("database.module", "electric.module") %>';
+<% } -%>
 import { <%= className %>Repository } from '<%= imports.moduleToRepository %>';
-<% if (exposeRest) { -%>
+<% if (exposeRest || exposeElectric) { -%>
 import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController %>';
 <% } -%>
 
 @Module({
-	imports: [DatabaseModule],
-<% if (exposeRest) { -%>
+	imports: [DatabaseModule<%= exposeElectric ? ', ElectricModule' : '' %>],
+<% if (exposeRest || exposeElectric) { -%>
 	controllers: [<%= classNamePlural %>Controller],
 <% } -%>
 	providers: [
 		{ provide: <%= repositoryToken %>, useClass: <%= className %>Repository },
 		// Queries
 		<%= getByIdQueryClass %>,
+<% if (!exposeElectric) { -%>
 		<%= listQueryClass %>,
+<% } -%>
 		// Use Cases
 		<%= createCommandClass %>,
 		<%= updateCommandClass %>,
@@ -38,7 +45,9 @@ import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController
 	exports: [
 		<%= repositoryToken %>,
 		<%= getByIdQueryClass %>,
+<% if (!exposeElectric) { -%>
 		<%= listQueryClass %>,
+<% } -%>
 		<%= createCommandClass %>,
 		<%= updateCommandClass %>,
 		<%= deleteCommandClass %>,

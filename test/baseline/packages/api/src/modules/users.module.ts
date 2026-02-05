@@ -4,18 +4,18 @@
  */
 
 import { Module } from '@nestjs/common';
-import { USER_REPOSITORY } from '../constants';
+import { USER_REPOSITORY } from '../constants/tokens';
 import { GetUserByIdQuery } from '../application/queries/user/get-by-id.query';
 import { ListUsersQuery } from '../application/queries/user/list.query';
 import { CreateUserCommand } from '../application/commands/user/create.command';
 import { DeleteUserCommand } from '../application/commands/user/delete.command';
 import { UpdateUserCommand } from '../application/commands/user/update.command';
-import { PersistenceModule } from '../infrastructure/persistence/persistence.module';
-import { UserRepository } from '../infrastructure/persistence/drizzle/repositories/user.repository';
-import { UsersController } from '../../presentation/rest/users.controller';
+import { DatabaseModule } from '../infrastructure/database/database.module';
+import { UserRepository } from '../infrastructure/persistence/repositories/user.repository';
+import { UsersController } from '../presentation/rest/users.controller';
 
 @Module({
-	imports: [PersistenceModule],
+	imports: [DatabaseModule],
 	controllers: [UsersController],
 	providers: [
 		{ provide: USER_REPOSITORY, useClass: UserRepository },

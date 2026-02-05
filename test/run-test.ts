@@ -104,7 +104,7 @@ function runCodegen() {
   // Set up test config at ROOT
   setupTestConfig();
 
-  const fixtures = readdirSync(FIXTURES_DIR).filter(f => f.endsWith('.yaml') && f !== 'codegen.config.yaml');
+  const fixtures = readdirSync(FIXTURES_DIR).filter(f => f.endsWith('.yaml') && !f.startsWith('codegen.config'));
 
   // Use env var or compute from script location (works when running from any directory)
   const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(CODEGEN_DIR, 'templates');

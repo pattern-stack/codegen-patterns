@@ -4,18 +4,18 @@
  */
 
 import { Module } from '@nestjs/common';
-import { OPPORTUNITY_REPOSITORY } from '../constants';
+import { OPPORTUNITY_REPOSITORY } from '../constants/tokens';
 import { GetOpportunityByIdQuery } from '../application/queries/opportunity/get-by-id.query';
 import { ListOpportunitiesQuery } from '../application/queries/opportunity/list.query';
 import { CreateOpportunityCommand } from '../application/commands/opportunity/create.command';
 import { DeleteOpportunityCommand } from '../application/commands/opportunity/delete.command';
 import { UpdateOpportunityCommand } from '../application/commands/opportunity/update.command';
-import { PersistenceModule } from '../infrastructure/persistence/persistence.module';
-import { OpportunityRepository } from '../infrastructure/persistence/drizzle/repositories/opportunity.repository';
-import { OpportunitiesController } from '../../presentation/rest/opportunities.controller';
+import { DatabaseModule } from '../infrastructure/database/database.module';
+import { OpportunityRepository } from '../infrastructure/persistence/repositories/opportunity.repository';
+import { OpportunitiesController } from '../presentation/rest/opportunities.controller';
 
 @Module({
-	imports: [PersistenceModule],
+	imports: [DatabaseModule],
 	controllers: [OpportunitiesController],
 	providers: [
 		{ provide: OPPORTUNITY_REPOSITORY, useClass: OpportunityRepository },

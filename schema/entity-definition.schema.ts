@@ -342,10 +342,11 @@ const FileGroupingSchema = z.enum(["separate", "grouped"]).default("separate");
  * - repository: Always generated (domain entity, repository interface/impl)
  * - rest: Generate REST controller
  * - trpc: Generate tRPC module
+ * - electric: Generate Electric SQL migration (REPLICA IDENTITY + publication)
  *
  * Default: ['repository', 'rest', 'trpc'] (all layers)
  */
-const ExposeLayerSchema = z.enum(["repository", "rest", "trpc"]);
+const ExposeLayerSchema = z.enum(["repository", "rest", "trpc", "electric"]);
 export type ExposeLayer = z.infer<typeof ExposeLayerSchema>;
 
 const EntityConfigSchema = z

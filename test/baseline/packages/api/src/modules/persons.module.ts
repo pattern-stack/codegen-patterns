@@ -4,18 +4,18 @@
  */
 
 import { Module } from '@nestjs/common';
-import { PERSON_REPOSITORY } from '../constants';
+import { PERSON_REPOSITORY } from '../constants/tokens';
 import { GetPersonByIdQuery } from '../application/queries/person/get-by-id.query';
 import { ListPersonsQuery } from '../application/queries/person/list.query';
 import { CreatePersonCommand } from '../application/commands/person/create.command';
 import { DeletePersonCommand } from '../application/commands/person/delete.command';
 import { UpdatePersonCommand } from '../application/commands/person/update.command';
-import { PersistenceModule } from '../infrastructure/persistence/persistence.module';
-import { PersonRepository } from '../infrastructure/persistence/drizzle/repositories/person.repository';
-import { PersonsController } from '../../presentation/rest/persons.controller';
+import { DatabaseModule } from '../infrastructure/database/database.module';
+import { PersonRepository } from '../infrastructure/persistence/repositories/person.repository';
+import { PersonsController } from '../presentation/rest/persons.controller';
 
 @Module({
-	imports: [PersistenceModule],
+	imports: [DatabaseModule],
 	controllers: [PersonsController],
 	providers: [
 		{ provide: PERSON_REPOSITORY, useClass: PersonRepository },

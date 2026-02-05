@@ -6,6 +6,9 @@ entity:
   plural: organizations
   table: organizations
   folder_structure: nested
+  expose:
+    - repository
+    - electric
 
 fields:
   tenant_id:

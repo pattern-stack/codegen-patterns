@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.electricMigrations && databaseDialect === 'postgres' ? `${locations.dbMigrations.path}/${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}_${table}-electric-setup.sql` : '' %>"
+to: "<%= exposeElectric && databaseDialect === 'postgres' ? `${locations.dbMigrations.path}/${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}_Add${classNamePlural}ToElectric.sql` : '' %>"
 force: true
 ---
 -- Electric SQL setup for <%= table %>

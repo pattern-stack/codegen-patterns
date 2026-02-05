@@ -4,24 +4,23 @@
  */
 
 import { Module } from '@nestjs/common';
-import { ORGANIZATION_REPOSITORY } from '../constants';
+import { ORGANIZATION_REPOSITORY } from '../constants/tokens';
 import { GetOrganizationByIdQuery } from '../application/queries/organization/get-by-id.query';
-import { ListOrganizationsQuery } from '../application/queries/organization/list.query';
 import { CreateOrganizationCommand } from '../application/commands/organization/create.command';
 import { DeleteOrganizationCommand } from '../application/commands/organization/delete.command';
 import { UpdateOrganizationCommand } from '../application/commands/organization/update.command';
-import { PersistenceModule } from '../infrastructure/persistence/persistence.module';
-import { OrganizationRepository } from '../infrastructure/persistence/drizzle/repositories/organization.repository';
-import { OrganizationsController } from '../../presentation/rest/organizations.controller';
+import { DatabaseModule } from '../infrastructure/database/database.module';
+import { ElectricModule } from '../infrastructure/database/electric.module';
+import { OrganizationRepository } from '../infrastructure/persistence/repositories/organization.repository';
+import { OrganizationsController } from '../presentation/rest/organizations.controller';
 
 @Module({
-	imports: [PersistenceModule],
+	imports: [DatabaseModule, ElectricModule],
 	controllers: [OrganizationsController],
 	providers: [
 		{ provide: ORGANIZATION_REPOSITORY, useClass: OrganizationRepository },
 		// Queries
 		GetOrganizationByIdQuery,
-		ListOrganizationsQuery,
 		// Use Cases
 		CreateOrganizationCommand,
 		UpdateOrganizationCommand,
@@ -30,7 +29,6 @@ import { OrganizationsController } from '../../presentation/rest/organizations.c
 	exports: [
 		ORGANIZATION_REPOSITORY,
 		GetOrganizationByIdQuery,
-		ListOrganizationsQuery,
 		CreateOrganizationCommand,
 		UpdateOrganizationCommand,
 		DeleteOrganizationCommand,
