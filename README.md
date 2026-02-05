@@ -107,6 +107,102 @@ locations:
 
 See `config/locations.mjs` for all available locations and their defaults.
 
+### Backend Naming Conventions
+
+Control file and class naming patterns for generated backend code:
+
+```yaml
+naming:
+  fileCase: kebab-case       # kebab-case | camelCase | snake_case | PascalCase
+  suffixStyle: dotted        # dotted (.entity.ts) | suffixed (Entity.ts) | worded (-entity.ts)
+  entityInclusion: always    # always | never | flat-only
+  terminology:
+    command: use-case        # command | use-case
+    query: query             # query | use-case
+```
+
+| Option | Values | Default | Description |
+|--------|--------|---------|-------------|
+| `fileCase` | `kebab-case`, `camelCase`, `snake_case`, `PascalCase` | `kebab-case` | File name casing |
+| `suffixStyle` | `dotted`, `suffixed`, `worded` | `dotted` | How suffixes are applied |
+| `entityInclusion` | `always`, `never`, `flat-only` | `flat-only` | When entity name appears in filenames |
+| `terminology.command` | `command`, `use-case` | `command` | Write operation naming |
+| `terminology.query` | `query`, `use-case` | `query` | Read operation naming |
+
+**Example outputs by configuration:**
+
+| Config | Entity File | Command File | Query File |
+|--------|-------------|--------------|------------|
+| Default | `opportunity.entity.ts` | `create.command.ts` | `get-by-id.query.ts` |
+| `entityInclusion: always` | `opportunity.entity.ts` | `create-opportunity.command.ts` | `get-opportunity-by-id.query.ts` |
+| `terminology.command: use-case` | `opportunity.entity.ts` | `create-opportunity.use-case.ts` | `get-opportunity-by-id.query.ts` |
+| `suffixStyle: suffixed` + `PascalCase` | `OpportunityEntity.ts` | `CreateOpportunityCommand.ts` | `GetOpportunityByIdQuery.ts` |
+
+### Full Example: Clean Architecture (Dealbrain-style)
+
+A complete configuration matching Clean Architecture with UseCase terminology:
+
+```yaml
+database:
+  dialect: postgres
+
+naming:
+  fileCase: kebab-case
+  suffixStyle: dotted
+  entityInclusion: always
+  terminology:
+    command: use-case    # → create-user.use-case.ts, CreateUserUseCase
+    query: query         # → get-user-by-id.query.ts, GetUserByIdQuery
+
+locations:
+  # Application layer uses "applications" (plural) with use-cases folder
+  backendCommands:
+    path: src/applications/use-cases
+    import: '@backend/applications/use-cases'
+  backendQueries:
+    path: src/applications/queries
+    import: '@backend/applications/queries'
+  backendSchemas:
+    path: src/applications/schemas
+    import: '@backend/applications/schemas'
+
+  # Modules under infrastructure
+  backendModules:
+    path: src/infrastructure/modules
+    import: '@backend/infrastructure/modules'
+
+paths:
+  backend_src: src
+```
+
+This generates:
+```
+src/
+├── applications/
+│   ├── use-cases/
+│   │   ├── create-user.use-case.ts      # CreateUserUseCase
+│   │   ├── update-user.use-case.ts      # UpdateUserUseCase
+│   │   └── delete-user.use-case.ts      # DeleteUserUseCase
+│   ├── queries/
+│   │   ├── get-user-by-id.query.ts      # GetUserByIdQuery
+│   │   └── get-all-users.query.ts       # GetAllUsersQuery
+│   └── schemas/
+│       └── user.dto.ts
+├── domain/
+│   └── user/
+│       ├── user.entity.ts               # User class
+│       └── user.repository.interface.ts # IUserRepository
+├── infrastructure/
+│   ├── modules/
+│   │   └── users.module.ts              # UsersModule
+│   └── database/
+│       └── repositories/
+│           └── user.repository.ts       # UserRepository
+└── presentation/
+    └── rest/
+        └── users.controller.ts          # UsersController
+```
+
 ### Environment Variables
 
 Override config at runtime:
