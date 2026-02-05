@@ -583,8 +583,8 @@ describe("Custom naming configurations", () => {
         namingConfig: config,
       });
 
-      expect(files.getByIdQuery).toBe("GetByIdOpportunityUseCase.ts");
-      expect(files.listQuery).toBe("ListOpportunitiesUseCase.ts");
+      expect(files.getByIdQuery).toBe("GetOpportunityByIdUseCase.ts");
+      expect(files.listQuery).toBe("GetAllOpportunitiesUseCase.ts");
     });
   });
 
@@ -706,6 +706,111 @@ describe("YAML config loading integration", () => {
     expect(files.entity).toBe("OpportunityEntity.ts");
     expect(files.repository).toBe("OpportunityRepository.ts");
     expect(files.createCommand).toBe("CreateOpportunityUseCase.ts");
-    expect(files.getByIdQuery).toBe("GetByIdOpportunityUseCase.ts");
+    expect(files.getByIdQuery).toBe("GetOpportunityByIdUseCase.ts");
+  });
+});
+
+// ============================================================================
+// Dealbrain-Style Config Tests
+// ============================================================================
+
+describe("Dealbrain-style configuration", () => {
+  const loadDealbrainConfig = () => {
+    const fixturePath = path.resolve(
+      __dirname,
+      "fixtures/codegen.config.dealbrain.yaml"
+    );
+    const content = fs.readFileSync(fixturePath, "utf-8");
+    const parsed = yaml.parse(content);
+    return BackendNamingConfigSchema.parse(parsed.naming);
+  };
+
+  test("loads Dealbrain config correctly", () => {
+    const config = loadDealbrainConfig();
+
+    expect(config.fileCase).toBe("kebab-case");
+    expect(config.suffixStyle).toBe("dotted");
+    expect(config.entityInclusion).toBe("always");
+    expect(config.terminology.command).toBe("use-case");
+    expect(config.terminology.query).toBe("query");
+  });
+
+  test("generates use-case files with entity name", () => {
+    const config = loadDealbrainConfig();
+
+    const files = getEntityFileNames({
+      name: "artifact",
+      plural: "artifacts",
+      isNested: true,
+      namingConfig: config,
+    });
+
+    // Dealbrain pattern: create-artifact.use-case.ts
+    expect(files.createCommand).toBe("create-artifact.use-case.ts");
+    expect(files.updateCommand).toBe("update-artifact.use-case.ts");
+    expect(files.deleteCommand).toBe("delete-artifact.use-case.ts");
+  });
+
+  test("generates query files with entity name and .query.ts suffix", () => {
+    const config = loadDealbrainConfig();
+
+    const files = getEntityFileNames({
+      name: "user",
+      plural: "users",
+      isNested: true,
+      namingConfig: config,
+    });
+
+    // Dealbrain pattern: get-user-by-id.query.ts (NOT .use-case.ts)
+    expect(files.getByIdQuery).toBe("get-user-by-id.query.ts");
+    expect(files.listQuery).toBe("get-all-users.query.ts");
+  });
+
+  test("generates entity files correctly", () => {
+    const config = loadDealbrainConfig();
+
+    const files = getEntityFileNames({
+      name: "opportunity",
+      plural: "opportunities",
+      isNested: true,
+      namingConfig: config,
+    });
+
+    // Dealbrain pattern: opportunity.entity.ts
+    expect(files.entity).toBe("opportunity.entity.ts");
+    expect(files.repository).toBe("opportunity.repository.ts");
+    expect(files.repositoryInterface).toBe("opportunity.repository.interface.ts");
+  });
+
+  test("generates module files with plural names", () => {
+    const config = loadDealbrainConfig();
+
+    const files = getEntityFileNames({
+      name: "opportunity",
+      plural: "opportunities",
+      isNested: true,
+      namingConfig: config,
+    });
+
+    // Dealbrain pattern: opportunities.module.ts
+    expect(files.module).toBe("opportunities.module.ts");
+    expect(files.controller).toBe("opportunities.controller.ts");
+  });
+
+  test("handles multi-word entities correctly", () => {
+    const config = loadDealbrainConfig();
+
+    const files = getEntityFileNames({
+      name: "import_job",
+      plural: "import_jobs",
+      isNested: true,
+      namingConfig: config,
+    });
+
+    // Dealbrain pattern: import-job.entity.ts, create-import-job.use-case.ts
+    expect(files.entity).toBe("import-job.entity.ts");
+    expect(files.createCommand).toBe("create-import-job.use-case.ts");
+    expect(files.getByIdQuery).toBe("get-import-job-by-id.query.ts");
+    expect(files.module).toBe("import-jobs.module.ts");
   });
 });

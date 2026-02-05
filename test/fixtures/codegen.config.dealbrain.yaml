@@ -1,0 +1,36 @@
+# codegen.config.yaml - Dealbrain-style (verified)
+
+database:
+  dialect: postgres
+
+naming:
+  fileCase: kebab-case
+  suffixStyle: dotted
+  entityInclusion: always
+  terminology:
+    command: use-case
+    query: query
+
+locations:
+  backendCommands:
+    path: src/applications/use-cases
+    import: '@backend/applications/use-cases'
+
+  backendQueries:
+    path: src/applications/queries
+    import: '@backend/applications/queries'
+
+  backendSchemas:
+    path: src/applications/schemas
+    import: '@backend/applications/schemas'
+
+  backendModules:
+    path: src/infrastructure/modules
+    import: '@backend/infrastructure/modules'
+
+  backendDomain:
+    path: src/domain
+    import: '@backend/domain'
+
+paths:
+  backend_src: src

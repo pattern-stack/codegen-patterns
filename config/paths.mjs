@@ -243,8 +243,17 @@ export function computeFileName(entityName, fileType, namingConfig = null, optio
       (entityInclusion === 'flat-only' && !isNested);
 
     if (includeEntity) {
-      // Include entity: create-opportunity.command.ts
-      baseName = `${action}-${entityName}`;
+      // Use natural action patterns (Dealbrain-style):
+      // - get-{entity}-by-id (not get-by-id-{entity})
+      // - get-all-{plural} (not list-{plural})
+      // - {action}-{entity} for others (create-user, update-user, delete-user)
+      if (action === 'get-by-id') {
+        baseName = `get-${entityName}-by-id`;
+      } else if (action === 'list' && plural) {
+        baseName = `get-all-${plural}`;
+      } else {
+        baseName = `${action}-${entityName}`;
+      }
     } else {
       // Exclude entity: create.command.ts
       baseName = action;
