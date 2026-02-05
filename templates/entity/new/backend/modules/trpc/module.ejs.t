@@ -40,20 +40,17 @@ export class <%= classNamePlural %>Router {
 		return this.list<%= classNamePlural %>.execute();
 	}
 
-	@Query()
-	@Input(z.object({ id: z.string().uuid() }))
+	@Query({ input: z.object({ id: z.string().uuid() }) })
 	async getById(@Input('id') id: string) {
 		return this.get<%= className %>ById.execute(id);
 	}
 
-	@Mutation()
-	@Input(create<%= className %>Schema)
+	@Mutation({ input: create<%= className %>Schema })
 	async create(@Input() input: z.infer<typeof create<%= className %>Schema>) {
 		return this.create<%= className %>.execute(input);
 	}
 
-	@Mutation()
-	@Input(z.object({ id: z.string().uuid(), data: update<%= className %>Schema }))
+	@Mutation({ input: z.object({ id: z.string().uuid(), data: update<%= className %>Schema }) })
 	async update(
 		@Input('id') id: string,
 		@Input('data') data: z.infer<typeof update<%= className %>Schema>,
@@ -61,8 +58,7 @@ export class <%= classNamePlural %>Router {
 		return this.update<%= className %>.execute(id, data);
 	}
 
-	@Mutation()
-	@Input(z.object({ id: z.string().uuid() }))
+	@Mutation({ input: z.object({ id: z.string().uuid() }) })
 	async delete(@Input('id') id: string) {
 		return this.delete<%= className %>.execute(id);
 	}
