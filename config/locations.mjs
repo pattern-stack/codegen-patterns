@@ -14,6 +14,8 @@
 
 import { projectConfig } from './config-loader.mjs';
 
+const backendSrcPath = projectConfig?.paths?.backend_src ?? 'app/backend/src';
+
 // ============================================================================
 // Default Locations
 // ============================================================================
@@ -33,6 +35,18 @@ const DEFAULT_LOCATIONS = {
   dbEntities: {
     path: 'packages/db/src/entities',
     import: '@repo/db/entities',
+  },
+
+  /** Monolithic server schema (Drizzle tables, relations, types) */
+  dbSchemaServer: {
+    path: 'packages/db/src/server/schema.ts',
+    import: '@repo/db/server/schema',
+  },
+
+  /** Monolithic client schema exports */
+  dbSchemaClient: {
+    path: 'packages/db/src/client/schema.ts',
+    import: '@repo/db/client/schema',
   },
 
   /** Context engine (polymorphic relationships, facts) */
@@ -57,10 +71,10 @@ const DEFAULT_LOCATIONS = {
     import: '@',
   },
 
-  /** Electric SQL collections */
+  /** Electric SQL collections (directory containing collections.ts) */
   frontendCollections: {
-    path: 'apps/frontend/src/lib/collections',
-    import: '@/lib/collections',
+    path: 'apps/frontend/src/lib',
+    import: '@/lib',
   },
 
   /** Frontend store (TanStack DB) */
@@ -111,61 +125,61 @@ const DEFAULT_LOCATIONS = {
 
   /** Backend source root */
   backendSrc: {
-    path: 'app/backend/src',
+    path: backendSrcPath,
     import: '@backend',
   },
 
   /** Domain layer */
   backendDomain: {
-    path: 'app/backend/src/domain',
+    path: `${backendSrcPath}/domain`,
     import: '@backend/domain',
   },
 
   /** Application layer - commands */
   backendCommands: {
-    path: 'app/backend/src/application/commands',
+    path: `${backendSrcPath}/application/commands`,
     import: '@backend/application/commands',
   },
 
   /** Application layer - queries */
   backendQueries: {
-    path: 'app/backend/src/application/queries',
+    path: `${backendSrcPath}/application/queries`,
     import: '@backend/application/queries',
   },
 
   /** Application layer - schemas/DTOs */
   backendSchemas: {
-    path: 'app/backend/src/application/schemas',
+    path: `${backendSrcPath}/application/schemas`,
     import: '@backend/application/schemas',
   },
 
   /** Infrastructure - Drizzle schemas */
   backendDrizzle: {
-    path: 'app/backend/src/infrastructure/persistence/drizzle',
+    path: `${backendSrcPath}/infrastructure/persistence/drizzle`,
     import: '@backend/infrastructure/persistence/drizzle',
   },
 
   /** Infrastructure - Repositories */
   backendRepositories: {
-    path: 'app/backend/src/infrastructure/persistence/repositories',
+    path: `${backendSrcPath}/infrastructure/persistence/repositories`,
     import: '@backend/infrastructure/persistence/repositories',
   },
 
   /** Presentation - REST controllers */
   backendControllers: {
-    path: 'app/backend/src/presentation/rest',
+    path: `${backendSrcPath}/presentation/rest`,
     import: '@backend/presentation/rest',
   },
 
   /** NestJS modules */
   backendModules: {
-    path: 'app/backend/src/modules',
-    import: '@backend/modules',
+    path: `${backendSrcPath}/infrastructure/modules`,
+    import: '@backend/infrastructure/modules',
   },
 
   /** Constants (tokens, etc) */
   backendConstants: {
-    path: 'app/backend/src/constants',
+    path: `${backendSrcPath}/constants`,
     import: '@backend/constants',
   },
 };

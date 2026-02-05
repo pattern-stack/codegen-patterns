@@ -12,7 +12,7 @@ import { Injectable } from '@nestjs/common';
 import { eq<%= hasEntityRefFields ? ', and' : '' %> } from 'drizzle-orm';
 import { BaseRepository, type BehaviorConfig } from '../base.repository';
 <% if (hasEntityRefFields) { -%>
-import type { EntityType } from '../drizzle/entity-types.schema';
+import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>
 import type {
 	Create<%= className %>Input,
@@ -32,7 +32,7 @@ if (hasExistingRelationships) {
 }
 -%>
 import { <%- [...entityImports].join(', ') %> } from '../../../domain';
-import { <%= plural %> } from '../drizzle';
+import { <%= plural %> } from '<%= locations.dbSchemaServer.import %>';
 
 @Injectable()
 export class <%= className %>Repository
@@ -148,9 +148,9 @@ export class <%= className %>Repository
 
 import { Inject, Injectable } from '@nestjs/common';
 import { eq<%= hasSoftDelete ? ', isNull, isNotNull' : '' %><%= hasEntityRefFields ? ', and' : '' %> } from 'drizzle-orm';
-import { DRIZZLE } from 'src/constants';
+import { DRIZZLE } from '<%= locations.backendConstants.import %>';
 <% if (hasEntityRefFields) { -%>
-import type { EntityType } from '../drizzle/entity-types.schema';
+import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>
 import type {
 	Create<%= className %>Input,
@@ -171,7 +171,7 @@ if (hasExistingRelationships) {
 -%>
 import { <%- [...entityImports].join(', ') %> } from '../../../domain';
 import type { DrizzleDB } from '../database.module';
-import { <%= plural %> } from '../drizzle';
+import { <%= plural %> } from '<%= locations.dbSchemaServer.import %>';
 
 @Injectable()
 export class <%= className %>Repository implements I<%= className %>Repository {

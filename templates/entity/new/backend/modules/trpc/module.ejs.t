@@ -20,11 +20,11 @@ import {
 	create<%= className %>Schema,
 	update<%= className %>Schema,
 } from '<%= locations.dbEntities.import %>/<%= name %>';
-import { Get<%= className %>ByIdQuery } from '<%= imports.moduleToGetByIdQuery %>';
-import { List<%= classNamePlural %>Query } from '<%= imports.moduleToListQuery %>';
-import { Create<%= className %>Command } from '<%= imports.moduleToCreateCommand %>';
-import { Update<%= className %>Command } from '<%= imports.moduleToUpdateCommand %>';
-import { Delete<%= className %>Command } from '<%= imports.moduleToDeleteCommand %>';
+import { <%= getByIdQueryClass %> } from '<%= imports.moduleToGetByIdQuery %>';
+import { <%= listQueryClass %> } from '<%= imports.moduleToListQuery %>';
+import { <%= createCommandClass %> } from '<%= imports.moduleToCreateCommand %>';
+import { <%= updateCommandClass %> } from '<%= imports.moduleToUpdateCommand %>';
+import { <%= deleteCommandClass %> } from '<%= imports.moduleToDeleteCommand %>';
 import { <%= classNamePlural %>Module } from './<%= plural %>.module';
 
 @Module({
@@ -32,11 +32,11 @@ import { <%= classNamePlural %>Module } from './<%= plural %>.module';
 })
 export class <%= className %>TrpcModule {
 	constructor(
-		private readonly get<%= className %>ByIdQuery: Get<%= className %>ByIdQuery,
-		private readonly list<%= classNamePlural %>Query: List<%= classNamePlural %>Query,
-		private readonly create<%= className %>Command: Create<%= className %>Command,
-		private readonly update<%= className %>Command: Update<%= className %>Command,
-		private readonly delete<%= className %>Command: Delete<%= className %>Command,
+		private readonly get<%= className %>ByIdQuery: <%= getByIdQueryClass %>,
+		private readonly list<%= classNamePlural %>Query: <%= listQueryClass %>,
+		private readonly create<%= className %>Command: <%= createCommandClass %>,
+		private readonly update<%= className %>Command: <%= updateCommandClass %>,
+		private readonly delete<%= className %>Command: <%= deleteCommandClass %>,
 	) {}
 
 	@Router('<%= plural %>')

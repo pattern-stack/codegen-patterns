@@ -21,7 +21,7 @@ import type { I<%= className %>Repository } from '<%= imports.domain %>';
 import { <%= className %> } from '<%= imports.domain %>';
 
 @Injectable()
-export class Delete<%= className %>Command {
+export class <%= deleteCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,

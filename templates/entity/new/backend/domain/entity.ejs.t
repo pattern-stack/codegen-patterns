@@ -13,7 +13,7 @@ force: true
  * All entities should follow this structure for consistent imports.
  */
 <% if (hasEntityRefFields) { -%>
-import type { EntityType } from '../../infrastructure/persistence/drizzle/entity-types.schema';
+import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>
 <%
 // Collect unique non-self-referential imports

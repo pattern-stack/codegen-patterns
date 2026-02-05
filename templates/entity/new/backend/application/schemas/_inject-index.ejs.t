@@ -1,5 +1,5 @@
 ---
-to: <%= basePaths.backendSrc %>/application/schemas/index.ts
+to: "<%= generate.dtos ? `${basePaths.backendSrc}/${backendLayers.schemas}/index.ts` : '' %>"
 inject: true
 append: true
 skip_if: <%= name %>.dto

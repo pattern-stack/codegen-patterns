@@ -1,7 +1,9 @@
 ---
-to: <%= locations.frontendCollections.path %>/index.ts
+to: "<%= generate.collectionsIndex ? `${locations.frontendCollections.path}/index.ts` : '' %>"
 inject: true
 after: "// Generated entity collections"
-skip_if: <%= camelName %>Collection
+skip_if: "from './collections'"
 ---
-export { <%= camelName %>Collection } from './<%= name %>';
+<% if (generate.collectionsIndex) { -%>
+export * from './collections';
+<% } -%>

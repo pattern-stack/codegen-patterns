@@ -21,7 +21,7 @@ import type { I<%= className %>Repository<%= hasRelationships ? `, ${className}W
 import { <%= className %> } from '<%= imports.domain %>';
 
 @Injectable()
-export class List<%= classNamePlural %>Query {
+export class <%= listQueryClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,

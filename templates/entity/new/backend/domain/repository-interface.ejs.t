@@ -10,7 +10,7 @@ force: true
 
 import type { <%= className %> } from './<%= name %>.entity';
 <% if (hasEntityRefFields) { -%>
-import type { EntityType } from '../../infrastructure/persistence/drizzle/entity-types.schema';
+import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>
 <% if (hasRelationships) { -%>
 

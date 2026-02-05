@@ -12,7 +12,7 @@ force: true
 import { createUnifiedEntity } from './create-unified-entity';
 import { <%= camelName %>Hooks } from '../store/entities/<%= name %>';
 import { <%= camelName %>Metadata } from '<%= locations.frontendEntityMetadata.import %>';
-import { <%= camelName %>Collection } from '../collections/<%= name %>';
+import { <%= camelName %>Collection } from '<%= locations.frontendCollections.import %>/collections';
 import { store } from '../store';
 <%
 const entityTypeName = generate.typeNaming === 'plain' ? className : className + 'Entity';

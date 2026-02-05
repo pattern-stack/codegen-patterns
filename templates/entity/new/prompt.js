@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
 import {
+  BACKEND_LAYERS,
   BASE_PATHS,
   FOLDER_STRUCTURES,
   FILE_GROUPINGS,
@@ -136,7 +137,7 @@ const behaviorRegistry = {
  */
 function loadCodegenConfig(cwd) {
   const configPath = path.resolve(cwd, "codegen.config.yaml");
-  const defaultConfig = { behaviors: { strategy: "base_class" } };
+  const defaultConfig = { behaviors: { strategy: "inline" } };
 
   if (!fs.existsSync(configPath)) {
     return defaultConfig;
@@ -145,9 +146,10 @@ function loadCodegenConfig(cwd) {
   try {
     const content = fs.readFileSync(configPath, "utf-8");
     const parsed = yaml.parse(content);
+
     return {
       behaviors: {
-        strategy: parsed?.behaviors?.strategy || "base_class",
+        strategy: parsed?.behaviors?.strategy || "inline",
       },
     };
   } catch {
@@ -236,6 +238,10 @@ export default {
 
     // Load global codegen config
     const codegenConfig = loadCodegenConfig(process.cwd());
+
+    // Load frontend config from project config (used for auth, sync, parsers)
+    const frontendConfig = getProjectConfig()?.frontend ?? {};
+    const frontendSync = frontendConfig.sync ?? {};
 
     // Prepare locals for templates
     const entity = definition.entity;
@@ -499,9 +505,9 @@ export default {
     const importHelpers = getImportPaths({ isNested });
     const imports = {
       // From commands/queries to other locations
-      constants: importHelpers.constants,
-      domain: importHelpers.domain,
-      schemas: importHelpers.schemas,
+      constants: importHelpers.constants(name),
+      domain: importHelpers.domain(name),
+      schemas: importHelpers.schemas(name),
       // From domain to other domain files (same folder when nested)
       domainEntity: importHelpers.domainEntity(name),
       // From module (modules/) to commands/queries
@@ -510,12 +516,21 @@ export default {
       moduleToCreateCommand: importHelpers.moduleToCommand(name, fileNames.createCommand.replace('.ts', '')),
       moduleToUpdateCommand: importHelpers.moduleToCommand(name, fileNames.updateCommand.replace('.ts', '')),
       moduleToDeleteCommand: importHelpers.moduleToCommand(name, fileNames.deleteCommand.replace('.ts', '')),
+      moduleToRepository: importHelpers.moduleToRepository(fileNames.repository.replace('.ts', '')),
+      moduleToConstants: importHelpers.moduleToConstants(),
+      moduleToDatabaseModule: importHelpers.moduleToDatabaseModule(),
+      moduleToController: importHelpers.moduleToController(fileNames.controller.replace('.ts', '')),
       // From controller (presentation/rest/) to queries/commands
       controllerToGetByIdQuery: importHelpers.controllerToQuery(name, fileNames.getByIdQuery.replace('.ts', '')),
       controllerToListQuery: importHelpers.controllerToQuery(name, fileNames.listQuery.replace('.ts', '')),
       controllerToCreateCommand: importHelpers.controllerToCommand(name, fileNames.createCommand.replace('.ts', '')),
       controllerToUpdateCommand: importHelpers.controllerToCommand(name, fileNames.updateCommand.replace('.ts', '')),
       controllerToDeleteCommand: importHelpers.controllerToCommand(name, fileNames.deleteCommand.replace('.ts', '')),
+      controllerToSchemas: importHelpers.controllerToSchemas(),
+      controllerToDomain: importHelpers.controllerToDomain(),
+      // From app.module.ts to modules
+      appModuleToModule: importHelpers.appModuleToModule(fileNames.module.replace('.ts', '')),
+      appModuleToTrpcModule: importHelpers.appModuleToTrpcModule(`${name}-trpc.module`),
       // For domain/index.ts export
       domainExport: isNested ? `./${name}` : null,
     };
@@ -959,6 +974,7 @@ export default {
 
       // Base paths for templates (from centralized config)
       basePaths: BASE_PATHS,
+      backendLayers: BACKEND_LAYERS,
 
       // Unified locations (path + import alias)
       // Usage: locations.dbEntities.path, locations.dbEntities.import
@@ -969,24 +985,26 @@ export default {
       frontend: {
         auth: {
           // null means "no auth function" - don't fall back to default
-          function: getProjectConfig()?.frontend?.auth?.hasOwnProperty?.('function')
-            ? getProjectConfig().frontend.auth.function
+          function: frontendConfig.auth?.hasOwnProperty?.('function')
+            ? frontendConfig.auth.function
             : 'getAuthorizationHeader',
         },
         sync: {
-          shapeUrl: getProjectConfig()?.frontend?.sync?.shapeUrl ?? '/v1/shape',
-          useTableParam: getProjectConfig()?.frontend?.sync?.useTableParam ?? true,
+          shapeUrl: frontendSync.shapeUrl ?? '/v1/shape',
+          useTableParam: frontendSync.useTableParam ?? true,
           // Column mapper for snake_case to camelCase conversion (e.g., 'snakeCamelMapper')
           // Set to null/undefined if DB columns already match JS property names
-          columnMapper: getProjectConfig()?.frontend?.sync?.columnMapper ?? null,
+          columnMapper: frontendSync.hasOwnProperty?.('columnMapper')
+            ? frontendSync.columnMapper
+            : 'snakeCamelMapper',
           // Whether to wrap shapeUrl in new URL() constructor
-          wrapInUrlConstructor: getProjectConfig()?.frontend?.sync?.wrapInUrlConstructor ?? true,
+          wrapInUrlConstructor: frontendSync.wrapInUrlConstructor ?? true,
           // Whether columnMapper needs () to call (true for functions, false for objects)
-          columnMapperNeedsCall: getProjectConfig()?.frontend?.sync?.columnMapperNeedsCall ?? true,
+          columnMapperNeedsCall: frontendSync.columnMapperNeedsCall ?? true,
           // Import path for API_BASE_URL (if needed)
-          apiBaseUrlImport: getProjectConfig()?.frontend?.sync?.apiBaseUrlImport ?? null,
+          apiBaseUrlImport: frontendSync.apiBaseUrlImport ?? null,
         },
-        parsers: getProjectConfig()?.frontend?.parsers ?? {
+        parsers: frontendConfig.parsers ?? {
           timestamptz: '(date: string) => new Date(date)',
         },
       },
@@ -1007,6 +1025,8 @@ export default {
       generate: {
         fieldMetadata: getProjectConfig()?.generate?.fieldMetadata ?? true,
         collections: getProjectConfig()?.generate?.collections ?? true,
+        // Whether to generate index.ts in collections folder (for multi-file collection structure)
+        collectionsIndex: getProjectConfig()?.generate?.collectionsIndex ?? false,
         hooks: getProjectConfig()?.generate?.hooks ?? true,
         mutations: getProjectConfig()?.generate?.mutations ?? true,
         // Backend toggles
@@ -1014,6 +1034,9 @@ export default {
         commands: getProjectConfig()?.generate?.commands ?? true,
         queries: getProjectConfig()?.generate?.queries ?? true,
         dtos: getProjectConfig()?.generate?.dtos ?? true,
+        schemaServer: getProjectConfig()?.generate?.schemaServer ?? false,
+        schemaClient: getProjectConfig()?.generate?.schemaClient ?? false,
+        electricMigrations: getProjectConfig()?.generate?.electricMigrations ?? false,
         // Hook style: 'collection' uses collection.useMany(), 'useLiveQuery' uses TanStack DB pattern
         hookStyle: getProjectConfig()?.generate?.hookStyle ?? 'collection',
         // Output structure mode: 'entity-first' | 'concern-first' | 'monolithic'

@@ -1,7 +1,7 @@
 ---
-to: <%= basePaths.backendSrc %>/constants/tokens.ts
+to: <%= locations.backendConstants.path %>/tokens.ts
 inject: true
-after: "// Generated entity repository tokens"
+append: true
 skip_if: <%= repositoryToken %>
 ---
 export const <%= repositoryToken %> = Symbol('<%= repositoryToken %>');

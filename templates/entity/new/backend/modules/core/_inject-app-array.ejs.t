@@ -4,4 +4,4 @@ inject: true
 skip_if: <%= classNamePlural %>Module
 after: "from '@nestjs/common'"
 ---
-import { <%= classNamePlural %>Module } from './modules/<%= plural %>.module';
+import { <%= classNamePlural %>Module } from '<%= imports.appModuleToModule %>';

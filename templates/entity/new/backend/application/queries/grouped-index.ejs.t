@@ -30,7 +30,7 @@ import { <%= className %> } from '<%= imports.domain %>';
  * - Caching: Add cache layer for frequently accessed records
  */
 @Injectable()
-export class Get<%= className %>ByIdQuery {
+export class <%= getByIdQueryClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
@@ -66,7 +66,7 @@ export class Get<%= className %>ByIdQuery {
  * - Caching: Add cache layer for frequently accessed lists
  */
 @Injectable()
-export class List<%= classNamePlural %>Query {
+export class <%= listQueryClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,

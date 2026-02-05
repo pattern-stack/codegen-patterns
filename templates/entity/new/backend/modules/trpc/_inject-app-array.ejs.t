@@ -5,5 +5,5 @@ skip_if: <%= className %>TrpcModule
 after: "from '@nestjs/common'"
 ---
 <% if (exposeTrpc) { -%>
-import { <%= className %>TrpcModule } from './modules/<%= name %>-trpc.module';
+import { <%= className %>TrpcModule } from '<%= imports.appModuleToTrpcModule %>';
 <% } -%>

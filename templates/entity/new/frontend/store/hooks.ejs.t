@@ -12,7 +12,7 @@ force: true
 
 import { useLiveQuery } from '@tanstack/react-db';
 import { eq } from '@tanstack/react-db';
-import { <%= camelName %>Collection } from '../../collections/<%= name %>';
+import { <%= camelName %>Collection } from '<%= locations.frontendCollections.import %>/collections';
 <%
 const entityTypeName = generate.typeNaming === 'plain' ? className : className + 'Entity';
 -%>

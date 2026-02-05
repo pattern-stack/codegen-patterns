@@ -32,7 +32,7 @@ import type { Create<%= className %>Dto, Update<%= className %>Dto } from '<%= i
  * - Audit: Log creation for compliance/debugging
  */
 @Injectable()
-export class Create<%= className %>Command {
+export class <%= createCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
@@ -77,7 +77,7 @@ export class Create<%= className %>Command {
  * - Audit: Log changes for compliance/debugging
  */
 @Injectable()
-export class Update<%= className %>Command {
+export class <%= updateCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
@@ -125,7 +125,7 @@ export class Update<%= className %>Command {
  * - Audit: Log deletion for compliance/debugging
  */
 @Injectable()
-export class Delete<%= className %>Command {
+export class <%= deleteCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,

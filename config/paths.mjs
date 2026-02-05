@@ -14,10 +14,12 @@
  *   import { paths, getPath, LOCATIONS } from '../config/paths.js';
  */
 
+import path from 'node:path';
 import { projectConfig } from './config-loader.mjs';
 import { getNamingConfig } from './naming-config.mjs';
 import { applyCase, toPascalCase, getCaseSeparator } from './case-converters.mjs';
 import { FILE_TYPE_SUFFIXES } from '../schema/naming-config.schema.ts';
+import { LOCATIONS } from './locations.mjs';
 
 // Re-export LOCATIONS for unified path + import configuration
 export { LOCATIONS, getLocation, getLocationPath, getLocationImport } from './locations.mjs';
@@ -79,35 +81,61 @@ export const BASE_PATHS = {
   manifestDir: projectConfig?.paths?.manifest_dir ?? ".codegen",
 };
 
+const posixPath = path.posix;
+
+function normalizeRelativePath(value) {
+  return value === "" ? "." : value;
+}
+
+function joinPath(...parts) {
+  return posixPath.join(...parts.filter((part) => part !== "" && part != null));
+}
+
+function relativeImport(fromDir, toPath) {
+  const from = fromDir && fromDir !== "" ? fromDir : ".";
+  const rel = posixPath.relative(from, toPath);
+  if (!rel) return ".";
+  return rel.startsWith(".") ? rel : `./${rel}`;
+}
+
+function toBackendLayer(locationKey) {
+  const location = LOCATIONS[locationKey];
+  if (!location?.path) return ".";
+  const rel = posixPath.relative(BASE_PATHS.backendSrc, location.path);
+  return normalizeRelativePath(rel);
+}
+
 /**
  * Layer paths within backend (relative to backendSrc)
  * Following Clean Architecture principles
  */
 export const BACKEND_LAYERS = {
   // Domain layer - pure business logic, no framework deps
-  domain: "domain",
+  domain: toBackendLayer("backendDomain"),
 
   // Application layer - use cases, commands, queries
-  application: "application",
-  commands: "application/commands",
-  queries: "application/queries",
-  schemas: "application/schemas",
+  application: normalizeRelativePath(posixPath.dirname(toBackendLayer("backendCommands"))),
+  commands: toBackendLayer("backendCommands"),
+  queries: toBackendLayer("backendQueries"),
+  schemas: toBackendLayer("backendSchemas"),
 
   // Infrastructure layer - external integrations
-  infrastructure: "infrastructure",
-  persistence: "infrastructure/persistence",
-  drizzle: "infrastructure/persistence/drizzle",
-  repositories: "infrastructure/persistence/repositories",
+  infrastructure: normalizeRelativePath(
+    posixPath.dirname(posixPath.dirname(toBackendLayer("backendDrizzle")))
+  ),
+  persistence: normalizeRelativePath(posixPath.dirname(toBackendLayer("backendDrizzle"))),
+  drizzle: toBackendLayer("backendDrizzle"),
+  repositories: toBackendLayer("backendRepositories"),
 
   // Presentation layer - REST controllers, GraphQL resolvers
-  presentation: "presentation",
-  controllers: "presentation/rest",
+  presentation: normalizeRelativePath(posixPath.dirname(toBackendLayer("backendControllers"))),
+  controllers: toBackendLayer("backendControllers"),
 
-  // Modules - NestJS DI configuration (at src root, not inside infrastructure)
-  modules: "modules",
+  // Modules - NestJS DI configuration
+  modules: toBackendLayer("backendModules"),
 
   // Constants
-  constants: "constants",
+  constants: toBackendLayer("backendConstants"),
 };
 
 /**
@@ -134,13 +162,13 @@ export const PACKAGE_PATHS = {
  * Get full path from project root
  */
 export function getBackendPath(layer, subpath = "") {
-  const basePath = `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS[layer]}`;
-  return subpath ? `${basePath}/${subpath}` : basePath;
+  const basePath = joinPath(BASE_PATHS.backendSrc, BACKEND_LAYERS[layer]);
+  return subpath ? joinPath(basePath, subpath) : basePath;
 }
 
 export function getFrontendPath(layer, subpath = "") {
-  const basePath = `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS[layer]}`;
-  return subpath ? `${basePath}/${subpath}` : basePath;
+  const basePath = joinPath(BASE_PATHS.frontendSrc, FRONTEND_LAYERS[layer]);
+  return subpath ? joinPath(basePath, subpath) : basePath;
 }
 
 /**
@@ -315,14 +343,14 @@ export function computeFileNaming(namingConfig = null) {
 export function getEntityPaths({ name, plural, isNested = true, isGrouped = false }) {
   return {
     // Domain paths
-    domain: isNested ? `${BACKEND_LAYERS.domain}/${name}` : BACKEND_LAYERS.domain,
+    domain: isNested ? joinPath(BACKEND_LAYERS.domain, name) : BACKEND_LAYERS.domain,
 
     // Application paths
     commands: isNested
-      ? `${BACKEND_LAYERS.commands}/${name}`
+      ? joinPath(BACKEND_LAYERS.commands, name)
       : BACKEND_LAYERS.commands,
     queries: isNested
-      ? `${BACKEND_LAYERS.queries}/${name}`
+      ? joinPath(BACKEND_LAYERS.queries, name)
       : BACKEND_LAYERS.queries,
 
     // These are flat (single file per entity type)
@@ -331,6 +359,7 @@ export function getEntityPaths({ name, plural, isNested = true, isGrouped = fals
     repositories: BACKEND_LAYERS.repositories,
     controllers: BACKEND_LAYERS.controllers,
     modules: BACKEND_LAYERS.modules,
+    constants: BACKEND_LAYERS.constants,
   };
 }
 
@@ -414,34 +443,49 @@ export function getLayoutConfig(entity) {
  * Calculate relative import paths from one location to another
  */
 export function getImportPaths({ isNested }) {
+  const commandDir = (name) => joinPath(BACKEND_LAYERS.commands, isNested ? name : "");
+  const queryDir = (name) => joinPath(BACKEND_LAYERS.queries, isNested ? name : "");
+  const controllerDir = BACKEND_LAYERS.controllers;
+  const moduleDir = BACKEND_LAYERS.modules;
+  const appModuleDir = ".";
+  const databaseModulePath = joinPath(posixPath.dirname(BACKEND_LAYERS.drizzle), "database.module");
+
   return {
     // From commands/queries to other locations
-    constants: isNested ? "../../../constants" : "../../constants",
-    domain: isNested ? "../../../domain" : "../../domain",
-    schemas: isNested ? "../../schemas" : "../schemas",
+    constants: (name) => relativeImport(commandDir(name), BACKEND_LAYERS.constants),
+    domain: (name) => relativeImport(commandDir(name), BACKEND_LAYERS.domain),
+    schemas: (name) => relativeImport(commandDir(name), BACKEND_LAYERS.schemas),
 
     // From domain to other domain files
     domainEntity: (name) => `./${name}.entity`,
 
     // From module to commands/queries
     moduleToQuery: (name, queryFile) =>
-      isNested
-        ? `../application/queries/${name}/${queryFile}`
-        : `../application/queries/${queryFile}`,
+      relativeImport(moduleDir, joinPath(BACKEND_LAYERS.queries, isNested ? name : "", queryFile)),
     moduleToCommand: (name, commandFile) =>
-      isNested
-        ? `../application/commands/${name}/${commandFile}`
-        : `../application/commands/${commandFile}`,
+      relativeImport(moduleDir, joinPath(BACKEND_LAYERS.commands, isNested ? name : "", commandFile)),
+
+    // From module to repositories/constants/database module
+    moduleToRepository: (repositoryFile) =>
+      relativeImport(moduleDir, joinPath(BACKEND_LAYERS.repositories, repositoryFile)),
+    moduleToConstants: () => relativeImport(moduleDir, BACKEND_LAYERS.constants),
+    moduleToDatabaseModule: () => relativeImport(moduleDir, databaseModulePath),
+    moduleToController: (controllerFile) =>
+      relativeImport(moduleDir, joinPath(BACKEND_LAYERS.controllers, controllerFile)),
 
     // From controller to commands/queries
     controllerToQuery: (name, queryFile) =>
-      isNested
-        ? `../../application/queries/${name}/${queryFile}`
-        : `../../application/queries/${queryFile}`,
+      relativeImport(controllerDir, joinPath(BACKEND_LAYERS.queries, isNested ? name : "", queryFile)),
     controllerToCommand: (name, commandFile) =>
-      isNested
-        ? `../../application/commands/${name}/${commandFile}`
-        : `../../application/commands/${commandFile}`,
+      relativeImport(controllerDir, joinPath(BACKEND_LAYERS.commands, isNested ? name : "", commandFile)),
+    controllerToSchemas: () => relativeImport(controllerDir, BACKEND_LAYERS.schemas),
+    controllerToDomain: () => relativeImport(controllerDir, BACKEND_LAYERS.domain),
+
+    // From app.module.ts (backend root) to modules
+    appModuleToModule: (moduleFile) =>
+      relativeImport(appModuleDir, joinPath(BACKEND_LAYERS.modules, moduleFile)),
+    appModuleToTrpcModule: (moduleFile) =>
+      relativeImport(appModuleDir, joinPath(BACKEND_LAYERS.modules, moduleFile)),
   };
 }
 
@@ -470,7 +514,10 @@ export const INJECTABLE_FILES = [
   `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.constants}/tokens.ts`,
   `${BASE_PATHS.backendSrc}/app.module.ts`,
   `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.collections}/index.ts`,
+  `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.collections}/collections.ts`,
   `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.store}/index.ts`,
+  `${LOCATIONS.dbSchemaServer.path}`,
+  `${LOCATIONS.dbSchemaClient.path}`,
   `${PACKAGE_PATHS.dbEntities}/index.ts`,
 ];
 
@@ -499,9 +546,6 @@ export function getDatabaseDialect() {
 export function getProjectConfig() {
   return projectConfig;
 }
-
-// Import LOCATIONS for default export
-import { LOCATIONS } from './locations.mjs';
 
 // Default export for convenience
 export default {

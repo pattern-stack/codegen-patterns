@@ -1,5 +1,5 @@
 ---
-to: <%= basePaths.backendSrc %>/domain/index.ts
+to: <%= basePaths.backendSrc %>/<%= backendLayers.domain %>/index.ts
 inject: true
 append: true
 skip_if: <%= name %>

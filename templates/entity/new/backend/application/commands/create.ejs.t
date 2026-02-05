@@ -22,7 +22,7 @@ import { <%= className %> } from '<%= imports.domain %>';
 import type { Create<%= className %>Dto } from '<%= imports.schemas %>';
 
 @Injectable()
-export class Create<%= className %>Command {
+export class <%= createCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,

@@ -1,5 +1,5 @@
 ---
-to: <%= basePaths.backendSrc %>/modules/<%= plural %>.module.ts
+to: <%= outputPaths.module %>
 force: true
 ---
 /**
@@ -8,40 +8,40 @@ force: true
  */
 
 import { Module } from '@nestjs/common';
-import { <%= repositoryToken %> } from '../constants';
-import { Get<%= className %>ByIdQuery } from '../application/queries/<%= name %>/get-by-id.query';
-import { List<%= classNamePlural %>Query } from '../application/queries/<%= name %>/list.query';
-import { Create<%= className %>Command } from '../application/commands/<%= name %>/create.command';
-import { Delete<%= className %>Command } from '../application/commands/<%= name %>/delete.command';
-import { Update<%= className %>Command } from '../application/commands/<%= name %>/update.command';
-import { PersistenceModule } from '../infrastructure/persistence/persistence.module';
-import { <%= className %>Repository } from '../infrastructure/persistence/drizzle/repositories/<%= name %>.repository';
+import { <%= repositoryToken %> } from '<%= imports.moduleToConstants %>';
+import { <%= getByIdQueryClass %> } from '<%= imports.moduleToGetByIdQuery %>';
+import { <%= listQueryClass %> } from '<%= imports.moduleToListQuery %>';
+import { <%= createCommandClass %> } from '<%= imports.moduleToCreateCommand %>';
+import { <%= deleteCommandClass %> } from '<%= imports.moduleToDeleteCommand %>';
+import { <%= updateCommandClass %> } from '<%= imports.moduleToUpdateCommand %>';
+import { DatabaseModule } from '<%= imports.moduleToDatabaseModule %>';
+import { <%= className %>Repository } from '<%= imports.moduleToRepository %>';
 <% if (exposeRest) { -%>
-import { <%= classNamePlural %>Controller } from '../../presentation/rest/<%= plural %>.controller';
+import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController %>';
 <% } -%>
 
 @Module({
-	imports: [PersistenceModule],
+	imports: [DatabaseModule],
 <% if (exposeRest) { -%>
 	controllers: [<%= classNamePlural %>Controller],
 <% } -%>
 	providers: [
 		{ provide: <%= repositoryToken %>, useClass: <%= className %>Repository },
 		// Queries
-		Get<%= className %>ByIdQuery,
-		List<%= classNamePlural %>Query,
+		<%= getByIdQueryClass %>,
+		<%= listQueryClass %>,
 		// Use Cases
-		Create<%= className %>Command,
-		Update<%= className %>Command,
-		Delete<%= className %>Command,
+		<%= createCommandClass %>,
+		<%= updateCommandClass %>,
+		<%= deleteCommandClass %>,
 	],
 	exports: [
 		<%= repositoryToken %>,
-		Get<%= className %>ByIdQuery,
-		List<%= classNamePlural %>Query,
-		Create<%= className %>Command,
-		Update<%= className %>Command,
-		Delete<%= className %>Command,
+		<%= getByIdQueryClass %>,
+		<%= listQueryClass %>,
+		<%= createCommandClass %>,
+		<%= updateCommandClass %>,
+		<%= deleteCommandClass %>,
 	],
 })
 export class <%= classNamePlural %>Module {}

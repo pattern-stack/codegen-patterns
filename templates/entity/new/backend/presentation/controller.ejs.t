@@ -22,31 +22,31 @@ import {
 <% } -%>
 	UsePipes,
 } from '@nestjs/common';
-import { Get<%= className %>ByIdQuery } from '<%= imports.controllerToGetByIdQuery %>';
-import { List<%= classNamePlural %>Query } from '<%= imports.controllerToListQuery %>';
+import { <%= getByIdQueryClass %> } from '<%= imports.controllerToGetByIdQuery %>';
+import { <%= listQueryClass %> } from '<%= imports.controllerToListQuery %>';
 import {
 	type Create<%= className %>Dto,
 	create<%= className %>Schema,
 	type Update<%= className %>Dto,
 	update<%= className %>Schema,
-} from '../../application/schemas';
-import { Create<%= className %>Command } from '<%= imports.controllerToCreateCommand %>';
-import { Delete<%= className %>Command } from '<%= imports.controllerToDeleteCommand %>';
-import { Update<%= className %>Command } from '<%= imports.controllerToUpdateCommand %>';
+} from '<%= imports.controllerToSchemas %>';
+import { <%= createCommandClass %> } from '<%= imports.controllerToCreateCommand %>';
+import { <%= deleteCommandClass %> } from '<%= imports.controllerToDeleteCommand %>';
+import { <%= updateCommandClass %> } from '<%= imports.controllerToUpdateCommand %>';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
-import { <%= className %> } from '../../domain';
+import { <%= className %> } from '<%= imports.controllerToDomain %>';
 <% if (hasRelationships) { -%>
-import type { <%= className %>With } from '../../domain';
+import type { <%= className %>With } from '<%= imports.controllerToDomain %>';
 <% } -%>
 
 @Controller('<%= plural %>')
 export class <%= classNamePlural %>Controller {
 	constructor(
-		private readonly get<%= className %>ByIdQuery: Get<%= className %>ByIdQuery,
-		private readonly list<%= classNamePlural %>Query: List<%= classNamePlural %>Query,
-		private readonly create<%= className %>Command: Create<%= className %>Command,
-		private readonly update<%= className %>Command: Update<%= className %>Command,
-		private readonly delete<%= className %>Command: Delete<%= className %>Command,
+		private readonly get<%= className %>ByIdQuery: <%= getByIdQueryClass %>,
+		private readonly list<%= classNamePlural %>Query: <%= listQueryClass %>,
+		private readonly create<%= className %>Command: <%= createCommandClass %>,
+		private readonly update<%= className %>Command: <%= updateCommandClass %>,
+		private readonly delete<%= className %>Command: <%= deleteCommandClass %>,
 	) {}
 
 	@Get()
