@@ -15,10 +15,9 @@ import { Injectable } from '@nestjs/common';
 import { Router, Query, Mutation, Input } from '@mguay/nestjs-trpc';
 import { z } from 'zod';
 import {
-	<%= camelName %>Schema,
 	create<%= className %>Schema,
 	update<%= className %>Schema,
-} from '<%= locations.dbEntities.import %>/<%= name %>';
+} from '<%= imports.controllerToSchemas %>';
 import { <%= getByIdQueryClass %> } from '<%= imports.controllerToGetByIdQuery %>';
 import { <%= listQueryClass %> } from '<%= imports.controllerToListQuery %>';
 import { <%= createCommandClass %> } from '<%= imports.controllerToCreateCommand %>';
