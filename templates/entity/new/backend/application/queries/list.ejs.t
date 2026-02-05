@@ -1,5 +1,5 @@
 ---
-to: <%= outputPaths.listQuery %>
+to: "<%= generate.queries ? outputPaths.listQuery : '' %>"
 force: true
 ---
 <% if (outputPaths.listQuery) { -%>

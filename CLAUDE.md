@@ -133,10 +133,16 @@ generate:
 **Generation Toggles**: Control which outputs are generated:
 ```yaml
 generate:
+  # Frontend
   fieldMetadata: true      # Generate field metadata (default: true)
   collections: true        # Generate standalone collection files (default: true)
   hooks: true              # Generate standalone hooks files (default: true)
   mutations: true          # Generate mutation functions (default: true)
+  # Backend
+  drizzleSchema: true      # Generate Drizzle schema (default: true)
+  commands: true           # Generate application commands (default: true)
+  queries: true            # Generate application queries (default: true)
+  dtos: true               # Generate application DTOs (default: true)
   structure: 'monolithic'  # Output structure mode (default: monolithic)
   typeNaming: 'plain'      # 'plain' = Opportunity, 'entity' = OpportunityEntity (default: plain)
   fkResolution: true       # Import related collections for FK resolution (default: true)
@@ -144,7 +150,7 @@ generate:
   fileNaming: 'singular'   # 'singular' = opportunity.ts, 'plural' = opportunities.ts
   hookReturnStyle: 'generic'  # 'generic' = { data }, 'named' = { opportunities }
 ```
-Set any toggle to `false` to skip generating that output. Useful when you have manual `fields.tsx` files or custom hook implementations you want to preserve.
+Set any toggle to `false` to skip generating that output. Useful when you have manual `fields.tsx` files or custom hook implementations you want to preserve. Backend toggles only prevent file generation; other generated files may still reference those outputs, so provide manual implementations if you disable them.
 
 **Naming Convention Options** (Frontend):
 - `typeNaming`: Controls the type name imported from source and exported locally. `'plain'` (default) expects source to export `Opportunity`, `'entity'` expects source to export `OpportunityEntity`

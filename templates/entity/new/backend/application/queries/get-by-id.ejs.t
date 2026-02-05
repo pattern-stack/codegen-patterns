@@ -1,5 +1,5 @@
 ---
-to: <%= outputPaths.getByIdQuery %>
+to: "<%= generate.queries ? outputPaths.getByIdQuery : '' %>"
 force: true
 ---
 <% if (outputPaths.getByIdQuery) { -%>

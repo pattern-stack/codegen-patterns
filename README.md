@@ -138,6 +138,35 @@ naming:
 | `terminology.command: use-case` | `opportunity.entity.ts` | `create-opportunity.use-case.ts` | `get-opportunity-by-id.query.ts` |
 | `suffixStyle: suffixed` + `PascalCase` | `OpportunityEntity.ts` | `CreateOpportunityCommand.ts` | `GetOpportunityByIdQuery.ts` |
 
+### Generation Toggles
+
+Control which outputs are generated (all default to `true`):
+
+```yaml
+generate:
+  # Frontend
+  fieldMetadata: true      # Generate field metadata
+  collections: true        # Generate standalone collection files
+  hooks: true              # Generate standalone hooks files
+  mutations: true          # Generate mutation functions
+
+  # Backend
+  drizzleSchema: true      # Generate Drizzle schema
+  commands: true           # Generate application commands
+  queries: true            # Generate application queries
+  dtos: true               # Generate application DTOs
+
+  # Frontend structure/options
+  structure: 'monolithic'  # Output structure: monolithic | entity-first | concern-first
+  typeNaming: 'plain'      # 'plain' = Opportunity, 'entity' = OpportunityEntity
+  fkResolution: true       # Import related collections for FK resolution
+  collectionNaming: 'singular'  # 'singular' = opportunityCollection, 'plural' = opportunitiesCollection
+  fileNaming: 'singular'   # 'singular' = opportunity.ts, 'plural' = opportunities.ts
+  hookReturnStyle: 'generic'  # 'generic' = { data }, 'named' = { opportunities }
+```
+
+Set any toggle to `false` to skip generating that output. Backend toggles only prevent file generation; other generated files may still reference those outputs, so provide manual implementations if you disable them.
+
 ### Full Example: Clean Architecture (Dealbrain-style)
 
 A complete configuration matching Clean Architecture with UseCase terminology:

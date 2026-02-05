@@ -1,5 +1,5 @@
 ---
-to: <%= outputPaths.queriesGroupedIndex %>
+to: "<%= generate.queries ? outputPaths.queriesGroupedIndex : '' %>"
 force: true
 ---
 <% if (outputPaths.queriesGroupedIndex) { -%>

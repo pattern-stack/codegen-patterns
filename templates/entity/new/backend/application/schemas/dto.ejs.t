@@ -1,5 +1,5 @@
 ---
-to: <%= basePaths.backendSrc %>/application/schemas/<%= name %>.dto.ts
+to: "<%= generate.dtos ? `${basePaths.backendSrc}/application/schemas/${name}.dto.ts` : '' %>"
 force: true
 ---
 /**

@@ -1,5 +1,5 @@
 ---
-to: <%= outputPaths.commandsGroupedIndex %>
+to: "<%= generate.commands ? outputPaths.commandsGroupedIndex : '' %>"
 force: true
 ---
 <% if (outputPaths.commandsGroupedIndex) { -%>

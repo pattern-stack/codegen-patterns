@@ -1,5 +1,5 @@
 ---
-to: <%= basePaths.backendSrc %>/<%= schemaDir %>/<%= plural %>.schema.ts
+to: "<%= generate.drizzleSchema ? `${basePaths.backendSrc}/${schemaDir}/${plural}.schema.ts` : '' %>"
 force: true
 ---
 /**

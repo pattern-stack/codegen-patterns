@@ -1,5 +1,5 @@
 ---
-to: <%= outputPaths.queriesIndex %>
+to: "<%= generate.queries ? outputPaths.queriesIndex : '' %>"
 force: true
 ---
 <% if (outputPaths.queriesIndex) { -%>

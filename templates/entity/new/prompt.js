@@ -1009,6 +1009,11 @@ export default {
         collections: getProjectConfig()?.generate?.collections ?? true,
         hooks: getProjectConfig()?.generate?.hooks ?? true,
         mutations: getProjectConfig()?.generate?.mutations ?? true,
+        // Backend toggles
+        drizzleSchema: getProjectConfig()?.generate?.drizzleSchema ?? true,
+        commands: getProjectConfig()?.generate?.commands ?? true,
+        queries: getProjectConfig()?.generate?.queries ?? true,
+        dtos: getProjectConfig()?.generate?.dtos ?? true,
         // Hook style: 'collection' uses collection.useMany(), 'useLiveQuery' uses TanStack DB pattern
         hookStyle: getProjectConfig()?.generate?.hookStyle ?? 'collection',
         // Output structure mode: 'entity-first' | 'concern-first' | 'monolithic'

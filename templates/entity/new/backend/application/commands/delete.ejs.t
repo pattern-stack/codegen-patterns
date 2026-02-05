@@ -1,5 +1,5 @@
 ---
-to: <%= outputPaths.deleteCommand %>
+to: "<%= generate.commands ? outputPaths.deleteCommand : '' %>"
 force: true
 ---
 <% if (outputPaths.deleteCommand) { -%>

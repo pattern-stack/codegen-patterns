@@ -1,5 +1,5 @@
 ---
-to: <%= outputPaths.updateCommand %>
+to: "<%= generate.commands ? outputPaths.updateCommand : '' %>"
 force: true
 ---
 <% if (outputPaths.updateCommand) { -%>
