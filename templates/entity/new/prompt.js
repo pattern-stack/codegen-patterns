@@ -1077,7 +1077,7 @@ export default {
         })
       : [];
 
-    return {
+    const locals = {
       // Database configuration
       databaseDialect,
       schemaDir: BASE_PATHS.schemaDir,
@@ -1289,5 +1289,15 @@ export default {
       hasEvents,
       processedEvents,
     };
+
+    // Clean-Lite-PS template locals (only when generate.cleanLitePs: true)
+    const projectConfig = getProjectConfig();
+    const cleanLitePs = projectConfig?.generate?.cleanLitePs ?? false;
+    if (cleanLitePs) {
+      const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
+      Object.assign(locals, buildCleanLitePsLocals(definition, locals));
+    }
+
+    return locals;
   },
 };

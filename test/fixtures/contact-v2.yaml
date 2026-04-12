@@ -1,0 +1,121 @@
+# Contact Entity Definition — v2 Architecture
+# Exercises all v2 schema blocks: family, queries, sync, events
+# Reference: docs/architecture/sketches/contact-module-sketch.md
+
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  family: crm-synced
+  folder_structure: nested
+
+fields:
+  user_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: users.id
+
+  account_id:
+    type: uuid
+    nullable: true
+    index: true
+    foreign_key: accounts.id
+
+  first_name:
+    type: string
+    required: true
+    max_length: 100
+
+  last_name:
+    type: string
+    required: true
+    max_length: 100
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+  title:
+    type: string
+    nullable: true
+    max_length: 200
+
+  phone:
+    type: string
+    nullable: true
+    max_length: 50
+
+  linkedin_url:
+    type: string
+    nullable: true
+    max_length: 500
+
+behaviors:
+  - timestamps
+  - soft_delete
+  - external_id_tracking
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+  user:
+    type: belongs_to
+    target: user
+    foreign_key: user_id
+
+queries:
+  - by: [user_id]
+  - by: [email]
+    unique: true
+  - by: [account_id]
+    order: created_at desc
+  - by: [user_id, account_id]
+  - by: [opportunity_id]
+    via: opportunity_contact_link
+  - by: [opportunity_id]
+    select: [email]
+    via: opportunity_contact_link
+
+sync:
+  electric: true
+  providers:
+    salesforce:
+      remote_entity: Contact
+      direction: bidirectional
+      cdc: true
+      field_mapping:
+        first_name: FirstName
+        last_name: LastName
+        email: Email
+        title: Title
+        phone: Phone
+      read_only_fields:
+        - linkedin_url
+
+events:
+  - name: contact_created
+    queue: domain-events
+    body:
+      contact_id: uuid
+      account_id: uuid
+      created_by: uuid
+    generate_handler: true
+
+  - name: contact_merged
+    queue: domain-events
+    body:
+      source_id: uuid
+      target_id: uuid
+      merged_by: uuid
+    generate_handler: true
+
+  - name: contact_marked_champion
+    queue: domain-events
+    body:
+      contact_id: uuid
+      opportunity_id: uuid
