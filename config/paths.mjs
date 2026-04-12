@@ -15,10 +15,10 @@
  */
 
 import path from 'node:path';
-import { projectConfig } from './config-loader.ts';
+import { projectConfig } from './config-loader.mjs';
 import { getNamingConfig } from './naming-config.mjs';
 import { applyCase, toPascalCase, getCaseSeparator } from './case-converters.mjs';
-import { FILE_TYPE_SUFFIXES } from '../schema/naming-config.schema.ts';
+import { FILE_TYPE_SUFFIXES } from '../schema/naming-config.schema.mjs';
 import { LOCATIONS } from './locations.mjs';
 
 // Re-export LOCATIONS for unified path + import configuration

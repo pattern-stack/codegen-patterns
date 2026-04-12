@@ -42,3 +42,16 @@ locations:
   backendConstants:
     path: packages/api/src/constants
     import: "@api/constants"
+
+pipelines:
+  backend:
+    enabled: true
+    architecture: clean-lite-ps
+  frontend:
+    enabled: true
+    preset: dealbrain
+  shared:
+    enabled: true
+
+generate:
+  cleanLitePs: true
