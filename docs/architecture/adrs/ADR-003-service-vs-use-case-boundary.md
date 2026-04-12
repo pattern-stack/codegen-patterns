@@ -81,6 +81,7 @@ Use case names represent business operations, not CRUD primitives.
 The name should read like a thing a salesperson would say.
 
 ### Reads — CQRS-lite Controller Shortcut
+I may consider a more automatic approahc - can this be done? Let's discuss
 
 For pure reads with no side effects, controllers MAY call service methods directly, skipping the use case layer. The permitted method names are:
 

@@ -9,6 +9,8 @@
 
 Dealbrain has roughly a dozen entity types that cluster into four distinct families based on their access patterns, sync model, and lifecycle:
 
+We have Documents and Notes coming - need to deide where these live.
+
 | Family | Entities | Shared Patterns |
 |---|---|---|
 | **CRM Synced** | Opportunity, Account, Contact | Bidirectional CRM sync, external ID tracking, full CRUD, visibility filtering, user scoping |
@@ -55,6 +57,8 @@ CrmEntityRepository    ActivityEntityRepository    KnowledgeEntityRepository    
                           │                      ├── softDelete (with expiry)
                           │                      └── setBatchId
 ```
+
+^ This feels like another pattern emerging. While different - many of these retrieval methods follow the same patterns. "Find by FK" "+Type" - Are these variable "find by" functions? Can we extract a clean, clear way to template/compose these searches ? 
 
 Concrete repositories (`OpportunityRepository`, `AccountRepository`, etc.) extend the appropriate family base and add methods that are unique to that entity. For example:
 
@@ -154,6 +158,7 @@ Each family has distinctly different access patterns that cannot be collapsed:
 - **Metadata** entities use the EAV pattern. Their queries are polymorphic by `entityType + entityId`, which doesn't fit any of the other families.
 
 A fifth family for, e.g., "join tables" or "audit logs" might emerge. When it does, the YAML gets a new `family` enum value and codegen gets new templates. This is an open-ended extension point.
+^It will. We'll be building association - but we can discuss the implementation. Can be based on the ORM or managed similar to Pattenr Stakc - lets discuss
 
 ### Open Question — Knowledge Family
 

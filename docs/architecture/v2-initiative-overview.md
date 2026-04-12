@@ -180,13 +180,27 @@ apps/backend/src/
 ## Open Questions for Team Decision
 
 1. **Knowledge entity family** — fourth base class or fold into Activity?
+Separate. 
 2. **Canonical schema scope for v1** — four entities or more? Which fields per entity?
+Four for now. Doesn't matter for now - details after. Just draft them. 
+
 3. **`repository.interface.ts` → `port.ts` rename** — only for external adapters, or everywhere?
+It's not a rename - we're just removing interfaces. Ports for external - but yes - we'll have our repositories be explicit. 
+
 4. **`modules/canonical/` vs `shared/canonical/`** — location decision
+Shared - good callout. 
+
 5. **Codegen-patterns fork vs expand** — rename/fork or keep evolving in place?
+what do you think? 
+
 6. **Agent port scope** — include Lineup/Step/DomainTypes (aspirational layer) or skip?
+Let's discuss - what's lineup step domaintypes 
+
 7. **Agent migration cadence** — one agency at a time or all three in parallel?
+We're going to start fresh based on new architecture.
+
 8. **Auto-generated thin use cases** — generate `GetXByIdUseCase` or let controllers call services for reads (CQRS-lite)?
+Let's discuss.
 
 ## Risks
 

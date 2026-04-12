@@ -43,6 +43,7 @@ External Systems  ←  Adapters  ←  Ports  ←  Use Cases
 **Use Case** — business workflow that composes services and can produce side effects: emit events, enqueue jobs, call external systems, invoke LLMs, orchestrate multiple domains. Named semantically (`NewOpportunity`, `MoveToNextStage`, `AssignPrimaryContact`) rather than CRUD-style (`CreateOpportunity`). Every public operation a consumer can invoke is a use case or a direct service read.
 
 **Controller** — thin protocol adapter (REST, tRPC, MCP, CLI). Translates external protocol concerns (HTTP request/response, RPC envelopes) into use case calls. Contains no business logic.
+^Lets debate this. I don't think i fully gree.
 
 ### Hexagonal Ports for External Systems
 
