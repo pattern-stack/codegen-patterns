@@ -157,4 +157,5 @@ export interface ResolvedBehaviors {
 	hasTimestamps: boolean;
 	hasSoftDelete: boolean;
 	hasUserTracking: boolean;
+	hasExternalIdTracking?: boolean;
 }

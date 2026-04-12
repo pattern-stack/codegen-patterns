@@ -12,7 +12,7 @@ import {
 	type LoadResult,
 	type LoadError,
 } from '../utils/yaml-loader';
-import type { ParsedEntity, ParsedField, ParsedRelationship, AnalysisIssue } from '../analyzer/types';
+import type { ParsedEntity, ParsedEvent, ParsedField, ParsedProviderSync, ParsedQuery, ParsedRelationship, ParsedSync, AnalysisIssue } from '../analyzer/types';
 
 export interface LoadEntitiesResult {
 	entities: ParsedEntity[];
@@ -25,14 +25,25 @@ export interface LoadEntitiesResult {
 function transformToEntity(result: LoadResult): ParsedEntity {
 	const { definition, filePath } = result;
 
+	const queries: ParsedQuery[] | undefined = definition.queries?.map((q) => ({
+		by: q.by,
+		unique: q.unique,
+		select: q.select,
+		order: q.order,
+		limit: q.limit,
+		via: q.via,
+	}));
+
 	const entity: ParsedEntity = {
 		name: definition.entity.name,
 		plural: definition.entity.plural,
 		table: definition.entity.table,
+		family: definition.entity.family,
 		folderStructure: definition.entity.folder_structure ?? 'nested',
 		fields: new Map(),
 		relationships: new Map(),
-		behaviors: [],
+		behaviors: definition.behaviors.map((b) => (typeof b === 'string' ? b : b.name)),
+		queries,
 		sourcePath: filePath,
 	};
 
@@ -80,6 +91,44 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 			};
 			entity.relationships.set(name, relationship);
 		}
+	}
+
+	// Parse sync configuration
+	if (definition.sync) {
+		const syncDef = definition.sync;
+		const parsedSync: ParsedSync = {
+			electric: syncDef.electric ?? false,
+		};
+
+		if (syncDef.providers) {
+			parsedSync.providers = {};
+			for (const [providerName, providerDef] of Object.entries(syncDef.providers)) {
+				const parsedProvider: ParsedProviderSync = {
+					remoteEntity: providerDef.remote_entity,
+					direction: providerDef.direction,
+					cdc: providerDef.cdc ?? false,
+				};
+				if (providerDef.field_mapping) {
+					parsedProvider.fieldMapping = providerDef.field_mapping;
+				}
+				if (providerDef.read_only_fields) {
+					parsedProvider.readOnlyFields = providerDef.read_only_fields;
+				}
+				parsedSync.providers[providerName] = parsedProvider;
+			}
+		}
+
+		entity.sync = parsedSync;
+	}
+
+	// Parse events
+	if (definition.events) {
+		entity.events = definition.events.map((ev): ParsedEvent => ({
+			name: ev.name,
+			queue: ev.queue,
+			body: ev.body,
+			generateHandler: ev.generate_handler,
+		}));
 	}
 
 	return entity;

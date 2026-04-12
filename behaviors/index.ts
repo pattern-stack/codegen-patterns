@@ -7,6 +7,7 @@
  * - Resolve fields added by behaviors
  */
 
+import { externalIdTrackingBehavior } from './external-id-tracking';
 import { softDeleteBehavior } from './soft-delete';
 import { timestampsBehavior } from './timestamps';
 import type {
@@ -27,6 +28,7 @@ const behaviorRegistry = new Map<string, BehaviorDefinition>([
 	['timestamps', timestampsBehavior],
 	['soft_delete', softDeleteBehavior],
 	['user_tracking', userTrackingBehavior],
+	['external_id_tracking', externalIdTrackingBehavior],
 ]);
 
 /**
@@ -189,6 +191,7 @@ export function resolveBehaviors(configs: BehaviorConfig[]): ResolvedBehaviors {
 	const hasTimestamps = enabledNames.has('timestamps');
 	const hasSoftDelete = enabledNames.has('soft_delete');
 	const hasUserTracking = enabledNames.has('user_tracking');
+	const hasExternalIdTracking = enabledNames.has('external_id_tracking');
 
 	return {
 		configs: normalized,
@@ -204,6 +207,7 @@ export function resolveBehaviors(configs: BehaviorConfig[]): ResolvedBehaviors {
 		hasTimestamps,
 		hasSoftDelete,
 		hasUserTracking,
+		hasExternalIdTracking,
 	};
 }
 
@@ -223,3 +227,4 @@ export type {
 export { timestampsBehavior } from './timestamps';
 export { softDeleteBehavior } from './soft-delete';
 export { userTrackingBehavior } from './user-tracking';
+export { externalIdTrackingBehavior } from './external-id-tracking';

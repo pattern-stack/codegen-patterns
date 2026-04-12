@@ -13,6 +13,7 @@
 
 import type { ParsedEntity, DomainGraph, AnalysisIssue } from './types';
 import { findOrphanEntities, findCircularDependencies } from './graph-builder';
+import { resolveBehaviorFields } from '../behaviors/index';
 
 /**
  * Run all consistency checks on the domain graph
@@ -27,6 +28,13 @@ export function checkConsistency(graph: DomainGraph): AnalysisIssue[] {
 		issues.push(...checkNamingConventions(entity));
 		issues.push(...checkMissingIndexes(entity));
 		issues.push(...checkUiMetadata(entity));
+		if (entity.queries !== undefined) {
+			issues.push(...checkQueryFieldReferences(entity));
+		}
+		if (entity.sync !== undefined) {
+			issues.push(...checkSyncFieldMappingReferences(entity));
+			issues.push(...checkExternalIdTrackingCollision(entity));
+		}
 	}
 
 	// Check graph-level issues
@@ -287,6 +295,117 @@ function checkMissingInverses(graph: DomainGraph): AnalysisIssue[] {
 				field: relationship.name,
 				message: `Relationship "${relationship.name}" to "${to}" has no inverse defined on target`,
 				suggestion: `Add inverse relationship on "${to}" pointing back to "${from}"`,
+			});
+		}
+	}
+
+	return issues;
+}
+
+/**
+ * Get the set of all valid field names for an entity, including behavior-added fields
+ */
+function getAvailableFieldNames(entity: ParsedEntity): string[] {
+	const entityFieldNames = Array.from(entity.fields.keys());
+	const behaviorFields = resolveBehaviorFields(entity.behaviors);
+	const behaviorFieldNames = behaviorFields.map((f) => f.name);
+	return [...new Set([...entityFieldNames, ...behaviorFieldNames])];
+}
+
+/**
+ * Check that query.by and query.select fields reference existing entity fields
+ */
+function checkQueryFieldReferences(entity: ParsedEntity): AnalysisIssue[] {
+	const issues: AnalysisIssue[] = [];
+	const availableFields = getAvailableFieldNames(entity);
+	const availableSet = new Set(availableFields);
+
+	for (const query of entity.queries ?? []) {
+		// Skip by-field validation when via is specified — those fields come from the junction table
+		if (!query.via) {
+			for (const fieldName of query.by) {
+				if (!availableSet.has(fieldName)) {
+					issues.push({
+						severity: 'error',
+						type: 'unknown_query_field',
+						entity: entity.name,
+						field: fieldName,
+						message: `Query references unknown field "${fieldName}" in entity "${entity.name}". Available fields: ${availableFields.join(', ')}`,
+					});
+				}
+			}
+		}
+
+		for (const fieldName of query.select ?? []) {
+			if (!availableSet.has(fieldName)) {
+				issues.push({
+					severity: 'error',
+					type: 'unknown_query_field',
+					entity: entity.name,
+					field: fieldName,
+					message: `Query references unknown field "${fieldName}" in entity "${entity.name}". Available fields: ${availableFields.join(', ')}`,
+				});
+			}
+		}
+	}
+
+	return issues;
+}
+
+/**
+ * Check that sync field_mapping keys and read_only_fields reference existing entity fields
+ */
+function checkSyncFieldMappingReferences(entity: ParsedEntity): AnalysisIssue[] {
+	const issues: AnalysisIssue[] = [];
+	const availableFields = getAvailableFieldNames(entity);
+	const availableSet = new Set(availableFields);
+
+	for (const [providerName, provider] of Object.entries(entity.sync?.providers ?? {})) {
+		for (const fieldName of Object.keys(provider.fieldMapping ?? {})) {
+			if (!availableSet.has(fieldName)) {
+				issues.push({
+					severity: 'warning',
+					type: 'unknown_sync_field_mapping',
+					entity: entity.name,
+					field: fieldName,
+					message: `Sync field mapping references unknown field "${fieldName}" for provider "${providerName}" in entity "${entity.name}"`,
+				});
+			}
+		}
+
+		for (const fieldName of provider.readOnlyFields ?? []) {
+			if (!availableSet.has(fieldName)) {
+				issues.push({
+					severity: 'warning',
+					type: 'unknown_sync_field_mapping',
+					entity: entity.name,
+					field: fieldName,
+					message: `Sync field mapping references unknown field "${fieldName}" for provider "${providerName}" in entity "${entity.name}"`,
+				});
+			}
+		}
+	}
+
+	return issues;
+}
+
+/**
+ * Check for potential collision between external_id_tracking behavior and sync field_mapping
+ */
+function checkExternalIdTrackingCollision(entity: ParsedEntity): AnalysisIssue[] {
+	const issues: AnalysisIssue[] = [];
+
+	const hasExternalIdTracking = entity.behaviors.includes('external_id_tracking');
+	if (!hasExternalIdTracking) return issues;
+
+	for (const [providerName, provider] of Object.entries(entity.sync?.providers ?? {})) {
+		if (provider.fieldMapping && 'external_id' in provider.fieldMapping) {
+			issues.push({
+				severity: 'warning',
+				type: 'external_id_tracking_collision',
+				entity: entity.name,
+				field: 'external_id',
+				message: `Entity "${entity.name}" has external_id_tracking behavior and also maps "external_id" in sync field_mapping for provider "${providerName}". The behavior-added field may collide with the mapped field.`,
 			});
 		}
 	}

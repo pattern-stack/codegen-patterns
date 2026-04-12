@@ -373,10 +373,108 @@ const EntityConfigSchema = z
       .array(ExposeLayerSchema)
       .optional()
       .default(["repository", "rest", "trpc"]),
+
+    // v2: Entity family classification (ADR-005)
+    // Determines which base class hierarchy the entity inherits from
+    family: z
+      .enum(["crm-synced", "activity", "knowledge", "metadata"])
+      .optional(),
   })
   .strict();
 
 export type EntityConfig = z.infer<typeof EntityConfigSchema>;
+
+// ============================================================================
+// Query Declaration
+// ============================================================================
+
+/**
+ * Query Declaration Schema - Declarative query generation (ADR-005)
+ *
+ * Each declaration generates repository + service + use case methods.
+ *
+ * Examples:
+ *   { by: ["user_id"] }
+ *   { by: ["email"], unique: true }
+ *   { by: ["account_id"], order: "created_at desc", limit: true }
+ *   { by: ["opportunity_id"], select: ["email"], via: "opportunity_contact_link" }
+ */
+const QueryDeclarationSchema = z.object({
+  by: z.array(z.string()).min(1),
+  unique: z.boolean().optional(),
+  select: z.array(z.string()).optional(),
+  order: z.string().optional(),
+  limit: z.boolean().optional(),
+  via: z.string().optional(),
+});
+
+export type QueryDeclaration = z.infer<typeof QueryDeclarationSchema>;
+
+// ============================================================================
+// Sync Configuration
+// ============================================================================
+
+/**
+ * Direction of sync with an external provider
+ */
+export const SyncDirectionSchema = z.enum([
+  'inbound',
+  'outbound',
+  'bidirectional',
+]);
+
+export type SyncDirection = z.infer<typeof SyncDirectionSchema>;
+
+/**
+ * Per-provider sync configuration
+ */
+export const ProviderSyncSchema = z.object({
+  remote_entity: z.string(),
+  direction: SyncDirectionSchema,
+  cdc: z.boolean().optional().default(false),
+  field_mapping: z.record(z.string(), z.string()).optional(),
+  read_only_fields: z.array(z.string()).optional(),
+});
+
+export type ProviderSync = z.infer<typeof ProviderSyncSchema>;
+
+/**
+ * Top-level sync block: Electric SQL + named provider configs
+ */
+export const SyncConfigSchema = z.object({
+  electric: z.boolean().optional().default(false),
+  providers: z.record(z.string(), ProviderSyncSchema).optional(),
+});
+
+export type SyncConfig = z.infer<typeof SyncConfigSchema>;
+
+// ============================================================================
+// Event Declaration
+// ============================================================================
+
+/**
+ * Event Declaration Schema - Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
+ *
+ * Each declaration generates typed event classes, handlers, and queue registration.
+ *
+ * Example:
+ *   name: opportunity_stage_changed
+ *   queue: domain-events
+ *   body:
+ *     opportunity_id: uuid
+ *     old_stage: string
+ *   generate_handler: true
+ */
+const EventDeclarationSchema = z.object({
+  name: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*$/, "Event name must be snake_case"),
+  queue: z.string(),
+  body: z.record(z.string(), z.string()),
+  generate_handler: z.boolean().optional().default(false),
+});
+
+export type EventDeclaration = z.infer<typeof EventDeclarationSchema>;
 
 // ============================================================================
 // Full Entity Definition
@@ -389,6 +487,18 @@ export const EntityDefinitionSchema = z
     relationships: z.record(z.string(), RelationshipSchema).optional(),
     // Behaviors add cross-cutting concerns (timestamps, soft_delete, user_tracking, etc.)
     behaviors: z.array(BehaviorConfigSchema).optional().default([]),
+
+    // v2: Declarative query generation (ADR-005)
+    // Generates repository + service + use case methods from declarations
+    queries: z.array(QueryDeclarationSchema).optional(),
+
+    // v2: Integration sync configuration (CODEGEN-EVOLUTION-PLAN Phase 2)
+    // Electric SQL + provider sync (Salesforce, HubSpot, etc.)
+    sync: SyncConfigSchema.optional(),
+
+    // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
+    // Generates typed event classes, handlers, and queue registration
+    events: z.array(EventDeclarationSchema).optional(),
   })
   .strict();
 

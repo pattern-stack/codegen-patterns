@@ -15,6 +15,13 @@ build/
 # Test output (regenerated)
 test/gen/
 
+# Codegen output (generated from entity YAML — never commit)
+gen/
+app/
+apps/
+modules/
+packages/
+
 # IDE
 .vscode/
 .idea/
