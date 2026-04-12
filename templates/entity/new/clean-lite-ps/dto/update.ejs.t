@@ -1,5 +1,6 @@
 ---
-to: <%= clpOutputPaths.updateDto %>
+to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.updateDto : null %>"
+skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import { z } from 'zod';

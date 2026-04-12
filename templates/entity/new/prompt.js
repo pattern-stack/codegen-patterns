@@ -1296,6 +1296,32 @@ export default {
     if (cleanLitePs) {
       const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
       Object.assign(locals, buildCleanLitePsLocals(definition, locals));
+    } else {
+      // Inject safe stub locals so CLP template bodies can render without crashing.
+      // The to: guard resolves to "null" which causes Hygen to skip file writing.
+      const _n = definition.entity?.name || '';
+      const _p = definition.entity?.plural || _n + 's';
+      Object.assign(locals, {
+        clpOutputPaths: undefined,
+        entityName: _n,
+        entityNamePlural: _p,
+        entityNamePascal: _n,
+        entityNamePluralPascal: _p,
+        classNames: {},
+        clpDrizzleImports: [],
+        clpProcessedFields: [],
+        clpCreateDtoFields: [],
+        clpOutputDtoFields: [],
+        clpBelongsTo: [],
+        clpBelongsToFkFields: [],
+        clpHasRelationsBlock: false,
+        repositoryBaseClass: '',
+        serviceBaseClass: '',
+        repositoryBaseImport: '',
+        serviceBaseImport: '',
+        repositoryInheritedMethods: [],
+        serviceInheritedMethods: [],
+      });
     }
 
     return locals;

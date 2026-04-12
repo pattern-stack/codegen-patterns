@@ -1,5 +1,6 @@
 ---
-to: <%= clpOutputPaths.repository %>
+to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.repository : null %>"
+skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import { Injectable, Inject } from '@nestjs/common';

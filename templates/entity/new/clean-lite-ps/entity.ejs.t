@@ -1,5 +1,6 @@
 ---
-to: <%= clpOutputPaths.entity %>
+to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.entity : null %>"
+skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import {

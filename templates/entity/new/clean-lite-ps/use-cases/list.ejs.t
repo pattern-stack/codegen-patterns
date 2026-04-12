@@ -1,5 +1,5 @@
 ---
-to: <%= clpOutputPaths.listUseCase %>
+to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.listUseCase : null %>"
 force: true
 ---
 import { Injectable } from '@nestjs/common';

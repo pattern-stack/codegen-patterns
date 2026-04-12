@@ -1,5 +1,6 @@
 ---
-to: <%= clpOutputPaths.controller %>
+to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.controller : null %>"
+skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import { Controller, Get, Param } from '@nestjs/common';

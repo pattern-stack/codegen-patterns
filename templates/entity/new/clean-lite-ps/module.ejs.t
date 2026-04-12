@@ -1,5 +1,6 @@
 ---
-to: <%= clpOutputPaths.module %>
+to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.module : null %>"
+skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import { Module } from '@nestjs/common';
