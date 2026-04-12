@@ -7,10 +7,10 @@ import { z } from 'zod';
 export const <%= classNames.outputSchema %> = z.object({
   id: z.string().uuid(),
 <%_ clpBelongsToFkFields.forEach(fk => { _%>
-  <%= fk.camelName %>: <%= fk.zodChainOutput %>,
+  <%= fk.camelName %>: <%- fk.zodChainOutput %>,
 <%_ }) _%>
 <%_ clpOutputDtoFields.forEach(field => { _%>
-  <%= field.camelName %>: <%= field.zodChainOutput %>,
+  <%= field.camelName %>: <%- field.zodChainOutput %>,
 <%_ }) _%>
 <%_ if (hasTimestamps) { _%>
   createdAt: z.coerce.date(),

@@ -6,10 +6,10 @@ import { z } from 'zod';
 
 export const <%= classNames.createSchema %> = z.object({
 <%_ clpBelongsToFkFields.forEach(fk => { _%>
-  <%= fk.camelName %>: <%= fk.zodChainCreate %>,
+  <%= fk.camelName %>: <%- fk.zodChainCreate %>,
 <%_ }) _%>
 <%_ clpCreateDtoFields.forEach(field => { _%>
-  <%= field.camelName %>: <%= field.zodChainCreate %>,
+  <%= field.camelName %>: <%- field.zodChainCreate %>,
 <%_ }) _%>
 });
 

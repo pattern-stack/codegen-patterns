@@ -382,6 +382,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Process belongs_to relationships
   const belongsTo = processBelongsTo(relationships);
 
+  // Filter FK fields that are already emitted by the clpBelongsTo loop
+  const fkFieldNames = new Set(belongsTo.map((r) => r.field));
+  const nonFkFields = processedFields.filter((f) => !fkFieldNames.has(f.name));
+
   // Drizzle imports needed
   const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete);
   // Whether relations() import is needed
@@ -419,8 +423,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     outputSchema: `${entityNamePascal}OutputSchema`,
   };
 
-  // Fields for create DTO: exclude id and behavior-managed fields
-  const createDtoFields = processedFields.filter(
+  // Fields for create DTO: exclude id, behavior-managed fields, and FK fields
+  const createDtoFields = nonFkFields.filter(
     (f) => !BEHAVIOR_MANAGED_FIELDS.has(f.name),
   );
 
@@ -438,8 +442,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     zodChainCreate: zodChainForCreate(f),
   }));
 
-  // Build zodChain for each output DTO field (all fields including id)
-  const outputDtoFields = processedFields.map((f) => ({
+  // Build zodChain for each output DTO field (all non-FK fields)
+  const outputDtoFields = nonFkFields.map((f) => ({
     ...f,
     zodChainOutput: zodChainForOutput(f),
   }));
@@ -466,7 +470,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     classNames,
 
     // Field data
-    clpProcessedFields: processedFields,
+    clpProcessedFields: nonFkFields,
     clpCreateDtoFields: createDtoFieldsWithZod,
     clpOutputDtoFields: outputDtoFields,
     clpBelongsTo: belongsTo,

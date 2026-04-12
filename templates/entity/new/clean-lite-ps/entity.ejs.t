@@ -24,7 +24,7 @@ export const <%= entityNamePlural %> = pgTable(
     <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>,
 <%_ }) _%>
 <%_ clpProcessedFields.forEach(field => { _%>
-    <%= field.camelName %>: <%= field.drizzleChain %>,
+    <%= field.camelName %>: <%- field.drizzleChain %>,
 <%_ }) _%>
 <%_ if (hasTimestamps) { _%>
     createdAt: timestamp('created_at').notNull().defaultNow(),
