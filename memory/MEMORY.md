@@ -1,0 +1,2 @@
+- [Dealbrain v2 Initiative](project_v2_initiative.md) — Three-track rebuild: codegen evolution → backend rebuild → agent port
+- [Doug - Architect](user_doug_role.md) — Sole architect driving v2, DDD/NestJS/codegen expert, values mechanical enforcement

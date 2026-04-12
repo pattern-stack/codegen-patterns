@@ -80,20 +80,25 @@ Use case names represent business operations, not CRUD primitives.
 
 The name should read like a thing a salesperson would say.
 
-### Reads — CQRS-lite Controller Shortcut
-I may consider a more automatic approahc - can this be done? Let's discuss
+### Reads — Auto-Generated Read Use Cases (No Exceptions)
 
-For pure reads with no side effects, controllers MAY call service methods directly, skipping the use case layer. The permitted method names are:
+Controllers ALWAYS call use cases. There is no shortcut for reads. The rule is absolute: **controllers → use cases → services → repositories**. No layer-skipping, no asymmetry, no exceptions.
 
-- `findById`, `findByIds`, `findAll`
-- `list*`, `search*`, `filter*`
-- `get*`, `getOverview`, `getBy*`
-- Any method defined on the entity-family base class for reads
-- Any inherited `BaseAnalyticsService` measure method
+To avoid ceremony bloat, **standard read use cases are auto-generated from the entity-family base class.** The codegen emits inherited read use cases that delegate to the corresponding service method:
 
-Writes and orchestration MUST go through a use case. No exceptions.
+- `FindByIdUseCase` → `service.findById()`
+- `ListUseCase` → `service.list()`
+- `SearchUseCase` → `service.search()` (when applicable)
+- Any read method defined on the entity-family base class
 
-This is CQRS-lite: reads can shortcut for ergonomic reasons, writes cannot. The shortcut is ESLint-enforceable by restricting which service method prefixes controllers may import.
+These are thin pass-throughs — but they exist as first-class use cases, not as exceptions to the rule. This means:
+
+1. **Controllers have one dependency type: use cases.** No conditional "use cases for writes, services for reads" logic.
+2. **The use case directory is the complete API surface.** Every operation the app exposes is visible in `use-cases/`.
+3. **ESLint enforcement is trivial.** Controllers may only import `*.use-case.ts`. Period.
+4. **If a read later needs side effects** (audit logging, analytics tracking), promote the auto-generated use case to a hand-written one. No controller change needed.
+
+The auto-generated read use cases are inherited from a base class, so adding them costs zero hand-written code per entity. The tradeoff is a few more files — but those files make the architecture legible and the rules exceptionless.
 
 ### Use Cases Composing Use Cases — The Rule
 
@@ -139,21 +144,21 @@ The result: **use cases only exist when they are doing real work.** Every file i
 
 - **Some operations feel over-categorized.** "Assign primary contact" is a single field update — does it need a whole use case file? Under the rule, yes if it emits an event or syncs to CRM (which it probably does). If it doesn't, it's a service method.
 - **Requires discipline about what counts as a "side effect."** Audit logging, cache invalidation, and event emission are all side effects. Teams may try to push these into services ("it's just logging"). They cannot.
-- **The CQRS-lite read shortcut is an asymmetry.** Writes go through use cases; reads can skip. Some team members may prefer full symmetry. The counter: generating thin `GetByIdUseCase` wrappers for every entity is ceremony that adds no value.
+- **More files per entity.** Auto-generated read use cases add files to the `use-cases/` directory. These are inherited/generated (zero hand-written code), but they are visible in the tree. The tradeoff is worth it: the directory is now a complete API surface with no hidden shortcuts.
 - **Use case depth can grow.** Orchestrator use cases can call other orchestrators. In practice, keep it shallow (2-3 levels) — deeper nesting usually indicates logic that should be a service method instead.
 
 ### Neutral
 
 - Services can still call other services within their own domain, but cross-domain service-to-service calls are forbidden at the write path (see ADR-004). This naturally pushes cross-domain orchestration into use cases.
-- Services may still expose inherited CRUD from base classes. These are callable from controllers under the read shortcut, which means simple entities have near-zero hand-written code.
+- Services expose inherited CRUD from base classes. These are consumed by auto-generated read use cases, which controllers import. Simple entities have near-zero hand-written code — the base class handles both the service methods and the corresponding use case wrappers.
 
 ## Alternatives Considered
 
-### Alternative 1 — Use cases for everything, including reads
+### Alternative 1 — CQRS-lite: controllers call services directly for reads
 
-Every operation, including `findById`, goes through a use case. Controllers never call services directly.
+Controllers MAY call service read methods directly, skipping the use case layer for pure reads.
 
-**Rejected because:** It creates a uniform contract at the cost of generating hundreds of trivial use case files. AI would spend tokens wrapping `repo.findById()` in a class for no benefit. The CQRS-lite compromise preserves the uniform contract for writes (where coupling matters) and allows reads to shortcut (where ceremony hurts).
+**Rejected because:** It introduces an exception to the layer rule. Controllers would need to know which operations are "reads" (call service) vs "writes" (call use case). This asymmetry creates confusion, makes ESLint enforcement conditional, and hides part of the API surface from the use case directory. Auto-generating read use cases from base classes eliminates the ceremony concern without introducing an exception.
 
 ### Alternative 2 — Services for everything, no use cases
 

@@ -58,7 +58,46 @@ CrmEntityRepository    ActivityEntityRepository    KnowledgeEntityRepository    
                           │                      └── setBatchId
 ```
 
-^ This feels like another pattern emerging. While different - many of these retrieval methods follow the same patterns. "Find by FK" "+Type" - Are these variable "find by" functions? Can we extract a clean, clear way to template/compose these searches ? 
+### Declarative Query Generation — `queries:` Block
+
+Many retrieval methods follow common patterns — "find by FK", "find by FK + type", "find by FK + date range." Rather than hand-coding each method, entities declare their query patterns in the YAML, and the codegen generates the corresponding repository and service methods.
+
+```yaml
+# entities/contact.yaml
+queries:
+  - by: [opportunity_id]                    # → findByOpportunityId(opportunityId)
+  - by: [user_id]                           # → findByUserId(userId)
+  - by: [email]                             # → findByEmail(email)
+    unique: true                            # Returns single result, not array
+  - by: [user_id, account_id]              # → findByUserIdAndAccountId(userId, accountId)
+  - by: [opportunity_id]
+    select: [email]                         # → findEmailsByOpportunityId(opportunityId)
+  - by: [account_id]
+    order: created_at desc                  # → findByAccountId(accountId) with default ordering
+    limit: true                             # Generates paginated variant too
+```
+
+**What each query declaration generates:**
+
+1. **Repository method** — Drizzle query with `eq()` / `and()` / `inArray()` filters matching the `by` fields. Handles `unique` (returns `T | null` vs `T[]`), `select` (projection), `order` (default sort), `limit` (pagination).
+2. **Service method** — Pass-through that delegates to repository, with the same signature.
+3. **Read use case** — Auto-generated use case wrapping the service method (per the "no exceptions" rule from ADR-003).
+
+**Naming convention:** Method names are derived mechanically from the `by` fields:
+- `by: [opportunity_id]` → `findByOpportunityId`
+- `by: [user_id, date_range]` → `findByUserIdAndDateRange`
+- `by: [opportunity_id]` + `select: [email]` → `findEmailsByOpportunityId`
+
+**Family-level defaults:** Each entity family pre-declares common queries. CRM entities get `findByUserId`, `findByExternalId`. Activities get `findByOpportunityId`, `findByDateRange`. These are inherited; the entity YAML only declares entity-specific additions.
+
+**Junction table queries:** For entities with junction relationships, the `by` field can reference across the junction:
+```yaml
+queries:
+  - by: [opportunity_id]
+    via: opportunity_contact_link          # Generates JOIN through junction table
+```
+
+This system makes the base class inheritance tree composable with entity-specific queries, all from declarative YAML. The codegen generates the full chain: repository → service → use case.
 
 Concrete repositories (`OpportunityRepository`, `AccountRepository`, etc.) extend the appropriate family base and add methods that are unique to that entity. For example:
 
@@ -158,7 +197,7 @@ Each family has distinctly different access patterns that cannot be collapsed:
 - **Metadata** entities use the EAV pattern. Their queries are polymorphic by `entityType + entityId`, which doesn't fit any of the other families.
 
 A fifth family for, e.g., "join tables" or "audit logs" might emerge. When it does, the YAML gets a new `family` enum value and codegen gets new templates. This is an open-ended extension point.
-^It will. We'll be building association - but we can discuss the implementation. Can be based on the ORM or managed similar to Pattenr Stakc - lets discuss
+**Note:** A fifth family for associations/junction tables is expected. Implementation approach (ORM-managed vs explicit Pattern Stack-style) to be decided based on Pattern Stack backend-patterns validation. The `queries:` block with `via:` already supports junction traversal at the query level; the open question is whether junction tables get their own entity family or remain as plain `BaseRepository` extensions.
 
 ### Open Question — Knowledge Family
 
