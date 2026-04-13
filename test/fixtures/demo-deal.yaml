@@ -1,0 +1,72 @@
+# Demo entity: a sales deal with relationships, queries, behaviors, and events
+entity:
+  name: deal
+  plural: deals
+  table: deals
+  family: crm-synced
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+  amount:
+    type: decimal
+    nullable: true
+  stage:
+    type: enum
+    choices: [prospecting, qualification, proposal, negotiation, closed_won, closed_lost]
+    required: true
+  owner_id:
+    type: uuid
+    required: true
+    foreign_key: users.id
+    index: true
+  account_id:
+    type: uuid
+    required: true
+    foreign_key: accounts.id
+    index: true
+  close_date:
+    type: date
+    nullable: true
+  probability:
+    type: integer
+    nullable: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+
+relationships:
+  owner:
+    type: belongs_to
+    target: user
+    foreign_key: owner_id
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+queries:
+  - by: [owner_id]
+  - by: [account_id]
+    order: close_date desc
+  - by: [stage]
+  - by: [owner_id, stage]
+
+events:
+  - name: deal_created
+    queue: domain-events
+    body:
+      deal_id: uuid
+      account_id: uuid
+      owner_id: uuid
+    generate_handler: true
+  - name: deal_stage_changed
+    queue: domain-events
+    body:
+      deal_id: uuid
+      old_stage: string
+      new_stage: string

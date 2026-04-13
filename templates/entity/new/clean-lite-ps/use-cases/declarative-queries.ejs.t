@@ -1,5 +1,5 @@
 ---
-to: "<%= hasDeclarativeQueries ? clpOutputPaths.declarativeQueries : null %>"
+to: "<%= (typeof clpOutputPaths !== 'undefined' && hasDeclarativeQueries) ? clpOutputPaths.declarativeQueries : null %>"
 force: true
 ---
 <% if (hasDeclarativeQueries) { -%>
