@@ -10,6 +10,9 @@
  *   <repo-root>/modules/contacts/contact.entity.ts
  */
 export { contacts } from '@gen/modules/contacts/contact.entity';
+export { domainEvents } from '@gen/shared/subsystems/events/domain-events.schema';
+export { jobQueue } from '@gen/shared/subsystems/jobs/job-queue.schema';
+export { cacheEntries } from '@gen/shared/subsystems/cache/cache.schema';
 
 // ============================================================================
 // Family base class test tables

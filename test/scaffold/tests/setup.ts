@@ -29,7 +29,7 @@ export function getTestDb() {
 export async function truncateAll() {
   const client = getTestDb();
   await client.execute(
-    sql`TRUNCATE contacts, crm_entities, activity_entities, metadata_entities CASCADE`,
+    sql`TRUNCATE contacts, crm_entities, activity_entities, metadata_entities, domain_events, job_queue, cache_entries CASCADE`,
   );
 }
 

@@ -802,6 +802,40 @@ async function main() {
 			});
 			break;
 
+		case 'subsystem': {
+			const VALID_SUBSYSTEMS = ['events', 'jobs', 'cache', 'storage'];
+			if (!arg || !VALID_SUBSYSTEMS.includes(arg)) {
+				console.error(`[FAIL] Usage: codegen subsystem <${VALID_SUBSYSTEMS.join('|')}>`);
+				process.exit(1);
+			}
+
+			const { cpSync, existsSync, mkdirSync } = await import('fs');
+			const { join, resolve } = await import('path');
+			const srcDir = resolve(import.meta.dir, 'shared', 'subsystems', arg);
+			const destDir = join(process.cwd(), 'shared', 'subsystems', arg);
+
+			if (!existsSync(srcDir)) {
+				console.error(`[FAIL] Subsystem source not found: ${srcDir}`);
+				process.exit(1);
+			}
+
+			mkdirSync(destDir, { recursive: true });
+			cpSync(srcDir, destDir, { recursive: true, force: true });
+
+			// Filter out test files from the copy
+			const { readdirSync, unlinkSync } = await import('fs');
+			for (const file of readdirSync(destDir)) {
+				if (file.endsWith('.spec.ts') || file.endsWith('.test.ts')) {
+					unlinkSync(join(destDir, file));
+				}
+			}
+
+			console.log(`[OK] ${arg} subsystem scaffolded to ${destDir}`);
+			const files = readdirSync(destDir);
+			files.forEach((f: string) => console.log(`     ${f}`));
+			break;
+		}
+
 		default:
 			console.error(`[FAIL] Unknown command: ${command}`);
 			console.log(USAGE);

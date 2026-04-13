@@ -22,6 +22,10 @@ gen-all:
 scan path=".":
     bun codegen scan {{path}}
 
+# Scaffold a subsystem (events, jobs, cache, storage)
+gen-subsystem name:
+    bun codegen subsystem {{name}}
+
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
 # Run unit tests (base classes)
