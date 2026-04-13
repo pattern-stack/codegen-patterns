@@ -134,6 +134,38 @@ Families provide pre-built base classes with domain-specific query patterns:
 | `knowledge` | Vector-searchable content | Stub (needs pgvector) |
 | *(none)* | Generic entities | Base CRUD only |
 
+## Infrastructure Subsystems
+
+Scaffold production-ready infrastructure with Postgres-backed defaults (ADR-008):
+
+```bash
+just gen-subsystem events          # Domain event bus (transactional outbox)
+just gen-subsystem jobs            # Background job queue (pg-boss pattern)
+just gen-subsystem cache           # Key-value cache with TTL
+just gen-subsystem storage         # File storage (local filesystem)
+```
+
+Each subsystem generates a **protocol** (interface), **Drizzle backend** (Postgres), **memory backend** (tests), and a **NestJS module** with `forRoot()` factory:
+
+```typescript
+// app.module.ts
+@Module({
+  imports: [
+    DatabaseModule,
+    EventsModule.forRoot({ backend: 'drizzle' }),
+    JobsModule.forRoot({ backend: 'drizzle' }),
+    CacheModule.forRoot({ backend: 'drizzle', defaultTtl: 300 }),
+    StorageModule.forRoot({ backend: 'local' }),
+  ],
+})
+export class AppModule {}
+
+// Tests swap to memory — no Docker needed
+EventsModule.forRoot({ backend: 'memory' })
+```
+
+Use cases inject subsystem protocols via tokens (`EVENT_BUS`, `JOB_QUEUE`, `CACHE`, `STORAGE`). Services cannot import subsystem tokens — this mechanically enforces the ADR-003 sharp test.
+
 ## Configuration
 
 Create `codegen.config.yaml` in your project root:
@@ -173,6 +205,7 @@ just scan                          # generates codegen.config.yaml
 # Dev
 just gen entities/contact.yaml     # Generate single entity
 just gen-all                       # Generate all entities
+just gen-subsystem events          # Scaffold a subsystem
 just scan                          # Auto-detect project patterns
 
 # Test
@@ -223,8 +256,9 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated
 | `behaviors/` | Shared entity behaviors (timestamps, soft delete) |
 | `config/` | Config loader, paths, locations, naming |
 | `templates/` | Hygen EJS templates (the core product) |
-| `shared/` | Base classes shipped to consumer projects |
-| `test/` | Baseline snapshots, fixtures, scaffold integration |
+| `shared/base-classes/` | BaseRepository, BaseService, family repos/services, WithAnalytics |
+| `shared/subsystems/` | Events, Jobs, Cache, Storage (Protocol → Backend → Factory) |
+| `test/` | Baseline snapshots, fixtures, scaffold integration (241 tests) |
 
 ## License
 

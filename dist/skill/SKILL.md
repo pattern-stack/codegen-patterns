@@ -175,6 +175,28 @@ naming:
 
 Run `bun codegen scan .` to auto-detect your project's conventions and generate a config.
 
+## Infrastructure Subsystems
+
+Scaffold production infrastructure (Protocol → Backend → Factory pattern):
+
+```bash
+bun codegen subsystem events       # Domain event bus (Drizzle outbox)
+bun codegen subsystem jobs         # Background job queue (pg-boss pattern)
+bun codegen subsystem cache        # Key-value cache with TTL
+bun codegen subsystem storage      # File storage (local filesystem)
+```
+
+Each generates a protocol interface, Drizzle backend (Postgres), memory backend (tests), and NestJS `DynamicModule.forRoot()`. Wire into app.module.ts:
+
+```typescript
+EventsModule.forRoot({ backend: 'drizzle' }),
+JobsModule.forRoot({ backend: 'drizzle' }),
+CacheModule.forRoot({ backend: 'drizzle', defaultTtl: 300 }),
+StorageModule.forRoot({ backend: 'local' }),
+```
+
+Use cases inject via tokens: `@Inject(EVENT_BUS)`, `@Inject(JOB_QUEUE)`, etc.
+
 ## Common Workflows
 
 ### "Add a new entity to my app"
@@ -188,6 +210,11 @@ Run `bun codegen scan .` to auto-detect your project's conventions and generate 
 1. Determine if this maps to a new entity or a query on an existing one
 2. For new entity: create YAML + generate
 3. For existing entity: add to `queries:` block and regenerate
+
+### "Set up infrastructure for my app"
+1. Run `bun codegen subsystem events` (and jobs, cache, storage as needed)
+2. Add `EventsModule.forRoot({ backend: 'drizzle' })` to app.module.ts
+3. Use cases can now `@Inject(EVENT_BUS)` to publish domain events
 
 ### "Scaffold my whole domain"
 1. Run `bun codegen scan .` to detect project patterns
