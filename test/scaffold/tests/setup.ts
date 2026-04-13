@@ -28,7 +28,9 @@ export function getTestDb() {
 /** Truncate all known tables. Call between tests for isolation. */
 export async function truncateAll() {
   const client = getTestDb();
-  await client.execute(sql`TRUNCATE contacts CASCADE`);
+  await client.execute(
+    sql`TRUNCATE contacts, crm_entities, activity_entities, metadata_entities CASCADE`,
+  );
 }
 
 /** Close the connection pool. Call in afterAll. */

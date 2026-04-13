@@ -10,3 +10,54 @@
  *   <repo-root>/modules/contacts/contact.entity.ts
  */
 export { contacts } from '@gen/modules/contacts/contact.entity';
+
+// ============================================================================
+// Family base class test tables
+// ============================================================================
+
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import type { InferSelectModel } from 'drizzle-orm';
+
+/** CRM family test table */
+export const crmEntities = pgTable('crm_entities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  externalId: text('external_id'),
+  provider: text('provider'),
+  userId: text('user_id'),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at'),
+});
+
+export type CrmEntity = InferSelectModel<typeof crmEntities>;
+
+/** Activity family test table */
+export const activityEntities = pgTable('activity_entities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id'),
+  opportunityId: text('opportunity_id'),
+  occurredAt: timestamp('occurred_at').notNull().defaultNow(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type ActivityEntity = InferSelectModel<typeof activityEntities>;
+
+/** Metadata family test table */
+export const metadataEntities = pgTable('metadata_entities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id').notNull(),
+  fieldName: text('field_name').notNull(),
+  fieldValue: text('field_value'),
+  validFrom: timestamp('valid_from').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
