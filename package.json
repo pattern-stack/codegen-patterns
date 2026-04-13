@@ -9,7 +9,9 @@
   },
   "scripts": {
     "codegen": "bun cli.ts",
-    "test": "bun test/run-test.ts full"
+    "test": "bun test/run-test.ts full",
+    "test:integration": "bun test/scaffold/run-integration.ts",
+    "test:integration:quick": "bun test/scaffold/run-integration.ts --skip-codegen"
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
@@ -18,7 +20,11 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@nestjs/common": "10",
+    "@nestjs/core": "10",
+    "@types/bun": "latest",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
   },
   "peerDependencies": {
     "hygen": "^6.2.11"

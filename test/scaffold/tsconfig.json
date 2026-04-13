@@ -18,6 +18,7 @@
     "src/**/*",
     "shared/**/*",
     "schema.ts",
-    "drizzle.config.ts"
+    "drizzle.config.ts",
+    "../../modules/**/*"
   ]
 }

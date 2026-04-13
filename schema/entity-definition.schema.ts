@@ -377,7 +377,7 @@ const EntityConfigSchema = z
     // v2: Entity family classification (ADR-005)
     // Determines which base class hierarchy the entity inherits from
     family: z
-      .enum(["crm-synced", "activity", "knowledge", "metadata"])
+      .enum(["base", "crm-synced", "activity", "knowledge", "metadata"])
       .optional(),
   })
   .strict();
