@@ -8,7 +8,7 @@
  * - PRIMARY KEY on key (point-lookup)
  * - (expiresAt) for the cleanup query
  */
-import { pgTable, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, jsonb, timestamp } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';
 
 export const cacheEntries = pgTable(
@@ -21,7 +21,7 @@ export const cacheEntries = pgTable(
     /** NULL means the entry never expires. */
     expiresAt: timestamp('expires_at', { withTimezone: true }),
   },
-  (table) => [index('cache_entries_expires_at_idx').on(table.expiresAt)],
+  // Index: add (expires_at) via migration for cleanup queries
 );
 
 export type CacheEntry = InferSelectModel<typeof cacheEntries>;

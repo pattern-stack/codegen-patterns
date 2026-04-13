@@ -10,7 +10,6 @@
  *   - (aggregateId, aggregateType) — event replay per aggregate
  */
 import {
-  index,
   jsonb,
   pgTable,
   text,
@@ -31,10 +30,9 @@ export const domainEvents = pgTable(
     processedAt: timestamp('processed_at', { withTimezone: true }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   },
-  (t) => [
-    index('idx_domain_events_type_processed').on(t.type, t.processedAt),
-    index('idx_domain_events_aggregate').on(t.aggregateId, t.aggregateType),
-  ],
+  // Indexes: add via migration when deploying
+  // - (type, processed_at) for polling
+  // - (aggregate_id, aggregate_type) for replay
 );
 
 export type DomainEventRecord = InferSelectModel<typeof domainEvents>;

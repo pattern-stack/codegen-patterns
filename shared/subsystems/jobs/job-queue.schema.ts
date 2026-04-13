@@ -12,7 +12,6 @@ import {
   jsonb,
   integer,
   timestamp,
-  index,
 } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';
 
@@ -41,10 +40,9 @@ export const jobQueue = pgTable(
     createdAt: timestamp('created_at').notNull().defaultNow(),
     completedAt: timestamp('completed_at'),
   },
-  (t) => [
-    index('job_queue_status_run_at_idx').on(t.status, t.runAt),
-    index('job_queue_type_status_idx').on(t.type, t.status),
-  ],
+  // Indexes: add via migration when deploying
+  // - (status, run_at) for claim query
+  // - (type, status) for routing
 );
 
 export type JobRow = InferSelectModel<typeof jobQueue>;
