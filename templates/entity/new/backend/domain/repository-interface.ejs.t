@@ -60,5 +60,11 @@ export interface I<%= className %>Repository {
 <% entityRefFields.forEach((ref) => { -%>
 	findBy<%= ref.pascalName %>(entityType: EntityType, entityId: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %>[]>;
 <% }) -%>
+<% if (hasDeclarativeQueries) { -%>
+	// Declarative queries (from queries: block in entity YAML)
+<% processedQueries.forEach((q) => { -%>
+	<%= q.methodName %>(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>>;
+<% }) -%>
+<% } -%>
 }
 <% } -%>
