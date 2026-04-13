@@ -346,6 +346,108 @@ function zodChainForOutput(field) {
 }
 
 // ============================================================================
+// Query processing
+// ============================================================================
+
+/**
+ * Derive repository method name from a declarative query definition.
+ * E.g., { by: ['user_id'] } → 'findByUserId'
+ *       { by: ['email'], unique: true } → 'findByEmail'
+ *       { by: ['opportunity_id'], select: ['email'] } → 'findEmailsByOpportunityId'
+ */
+function deriveQueryMethodName(query) {
+  const byFields = Array.isArray(query.by) ? query.by : [];
+  const selectFields = Array.isArray(query.select) ? query.select : [];
+
+  const byPart = byFields.map((f) => pascalCase(f)).join('And');
+
+  if (selectFields.length > 0) {
+    const selectPart = selectFields.map((f) => pascalCase(f)).join('And') + 's';
+    return `find${selectPart}By${byPart}`;
+  }
+
+  return `findBy${byPart}`;
+}
+
+/**
+ * Process declarative queries from YAML queries: block.
+ * Produces typed query metadata for template generation.
+ */
+function processQueries(queriesBlock, processedFields, entityNamePascal) {
+  if (!queriesBlock || !Array.isArray(queriesBlock) || queriesBlock.length === 0) {
+    return [];
+  }
+
+  // Build field name → TS type lookup
+  const fieldTypeMap = {};
+  for (const pf of processedFields) {
+    fieldTypeMap[pf.name] = pf.tsType;
+    fieldTypeMap[pf.camelName] = pf.tsType;
+  }
+
+  return queriesBlock.map((q) => {
+    const byFields = Array.isArray(q.by) ? q.by : [];
+    const selectFields = Array.isArray(q.select) ? q.select : [];
+    const isUnique = q.unique ?? false;
+    const viaTable = q.via ?? null;
+
+    const params = byFields.map((f) => ({
+      name: f,
+      camelName: camelCase(f),
+      tsType: fieldTypeMap[f] || fieldTypeMap[camelCase(f)] || 'string',
+    }));
+
+    let orderBy = null;
+    let orderDirection = null;
+    if (q.order) {
+      const parts = q.order.trim().split(/\s+/);
+      orderBy = camelCase(parts[0]);
+      orderDirection = parts[1] || 'asc';
+    }
+
+    const methodName = deriveQueryMethodName(q);
+
+    let returnType;
+    if (isUnique) {
+      returnType = `${entityNamePascal} | null`;
+    } else if (selectFields.length > 0) {
+      const camelFields = selectFields.map((f) => camelCase(f));
+      returnType = selectFields.length === 1
+        ? `${fieldTypeMap[selectFields[0]] || fieldTypeMap[camelFields[0]] || 'string'}[]`
+        : `Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(' | ')}>[]`;
+    } else {
+      returnType = `${entityNamePascal}[]`;
+    }
+
+    const useCaseClassName = `${pascalCase(methodName)}UseCase`;
+
+    return {
+      by: byFields,
+      unique: isUnique,
+      select: selectFields,
+      order: q.order ?? null,
+      limit: q.limit ?? null,
+      via: viaTable,
+      methodName,
+      returnType,
+      params,
+      isUnique,
+      orderBy,
+      orderDirection,
+      viaTable,
+      viaTableCamel: viaTable ? camelCase(viaTable) : null,
+      selectFields: selectFields.map((f) => camelCase(f)),
+      useCaseClassName,
+      hasVia: viaTable != null,
+      hasSelect: selectFields.length > 0,
+      hasOrder: q.order != null,
+      hasLimit: q.limit != null,
+      hasMultipleParams: params.length > 1,
+    };
+  });
+}
+
+// ============================================================================
 // Main export
 // ============================================================================
 
@@ -361,6 +463,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const fields = definition.fields || {};
   const relationships = definition.relationships || {};
   const behaviors = definition.behaviors || [];
+  const queriesBlock = definition.queries || null;
 
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);
@@ -378,6 +481,14 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const behaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
   const hasTimestamps = behaviorNames.includes('timestamps');
   const hasSoftDelete = behaviorNames.includes('soft_delete');
+
+  // Process declarative queries
+  const processedQueries = processQueries(queriesBlock, processedFields, entityNamePascal);
+  const hasDeclarativeQueries = processedQueries.length > 0;
+  const declarativeQueryClasses = processedQueries.map((q) => q.useCaseClassName);
+  const hasMultiFieldQuery = processedQueries.some((q) => q.hasMultipleParams);
+  const hasOrderedQuery = processedQueries.some((q) => q.hasOrder);
+  const hasViaQuery = processedQueries.some((q) => q.hasVia);
 
   // Process belongs_to relationships
   const belongsTo = processBelongsTo(relationships);
@@ -403,6 +514,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     createDto: `modules/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
     updateDto: `modules/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
     outputDto: `modules/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
+    declarativeQueries: hasDeclarativeQueries
+      ? `modules/${entityNamePlural}/use-cases/declarative-queries.ts`
+      : null,
   };
 
   // Class names
@@ -479,5 +593,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // Drizzle
     clpDrizzleImports: drizzleEntityImports,
     clpHasRelationsBlock: hasRelationsBlock,
+
+    // Declarative queries
+    processedQueries,
+    hasDeclarativeQueries,
+    declarativeQueryClasses,
+    hasMultiFieldQuery,
+    hasOrderedQuery,
+    hasViaQuery,
   };
 }

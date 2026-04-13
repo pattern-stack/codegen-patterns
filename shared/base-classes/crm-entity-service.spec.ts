@@ -28,6 +28,8 @@ function makeMockRepo(
     findByExternalId: mock(async () => null),
     findManyByExternalIds: mock(async () => []),
     findAllByUserId: mock(async () => []),
+    findVisibleByUserId: mock(async () => []),
+    syncUpsert: mock(async () => []),
     ...overrides,
   };
 }
@@ -54,6 +56,30 @@ describe('CrmEntityService', () => {
       const result = await service.findAllByUser('user-1');
       expect(result).toEqual(entities);
       expect(repo.findAllByUserId).toHaveBeenCalledWith('user-1');
+    });
+  });
+
+  describe('findManyByExternalIds', () => {
+    it('delegates to repository.findManyByExternalIds', async () => {
+      const entities: TestEntity[] = [{ id: '1', name: 'A' }, { id: '2', name: 'B' }];
+      const repo = makeMockRepo({ findManyByExternalIds: mock(async () => entities) });
+      const service = new TestCrmService(repo);
+
+      const result = await service.findManyByExternalIds(['sf-001', 'sf-002']);
+      expect(result).toEqual(entities);
+      expect(repo.findManyByExternalIds).toHaveBeenCalledWith(['sf-001', 'sf-002']);
+    });
+  });
+
+  describe('findVisibleByUser', () => {
+    it('delegates to repository.findVisibleByUserId', async () => {
+      const entities: TestEntity[] = [{ id: '1', name: 'Visible' }];
+      const repo = makeMockRepo({ findVisibleByUserId: mock(async () => entities) });
+      const service = new TestCrmService(repo);
+
+      const result = await service.findVisibleByUser('user-1');
+      expect(result).toEqual(entities);
+      expect(repo.findVisibleByUserId).toHaveBeenCalledWith('user-1');
     });
   });
 

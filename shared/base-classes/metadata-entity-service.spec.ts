@@ -37,6 +37,18 @@ function makeMockRepo(
 }
 
 describe('MetadataEntityService', () => {
+  describe('findByEntityIdAndType', () => {
+    it('delegates to repository.findByEntityIdAndType', async () => {
+      const entities: TestEntity[] = [{ id: '1', fieldName: 'status' }];
+      const repo = makeMockRepo({ findByEntityIdAndType: mock(async () => entities) });
+      const service = new TestMetadataService(repo);
+
+      const result = await service.findByEntityIdAndType('opp-1', 'opportunity');
+      expect(result).toEqual(entities);
+      expect(repo.findByEntityIdAndType).toHaveBeenCalledWith('opp-1', 'opportunity');
+    });
+  });
+
   describe('listByEntity', () => {
     it('delegates to repository.listByEntityId', async () => {
       const entities: TestEntity[] = [{ id: '1', fieldName: 'status' }];

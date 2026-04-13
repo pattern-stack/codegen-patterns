@@ -11,6 +11,8 @@ export interface ICrmEntityRepository<TEntity> extends IBaseRepository<TEntity> 
   findByExternalId(externalId: string): Promise<TEntity | null>;
   findManyByExternalIds(externalIds: string[]): Promise<TEntity[]>;
   findAllByUserId(userId: string): Promise<TEntity[]>;
+  findVisibleByUserId(userId: string): Promise<TEntity[]>;
+  syncUpsert(inputs: Array<Partial<TEntity>>): Promise<TEntity[]>;
 }
 
 export abstract class CrmEntityService<
@@ -25,9 +27,24 @@ export abstract class CrmEntityService<
   }
 
   /**
+   * Find multiple entities by external CRM identifiers.
+   */
+  findManyByExternalIds(externalIds: string[]): Promise<TEntity[]> {
+    return this.repository.findManyByExternalIds(externalIds);
+  }
+
+  /**
    * Find all entities owned by a specific user.
    */
   findAllByUser(userId: string): Promise<TEntity[]> {
     return this.repository.findAllByUserId(userId);
+  }
+
+  /**
+   * Find entities visible to a user (ownership + sharing rules).
+   * Concrete services may override with domain-specific visibility logic.
+   */
+  findVisibleByUser(userId: string): Promise<TEntity[]> {
+    return this.repository.findVisibleByUserId(userId);
   }
 }

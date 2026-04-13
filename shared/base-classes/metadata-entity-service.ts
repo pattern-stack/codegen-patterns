@@ -19,6 +19,13 @@ export abstract class MetadataEntityService<
   TEntity,
 > extends BaseService<TRepo, TEntity> {
   /**
+   * Find metadata records by entity ID and entity type (EAV polymorphic lookup).
+   */
+  findByEntityIdAndType(entityId: string, entityType: string): Promise<TEntity[]> {
+    return this.repository.findByEntityIdAndType(entityId, entityType);
+  }
+
+  /**
    * List all metadata records for an entity.
    */
   listByEntity(entityId: string): Promise<TEntity[]> {

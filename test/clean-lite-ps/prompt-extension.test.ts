@@ -204,4 +204,90 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.hasTimestamps).toBe(false);
     expect(locals.hasSoftDelete).toBe(false);
   });
+
+  // ============================================================================
+  // Declarative queries
+  // ============================================================================
+
+  it('processes declarative queries from queries block', () => {
+    const withQueries = {
+      ...contactDefinition,
+      queries: [
+        { by: ['user_id'] },
+        { by: ['email'], unique: true },
+        { by: ['account_id'], order: 'created_at desc' },
+        { by: ['user_id', 'account_id'] },
+      ],
+    };
+    const locals = buildCleanLitePsLocals(withQueries, EMPTY_BASE_LOCALS);
+
+    expect(locals.hasDeclarativeQueries).toBe(true);
+    expect(locals.processedQueries).toHaveLength(4);
+    expect(locals.processedQueries[0].methodName).toBe('findByUserId');
+    expect(locals.processedQueries[1].methodName).toBe('findByEmail');
+    expect(locals.processedQueries[1].isUnique).toBe(true);
+    expect(locals.processedQueries[1].returnType).toBe('Contact | null');
+    expect(locals.processedQueries[2].hasOrder).toBe(true);
+    expect(locals.processedQueries[2].orderBy).toBe('createdAt');
+    expect(locals.processedQueries[2].orderDirection).toBe('desc');
+    expect(locals.processedQueries[3].hasMultipleParams).toBe(true);
+    expect(locals.processedQueries[3].methodName).toBe('findByUserIdAndAccountId');
+  });
+
+  it('processes via-table and select queries', () => {
+    const withViaQueries = {
+      ...contactDefinition,
+      queries: [
+        { by: ['opportunity_id'], via: 'opportunity_contact_link' },
+        { by: ['opportunity_id'], select: ['email'], via: 'opportunity_contact_link' },
+      ],
+    };
+    const locals = buildCleanLitePsLocals(withViaQueries, EMPTY_BASE_LOCALS);
+
+    expect(locals.hasViaQuery).toBe(true);
+    expect(locals.processedQueries[0].hasVia).toBe(true);
+    expect(locals.processedQueries[0].viaTable).toBe('opportunity_contact_link');
+    expect(locals.processedQueries[0].methodName).toBe('findByOpportunityId');
+    expect(locals.processedQueries[1].hasSelect).toBe(true);
+    expect(locals.processedQueries[1].methodName).toBe('findEmailsByOpportunityId');
+  });
+
+  it('generates use case class names from queries', () => {
+    const withQueries = {
+      ...contactDefinition,
+      queries: [{ by: ['user_id'] }, { by: ['email'], unique: true }],
+    };
+    const locals = buildCleanLitePsLocals(withQueries, EMPTY_BASE_LOCALS);
+
+    expect(locals.declarativeQueryClasses).toEqual([
+      'FindByUserIdUseCase',
+      'FindByEmailUseCase',
+    ]);
+  });
+
+  it('sets hasDeclarativeQueries false when no queries block', () => {
+    const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
+
+    expect(locals.hasDeclarativeQueries).toBe(false);
+    expect(locals.processedQueries).toEqual([]);
+    expect(locals.declarativeQueryClasses).toEqual([]);
+  });
+
+  it('includes declarativeQueries output path when queries exist', () => {
+    const withQueries = {
+      ...contactDefinition,
+      queries: [{ by: ['user_id'] }],
+    };
+    const locals = buildCleanLitePsLocals(withQueries, EMPTY_BASE_LOCALS);
+
+    expect(locals.clpOutputPaths.declarativeQueries).toBe(
+      'modules/contacts/use-cases/declarative-queries.ts',
+    );
+  });
+
+  it('sets declarativeQueries output path to null when no queries', () => {
+    const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
+
+    expect(locals.clpOutputPaths.declarativeQueries).toBeNull();
+  });
 });

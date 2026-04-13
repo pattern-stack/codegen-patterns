@@ -14,6 +14,9 @@ import { <%= classNames.service %> } from './<%= entityName %>.service';
 import { <%= classNames.controller %> } from './<%= entityName %>.controller';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
+<% if (hasDeclarativeQueries) { -%>
+import { declarativeQueryClasses } from './use-cases/declarative-queries';
+<% } -%>
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePl
     <%= classNames.service %>,
     <%= classNames.findByIdUseCase %>,
     <%= classNames.listUseCase %>,
+<% if (hasDeclarativeQueries) { -%>
+    ...declarativeQueryClasses,
+<% } -%>
     // TODO: Register hand-written use cases here
   ],
   exports: [<%= classNames.service %>],  // Only service is exported (ADR-002)
