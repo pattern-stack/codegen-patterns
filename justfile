@@ -28,9 +28,9 @@ gen-subsystem name:
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
-# Run unit tests (base classes)
+# Run unit tests (base classes + subsystems + scanner + schema)
 test-unit:
-    bun test shared/base-classes/*.spec.ts
+    bun test src/__tests__/
 
 # Run baseline test (generate + compare to baseline)
 test-baseline:

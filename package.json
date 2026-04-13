@@ -3,12 +3,12 @@
   "version": "0.2.0",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "type": "module",
-  "main": "index.ts",
+  "main": "src/index.ts",
   "bin": {
-    "codegen": "./cli.ts"
+    "codegen": "./src/cli.ts"
   },
   "scripts": {
-    "codegen": "bun cli.ts",
+    "codegen": "bun src/cli.ts",
     "test": "bun test/run-test.ts full",
     "test:integration": "bun test/scaffold/run-integration.ts",
     "test:integration:quick": "bun test/scaffold/run-integration.ts --skip-codegen"

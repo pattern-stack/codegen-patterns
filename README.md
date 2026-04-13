@@ -248,17 +248,20 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated
 
 | Directory | Purpose |
 |-----------|---------|
-| `cli.ts` | CLI entry point |
-| `parser/` | YAML loading and cross-reference resolution |
-| `analyzer/` | Graph building, consistency checking, suggestions |
-| `scanner/` | Project pattern detection |
-| `schema/` | Zod validation schemas |
-| `behaviors/` | Shared entity behaviors (timestamps, soft delete) |
-| `config/` | Config loader, paths, locations, naming |
+| `src/cli.ts` | CLI entry point |
+| `src/parser/` | YAML loading and cross-reference resolution |
+| `src/analyzer/` | Graph building, consistency checking, suggestions |
+| `src/scanner/` | Project pattern detection |
+| `src/schema/` | Zod validation schemas |
+| `src/behaviors/` | Shared entity behaviors (timestamps, soft delete) |
+| `src/config/` | Config loader, paths, locations, naming |
+| `src/formatters/` | Console, JSON, markdown output formatters |
+| `src/__tests__/` | Unit tests (mirrors `src/` structure) |
+| `runtime/base-classes/` | BaseRepository, BaseService, family repos/services, WithAnalytics |
+| `runtime/subsystems/` | Events, Jobs, Cache, Storage (Protocol → Backend → Factory) |
 | `templates/` | Hygen EJS templates (the core product) |
-| `shared/base-classes/` | BaseRepository, BaseService, family repos/services, WithAnalytics |
-| `shared/subsystems/` | Events, Jobs, Cache, Storage (Protocol → Backend → Factory) |
-| `test/` | Baseline snapshots, fixtures, scaffold integration (241 tests) |
+| `test/` | Baseline snapshots, fixtures, scaffold integration |
+| `docs/adrs/` | Architecture decision records |
 
 ## License
 

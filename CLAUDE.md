@@ -55,26 +55,30 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated
 - **`templates/entity/new/backend/`** + **`frontend/`** — Full Clean Architecture: separate command/query classes, repository interfaces, NestJS modules.
 - **`templates/entity/new/clean-lite-ps/`** — Clean-Lite-PS: lighter layout with entity, service, repository, controller, module, DTOs, use-cases. Enabled via `generate.cleanLitePs: true`. Has its own `prompt-extension.js`.
 
-### Module Structure
+### Project Layout
 
-| Directory | Purpose |
-|-----------|---------|
-| `cli.ts` | CLI entry point with all command handlers |
-| `parser/` | YAML loading, cross-reference resolution |
-| `analyzer/` | Graph building, consistency checking, suggestions |
-| `scanner/` | Project pattern detection (framework, ORM, naming) |
-| `schema/` | Zod schemas for entity definitions |
-| `behaviors/` | Shared behaviors (timestamps, soft-delete, user-tracking) |
-| `config/` | Config loader, paths, locations, naming |
-| `output/` | Console, JSON, markdown formatters |
-| `templates/` | Hygen EJS templates (the core product) |
-| `shared/base-classes/` | BaseRepository, BaseService, family repos/services, WithAnalytics |
-| `shared/subsystems/` | Infrastructure: events, jobs, cache, storage (Protocol → Backend → Factory) |
-| `shared/constants/` | Injection tokens |
-| `shared/types/` | DrizzleClient type |
-| `utils/` | YAML and config loaders used by CLI |
-| `test/` | Baseline snapshots, fixtures, scaffold integration |
-| `docs/` | ADRs and architecture docs |
+```
+src/                    # Generator source code
+  cli.ts                # CLI entry point
+  index.ts              # Package exports
+  analyzer/             # Graph building, consistency checking, suggestions
+  behaviors/            # Shared behaviors (timestamps, soft-delete, user-tracking)
+  config/               # Config loader, paths, locations, naming
+  formatters/           # Console, JSON, markdown output formatters
+  parser/               # YAML loading, cross-reference resolution
+  scanner/              # Project pattern detection (framework, ORM, naming)
+  schema/               # Zod schemas for entity definitions
+  utils/                # YAML and config loaders
+  __tests__/            # Unit tests (mirrors src/ structure)
+runtime/                # Code shipped into user's generated project
+  base-classes/         # BaseRepository, BaseService, family repos/services, WithAnalytics
+  subsystems/           # Infrastructure: events, jobs, cache, storage
+  constants/            # Injection tokens
+  types/                # DrizzleClient type
+templates/              # Hygen EJS templates (the core product)
+test/                   # Cross-cutting: baseline snapshots, fixtures, scaffold integration
+docs/                   # ADRs
+```
 
 ### Infrastructure Subsystems (ADR-008)
 
@@ -91,7 +95,7 @@ All use `DynamicModule.forRoot({ backend })` with `global: true`.
 
 ### Entity Families
 
-Base classes in `shared/base-classes/`:
+Base classes in `runtime/base-classes/`:
 
 | Family | Repository | Service |
 |--------|-----------|---------|
