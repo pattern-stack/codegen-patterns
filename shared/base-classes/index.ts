@@ -15,3 +15,15 @@ export { CrmEntityRepository } from './crm-entity-repository';
 export { ActivityEntityRepository } from './activity-entity-repository';
 export { MetadataEntityRepository } from './metadata-entity-repository';
 export { KnowledgeEntityRepository } from './knowledge-entity-repository';
+
+// Family-specific service base classes
+export { CrmEntityService } from './crm-entity-service';
+export type { ICrmEntityRepository } from './crm-entity-service';
+export { ActivityEntityService } from './activity-entity-service';
+export type { IActivityEntityRepository } from './activity-entity-service';
+export { MetadataEntityService } from './metadata-entity-service';
+export type { IMetadataEntityRepository } from './metadata-entity-service';
+export { KnowledgeEntityService } from './knowledge-entity-service';
+
+// Mixins
+export { WithAnalytics } from './with-analytics';
