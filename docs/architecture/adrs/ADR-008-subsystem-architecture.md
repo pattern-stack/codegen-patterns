@@ -19,7 +19,7 @@ Without generated subsystem infrastructure, every team building on codegen-patte
 
 This is 500+ lines of infrastructure boilerplate per project, identical in shape every time. It should be generated.
 
-The broadcast subsystem (`templates/broadcast/`) already demonstrates the pattern: a protocol interface, pluggable backends (memory, WebSocket), and a NestJS module. This ADR generalizes that pattern to all infrastructure subsystems.
+The existing broadcast subsystem (`templates/broadcast/`) demonstrates the concept — a protocol interface, pluggable backends (memory, WebSocket), and a NestJS module — but uses a plain `@Module` with hardcoded backend selection. This ADR generalizes and formalizes the pattern with `DynamicModule.forRoot()` for runtime backend selection.
 
 ## Decision
 
@@ -35,16 +35,24 @@ Factory (DynamicModule) → Which backend is selected at boot
 
 The protocol is the **port** (hexagonal architecture). Backends are **adapters**. The factory is NestJS `DynamicModule.forRoot()` wiring. Use cases inject the protocol via token; they never know which backend is active.
 
+All subsystem injection tokens use `Symbol()` for type safety and collision avoidance:
+```typescript
+export const EVENT_BUS = Symbol('EVENT_BUS');
+export const JOB_QUEUE = Symbol('JOB_QUEUE');
+export const CACHE = Symbol('CACHE');
+export const STORAGE = Symbol('STORAGE');
+```
+
 ### Infrastructure Subsystems
 
-Four infrastructure subsystems are generated as one-time scaffolds:
+Four infrastructure subsystems are generated as one-time scaffolds. None of these exist yet — this ADR proposes their creation via new `bun codegen subsystem <name>` commands and corresponding templates.
 
 #### Events
 
 ```
 subsystems/events/
 ├── event-bus.protocol.ts           # IEventBus
-├── event-bus.drizzle-backend.ts    # Postgres: domain_events table
+├── event-bus.drizzle-backend.ts    # Postgres: domain_events table (outbox)
 ├── event-bus.memory-backend.ts     # In-memory: array + callbacks
 ├── domain-events.schema.ts         # Drizzle table definition
 ├── events.module.ts                # EventsModule.forRoot({ backend })
@@ -55,22 +63,53 @@ subsystems/events/
 **Protocol:**
 ```typescript
 export interface DomainEvent {
-  readonly type: string;
+  readonly id: string;              // UUID — for deduplication and idempotency
+  readonly type: string;            // e.g., 'contact_created'
+  readonly aggregateId: string;     // ID of the entity that produced the event
+  readonly aggregateType: string;   // e.g., 'contact'
   readonly payload: Record<string, unknown>;
   readonly occurredAt: Date;
   readonly metadata?: Record<string, unknown>;
 }
 
+// DrizzleTransaction is the Drizzle ORM transaction type from the project's DrizzleClient.
+// In practice: import type { DrizzleTransaction } from '@shared/types/drizzle';
+// (extends the existing DrizzleClient type alias with transaction support)
+type DrizzleTransaction = Parameters<Parameters<DrizzleClient['transaction']>[0]>[0];
+
 export interface IEventBus {
-  publish(event: DomainEvent): Promise<void>;
-  publishMany(events: DomainEvent[]): Promise<void>;
-  subscribe(eventType: string, handler: (event: DomainEvent) => Promise<void>): void;
+  /** Publish events within a Drizzle transaction (outbox pattern). */
+  publish(event: DomainEvent, tx?: DrizzleTransaction): Promise<void>;
+  publishMany(events: DomainEvent[], tx?: DrizzleTransaction): Promise<void>;
+
+  /** Subscribe to events by type. Returns unsubscribe function. */
+  subscribe<T extends DomainEvent = DomainEvent>(
+    eventType: string,
+    handler: (event: T) => Promise<void>,
+  ): () => void;
 }
 ```
 
-**Drizzle backend** inserts to a `domain_events` table with columns: `id`, `type`, `payload` (jsonb), `occurredAt`, `processedAt`, `metadata` (jsonb). Subscription uses polling or pg_notify (configurable). The table acts as an outbox — events are persisted atomically with the write operation, then processed asynchronously.
+**Transactional outbox pattern:** The `tx` parameter is the key to atomicity. When a use case writes to the database and publishes an event, both happen in the same transaction:
+
+```typescript
+// In a use case:
+async execute(input: CreateContactInput): Promise<Contact> {
+  return this.db.transaction(async (tx) => {
+    const contact = await this.contacts.create(input, tx);
+    await this.eventBus.publish(new ContactCreatedEvent(contact), tx);
+    return contact;
+  });
+}
+```
+
+If the transaction rolls back, the event is never persisted. The Drizzle backend inserts events into the `domain_events` table within the provided transaction. A separate polling process (started via `OnModuleInit`) reads unprocessed events and dispatches to subscribers. The memory backend ignores the `tx` parameter and dispatches synchronously.
+
+**Drizzle table:** `domain_events` with columns: `id` (uuid pk), `type`, `aggregateId`, `aggregateType`, `payload` (jsonb), `occurredAt`, `processedAt` (null until consumed), `metadata` (jsonb). Indexes: `(type, processedAt)` for the polling query, `(aggregateId, aggregateType)` for event replay per entity.
 
 **Memory backend** stores events in an array and dispatches to registered callbacks synchronously. Used in tests to assert event publication without database.
+
+**The `queue` field** in entity YAML event declarations maps to the `metadata.queue` field on published events. Backends that support multiple queues (e.g., a future Redis Streams backend) use this for routing. The Drizzle backend stores it in metadata but processes all events from a single table.
 
 #### Jobs
 
@@ -89,20 +128,26 @@ subsystems/jobs/
 ```typescript
 export interface JobOptions {
   delay?: number;           // ms before processing
-  retries?: number;         // max retry count
-  backoff?: number;         // ms between retries
+  retries?: number;         // max retry count (default: 3)
+  backoff?: number;         // ms between retries (default: 1000)
   priority?: number;        // higher = sooner
 }
 
 export interface IJobQueue {
   enqueue<T = unknown>(type: string, payload: T, options?: JobOptions): Promise<string>;
-  process(type: string, handler: (payload: unknown) => Promise<void>): void;
+  process<T = unknown>(
+    type: string,
+    handler: (payload: T) => Promise<void>,
+    payloadSchema?: ZodType<T>,
+  ): void;
   schedule(type: string, cron: string, payload?: unknown): Promise<string>;
   cancel(jobId: string): Promise<void>;
 }
 ```
 
-**Drizzle backend** follows the pg-boss pattern: a `job_queue` table with `id`, `type`, `payload` (jsonb), `status` (pending/active/completed/failed), `runAt`, `attempts`, `maxRetries`, `lastError`, `createdAt`, `completedAt`. A polling loop claims jobs with `UPDATE ... SET status = 'active' WHERE status = 'pending' AND runAt <= now() ... LIMIT 1 RETURNING *`. Advisory locks prevent double-processing.
+The optional `payloadSchema` parameter on `process()` enables runtime validation — the backend parses the stored payload through the Zod schema before passing it to the handler. This closes the type safety gap between `enqueue<T>` and `process<T>`.
+
+**Drizzle backend** follows the pg-boss pattern: a `job_queue` table with `id`, `type`, `payload` (jsonb), `status` (pending/active/completed/failed/expired), `runAt`, `attempts`, `maxRetries`, `backoffMs`, `lastError`, `createdAt`, `completedAt`. Indexes: `(status, runAt)` for the claim query, `(type, status)` for routing. A polling loop (started via `OnModuleInit`, stopped via `OnModuleDestroy`) claims jobs with `UPDATE ... SET status = 'active' WHERE status = 'pending' AND runAt <= now() ... LIMIT 1 RETURNING *`. Advisory locks prevent double-processing. Failed jobs are retried with exponential backoff up to `maxRetries`.
 
 **Memory backend** uses a Map of type → handler and processes jobs synchronously (for tests).
 
@@ -125,12 +170,15 @@ export interface ICacheService {
   get<T = unknown>(key: string): Promise<T | null>;
   set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void>;
   delete(key: string): Promise<void>;
-  invalidate(pattern: string): Promise<number>;  // returns count deleted
+  /** Delete all entries matching a key prefix (e.g., 'contact:*' deletes all contact cache). */
+  invalidateByPrefix(prefix: string): Promise<number>;
   has(key: string): Promise<boolean>;
 }
 ```
 
-**Drizzle backend** uses a `cache_entries` table with `key` (primary), `value` (jsonb), `expiresAt` (timestamp). Reads check `expiresAt > now()`. A periodic cleanup job (registered with the jobs subsystem if available, else manual) deletes expired entries.
+**Sharp test clarification:** Cache *reads* (`get`, `has`) are not side effects — services MAY use them. Cache *writes* (`set`, `delete`, `invalidateByPrefix`) are side effects — they belong in use cases per ADR-003. In practice, a common pattern is: services read from cache, use cases invalidate on mutations.
+
+**Drizzle backend** uses a `cache_entries` table with `key` (primary), `value` (jsonb), `expiresAt` (timestamp). Reads filter by `expiresAt > now()`. `invalidateByPrefix` uses `LIKE prefix%`. Indexes: `(expiresAt)` for cleanup. A periodic cleanup (via jobs subsystem if available, else `setInterval` in `OnModuleInit`) deletes expired entries.
 
 **Memory backend** uses a Map with setTimeout-based expiry.
 
@@ -162,6 +210,42 @@ export interface IStorageService {
 **Memory backend** stores Buffers in a Map. For tests.
 
 No Drizzle backend — files in Postgres is an antipattern. Users implement S3/GCS backends by implementing `IStorageService`.
+
+### Lifecycle Management
+
+All Drizzle backends that require background processing implement NestJS lifecycle hooks:
+
+```typescript
+@Injectable()
+export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
+  private polling = false;
+
+  async onModuleInit(): Promise<void> {
+    this.polling = true;
+    this.startPolling();    // begin processing unhandled events
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    this.polling = false;   // stop polling loop gracefully
+  }
+}
+```
+
+This applies to:
+- **Events Drizzle backend** — polling loop for unprocessed events
+- **Jobs Drizzle backend** — polling loop for claimable jobs
+- **Cache Drizzle backend** — periodic cleanup of expired entries (if jobs subsystem unavailable)
+
+Memory backends do not need lifecycle hooks — they process synchronously.
+
+### Error Handling
+
+Protocol methods throw on failure — they do not swallow errors. Retry logic lives in the backend implementation, not the caller.
+
+- **EventBus.publish()** — if the transaction commits, the event is persisted. Processing failures are retried by the polling loop with backoff. After max retries, events are marked as `failed` (not lost).
+- **JobQueue.enqueue()** — always succeeds if the database is reachable (it's just an INSERT). Processing failures trigger retry per `JobOptions`. After `maxRetries`, job status becomes `failed`.
+- **CacheService.get()** — returns `null` on any error (cache miss behavior). Cache should never cause request failures.
+- **StorageService** — throws on all failures. Callers must handle `upload`/`download` errors explicitly.
 
 ### The Factory Module Pattern
 
@@ -218,6 +302,18 @@ Test.createTestingModule({
 });
 ```
 
+### Subsystem Dependencies
+
+```
+Events:       standalone
+Jobs:         standalone
+Cache:        optional dependency on Jobs (for cleanup scheduling)
+Storage:      standalone
+Integrations: depends on Events (for sync tracking)
+```
+
+When the cache subsystem detects that the jobs subsystem is available (via optional injection), it registers a periodic cleanup job. Otherwise it falls back to `setInterval`.
+
 ### Why Drizzle Backends (Not Redis/BullMQ)
 
 The default backend for events, jobs, and cache is **Postgres via Drizzle**, not Redis or BullMQ. Rationale:
@@ -229,7 +325,7 @@ The default backend for events, jobs, and cache is **Postgres via Drizzle**, not
 
 ### Entity-Level Event Generation
 
-The `events:` block in entity YAML generates typed event classes:
+The `events:` block in entity YAML is already parsed by `prompt.js` (producing `processedEvents` with class names, payloads, and handler flags). This ADR proposes adding templates that generate typed event classes from that parsed data.
 
 ```yaml
 # contact.yaml
@@ -246,42 +342,70 @@ events:
 Generates:
 ```typescript
 // modules/contacts/events/contact-created.event.ts
+import { randomUUID } from 'crypto';
+import type { DomainEvent } from '@shared/subsystems/events';
+
 export class ContactCreatedEvent implements DomainEvent {
-  readonly type = 'contact_created';
-  readonly occurredAt = new Date();
+  readonly id = randomUUID();
+  readonly type = 'contact_created' as const;
+  readonly aggregateType = 'contact' as const;
+  readonly occurredAt: Date;
 
   constructor(
+    readonly aggregateId: string,
     readonly payload: {
       contactId: string;
       accountId: string;
       createdBy: string;
     },
-  ) {}
+    occurredAt?: Date,
+  ) {
+    this.occurredAt = occurredAt ?? new Date();
+  }
+
+  /** Rehydrate from stored event (e.g., when replaying from domain_events table). */
+  static fromRecord(record: DomainEvent): ContactCreatedEvent {
+    return new ContactCreatedEvent(
+      record.aggregateId,
+      record.payload as ContactCreatedEvent['payload'],
+      record.occurredAt,
+    );
+  }
 }
 ```
 
 And when `generate_handler: true`:
 ```typescript
 // modules/contacts/events/contact-created.handler.ts
+import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
+import { EVENT_BUS, type IEventBus, type DomainEvent } from '@shared/subsystems/events';
+import { ContactCreatedEvent } from './contact-created.event';
+
 @Injectable()
-export class ContactCreatedHandler {
+export class ContactCreatedHandler implements OnModuleInit {
   constructor(
     @Inject(EVENT_BUS) private readonly eventBus: IEventBus,
-  ) {
-    this.eventBus.subscribe('contact_created', this.handle.bind(this));
+  ) {}
+
+  onModuleInit(): void {
+    this.eventBus.subscribe<ContactCreatedEvent>(
+      'contact_created',
+      this.handle.bind(this),
+    );
   }
 
-  async handle(event: DomainEvent): Promise<void> {
+  async handle(event: ContactCreatedEvent): Promise<void> {
     // TODO: implement handler logic
   }
 }
 ```
 
-Entity modules auto-register handlers in their `providers` array when `events:` block is present.
+Entity modules auto-register handlers in their `providers` array when `events:` block is present. **Prerequisite:** The events subsystem must be scaffolded before entity event generation works. `bun codegen entity` should warn if `subsystems/events/` does not exist and the entity has an `events:` block.
 
 ### Integration Ports (Hexagonal Adapters)
 
-Integration ports are **per-entity**, generated from the `sync:` block in entity YAML. They follow the hexagonal port/adapter pattern from ADR-001.
+Integration ports are **per-entity**, generated from the `sync:` block in entity YAML. The `sync:` block is already parsed by `prompt.js` (producing `syncProviders` with field mappings). This ADR proposes adding templates that generate port interfaces and field mappers from that parsed data.
 
 ```yaml
 # contact.yaml
@@ -341,11 +465,11 @@ A **provider registry** manages adapter selection:
 // subsystems/integrations/provider-registry.ts
 @Injectable()
 export class ProviderRegistry {
-  private adapters = new Map<string, Map<string, any>>();
+  private adapters = new Map<string, Map<string, unknown>>();
 
-  register(entity: string, provider: string, adapter: any): void { ... }
+  register<T>(entity: string, provider: string, adapter: T): void { ... }
   get<T>(entity: string, provider: string): T { ... }
-  getAll(entity: string): Map<string, any> { ... }
+  getAll(entity: string): Map<string, unknown> { ... }
 }
 ```
 
@@ -365,29 +489,36 @@ The provider registry is a one-time scaffold (like events/jobs), while the ports
 
 ### Generation Commands
 
+These commands do not exist yet — they are part of what this ADR proposes to build:
+
 ```bash
-# One-time infrastructure scaffolds
+# One-time infrastructure scaffolds (new CLI commands)
 bun codegen subsystem events
 bun codegen subsystem jobs
 bun codegen subsystem cache
 bun codegen subsystem storage
 bun codegen subsystem integrations   # provider registry + base types
 
-# Per-entity (already exists, extended with events + ports)
+# Per-entity (existing command, extended with new template outputs)
 bun codegen entity entities/contact.yaml
-# → generates event classes from events: block
-# → generates sync port + field mapper from sync: block
+# → generates event classes from events: block (NEW)
+# → generates sync port + field mapper from sync: block (NEW)
 ```
+
+### Broadcast Subsystem
+
+The existing broadcast subsystem (`templates/broadcast/`) predates this ADR. It demonstrates the protocol/backend concept but uses a plain `@Module` with hardcoded backend selection rather than `DynamicModule.forRoot()`. It should be refactored to follow the standard factory pattern when the subsystem templates are built. Until then, it continues to work as-is.
 
 ## Consequences
 
 ### Positive
 
 - **Near-complete generated application.** After running codegen, a project has working infrastructure for events, jobs, cache, and storage with zero hand-written plumbing. The only hand-written code is write use cases (business workflows) and integration adapter implementations.
-- **ADR-003 becomes enforceable.** Use cases inject `EVENT_BUS` and `JOB_QUEUE` — these imports can be lint-checked. Services cannot import subsystem tokens. The sharp test is mechanically enforced.
+- **ADR-003 becomes enforceable.** Use cases inject `EVENT_BUS` and `JOB_QUEUE` — these imports can be lint-checked. Services cannot import subsystem tokens (exception: `CACHE` for reads only). The sharp test is mechanically enforced.
 - **Test story is clean.** Swap to memory backends in tests. No Docker, no external services. The memory backends are generated alongside the Drizzle backends.
 - **Postgres-first simplicity.** New projects start with zero infrastructure beyond Postgres. Events, jobs, and cache all work out of the box. Scale-out to Redis/BullMQ is a single `forRoot()` change.
 - **Integration ports are mechanical.** Field mapping from YAML eliminates the most error-prone part of building integrations. The port interface and mapper are generated; the user only writes API-specific adapter logic.
+- **Transactional event publishing.** The outbox pattern ensures events are atomically persisted with domain writes. No lost events from process crashes.
 
 ### Negative
 
@@ -395,11 +526,11 @@ bun codegen entity entities/contact.yaml
 - **Postgres-as-event-bus is not pub/sub.** The outbox pattern provides persistence and ordering but not real-time fan-out. For real-time needs, the Drizzle backend should be swapped for Redis Streams or similar.
 - **More generated files.** Each subsystem adds 6-7 files. Four subsystems = ~25 files of infrastructure. This is boilerplate the user would otherwise write by hand, but it's visible in the tree.
 - **DynamicModule pattern has NestJS learning curve.** `forRoot()` with `global: true` is idiomatic NestJS but not obvious to newcomers. Generated code includes comments explaining the pattern.
+- **Ordering not guaranteed across aggregates.** Events for the same aggregate are ordered (insertion order in the outbox). Events across aggregates may be processed out of order depending on polling concurrency. This is acceptable for domain events but should be documented.
 
 ### Neutral
 
 - Integration adapters remain hand-written. This is intentional — API auth, pagination, rate limiting, and error handling are provider-specific and cannot be meaningfully generated.
-- The broadcast subsystem (`templates/broadcast/`) predates this ADR and follows the same pattern. It may be refactored to use the standard `forRoot()` factory, or left as-is since it already works.
 - Subsystem tables (`domain_events`, `job_queue`, `cache_entries`) are managed by the same migration tooling as entity tables. No separate migration path.
 
 ## Alternatives Considered
