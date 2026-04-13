@@ -1,7 +1,0 @@
-- [Dealbrain v2 Initiative](project_v2_initiative.md) — Three-track rebuild: codegen evolution, backend rebuild, agent port
-- [Doug - Architect](user_doug_role.md) — Sole architect driving v2, DDD/NestJS/codegen expert, values mechanical enforcement
-- [ORM + Analytics Decisions](feedback_orm_analytics_decisions.md) — Drizzle stays, Atlas for migrations, port MetricFlow pattern to TS
-- [EOD Milestone Status](project_eod_milestone_status.md) — Issues #1-#6 complete, integration harness (31 tests), PR #21 open
-- [Active Branch/PR](project_branch_and_pr.md) — claude/eod-milestone-92a711, PR #21 closes #2-#6
-- [Codegen Testing](feedback_codegen_testing.md) — Must run actual hygen generation + `bun test:integration` against real Postgres
-- [Next Session Bootstrap](project_next_session.md) — Commit harness, merge PR #21, then v0.1 issues #7-#11

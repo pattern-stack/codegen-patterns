@@ -22,6 +22,10 @@ apps/
 modules/
 packages/
 
+# Runtime artifacts
+agent-logs/
+codegen.config.yaml
+
 # IDE
 .vscode/
 .idea/
