@@ -16,7 +16,7 @@ import {
   BackendNamingConfigSchema,
   DEFAULT_BACKEND_NAMING,
   resolveLayerNaming as resolveLayer,
-} from '../schema/naming-config.schema.ts';
+} from '../schema/naming-config.schema.mjs';
 
 // ============================================================================
 // Deep Merge Utility

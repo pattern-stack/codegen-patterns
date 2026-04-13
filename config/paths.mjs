@@ -18,7 +18,7 @@ import path from 'node:path';
 import { projectConfig } from './config-loader.mjs';
 import { getNamingConfig } from './naming-config.mjs';
 import { applyCase, toPascalCase, getCaseSeparator } from './case-converters.mjs';
-import { FILE_TYPE_SUFFIXES } from '../schema/naming-config.schema.ts';
+import { FILE_TYPE_SUFFIXES } from '../schema/naming-config.schema.mjs';
 import { LOCATIONS } from './locations.mjs';
 
 // Re-export LOCATIONS for unified path + import configuration
@@ -585,6 +585,18 @@ export function getProjectConfig() {
   return projectConfig;
 }
 
+/**
+ * Get pipelines configuration from project config.
+ * Returns the pipelines block (or an empty object if not configured).
+ *
+ * Usage:
+ *   const pipelines = getPipelinesConfig();
+ *   const arch = pipelines?.backend?.architecture ?? 'clean';
+ */
+export function getPipelinesConfig() {
+  return projectConfig?.pipelines ?? {};
+}
+
 // Default export for convenience
 export default {
   // Layout options
@@ -612,6 +624,7 @@ export default {
   getLayoutConfig,
   getDatabaseDialect,
   getProjectConfig,
+  getPipelinesConfig,
   // NEW: Config-driven naming functions
   computeFileName,
   computeFileNaming,

@@ -1,0 +1,47 @@
+# Simplified Contact Entity — Scaffold Test Harness
+#
+# Stripped-down version of contact-v2.yaml for use by test/scaffold/validate.sh.
+# Differences from contact-v2.yaml:
+#   - family: base (instead of crm-synced) — CrmEntityRepository does not exist yet
+#   - No external_id_tracking behavior — not yet supported in templates
+#   - No FK relationships to other entities — avoids circular import issues in scaffold
+#   - No queries/sync/events blocks — those are v2-only schema additions
+#
+# This is intentionally minimal. The scaffold exists only to prove the codegen
+# pipeline compiles and serves HTTP traffic, not to exercise every feature.
+
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  family: base
+
+fields:
+  first_name:
+    type: string
+    required: true
+    max_length: 100
+
+  last_name:
+    type: string
+    required: true
+    max_length: 100
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+  title:
+    type: string
+    nullable: true
+    max_length: 200
+
+  phone:
+    type: string
+    nullable: true
+    max_length: 50
+
+behaviors:
+  - timestamps
+  - soft_delete

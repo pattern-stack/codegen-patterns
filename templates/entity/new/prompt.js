@@ -19,6 +19,7 @@ import {
   getLayoutConfig,
   getDatabaseDialect,
   getProjectConfig,
+  getPipelinesConfig,
 } from "../../../config/paths.mjs";
 import { getNamingConfig } from "../../../config/naming-config.mjs";
 
@@ -248,6 +249,11 @@ export default {
     const fields = definition.fields || {};
     const relationships = definition.relationships || {};
     const behaviors = definition.behaviors || [];
+
+    // v2 blocks (optional — absent in v1 entities)
+    const queriesBlock = definition.queries || null;
+    const syncBlock = definition.sync || null;
+    const eventsBlock = definition.events || null;
 
     // Helper functions
     const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -937,7 +943,141 @@ export default {
       }
     }
 
-    return {
+    // ============================================================================
+    // Architecture Target (from pipelines config)
+    // ============================================================================
+
+    const pipelinesConfig = getPipelinesConfig();
+    const architectureTarget = pipelinesConfig?.backend?.architecture ?? 'clean';
+
+    // ============================================================================
+    // v2: Family
+    // ============================================================================
+
+    const FAMILY_REPOSITORY_MAP = {
+      'crm-synced': 'CrmEntityRepository',
+      'activity': 'ActivityEntityRepository',
+      'knowledge': 'KnowledgeEntityRepository',
+      'metadata': 'MetadataEntityRepository',
+    };
+
+    const FAMILY_SERVICE_MAP = {
+      'crm-synced': 'CrmEntityService',
+      'activity': 'ActivityEntityService',
+      'knowledge': 'KnowledgeEntityService',
+      'metadata': 'MetadataEntityService',
+    };
+
+    const family = entity.family ?? null;
+    const hasFamily = family != null;
+    const familyBaseRepository = family ? (FAMILY_REPOSITORY_MAP[family] ?? null) : null;
+    const familyBaseService = family ? (FAMILY_SERVICE_MAP[family] ?? null) : null;
+
+    // ============================================================================
+    // v2: Queries
+    // ============================================================================
+
+    /**
+     * Derive a camelCase method name from a query spec.
+     *
+     * Rules:
+     *   select present → findXsByY  (e.g., select:[email], by:[opportunity_id] → findEmailsByOpportunityId)
+     *   otherwise      → findByX    (e.g., by:[user_id] → findByUserId)
+     *                                (e.g., by:[user_id, account_id] → findByUserIdAndAccountId)
+     */
+    function deriveQueryMethodName(query) {
+      const byFields = Array.isArray(query.by) ? query.by : [];
+      const selectFields = Array.isArray(query.select) ? query.select : [];
+
+      // Convert snake_case field list to PascalCase joined by "And"
+      const byPart = byFields.map((f) => pascalCase(f)).join('And');
+
+      if (selectFields.length > 0) {
+        // findEmailsByOpportunityId — select fields come first (plural implied)
+        const selectPart = selectFields.map((f) => pascalCase(f)).join('And') + 's';
+        return `find${selectPart}By${byPart}`;
+      }
+
+      return `findBy${byPart}`;
+    }
+
+    const hasQueries = queriesBlock != null && queriesBlock.length > 0;
+    const processedQueries = hasQueries
+      ? queriesBlock.map((q) => ({
+          // Raw YAML fields
+          by: q.by ?? [],
+          unique: q.unique ?? false,
+          select: q.select ?? null,
+          order: q.order ?? null,
+          limit: q.limit ?? null,
+          via: q.via ?? null,
+          // Derived
+          methodName: deriveQueryMethodName(q),
+          returnType: q.unique ? 'single' : 'array',
+          // Convenience flags
+          hasVia: q.via != null,
+          hasSelect: Array.isArray(q.select) && q.select.length > 0,
+          hasOrder: q.order != null,
+          hasLimit: q.limit != null,
+        }))
+      : [];
+
+    // ============================================================================
+    // v2: Sync
+    // ============================================================================
+
+    const hasSyncBlock = syncBlock != null;
+    const syncElectric = hasSyncBlock ? (syncBlock.electric ?? false) : false;
+    const rawSyncProviders = hasSyncBlock ? (syncBlock.providers ?? {}) : {};
+    const hasSyncProviders = Object.keys(rawSyncProviders).length > 0;
+
+    const syncProviders = hasSyncProviders
+      ? Object.entries(rawSyncProviders).map(([providerName, cfg]) => {
+          // Normalize field_mapping: { local: key, remote: value }[]
+          const rawMapping = cfg.field_mapping ?? {};
+          const fieldMapping = Object.entries(rawMapping).map(([local, remote]) => ({
+            local,
+            remote,
+          }));
+
+          return {
+            name: providerName,
+            remoteEntity: cfg.remote_entity ?? null,
+            direction: cfg.direction ?? 'bidirectional',
+            cdc: cfg.cdc ?? false,
+            fieldMapping,
+            readOnlyFields: cfg.read_only_fields ?? [],
+          };
+        })
+      : [];
+
+    // ============================================================================
+    // v2: Events
+    // ============================================================================
+
+    const hasEvents = eventsBlock != null && eventsBlock.length > 0;
+    const processedEvents = hasEvents
+      ? eventsBlock.map((ev) => {
+          // Convert body: { field: type } to array of { field, type }
+          const rawBody = ev.body ?? {};
+          const body = Object.entries(rawBody).map(([field, type]) => ({ field, type }));
+
+          // Derive class names from event name (snake_case → PascalCase + Event)
+          const className = pascalCase(ev.name) + 'Event';
+          const handlerClassName = pascalCase(ev.name) + 'Handler';
+
+          return {
+            name: ev.name,
+            queue: ev.queue ?? null,
+            body,
+            generateHandler: ev.generate_handler ?? false,
+            className,
+            handlerClassName,
+          };
+        })
+      : [];
+
+    const locals = {
       // Database configuration
       databaseDialect,
       schemaDir: BASE_PATHS.schemaDir,
@@ -1121,6 +1261,69 @@ export default {
       // Electric SQL where clause (derived from entity FK fields)
       electricWhereColumn,
       electricWhereValue,
+
+      // ======================================================================
+      // v2 variables
+      // ======================================================================
+
+      // Architecture target (from pipelines.backend.architecture config)
+      architectureTarget,
+
+      // Family
+      family,
+      hasFamily,
+      familyBaseRepository,
+      familyBaseService,
+
+      // Queries
+      hasQueries,
+      processedQueries,
+
+      // Sync
+      hasSyncBlock,
+      syncElectric,
+      hasSyncProviders,
+      syncProviders,
+
+      // Events
+      hasEvents,
+      processedEvents,
     };
+
+    // Clean-Lite-PS template locals (only when generate.cleanLitePs: true)
+    const projectConfig = getProjectConfig();
+    const cleanLitePs = projectConfig?.generate?.cleanLitePs ?? false;
+    if (cleanLitePs) {
+      const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
+      Object.assign(locals, buildCleanLitePsLocals(definition, locals));
+    } else {
+      // Inject safe stub locals so CLP template bodies can render without crashing.
+      // The to: guard resolves to "null" which causes Hygen to skip file writing.
+      const _n = definition.entity?.name || '';
+      const _p = definition.entity?.plural || _n + 's';
+      Object.assign(locals, {
+        clpOutputPaths: undefined,
+        entityName: _n,
+        entityNamePlural: _p,
+        entityNamePascal: _n,
+        entityNamePluralPascal: _p,
+        classNames: {},
+        clpDrizzleImports: [],
+        clpProcessedFields: [],
+        clpCreateDtoFields: [],
+        clpOutputDtoFields: [],
+        clpBelongsTo: [],
+        clpBelongsToFkFields: [],
+        clpHasRelationsBlock: false,
+        repositoryBaseClass: '',
+        serviceBaseClass: '',
+        repositoryBaseImport: '',
+        serviceBaseImport: '',
+        repositoryInheritedMethods: [],
+        serviceInheritedMethods: [],
+      });
+    }
+
+    return locals;
   },
 };

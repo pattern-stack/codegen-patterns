@@ -1,0 +1,10 @@
+{
+  "extends": "./test/scaffold/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@gen/*": ["./*"],
+      "@shared/*": ["./test/scaffold/shared/*"]
+    }
+  }
+}

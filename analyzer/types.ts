@@ -52,14 +52,49 @@ export interface ParsedRelationship {
 	resolved: boolean;
 }
 
+export type EntityFamily = 'crm-synced' | 'activity' | 'knowledge' | 'metadata';
+
+export interface ParsedQuery {
+	by: string[];
+	unique?: boolean;
+	select?: string[];
+	order?: string;
+	limit?: boolean;
+	via?: string;
+}
+
+export interface ParsedProviderSync {
+	remoteEntity: string;
+	direction: 'inbound' | 'outbound' | 'bidirectional';
+	cdc: boolean;
+	fieldMapping?: Record<string, string>;
+	readOnlyFields?: string[];
+}
+
+export interface ParsedSync {
+	electric: boolean;
+	providers?: Record<string, ParsedProviderSync>;
+}
+
+export interface ParsedEvent {
+	name: string;
+	queue: string;
+	body: Record<string, string>;
+	generateHandler: boolean;
+}
+
 export interface ParsedEntity {
 	name: string;
 	plural: string;
 	table: string;
+	family?: EntityFamily;
 	folderStructure: 'nested' | 'flat';
 	fields: Map<string, ParsedField>;
 	relationships: Map<string, ParsedRelationship>;
 	behaviors: string[];
+	queries?: ParsedQuery[];
+	sync?: ParsedSync;
+	events?: ParsedEvent[];
 	sourcePath: string;
 }
 
