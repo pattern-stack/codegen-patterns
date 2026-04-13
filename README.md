@@ -1,511 +1,230 @@
-# Entity Code Generation System
+# codegen-patterns
 
-Generate full-stack entity scaffolding from YAML definitions. Creates domain entities, repositories, use cases, queries, DTOs, Drizzle schemas, REST controllers, and NestJS modules.
+Entity-driven code generation for full-stack TypeScript apps. Define entities in YAML, generate Clean Architecture scaffolding — domain entities, repositories, use cases, DTOs, Drizzle schemas, NestJS modules, controllers, and frontend collections.
 
-## Installation
+## Setup
 
 ```bash
-# Install dependencies
 bun install
+```
 
-# Peer dependency
-bun add -d hygen
+Requires [mise](https://mise.jdx.dev) for runtime management and [just](https://just.systems) for task running:
+
+```bash
+mise install        # install pinned bun + node versions
+just install        # install all deps (root + scaffold)
 ```
 
 ## Quick Start
 
 ```bash
-# 1. Create codegen.config.yaml in your project root (see Configuration below)
-
-# 2. Define your entity in YAML
-cat > entities/opportunity.yaml << 'EOF'
+# Define an entity
+cat > entities/contact.yaml << 'YAML'
 entity:
-  name: opportunity
-  plural: opportunities
-  table: opportunities
+  name: contact
+  plural: contacts
+  table: contacts
 
 fields:
-  id:
-    type: uuid
-    required: false
-  name:
+  email:
     type: string
     required: true
     max_length: 255
-  amount:
-    type: decimal
-    nullable: true
+  first_name:
+    type: string
+    required: true
+  account_id:
+    type: uuid
+    foreign_key: accounts.id
+
+behaviors:
+  - timestamps
+  - soft_delete
 
 relationships:
   account:
     type: belongs_to
     target: account
     foreign_key: account_id
-EOF
+YAML
 
-# 3. Generate the entity
-bun codegen entity entities/opportunity.yaml
-
-# 4. Run database migration (project-specific)
-bun run db:generate --name add-opportunity
-bun run db:migrate
+# Generate
+just gen entities/contact.yaml
 ```
+
+## What Gets Generated
+
+**Clean Architecture** (default):
+```
+{backend_src}/
+├── domain/{entity}/           # Entity class + repository interface
+├── application/
+│   ├── commands/{entity}/     # Create, Update, Delete
+│   ├── queries/{entity}/      # GetById, List, + declarative queries
+│   └── schemas/               # Zod DTOs
+├── infrastructure/persistence/
+│   ├── drizzle/               # Drizzle schema
+│   └── repositories/          # Repository implementation
+├── presentation/rest/         # REST controller
+└── modules/                   # NestJS module wiring
+```
+
+**Clean-Lite-PS** (`generate.cleanLitePs: true`):
+```
+modules/{plural}/
+├── {entity}.entity.ts         # Drizzle table + types
+├── {entity}.repository.ts     # Extends family base class
+├── {entity}.service.ts        # Extends family base service
+├── {entity}.controller.ts     # REST endpoints
+├── {plural}.module.ts         # NestJS module
+├── dto/                       # Create, Update, Output DTOs
+├── use-cases/                 # FindById, List
+└── index.ts                   # Barrel export
+```
+
+## Entity YAML Schema
+
+```yaml
+entity:
+  name: contact                     # singular snake_case
+  plural: contacts                  # plural form
+  table: contacts                   # database table name
+  folder_structure: nested          # nested | flat
+  family: crm-synced               # optional: crm-synced | activity | metadata | knowledge
+
+fields:
+  email:
+    type: string                    # string | integer | decimal | boolean | uuid | date | datetime | json | enum
+    required: true
+    max_length: 255
+    index: true
+  status:
+    type: enum
+    choices: [active, inactive]
+
+behaviors:
+  - timestamps                      # createdAt, updatedAt
+  - soft_delete                     # deletedAt + query filtering
+  - user_tracking                   # createdBy, updatedBy
+
+relationships:
+  account:
+    type: belongs_to                # belongs_to | has_many | has_one
+    target: account
+    foreign_key: account_id
+
+queries:                            # Declarative query generation
+  - by: [user_id]                   # → findByUserId(): Promise<Contact[]>
+  - by: [email]                     # → findByEmail(): Promise<Contact | null>
+    unique: true
+  - by: [account_id]               # → findByAccountId(): ordered
+    order: created_at desc
+  - by: [user_id, account_id]      # → compound WHERE
+```
+
+## Entity Families
+
+Families provide pre-built base classes with domain-specific query patterns:
+
+| Family | Use Case | Inherited Methods |
+|--------|----------|-------------------|
+| `crm-synced` | CRM entities (contacts, accounts) | `findByExternalId`, `findAllByUserId`, `syncUpsert` |
+| `activity` | Time-based events (emails, calls) | `findByDateRange`, `findByUserId`, `findRecentByOpportunityId` |
+| `metadata` | Key-value data (field values, tags) | `findByEntityIdAndType`, `listByEntityId`, `upsertMany` |
+| `knowledge` | Vector-searchable content | Stub (needs pgvector) |
+| *(none)* | Generic entities | Base CRUD only |
 
 ## Configuration
 
-Create `codegen.config.yaml` in your project root to configure output paths:
+Create `codegen.config.yaml` in your project root:
 
 ```yaml
-# Database dialect
-database:
-  dialect: postgres  # postgres | sqlite
-
-# Output paths (relative to project root)
 paths:
-  # Backend source directory
-  backend_src: app/backend/src
+  backend_src: src
+  frontend_src: apps/frontend/src
 
-  # Frontend source directory (set to null to skip frontend generation)
-  frontend_src: app/frontend/src
-
-  # Shared packages directory
-  packages: packages
-
-  # Schema directory (relative to backend_src)
-  schema_dir: infrastructure/persistence/drizzle
-
-  # Entity definitions directory
-  entities_dir: entities
-
-  # Manifest output directory
-  manifest_dir: .codegen
-```
-
-### Locations (Path + Import Mapping)
-
-Each location defines both where files are written and how to import them:
-
-```yaml
-# Override default locations in codegen.config.yaml
-locations:
-  # Shared packages
-  dbEntities:
-    path: packages/db/src/entities        # filesystem path
-    import: "@repo/db/entities"           # TypeScript import alias
-
-  # Frontend
-  frontendCollections:
-    path: apps/frontend/src/lib/collections
-    import: "@/lib/collections"
-
-  frontendStore:
-    path: apps/frontend/src/lib/store
-    import: "@/lib/store"
-
-  # Add any location to override defaults
-```
-
-See `config/locations.mjs` for all available locations and their defaults.
-
-### Backend Naming Conventions
-
-Control file and class naming patterns for generated backend code:
-
-```yaml
-naming:
-  fileCase: kebab-case       # kebab-case | camelCase | snake_case | PascalCase
-  suffixStyle: dotted        # dotted (.entity.ts) | suffixed (Entity.ts) | worded (-entity.ts)
-  entityInclusion: always    # always | never | flat-only
-  terminology:
-    command: use-case        # command | use-case
-    query: query             # query | use-case
-```
-
-| Option | Values | Default | Description |
-|--------|--------|---------|-------------|
-| `fileCase` | `kebab-case`, `camelCase`, `snake_case`, `PascalCase` | `kebab-case` | File name casing |
-| `suffixStyle` | `dotted`, `suffixed`, `worded` | `dotted` | How suffixes are applied |
-| `entityInclusion` | `always`, `never`, `flat-only` | `flat-only` | When entity name appears in filenames |
-| `terminology.command` | `command`, `use-case` | `command` | Write operation naming |
-| `terminology.query` | `query`, `use-case` | `query` | Read operation naming |
-
-**Example outputs by configuration:**
-
-| Config | Entity File | Command File | Query File |
-|--------|-------------|--------------|------------|
-| Default | `opportunity.entity.ts` | `create.command.ts` | `get-by-id.query.ts` |
-| `entityInclusion: always` | `opportunity.entity.ts` | `create-opportunity.command.ts` | `get-opportunity-by-id.query.ts` |
-| `terminology.command: use-case` | `opportunity.entity.ts` | `create-opportunity.use-case.ts` | `get-opportunity-by-id.query.ts` |
-| `suffixStyle: suffixed` + `PascalCase` | `OpportunityEntity.ts` | `CreateOpportunityCommand.ts` | `GetOpportunityByIdQuery.ts` |
-
-### Generation Toggles
-
-Control which outputs are generated (all default to `true`):
-
-```yaml
 generate:
-  # Frontend
-  fieldMetadata: true      # Generate field metadata
-  collections: true        # Generate standalone collection files
-  hooks: true              # Generate standalone hooks files
-  mutations: true          # Generate mutation functions
-
-  # Backend
-  drizzleSchema: true      # Generate Drizzle schema
-  commands: true           # Generate application commands
-  queries: true            # Generate application queries
-  dtos: true               # Generate application DTOs
-
-  # Frontend structure/options
-  structure: 'monolithic'  # Output structure: monolithic | entity-first | concern-first
-  typeNaming: 'plain'      # 'plain' = Opportunity, 'entity' = OpportunityEntity
-  fkResolution: true       # Import related collections for FK resolution
-  collectionNaming: 'singular'  # 'singular' = opportunityCollection, 'plural' = opportunitiesCollection
-  fileNaming: 'singular'   # 'singular' = opportunity.ts, 'plural' = opportunities.ts
-  hookReturnStyle: 'generic'  # 'generic' = { data }, 'named' = { opportunities }
-```
-
-Set any toggle to `false` to skip generating that output. Backend toggles only prevent file generation; other generated files may still reference those outputs, so provide manual implementations if you disable them.
-
-### Full Example: Clean Architecture (Dealbrain-style)
-
-A complete configuration matching Clean Architecture with UseCase terminology:
-
-```yaml
-database:
-  dialect: postgres
+  cleanLitePs: true               # Use Clean-Lite-PS architecture
+  commands: true                   # Generate write commands
+  queries: true                    # Generate read queries
 
 naming:
-  fileCase: kebab-case
-  suffixStyle: dotted
-  entityInclusion: always
+  fileCase: kebab-case             # kebab-case | PascalCase | camelCase | snake_case
+  suffixStyle: dotted              # dotted (.entity.ts) | suffixed (Entity.ts)
   terminology:
-    command: use-case    # → create-user.use-case.ts, CreateUserUseCase
-    query: query         # → get-user-by-id.query.ts, GetUserByIdQuery
+    command: use-case              # command | use-case
+    query: query                   # query | use-case
 
 locations:
-  # Application layer uses "applications" (plural) with use-cases folder
   backendCommands:
     path: src/applications/use-cases
     import: '@backend/applications/use-cases'
-  backendQueries:
-    path: src/applications/queries
-    import: '@backend/applications/queries'
-  backendSchemas:
-    path: src/applications/schemas
-    import: '@backend/applications/schemas'
-
-  # Modules under infrastructure
-  backendModules:
-    path: src/infrastructure/modules
-    import: '@backend/infrastructure/modules'
-
-paths:
-  backend_src: src
 ```
 
-This generates:
-```
-src/
-├── applications/
-│   ├── use-cases/
-│   │   ├── create-user.use-case.ts      # CreateUserUseCase
-│   │   ├── update-user.use-case.ts      # UpdateUserUseCase
-│   │   └── delete-user.use-case.ts      # DeleteUserUseCase
-│   ├── queries/
-│   │   ├── get-user-by-id.query.ts      # GetUserByIdQuery
-│   │   └── get-all-users.query.ts       # GetAllUsersQuery
-│   └── schemas/
-│       └── user.dto.ts
-├── domain/
-│   └── user/
-│       ├── user.entity.ts               # User class
-│       └── user.repository.interface.ts # IUserRepository
-├── infrastructure/
-│   ├── modules/
-│   │   └── users.module.ts              # UsersModule
-│   └── database/
-│       └── repositories/
-│           └── user.repository.ts       # UserRepository
-└── presentation/
-    └── rest/
-        └── users.controller.ts          # UsersController
-```
-
-### Environment Variables
-
-Override config at runtime:
-
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `CODEGEN_TEMPLATES_DIR` | Path to Hygen templates | `<codegen>/templates` |
-| `CODEGEN_ENTITIES_DIR` | Path to entity YAML files | `entities/` |
-| `CODEGEN_MANIFEST_DIR` | Directory for manifest.json | `.codegen/` |
-
-## CLI Commands
+Auto-detect your project's conventions:
 
 ```bash
-# ═══════════════════════════════════════════════════════════════
-# CODE GENERATION
-# ═══════════════════════════════════════════════════════════════
-bun codegen entity entities/opportunity.yaml   # Generate single entity
-bun codegen all                                # Generate all entities
-bun codegen all --entities-dir path/to/yaml    # Custom entities directory
-bun codegen broadcast                          # Generate WebSocket infrastructure
-
-# ═══════════════════════════════════════════════════════════════
-# PROJECT SCANNING
-# ═══════════════════════════════════════════════════════════════
-bun codegen scan .                          # Scan project, generate config
-bun codegen scan . -v                       # Verbose output with evidence
-
-# ═══════════════════════════════════════════════════════════════
-# DOMAIN ANALYSIS
-# ═══════════════════════════════════════════════════════════════
-bun codegen validate entities/              # Validate YAML files only
-bun codegen analyze entities/               # Full analysis with graph & issues
-bun codegen stats entities/                 # Statistics only
-bun codegen doc entities/ -o domain.md      # Generate documentation
-
-# ═══════════════════════════════════════════════════════════════
-# MANIFEST & TRANSITIVE SUGGESTIONS
-# ═══════════════════════════════════════════════════════════════
-bun codegen manifest entities/              # Update .codegen/manifest.json
-bun codegen manifest entities/ --force      # Force re-scan even if fresh
-bun codegen suggestions                     # Review pending suggestions
-bun codegen suggestions --accept <id>       # Accept a suggestion
-bun codegen suggestions --skip <id>         # Skip a suggestion
-bun codegen suggestions --accept-all        # Accept all pending
-
-# Options
--f, --format <format>     # Output: console (default), json, markdown
--o, --output <file>       # Write to file instead of stdout
--s, --strict              # Treat warnings as errors (exit 1)
--e, --entity <name>       # Focus on specific entity
--v, --verbose             # Show detailed detection results
---entities-dir <path>     # Override entities directory
---force                   # Force re-scan (manifest command)
+just scan                          # generates codegen.config.yaml
 ```
 
-## YAML Schema
-
-```yaml
-# Entity metadata
-entity:
-  name: opportunity          # Singular name (snake_case)
-  plural: opportunities      # Plural form
-  table: opportunities       # Database table name
-  folder_structure: nested   # 'nested' or 'flat'
-
-# Field definitions
-fields:
-  id:
-    type: uuid
-    required: false
-
-  account_id:
-    type: uuid
-    required: true
-    foreign_key: accounts.id  # FK reference (table.column)
-    index: true               # Create database index
-
-  name:
-    type: string
-    required: true
-    max_length: 255           # String length constraint
-
-  amount:
-    type: decimal
-    nullable: true            # Allow NULL in database
-
-  probability:
-    type: integer
-    nullable: true
-    min: 0                    # Validation constraint
-    max: 100
-
-  status:
-    type: enum
-    choices: [open, won, lost]
-    required: true
-
-# Relationship definitions
-relationships:
-  account:
-    type: belongs_to          # belongs_to, has_many, has_one
-    target: account           # Target entity name
-    foreign_key: account_id   # FK field in this entity
-
-  deals:
-    type: has_many
-    target: deal
-    foreign_key: opportunity_id  # FK in the related entity
-```
-
-## Field Types
-
-| YAML Type  | TypeScript | Drizzle          | Zod                 |
-|------------|------------|------------------|---------------------|
-| `string`   | `string`   | `varchar`        | `z.string()`        |
-| `integer`  | `number`   | `integer`        | `z.number().int()`  |
-| `decimal`  | `number`   | `doublePrecision`| `z.number()`        |
-| `boolean`  | `boolean`  | `boolean`        | `z.boolean()`       |
-| `uuid`     | `string`   | `uuid`           | `z.string().uuid()` |
-| `date`     | `Date`     | `date`           | `z.coerce.date()`   |
-| `datetime` | `Date`     | `timestamp`      | `z.coerce.date()`   |
-| `json`     | `unknown`  | `jsonb`          | `z.unknown()`       |
-| `enum`     | union      | `varchar`        | `z.enum()`          |
-
-## UI Metadata
-
-Fields can include optional UI metadata for automatic admin panel generation:
-
-```yaml
-fields:
-  name:
-    type: string
-    required: true
-
-    # UI metadata (all optional - sensible defaults inferred)
-    ui_label: "Opportunity Name"     # Display label
-    ui_type: text                    # Input type
-    ui_importance: primary           # primary | secondary | tertiary
-    ui_group: identification         # Logical grouping for forms
-    ui_sortable: true                # Enable column sorting
-    ui_filterable: true              # Enable column filtering
-    ui_visible: true                 # Show in UI
-    ui_placeholder: "Enter name..."  # Input placeholder
-    ui_help: "The display name"      # Help text
-```
-
-## Generated Output Structure
-
-Running codegen generates files following Clean Architecture:
-
-```
-{backend_src}/
-├── domain/{entity}/
-│   ├── {entity}.entity.ts              # Domain entity
-│   └── {entity}.repository.interface.ts # Repository contract
-├── application/
-│   ├── commands/{entity}/              # Create, Update, Delete
-│   ├── queries/{entity}/               # GetById, List
-│   └── schemas/{entity}.dto.ts         # Zod DTOs
-├── infrastructure/persistence/
-│   ├── {schema_dir}/{entity}.schema.ts # Drizzle schema
-│   └── repositories/{entity}.repository.ts
-├── presentation/rest/
-│   └── {plural}.controller.ts          # REST endpoints
-└── modules/
-    └── {plural}.module.ts              # NestJS module
-
-{frontend_src}/
-├── lib/collections/{entity}.ts         # Electric collection
-├── lib/store/entities/{entity}.ts      # Entity hooks
-└── lib/entities/{entity}.ts            # Entity metadata
-
-{packages}/db/src/entities/
-└── {entity}.ts                         # Shared Zod schema
-```
-
-## WebSocket Broadcast Infrastructure
-
-Generate real-time broadcast infrastructure for entity updates:
+## Commands
 
 ```bash
-bun codegen broadcast
+# Dev
+just gen entities/contact.yaml     # Generate single entity
+just gen-all                       # Generate all entities
+just scan                          # Auto-detect project patterns
+
+# Test
+just test-unit                     # Unit tests (base classes, ~40ms)
+just test-family                   # Family repo integration tests (needs Docker)
+just test-baseline                 # Baseline snapshot test (generate + compare)
+just test-integration              # Full integration (Docker + codegen + NestJS)
+just validate                      # End-to-end scaffold validation
+
+# Domain Analysis
+just validate-entities             # Validate YAML files
+just analyze                       # Dependency graph + issues
+just stats                         # Entity statistics
+
+# Release
+just bump patch                    # Bump version (patch | minor | major)
+just release                       # Tag + push
+
+# Database (scaffold)
+just db-up                         # Start Postgres
+just db-push                       # Push schema
+just db-down                       # Stop Postgres
 ```
 
-Creates a NestJS module with WebSocket gateway, channel abstraction, and pluggable backends (memory, WebSocket). Useful for pushing entity changes to connected clients.
+## Claude Code Skill
 
-## Project Scanning
-
-The `scan` command auto-detects your project's patterns and generates a config file:
+Install the codegen skill into your project to teach Claude how to use it:
 
 ```bash
-bun codegen scan .
+just install-skill /path/to/my-app
 ```
 
-Detects:
-- **Framework**: NestJS, Express, Fastify, etc.
-- **ORM**: Drizzle, Prisma, TypeORM, etc.
-- **Architecture**: Clean Architecture, MVC, layered, etc.
-- **Naming conventions**: File casing, suffixes, etc.
-
-Outputs a `codegen.config.yaml` with confidence scores for each detection.
-
-## Transitive Relationship Suggestions
-
-The manifest tracks your domain model and suggests "through" relationships when it detects multi-hop paths between entities.
-
-```bash
-# Scan entities and update manifest
-bun codegen manifest entities/
-
-# Review suggestions (e.g., if Person → Organization → Opportunity exists,
-# suggests Person → Opportunity through Organization)
-bun codegen suggestions
-
-# Accept or skip suggestions
-bun codegen suggestions --accept "person->opportunity"
-bun codegen suggestions --skip-all
-```
-
-Suggestions include YAML snippets to add to your entity files.
+This copies a skill definition to `.claude/skills/codegen/` that Claude Code auto-detects when you ask it to create entities, scaffold modules, or add API endpoints.
 
 ## Architecture
 
-The generator follows layered Clean Architecture:
-
 ```
-Presentation → Application → Domain ← Infrastructure
-     │              │           │            │
- Controllers    Commands    Entities    Repositories
-     │          Queries    Interfaces   Drizzle Schemas
-     └──────────────┴───────────┴────────────┘
-                        ↓
-                  NestJS Module
+YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated Code
 ```
 
-## Testing
-
-```bash
-# Capture current output as baseline
-bun test/run-test.ts baseline
-
-# Run full test (generate + compare to baseline)
-bun test/run-test.ts full
-
-# Generate only (without comparison)
-bun test/run-test.ts generate
-
-# Compare gen/ to baseline/ (without regenerating)
-bun test/run-test.ts compare
-```
-
-## Customization
-
-### Adding a new field type
-
-Edit `templates/entity/new/prompt.js` and add mappings to `tsTypes`, `drizzleTypes`, and `zodTypes`.
-
-### Modifying generated code
-
-Edit the relevant `.ejs.t` template:
-
-| Layer | Template Location |
-|-------|------------------|
-| Domain entities | `templates/entity/new/backend/domain/` |
-| Database schemas | `templates/entity/new/backend/database/` |
-| Commands (CRUD) | `templates/entity/new/backend/application/commands/` |
-| Queries | `templates/entity/new/backend/application/queries/` |
-| DTOs | `templates/entity/new/backend/application/schemas/` |
-| Controllers | `templates/entity/new/backend/presentation/` |
-| NestJS modules | `templates/entity/new/backend/modules/` |
-| Frontend | `templates/entity/new/frontend/` |
-| Shared schemas | `templates/entity/new/shared/` |
-
-Templates prefixed with `_inject-` modify existing files. Others create new files.
+| Directory | Purpose |
+|-----------|---------|
+| `cli.ts` | CLI entry point |
+| `parser/` | YAML loading and cross-reference resolution |
+| `analyzer/` | Graph building, consistency checking, suggestions |
+| `scanner/` | Project pattern detection |
+| `schema/` | Zod validation schemas |
+| `behaviors/` | Shared entity behaviors (timestamps, soft delete) |
+| `config/` | Config loader, paths, locations, naming |
+| `templates/` | Hygen EJS templates (the core product) |
+| `shared/` | Base classes shipped to consumer projects |
+| `test/` | Baseline snapshots, fixtures, scaffold integration |
 
 ## License
 
