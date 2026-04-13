@@ -956,14 +956,14 @@ export default {
     // ============================================================================
 
     const FAMILY_REPOSITORY_MAP = {
-      'crm-synced': 'CrmEntityRepository',
+      'synced': 'SyncedEntityRepository',
       'activity': 'ActivityEntityRepository',
       'knowledge': 'KnowledgeEntityRepository',
       'metadata': 'MetadataEntityRepository',
     };
 
     const FAMILY_SERVICE_MAP = {
-      'crm-synced': 'CrmEntityService',
+      'synced': 'SyncedEntityService',
       'activity': 'ActivityEntityService',
       'knowledge': 'KnowledgeEntityService',
       'metadata': 'MetadataEntityService',

@@ -26,7 +26,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';
 
-/** CRM family test table */
+/** Synced family test table */
 export const crmEntities = pgTable('crm_entities', {
   id: uuid('id').primaryKey().defaultRandom(),
   externalId: text('external_id'),

@@ -26,7 +26,7 @@ describe('family enum', () => {
 	};
 
 	it('accepts all four family values', () => {
-		for (const family of ['crm-synced', 'activity', 'knowledge', 'metadata']) {
+		for (const family of ['synced', 'activity', 'knowledge', 'metadata']) {
 			const result = EntityDefinitionSchema.safeParse({
 				...base,
 				entity: { ...base.entity, family },
@@ -290,7 +290,7 @@ describe('contact-v2.yaml integration', () => {
 		const result = loadEntityFromYaml(resolve('test/fixtures/contact-v2.yaml'));
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.definition.entity.family).toBe('crm-synced');
+			expect(result.definition.entity.family).toBe('synced');
 			expect(result.definition.queries).toHaveLength(6);
 			expect(result.definition.sync?.electric).toBe(true);
 			expect(result.definition.events).toHaveLength(3);
@@ -301,7 +301,7 @@ describe('contact-v2.yaml integration', () => {
 		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
 		const contact = result.entities[0];
 
-		expect(contact.family).toBe('crm-synced');
+		expect(contact.family).toBe('synced');
 		expect(contact.behaviors).toContain('external_id_tracking');
 		expect(contact.queries).toHaveLength(6);
 		expect(contact.sync?.electric).toBe(true);

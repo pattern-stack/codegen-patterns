@@ -18,7 +18,7 @@ const contactDefinition = {
     name: 'contact',
     plural: 'contacts',
     table: 'contacts',
-    family: 'crm-synced',
+    family: 'synced',
   },
   fields: {
     user_id: { type: 'uuid', required: true },
@@ -81,14 +81,14 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.classNames.outputSchema).toBe('ContactOutputSchema');
   });
 
-  it('maps crm-synced family to CrmEntityRepository and CrmEntityService', () => {
+  it('maps synced family to SyncedEntityRepository and SyncedEntityService', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
 
-    expect(locals.family).toBe('crm-synced');
-    expect(locals.repositoryBaseClass).toBe('CrmEntityRepository');
-    expect(locals.serviceBaseClass).toBe('CrmEntityService');
-    expect(locals.repositoryBaseImport).toBe('@shared/base-classes/crm-entity-repository');
-    expect(locals.serviceBaseImport).toBe('@shared/base-classes/crm-entity-service');
+    expect(locals.family).toBe('synced');
+    expect(locals.repositoryBaseClass).toBe('SyncedEntityRepository');
+    expect(locals.serviceBaseClass).toBe('SyncedEntityService');
+    expect(locals.repositoryBaseImport).toBe('@shared/base-classes/synced-entity-repository');
+    expect(locals.serviceBaseImport).toBe('@shared/base-classes/synced-entity-service');
   });
 
   it('maps activity family to ActivityEntityRepository and ActivityEntityService', () => {

@@ -95,7 +95,7 @@ Base classes in `shared/base-classes/`:
 
 | Family | Repository | Service |
 |--------|-----------|---------|
-| `crm-synced` | CrmEntityRepository | CrmEntityService |
+| `synced` | SyncedEntityRepository | SyncedEntityService |
 | `activity` | ActivityEntityRepository | ActivityEntityService |
 | `metadata` | MetadataEntityRepository | MetadataEntityService |
 | `knowledge` | KnowledgeEntityRepository (stub) | KnowledgeEntityService (stub) |

@@ -6,7 +6,7 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-  family: crm-synced
+  family: synced
   folder_structure: nested
 
 fields:

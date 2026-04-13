@@ -199,7 +199,7 @@ just test-baseline      # generate from fixtures + compare to baseline/
 
 ## Next Steps
 
-- **Entity families** — assign `family: crm-synced` (or `activity`, `metadata`, `knowledge`) in your YAML to inherit domain-specific query patterns. See [ADR-005](architecture/adrs/ADR-005-entity-family-base-classes.md).
+- **Entity families** — assign `family: synced` (or `activity`, `metadata`, `knowledge`) in your YAML to inherit domain-specific query patterns. See [ADR-005](architecture/adrs/ADR-005-entity-family-base-classes.md).
 - **Declarative queries** — the `queries:` block generates typed repository methods with compound filters and ordering. No hand-written SQL.
 - **Subsystem architecture** — events, jobs, cache, and storage follow the Protocol/Backend/Factory pattern. See [ADR-008](architecture/adrs/ADR-008-subsystem-architecture.md).
 - **Claude Code skill** — run `just install-skill /path/to/my-app` to teach Claude Code how to generate entities in your project.

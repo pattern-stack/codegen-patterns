@@ -90,7 +90,7 @@ entity:
   plural: contacts                  # plural form
   table: contacts                   # database table name
   folder_structure: nested          # nested | flat
-  family: crm-synced               # optional: crm-synced | activity | metadata | knowledge
+  family: synced               # optional: synced | activity | metadata | knowledge
 
 fields:
   email:
@@ -128,7 +128,7 @@ Families provide pre-built base classes with domain-specific query patterns:
 
 | Family | Use Case | Inherited Methods |
 |--------|----------|-------------------|
-| `crm-synced` | CRM entities (contacts, accounts) | `findByExternalId`, `findAllByUserId`, `syncUpsert` |
+| `synced` | Synced entities (contacts, accounts) | `findByExternalId`, `findAllByUserId`, `syncUpsert` |
 | `activity` | Time-based events (emails, calls) | `findByDateRange`, `findByUserId`, `findRecentByOpportunityId` |
 | `metadata` | Key-value data (field values, tags) | `findByEntityIdAndType`, `listByEntityId`, `upsertMany` |
 | `knowledge` | Vector-searchable content | Stub (needs pgvector) |

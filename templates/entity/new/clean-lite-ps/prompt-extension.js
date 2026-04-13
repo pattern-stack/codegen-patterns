@@ -10,11 +10,11 @@
 // ============================================================================
 
 const FAMILY_MAP = {
-  'crm-synced': {
-    repositoryBaseClass: 'CrmEntityRepository',
-    serviceBaseClass: 'CrmEntityService',
-    repositoryBaseImport: '@shared/base-classes/crm-entity-repository',
-    serviceBaseImport: '@shared/base-classes/crm-entity-service',
+  'synced': {
+    repositoryBaseClass: 'SyncedEntityRepository',
+    serviceBaseClass: 'SyncedEntityService',
+    repositoryBaseImport: '@shared/base-classes/synced-entity-repository',
+    serviceBaseImport: '@shared/base-classes/synced-entity-service',
     repositoryInheritedMethods: [
       'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
       'findByExternalId, findAllByUserId, findVisibleByUserId, syncUpsert',

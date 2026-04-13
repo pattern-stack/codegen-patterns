@@ -1,21 +1,21 @@
 /**
- * CrmEntityService unit tests
+ * SyncedEntityService unit tests
  *
  * Verifies that family-specific methods delegate to the repository.
  */
 import { describe, it, expect, mock } from 'bun:test';
-import { CrmEntityService, type ICrmEntityRepository } from './crm-entity-service';
+import { SyncedEntityService, type ISyncedEntityRepository } from './synced-entity-service';
 
 interface TestEntity {
   id: string;
   name: string;
 }
 
-class TestCrmService extends CrmEntityService<ICrmEntityRepository<TestEntity>, TestEntity> {}
+class TestCrmService extends SyncedEntityService<ISyncedEntityRepository<TestEntity>, TestEntity> {}
 
 function makeMockRepo(
-  overrides: Partial<ICrmEntityRepository<TestEntity>> = {},
-): ICrmEntityRepository<TestEntity> {
+  overrides: Partial<ISyncedEntityRepository<TestEntity>> = {},
+): ISyncedEntityRepository<TestEntity> {
   return {
     findById: mock(async () => null),
     findByIds: mock(async () => []),
@@ -34,7 +34,7 @@ function makeMockRepo(
   };
 }
 
-describe('CrmEntityService', () => {
+describe('SyncedEntityService', () => {
   describe('findByExternalId', () => {
     it('delegates to repository.findByExternalId', async () => {
       const entity: TestEntity = { id: '1', name: 'Contact' };

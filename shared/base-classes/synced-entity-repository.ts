@@ -1,7 +1,7 @@
 /**
- * CrmEntityRepository<TEntity>
+ * SyncedEntityRepository<TEntity>
  *
- * Family-specific base for CRM-synced entities (contacts, accounts, opportunities).
+ * Family-specific base for Synced entities (contacts, accounts, opportunities).
  * Adds external ID lookups, user-scoped queries, and sync stubs.
  *
  * Concrete repos extend this and declare their table + behaviors.
@@ -9,7 +9,7 @@
 import { eq, inArray } from 'drizzle-orm';
 import { BaseRepository } from './base-repository';
 
-export abstract class CrmEntityRepository<TEntity> extends BaseRepository<TEntity> {
+export abstract class SyncedEntityRepository<TEntity> extends BaseRepository<TEntity> {
   /**
    * Find a single entity by its external CRM identifier.
    */

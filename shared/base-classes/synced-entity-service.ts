@@ -1,13 +1,13 @@
 /**
- * CrmEntityService<TRepo, TEntity>
+ * SyncedEntityService<TRepo, TEntity>
  *
- * Family-specific base service for CRM-synced entities.
+ * Family-specific base service for Synced entities.
  * Delegates to a CRM repository that provides external ID lookups
  * and user-scoped queries.
  */
 import { BaseService, type IBaseRepository } from './base-service';
 
-export interface ICrmEntityRepository<TEntity> extends IBaseRepository<TEntity> {
+export interface ISyncedEntityRepository<TEntity> extends IBaseRepository<TEntity> {
   findByExternalId(externalId: string): Promise<TEntity | null>;
   findManyByExternalIds(externalIds: string[]): Promise<TEntity[]>;
   findAllByUserId(userId: string): Promise<TEntity[]>;
@@ -15,8 +15,8 @@ export interface ICrmEntityRepository<TEntity> extends IBaseRepository<TEntity> 
   syncUpsert(inputs: Array<Partial<TEntity>>): Promise<TEntity[]>;
 }
 
-export abstract class CrmEntityService<
-  TRepo extends ICrmEntityRepository<TEntity>,
+export abstract class SyncedEntityService<
+  TRepo extends ISyncedEntityRepository<TEntity>,
   TEntity,
 > extends BaseService<TRepo, TEntity> {
   /**

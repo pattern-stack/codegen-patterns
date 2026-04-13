@@ -5,14 +5,14 @@
  */
 import { describe, it, expect, mock } from 'bun:test';
 import { WithAnalytics } from './with-analytics';
-import { CrmEntityService, type ICrmEntityRepository } from './crm-entity-service';
+import { SyncedEntityService, type ISyncedEntityRepository } from './synced-entity-service';
 
 interface TestEntity {
   id: string;
   name: string;
 }
 
-function makeMockRepo(): ICrmEntityRepository<TestEntity> {
+function makeMockRepo(): ISyncedEntityRepository<TestEntity> {
   return {
     findById: mock(async () => ({ id: '1', name: 'Test' })),
     findByIds: mock(async () => []),
@@ -28,18 +28,18 @@ function makeMockRepo(): ICrmEntityRepository<TestEntity> {
   };
 }
 
-// This is the key test: WithAnalytics(CrmEntityService) must compile
+// This is the key test: WithAnalytics(SyncedEntityService) must compile
 // and preserve all inherited methods.
 class AnalyticsCrmService extends WithAnalytics(
-  CrmEntityService<ICrmEntityRepository<TestEntity>, TestEntity>,
+  SyncedEntityService<ISyncedEntityRepository<TestEntity>, TestEntity>,
 ) {
-  constructor(repo: ICrmEntityRepository<TestEntity>) {
+  constructor(repo: ISyncedEntityRepository<TestEntity>) {
     super(repo);
   }
 }
 
 describe('WithAnalytics', () => {
-  it('creates a class that compiles with CrmEntityService', () => {
+  it('creates a class that compiles with SyncedEntityService', () => {
     const repo = makeMockRepo();
     const service = new AnalyticsCrmService(repo);
     expect(service).toBeDefined();

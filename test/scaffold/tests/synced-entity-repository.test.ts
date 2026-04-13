@@ -1,16 +1,16 @@
 /**
- * CrmEntityRepository integration tests against real Postgres.
+ * SyncedEntityRepository integration tests against real Postgres.
  *
  * Tests family-specific methods: findByExternalId, findManyByExternalIds,
  * findAllByUserId, syncUpsert (stub), findVisibleByUserId (stub).
  */
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { CrmEntityRepository } from '@shared/base-classes/crm-entity-repository';
+import { SyncedEntityRepository } from '@shared/base-classes/synced-entity-repository';
 import { crmEntities, type CrmEntity } from '../schema';
 import { getTestDb, truncateAll, closeDb } from './setup';
-import { crmEntityFactory } from './helpers';
+import { syncedEntityFactory } from './helpers';
 
-class TestCrmRepository extends CrmEntityRepository<CrmEntity> {
+class TestCrmRepository extends SyncedEntityRepository<CrmEntity> {
   readonly table = crmEntities;
   protected readonly behaviors = { timestamps: true, softDelete: true, userTracking: false };
 }
@@ -34,7 +34,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 describe('inherited CRUD', () => {
   test('create + findById round-trip', async () => {
-    const data = crmEntityFactory();
+    const data = syncedEntityFactory();
     const created = await repo.create(data);
     expect(created.id).toBeDefined();
     expect(created.name).toBe(data.name);
@@ -50,7 +50,7 @@ describe('inherited CRUD', () => {
 // ---------------------------------------------------------------------------
 describe('findByExternalId', () => {
   test('returns entity with matching external ID', async () => {
-    const created = await repo.create(crmEntityFactory({ externalId: 'sf-001' }));
+    const created = await repo.create(syncedEntityFactory({ externalId: 'sf-001' }));
     const found = await repo.findByExternalId('sf-001');
 
     expect(found).not.toBeNull();
@@ -69,9 +69,9 @@ describe('findByExternalId', () => {
 // ---------------------------------------------------------------------------
 describe('findManyByExternalIds', () => {
   test('returns correct subset', async () => {
-    await repo.create(crmEntityFactory({ externalId: 'sf-a' }));
-    await repo.create(crmEntityFactory({ externalId: 'sf-b' }));
-    await repo.create(crmEntityFactory({ externalId: 'sf-c' }));
+    await repo.create(syncedEntityFactory({ externalId: 'sf-a' }));
+    await repo.create(syncedEntityFactory({ externalId: 'sf-b' }));
+    await repo.create(syncedEntityFactory({ externalId: 'sf-c' }));
 
     const found = await repo.findManyByExternalIds(['sf-a', 'sf-c']);
     expect(found).toHaveLength(2);
@@ -90,9 +90,9 @@ describe('findManyByExternalIds', () => {
 // ---------------------------------------------------------------------------
 describe('findAllByUserId', () => {
   test('returns only entities for the given user', async () => {
-    await repo.create(crmEntityFactory({ userId: 'user-1', name: 'A' }));
-    await repo.create(crmEntityFactory({ userId: 'user-1', name: 'B' }));
-    await repo.create(crmEntityFactory({ userId: 'user-2', name: 'C' }));
+    await repo.create(syncedEntityFactory({ userId: 'user-1', name: 'A' }));
+    await repo.create(syncedEntityFactory({ userId: 'user-1', name: 'B' }));
+    await repo.create(syncedEntityFactory({ userId: 'user-2', name: 'C' }));
 
     const found = await repo.findAllByUserId('user-1');
     expect(found).toHaveLength(2);
