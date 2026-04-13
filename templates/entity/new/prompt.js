@@ -519,6 +519,7 @@ export default {
       // From module (modules/) to commands/queries
       moduleToGetByIdQuery: importHelpers.moduleToQuery(name, fileNames.getByIdQuery.replace('.ts', '')),
       moduleToListQuery: importHelpers.moduleToQuery(name, fileNames.listQuery.replace('.ts', '')),
+      moduleToDeclarativeQueries: importHelpers.moduleToQuery(name, 'declarative-queries'),
       moduleToCreateCommand: importHelpers.moduleToCommand(name, fileNames.createCommand.replace('.ts', '')),
       moduleToUpdateCommand: importHelpers.moduleToCommand(name, fileNames.updateCommand.replace('.ts', '')),
       moduleToDeleteCommand: importHelpers.moduleToCommand(name, fileNames.deleteCommand.replace('.ts', '')),
@@ -1002,25 +1003,93 @@ export default {
     }
 
     const hasQueries = queriesBlock != null && queriesBlock.length > 0;
+
+    // Build a lookup of field name → TS type for query param resolution
+    const fieldTypeMap = {};
+    for (const pf of processedFields) {
+      fieldTypeMap[pf.name] = pf.tsType;
+      fieldTypeMap[pf.camelName] = pf.tsType;
+    }
+
     const processedQueries = hasQueries
-      ? queriesBlock.map((q) => ({
-          // Raw YAML fields
-          by: q.by ?? [],
-          unique: q.unique ?? false,
-          select: q.select ?? null,
-          order: q.order ?? null,
-          limit: q.limit ?? null,
-          via: q.via ?? null,
-          // Derived
-          methodName: deriveQueryMethodName(q),
-          returnType: q.unique ? 'single' : 'array',
-          // Convenience flags
-          hasVia: q.via != null,
-          hasSelect: Array.isArray(q.select) && q.select.length > 0,
-          hasOrder: q.order != null,
-          hasLimit: q.limit != null,
-        }))
+      ? queriesBlock.map((q) => {
+          const byFields = Array.isArray(q.by) ? q.by : [];
+          const selectFields = Array.isArray(q.select) ? q.select : [];
+          const isUnique = q.unique ?? false;
+          const viaTable = q.via ?? null;
+
+          // Build typed params from by fields
+          const params = byFields.map((f) => ({
+            name: f,
+            camelName: camelCase(f),
+            tsType: fieldTypeMap[f] || fieldTypeMap[camelCase(f)] || 'string',
+          }));
+
+          // Parse order: "created_at desc" → { column, direction }
+          let orderBy = null;
+          let orderDirection = null;
+          if (q.order) {
+            const parts = q.order.trim().split(/\s+/);
+            orderBy = camelCase(parts[0]);
+            orderDirection = parts[1] || 'asc';
+          }
+
+          // Derive method name
+          const methodName = deriveQueryMethodName(q);
+
+          // Derive return type
+          let returnType;
+          if (isUnique) {
+            returnType = `${className} | null`;
+          } else if (selectFields.length > 0) {
+            // Projection — return picked fields
+            const camelFields = selectFields.map((f) => camelCase(f));
+            returnType = selectFields.length === 1
+              ? `${fieldTypeMap[selectFields[0]] || fieldTypeMap[camelFields[0]] || 'string'}[]`
+              : `Pick<${className}, ${camelFields.map((f) => `'${f}'`).join(' | ')}>[]`;
+          } else {
+            returnType = `${className}[]`;
+          }
+
+          // Use case class name
+          const useCaseClassName = pascalCase(methodName) + queryLayerSuffix;
+
+          return {
+            // Raw YAML fields
+            by: byFields,
+            unique: isUnique,
+            select: selectFields,
+            order: q.order ?? null,
+            limit: q.limit ?? null,
+            via: viaTable,
+            // Derived
+            methodName,
+            returnType,
+            params,
+            isUnique,
+            orderBy,
+            orderDirection,
+            viaTable,
+            viaTableCamel: viaTable ? camelCase(viaTable) : null,
+            selectFields: selectFields.map((f) => camelCase(f)),
+            useCaseClassName,
+            // Convenience flags
+            hasVia: viaTable != null,
+            hasSelect: selectFields.length > 0,
+            hasOrder: q.order != null,
+            hasLimit: q.limit != null,
+            hasMultipleParams: params.length > 1,
+          };
+        })
       : [];
+
+    const hasDeclarativeQueries = processedQueries.length > 0;
+    const declarativeQueryClasses = processedQueries.map((q) => q.useCaseClassName);
+
+    // Check if any query needs 'and' import (multi-field WHERE)
+    const hasMultiFieldQuery = processedQueries.some((q) => q.hasMultipleParams);
+    // Check if any query needs 'desc'/'asc' import (ordered)
+    const hasOrderedQuery = processedQueries.some((q) => q.hasOrder);
 
     // ============================================================================
     // v2: Sync
@@ -1278,6 +1347,10 @@ export default {
       // Queries
       hasQueries,
       processedQueries,
+      hasDeclarativeQueries,
+      declarativeQueryClasses,
+      hasMultiFieldQuery,
+      hasOrderedQuery,
 
       // Sync
       hasSyncBlock,

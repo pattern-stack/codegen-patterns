@@ -9,7 +9,7 @@ force: true
 <% if (behaviorStrategy === 'base_class') { -%>
 
 import { Injectable } from '@nestjs/common';
-import { eq<%= hasEntityRefFields ? ', and' : '' %> } from 'drizzle-orm';
+import { eq<%= (hasEntityRefFields || hasMultiFieldQuery) ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';
 import { BaseRepository, type BehaviorConfig } from '../base.repository';
 <% if (hasEntityRefFields) { -%>
 import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
@@ -77,6 +77,37 @@ export class <%= className %>Repository
 		return records.map((r) => this.toEntity(r));
 	}
 <% }) -%>
+<% if (hasDeclarativeQueries) { -%>
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// Declarative queries (from queries: block in entity YAML)
+	// ═══════════════════════════════════════════════════════════════════════
+<% processedQueries.forEach((q) => { -%>
+
+	async <%= q.methodName %>(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
+<% if (q.hasVia) { -%>
+		// Junction query through <%= q.viaTable %>
+		const junctionRecords = await this.baseQuery()
+			.innerJoin(<%= q.viaTableCamel %>, eq(<%= q.viaTableCamel %>.<%= name %>Id, this.table.id))
+			.where(<%= q.params.map(p => `eq(${q.viaTableCamel}.${p.camelName}, ${p.camelName})`).join(', ') %>);
+<% if (q.hasSelect) { -%>
+		return junctionRecords.map(r => r.<%= q.selectFields[0] %>);
+<% } else { -%>
+		return junctionRecords.map(r => this.toEntity(r));
+<% } -%>
+<% } else if (q.isUnique) { -%>
+		const records = await this.baseQuery()
+			.where(<%= q.hasMultipleParams ? 'and(' : '' %><%= q.params.map(p => `eq(this.table.${p.camelName}, ${p.camelName})`).join(', ') %><%= q.hasMultipleParams ? ')' : '' %>)
+			.limit(1);
+		return records[0] ? this.toEntity(records[0]) : null;
+<% } else { -%>
+		const records = await this.baseQuery()
+			.where(<%= q.hasMultipleParams ? 'and(' : '' %><%= q.params.map(p => `eq(this.table.${p.camelName}, ${p.camelName})`).join(', ') %><%= q.hasMultipleParams ? ')' : '' %>)<%= q.hasOrder ? `.orderBy(${q.orderDirection}(this.table.${q.orderBy}))` : '' %>;
+		return records.map(r => this.toEntity(r));
+<% } -%>
+	}
+<% }) -%>
+<% } -%>
 <% if (hasRelationships) { -%>
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -147,7 +178,7 @@ export class <%= className %>Repository
 <%# ================================================================== -%>
 
 import { Inject, Injectable } from '@nestjs/common';
-import { eq<%= hasSoftDelete ? ', isNull, isNotNull' : '' %><%= hasEntityRefFields ? ', and' : '' %> } from 'drizzle-orm';
+import { eq<%= hasSoftDelete ? ', isNull, isNotNull' : '' %><%= (hasEntityRefFields || hasMultiFieldQuery) ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';
 import { DRIZZLE } from '<%= imports.repositoryToConstants %>';
 <% if (hasEntityRefFields) { -%>
 import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
@@ -341,6 +372,37 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 <% } -%>
 	}
 <% }) -%>
+<% if (hasDeclarativeQueries) { -%>
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// Declarative queries (from queries: block in entity YAML)
+	// ═══════════════════════════════════════════════════════════════════════
+<% processedQueries.forEach((q) => { -%>
+
+	async <%= q.methodName %>(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
+<% if (q.hasVia) { -%>
+		// Junction query through <%= q.viaTable %>
+		const junctionRecords = await this.baseQuery()
+			.innerJoin(<%= q.viaTableCamel %>, eq(<%= q.viaTableCamel %>.<%= name %>Id, <%= plural %>.id))
+			.where(<%= q.params.map(p => `eq(${q.viaTableCamel}.${p.camelName}, ${p.camelName})`).join(', ') %>);
+<% if (q.hasSelect) { -%>
+		return junctionRecords.map(r => r.<%= q.selectFields[0] %>);
+<% } else { -%>
+		return junctionRecords.map(r => <%= className %>.fromRecord(r));
+<% } -%>
+<% } else if (q.isUnique) { -%>
+		const records = await this.baseQuery()
+			.where(<%= q.hasMultipleParams ? 'and(' : '' %><%= q.params.map(p => `eq(${plural}.${p.camelName}, ${p.camelName})`).join(', ') %><%= q.hasMultipleParams ? ')' : '' %>)
+			.limit(1);
+		return records[0] ? <%= className %>.fromRecord(records[0]) : null;
+<% } else { -%>
+		const records = await this.baseQuery()
+			.where(<%= q.hasMultipleParams ? 'and(' : '' %><%= q.params.map(p => `eq(${plural}.${p.camelName}, ${p.camelName})`).join(', ') %><%= q.hasMultipleParams ? ')' : '' %>)<%= q.hasOrder ? `.orderBy(${q.orderDirection}(${plural}.${q.orderBy}))` : '' %>;
+		return records.map(<%= className %>.fromRecord);
+<% } -%>
+	}
+<% }) -%>
+<% } -%>
 <% if (hasRelationships) { -%>
 
 	private buildWithClause(include?: <%= className %>With) {

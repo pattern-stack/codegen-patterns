@@ -21,6 +21,9 @@ import { DatabaseModule } from '<%= imports.moduleToDatabaseModule %>';
 import { ElectricModule } from '<%= imports.moduleToElectricModule %>/electric.module';
 <% } -%>
 import { <%= className %>Repository } from '<%= imports.moduleToRepository %>';
+<% if (hasDeclarativeQueries) { -%>
+import { declarativeQueryClasses } from '<%= imports.moduleToDeclarativeQueries %>';
+<% } -%>
 <% if (exposeRest || exposeElectric) { -%>
 import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController %>';
 <% } -%>
@@ -41,6 +44,10 @@ import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController
 		<%= createCommandClass %>,
 		<%= updateCommandClass %>,
 		<%= deleteCommandClass %>,
+<% if (hasDeclarativeQueries) { -%>
+		// Declarative queries
+		...declarativeQueryClasses,
+<% } -%>
 	],
 	exports: [
 		<%= repositoryToken %>,
@@ -51,6 +58,9 @@ import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController
 		<%= createCommandClass %>,
 		<%= updateCommandClass %>,
 		<%= deleteCommandClass %>,
+<% if (hasDeclarativeQueries) { -%>
+		...declarativeQueryClasses,
+<% } -%>
 	],
 })
 export class <%= classNamePlural %>Module {}
