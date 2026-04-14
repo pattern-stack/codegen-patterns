@@ -4,13 +4,27 @@
  * Abstract base class providing 8 CRUD pass-through methods delegating to
  * an injected repository. Every generated service extends this class.
  *
- * No side effects — pure delegation per ADR-003. Enrichment logic lives in
- * concrete service subclasses or dedicated use cases.
+ * Lifecycle event emission (LIFECYCLE + CHANGE categories) is built into
+ * create/update/delete — matching pattern-stack's BaseService. Events are
+ * fire-and-forget: emission never fails the CRUD operation. If no IEventBus
+ * is injected (eventBus is undefined), emission is silently skipped.
+ *
+ * Generated services set `entityName` and optionally inject `eventBus` via
+ * NestJS property injection (@Inject(EVENT_BUS) @Optional()).
  *
  * Note: @Injectable() is applied on concrete services (not here) so that
  * NestJS DI metadata is emitted at the concrete class level. This matches
  * the pattern established by BaseRepository.
  */
+
+import type { IEventBus } from '../subsystems/events/event-bus.protocol';
+import {
+  entitySnapshot,
+  diffSnapshots,
+  buildLifecycleEvent,
+  buildChangeEvents,
+  emitSafely,
+} from './lifecycle-events';
 
 // ============================================================================
 // IBaseRepository interface
@@ -37,6 +51,25 @@ export interface IBaseRepository<TEntity> {
 // ============================================================================
 
 export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntity> {
+  /**
+   * Entity name for event types (e.g., 'account' → 'account.created').
+   * Set by generated services. If empty, lifecycle events are skipped.
+   */
+  protected entityName?: string;
+
+  /**
+   * Event bus for lifecycle/change event emission.
+   * Injected via @Inject(EVENT_BUS) @Optional() on generated services.
+   * If undefined (no events subsystem installed), emission is silently skipped.
+   */
+  protected eventBus?: IEventBus;
+
+  /**
+   * Whether to emit lifecycle events. Default: true.
+   * Override to false in entity YAML via behaviors or in the service class.
+   */
+  protected emitLifecycleEvents = true;
+
   constructor(protected readonly repository: TRepo) {}
 
   /**
@@ -77,22 +110,74 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
 
   /**
    * Insert a new entity.
+   * Emits a LIFECYCLE 'created' event with entity snapshot.
    */
-  create(input: Partial<TEntity>): Promise<TEntity> {
-    return this.repository.create(input);
+  async create(input: Partial<TEntity>): Promise<TEntity> {
+    const result = await this.repository.create(input);
+
+    if (this._shouldEmit()) {
+      const snap = entitySnapshot(result as Record<string, unknown>);
+      const id = (result as Record<string, unknown>).id as string;
+      const event = buildLifecycleEvent(this.entityName!, 'created', id, snap);
+      void emitSafely(this.eventBus, [event]);
+    }
+
+    return result;
   }
 
   /**
    * Update an existing entity by id.
+   * Emits a LIFECYCLE 'updated' event + CHANGE events for each modified field.
    */
-  update(id: string, input: Partial<TEntity>): Promise<TEntity> {
-    return this.repository.update(id, input);
+  async update(id: string, input: Partial<TEntity>): Promise<TEntity> {
+    // Snapshot before for change diffing
+    let before: Record<string, unknown> | undefined;
+    if (this._shouldEmit()) {
+      const existing = await this.repository.findById(id);
+      if (existing) {
+        before = entitySnapshot(existing as Record<string, unknown>);
+      }
+    }
+
+    const result = await this.repository.update(id, input);
+
+    if (this._shouldEmit()) {
+      const after = entitySnapshot(result as Record<string, unknown>);
+      const events = [
+        buildLifecycleEvent(this.entityName!, 'updated', id, after),
+      ];
+      // Append per-field CHANGE events
+      if (before) {
+        const changes = diffSnapshots(before, after);
+        if (changes.length > 0) {
+          events.push(...buildChangeEvents(this.entityName!, id, changes));
+        }
+      }
+      void emitSafely(this.eventBus, events);
+    }
+
+    return result;
   }
 
   /**
    * Delete an entity by id.
+   * Emits a LIFECYCLE 'deleted' event.
    */
-  delete(id: string): Promise<void> {
-    return this.repository.delete(id);
+  async delete(id: string): Promise<void> {
+    await this.repository.delete(id);
+
+    if (this._shouldEmit()) {
+      const event = buildLifecycleEvent(this.entityName!, 'deleted', id);
+      void emitSafely(this.eventBus, [event]);
+    }
+  }
+
+  /** Check whether lifecycle event emission is active. */
+  private _shouldEmit(): boolean {
+    return Boolean(
+      this.emitLifecycleEvents &&
+      this.entityName &&
+      this.eventBus,
+    );
   }
 }

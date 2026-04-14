@@ -7,6 +7,15 @@ export type { BehaviorConfig, ListOptions } from './base-repository';
 export { BaseService } from './base-service';
 export type { IBaseRepository } from './base-service';
 
+export {
+  entitySnapshot,
+  diffSnapshots,
+  buildLifecycleEvent,
+  buildChangeEvents,
+  emitSafely,
+} from './lifecycle-events';
+export type { EventCategory } from './lifecycle-events';
+
 export { BaseFindByIdUseCase, BaseListUseCase } from './base-read-use-cases';
 export type { IFindByIdService, IListService } from './base-read-use-cases';
 

@@ -133,8 +133,18 @@ install-skill target:
     set -euo pipefail
     dest="{{target}}/.claude/skills/codegen"
     mkdir -p "$dest"
-    cp dist/skill/SKILL.md "$dest/SKILL.md"
+    cp .claude/skills/codegen/SKILL.md "$dest/SKILL.md"
     echo "Installed codegen skill to $dest"
+
+# Update codegen to latest from source (pull + reinstall)
+update:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Pulling latest..."
+    git pull --ff-only
+    bun install
+    version=$(jq -r .version package.json)
+    echo "Updated to v${version}"
 
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
