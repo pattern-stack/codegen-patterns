@@ -10,13 +10,13 @@ install:
     bun install
     cd test/scaffold && bun install
 
-# Generate a single entity from YAML
+# Generate a single entity from YAML (new noun-verb CLI)
 gen entity:
-    bun codegen entity {{entity}}
+    bun src/cli/index.ts entity new {{entity}}
 
-# Generate all entities
+# Generate all entities (new noun-verb CLI)
 gen-all:
-    bun codegen all
+    bun src/cli/index.ts entity new --all
 
 # Scan a project and generate config
 scan path=".":
