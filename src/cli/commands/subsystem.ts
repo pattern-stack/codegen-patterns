@@ -37,7 +37,7 @@ import type { NounModule } from '../noun-module.js';
 // paths
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SUBSYSTEMS_REL = 'src/shared/subsystems';
+const DEFAULT_SUBSYSTEMS_REL = 'shared/subsystems';
 
 function runtimeRoot(): string {
 	// src/cli/commands/subsystem.ts → ../../../runtime
@@ -155,11 +155,8 @@ function backendFileFilter(backend: SubsystemBackend): (file: string) => boolean
 			if (file.endsWith('.schema.ts')) return false;
 			return true;
 		}
-		if (backend === 'drizzle') {
-			if (file.endsWith('.memory-backend.ts')) return false;
-			return true;
-		}
-		// local / unknown — copy everything
+		// drizzle, local, or unknown — copy everything (memory backend is always
+		// needed for tests, even when drizzle is the default runtime backend)
 		return true;
 	};
 }
