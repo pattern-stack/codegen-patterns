@@ -20,8 +20,8 @@ import {
   getDatabaseDialect,
   getProjectConfig,
   getPipelinesConfig,
-} from "../../../config/paths.mjs";
-import { getNamingConfig } from "../../../config/naming-config.mjs";
+} from "../../../src/config/paths.mjs";
+import { getNamingConfig } from "../../../src/config/naming-config.mjs";
 
 // ============================================================================
 // Behavior Registry (inline to avoid import issues with Hygen)
