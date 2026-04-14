@@ -54,7 +54,7 @@ async function run() {
 
       await Bun.write(
         configPath,
-        'generate:\n  cleanLitePs: true\n',
+        'generate:\n  architecture: clean-lite-ps\n  frontend: false\n',
       );
 
       try {

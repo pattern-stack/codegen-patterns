@@ -69,7 +69,7 @@ just gen entities/contact.yaml
 └── modules/                   # NestJS module wiring
 ```
 
-**Clean-Lite-PS** (`generate.cleanLitePs: true`):
+**Clean-Lite-PS** (`generate.architecture: clean-lite-ps`):
 ```
 modules/{plural}/
 ├── {entity}.entity.ts         # Drizzle table + types
@@ -176,7 +176,8 @@ paths:
   frontend_src: apps/frontend/src
 
 generate:
-  cleanLitePs: true               # Use Clean-Lite-PS architecture
+  architecture: clean-lite-ps      # Backend layout: clean | clean-lite-ps
+  frontend: false                  # Emit Electric-SQL frontend pipeline (default: false)
   commands: true                   # Generate write commands
   queries: true                    # Generate read queries
 

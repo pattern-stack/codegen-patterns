@@ -159,7 +159,8 @@ paths:
   frontend_src: apps/frontend/src
 
 generate:
-  cleanLitePs: true          # Use Clean-Lite-PS architecture (simpler)
+  architecture: clean-lite-ps  # clean | clean-lite-ps (mutually exclusive)
+  frontend: false              # Emit frontend pipeline? (default: false)
   commands: true
   queries: true
 

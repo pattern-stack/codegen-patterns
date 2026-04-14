@@ -7,7 +7,10 @@
 
 import { describe, it, expect } from 'bun:test';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
-import { PipelinesConfigSchema } from '../../schema/pipelines-config.schema';
+import {
+	GenerateConfigSchema,
+	PipelinesConfigSchema,
+} from '../../schema/pipelines-config.schema';
 import { loadEntityFromYaml } from '../../utils/yaml-loader';
 import { loadEntities } from '../../parser/load-entities';
 import { buildDomainGraph } from '../../analyzer/graph-builder';
@@ -254,6 +257,56 @@ describe('pipelines config', () => {
 				backend: { architecture: arch },
 			});
 			expect(result.success).toBe(true);
+		}
+	});
+});
+
+// ============================================================================
+// Generate Config
+// ============================================================================
+
+describe('generate config', () => {
+	it('applies defaults when block is empty', () => {
+		const result = GenerateConfigSchema.safeParse({});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.architecture).toBe('clean');
+			expect(result.data.frontend).toBe(false);
+		}
+	});
+
+	it('accepts architecture: clean', () => {
+		const result = GenerateConfigSchema.safeParse({ architecture: 'clean' });
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts architecture: clean-lite-ps', () => {
+		const result = GenerateConfigSchema.safeParse({ architecture: 'clean-lite-ps' });
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects unknown architecture values', () => {
+		const result = GenerateConfigSchema.safeParse({ architecture: 'vertical-slice' });
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts frontend: true', () => {
+		const result = GenerateConfigSchema.safeParse({ frontend: true });
+		expect(result.success).toBe(true);
+		if (result.success) expect(result.data.frontend).toBe(true);
+	});
+
+	it('passes through unknown keys (legacy toggles)', () => {
+		const result = GenerateConfigSchema.safeParse({
+			architecture: 'clean',
+			frontend: false,
+			drizzleSchema: false,
+			hooks: true,
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect((result.data as Record<string, unknown>).drizzleSchema).toBe(false);
+			expect((result.data as Record<string, unknown>).hooks).toBe(true);
 		}
 	});
 });
