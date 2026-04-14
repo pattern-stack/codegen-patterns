@@ -4,7 +4,7 @@ skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import { Injectable } from '@nestjs/common';
-import { WithAnalytics } from '@shared/base-classes/base-analytics-service';
+import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
