@@ -32,13 +32,17 @@
   "peerDependencies": {
     "hygen": "^6.2.11",
     "ioredis": ">=5",
-    "@cubejs-client/core": ">=1.0.0"
+    "@cubejs-client/core": ">=1.0.0",
+    "bullmq": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "ioredis": {
       "optional": true
     },
     "@cubejs-client/core": {
+      "optional": true
+    },
+    "bullmq": {
       "optional": true
     }
   },

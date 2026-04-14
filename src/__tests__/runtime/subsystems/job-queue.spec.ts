@@ -128,3 +128,73 @@ describe('MemoryJobQueue', () => {
     });
   });
 });
+
+// ============================================================================
+// JobsModule — backend factory shape
+// ============================================================================
+
+describe('JobsModule', () => {
+  it('exports forRoot static method', async () => {
+    const { JobsModule } = await import(
+      '../../../../runtime/subsystems/jobs/jobs.module'
+    );
+    expect(typeof JobsModule.forRoot).toBe('function');
+  });
+
+  it('forRoot returns DynamicModule for drizzle backend', async () => {
+    const { JobsModule } = await import(
+      '../../../../runtime/subsystems/jobs/jobs.module'
+    );
+    const mod = JobsModule.forRoot({ backend: 'drizzle' });
+    expect(mod).toHaveProperty('module');
+    expect(mod).toHaveProperty('providers');
+    expect(mod).toHaveProperty('exports');
+    expect(mod.global).toBe(true);
+  });
+
+  it('forRoot returns DynamicModule for memory backend', async () => {
+    const { JobsModule } = await import(
+      '../../../../runtime/subsystems/jobs/jobs.module'
+    );
+    const mod = JobsModule.forRoot({ backend: 'memory' });
+    expect(mod.global).toBe(true);
+    expect(mod.providers).toHaveLength(1);
+  });
+
+  it('forRoot returns DynamicModule for redis backend', async () => {
+    const { JobsModule } = await import(
+      '../../../../runtime/subsystems/jobs/jobs.module'
+    );
+    const mod = JobsModule.forRoot({ backend: 'redis', redisUrl: 'redis://localhost:6379' });
+    expect(mod.global).toBe(true);
+    // Redis backend needs REDIS_URL provider + JOB_QUEUE provider
+    expect(mod.providers).toHaveLength(2);
+  });
+
+  it('forRoot returns DynamicModule for bullmq backend', async () => {
+    const { JobsModule } = await import(
+      '../../../../runtime/subsystems/jobs/jobs.module'
+    );
+    const mod = JobsModule.forRoot({ backend: 'bullmq', redisUrl: 'redis://localhost:6379' });
+    expect(mod.global).toBe(true);
+    expect(mod.providers).toHaveLength(2);
+  });
+
+  it('defaults to drizzle backend', async () => {
+    const { JobsModule } = await import(
+      '../../../../runtime/subsystems/jobs/jobs.module'
+    );
+    const mod = JobsModule.forRoot();
+    expect(mod.providers).toHaveLength(1);
+  });
+
+  it('accepts all four backend options', async () => {
+    const { JobsModule } = await import(
+      '../../../../runtime/subsystems/jobs/jobs.module'
+    );
+    for (const backend of ['drizzle', 'memory', 'redis', 'bullmq'] as const) {
+      const mod = JobsModule.forRoot({ backend, redisUrl: 'redis://localhost:6379' });
+      expect(mod).toHaveProperty('module');
+    }
+  });
+});

@@ -6,3 +6,5 @@ export { jobQueue } from './job-queue.schema';
 export type { JobRow, JobStatus } from './job-queue.schema';
 export { DrizzleJobQueue } from './job-queue.drizzle-backend';
 export { MemoryJobQueue } from './job-queue.memory-backend';
+export { RedisJobQueue } from './job-queue.redis-backend';
+export { BullMQJobQueue } from './job-queue.bullmq-backend';
