@@ -16,6 +16,11 @@ import { analyzeDomain, validateEntities } from '../../index.js';
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeEntityNew } from '../shared/hygen.js';
 import { checkGitSafety } from '../shared/git-safety.js';
+import {
+	regenerateBarrels,
+	resolveArchitecture,
+	resolveGeneratedDir,
+} from '../shared/barrel-generator.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -213,13 +218,33 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Compute barrel plan (used in both dry-run reporting and post-gen execution).
+		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const generatedDir = resolveGeneratedDir(ctx);
+		const architecture = resolveArchitecture(ctx);
+
 		if (this.dryRun) {
+			const barrelPlan = await regenerateBarrels({
+				ctx,
+				entitiesDir,
+				generatedDir,
+				architecture,
+				dryRun: true,
+			});
+
 			if (isJsonMode()) {
 				printJson({
 					command: 'entity new',
 					dryRun: true,
 					entities: validated.map((v) => ({ name: v.name, file: v.file })),
 					totals: { planned: validated.length, invalid: invalid.length },
+					barrels: {
+						modules: barrelPlan.modulesBarrel,
+						schema: barrelPlan.schemaBarrel,
+						entityCount: barrelPlan.entityCount,
+						modulesContent: barrelPlan.modulesContent,
+						schemaContent: barrelPlan.schemaContent,
+					},
 				});
 			} else {
 				printInfo(`Dry run — ${validated.length} entities would be generated:`);
@@ -231,6 +256,10 @@ export class EntityNewCommand extends Command {
 						printWarning(`${path.basename(i.file)} — ${i.message}`);
 					}
 				}
+				console.log('');
+				printInfo(`Barrels (${barrelPlan.entityCount} entities):`);
+				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.modulesBarrel}`);
+				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.schemaBarrel}`);
 			}
 			return invalid.length > 0 && !this.continueOnError ? 1 : 0;
 		}
@@ -259,6 +288,24 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Regenerate barrels once, after all Hygen invocations. This is total —
+		// every .yaml in entitiesDir is re-scanned, so deleting an entity YAML and
+		// re-running removes it from the barrels. See ADR-017.
+		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>> | null = null;
+		try {
+			barrelResult = await regenerateBarrels({
+				ctx,
+				entitiesDir,
+				generatedDir,
+				architecture,
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`barrel regeneration failed — ${msg}`);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'entity new',
@@ -268,6 +315,13 @@ export class EntityNewCommand extends Command {
 				},
 				succeeded,
 				failed,
+				barrels: barrelResult
+					? {
+							modules: barrelResult.modulesBarrel,
+							schema: barrelResult.schemaBarrel,
+							entityCount: barrelResult.entityCount,
+						}
+					: null,
 			});
 		} else {
 			const total = validated.length + invalid.length;
@@ -277,6 +331,11 @@ export class EntityNewCommand extends Command {
 			} else {
 				printWarning(
 					`${total} entities · ${succeeded.length} succeeded · ${failed.length} failed`
+				);
+			}
+			if (barrelResult) {
+				printInfo(
+					`barrels regenerated (${barrelResult.entityCount} entities) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`
 				);
 			}
 		}
