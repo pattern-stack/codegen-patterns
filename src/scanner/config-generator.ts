@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { ProjectProfile } from './types.js';
 
 export interface ProposedConfig {
@@ -29,6 +32,18 @@ export interface ProposedConfig {
 		application: string;
 		infrastructure: string;
 		presentation: string;
+		frontend_src?: string;
+	};
+
+	// Generation toggles emitted into the `generate` block of codegen.config.yaml.
+	// Matches GenerateConfigSchema.
+	generate: {
+		/** Which backend architecture to emit. Defaults to 'clean'. */
+		architecture: 'clean' | 'clean-lite-ps';
+		/** Whether to emit the frontend pipeline at all. Default is false unless
+		 *  detection found an `apps/frontend/` directory or the profile set an
+		 *  explicit `paths.frontend_src`. */
+		frontend: boolean;
 	};
 
 	// Confidence summary
@@ -67,7 +82,13 @@ export function generateConfig(profile: ProjectProfile): ProposedConfig {
 	// 5. Naming conventions (with derived fields)
 	const naming = buildNamingConfig(profile);
 
-	// 6. Confidence: Calculate overall confidence
+	// 6. Generate toggles — architecture is always 'clean' by default (the
+	//    auto-detected path for new projects); frontend is true iff either the
+	//    profile exposed an explicit frontend_src or an `apps/frontend/`
+	//    directory exists under the project root.
+	const generate = buildGenerateConfig(profile, paths);
+
+	// 7. Confidence: Calculate overall confidence
 	const confidence = calculateConfidence(profile);
 
 	return {
@@ -77,7 +98,30 @@ export function generateConfig(profile: ProjectProfile): ProposedConfig {
 		file_grouping,
 		naming,
 		paths,
+		generate,
 		confidence,
+	};
+}
+
+/**
+ * Build the `generate` block for the proposed config.
+ *
+ * Detection rules for `frontend`:
+ * - true if `profile.paths` or `paths.frontend_src` is explicitly set (non-empty string)
+ * - true if `apps/frontend/` exists under the project root
+ * - false otherwise (backend-only default)
+ */
+function buildGenerateConfig(
+	profile: ProjectProfile,
+	paths: ProposedConfig['paths']
+): ProposedConfig['generate'] {
+	const explicitFrontendSrc =
+		typeof paths.frontend_src === 'string' && paths.frontend_src.length > 0;
+	const appsFrontendExists = existsSync(join(profile.paths.root, 'apps', 'frontend'));
+
+	return {
+		architecture: 'clean',
+		frontend: explicitFrontendSrc || appsFrontendExists,
 	};
 }
 

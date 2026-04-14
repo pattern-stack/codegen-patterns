@@ -1,5 +1,6 @@
 ---
 to: "<%= generate.commands ? outputPaths.createCommand : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (outputPaths.createCommand) { -%>

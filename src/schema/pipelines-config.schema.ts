@@ -88,6 +88,49 @@ export const SharedPipelineSchema = z.object({
 export type SharedPipeline = z.infer<typeof SharedPipelineSchema>;
 
 // ============================================================================
+// Generate Config
+// ============================================================================
+
+/**
+ * Top-level entity generation toggle schema.
+ *
+ * The `generate` block in `codegen.config.yaml` controls which pipelines the
+ * entity generator walks and which coarse-grained outputs it produces. It is
+ * intentionally narrower than the `pipelines` block — these are user-facing
+ * switches, not pipeline-internal wiring.
+ *
+ * Keys validated here:
+ * - `architecture`: which backend architecture flavor to emit. Selects one of
+ *   the two backend template sets and is mutually exclusive (emitting both
+ *   was the v0.2 dogfood bug).
+ * - `frontend`: whether to emit the frontend pipeline at all. Defaults to
+ *   `false` so backend-only projects don't get a half-built frontend tree.
+ *
+ * Additional untyped keys are permitted (passthrough) so the many template
+ * toggles already read directly off `generate.*` in `prompt.js` keep working
+ * without each needing a schema entry here.
+ */
+export const GenerateConfigSchema = z
+  .object({
+    /**
+     * Backend architecture to generate. One of:
+     * - 'clean'          — Full Clean Architecture (domain + application + infrastructure + presentation)
+     * - 'clean-lite-ps'  — Clean-Lite-PS modules/{plural}/ layout
+     *
+     * Default: 'clean'.
+     */
+    architecture: z.enum(["clean", "clean-lite-ps"]).default("clean"),
+    /**
+     * Whether to emit the frontend pipeline (collections, hooks, entity metadata).
+     * Default: false — backend-only projects opt out by default.
+     */
+    frontend: z.boolean().default(false),
+  })
+  .passthrough();
+
+export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
+
+// ============================================================================
 // Top-Level Pipelines Config
 // ============================================================================
 

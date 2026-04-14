@@ -1,5 +1,6 @@
 ---
 to: "<%= (exposeRest || exposeElectric) ? `${basePaths.backendSrc}/${paths.controllers}/${plural}.controller.ts` : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (exposeRest) { -%>

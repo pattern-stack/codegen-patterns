@@ -1,5 +1,6 @@
 ---
 to: <%= outputPaths.entity %>
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (outputPaths.entity) { -%>

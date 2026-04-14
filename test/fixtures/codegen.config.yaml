@@ -46,7 +46,7 @@ locations:
 pipelines:
   backend:
     enabled: true
-    architecture: clean-lite-ps
+    architecture: clean
   frontend:
     enabled: true
     preset: dealbrain
@@ -54,4 +54,5 @@ pipelines:
     enabled: true
 
 generate:
-  cleanLitePs: true
+  architecture: clean
+  frontend: false

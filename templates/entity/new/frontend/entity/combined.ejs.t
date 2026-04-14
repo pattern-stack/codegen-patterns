@@ -1,6 +1,6 @@
 ---
 to: "<%= generate.structure === 'monolithic' ? `${locations.frontendGenerated.path}/${generate.fileNaming === 'plural' ? plural : name}.ts` : '' %>"
-skip_if: <%= generate.structure !== 'monolithic' %>
+skip_if: <%= !frontendEnabled || (generate.structure !== 'monolithic') %>
 force: true
 ---
 /**

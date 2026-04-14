@@ -1,5 +1,6 @@
 ---
 to: "<%= generate.queries ? outputPaths.queriesGroupedIndex : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (outputPaths.queriesGroupedIndex) { -%>

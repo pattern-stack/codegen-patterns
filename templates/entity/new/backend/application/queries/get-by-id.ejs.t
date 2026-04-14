@@ -1,5 +1,6 @@
 ---
 to: "<%= generate.queries ? outputPaths.getByIdQuery : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (outputPaths.getByIdQuery) { -%>

@@ -1,6 +1,6 @@
 ---
 to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${name}/index.ts` : '' %>"
-skip_if: <%= generate.structure !== 'entity-first' %>
+skip_if: <%= !frontendEnabled || (generate.structure !== 'entity-first') %>
 force: true
 ---
 /**

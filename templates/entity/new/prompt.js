@@ -20,6 +20,7 @@ import {
   getDatabaseDialect,
   getProjectConfig,
   getPipelinesConfig,
+  getGenerateConfig,
 } from "../../../src/config/paths.mjs";
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";
 
@@ -945,11 +946,21 @@ export default {
     }
 
     // ============================================================================
-    // Architecture Target (from pipelines config)
+    // Architecture Target + pipeline gates (from generate config)
+    //
+    // `generate.architecture` is the single source of truth for which backend
+    // template set runs. Values:
+    //   - 'clean'         → templates/entity/new/backend/ (Clean Architecture)
+    //   - 'clean-lite-ps' → templates/entity/new/clean-lite-ps/ (modules/ layout)
+    //
+    // `generate.frontend` gates the frontend pipeline entirely.
     // ============================================================================
 
-    const pipelinesConfig = getPipelinesConfig();
-    const architectureTarget = pipelinesConfig?.backend?.architecture ?? 'clean';
+    const generateConfig = getGenerateConfig();
+    const architectureTarget = generateConfig.architecture;
+    const isCleanArchitecture = architectureTarget === 'clean';
+    const isCleanLitePs = architectureTarget === 'clean-lite-ps';
+    const frontendEnabled = generateConfig.frontend === true;
 
     // ============================================================================
     // v2: Family
@@ -1335,8 +1346,11 @@ export default {
       // v2 variables
       // ======================================================================
 
-      // Architecture target (from pipelines.backend.architecture config)
+      // Architecture target (from generate.architecture config)
       architectureTarget,
+      isCleanArchitecture,
+      isCleanLitePs,
+      frontendEnabled,
 
       // Family
       family,
@@ -1363,10 +1377,15 @@ export default {
       processedEvents,
     };
 
-    // Clean-Lite-PS template locals (only when generate.cleanLitePs: true)
-    const projectConfig = getProjectConfig();
-    const cleanLitePs = projectConfig?.generate?.cleanLitePs ?? false;
-    if (cleanLitePs) {
+    // ========================================================================
+    // Clean-Lite-PS template locals
+    //
+    // Populated only when `generate.architecture === 'clean-lite-ps'`.
+    // When the architecture is 'clean', stub locals are injected so CLP
+    // template bodies can render without crashing; their `to:` guards resolve
+    // to null which causes Hygen to skip file writing.
+    // ========================================================================
+    if (isCleanLitePs) {
       const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
       Object.assign(locals, buildCleanLitePsLocals(definition, locals));
     } else {

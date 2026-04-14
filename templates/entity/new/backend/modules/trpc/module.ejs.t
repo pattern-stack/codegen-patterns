@@ -1,5 +1,6 @@
 ---
 to: "<%= exposeTrpc ? `${basePaths.backendSrc}/presentation/trpc/${plural}.router.ts` : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (exposeTrpc) { -%>

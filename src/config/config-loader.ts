@@ -9,7 +9,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
-import { PipelinesConfigSchema, type PipelinesConfig } from '../schema/pipelines-config.schema.ts';
+import {
+  GenerateConfigSchema,
+  PipelinesConfigSchema,
+  type GenerateConfig,
+  type PipelinesConfig,
+} from '../schema/pipelines-config.schema.ts';
 
 // ============================================================================
 // Types
@@ -21,6 +26,7 @@ import { PipelinesConfigSchema, type PipelinesConfig } from '../schema/pipelines
  */
 export interface ProjectConfig {
   pipelines?: PipelinesConfig;
+  generate?: GenerateConfig;
   [key: string]: unknown;
 }
 
@@ -61,6 +67,20 @@ function loadProjectConfig(cwd = process.cwd()): ProjectConfig | null {
         );
         // Leave raw.pipelines as-is so callers still get something
       }
+    }
+
+    // Validate the generate block (always — we want defaults applied even when absent)
+    const rawGenerate = raw && typeof raw === 'object' && 'generate' in raw ? raw.generate : undefined;
+    const generateResult = GenerateConfigSchema.safeParse(rawGenerate ?? {});
+    if (generateResult.success) {
+      raw.generate = generateResult.data;
+    } else {
+      console.warn(
+        `Warning: codegen.config.yaml has an invalid "generate" block:\n` +
+          generateResult.error.issues
+            .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+            .join('\n')
+      );
     }
 
     return raw as ProjectConfig;

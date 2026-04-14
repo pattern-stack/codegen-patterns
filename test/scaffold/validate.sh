@@ -61,7 +61,7 @@ cd "$SCAFFOLD_DIR"
 bun install
 
 # ---------------------------------------------------------------------------
-# 2. Create a temporary codegen.config.yaml with cleanLitePs enabled
+# 2. Create a temporary codegen.config.yaml with clean-lite-ps architecture
 #    The test runner (run-test.ts) also manages this file, so we back it up
 #    if it already exists and restore it in the cleanup function.
 # ---------------------------------------------------------------------------
@@ -76,7 +76,8 @@ cat > "$CODEGEN_CONFIG" << 'YAML_EOF'
 # Temporary config created by test/scaffold/validate.sh
 # Cleaned up automatically on exit.
 generate:
-  cleanLitePs: true
+  architecture: clean-lite-ps
+  frontend: false
 YAML_EOF
 
 # ---------------------------------------------------------------------------

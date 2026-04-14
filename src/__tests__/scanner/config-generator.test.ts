@@ -1,4 +1,8 @@
 import { describe, it, expect } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { generateConfig, type ProposedConfig } from '../../scanner/config-generator.js';
 import type { ProjectProfile } from '../../scanner/types.js';
 
@@ -471,6 +475,42 @@ describe('generateConfig', () => {
 			expect(config.confidence.orm).toBe(100);
 			expect(config.confidence.architecture).toBe(100);
 			expect(config.confidence.naming).toBe(100);
+		});
+	});
+
+	describe('generate block', () => {
+		it('defaults architecture to "clean"', () => {
+			const profile = createMockProfile();
+			const config = generateConfig(profile);
+			expect(config.generate.architecture).toBe('clean');
+		});
+
+		it('defaults frontend to false when no frontend_src and no apps/frontend/', () => {
+			// Use a tmp root guaranteed not to contain apps/frontend
+			const tmpRoot = mkdtempSync(join(tmpdir(), 'codegen-scanner-'));
+			try {
+				const profile = createMockProfile({
+					paths: { root: tmpRoot, src: `${tmpRoot}/src` },
+				});
+				const config = generateConfig(profile);
+				expect(config.generate.frontend).toBe(false);
+			} finally {
+				rmSync(tmpRoot, { recursive: true, force: true });
+			}
+		});
+
+		it('emits frontend: true when apps/frontend/ exists under project root', () => {
+			const tmpRoot = mkdtempSync(join(tmpdir(), 'codegen-scanner-'));
+			try {
+				mkdirSync(join(tmpRoot, 'apps', 'frontend'), { recursive: true });
+				const profile = createMockProfile({
+					paths: { root: tmpRoot, src: `${tmpRoot}/src` },
+				});
+				const config = generateConfig(profile);
+				expect(config.generate.frontend).toBe(true);
+			} finally {
+				rmSync(tmpRoot, { recursive: true, force: true });
+			}
 		});
 	});
 

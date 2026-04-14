@@ -1,5 +1,6 @@
 ---
 to: <%= basePaths.backendSrc %>/<%= paths.repositories %>/<%= name %>.repository.ts
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 /**

@@ -1,5 +1,6 @@
 ---
 to: "<%= hasDeclarativeQueries ? `${basePaths.backendSrc}/${paths.queries}/declarative-queries.ts` : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (hasDeclarativeQueries) { -%>

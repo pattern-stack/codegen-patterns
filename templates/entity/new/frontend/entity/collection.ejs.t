@@ -1,6 +1,6 @@
 ---
 to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${generate.fileNaming === 'plural' ? plural : name}/collection.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/collections/${generate.fileNaming === 'plural' ? plural : name}.ts` : '' %>"
-skip_if: <%= generate.structure === 'monolithic' %>
+skip_if: <%= !frontendEnabled || (generate.structure === 'monolithic') %>
 force: true
 ---
 /**

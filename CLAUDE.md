@@ -53,7 +53,7 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated
 ### Two Template Pipelines
 
 - **`templates/entity/new/backend/`** + **`frontend/`** — Full Clean Architecture: separate command/query classes, repository interfaces, NestJS modules.
-- **`templates/entity/new/clean-lite-ps/`** — Clean-Lite-PS: lighter layout with entity, service, repository, controller, module, DTOs, use-cases. Enabled via `generate.cleanLitePs: true`. Has its own `prompt-extension.js`.
+- **`templates/entity/new/clean-lite-ps/`** — Clean-Lite-PS: lighter layout with entity, service, repository, controller, module, DTOs, use-cases. Selected via `generate.architecture: clean-lite-ps`. Has its own `prompt-extension.js`. The two backend template pipelines are mutually exclusive — `generate.architecture` picks exactly one.
 
 ### Project Layout
 

@@ -1,5 +1,6 @@
 ---
 to: "<%= generate.drizzleSchema ? outputPaths.drizzleSchema : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 /**

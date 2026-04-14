@@ -1,5 +1,6 @@
 ---
 to: <%= outputPaths.domainGroupedIndex %>
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (outputPaths.domainGroupedIndex) { -%>

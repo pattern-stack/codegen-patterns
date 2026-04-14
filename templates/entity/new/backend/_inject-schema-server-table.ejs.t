@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.schemaServer ? locations.dbSchemaServer.path : '' %>"
+to: "<%= isCleanArchitecture ? (generate.schemaServer ? locations.dbSchemaServer.path : '') : '' %>"
 inject: true
 after: "// Codegen tables"
 skip_if: "export const <%= plural %> ="

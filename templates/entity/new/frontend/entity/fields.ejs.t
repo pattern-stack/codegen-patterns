@@ -1,6 +1,6 @@
 ---
 to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${name}/fields.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/fields/${name}.ts` : '' %>"
-skip_if: <%= generate.structure === 'monolithic' || !generate.fieldMetadata %>
+skip_if: <%= !frontendEnabled || (generate.structure === 'monolithic' || !generate.fieldMetadata) %>
 force: true
 ---
 /**
