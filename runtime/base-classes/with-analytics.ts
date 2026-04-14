@@ -1,16 +1,21 @@
 /**
  * WithAnalytics mixin
  *
- * No-op mixin for v0.1. Will add analytics event emission in a future version.
+ * Adds an optional `.analytics` property to the service class.
+ * The analytics provider is a per-entity @Injectable (e.g., AccountAnalytics)
+ * injected via @Optional() in the generated service constructor.
+ *
  * Usage: class MyService extends WithAnalytics(BaseService<...>) { ... }
+ *
+ * The generated service adds:
+ *   @Optional() @Inject(AccountAnalytics) override analytics?: AccountAnalytics
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Constructor<T = {}> = abstract new (...args: any[]) => T;
+type Constructor<T = {}> = new (...args: any[]) => T;
 
 export function WithAnalytics<TBase extends Constructor>(Base: TBase) {
-  abstract class WithAnalyticsMixin extends Base {
-    // No-op — analytics hooks will be wired here in a future version.
-  }
-  return WithAnalyticsMixin as TBase & typeof WithAnalyticsMixin;
+  return class extends Base {
+    analytics?: any;
+  };
 }
