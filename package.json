@@ -5,10 +5,10 @@
   "type": "module",
   "main": "src/index.ts",
   "bin": {
-    "codegen": "./src/cli.ts"
+    "codegen": "./src/cli/index.ts"
   },
   "scripts": {
-    "codegen": "bun src/cli.ts",
+    "codegen": "bun src/cli/index.ts",
     "test": "bun test/run-test.ts full",
     "test:integration": "bun test/scaffold/run-integration.ts",
     "test:integration:quick": "bun test/scaffold/run-integration.ts --skip-codegen"
