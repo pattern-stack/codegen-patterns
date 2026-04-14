@@ -85,7 +85,7 @@ export class <%= className %>Repository
 	// ═══════════════════════════════════════════════════════════════════════
 <% processedQueries.forEach((q) => { -%>
 
-	async <%= q.methodName %>(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
+	async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.hasVia) { -%>
 		// Junction query through <%= q.viaTable %>
 		const junctionRecords = await this.baseQuery()
@@ -380,7 +380,7 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 	// ═══════════════════════════════════════════════════════════════════════
 <% processedQueries.forEach((q) => { -%>
 
-	async <%= q.methodName %>(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
+	async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.hasVia) { -%>
 		// Junction query through <%= q.viaTable %>
 		const junctionRecords = await this.baseQuery()

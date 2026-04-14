@@ -32,6 +32,11 @@ gen-subsystem name:
 test-unit:
     bun test src/__tests__/
 
+# Run end-to-end smoke test: scaffold + generate + typecheck a fresh project.
+# Completes in ~60-120s. Set KEEP_SMOKE_DIR=1 to preserve the tmp project.
+test-smoke:
+    bun test/smoke/run-smoke.ts
+
 # Run baseline test (generate + compare to baseline)
 test-baseline:
     bun test/run-test.ts full

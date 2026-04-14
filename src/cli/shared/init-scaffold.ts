@@ -317,17 +317,70 @@ interface TsconfigMergeResult {
 }
 
 /**
- * Idempotent merge of required path aliases into an existing tsconfig.
- * Only adds missing aliases — never clobbers user-authored paths.
- *
- * Tolerates JSONC (comments) by preserving the original text if the JSON
- * parse fails; in that case it returns the input unchanged with a warning
- * reason so the caller can surface the issue.
+ * Strip JSONC single-line (//) and block (/* ... *&#47;) comments so
+ * JSON.parse can handle a typical tsconfig.json authored by `bun init` or
+ * similar tooling. Deliberately simple — doesn't handle comment-looking
+ * substrings inside string literals, which is acceptable because tsconfig
+ * values are well-known shapes.
+ */
+function stripJsonComments(raw: string): string {
+	let out = '';
+	let i = 0;
+	let inString = false;
+	let stringChar = '';
+	while (i < raw.length) {
+		const c = raw[i];
+		const next = raw[i + 1];
+		if (inString) {
+			out += c;
+			if (c === '\\' && i + 1 < raw.length) {
+				out += next;
+				i += 2;
+				continue;
+			}
+			if (c === stringChar) inString = false;
+			i++;
+			continue;
+		}
+		if (c === '"' || c === "'") {
+			inString = true;
+			stringChar = c;
+			out += c;
+			i++;
+			continue;
+		}
+		if (c === '/' && next === '/') {
+			// single-line comment — skip to newline
+			while (i < raw.length && raw[i] !== '\n') i++;
+			continue;
+		}
+		if (c === '/' && next === '*') {
+			i += 2;
+			while (i < raw.length && !(raw[i] === '*' && raw[i + 1] === '/')) i++;
+			i += 2;
+			continue;
+		}
+		out += c;
+		i++;
+	}
+	// Strip trailing commas before ] and }
+	return out.replace(/,\s*([\]}])/g, '$1');
+}
+
+const REQUIRED_COMPILER_OPTIONS: Record<string, unknown> = {
+	experimentalDecorators: true,
+	emitDecoratorMetadata: true,
+};
+
+/**
+ * Idempotent merge of required path aliases + compiler options into an
+ * existing tsconfig. Only adds missing entries — never clobbers user-
+ * authored paths or flags. Tolerates JSONC via a comment-stripping pass.
  */
 export function mergeTsconfig(raw: string): TsconfigMergeResult & { parseError?: string } {
 	let parsed: Record<string, unknown>;
 	try {
-		parsed = JSON.parse(raw);
+		parsed = JSON.parse(stripJsonComments(raw));
 	} catch (err: unknown) {
 		return {
 			content: raw,
@@ -346,6 +399,21 @@ export function mergeTsconfig(raw: string): TsconfigMergeResult & { parseError?:
 			paths[alias] = target;
 			added.push(alias);
 		}
+	}
+
+	// Also ensure decorator flags are enabled — NestJS generated code uses them.
+	for (const [opt, value] of Object.entries(REQUIRED_COMPILER_OPTIONS)) {
+		if (compilerOptions[opt] === undefined) {
+			compilerOptions[opt] = value;
+			added.push(opt);
+		}
+	}
+
+	// Verbatim module syntax + allowImportingTsExtensions (bun init defaults)
+	// conflict with NestJS decorator metadata — turn them off for decorated code.
+	if (compilerOptions.verbatimModuleSyntax === true) {
+		compilerOptions.verbatimModuleSyntax = false;
+		added.push('verbatimModuleSyntax=false');
 	}
 
 	if (added.length === 0) {
@@ -416,10 +484,16 @@ export async function buildInitPlan(
 	const cwd = options.cwd;
 	const force = Boolean(options.force);
 
-	// Detection — drive config defaults
+	// Detection — drive config defaults.
+	//
+	// Architecture default: 'clean-lite-ps'. The CONSUMER-SETUP.md flow and
+	// the codegen-pattern-demo-app both use clean-lite-ps; it's the
+	// supported consumer path. The scanner only overrides when it finds
+	// high-confidence evidence of a different layout (e.g. existing
+	// domain/ + application/ directories).
 	let framework = 'nestjs';
 	let orm = 'drizzle';
-	let architecture: 'clean' | 'clean-lite-ps' = 'clean';
+	let architecture: 'clean' | 'clean-lite-ps' = 'clean-lite-ps';
 	let frontend = false;
 
 	if (!options.skipScan) {
@@ -428,7 +502,19 @@ export async function buildInitPlan(
 			const proposed = generateConfig(profile);
 			framework = proposed.framework;
 			orm = proposed.orm;
-			architecture = proposed.generate.architecture;
+			// Only override architecture when the scanner detected actual
+			// clean-architecture evidence (domain/, application/ dirs). A
+			// fresh project that resolves to 'flat' with high confidence
+			// should stay at the clean-lite-ps default — otherwise init
+			// would emit a config that asks codegen to generate files into
+			// presentation/ and infrastructure/ directories that don't
+			// (and shouldn't) exist.
+			if (
+				profile.architecture.detected === 'clean' &&
+				profile.architecture.confidence >= 50
+			) {
+				architecture = proposed.generate.architecture;
+			}
 			frontend = proposed.generate.frontend;
 		} catch {
 			// Detection failed — keep defaults.
