@@ -130,7 +130,7 @@ function generateEntity(filePath: string, quiet = false): boolean {
 	console.log(`[GEN] Generating entity: ${result.definition.entity.name}`);
 
 	// Resolve templates directory dynamically
-	const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(import.meta.dirname, 'templates');
+	const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(import.meta.dirname, '..', 'templates');
 
 	// Run Hygen
 	const fullPath = resolve(process.cwd(), filePath);
@@ -197,7 +197,7 @@ function generateBroadcast(yamlPath?: string): boolean {
 
 	const cwd = process.cwd();
 	// Use env var or script location to find templates (works when running from any directory)
-	const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(import.meta.dirname, 'templates');
+	const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(import.meta.dirname, '..', 'templates');
 
 	// Build Hygen command
 	let hygenCmd = 'bunx hygen broadcast new';
