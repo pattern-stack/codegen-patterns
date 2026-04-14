@@ -1,5 +1,6 @@
 ---
 to: <%= locations.frontendCollections.path %>/collections.ts
+skip_if: <%= !frontendEnabled %>
 force: false
 ---
 /**

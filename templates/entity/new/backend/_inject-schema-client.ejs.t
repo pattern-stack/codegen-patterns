@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.schemaClient ? locations.dbSchemaClient.path : '' %>"
+to: "<%= isCleanArchitecture ? (generate.schemaClient ? locations.dbSchemaClient.path : '') : '' %>"
 inject: true
 after: "// Codegen exports"
 skip_if: <%= camelName %>Schema

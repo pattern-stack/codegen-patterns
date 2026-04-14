@@ -1,5 +1,5 @@
 ---
-to: <%= locations.backendConstants.path %>/tokens.ts
+to: "<%= isCleanArchitecture ? `${locations.backendConstants.path}/tokens.ts` : '' %>"
 inject: true
 append: true
 skip_if: <%= repositoryToken %>

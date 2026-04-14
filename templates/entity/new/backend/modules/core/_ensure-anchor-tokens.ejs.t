@@ -1,5 +1,5 @@
 ---
-to: "<%= exposeRepository ? `${locations.backendConstants.path}/tokens.ts` : '' %>"
+to: "<%= isCleanArchitecture ? (exposeRepository ? `${locations.backendConstants.path}/tokens.ts` : '') : '' %>"
 inject: true
 append: true
 skip_if: "// Generated entity repository tokens"

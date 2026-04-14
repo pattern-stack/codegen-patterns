@@ -1,5 +1,6 @@
 ---
 to: "<%= generate.dtos ? outputPaths.dto : '' %>"
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 /**

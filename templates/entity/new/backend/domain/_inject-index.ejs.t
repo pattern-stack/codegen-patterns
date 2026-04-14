@@ -1,5 +1,5 @@
 ---
-to: <%= basePaths.backendSrc %>/<%= backendLayers.domain %>/index.ts
+to: "<%= isCleanArchitecture ? `${basePaths.backendSrc}/${backendLayers.domain}/index.ts` : '' %>"
 inject: true
 append: true
 skip_if: <%= name %>

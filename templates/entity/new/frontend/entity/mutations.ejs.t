@@ -1,6 +1,6 @@
 ---
 to: "<%= generate.structure === 'entity-first' ? `${locations.frontendGenerated.path}/${name}/mutations.ts` : generate.structure === 'concern-first' ? `${locations.frontendGenerated.path}/mutations/${name}.ts` : '' %>"
-skip_if: <%= generate.structure === 'monolithic' || !generate.mutations || !(exposeTrpc || exposeRepository) %>
+skip_if: <%= !frontendEnabled || (generate.structure === 'monolithic' || !generate.mutations || !(exposeTrpc || exposeRepository)) %>
 force: true
 ---
 /**

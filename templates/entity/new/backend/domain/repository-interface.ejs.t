@@ -1,5 +1,6 @@
 ---
 to: <%= outputPaths.repositoryInterface %>
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 <% if (outputPaths.repositoryInterface) { -%>

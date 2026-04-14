@@ -1,5 +1,6 @@
 ---
 to: <%= locations.frontendEntities.path %>/<%= name %>.ts
+skip_if: <%= !frontendEnabled %>
 force: true
 ---
 /**

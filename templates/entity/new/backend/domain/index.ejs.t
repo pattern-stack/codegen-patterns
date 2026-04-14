@@ -1,6 +1,6 @@
 ---
 to: <%= basePaths.backendSrc %>/<%= paths.domain %>/index.ts
-skip_if: <%= !isNested || isGrouped %>
+skip_if: <%= !isCleanArchitecture || (!isNested || isGrouped) %>
 force: true
 ---
 /**

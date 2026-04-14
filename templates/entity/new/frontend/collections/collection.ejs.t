@@ -1,5 +1,5 @@
 ---
-to: "<%= generate.collections ? `${locations.frontendCollections.path}/collections.ts` : '' %>"
+to: "<%= frontendEnabled ? (generate.collections ? `${locations.frontendCollections.path}/collections.ts` : '') : '' %>"
 inject: true
 after: "// Codegen collections"
 skip_if: <%= camelName %>Collection

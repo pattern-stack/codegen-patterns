@@ -1,5 +1,6 @@
 ---
 to: <%= outputPaths.module %>
+skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
 /**
