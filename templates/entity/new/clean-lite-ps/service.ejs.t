@@ -18,7 +18,7 @@ export class <%= classNames.service %> extends WithAnalytics(
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
-  protected override eventBus?: unknown;
+  protected override eventBus: any = undefined;
 
   constructor(protected readonly repository: <%= classNames.repository %>) {
     super(repository);
