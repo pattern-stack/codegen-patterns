@@ -112,6 +112,15 @@ async function loadNouns(): Promise<void> {
 	}
 }
 
+async function loadShortcuts(cli: Cli): Promise<void> {
+	try {
+		const mod = await import('./shortcuts/init.js');
+		if (mod?.default) cli.register(mod.default);
+	} catch {
+		// shortcut not implemented
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
@@ -132,6 +141,8 @@ async function main(): Promise<void> {
 	cli.register(Builtins.HelpCommand);
 	cli.register(Builtins.VersionCommand);
 	cli.register(RootSummaryCommand);
+
+	await loadShortcuts(cli);
 
 	for (const noun of nouns) {
 		for (const CommandClass of noun.commandClasses) {
