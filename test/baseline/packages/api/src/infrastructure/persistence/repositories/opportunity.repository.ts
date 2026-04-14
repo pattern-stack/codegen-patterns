@@ -12,7 +12,7 @@ import type {
 	UpdateOpportunityInput,
 	OpportunityWith,
 } from '../../../domain';
-import { Opportunity, Organization, User, DealState } from '../../../domain';
+import { Opportunity, Organization, User } from '../../../domain';
 import type { DrizzleDB } from '../database.module';
 import { opportunities } from '@repo/db/server/schema';
 
@@ -131,9 +131,6 @@ export class OpportunityRepository implements IOpportunityRepository {
 				case 'owner':
 					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
 					return User.fromRecord(data as any);
-				case 'state':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
-					return DealState.fromRecord(data as any);
 				default:
 					return data;
 			}
