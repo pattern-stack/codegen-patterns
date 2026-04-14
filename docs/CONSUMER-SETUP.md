@@ -1,12 +1,12 @@
 # Consumer Setup
 
-The contract a consumer project must satisfy for generated code to compile and run. If you just want to generate a first entity in this repo, read [GETTING-STARTED.md](./GETTING-STARTED.md) instead — this doc is for the second step: wiring `@anthropic/codegen` into a separate NestJS + Drizzle project you own.
+The contract a consumer project must satisfy for generated code to compile and run. If you just want to generate a first entity in this repo, read [GETTING-STARTED.md](./GETTING-STARTED.md) instead — this doc is for the second step: wiring `@pattern-stack/codegen` into a separate NestJS + Drizzle project you own.
 
-A complete working example lives at [`codegen-pattern-demo-app/`](https://github.com/anthropics/codegen-pattern-demo-app) — every file referenced below has a real counterpart there.
+A complete working example lives at [`codegen-pattern-demo-app/`](https://github.com/pattern-stack/codegen-pattern-demo-app) — every file referenced below has a real counterpart there.
 
 ## Who this is for
 
-You are running `@anthropic/codegen` (installed as a sibling repo, workspace dep, or `npx @anthropic/codegen` binary — see [ADR-015](./adrs/ADR-015-cli-command-architecture.md)) against your own NestJS application. Generated code imports from `@shared/*` path aliases and injects a `DRIZZLE` token. This doc tells you what those import paths and tokens must resolve to.
+You are running `@pattern-stack/codegen` (installed as a sibling repo, workspace dep, or `npx @pattern-stack/codegen` binary — see [ADR-015](./adrs/ADR-015-cli-command-architecture.md)) against your own NestJS application. Generated code imports from `@shared/*` path aliases and injects a `DRIZZLE` token. This doc tells you what those import paths and tokens must resolve to.
 
 ## Prerequisites
 
@@ -140,7 +140,7 @@ Generated code imports from stable `@shared/*` paths. Those paths have to resolv
 - Consumers can later swap the runtime location (workspace dep, published package) without rewriting generated code.
 - See [ADR-017](./adrs/ADR-017-barrel-files-over-injects.md) for the broader "stable surface over inject" philosophy these shims extend.
 
-Enumerate every shim below. All paths are relative to your project root. Adjust the `../../../codegen-patterns/runtime/...` path to wherever you've installed the runtime (sibling repo in the example; `../node_modules/@anthropic/codegen/runtime/...` for workspace installs).
+Enumerate every shim below. All paths are relative to your project root. Adjust the `../../../codegen-patterns/runtime/...` path to wherever you've installed the runtime (sibling repo in the example; `../node_modules/@pattern-stack/codegen/runtime/...` for workspace installs).
 
 ### Base classes
 
@@ -287,7 +287,7 @@ After authoring the shims, `DatabaseModule`, `schema.ts`, `app.module.ts`, and `
 ```bash
 # Regenerate the full entity set
 bun /path/to/codegen-patterns/src/cli/index.ts entity new --all
-# (or `just gen-all` / `npx @anthropic/codegen entity new --all` depending on install form)
+# (or `just gen-all` / `npx @pattern-stack/codegen entity new --all` depending on install form)
 
 # Typecheck — zero errors expected
 bun run typecheck

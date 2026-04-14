@@ -2,7 +2,7 @@
 
 Generate Clean Architecture scaffolding for TypeScript/NestJS apps from YAML entity definitions.
 
-> **Consuming codegen in your own project?** This guide walks through the generator's own repo. For wiring `@anthropic/codegen` into a separate NestJS app — path aliases, `DatabaseModule`, re-export shims — see [CONSUMER-SETUP.md](./CONSUMER-SETUP.md).
+> **Consuming codegen in your own project?** This guide walks through the generator's own repo. For wiring `@pattern-stack/codegen` into a separate NestJS app — path aliases, `DatabaseModule`, re-export shims — see [CONSUMER-SETUP.md](./CONSUMER-SETUP.md).
 
 ## Prerequisites
 

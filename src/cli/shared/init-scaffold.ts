@@ -74,7 +74,7 @@ export interface InitOptions {
  *    `<packageRoot>/runtime/`.
  * 2. Resolve the relative path from the shim directory. For most layouts
  *    (sibling repo, workspace dep) this produces `../../../codegen-patterns/
- *    runtime` or `../../node_modules/@anthropic/codegen/runtime` — either
+ *    runtime` or `../../node_modules/@pattern-stack/codegen/runtime` — either
  *    works as an import specifier.
  */
 export function resolveRuntimePath(cwd: string): string {
