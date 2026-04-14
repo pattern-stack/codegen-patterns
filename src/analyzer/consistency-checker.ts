@@ -304,12 +304,20 @@ function checkMissingInverses(graph: DomainGraph): AnalysisIssue[] {
 
 /**
  * Get the set of all valid field names for an entity, including behavior-added fields
+ * and belongs_to foreign key fields (which the template emits as columns even when
+ * not explicitly declared under `fields:`).
  */
 function getAvailableFieldNames(entity: ParsedEntity): string[] {
 	const entityFieldNames = Array.from(entity.fields.keys());
 	const behaviorFields = resolveBehaviorFields(entity.behaviors);
 	const behaviorFieldNames = behaviorFields.map((f) => f.name);
-	return [...new Set([...entityFieldNames, ...behaviorFieldNames])];
+	const belongsToFkNames: string[] = [];
+	for (const rel of entity.relationships.values()) {
+		if (rel.type === 'belongs_to' && rel.foreignKey) {
+			belongsToFkNames.push(rel.foreignKey);
+		}
+	}
+	return [...new Set([...entityFieldNames, ...behaviorFieldNames, ...belongsToFkNames])];
 }
 
 /**

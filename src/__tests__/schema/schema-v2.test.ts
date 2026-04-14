@@ -406,4 +406,50 @@ describe('cross-block validation', () => {
 		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
 		expect(queryIssues).toHaveLength(0);
 	});
+
+	// dogfood #9: belongs_to FK fields (not separately declared under `fields:`)
+	// must still count as available fields for query validation.
+	it('accepts query on belongs_to FK field even when not declared in fields', () => {
+		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
+		const contact = result.entities[0];
+
+		// Simulate the buggy scenario: author relies on the belongs_to relationship
+		// to imply the `account_id` column, without also declaring it under `fields:`.
+		contact.fields.delete('account_id');
+		contact.queries = [{ by: ['account_id'] }];
+
+		const graph = buildDomainGraph([contact]);
+		const issues = checkConsistency(graph);
+		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
+		expect(queryIssues).toHaveLength(0);
+	});
+
+	it('still rejects query on truly nonexistent field when belongs_to is present', () => {
+		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
+		const contact = result.entities[0];
+
+		contact.fields.delete('account_id');
+		contact.queries = [{ by: ['nonexistent'] }];
+
+		const graph = buildDomainGraph([contact]);
+		const issues = checkConsistency(graph);
+		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
+		expect(queryIssues.length).toBeGreaterThan(0);
+		expect(queryIssues[0].message).toContain('nonexistent');
+	});
+
+	it('accepts composite query mixing declared field and belongs_to FK', () => {
+		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
+		const contact = result.entities[0];
+
+		// Drop the declared account_id so only the belongs_to relationship provides it.
+		contact.fields.delete('account_id');
+		// user_id remains declared; account_id comes from the `account` belongs_to.
+		contact.queries = [{ by: ['user_id', 'account_id'] }];
+
+		const graph = buildDomainGraph([contact]);
+		const issues = checkConsistency(graph);
+		const queryIssues = issues.filter((i) => i.type === 'unknown_query_field');
+		expect(queryIssues).toHaveLength(0);
+	});
 });
