@@ -17,9 +17,14 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
    */
   async upsertMany(
     inputs: Array<Partial<TEntity>>,
-    conflictTarget: keyof PgTableWithColumns<any>['_']['columns'], // eslint-disable-line @typescript-eslint/no-explicit-any
+    conflictTarget?: keyof PgTableWithColumns<any>['_']['columns'], // eslint-disable-line @typescript-eslint/no-explicit-any
   ): Promise<TEntity[]> {
     if (inputs.length === 0) return [];
+
+    // Fall back to base class naive upsert when no conflict target provided
+    if (!conflictTarget) {
+      return super.upsertMany(inputs);
+    }
 
     const data = inputs.map((input) =>
       this.withTimestamps(input as Record<string, unknown>, 'create'),
