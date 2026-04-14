@@ -18,6 +18,8 @@ export interface CodegenConfig {
 		subsystems?: string;
 		backend_src?: string;
 		frontend_src?: string;
+		/** Directory codegen writes barrel files into. Default: 'src/generated'. */
+		generated?: string;
 	};
 	generate?: Record<string, unknown>;
 	framework?: string;

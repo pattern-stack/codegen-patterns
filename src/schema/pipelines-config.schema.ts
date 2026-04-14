@@ -131,6 +131,28 @@ export const GenerateConfigSchema = z
 export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
 
 // ============================================================================
+// Paths Config
+// ============================================================================
+
+/**
+ * Filesystem path configuration for the `paths` block.
+ *
+ * Only keys used by the barrel/codegen machinery are validated here. Other
+ * legacy `paths.*` keys flow through via `.passthrough()` so existing configs
+ * keep working.
+ *
+ * - `generated`: directory where codegen-owned barrel files are written
+ *   (modules.ts, schema.ts). Relative to project root. Default: `src/generated`.
+ */
+export const PathsConfigSchema = z
+  .object({
+    generated: z.string().default("src/generated"),
+  })
+  .passthrough();
+
+export type PathsConfig = z.infer<typeof PathsConfigSchema>;
+
+// ============================================================================
 // Top-Level Pipelines Config
 // ============================================================================
 
