@@ -14,7 +14,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   <%= serviceBaseClass %><<%= classNames.repository %>, <%= classNames.entity %>>,
 ) {
   constructor(protected readonly repository: <%= classNames.repository %>) {
-    super();
+    super(repository);
   }
 
   // TODO: Add entity-specific domain methods here.

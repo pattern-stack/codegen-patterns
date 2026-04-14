@@ -29,12 +29,12 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
   async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.isUnique) { -%>
     const rows = await this.baseQuery()
-      .where(<%= q.hasMultipleParams ? 'and(' : '' %><%= q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%= q.hasMultipleParams ? ')' : '' %>)
+      .where(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)
       .limit(1);
     return (rows[0] as <%= classNames.entity %>) ?? null;
 <% } else { -%>
     const rows = await this.baseQuery()
-      .where(<%= q.hasMultipleParams ? 'and(' : '' %><%= q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%= q.hasMultipleParams ? ')' : '' %>)<%= q.hasOrder ? `.orderBy(${q.orderDirection}(this.table['${q.orderBy}']))` : '' %>;
+      .where(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)<%- q.hasOrder ? `.orderBy(${q.orderDirection}(this.table['${q.orderBy}']))` : '' %>;
     return rows as <%= classNames.entity %>[];
 <% } -%>
   }
