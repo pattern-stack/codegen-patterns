@@ -419,7 +419,11 @@ function processQueries(queriesBlock, processedFields, entityNamePascal) {
       returnType = `${entityNamePascal}[]`;
     }
 
-    const useCaseClassName = `${pascalCase(methodName)}UseCase`;
+    // Prefix class name with entity to guarantee uniqueness across modules.
+    // e.g. methodName 'findByDomain' on Account → 'FindAccountByDomainUseCase'
+    //      methodName 'findEmailsByOpportunityId' on Contact → 'FindContactEmailsByOpportunityIdUseCase'
+    const methodPascal = pascalCase(methodName);
+    const useCaseClassName = methodPascal.replace(/^Find/, `Find${entityNamePascal}`) + 'UseCase';
 
     return {
       by: byFields,
