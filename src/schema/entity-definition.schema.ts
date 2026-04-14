@@ -70,6 +70,62 @@ export type UiImportance = z.infer<typeof UiImportanceSchema>;
  * All properties are optional and will be inferred at generation time
  * if not explicitly specified in the YAML definition.
  */
+// ============================================================================
+// Semantic / Analytics Metadata Types
+// ============================================================================
+
+const AnalyticsAggregationSchema = z.enum([
+  'sum',
+  'min',
+  'max',
+  'count',
+  'count_distinct',
+  'average',
+  'median',
+  'percentile',
+  'sum_boolean',
+]);
+
+const AnalyticsDimensionTypeSchema = z.enum(['categorical', 'time']);
+
+const AnalyticsEntityTypeSchema = z.enum(['primary', 'unique', 'foreign', 'natural']);
+
+const AnalyticsTimeGranularitySchema = z.enum(['day', 'week', 'month', 'quarter', 'year']);
+
+const AnalyticsVisibilitySchema = z.enum(['internal', 'agent', 'public']);
+
+const NonAdditiveDimensionSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string(),
+    window_choice: z.string().optional(),
+    window_groupings: z.array(z.string()).optional(),
+  }),
+]);
+
+/**
+ * Semantic Metadata Schema - Optional field-level analytics properties
+ *
+ * Controls how a field is exposed to the cube.js semantic layer:
+ * measures, dimensions, entities, and their configuration.
+ */
+const SemanticMetadataSchema = z.object({
+  measure: z.boolean().optional(),
+  analytics_aggregation: AnalyticsAggregationSchema.optional(),
+  agg_time_dimension: z.string().optional(),
+  non_additive_dimension: NonAdditiveDimensionSchema.optional(),
+  dimension: z.boolean().optional(),
+  dimension_type: AnalyticsDimensionTypeSchema.optional(),
+  time_granularity: AnalyticsTimeGranularitySchema.optional(),
+  is_partition: z.boolean().optional(),
+  entity: z.boolean().optional(),
+  entity_type: AnalyticsEntityTypeSchema.optional(),
+  entity_role: z.string().optional(),
+  analytics_visibility: AnalyticsVisibilitySchema.optional(),
+  semantic_expr: z.string().optional(),
+  semantic_label: z.string().optional(),
+});
+
 const UiMetadataSchema = z.object({
   ui_label: z.string().optional(),
   ui_type: UiTypeSchema.optional(),
@@ -143,7 +199,7 @@ const BaseFieldSchema = z.object({
 /**
  * Field Definition Schema - Combines base fields with optional UI metadata
  */
-const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
+const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema).merge(SemanticMetadataSchema)
   .refine((data) => !(data.required === true && data.nullable === true), {
     message:
       "'required: true' and 'nullable: true' cannot both be set. A required field cannot be null.",
@@ -253,6 +309,20 @@ const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
     {
       message: "'enum' type requires either 'choices' or 'choices_from'",
       path: ["choices"],
+    },
+  )
+  .refine(
+    (data) => {
+      // If measure is true, analytics_aggregation must be present
+      if (data.measure === true && !data.analytics_aggregation) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message:
+        "When 'measure' is true, 'analytics_aggregation' must be specified",
+      path: ["analytics_aggregation"],
     },
   );
 
@@ -477,6 +547,82 @@ const EventDeclarationSchema = z.object({
 export type EventDeclaration = z.infer<typeof EventDeclarationSchema>;
 
 // ============================================================================
+// Analytics Block (entity-level)
+// ============================================================================
+
+/**
+ * Simple metric in a YAML metric definition
+ */
+const SimpleMetricSchema = z.object({
+  type: z.literal('simple'),
+  measure: z.string(),
+  agg: AnalyticsAggregationSchema.optional(),
+  filter: z.string().optional(),
+  description: z.string().optional(),
+  label: z.string().optional(),
+});
+
+/**
+ * Derived metric — expression combining other metrics
+ */
+const DerivedMetricSchema = z.object({
+  type: z.literal('derived'),
+  expr: z.string(),
+  metrics: z.array(z.string()),
+  description: z.string().optional(),
+  label: z.string().optional(),
+});
+
+/**
+ * Ratio metric — numerator / denominator
+ */
+const RatioMetricSchema = z.object({
+  type: z.literal('ratio'),
+  numerator: z.union([z.string(), SimpleMetricSchema]),
+  denominator: z.union([z.string(), SimpleMetricSchema]),
+  filter: z.string().optional(),
+  description: z.string().optional(),
+  label: z.string().optional(),
+});
+
+/**
+ * Cumulative metric — time-series accumulation
+ */
+const CumulativeMetricSchema = z.object({
+  type: z.literal('cumulative'),
+  measure: z.string(),
+  window: z.string().optional(),
+  grain_to_date: AnalyticsTimeGranularitySchema.optional(),
+  description: z.string().optional(),
+  label: z.string().optional(),
+});
+
+/**
+ * Discriminated union of all four metric types
+ */
+const MetricDefinitionSchema = z.discriminatedUnion('type', [
+  SimpleMetricSchema,
+  DerivedMetricSchema,
+  RatioMetricSchema,
+  CumulativeMetricSchema,
+]);
+
+export type MetricDefinition = z.infer<typeof MetricDefinitionSchema>;
+
+/**
+ * Entity-level analytics block
+ *
+ * Declared in the YAML under `analytics:` alongside fields and relationships.
+ */
+const AnalyticsBlockSchema = z.object({
+  measure_packs: z.array(z.string()).optional(),
+  cube_name: z.string().optional(),
+  metrics: z.record(z.string(), MetricDefinitionSchema).optional(),
+});
+
+export type AnalyticsBlock = z.infer<typeof AnalyticsBlockSchema>;
+
+// ============================================================================
 // Full Entity Definition
 // ============================================================================
 
@@ -499,6 +645,10 @@ export const EntityDefinitionSchema = z
     // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Generates typed event classes, handlers, and queue registration
     events: z.array(EventDeclarationSchema).optional(),
+
+    // v2: Analytics / semantic layer configuration
+    // Cube.js measure packs, custom cube name, and metric definitions
+    analytics: AnalyticsBlockSchema.optional(),
   })
   .strict();
 

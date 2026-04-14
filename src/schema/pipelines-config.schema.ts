@@ -125,6 +125,12 @@ export const GenerateConfigSchema = z
      * Default: false — backend-only projects opt out by default.
      */
     frontend: z.boolean().default(false),
+    /**
+     * Analytics backend to generate.
+     * - 'none': no analytics layer (default)
+     * - 'cube': generate cube.js semantic layer and analytics providers
+     */
+    analytics: z.enum(['none', 'cube']).default('none'),
   })
   .passthrough();
 
