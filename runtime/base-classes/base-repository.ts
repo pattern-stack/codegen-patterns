@@ -10,7 +10,7 @@
  * NOT @Injectable — concrete repositories are @Injectable and inject DRIZZLE.
  */
 import { eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { PgTableWithColumns, Column } from 'drizzle-orm/pg-core';
+import type { PgTableWithColumns, PgColumn } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '../types/drizzle';
 
@@ -35,7 +35,7 @@ export interface ListOptions {
   where?: SQL;
   limit?: number;
   offset?: number;
-  orderBy?: Column | SQL;
+  orderBy?: PgColumn | SQL;
 }
 
 // ============================================================================
@@ -216,7 +216,7 @@ export abstract class BaseRepository<TEntity> {
    * when softDelete behavior is enabled.
    */
   protected baseQuery() {
-    const query = this.db.select().from(this.table);
+    const query = this.db.select().from(this.table).$dynamic();
     if (this.behaviors.softDelete) {
       return query.where(isNull(this.table['deletedAt']));
     }
