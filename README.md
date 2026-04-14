@@ -15,6 +15,8 @@ mise install        # install pinned bun + node versions
 just install        # install all deps (root + scaffold)
 ```
 
+> **Using codegen in your own project?** See [**docs/CONSUMER-SETUP.md**](docs/CONSUMER-SETUP.md) for the consumer contract — required tsconfig path aliases, `DatabaseModule` scaffold, and `@shared/*` re-export shims. [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) covers entity YAML authoring.
+
 ## Quick Start
 
 ```bash
