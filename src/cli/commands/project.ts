@@ -15,6 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
 import { Command, Option } from 'clipanion';
 import type { CommandClass } from 'clipanion';
 import { stringify as stringifyYaml } from 'yaml';
@@ -166,6 +167,17 @@ export class ProjectInitCommand extends Command {
 			return renderPlanOnly(plan, { dryRun: true });
 		}
 
+		if (!this.yes && !isJsonMode()) {
+			renderPlanOnly(plan, { dryRun: false });
+			console.log('');
+			const confirmed = await askConfirm('Proceed?');
+			if (!confirmed) {
+				printInfo('Aborted.');
+				return 0;
+			}
+			console.log('');
+		}
+
 		const result = writePlan(plan);
 
 		if (isJsonMode()) {
@@ -221,6 +233,16 @@ export class ProjectInitCommand extends Command {
 
 		return 0;
 	}
+}
+
+function askConfirm(question: string): Promise<boolean> {
+	const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+	return new Promise((resolve) => {
+		rl.question(`${question} [Y/n] `, (answer) => {
+			rl.close();
+			resolve(answer.trim().toLowerCase() !== 'n');
+		});
+	});
 }
 
 function renderPlanOnly(plan: InitPlan, opts: { dryRun: boolean }): number {

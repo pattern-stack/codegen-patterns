@@ -2,7 +2,7 @@
 
 The contract a consumer project must satisfy for generated code to compile and run. If you just want to generate a first entity in this repo, read [GETTING-STARTED.md](./GETTING-STARTED.md) instead — this doc is for the second step: wiring `@anthropic/codegen` into a separate NestJS + Drizzle project you own.
 
-A complete working example lives at [`codegen-pattern-demo-app/`](https://github.com/) — every file referenced below has a real counterpart there.
+A complete working example lives at [`codegen-pattern-demo-app/`](https://github.com/anthropics/codegen-pattern-demo-app) — every file referenced below has a real counterpart there.
 
 ## Who this is for
 

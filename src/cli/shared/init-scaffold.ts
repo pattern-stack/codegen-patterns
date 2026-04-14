@@ -171,7 +171,7 @@ export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
       provide: DRIZZLE,
       useFactory: () => {
         const pool = new Pool({
-          connectionString: process.env.DATABASE_URL,
+          connectionString: process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev',
         });
         return drizzle(pool, { schema });
       },
@@ -262,7 +262,7 @@ function exampleEntityYaml(): string {
 #     type: string
 #   status:
 #     type: enum
-#     values: [active, inactive]
+#     choices: [active, inactive]
 #
 # queries:
 #   - by: [email]
