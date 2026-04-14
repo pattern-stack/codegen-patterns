@@ -104,6 +104,12 @@ async function loadNouns(): Promise<void> {
 	} catch {
 		// subsystem noun not implemented yet
 	}
+	try {
+		const mod = await import('./commands/project.js');
+		if (mod?.default) nouns.push(mod.default as NounModule);
+	} catch {
+		// project noun not implemented yet
+	}
 }
 
 // ---------------------------------------------------------------------------
