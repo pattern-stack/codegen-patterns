@@ -75,7 +75,7 @@ function makeMockDb(returnValue: unknown = []) {
   };
 
   const chainMethods = [
-    'select', 'from', 'where', 'limit', 'offset', 'orderBy',
+    'select', 'from', '$dynamic', 'where', 'limit', 'offset', 'orderBy',
     'insert', 'values', 'returning',
     'update', 'set',
     'delete',
