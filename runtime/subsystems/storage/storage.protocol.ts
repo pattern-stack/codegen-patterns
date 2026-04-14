@@ -60,4 +60,19 @@ export interface IStorageService {
    * @throws Only on unexpected I/O errors (not on simple absence)
    */
   exists(key: string): Promise<boolean>;
+
+  /**
+   * List all stored keys, optionally filtered by prefix.
+   *
+   * @param prefix - Optional prefix filter (e.g. 'avatars/')
+   * @returns Array of keys matching the prefix (or all keys if omitted)
+   */
+  list(prefix?: string): Promise<string[]>;
+
+  /**
+   * Download a file by key and return its contents as a Web ReadableStream.
+   *
+   * @throws If the file does not exist or cannot be read
+   */
+  downloadStream(key: string): Promise<ReadableStream>;
 }

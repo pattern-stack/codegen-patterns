@@ -37,8 +37,45 @@ export interface EventsModuleOptions {
   redisUrl?: string;
 }
 
+export interface EventsModuleAsyncOptions {
+  useFactory: (...args: unknown[]) => Promise<EventsModuleOptions> | EventsModuleOptions;
+  inject?: unknown[];
+  imports?: unknown[];
+}
+
 @Module({})
 export class EventsModule {
+  static forRootAsync(asyncOptions: EventsModuleAsyncOptions): DynamicModule {
+    return {
+      module: EventsModule,
+      global: true,
+      imports: (asyncOptions.imports ?? []) as Parameters<typeof Module>[0]['imports'],
+      providers: [
+        {
+          provide: 'EVENTS_MODULE_OPTIONS',
+          useFactory: asyncOptions.useFactory,
+          inject: (asyncOptions.inject ?? []) as Parameters<typeof Module>[0]['providers'],
+        },
+        {
+          provide: EVENT_BUS,
+          useFactory: (options: EventsModuleOptions) => {
+            const mod = EventsModule.forRoot(options);
+            // Return the provider instance by delegating to forRoot's logic
+            const provider = mod.providers?.find(
+              (p) => typeof p === 'object' && p !== null && 'provide' in p && p.provide === EVENT_BUS,
+            );
+            if (provider && typeof provider === 'object' && 'useClass' in provider) {
+              return new (provider.useClass as new () => unknown)();
+            }
+            throw new Error('EventsModule.forRootAsync: failed to resolve provider');
+          },
+          inject: ['EVENTS_MODULE_OPTIONS'],
+        },
+      ],
+      exports: [EVENT_BUS],
+    };
+  }
+
   static forRoot(
     options: EventsModuleOptions = { backend: 'drizzle' },
   ): DynamicModule {

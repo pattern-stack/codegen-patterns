@@ -8,6 +8,7 @@
  * - All methods throw on failure (missing keys, etc.)
  */
 import type { IStorageService } from './storage.protocol';
+import { toBuffer } from './storage.utils';
 
 interface MemoryEntry {
   data: Buffer;
@@ -38,7 +39,7 @@ export class MemoryStorageBackend implements IStorageService {
     this.store.delete(key);
   }
 
-  async getUrl(key: string, expiresInSeconds?: number): Promise<string> {
+  async getUrl(key: string, _expiresInSeconds?: number): Promise<string> {
     if (!this.store.has(key)) {
       throw new Error(`Storage: file not found: ${key}`);
     }
@@ -47,6 +48,22 @@ export class MemoryStorageBackend implements IStorageService {
 
   async exists(key: string): Promise<boolean> {
     return this.store.has(key);
+  }
+
+  async list(prefix?: string): Promise<string[]> {
+    const keys = Array.from(this.store.keys());
+    if (prefix === undefined) return keys;
+    return keys.filter((k) => k.startsWith(prefix));
+  }
+
+  async downloadStream(key: string): Promise<ReadableStream> {
+    const buffer = await this.download(key);
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(buffer));
+        controller.close();
+      },
+    });
   }
 
   /** Clear all stored files. Useful for test teardown. */
@@ -58,18 +75,4 @@ export class MemoryStorageBackend implements IStorageService {
   size(): number {
     return this.store.size;
   }
-}
-
-async function toBuffer(data: Buffer | ReadableStream): Promise<Buffer> {
-  if (Buffer.isBuffer(data)) {
-    return data;
-  }
-  const reader = (data as ReadableStream<Uint8Array>).getReader();
-  const chunks: Uint8Array[] = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) chunks.push(value);
-  }
-  return Buffer.concat(chunks);
 }

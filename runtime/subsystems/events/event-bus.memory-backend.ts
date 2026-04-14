@@ -7,11 +7,13 @@
  * Use this backend in tests to assert event publication without a database.
  * Swap via EventsModule.forRoot({ backend: 'memory' }).
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { DomainEvent, IEventBus } from './event-bus.protocol';
 
 @Injectable()
 export class MemoryEventBus implements IEventBus {
+  private readonly logger = new Logger(MemoryEventBus.name);
+
   /** All events published since construction (or last clear). */
   readonly publishedEvents: DomainEvent[] = [];
 
@@ -54,8 +56,23 @@ export class MemoryEventBus implements IEventBus {
   private async dispatch(event: DomainEvent): Promise<void> {
     const set = this.handlers.get(event.type);
     if (!set) return;
+
+    let firstError: unknown;
     for (const handler of set) {
-      await handler(event);
+      try {
+        await handler(event);
+      } catch (err) {
+        this.logger.error(
+          `Handler error for event type "${event.type}" (id: ${event.id}): ${err}`,
+        );
+        if (firstError === undefined) {
+          firstError = err;
+        }
+      }
+    }
+
+    if (firstError !== undefined) {
+      throw firstError;
     }
   }
 }

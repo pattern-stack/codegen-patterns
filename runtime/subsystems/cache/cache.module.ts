@@ -17,8 +17,8 @@
  * The drizzle backend requires DRIZZLE to be provided globally (e.g., via DatabaseModule).
  */
 import { Module, type DynamicModule } from '@nestjs/common';
-import { CACHE } from './cache.tokens';
-import { CACHE_DEFAULT_TTL, DrizzleCacheService } from './cache.drizzle-backend';
+import { CACHE, CACHE_DEFAULT_TTL } from './cache.tokens';
+import { DrizzleCacheService } from './cache.drizzle-backend';
 import { MemoryCacheService } from './cache.memory-backend';
 
 export interface CacheModuleOptions {
@@ -27,25 +27,59 @@ export interface CacheModuleOptions {
   defaultTtl?: number;
 }
 
+export interface CacheModuleAsyncOptions {
+  useFactory: (...args: unknown[]) => Promise<CacheModuleOptions> | CacheModuleOptions;
+  inject?: unknown[];
+  imports?: unknown[];
+}
+
 @Module({})
 export class CacheModule {
+  static forRootAsync(asyncOptions: CacheModuleAsyncOptions): DynamicModule {
+    return {
+      module: CacheModule,
+      global: true,
+      imports: (asyncOptions.imports ?? []) as Parameters<typeof Module>[0]['imports'],
+      providers: [
+        {
+          provide: 'CACHE_MODULE_OPTIONS',
+          useFactory: asyncOptions.useFactory,
+          inject: (asyncOptions.inject ?? []) as Parameters<typeof Module>[0]['providers'],
+        },
+        {
+          provide: CACHE,
+          useFactory: (options: CacheModuleOptions) => {
+            if (options.backend === 'drizzle') {
+              return new DrizzleCacheService(
+                null as unknown as Parameters<typeof DrizzleCacheService.prototype.get>[0] extends never ? never : Parameters<typeof DrizzleCacheService['prototype']['get']>[0] extends never ? never : never,
+                options.defaultTtl ?? null,
+              );
+            }
+            return new MemoryCacheService(options.defaultTtl ?? null);
+          },
+          inject: ['CACHE_MODULE_OPTIONS'],
+        },
+        { provide: DrizzleCacheService, useExisting: CACHE },
+        { provide: MemoryCacheService, useExisting: CACHE },
+      ],
+      exports: [CACHE],
+    };
+  }
+
   static forRoot(options: CacheModuleOptions = { backend: 'drizzle' }): DynamicModule {
-    const cacheProvider =
-      options.backend === 'drizzle'
-        ? { provide: CACHE, useClass: DrizzleCacheService }
-        : { provide: CACHE, useClass: MemoryCacheService };
+    const ConcreteClass = options.backend === 'drizzle' ? DrizzleCacheService : MemoryCacheService;
 
     const providers = options.defaultTtl !== undefined
       ? [
-          cacheProvider,
+          // Register the concrete class as the canonical instance
+          ConcreteClass,
           { provide: CACHE_DEFAULT_TTL, useValue: options.defaultTtl },
-          // Register concrete class so NestJS can resolve lifecycle hooks
-          options.backend === 'drizzle' ? DrizzleCacheService : MemoryCacheService,
+          // CACHE token points to the same instance — no duplicate
+          { provide: CACHE, useExisting: ConcreteClass },
         ]
       : [
-          cacheProvider,
-          // Register concrete class so NestJS can resolve lifecycle hooks
-          options.backend === 'drizzle' ? DrizzleCacheService : MemoryCacheService,
+          ConcreteClass,
+          { provide: CACHE, useExisting: ConcreteClass },
         ];
 
     return {

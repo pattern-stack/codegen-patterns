@@ -30,4 +30,16 @@ export interface ICacheService {
 
   /** Check whether a non-expired entry exists for the given key. Returns false on error. */
   has(key: string): Promise<boolean>;
+
+  /**
+   * Return the cached value for `key`, or compute it via `factory` and store it.
+   *
+   * Stampede protection: concurrent calls for the same key that miss the cache
+   * will share the same in-flight promise — the factory is invoked only once.
+   *
+   * @param key - Cache key
+   * @param factory - Async function that computes the value on cache miss
+   * @param ttlSeconds - Optional TTL; falls back to the module-configured default
+   */
+  getOrSet<T = unknown>(key: string, factory: () => Promise<T>, ttlSeconds?: number): Promise<T>;
 }

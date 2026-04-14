@@ -13,7 +13,7 @@
  */
 import { Injectable, Inject, Optional } from '@nestjs/common';
 import type { ICacheService } from './cache.protocol';
-import { CACHE_DEFAULT_TTL } from './cache.drizzle-backend';
+import { CACHE_DEFAULT_TTL } from './cache.tokens';
 
 interface CacheRecord {
   value: unknown;
@@ -24,6 +24,8 @@ interface CacheRecord {
 export class MemoryCacheService implements ICacheService {
   private readonly store = new Map<string, CacheRecord>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** In-flight getOrSet promises — keyed by cache key to deduplicate stampedes. */
+  private readonly inflight = new Map<string, Promise<unknown>>();
 
   constructor(
     @Optional() @Inject(CACHE_DEFAULT_TTL) private readonly defaultTtl: number | null = null,
@@ -72,6 +74,30 @@ export class MemoryCacheService implements ICacheService {
   async has(key: string): Promise<boolean> {
     const value = await this.get(key);
     return value !== null;
+  }
+
+  async getOrSet<T = unknown>(
+    key: string,
+    factory: () => Promise<T>,
+    ttlSeconds?: number,
+  ): Promise<T> {
+    // Fast path: cache hit
+    const cached = await this.get<T>(key);
+    if (cached !== null) return cached;
+
+    // Stampede protection: if another call is already computing this key, reuse its promise
+    const existing = this.inflight.get(key) as Promise<T> | undefined;
+    if (existing !== undefined) return existing;
+
+    const promise = factory().then(async (value) => {
+      await this.set(key, value, ttlSeconds);
+      return value;
+    }).finally(() => {
+      this.inflight.delete(key);
+    });
+
+    this.inflight.set(key, promise as Promise<unknown>);
+    return promise;
   }
 
   /** Remove a key from store and cancel its expiry timer. */

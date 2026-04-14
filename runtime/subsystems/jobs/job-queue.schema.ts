@@ -29,6 +29,8 @@ export const jobQueue = pgTable(
     status: text('status').notNull().default('pending').$type<JobStatus>(),
     /** Earliest time the job may be claimed. */
     runAt: timestamp('run_at').notNull().defaultNow(),
+    /** Higher priority jobs are claimed first (ORDER BY priority DESC). */
+    priority: integer('priority').notNull().default(0),
     /** Number of processing attempts made so far. */
     attempts: integer('attempts').notNull().default(0),
     /** Maximum number of retries before status → failed. */
@@ -39,6 +41,8 @@ export const jobQueue = pgTable(
     lastError: text('last_error'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     completedAt: timestamp('completed_at'),
+    /** When the job was last claimed by a worker (used for stale job recovery). */
+    claimedAt: timestamp('claimed_at'),
   },
   // Indexes: add via migration when deploying
   // - (status, run_at) for claim query

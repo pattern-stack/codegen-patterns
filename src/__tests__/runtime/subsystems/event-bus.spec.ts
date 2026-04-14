@@ -149,6 +149,20 @@ describe('MemoryEventBus', () => {
       expect(calls).toContain('h2');
     });
 
+    it('a throwing handler does not prevent other handlers from receiving the event', async () => {
+      const received: string[] = [];
+      bus.subscribe('test_event', async () => {
+        throw new Error('handler 1 failed');
+      });
+      bus.subscribe('test_event', async () => {
+        received.push('h2');
+      });
+
+      // publish should throw (first error re-thrown) but h2 still ran
+      await expect(bus.publish(makeEvent())).rejects.toThrow('handler 1 failed');
+      expect(received).toContain('h2');
+    });
+
     it('removing one handler does not affect others', async () => {
       const calls: string[] = [];
       const unsub = bus.subscribe('test_event', async () => { calls.push('h1'); });

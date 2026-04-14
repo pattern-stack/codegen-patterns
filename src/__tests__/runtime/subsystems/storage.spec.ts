@@ -119,6 +119,59 @@ describe('LocalStorageBackend', () => {
     const result = await backend.download('test/overwrite.txt');
     expect(result.toString()).toBe('v2');
   });
+
+  it('rejects path traversal keys (../../etc/passwd)', async () => {
+    const backend = new LocalStorageBackend(tmpDir);
+    await expect(backend.download('../../etc/passwd')).rejects.toThrow('path traversal');
+  });
+
+  it('rejects path traversal on upload', async () => {
+    const backend = new LocalStorageBackend(tmpDir);
+    await expect(
+      backend.upload('../../evil.txt', Buffer.from('x')),
+    ).rejects.toThrow('path traversal');
+  });
+
+  it('list() returns all uploaded keys', async () => {
+    const backend = new LocalStorageBackend(tmpDir);
+    await backend.upload('a/1.txt', Buffer.from('a'));
+    await backend.upload('b/2.txt', Buffer.from('b'));
+    await backend.upload('b/3.txt', Buffer.from('c'));
+
+    const keys = await backend.list();
+    expect(keys.sort()).toEqual(['a/1.txt', 'b/2.txt', 'b/3.txt']);
+  });
+
+  it('list(prefix) filters by prefix', async () => {
+    const backend = new LocalStorageBackend(tmpDir);
+    await backend.upload('avatars/a.png', Buffer.from('a'));
+    await backend.upload('avatars/b.png', Buffer.from('b'));
+    await backend.upload('docs/c.pdf', Buffer.from('c'));
+
+    const keys = await backend.list('avatars/');
+    expect(keys.sort()).toEqual(['avatars/a.png', 'avatars/b.png']);
+  });
+
+  it('downloadStream returns file contents as ReadableStream', async () => {
+    const backend = new LocalStorageBackend(tmpDir);
+    await backend.upload('stream-test.txt', Buffer.from('streamed'));
+
+    const stream = await backend.downloadStream('stream-test.txt');
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+    const result = Buffer.concat(chunks).toString();
+    expect(result).toBe('streamed');
+  });
+
+  it('downloadStream throws if file does not exist', async () => {
+    const backend = new LocalStorageBackend(tmpDir);
+    await expect(backend.downloadStream('ghost.txt')).rejects.toThrow('file not found');
+  });
 });
 
 // ============================================================================
@@ -161,5 +214,42 @@ describe('MemoryStorageBackend', () => {
     await b1.upload('file.txt', Buffer.from('in b1'));
     expect(await b1.exists('file.txt')).toBe(true);
     expect(await b2.exists('file.txt')).toBe(false);
+  });
+
+  it('list() returns all uploaded keys', async () => {
+    const backend = new MemoryStorageBackend();
+    await backend.upload('x/1.txt', Buffer.from('a'));
+    await backend.upload('y/2.txt', Buffer.from('b'));
+    const keys = await backend.list();
+    expect(keys.sort()).toEqual(['x/1.txt', 'y/2.txt']);
+  });
+
+  it('list(prefix) filters by prefix', async () => {
+    const backend = new MemoryStorageBackend();
+    await backend.upload('img/a.png', Buffer.from('a'));
+    await backend.upload('img/b.png', Buffer.from('b'));
+    await backend.upload('doc/c.pdf', Buffer.from('c'));
+    const keys = await backend.list('img/');
+    expect(keys.sort()).toEqual(['img/a.png', 'img/b.png']);
+  });
+
+  it('downloadStream returns file contents as ReadableStream', async () => {
+    const backend = new MemoryStorageBackend();
+    await backend.upload('test.txt', Buffer.from('hello stream'));
+
+    const stream = await backend.downloadStream('test.txt');
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+    expect(Buffer.concat(chunks).toString()).toBe('hello stream');
+  });
+
+  it('downloadStream throws if file does not exist', async () => {
+    const backend = new MemoryStorageBackend();
+    await expect(backend.downloadStream('ghost.txt')).rejects.toThrow('file not found');
   });
 });

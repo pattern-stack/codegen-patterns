@@ -38,10 +38,46 @@ export interface JobsModuleOptions {
   redisUrl?: string;
 }
 
+export interface JobsModuleAsyncOptions {
+  useFactory: (...args: unknown[]) => Promise<JobsModuleOptions> | JobsModuleOptions;
+  inject?: unknown[];
+  imports?: unknown[];
+}
+
 const DEFAULT_REDIS_URL = 'redis://localhost:6379';
 
 @Module({})
 export class JobsModule {
+  static forRootAsync(asyncOptions: JobsModuleAsyncOptions): DynamicModule {
+    return {
+      module: JobsModule,
+      global: true,
+      imports: (asyncOptions.imports ?? []) as Parameters<typeof Module>[0]['imports'],
+      providers: [
+        {
+          provide: 'JOBS_MODULE_OPTIONS',
+          useFactory: asyncOptions.useFactory,
+          inject: (asyncOptions.inject ?? []) as Parameters<typeof Module>[0]['providers'],
+        },
+        {
+          provide: JOB_QUEUE,
+          useFactory: (options: JobsModuleOptions) => {
+            const mod = JobsModule.forRoot(options);
+            const provider = mod.providers?.find(
+              (p) => typeof p === 'object' && p !== null && 'provide' in p && p.provide === JOB_QUEUE,
+            );
+            if (provider && typeof provider === 'object' && 'useClass' in provider) {
+              return new (provider.useClass as new () => unknown)();
+            }
+            throw new Error('JobsModule.forRootAsync: failed to resolve provider');
+          },
+          inject: ['JOBS_MODULE_OPTIONS'],
+        },
+      ],
+      exports: [JOB_QUEUE],
+    };
+  }
+
   static forRoot(options: JobsModuleOptions = { backend: 'drizzle' }): DynamicModule {
     switch (options.backend) {
       case 'redis':

@@ -121,6 +121,97 @@ function runCacheSuite(label: string, factory: () => ICacheService) {
 
 runCacheSuite('MemoryCacheService (shared suite)', () => new MemoryCacheService());
 
+// ============================================================================
+// getOrSet — shared suite
+// ============================================================================
+
+function runGetOrSetSuite(label: string, factory: () => ICacheService) {
+  describe(`${label} — getOrSet`, () => {
+    let cache: ICacheService;
+
+    beforeEach(() => {
+      cache = factory();
+    });
+
+    it('returns cached value on hit (factory not called)', async () => {
+      await cache.set('existing', 'cached-value');
+      let calls = 0;
+      const result = await cache.getOrSet('existing', async () => {
+        calls++;
+        return 'factory-value';
+      });
+      expect(result).toBe('cached-value');
+      expect(calls).toBe(0);
+    });
+
+    it('calls factory and stores result on miss', async () => {
+      let calls = 0;
+      const result = await cache.getOrSet('missing', async () => {
+        calls++;
+        return 'computed';
+      });
+      expect(result).toBe('computed');
+      expect(calls).toBe(1);
+      // Value should now be cached
+      expect(await cache.get('missing')).toBe('computed');
+    });
+
+    it('stampede protection: concurrent calls for same key invoke factory only once', async () => {
+      let calls = 0;
+      const factory = async () => {
+        calls++;
+        // Simulate async work
+        await new Promise<void>((r) => setTimeout(r, 5));
+        return 'result';
+      };
+
+      // Fire 5 concurrent getOrSet calls for the same key
+      const results = await Promise.all([
+        cache.getOrSet('stampede-key', factory),
+        cache.getOrSet('stampede-key', factory),
+        cache.getOrSet('stampede-key', factory),
+        cache.getOrSet('stampede-key', factory),
+        cache.getOrSet('stampede-key', factory),
+      ]);
+
+      // All callers get the same result
+      expect(results).toEqual(['result', 'result', 'result', 'result', 'result']);
+      // Factory was called only once
+      expect(calls).toBe(1);
+    });
+  });
+}
+
+runGetOrSetSuite('MemoryCacheService', () => new MemoryCacheService());
+
+// ============================================================================
+// invalidateByPrefix with wildcard characters
+// ============================================================================
+
+describe('MemoryCacheService — invalidateByPrefix wildcard escaping', () => {
+  it('treats % in prefix as a literal character', async () => {
+    const cache = new MemoryCacheService();
+    await cache.set('100%:ok', 'yes');
+    await cache.set('other:key', 'no');
+
+    const count = await cache.invalidateByPrefix('100%:');
+    expect(count).toBe(1);
+    expect(await cache.get('100%:ok')).toBeNull();
+    expect(await cache.get('other:key')).toBe('no');
+  });
+
+  it('treats _ in prefix as a literal character', async () => {
+    const cache = new MemoryCacheService();
+    await cache.set('a_b:1', 'yes');
+    await cache.set('axb:1', 'should not be removed');
+
+    const count = await cache.invalidateByPrefix('a_b:');
+    expect(count).toBe(1);
+    expect(await cache.get('a_b:1')).toBeNull();
+    expect(await cache.get('axb:1')).toBe('should not be removed');
+  });
+});
+
 describe('MemoryCacheService (TTL-specific)', () => {
   it('expires an entry after the TTL elapses', async () => {
     const cache = new MemoryCacheService();
