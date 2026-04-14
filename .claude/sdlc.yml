@@ -1,0 +1,5 @@
+language: typescript
+framework: nestjs
+quality_profile: strict
+commit_style: conventional
+task_management: github
