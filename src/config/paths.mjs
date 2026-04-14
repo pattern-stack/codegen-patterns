@@ -598,6 +598,20 @@ export function getPipelinesConfig() {
 }
 
 /**
+ * Resolve the directory codegen writes barrel files to (modules.ts, schema.ts).
+ *
+ * Honors `paths.generated` from codegen.config.yaml; defaults to 'src/generated'.
+ * Returns a relative path (from project root) — callers are responsible for
+ * resolving against a cwd as needed.
+ */
+export function getGeneratedDir() {
+  const fromConfig = projectConfig?.paths?.generated;
+  return typeof fromConfig === 'string' && fromConfig.length > 0
+    ? fromConfig
+    : 'src/generated';
+}
+
+/**
  * Get the `generate` block with defaults applied for the two top-level
  * pipeline switches validated by GenerateConfigSchema.
  *
@@ -642,6 +656,7 @@ export default {
   getProjectConfig,
   getPipelinesConfig,
   getGenerateConfig,
+  getGeneratedDir,
   // NEW: Config-driven naming functions
   computeFileName,
   computeFileNaming,
