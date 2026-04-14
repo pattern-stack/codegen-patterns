@@ -59,7 +59,7 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated
 
 ```
 src/                    # Generator source code
-  cli.ts                # CLI entry point
+  cli/                  # Clipanion CLI (noun-verb: entity, subsystem, project)
   index.ts              # Package exports
   analyzer/             # Graph building, consistency checking, suggestions
   behaviors/            # Shared behaviors (timestamps, soft-delete, user-tracking)

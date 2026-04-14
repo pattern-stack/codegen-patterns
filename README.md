@@ -251,7 +251,7 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated
 
 | Directory | Purpose |
 |-----------|---------|
-| `src/cli.ts` | CLI entry point |
+| `src/cli/` | Clipanion CLI (noun-verb: entity, subsystem, project) |
 | `src/parser/` | YAML loading and cross-reference resolution |
 | `src/analyzer/` | Graph building, consistency checking, suggestions |
 | `src/scanner/` | Project pattern detection |
