@@ -9,5 +9,6 @@ export { EventsModule } from './events.module';
 export type { EventsModuleOptions } from './events.module';
 export { MemoryEventBus } from './event-bus.memory-backend';
 export { DrizzleEventBus } from './event-bus.drizzle-backend';
+export { RedisEventBus } from './event-bus.redis-backend';
 export { domainEvents } from './domain-events.schema';
 export type { DomainEventRecord } from './domain-events.schema';
