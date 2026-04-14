@@ -111,6 +111,31 @@ modules/                  # NestJS module wiring
 
 Generate all entities at once with `just gen-all`.
 
+## Wire Up the Generated Barrels
+
+Every generation run writes two barrel files that aggregate the full entity set — codegen owns these entirely and rewrites them on every run. The user wires them into the app **once**, with two lines in hand-written files:
+
+```ts
+// src/app.module.ts — you write this once
+import { Module } from '@nestjs/common';
+import { DatabaseModule } from './database/database.module';
+import { GENERATED_MODULES } from './generated/modules';
+
+@Module({
+  imports: [DatabaseModule, ...GENERATED_MODULES],
+})
+export class AppModule {}
+```
+
+```ts
+// src/schema.ts — you write this once
+export * from './generated/schema';
+```
+
+The barrel location is configurable via `paths.generated` in `codegen.config.yaml` (default: `src/generated`). Deleting an entity YAML and re-running codegen removes it from both barrels — regeneration is total, so the barrels always reflect the exact current entity set.
+
+Codegen never touches `app.module.ts` or your root `schema.ts`. If you see changes outside `<paths.generated>/` on a generation run, something is wrong — file an issue. (See [ADR-017](adrs/ADR-017-barrel-files-over-injects.md) for the rationale.)
+
 ## Add Infrastructure Subsystems
 
 Scaffold production-ready infrastructure backed by Postgres (no Redis required):
@@ -157,6 +182,7 @@ This scans your codebase and generates `codegen.config.yaml`. Then customize:
 paths:
   backend_src: src
   frontend_src: apps/frontend/src
+  generated: src/generated       # where barrel files are written (modules.ts, schema.ts)
 
 generate:
   architecture: clean-lite-ps  # clean | clean-lite-ps (mutually exclusive)
