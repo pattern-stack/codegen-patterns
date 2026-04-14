@@ -10,21 +10,21 @@ install:
     bun install
     cd test/scaffold && bun install
 
-# Generate a single entity from YAML
+# Generate a single entity from YAML (new noun-verb CLI)
 gen entity:
-    bun codegen entity {{entity}}
+    bun src/cli/index.ts entity new {{entity}}
 
-# Generate all entities
+# Generate all entities (new noun-verb CLI)
 gen-all:
-    bun codegen all
+    bun src/cli/index.ts entity new --all
 
 # Scan a project and generate config
 scan path=".":
     bun codegen scan {{path}}
 
-# Scaffold a subsystem (events, jobs, cache, storage)
+# Scaffold a subsystem (events, jobs, cache, storage) via the new CLI
 gen-subsystem name:
-    bun codegen subsystem {{name}}
+    bun src/cli/index.ts subsystem install {{name}}
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
