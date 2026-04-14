@@ -2,6 +2,8 @@
 
 Generate Clean Architecture scaffolding for TypeScript/NestJS apps from YAML entity definitions.
 
+> **Consuming codegen in your own project?** This guide walks through the generator's own repo. For wiring `@anthropic/codegen` into a separate NestJS app — path aliases, `DatabaseModule`, re-export shims — see [CONSUMER-SETUP.md](./CONSUMER-SETUP.md).
+
 ## Prerequisites
 
 - [mise](https://mise.jdx.dev) — runtime version manager (installs bun + node)
@@ -223,6 +225,10 @@ Baseline snapshot testing for template changes:
 ```bash
 just test-baseline      # generate from fixtures + compare to baseline/
 ```
+
+## Install in Your Project
+
+This guide covers working inside the `codegen-patterns` repo. To use the generator against your own NestJS + Drizzle project — required path aliases, `DatabaseModule` scaffold, `@shared/*` shims, and the rest of the consumer contract — see [**CONSUMER-SETUP.md**](./CONSUMER-SETUP.md).
 
 ## Next Steps
 
