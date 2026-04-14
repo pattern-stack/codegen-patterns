@@ -252,17 +252,76 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.processedQueries[1].methodName).toBe('findEmailsByOpportunityId');
   });
 
-  it('generates use case class names from queries', () => {
+  it('generates entity-prefixed use case class names from queries', () => {
     const withQueries = {
       ...contactDefinition,
       queries: [{ by: ['user_id'] }, { by: ['email'], unique: true }],
     };
     const locals = buildCleanLitePsLocals(withQueries, EMPTY_BASE_LOCALS);
 
+    // Names are prefixed with the entity to avoid collisions across modules
+    // and read as English: "Find contact by user id".
     expect(locals.declarativeQueryClasses).toEqual([
-      'FindByUserIdUseCase',
-      'FindByEmailUseCase',
+      'FindContactByUserIdUseCase',
+      'FindContactByEmailUseCase',
     ]);
+  });
+
+  it('generates entity-prefixed class names for composite queries', () => {
+    const withQueries = {
+      ...contactDefinition,
+      queries: [{ by: ['user_id', 'account_id'] }],
+    };
+    const locals = buildCleanLitePsLocals(withQueries, EMPTY_BASE_LOCALS);
+
+    expect(locals.declarativeQueryClasses).toEqual([
+      'FindContactByUserIdAndAccountIdUseCase',
+    ]);
+    expect(locals.processedQueries[0].useCaseClassName).toBe(
+      'FindContactByUserIdAndAccountIdUseCase',
+    );
+  });
+
+  it('generates entity-prefixed class names for select + via queries', () => {
+    const withQueries = {
+      ...contactDefinition,
+      queries: [
+        { by: ['opportunity_id'], select: ['email'], via: 'opportunity_contact_link' },
+      ],
+    };
+    const locals = buildCleanLitePsLocals(withQueries, EMPTY_BASE_LOCALS);
+
+    // methodName 'findEmailsByOpportunityId' → 'FindContactEmailsByOpportunityIdUseCase'
+    expect(locals.declarativeQueryClasses).toEqual([
+      'FindContactEmailsByOpportunityIdUseCase',
+    ]);
+  });
+
+  it('produces collision-free class names for different entities sharing a query', () => {
+    const accountDef = {
+      entity: { name: 'account', plural: 'accounts', table: 'accounts', family: 'synced' },
+      fields: { domain: { type: 'string', required: true } },
+      relationships: {},
+      behaviors: [],
+      queries: [{ by: ['domain'], unique: true }],
+    };
+    const opportunityDef = {
+      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', family: 'synced' },
+      fields: { domain: { type: 'string', required: true } },
+      relationships: {},
+      behaviors: [],
+      queries: [{ by: ['domain'], unique: true }],
+    };
+
+    const accountLocals = buildCleanLitePsLocals(accountDef, EMPTY_BASE_LOCALS);
+    const opportunityLocals = buildCleanLitePsLocals(opportunityDef, EMPTY_BASE_LOCALS);
+
+    expect(accountLocals.declarativeQueryClasses).toEqual(['FindAccountByDomainUseCase']);
+    expect(opportunityLocals.declarativeQueryClasses).toEqual(['FindOpportunityByDomainUseCase']);
+    // Different entities must not produce colliding class names
+    expect(accountLocals.declarativeQueryClasses[0]).not.toBe(
+      opportunityLocals.declarativeQueryClasses[0],
+    );
   });
 
   it('sets hasDeclarativeQueries false when no queries block', () => {
