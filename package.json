@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
-    "@cubejs-client/core": "^1.6.33",
     "chalk": "^5.6.2",
     "clipanion": "^4.0.0-rc.4",
     "drizzle-orm": "^0.45.2",
@@ -32,10 +31,14 @@
   },
   "peerDependencies": {
     "hygen": "^6.2.11",
-    "ioredis": ">=5"
+    "ioredis": ">=5",
+    "@cubejs-client/core": ">=1.0.0"
   },
   "peerDependenciesMeta": {
     "ioredis": {
+      "optional": true
+    },
+    "@cubejs-client/core": {
       "optional": true
     }
   },

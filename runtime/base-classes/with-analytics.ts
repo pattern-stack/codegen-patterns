@@ -18,5 +18,5 @@ export function WithAnalytics<TBase extends Constructor>(Base: TBase) {
   abstract class WithAnalyticsMixin extends Base {
     analytics?: any;
   }
-  return WithAnalyticsMixin;
+  return WithAnalyticsMixin as TBase & typeof WithAnalyticsMixin;
 }
