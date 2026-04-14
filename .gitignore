@@ -36,6 +36,10 @@ codegen.config.yaml
 .DS_Store
 Thumbs.db
 
+# Dev companion
+.dev-app.pid
+.dev-app.log
+
 # Environment
 .env
 .env.local

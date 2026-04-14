@@ -78,6 +78,7 @@ class RootSummaryCommand extends Command {
 		renderHints([
 			{ command: 'codegen entity', description: 'Entity summary + hints' },
 			{ command: 'codegen subsystem', description: 'Subsystem summary + hints' },
+			{ command: 'codegen dev', description: 'Dev environment status + controls' },
 		]);
 		return 0;
 	}
@@ -109,6 +110,12 @@ async function loadNouns(): Promise<void> {
 		if (mod?.default) nouns.push(mod.default as NounModule);
 	} catch {
 		// project noun not implemented yet
+	}
+	try {
+		const mod = await import('./commands/dev.js');
+		if (mod?.default) nouns.push(mod.default as NounModule);
+	} catch {
+		// dev noun not implemented yet
 	}
 }
 
