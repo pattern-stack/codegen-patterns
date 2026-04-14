@@ -22,9 +22,9 @@ gen-all:
 scan path=".":
     bun codegen scan {{path}}
 
-# Scaffold a subsystem (events, jobs, cache, storage)
+# Scaffold a subsystem (events, jobs, cache, storage) via the new CLI
 gen-subsystem name:
-    bun codegen subsystem {{name}}
+    bun src/cli/index.ts subsystem install {{name}}
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 

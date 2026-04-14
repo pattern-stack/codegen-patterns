@@ -127,8 +127,12 @@ function detectInstalledSubsystemNames(
 	for (const root of roots) {
 		if (!fs.existsSync(root)) continue;
 		for (const name of KNOWN_SUBSYSTEMS) {
-			const proto = path.join(root, name, `${name}.protocol.ts`);
-			if (fs.existsSync(proto)) found.add(name);
+			const dir = path.join(root, name);
+			if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
+			const hasProtocol = fs
+				.readdirSync(dir)
+				.some((f) => f.endsWith('.protocol.ts'));
+			if (hasProtocol) found.add(name);
 		}
 	}
 	return Array.from(found);

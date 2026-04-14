@@ -1,0 +1,158 @@
+/**
+ * runtime-copier — copy a runtime/ subdirectory into a user's project.
+ *
+ * Used by the subsystem noun to install {events, jobs, cache, storage} from
+ * the shipped `runtime/subsystems/<name>/` into the user's project. Honors
+ * file filters (for backend selection) and optionally walks the import graph
+ * to also copy referenced runtime/types/ and runtime/constants/ files.
+ *
+ * The runtime tree is treated as read-only source of truth; this module only
+ * reads from it and writes into the user's target.
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+export interface RuntimeCopyOptions {
+	sourceDir: string;
+	targetDir: string;
+	filter?: (file: string) => boolean;
+	resolveDeps?: boolean;
+	/** runtime/ root (parent of subsystems/, types/, constants/). */
+	runtimeRoot?: string;
+	/** Where dependency files like runtime/types/foo.ts should land in the user project.
+	 * Defaults to the parent directory of targetDir. */
+	depsTargetRoot?: string;
+	dryRun?: boolean;
+}
+
+export interface RuntimeCopyResult {
+	written: string[];
+	updated: string[];
+	unchanged: string[];
+	dependenciesCopied: string[];
+	planned: string[];
+}
+
+function readIfExists(p: string): string | null {
+	try {
+		return fs.readFileSync(p, 'utf-8');
+	} catch {
+		return null;
+	}
+}
+
+function writeFile(target: string, content: string): 'written' | 'updated' | 'unchanged' {
+	const existing = readIfExists(target);
+	if (existing === content) return 'unchanged';
+	fs.mkdirSync(path.dirname(target), { recursive: true });
+	fs.writeFileSync(target, content);
+	return existing === null ? 'written' : 'updated';
+}
+
+/**
+ * Extract relative import paths from a TypeScript source file. Returns the
+ * raw specifiers (e.g. '../../types/drizzle').
+ */
+function extractRelativeImports(source: string): string[] {
+	const out: string[] = [];
+	const re =
+		/(?:import|export)\s+(?:[^'"`;]*?\s+from\s+)?['"`](\.{1,2}\/[^'"`]+)['"`]/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(source)) !== null) {
+		out.push(m[1]);
+	}
+	return out;
+}
+
+function resolveSourceImport(
+	sourceFile: string,
+	specifier: string
+): string | null {
+	const base = path.resolve(path.dirname(sourceFile), specifier);
+	const candidates = [base + '.ts', base + '.tsx', path.join(base, 'index.ts')];
+	for (const c of candidates) {
+		if (fs.existsSync(c)) return c;
+	}
+	return null;
+}
+
+/**
+ * Copy `sourceDir` into `targetDir`. Optionally follows relative imports and
+ * copies referenced runtime/types/* and runtime/constants/* into a sibling
+ * directory structure of targetDir.
+ */
+export async function copyRuntime(opts: RuntimeCopyOptions): Promise<RuntimeCopyResult> {
+	const { sourceDir, targetDir, filter, resolveDeps, dryRun } = opts;
+
+	if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+		throw new Error(`runtime source directory not found: ${sourceDir}`);
+	}
+
+	const runtimeRoot = opts.runtimeRoot
+		? path.resolve(opts.runtimeRoot)
+		: path.resolve(sourceDir, '..', '..'); // runtime/subsystems/<x> → runtime/
+	const depsTargetRoot = opts.depsTargetRoot ?? path.resolve(targetDir, '..');
+
+	const result: RuntimeCopyResult = {
+		written: [],
+		updated: [],
+		unchanged: [],
+		dependenciesCopied: [],
+		planned: [],
+	};
+
+	// Queue of source paths to copy; value is the destination path.
+	const queue: Array<{ src: string; dest: string; isDep: boolean }> = [];
+
+	// Enumerate files in sourceDir
+	const entries = fs.readdirSync(sourceDir);
+	for (const entry of entries) {
+		const src = path.join(sourceDir, entry);
+		const stat = fs.statSync(src);
+		if (!stat.isFile()) continue;
+		if (!entry.endsWith('.ts') && !entry.endsWith('.tsx')) continue;
+		if (filter && !filter(entry)) continue;
+		queue.push({ src, dest: path.join(targetDir, entry), isDep: false });
+	}
+
+	const visited = new Set<string>();
+
+	while (queue.length > 0) {
+		const next = queue.shift()!;
+		if (visited.has(next.src)) continue;
+		visited.add(next.src);
+
+		const content = fs.readFileSync(next.src, 'utf-8');
+		result.planned.push(next.dest);
+
+		if (!dryRun) {
+			const status = writeFile(next.dest, content);
+			if (status === 'written') result.written.push(next.dest);
+			else if (status === 'updated') result.updated.push(next.dest);
+			else result.unchanged.push(next.dest);
+			if (next.isDep) result.dependenciesCopied.push(next.dest);
+		}
+
+		if (resolveDeps) {
+			for (const spec of extractRelativeImports(content)) {
+				const resolvedSrc = resolveSourceImport(next.src, spec);
+				if (!resolvedSrc) continue;
+				// Only follow imports that land inside runtimeRoot.
+				const relToRuntime = path.relative(runtimeRoot, resolvedSrc);
+				if (relToRuntime.startsWith('..') || path.isAbsolute(relToRuntime)) continue;
+				// If already under sourceDir, it's local — copied by the main loop already.
+				const relToSource = path.relative(sourceDir, resolvedSrc);
+				if (!relToSource.startsWith('..') && !path.isAbsolute(relToSource)) continue;
+
+				// Place it under depsTargetRoot at the same relative path from runtimeRoot
+				// minus the leading 'subsystems/<name>' if the file lives elsewhere.
+				// Simpler: preserve runtime's own relative structure under depsTargetRoot.
+				const depDest = path.join(depsTargetRoot, relToRuntime);
+				queue.push({ src: resolvedSrc, dest: depDest, isDep: true });
+			}
+		}
+	}
+
+	return result;
+}
