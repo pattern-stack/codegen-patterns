@@ -154,12 +154,14 @@ function entityFilePaths(
 	const pluralKebab = toKebabCase(plural);
 
 	if (architecture === 'clean-lite-ps') {
-		// Clean-Lite-PS templates emit at the cwd, no backendSrc prefix.
+		// Clean-Lite-PS templates currently emit directories/files using the raw
+		// snake_case `plural`/`name` values (see templates/entity/new/clean-lite-ps/
+		// prompt-extension.js). The barrel must match that on-disk layout.
 		return {
-			moduleFile: `modules/${pluralKebab}/${pluralKebab}.module.ts`,
+			moduleFile: `modules/${plural}/${plural}.module.ts`,
 			moduleClass: `${toPascalCase(plural)}Module`,
 			// Drizzle entity schema lives alongside the entity file in clean-lite-ps.
-			schemaFile: `modules/${pluralKebab}/${nameKebab}.entity.ts`,
+			schemaFile: `modules/${plural}/${name}.entity.ts`,
 		};
 	}
 
