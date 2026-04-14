@@ -1,0 +1,50 @@
+# Smoke fixture: contact
+# Has a belongs_to relationship to account, plus a query on the FK column
+# (exercises the validator fix for dogfood #9 — "query on FK field must not
+# be rejected as 'unknown field'").
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  family: synced
+  folder_structure: nested
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  first_name:
+    type: string
+    required: true
+    max_length: 100
+
+  last_name:
+    type: string
+    required: true
+    max_length: 100
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+queries:
+  # Query on the FK column — this was the dogfood #9 path.
+  - by: [account_id]
+  # Query on a non-FK column.
+  - by: [email]
+    unique: true
+  # Composite query mixing FK + non-FK columns.
+  - by: [account_id, email]

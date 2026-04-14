@@ -1,0 +1,28 @@
+# Smoke fixture: account
+# Minimal entity — no FKs. Exercised together with contact to validate the
+# belongs_to FK query path (dogfood #9 regression).
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  family: synced
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  # Enum field — exercises the template HTML-escape regression (PR #28).
+  status:
+    type: enum
+    choices: [active, inactive, archived]
+    required: true
+    default: active
+
+behaviors:
+  - timestamps
+
+queries:
+  - by: [status]

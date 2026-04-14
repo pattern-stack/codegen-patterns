@@ -64,7 +64,7 @@ export interface I<%= className %>Repository {
 <% if (hasDeclarativeQueries) { -%>
 	// Declarative queries (from queries: block in entity YAML)
 <% processedQueries.forEach((q) => { -%>
-	<%= q.methodName %>(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>>;
+	<%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>>;
 <% }) -%>
 <% } -%>
 }
