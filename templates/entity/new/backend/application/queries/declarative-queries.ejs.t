@@ -22,7 +22,7 @@ export class <%= q.useCaseClassName %> {
 		private readonly repository: I<%= className %>Repository,
 	) {}
 
-	async execute(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
+	async execute(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 		return this.repository.<%= q.methodName %>(<%= q.params.map(p => p.camelName).join(', ') %>);
 	}
 }

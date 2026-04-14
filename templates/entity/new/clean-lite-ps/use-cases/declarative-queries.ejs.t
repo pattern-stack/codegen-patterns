@@ -20,7 +20,7 @@ import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
 export class <%= q.useCaseClassName %> {
   constructor(private readonly repository: <%= classNames.repository %>) {}
 
-  async execute(<%= q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
+  async execute(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
     return this.repository.<%= q.methodName %>(<%= q.params.map(p => p.camelName).join(', ') %>);
   }
 }
