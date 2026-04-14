@@ -597,6 +597,22 @@ export function getPipelinesConfig() {
   return projectConfig?.pipelines ?? {};
 }
 
+/**
+ * Get the `generate` block with defaults applied for the two top-level
+ * pipeline switches validated by GenerateConfigSchema.
+ *
+ * Returns an object that always includes `architecture` and `frontend`
+ * alongside any other user-supplied toggles.
+ */
+export function getGenerateConfig() {
+  const raw = projectConfig?.generate ?? {};
+  return {
+    ...raw,
+    architecture: raw.architecture ?? 'clean',
+    frontend: raw.frontend ?? false,
+  };
+}
+
 // Default export for convenience
 export default {
   // Layout options
@@ -625,6 +641,7 @@ export default {
   getDatabaseDialect,
   getProjectConfig,
   getPipelinesConfig,
+  getGenerateConfig,
   // NEW: Config-driven naming functions
   computeFileName,
   computeFileNaming,
