@@ -70,6 +70,12 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
    */
   private readonly handlers = new Map<string, Set<(event: DomainEvent) => Promise<void>>>();
 
+  /**
+   * Track which event types have active Redis subscriptions.
+   * Used to avoid subscribing multiple times to the same type channel.
+   */
+  private readonly subscribedTypes = new Set<string>();
+
   constructor(@Inject(REDIS_URL) private readonly redisUrl: string) {}
 
   // ============================================================================
@@ -88,16 +94,11 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
       this.logger.error(`Redis subscriber error: ${err.message}`, err.stack),
     );
 
-    // Subscribe to the wildcard pattern so a single subscriber connection
-    // receives all events:* messages regardless of which type channels exist.
-    await this.subscriber.psubscribe(`${CHANNEL_PREFIX}*`);
-
-    this.subscriber.on(
-      'pmessage',
-      (_pattern: string, channel: string, message: string) => {
-        void this.handleMessage(channel, message);
-      },
-    );
+    // Set up message listener for per-type subscriptions.
+    // Subscriptions are created lazily when the first handler is registered for a type.
+    this.subscriber.on('message', (channel: string, message: string) => {
+      void this.handleMessage(channel, message);
+    });
 
     this.connected = true;
     this.logger.log(`RedisEventBus connected to ${this.redisUrl}`);
@@ -107,7 +108,9 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
     this.connected = false;
 
     if (this.subscriber) {
-      await this.subscriber.punsubscribe(`${CHANNEL_PREFIX}*`);
+      // Unsubscribe from all channels and disconnect the subscriber.
+      // unsubscribe() with no args unsubscribes from all channels.
+      await this.subscriber.unsubscribe();
       this.subscriber.disconnect();
       this.subscriber = null;
     }
@@ -117,6 +120,7 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
       this.publisher = null;
     }
 
+    this.subscribedTypes.clear();
     this.logger.log('RedisEventBus disconnected');
   }
 
@@ -162,6 +166,9 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
   /**
    * Register a handler for a specific event type.
    * Returns an unsubscribe function — call it to remove the handler.
+   *
+   * On first handler for a type, subscribes to the per-type Redis channel.
+   * On removal of the last handler for a type, unsubscribes from the channel.
    */
   subscribe<T extends DomainEvent = DomainEvent>(
     eventType: string,
@@ -169,6 +176,8 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
   ): () => void {
     if (!this.handlers.has(eventType)) {
       this.handlers.set(eventType, new Set());
+      // First handler for this type — subscribe to the per-type channel in Redis.
+      void this.subscribeToType(eventType);
     }
     const set = this.handlers.get(eventType)!;
     const h = handler as (event: DomainEvent) => Promise<void>;
@@ -176,6 +185,11 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
 
     return () => {
       set.delete(h);
+      // If no more handlers for this type, unsubscribe from the Redis channel.
+      if (set.size === 0) {
+        this.handlers.delete(eventType);
+        void this.unsubscribeFromType(eventType);
+      }
     };
   }
 
@@ -229,6 +243,42 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
           `Handler error for event type "${event.type}" (id: ${event.id}): ${err}`,
         );
       }
+    }
+  }
+
+  /**
+   * Subscribe to a per-type Redis channel.
+   * Called lazily when the first handler is registered for a type.
+   */
+  private async subscribeToType(eventType: string): Promise<void> {
+    if (this.subscribedTypes.has(eventType)) {
+      return; // Already subscribed to this type.
+    }
+
+    const channel = `${CHANNEL_PREFIX}${eventType}`;
+    try {
+      await this.subscriber!.subscribe(channel);
+      this.subscribedTypes.add(eventType);
+    } catch (err) {
+      this.logger.error(`Failed to subscribe to channel "${channel}": ${err}`);
+    }
+  }
+
+  /**
+   * Unsubscribe from a per-type Redis channel.
+   * Called when the last handler for a type is removed.
+   */
+  private async unsubscribeFromType(eventType: string): Promise<void> {
+    if (!this.subscribedTypes.has(eventType)) {
+      return; // Not subscribed to this type.
+    }
+
+    const channel = `${CHANNEL_PREFIX}${eventType}`;
+    try {
+      await this.subscriber!.unsubscribe(channel);
+      this.subscribedTypes.delete(eventType);
+    } catch (err) {
+      this.logger.error(`Failed to unsubscribe from channel "${channel}": ${err}`);
     }
   }
 }
