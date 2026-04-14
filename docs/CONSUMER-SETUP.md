@@ -329,6 +329,12 @@ Two incompatible `drizzle-orm` versions in the resolved module graph. The genera
 1. Pin `drizzle-orm` to one version across consumer + runtime (workspace dedupe, or matching versions in two sibling repos).
 2. Use `drizzle-orm@^0.30.x` for now — the runtime base classes aren't yet on the 0.45 API (tracked in `DOGFOOD-LOG.md`).
 
+### `Types have separate declarations of a private property 'shouldInlineParams'`
+
+You have two copies of drizzle-orm installed — one in your project and one in codegen-patterns. This happens when `shared/base-classes/*.ts` re-exports from `../../codegen-patterns/runtime/` via relative paths instead of containing vendored copies.
+
+Fix: copy the runtime files into your project rather than re-exporting. Use `codegen init` to set up vendored copies, or copy `runtime/base-classes/` into `shared/base-classes/` manually. Each file should contain the actual code, not a `export * from '../../../codegen-patterns/runtime/...'` re-export.
+
 ### HTML-escaped entities in generated TypeScript (`&#39;` instead of `'`)
 
 EJS template escape bug, fixed upstream. Pull the latest `codegen-patterns` and regenerate.
