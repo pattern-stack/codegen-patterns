@@ -20,7 +20,10 @@ gen/
 app/
 apps/
 modules/
-packages/
+
+# Codegen output packages (not our source packages)
+# packages/ is allowed — packages/graph-components/ is source code
+# If codegen generates into packages/, use a more specific ignore
 
 # Runtime artifacts
 agent-logs/

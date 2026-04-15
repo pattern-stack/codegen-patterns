@@ -1,0 +1,1616 @@
+{
+  "entities": {
+    "contact": {
+      "name": "contact",
+      "plural": "contacts",
+      "table": "contacts",
+      "family": "synced",
+      "fields": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "users",
+            "column": "id"
+          }
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "accounts",
+            "column": "id"
+          }
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "email": {
+          "name": "email",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "title": {
+          "name": "title",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "linkedin_url": {
+          "name": "linkedin_url",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        }
+      },
+      "relationships": {
+        "account": {
+          "name": "account",
+          "type": "belongs_to",
+          "target": "account",
+          "foreignKey": "account_id",
+          "resolved": false
+        },
+        "user": {
+          "name": "user",
+          "type": "belongs_to",
+          "target": "user",
+          "foreignKey": "user_id",
+          "resolved": true
+        }
+      },
+      "behaviors": [
+        "timestamps",
+        "soft_delete",
+        "external_id_tracking"
+      ],
+      "queries": [
+        {
+          "by": [
+            "user_id"
+          ]
+        },
+        {
+          "by": [
+            "email"
+          ],
+          "unique": true
+        },
+        {
+          "by": [
+            "account_id"
+          ],
+          "order": "created_at desc"
+        },
+        {
+          "by": [
+            "user_id",
+            "account_id"
+          ]
+        },
+        {
+          "by": [
+            "opportunity_id"
+          ]
+        },
+        {
+          "by": [
+            "opportunity_id"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/contact-v2.yaml"
+    },
+    "person": {
+      "name": "person",
+      "plural": "persons",
+      "table": "persons",
+      "fields": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "tenants",
+            "column": "id"
+          }
+        },
+        "email": {
+          "name": "email",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        }
+      },
+      "relationships": {},
+      "behaviors": [],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/person.yaml"
+    },
+    "opportunity": {
+      "name": "opportunity",
+      "plural": "opportunities",
+      "table": "opportunities",
+      "fields": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "tenants",
+            "column": "id"
+          }
+        },
+        "name": {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "organizations",
+            "column": "id"
+          }
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "users",
+            "column": "id"
+          }
+        },
+        "state_id": {
+          "name": "state_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "deal_states",
+            "column": "id"
+          }
+        },
+        "amount": {
+          "name": "amount",
+          "type": "decimal",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "expected_close_date": {
+          "name": "expected_close_date",
+          "type": "date",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "datetime",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        }
+      },
+      "relationships": {
+        "organization": {
+          "name": "organization",
+          "type": "belongs_to",
+          "target": "organization",
+          "foreignKey": "organization_id",
+          "resolved": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "belongs_to",
+          "target": "user",
+          "foreignKey": "owner_id",
+          "resolved": true
+        },
+        "state": {
+          "name": "state",
+          "type": "belongs_to",
+          "target": "deal_state",
+          "foreignKey": "state_id",
+          "resolved": true
+        }
+      },
+      "behaviors": [],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/opportunity.yaml"
+    },
+    "deal_state": {
+      "name": "deal_state",
+      "plural": "deal_states",
+      "table": "deal_states",
+      "fields": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "tenants",
+            "column": "id"
+          }
+        },
+        "name": {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "state_type": {
+          "name": "state_type",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "open",
+            "won",
+            "lost",
+            "stalled"
+          ]
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "probability_default": {
+          "name": "probability_default",
+          "type": "integer",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "color": {
+          "name": "color",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        }
+      },
+      "relationships": {
+        "opportunities": {
+          "name": "opportunities",
+          "type": "has_many",
+          "target": "opportunity",
+          "foreignKey": "state_id",
+          "resolved": true
+        }
+      },
+      "behaviors": [],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/deal_state.yaml"
+    },
+    "organization": {
+      "name": "organization",
+      "plural": "organizations",
+      "table": "organizations",
+      "fields": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "tenants",
+            "column": "id"
+          }
+        },
+        "name": {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "domain": {
+          "name": "domain",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "organizations",
+            "column": "id"
+          }
+        }
+      },
+      "relationships": {
+        "parent": {
+          "name": "parent",
+          "type": "belongs_to",
+          "target": "organization",
+          "foreignKey": "parent_id",
+          "resolved": true
+        },
+        "children": {
+          "name": "children",
+          "type": "has_many",
+          "target": "organization",
+          "foreignKey": "parent_id",
+          "resolved": true
+        },
+        "opportunities": {
+          "name": "opportunities",
+          "type": "has_many",
+          "target": "opportunity",
+          "foreignKey": "organization_id",
+          "resolved": true
+        }
+      },
+      "behaviors": [],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/organization.yaml"
+    },
+    "user": {
+      "name": "user",
+      "plural": "users",
+      "table": "users",
+      "fields": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "tenants",
+            "column": "id"
+          }
+        },
+        "email": {
+          "name": "email",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "foreignKey": {
+            "table": "persons",
+            "column": "id"
+          }
+        }
+      },
+      "relationships": {
+        "person": {
+          "name": "person",
+          "type": "belongs_to",
+          "target": "person",
+          "foreignKey": "person_id",
+          "resolved": true
+        },
+        "owned_opportunities": {
+          "name": "owned_opportunities",
+          "type": "has_many",
+          "target": "opportunity",
+          "foreignKey": "owner_id",
+          "resolved": true
+        }
+      },
+      "behaviors": [],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/user.yaml"
+    },
+    "deal": {
+      "name": "deal",
+      "plural": "deals",
+      "table": "deals",
+      "family": "synced",
+      "fields": {
+        "name": {
+          "name": "name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "decimal",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "stage": {
+          "name": "stage",
+          "type": "enum",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "prospecting",
+            "qualification",
+            "proposal",
+            "negotiation",
+            "closed_won",
+            "closed_lost"
+          ]
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "users",
+            "column": "id"
+          }
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "required": true,
+          "nullable": false,
+          "unique": false,
+          "index": true,
+          "foreignKey": {
+            "table": "accounts",
+            "column": "id"
+          }
+        },
+        "close_date": {
+          "name": "close_date",
+          "type": "date",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "probability": {
+          "name": "probability",
+          "type": "integer",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        }
+      },
+      "relationships": {
+        "owner": {
+          "name": "owner",
+          "type": "belongs_to",
+          "target": "user",
+          "foreignKey": "owner_id",
+          "resolved": true
+        },
+        "account": {
+          "name": "account",
+          "type": "belongs_to",
+          "target": "account",
+          "foreignKey": "account_id",
+          "resolved": false
+        }
+      },
+      "behaviors": [
+        "timestamps",
+        "soft_delete"
+      ],
+      "queries": [
+        {
+          "by": [
+            "owner_id"
+          ]
+        },
+        {
+          "by": [
+            "account_id"
+          ],
+          "order": "close_date desc"
+        },
+        {
+          "by": [
+            "stage"
+          ]
+        },
+        {
+          "by": [
+            "owner_id",
+            "stage"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/demo-deal.yaml"
+    }
+  },
+  "relationshipDefinitions": {
+    "person_opportunity_role": {
+      "name": "person_opportunity_role",
+      "table": "person_opportunity_roles",
+      "from": "person",
+      "to": "opportunity",
+      "selfReferential": false,
+      "fromColumn": "person_id",
+      "toColumn": "opportunity_id",
+      "types": [
+        {
+          "name": "champion",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "blocker",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "decision_maker",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "influencer",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "evaluator",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "end_user",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "economic_buyer",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "coach",
+          "bidirectional": false,
+          "directed": true
+        }
+      ],
+      "hasTypes": true,
+      "temporal": true,
+      "sourced": true,
+      "onDeleteFrom": "restrict",
+      "onDeleteTo": "restrict",
+      "uniqueOn": [
+        "person_id",
+        "opportunity_id",
+        "type",
+        "valid_from"
+      ],
+      "fields": {
+        "engagement_level": {
+          "name": "engagement_level",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "highly_engaged",
+            "engaged",
+            "passive",
+            "disengaged",
+            "unknown"
+          ]
+        },
+        "last_interaction": {
+          "name": "last_interaction",
+          "type": "datetime",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "interaction_count": {
+          "name": "interaction_count",
+          "type": "integer",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "sentiment": {
+          "name": "sentiment",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "positive",
+            "neutral",
+            "skeptical",
+            "negative",
+            "unknown"
+          ]
+        },
+        "sentiment_trend": {
+          "name": "sentiment_trend",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "improving",
+            "stable",
+            "declining",
+            "unknown"
+          ]
+        },
+        "influence_score": {
+          "name": "influence_score",
+          "type": "decimal",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "blocker_reason": {
+          "name": "blocker_reason",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "decision_scope": {
+          "name": "decision_scope",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "technical",
+            "business",
+            "budget",
+            "final"
+          ]
+        }
+      },
+      "queries": [
+        {
+          "by": [
+            "person_id"
+          ]
+        },
+        {
+          "by": [
+            "opportunity_id"
+          ]
+        },
+        {
+          "by": [
+            "opportunity_id",
+            "type"
+          ]
+        },
+        {
+          "by": [
+            "person_id",
+            "type"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/relationships/person_opportunity_role.yaml"
+    },
+    "organization_hierarchy": {
+      "name": "organization_hierarchy",
+      "table": "organization_hierarchies",
+      "from": "organization",
+      "to": "organization",
+      "selfReferential": true,
+      "fromColumn": "from_organization_id",
+      "toColumn": "to_organization_id",
+      "types": [
+        {
+          "name": "parent_of",
+          "inverse": "subsidiary_of",
+          "bidirectional": false,
+          "directed": false
+        },
+        {
+          "name": "acquired",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "partner_of",
+          "bidirectional": true,
+          "directed": false
+        },
+        {
+          "name": "competes_with",
+          "bidirectional": true,
+          "directed": false
+        },
+        {
+          "name": "vendor_of",
+          "inverse": "customer_of",
+          "bidirectional": false,
+          "directed": false
+        }
+      ],
+      "hasTypes": true,
+      "temporal": true,
+      "sourced": true,
+      "onDeleteFrom": "restrict",
+      "onDeleteTo": "restrict",
+      "uniqueOn": [
+        "from_organization_id",
+        "to_organization_id",
+        "type",
+        "valid_from"
+      ],
+      "fields": {
+        "hierarchy_type": {
+          "name": "hierarchy_type",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "legal",
+            "operational",
+            "reporting"
+          ]
+        },
+        "ownership_percent": {
+          "name": "ownership_percent",
+          "type": "decimal",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "acquisition_date": {
+          "name": "acquisition_date",
+          "type": "date",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "integration_status": {
+          "name": "integration_status",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "pending",
+            "in_progress",
+            "completed",
+            "abandoned"
+          ]
+        },
+        "partner_type": {
+          "name": "partner_type",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "reseller",
+            "implementer",
+            "co_seller",
+            "technology",
+            "strategic"
+          ]
+        },
+        "agreement_status": {
+          "name": "agreement_status",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "active",
+            "expired",
+            "negotiating"
+          ]
+        },
+        "competition_intensity": {
+          "name": "competition_intensity",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "direct",
+            "indirect",
+            "emerging"
+          ]
+        },
+        "overlap_areas": {
+          "name": "overlap_areas",
+          "type": "string_array",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        }
+      },
+      "queries": [
+        {
+          "by": [
+            "from_organization_id"
+          ]
+        },
+        {
+          "by": [
+            "to_organization_id"
+          ]
+        },
+        {
+          "by": [
+            "from_organization_id",
+            "type"
+          ]
+        },
+        {
+          "by": [
+            "to_organization_id",
+            "type"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/relationships/organization_hierarchy.yaml"
+    },
+    "person_organization": {
+      "name": "person_organization",
+      "table": "person_organizations",
+      "from": "person",
+      "to": "organization",
+      "selfReferential": false,
+      "fromColumn": "person_id",
+      "toColumn": "organization_id",
+      "types": [
+        {
+          "name": "employed_by",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "advises",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "board_member",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "invested_in",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "consulted_for",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "founded",
+          "bidirectional": false,
+          "directed": true
+        }
+      ],
+      "hasTypes": true,
+      "temporal": true,
+      "sourced": true,
+      "onDeleteFrom": "restrict",
+      "onDeleteTo": "restrict",
+      "uniqueOn": [
+        "person_id",
+        "organization_id",
+        "type",
+        "valid_from"
+      ],
+      "fields": {
+        "role_title": {
+          "name": "role_title",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "department": {
+          "name": "department",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "seniority_level": {
+          "name": "seniority_level",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "ic",
+            "lead",
+            "manager",
+            "director",
+            "vp",
+            "c_level",
+            "founder"
+          ]
+        },
+        "buying_authority": {
+          "name": "buying_authority",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "none",
+            "influencer",
+            "recommender",
+            "decision_maker",
+            "budget_owner"
+          ]
+        },
+        "technical_authority": {
+          "name": "technical_authority",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "none",
+            "user",
+            "evaluator",
+            "architect",
+            "owner"
+          ]
+        }
+      },
+      "queries": [
+        {
+          "by": [
+            "person_id"
+          ]
+        },
+        {
+          "by": [
+            "organization_id"
+          ]
+        },
+        {
+          "by": [
+            "person_id",
+            "type"
+          ],
+          "order": "valid_from desc"
+        },
+        {
+          "by": [
+            "organization_id",
+            "type"
+          ]
+        },
+        {
+          "by": [
+            "person_id",
+            "is_current"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/relationships/person_organization.yaml"
+    },
+    "engagement_opportunity": {
+      "name": "engagement_opportunity",
+      "table": "engagement_opportunities",
+      "from": "engagement",
+      "to": "opportunity",
+      "selfReferential": false,
+      "fromColumn": "engagement_id",
+      "toColumn": "opportunity_id",
+      "types": [
+        {
+          "name": "advances",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "related_to",
+          "bidirectional": false,
+          "directed": true
+        }
+      ],
+      "hasTypes": true,
+      "temporal": false,
+      "sourced": false,
+      "onDeleteFrom": "restrict",
+      "onDeleteTo": "restrict",
+      "uniqueOn": [
+        "engagement_id",
+        "opportunity_id",
+        "type"
+      ],
+      "fields": {},
+      "queries": [
+        {
+          "by": [
+            "engagement_id"
+          ]
+        },
+        {
+          "by": [
+            "opportunity_id"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/relationships/engagement_opportunity.yaml"
+    },
+    "person_person": {
+      "name": "person_person",
+      "table": "person_person_relationships",
+      "from": "person",
+      "to": "person",
+      "selfReferential": true,
+      "fromColumn": "from_person_id",
+      "toColumn": "to_person_id",
+      "types": [
+        {
+          "name": "reporting",
+          "inverse": "management",
+          "bidirectional": false,
+          "directed": false
+        },
+        {
+          "name": "network",
+          "bidirectional": true,
+          "directed": false
+        },
+        {
+          "name": "introduction",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "collaboration",
+          "bidirectional": true,
+          "directed": false
+        }
+      ],
+      "hasTypes": true,
+      "temporal": true,
+      "sourced": true,
+      "onDeleteFrom": "restrict",
+      "onDeleteTo": "restrict",
+      "uniqueOn": [
+        "from_person_id",
+        "to_person_id",
+        "type",
+        "valid_from"
+      ],
+      "fields": {
+        "context": {
+          "name": "context",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "foreignKey": {
+            "table": "organizations",
+            "column": "id"
+          }
+        },
+        "strength": {
+          "name": "strength",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "strong",
+            "moderate",
+            "weak",
+            "unknown"
+          ]
+        },
+        "introducer_id": {
+          "name": "introducer_id",
+          "type": "uuid",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "foreignKey": {
+            "table": "persons",
+            "column": "id"
+          }
+        },
+        "introduction_date": {
+          "name": "introduction_date",
+          "type": "date",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        }
+      },
+      "queries": [
+        {
+          "by": [
+            "from_person_id"
+          ]
+        },
+        {
+          "by": [
+            "to_person_id"
+          ]
+        },
+        {
+          "by": [
+            "from_person_id",
+            "type"
+          ]
+        },
+        {
+          "by": [
+            "organization_id"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/relationships/person_person.yaml"
+    },
+    "engagement_participant": {
+      "name": "engagement_participant",
+      "table": "engagement_participants",
+      "from": "engagement",
+      "to": "person",
+      "selfReferential": false,
+      "fromColumn": "engagement_id",
+      "toColumn": "person_id",
+      "types": [
+        {
+          "name": "organizer",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "attendee",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "mentioned",
+          "bidirectional": false,
+          "directed": true
+        },
+        {
+          "name": "absent_invited",
+          "bidirectional": false,
+          "directed": true
+        }
+      ],
+      "hasTypes": true,
+      "temporal": false,
+      "sourced": true,
+      "onDeleteFrom": "restrict",
+      "onDeleteTo": "restrict",
+      "uniqueOn": [
+        "engagement_id",
+        "person_id",
+        "type"
+      ],
+      "fields": {
+        "spoke": {
+          "name": "spoke",
+          "type": "boolean",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "talk_time_percent": {
+          "name": "talk_time_percent",
+          "type": "decimal",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "sentiment_expressed": {
+          "name": "sentiment_expressed",
+          "type": "enum",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false,
+          "choices": [
+            "positive",
+            "neutral",
+            "skeptical",
+            "negative"
+          ]
+        },
+        "accepted": {
+          "name": "accepted",
+          "type": "boolean",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        },
+        "attended": {
+          "name": "attended",
+          "type": "boolean",
+          "required": false,
+          "nullable": true,
+          "unique": false,
+          "index": false
+        }
+      },
+      "queries": [
+        {
+          "by": [
+            "engagement_id"
+          ]
+        },
+        {
+          "by": [
+            "person_id"
+          ]
+        },
+        {
+          "by": [
+            "engagement_id",
+            "type"
+          ]
+        }
+      ],
+      "sourcePath": "/Users/dug/Projects/sandbox/codegen-patterns/test/fixtures/relationships/engagement_participant.yaml"
+    }
+  },
+  "edges": [
+    {
+      "from": "contact",
+      "to": "user",
+      "relationship": {
+        "name": "user",
+        "type": "belongs_to",
+        "target": "user",
+        "foreignKey": "user_id",
+        "resolved": true
+      },
+      "cardinality": "N:1",
+      "bidirectional": false
+    },
+    {
+      "from": "opportunity",
+      "to": "organization",
+      "relationship": {
+        "name": "organization",
+        "type": "belongs_to",
+        "target": "organization",
+        "foreignKey": "organization_id",
+        "resolved": true
+      },
+      "cardinality": "N:1",
+      "bidirectional": true
+    },
+    {
+      "from": "opportunity",
+      "to": "user",
+      "relationship": {
+        "name": "owner",
+        "type": "belongs_to",
+        "target": "user",
+        "foreignKey": "owner_id",
+        "resolved": true
+      },
+      "cardinality": "N:1",
+      "bidirectional": true
+    },
+    {
+      "from": "opportunity",
+      "to": "deal_state",
+      "relationship": {
+        "name": "state",
+        "type": "belongs_to",
+        "target": "deal_state",
+        "foreignKey": "state_id",
+        "resolved": true
+      },
+      "cardinality": "N:1",
+      "bidirectional": true
+    },
+    {
+      "from": "deal_state",
+      "to": "opportunity",
+      "relationship": {
+        "name": "opportunities",
+        "type": "has_many",
+        "target": "opportunity",
+        "foreignKey": "state_id",
+        "resolved": true
+      },
+      "cardinality": "1:N",
+      "bidirectional": true
+    },
+    {
+      "from": "organization",
+      "to": "organization",
+      "relationship": {
+        "name": "parent",
+        "type": "belongs_to",
+        "target": "organization",
+        "foreignKey": "parent_id",
+        "resolved": true
+      },
+      "cardinality": "N:1",
+      "bidirectional": true
+    },
+    {
+      "from": "organization",
+      "to": "organization",
+      "relationship": {
+        "name": "children",
+        "type": "has_many",
+        "target": "organization",
+        "foreignKey": "parent_id",
+        "resolved": true
+      },
+      "cardinality": "1:N",
+      "bidirectional": true
+    },
+    {
+      "from": "organization",
+      "to": "opportunity",
+      "relationship": {
+        "name": "opportunities",
+        "type": "has_many",
+        "target": "opportunity",
+        "foreignKey": "organization_id",
+        "resolved": true
+      },
+      "cardinality": "1:N",
+      "bidirectional": true
+    },
+    {
+      "from": "user",
+      "to": "person",
+      "relationship": {
+        "name": "person",
+        "type": "belongs_to",
+        "target": "person",
+        "foreignKey": "person_id",
+        "resolved": true
+      },
+      "cardinality": "N:1",
+      "bidirectional": false
+    },
+    {
+      "from": "user",
+      "to": "opportunity",
+      "relationship": {
+        "name": "owned_opportunities",
+        "type": "has_many",
+        "target": "opportunity",
+        "foreignKey": "owner_id",
+        "resolved": true
+      },
+      "cardinality": "1:N",
+      "bidirectional": true
+    },
+    {
+      "from": "deal",
+      "to": "user",
+      "relationship": {
+        "name": "owner",
+        "type": "belongs_to",
+        "target": "user",
+        "foreignKey": "owner_id",
+        "resolved": true
+      },
+      "cardinality": "N:1",
+      "bidirectional": false
+    },
+    {
+      "from": "person",
+      "to": "opportunity",
+      "relationship": {
+        "name": "person_opportunity_role",
+        "type": "has_many",
+        "target": "opportunity",
+        "foreignKey": "person_id",
+        "resolved": true
+      },
+      "cardinality": "N:M",
+      "bidirectional": false
+    },
+    {
+      "from": "organization",
+      "to": "organization",
+      "relationship": {
+        "name": "organization_hierarchy",
+        "type": "has_many",
+        "target": "organization",
+        "foreignKey": "from_organization_id",
+        "resolved": true
+      },
+      "cardinality": "N:M",
+      "bidirectional": true
+    },
+    {
+      "from": "person",
+      "to": "organization",
+      "relationship": {
+        "name": "person_organization",
+        "type": "has_many",
+        "target": "organization",
+        "foreignKey": "person_id",
+        "resolved": true
+      },
+      "cardinality": "N:M",
+      "bidirectional": false
+    },
+    {
+      "from": "person",
+      "to": "person",
+      "relationship": {
+        "name": "person_person",
+        "type": "has_many",
+        "target": "person",
+        "foreignKey": "from_person_id",
+        "resolved": true
+      },
+      "cardinality": "N:M",
+      "bidirectional": true
+    }
+  ]
+}

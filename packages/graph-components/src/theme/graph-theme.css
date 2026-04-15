@@ -1,0 +1,115 @@
+/* Graph Component Library — CSS Custom Properties */
+
+:root {
+  /* Node colors by kind */
+  --graph-entity-color: #3b82f6;
+  --graph-relationship-color: #10b981;
+  --graph-record-color: #8b5cf6;
+
+  /* Group colors */
+  --graph-group-base: #64748b;
+  --graph-group-synced: #3b82f6;
+  --graph-group-activity: #f59e0b;
+  --graph-group-metadata: #8b5cf6;
+  --graph-group-knowledge: #10b981;
+
+  /* Badge: default */
+  --graph-badge-default-bg: #f1f5f9;
+  --graph-badge-default-text: #475569;
+  --graph-badge-default-border: #e2e8f0;
+  /* Badge: primary */
+  --graph-badge-primary-bg: #dbeafe;
+  --graph-badge-primary-text: #1d4ed8;
+  --graph-badge-primary-border: #bfdbfe;
+  /* Badge: success */
+  --graph-badge-success-bg: #dcfce7;
+  --graph-badge-success-text: #15803d;
+  --graph-badge-success-border: #bbf7d0;
+  /* Badge: warning */
+  --graph-badge-warning-bg: #fef3c7;
+  --graph-badge-warning-text: #a16207;
+  --graph-badge-warning-border: #fde68a;
+  /* Badge: error */
+  --graph-badge-error-bg: #fee2e2;
+  --graph-badge-error-text: #b91c1c;
+  --graph-badge-error-border: #fecaca;
+  /* Badge: info */
+  --graph-badge-info-bg: #e0f2fe;
+  --graph-badge-info-text: #0369a1;
+  --graph-badge-info-border: #bae6fd;
+  /* Badge: muted */
+  --graph-badge-muted-bg: #f8fafc;
+  --graph-badge-muted-text: #94a3b8;
+  --graph-badge-muted-border: #f1f5f9;
+
+  /* Edge colors */
+  --graph-edge-fk: #94a3b8;
+  --graph-edge-junction: #10b981;
+  --graph-edge-inline: #3b82f6;
+
+  /* Surface */
+  --graph-node-bg: #ffffff;
+  --graph-node-border: #e2e8f0;
+  --graph-node-selected-border: #3b82f6;
+  --graph-panel-bg: #ffffff;
+
+  /* Typography */
+  --graph-font-family: ui-sans-serif, system-ui, sans-serif;
+  --graph-font-size-sm: 0.75rem;
+  --graph-font-size-md: 0.875rem;
+  --graph-font-size-lg: 1rem;
+}
+
+[data-theme="dark"] {
+  /* Node colors by kind */
+  --graph-entity-color: #60a5fa;
+  --graph-relationship-color: #34d399;
+  --graph-record-color: #a78bfa;
+
+  /* Group colors */
+  --graph-group-base: #94a3b8;
+  --graph-group-synced: #60a5fa;
+  --graph-group-activity: #fbbf24;
+  --graph-group-metadata: #a78bfa;
+  --graph-group-knowledge: #34d399;
+
+  /* Badge: default */
+  --graph-badge-default-bg: #334155;
+  --graph-badge-default-text: #cbd5e1;
+  --graph-badge-default-border: #475569;
+  /* Badge: primary */
+  --graph-badge-primary-bg: #1e3a5f;
+  --graph-badge-primary-text: #93c5fd;
+  --graph-badge-primary-border: #1e40af;
+  /* Badge: success */
+  --graph-badge-success-bg: #14532d;
+  --graph-badge-success-text: #86efac;
+  --graph-badge-success-border: #166534;
+  /* Badge: warning */
+  --graph-badge-warning-bg: #451a03;
+  --graph-badge-warning-text: #fcd34d;
+  --graph-badge-warning-border: #78350f;
+  /* Badge: error */
+  --graph-badge-error-bg: #450a0a;
+  --graph-badge-error-text: #fca5a5;
+  --graph-badge-error-border: #7f1d1d;
+  /* Badge: info */
+  --graph-badge-info-bg: #0c4a6e;
+  --graph-badge-info-text: #7dd3fc;
+  --graph-badge-info-border: #075985;
+  /* Badge: muted */
+  --graph-badge-muted-bg: #1e293b;
+  --graph-badge-muted-text: #64748b;
+  --graph-badge-muted-border: #334155;
+
+  /* Edge colors */
+  --graph-edge-fk: #64748b;
+  --graph-edge-junction: #34d399;
+  --graph-edge-inline: #60a5fa;
+
+  /* Surface */
+  --graph-node-bg: #1e293b;
+  --graph-node-border: #334155;
+  --graph-node-selected-border: #60a5fa;
+  --graph-panel-bg: #0f172a;
+}

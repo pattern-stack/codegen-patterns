@@ -1,5 +1,5 @@
 /**
- * Project noun — codegen project / init / scan / config / inspect
+ * Project noun — codegen project / init / scan / config / inspect / graph
  *
  * Implements the `project` surface:
  *   - codegen project           summary pane (initialized? framework? config?)
@@ -7,6 +7,7 @@
  *   - codegen project scan      run scanner + propose/write codegen.config.yaml
  *   - codegen project config    print resolved config (YAML or JSON)
  *   - codegen project inspect   legacy analyze/stats/doc/manifest/suggestions
+ *   - codegen project graph     visualize entity-relationship graph in browser
  *
  * Legacy verbs (`analyze`, `stats`, `doc`, `manifest`, `suggestions`) from
  * `src/cli.ts` are hosted under `codegen project inspect --kind <k>` to keep
@@ -21,6 +22,7 @@ import type { CommandClass } from 'clipanion';
 import { stringify as stringifyYaml } from 'yaml';
 
 import { analyzeDomain } from '../../index.js';
+import { serializeDomainGraph } from '../../analyzer/serialize-graph.js';
 import {
 	suggestTransitiveRelationships,
 	readManifest,
@@ -724,6 +726,98 @@ function formatStatsConsole(result: {
 	return lines.join('\n');
 }
 
+
+// ---------------------------------------------------------------------------
+// ProjectGraphCommand
+// ---------------------------------------------------------------------------
+
+export class ProjectGraphCommand extends Command {
+	static paths = [['project', 'graph']];
+	static usage = Command.Usage({
+		description: 'Visualize the entity-relationship graph in a browser',
+		examples: [
+			['Open interactive graph viewer', 'codegen project graph'],
+			['Export graph as JSON', 'codegen project graph --json'],
+			['Write graph JSON to file', 'codegen project graph --output graph.json'],
+		],
+	});
+
+	dir = Option.String({ required: false });
+	output = Option.String('--output,-o', { required: false });
+	json = Option.Boolean('--json', false);
+	cwd = Option.String('--cwd', { required: false });
+	configPath = Option.String('--config', { required: false });
+
+	async execute(): Promise<number> {
+		if (this.json) setJsonMode(true);
+		const ctx = await loadContext({
+			cwd: this.cwd,
+			configPath: this.configPath,
+			json: this.json,
+			skipDetection: true,
+		});
+
+		const entitiesDir = this.dir
+			? path.resolve(ctx.cwd, this.dir)
+			: ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+
+		if (!fs.existsSync(entitiesDir)) {
+			printError(`Entity directory not found: ${entitiesDir}`);
+			return 1;
+		}
+
+		// Relationships dir is conventionally alongside entities
+		const relDir = path.resolve(ctx.cwd, 'relationships');
+		const relationshipsDir = fs.existsSync(relDir) ? relDir : undefined;
+
+		const result = await analyzeDomain(entitiesDir, relationshipsDir);
+		const serialized = serializeDomainGraph(result.graph);
+
+		if (isJsonMode()) {
+			printJson({
+				command: 'project graph',
+				entities: result.entities.length,
+				relationshipDefinitions: result.relationshipDefinitions.length,
+				edges: result.graph.edges.length,
+				graph: serialized,
+			});
+			return 0;
+		}
+
+		if (this.output) {
+			const outPath = path.resolve(ctx.cwd, this.output);
+			fs.writeFileSync(outPath, JSON.stringify(serialized, null, 2));
+			printSuccess(`Graph written to ${outPath}`);
+			printInfo(`${result.entities.length} entities, ${result.relationshipDefinitions.length} relationships, ${result.graph.edges.length} edges`);
+			return 0;
+		}
+
+		// Write to temp file and provide viewer instructions
+		const os = await import('node:os');
+		const tmpDir = fs.mkdtempSync(path.join(os.default.tmpdir(), 'codegen-graph-'));
+		const graphPath = path.join(tmpDir, 'graph.json');
+		fs.writeFileSync(graphPath, JSON.stringify(serialized, null, 2));
+
+		const viewerDir = path.resolve(import.meta.dirname, '..', '..', '..', 'tools', 'schema-graph-viewer');
+		const viewerDist = path.join(viewerDir, 'dist', 'index.html');
+
+		if (fs.existsSync(viewerDist)) {
+			fs.copyFileSync(graphPath, path.join(viewerDir, 'dist', 'graph.json'));
+			printSuccess('Graph exported');
+			printInfo(`${result.entities.length} entities, ${result.relationshipDefinitions.length} relationships, ${result.graph.edges.length} edges`);
+			printInfo(`Graph JSON: ${graphPath}`);
+			printInfo(`Open the viewer: cd ${viewerDir} && npx vite preview`);
+		} else {
+			printSuccess('Graph exported');
+			printInfo(`${result.entities.length} entities, ${result.relationshipDefinitions.length} relationships, ${result.graph.edges.length} edges`);
+			printInfo(`Graph JSON: ${graphPath}`);
+			printInfo(`To view: cd ${viewerDir} && bun install && bun run dev`);
+		}
+
+		return 0;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // NounModule default export
 // ---------------------------------------------------------------------------
@@ -735,6 +829,7 @@ const projectNoun: NounModule = {
 		ProjectScanCommand,
 		ProjectConfigCommand,
 		ProjectInspectCommand,
+		ProjectGraphCommand,
 	] as CommandClass[],
 	summary,
 	hints,

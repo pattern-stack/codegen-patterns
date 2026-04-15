@@ -36,4 +36,7 @@ export {
 	getPendingSuggestions,
 } from './manifest';
 
+export { serializeDomainGraph } from './serialize-graph';
+export type { SerializedDomainGraph } from './serialize-graph';
+
 export * from './types';
