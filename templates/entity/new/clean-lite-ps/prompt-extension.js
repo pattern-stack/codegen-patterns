@@ -469,6 +469,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
 
+  // Source root — configurable via baseLocals.srcRoot or entity.src_root, defaults to 'src'
+  const srcRoot = baseLocals.srcRoot || entity.src_root || 'src';
+
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);
   const entityNamePlural = entity.plural || pluralize(entityName);
@@ -508,18 +511,18 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Output paths
   const outputPaths = {
-    entity: `modules/${entityNamePlural}/${entityName}.entity.ts`,
-    repository: `modules/${entityNamePlural}/${entityName}.repository.ts`,
-    service: `modules/${entityNamePlural}/${entityName}.service.ts`,
-    controller: `modules/${entityNamePlural}/${entityName}.controller.ts`,
-    module: `modules/${entityNamePlural}/${entityNamePlural}.module.ts`,
-    findByIdUseCase: `modules/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
-    listUseCase: `modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
-    createDto: `modules/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
-    updateDto: `modules/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
-    outputDto: `modules/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
+    entity: `${srcRoot}/modules/${entityNamePlural}/${entityName}.entity.ts`,
+    repository: `${srcRoot}/modules/${entityNamePlural}/${entityName}.repository.ts`,
+    service: `${srcRoot}/modules/${entityNamePlural}/${entityName}.service.ts`,
+    controller: `${srcRoot}/modules/${entityNamePlural}/${entityName}.controller.ts`,
+    module: `${srcRoot}/modules/${entityNamePlural}/${entityNamePlural}.module.ts`,
+    findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
+    listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+    createDto: `${srcRoot}/modules/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
+    updateDto: `${srcRoot}/modules/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
+    outputDto: `${srcRoot}/modules/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
     declarativeQueries: hasDeclarativeQueries
-      ? `modules/${entityNamePlural}/use-cases/declarative-queries.ts`
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
       : null,
   };
 

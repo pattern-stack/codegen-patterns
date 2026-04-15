@@ -114,16 +114,16 @@ describe('buildCleanLitePsLocals', () => {
   it('generates correct output paths for entity with plural name', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
 
-    expect(locals.clpOutputPaths.entity).toBe('modules/contacts/contact.entity.ts');
-    expect(locals.clpOutputPaths.repository).toBe('modules/contacts/contact.repository.ts');
-    expect(locals.clpOutputPaths.service).toBe('modules/contacts/contact.service.ts');
-    expect(locals.clpOutputPaths.controller).toBe('modules/contacts/contact.controller.ts');
-    expect(locals.clpOutputPaths.module).toBe('modules/contacts/contacts.module.ts');
-    expect(locals.clpOutputPaths.findByIdUseCase).toBe('modules/contacts/use-cases/find-contact-by-id.use-case.ts');
-    expect(locals.clpOutputPaths.listUseCase).toBe('modules/contacts/use-cases/list-contacts.use-case.ts');
-    expect(locals.clpOutputPaths.createDto).toBe('modules/contacts/dto/create-contact.dto.ts');
-    expect(locals.clpOutputPaths.updateDto).toBe('modules/contacts/dto/update-contact.dto.ts');
-    expect(locals.clpOutputPaths.outputDto).toBe('modules/contacts/dto/contact-output.dto.ts');
+    expect(locals.clpOutputPaths.entity).toBe('src/modules/contacts/contact.entity.ts');
+    expect(locals.clpOutputPaths.repository).toBe('src/modules/contacts/contact.repository.ts');
+    expect(locals.clpOutputPaths.service).toBe('src/modules/contacts/contact.service.ts');
+    expect(locals.clpOutputPaths.controller).toBe('src/modules/contacts/contact.controller.ts');
+    expect(locals.clpOutputPaths.module).toBe('src/modules/contacts/contacts.module.ts');
+    expect(locals.clpOutputPaths.findByIdUseCase).toBe('src/modules/contacts/use-cases/find-contact-by-id.use-case.ts');
+    expect(locals.clpOutputPaths.listUseCase).toBe('src/modules/contacts/use-cases/list-contacts.use-case.ts');
+    expect(locals.clpOutputPaths.createDto).toBe('src/modules/contacts/dto/create-contact.dto.ts');
+    expect(locals.clpOutputPaths.updateDto).toBe('src/modules/contacts/dto/update-contact.dto.ts');
+    expect(locals.clpOutputPaths.outputDto).toBe('src/modules/contacts/dto/contact-output.dto.ts');
   });
 
   it('processes belongs_to relations into BelongsToRelation shape', () => {
@@ -340,7 +340,7 @@ describe('buildCleanLitePsLocals', () => {
     const locals = buildCleanLitePsLocals(withQueries, EMPTY_BASE_LOCALS);
 
     expect(locals.clpOutputPaths.declarativeQueries).toBe(
-      'modules/contacts/use-cases/declarative-queries.ts',
+      'src/modules/contacts/use-cases/declarative-queries.ts',
     );
   });
 
@@ -348,5 +348,28 @@ describe('buildCleanLitePsLocals', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
 
     expect(locals.clpOutputPaths.declarativeQueries).toBeNull();
+  });
+
+  it('uses custom srcRoot from baseLocals', () => {
+    const locals = buildCleanLitePsLocals(contactDefinition, { srcRoot: 'app' });
+
+    expect(locals.clpOutputPaths.entity).toBe('app/modules/contacts/contact.entity.ts');
+    expect(locals.clpOutputPaths.service).toBe('app/modules/contacts/contact.service.ts');
+  });
+
+  it('uses src_root from entity definition', () => {
+    const withSrcRoot = {
+      ...contactDefinition,
+      entity: { ...contactDefinition.entity, src_root: 'lib' },
+    };
+    const locals = buildCleanLitePsLocals(withSrcRoot, EMPTY_BASE_LOCALS);
+
+    expect(locals.clpOutputPaths.entity).toBe('lib/modules/contacts/contact.entity.ts');
+  });
+
+  it('defaults srcRoot to src when not specified', () => {
+    const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
+
+    expect(locals.clpOutputPaths.entity).toStartWith('src/');
   });
 });
