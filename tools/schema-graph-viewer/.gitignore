@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Lockfiles (regenerated on install)
+bun.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Test output (regenerated)
+test/gen/
+
+# Codegen output (generated from entity YAML — never commit)
+gen/
+app/
+apps/
+modules/
+
+# Codegen output packages (not our source packages)
+# packages/ is allowed — packages/graph-components/ is source code
+# If codegen generates into packages/, use a more specific ignore
+
+# Runtime artifacts
+agent-logs/
+codegen.config.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dev companion
+.dev-app.pid
+.dev-app.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+node_modules/
+dist/
+bun.lock
