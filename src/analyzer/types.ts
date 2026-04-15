@@ -5,6 +5,7 @@
  */
 
 import type { EntityDefinition } from '../schema/entity-definition.schema';
+import type { RelationshipDefinition, TypeDirection } from '../schema/relationship-definition.schema';
 
 // ============================================================================
 // Severity Enum
@@ -99,6 +100,65 @@ export interface ParsedEntity {
 }
 
 // ============================================================================
+// Parsed Relationship Definition Types (first-class junction entities)
+// ============================================================================
+
+/**
+ * Direction metadata for a single relationship type.
+ * Resolved from the YAML types: block (simple list or object map).
+ */
+export interface ParsedTypeDirection {
+	name: string;
+	inverse?: string;
+	bidirectional: boolean;
+	directed: boolean;
+}
+
+/**
+ * A parsed relationship definition — a first-class junction entity
+ * between two core entities. Loaded from relationship YAML files.
+ *
+ * This is NOT the same as ParsedRelationship (which is an inline
+ * belongs_to/has_many/has_one on an entity). This represents a full
+ * junction table with its own fields, types, temporal/sourced flags.
+ */
+export interface ParsedRelationshipDefinition {
+	name: string;
+	table: string;
+	from: string;
+	to: string;
+	selfReferential: boolean;
+
+	// FK column names (derived from from/to)
+	fromColumn: string;
+	toColumn: string;
+
+	// Type taxonomy
+	types: ParsedTypeDirection[];
+	hasTypes: boolean;
+
+	// Behavioral flags
+	temporal: boolean;
+	sourced: boolean;
+
+	// On-delete semantics (ADR-021)
+	onDeleteFrom: 'restrict' | 'cascade' | 'set_null' | 'no_action';
+	onDeleteTo: 'restrict' | 'cascade' | 'set_null' | 'no_action';
+
+	// Unique constraint columns
+	uniqueOn: string[];
+
+	// Custom fields (beyond auto-generated)
+	fields: Map<string, ParsedField>;
+
+	// Declarative queries
+	queries?: ParsedQuery[];
+
+	// Source file path
+	sourcePath: string;
+}
+
+// ============================================================================
 // Graph Types
 // ============================================================================
 
@@ -118,6 +178,7 @@ export interface RelationshipEdge {
 
 export interface DomainGraph {
 	entities: Map<string, ParsedEntity>;
+	relationshipDefinitions: Map<string, ParsedRelationshipDefinition>;
 	edges: RelationshipEdge[];
 }
 
@@ -148,6 +209,7 @@ export interface DomainStatistics {
 export interface AnalysisResult {
 	isValid: boolean;
 	entities: ParsedEntity[];
+	relationshipDefinitions: ParsedRelationshipDefinition[];
 	graph: DomainGraph;
 	issues: AnalysisIssue[];
 	statistics: DomainStatistics;

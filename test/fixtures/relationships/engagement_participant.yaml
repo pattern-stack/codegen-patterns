@@ -1,0 +1,52 @@
+# Engagement ↔ Person Relationship
+# Who participated in an activity — meetings, calls, emails.
+#
+# Source: docs/codegen-evolution-data-model/03-relationship-taxonomy.md
+# Participation metadata: who organized, who attended, who spoke.
+
+relationship:
+  name: engagement_participant
+  table: engagement_participants
+  from: engagement
+  to: person
+
+  types:
+    - organizer
+    - attendee
+    - mentioned
+    - absent_invited
+
+  # Not temporal — participation is a point-in-time fact about the engagement.
+  temporal: false
+  sourced: true
+
+fields:
+  # Participation quality
+  spoke:
+    type: boolean
+    nullable: true
+
+  talk_time_percent:
+    type: decimal
+    nullable: true
+    min: 0
+    max: 100
+
+  sentiment_expressed:
+    type: enum
+    choices: [positive, neutral, skeptical, negative]
+    nullable: true
+
+  # For meetings
+  accepted:
+    type: boolean
+    nullable: true
+
+  attended:
+    type: boolean
+    nullable: true
+
+queries:
+  - by: [engagement_id]
+  - by: [person_id]
+  - by: [engagement_id, type]

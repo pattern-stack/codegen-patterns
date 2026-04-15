@@ -1,0 +1,22 @@
+# Engagement ↔ Opportunity Relationship
+# How activities connect to deals.
+#
+# Source: docs/codegen-evolution-data-model/03-relationship-taxonomy.md
+# Minimal junction — few fields, few types.
+
+relationship:
+  name: engagement_opportunity
+  table: engagement_opportunities
+  from: engagement
+  to: opportunity
+
+  types:
+    - advances
+    - related_to
+
+  temporal: false
+  sourced: false
+
+queries:
+  - by: [engagement_id]
+  - by: [opportunity_id]

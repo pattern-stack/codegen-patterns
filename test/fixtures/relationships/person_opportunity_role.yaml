@@ -1,0 +1,77 @@
+# Person ↔ Opportunity Relationship
+# How people participate in deals — the roles they play and their engagement.
+#
+# Source: docs/codegen-evolution-data-model/03-relationship-taxonomy.md
+# Critical for sales intelligence: who is the champion, who is blocking,
+# who makes the decision.
+
+relationship:
+  name: person_opportunity_role
+  table: person_opportunity_roles
+  from: person
+  to: opportunity
+
+  # Deal role types — nouns describing the person's role in the deal.
+  # A person's role is deal-specific: VP might be champion on one deal,
+  # blocker on another.
+  types:
+    - champion
+    - blocker
+    - decision_maker
+    - influencer
+    - evaluator
+    - end_user
+    - economic_buyer
+    - coach
+
+  temporal: true
+  sourced: true
+
+fields:
+  # Engagement tracking
+  engagement_level:
+    type: enum
+    choices: [highly_engaged, engaged, passive, disengaged, unknown]
+    nullable: true
+
+  last_interaction:
+    type: datetime
+    nullable: true
+
+  interaction_count:
+    type: integer
+    nullable: true
+    default: 0
+
+  # Sentiment
+  sentiment:
+    type: enum
+    choices: [positive, neutral, skeptical, negative, unknown]
+    nullable: true
+
+  sentiment_trend:
+    type: enum
+    choices: [improving, stable, declining, unknown]
+    nullable: true
+
+  # Role-specific fields (nullable — only relevant for certain types)
+  influence_score:
+    type: decimal
+    nullable: true
+    min: 0
+    max: 1
+
+  blocker_reason:
+    type: string
+    nullable: true
+
+  decision_scope:
+    type: enum
+    choices: [technical, business, budget, final]
+    nullable: true
+
+queries:
+  - by: [person_id]
+  - by: [opportunity_id]
+  - by: [opportunity_id, type]
+  - by: [person_id, type]

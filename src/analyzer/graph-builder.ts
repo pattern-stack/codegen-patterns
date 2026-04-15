@@ -8,6 +8,7 @@
 import type {
 	ParsedEntity,
 	ParsedRelationship,
+	ParsedRelationshipDefinition,
 	DomainGraph,
 	RelationshipEdge,
 	EntityNode,
@@ -43,8 +44,12 @@ function hasReverseEdge(
 /**
  * Build a domain graph from parsed entities
  */
-export function buildDomainGraph(entities: ParsedEntity[]): DomainGraph {
+export function buildDomainGraph(
+	entities: ParsedEntity[],
+	relationshipDefinitions: ParsedRelationshipDefinition[] = [],
+): DomainGraph {
 	const entityMap = new Map<string, ParsedEntity>();
+	const relDefMap = new Map<string, ParsedRelationshipDefinition>();
 	const edges: RelationshipEdge[] = [];
 
 	// Build entity map
@@ -52,7 +57,12 @@ export function buildDomainGraph(entities: ParsedEntity[]): DomainGraph {
 		entityMap.set(entity.name, entity);
 	}
 
-	// Build edges from relationships
+	// Build relationship definition map
+	for (const relDef of relationshipDefinitions) {
+		relDefMap.set(relDef.name, relDef);
+	}
+
+	// Build edges from inline entity relationships (belongs_to, has_many, has_one)
 	for (const entity of entities) {
 		for (const [relName, rel] of entity.relationships) {
 			if (!rel.resolved) continue;
@@ -77,7 +87,32 @@ export function buildDomainGraph(entities: ParsedEntity[]): DomainGraph {
 		}
 	}
 
-	return { entities: entityMap, edges };
+	// Build edges from first-class relationship definitions (junction entities)
+	for (const relDef of relationshipDefinitions) {
+		const fromExists = entityMap.has(relDef.from);
+		const toExists = entityMap.has(relDef.to);
+
+		if (fromExists && toExists) {
+			// Create an N:M edge — junction tables are always many-to-many
+			const edge: RelationshipEdge = {
+				from: relDef.from,
+				to: relDef.to,
+				relationship: {
+					name: relDef.name,
+					type: 'has_many',
+					target: relDef.to,
+					foreignKey: relDef.fromColumn,
+					resolved: true,
+				},
+				cardinality: 'N:M',
+				bidirectional: relDef.types.some((t) => t.bidirectional),
+			};
+
+			edges.push(edge);
+		}
+	}
+
+	return { entities: entityMap, relationshipDefinitions: relDefMap, edges };
 }
 
 /**

@@ -1,0 +1,97 @@
+# Person ↔ Organization Relationship
+# How people relate to companies — employment, advisory, board, investment.
+#
+# Source: docs/codegen-evolution-data-model/03-relationship-taxonomy.md
+# This is the richest relationship in the taxonomy — it carries role details,
+# buying context, and temporal employment history.
+
+relationship:
+  name: person_organization
+  table: person_organizations
+  from: person
+  to: organization
+
+  # Relationship subtypes — generates a `type` enum column.
+  # Direction is established by from/to — types read as "person [type] organization."
+  types:
+    - employed_by
+    - advises
+    - board_member
+    - invested_in
+    - consulted_for
+    - founded
+
+  # Sensible defaults (shown explicitly here for the first example):
+  temporal: true        # generates valid_from (date), valid_to (date?), is_current (boolean)
+  sourced: true         # generates source (enum), confidence (decimal 0-1)
+
+  # on_delete for each endpoint FK (default: restrict per ADR-021)
+  # on_delete_from: restrict
+  # on_delete_to: restrict
+
+# Fields beyond the auto-generated ones (FKs, type, temporal, sourced, timestamps).
+# These are relationship-specific metadata — they describe the relationship,
+# not either endpoint entity.
+fields:
+  # Role details (most relevant for employed_by, but useful across types)
+  role_title:
+    type: string
+    nullable: true
+    max_length: 200
+    ui_label: "Title"
+    ui_importance: primary
+
+  department:
+    type: string
+    nullable: true
+    max_length: 100
+
+  seniority_level:
+    type: enum
+    choices: [ic, lead, manager, director, vp, c_level, founder]
+    nullable: true
+
+  # Buying context — critical for sales intelligence
+  buying_authority:
+    type: enum
+    choices: [none, influencer, recommender, decision_maker, budget_owner]
+    nullable: true
+
+  technical_authority:
+    type: enum
+    choices: [none, user, evaluator, architect, owner]
+    nullable: true
+
+# Declarative queries — same syntax as entity queries.
+# Auto-generated FK field names: person_id, organization_id
+queries:
+  - by: [person_id]
+  - by: [organization_id]
+  - by: [person_id, type]
+    order: valid_from desc
+  - by: [organization_id, type]
+  - by: [person_id, is_current]
+
+# What the system auto-generates from the above:
+#
+# Table: person_organizations
+# ┌─────────────────────────────────────────────────────────┐
+# │ id                  uuid        PK                      │
+# │ person_id           uuid        FK→persons.id  NOT NULL │
+# │ organization_id     uuid        FK→orgs.id     NOT NULL │
+# │ type                enum        NOT NULL                │
+# │ valid_from          date        nullable                │
+# │ valid_to            date        nullable                │
+# │ is_current          boolean     default: true           │
+# │ source              enum        nullable                │
+# │ confidence          decimal     nullable  (0-1)         │
+# │ role_title          varchar     nullable                │
+# │ department          varchar     nullable                │
+# │ seniority_level     enum        nullable                │
+# │ buying_authority    enum        nullable                │
+# │ technical_authority enum        nullable                │
+# │ created_at          timestamp   default: now()          │
+# │ updated_at          timestamp   default: now()          │
+# └─────────────────────────────────────────────────────────┘
+# Indexes: person_id, organization_id, [person_id, type]
+# Unique: [person_id, organization_id, type, valid_from]

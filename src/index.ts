@@ -5,22 +5,37 @@
  * Parses entities, builds a relationship graph, and detects issues.
  */
 
-import { loadEntities, resolveReferences } from './parser';
+import { loadEntities, loadRelationships, resolveReferences, resolveRelationshipReferences } from './parser';
 import { buildDomainGraph, checkConsistency, computeStatistics } from './analyzer';
 import type { AnalysisResult, OutputFormat } from './analyzer/types';
 
 /**
- * Analyze a domain from entity YAML files in a directory
+ * Analyze a domain from entity and relationship YAML files
  */
-export async function analyzeDomain(entitiesDir: string): Promise<AnalysisResult> {
+export async function analyzeDomain(
+	entitiesDir: string,
+	relationshipsDir?: string,
+): Promise<AnalysisResult> {
 	// Load and parse all entity files
 	const { entities, issues: loadIssues } = loadEntities(entitiesDir);
+
+	// Load relationship definitions (optional — directory may not exist)
+	const { relationships: relationshipDefinitions, issues: relLoadIssues } =
+		relationshipsDir
+			? loadRelationships(relationshipsDir)
+			: { relationships: [], issues: [] };
 
 	// Resolve cross-entity references
 	const resolveIssues = resolveReferences(entities);
 
-	// Build relationship graph
-	const graph = buildDomainGraph(entities);
+	// Resolve relationship endpoint references
+	const relResolveIssues = resolveRelationshipReferences(
+		relationshipDefinitions,
+		entities,
+	);
+
+	// Build relationship graph (includes both inline and first-class relationships)
+	const graph = buildDomainGraph(entities, relationshipDefinitions);
 
 	// Check consistency
 	const consistencyIssues = checkConsistency(graph);
@@ -29,7 +44,13 @@ export async function analyzeDomain(entitiesDir: string): Promise<AnalysisResult
 	const statistics = computeStatistics(graph);
 
 	// Combine all issues
-	const allIssues = [...loadIssues, ...resolveIssues, ...consistencyIssues];
+	const allIssues = [
+		...loadIssues,
+		...relLoadIssues,
+		...resolveIssues,
+		...relResolveIssues,
+		...consistencyIssues,
+	];
 
 	// Determine validity (only errors make it invalid)
 	const hasErrors = allIssues.some((i) => i.severity === 'error');
@@ -37,6 +58,7 @@ export async function analyzeDomain(entitiesDir: string): Promise<AnalysisResult
 	return {
 		isValid: !hasErrors,
 		entities,
+		relationshipDefinitions,
 		graph,
 		issues: allIssues,
 		statistics,
@@ -66,7 +88,7 @@ export function validateEntities(entitiesDir: string): {
 export * from './analyzer/types';
 
 // Re-export parser utilities
-export { loadEntities, loadEntityFromYaml } from './parser';
+export { loadEntities, loadRelationships, loadEntityFromYaml, loadRelationshipFromYaml } from './parser';
 
 // Re-export analyzer utilities
 export {

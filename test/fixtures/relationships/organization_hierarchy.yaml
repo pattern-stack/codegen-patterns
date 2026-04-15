@@ -1,0 +1,74 @@
+# Organization ↔ Organization Relationship
+# Corporate structure and partnerships — hierarchy, M&A, competition.
+#
+# Source: docs/codegen-evolution-data-model/03-relationship-taxonomy.md
+# Self-referential: both endpoints are organizations.
+
+relationship:
+  name: organization_hierarchy
+  table: organization_hierarchies
+  from: organization
+  to: organization
+
+  types:
+    parent_of:
+      inverse: subsidiary_of
+    acquired:
+      directed: true
+    partner_of:
+      bidirectional: true
+    competes_with:
+      bidirectional: true
+    vendor_of:
+      inverse: customer_of
+
+  temporal: true
+  sourced: true
+
+fields:
+  # Structure (for parent_of/subsidiary_of)
+  hierarchy_type:
+    type: enum
+    choices: [legal, operational, reporting]
+    nullable: true
+
+  ownership_percent:
+    type: decimal
+    nullable: true
+
+  # M&A context (for acquired)
+  acquisition_date:
+    type: date
+    nullable: true
+
+  integration_status:
+    type: enum
+    choices: [pending, in_progress, completed, abandoned]
+    nullable: true
+
+  # Partnership context (for partner_of)
+  partner_type:
+    type: enum
+    choices: [reseller, implementer, co_seller, technology, strategic]
+    nullable: true
+
+  agreement_status:
+    type: enum
+    choices: [active, expired, negotiating]
+    nullable: true
+
+  # Competition context (for competes_with)
+  competition_intensity:
+    type: enum
+    choices: [direct, indirect, emerging]
+    nullable: true
+
+  overlap_areas:
+    type: string_array
+    nullable: true
+
+queries:
+  - by: [from_organization_id]
+  - by: [to_organization_id]
+  - by: [from_organization_id, type]
+  - by: [to_organization_id, type]

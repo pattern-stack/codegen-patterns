@@ -9,10 +9,32 @@ import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
 	loadEntityFromYaml,
+	loadRelationshipFromYaml,
 	type LoadResult,
 	type LoadError,
+	type RelationshipLoadResult,
+	type RelationshipLoadError,
 } from '../utils/yaml-loader';
-import type { ParsedEntity, ParsedEvent, ParsedField, ParsedProviderSync, ParsedQuery, ParsedRelationship, ParsedSync, AnalysisIssue } from '../analyzer/types';
+import type {
+	ParsedEntity,
+	ParsedEvent,
+	ParsedField,
+	ParsedProviderSync,
+	ParsedQuery,
+	ParsedRelationship,
+	ParsedRelationshipDefinition,
+	ParsedSync,
+	ParsedTypeDirection,
+	AnalysisIssue,
+} from '../analyzer/types';
+import {
+	deriveRelationshipFKColumns,
+	deriveTableName,
+	deriveUniqueConstraint,
+	collectTypeNames,
+	type RelationshipDefinition,
+	type RelationshipTypes,
+} from '../schema/relationship-definition.schema';
 
 export interface LoadEntitiesResult {
 	entities: ParsedEntity[];
@@ -283,4 +305,218 @@ export function resolveReferences(entities: ParsedEntity[]): AnalysisIssue[] {
 	return issues;
 }
 
+// ============================================================================
+// Relationship Loading
+// ============================================================================
+
+export interface LoadRelationshipsResult {
+	relationships: ParsedRelationshipDefinition[];
+	issues: AnalysisIssue[];
+}
+
+/**
+ * Transform a loaded relationship definition into a ParsedRelationshipDefinition.
+ *
+ * This resolves all auto-generated fields: FK columns, type directions,
+ * temporal/sourced fields, unique constraints.
+ */
+function transformToRelationshipDefinition(
+	result: RelationshipLoadResult,
+): ParsedRelationshipDefinition {
+	const { definition, filePath } = result;
+	const config = definition.relationship;
+
+	const { fromColumn, toColumn } = deriveRelationshipFKColumns(config);
+	const table = deriveTableName(config);
+	const uniqueOn = deriveUniqueConstraint(config);
+
+	// Resolve type directions
+	const types = resolveTypeDirections(config.types);
+
+	// Parse custom fields
+	const fields = new Map<string, ParsedField>();
+	if (definition.fields) {
+		for (const [name, fieldDef] of Object.entries(definition.fields)) {
+			const field: ParsedField = {
+				name,
+				type: fieldDef.type,
+				required: fieldDef.required ?? false,
+				nullable: fieldDef.nullable ?? false,
+				unique: fieldDef.unique ?? false,
+				index: fieldDef.index ?? false,
+				foreignKey: fieldDef.foreign_key
+					? parseForeignKey(fieldDef.foreign_key)
+					: undefined,
+				choices: fieldDef.choices,
+				constraints: {
+					minLength: fieldDef.min_length,
+					maxLength: fieldDef.max_length,
+					min: fieldDef.min,
+					max: fieldDef.max,
+				},
+				ui: {
+					label: fieldDef.ui_label,
+					type: fieldDef.ui_type,
+					importance: fieldDef.ui_importance,
+					group: fieldDef.ui_group,
+					sortable: fieldDef.ui_sortable,
+					filterable: fieldDef.ui_filterable,
+					visible: fieldDef.ui_visible,
+				},
+			};
+			fields.set(name, field);
+		}
+	}
+
+	// Parse queries
+	const queries: ParsedQuery[] | undefined = definition.queries?.map((q) => ({
+		by: q.by,
+		unique: q.unique,
+		select: q.select,
+		order: q.order,
+		limit: q.limit,
+	}));
+
+	return {
+		name: config.name,
+		table,
+		from: config.from,
+		to: config.to,
+		selfReferential: config.from === config.to,
+		fromColumn,
+		toColumn,
+		types,
+		hasTypes: types.length > 0,
+		temporal: config.temporal,
+		sourced: config.sourced,
+		onDeleteFrom: config.on_delete_from ?? 'restrict',
+		onDeleteTo: config.on_delete_to ?? 'restrict',
+		uniqueOn,
+		fields,
+		queries,
+		sourcePath: filePath,
+	};
+}
+
+/**
+ * Resolve type directions from the YAML types: block.
+ *
+ * Simple list → all directed, no inverses.
+ * Object map → each type has explicit direction metadata.
+ */
+function resolveTypeDirections(
+	types: RelationshipTypes | undefined,
+): ParsedTypeDirection[] {
+	if (!types) return [];
+
+	if (Array.isArray(types)) {
+		// Simple list: all directed from→to
+		return types.map((name) => ({
+			name,
+			bidirectional: false,
+			directed: true,
+		}));
+	}
+
+	// Object map: resolve each type's direction
+	return Object.entries(types).map(([name, dir]) => {
+		const direction = dir as { inverse?: string; bidirectional?: boolean; directed?: boolean };
+		return {
+			name,
+			inverse: direction.inverse,
+			bidirectional: direction.bidirectional ?? false,
+			directed: direction.directed ?? (!direction.bidirectional && !direction.inverse),
+		};
+	});
+}
+
+/**
+ * Load all relationship YAML files from a directory
+ */
+export function loadRelationships(
+	relationshipsDir: string,
+): LoadRelationshipsResult {
+	const relationships: ParsedRelationshipDefinition[] = [];
+	const issues: AnalysisIssue[] = [];
+
+	const resolvedDir = resolve(relationshipsDir);
+
+	let files: string[];
+	try {
+		files = readdirSync(resolvedDir)
+			.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+			.map((f) => join(resolvedDir, f));
+	} catch {
+		// Directory doesn't exist — not an error, relationships are optional
+		return { relationships, issues };
+	}
+
+	if (files.length === 0) {
+		return { relationships, issues };
+	}
+
+	for (const filePath of files) {
+		const result = loadRelationshipFromYaml(filePath);
+
+		if (result.success) {
+			relationships.push(transformToRelationshipDefinition(result));
+		} else {
+			issues.push(...loadErrorToIssue(result as unknown as LoadError));
+		}
+	}
+
+	return { relationships, issues };
+}
+
+/**
+ * Resolve cross-references between relationship definitions and entities.
+ * Validates that from/to entities exist.
+ */
+export function resolveRelationshipReferences(
+	relationshipDefs: ParsedRelationshipDefinition[],
+	entities: ParsedEntity[],
+): AnalysisIssue[] {
+	const issues: AnalysisIssue[] = [];
+	const entityNames = new Set(entities.map((e) => e.name));
+
+	for (const relDef of relationshipDefs) {
+		if (!entityNames.has(relDef.from)) {
+			issues.push({
+				severity: 'warning',
+				type: 'missing_relationship_endpoint',
+				entity: relDef.name,
+				message: `Relationship '${relDef.name}' references unknown 'from' entity '${relDef.from}'`,
+				path: relDef.sourcePath,
+				suggestion: `Define entity '${relDef.from}' or fix the 'from' value`,
+			});
+		}
+
+		if (!entityNames.has(relDef.to)) {
+			issues.push({
+				severity: 'warning',
+				type: 'missing_relationship_endpoint',
+				entity: relDef.name,
+				message: `Relationship '${relDef.name}' references unknown 'to' entity '${relDef.to}'`,
+				path: relDef.sourcePath,
+				suggestion: `Define entity '${relDef.to}' or fix the 'to' value`,
+			});
+		}
+
+		// Check for duplicate relationship names
+		const dupes = relationshipDefs.filter((r) => r.name === relDef.name);
+		if (dupes.length > 1) {
+			issues.push({
+				severity: 'error',
+				type: 'duplicate_relationship',
+				entity: relDef.name,
+				message: `Duplicate relationship name: ${relDef.name}`,
+				path: relDef.sourcePath,
+			});
+		}
+	}
+
+	return issues;
+}
+
 export { loadEntityFromYaml } from '../utils/yaml-loader';
+export { loadRelationshipFromYaml } from '../utils/yaml-loader';

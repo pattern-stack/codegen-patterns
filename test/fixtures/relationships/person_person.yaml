@@ -1,0 +1,85 @@
+# Person ↔ Person Relationship
+# How people relate to each other — reporting chains, networks, introductions.
+#
+# Source: docs/codegen-evolution-data-model/03-relationship-taxonomy.md
+# This is the first self-referential relationship. Both endpoints are the
+# same entity type, so direction can't be inferred from entity asymmetry.
+# Types must declare their own directionality.
+
+relationship:
+  name: person_person
+  table: person_person_relationships
+  from: person
+  to: person
+
+  # When from/to are the same entity type, types need direction metadata.
+  # Three options:
+  #   - inverse: "reporting" from A→B means "management" from B→A
+  #   - directed: true — one-way, no named inverse (A introduced B)
+  #   - bidirectional: true — direction doesn't matter (A knows B = B knows A)
+  types:
+    reporting:
+      inverse: management       # A reports to B ↔ B manages A
+    network:
+      bidirectional: true       # A knows B = B knows A
+    introduction:
+      directed: true            # A was introduced by B (one-way)
+    collaboration:
+      bidirectional: true       # A worked with B = B worked with A
+
+  temporal: true
+  sourced: true
+
+fields:
+  # Context — applies to most types
+  context:
+    type: string
+    nullable: true
+    max_length: 500
+
+  # Org context — at which company does this relationship exist?
+  # Relevant for reporting/collaboration (you report to someone AT a company)
+  organization_id:
+    type: uuid
+    nullable: true
+    foreign_key: organizations.id
+
+  # Network strength (primarily for `network` type)
+  strength:
+    type: enum
+    choices: [strong, moderate, weak, unknown]
+    nullable: true
+
+  # Introduction tracking (primarily for `introduction` type)
+  introducer_id:
+    type: uuid
+    nullable: true
+    foreign_key: persons.id
+
+  introduction_date:
+    type: date
+    nullable: true
+
+queries:
+  - by: [from_person_id]
+  - by: [to_person_id]
+  - by: [from_person_id, type]
+  - by: [organization_id]
+
+# Design questions this file surfaces:
+#
+# 1. FK column naming for self-referential: `person_id` + `person_id` collides.
+#    Options:
+#    a) from_person_id / to_person_id  (generic, consistent)
+#    b) person_a_id / person_b_id  (what the evolution doc uses)
+#    c) subject_id / object_id  (semantic but abstract)
+#    → Leaning (a) because it aligns with from/to in the relationship block
+#
+# 2. Query semantics for bidirectional types: when querying "who does person X
+#    know?", should the system automatically check BOTH sides?
+#    i.e., WHERE from_person_id = X OR to_person_id = X (for bidirectional types)
+#    → Probably yes, but this is a repository/query generation concern, not YAML.
+#
+# 3. Inverse type storage: when type is `reporting` from A→B, do we also store
+#    a `management` row from B→A? Or is `management` a virtual/query-time concept?
+#    → Leaning toward single storage + query-time inversion. Less data, no sync.
