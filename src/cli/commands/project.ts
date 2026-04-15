@@ -766,9 +766,13 @@ export class ProjectGraphCommand extends Command {
 			return 1;
 		}
 
-		// Relationships dir is conventionally alongside entities
-		const relDir = path.resolve(ctx.cwd, 'relationships');
-		const relationshipsDir = fs.existsSync(relDir) ? relDir : undefined;
+		// Relationships dir: check alongside entities, then as subdirectory, then at cwd level
+		const relCandidates = [
+			path.resolve(path.dirname(entitiesDir), 'relationships'),
+			path.resolve(entitiesDir, 'relationships'),
+			path.resolve(ctx.cwd, 'relationships'),
+		];
+		const relationshipsDir = relCandidates.find((d) => fs.existsSync(d));
 
 		const result = await analyzeDomain(entitiesDir, relationshipsDir);
 		const serialized = serializeDomainGraph(result.graph);
