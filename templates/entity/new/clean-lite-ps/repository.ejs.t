@@ -10,11 +10,23 @@ import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
 import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
+<% if (hasTimestamps || hasSoftDelete) { -%>
+import type { BehaviorConfig } from '@shared/base-classes/base-repository';
+<% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
 
 @Injectable()
 export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%= classNames.entity %>> {
   readonly table = <%= entityNamePlural %>;
+<% if (hasTimestamps || hasSoftDelete) { -%>
+
+  // Behaviors declared in YAML -> generated as config object
+  protected override readonly behaviors: BehaviorConfig = {
+    timestamps: <%= !!hasTimestamps %>,
+    softDelete: <%= !!hasSoftDelete %>,
+    userTracking: false,
+  };
+<% } -%>
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient) {
     super(db);
