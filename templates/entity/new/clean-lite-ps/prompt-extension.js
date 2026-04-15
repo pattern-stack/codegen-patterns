@@ -128,12 +128,17 @@ const DRIZZLE_IMPORT_MAP = {
 const ZOD_TYPE_MAP = {
   string: 'z.string()',
   integer: 'z.number().int()',
-  decimal: 'z.number()',
+  // PG numeric is returned by Drizzle as a string; z.coerce.number() parses
+  // strings at the boundary while still accepting numeric JSON input.
+  decimal: 'z.coerce.number()',
   boolean: 'z.boolean()',
   uuid: 'z.string().uuid()',
   date: 'z.coerce.date()',
   datetime: 'z.coerce.date()',
-  json: 'z.record(z.unknown())',
+  // jsonb has no schema guarantees and routinely holds arrays, objects, or
+  // scalars — z.unknown() preserves that. Use z.record(...) shaping in refine
+  // code at the consumer if stricter validation is needed.
+  json: 'z.unknown()',
 };
 
 // TypeScript type mapping
