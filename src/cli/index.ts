@@ -117,6 +117,12 @@ async function loadNouns(): Promise<void> {
 	} catch {
 		// dev noun not implemented yet
 	}
+	try {
+		const mod = await import('./commands/relationship.js');
+		if (mod?.default) nouns.push(mod.default as NounModule);
+	} catch {
+		// relationship noun not implemented yet
+	}
 }
 
 async function loadShortcuts(cli: Cli): Promise<void> {

@@ -94,3 +94,15 @@ export function invokeEntityNew(absoluteYamlPath: string, cwd?: string): HygenRe
 		cwd,
 	});
 }
+
+/**
+ * Convenience wrapper for generating one relationship from a YAML path.
+ */
+export function invokeRelationshipNew(absoluteYamlPath: string, cwd?: string): HygenResult {
+	return invokeHygen({
+		generator: 'relationship',
+		action: 'new',
+		args: ['--yaml', absoluteYamlPath],
+		cwd,
+	});
+}
