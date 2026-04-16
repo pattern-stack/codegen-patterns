@@ -29,12 +29,12 @@ fail()  { printf "  \033[31m✗\033[0m %s\n" "$*"; exit 1; }
 
 bold "pre-flight"
 
-if [ -n "$(git status --porcelain)" ]; then
-  warn "git tree is dirty"
-  git status --short
-  [ "$MODE" = "publish" ] && fail "refusing to publish with uncommitted changes"
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  warn "git tree has uncommitted modifications"
+  git status --short --untracked-files=no
+  [ "$MODE" = "publish" ] && fail "refusing to publish with modified tracked files"
 else
-  ok "git tree clean"
+  ok "git tree clean (ignoring untracked)"
 fi
 
 if [ "$MODE" = "publish" ]; then
