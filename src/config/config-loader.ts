@@ -14,7 +14,7 @@ import {
   PipelinesConfigSchema,
   type GenerateConfig,
   type PipelinesConfig,
-} from '../schema/pipelines-config.schema.ts';
+} from '../schema/pipelines-config.schema.js';
 
 // ============================================================================
 // Types

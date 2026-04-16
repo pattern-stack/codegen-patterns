@@ -240,7 +240,7 @@ export interface TransitivePath {
 	yamlSnippet: string; // Ready-to-paste YAML
 }
 
-export interface TransitiveSuggestion extends AnalysisIssue {
+export interface TransitiveSuggestion extends Omit<AnalysisIssue, 'path'> {
 	type: 'transitive_suggestion';
 	path: TransitivePath;
 }

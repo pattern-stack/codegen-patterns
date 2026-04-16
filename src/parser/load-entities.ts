@@ -7,6 +7,7 @@
 
 import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import type { EntityFamily } from '../analyzer/types.js';
 import {
 	loadEntityFromYaml,
 	loadRelationshipFromYaml,
@@ -60,7 +61,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		name: definition.entity.name,
 		plural: definition.entity.plural,
 		table: definition.entity.table,
-		family: definition.entity.family,
+		family: definition.entity.family as EntityFamily | undefined,
 		folderStructure: definition.entity.folder_structure ?? 'nested',
 		fields: new Map(),
 		relationships: new Map(),

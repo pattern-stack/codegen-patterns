@@ -2,52 +2,51 @@
   "name": "@pattern-stack/codegen",
   "version": "0.2.0",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
+  "license": "MIT",
   "type": "module",
-  "main": "src/index.ts",
-  "bin": {
-    "codegen": "./src/cli/index.ts"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pattern-stack/codegen-patterns.git"
   },
+  "homepage": "https://github.com/pattern-stack/codegen-patterns",
+  "bugs": "https://github.com/pattern-stack/codegen-patterns/issues",
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/src/index.js",
+  "module": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./runtime/*": {
+      "types": "./dist/runtime/*.d.ts",
+      "default": "./dist/runtime/*.js"
+    }
+  },
+  "bin": {
+    "cdp": "./dist/src/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "codegen": "bun src/cli/index.ts",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "cdp": "bun src/cli/index.ts",
     "test": "bun test/run-test.ts full",
     "test:integration": "bun test/scaffold/run-integration.ts",
     "test:integration:quick": "bun test/scaffold/run-integration.ts --skip-codegen"
-  },
-  "dependencies": {
-    "@clack/prompts": "^0.7.0",
-    "chalk": "^5.6.2",
-    "clipanion": "^4.0.0-rc.4",
-    "drizzle-orm": "^0.45.2",
-    "ora": "^9.3.0",
-    "yaml": "^2.8.3",
-    "zod": "^3.22.4"
-  },
-  "devDependencies": {
-    "@nestjs/common": "10",
-    "@nestjs/core": "10",
-    "@types/bun": "latest",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
-  },
-  "peerDependencies": {
-    "hygen": "^6.2.11",
-    "ioredis": ">=5",
-    "@cubejs-client/core": ">=1.0.0",
-    "bullmq": ">=5.0.0"
-  },
-  "peerDependenciesMeta": {
-    "ioredis": {
-      "optional": true
-    },
-    "@cubejs-client/core": {
-      "optional": true
-    },
-    "bullmq": {
-      "optional": true
-    }
-  },
-  "engines": {
-    "bun": ">=1.0.0"
   },
   "keywords": [
     "codegen",
@@ -58,5 +57,58 @@
     "entity",
     "yaml"
   ],
-  "license": "MIT"
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "chalk": "^5.6.2",
+    "clipanion": "^4.0.0-rc.4",
+    "drizzle-orm": "^0.45.2",
+    "ora": "^9.3.0",
+    "yaml": "^2.8.3",
+    "zod": "^3.22.4"
+  },
+  "peerDependencies": {
+    "@cubejs-client/core": ">=1.0.0",
+    "@nestjs/common": "^10",
+    "@nestjs/core": "^10",
+    "bullmq": ">=5.0.0",
+    "class-transformer": ">=0.5.0",
+    "class-validator": ">=0.14.0",
+    "hygen": "^6.2.11",
+    "ioredis": ">=5",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@cubejs-client/core": {
+      "optional": true
+    },
+    "bullmq": {
+      "optional": true
+    },
+    "class-transformer": {
+      "optional": true
+    },
+    "class-validator": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@cubejs-client/core": "^1.0.0",
+    "@nestjs/common": "10",
+    "@nestjs/core": "10",
+    "@types/bun": "latest",
+    "@types/node": "^25.6.0",
+    "bullmq": "^5.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.0",
+    "hygen": "^6.2.11",
+    "ioredis": "^5.3.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.2"
+  }
 }

@@ -57,7 +57,7 @@ export class JobsModule {
         {
           provide: 'JOBS_MODULE_OPTIONS',
           useFactory: asyncOptions.useFactory,
-          inject: (asyncOptions.inject ?? []) as Parameters<typeof Module>[0]['providers'],
+          inject: (asyncOptions.inject ?? []) as (string | symbol | Function)[],
         },
         {
           provide: JOB_QUEUE,
