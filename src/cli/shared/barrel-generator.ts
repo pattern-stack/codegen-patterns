@@ -154,14 +154,16 @@ function entityFilePaths(
 	const pluralKebab = toKebabCase(plural);
 
 	if (architecture === 'clean-lite-ps') {
-		// Clean-Lite-PS templates currently emit directories/files using the raw
-		// snake_case `plural`/`name` values (see templates/entity/new/clean-lite-ps/
-		// prompt-extension.js). The barrel must match that on-disk layout.
+		// Clean-Lite-PS templates emit directories/files using the raw snake_case
+		// `plural`/`name` values, prefixed with `paths.backend_src` (see
+		// templates/entity/new/clean-lite-ps/prompt-extension.js — `srcRoot`).
+		// The barrel must match that on-disk layout.
+		const prefix = backendSrc && backendSrc !== '.' ? `${backendSrc}/` : '';
 		return {
-			moduleFile: `modules/${plural}/${plural}.module.ts`,
+			moduleFile: `${prefix}modules/${plural}/${plural}.module.ts`,
 			moduleClass: `${toPascalCase(plural)}Module`,
 			// Drizzle entity schema lives alongside the entity file in clean-lite-ps.
-			schemaFile: `modules/${plural}/${name}.entity.ts`,
+			schemaFile: `${prefix}modules/${plural}/${name}.entity.ts`,
 		};
 	}
 
@@ -319,8 +321,15 @@ export function resolveGeneratedDir(ctx: Context): string {
 }
 
 /**
- * Resolve backend_src from config, defaulting to 'app/backend/src' to match
- * src/config/locations.mjs.
+ * Resolve backend_src from config.
+ *
+ * Default differs by architecture:
+ *   - clean: 'app/backend/src' (matches src/config/locations.mjs)
+ *   - clean-lite-ps: 'src' (matches the init-scaffold layout)
+ *
+ * The architecture isn't visible here, so we keep the historical 'app/backend/src'
+ * default for backwards compatibility. Callers in the clean-lite-ps path pass
+ * 'src' (or whatever paths.backend_src declares) explicitly.
  */
 export function resolveBackendSrc(ctx: Context): string {
 	const fromConfig = (ctx.config as { paths?: { backend_src?: string } } | null | undefined)
