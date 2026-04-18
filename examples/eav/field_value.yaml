@@ -1,0 +1,68 @@
+# EAV: Field Value
+# Stored value for one (entity_id, field_definition_id) cell.
+# Polymorphic — entity_type + entity_id reference any entity type declared in field_definition.
+#
+# TODO: this starter should become an `EavPattern` (see docs/RFC-app-defined-patterns.md).
+# Once Patterns land, apps will declare `patterns: [Eav]` on their entities and the
+# base class will contribute upsertWithFields / findByIdWithFields / read-merge automatically,
+# instead of consumers hand-writing dual-write in their service layer.
+
+entity:
+  name: field_value
+  plural: field_values
+  table: field_values
+  family: metadata
+  folder_structure: nested
+
+fields:
+  # Must match the enum in field_definition.yaml.
+  entity_type:
+    type: enum
+    choices: [opportunity, account, contact]
+    required: true
+    index: true
+
+  entity_id:
+    type: uuid
+    required: true
+    index: true
+
+  field_definition_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: field_definitions.id
+
+  value:
+    type: json
+    nullable: true
+
+  # Multi-tenant scoping. Remove if your app is single-tenant.
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  # Temporal validity for value history (optional — omit if you don't need history).
+  valid_from:
+    type: datetime
+    nullable: true
+
+  valid_to:
+    type: datetime
+    nullable: true
+
+behaviors:
+  - timestamps
+
+relationships:
+  field_definition:
+    type: belongs_to
+    target: field_definition
+    foreign_key: field_definition_id
+
+queries:
+  - by: [entity_id, entity_type]
+  - by: [entity_id, field_definition_id]
+    unique: true
+  - by: [user_id, entity_type]

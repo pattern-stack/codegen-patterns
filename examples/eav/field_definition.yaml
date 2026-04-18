@@ -1,0 +1,85 @@
+# EAV: Field Definition
+# Schema record describing a custom or sync-discovered field.
+# One row per (entity_type, key, provider) — defines the type/label/UI of an EAV field.
+#
+# TODO: this starter should become an `EavPattern` (see docs/RFC-app-defined-patterns.md).
+# Once Patterns land as a library primitive, consumers will opt in via
+# `patterns: [Eav]` instead of copying these YAMLs and hand-wiring dual-write.
+
+entity:
+  name: field_definition
+  plural: field_definitions
+  table: field_definitions
+  family: metadata
+  folder_structure: nested
+
+fields:
+  # Customize this enum for the entity types in your app that support EAV.
+  entity_type:
+    type: enum
+    choices: [opportunity, account, contact]
+    required: true
+    index: true
+    ui_label: "Entity Type"
+
+  key:
+    type: string
+    required: true
+    max_length: 255
+    index: true
+    ui_label: "Field Key"
+
+  label:
+    type: string
+    required: true
+    max_length: 255
+    ui_label: "Display Label"
+
+  data_type:
+    type: enum
+    choices: [string, integer, decimal, boolean, date, datetime, json, reference, picklist, multipicklist]
+    required: true
+    ui_label: "Data Type"
+
+  field_kind:
+    type: string
+    nullable: true
+    max_length: 64
+    ui_label: "Semantic Kind"
+
+  provider:
+    type: string
+    nullable: true
+    max_length: 64
+    index: true
+    ui_label: "Source Provider"
+
+  is_custom:
+    type: boolean
+    required: true
+    default: false
+
+  is_required:
+    type: boolean
+    required: true
+    default: false
+
+  picklist_values:
+    type: json
+    nullable: true
+
+  # Multi-tenant scoping. Remove if your app is single-tenant.
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+
+queries:
+  - by: [user_id, entity_type]
+  - by: [user_id, entity_type, key]
+    unique: true
+  - by: [provider, entity_type]
