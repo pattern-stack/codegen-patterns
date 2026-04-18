@@ -16,6 +16,11 @@ import { loadRelationshipFromYaml, detectYamlType } from '../../utils/yaml-loade
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeRelationshipNew } from '../shared/hygen.js';
 import { checkGitSafety } from '../shared/git-safety.js';
+import {
+	regenerateBarrels,
+	resolveGeneratedDir,
+	resolveArchitecture,
+} from '../shared/barrel-generator.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -253,6 +258,28 @@ export class RelationshipNewCommand extends Command {
 			}
 		}
 
+		// Regenerate barrels so new junction modules land in GENERATED_MODULES
+		// and src/generated/schema.ts. Mirrors what `entity new` does.
+		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
+		const generatedDir = resolveGeneratedDir(ctx);
+		const architecture = resolveArchitecture(ctx);
+		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>> | null = null;
+		try {
+			barrelResult = await regenerateBarrels({
+				ctx,
+				entitiesDir,
+				relationshipsDir,
+				generatedDir,
+				architecture,
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`barrel regeneration failed — ${msg}`);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'relationship new',
@@ -262,6 +289,13 @@ export class RelationshipNewCommand extends Command {
 				},
 				succeeded,
 				failed,
+				barrels: barrelResult
+					? {
+							modules: barrelResult.modulesBarrel,
+							schema: barrelResult.schemaBarrel,
+							entityCount: barrelResult.entityCount,
+						}
+					: null,
 			});
 		} else {
 			const total = validated.length + invalid.length;
@@ -271,6 +305,11 @@ export class RelationshipNewCommand extends Command {
 			} else {
 				printWarning(
 					`${total} relationships · ${succeeded.length} succeeded · ${failed.length} failed`
+				);
+			}
+			if (barrelResult) {
+				printInfo(
+					`barrels regenerated (${barrelResult.entityCount} modules) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`,
 				);
 			}
 		}

@@ -8,9 +8,9 @@ import {
 <%_ }) _%>
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
-import { <%= fromTable %> } from '../../<%= fromTable %>/<%= from %>.entity';
+import { <%= fromTable %> } from '../<%= fromTable %>/<%= from %>.entity';
 <%_ if (from !== to) { _%>
-import { <%= toTable %> } from '../../<%= toTable %>/<%= to %>.entity';
+import { <%= toTable %> } from '../<%= toTable %>/<%= to %>.entity';
 <%_ } _%>
 
 // ============================================================================

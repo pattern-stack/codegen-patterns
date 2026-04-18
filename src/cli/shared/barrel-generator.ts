@@ -27,7 +27,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { Context } from './context.js';
-import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
+import {
+	loadEntityFromYaml,
+	loadRelationshipFromYaml,
+	detectYamlType,
+} from '../../utils/yaml-loader.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
 
 // ---------------------------------------------------------------------------
@@ -40,6 +44,12 @@ export interface BarrelGeneratorOptions {
 	ctx: Context;
 	/** Absolute path to the entities directory. */
 	entitiesDir: string;
+	/**
+	 * Absolute path to the relationships directory. Optional — when present
+	 * junction modules are included in the generated barrels alongside entity
+	 * modules. Falls back to <cwd>/relationships when omitted.
+	 */
+	relationshipsDir?: string;
 	/** Absolute path to the directory the barrels should be written into. */
 	generatedDir: string;
 	/** Architecture flavor — drives where entity modules live on disk. */
@@ -119,6 +129,40 @@ function collectEntities(entitiesDir: string): EntityInfo[] {
 	// Deterministic: sort by singular name.
 	entities.sort((a, b) => a.name.localeCompare(b.name));
 	return entities;
+}
+
+/**
+ * Discover relationship YAML files and return them in the same shape as
+ * entities. Relationships produce a junction module that lives alongside
+ * regular modules on disk — so for barrel purposes they're peers.
+ *
+ * The junction's `plural` is its `table` name when declared, otherwise
+ * `${name}s` (matches the convention used by templates/relationship/new/
+ * prompt.js — `tableName = relationship.table ?? \`\${name}s\``).
+ */
+function listRelationshipYamls(relationshipsDir: string): string[] {
+	if (!fs.existsSync(relationshipsDir)) return [];
+	return fs
+		.readdirSync(relationshipsDir)
+		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+		.map((f) => path.join(relationshipsDir, f))
+		.filter((full) => detectYamlType(full) === 'relationship')
+		.sort();
+}
+
+function collectRelationships(relationshipsDir: string): EntityInfo[] {
+	const files = listRelationshipYamls(relationshipsDir);
+	const junctions: EntityInfo[] = [];
+	for (const file of files) {
+		const result = loadRelationshipFromYaml(file);
+		if (!result.success) continue;
+		const rel = result.definition.relationship;
+		const name = rel.name;
+		const plural = rel.table ?? `${name}s`;
+		junctions.push({ name, plural });
+	}
+	junctions.sort((a, b) => a.name.localeCompare(b.name));
+	return junctions;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +294,7 @@ export async function regenerateBarrels(
 	const {
 		ctx,
 		entitiesDir,
+		relationshipsDir = path.resolve(ctx.cwd, 'relationships'),
 		generatedDir,
 		architecture,
 		backendSrc = resolveBackendSrc(ctx),
@@ -257,7 +302,14 @@ export async function regenerateBarrels(
 	} = opts;
 	const cwd = ctx.cwd;
 
-	const entities = collectEntities(entitiesDir);
+	// Entities and relationship junctions produce peer modules on disk — merge
+	// both into the same deterministic list so the generated barrel reflects
+	// the full module graph. Relationships are silently skipped if the dir
+	// doesn't exist (the common case for projects with no junctions yet).
+	const entities = [
+		...collectEntities(entitiesDir),
+		...collectRelationships(relationshipsDir),
+	].sort((a, b) => a.name.localeCompare(b.name));
 
 	// Compute barrel paths relative to project root so imports line up.
 	const generatedRel = path.relative(cwd, generatedDir) || path.basename(generatedDir);
