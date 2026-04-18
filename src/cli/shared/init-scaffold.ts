@@ -186,10 +186,13 @@ export class DatabaseModule {}
 function tokensShim(cwd: string): string {
 	const rt = resolveRuntimePathFor(cwd, 'src/shared/constants');
 	return `/**
- * Re-export DRIZZLE injection token from the codegen runtime.
+ * Re-export every injection token from the codegen runtime.
  * Generated code imports from '@shared/constants/tokens'.
+ *
+ * Uses star-export so new runtime tokens (DRIZZLE, EVENT_BUS, future)
+ * are picked up automatically without editing this shim.
  */
-export { DRIZZLE } from '${rt}/constants/tokens';
+export * from '${rt}/constants/tokens';
 `;
 }
 
