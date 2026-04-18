@@ -626,6 +626,24 @@ export type AnalyticsBlock = z.infer<typeof AnalyticsBlockSchema>;
 // Full Entity Definition
 // ============================================================================
 
+// ============================================================================
+// Generation Toggles
+// ============================================================================
+
+/**
+ * Per-entity opt-outs for code generation.
+ *
+ * - `writes`: when `false`, suppresses create/update/delete use cases,
+ *   matching controller routes, and module providers. Defaults to `true`.
+ */
+const GenerateConfigSchema = z
+  .object({
+    writes: z.boolean().optional().default(true),
+  })
+  .strict();
+
+export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
+
 export const EntityDefinitionSchema = z
   .object({
     entity: EntityConfigSchema,
@@ -633,6 +651,9 @@ export const EntityDefinitionSchema = z
     relationships: z.record(z.string(), RelationshipSchema).optional(),
     // Behaviors add cross-cutting concerns (timestamps, soft_delete, user_tracking, etc.)
     behaviors: z.array(BehaviorConfigSchema).optional().default([]),
+
+    // Per-entity generation toggles (e.g. disable write-side emission)
+    generate: GenerateConfigSchema.optional(),
 
     // v2: Declarative query generation (ADR-005)
     // Generates repository + service + use case methods from declarations
