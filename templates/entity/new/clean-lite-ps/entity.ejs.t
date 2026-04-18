@@ -14,7 +14,9 @@ import { relations, type InferSelectModel } from 'drizzle-orm';
 import { type InferSelectModel } from 'drizzle-orm';
 <%_ } _%>
 <%_ clpBelongsTo.forEach(rel => { _%>
+<%_ if (rel.relatedTable !== entityNamePlural) { _%>
 import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
+<%_ } _%>
 <%_ }) _%>
 
 export const <%= entityNamePlural %> = pgTable(
@@ -46,7 +48,7 @@ export const <%= entityNamePlural %> = pgTable(
 
 export const <%= entityNamePlural %>Relations = relations(<%= entityNamePlural %>, ({ one }) => ({
 <%_ clpBelongsTo.forEach(rel => { _%>
-  <%= rel.relatedEntity %>: one(<%= rel.relatedTable %>, {
+  <%= rel.relationKey %>: one(<%= rel.relatedTable %>, {
     fields: [<%= entityNamePlural %>.<%= rel.camelField %>],
     references: [<%= rel.relatedTable %>.id],
   }),

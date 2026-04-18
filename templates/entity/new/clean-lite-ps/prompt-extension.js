@@ -251,7 +251,7 @@ function processFields(fields) {
 /**
  * Process belongs_to relationships into BelongsToRelation[]
  */
-function processBelongsTo(relationships) {
+function processBelongsTo(relationships, parentEntityNamePlural) {
   if (!relationships) return [];
 
   const result = [];
@@ -263,6 +263,22 @@ function processBelongsTo(relationships) {
     const field = rel.foreign_key;
     const nullable = rel.nullable ?? true;
     const relatedPlural = pluralize(target);
+    const isSelfFk = relatedPlural === parentEntityNamePlural;
+
+    // Relation key: for self-FKs derive from the FK column name
+    // (parent_account_id → parentAccount) to avoid colliding with the
+    // table's own snake_case name. For non-self-FKs preserve the prior
+    // behavior of using the target entity name verbatim so existing
+    // consumer code (e.g. drizzle queryBuilder.with.field_definition)
+    // keeps working.
+    let relationKey;
+    if (isSelfFk) {
+      // parent_account_id → parent_account → parentAccount
+      const base = field.endsWith('_id') ? field.slice(0, -3) : field;
+      relationKey = camelCase(base);
+    } else {
+      relationKey = target;
+    }
 
     result.push({
       field,
@@ -273,6 +289,8 @@ function processBelongsTo(relationships) {
       relatedPlural,
       nullable,
       importPath: `../${relatedPlural}/${target}.entity`,
+      relationKey,
+      isSelfFk,
     });
   }
 
@@ -528,7 +546,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const hasViaQuery = processedQueries.some((q) => q.hasVia);
 
   // Process belongs_to relationships
-  const belongsTo = processBelongsTo(relationships);
+  const belongsTo = processBelongsTo(relationships, entityNamePlural);
 
   // Filter FK fields that are already emitted by the clpBelongsTo loop
   const fkFieldNames = new Set(belongsTo.map((r) => r.field));
