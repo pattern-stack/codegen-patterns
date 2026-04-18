@@ -220,6 +220,7 @@ export class EntityNewCommand extends Command {
 
 		// Compute barrel plan (used in both dry-run reporting and post-gen execution).
 		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
 		const generatedDir = resolveGeneratedDir(ctx);
 		const architecture = resolveArchitecture(ctx);
 
@@ -227,6 +228,7 @@ export class EntityNewCommand extends Command {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
 				entitiesDir,
+				relationshipsDir,
 				generatedDir,
 				architecture,
 				dryRun: true,
@@ -296,6 +298,7 @@ export class EntityNewCommand extends Command {
 			barrelResult = await regenerateBarrels({
 				ctx,
 				entitiesDir,
+				relationshipsDir,
 				generatedDir,
 				architecture,
 			});
