@@ -521,6 +521,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const entityNamePlural = entity.plural || pluralize(entityName);
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
+  // Generation toggles — `generate.writes` defaults to true so consumers who
+  // regenerate pick up create/update/delete use cases without YAML changes.
+  // Set `generate.writes: false` in YAML to suppress write-side emission
+  // (use cases, controller routes, module providers).
+  const generateBlock = definition.generate || {};
+  const generateWrites = generateBlock.writes !== false;
+
   // Family resolution
   const family = entity.family || 'base';
   const familyConfig = FAMILY_MAP[family] || FAMILY_MAP['base'];
@@ -564,6 +571,15 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     index: `${srcRoot}/modules/${entityNamePlural}/index.ts`,
     findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
     listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+    createUseCase: generateWrites
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/create-${entityName}.use-case.ts`
+      : null,
+    updateUseCase: generateWrites
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/update-${entityName}.use-case.ts`
+      : null,
+    deleteUseCase: generateWrites
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/delete-${entityName}.use-case.ts`
+      : null,
     createDto: `${srcRoot}/modules/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
     updateDto: `${srcRoot}/modules/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
     outputDto: `${srcRoot}/modules/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
@@ -582,6 +598,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     module: `${entityNamePluralPascal}Module`,
     findByIdUseCase: `Find${entityNamePascal}ByIdUseCase`,
     listUseCase: `List${entityNamePluralPascal}UseCase`,
+    createUseCase: `Create${entityNamePascal}UseCase`,
+    updateUseCase: `Update${entityNamePascal}UseCase`,
+    deleteUseCase: `Delete${entityNamePascal}UseCase`,
     createDto: `Create${entityNamePascal}Dto`,
     updateDto: `Update${entityNamePascal}Dto`,
     outputDto: `${entityNamePascal}OutputDto`,
@@ -636,6 +655,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     hasTimestamps,
     hasSoftDelete,
     hasExternalIdTracking,
+
+    // Generation toggles
+    generateWrites,
 
     // Output paths
     clpOutputPaths: outputPaths,
