@@ -483,7 +483,7 @@ These are caught here so they are not lost; they do not block Phase 1.
 
 4. **Jobs as generated YAML** with a full template DSL. Prototyped in-discussion and withdrawn (see *Codegen scope* above).
 
-5. **Temporal as the backend.** Rejected for this iteration: operational cost, Node SDK maturity concerns for long-lived agent workflows, and the strategic goal of keeping codegen-patterns self-contained (Postgres + optional Redis). A Temporal-backed `IJobQueue` variant remains a future option.
+5. **Temporal as the backend.** Rejected for this iteration: operational cost, Node SDK maturity concerns for long-lived agent workflows, and the strategic goal of keeping codegen-patterns self-contained (Postgres + optional Redis). A Temporal-backed `IJobOrchestrator` backend remains a future option.
 
 ## References
 
@@ -491,4 +491,4 @@ These are caught here so they are not lost; they do not block Phase 1.
 - ADR-005 (Entity Family Base Classes) — `scopeable: true` entity flag lives next to family declarations
 - `docs/specs/job-orchestration-research.md` — synthesis of Airflow, Dagster, Temporal, Prefect, Step Functions, Inngest, LangGraph, OpenAI Assistants, CrewAI
 - `docs/specs/events-codegen-plan.md` — parallel design for typed events and direction routing
-- `runtime/subsystems/jobs/` — existing `IJobQueue` scaffold (unchanged by this ADR)
+- `runtime/subsystems/jobs/` — legacy `IJobQueue` scaffold (deleted by this ADR's Phase 1 work; see JOB-1 file deletion list)

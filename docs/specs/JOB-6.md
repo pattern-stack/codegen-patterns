@@ -114,13 +114,39 @@ Body (YAML appended):
 
 ```yaml
 jobs:
-  multi_tenant: false       # set true to add tenant_id column (requires JOB-8)
-  worker_mode: embedded     # embedded | standalone
+  # ── Backend selection (core/extension model — see CLAUDE.md) ──
+  # 'drizzle' is the only Phase 1 backend. Future backends ('bullmq', etc.)
+  # implement the same core IJobOrchestrator contract but expose their own
+  # native features as opt-in extensions below.
+  backend: drizzle
+
+  # ── Backend-specific extensions (typed per backend) ──
+  # Each backend may publish its own extension keys. Unrecognised keys for
+  # the active backend produce a config validation warning at boot.
+  extensions:
+    drizzle:
+      # listen_notify: true        # use Postgres LISTEN/NOTIFY to wake the
+      #                            # polling loop instead of (or alongside)
+      #                            # interval polling. Disabled by default.
+      poll_interval_ms: 1000
+    # bullmq:                      # Example shape for Phase 6+ BullMQ backend.
+    #   bull_board:                # Mount Bull Board admin UI.
+    #     enabled: true
+    #     mount_path: /admin/queues
+    #   redis_url: redis://...
+
+  # ── Multi-tenancy (JOB-8) ──
+  multi_tenant: false              # true → enforce tenantId on all calls
+
+  # ── Worker topology ──
+  worker_mode: embedded            # embedded | standalone
+
+  # ── Pools (logical lanes; one worker per pool) ──
   pools:
     events_inbound:
       queue: jobs-events-inbound
       concurrency: 20
-      reserved: true
+      reserved: true               # framework-only; user @JobHandler cannot target
     events_change:
       queue: jobs-events-change
       concurrency: 30
@@ -137,7 +163,7 @@ jobs:
       concurrency: 5
 ```
 
-All five pools, `reserved: true` only on `events_*`. No `description` keys (keep scaffold minimal).
+**Design intent.** The `backend` key surfaces the architectural choice explicitly. The `extensions:` block is keyed by backend name — when a consumer switches backends, they keep only the relevant extensions and the rest become inert (validator warns rather than errors so swap is non-destructive). Comments in the scaffolded file teach the model in-place.
 
 ## Implementation Steps
 

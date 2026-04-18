@@ -12,9 +12,11 @@ This PR adds `runtime/subsystems/jobs/job-orchestration.schema.ts`, declaring th
 
 ## Context
 
-**What exists.** `runtime/subsystems/jobs/job-queue.schema.ts` declares the executor-layer `job_queue` table (pg-boss pattern: `pending | active | completed | failed | expired`, four columns, two index comments). The `index.ts` barrel re-exports `jobQueue` and `JobRow`. This table is **unchanged** by JOB-1.
+**What exists.** `runtime/subsystems/jobs/` contains the legacy `IJobQueue` executor protocol and four backends (Drizzle/BullMQ/Redis/Memory) along with `job-queue.schema.ts` defining the pg-boss-style `job_queue` table. Per the architectural collapse decision (CLAUDE.md operating principles, ADR-022 revised spine), this entire executor layer is being removed — it was a degenerate transport that hid every native feature of any swappable backend behind a four-method dispatch port.
 
-**What this PR adds.** A second schema file in the same directory — `job-orchestration.schema.ts` — for the orchestration-layer triad. The two "job" concepts coexist in the DB until a future retirement of `job_queue`. Naming makes this explicit: executor table stays `job_queue`; orchestration tables are `job`, `job_run`, `job_step`.
+**What this PR adds.** A single new schema file `job-orchestration.schema.ts` containing the three core tables: `job`, `job_run`, `job_step`. Phase 1 ships only this single layer. There is no `job_queue` table, no executor port. Worker claim runs `SELECT ... FOR UPDATE SKIP LOCKED` directly against `job_run` (see JOB-3).
+
+**What this PR removes.** `runtime/subsystems/jobs/job-queue.schema.ts`, `job-queue.protocol.ts`, all four `job-queue.*-backend.ts` files, `jobs.module.ts`, `jobs.tokens.ts`. The `index.ts` barrel is rewritten to export only the new orchestration schema.
 
 ## Architecture
 
@@ -40,7 +42,15 @@ No service code touches this file. JOB-2 imports the `InferSelectModel` row type
 | File | Action | Purpose |
 |------|--------|---------|
 | `runtime/subsystems/jobs/job-orchestration.schema.ts` | create | All three table declarations, enums, exported row types |
-| `runtime/subsystems/jobs/index.ts` | modify | Re-export new schema symbols alongside existing `job-queue.schema` exports |
+| `runtime/subsystems/jobs/index.ts` | rewrite | Export new orchestration schema symbols only; remove all `IJobQueue` exports |
+| `runtime/subsystems/jobs/job-queue.schema.ts` | **delete** | Executor-layer table removed |
+| `runtime/subsystems/jobs/job-queue.protocol.ts` | **delete** | Executor-layer port removed |
+| `runtime/subsystems/jobs/job-queue.drizzle-backend.ts` | **delete** | Executor-layer backend removed |
+| `runtime/subsystems/jobs/job-queue.bullmq-backend.ts` | **delete** | Executor-layer backend removed (BullMQ adapter to be re-introduced at orchestrator layer in Phase 6+) |
+| `runtime/subsystems/jobs/job-queue.redis-backend.ts` | **delete** | Executor-layer backend removed |
+| `runtime/subsystems/jobs/job-queue.memory-backend.ts` | **delete** | Executor-layer backend removed |
+| `runtime/subsystems/jobs/jobs.module.ts` | **delete** | Executor-layer module removed; replaced by `JobsDomainModule` in JOB-5 |
+| `runtime/subsystems/jobs/jobs.tokens.ts` | **delete** | Executor-layer tokens removed; orchestration tokens live in `jobs-domain.tokens.ts` (JOB-2) |
 | `runtime/subsystems/jobs/__tests__/job-orchestration.schema.test.ts` | create | Import smoke test + column-presence assertions |
 
 ## Interfaces and Column Definitions
@@ -182,17 +192,28 @@ type JobRunError = {
 
 These are not exported — they are annotation types for jsonb columns only. JOB-2 will define the full public-facing protocol types.
 
-### `index.ts` additions
+### `index.ts` rewrite
 
-Add below the existing exports:
+The barrel is rewritten to export only the new orchestration surface. All `IJobQueue`-related exports (`jobQueue`, `JobRow`, `IJobQueue`, `JOB_QUEUE`, `JobsModule`, `DrizzleJobQueue`, `BullMQJobQueue`, etc.) are removed.
 
 ```ts
+// runtime/subsystems/jobs/index.ts
 export { jobs, jobRuns, jobSteps } from './job-orchestration.schema';
 export type { JobDefinitionRow, JobRunRow, JobStepRow } from './job-orchestration.schema';
-export { jobRunStatusEnum, jobStepKindEnum, jobStepStatusEnum, collisionModeEnum, replayFromEnum, parentClosePolicyEnum, waitKindEnum, triggerSourceEnum } from './job-orchestration.schema';
-```
+export {
+  jobRunStatusEnum,
+  jobStepKindEnum,
+  jobStepStatusEnum,
+  collisionModeEnum,
+  replayFromEnum,
+  parentClosePolicyEnum,
+  waitKindEnum,
+  triggerSourceEnum,
+} from './job-orchestration.schema';
 
-Do not remove or change existing `job-queue.schema` exports.
+// Subsequent issues add: protocols (JOB-2), backends (JOB-3, JOB-4),
+// modules (JOB-5). All net-new — nothing from the old executor layer survives.
+```
 
 ## Acceptance Criteria
 

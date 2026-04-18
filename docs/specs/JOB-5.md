@@ -60,9 +60,33 @@ const FRAMEWORK_POOLS: Record<string, PoolDefinition> = {
 };
 
 // jobs-domain.module.ts
+export interface DrizzleBackendExtensions {
+  /** Use Postgres LISTEN/NOTIFY to wake the polling loop. Default false. */
+  listenNotify?: boolean;
+  /** Polling interval when LISTEN/NOTIFY is off (ms). Default 1000. */
+  pollIntervalMs?: number;
+}
+
+// Future shape — Phase 6+, included here so the type system reserves the slot.
+// export interface BullMqBackendExtensions {
+//   bullBoard?: { enabled: boolean; mountPath?: string };
+//   redisUrl?: string;
+// }
+
 export interface JobsDomainModuleOptions {
   backend: 'drizzle' | 'memory';
+  /**
+   * Backend-specific extensions. Only the matching backend's extensions are
+   * read at boot; non-matching keys are ignored (with a config-validator warning).
+   * This is the core/extension protocol surface — see CLAUDE.md.
+   */
+  extensions?: {
+    drizzle?: DrizzleBackendExtensions;
+    // bullmq?: BullMqBackendExtensions;   // Phase 6+
+  };
+  multiTenant?: boolean;                    // JOB-8
 }
+
 export class JobsDomainModule {
   static forRoot(opts: JobsDomainModuleOptions): DynamicModule;
 }
@@ -155,11 +179,11 @@ export namespace HandlerRegistry {
 
 ### 5. `index.ts`
 
-Re-export `JobsDomainModule`, `JobsDomainModuleOptions`, `JobWorkerModule`, `JobWorkerModuleOptions`, `loadPoolConfig`, `PoolConfig`, `PoolDefinition`, error classes. Don't remove existing executor-layer exports.
+Re-export `JobsDomainModule`, `JobsDomainModuleOptions`, `JobWorkerModule`, `JobWorkerModuleOptions`, `loadPoolConfig`, `PoolConfig`, `PoolDefinition`, error classes. (No legacy executor-layer exports remain — JOB-1 deletes the entire `IJobQueue` surface.)
 
 ## Pool → Queue Binding
 
-Each pool maps to a distinct queue name passed to `IJobQueue.enqueue('job_run_tick', { runId }, { queue: poolDef.queue })`. `concurrency` passed to `JobWorker` as max parallel in-flight ticks — worker tracks active promises and skips `claimNext` at capacity.
+Each pool gets one `JobWorker` instance. The worker polls `job_run` for rows where `pool = poolDef.queue` (the `queue` field is reused as the pool's identifier on the `job_run` row — naming preserved for parity with future BullMQ backend mapping). `concurrency` passed to `JobWorker` as max parallel in-flight runs — worker tracks active promises and skips `claimNext` at capacity. No tick messages, no `IJobQueue`.
 
 Defaults:
 
@@ -215,12 +239,12 @@ User-defined `agents: { queue: 'jobs-agents', concurrency: 3 }` in config become
 - **JOB-6** owns standalone `worker.ts` entrypoint
 - **JOB-8** owns `tenant_id` filter threading (this module's `forRoot` signature stays stable)
 - `@JobHandler` decorator definition: JOB-2 (consumed here)
-- BullMQ-native claim: executor layer; `JobsModule` (not `JobsDomainModule`) unchanged
+- BullMQ orchestrator backend: Phase 6+ work, separate `IJobOrchestrator` implementation; not in JOB-5
 
 ## References
 
 - ADR-022 "Pools", "Worker lifecycle", "Registration — static codegen"
 - ADR-008 — Protocol → Backend → Factory
 - `runtime/subsystems/events/events.module.ts` — module factory pattern
-- `runtime/subsystems/jobs/jobs.module.ts` — existing executor-layer factory
+- `runtime/subsystems/events/events.module.ts` — closest surviving factory pattern (the legacy `runtime/subsystems/jobs/jobs.module.ts` is deleted in JOB-1)
 - JOB-1 schema, JOB-2 protocols, JOB-3 Drizzle backends, JOB-4 memory backends

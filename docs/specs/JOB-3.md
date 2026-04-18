@@ -8,28 +8,29 @@
 
 ## Overview
 
-Production Postgres layer for all three orchestration-domain protocols plus the tick-processing worker loop. The densest issue in Phase 1: it owns the claim query (`FOR UPDATE SKIP LOCKED`), dedupe/concurrency enforcement at enqueue time, step memoization via `job_step` upsert, parent-close-policy cascade traversal, stale-claim recovery, and graceful shutdown on `SIGTERM`. The executor-layer `IJobQueue` is not modified; it is consumed as a dependency to schedule `job_run_tick` messages that wake the worker.
+Production Postgres backend implementing the three orchestration protocols plus the worker loop. Single-layer architecture per the architectural collapse decision (CLAUDE.md, ADR-022 revised spine): no executor layer, no `IJobQueue`, no `job_queue` table. The worker polls `job_run` directly via `SELECT ... FOR UPDATE SKIP LOCKED`, runs the handler, records steps, transitions state, and loops. This is the densest issue in Phase 1: it owns the claim query, dedupe/concurrency enforcement, step memoization via `job_step` upsert, parent-close-policy cascade, stale-claim recovery, and graceful shutdown.
 
-## Context — Orchestration Layer vs. Executor Layer
+## Context
 
-`IJobQueue` (executor layer) is a narrow port: `enqueue`, `process`, `schedule`, `cancel`. It knows nothing about `JobRun` hierarchy, scoping, retries, or memoization. It is the substrate that moves ticks between Postgres rows (or Redis, or BullMQ).
-
-The orchestration layer sits above it:
+Per the core/extension principle (CLAUDE.md), `IJobOrchestrator` is the swap point. Phase 1 ships only the Drizzle backend implementing the **core contract**. A future BullMQ orchestrator backend (Phase 6+) would map `JobRun → BullMQ Job`, `parent_run_id → FlowProducer`, etc., and expose backend-specific **extensions** (Bull Board mounting, native rate limits) — but that is not Phase 1 work.
 
 ```
 App use case
      │
      ▼
 IJobOrchestrator.start(type, input, opts)
-     │   dedupe check → collision check → insert job_run row
+     │   dedupe check → collision check → INSERT job_run
      ▼
-IJobQueue.enqueue('job_run_tick', { runId })   ← executor, unchanged
-     │
+JobWorker polling loop (per pool)
+     │   SELECT ... FOR UPDATE SKIP LOCKED on job_run WHERE status='pending' AND pool=$1
      ▼
-JobWorker: claim job_run → run handler → record steps → transition state → re-enqueue tick
+Run handler.run(ctx) with memoized ctx.step
+     │   UPDATE job_run SET status=..., output=... (or re-enter pending on retry)
+     ▼
+JobEventLogger → IEventBus (selective broadcast — Phase 5)
 ```
 
-`IJobQueue` holds transient tick pointers. `job_run` and `job_step` in Postgres hold the durable domain state. Backend swap on the executor layer does not affect orchestration logic.
+`job_run` and `job_step` are the only persistence. No transient ticks, no separate transport.
 
 ## Files
 
@@ -56,11 +57,9 @@ c. Concurrency collision check — if `concurrency_key_template` set: query `job
 - `replace` — call `this.cancel(incumbent.id, { cascade: true, reason: 'replaced' })` before proceeding
 - `queue` — proceed; claim query natively gates the new row behind the incumbent (enforced at claim time, step 4d)
 
-d. Insert `job_run` row. Resolve `rootRunId`: if `opts.parentRunId` set and `opts.rootRunId` absent, load parent's `root_run_id`; otherwise use new run's own `id` (self-reference).
+d. Generate `id` client-side via `randomUUID()`. Resolve `rootRunId`: if `opts.parentRunId` set, load parent's `root_run_id`; otherwise use the new `id` (self-reference). INSERT `job_run` row in a single statement.
 
-e. Call `this.jobQueue.enqueue('job_run_tick', { runId }, { priority: opts.priority })`.
-
-f. Return the created `JobRun`.
+e. Return the created `JobRun`. **No tick to enqueue** — the polling worker for the relevant pool will claim the row on its next loop iteration.
 
 **`cancel(runId, opts)`:**
 
@@ -86,12 +85,17 @@ c. If `opts.cascade !== false`: fetch descendants via `WHERE root_run_id = $root
 
 ### 4. `job-worker.ts`
 
-`JobWorker` is `@Injectable()`, wired by `JobWorkerModule` (JOB-5). Holds references to all three service tokens plus `IJobQueue`.
+`JobWorker` is `@Injectable()`, wired by `JobWorkerModule` (JOB-5). One worker instance per active pool; each holds references to the orchestrator, run service, and step service.
 
 **`onModuleInit()`:**
-- Register `IJobQueue.process('job_run_tick', this.handleTick)` — payload `{ runId }`
-- Start stale-claim sweeper: `setInterval(() => void this.sweepStaleClaims(), opts.staleSweeperIntervalMs)`
+- Start the polling loop: `setInterval(() => void this.pollAndProcess(), opts.pollIntervalMs)` (default 1000ms)
+- Start stale-claim sweeper: `setInterval(() => void this.sweepStaleClaims(), opts.staleSweeperIntervalMs)` (default 60s)
 - Register SIGTERM handler
+
+**`pollAndProcess()`:**
+- If `this.shuttingDown` or `this.inFlight.size >= this.pool.concurrency`, return.
+- Call `claimNext(this.pool.name)`. If `null`, return (nothing to do this tick).
+- Otherwise call `processRun(claimed)` — tracked in `this.inFlight` so shutdown can await it.
 
 **`claimNext(pool)` — ADR-022 pattern:**
 ```ts
@@ -120,18 +124,15 @@ return db.transaction(async (tx) => {
 });
 ```
 
-**`handleTick({ runId })`:**
+**`processRun(claimed)`:**
 
-a. If `this.shuttingDown`, return.
-b. Load `job_run`; return if absent or terminal.
-c. Resolve handler class from registry; fail run if missing.
-d. Concurrency queue enforcement: if `concurrency_key IS NOT NULL` and another run with same key is `running`, transition back to `pending` and return.
-e. Build `JobContext`; assign `ctx.input`, `ctx.run`, `ctx.step`, `ctx.spawnChild`, `ctx.logger`.
-f. Track promise in `this.inFlight: Set<Promise>` for shutdown.
-g. `await handler.run(ctx)`. Capture return as `output`.
-h. Success → `UPDATE job_run SET status='completed', output=$output, finished_at=now()`.
-i. Error → increment `attempts`; check `non_retryable_errors`; if not exhausted, set `status='pending'`, `run_at=now()+delay`, enqueue new tick with delay. If exhausted, set `status='failed'`. Apply parent-close-policy cascade.
-j. Remove promise from `inFlight` in finally.
+a. Resolve handler class from registry; if missing, transition run to `failed` (boot validator should have caught this — defensive only).
+b. Concurrency queue enforcement: if `claimed.concurrency_key IS NOT NULL` and another run with same key is currently `running`, transition this row back to `pending` (release the claim) and return. Next poll will re-evaluate.
+c. Build `JobContext`; assign `ctx.input = claimed.input`, `ctx.run = claimed`, `ctx.step = makeStepFn(claimed)`, `ctx.spawnChild = makeSpawnFn(claimed)`, `ctx.logger`.
+d. `await handler.run(ctx)`. Capture return as `output`.
+e. Success → `UPDATE job_run SET status='completed', output=$output, finished_at=now()`.
+f. Error → increment `attempts`; check `non_retryable_errors`; if not exhausted, set `status='pending'`, `run_at=now()+delay` (next poll claims it after the delay window). If exhausted, set `status='failed'`. Apply parent-close-policy cascade.
+g. Remove promise from `inFlight` in finally.
 
 **`ctx.step(stepId, fn, opts?)` closure (`makeStepFn(run)`):**
 - Call `stepService.findStep(run.id, stepId)`.
@@ -154,7 +155,7 @@ j. Remove promise from `inFlight` in finally.
 | `claimNext` | Yes | Atomic select + update; two statements allow race |
 | `cancel` cascade | No | Per-row updates are self-protecting |
 | `replay` memoization reset | Yes | Step deletes + status reset must be atomic |
-| `start` (insert + enqueue tick) | Best-effort | Insert first, enqueue second; failed enqueue → stale sweeper surfaces orphan |
+| `start` (single INSERT) | No | Single statement; polling worker discovers the row on next loop |
 | `recordStep` upsert | No | Unique-index upsert is atomic at DB level |
 | `findStep` | No | Read-only |
 | `rescheduleForScope` | No | Bulk UPDATE is atomic |
@@ -201,6 +202,5 @@ Proposed: `ON CONFLICT (type) DO UPDATE SET pool = EXCLUDED.pool, retry_policy =
 ## References
 
 - ADR-022 "Claim query (Drizzle backend)", "Hierarchy and close policy", "Replay", "Worker lifecycle", "Policy"
-- `runtime/subsystems/jobs/job-queue.drizzle-backend.ts` — stale sweeper pattern (`recoverStaleJobs`, `setInterval`, `onModuleInit`/`onModuleDestroy`)
-- `runtime/subsystems/events/event-bus.drizzle-backend.ts` — `@Inject(DRIZZLE)` style
-- `runtime/subsystems/jobs/job-queue.bullmq-backend.ts` — graceful shutdown drain pattern
+- `runtime/subsystems/events/event-bus.drizzle-backend.ts` — `@Inject(DRIZZLE)` style + `setInterval`/`onModuleInit`/`onModuleDestroy` lifecycle pattern
+- (The legacy `runtime/subsystems/jobs/job-queue.*-backend.ts` files were referenced in earlier drafts as patterns to copy. They are being **deleted** in JOB-1; use `event-bus.drizzle-backend.ts` as the surviving pattern reference.)
