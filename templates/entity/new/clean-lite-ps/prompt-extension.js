@@ -165,6 +165,15 @@ const BEHAVIOR_MANAGED_FIELDS = new Set([
   'is_active',
 ]);
 
+// Fields injected by external_id_tracking behavior — only behavior-managed when
+// that behavior is enabled (otherwise 'provider' etc. could be a legitimate
+// user-declared field, e.g. on field_definition).
+const EXTERNAL_ID_TRACKING_FIELDS = new Set([
+  'external_id',
+  'provider',
+  'provider_metadata',
+]);
+
 // ============================================================================
 // Field processors
 // ============================================================================
@@ -273,7 +282,7 @@ function processBelongsTo(relationships) {
 /**
  * Collect drizzle imports needed for entity fields
  */
-function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete) {
+function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking) {
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
@@ -289,6 +298,12 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
   // Behavior imports
   if (hasTimestamps || hasSoftDelete) {
     imports.add('timestamp');
+  }
+
+  // external_id_tracking behavior injects varchar + jsonb columns
+  if (hasExternalIdTracking) {
+    imports.add('varchar');
+    imports.add('jsonb');
   }
 
   if (belongsTo.length > 0) {
@@ -502,6 +517,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const behaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
   const hasTimestamps = behaviorNames.includes('timestamps');
   const hasSoftDelete = behaviorNames.includes('soft_delete');
+  const hasExternalIdTracking = behaviorNames.includes('external_id_tracking');
 
   // Process declarative queries
   const processedQueries = processQueries(queriesBlock, processedFields, entityNamePascal);
@@ -519,7 +535,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const nonFkFields = processedFields.filter((f) => !fkFieldNames.has(f.name));
 
   // Drizzle imports needed
-  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete);
+  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking);
   // Whether relations() import is needed
   const hasRelationsBlock = belongsTo.length > 0;
 
@@ -561,7 +577,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Fields for create DTO: exclude id, behavior-managed fields, and FK fields
   const createDtoFields = nonFkFields.filter(
-    (f) => !BEHAVIOR_MANAGED_FIELDS.has(f.name),
+    (f) => !BEHAVIOR_MANAGED_FIELDS.has(f.name)
+        && !(hasExternalIdTracking && EXTERNAL_ID_TRACKING_FIELDS.has(f.name)),
   );
 
   // FK fields from belongs_to for create/output DTOs
@@ -578,8 +595,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     zodChainCreate: zodChainForCreate(f),
   }));
 
-  // Build zodChain for each output DTO field (all non-FK fields)
-  const outputDtoFields = nonFkFields.map((f) => ({
+  // Build zodChain for each output DTO field (all non-FK fields).
+  // When external_id_tracking is enabled, its fields are injected into the
+  // entity table but do not appear in the output DTO (they're metadata).
+  const outputDtoSource = hasExternalIdTracking
+    ? nonFkFields.filter((f) => !EXTERNAL_ID_TRACKING_FIELDS.has(f.name))
+    : nonFkFields;
+  const outputDtoFields = outputDtoSource.map((f) => ({
     ...f,
     zodChainOutput: zodChainForOutput(f),
   }));
@@ -598,6 +620,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // Behavior flags (also exposed at top level for template use)
     hasTimestamps,
     hasSoftDelete,
+    hasExternalIdTracking,
 
     // Output paths
     clpOutputPaths: outputPaths,
