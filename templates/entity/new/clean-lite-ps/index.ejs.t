@@ -1,5 +1,5 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? `modules/${entityNamePlural}/index.ts` : null %>"
+to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.index : null %>"
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---

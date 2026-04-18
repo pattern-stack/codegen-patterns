@@ -474,8 +474,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
 
-  // Source root — configurable via baseLocals.srcRoot or entity.src_root, defaults to 'src'
-  const srcRoot = baseLocals.srcRoot || entity.src_root || 'src';
+  // Source root — resolved in priority order:
+  //   1. baseLocals.srcRoot (e.g. set explicitly by tests or callers)
+  //   2. entity.src_root (per-entity override in YAML)
+  //   3. baseLocals.backendSrc (clean-lite-ps reads paths.backend_src from
+  //      codegen.config.yaml; prompt.js threads BASE_PATHS.backendSrc here)
+  //   4. 'src' (sane default for greenfield projects)
+  const srcRoot =
+    baseLocals.srcRoot ||
+    entity.src_root ||
+    baseLocals.backendSrc ||
+    'src';
 
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);
@@ -521,6 +530,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     service: `${srcRoot}/modules/${entityNamePlural}/${entityName}.service.ts`,
     controller: `${srcRoot}/modules/${entityNamePlural}/${entityName}.controller.ts`,
     module: `${srcRoot}/modules/${entityNamePlural}/${entityNamePlural}.module.ts`,
+    index: `${srcRoot}/modules/${entityNamePlural}/index.ts`,
     findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
     listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
     createDto: `${srcRoot}/modules/${entityNamePlural}/dto/create-${entityName}.dto.ts`,

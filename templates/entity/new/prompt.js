@@ -1162,6 +1162,10 @@ export default {
       databaseDialect,
       schemaDir: BASE_PATHS.schemaDir,
 
+      // Project layout — used by clean-lite-ps prompt-extension to compute
+      // output paths under the configured source root (paths.backend_src).
+      backendSrc: BASE_PATHS.backendSrc,
+
       // Entity names
       name,
       plural,

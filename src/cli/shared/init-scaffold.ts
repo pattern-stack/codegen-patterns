@@ -66,23 +66,23 @@ export interface InitOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the relative path from `<cwd>/shared/base-classes/` (or any shim
- * directory at depth 2 under cwd) back to the codegen-patterns `runtime/`.
+ * Compute the relative path from `<cwd>/src/shared/base-classes/` back to the
+ * codegen-patterns `runtime/`.
  *
  * Strategy:
  * 1. Find the runtime source. It's bundled with this CLI at
  *    `<packageRoot>/runtime/`.
  * 2. Resolve the relative path from the shim directory. For most layouts
- *    (sibling repo, workspace dep) this produces `../../../codegen-patterns/
- *    runtime` or `../../node_modules/@pattern-stack/codegen/runtime` — either
+ *    (sibling repo, workspace dep) this produces `../../../../codegen-patterns/
+ *    runtime` or `../../../node_modules/@pattern-stack/codegen/runtime` — either
  *    works as an import specifier.
  */
 export function resolveRuntimePath(cwd: string): string {
 	// src/cli/shared/init-scaffold.ts → ../../../runtime
 	const runtimeAbs = path.resolve(import.meta.dirname, '..', '..', '..', 'runtime');
-	// Shim files live at <cwd>/shared/<subdir>/<file>.ts — that's depth 3.
-	// Compute relative from <cwd>/shared/base-classes/ (representative).
-	const shimDir = path.join(cwd, 'shared', 'base-classes');
+	// Shim files live at <cwd>/src/shared/<subdir>/<file>.ts — that's depth 4.
+	// Compute relative from <cwd>/src/shared/base-classes/ (representative).
+	const shimDir = path.join(cwd, 'src', 'shared', 'base-classes');
 	return path.relative(shimDir, runtimeAbs);
 }
 
@@ -184,7 +184,7 @@ export class DatabaseModule {}
 }
 
 function tokensShim(cwd: string): string {
-	const rt = resolveRuntimePathFor(cwd, 'shared/constants');
+	const rt = resolveRuntimePathFor(cwd, 'src/shared/constants');
 	return `/**
  * Re-export DRIZZLE injection token from the codegen runtime.
  * Generated code imports from '@shared/constants/tokens'.
@@ -194,7 +194,7 @@ export { DRIZZLE } from '${rt}/constants/tokens';
 }
 
 function drizzleTypeShim(cwd: string): string {
-	const rt = resolveRuntimePathFor(cwd, 'shared/types');
+	const rt = resolveRuntimePathFor(cwd, 'src/shared/types');
 	return `/**
  * Re-export the DrizzleClient type from the codegen runtime.
  * Generated code imports from '@shared/types/drizzle'.
@@ -205,7 +205,7 @@ export type { DrizzleClient } from '${rt}/types/drizzle';
 
 function appModuleContent(): string {
 	return `import { Module } from '@nestjs/common';
-import { DatabaseModule } from '../shared/database/database.module';
+import { DatabaseModule } from './shared/database/database.module';
 import { GENERATED_MODULES } from './generated/modules';
 
 /**
@@ -227,7 +227,7 @@ function rootSchemaContent(): string {
  * Re-exports the generated schema barrel. Codegen owns src/generated/schema.ts
  * — add or remove entity YAML to change the table set.
  */
-export * from './src/generated/schema';
+export * from './generated/schema';
 `;
 }
 
@@ -283,17 +283,14 @@ function tsconfigTemplate(): string {
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["./shared/*"],
-      "@modules/*": ["./modules/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@modules/*": ["./src/modules/*"],
       "@generated/*": ["./src/generated/*"]
     },
     "types": ["node"]
   },
   "include": [
     "src/**/*",
-    "shared/**/*",
-    "modules/**/*",
-    "schema.ts",
     "drizzle.config.ts"
   ]
 }
@@ -305,8 +302,8 @@ function tsconfigTemplate(): string {
 // ---------------------------------------------------------------------------
 
 const REQUIRED_ALIASES: Record<string, string[]> = {
-	'@shared/*': ['./shared/*'],
-	'@modules/*': ['./modules/*'],
+	'@shared/*': ['./src/shared/*'],
+	'@modules/*': ['./src/modules/*'],
 	'@generated/*': ['./src/generated/*'],
 };
 
@@ -530,7 +527,7 @@ export async function buildInitPlan(
 		const configPath = path.join(cwd, 'codegen.config.yaml');
 		const config = {
 			paths: {
-				backend_src: '.',
+				backend_src: 'src',
 				entities_dir: 'entities',
 				generated: 'src/generated',
 			},
@@ -603,38 +600,38 @@ export async function buildInitPlan(
 		}
 	}
 
-	// 3. shared/database/database.module.ts
+	// 3. src/shared/database/database.module.ts
 	entries.push(
 		fileEntry(
 			cwd,
-			path.join(cwd, 'shared', 'database', 'database.module.ts'),
+			path.join(cwd, 'src', 'shared', 'database', 'database.module.ts'),
 			databaseModuleContent(),
 			{ force }
 		)
 	);
 
-	// 4. shared/constants/tokens.ts
+	// 4. src/shared/constants/tokens.ts
 	entries.push(
-		fileEntry(cwd, path.join(cwd, 'shared', 'constants', 'tokens.ts'), tokensShim(cwd), {
+		fileEntry(cwd, path.join(cwd, 'src', 'shared', 'constants', 'tokens.ts'), tokensShim(cwd), {
 			force,
 		})
 	);
 
-	// 5. shared/types/drizzle.ts
+	// 5. src/shared/types/drizzle.ts
 	entries.push(
-		fileEntry(cwd, path.join(cwd, 'shared', 'types', 'drizzle.ts'), drizzleTypeShim(cwd), {
+		fileEntry(cwd, path.join(cwd, 'src', 'shared', 'types', 'drizzle.ts'), drizzleTypeShim(cwd), {
 			force,
 		})
 	);
 
-	// 6. shared/base-classes/*
+	// 6. src/shared/base-classes/*
 	{
-		const rt = resolveRuntimePathFor(cwd, 'shared/base-classes');
+		const rt = resolveRuntimePathFor(cwd, 'src/shared/base-classes');
 		for (const shim of BASE_CLASS_SHIMS) {
 			entries.push(
 				fileEntry(
 					cwd,
-					path.join(cwd, 'shared', 'base-classes', shim.file),
+					path.join(cwd, 'src', 'shared', 'base-classes', shim.file),
 					shim.exportLine(rt),
 					{ force }
 				)
@@ -680,9 +677,9 @@ export async function buildInitPlan(
 		}
 	}
 
-	// 9. schema.ts — root
+	// 9. src/schema.ts — drizzle schema root
 	{
-		const schemaPath = path.join(cwd, 'schema.ts');
+		const schemaPath = path.join(cwd, 'src', 'schema.ts');
 		if (!fs.existsSync(schemaPath)) {
 			entries.push({
 				path: schemaPath,
@@ -695,7 +692,7 @@ export async function buildInitPlan(
 				path: schemaPath,
 				relPath: relOf(cwd, schemaPath),
 				action: 'skip',
-				reason: "exists — ensure it re-exports './src/generated/schema'",
+				reason: "exists — ensure it re-exports './generated/schema'",
 			});
 		}
 	}
