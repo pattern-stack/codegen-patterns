@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
+import pluralizePkg from "pluralize";
 import {
   BACKEND_LAYERS,
   BASE_PATHS,
@@ -260,17 +261,7 @@ export default {
     const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     const pascalCase = (s) => capitalize(camelCase(s));
-    const pluralize = (s) => {
-      if (s.endsWith("y")) return s.slice(0, -1) + "ies";
-      if (
-        s.endsWith("s") ||
-        s.endsWith("x") ||
-        s.endsWith("ch") ||
-        s.endsWith("sh")
-      )
-        return s + "es";
-      return s + "s";
-    };
+    const pluralize = (s) => pluralizePkg.plural(s);
 
     // ============================================================================
     // UI Metadata Inference Functions

@@ -26,6 +26,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import pluralize from 'pluralize';
+
 import type { Context } from './context.js';
 import {
 	loadEntityFromYaml,
@@ -137,8 +139,9 @@ function collectEntities(entitiesDir: string): EntityInfo[] {
  * regular modules on disk — so for barrel purposes they're peers.
  *
  * The junction's `plural` is its `table` name when declared, otherwise
- * `${name}s` (matches the convention used by templates/relationship/new/
- * prompt.js — `tableName = relationship.table ?? \`\${name}s\``).
+ * derived via the `pluralize` library (handles irregular English plurals
+ * like category→categories). Matches the convention in
+ * templates/relationship/new/prompt.js `deriveTableName()`.
  */
 function listRelationshipYamls(relationshipsDir: string): string[] {
 	if (!fs.existsSync(relationshipsDir)) return [];
@@ -158,7 +161,7 @@ function collectRelationships(relationshipsDir: string): EntityInfo[] {
 		if (!result.success) continue;
 		const rel = result.definition.relationship;
 		const name = rel.name;
-		const plural = rel.table ?? `${name}s`;
+		const plural = rel.table ?? pluralize(name);
 		junctions.push({ name, plural });
 	}
 	junctions.sort((a, b) => a.name.localeCompare(b.name));

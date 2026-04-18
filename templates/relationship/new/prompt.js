@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
+import pluralizePkg from "pluralize";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -19,12 +20,7 @@ import yaml from "yaml";
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
-const pluralize = (s) => {
-  if (s.endsWith("y")) return s.slice(0, -1) + "ies";
-  if (s.endsWith("s") || s.endsWith("x") || s.endsWith("ch") || s.endsWith("sh"))
-    return s + "es";
-  return s + "s";
-};
+const pluralize = (s) => pluralizePkg.plural(s);
 const kebabCase = (s) => s.replace(/_/g, "-");
 
 // ============================================================================
@@ -45,7 +41,7 @@ function deriveRelationshipFKColumns(config) {
 }
 
 function deriveTableName(config) {
-  return config.table ?? `${config.name}s`;
+  return config.table ?? pluralize(config.name);
 }
 
 function collectTypeNames(types) {
