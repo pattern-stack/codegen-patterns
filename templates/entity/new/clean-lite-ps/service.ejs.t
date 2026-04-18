@@ -9,6 +9,10 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
+<% if (eavEnabled) { -%>
+import { FieldValueRepository } from '../field_values/field_value.repository';
+import { mergeEavRows } from '@shared/eav-helpers';
+<% } -%>
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -20,7 +24,12 @@ export class <%= classNames.service %> extends WithAnalytics(
   @Optional() @Inject(EVENT_BUS)
   protected override eventBus: any = undefined;
 
-  constructor(protected readonly repository: <%= classNames.repository %>) {
+  constructor(
+    protected readonly repository: <%= classNames.repository %>,
+<% if (eavEnabled) { -%>
+    private readonly fieldValueRepository: FieldValueRepository,
+<% } -%>
+  ) {
     super(repository);
   }
 
@@ -31,4 +40,36 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ serviceInheritedMethods.forEach(line => { _%>
   //   <%= line %>
 <%_ }) _%>
+<% if (eavEnabled) { %>
+  /**
+   * EAV paired read (ADR-13): fetch the entity and merge dynamic `field_values`
+   * into a single `fields` bag. Cross-domain read — permitted at the service
+   * layer. Use this for frontend detail views, LLM context, exports.
+   */
+  async findByIdWithFields(
+    id: string,
+  ): Promise<(<%= classNames.entity %> & { fields: Record<string, unknown> }) | null> {
+    const entity = await this.repository.findById(id);
+    if (!entity) return null;
+    const rows = await this.fieldValueRepository.findByEntityIdAndType(id, '<%= entityName %>');
+    return { ...entity, fields: mergeEavRows(rows) };
+  }
+
+  /**
+   * EAV paired read (ADR-13): list variant. Fetches all entities then merges
+   * each one's EAV rows. Acceptable for modest result sets; page externally
+   * for large collections.
+   */
+  async listWithFields(): Promise<Array<<%= classNames.entity %> & { fields: Record<string, unknown> }>> {
+    const entities = await this.repository.list();
+    if (entities.length === 0) return [];
+    const merged = await Promise.all(
+      entities.map(async (entity) => {
+        const rows = await this.fieldValueRepository.findByEntityIdAndType(entity.id, '<%= entityName %>');
+        return { ...entity, fields: mergeEavRows(rows) };
+      }),
+    );
+    return merged;
+  }
+<% } %>
 }
