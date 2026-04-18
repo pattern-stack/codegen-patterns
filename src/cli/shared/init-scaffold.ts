@@ -66,88 +66,73 @@ export interface InitOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the relative path from `<cwd>/src/shared/base-classes/` back to the
- * codegen-patterns `runtime/`.
- *
- * Strategy:
- * 1. Find the runtime source. It's bundled with this CLI at
- *    `<packageRoot>/runtime/`.
- * 2. Resolve the relative path from the shim directory. For most layouts
- *    (sibling repo, workspace dep) this produces `../../../../codegen-patterns/
- *    runtime` or `../../../node_modules/@pattern-stack/codegen/runtime` — either
- *    works as an import specifier.
+ * Absolute path to the codegen runtime source tree (bundled with the CLI).
  */
-export function resolveRuntimePath(cwd: string): string {
+function runtimeRoot(): string {
 	// src/cli/shared/init-scaffold.ts → ../../../runtime
-	const runtimeAbs = path.resolve(import.meta.dirname, '..', '..', '..', 'runtime');
-	// Shim files live at <cwd>/src/shared/<subdir>/<file>.ts — that's depth 4.
-	// Compute relative from <cwd>/src/shared/base-classes/ (representative).
-	const shimDir = path.join(cwd, 'src', 'shared', 'base-classes');
-	return path.relative(shimDir, runtimeAbs);
+	return path.resolve(import.meta.dirname, '..', '..', '..', 'runtime');
 }
 
-function resolveRuntimePathFor(cwd: string, shimRelDir: string): string {
-	const runtimeAbs = path.resolve(import.meta.dirname, '..', '..', '..', 'runtime');
-	const shimDir = path.join(cwd, shimRelDir);
-	return path.relative(shimDir, runtimeAbs);
+/**
+ * Compute a display/doc-only relative path from `<cwd>/src/shared/base-classes/`
+ * back to the codegen runtime. Retained for compatibility with the runtimePath
+ * field in the init summary; no longer used by the scaffold entries themselves
+ * (those now vendor content verbatim — see loadRuntimeFile).
+ */
+export function resolveRuntimePath(cwd: string): string {
+	const shimDir = path.join(cwd, 'src', 'shared', 'base-classes');
+	return path.relative(shimDir, runtimeRoot());
+}
+
+/**
+ * Load the contents of a runtime file (path relative to the runtime root).
+ * Used to vendor runtime files into consumer projects — see ADR note below.
+ */
+function loadRuntimeFile(relPath: string): string {
+	return fs.readFileSync(path.join(runtimeRoot(), relPath), 'utf-8');
 }
 
 // ---------------------------------------------------------------------------
 // Content builders
 // ---------------------------------------------------------------------------
 
-const BASE_CLASS_SHIMS: Array<{ file: string; exportLine: (rt: string) => string }> = [
-	{
-		file: 'base-repository.ts',
-		exportLine: (rt) => `export * from '${rt}/base-classes/base-repository';\n`,
-	},
-	{
-		file: 'base-service.ts',
-		exportLine: (rt) => `export * from '${rt}/base-classes/base-service';\n`,
-	},
-	{
-		file: 'synced-entity-repository.ts',
-		exportLine: (rt) =>
-			`export * from '${rt}/base-classes/synced-entity-repository';\n`,
-	},
-	{
-		file: 'synced-entity-service.ts',
-		exportLine: (rt) => `export * from '${rt}/base-classes/synced-entity-service';\n`,
-	},
-	{
-		file: 'activity-entity-repository.ts',
-		exportLine: (rt) =>
-			`export * from '${rt}/base-classes/activity-entity-repository';\n`,
-	},
-	{
-		file: 'activity-entity-service.ts',
-		exportLine: (rt) =>
-			`export * from '${rt}/base-classes/activity-entity-service';\n`,
-	},
-	{
-		file: 'metadata-entity-repository.ts',
-		exportLine: (rt) =>
-			`export * from '${rt}/base-classes/metadata-entity-repository';\n`,
-	},
-	{
-		file: 'metadata-entity-service.ts',
-		exportLine: (rt) =>
-			`export * from '${rt}/base-classes/metadata-entity-service';\n`,
-	},
-	{
-		file: 'knowledge-entity-repository.ts',
-		exportLine: (rt) =>
-			`export * from '${rt}/base-classes/knowledge-entity-repository';\n`,
-	},
-	{
-		file: 'knowledge-entity-service.ts',
-		exportLine: (rt) =>
-			`export * from '${rt}/base-classes/knowledge-entity-service';\n`,
-	},
-	{
-		file: 'with-analytics.ts',
-		exportLine: (rt) => `export { WithAnalytics } from '${rt}/base-classes/with-analytics';\n`,
-	},
+/**
+ * Runtime files vendored into `<cwd>/src/shared/...` by `codegen project init`.
+ *
+ * Why vendor instead of re-export? TypeScript treats identical types coming
+ * from different `node_modules` trees as distinct (e.g. two `PgTable<...>`
+ * values fail to unify even at identical drizzle-orm versions — the private
+ * `shouldInlineParams` field is the giveaway). When shims re-export from
+ * `<monorepo>/codegen-patterns/runtime/...`, the consumer ends up compiling
+ * against two separate drizzle type graphs: its own `node_modules/drizzle-orm`
+ * and the runtime repo's. Vendoring bakes the runtime into the consumer's
+ * own module graph, so only one drizzle-orm identity exists.
+ *
+ * The list is intentionally exhaustive of the transitive closure reachable
+ * from `@shared/*` imports in the generated templates — if a generated file
+ * imports it (directly or transitively), it's here.
+ */
+const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
+	// base-classes — consumer-facing inheritance targets
+	{ runtime: 'base-classes/base-repository.ts', target: 'src/shared/base-classes/base-repository.ts' },
+	{ runtime: 'base-classes/base-service.ts', target: 'src/shared/base-classes/base-service.ts' },
+	{ runtime: 'base-classes/synced-entity-repository.ts', target: 'src/shared/base-classes/synced-entity-repository.ts' },
+	{ runtime: 'base-classes/synced-entity-service.ts', target: 'src/shared/base-classes/synced-entity-service.ts' },
+	{ runtime: 'base-classes/activity-entity-repository.ts', target: 'src/shared/base-classes/activity-entity-repository.ts' },
+	{ runtime: 'base-classes/activity-entity-service.ts', target: 'src/shared/base-classes/activity-entity-service.ts' },
+	{ runtime: 'base-classes/metadata-entity-repository.ts', target: 'src/shared/base-classes/metadata-entity-repository.ts' },
+	{ runtime: 'base-classes/metadata-entity-service.ts', target: 'src/shared/base-classes/metadata-entity-service.ts' },
+	{ runtime: 'base-classes/knowledge-entity-repository.ts', target: 'src/shared/base-classes/knowledge-entity-repository.ts' },
+	{ runtime: 'base-classes/knowledge-entity-service.ts', target: 'src/shared/base-classes/knowledge-entity-service.ts' },
+	{ runtime: 'base-classes/with-analytics.ts', target: 'src/shared/base-classes/with-analytics.ts' },
+	// base-classes — transitive deps of base-service
+	{ runtime: 'base-classes/lifecycle-events.ts', target: 'src/shared/base-classes/lifecycle-events.ts' },
+	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'src/shared/base-classes/base-read-use-cases.ts' },
+	// Types + constants reached via `@shared/types/*` and `@shared/constants/*`
+	{ runtime: 'types/drizzle.ts', target: 'src/shared/types/drizzle.ts' },
+	{ runtime: 'constants/tokens.ts', target: 'src/shared/constants/tokens.ts' },
+	// Events protocol — imported transitively by base-service + lifecycle-events
+	{ runtime: 'subsystems/events/event-bus.protocol.ts', target: 'src/shared/subsystems/events/event-bus.protocol.ts' },
 ];
 
 function databaseModuleContent(): string {
@@ -183,28 +168,13 @@ export class DatabaseModule {}
 `;
 }
 
-function tokensShim(cwd: string): string {
-	const rt = resolveRuntimePathFor(cwd, 'src/shared/constants');
-	return `/**
- * Re-export every injection token from the codegen runtime.
- * Generated code imports from '@shared/constants/tokens'.
- *
- * Uses star-export so new runtime tokens (DRIZZLE, EVENT_BUS, future)
- * are picked up automatically without editing this shim.
- */
-export * from '${rt}/constants/tokens';
-`;
-}
-
-function drizzleTypeShim(cwd: string): string {
-	const rt = resolveRuntimePathFor(cwd, 'src/shared/types');
-	return `/**
- * Re-export the DrizzleClient type from the codegen runtime.
- * Generated code imports from '@shared/types/drizzle'.
- */
-export type { DrizzleClient } from '${rt}/types/drizzle';
-`;
-}
+// Deprecated — kept only for backwards compatibility with `resolveRuntimePath`
+// consumers/tests. Vendored files replace these in the scaffold output.
+//
+// The tokens/drizzle shims used to be thin re-exports from
+// `codegen-patterns/runtime`. That triggered the dual-drizzle type clash
+// (see VENDORED_RUNTIME_FILES comment). Vendored files are now the source
+// of truth; no runtime re-export shim is emitted.
 
 function appModuleContent(): string {
 	return `import { Module } from '@nestjs/common';
@@ -613,33 +583,14 @@ export async function buildInitPlan(
 		)
 	);
 
-	// 4. src/shared/constants/tokens.ts
-	entries.push(
-		fileEntry(cwd, path.join(cwd, 'src', 'shared', 'constants', 'tokens.ts'), tokensShim(cwd), {
-			force,
-		})
-	);
-
-	// 5. src/shared/types/drizzle.ts
-	entries.push(
-		fileEntry(cwd, path.join(cwd, 'src', 'shared', 'types', 'drizzle.ts'), drizzleTypeShim(cwd), {
-			force,
-		})
-	);
-
-	// 6. src/shared/base-classes/*
-	{
-		const rt = resolveRuntimePathFor(cwd, 'src/shared/base-classes');
-		for (const shim of BASE_CLASS_SHIMS) {
-			entries.push(
-				fileEntry(
-					cwd,
-					path.join(cwd, 'src', 'shared', 'base-classes', shim.file),
-					shim.exportLine(rt),
-					{ force }
-				)
-			);
-		}
+	// 4-6. Vendor runtime files into src/shared/.
+	// Vendoring (vs re-export) avoids the dual-drizzle type-identity clash
+	// the old shim form triggered when the consumer and runtime each resolved
+	// their own drizzle-orm. See VENDORED_RUNTIME_FILES comment.
+	for (const v of VENDORED_RUNTIME_FILES) {
+		entries.push(
+			fileEntry(cwd, path.join(cwd, v.target), loadRuntimeFile(v.runtime), { force })
+		);
 	}
 
 	// 7. src/generated/{modules,schema}.ts — empty barrels

@@ -130,90 +130,48 @@ Generated repositories do this:
 constructor(@Inject(DRIZZLE) db: DrizzleClient) { super(db); }
 ```
 
-`DRIZZLE` resolves to `@shared/constants/tokens`, which is a re-export of `codegen-patterns/runtime/constants/tokens`. The value is the string literal `'DRIZZLE'`. Do not declare a fresh token in your project — it must be the same identity as the runtime's, or `useFactory` will bind to one symbol and `@Inject()` will look for another.
+`DRIZZLE` resolves to `@shared/constants/tokens`, which is a vendored copy of `codegen-patterns/runtime/constants/tokens`. The value is the string literal `'DRIZZLE'`. Do not declare a fresh token in your project — it must be the same identity as the runtime's, or `useFactory` will bind to one symbol and `@Inject()` will look for another.
 
-## `shared/` re-export shims
+## `src/shared/` vendored runtime files
 
-Generated code imports from stable `@shared/*` paths. Those paths have to resolve to something — the "something" is a set of thin files in your `shared/` tree that re-export from `codegen-patterns/runtime/`. The shims exist so:
+Generated code imports from stable `@shared/*` paths. Those paths have to resolve to something — the "something" is a **vendored copy** of the relevant runtime files in your `src/shared/` tree. `codegen project init` writes these files for you on first run.
 
-- The generator can emit stable imports without knowing where the consumer installed the runtime.
-- Consumers can later swap the runtime location (workspace dep, published package) without rewriting generated code.
-- See [ADR-017](./adrs/ADR-017-barrel-files-over-injects.md) for the broader "stable surface over inject" philosophy these shims extend.
+**Why vendor instead of re-export.** The naive approach is a one-line re-export from `codegen-patterns/runtime/...`. TypeScript treats identical types coming from different `node_modules` trees as distinct — two `PgTable<...>` values fail to unify even at identical `drizzle-orm` versions (the private `shouldInlineParams` field is the giveaway). A re-export shim compiles the consumer's generated code against two separate drizzle type graphs (its own and the runtime's), producing 20+ "Types have separate declarations of a private property 'shouldInlineParams'" errors. Vendoring bakes the runtime files into the consumer's own module graph, so only one drizzle-orm identity exists. See [ADR-017](./adrs/ADR-017-barrel-files-over-injects.md) for the broader "stable surface over inject" philosophy these vendored files extend.
 
-Enumerate every shim below. All paths are relative to your project root. Adjust the `../../../codegen-patterns/runtime/...` path to wherever you've installed the runtime (sibling repo in the example; `../node_modules/@pattern-stack/codegen/runtime/...` for workspace installs).
+`codegen project init` writes the following files. You do not need to hand-author them — this list exists so you know what's generated and can spot-check the output.
 
-### Base classes
+### Base classes + transitive deps
 
-```ts
-// shared/base-classes/base-repository.ts
-export * from '../../../codegen-patterns/runtime/base-classes/base-repository';
+```
+src/shared/base-classes/base-repository.ts
+src/shared/base-classes/base-service.ts
+src/shared/base-classes/synced-entity-repository.ts
+src/shared/base-classes/synced-entity-service.ts
+src/shared/base-classes/activity-entity-repository.ts
+src/shared/base-classes/activity-entity-service.ts
+src/shared/base-classes/metadata-entity-repository.ts
+src/shared/base-classes/metadata-entity-service.ts
+src/shared/base-classes/knowledge-entity-repository.ts
+src/shared/base-classes/knowledge-entity-service.ts
+src/shared/base-classes/with-analytics.ts
+src/shared/base-classes/lifecycle-events.ts       # transitive dep of base-service
+src/shared/base-classes/base-read-use-cases.ts
 ```
 
-```ts
-// shared/base-classes/base-service.ts
-export * from '../../../codegen-patterns/runtime/base-classes/base-service';
+### Types + constants
+
+```
+src/shared/types/drizzle.ts
+src/shared/constants/tokens.ts
 ```
 
-```ts
-// shared/base-classes/synced-entity-repository.ts
-export * from '../../../codegen-patterns/runtime/base-classes/synced-entity-repository';
+### Event bus protocol
+
+```
+src/shared/subsystems/events/event-bus.protocol.ts  # transitive dep of base-service + lifecycle-events
 ```
 
-```ts
-// shared/base-classes/synced-entity-service.ts
-export * from '../../../codegen-patterns/runtime/base-classes/synced-entity-service';
-```
-
-```ts
-// shared/base-classes/activity-entity-repository.ts
-export * from '../../../codegen-patterns/runtime/base-classes/activity-entity-repository';
-```
-
-```ts
-// shared/base-classes/activity-entity-service.ts
-export * from '../../../codegen-patterns/runtime/base-classes/activity-entity-service';
-```
-
-```ts
-// shared/base-classes/metadata-entity-repository.ts
-export * from '../../../codegen-patterns/runtime/base-classes/metadata-entity-repository';
-```
-
-```ts
-// shared/base-classes/metadata-entity-service.ts
-export * from '../../../codegen-patterns/runtime/base-classes/metadata-entity-service';
-```
-
-```ts
-// shared/base-classes/knowledge-entity-repository.ts
-export * from '../../../codegen-patterns/runtime/base-classes/knowledge-entity-repository';
-```
-
-```ts
-// shared/base-classes/knowledge-entity-service.ts
-export * from '../../../codegen-patterns/runtime/base-classes/knowledge-entity-service';
-```
-
-```ts
-// shared/base-classes/with-analytics.ts
-export { WithAnalytics } from '../../../codegen-patterns/runtime/base-classes/with-analytics';
-```
-
-You only need a shim for the families your entities actually use. If no YAML declares `family: knowledge`, skip the knowledge shims. Adding a shim later costs one file and one line.
-
-### Constants
-
-```ts
-// shared/constants/tokens.ts
-export { DRIZZLE } from '../../../codegen-patterns/runtime/constants/tokens';
-```
-
-### Types
-
-```ts
-// shared/types/drizzle.ts
-export type { DrizzleClient } from '../../../codegen-patterns/runtime/types/drizzle';
-```
+**Keeping vendored files in sync with the runtime.** Re-running `codegen project init --force` will overwrite them with the current runtime contents. If you upgrade `@pattern-stack/codegen`, re-run init to pull the matching base classes. Treat the vendored files as generated output — don't hand-edit them; if you need to override behavior, subclass them in your own module instead.
 
 ## `schema.ts` wiring
 
@@ -257,7 +215,7 @@ Minimum viable config for a backend-only clean-lite-ps project:
 # codegen.config.yaml
 
 paths:
-  backend_src: .                    # root-relative; clean-lite-ps writes to modules/<plural>/
+  backend_src: src                  # clean-lite-ps writes to <backend_src>/modules/<plural>/
   entities_dir: entities
   generated: src/generated          # ADR-017 barrels land here
 
