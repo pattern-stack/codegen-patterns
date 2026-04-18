@@ -27,6 +27,12 @@ export const <%= entityNamePlural %> = pgTable(
 <%_ clpProcessedFields.forEach(field => { _%>
     <%= field.camelName %>: <%- field.drizzleChain %>,
 <%_ }) _%>
+<%_ if (hasExternalIdTracking) { _%>
+    // external_id_tracking behavior
+    externalId: varchar('external_id'),
+    provider: varchar('provider'),
+    providerMetadata: jsonb('provider_metadata'),
+<%_ } _%>
 <%_ if (hasTimestamps) { _%>
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
