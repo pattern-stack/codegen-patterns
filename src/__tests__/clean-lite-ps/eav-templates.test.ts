@@ -135,7 +135,8 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
     const output = render('use-cases/create.ejs.t', locals);
 
     // Imports — EAV-specific plumbing.
-    expect(output).toContain("import { DRIZZLE_DB } from '@shared/constants/tokens';");
+    expect(output).toContain("import { DRIZZLE } from '@shared/constants/tokens';");
+    expect(output).toContain("import type { DrizzleClient } from '@shared/types/drizzle';");
     expect(output).toContain(
       "import { FieldValueService } from '../../field_values/field_value.service';",
     );
@@ -143,7 +144,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
     // Constructor composes entity service + FieldValueService + DRIZZLE_DB.
     expect(output).toContain('private readonly opportunities: OpportunityService,');
     expect(output).toContain('private readonly fields: FieldValueService,');
-    expect(output).toContain('@Inject(DRIZZLE_DB) private readonly db: DrizzleDB,');
+    expect(output).toContain('@Inject(DRIZZLE) private readonly db: DrizzleClient,');
 
     // Execute body splits { fields, ...core } and runs in a tx.
     expect(output).toContain('this.db.transaction(async (tx) =>');
@@ -174,7 +175,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
     expect(output).toContain('return this.service.create(dto);');
     expect(output).not.toContain('transaction');
     expect(output).not.toContain('FieldValueService');
-    expect(output).not.toContain('DRIZZLE_DB');
+    expect(output).not.toContain('DRIZZLE');
   });
 
   it('update.ejs.t emits the transactional compound-write shape when eav is true', () => {

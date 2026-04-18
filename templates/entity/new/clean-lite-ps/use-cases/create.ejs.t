@@ -5,8 +5,8 @@ force: true
 ---
 <% if (eavEnabled) { -%>
 import { Injectable, Inject } from '@nestjs/common';
-import { DRIZZLE_DB } from '@shared/constants/tokens';
-import type { DrizzleDB } from '@shared/database/drizzle.types';
+import { DRIZZLE } from '@shared/constants/tokens';
+import type { DrizzleClient } from '@shared/types/drizzle';
 import { FieldValueService } from '../../field_values/field_value.service';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityName %>.dto';
@@ -27,7 +27,7 @@ export class <%= classNames.createUseCase %> {
   constructor(
     private readonly <%= entityNamePlural %>: <%= classNames.service %>,
     private readonly fields: FieldValueService,
-    @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
+    @Inject(DRIZZLE) private readonly db: DrizzleClient,
   ) {}
 
   async execute(
