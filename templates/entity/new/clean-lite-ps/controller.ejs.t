@@ -73,7 +73,7 @@ export class <%= classNames.controller %> {
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string): Promise<<%= classNames.entity %> | null> {
+  async remove(@Param('id') id: string): Promise<void> {
     return this.deleteUseCase.execute(id);
   }
 <% } %>

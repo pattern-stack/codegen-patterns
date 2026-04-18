@@ -125,9 +125,11 @@ const DRIZZLE_IMPORT_MAP = {
 const ZOD_TYPE_MAP = {
   string: 'z.string()',
   integer: 'z.number().int()',
-  // PG numeric is returned by Drizzle as a string; z.coerce.number() parses
-  // strings at the boundary while still accepting numeric JSON input.
-  decimal: 'z.coerce.number()',
+  // PG numeric is returned by Drizzle as a string (precision preservation);
+  // z.coerce.string() accepts either JSON string or number and coerces to string
+  // so the DTO type aligns with the entity type. Do arithmetic at the consumer
+  // via Number(value) or a BigNumber library.
+  decimal: 'z.coerce.string()',
   boolean: 'z.boolean()',
   uuid: 'z.string().uuid()',
   date: 'z.coerce.date()',
@@ -142,7 +144,7 @@ const ZOD_TYPE_MAP = {
 const TS_TYPE_MAP = {
   string: 'string',
   integer: 'number',
-  decimal: 'number',
+  decimal: 'string',
   boolean: 'boolean',
   uuid: 'string',
   date: 'Date',
