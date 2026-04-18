@@ -23,7 +23,11 @@ One `SKILL.md` containing the entire body of knowledge. No siblings.
 
 **Use when:** the domain has multiple sub-concerns that don't all apply to every task. Loading the full body for an agent who only needs one slice wastes context.
 
-**Examples in this project:** none yet — both `jobs/` and `events/` were authored 2026-04-18 as candidates for L0/L1 split, but their authors judged them small enough to remain flat. They will split when they cross the 300-line threshold (likely as Phase 2-7 work lands for jobs, and as the events codegen plan moves to ADR + spec set).
+**Examples in this project:**
+- `jobs/` — L0 `SKILL.md` (177 lines) routes to three L1 files: `handler-authoring.md`, `orchestrator-and-worker.md`, `pools-and-config.md`
+- `events/` — L0 `SKILL.md` (96 lines) routes to four L1 files: `outbox-and-transactions.md`, `event-codegen.md`, `directions-and-pools.md`, `protocol-and-backends.md`
+
+Both authored 2026-04-18 as the **template-setting v1** of progressive disclosure in this project. Future complex domains follow this shape.
 
 ## Convention (locked, see ADR-030)
 

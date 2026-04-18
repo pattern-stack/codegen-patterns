@@ -101,5 +101,8 @@ A skill is best authored by an agent who has **just learned** the domain — fre
 
 - `docs/specs/pattern-stack-disclosure-audit.md` — the audit that informed this design
 - `.claude/skills/README.md` — quick-reference convention summary for contributors
-- `.claude/skills/jobs/`, `.claude/skills/events/` — first two domain skills authored under this convention. Both are flat (177 and 96 lines) — under the 300-line threshold for L1 split. They will split as their domains grow (jobs Phases 2-7; events codegen formalization moving from plan to ADR + spec set). They demonstrate the **frontmatter convention + L0 structure**; the L1 split itself remains a forward-looking pattern documented for when it's needed.
+- `.claude/skills/jobs/` — first progressive-disclosure skill in this project. L0 `SKILL.md` (177 lines) routes to three L1 files: `handler-authoring.md` (209 lines), `orchestrator-and-worker.md` (237 lines), `pools-and-config.md` (215 lines). Total 838 lines split across four files — agents working on a handler load only L0 + `handler-authoring.md` (~390 lines), not the full domain.
+- `.claude/skills/events/` — second progressive-disclosure skill. L0 `SKILL.md` (96 lines) routes to four L1 files: `outbox-and-transactions.md` (139 lines), `event-codegen.md` (285 lines), `directions-and-pools.md` (113 lines), `protocol-and-backends.md` (161 lines). Total 794 lines split across five files. The largest L1 (`event-codegen.md`) is the in-flight design — agents touching the typed event facade load it; agents only publishing existing events do not.
+
+These two are the **template-setting v1** of progressive disclosure for codegen-patterns. They demonstrate both the frontmatter convention and the L0/L1 split, and serve as the reference shape for future complex domains.
 - `~/.claude/plugins/cache/claude-brain/claude-brain/1.0.0/skills/skill-authoring/SKILL.md` — standard Claude Code frontmatter reference
