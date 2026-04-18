@@ -23,7 +23,7 @@ import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
 @Injectable()
 export class <%= classNames.updateUseCase %> {
   constructor(
-    private readonly <%= entityName %>s: <%= classNames.service %>,
+    private readonly <%= entityNamePlural %>: <%= classNames.service %>,
     private readonly fields: FieldValueService,
     @Inject(DRIZZLE_DB) private readonly db: DrizzleDB,
   ) {}
@@ -34,7 +34,7 @@ export class <%= classNames.updateUseCase %> {
   ): Promise<<%= classNames.entity %> | null> {
     return this.db.transaction(async (tx) => {
       const { fields, ...core } = dto;
-      const entity = await this.<%= entityName %>s.update(id, core as <%= classNames.updateDto %>, tx);
+      const entity = await this.<%= entityNamePlural %>.update(id, core as <%= classNames.updateDto %>, tx);
       if (!entity) return null;
       if (fields && Object.keys(fields).length > 0) {
         await this.fields.upsertFieldsTransactional(

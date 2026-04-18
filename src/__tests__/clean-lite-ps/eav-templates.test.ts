@@ -141,7 +141,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
     );
 
     // Constructor composes entity service + FieldValueService + DRIZZLE_DB.
-    expect(output).toContain('private readonly opportunitys: OpportunityService,');
+    expect(output).toContain('private readonly opportunities: OpportunityService,');
     expect(output).toContain('private readonly fields: FieldValueService,');
     expect(output).toContain('@Inject(DRIZZLE_DB) private readonly db: DrizzleDB,');
 
@@ -149,7 +149,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
     expect(output).toContain('this.db.transaction(async (tx) =>');
     expect(output).toContain('const { fields, ...core } = dto;');
     expect(output).toContain(
-      'const entity = await this.opportunitys.create(core as CreateOpportunityDto, tx);',
+      'const entity = await this.opportunities.create(core as CreateOpportunityDto, tx);',
     );
 
     // Calls the service-level compound helper — NOT toEavRows / upsertMany.
@@ -185,7 +185,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
       'dto: UpdateOpportunityDto & { fields?: Record<string, unknown> },',
     );
     expect(output).toContain(
-      'const entity = await this.opportunitys.update(id, core as UpdateOpportunityDto, tx);',
+      'const entity = await this.opportunities.update(id, core as UpdateOpportunityDto, tx);',
     );
     expect(output).toContain('if (!entity) return null;');
 
