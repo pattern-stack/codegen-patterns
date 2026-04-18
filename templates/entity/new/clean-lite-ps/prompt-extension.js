@@ -185,7 +185,16 @@ function buildDrizzleChain(fieldName, field, drizzleType) {
   const required = field.required ?? false;
   const hasDefault = field.default !== undefined && field.default !== null;
 
-  let chain = `${drizzleType}('${fieldName}')`;
+  // Drizzle's `date('x')` returns the PgDateString builder by default
+  // (data type: string). Force the Date-typed variant so DTO Zod
+  // schemas using z.coerce.date() align with the entity type.
+  // `timestamp` already defaults to Date — no mode override needed.
+  let chain;
+  if (drizzleType === 'date') {
+    chain = `${drizzleType}('${fieldName}', { mode: 'date' })`;
+  } else {
+    chain = `${drizzleType}('${fieldName}')`;
+  }
 
   // Add .notNull() for non-nullable required fields
   if (required && !nullable) {
