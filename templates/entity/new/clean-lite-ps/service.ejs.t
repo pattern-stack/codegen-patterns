@@ -10,8 +10,7 @@ import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
 <% if (eavEnabled) { -%>
-import { FieldValueRepository } from '../field_values/field_value.repository';
-import { mergeEavRows } from '@shared/eav-helpers';
+import { FieldValueService } from '../field_values/field_value.service';
 <% } -%>
 
 @Injectable()
@@ -27,7 +26,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   constructor(
     protected readonly repository: <%= classNames.repository %>,
 <% if (eavEnabled) { -%>
-    private readonly fieldValueRepository: FieldValueRepository,
+    private readonly fieldValues: FieldValueService,
 <% } -%>
   ) {
     super(repository);
@@ -43,33 +42,33 @@ export class <%= classNames.service %> extends WithAnalytics(
 <% if (eavEnabled) { %>
   /**
    * EAV paired read (ADR-13): fetch the entity and merge dynamic `field_values`
-   * into a single `fields` bag. Cross-domain read — permitted at the service
-   * layer. Use this for frontend detail views, LLM context, exports.
+   * into a single `fields` bag. FieldValueService owns the FieldDefinition
+   * lookup internally. Use this for frontend detail views, LLM context,
+   * exports.
    */
   async findByIdWithFields(
     id: string,
   ): Promise<(<%= classNames.entity %> & { fields: Record<string, unknown> }) | null> {
     const entity = await this.repository.findById(id);
     if (!entity) return null;
-    const rows = await this.fieldValueRepository.findByEntityIdAndType(id, '<%= entityName %>');
-    return { ...entity, fields: mergeEavRows(rows) };
+    const fields = await this.fieldValues.findMergedByEntity('<%= entityName %>', id);
+    return { ...entity, fields };
   }
 
   /**
    * EAV paired read (ADR-13): list variant. Fetches all entities then merges
-   * each one's EAV rows. Acceptable for modest result sets; page externally
-   * for large collections.
+   * each one's EAV fields via FieldValueService. Acceptable for modest result
+   * sets; page externally for large collections.
    */
   async listWithFields(): Promise<Array<<%= classNames.entity %> & { fields: Record<string, unknown> }>> {
     const entities = await this.repository.list();
     if (entities.length === 0) return [];
-    const merged = await Promise.all(
+    return Promise.all(
       entities.map(async (entity) => {
-        const rows = await this.fieldValueRepository.findByEntityIdAndType(entity.id, '<%= entityName %>');
-        return { ...entity, fields: mergeEavRows(rows) };
+        const fields = await this.fieldValues.findMergedByEntity('<%= entityName %>', entity.id);
+        return { ...entity, fields };
       }),
     );
-    return merged;
   }
 <% } %>
 }

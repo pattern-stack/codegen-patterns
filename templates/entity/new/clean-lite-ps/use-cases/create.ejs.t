@@ -7,7 +7,6 @@ force: true
 import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE_DB } from '@shared/constants/tokens';
 import type { DrizzleDB } from '@shared/database/drizzle.types';
-import { toEavRows } from '@shared/eav-helpers';
 import { FieldValueService } from '../../field_values/field_value.service';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityName %>.dto';
@@ -19,8 +18,9 @@ import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
  * Splits `{ fields, ...core }` from the DTO and persists both halves in a
  * single transaction: core columns go to the <%= entityName %> table via
  * <%= classNames.service %>, dynamic `fields` go to `field_values` via
- * FieldValueService. Atomicity comes from the shared tx; each service
- * still only writes its own domain.
+ * FieldValueService.upsertFieldsTransactional (which owns the
+ * FieldDefinition lookup internally). Atomicity comes from the shared tx;
+ * each service still only writes its own domain.
  */
 @Injectable()
 export class <%= classNames.createUseCase %> {
@@ -37,7 +37,13 @@ export class <%= classNames.createUseCase %> {
       const { fields, ...core } = dto;
       const entity = await this.<%= entityName %>s.create(core as <%= classNames.createDto %>, tx);
       if (fields && Object.keys(fields).length > 0) {
-        await this.fields.upsertMany(toEavRows(entity.id, '<%= entityName %>', fields), tx);
+        await this.fields.upsertFieldsTransactional(
+          '<%= entityName %>',
+          entity.id,
+          core.userId,
+          fields,
+          tx,
+        );
       }
       return entity;
     });

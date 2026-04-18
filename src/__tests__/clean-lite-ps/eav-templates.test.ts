@@ -6,11 +6,16 @@
  *   class names and output paths, gated by `eav: true`
  * - Paired read templates render correctly
  * - Compound-write templates (create/update) switch to transactional shape
- *   when eav is enabled, delegating to the entity service + FieldValueService
+ *   when eav is enabled, calling FieldValueService.upsertFieldsTransactional
  * - Controller gates GET /with-fields + GET /:id/with-fields on eav
- * - Service injects FieldValueRepository and emits paired read methods
+ * - Service injects FieldValueService and emits paired read methods calling
+ *   FieldValueService.findMergedByEntity
  * - Module imports FieldValuesModule and registers the paired use cases
  * - `eav` default (false) preserves the pre-existing non-EAV shape
+ *
+ * Contract: when eav:true, the generated code never reaches into
+ * FieldValueRepository or FieldDefinitionRepository directly. All EAV
+ * operations go through FieldValueService which owns the map resolution.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -131,7 +136,6 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
 
     // Imports — EAV-specific plumbing.
     expect(output).toContain("import { DRIZZLE_DB } from '@shared/constants/tokens';");
-    expect(output).toContain("import { toEavRows } from '@shared/eav-helpers';");
     expect(output).toContain(
       "import { FieldValueService } from '../../field_values/field_value.service';",
     );
@@ -147,10 +151,20 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
     expect(output).toContain(
       'const entity = await this.opportunitys.create(core as CreateOpportunityDto, tx);',
     );
-    expect(output).toContain(
-      "await this.fields.upsertMany(toEavRows(entity.id, 'opportunity', fields), tx);",
-    );
-    expect(output).toContain('return entity;');
+
+    // Calls the service-level compound helper — NOT toEavRows / upsertMany.
+    expect(output).toContain('this.fields.upsertFieldsTransactional(');
+    expect(output).toContain("'opportunity',");
+    expect(output).toContain('entity.id,');
+    expect(output).toContain('core.userId,');
+    expect(output).toContain('fields,');
+    expect(output).toContain('tx,');
+
+    // No direct helper imports or repository injection.
+    expect(output).not.toContain('toEavRows');
+    expect(output).not.toContain('upsertMany');
+    expect(output).not.toContain('FieldValueRepository');
+    expect(output).not.toContain('FieldDefinitionRepository');
   });
 
   it('create.ejs.t preserves the one-line shape when eav is false', () => {
@@ -168,15 +182,19 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
     const output = render('use-cases/update.ejs.t', locals);
 
     expect(output).toContain(
-      'async execute(\n    id: string,\n    dto: UpdateOpportunityDto & { fields?: Record<string, unknown> },\n  ): Promise<Opportunity | null>',
+      'dto: UpdateOpportunityDto & { fields?: Record<string, unknown> },',
     );
     expect(output).toContain(
       'const entity = await this.opportunitys.update(id, core as UpdateOpportunityDto, tx);',
     );
     expect(output).toContain('if (!entity) return null;');
-    expect(output).toContain(
-      "await this.fields.upsertMany(toEavRows(entity.id, 'opportunity', fields), tx);",
-    );
+
+    // Update reads userId from the loaded entity (update DTO omits userId).
+    expect(output).toContain('this.fields.upsertFieldsTransactional(');
+    expect(output).toContain('entity.userId,');
+
+    expect(output).not.toContain('toEavRows');
+    expect(output).not.toContain('upsertMany');
   });
 
   it('update.ejs.t preserves the one-line shape when eav is false', () => {
@@ -190,31 +208,38 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
 });
 
 describe('clean-lite-ps eav templates — service rendering', () => {
-  it('injects FieldValueRepository and emits paired read methods when eav is true', () => {
+  it('injects FieldValueService and emits paired read methods when eav is true', () => {
     const locals = buildCleanLitePsLocals(eavEntity, {});
     const output = render('service.ejs.t', locals);
 
     expect(output).toContain(
-      "import { FieldValueRepository } from '../field_values/field_value.repository';",
+      "import { FieldValueService } from '../field_values/field_value.service';",
     );
-    expect(output).toContain(
-      "import { mergeEavRows } from '@shared/eav-helpers';",
-    );
-    expect(output).toContain('private readonly fieldValueRepository: FieldValueRepository,');
+    expect(output).toContain('private readonly fieldValues: FieldValueService,');
     expect(output).toContain('async findByIdWithFields(');
     expect(output).toContain('async listWithFields(');
+
+    // Paired reads go through FieldValueService.findMergedByEntity — NOT
+    // directly through FieldValueRepository or FieldDefinitionRepository.
     expect(output).toContain(
-      "await this.fieldValueRepository.findByEntityIdAndType(id, 'opportunity');",
+      "await this.fieldValues.findMergedByEntity('opportunity', id);",
     );
-    expect(output).toContain('mergeEavRows(rows)');
+    expect(output).toContain(
+      "await this.fieldValues.findMergedByEntity('opportunity', entity.id);",
+    );
+
+    expect(output).not.toContain('FieldValueRepository');
+    expect(output).not.toContain('FieldDefinitionRepository');
+    expect(output).not.toContain('mergeEavRows');
+    expect(output).not.toContain('findByEntityIdAndType');
   });
 
   it('omits EAV wiring when eav is false (default)', () => {
     const locals = buildCleanLitePsLocals(baseEntity, {});
     const output = render('service.ejs.t', locals);
 
-    expect(output).not.toContain('FieldValueRepository');
-    expect(output).not.toContain('mergeEavRows');
+    expect(output).not.toContain('FieldValueService');
+    expect(output).not.toContain('findMergedByEntity');
     expect(output).not.toContain('findByIdWithFields');
     expect(output).not.toContain('listWithFields');
   });
