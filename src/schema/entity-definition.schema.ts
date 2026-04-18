@@ -655,6 +655,28 @@ export const EntityDefinitionSchema = z
     // Per-entity generation toggles (e.g. disable write-side emission)
     generate: GenerateConfigSchema.optional(),
 
+    // EAV (entity-attribute-value) dual-write + paired reads (ADR-13).
+    // When `true`, codegen emits:
+    //   - FindXWithFieldsUseCase + ListXWithFieldsUseCase (paired reads)
+    //   - CreateX / UpdateX use cases in transactional compound-write shape
+    //     (composes entity service + FieldValueService in one db.transaction,
+    //     splits `{ fields, ...core }` from the DTO)
+    //   - GET /:id/with-fields + GET /with-fields controller routes
+    //   - Service with injected FieldValueRepository + findByIdWithFields /
+    //     listWithFields paired read methods
+    //
+    // Consumer contract (must be in place before regen):
+    //   - BaseService.create/update/delete accept optional `tx` parameter
+    //   - `@shared/eav-helpers` exports `toEavRows(entityId, entityType, fields)`
+    //     and `mergeEavRows(rows)`
+    //   - FieldValueService exposes `upsertMany(rows, tx?)` (inherited from
+    //     MetadataEntityService)
+    //   - DRIZZLE_DB injection token available via `@shared/constants/tokens`
+    //
+    // Defaults to `false` — opt in per entity that needs dynamic/custom fields.
+    eav: z.boolean().optional().default(false),
+
+
     // v2: Declarative query generation (ADR-005)
     // Generates repository + service + use case methods from declarations
     queries: z.array(QueryDeclarationSchema).optional(),

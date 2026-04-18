@@ -528,6 +528,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const generateBlock = definition.generate || {};
   const generateWrites = generateBlock.writes !== false;
 
+  // EAV (ADR-13) — when true, emit paired reads + transactional compound
+  // writes. Consumer must provide `@shared/eav-helpers` and `FieldValueService`.
+  const eavEnabled = definition.eav === true;
+
   // Family resolution
   const family = entity.family || 'base';
   const familyConfig = FAMILY_MAP[family] || FAMILY_MAP['base'];
@@ -571,6 +575,12 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     index: `${srcRoot}/modules/${entityNamePlural}/index.ts`,
     findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
     listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+    findByIdWithFieldsUseCase: eavEnabled
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id-with-fields.use-case.ts`
+      : null,
+    listWithFieldsUseCase: eavEnabled
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}-with-fields.use-case.ts`
+      : null,
     createUseCase: generateWrites
       ? `${srcRoot}/modules/${entityNamePlural}/use-cases/create-${entityName}.use-case.ts`
       : null,
@@ -598,6 +608,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     module: `${entityNamePluralPascal}Module`,
     findByIdUseCase: `Find${entityNamePascal}ByIdUseCase`,
     listUseCase: `List${entityNamePluralPascal}UseCase`,
+    findByIdWithFieldsUseCase: `Find${entityNamePascal}ByIdWithFieldsUseCase`,
+    listWithFieldsUseCase: `List${entityNamePluralPascal}WithFieldsUseCase`,
     createUseCase: `Create${entityNamePascal}UseCase`,
     updateUseCase: `Update${entityNamePascal}UseCase`,
     deleteUseCase: `Delete${entityNamePascal}UseCase`,
@@ -658,6 +670,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // Generation toggles
     generateWrites,
+
+    // EAV (ADR-13)
+    eavEnabled,
 
     // Output paths
     clpOutputPaths: outputPaths,
