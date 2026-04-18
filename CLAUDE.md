@@ -19,6 +19,15 @@ This applies to every ADR, spec, and code change. Agents that find themselves wr
 
 Avoid the "uniform interface that hides everything" trap (e.g., ORMs that pretend all databases are equivalent). The core contract guarantees portability for the 90% case; extensions let consumers leverage their chosen backend's actual strengths. Collapse abstraction layers that exist purely to preserve uniformity at the cost of feature access.
 
+**Specs and skills are living documentation — update as you work.** ADRs, specs (`docs/specs/*`), and skills (`.claude/skills/*`) describe intent at the moment they were written. Implementation always discovers things that intent missed: a clearer name, a missing edge case, a constraint the spec assumed away, an open question that turned out to have an obvious answer. When you discover any of these while working, **update the spec or skill in the same PR as the code change**. Do not "leave it for later." Do not "ask the original author." The agent doing the work has the freshest context to fix the documentation; the agent reading it next has no recourse if it is wrong.
+
+Concretely:
+- Implementing a JOB-N spec? When you finish, the spec should reflect what was actually built — close any open questions you resolved, correct any details that turned out wrong, add any constraints discovered during implementation. The spec becomes the post-implementation truth, not just the pre-implementation plan.
+- Working in a domain skill? When you find a routing table that doesn't match reality, a "do not" rule that's too vague, or a missing L1 file for a topic that came up — fix it. Skills are living documentation, not snapshots.
+- Touching an ADR's territory? If a decision was made on grounds that no longer apply (e.g., backwards compat we agreed to drop, an alternative we now want to revisit), add a dated revision note. Don't silently ignore the ADR.
+
+The cost of stale documentation compounds: every future agent reading it pays for the drift. The cost of updating it as you go is one extra paragraph per PR. Pay the small cost.
+
 ## Commands
 
 ```bash

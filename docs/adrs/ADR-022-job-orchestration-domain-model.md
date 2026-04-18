@@ -419,6 +419,17 @@ All job-related schemas are emitted as Drizzle `pgTable` declarations. Atlas con
 
 This supersedes the older `drizzle-kit push` recommendation in `docs/CONSUMER-SETUP.md` — that section will be updated to reflect the Atlas workflow as part of Phase 1.
 
+## Spec maintenance during implementation
+
+The eight Phase 1 specs (JOB-1 through JOB-8) and this ADR were authored before any code was written. They are intent-at-time-of-design, not post-implementation truth. Per the project-wide operating principle in CLAUDE.md ("Specs and skills are living documentation — update as you work"):
+
+- An agent implementing JOB-N **MUST** update `docs/specs/JOB-N.md` in the same PR as the code change. Close open questions you resolve. Correct details that turned out wrong. Add constraints discovered during implementation.
+- An agent that finds a contradiction between this ADR and reality **MUST** add a dated revision note to the affected section, not silently work around it.
+- The `.claude/skills/jobs/` skill is downstream of these specs. If you change a spec, check whether the skill's L0 routing table or L1 deep dives need to follow.
+- Open implementation questions in this ADR (Section *Open implementation questions*) and in each spec are not aspirational TODOs — they are blockers for the build agent. Resolve or escalate before merging.
+
+The cost of an out-of-date spec compounds: every future agent picking up the next phase pays for the drift. Pay the small per-PR cost.
+
 ## Phase roadmap
 
 Implementation is sequenced in six phases. Each phase is an independently reviewable PR.

@@ -62,6 +62,20 @@ Length target: 150–250 lines. Past 300 lines, push detail into L1.
 
 A skill is best authored by an agent who has **just learned** the domain — fresh enough to remember what was confusing, structured enough to organize it. Agents deeply rooted in a domain through a long conversation suffer curse-of-knowledge bias and produce skills that under-explain. When a skill needs to be written or rewritten, prefer spawning a fresh agent with the relevant ADRs and specs as input over having the long-conversation agent author it directly. The deep-context agent reviews for technical accuracy after.
 
+### Maintenance rule — skills are living documentation
+
+Per the project operating principle in CLAUDE.md, **skills are not write-once.** An agent working in a domain whose skill is stale, drifted, or missing important context **MUST** update the skill in the same PR as the code change. Concretely:
+
+- L0 routing table missing an L1 file that should be there → add the entry
+- L1 file describing an API surface that has since shifted → correct the description
+- "Do not" rule that no longer applies (decision was reversed) → remove it
+- New "do not" rule discovered during implementation (a footgun the spec didn't anticipate) → add it
+- Frontmatter `description` that no longer accurately captures when to load → rewrite
+
+The agent doing the work has the freshest context to fix the skill; the agent reading it next has no recourse if it is wrong. Skills exist to compound knowledge across agents and time. They cannot do that if they go stale.
+
+Reviewers should expect a skill diff alongside any non-trivial domain PR. Absence of one in a domain whose skill exists is a review smell — ask why.
+
 ## Consequences
 
 **Positive:**
