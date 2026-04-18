@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Entity-driven code generation system for full-stack TypeScript applications (v0.2). Generates Clean Architecture scaffolding from YAML entity definitions, including domain entities, repositories, use cases, DTOs, Drizzle schemas, NestJS modules, controllers, and frontend collections. Also provides infrastructure subsystem scaffolding (events, jobs, cache, storage).
 
+## Operating Principles
+
+**No backwards compatibility until we have users.** This project has no external consumers. Architectural correctness is the only criterion. Do not preserve old tables, old commands, old config keys, old doc anchors, old import paths, or old behaviors to "avoid breaking things." Replace them cleanly. Iterative snapshots are disposable. If a decision is being made on backwards-compat grounds, the decision is wrong — re-evaluate from architectural correctness alone.
+
+This applies to every ADR, spec, and code change. Agents that find themselves writing "deprecated" callouts, upgrade commands, parallel-old-and-new schemas, or migration shims should stop and ask whether the predecessor exists for any reason other than backwards compat. If not, delete it.
+
+**Backend swappability via core/extension protocols.** Subsystems that allow swappable backends (events, jobs, cache, storage, etc.) must structure their protocols as a **core contract + opt-in extensions**:
+
+- **Core contract** — every backend MUST implement. Defines the minimum capability surface guaranteed across all backends. App code written against the core is portable.
+- **Extensions** — backends MAY add features beyond the core (e.g., BullMQ backend exposing Bull Board mounting; Postgres backend exposing `LISTEN/NOTIFY`). Consumers opting into extensions accept backend-specific code paths.
+
+Avoid the "uniform interface that hides everything" trap (e.g., ORMs that pretend all databases are equivalent). The core contract guarantees portability for the 90% case; extensions let consumers leverage their chosen backend's actual strengths. Collapse abstraction layers that exist purely to preserve uniformity at the cost of feature access.
+
 ## Commands
 
 ```bash
