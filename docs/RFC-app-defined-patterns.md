@@ -3,7 +3,21 @@
 **Status:** Draft — proposal for discussion
 **Date:** 2026-04-18
 **Author:** Doug + Claude
-**Relates to:** `CODEGEN-EVOLUTION-PLAN.md`, `#16` (subsystem templates), `#12` (semantic definitions), dealbrain-v2 CRM sync ADR-14
+**Relates to:** `CODEGEN-EVOLUTION-PLAN.md`, `#59` (auth + integrations subsystem), `#60` (sync engine + `syncable:`), dealbrain-v2 CRM sync ADR-14
+
+---
+
+## Revision — 2026-04-19: Patterns are a parallel track, not a prerequisite
+
+Dealbrain-v2 evidence (CRM epic, April 2026) confirms: subsystems can ship without patterns and retrofit cleanly when patterns land.
+
+- **Integrations** (#59): adapter-per-provider (`ICrmPort` → `SalesforceCrmAdapter`) works today without a Patterns primitive. When patterns land, `patterns: [Integrations]` becomes an opt-in authoring surface; the runtime contract (`IAuthStrategy.resolve`, port/adapter dispatch) does not change.
+- **Sync engine** (#60): `ExecuteSyncUseCase<T>` + `syncable:` annotation is an orthogonal feature. `patterns: [Sync]` would add nicer declarative syntax, not change runtime behavior.
+- **EAV** (in `src/modules/crm/` today): hand-extended `FieldValueService.upsertFieldsTransactional` works. `patterns: [Eav]` when it lands replaces `eav: true` flag + ~15 LOC of hand extension. Real delta, but modest and non-structural.
+
+**Implication for sequencing:** #59 and #60 do not wait on this RFC. Both ship with direct port/adapter patterns and gain an opt-in `patterns:` surface when Patterns land. The CrmEntityRepository/CrmEntityService hand-written base classes stay the "first app pattern" placeholder until the upstream primitive exists — they do not block it.
+
+---
 
 ---
 
