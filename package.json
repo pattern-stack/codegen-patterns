@@ -96,6 +96,7 @@
       "optional": true
     }
   },
+  "workspaces": ["packages/*"],
   "devDependencies": {
     "@cubejs-client/core": "^1.0.0",
     "@nestjs/common": "10",
