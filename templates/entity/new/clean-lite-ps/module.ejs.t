@@ -29,6 +29,10 @@ import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityNa
 <% if (hasDeclarativeQueries) { -%>
 import { declarativeQueryClasses } from './use-cases/declarative-queries';
 <% } -%>
+<% if (hasSearchQuery) { -%>
+import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityNamePlural %>.use-case';
+import { <%= classNames.searchController %> } from './<%= entityName %>-search.controller';
+<% } -%>
 
 @Module({
   imports: [
@@ -42,7 +46,7 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
     // <%= rel.relatedEntityPascal %>sModule,
 <%_ }) _%>
   ],
-  controllers: [<%= classNames.controller %>],
+  controllers: [<%= classNames.controller %><% if (hasSearchQuery) { %>, <%= classNames.searchController %><% } %>],
   providers: [
     <%= classNames.repository %>,
     <%= classNames.service %>,
@@ -59,6 +63,9 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
 <% } -%>
 <% if (hasDeclarativeQueries) { -%>
     ...declarativeQueryClasses,
+<% } -%>
+<% if (hasSearchQuery) { -%>
+    <%= searchQuery.useCaseClassName %>,
 <% } -%>
   ],
   exports: [<%= classNames.service %>],  // Only service is exported (ADR-002)
