@@ -3,7 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.controller : nul
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, Param } from '@nestjs/common';
+import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param } from '@nestjs/common';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
 <% if (eavEnabled) { -%>
@@ -48,15 +48,19 @@ export class <%= classNames.controller %> {
   }
 <% } %>
   @Get(':id')
-  async getById(@Param('id') id: string): Promise<<%= classNames.entity %> | null> {
-    return this.findByIdUseCase.execute(id);
+  async getById(@Param('id') id: string): Promise<<%= classNames.entity %>> {
+    const entity = await this.findByIdUseCase.execute(id);
+    if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
+    return entity;
   }
 <% if (eavEnabled) { %>
   @Get(':id/with-fields')
   async getByIdWithFields(
     @Param('id') id: string,
-  ): Promise<(<%= classNames.entity %> & { fields: Record<string, unknown> }) | null> {
-    return this.findByIdWithFieldsUseCase.execute(id);
+  ): Promise<<%= classNames.entity %> & { fields: Record<string, unknown> }> {
+    const entity = await this.findByIdWithFieldsUseCase.execute(id);
+    if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
+    return entity;
   }
 <% } %>
 <% if (generateWrites) { %>
@@ -71,8 +75,10 @@ export class <%= classNames.controller %> {
   async update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(<%= classNames.updateSchema %>)) dto: <%= classNames.updateDto %>,
-  ): Promise<<%= classNames.entity %> | null> {
-    return this.updateUseCase.execute(id, dto);
+  ): Promise<<%= classNames.entity %>> {
+    const entity = await this.updateUseCase.execute(id, dto);
+    if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
+    return entity;
   }
 
   @Delete(':id')

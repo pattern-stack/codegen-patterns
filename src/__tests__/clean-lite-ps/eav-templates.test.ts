@@ -266,7 +266,8 @@ describe('clean-lite-ps eav templates — controller rendering', () => {
     expect(output).toContain("@Get('with-fields')");
     expect(output).toContain("@Get(':id/with-fields')");
     expect(output).toContain('return this.listWithFieldsUseCase.execute();');
-    expect(output).toContain('return this.findByIdWithFieldsUseCase.execute(id);');
+    expect(output).toContain('const entity = await this.findByIdWithFieldsUseCase.execute(id);');
+    expect(output).toContain('throw new NotFoundException');
 
     // Ordering: static /with-fields route must be declared before the :id
     // param route so NestJS doesn't capture "with-fields" as an id.

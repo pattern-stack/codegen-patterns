@@ -187,7 +187,8 @@ describe('clean-lite-ps write templates — controller rendering', () => {
     expect(output).toContain('@Body(new ZodValidationPipe(UpdateContactSchema)) dto: UpdateContactDto');
     expect(output).toContain('return this.createUseCase.execute(dto);');
     expect(output).toContain("@Patch(':id')");
-    expect(output).toContain('return this.updateUseCase.execute(id, dto);');
+    expect(output).toContain('const entity = await this.updateUseCase.execute(id, dto);');
+    expect(output).toContain('throw new NotFoundException');
     expect(output).toContain("@Delete(':id')");
     expect(output).toContain('return this.deleteUseCase.execute(id);');
 
