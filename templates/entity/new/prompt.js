@@ -1408,6 +1408,20 @@ export default {
         serviceBaseImport: '',
         repositoryInheritedMethods: [],
         serviceInheritedMethods: [],
+        // CLP template bodies are EJS-evaluated even when `skip_if` fires
+        // (frontmatter `to:` resolves to null so no file is written, but the
+        // body still runs). Every referenced local must exist here or the
+        // non-clean-lite-ps pipeline crashes with ReferenceError. Closes #44.
+        generateWrites: false,
+        eavEnabled: false,
+        eavValueTable: false,
+        eavDefinitionEntity: null,
+        eavDefinitionEntityPlural: null,
+        eavDefinitionPascal: null,
+        eavDefinitionPluralPascal: null,
+        hasSearchQuery: false,
+        searchQuery: null,
+        hasExternalIdTracking: false,
       });
     }
 
