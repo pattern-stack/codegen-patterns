@@ -88,6 +88,14 @@ function captureStdoutWrite<T>(fn: () => Promise<T>): Promise<{ result: T; out: 
 		chunks.push(args.map((a) => String(a)).join(' ') + '\n');
 	};
 
+	// Silence intentional error-path CLI output (stderr + console.error) during
+	// tests that assert exit codes for error cases. Assertions are unchanged;
+	// this only suppresses the [FAIL] banner noise in test output.
+	const origStderrWrite = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (() => true) as typeof process.stderr.write;
+	const origErr = console.error;
+	console.error = () => {};
+
 	return (async () => {
 		try {
 			const result = await fn();
@@ -95,6 +103,8 @@ function captureStdoutWrite<T>(fn: () => Promise<T>): Promise<{ result: T; out: 
 		} finally {
 			process.stdout.write = original;
 			console.log = origLog;
+			process.stderr.write = origStderrWrite;
+			console.error = origErr;
 		}
 	})();
 }
