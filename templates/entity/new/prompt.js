@@ -573,7 +573,10 @@ export default {
     const zodTypes = {
       string: "z.string()",
       integer: "z.number().int()",
-      decimal: "z.number()",
+      // Drizzle returns PG `numeric` as a JS string; bare `z.number()` would
+      // reject it at the DTO boundary. Keep the value a (coerced) string —
+      // mirrors the clean-lite-ps fix from #35/PR #42. See issue #43.
+      decimal: "z.coerce.string()",
       boolean: "z.boolean()",
       uuid: "z.string().uuid()",
       date: "z.coerce.date()",
