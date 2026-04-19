@@ -82,7 +82,7 @@ describe('MetadataEntityService', () => {
 
       const result = await service.upsertValues(inputs, 'id');
       expect(result).toEqual(entities);
-      expect(repo.upsertMany).toHaveBeenCalledWith(inputs, 'id');
+      expect(repo.upsertMany).toHaveBeenCalledWith(inputs, undefined, { conflictTarget: 'id' });
     });
   });
 });

@@ -9,6 +9,7 @@
 import { eq, and, desc } from 'drizzle-orm';
 import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
 import { BaseRepository } from './base-repository';
+import type { DrizzleTx } from '../types/drizzle';
 
 export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<TEntity> {
   /**
@@ -17,20 +18,22 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
    */
   async upsertMany(
     inputs: Array<Partial<TEntity>>,
-    conflictTarget?: keyof PgTableWithColumns<any>['_']['columns'], // eslint-disable-line @typescript-eslint/no-explicit-any
+    tx?: DrizzleTx,
+    options?: { conflictTarget?: keyof PgTableWithColumns<any>['_']['columns'] }, // eslint-disable-line @typescript-eslint/no-explicit-any
   ): Promise<TEntity[]> {
     if (inputs.length === 0) return [];
+    const conflictTarget = options?.conflictTarget;
 
-    // Fall back to base class naive upsert when no conflict target provided
+    // Fall back to base class naive upsert when no conflict target provided.
     if (!conflictTarget) {
-      return super.upsertMany(inputs);
+      return super.upsertMany(inputs, tx);
     }
 
     const data = inputs.map((input) =>
       this.withTimestamps(input as Record<string, unknown>, 'create'),
     );
 
-    const rows = await this.db
+    const rows = await this.runner(tx)
       .insert(this.table)
       .values(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
       .onConflictDoUpdate({
