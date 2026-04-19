@@ -161,10 +161,13 @@ describe('clean-lite-ps write templates — controller rendering', () => {
       "import { DeleteContactUseCase } from './use-cases/delete-contact.use-case';",
     );
     expect(output).toContain(
-      "import type { CreateContactDto } from './dto/create-contact.dto';",
+      "import { CreateContactSchema, type CreateContactDto } from './dto/create-contact.dto';",
     );
     expect(output).toContain(
-      "import type { UpdateContactDto } from './dto/update-contact.dto';",
+      "import { UpdateContactSchema, type UpdateContactDto } from './dto/update-contact.dto';",
+    );
+    expect(output).toContain(
+      "import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';",
     );
 
     // Constructor injections
@@ -180,9 +183,8 @@ describe('clean-lite-ps write templates — controller rendering', () => {
 
     // Routes
     expect(output).toContain('@Post()');
-    expect(output).toContain(
-      'async create(@Body() dto: CreateContactDto): Promise<Contact>',
-    );
+    expect(output).toContain('@Body(new ZodValidationPipe(CreateContactSchema)) dto: CreateContactDto');
+    expect(output).toContain('@Body(new ZodValidationPipe(UpdateContactSchema)) dto: UpdateContactDto');
     expect(output).toContain('return this.createUseCase.execute(dto);');
     expect(output).toContain("@Patch(':id')");
     expect(output).toContain('return this.updateUseCase.execute(id, dto);');
