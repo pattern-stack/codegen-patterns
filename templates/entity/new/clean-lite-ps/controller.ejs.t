@@ -11,10 +11,13 @@ import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%
 import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityNamePlural %>-with-fields.use-case';
 <% } -%>
 <% if (generateWrites) { -%>
+import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';
 import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityName %>.use-case';
 import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityName %>.use-case';
 import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityName %>.use-case';
+import { <%= classNames.createSchema %> } from './dto/create-<%= entityName %>.dto';
 import type { <%= classNames.createDto %> } from './dto/create-<%= entityName %>.dto';
+import { <%= classNames.updateSchema %> } from './dto/update-<%= entityName %>.dto';
 import type { <%= classNames.updateDto %> } from './dto/update-<%= entityName %>.dto';
 <% } -%>
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
@@ -60,14 +63,16 @@ export class <%= classNames.controller %> {
 <% } %>
 <% if (generateWrites) { %>
   @Post()
-  async create(@Body() dto: <%= classNames.createDto %>): Promise<<%= classNames.entity %>> {
+  async create(
+    @Body(new ZodValidationPipe(<%= classNames.createSchema %>)) dto: <%= classNames.createDto %>,
+  ): Promise<<%= classNames.entity %>> {
     return this.createUseCase.execute(dto);
   }
 
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: <%= classNames.updateDto %>,
+    @Body(new ZodValidationPipe(<%= classNames.updateSchema %>)) dto: <%= classNames.updateDto %>,
   ): Promise<<%= classNames.entity %> | null> {
     return this.updateUseCase.execute(id, dto);
   }

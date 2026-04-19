@@ -133,6 +133,9 @@ const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
 	{ runtime: 'constants/tokens.ts', target: 'src/shared/constants/tokens.ts' },
 	// Events protocol — imported transitively by base-service + lifecycle-events
 	{ runtime: 'subsystems/events/event-bus.protocol.ts', target: 'src/shared/subsystems/events/event-bus.protocol.ts' },
+	// Pipes — ZodValidationPipe is wired on every generated controller
+	// @Body() to give runtime Zod validation at the controller boundary.
+	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'src/shared/pipes/zod-validation.pipe.ts' },
 ];
 
 function databaseModuleContent(): string {

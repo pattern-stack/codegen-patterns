@@ -163,6 +163,7 @@ describe('buildInitPlan', () => {
 		expect(paths).toContain('src/shared/types/drizzle.ts');
 		expect(paths).toContain('src/shared/base-classes/base-repository.ts');
 		expect(paths).toContain('src/shared/base-classes/with-analytics.ts');
+		expect(paths).toContain('src/shared/pipes/zod-validation.pipe.ts');
 		expect(paths).toContain('src/generated/modules.ts');
 		expect(paths).toContain('src/generated/schema.ts');
 		expect(paths).toContain('src/app.module.ts');
