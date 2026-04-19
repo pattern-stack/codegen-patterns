@@ -65,21 +65,23 @@ const agentDefinition = {
 };
 
 describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
-  describe('decimal field → z.coerce.number()', () => {
-    it('create DTO emits z.coerce.number() for decimal', () => {
+  describe('decimal field → z.coerce.string()', () => {
+    it('create DTO emits z.coerce.string() for decimal', () => {
       const locals = buildCleanLitePsLocals(agentDefinition, {});
       const output = render(CREATE_TEMPLATE, locals);
 
-      expect(output).toContain('temperature: z.coerce.number()');
-      // Bare z.number() on a decimal field is the bug we are fixing.
+      expect(output).toContain('temperature: z.coerce.string()');
+      // Drizzle returns PG numeric as a string — string all the way through
+      // keeps DTO/entity types aligned and avoids precision loss.
       expect(output).not.toMatch(/temperature:\s*z\.number\(\)/);
+      expect(output).not.toMatch(/temperature:\s*z\.coerce\.number\(\)/);
     });
 
-    it('output DTO emits z.coerce.number() for decimal', () => {
+    it('output DTO emits z.coerce.string() for decimal', () => {
       const locals = buildCleanLitePsLocals(agentDefinition, {});
       const output = render(OUTPUT_TEMPLATE, locals);
 
-      expect(output).toContain('temperature: z.coerce.number()');
+      expect(output).toContain('temperature: z.coerce.string()');
       expect(output).not.toMatch(/temperature:\s*z\.number\(\)/);
     });
 

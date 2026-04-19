@@ -125,9 +125,11 @@ const DRIZZLE_IMPORT_MAP = {
 const ZOD_TYPE_MAP = {
   string: 'z.string()',
   integer: 'z.number().int()',
-  // PG numeric is returned by Drizzle as a string; z.coerce.number() parses
-  // strings at the boundary while still accepting numeric JSON input.
-  decimal: 'z.coerce.number()',
+  // PG numeric is returned by Drizzle as a string (precision preservation);
+  // z.coerce.string() accepts either JSON string or number and coerces to string
+  // so the DTO type aligns with the entity type. Do arithmetic at the consumer
+  // via Number(value) or a BigNumber library.
+  decimal: 'z.coerce.string()',
   boolean: 'z.boolean()',
   uuid: 'z.string().uuid()',
   date: 'z.coerce.date()',
@@ -142,7 +144,7 @@ const ZOD_TYPE_MAP = {
 const TS_TYPE_MAP = {
   string: 'string',
   integer: 'number',
-  decimal: 'number',
+  decimal: 'string',
   boolean: 'boolean',
   uuid: 'string',
   date: 'Date',
@@ -183,7 +185,16 @@ function buildDrizzleChain(fieldName, field, drizzleType) {
   const required = field.required ?? false;
   const hasDefault = field.default !== undefined && field.default !== null;
 
-  let chain = `${drizzleType}('${fieldName}')`;
+  // Drizzle's `date('x')` returns the PgDateString builder by default
+  // (data type: string). Force the Date-typed variant so DTO Zod
+  // schemas using z.coerce.date() align with the entity type.
+  // `timestamp` already defaults to Date — no mode override needed.
+  let chain;
+  if (drizzleType === 'date') {
+    chain = `${drizzleType}('${fieldName}', { mode: 'date' })`;
+  } else {
+    chain = `${drizzleType}('${fieldName}')`;
+  }
 
   // Add .notNull() for non-nullable required fields
   if (required && !nullable) {
@@ -528,6 +539,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const generateBlock = definition.generate || {};
   const generateWrites = generateBlock.writes !== false;
 
+  // EAV (ADR-13) — when true, emit paired reads + transactional compound
+  // writes. Consumer must provide `@shared/eav-helpers` and `FieldValueService`.
+  const eavEnabled = definition.eav === true;
+
   // Family resolution
   const family = entity.family || 'base';
   const familyConfig = FAMILY_MAP[family] || FAMILY_MAP['base'];
@@ -571,6 +586,12 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     index: `${srcRoot}/modules/${entityNamePlural}/index.ts`,
     findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
     listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+    findByIdWithFieldsUseCase: eavEnabled
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id-with-fields.use-case.ts`
+      : null,
+    listWithFieldsUseCase: eavEnabled
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}-with-fields.use-case.ts`
+      : null,
     createUseCase: generateWrites
       ? `${srcRoot}/modules/${entityNamePlural}/use-cases/create-${entityName}.use-case.ts`
       : null,
@@ -598,6 +619,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     module: `${entityNamePluralPascal}Module`,
     findByIdUseCase: `Find${entityNamePascal}ByIdUseCase`,
     listUseCase: `List${entityNamePluralPascal}UseCase`,
+    findByIdWithFieldsUseCase: `Find${entityNamePascal}ByIdWithFieldsUseCase`,
+    listWithFieldsUseCase: `List${entityNamePluralPascal}WithFieldsUseCase`,
     createUseCase: `Create${entityNamePascal}UseCase`,
     updateUseCase: `Update${entityNamePascal}UseCase`,
     deleteUseCase: `Delete${entityNamePascal}UseCase`,
@@ -658,6 +681,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // Generation toggles
     generateWrites,
+
+    // EAV (ADR-13)
+    eavEnabled,
 
     // Output paths
     clpOutputPaths: outputPaths,

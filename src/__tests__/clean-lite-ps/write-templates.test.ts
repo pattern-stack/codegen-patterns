@@ -129,13 +129,13 @@ describe('clean-lite-ps write templates — use-case rendering', () => {
     expect(output).toContain('return this.service.update(id, dto);');
   });
 
-  it('delete.ejs.t emits a Delete<Entity>UseCase returning nullable entity', () => {
+  it('delete.ejs.t emits a Delete<Entity>UseCase returning void', () => {
     const locals = buildCleanLitePsLocals(baseEntity, {});
     const output = render('use-cases/delete.ejs.t', locals);
 
     expect(output).toContain('export class DeleteContactUseCase');
     expect(output).toContain(
-      'async execute(id: string): Promise<Contact | null>',
+      'async execute(id: string): Promise<void>',
     );
     expect(output).toContain('return this.service.delete(id);');
   });
