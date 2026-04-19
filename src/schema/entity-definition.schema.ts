@@ -875,9 +875,8 @@ export const fieldTypeToZod: Record<FieldType, string> = {
   string: "z.string()",
   integer: "z.number().int()",
   // Drizzle maps PG `numeric` to a JS string to preserve precision.
-  // Keep the Zod type as a (coerced) string so the DTO aligns with the
-  // runtime value flowing through Drizzle — parallel to the clean-lite-ps
-  // fix from #35/PR #42. See issue #43.
+  // Using z.coerce.string() — not z.coerce.number() — prevents silent
+  // precision loss on large decimal values. Matches clean-lite-ps (PR #42).
   decimal: "z.coerce.string()",
   boolean: "z.boolean()",
   uuid: "z.string().uuid()",

@@ -573,9 +573,8 @@ export default {
     const zodTypes = {
       string: "z.string()",
       integer: "z.number().int()",
-      // Drizzle returns PG `numeric` as a JS string; bare `z.number()` would
-      // reject it at the DTO boundary. Keep the value a (coerced) string —
-      // mirrors the clean-lite-ps fix from #35/PR #42. See issue #43.
+      // Drizzle maps PG `numeric` to JS string — z.coerce.string() avoids
+      // silent precision loss. Aligned with clean-lite-ps (PR #42). See #43.
       decimal: "z.coerce.string()",
       boolean: "z.boolean()",
       uuid: "z.string().uuid()",
@@ -1411,11 +1410,9 @@ export default {
         serviceBaseImport: '',
         repositoryInheritedMethods: [],
         serviceInheritedMethods: [],
-        // CLP template bodies are EJS-evaluated even when `skip_if` fires
-        // (frontmatter `to:` resolves to null so no file is written, but the
-        // body still runs). Every referenced local must exist here or the
-        // non-clean-lite-ps pipeline crashes with ReferenceError. Closes #44.
-        generateWrites: false,
+        // Generation toggles — needed so CLP template bodies render without crashing
+        // when architecture is 'clean'. The to:/skip_if: guards prevent file writes.
+        generateWrites: true,
         eavEnabled: false,
         eavValueTable: false,
         eavDefinitionEntity: null,

@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 export const createDealSchema = z.object({
 	name: z.string().max(255),
-	amount: z.number().nullable().optional(),
+	amount: z.coerce.string().nullable().optional(),
 	stage: z.enum(['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']),
 	ownerId: z.string().uuid(),
 	accountId: z.string().uuid(),
@@ -19,7 +19,7 @@ export type CreateDealDto = z.infer<typeof createDealSchema>;
 
 export const updateDealSchema = z.object({
 	name: z.string().max(255).optional(),
-	amount: z.number().nullable().optional(),
+	amount: z.coerce.string().nullable().optional(),
 	stage: z.enum(['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']).optional(),
 	ownerId: z.string().uuid().optional(),
 	accountId: z.string().uuid().optional(),
