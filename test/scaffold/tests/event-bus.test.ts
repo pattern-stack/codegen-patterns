@@ -4,13 +4,20 @@
  * Tests the DrizzleEventBus against the docker-compose Postgres instance,
  * verifying the transactional outbox pattern: publish inserts rows, the
  * polling loop dispatches and marks them processed.
+ *
+ * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { DrizzleEventBus } from '@gen/shared/subsystems/events/event-bus.drizzle-backend';
-import { domainEvents } from '@gen/shared/subsystems/events/domain-events.schema';
-import type { DomainEvent } from '@gen/shared/subsystems/events/event-bus.protocol';
-import { getTestDb, truncateAll, closeDb } from './setup';
-import { isNull, eq } from 'drizzle-orm';
+import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { SHOULD_RUN_SCAFFOLD, d } from './_skip-guard';
+
+type DomainEvent = any;
+let DrizzleEventBus: any;
+let domainEvents: any;
+let getTestDb: any;
+let truncateAll: any;
+let closeDb: any;
+let eq: any;
+let bus: any;
 
 function makeEvent(overrides: Partial<DomainEvent> = {}): DomainEvent {
   return {
@@ -24,26 +31,32 @@ function makeEvent(overrides: Partial<DomainEvent> = {}): DomainEvent {
   };
 }
 
-let bus: DrizzleEventBus;
+beforeAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
+  ({ DrizzleEventBus } = await import(
+    '@gen/shared/subsystems/events/event-bus.drizzle-backend'
+  ));
+  ({ domainEvents } = await import(
+    '@gen/shared/subsystems/events/domain-events.schema'
+  ));
+  ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
+  ({ eq } = await import('drizzle-orm'));
 
-beforeAll(() => {
   const db = getTestDb();
-  // Direct instantiation — @Inject is just metadata, constructor takes DRIZZLE
   bus = new DrizzleEventBus(db as any);
 });
 
 beforeEach(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await truncateAll();
 });
 
 afterAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await closeDb();
 });
 
-// ---------------------------------------------------------------------------
-// publish
-// ---------------------------------------------------------------------------
-describe('publish', () => {
+d('publish', () => {
   test('inserts an event row into domain_events', async () => {
     const db = getTestDb();
     const event = makeEvent();
@@ -68,10 +81,7 @@ describe('publish', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// publishMany
-// ---------------------------------------------------------------------------
-describe('publishMany', () => {
+d('publishMany', () => {
   test('inserts all events', async () => {
     const db = getTestDb();
     const events = [makeEvent({ type: 'a' }), makeEvent({ type: 'b' }), makeEvent({ type: 'c' })];
@@ -79,7 +89,7 @@ describe('publishMany', () => {
 
     const rows = await db.select().from(domainEvents);
     expect(rows).toHaveLength(3);
-    const types = rows.map((r) => r.type).sort();
+    const types = rows.map((r: DomainEvent) => r.type).sort();
     expect(types).toEqual(['a', 'b', 'c']);
   });
 
@@ -91,18 +101,14 @@ describe('publishMany', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// transactional outbox — tx rollback prevents event persistence
-// ---------------------------------------------------------------------------
-describe('transactional outbox', () => {
+d('transactional outbox', () => {
   test('event is not persisted when the transaction rolls back', async () => {
     const db = getTestDb();
     const event = makeEvent({ type: 'rolled_back_event' });
 
     try {
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         await bus.publish(event, tx as any);
-        // Force rollback
         throw new Error('intentional rollback');
       });
     } catch {
@@ -117,7 +123,7 @@ describe('transactional outbox', () => {
     const db = getTestDb();
     const event = makeEvent({ type: 'committed_event' });
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: any) => {
       await bus.publish(event, tx as any);
     });
 
@@ -127,32 +133,23 @@ describe('transactional outbox', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// polling / dispatch
-// ---------------------------------------------------------------------------
-describe('polling loop', () => {
+d('polling loop', () => {
   test('marks events as processed after dispatching', async () => {
     const db = getTestDb();
     const received: DomainEvent[] = [];
     const event = makeEvent({ type: 'poll_test' });
 
-    bus.subscribe('poll_test', async (e) => { received.push(e); });
+    bus.subscribe('poll_test', async (e: DomainEvent) => { received.push(e); });
     await bus.publish(event);
 
-    // Start polling
     await bus.onModuleInit();
-
-    // Wait for the polling cycle to run (poll interval is 1 s; allow 2 s)
     await new Promise((r) => setTimeout(r, 2_000));
-
     await bus.onModuleDestroy();
 
     expect(received.length).toBeGreaterThanOrEqual(1);
 
-    // Row should be marked processed
     const rows = await db.select().from(domainEvents).where(eq(domainEvents.id, event.id));
     expect(rows[0].processedAt).not.toBeNull();
-    // Not the sentinel failure date
     expect(rows[0].processedAt!.getFullYear()).toBeGreaterThan(1970);
   }, 10_000);
 
@@ -161,7 +158,6 @@ describe('polling loop', () => {
     const event = makeEvent({ type: 'no_handler_event' });
     await bus.publish(event);
 
-    // Start and stop polling quickly — event has no handler so stays unprocessed
     await bus.onModuleInit();
     await new Promise((r) => setTimeout(r, 1_500));
     await bus.onModuleDestroy();
@@ -171,19 +167,14 @@ describe('polling loop', () => {
       .from(domainEvents)
       .where(eq(domainEvents.id, event.id));
 
-    // No handler registered: dispatch is a no-op, event is still marked processed
-    // (the backend marks it processed after dispatch even if no handler consumed it)
     expect(rows).toHaveLength(1);
   }, 10_000);
 });
 
-// ---------------------------------------------------------------------------
-// subscribe / unsubscribe
-// ---------------------------------------------------------------------------
-describe('subscribe', () => {
+d('subscribe', () => {
   test('returns an unsubscribe function', () => {
     const unsub = bus.subscribe('test_event', async () => {});
     expect(typeof unsub).toBe('function');
-    unsub(); // cleanup
+    unsub();
   });
 });

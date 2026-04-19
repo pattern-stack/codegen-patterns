@@ -3,19 +3,31 @@
  *
  * Validates DI wiring, controller routing, use case integration,
  * and the full request/response lifecycle against real Postgres.
+ *
+ * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
+ * Requires the consumer scaffold's own devDependencies (supertest),
+ * which are installed by `run-integration.ts`.
  */
 import 'reflect-metadata';
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { Test } from '@nestjs/testing';
-import type { INestApplication } from '@nestjs/common';
-import supertest from 'supertest';
-import { AppModule } from '../src/app.module';
-import { truncateAll, closeDb } from './setup';
+import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { SHOULD_RUN_SCAFFOLD, d } from './_skip-guard';
 
-let app: INestApplication;
-let request: ReturnType<typeof supertest>;
+let Test: any;
+let AppModule: any;
+let supertest: any;
+let truncateAll: any;
+let closeDb: any;
+
+let app: any;
+let request: any;
 
 beforeAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
+  ({ Test } = await import('@nestjs/testing'));
+  ({ AppModule } = await import('../src/app.module'));
+  supertest = (await import('supertest')).default;
+  ({ truncateAll, closeDb } = await import('./setup'));
+
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
   }).compile();
@@ -26,18 +38,17 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await truncateAll();
 });
 
 afterAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await app?.close();
   await closeDb();
 });
 
-// ---------------------------------------------------------------------------
-// POST /contacts
-// ---------------------------------------------------------------------------
-describe('POST /contacts', () => {
+d('POST /contacts', () => {
   test('creates a contact and returns 201', async () => {
     const res = await request
       .post('/contacts')
@@ -53,10 +64,7 @@ describe('POST /contacts', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// GET /contacts
-// ---------------------------------------------------------------------------
-describe('GET /contacts', () => {
+d('GET /contacts', () => {
   test('returns empty array when no contacts', async () => {
     const res = await request.get('/contacts').expect(200);
     expect(res.body).toEqual([]);
@@ -75,10 +83,7 @@ describe('GET /contacts', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// GET /contacts/:id
-// ---------------------------------------------------------------------------
-describe('GET /contacts/:id', () => {
+d('GET /contacts/:id', () => {
   test('returns the correct contact', async () => {
     const created = await request
       .post('/contacts')
@@ -93,15 +98,11 @@ describe('GET /contacts/:id', () => {
     const res = await request
       .get('/contacts/00000000-0000-0000-0000-000000000000')
       .expect(200);
-    // Controller returns null, NestJS serializes as empty object
     expect(res.body.id).toBeUndefined();
   });
 });
 
-// ---------------------------------------------------------------------------
-// PUT /contacts/:id
-// ---------------------------------------------------------------------------
-describe('PUT /contacts/:id', () => {
+d('PUT /contacts/:id', () => {
   test('updates fields and returns updated contact', async () => {
     const created = await request
       .post('/contacts')
@@ -113,18 +114,14 @@ describe('PUT /contacts/:id', () => {
       .expect(200);
 
     expect(res.body.title).toBe('Mathematician');
-    expect(res.body.firstName).toBe('Ada'); // unchanged
-    // updatedAt should be bumped
+    expect(res.body.firstName).toBe('Ada');
     expect(new Date(res.body.updatedAt).getTime()).toBeGreaterThan(
       new Date(created.body.updatedAt).getTime(),
     );
   });
 });
 
-// ---------------------------------------------------------------------------
-// DELETE /contacts/:id (soft-delete)
-// ---------------------------------------------------------------------------
-describe('DELETE /contacts/:id', () => {
+d('DELETE /contacts/:id', () => {
   test('soft-deletes and returns the entity with deletedAt set', async () => {
     const created = await request
       .post('/contacts')
@@ -151,39 +148,30 @@ describe('DELETE /contacts/:id', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Full lifecycle
-// ---------------------------------------------------------------------------
-describe('full CRUD lifecycle', () => {
+d('full CRUD lifecycle', () => {
   test('create → read → update → delete → verify gone from list', async () => {
-    // Create
     const createRes = await request
       .post('/contacts')
       .send({ firstName: 'Ada', lastName: 'Lovelace', email: 'ada@test.com' })
       .expect(201);
     const id = createRes.body.id;
 
-    // Read
     const getRes = await request.get(`/contacts/${id}`).expect(200);
     expect(getRes.body.firstName).toBe('Ada');
 
-    // Update
     const putRes = await request
       .put(`/contacts/${id}`)
       .send({ title: 'Pioneer' })
       .expect(200);
     expect(putRes.body.title).toBe('Pioneer');
 
-    // List includes updated entity
     const listRes = await request.get('/contacts').expect(200);
     expect(listRes.body).toHaveLength(1);
     expect(listRes.body[0].title).toBe('Pioneer');
 
-    // Delete
     const delRes = await request.delete(`/contacts/${id}`).expect(200);
     expect(delRes.body.deletedAt).not.toBeNull();
 
-    // List excludes deleted
     const listAfter = await request.get('/contacts').expect(200);
     expect(listAfter.body).toEqual([]);
   });

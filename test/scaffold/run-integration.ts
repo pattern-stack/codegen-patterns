@@ -83,7 +83,11 @@ async function run() {
     console.log('==> Running integration tests...');
     const testResult = Bun.spawnSync(
       ['bun', 'test', 'test/scaffold/tests/'],
-      { cwd: REPO_ROOT, stdio: ['inherit', 'inherit', 'inherit'] },
+      {
+        cwd: REPO_ROOT,
+        stdio: ['inherit', 'inherit', 'inherit'],
+        env: { ...process.env, SCAFFOLD_INTEGRATION: '1' },
+      },
     );
     exitCode = testResult.exitCode;
 

@@ -3,33 +3,39 @@
  *
  * No NestJS, no HTTP — just Drizzle → Postgres.
  * Tests every inherited method from BaseRepository using ContactRepository.
+ *
+ * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { ContactRepository } from '@gen/modules/contacts/contact.repository';
-import type { Contact } from '@gen/modules/contacts/contact.entity';
-import { getTestDb, truncateAll, closeDb } from './setup';
-import { contactFactory } from './helpers';
+import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { SHOULD_RUN_SCAFFOLD, d } from './_skip-guard';
 
-let repo: ContactRepository;
+type Contact = any;
+let ContactRepository: any;
+let getTestDb: any;
+let truncateAll: any;
+let closeDb: any;
+let contactFactory: any;
+let repo: any;
 
-beforeAll(() => {
-  const db = getTestDb();
-  // Direct instantiation — @Inject is just metadata, constructor takes DrizzleClient
-  repo = new ContactRepository(db as any);
+beforeAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
+  ({ ContactRepository } = await import('@gen/modules/contacts/contact.repository'));
+  ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
+  ({ contactFactory } = await import('./helpers'));
+  repo = new ContactRepository(getTestDb() as any);
 });
 
 beforeEach(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await truncateAll();
 });
 
 afterAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await closeDb();
 });
 
-// ---------------------------------------------------------------------------
-// create
-// ---------------------------------------------------------------------------
-describe('create', () => {
+d('create', () => {
   test('returns entity with generated UUID and timestamps', async () => {
     const data = contactFactory();
     const result = await repo.create(data);
@@ -56,10 +62,7 @@ describe('create', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findById
-// ---------------------------------------------------------------------------
-describe('findById', () => {
+d('findById', () => {
   test('returns the correct entity', async () => {
     const created = await repo.create(contactFactory());
     const found = await repo.findById(created.id);
@@ -75,10 +78,7 @@ describe('findById', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findByIds
-// ---------------------------------------------------------------------------
-describe('findByIds', () => {
+d('findByIds', () => {
   test('returns correct subset', async () => {
     const a = await repo.create(contactFactory({ firstName: 'Alice' }));
     const b = await repo.create(contactFactory({ firstName: 'Bob' }));
@@ -87,7 +87,7 @@ describe('findByIds', () => {
     const found = await repo.findByIds([a.id, b.id]);
 
     expect(found).toHaveLength(2);
-    const names = found.map((c) => c.firstName).sort();
+    const names = found.map((c: Contact) => c.firstName).sort();
     expect(names).toEqual(['Alice', 'Bob']);
   });
 
@@ -103,10 +103,7 @@ describe('findByIds', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// list
-// ---------------------------------------------------------------------------
-describe('list', () => {
+d('list', () => {
   test('returns all non-deleted entities', async () => {
     await repo.create(contactFactory({ firstName: 'Alice' }));
     await repo.create(contactFactory({ firstName: 'Bob' }));
@@ -121,10 +118,7 @@ describe('list', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// count
-// ---------------------------------------------------------------------------
-describe('count', () => {
+d('count', () => {
   test('returns correct count', async () => {
     expect(await repo.count()).toBe(0);
 
@@ -136,10 +130,7 @@ describe('count', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// exists
-// ---------------------------------------------------------------------------
-describe('exists', () => {
+d('exists', () => {
   test('returns true for existing entity', async () => {
     const created = await repo.create(contactFactory());
     expect(await repo.exists(created.id)).toBe(true);
@@ -150,21 +141,17 @@ describe('exists', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// update
-// ---------------------------------------------------------------------------
-describe('update', () => {
+d('update', () => {
   test('changes fields and bumps updatedAt', async () => {
     const created = await repo.create(contactFactory());
 
-    // Small delay to ensure updatedAt changes
     await new Promise((r) => setTimeout(r, 10));
 
     const updated = await repo.update(created.id, { title: 'Mathematician' });
 
     expect(updated).not.toBeNull();
     expect(updated!.title).toBe('Mathematician');
-    expect(updated!.firstName).toBe(created.firstName); // unchanged
+    expect(updated!.firstName).toBe(created.firstName);
     expect(updated!.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
   });
 
@@ -176,10 +163,7 @@ describe('update', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// delete (soft)
-// ---------------------------------------------------------------------------
-describe('delete (soft)', () => {
+d('delete (soft)', () => {
   test('sets deletedAt timestamp', async () => {
     const created = await repo.create(contactFactory());
     const deleted = await repo.delete(created.id);
@@ -212,7 +196,6 @@ describe('delete (soft)', () => {
     const created = await repo.create(contactFactory());
     await repo.delete(created.id);
 
-    // findById does NOT filter soft-deleted — intentional for lookups
     const found = await repo.findById(created.id);
     expect(found).not.toBeNull();
     expect(found!.deletedAt).not.toBeNull();
@@ -224,10 +207,7 @@ describe('delete (soft)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// upsertMany
-// ---------------------------------------------------------------------------
-describe('upsertMany', () => {
+d('upsertMany', () => {
   test('creates new entities when no id provided', async () => {
     const results = await repo.upsertMany([
       contactFactory({ firstName: 'Alice' }) as Partial<Contact>,

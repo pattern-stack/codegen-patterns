@@ -3,39 +3,49 @@
  *
  * Tests family-specific methods: findByEntityIdAndType, listByEntityId,
  * listHistoryByEntityId, upsertMany.
+ *
+ * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { MetadataEntityRepository } from '@shared/base-classes/metadata-entity-repository';
-import { metadataEntities } from '../schema';
-import type { InferSelectModel } from 'drizzle-orm';
-import { getTestDb, truncateAll, closeDb } from './setup';
-import { metadataEntityFactory } from './helpers';
+import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { SHOULD_RUN_SCAFFOLD, d } from './_skip-guard';
 
-type MetadataEntity = InferSelectModel<typeof metadataEntities>;
+type MetadataEntity = any;
+let MetadataEntityRepository: any;
+let metadataEntities: any;
+let getTestDb: any;
+let truncateAll: any;
+let closeDb: any;
+let metadataEntityFactory: any;
+let repo: any;
 
-class TestMetadataRepository extends MetadataEntityRepository<MetadataEntity> {
-  readonly table = metadataEntities;
-  protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
-}
+beforeAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
+  ({ MetadataEntityRepository } = await import(
+    '@shared/base-classes/metadata-entity-repository'
+  ));
+  ({ metadataEntities } = await import('../schema'));
+  ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
+  ({ metadataEntityFactory } = await import('./helpers'));
 
-let repo: TestMetadataRepository;
+  class TestMetadataRepository extends MetadataEntityRepository<MetadataEntity> {
+    readonly table = metadataEntities;
+    protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+  }
 
-beforeAll(() => {
   repo = new TestMetadataRepository(getTestDb() as any);
 });
 
 beforeEach(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await truncateAll();
 });
 
 afterAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await closeDb();
 });
 
-// ---------------------------------------------------------------------------
-// Inherited CRUD
-// ---------------------------------------------------------------------------
-describe('inherited CRUD', () => {
+d('inherited CRUD', () => {
   test('create + findById round-trip', async () => {
     const data = metadataEntityFactory();
     const created = await repo.create(data);
@@ -44,10 +54,7 @@ describe('inherited CRUD', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findByEntityIdAndType
-// ---------------------------------------------------------------------------
-describe('findByEntityIdAndType', () => {
+d('findByEntityIdAndType', () => {
   test('returns records matching both entity ID and type', async () => {
     await repo.create(metadataEntityFactory({ entityId: 'e1', entityType: 'contact', fieldName: 'a' }));
     await repo.create(metadataEntityFactory({ entityId: 'e1', entityType: 'contact', fieldName: 'b' }));
@@ -56,7 +63,7 @@ describe('findByEntityIdAndType', () => {
 
     const found = await repo.findByEntityIdAndType('e1', 'contact');
     expect(found).toHaveLength(2);
-    const fields = found.map((e) => e.fieldName).sort();
+    const fields = found.map((e: MetadataEntity) => e.fieldName).sort();
     expect(fields).toEqual(['a', 'b']);
   });
 
@@ -66,10 +73,7 @@ describe('findByEntityIdAndType', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// listByEntityId
-// ---------------------------------------------------------------------------
-describe('listByEntityId', () => {
+d('listByEntityId', () => {
   test('returns all records for an entity', async () => {
     await repo.create(metadataEntityFactory({ entityId: 'e1', fieldName: 'x' }));
     await repo.create(metadataEntityFactory({ entityId: 'e1', fieldName: 'y' }));
@@ -80,10 +84,7 @@ describe('listByEntityId', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// listHistoryByEntityId
-// ---------------------------------------------------------------------------
-describe('listHistoryByEntityId', () => {
+d('listHistoryByEntityId', () => {
   test('returns records ordered by validFrom descending', async () => {
     const t1 = new Date('2025-01-01T00:00:00Z');
     const t2 = new Date('2025-02-01T00:00:00Z');

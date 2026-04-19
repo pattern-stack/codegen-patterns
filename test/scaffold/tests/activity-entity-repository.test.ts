@@ -3,36 +3,49 @@
  *
  * Tests family-specific methods: findByDateRange, findByUserId,
  * findByOpportunityId, findRecentByOpportunityId.
+ *
+ * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { ActivityEntityRepository } from '@shared/base-classes/activity-entity-repository';
-import { activityEntities, type ActivityEntity } from '../schema';
-import { getTestDb, truncateAll, closeDb } from './setup';
-import { activityEntityFactory } from './helpers';
+import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { SHOULD_RUN_SCAFFOLD, d } from './_skip-guard';
 
-class TestActivityRepository extends ActivityEntityRepository<ActivityEntity> {
-  readonly table = activityEntities;
-  protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
-}
+type ActivityEntity = any;
+let ActivityEntityRepository: any;
+let activityEntities: any;
+let getTestDb: any;
+let truncateAll: any;
+let closeDb: any;
+let activityEntityFactory: any;
+let repo: any;
 
-let repo: TestActivityRepository;
+beforeAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
+  ({ ActivityEntityRepository } = await import(
+    '@shared/base-classes/activity-entity-repository'
+  ));
+  ({ activityEntities } = await import('../schema'));
+  ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
+  ({ activityEntityFactory } = await import('./helpers'));
 
-beforeAll(() => {
+  class TestActivityRepository extends ActivityEntityRepository<ActivityEntity> {
+    readonly table = activityEntities;
+    protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+  }
+
   repo = new TestActivityRepository(getTestDb() as any);
 });
 
 beforeEach(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await truncateAll();
 });
 
 afterAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await closeDb();
 });
 
-// ---------------------------------------------------------------------------
-// Inherited CRUD
-// ---------------------------------------------------------------------------
-describe('inherited CRUD', () => {
+d('inherited CRUD', () => {
   test('create + findById round-trip', async () => {
     const data = activityEntityFactory();
     const created = await repo.create(data);
@@ -41,10 +54,7 @@ describe('inherited CRUD', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findByDateRange
-// ---------------------------------------------------------------------------
-describe('findByDateRange', () => {
+d('findByDateRange', () => {
   test('returns activities within the range', async () => {
     const jan = new Date('2025-01-15T12:00:00Z');
     const feb = new Date('2025-02-15T12:00:00Z');
@@ -60,7 +70,7 @@ describe('findByDateRange', () => {
     );
 
     expect(found).toHaveLength(2);
-    const names = found.map((e) => e.name).sort();
+    const names = found.map((e: ActivityEntity) => e.name).sort();
     expect(names).toEqual(['Feb', 'Jan']);
   });
 
@@ -74,10 +84,7 @@ describe('findByDateRange', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findByUserId
-// ---------------------------------------------------------------------------
-describe('findByUserId', () => {
+d('findByUserId', () => {
   test('returns activities for the given user', async () => {
     await repo.create(activityEntityFactory({ userId: 'u1', name: 'A' }));
     await repo.create(activityEntityFactory({ userId: 'u1', name: 'B' }));
@@ -88,10 +95,7 @@ describe('findByUserId', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findByOpportunityId
-// ---------------------------------------------------------------------------
-describe('findByOpportunityId', () => {
+d('findByOpportunityId', () => {
   test('returns activities for the given opportunity', async () => {
     await repo.create(activityEntityFactory({ opportunityId: 'opp-1', name: 'A' }));
     await repo.create(activityEntityFactory({ opportunityId: 'opp-1', name: 'B' }));
@@ -102,10 +106,7 @@ describe('findByOpportunityId', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findRecentByOpportunityId
-// ---------------------------------------------------------------------------
-describe('findRecentByOpportunityId', () => {
+d('findRecentByOpportunityId', () => {
   test('returns activities ordered by occurredAt desc with limit', async () => {
     const t1 = new Date('2025-01-01T10:00:00Z');
     const t2 = new Date('2025-01-02T10:00:00Z');

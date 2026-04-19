@@ -3,36 +3,49 @@
  *
  * Tests family-specific methods: findByExternalId, findManyByExternalIds,
  * findAllByUserId, syncUpsert (stub), findVisibleByUserId (stub).
+ *
+ * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
-import { SyncedEntityRepository } from '@shared/base-classes/synced-entity-repository';
-import { crmEntities, type CrmEntity } from '../schema';
-import { getTestDb, truncateAll, closeDb } from './setup';
-import { syncedEntityFactory } from './helpers';
+import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { SHOULD_RUN_SCAFFOLD, d } from './_skip-guard';
 
-class TestCrmRepository extends SyncedEntityRepository<CrmEntity> {
-  readonly table = crmEntities;
-  protected readonly behaviors = { timestamps: true, softDelete: true, userTracking: false };
-}
+type CrmEntity = any;
+let SyncedEntityRepository: any;
+let crmEntities: any;
+let getTestDb: any;
+let truncateAll: any;
+let closeDb: any;
+let syncedEntityFactory: any;
+let repo: any;
 
-let repo: TestCrmRepository;
+beforeAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
+  ({ SyncedEntityRepository } = await import(
+    '@shared/base-classes/synced-entity-repository'
+  ));
+  ({ crmEntities } = await import('../schema'));
+  ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
+  ({ syncedEntityFactory } = await import('./helpers'));
 
-beforeAll(() => {
+  class TestCrmRepository extends SyncedEntityRepository<CrmEntity> {
+    readonly table = crmEntities;
+    protected readonly behaviors = { timestamps: true, softDelete: true, userTracking: false };
+  }
+
   repo = new TestCrmRepository(getTestDb() as any);
 });
 
 beforeEach(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await truncateAll();
 });
 
 afterAll(async () => {
+  if (!SHOULD_RUN_SCAFFOLD) return;
   await closeDb();
 });
 
-// ---------------------------------------------------------------------------
-// Inherited BaseRepository methods still work
-// ---------------------------------------------------------------------------
-describe('inherited CRUD', () => {
+d('inherited CRUD', () => {
   test('create + findById round-trip', async () => {
     const data = syncedEntityFactory();
     const created = await repo.create(data);
@@ -45,10 +58,7 @@ describe('inherited CRUD', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findByExternalId
-// ---------------------------------------------------------------------------
-describe('findByExternalId', () => {
+d('findByExternalId', () => {
   test('returns entity with matching external ID', async () => {
     const created = await repo.create(syncedEntityFactory({ externalId: 'sf-001' }));
     const found = await repo.findByExternalId('sf-001');
@@ -64,10 +74,7 @@ describe('findByExternalId', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findManyByExternalIds
-// ---------------------------------------------------------------------------
-describe('findManyByExternalIds', () => {
+d('findManyByExternalIds', () => {
   test('returns correct subset', async () => {
     await repo.create(syncedEntityFactory({ externalId: 'sf-a' }));
     await repo.create(syncedEntityFactory({ externalId: 'sf-b' }));
@@ -75,7 +82,7 @@ describe('findManyByExternalIds', () => {
 
     const found = await repo.findManyByExternalIds(['sf-a', 'sf-c']);
     expect(found).toHaveLength(2);
-    const ids = found.map((e) => e.externalId).sort();
+    const ids = found.map((e: CrmEntity) => e.externalId).sort();
     expect(ids).toEqual(['sf-a', 'sf-c']);
   });
 
@@ -85,10 +92,7 @@ describe('findManyByExternalIds', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findAllByUserId
-// ---------------------------------------------------------------------------
-describe('findAllByUserId', () => {
+d('findAllByUserId', () => {
   test('returns only entities for the given user', async () => {
     await repo.create(syncedEntityFactory({ userId: 'user-1', name: 'A' }));
     await repo.create(syncedEntityFactory({ userId: 'user-1', name: 'B' }));
@@ -96,7 +100,7 @@ describe('findAllByUserId', () => {
 
     const found = await repo.findAllByUserId('user-1');
     expect(found).toHaveLength(2);
-    const names = found.map((e) => e.name).sort();
+    const names = found.map((e: CrmEntity) => e.name).sort();
     expect(names).toEqual(['A', 'B']);
   });
 
@@ -106,10 +110,7 @@ describe('findAllByUserId', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Abstract stubs throw
-// ---------------------------------------------------------------------------
-describe('abstract stubs', () => {
+d('abstract stubs', () => {
   test('syncUpsert throws not implemented', async () => {
     await expect(repo.syncUpsert([])).rejects.toThrow('syncUpsert not implemented');
   });
