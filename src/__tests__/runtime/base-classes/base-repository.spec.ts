@@ -307,4 +307,83 @@ describe('BaseRepository', () => {
       expect((db as any).offset).toHaveBeenCalledWith(5);
     });
   });
+
+  // ==========================================================================
+  // Tx threading (task #23)
+  // ==========================================================================
+
+  describe('runner(tx)', () => {
+    it('prefers the caller-supplied tx for writes', async () => {
+      const db = makeMockDb([{ id: 'x', name: 'A' }]);
+      const tx = makeMockDb([{ id: 'x', name: 'A' }]);
+      const table = makeTable();
+      const repo = new TestRepository(db, table);
+
+      await repo.create({ name: 'A' }, tx);
+
+      // Write went through the tx, not the repo's own client.
+      expect((tx as any).insert).toHaveBeenCalled();
+      expect((db as any).insert).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the repo client when no tx is passed', async () => {
+      const db = makeMockDb([{ id: 'x', name: 'A' }]);
+      const table = makeTable();
+      const repo = new TestRepository(db, table);
+
+      await repo.create({ name: 'A' });
+
+      expect((db as any).insert).toHaveBeenCalled();
+    });
+
+    it('threads tx through update()', async () => {
+      const db = makeMockDb([{ id: 'x', name: 'B' }]);
+      const tx = makeMockDb([{ id: 'x', name: 'B' }]);
+      const table = makeTable();
+      const repo = new TestRepository(db, table);
+
+      await repo.update('x', { name: 'B' }, tx);
+
+      expect((tx as any).update).toHaveBeenCalled();
+      expect((db as any).update).not.toHaveBeenCalled();
+    });
+
+    it('threads tx through delete() under soft-delete', async () => {
+      const db = makeMockDb([]);
+      const tx = makeMockDb([]);
+      const table = makeTable();
+      const repo = new TestRepository(db, table, { softDelete: true });
+
+      await repo.delete('x', tx);
+
+      // Soft-delete issues an UPDATE on the tx, not the base db.
+      expect((tx as any).update).toHaveBeenCalled();
+      expect((db as any).update).not.toHaveBeenCalled();
+    });
+
+    it('threads tx through delete() under hard-delete', async () => {
+      const db = makeMockDb([]);
+      const tx = makeMockDb([]);
+      const table = makeTable();
+      const repo = new TestRepository(db, table);
+
+      await repo.delete('x', tx);
+
+      expect((tx as any).delete).toHaveBeenCalled();
+      expect((db as any).delete).not.toHaveBeenCalled();
+    });
+
+    it('threads tx through upsertMany() via create()', async () => {
+      const db = makeMockDb([{ id: 'x', name: 'Z' }]);
+      const tx = makeMockDb([{ id: 'x', name: 'Z' }]);
+      const table = makeTable();
+      const repo = new TestRepository(db, table);
+
+      await repo.upsertMany([{ name: 'Z' }], tx);
+
+      expect((tx as any).insert).toHaveBeenCalled();
+      expect((db as any).insert).not.toHaveBeenCalled();
+    });
+  });
+
 });

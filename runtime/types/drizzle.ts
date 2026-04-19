@@ -13,3 +13,11 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DrizzleClient = NodePgDatabase<any>;
+
+/**
+ * A transaction-capable Drizzle handle. Structurally compatible with
+ * DrizzleClient — either the root client or a tx callback handle from
+ * `db.transaction((tx) => ...)` satisfies it, so writes can run in a
+ * caller-owned transaction without changing repository internals.
+ */
+export type DrizzleTx = DrizzleClient;

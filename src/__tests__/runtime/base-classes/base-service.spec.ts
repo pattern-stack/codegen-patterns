@@ -153,7 +153,7 @@ describe('BaseService', () => {
       const result = await service.create({ name: 'Created' });
 
       expect(result).toBe(entity);
-      expect(repo.create).toHaveBeenCalledWith({ name: 'Created' });
+      expect(repo.create).toHaveBeenCalledWith({ name: 'Created' }, undefined);
     });
   });
 
@@ -166,7 +166,7 @@ describe('BaseService', () => {
       const result = await service.update('upd', { name: 'Updated' });
 
       expect(result).toBe(entity);
-      expect(repo.update).toHaveBeenCalledWith('upd', { name: 'Updated' });
+      expect(repo.update).toHaveBeenCalledWith('upd', { name: 'Updated' }, undefined);
     });
   });
 
@@ -177,7 +177,7 @@ describe('BaseService', () => {
 
       await service.delete('del-id');
 
-      expect(repo.delete).toHaveBeenCalledWith('del-id');
+      expect(repo.delete).toHaveBeenCalledWith('del-id', undefined);
     });
   });
 });

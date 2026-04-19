@@ -11,7 +11,7 @@ export interface IMetadataEntityRepository<TEntity> extends IBaseRepository<TEnt
   findByEntityIdAndType(entityId: string, entityType: string): Promise<TEntity[]>;
   listByEntityId(entityId: string): Promise<TEntity[]>;
   listHistoryByEntityId(entityId: string): Promise<TEntity[]>;
-  upsertMany(inputs: Array<Partial<TEntity>>, conflictTarget: string): Promise<TEntity[]>;
+  upsertMany(inputs: Array<Partial<TEntity>>, tx?: unknown, options?: { conflictTarget?: string }): Promise<TEntity[]>;
 }
 
 export abstract class MetadataEntityService<
@@ -42,7 +42,7 @@ export abstract class MetadataEntityService<
   /**
    * Bulk upsert metadata values.
    */
-  upsertValues(inputs: Array<Partial<TEntity>>, conflictTarget: string): Promise<TEntity[]> {
-    return this.repository.upsertMany(inputs, conflictTarget);
+  upsertValues(inputs: Array<Partial<TEntity>>, conflictTarget: string, tx?: unknown): Promise<TEntity[]> {
+    return this.repository.upsertMany(inputs, tx, { conflictTarget });
   }
 }
