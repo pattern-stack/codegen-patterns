@@ -95,3 +95,38 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
     expect(output).not.toContain('protected override readonly behaviors');
   });
 });
+
+describe('clean-lite-ps repository template — declarative queries use baseQuery()', () => {
+  // Regression: the declarative query methods must go through baseQuery()
+  // (which applies the soft-delete isNull(deletedAt) filter) rather than
+  // raw this.db.select(), so soft-deleted rows don't leak through
+  // findByX queries when soft_delete is enabled.
+  const queriesEntity = {
+    ...baseEntity,
+    behaviors: ['timestamps', 'soft_delete'],
+    queries: [
+      { by: ['email'], unique: true },
+      { by: ['user_id'] },
+    ],
+  };
+
+  it('unique (findByX with limit 1) query delegates to baseQuery()', () => {
+    const locals = buildCleanLitePsLocals(queriesEntity, {});
+    const output = renderRepository(locals);
+
+    expect(output).toContain('async findByEmail(email: string)');
+    expect(output).toContain('await this.baseQuery()');
+    // Must not use raw db.select() for the declarative read path.
+    expect(output).not.toContain('this.db.select().from(this.table)');
+  });
+
+  it('non-unique list query also delegates to baseQuery()', () => {
+    const locals = buildCleanLitePsLocals(queriesEntity, {});
+    const output = renderRepository(locals);
+
+    expect(output).toContain('async findByUserId(userId: string)');
+    // Count the number of baseQuery() usages — should be 2 (one per query).
+    const matches = output.match(/this\.baseQuery\(\)/g) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+});
