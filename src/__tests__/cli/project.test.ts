@@ -95,7 +95,7 @@ describe('mergeTsconfig', () => {
 		expect(res.added).toContain('@modules/*');
 		expect(res.added).toContain('@generated/*');
 		const parsed = JSON.parse(res.content);
-		expect(parsed.compilerOptions.paths['@shared/*']).toEqual(['./shared/*']);
+		expect(parsed.compilerOptions.paths['@shared/*']).toEqual(['./src/shared/*']);
 	});
 
 	test('is idempotent — second merge reports unchanged', () => {
@@ -119,7 +119,7 @@ describe('mergeTsconfig', () => {
 		// User's custom target is preserved
 		expect(parsed.compilerOptions.paths['@shared/*']).toEqual(['./custom/shared/*']);
 		// But missing ones are added
-		expect(parsed.compilerOptions.paths['@modules/*']).toEqual(['./modules/*']);
+		expect(parsed.compilerOptions.paths['@modules/*']).toEqual(['./src/modules/*']);
 	});
 
 	test('tolerates JSONC comments', () => {
@@ -158,15 +158,15 @@ describe('buildInitPlan', () => {
 		const paths = plan.entries.map((e) => e.relPath);
 
 		expect(paths).toContain('codegen.config.yaml');
-		expect(paths).toContain('shared/database/database.module.ts');
-		expect(paths).toContain('shared/constants/tokens.ts');
-		expect(paths).toContain('shared/types/drizzle.ts');
-		expect(paths).toContain('shared/base-classes/base-repository.ts');
-		expect(paths).toContain('shared/base-classes/with-analytics.ts');
+		expect(paths).toContain('src/shared/database/database.module.ts');
+		expect(paths).toContain('src/shared/constants/tokens.ts');
+		expect(paths).toContain('src/shared/types/drizzle.ts');
+		expect(paths).toContain('src/shared/base-classes/base-repository.ts');
+		expect(paths).toContain('src/shared/base-classes/with-analytics.ts');
 		expect(paths).toContain('src/generated/modules.ts');
 		expect(paths).toContain('src/generated/schema.ts');
 		expect(paths).toContain('src/app.module.ts');
-		expect(paths).toContain('schema.ts');
+		expect(paths).toContain('src/schema.ts');
 		expect(paths).toContain('entities');
 		expect(paths).toContain('entities/example.yaml');
 
@@ -252,11 +252,11 @@ describe('writePlan', () => {
 
 		// Every scaffolded file should exist
 		expect(fs.existsSync(path.join(cwd, 'codegen.config.yaml'))).toBe(true);
-		expect(fs.existsSync(path.join(cwd, 'shared/database/database.module.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(cwd, 'shared/constants/tokens.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(cwd, 'src/shared/database/database.module.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(cwd, 'src/shared/constants/tokens.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(cwd, 'src/generated/modules.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(cwd, 'src/app.module.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(cwd, 'schema.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(cwd, 'src/schema.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(cwd, 'entities/example.yaml'))).toBe(true);
 
 		expect(result.created.length).toBeGreaterThan(10);
