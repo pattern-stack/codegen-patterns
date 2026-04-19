@@ -647,6 +647,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const behaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
   const hasTimestamps = behaviorNames.includes('timestamps');
   const hasSoftDelete = behaviorNames.includes('soft_delete');
+  const hasUserTracking = behaviorNames.includes('user_tracking');
   const hasExternalIdTracking = behaviorNames.includes('external_id_tracking');
 
   // Process declarative queries
@@ -809,6 +810,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // Behavior flags (also exposed at top level for template use)
     hasTimestamps,
     hasSoftDelete,
+    hasUserTracking,
     hasExternalIdTracking,
 
     // Generation toggles

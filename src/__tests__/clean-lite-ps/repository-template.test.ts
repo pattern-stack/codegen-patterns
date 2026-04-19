@@ -86,6 +86,44 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
     expect(output).toContain('softDelete: true');
   });
 
+  // Issue #38 — hasUserTracking plumbed through prompt-extension.
+  // Previously the template hard-coded `userTracking: false` even when the
+  // entity declared `user_tracking` in its behaviors array.
+  it('emits behaviors override with userTracking: true when user_tracking behavior is present', () => {
+    const def = { ...baseEntity, behaviors: ['timestamps', 'user_tracking'] };
+    const locals = buildCleanLitePsLocals(def, {});
+    const output = renderRepository(locals);
+
+    expect(output).toContain('protected override readonly behaviors: BehaviorConfig');
+    expect(output).toContain('timestamps: true');
+    expect(output).toContain('softDelete: false');
+    expect(output).toContain('userTracking: true');
+  });
+
+  it('emits behaviors block with only userTracking: true when user_tracking is the sole behavior', () => {
+    const def = { ...baseEntity, behaviors: ['user_tracking'] };
+    const locals = buildCleanLitePsLocals(def, {});
+    const output = renderRepository(locals);
+
+    // The block must still be emitted (fix verified at the template
+    // `if (hasTimestamps || hasSoftDelete || hasUserTracking)` guard).
+    expect(output).toContain('protected override readonly behaviors: BehaviorConfig');
+    expect(output).toContain('timestamps: false');
+    expect(output).toContain('softDelete: false');
+    expect(output).toContain('userTracking: true');
+    expect(output).toContain(
+      "import type { BehaviorConfig } from '@shared/base-classes/base-repository';",
+    );
+  });
+
+  it('emits userTracking: false when user_tracking behavior is absent', () => {
+    const def = { ...baseEntity, behaviors: ['timestamps'] };
+    const locals = buildCleanLitePsLocals(def, {});
+    const output = renderRepository(locals);
+
+    expect(output).toContain('userTracking: false');
+  });
+
   it('omits behaviors override and BehaviorConfig import when no behaviors are declared', () => {
     const def = { ...baseEntity, behaviors: [] };
     const locals = buildCleanLitePsLocals(def, {});
