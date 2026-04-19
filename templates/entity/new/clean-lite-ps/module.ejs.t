@@ -11,6 +11,9 @@ import { DatabaseModule } from '@shared/database/database.module';
 <% if (eavEnabled) { -%>
 import { FieldValuesModule } from '../field_values/field_values.module';
 <% } -%>
+<% if (eavValueTable) { -%>
+import { <%= eavDefinitionPluralPascal %>Module } from '../<%= eavDefinitionEntityPlural %>/<%= eavDefinitionEntityPlural %>.module';
+<% } -%>
 
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import { <%= classNames.service %> } from './<%= entityName %>.service';
@@ -39,6 +42,9 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
     DatabaseModule,
 <% if (eavEnabled) { -%>
     FieldValuesModule,
+<% } -%>
+<% if (eavValueTable) { -%>
+    <%= eavDefinitionPluralPascal %>Module,
 <% } -%>
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
     // Cross-domain modules from relationships:

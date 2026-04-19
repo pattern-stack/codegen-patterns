@@ -7,8 +7,11 @@ import { Injectable, Inject } from '@nestjs/common';
 <% if (hasDeclarativeQueries) { -%>
 import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';
 <% } -%>
+<% if (eavValueTable) { -%>
+import { sql } from 'drizzle-orm';
+<% } -%>
 import { DRIZZLE } from '@shared/constants/tokens';
-import type { DrizzleClient } from '@shared/types/drizzle';
+import type { DrizzleClient<% if (eavValueTable) { %>, DrizzleTx<% } %> } from '@shared/types/drizzle';
 import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
 <% if (hasTimestamps || hasSoftDelete) { -%>
 import type { BehaviorConfig } from '@shared/base-classes/base-repository';
@@ -55,6 +58,48 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
 
   // TODO: Add entity-specific query methods here.
 <% } -%>
+<% if (eavValueTable) { -%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // EAV compound writes (task #23) — generated from eav_value_table: true
+  // ═══════════════════════════════════════════════════════════════════════
+  /**
+   * Upsert "current" value rows keyed by the composite unique
+   * (entity_type, entity_id, field_definition_id). Used by the service's
+   * upsertFieldsTransactional to dual-write a bag of dynamic fields
+   * atomically with the owning entity. Inherited upsertMany only
+   * supports single-column conflict targets — this override uses
+   * Drizzle's `onConflictDoUpdate` with an explicit column list.
+   */
+  async upsertCurrentValues(
+    inputs: Array<Partial<<%= classNames.entity %>>>,
+    tx?: DrizzleTx,
+  ): Promise<<%= classNames.entity %>[]> {
+    if (inputs.length === 0) return [];
+    const data = inputs.map((input) =>
+      this.withTimestamps(input as Record<string, unknown>, 'create'),
+    );
+    const runner = this.runner(tx);
+    const rows = await runner
+      .insert(this.table)
+      .values(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+      .onConflictDoUpdate({
+        target: [
+          this.table['entityType'],
+          this.table['entityId'],
+          this.table['fieldDefinitionId'],
+        ],
+        set: {
+          value: sql`excluded.value`,
+          userId: sql`excluded.user_id`,
+          updatedAt: sql`excluded.updated_at`,
+        } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      })
+      .returning();
+    return rows as <%= classNames.entity %>[];
+  }
+<% } -%>
+
   // Inherited from <%= repositoryBaseClass %>:
 <%_ repositoryInheritedMethods.forEach(line => { _%>
   //   <%= line %>

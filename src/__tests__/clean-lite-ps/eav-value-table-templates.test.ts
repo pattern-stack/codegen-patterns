@@ -1,0 +1,239 @@
+/**
+ * Template tests for `eav_value_table: true` emission (task #23).
+ *
+ * A value-table entity (e.g. field_value) declares:
+ *   eav_value_table: true
+ *   eav_definition_table: field_definition
+ *
+ * Codegen emits the compound methods directly into the generated service
+ * and repository, wires the paired definitions module into the value-table
+ * module, and scaffolds the shared EAV helpers into the consumer's shared
+ * layer via `codegen init` (covered in a sibling test file). No hand
+ * extension on the consumer side.
+ *
+ * Contract lock:
+ *   - Repository: `upsertCurrentValues(rows, tx?)` with composite
+ *     (entity_type, entity_id, field_definition_id) conflict target.
+ *   - Service: `upsertFieldsTransactional(entityType, entityId, userId, fields, tx)`
+ *     and `findMergedByEntity(entityType, entityId)`, resolving
+ *     definition-key↔id internally via an injected definition-table repo.
+ *   - Module: auto-imports the definitions module so DI resolves.
+ *
+ * Entities without `eav_value_table: true` keep the existing shape.
+ */
+
+import { describe, it, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import ejs from 'ejs';
+import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { safeValidateEntityDefinition } from '../../schema/entity-definition.schema.js';
+
+const TEMPLATE_ROOT = resolve(
+  import.meta.dir,
+  '../../../templates/entity/new/clean-lite-ps',
+);
+
+function readTemplate(relPath: string): string {
+  return readFileSync(resolve(TEMPLATE_ROOT, relPath), 'utf8');
+}
+
+function extractBody(source: string): string {
+  const lines = source.split('\n');
+  if (lines[0] !== '---') return source;
+  let end = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === '---') {
+      end = i;
+      break;
+    }
+  }
+  if (end === -1) return source;
+  return lines.slice(end + 1).join('\n');
+}
+
+function render(relPath: string, locals: Record<string, unknown>): string {
+  return ejs.render(extractBody(readTemplate(relPath)), locals, {
+    rmWhitespace: false,
+  });
+}
+
+const valueEntity = {
+  entity: {
+    name: 'field_value',
+    plural: 'field_values',
+    table: 'field_values',
+    family: 'metadata',
+  },
+  eav_value_table: true,
+  eav_definition_table: 'field_definition',
+  fields: {
+    entity_type: { type: 'string', required: true },
+    entity_id: { type: 'uuid', required: true },
+    field_definition_id: { type: 'uuid', required: true },
+    user_id: { type: 'uuid', required: true },
+    value: { type: 'json', required: true },
+  },
+  relationships: {},
+  behaviors: ['timestamps'],
+};
+
+const entityWithoutFlag = {
+  ...valueEntity,
+  eav_value_table: undefined,
+  eav_definition_table: undefined,
+};
+
+describe('clean-lite-ps eav_value_table — schema validation', () => {
+  it('accepts a value-table entity with the paired flags', () => {
+    const result = safeValidateEntityDefinition(valueEntity);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects eav_value_table: true without eav_definition_table', () => {
+    const bad = { ...valueEntity, eav_definition_table: undefined };
+    const result = safeValidateEntityDefinition(bad);
+    expect(result.success).toBe(false);
+    const msgs = JSON.stringify(result.error?.issues ?? []);
+    expect(msgs).toContain('eav_definition_table');
+  });
+
+  it('accepts entity without either eav flag', () => {
+    const result = safeValidateEntityDefinition(entityWithoutFlag);
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('clean-lite-ps eav_value_table — prompt-extension locals', () => {
+  it('exposes eavValueTable + definition entity metadata', () => {
+    const locals = buildCleanLitePsLocals(valueEntity, {});
+
+    expect(locals.eavValueTable).toBe(true);
+    expect(locals.eavDefinitionEntity).toBe('field_definition');
+    expect(locals.eavDefinitionEntityPlural).toBe('field_definitions');
+    expect(locals.eavDefinitionPascal).toBe('FieldDefinition');
+    expect(locals.eavDefinitionPluralPascal).toBe('FieldDefinitions');
+  });
+
+  it('zeros the metadata when the flag is absent', () => {
+    const locals = buildCleanLitePsLocals(entityWithoutFlag, {});
+
+    expect(locals.eavValueTable).toBe(false);
+    expect(locals.eavDefinitionEntity).toBeNull();
+    expect(locals.eavDefinitionEntityPlural).toBeNull();
+    expect(locals.eavDefinitionPascal).toBeNull();
+    expect(locals.eavDefinitionPluralPascal).toBeNull();
+  });
+});
+
+describe('clean-lite-ps eav_value_table — repository emission', () => {
+  it('emits upsertCurrentValues with composite conflict target when flag set', () => {
+    const locals = buildCleanLitePsLocals(valueEntity, {});
+    const output = render('repository.ejs.t', locals);
+
+    expect(output).toContain('async upsertCurrentValues(');
+    expect(output).toContain('tx?: DrizzleTx');
+    expect(output).toContain("import { sql } from 'drizzle-orm';");
+    expect(output).toContain("import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';");
+    expect(output).toContain('onConflictDoUpdate');
+    expect(output).toContain("this.table['entityType']");
+    expect(output).toContain("this.table['entityId']");
+    expect(output).toContain("this.table['fieldDefinitionId']");
+    // Runner threaded through the tx.
+    expect(output).toContain('this.runner(tx)');
+  });
+
+  it('omits upsertCurrentValues when the flag is absent', () => {
+    const locals = buildCleanLitePsLocals(entityWithoutFlag, {});
+    const output = render('repository.ejs.t', locals);
+
+    expect(output).not.toContain('upsertCurrentValues');
+    expect(output).not.toContain('onConflictDoUpdate');
+    expect(output).not.toContain('DrizzleTx');
+  });
+});
+
+describe('clean-lite-ps eav_value_table — service emission', () => {
+  it('emits compound methods + imports when flag set', () => {
+    const locals = buildCleanLitePsLocals(valueEntity, {});
+    const output = render('service.ejs.t', locals);
+
+    // Imports: helpers + DrizzleTx + definition repo.
+    expect(output).toContain("import { toEavRows, mergeEavRows } from '@shared/eav-helpers';");
+    expect(output).toContain("import type { DrizzleTx } from '@shared/types/drizzle';");
+    expect(output).toContain(
+      "import { FieldDefinitionRepository } from '../field_definitions/field_definition.repository';",
+    );
+
+    // Constructor injection of the definition repo.
+    expect(output).toContain('private readonly definitionRepo: FieldDefinitionRepository,');
+
+    // Compound write signature + body markers.
+    expect(output).toContain(
+      'async upsertFieldsTransactional(\n    entityType: string,\n    entityId: string,\n    userId: string,\n    fields: Record<string, unknown>,\n    tx?: DrizzleTx,\n  ): Promise<void>',
+    );
+    expect(output).toContain('toEavRows(entityId, entityType, userId, fields, defIdByKey)');
+    expect(output).toContain('this.repository.upsertCurrentValues(');
+
+    // Merged read + Promise.all shape.
+    expect(output).toContain('async findMergedByEntity(');
+    expect(output).toContain('this.repository.findByEntityIdAndType(entityId, entityType)');
+    expect(output).toContain('this.definitionRepo.list()');
+    expect(output).toContain('mergeEavRows(rows as any, defsById)');
+  });
+
+  it('omits compound methods when flag is absent', () => {
+    const locals = buildCleanLitePsLocals(entityWithoutFlag, {});
+    const output = render('service.ejs.t', locals);
+
+    expect(output).not.toContain('upsertFieldsTransactional');
+    expect(output).not.toContain('findMergedByEntity');
+    expect(output).not.toContain('toEavRows');
+    expect(output).not.toContain('FieldDefinitionRepository');
+  });
+});
+
+describe('clean-lite-ps eav_value_table — module emission', () => {
+  it('imports the paired definitions module when flag set', () => {
+    const locals = buildCleanLitePsLocals(valueEntity, {});
+    const output = render('module.ejs.t', locals);
+
+    expect(output).toContain(
+      "import { FieldDefinitionsModule } from '../field_definitions/field_definitions.module';",
+    );
+    expect(output).toContain('FieldDefinitionsModule,');
+  });
+
+  it('omits the paired-module import when flag is absent', () => {
+    const locals = buildCleanLitePsLocals(entityWithoutFlag, {});
+    const output = render('module.ejs.t', locals);
+
+    expect(output).not.toContain('FieldDefinitionsModule');
+    expect(output).not.toContain('field_definitions.module');
+  });
+});
+
+describe('clean-lite-ps eav_value_table — composition with eav on owning entities', () => {
+  it('handles a graph where one entity is eav_value_table + another is eav-enabled', () => {
+    // Simulate the dealbrain-v2 shape: field_value is the value table,
+    // opportunity is an eav-enabled owner.
+    const valueLocals = buildCleanLitePsLocals(valueEntity, {});
+    const opportunityEntity = {
+      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', family: 'synced' },
+      eav: true,
+      fields: { name: { type: 'string', required: true }, user_id: { type: 'uuid', required: true } },
+      relationships: {},
+      behaviors: ['timestamps'],
+    };
+    const opportunityLocals = buildCleanLitePsLocals(opportunityEntity, {});
+
+    // Value table has compound writes + definition module import.
+    expect(valueLocals.eavValueTable).toBe(true);
+    expect(valueLocals.eavEnabled).toBe(false);
+
+    // Owner has paired reads + compound use cases, no value-table methods.
+    expect(opportunityLocals.eavEnabled).toBe(true);
+    expect(opportunityLocals.eavValueTable).toBe(false);
+    expect(opportunityLocals.clpOutputPaths.findByIdWithFieldsUseCase).not.toBeNull();
+  });
+});

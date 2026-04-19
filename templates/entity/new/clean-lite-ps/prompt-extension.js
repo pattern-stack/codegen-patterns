@@ -618,6 +618,24 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // writes. Consumer must provide `@shared/eav-helpers` and `FieldValueService`.
   const eavEnabled = definition.eav === true;
 
+  // EAV value-table shape (task #23) — when true, this entity IS the value
+  // table. Templates emit compound methods (upsertFieldsTransactional,
+  // findMergedByEntity) on the service, upsertCurrentValues on the repo,
+  // and auto-wire the paired field-definitions module for DI.
+  const eavValueTable = definition.eav_value_table === true;
+  const eavDefinitionEntity = eavValueTable
+    ? (definition.eav_definition_table || null)
+    : null;
+  const eavDefinitionEntityPlural = eavDefinitionEntity
+    ? pluralize(eavDefinitionEntity)
+    : null;
+  const eavDefinitionPascal = eavDefinitionEntity
+    ? pascalCase(eavDefinitionEntity)
+    : null;
+  const eavDefinitionPluralPascal = eavDefinitionEntityPlural
+    ? pascalCase(eavDefinitionEntityPlural)
+    : null;
+
   // Family resolution
   const family = entity.family || 'base';
   const familyConfig = FAMILY_MAP[family] || FAMILY_MAP['base'];
@@ -798,6 +816,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // EAV (ADR-13)
     eavEnabled,
+
+    // EAV value-table (task #23) — this entity IS the value table.
+    eavValueTable,
+    eavDefinitionEntity,
+    eavDefinitionEntityPlural,
+    eavDefinitionPascal,
+    eavDefinitionPluralPascal,
     // Search query (#16)
     searchQuery: searchQueryResolved,
     hasSearchQuery: !!searchQueryResolved,
