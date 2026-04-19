@@ -480,6 +480,45 @@ const QueryDeclarationSchema = z.object({
 
 export type QueryDeclaration = z.infer<typeof QueryDeclarationSchema>;
 
+/**
+ * Search Query Declaration — filtered search with pagination.
+ *
+ * Emits:
+ *   - `searchXs(input): Promise<Page<Entity>>` on the service
+ *   - `GET /xs/search` controller route with Zod filter schema
+ *   - `SearchXsUseCase` with filter-AND + count-for-total semantics
+ *
+ * Example:
+ *   - name: search
+ *     filters: [user_id, provider, is_visible, canonical_state, is_closed]
+ *     search: name              # optional ilike on a single text column
+ *     paginate: true            # defaults to limit 50, max 200, offset 0
+ *
+ * Consumer contract: `@shared/http/pagination` must export
+ * `PaginationSchema` (z.object with limit+offset defaults) and a
+ * `Page<T>` interface with `{ items, total, limit, offset }`.
+ */
+const SearchQueryDeclarationSchema = z.object({
+  name: z.literal('search'),
+  filters: z.array(z.string()).min(1),
+  search: z.string().optional(),
+  paginate: z.boolean().optional().default(true),
+  order: z.string().optional(),
+});
+
+export type SearchQueryDeclaration = z.infer<typeof SearchQueryDeclarationSchema>;
+
+/**
+ * Discriminated union: query declarations can be either the legacy
+ * by-column findByX form or the named-search form. The two shapes are
+ * disjoint (no `name` vs required `name: 'search'`), so consumers can
+ * mix them in the same `queries:` block.
+ */
+const AnyQueryDeclarationSchema = z.union([
+  SearchQueryDeclarationSchema,
+  QueryDeclarationSchema,
+]);
+
 // ============================================================================
 // Sync Configuration
 // ============================================================================
@@ -679,7 +718,7 @@ export const EntityDefinitionSchema = z
 
     // v2: Declarative query generation (ADR-005)
     // Generates repository + service + use case methods from declarations
-    queries: z.array(QueryDeclarationSchema).optional(),
+    queries: z.array(AnyQueryDeclarationSchema).optional(),
 
     // v2: Integration sync configuration (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Electric SQL + provider sync (Salesforce, HubSpot, etc.)

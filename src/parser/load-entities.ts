@@ -48,14 +48,19 @@ export interface LoadEntitiesResult {
 function transformToEntity(result: LoadResult): ParsedEntity {
 	const { definition, filePath } = result;
 
-	const queries: ParsedQuery[] | undefined = definition.queries?.map((q) => ({
-		by: q.by,
-		unique: q.unique,
-		select: q.select,
-		order: q.order,
-		limit: q.limit,
-		via: q.via,
-	}));
+	// Search queries use a different shape (name/filters/search/paginate) and
+	// are consumed directly by the codegen templates, not by the analyzer.
+	// Narrow to the by-column variant here for ParsedQuery mapping.
+	const queries: ParsedQuery[] | undefined = definition.queries
+		?.filter((q): q is Extract<typeof q, { by: unknown }> => 'by' in q)
+		.map((q) => ({
+			by: q.by,
+			unique: q.unique,
+			select: q.select,
+			order: q.order,
+			limit: q.limit,
+			via: q.via,
+		}));
 
 	const entity: ParsedEntity = {
 		name: definition.entity.name,
@@ -370,13 +375,16 @@ function transformToRelationshipDefinition(
 	}
 
 	// Parse queries
-	const queries: ParsedQuery[] | undefined = definition.queries?.map((q) => ({
-		by: q.by,
-		unique: q.unique,
-		select: q.select,
-		order: q.order,
-		limit: q.limit,
-	}));
+	// Relationship queries here: same filtering rationale as entity queries.
+	const queries: ParsedQuery[] | undefined = definition.queries
+		?.filter((q): q is Extract<typeof q, { by: unknown }> => 'by' in q)
+		.map((q) => ({
+			by: q.by,
+			unique: q.unique,
+			select: q.select,
+			order: q.order,
+			limit: q.limit,
+		}));
 
 	return {
 		name: config.name,
