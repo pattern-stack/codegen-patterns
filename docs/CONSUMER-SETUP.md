@@ -171,6 +171,22 @@ src/shared/constants/tokens.ts
 src/shared/subsystems/events/event-bus.protocol.ts  # transitive dep of base-service + lifecycle-events
 ```
 
+### Runtime validation pipe
+
+```
+src/shared/pipes/zod-validation.pipe.ts             # @Body() validation for generated write routes
+```
+
+Generated controllers wrap their `@Body()` params with `new ZodValidationPipe(CreateXSchema)` — the pipe runs the DTO's Zod schema at request time, throws `BadRequestException` on failure, returns parsed data on success. No consumer wiring required.
+
+### EAV helpers
+
+```
+src/shared/eav-helpers.ts                           # toEavRows + mergeEavRows for eav_value_table services
+```
+
+Pure helpers used by services generated for entities declaring `eav_value_table: true`. Caller supplies the field-definition id/key maps; helpers are sync + allocation-light.
+
 **Keeping vendored files in sync with the runtime.** Re-running `codegen project init --force` will overwrite them with the current runtime contents. If you upgrade `@pattern-stack/codegen`, re-run init to pull the matching base classes. Treat the vendored files as generated output — don't hand-edit them; if you need to override behavior, subclass them in your own module instead.
 
 ## `schema.ts` wiring
@@ -237,6 +253,79 @@ database:
 ```
 
 `paths.generated` must sit inside your `tsconfig.json` `"include"` globs — otherwise TS won't typecheck the barrel.
+
+## EAV dual-write — opt-in per entity
+
+Two YAML flags light up the EAV (entity-attribute-value) surface. Both default to `false` — entities that don't declare them get the non-EAV shape unchanged.
+
+### `eav: true` on owning entities
+
+Declare this on the entity that has a dynamic `fields` bag alongside its core columns (e.g. `opportunity`, `account`, `contact`).
+
+```yaml
+# entities/opportunity.yaml
+entity:
+  name: opportunity
+  family: synced
+eav: true
+fields:
+  name:
+    type: string
+    required: true
+  # ... core columns
+```
+
+Codegen emits:
+
+- `Create<Entity>UseCase` / `Update<Entity>UseCase` in transactional compound-write shape — splits `{ fields, ...core }` from the DTO and runs both halves in `db.transaction(async (tx) => ...)`.
+- `Find<Entity>ByIdWithFieldsUseCase` / `List<Entity>sWithFieldsUseCase` — paired reads that merge the EAV `fields` bag onto the entity.
+- `GET /<entity>/:id/with-fields` + `GET /<entity>/with-fields` routes on the controller.
+- `findByIdWithFields` + `listWithFields` methods on the service.
+- Module imports of the paired value-table module so DI resolves.
+
+### `eav_value_table: true` on the value-table entity
+
+Declare this on the entity that IS the value table (e.g. `field_value`). Paired with `eav_definition_table: <singular-entity-name>` pointing at the field-definitions entity.
+
+```yaml
+# entities/field_value.yaml
+entity:
+  name: field_value
+  family: metadata
+eav_value_table: true
+eav_definition_table: field_definition
+fields:
+  entity_type:
+    type: string
+    required: true
+  entity_id:
+    type: uuid
+    required: true
+  field_definition_id:
+    type: uuid
+    required: true
+  user_id:
+    type: uuid
+    required: true
+  value:
+    type: json
+    required: true
+```
+
+Codegen emits:
+
+- `upsertCurrentValues(rows, tx?)` on the repository — composite `(entity_type, entity_id, field_definition_id)` conflict target, so repeated upserts update a row in place rather than appending.
+- `upsertFieldsTransactional(entityType, entityId, userId, fields, tx?)` on the service — resolves field keys to definition ids internally (via the injected definition repo) and delegates to the repo's upsert.
+- `findMergedByEntity(entityType, entityId)` on the service — reads value rows + definitions in parallel, collapses via `mergeEavRows` into a flat `{ key: value }` bag.
+- Auto-imports the paired field-definitions module so DI resolves.
+
+**v1 assumption:** `eav_value_table: true` expects a NOT-NULL `user_id` column on the value table. A future `eav_user_scoped: false` flag will relax this for audit/system EAV with no user context.
+
+### What the consumer has to author for EAV
+
+Nothing beyond the YAML flags. Every consumer contract item — tx-aware base classes, the EAV helpers, the composite conflict-target upsert — ships via `codegen project init` (the vendored runtime files above) or via the generated templates.
+
+The one thing consumers do own: creating `field_definition` rows before they reference them. `upsertFieldsTransactional` silently skips keys with no definition; auto-create is a later step.
 
 ## Verification
 
