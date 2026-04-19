@@ -3,7 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.controller : nul
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, Param } from '@nestjs/common';
+import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, Param, ParseUUIDPipe } from '@nestjs/common';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
 <% if (eavEnabled) { -%>
@@ -47,13 +47,13 @@ export class <%= classNames.controller %> {
   }
 <% } %>
   @Get(':id')
-  async getById(@Param('id') id: string): Promise<<%= classNames.entity %> | null> {
+  async getById(@Param('id', ParseUUIDPipe) id: string): Promise<<%= classNames.entity %>> {
     return this.findByIdUseCase.execute(id);
   }
 <% if (eavEnabled) { %>
   @Get(':id/with-fields')
   async getByIdWithFields(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<(<%= classNames.entity %> & { fields: Record<string, unknown> }) | null> {
     return this.findByIdWithFieldsUseCase.execute(id);
   }
@@ -66,14 +66,14 @@ export class <%= classNames.controller %> {
 
   @Patch(':id')
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: <%= classNames.updateDto %>,
   ): Promise<<%= classNames.entity %> | null> {
     return this.updateUseCase.execute(id, dto);
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string): Promise<void> {
+  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.deleteUseCase.execute(id);
   }
 <% } %>
