@@ -140,15 +140,27 @@ Emit cascade as the default because "that's what people usually want." Rejected:
 
 ## Follow-ups
 
-- **Issue #34** — implement the schema change, template change, and `activeParentFilter()` helper. Includes snapshot tests on generated `.entity.ts` asserting the FK constraint is emitted with the configured `onDelete` value, and an integration test covering parent-delete-with-children under each `on_delete` value.
-- **Migration guidance doc** — short note in `docs/CONSUMER-SETUP.md` on cleaning up existing orphans before applying the migration that introduces FKs. To ship with the issue #34 PR.
+- **Issue #34** — DONE (2026-04-19). Schema change, template change, and `activeParentFilter()` helper shipped. Unit tests cover all four `on_delete` values and the soft-delete warning comment.
+- **Migration guidance doc** — DONE (2026-04-19). Written as a standalone guide at `docs/guides/introducing-fk-constraints.md` (issue #39). Covers orphan-detection SQL + `NOT VALID` two-step migration path.
+- **Issue #41** — DONE (2026-04-19). Scaffolder emits a `// WARNING:` comment before any FK column on a soft-delete entity, and `buildCleanLitePsLocals` prints a `console.warn` when a non-restrict `on_delete` is declared on a soft-delete entity.
 - **`BaseService.hardDelete()`** — not covered here. Exists as a separate design question: if we ever need a true hard-delete path (admin purge, GDPR erasure), it will interact with `on_delete` in the obvious way. No work implied by this ADR.
 - **Revisit Option B** — only if a concrete use case surfaces where single-statement soft-delete is insufficient and `activeParentFilter()` is not a reasonable answer.
 
+## Implementation Notes (2026-04-19)
+
+The following were confirmed during implementation of issue #34:
+
+- **YAML field name confirmed**: `on_delete` (snake_case, four values: `restrict`, `cascade`, `set_null`, `no_action`). The Zod default is `"restrict"` so omitting the key is equivalent to `on_delete: restrict`.
+- **Drizzle mapping confirmed**: `set_null` → `'set null'`, `no_action` → `'no action'` (SQL keyword form with space). `restrict` and `cascade` pass through unchanged.
+- **`activeParentFilter()` location confirmed**: `runtime/base-classes/base-repository.ts`. Takes `(parentTable: PgTableWithColumns<any>, parentFkColumn: PgColumn): SQL`. Returns an `EXISTS` subquery that excludes rows whose parent has `deleted_at IS NOT NULL`.
+- **Warning comment surface (issue #41)**: the entity template emits the warning comment for every `belongs_to` column on any entity with `soft_delete` behavior, regardless of the `on_delete` value. This ensures developers see the caveat even for `restrict` (which is harmless but still surprising for soft-delete parents).
+- **Snapshot tests**: template-level (no codegen pipeline needed). Tests in `src/__tests__/clean-lite-ps/entity-fk-template.test.ts`.
+
 ## References
 
-- `templates/entity/new/clean-lite-ps/entity.ejs.t` — bug site (lines 24–26).
-- `src/parser/load-entities.ts` — parser already carries `foreign_key`, `target`, `nullable` (lines 59, 87, 138, 261–276).
-- `src/schema/entity-definition.schema.*` — destination for the `on_delete` field.
-- `runtime/base-classes/BaseRepository.ts` — destination for `activeParentFilter()`.
-- Issue #34 — implementation tracker.
+- `templates/entity/new/clean-lite-ps/entity.ejs.t` — FK column emission with `.references()`.
+- `templates/entity/new/clean-lite-ps/prompt-extension.js` — `processBelongsTo()` (maps `on_delete`) and `buildCleanLitePsLocals()` (console warning).
+- `src/schema/entity-definition.schema.ts` — `OnDeleteSchema`, `RelationshipSchema` with `on_delete` field and `set_null`/`nullable` refine rule.
+- `runtime/base-classes/base-repository.ts` — `activeParentFilter()` helper.
+- `docs/guides/introducing-fk-constraints.md` — migration guide for adding FKs to existing tables.
+- Issue #34, Issue #39, Issue #41 — implementation trackers.
