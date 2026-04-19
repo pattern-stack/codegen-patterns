@@ -41,9 +41,9 @@ export interface IBaseRepository<TEntity> {
   list(options?: unknown): Promise<TEntity[]>;
   count(where?: unknown): Promise<number>;
   exists(id: string): Promise<boolean>;
-  create(input: Partial<TEntity>): Promise<TEntity>;
-  update(id: string, input: Partial<TEntity>): Promise<TEntity>;
-  delete(id: string): Promise<void>;
+  create(input: Partial<TEntity>, tx?: unknown): Promise<TEntity>;
+  update(id: string, input: Partial<TEntity>, tx?: unknown): Promise<TEntity>;
+  delete(id: string, tx?: unknown): Promise<void>;
 }
 
 // ============================================================================
@@ -112,8 +112,8 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
    * Insert a new entity.
    * Emits a LIFECYCLE 'created' event with entity snapshot.
    */
-  async create(input: Partial<TEntity>): Promise<TEntity> {
-    const result = await this.repository.create(input);
+  async create(input: Partial<TEntity>, tx?: unknown): Promise<TEntity> {
+    const result = await this.repository.create(input, tx);
 
     if (this._shouldEmit()) {
       const snap = entitySnapshot(result as Record<string, unknown>);
@@ -129,7 +129,7 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
    * Update an existing entity by id.
    * Emits a LIFECYCLE 'updated' event + CHANGE events for each modified field.
    */
-  async update(id: string, input: Partial<TEntity>): Promise<TEntity> {
+  async update(id: string, input: Partial<TEntity>, tx?: unknown): Promise<TEntity> {
     // Snapshot before for change diffing
     let before: Record<string, unknown> | undefined;
     if (this._shouldEmit()) {
@@ -139,7 +139,7 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
       }
     }
 
-    const result = await this.repository.update(id, input);
+    const result = await this.repository.update(id, input, tx);
 
     if (this._shouldEmit()) {
       const after = entitySnapshot(result as Record<string, unknown>);
@@ -163,8 +163,8 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
    * Delete an entity by id.
    * Emits a LIFECYCLE 'deleted' event.
    */
-  async delete(id: string): Promise<void> {
-    await this.repository.delete(id);
+  async delete(id: string, tx?: unknown): Promise<void> {
+    await this.repository.delete(id, tx);
 
     if (this._shouldEmit()) {
       const event = buildLifecycleEvent(this.entityName!, 'deleted', id);

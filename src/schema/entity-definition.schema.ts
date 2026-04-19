@@ -480,6 +480,45 @@ const QueryDeclarationSchema = z.object({
 
 export type QueryDeclaration = z.infer<typeof QueryDeclarationSchema>;
 
+/**
+ * Search Query Declaration — filtered search with pagination.
+ *
+ * Emits:
+ *   - `searchXs(input): Promise<Page<Entity>>` on the service
+ *   - `GET /xs/search` controller route with Zod filter schema
+ *   - `SearchXsUseCase` with filter-AND + count-for-total semantics
+ *
+ * Example:
+ *   - name: search
+ *     filters: [user_id, provider, is_visible, canonical_state, is_closed]
+ *     search: name              # optional ilike on a single text column
+ *     paginate: true            # defaults to limit 50, max 200, offset 0
+ *
+ * Consumer contract: `@shared/http/pagination` must export
+ * `PaginationSchema` (z.object with limit+offset defaults) and a
+ * `Page<T>` interface with `{ items, total, limit, offset }`.
+ */
+const SearchQueryDeclarationSchema = z.object({
+  name: z.literal('search'),
+  filters: z.array(z.string()).min(1),
+  search: z.string().optional(),
+  paginate: z.boolean().optional().default(true),
+  order: z.string().optional(),
+});
+
+export type SearchQueryDeclaration = z.infer<typeof SearchQueryDeclarationSchema>;
+
+/**
+ * Discriminated union: query declarations can be either the legacy
+ * by-column findByX form or the named-search form. The two shapes are
+ * disjoint (no `name` vs required `name: 'search'`), so consumers can
+ * mix them in the same `queries:` block.
+ */
+const AnyQueryDeclarationSchema = z.union([
+  SearchQueryDeclarationSchema,
+  QueryDeclarationSchema,
+]);
+
 // ============================================================================
 // Sync Configuration
 // ============================================================================
@@ -676,10 +715,28 @@ export const EntityDefinitionSchema = z
     // Defaults to `false` — opt in per entity that needs dynamic/custom fields.
     eav: z.boolean().optional().default(false),
 
+    // Declare this entity IS an EAV value table. When `true`, codegen emits
+    // the compound EAV methods (upsertFieldsTransactional, findMergedByEntity)
+    // on the service and the upsertCurrentValues method on the repository —
+    // no hand extension required. Companion flag `eav_definition_table`
+    // identifies the sibling entity that stores the field-key ↔ id lookup.
+    //
+    // Mutually exclusive with `eav: true` in practice — a value table holds
+    // OTHER entities' dynamic fields, it isn't itself an EAV-opt-in entity.
+    //
+    // Assumption (v1): value tables have a `user_id` column. Future
+    // `eav_user_scoped: false` flag will relax this for audit/system EAV.
+    eav_value_table: z.boolean().optional().default(false),
+
+    // Singular entity name of the field-definitions entity that pairs with
+    // this value table (matches the `target:` convention in relationship
+    // YAMLs). Required when `eav_value_table: true`; ignored otherwise.
+    eav_definition_table: z.string().optional(),
+
 
     // v2: Declarative query generation (ADR-005)
     // Generates repository + service + use case methods from declarations
-    queries: z.array(QueryDeclarationSchema).optional(),
+    queries: z.array(AnyQueryDeclarationSchema).optional(),
 
     // v2: Integration sync configuration (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Electric SQL + provider sync (Salesforce, HubSpot, etc.)
@@ -693,7 +750,17 @@ export const EntityDefinitionSchema = z
     // Cube.js measure packs, custom cube name, and metric definitions
     analytics: AnalyticsBlockSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => !data.eav_value_table || typeof data.eav_definition_table === 'string',
+    {
+      message:
+        "`eav_definition_table` is required when `eav_value_table: true` — " +
+        "declare the singular entity name of the paired field-definitions entity " +
+        "(e.g. `eav_definition_table: 'field_definition'`).",
+      path: ['eav_definition_table'],
+    },
+  );
 
 export type EntityDefinition = z.infer<typeof EntityDefinitionSchema>;
 

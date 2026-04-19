@@ -12,6 +12,11 @@ import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '../field_values/field_value.service';
 <% } -%>
+<% if (eavValueTable) { -%>
+import { toEavRows, mergeEavRows } from '@shared/eav-helpers';
+import type { DrizzleTx } from '@shared/types/drizzle';
+import { <%= eavDefinitionPascal %>Repository } from '../<%= eavDefinitionEntityPlural %>/<%= eavDefinitionEntity %>.repository';
+<% } -%>
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -27,6 +32,9 @@ export class <%= classNames.service %> extends WithAnalytics(
     protected readonly repository: <%= classNames.repository %>,
 <% if (eavEnabled) { -%>
     private readonly fieldValues: FieldValueService,
+<% } -%>
+<% if (eavValueTable) { -%>
+    private readonly definitionRepo: <%= eavDefinitionPascal %>Repository,
 <% } -%>
   ) {
     super(repository);
@@ -69,6 +77,48 @@ export class <%= classNames.service %> extends WithAnalytics(
         return { ...entity, fields };
       }),
     );
+  }
+<% } %>
+<% if (eavValueTable) { %>
+  /**
+   * EAV compound write (task #23) — upserts a bag of dynamic fields onto
+   * an owning entity in a single transaction. Resolves field keys to
+   * definition ids internally (by reading <%= eavDefinitionPascal %>Repository),
+   * so use-cases inject only this service. Unknown keys are skipped; the
+   * caller is expected to have created the definitions first (auto-create
+   * is a later step).
+   */
+  async upsertFieldsTransactional(
+    entityType: string,
+    entityId: string,
+    userId: string,
+    fields: Record<string, unknown>,
+    tx?: DrizzleTx,
+  ): Promise<void> {
+    if (!fields || Object.keys(fields).length === 0) return;
+    const allDefs = await this.definitionRepo.list();
+    const defs = allDefs.filter((d) => (d as any).entityType === entityType);
+    const defIdByKey = new Map(defs.map((d) => [d.key, d.id]));
+    const rows = toEavRows(entityId, entityType, userId, fields, defIdByKey);
+    if (rows.length === 0) return;
+    await this.repository.upsertCurrentValues(rows as Array<Partial<<%= classNames.entity %>>>, tx);
+  }
+
+  /**
+   * EAV paired read (task #23) — returns the current merged `{ key: value }`
+   * bag for one owning entity. Resolves definition ids to keys internally.
+   */
+  async findMergedByEntity(
+    entityType: string,
+    entityId: string,
+  ): Promise<Record<string, unknown>> {
+    const [rows, allDefs] = await Promise.all([
+      this.repository.findByEntityIdAndType(entityId, entityType),
+      this.definitionRepo.list(),
+    ]);
+    const defs = allDefs.filter((d) => (d as any).entityType === entityType);
+    const defsById = new Map(defs.map((d) => [d.id, { key: d.key }]));
+    return mergeEavRows(rows as any, defsById);
   }
 <% } %>
 }

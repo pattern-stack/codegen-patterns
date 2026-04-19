@@ -498,6 +498,81 @@ function processQueries(queriesBlock, processedFields, entityNamePascal) {
 }
 
 // ============================================================================
+// Search query processing
+// ============================================================================
+
+/**
+ * Process the `queries: - name: search` declarations into template locals.
+ *
+ * A search query compiles down to:
+ *   - A `SearchXsUseCase` class composing the entity service's list+count
+ *     with filter-AND and optional ilike search.
+ *   - A thin `@Get('search')` controller route that runs the request
+ *     querystring through a Zod schema before delegating.
+ *   - A `searchUseCase` / output-path entry so the module/controller
+ *     templates can emit imports + provider entries.
+ *
+ * Multiple search declarations per entity aren't supported yet — first
+ * one wins and a warning surfaces in the emitted comment. Consumers can
+ * split into separate entities if they need multiple search surfaces.
+ */
+function processSearchQueries(queriesBlock, processedFields, belongsTo, entityName, entityNamePascal, entityNamePlural, entityNamePluralPascal) {
+  if (!queriesBlock || !Array.isArray(queriesBlock)) return null;
+  const search = queriesBlock.find((q) => q && q.name === 'search');
+  if (!search) return null;
+
+  const filters = Array.isArray(search.filters) ? search.filters : [];
+  if (filters.length === 0) return null;
+
+  // Build a field->type lookup that covers both regular fields and FK
+  // columns from belongs_to relationships — filters commonly target
+  // account_id / user_id etc.
+  const fieldTypeMap = {};
+  for (const pf of processedFields) {
+    const entry = {
+      tsType: pf.tsType,
+      hasChoices: pf.hasChoices,
+      choices: pf.choices,
+      isUuid: pf.type === 'uuid',
+    };
+    fieldTypeMap[pf.name] = entry;
+    fieldTypeMap[pf.camelName] = entry;
+  }
+  for (const rel of belongsTo) {
+    fieldTypeMap[rel.field] = { tsType: 'string', isUuid: true };
+    fieldTypeMap[rel.camelField] = { tsType: 'string', isUuid: true };
+  }
+
+  const resolvedFilters = filters.map((name) => {
+    const info = fieldTypeMap[name] || fieldTypeMap[camelCase(name)] || { tsType: 'string' };
+    return {
+      name,
+      camelName: camelCase(name),
+      tsType: info.tsType,
+      hasChoices: !!info.hasChoices,
+      choices: info.choices,
+      isUuid: !!info.isUuid,
+      // Booleans + numbers need z.coerce.* in the querystring schema.
+      isBoolean: info.tsType === 'boolean',
+      isNumber: info.tsType === 'number',
+    };
+  });
+
+  const searchField = typeof search.search === 'string' ? search.search : null;
+  const paginate = search.paginate !== false; // default true
+
+  return {
+    filters: resolvedFilters,
+    searchField,
+    searchFieldCamel: searchField ? camelCase(searchField) : null,
+    paginate,
+    useCaseClassName: `Search${entityNamePluralPascal}UseCase`,
+    filtersSchemaName: `${entityNamePascal}FiltersSchema`,
+    inputTypeName: `Search${entityNamePluralPascal}Input`,
+  };
+}
+
+// ============================================================================
 // Main export
 // ============================================================================
 
@@ -543,6 +618,24 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // writes. Consumer must provide `@shared/eav-helpers` and `FieldValueService`.
   const eavEnabled = definition.eav === true;
 
+  // EAV value-table shape (task #23) — when true, this entity IS the value
+  // table. Templates emit compound methods (upsertFieldsTransactional,
+  // findMergedByEntity) on the service, upsertCurrentValues on the repo,
+  // and auto-wire the paired field-definitions module for DI.
+  const eavValueTable = definition.eav_value_table === true;
+  const eavDefinitionEntity = eavValueTable
+    ? (definition.eav_definition_table || null)
+    : null;
+  const eavDefinitionEntityPlural = eavDefinitionEntity
+    ? pluralize(eavDefinitionEntity)
+    : null;
+  const eavDefinitionPascal = eavDefinitionEntity
+    ? pascalCase(eavDefinitionEntity)
+    : null;
+  const eavDefinitionPluralPascal = eavDefinitionEntityPlural
+    ? pascalCase(eavDefinitionEntityPlural)
+    : null;
+
   // Family resolution
   const family = entity.family || 'base';
   const familyConfig = FAMILY_MAP[family] || FAMILY_MAP['base'];
@@ -557,7 +650,24 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const hasExternalIdTracking = behaviorNames.includes('external_id_tracking');
 
   // Process declarative queries
-  const processedQueries = processQueries(queriesBlock, processedFields, entityNamePascal);
+  // Filter out search-named entries — they're handled by
+  // processSearchQueries below. processQueries only understands the
+  // by-column shape.
+  const byColumnQueries = Array.isArray(queriesBlock)
+    ? queriesBlock.filter((q) => q && 'by' in q)
+    : queriesBlock;
+  const processedQueries = processQueries(byColumnQueries, processedFields, entityNamePascal);
+  // Process search query declaration (at most one per entity for now).
+  const searchQuery = processSearchQueries(
+    queriesBlock,
+    processedFields,
+    [], // belongsTo populated below — late-bind via reassignment
+    entityName,
+    entityNamePascal,
+    entityNamePlural,
+    entityNamePluralPascal,
+  );
+
   const hasDeclarativeQueries = processedQueries.length > 0;
   const declarativeQueryClasses = processedQueries.map((q) => q.useCaseClassName);
   const hasMultiFieldQuery = processedQueries.some((q) => q.hasMultipleParams);
@@ -566,6 +676,20 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Process belongs_to relationships
   const belongsTo = processBelongsTo(relationships, entityNamePlural);
+
+  // Re-process search query now that belongsTo is known — filters can
+  // reference FK columns (account_id, user_id) which aren't in
+  // processedFields because they're emitted by the belongsTo loop.
+  const searchQueryResolved = processSearchQueries(
+    queriesBlock,
+    processedFields,
+    belongsTo,
+    entityName,
+    entityNamePascal,
+    entityNamePlural,
+    entityNamePluralPascal,
+  );
+
 
   // Filter FK fields that are already emitted by the clpBelongsTo loop
   const fkFieldNames = new Set(belongsTo.map((r) => r.field));
@@ -604,6 +728,12 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     createDto: `${srcRoot}/modules/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
     updateDto: `${srcRoot}/modules/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
     outputDto: `${srcRoot}/modules/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
+    searchUseCase: searchQueryResolved
+      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/search-${entityNamePlural}.use-case.ts`
+      : null,
+    searchController: searchQueryResolved
+      ? `${srcRoot}/modules/${entityNamePlural}/${entityName}-search.controller.ts`
+      : null,
     declarativeQueries: hasDeclarativeQueries
       ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
       : null,
@@ -618,6 +748,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     controller: `${entityNamePascal}Controller`,
     module: `${entityNamePluralPascal}Module`,
     findByIdUseCase: `Find${entityNamePascal}ByIdUseCase`,
+    searchUseCase: `Search${entityNamePluralPascal}UseCase`,
+    searchController: `${entityNamePascal}SearchController`,
     listUseCase: `List${entityNamePluralPascal}UseCase`,
     findByIdWithFieldsUseCase: `Find${entityNamePascal}ByIdWithFieldsUseCase`,
     listWithFieldsUseCase: `List${entityNamePluralPascal}WithFieldsUseCase`,
@@ -684,6 +816,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // EAV (ADR-13)
     eavEnabled,
+
+    // EAV value-table (task #23) — this entity IS the value table.
+    eavValueTable,
+    eavDefinitionEntity,
+    eavDefinitionEntityPlural,
+    eavDefinitionPascal,
+    eavDefinitionPluralPascal,
+    // Search query (#16)
+    searchQuery: searchQueryResolved,
+    hasSearchQuery: !!searchQueryResolved,
+
 
     // Output paths
     clpOutputPaths: outputPaths,
