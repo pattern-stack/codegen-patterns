@@ -3,8 +3,11 @@
  *
  * These tests assert the behaviors override — covered by issue #33 — is
  * emitted when the entity declares timestamps / soft_delete, and is omitted
- * otherwise. This is a template-level regression test (not a baseline
- * snapshot) because clean-lite-ps is not part of test/baseline.
+ * otherwise. Also covers issue #38: hasUserTracking is plumbed from the
+ * behaviors array instead of being hard-coded to false.
+ *
+ * This is a template-level regression test (not a baseline snapshot) because
+ * clean-lite-ps is not part of test/baseline.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -131,6 +134,35 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
 
     expect(output).not.toContain('BehaviorConfig');
     expect(output).not.toContain('protected override readonly behaviors');
+  });
+});
+
+describe('clean-lite-ps repository template — user_tracking behavior (issue #38)', () => {
+  it('emits userTracking: true when user_tracking behavior is declared', () => {
+    const def = { ...baseEntity, behaviors: ['timestamps', 'user_tracking'] };
+    const locals = buildCleanLitePsLocals(def, {});
+    const output = renderRepository(locals);
+
+    expect(output).toContain('userTracking: true');
+    expect(output).not.toContain('userTracking: false');
+  });
+
+  it('emits userTracking: false when user_tracking behavior is absent', () => {
+    const def = { ...baseEntity, behaviors: ['timestamps', 'soft_delete'] };
+    const locals = buildCleanLitePsLocals(def, {});
+    const output = renderRepository(locals);
+
+    expect(output).toContain('userTracking: false');
+    expect(output).not.toContain('userTracking: true');
+  });
+
+  it('emits userTracking: true alongside soft_delete when both are present', () => {
+    const def = { ...baseEntity, behaviors: ['timestamps', 'soft_delete', 'user_tracking'] };
+    const locals = buildCleanLitePsLocals(def, {});
+    const output = renderRepository(locals);
+
+    expect(output).toContain('softDelete: true');
+    expect(output).toContain('userTracking: true');
   });
 });
 
