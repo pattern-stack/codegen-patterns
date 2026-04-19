@@ -64,10 +64,16 @@ describe('clean-lite-ps zod validation pipe — controller', () => {
 
     expect(output).toContain("import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';");
     expect(output).toContain(
-      "import { CreateContactSchema, type CreateContactDto } from './dto/create-contact.dto';",
+      "import { CreateContactSchema } from './dto/create-contact.dto';",
     );
     expect(output).toContain(
-      "import { UpdateContactSchema, type UpdateContactDto } from './dto/update-contact.dto';",
+      "import type { CreateContactDto } from './dto/create-contact.dto';",
+    );
+    expect(output).toContain(
+      "import { UpdateContactSchema } from './dto/update-contact.dto';",
+    );
+    expect(output).toContain(
+      "import type { UpdateContactDto } from './dto/update-contact.dto';",
     );
   });
 

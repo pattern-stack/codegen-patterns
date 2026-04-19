@@ -68,17 +68,15 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
     expect(output).toMatch(/import\s*\{[^}]*NotFoundException[^}]*\}\s*from\s*'@nestjs\/common'/);
   });
 
-  it('GET /:id returns Promise<Entity> and throws 404 when service returns null', () => {
+  it('GET /:id returns Promise<Entity> — use case throws 404 when null (D2)', () => {
     const locals = buildCleanLitePsLocals(baseEntity, {});
     const output = render('controller.ejs.t', locals);
 
-    expect(output).toContain('async getById(@Param(\'id\') id: string): Promise<Contact> {');
-    expect(output).toContain('const entity = await this.findByIdUseCase.execute(id);');
-    expect(output).toContain('if (!entity) throw new NotFoundException(`Contact ${id} not found`);');
-    expect(output).toContain('return entity;');
+    // D3 + D2 combined: ParseUUIDPipe guards the id; find-by-id use case
+    // throws NotFoundException on null, so the controller is a one-liner.
+    expect(output).toContain("async getById(@Param('id', ParseUUIDPipe) id: string): Promise<Contact> {");
+    expect(output).toContain('return this.findByIdUseCase.execute(id);');
 
-    // The old "return the raw use-case result" shape is gone.
-    expect(output).not.toMatch(/return\s+this\.findByIdUseCase\.execute\(id\);/);
     // And the nullable return type is gone from the :id signature.
     expect(output).not.toContain('Promise<Contact | null>');
   });
@@ -98,8 +96,8 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
     const output = render('controller.ejs.t', locals);
 
     // Per PR #52 dogfooding fix, delete is void. Double-check the 404
-    // change didn't regress this.
-    expect(output).toContain("async remove(@Param('id') id: string): Promise<void>");
+    // change didn't regress this. D3 adds ParseUUIDPipe to the @Param.
+    expect(output).toContain("async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void>");
     // No NotFoundException in the delete body — idempotent semantics.
     expect(output).not.toMatch(/remove[\s\S]*?throw new NotFoundException/);
   });
