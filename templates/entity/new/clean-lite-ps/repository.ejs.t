@@ -13,7 +13,7 @@ import { sql } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient<% if (eavValueTable) { %>, DrizzleTx<% } %> } from '@shared/types/drizzle';
 import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
-<% if (hasTimestamps || hasSoftDelete) { -%>
+<% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
 import type { BehaviorConfig } from '@shared/base-classes/base-repository';
 <% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
@@ -21,13 +21,13 @@ import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= en
 @Injectable()
 export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%= classNames.entity %>> {
   readonly table = <%= entityNamePlural %>;
-<% if (hasTimestamps || hasSoftDelete) { -%>
+<% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {
     timestamps: <%= !!hasTimestamps %>,
     softDelete: <%= !!hasSoftDelete %>,
-    userTracking: false,
+    userTracking: <%= !!hasUserTracking %>,
   };
 <% } -%>
 
