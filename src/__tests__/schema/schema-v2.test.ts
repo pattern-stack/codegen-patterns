@@ -312,6 +312,82 @@ describe('generate config', () => {
 });
 
 // ============================================================================
+// on_delete — belongs_to FK cascade action (ADR-021)
+// ============================================================================
+
+describe('on_delete field on belongs_to relationships', () => {
+	const base = {
+		entity: { name: 'message', plural: 'messages', table: 'messages' },
+		fields: { body: { type: 'string', required: true } },
+	};
+
+	const withBelongsTo = (on_delete?: string, nullable?: boolean) => ({
+		...base,
+		relationships: {
+			conversation: {
+				type: 'belongs_to',
+				target: 'conversation',
+				foreign_key: 'conversation_id',
+				...(nullable !== undefined ? { nullable } : {}),
+				...(on_delete !== undefined ? { on_delete } : {}),
+			},
+		},
+	});
+
+	it('accepts on_delete: cascade', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo('cascade'));
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts on_delete: restrict', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo('restrict'));
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts on_delete: set_null with nullable: true', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo('set_null', true));
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts on_delete: no_action', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo('no_action'));
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects on_delete: set_null without nullable: true', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo('set_null', false));
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0].message).toContain('set_null');
+		}
+	});
+
+	it('rejects on_delete: set_null when nullable is absent (defaults to false)', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo('set_null'));
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects unknown on_delete value', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo('delete_all'));
+		expect(result.success).toBe(false);
+	});
+
+	it('defaults on_delete to restrict when omitted', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo());
+		expect(result.success).toBe(true);
+		if (result.success) {
+			const rel = result.data.relationships!['conversation'];
+			expect(rel.on_delete).toBe('restrict');
+		}
+	});
+
+	it('is optional — entity parses without on_delete key', () => {
+		const result = EntityDefinitionSchema.safeParse(withBelongsTo());
+		expect(result.success).toBe(true);
+	});
+});
+
+// ============================================================================
 // Strict mode — unknown keys still rejected
 // ============================================================================
 

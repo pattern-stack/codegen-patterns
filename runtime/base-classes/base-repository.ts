@@ -253,4 +253,37 @@ export abstract class BaseRepository<TEntity> {
     }
     return { ...input, updatedAt: now };
   }
+
+  /**
+   * Build a WHERE clause fragment that restricts results to rows whose
+   * parent (identified by a belongs_to FK) is not soft-deleted.
+   *
+   * Use this in custom repository methods when you need "rows reachable
+   * from an active parent". The default findAll / findById behavior is
+   * NOT changed by this helper — opt in explicitly where needed.
+   *
+   * ADR-021 — Soft-delete cascade: Option A (filter at query time).
+   * `on_delete` FK rules do not fire for soft-deletes; use this helper
+   * instead of expecting cascade semantics on the DB level.
+   *
+   * Example:
+   *   async listActiveMessages(): Promise<Message[]> {
+   *     return this.list({
+   *       where: this.activeParentFilter(conversations, this.table['conversationId']),
+   *     });
+   *   }
+   *
+   * @param parentTable  The Drizzle table object for the parent entity.
+   * @param parentFkColumn  The FK column on this (child) table that references parent.id.
+   */
+  protected activeParentFilter(
+    parentTable: PgTableWithColumns<any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    parentFkColumn: PgColumn,
+  ): SQL {
+    return sql`EXISTS (
+      SELECT 1 FROM ${parentTable} p
+      WHERE p.id = ${parentFkColumn}
+        AND p.deleted_at IS NULL
+    )`;
+  }
 }

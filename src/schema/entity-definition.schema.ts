@@ -334,6 +334,27 @@ export type FieldDefinition = z.infer<typeof FieldDefinitionSchema>;
 
 const RelationshipTypeSchema = z.enum(["belongs_to", "has_many", "has_one"]);
 
+/**
+ * on_delete — governs database-level FK cascade behaviour for hard-deletes.
+ *
+ * Applies only to belongs_to relations; ignored on has_many / has_one.
+ * Per ADR-021, this has NO effect under soft-delete: BaseService.delete()
+ * issues an UPDATE (sets deleted_at), never a DELETE, so Postgres cascade
+ * rules never fire for a soft-deleted parent.
+ *
+ * | Value       | Emitted Drizzle              | Postgres behaviour                    |
+ * |-------------|------------------------------|---------------------------------------|
+ * | restrict    | { onDelete: 'restrict' }     | Parent DELETE fails if children exist. DEFAULT. |
+ * | cascade     | { onDelete: 'cascade' }      | Parent DELETE removes children.       |
+ * | set_null    | { onDelete: 'set null' }     | Parent DELETE nulls FK on children. Requires nullable: true. |
+ * | no_action   | { onDelete: 'no action' }    | Deferred check (equivalent to restrict in single-statement txns). |
+ *
+ * See docs/adrs/ADR-021-on-delete-semantics.md for the full decision.
+ */
+export const OnDeleteSchema = z.enum(["restrict", "cascade", "set_null", "no_action"]);
+
+export type OnDelete = z.infer<typeof OnDeleteSchema>;
+
 const RelationshipSchema = z
   .object({
     type: RelationshipTypeSchema,
@@ -341,8 +362,24 @@ const RelationshipSchema = z
     foreign_key: z.string(), // FK field name (e.g., "account_id")
     through: z.string().optional(), // For transitive: "owned_opportunities.updates"
     inverse: z.string().optional(), // Name of inverse relationship on target entity
+    nullable: z.boolean().optional(), // Whether the FK column allows NULL
+    on_delete: OnDeleteSchema.optional().default("restrict"), // FK cascade action (belongs_to only; hard-delete only)
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => {
+      // set_null requires nullable: true — Postgres cannot null a NOT NULL column
+      if (data.on_delete === "set_null" && data.nullable !== true) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message:
+        "'on_delete: set_null' requires 'nullable: true' — Postgres cannot null a NOT NULL FK column.",
+      path: ["on_delete"],
+    },
+  );
 
 export type Relationship = z.infer<typeof RelationshipSchema>;
 

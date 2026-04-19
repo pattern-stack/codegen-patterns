@@ -24,7 +24,13 @@ export const <%= entityNamePlural %> = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
 <%_ clpBelongsTo.forEach(rel => { _%>
-    <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>,
+<%_ if (hasSoftDelete) { _%>
+    // WARNING: on_delete: '<%= rel.onDeleteYaml %>' is a no-op when this entity uses soft_delete.
+    // BaseService.delete() issues UPDATE … SET deleted_at = now(), not DELETE, so Postgres
+    // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
+    // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
+<%_ } _%>
+    <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>.references(() => <%= rel.relatedTable %>.id, { onDelete: '<%= rel.onDelete %>' }),
 <%_ }) _%>
 <%_ clpProcessedFields.forEach(field => { _%>
     <%= field.camelName %>: <%- field.drizzleChain %>,

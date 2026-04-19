@@ -257,6 +257,22 @@ function processFields(fields) {
 }
 
 /**
+ * Map YAML on_delete value to the Drizzle onDelete option string.
+ *
+ * ADR-021 uses snake_case values in YAML (set_null, no_action) while
+ * Drizzle expects the SQL keyword form with a space ('set null', 'no action').
+ */
+function mapOnDelete(onDelete) {
+  const map = {
+    restrict: 'restrict',
+    cascade: 'cascade',
+    set_null: 'set null',
+    no_action: 'no action',
+  };
+  return map[onDelete] ?? 'restrict';
+}
+
+/**
  * Process belongs_to relationships into BelongsToRelation[]
  */
 function processBelongsTo(relationships, parentEntityNamePlural) {
@@ -272,6 +288,10 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
     const nullable = rel.nullable ?? true;
     const relatedPlural = pluralize(target);
     const isSelfFk = relatedPlural === parentEntityNamePlural;
+
+    // on_delete defaults to 'restrict' per ADR-021
+    const onDeleteYaml = rel.on_delete ?? 'restrict';
+    const onDelete = mapOnDelete(onDeleteYaml);
 
     // Relation key: for self-FKs derive from the FK column name
     // (parent_account_id → parentAccount) to avoid colliding with the
@@ -299,6 +319,8 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
       importPath: `../${relatedPlural}/${target}.entity`,
       relationKey,
       isSelfFk,
+      onDelete,
+      onDeleteYaml,
     });
   }
 
@@ -677,6 +699,21 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Process belongs_to relationships
   const belongsTo = processBelongsTo(relationships, entityNamePlural);
+
+  // Issue #41 — warn when a soft-delete entity declares non-restrict on_delete on any
+  // belongs_to relation. The FK constraint applies to hard-delete only;
+  // developers expecting soft-delete cascade must use activeParentFilter() instead.
+  if (hasSoftDelete && belongsTo.some((rel) => rel.onDeleteYaml !== 'restrict')) {
+    const affectedRels = belongsTo
+      .filter((rel) => rel.onDeleteYaml !== 'restrict')
+      .map((rel) => `${rel.field} (on_delete: ${rel.onDeleteYaml})`)
+      .join(', ');
+    console.warn(
+      `[codegen] WARNING: ${entityName} has soft_delete behavior but declares non-restrict on_delete on: ${affectedRels}. ` +
+      `on_delete is a no-op for soft-delete — only hard-DELETE triggers Postgres cascade rules. ` +
+      `See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md`,
+    );
+  }
 
   // Re-process search query now that belongsTo is known — filters can
   // reference FK columns (account_id, user_id) which aren't in
