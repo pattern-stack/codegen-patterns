@@ -13,6 +13,13 @@
  * stage produces the standard 400 BadRequest response shape that HTTP
  * clients expect.
  *
+ * On success: returns parsed, coerced data.
+ * On failure: throws BadRequestException with a structured `issues` array
+ * (path / code / message) — richer than `.flatten()` for API consumers.
+ *
+ * One pipe instance per route (cheap — instantiated at module load). Keeps
+ * validation explicit in the generated code; no metadata/reflection magic.
+ *
  * Vendored into consumer projects at `src/shared/pipes/zod-validation.pipe.ts`
  * via `codegen project init` (see init-scaffold's VENDORED_RUNTIME_FILES).
  */

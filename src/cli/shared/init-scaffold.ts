@@ -136,6 +136,8 @@ const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
 	// Pipes — ZodValidationPipe is wired on every generated controller
 	// @Body() to give runtime Zod validation at the controller boundary.
 	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'src/shared/pipes/zod-validation.pipe.ts' },
+	// EAV helpers — referenced by generated services on `eav_value_table` entities
+	{ runtime: 'eav-helpers.ts', target: 'src/shared/eav-helpers.ts' },
 ];
 
 function databaseModuleContent(): string {

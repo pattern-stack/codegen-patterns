@@ -175,6 +175,22 @@ describe('buildInitPlan', () => {
 		expect(plan.summary.architecture).toBe('clean-lite-ps');
 	});
 
+	test('plans the ZodValidationPipe scaffold under src/shared/pipes (task #23)', async () => {
+		const cwd = mkTempDir('zodpipe');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const paths = plan.entries.map((e) => e.relPath);
+		expect(paths).toContain('src/shared/pipes/zod-validation.pipe.ts');
+	});
+
+	test('plans @shared/eav-helpers scaffold (task #23)', async () => {
+		const cwd = mkTempDir('eavhelpers');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const paths = plan.entries.map((e) => e.relPath);
+		expect(paths).toContain('src/shared/eav-helpers.ts');
+	});
+
 	test('skips existing files (idempotent)', async () => {
 		const cwd = mkTempDir('idempotent');
 		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), '# existing\n');

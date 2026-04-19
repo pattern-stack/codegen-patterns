@@ -12,7 +12,7 @@
 import { eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgTableWithColumns, PgColumn } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
-import type { DrizzleClient } from '../types/drizzle';
+import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
 
 // ============================================================================
 // Interfaces
@@ -63,6 +63,17 @@ export abstract class BaseRepository<TEntity> {
 
   constructor(db: DrizzleClient) {
     this.db = db;
+  }
+
+  /**
+   * Pick the runner for a write: the caller-supplied transaction handle
+   * if present, otherwise the repository's own client. Keeps the `tx`
+   * parameter purely additive — callers without a transaction call as
+   * before. Used by the write methods below + consumer overrides (e.g.
+   * the generated `upsertCurrentValues` on EAV value tables).
+   */
+  protected runner(tx?: DrizzleTx): DrizzleClient {
+    return tx ?? this.db;
   }
 
   // ============================================================================
@@ -157,9 +168,9 @@ export abstract class BaseRepository<TEntity> {
   /**
    * Insert a new entity. Timestamps are auto-injected when timestamps=true.
    */
-  async create(input: Partial<TEntity>): Promise<TEntity> {
+  async create(input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
     const data = this.withTimestamps(input as Record<string, unknown>, 'create');
-    const rows = await this.db
+    const rows = await this.runner(tx)
       .insert(this.table)
       .values(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
       .returning();
@@ -170,9 +181,9 @@ export abstract class BaseRepository<TEntity> {
    * Update an existing entity by id. updatedAt is auto-injected when timestamps=true.
    * Returns the updated entity.
    */
-  async update(id: string, input: Partial<TEntity>): Promise<TEntity> {
+  async update(id: string, input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
     const data = this.withTimestamps(input as Record<string, unknown>, 'update');
-    const rows = await this.db
+    const rows = await this.runner(tx)
       .update(this.table)
       .set(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
       .where(eq(this.table['id'], id))
@@ -185,14 +196,15 @@ export abstract class BaseRepository<TEntity> {
    * - softDelete=true: sets deletedAt to current timestamp
    * - softDelete=false: hard-deletes the row
    */
-  async delete(id: string): Promise<void> {
+  async delete(id: string, tx?: DrizzleTx): Promise<void> {
+    const runner = this.runner(tx);
     if (this.behaviors.softDelete) {
-      await this.db
+      await runner
         .update(this.table)
         .set({ deletedAt: new Date() } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
         .where(eq(this.table['id'], id));
     } else {
-      await this.db
+      await runner
         .delete(this.table)
         .where(eq(this.table['id'], id));
     }
@@ -203,8 +215,8 @@ export abstract class BaseRepository<TEntity> {
    * Default naive implementation — family repositories override with
    * proper conflict-target upsert (e.g., CrmEntityRepository).
    */
-  async upsertMany(inputs: Array<Partial<TEntity>>): Promise<TEntity[]> {
-    return Promise.all(inputs.map((input) => this.create(input)));
+  async upsertMany(inputs: Array<Partial<TEntity>>, tx?: DrizzleTx): Promise<TEntity[]> {
+    return Promise.all(inputs.map((input) => this.create(input, tx)));
   }
 
   // ============================================================================
