@@ -837,7 +837,7 @@ export const fieldTypeToDrizzle: Record<FieldType, string> = {
 export const fieldTypeToZod: Record<FieldType, string> = {
   string: "z.string()",
   integer: "z.number().int()",
-  decimal: "z.number()",
+  decimal: "z.coerce.number()",
   boolean: "z.boolean()",
   uuid: "z.string().uuid()",
   date: "z.date()",

@@ -10,14 +10,14 @@ import {
 	varchar,
 	index,
 } from 'drizzle-orm/pg-core';
-import { persons } from './persons.schema';
+import { people } from './people.schema';
 import { opportunities } from './opportunities.schema';
 
 export const users = pgTable('users', {
 	id: uuid('id').defaultRandom().primaryKey(),
 	tenantId: uuid('tenant_id').notNull(),
 	email: varchar('email', { length: 255 }).notNull(),
-	personId: uuid('person_id').references(() => persons.id),
+	personId: uuid('person_id').references(() => people.id),
 }, (table) => ({
 	personIdIdx: index('idx_users_person_id').on(table.personId),
 	tenantIdIdx: index('idx_users_tenant_id').on(table.tenantId),
@@ -25,9 +25,9 @@ export const users = pgTable('users', {
 }));
 
 export const usersRelations = relations(users, ({ one, many }) => ({
-	person: one(persons, {
+	person: one(people, {
 		fields: [users.personId],
-		references: [persons.id],
+		references: [people.id],
 	}),
 	owned_opportunities: many(opportunities),
 }));

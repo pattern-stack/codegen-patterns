@@ -573,7 +573,7 @@ export default {
     const zodTypes = {
       string: "z.string()",
       integer: "z.number().int()",
-      decimal: "z.number()",
+      decimal: "z.coerce.number()",
       boolean: "z.boolean()",
       uuid: "z.string().uuid()",
       date: "z.coerce.date()",
@@ -1408,6 +1408,18 @@ export default {
         serviceBaseImport: '',
         repositoryInheritedMethods: [],
         serviceInheritedMethods: [],
+        // Generation toggles — needed so CLP template bodies render without crashing
+        // when architecture is 'clean'. The to:/skip_if: guards prevent file writes.
+        generateWrites: true,
+        eavEnabled: false,
+        eavValueTable: false,
+        eavDefinitionEntity: null,
+        eavDefinitionEntityPlural: null,
+        eavDefinitionPascal: null,
+        eavDefinitionPluralPascal: null,
+        hasSearchQuery: false,
+        searchQuery: null,
+        hasExternalIdTracking: false,
       });
     }
 
