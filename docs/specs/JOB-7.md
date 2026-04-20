@@ -1,15 +1,15 @@
 # JOB-7 — `scopeable: true` Entity Flag and Generated `ScopeEntityType` Union
 
 **Issue:** JOB-7
-**Status:** Draft
-**Last Updated:** 2026-04-18
+**Status:** Implemented
+**Last Updated:** 2026-04-20
 **Phase:** ADR-022 Phase 1
 **Depends on:** JOB-1 (`scope_entity_type text?` column consumes this union), JOB-2 (`ScopeRef<TInput, TScope extends string>` references this union)
 **Blocks:** JOB-8 (uses same entity scan infrastructure for `multi_tenant` flag)
 
 ## Overview
 
-Add `scopeable: true` to entity YAML definitions and generate a typed `ScopeEntityType` TypeScript union and Zod enum from the set of all flagged entities. The union is written to `src/shared/jobs/scope-entity-type.ts` in the consumer project. Type safety lives at the TS layer; the `scope_entity_type` DB column remains `text` with no CHECK constraint (ADR-022 mandate). Codegen-only change: no DB migrations, no new runtime classes.
+Add `scopeable: true` to entity YAML definitions and generate a typed `ScopeEntityType` TypeScript union and Zod enum from the set of all flagged entities. The union is written to `runtime/subsystems/jobs/generated/scope-entity-type.ts` in the consumer project. Type safety lives at the TS layer; the `scope_entity_type` DB column remains `text` with no CHECK constraint (ADR-022 mandate). Codegen-only change: no DB migrations, no new runtime classes.
 
 ## Context
 
@@ -35,7 +35,7 @@ EntityNewCommand.execute()
         ├── collectScopeableNames(entitiesDir)
         │     └── loadEntityFromYaml per file; filter scopeable === true
         ├── buildScopeEntityTypeContent(names)  ← pure function
-        └── write src/shared/jobs/scope-entity-type.ts
+        └── write runtime/subsystems/jobs/generated/scope-entity-type.ts
 ```
 
 Deterministic: full directory rescan on every invocation. Adding/removing `scopeable: true` and rerunning `entity new` always yields correct union.
@@ -98,7 +98,7 @@ const entity: ParsedEntity = {
 ```typescript
 interface ScopeEntityTypeGeneratorOptions {
   entitiesDir: string;        // absolute
-  outputPath: string;         // absolute, default <cwd>/src/shared/jobs/scope-entity-type.ts
+  outputPath: string;         // absolute, default <cwd>/runtime/subsystems/jobs/generated/scope-entity-type.ts
   dryRun?: boolean;
 }
 
@@ -154,7 +154,9 @@ No Zod import when empty (`z.enum([])` is invalid).
 **Consumer usage** (matches JOB-2's `ScopeRef<TInput, TScope extends string>`):
 
 ```typescript
-import type { ScopeEntityType } from '@shared/jobs/scope-entity-type';
+// import path is consumer-project-relative; use a tsconfig path alias (e.g. @jobs/*)
+// pointing to `runtime/subsystems/jobs/generated/` if desired.
+import type { ScopeEntityType } from '../../../subsystems/jobs/generated/scope-entity-type';
 
 @JobHandler<OnboardingInput>('onboarding', {
   scope: { entity: 'account' satisfies ScopeEntityType, from: (i) => i.accountId },
@@ -169,24 +171,24 @@ import type { ScopeEntityType } from '@shared/jobs/scope-entity-type';
 2. **Extend `ParsedEntity`** — add `scopeable?: boolean`.
 3. **Populate in parser** — `scopeable: definition.entity.scopeable ?? false` in `transformToEntity`.
 4. **Create generator** — `scope-entity-type-generator.ts` with `collectScopeableNames`, `buildScopeEntityTypeContent`, `generateScopeEntityType`. Match `barrel-generator.ts` style (HEADER constant, `mkdirSync`, same dry-run semantics).
-5. **Wire into `EntityNewCommand`** — after `regenerateBarrels()`, call `generateScopeEntityType({ entitiesDir, outputPath: path.resolve(ctx.cwd, 'src/shared/jobs/scope-entity-type.ts'), dryRun: this.dryRun })`. Include in dry-run report. Warn-but-don't-fail on error (matches barrel pattern). Run for both single-file and `--all` modes.
+5. **Wire into `EntityNewCommand`** — after `regenerateBarrels()`, call `generateScopeEntityType({ entitiesDir, outputPath: path.resolve(ctx.cwd, 'runtime/subsystems/jobs/generated/scope-entity-type.ts'), dryRun: this.dryRun })`. Include in dry-run report. Warn-but-don't-fail on error (matches barrel pattern). Run for both single-file and `--all` modes.
 6. **Add unit tests** — schema tests for field validation; generator tests with temp-directory fixtures.
 7. **Update baseline** — ensure one baseline fixture has `scopeable: true` so snapshot exercises non-empty path.
 
 ## Acceptance Criteria
 
-- [ ] `scopeable: true` passes `EntityDefinitionSchema.parse()`
-- [ ] `scopeable: false` passes
-- [ ] Omitting `scopeable` passes (`.optional()`)
-- [ ] Non-boolean values rejected by Zod
-- [ ] `transformToEntity` produces `entity.scopeable === true` for flagged entity, `false` otherwise
-- [ ] Given `account` (scopeable) + `contact` (not): union = `'account'`; `contact` absent
-- [ ] Given zero scopeable: `ScopeEntityType = never`, no Zod import
-- [ ] Generated file has `// AUTO-GENERATED` header
-- [ ] `entity new --all` regenerates union after Hygen
-- [ ] `entity new entities/X.yaml` also regenerates (full directory rescan)
-- [ ] `--dry-run` reports planned output without writing
-- [ ] `just test-unit` + `just test-baseline` pass
+- [x] `scopeable: true` passes `EntityDefinitionSchema.parse()`
+- [x] `scopeable: false` passes
+- [x] Omitting `scopeable` passes (`.optional()`)
+- [x] Non-boolean values rejected by Zod
+- [x] `transformToEntity` produces `entity.scopeable === true` for flagged entity, `false` otherwise
+- [x] Given `account` (scopeable) + `contact` (not): union = `'account'`; `contact` absent
+- [x] Given zero scopeable: `ScopeEntityType = never`, no Zod import
+- [x] Generated file has `// AUTO-GENERATED` header
+- [x] `entity new --all` regenerates union after Hygen
+- [x] `entity new entities/X.yaml` also regenerates (full directory rescan)
+- [x] `--dry-run` reports planned output without writing
+- [x] `just test-unit` + `just test-baseline` pass
 
 ## Testing Strategy
 
@@ -222,7 +224,7 @@ All tests run via `just test-unit` / `just test-baseline`. No Docker.
 
 - [x] **OQ-1 — Single-file vs. `--all` trigger.** **Resolved 2026-04-18: always rescan.** Both single-file and `--all` invocations trigger a full directory rescan and union regeneration. Cost is one directory walk (sub-millisecond at typical entity counts). Correctness over speed — silent stale-union failures would be confusing.
 
-- [x] **OQ-2 — Consumer output path.** **Resolved 2026-04-18: hardcoded `src/shared/jobs/scope-entity-type.ts` for Phase 1.** Add config override only if a real conflict surfaces.
+- [x] **OQ-2 — Consumer output path.** **Resolved 2026-04-19 (Q5): hardcoded `runtime/subsystems/jobs/generated/scope-entity-type.ts` — co-located with the jobs subsystem scaffold.** Establishes the `generated/` convention for subsystem-owned generated types (the forthcoming events epic will follow the same pattern for `AppDomainEvent`). Supersedes the 2026-04-18 proposal of `src/shared/jobs/...`. Rationale: clearer ownership — the jobs subsystem owns the type — and avoids a cross-cutting `@shared/` path.
 
 - [x] **OQ-3 — Empty Zod enum.** **Resolved 2026-04-18: omit the Zod export entirely when no scopeable entities exist.** Importers of `scopeEntityTypeSchema` get a clear "not exported" build error — correct surfacing of "there are no valid scopes." Fallbacks (`z.never()`, `z.string()`) hide the problem.
 

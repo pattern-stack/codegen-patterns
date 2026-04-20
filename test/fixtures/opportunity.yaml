@@ -6,6 +6,7 @@ entity:
   plural: opportunities
   table: opportunities
   folder_structure: nested
+  scopeable: true
 
 fields:
   tenant_id:

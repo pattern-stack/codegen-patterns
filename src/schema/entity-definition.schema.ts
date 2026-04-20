@@ -486,6 +486,11 @@ const EntityConfigSchema = z
     family: z
       .enum(["base", "synced", "activity", "knowledge", "metadata"])
       .optional(),
+
+    // JOB-7: marks this entity as a valid scope target for job scoping.
+    // Drives the generated ScopeEntityType union in
+    // runtime/subsystems/jobs/generated/scope-entity-type.ts.
+    scopeable: z.boolean().optional(),
   })
   .strict();
 

@@ -67,6 +67,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		plural: definition.entity.plural,
 		table: definition.entity.table,
 		family: definition.entity.family as EntityFamily | undefined,
+		scopeable: definition.entity.scopeable ?? false,
 		folderStructure: definition.entity.folder_structure ?? 'nested',
 		fields: new Map(),
 		relationships: new Map(),
