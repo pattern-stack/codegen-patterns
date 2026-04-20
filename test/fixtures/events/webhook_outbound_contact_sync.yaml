@@ -1,0 +1,14 @@
+type: webhook_outbound_contact_sync
+direction: outbound
+destination: crm
+aggregate: contact
+version: 1
+description: Outbound notification to the configured CRM when a contact changes.
+payload:
+  contact_id:
+    type: uuid
+  operation:
+    type: string
+    description: "create | update | delete"
+  occurred_at:
+    type: date
