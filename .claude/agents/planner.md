@@ -2,7 +2,7 @@
 name: planner
 description: Breaks understood concepts into PR-sized issues with dependencies. Use after understanding is approved to create the work breakdown.
 tools: Read, Glob, Grep
-model: sonnet
+model: inherit
 permissionMode: plan
 ---
 

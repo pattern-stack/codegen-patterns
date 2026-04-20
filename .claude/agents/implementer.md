@@ -2,7 +2,7 @@
 name: implementer
 description: Writes code following approved specs. Use after spec approval to implement the feature.
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
+model: inherit
 ---
 
 # Implementer Agent
