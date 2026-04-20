@@ -25,7 +25,6 @@ import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
 import {
 	desugarEntityEvents,
 	loadEvents,
-	type LoadEventsResult,
 } from '../../parser/load-events.js';
 import type {
 	EventDefinition,
@@ -229,6 +228,72 @@ export function mergeEvents(
 	);
 
 	return { events, issues };
+}
+
+// ---------------------------------------------------------------------------
+// Exported helper: collectMergedEvents (EVT-7)
+// ---------------------------------------------------------------------------
+
+export interface CollectMergedEventsOptions {
+	/** Absolute path to the entities directory. */
+	entitiesDir: string;
+	/** Absolute path to the events directory. */
+	eventsDir: string;
+}
+
+export interface CollectMergedEventsResult {
+	/** Merged + deduplicated EventDefinitions (same shape as generateEventCodegen). */
+	events: EventDefinition[];
+	/** Issues surfaced during load / merge (warnings + errors). */
+	issues: AnalysisIssue[];
+}
+
+/**
+ * Load + merge events from `events/*.yaml` and entity `events:` block desugar,
+ * without writing any files.
+ *
+ * Exposed for callers that need the merged registry before Hygen runs (e.g.
+ * `validateEntityEmits()` in `EntityNewCommand.execute()` pre-flight). Mirrors
+ * the internal `generateEventCodegen()` flow so both paths observe the same
+ * `{ events, issues }` shape.
+ */
+export function collectMergedEvents(
+	opts: CollectMergedEventsOptions,
+): CollectMergedEventsResult {
+	const { entitiesDir, eventsDir } = opts;
+
+	// 1. Gather entity names (for loadEvents cross-validation).
+	const entityNames: string[] = [];
+	if (fs.existsSync(entitiesDir)) {
+		const entityFiles = fs
+			.readdirSync(entitiesDir)
+			.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+			.map((f) => path.join(entitiesDir, f))
+			.sort();
+		for (const f of entityFiles) {
+			const result = loadEntityFromYaml(f);
+			if (result.success) entityNames.push(result.definition.entity.name);
+		}
+	}
+
+	// 2. Load top-level events and desugar entity events.
+	const topLevelResult = loadEvents(eventsDir, entityNames);
+	const { events: entitySugar, issues: sugarIssues } =
+		collectEntityEvents(entitiesDir);
+
+	// 3. Merge (top-level wins on collision).
+	const { events: merged, issues: mergeIssues } = mergeEvents(
+		topLevelResult.events,
+		entitySugar,
+	);
+
+	const issues: AnalysisIssue[] = [
+		...topLevelResult.issues,
+		...sugarIssues,
+		...mergeIssues,
+	];
+
+	return { events: merged, issues };
 }
 
 // ---------------------------------------------------------------------------
@@ -583,38 +648,13 @@ export async function generateEventCodegen(
 ): Promise<EventCodegenResult> {
 	const { entitiesDir, eventsDir, outputDir, dryRun = false } = opts;
 
-	// 1. Gather entity names (for loadEvents cross-validation).
-	let entityNames: string[] = [];
-	if (fs.existsSync(entitiesDir)) {
-		const entityFiles = fs
-			.readdirSync(entitiesDir)
-			.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-			.map((f) => path.join(entitiesDir, f))
-			.sort();
-		for (const f of entityFiles) {
-			const result = loadEntityFromYaml(f);
-			if (result.success) entityNames.push(result.definition.entity.name);
-		}
-	}
-
-	// 2. Load top-level events and desugar entity events.
-	const topLevelResult: LoadEventsResult = loadEvents(eventsDir, entityNames);
-	const { events: entitySugar, issues: sugarIssues } =
-		collectEntityEvents(entitiesDir);
-
-	// 3. Merge (top-level wins on collision).
-	const { events: merged, issues: mergeIssues } = mergeEvents(
-		topLevelResult.events,
-		entitySugar,
-	);
-
-	const issues: AnalysisIssue[] = [
-		// `no_events_dir` / `no_files` warnings from loadEvents are retained —
-		// the generator still emits stub files, matching JOB-7's empty case.
-		...topLevelResult.issues,
-		...sugarIssues,
-		...mergeIssues,
-	];
+	// 1–3. Load + merge via the shared helper. `no_events_dir` / `no_files`
+	// warnings are retained — the generator still emits stub files, matching
+	// JOB-7's empty case.
+	const { events: merged, issues } = collectMergedEvents({
+		entitiesDir,
+		eventsDir,
+	});
 
 	// 4. Build all file contents.
 	const builders: Record<

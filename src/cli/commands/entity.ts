@@ -22,7 +22,13 @@ import {
 	resolveGeneratedDir,
 } from '../shared/barrel-generator.js';
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
-import { generateEventCodegen } from '../shared/event-codegen-generator.js';
+import {
+	collectMergedEvents,
+	generateEventCodegen,
+} from '../shared/event-codegen-generator.js';
+import { validateEntityEmits } from '../../parser/validate-emits.js';
+import { loadEntities } from '../../parser/load-entities.js';
+import type { AnalysisIssue } from '../../analyzer/types.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -208,6 +214,52 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// EVT-7: pre-flight cross-validate each target's `emits:` block against
+		// the merged event registry (top-level events/*.yaml + entity events:
+		// desugar). Errors are fatal (unless --continue-on-error); warnings are
+		// surfaced via printWarning + JSON payload and never gate.
+		const entitiesDirForEmits =
+			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const eventsDirForEmits = path.resolve(ctx.cwd, 'events');
+		const allEntitiesForEmits = loadEntities(entitiesDirForEmits).entities;
+		const validatedNames = new Set(validated.map((v) => v.name));
+		const emitsTargetEntities = allEntitiesForEmits.filter((e) =>
+			validatedNames.has(e.name),
+		);
+		const mergedEventsForEmits = collectMergedEvents({
+			entitiesDir: entitiesDirForEmits,
+			eventsDir: eventsDirForEmits,
+		});
+		const emitsIssues: AnalysisIssue[] = validateEntityEmits(
+			emitsTargetEntities,
+			mergedEventsForEmits.events,
+		);
+		const emitsErrors = emitsIssues.filter((i) => i.severity === 'error');
+		const emitsWarnings = emitsIssues.filter(
+			(i) => i.severity === 'warning',
+		);
+
+		if (emitsErrors.length > 0 && !this.continueOnError) {
+			if (!isJsonMode()) {
+				for (const e of emitsErrors) {
+					printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
+				}
+				return 1;
+			}
+		}
+
+		if (!isJsonMode()) {
+			for (const w of emitsWarnings) {
+				printWarning(w.message);
+			}
+			const noEmitsCount = emitsWarnings.filter(
+				(w) => w.type === 'no_emits',
+			).length;
+			if (noEmitsCount > 0) {
+				printInfo(`${noEmitsCount} entities missing emits:`);
+			}
+		}
+
 		// Git safety — we don't know specific output paths without running Hygen,
 		// so scope the check to the cwd's generated source roots if we can.
 		if (!this.force) {
@@ -285,6 +337,18 @@ export class EntityNewCommand extends Command {
 							name: f.name,
 							outputPath: f.outputPath,
 							content: f.content,
+						})),
+					},
+					emits: {
+						warnings: emitsWarnings.map((w) => ({
+							entity: w.entity ?? null,
+							type: w.type,
+							message: w.message,
+						})),
+						errors: emitsErrors.map((e) => ({
+							entity: e.entity ?? null,
+							type: e.type,
+							message: e.message,
 						})),
 					},
 				});
@@ -430,6 +494,18 @@ export class EntityNewCommand extends Command {
 							})),
 						}
 					: null,
+				emits: {
+					warnings: emitsWarnings.map((w) => ({
+						entity: w.entity ?? null,
+						type: w.type,
+						message: w.message,
+					})),
+					errors: emitsErrors.map((e) => ({
+						entity: e.entity ?? null,
+						type: e.type,
+						message: e.message,
+					})),
+				},
 			});
 		} else {
 			const total = validated.length + invalid.length;

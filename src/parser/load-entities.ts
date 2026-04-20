@@ -160,6 +160,12 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		}));
 	}
 
+	// Parse emits (EVT-7). Preserve `undefined` vs `[]` distinction — the
+	// validator treats absence as a warning and explicit empty as opt-out.
+	if (definition.emits !== undefined) {
+		entity.emits = definition.emits;
+	}
+
 	return entity;
 }
 

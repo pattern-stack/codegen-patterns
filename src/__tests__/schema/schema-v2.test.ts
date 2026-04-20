@@ -572,3 +572,87 @@ describe('cross-block validation', () => {
 		expect(queryIssues).toHaveLength(0);
 	});
 });
+
+// ============================================================================
+// emits block (EVT-7)
+// ============================================================================
+
+describe('emits block (EVT-7)', () => {
+	const base = {
+		entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+		fields: { email: { type: 'string', required: true } },
+	};
+
+	it('accepts a single valid snake_case entry', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: ['contact_created'],
+		});
+		expect(result.success).toBe(true);
+		expect(result.data!.emits).toEqual(['contact_created']);
+	});
+
+	it('accepts multiple valid entries', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: ['contact_created', 'contact_updated', 'contact_deleted'],
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts an explicit empty array (opt-out)', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: [],
+		});
+		expect(result.success).toBe(true);
+		expect(result.data!.emits).toEqual([]);
+	});
+
+	it('treats absent emits as undefined (fallback path)', () => {
+		const result = EntityDefinitionSchema.safeParse(base);
+		expect(result.success).toBe(true);
+		expect(result.data!.emits).toBeUndefined();
+	});
+
+	it('rejects PascalCase entries', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: ['ContactCreated'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects kebab-case entries', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: ['contact-created'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects entries starting with a digit', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: ['1contact_created'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects entries with uppercase characters', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: ['contact_Created'],
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('does not dedupe at schema level (validator concern)', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			emits: ['contact_created', 'contact_created'],
+		});
+		expect(result.success).toBe(true);
+		expect(result.data!.emits).toHaveLength(2);
+	});
+});

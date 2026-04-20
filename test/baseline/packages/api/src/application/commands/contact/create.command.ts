@@ -15,12 +15,17 @@ import { CONTACT_REPOSITORY } from '../../../constants';
 import type { CreateContactInput, IContactRepository } from '../../../domain';
 import { Contact } from '../../../domain';
 import type { CreateContactDto } from '../../schemas';
+import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/events';
+import { DRIZZLE } from '@shared/constants/tokens';
+import type { DrizzleClient } from '@shared/types/drizzle';
 
 @Injectable()
 export class CreateContactCommand {
 	constructor(
 		@Inject(CONTACT_REPOSITORY)
 		private readonly contactRepository: IContactRepository,
+		@Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
+		@Inject(DRIZZLE) private readonly db: DrizzleClient,
 	) {}
 
 	async execute(dto: CreateContactDto): Promise<Contact> {
@@ -38,10 +43,24 @@ export class CreateContactCommand {
 			linkedinUrl: dto.linkedinUrl ?? null,
 		};
 
-		const created = await this.contactRepository.create(input);
+		return this.db.transaction(async (tx) => {
+			const entity = await this.contactRepository.create(input, tx);
+			// TODO: verify payload mapping against events/contact_created.yaml
+			await this.typedEvents.publish(
+				'contact_created',
+				entity.id,
+				{
+					accountId: entity.accountId,
 
-		// TODO: Add post-create side effects here (events, notifications, etc.)
+					contactId: entity.id,
 
-		return created;
+					createdBy: null as unknown as string, // TODO: supply created_by (not on DTO — wire from auth context)
+
+				},
+				{ tx },
+			);
+			// TODO: Add post-create side effects here (non-event hooks, notifications, etc.)
+			return entity;
+		});
 	}
 }

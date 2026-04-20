@@ -13,6 +13,13 @@
  *   - LIFECYCLE events carry an entity snapshot in payload.
  *   - CHANGE events carry per-field old/new diffs.
  *   - Controlled per-entity via `emitLifecycleEvents` flag (default: true).
+ *
+ * @deprecated EVT-7 — Lifecycle events are untyped and emit outside of the
+ *   CRUD transaction. New work should declare an `emits:` block on the entity
+ *   and publish typed domain events from use-cases via TYPED_EVENT_BUS inside
+ *   the same Drizzle transaction. See `docs/specs/EVT-7.md`. This helper is
+ *   retained for BaseService backward compatibility until all entities have
+ *   migrated to typed emits.
  */
 
 import { randomUUID } from 'crypto';
