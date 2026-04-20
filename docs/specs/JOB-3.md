@@ -191,7 +191,7 @@ g. Remove promise from `inFlight` in finally.
 - `ctx.step` memoizes across retries
 - `replay_from` modes: `scratch` clears all steps; `last_step` clears only failing; `last_checkpoint` preserves all
 - Cascade cancel respects `parent_close_policy` (terminate/cancel/abandon)
-- Stale sweeper recovers stranded `running` rows
+- Stale sweeper: per-`JobWorker` instance, wired via `setInterval` in `onModuleInit`; uses `FOR UPDATE SKIP LOCKED` so concurrent sweepers across horizontally-scaled workers are safe (a row is recovered at most once); recovers stranded `running` rows back to `pending` (Q2 resolved 2026-04-19)
 - SIGTERM drains in-flight, resets uncompleted runs on timeout
 
 ## Testing Strategy
@@ -202,8 +202,8 @@ g. Remove promise from `inFlight` in finally.
 
 ## Open Questions (with proposed resolutions)
 
-**OQ-2 — Stale-claim sweeper placement: per-worker vs. singleton.**
-Proposed: run sweeper on every `JobWorker` instance. The update is self-protecting: `WHERE status='running' AND claimed_at < threshold` — a row only transitions once; subsequent sweepers find no matching rows. Singleton adds coordination complexity (leader election) without meaningful advantage at Phase 1 scale. Document invariant: `staleThresholdMs >= 2 * max_handler_duration`.
+**OQ-2 — Stale-claim sweeper placement. Resolved 2026-04-19.**
+Resolution: sweeper runs on every `JobWorker` instance (per-pool), wired via `setInterval` in `onModuleInit`. The sweep query uses `FOR UPDATE SKIP LOCKED`, making concurrent sweepers across horizontally-scaled workers safe — a row is recovered at most once. Singleton rejected: adds coordination complexity (leader election) without meaningful advantage at Phase 1 scale. Document invariant: `staleThresholdMs >= 2 * max_handler_duration`.
 
 **OQ-3 — `job` table upsert under horizontal scale.**
 Proposed: `ON CONFLICT (type) DO UPDATE SET pool = EXCLUDED.pool, retry_policy = EXCLUDED.retry_policy, version = EXCLUDED.version, updated_at = now()`. Last-writer-wins. All instances of the same app version produce identical metadata — concurrent upserts are harmless. `DO NOTHING` is rejected: under rolling deploy, old-version instance A could leave a stale row that new-version instance B cannot overwrite. Advisory locks rejected: add latency + leak risk.
