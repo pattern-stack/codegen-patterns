@@ -14,7 +14,7 @@
  * the orchestrator's mutex.
  */
 import { randomUUID } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type {
   JobDefinitionRow,
   JobRunRow,
@@ -41,9 +41,11 @@ import {
   JobNotReplayableError,
   JobTemplateFieldMissingError,
   JobTypeNotFoundError,
+  MissingTenantIdError,
 } from './jobs-errors';
 import { MemoryJobStore } from './memory-job-store';
 import { MemoryJobStepService } from './job-step-service.memory-backend';
+import { JOBS_MULTI_TENANT } from './jobs-domain.tokens';
 
 /**
  * Sentinel `run_at` for runs that lost the `queue` collision — they stay
@@ -136,7 +138,22 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
   constructor(
     private readonly store: MemoryJobStore,
     private readonly stepService: MemoryJobStepService,
+    @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
   ) {}
+
+  /**
+   * JOB-8 — mirror of the Drizzle backend's `resolveTenantId`. Returns the
+   * value to stamp on `tenant_id` / compare against in memory predicates.
+   * Off → always `null`. On + `undefined` → throw. On + `null`/string → pass.
+   */
+  private resolveTenantId(
+    method: string,
+    tenantId: string | null | undefined,
+  ): string | null {
+    if (!this.multiTenant) return null;
+    if (tenantId === undefined) throw new MissingTenantIdError(method);
+    return tenantId;
+  }
 
   // ==========================================================================
   // registerHandler — replaces Drizzle's `job` table upsert
@@ -229,6 +246,11 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
     input: unknown,
     opts: StartOptions = {},
   ): Promise<JobRun> {
+    // JOB-8 — resolve tenant gate outside the mutex so the error throws
+    // synchronously-ish from the caller's stack rather than via the mutex's
+    // deferred chain (matches Drizzle backend's pre-transaction guard).
+    const tenantId = this.resolveTenantId('start', opts.tenantId);
+
     return this.mutex.run(async () => {
       const payload = (input ?? {}) as Record<string, unknown>;
       const definition = this.store.jobs.get(type);
@@ -262,7 +284,16 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
               // Cancel incumbent (cascading children). Must happen inside
               // the mutex — call the internal helper, not public `cancel()`
               // (public `cancel` would re-enter the mutex and deadlock).
-              this.cancelLocked(incumbent.id, { cascade: true, reason: 'replaced' });
+              // Internal replace path sidesteps the tenant gate — it uses
+              // the incumbent's own tenant (same concurrency key implies
+              // same tenant in practice, but the gate is bypassed via
+              // `incumbent.tenantId` to avoid accidental cross-tenant
+              // MissingTenantIdError bubbling from the user's `start` call).
+              this.cancelLocked(
+                incumbent.id,
+                { cascade: true, reason: 'replaced' },
+                incumbent.tenantId,
+              );
               break;
             case 'queue':
               queueBlockedBy = incumbent.id;
@@ -305,7 +336,7 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
         parentClosePolicy: opts.parentClosePolicy ?? 'terminate',
         scopeEntityType: opts.scope?.entityType ?? null,
         scopeEntityId: opts.scope?.entityId ?? null,
-        tenantId: null,
+        tenantId,
         tags: opts.tags ?? {},
         pool: opts.pool ?? definition.pool,
         priority: opts.priority ?? definition.priorityDefault,
@@ -344,18 +375,32 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
   // ==========================================================================
 
   async cancel(runId: string, opts: CancelOptions = {}): Promise<void> {
+    // JOB-8 — strict tenant gate outside the mutex (matches Drizzle path).
+    const tenantId = this.resolveTenantId('cancel', opts.tenantId);
     await this.mutex.run(async () => {
-      this.cancelLocked(runId, opts);
+      this.cancelLocked(runId, opts, tenantId);
     });
   }
 
   /**
    * Internal cancel that assumes the caller already holds the mutex.
    * Synchronous because all store ops are in-memory. Idempotent.
+   *
+   * `tenantForGate` is the already-validated tenant id (or `null`). When
+   * non-null it gates the initial cancellation to that tenant's run; the
+   * cascade step then sweeps descendants on the same `rootRunId` without
+   * re-checking — children of a tenant-gated parent always share the
+   * tenant (enforced at `start` time).
    */
-  private cancelLocked(runId: string, opts: CancelOptions): void {
+  private cancelLocked(
+    runId: string,
+    opts: CancelOptions,
+    tenantForGate: string | null,
+  ): void {
     const run = this.store.runs.get(runId);
     if (!run) return;
+    // JOB-8 — cross-tenant cancel is silent no-op.
+    if (this.multiTenant && run.tenantId !== tenantForGate) return;
     if (isTerminal(run.status)) return;
 
     const now = new Date();
@@ -686,10 +731,16 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
     });
 
     // parent_close_policy = 'terminate' cascade mirrors the Drizzle worker
-    // (cancel runs outside its own terminal transition).
+    // (cancel runs outside its own terminal transition). We pass the run's
+    // own `tenantId` so the cancel passes the multi-tenant gate — this is
+    // system-internal cascade, not a user-initiated call.
     if (run.parentClosePolicy === 'terminate') {
       try {
-        await this.cancel(run.id, { cascade: true, reason: 'parent-failed' });
+        await this.cancel(run.id, {
+          cascade: true,
+          reason: 'parent-failed',
+          tenantId: run.tenantId,
+        });
       } catch (cascadeErr) {
         this.logger.warn(
           `cascade on failed run ${run.id}: ${(cascadeErr as Error).message}`,

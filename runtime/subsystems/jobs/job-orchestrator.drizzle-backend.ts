@@ -30,8 +30,10 @@ import {
   JobNotReplayableError,
   JobTemplateFieldMissingError,
   JobTypeNotFoundError,
+  MissingTenantIdError,
 } from './jobs-errors';
 import { jobSteps } from './job-orchestration.schema';
+import { JOBS_MULTI_TENANT } from './jobs-domain.tokens';
 
 /**
  * Terminal statuses — transitions into these are final. Used by `cancel`
@@ -77,7 +79,26 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
   // TODO(logging-subsystem): swap to ILogger once ADR-028 lands
   private readonly logger = new Logger(DrizzleJobOrchestrator.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleClient) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleClient,
+    @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
+  ) {}
+
+  /**
+   * JOB-8 — resolve `tenantId` for a mutating / targeted-read call.
+   * Returns the tenant value that should be written to the row (or compared
+   * against in a WHERE clause). When `multiTenant` is off, the column is
+   * forced to `null` regardless of what callers pass. When on, `undefined`
+   * throws; `null` and strings pass through untouched.
+   */
+  private resolveTenantId(
+    method: string,
+    tenantId: string | null | undefined,
+  ): string | null {
+    if (!this.multiTenant) return null;
+    if (tenantId === undefined) throw new MissingTenantIdError(method);
+    return tenantId;
+  }
 
   // ==========================================================================
   // start
@@ -85,6 +106,10 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
 
   async start(type: string, input: unknown, opts: StartOptions = {}): Promise<JobRun> {
     const payload = (input ?? {}) as Record<string, unknown>;
+
+    // JOB-8 — resolve tenant gate up front so `multi_tenant=true` +
+    // undefined surfaces before any row is touched.
+    const tenantId = this.resolveTenantId('start', opts.tenantId);
 
     // 1a. Load job definition.
     const [def] = await this.db
@@ -141,7 +166,17 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
           case 'reject':
             throw new JobCollisionError(type, concurrencyKey, incumbent);
           case 'replace':
-            await this.cancel(incumbent.id, { cascade: true, reason: 'replaced' });
+            // JOB-8 — thread the incumbent's own tenantId through the
+            // internal cascade. Without this, every `replace`-collision
+            // start() under multiTenant=true throws MissingTenantIdError
+            // from the inner cancel() call instead of cancelling the
+            // incumbent. Mirrors the memory backend's `cancelLocked(
+            // incumbent.id, ..., incumbent.tenantId)` pattern.
+            await this.cancel(incumbent.id, {
+              cascade: true,
+              reason: 'replaced',
+              tenantId: incumbent.tenantId,
+            });
             break;
           case 'queue':
             // Fall through — row is inserted; claim query gates it until
@@ -184,7 +219,7 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
         parentClosePolicy: opts.parentClosePolicy ?? 'terminate',
         scopeEntityType: opts.scope?.entityType ?? null,
         scopeEntityId: opts.scope?.entityId ?? null,
-        tenantId: null, // JOB-8 wires multi-tenancy
+        tenantId,
         tags: opts.tags ?? {},
         pool: opts.pool ?? definition.pool,
         priority: opts.priority ?? definition.priorityDefault,
@@ -212,6 +247,9 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
   // ==========================================================================
 
   async cancel(runId: string, opts: CancelOptions = {}): Promise<void> {
+    // JOB-8 — resolve tenant gate up front (strict undefined-throws).
+    const tenantId = this.resolveTenantId('cancel', opts.tenantId);
+
     // Load target.
     const [target] = await this.db
       .select()
@@ -219,6 +257,8 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
       .where(eq(jobRuns.id, runId))
       .limit(1);
     if (!target) return;
+    // JOB-8 — cross-tenant cancel is a silent no-op (no existence leak).
+    if (this.multiTenant && target.tenantId !== tenantId) return;
     if (TERMINAL_STATUSES.includes(target.status as TerminalStatus)) {
       return; // idempotent
     }

@@ -16,11 +16,12 @@ export {
   triggerSourceEnum,
 } from './job-orchestration.schema';
 
-// ─── JOB-2: domain tokens ──────────────────────────────────────────────────
+// ─── JOB-2 + JOB-8: domain tokens ──────────────────────────────────────────
 export {
   JOB_ORCHESTRATOR,
   JOB_RUN_SERVICE,
   JOB_STEP_SERVICE,
+  JOBS_MULTI_TENANT,
 } from './jobs-domain.tokens';
 
 // ─── JOB-2: orchestrator protocol ──────────────────────────────────────────
@@ -37,6 +38,8 @@ export type {
 export type {
   IJobRunService,
   ListForScopeOptions,
+  CancelForScopeOptions,
+  RescheduleForScopeOptions,
 } from './job-run-service.protocol';
 
 // ─── JOB-2: step-service protocol ──────────────────────────────────────────
@@ -85,6 +88,7 @@ export {
   JobNotReplayableError,
   JobTemplateFieldMissingError,
   JobTypeNotFoundError,
+  MissingTenantIdError,
   BootValidationError,
   ReservedPoolViolationError,
 } from './jobs-errors';

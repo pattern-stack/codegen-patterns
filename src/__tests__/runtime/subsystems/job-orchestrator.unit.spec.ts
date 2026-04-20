@@ -74,7 +74,10 @@ function makeStepHandlerFailB(calls: string[], mutable: { failB: boolean }) {
 function buildOrchestrator() {
   const store = new MemoryJobStore();
   const stepService = new MemoryJobStepService(store);
-  const orchestrator = new MemoryJobOrchestrator(store, stepService);
+  // JOB-8: the third constructor arg is the multi-tenant flag. This test
+  // suite exercises pre-multi-tenant behaviour; `false` keeps the previous
+  // observable contract (tenant_id always written as null; no filter).
+  const orchestrator = new MemoryJobOrchestrator(store, stepService, false);
   return { store, stepService, orchestrator };
 }
 

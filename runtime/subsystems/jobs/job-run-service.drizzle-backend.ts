@@ -7,7 +7,7 @@
  * `idx_job_run_scope`, whereas orchestrator mutates individual runs by id.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
 import { jobRuns, type JobRunRow } from './job-orchestration.schema';
@@ -15,9 +15,12 @@ import type { JobRun } from './job-orchestrator.protocol';
 import type {
   IJobRunService,
   ListForScopeOptions,
+  CancelForScopeOptions,
+  RescheduleForScopeOptions,
 } from './job-run-service.protocol';
 import type { IJobOrchestrator } from './job-orchestrator.protocol';
-import { JOB_ORCHESTRATOR } from './jobs-domain.tokens';
+import { JOB_ORCHESTRATOR, JOBS_MULTI_TENANT } from './jobs-domain.tokens';
+import { MissingTenantIdError } from './jobs-errors';
 
 const NON_TERMINAL_STATUSES: JobRunRow['status'][] = [
   'pending',
@@ -30,7 +33,25 @@ export class DrizzleJobRunService implements IJobRunService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
     @Inject(JOB_ORCHESTRATOR) private readonly orchestrator: IJobOrchestrator,
+    @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
   ) {}
+
+  /**
+   * JOB-8 — produce the tenant WHERE fragment (or `null` to opt out).
+   * Returns `null` when multi-tenancy is off (caller skips the predicate).
+   * Throws `MissingTenantIdError` when on + `undefined`.
+   * When on + explicit `null`, filters `tenant_id IS NULL`.
+   */
+  private tenantCondition(
+    method: string,
+    tenantId: string | null | undefined,
+  ) {
+    if (!this.multiTenant) return null;
+    if (tenantId === undefined) throw new MissingTenantIdError(method);
+    return tenantId === null
+      ? isNull(jobRuns.tenantId)
+      : eq(jobRuns.tenantId, tenantId);
+  }
 
   async listForScope(
     entityType: string,
@@ -41,6 +62,8 @@ export class DrizzleJobRunService implements IJobRunService {
       eq(jobRuns.scopeEntityType, entityType),
       eq(jobRuns.scopeEntityId, entityId),
     ];
+    const tenantCond = this.tenantCondition('listForScope', opts.tenantId);
+    if (tenantCond) conditions.push(tenantCond);
     if (opts.status) {
       if (Array.isArray(opts.status)) {
         conditions.push(inArray(jobRuns.status, opts.status));
@@ -84,20 +107,32 @@ export class DrizzleJobRunService implements IJobRunService {
     return rows as JobRun[];
   }
 
-  async cancelForScope(entityType: string, entityId: string): Promise<void> {
+  async cancelForScope(
+    entityType: string,
+    entityId: string,
+    opts: CancelForScopeOptions = {},
+  ): Promise<void> {
+    const tenantCond = this.tenantCondition('cancelForScope', opts.tenantId);
+    const conditions = [
+      eq(jobRuns.scopeEntityType, entityType),
+      eq(jobRuns.scopeEntityId, entityId),
+      inArray(jobRuns.status, NON_TERMINAL_STATUSES),
+    ];
+    if (tenantCond) conditions.push(tenantCond);
+
     const rows = await this.db
       .select({ id: jobRuns.id })
       .from(jobRuns)
-      .where(
-        and(
-          eq(jobRuns.scopeEntityType, entityType),
-          eq(jobRuns.scopeEntityId, entityId),
-          inArray(jobRuns.status, NON_TERMINAL_STATUSES),
-        ),
-      );
+      .where(and(...conditions));
 
     for (const { id } of rows) {
-      await this.orchestrator.cancel(id, { cascade: true });
+      // Propagate the tenant gate into cascade-cancel. The scope query has
+      // already narrowed to this tenant; passing `tenantId` through keeps
+      // the orchestrator's per-row guard consistent under multi-tenant mode.
+      await this.orchestrator.cancel(id, {
+        cascade: true,
+        tenantId: opts.tenantId,
+      });
     }
   }
 
@@ -105,17 +140,20 @@ export class DrizzleJobRunService implements IJobRunService {
     entityType: string,
     entityId: string,
     newRunAt: Date,
+    opts: RescheduleForScopeOptions = {},
   ): Promise<void> {
+    const tenantCond = this.tenantCondition('rescheduleForScope', opts.tenantId);
+    const conditions = [
+      eq(jobRuns.scopeEntityType, entityType),
+      eq(jobRuns.scopeEntityId, entityId),
+      eq(jobRuns.status, 'pending'),
+    ];
+    if (tenantCond) conditions.push(tenantCond);
+
     await this.db
       .update(jobRuns)
       .set({ runAt: newRunAt, updatedAt: new Date() })
-      .where(
-        and(
-          eq(jobRuns.scopeEntityType, entityType),
-          eq(jobRuns.scopeEntityId, entityId),
-          eq(jobRuns.status, 'pending'),
-        ),
-      );
+      .where(and(...conditions));
   }
 
   /**

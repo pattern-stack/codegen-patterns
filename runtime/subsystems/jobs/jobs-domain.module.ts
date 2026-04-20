@@ -19,6 +19,7 @@ import {
   JOB_ORCHESTRATOR,
   JOB_RUN_SERVICE,
   JOB_STEP_SERVICE,
+  JOBS_MULTI_TENANT,
 } from './jobs-domain.tokens';
 import { DrizzleJobOrchestrator } from './job-orchestrator.drizzle-backend';
 import { DrizzleJobRunService } from './job-run-service.drizzle-backend';
@@ -73,9 +74,17 @@ export interface JobsDomainModuleOptions {
 export class JobsDomainModule {
   static forRoot(opts: JobsDomainModuleOptions): DynamicModule {
     void opts.extensions; // typed reservation; consumed by Phase 6+ wiring
-    void opts.multiTenant; // JOB-8 wires multi-tenancy
 
-    const providers: Provider[] = [];
+    const multiTenant = opts.multiTenant ?? false;
+
+    const providers: Provider[] = [
+      // JOB-8 — boolean provider consumed by the four service-layer backends.
+      // Always provided (even when `multiTenant === false`) so `@Inject`
+      // always resolves; backends short-circuit the enforcement path when
+      // the value is `false`. See `jobs-domain.tokens.ts` for the claim-loop
+      // cross-tenant-by-design decision.
+      { provide: JOBS_MULTI_TENANT, useValue: multiTenant },
+    ];
 
     if (opts.backend === 'memory') {
       // The store is a plain class — wired as a singleton `useValue` so
@@ -99,7 +108,12 @@ export class JobsDomainModule {
       module: JobsDomainModule,
       global: true,
       providers,
-      exports: [JOB_ORCHESTRATOR, JOB_RUN_SERVICE, JOB_STEP_SERVICE],
+      exports: [
+        JOB_ORCHESTRATOR,
+        JOB_RUN_SERVICE,
+        JOB_STEP_SERVICE,
+        JOBS_MULTI_TENANT,
+      ],
     };
   }
 }

@@ -74,8 +74,11 @@ function buildProviders() {
   // Orchestrator needs the shared store + step service injected directly.
   // (JOB-5's DynamicModule.forRoot({ backend: 'memory' }) wires these via
   //  `useClass` + `useValue`; we replicate that shape here.)
-  const orchestrator = new MemoryJobOrchestrator(store, stepService);
-  const runService = new MemoryJobRunService(store, orchestrator);
+  // JOB-8: third / third positional arg is the multi-tenant flag. These
+  // worker tests don't exercise multi-tenancy; `false` preserves the
+  // pre-JOB-8 behaviour (tenant_id always null, no tenant filter).
+  const orchestrator = new MemoryJobOrchestrator(store, stepService, false);
+  const runService = new MemoryJobRunService(store, orchestrator, false);
 
   return { store, stepService, orchestrator, runService };
 }
