@@ -134,7 +134,6 @@ export const jobRuns = pgTable(
       .default('terminate'),
     scopeEntityType: text('scope_entity_type'),
     scopeEntityId: text('scope_entity_id'),
-    // scaffold-time conditional in template — see JOB-8
     tenantId: text('tenant_id'),
     tags: jsonb('tags').notNull().default({}).$type<Record<string, string>>(),
     pool: text('pool').notNull(),

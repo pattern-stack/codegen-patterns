@@ -53,6 +53,17 @@ export interface StartOptions {
 
   /** Internal — set by `ctx.spawnChild`. User code should not pass this. */
   parentRunId?: string;
+
+  /**
+   * Multi-tenancy opt-in (JOB-8). When `JobsDomainModule` is configured
+   * with `multiTenant: true`, this field is required:
+   *   - `string` — tenant the run belongs to (written to `job_run.tenant_id`).
+   *   - `null`   — cross-tenant background work; row persisted with NULL.
+   *   - `undefined` — throws `MissingTenantIdError` at the backend.
+   * When `multiTenant: false`, the field is ignored and the column is
+   * always written as `NULL`.
+   */
+  tenantId?: string | null;
 }
 
 export interface CancelOptions {
@@ -64,6 +75,16 @@ export interface CancelOptions {
    */
   cascade?: boolean;
   reason?: string;
+
+  /**
+   * Multi-tenancy gate (JOB-8). When `multiTenant: true`, the backend
+   * additionally filters `WHERE tenant_id = :tenantId` — cancelling a run
+   * that belongs to a different tenant is a **no-op** (not an error), so
+   * cross-tenant cancellation attempts are silent rather than leaking
+   * existence information. `undefined` throws `MissingTenantIdError`;
+   * explicit `null` matches `tenant_id IS NULL` rows.
+   */
+  tenantId?: string | null;
 }
 
 /**

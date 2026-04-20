@@ -12,9 +12,12 @@ import type { JobRun } from './job-orchestrator.protocol';
 import type {
   IJobRunService,
   ListForScopeOptions,
+  CancelForScopeOptions,
+  RescheduleForScopeOptions,
 } from './job-run-service.protocol';
 import type { IJobOrchestrator } from './job-orchestrator.protocol';
-import { JOB_ORCHESTRATOR } from './jobs-domain.tokens';
+import { JOB_ORCHESTRATOR, JOBS_MULTI_TENANT } from './jobs-domain.tokens';
+import { MissingTenantIdError } from './jobs-errors';
 import { MemoryJobStore } from './memory-job-store';
 
 const NON_TERMINAL_STATUSES: JobRunRow['status'][] = [
@@ -28,7 +31,23 @@ export class MemoryJobRunService implements IJobRunService {
   constructor(
     private readonly store: MemoryJobStore,
     @Inject(JOB_ORCHESTRATOR) private readonly orchestrator: IJobOrchestrator,
+    @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
   ) {}
+
+  /**
+   * JOB-8 — produce a per-row predicate for the tenant gate.
+   * Returns `null` when multi-tenancy is off (caller doesn't check).
+   * Throws when on + `undefined`; matches `tenant_id IS NULL` on explicit
+   * `null` to support cross-tenant background work.
+   */
+  private tenantPredicate(
+    method: string,
+    tenantId: string | null | undefined,
+  ): ((r: JobRunRow) => boolean) | null {
+    if (!this.multiTenant) return null;
+    if (tenantId === undefined) throw new MissingTenantIdError(method);
+    return (r) => r.tenantId === tenantId;
+  }
 
   async listForScope(
     entityType: string,
@@ -40,6 +59,7 @@ export class MemoryJobRunService implements IJobRunService {
         ? new Set(opts.status)
         : new Set([opts.status])
       : null;
+    const tenantCheck = this.tenantPredicate('listForScope', opts.tenantId);
 
     const rows: JobRunRow[] = [];
     for (const r of this.store.runs.values()) {
@@ -47,6 +67,7 @@ export class MemoryJobRunService implements IJobRunService {
       if (r.scopeEntityId !== entityId) continue;
       if (statusFilter && !statusFilter.has(r.status)) continue;
       if (opts.jobType && r.jobType !== opts.jobType) continue;
+      if (tenantCheck && !tenantCheck(r)) continue;
       rows.push(r);
     }
 
@@ -60,16 +81,29 @@ export class MemoryJobRunService implements IJobRunService {
     return sliced as JobRun[];
   }
 
-  async cancelForScope(entityType: string, entityId: string): Promise<void> {
+  async cancelForScope(
+    entityType: string,
+    entityId: string,
+    opts: CancelForScopeOptions = {},
+  ): Promise<void> {
+    const tenantCheck = this.tenantPredicate('cancelForScope', opts.tenantId);
+
     const ids: string[] = [];
     for (const r of this.store.runs.values()) {
       if (r.scopeEntityType !== entityType) continue;
       if (r.scopeEntityId !== entityId) continue;
       if (!NON_TERMINAL_STATUSES.includes(r.status)) continue;
+      if (tenantCheck && !tenantCheck(r)) continue;
       ids.push(r.id);
     }
     for (const id of ids) {
-      await this.orchestrator.cancel(id, { cascade: true });
+      // Propagate the tenant gate through the orchestrator's cancel so the
+      // internal per-row guard passes (no surprise MissingTenantIdError
+      // once the scope query has already narrowed to this tenant).
+      await this.orchestrator.cancel(id, {
+        cascade: true,
+        tenantId: opts.tenantId,
+      });
     }
   }
 
@@ -77,11 +111,14 @@ export class MemoryJobRunService implements IJobRunService {
     entityType: string,
     entityId: string,
     newRunAt: Date,
+    opts: RescheduleForScopeOptions = {},
   ): Promise<void> {
+    const tenantCheck = this.tenantPredicate('rescheduleForScope', opts.tenantId);
     for (const r of this.store.runs.values()) {
       if (r.scopeEntityType !== entityType) continue;
       if (r.scopeEntityId !== entityId) continue;
       if (r.status !== 'pending') continue;
+      if (tenantCheck && !tenantCheck(r)) continue;
       this.store.runs.set(r.id, {
         ...r,
         runAt: newRunAt,

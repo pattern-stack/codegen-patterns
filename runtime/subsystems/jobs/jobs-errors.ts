@@ -75,6 +75,34 @@ export class JobTemplateFieldMissingError extends Error {
 }
 
 /**
+ * Thrown by the four multi-tenant-aware service-layer backends (JOB-8)
+ * when `JobsDomainModule` was configured with `multiTenant: true` but the
+ * caller did not pass a `tenantId` in the relevant options object.
+ *
+ * **Strict enforcement rationale (resolved 2026-04-18).** Cross-tenant data
+ * leakage is the worst class of bug a multi-tenant system can ship; surfacing
+ * the misuse loudly at the call site (rather than silently defaulting to
+ * `null` or to the "last tenant seen") prevents both accidental global
+ * writes and sneaky reads that return a union of tenants.
+ *
+ * - `undefined` `tenantId` → throw this error.
+ * - Explicit `null` `tenantId` → passes; opts the call into cross-tenant
+ *   background work (e.g. a nightly housekeeping job that must scan all
+ *   tenants). The row is persisted with `tenant_id = NULL`.
+ */
+export class MissingTenantIdError extends Error {
+  readonly name = 'MissingTenantIdError';
+  constructor(public readonly method: string) {
+    super(
+      `MissingTenantIdError: JobsDomainModule was configured with ` +
+        `multiTenant=true but ${method} was called without tenantId ` +
+        `(undefined). Pass an explicit tenantId, or pass null for ` +
+        `cross-tenant work.`,
+    );
+  }
+}
+
+/**
  * Thrown by `JobWorkerModule.onModuleInit` (Drizzle backend only) when the
  * `job` table contains type rows for which no `@JobHandler` is registered
  * in the running process. Surfaces every orphaned type at once so a single

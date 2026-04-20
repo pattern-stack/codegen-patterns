@@ -22,6 +22,26 @@ export interface ListForScopeOptions {
     | 'created_at asc'
     | 'run_at desc'
     | 'run_at asc';
+
+  /**
+   * Multi-tenancy gate (JOB-8). When `multiTenant: true`, the backend adds
+   * `AND tenant_id = :tenantId` to the scope query. `undefined` throws
+   * `MissingTenantIdError`; explicit `null` matches `tenant_id IS NULL`
+   * rows (cross-tenant background work).
+   */
+  tenantId?: string | null;
+}
+
+/**
+ * JOB-8 — scoped bulk ops take the same tenant gate as `listForScope`.
+ * Added in JOB-8; pre-JOB-8 callers passing nothing continue to compile.
+ */
+export interface CancelForScopeOptions {
+  tenantId?: string | null;
+}
+
+export interface RescheduleForScopeOptions {
+  tenantId?: string | null;
 }
 
 export interface IJobRunService {
@@ -40,7 +60,11 @@ export interface IJobRunService {
    * cascading via `root_run_id`. Used e.g. when an Opportunity is closed
    * and all its background work should stop.
    */
-  cancelForScope(entityType: string, entityId: string): Promise<void>;
+  cancelForScope(
+    entityType: string,
+    entityId: string,
+    opts?: CancelForScopeOptions,
+  ): Promise<void>;
 
   /**
    * Push `run_at` forward on every `pending` run attached to the scope.
@@ -50,5 +74,6 @@ export interface IJobRunService {
     entityType: string,
     entityId: string,
     newRunAt: Date,
+    opts?: RescheduleForScopeOptions,
   ): Promise<void>;
 }

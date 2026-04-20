@@ -205,6 +205,74 @@ export * from './src/generated/schema';
 export * from './shared/database/auth-tables'; // hand-authored
 ```
 
+## Atlas migration workflow
+
+Your schema lives in `schema.ts` (re-exporting `src/generated/schema.ts`). To promote schema changes into your database, use [Atlas](https://atlasgo.io/) — it inspects the Drizzle schema, diffs it against the database, and emits **versioned, reviewable** SQL migrations that you commit alongside the code change.
+
+**Why Atlas, not `drizzle-kit push`.** `drizzle-kit push` is a dev-loop convenience — it applies schema changes directly, produces no migration file, leaves no reviewable artifact, and silently runs destructive operations. That is acceptable for throwaway iteration; it is **not** acceptable for shared databases, CI, or production. Atlas gives you:
+
+- A `migrations/` directory of timestamped SQL files you review in PRs.
+- Destructive-change detection (50+ analyzers for drops, data-loss renames, etc.).
+- A forward-and-rollback workflow; migrations apply or fail atomically.
+- CI-friendly `atlas migrate lint` that fails the build on risky diffs.
+
+### Prerequisites
+
+- **Atlas CLI** `>= 0.24.0` — install once per workstation / CI image:
+  ```bash
+  # macOS (Homebrew)
+  brew install ariga/tap/atlas
+
+  # Linux / CI / anywhere with curl
+  curl -sSf https://atlasgo.sh | sh
+  ```
+  Verify with `atlas version`.
+- A reachable `DATABASE_URL` (local Postgres is fine; the generated SQL is database-agnostic for the columns codegen emits).
+- `drizzle-kit` already installed as a dev dependency — Atlas shells out to `drizzle-kit` to introspect your schema (no additional Drizzle plugin required).
+- An `atlas.hcl` file at your project root (next to `drizzle.config.ts`).
+
+### Example `atlas.hcl`
+
+Drop this at the project root and commit it. Atlas reads the schema by running `drizzle-kit`'s external-schema introspection — no duplication of your Drizzle wiring.
+
+```hcl
+data "external_schema" "drizzle" {
+  program = [
+    "bunx",
+    "drizzle-kit",
+    "introspect:pg",
+    "--config=drizzle.config.ts",
+  ]
+}
+env "local" {
+  src = data.external_schema.drizzle.url
+  url = getenv("DATABASE_URL")
+  migration {
+    dir = "file://migrations"
+  }
+}
+```
+
+Swap `bunx` for `npx` if your project uses npm/pnpm. Add more `env "…"` blocks (e.g. `env "ci"`, `env "prod"`) as you grow — they all share the same `data "external_schema"` source.
+
+### Workflow
+
+1. **Author or update your Drizzle schema** (either by editing entity YAML and regenerating, or by authoring a hand-written table outside the codegen tree).
+2. **Diff against the database** to produce a migration file:
+   ```bash
+   atlas migrate diff --env local --name add_account_flag
+   ```
+   This writes `migrations/<timestamp>_add_account_flag.sql` — one forward-only SQL file per change. The `--name` is a short human label; pick something a reviewer can grep for.
+3. **Review the generated SQL.** Atlas is conservative but not omniscient — it cannot distinguish a column rename from a drop-and-add, so destructive changes always need a human look. Edit the file by hand if you need to preserve data (e.g. add a `UPDATE ... SET ...` before a `DROP COLUMN`).
+4. **Apply the migration** against your target environment:
+   ```bash
+   atlas migrate apply --env local
+   ```
+   Atlas records every applied migration in an `atlas_schema_revisions` table so re-runs are no-ops. Failures roll back atomically.
+5. **Commit the migration file** alongside the schema / YAML change in the same PR. The `migrations/` directory is part of your source tree; reviewers should see schema change and SQL change together.
+
+In CI, add `atlas migrate lint --env local --latest=1` before merge to catch destructive diffs before they ship. In production, `atlas migrate apply --env prod` runs the same file set, ensuring dev and prod converge on identical schema.
+
 ## `app.module.ts` wiring
 
 `AppModule` imports the `DatabaseModule` first, then spreads the generated module barrel:
