@@ -16,3 +16,16 @@ export const EVENT_BUS = 'EVENT_BUS' as const;
  * Provided automatically by EventsModule.forRoot({ backend: 'redis' }).
  */
 export const REDIS_URL = Symbol('REDIS_URL');
+
+/**
+ * Injection token for the resolved `EventsModuleOptions` object.
+ *
+ * Provided automatically by `EventsModule.forRoot(...)` /
+ * `EventsModule.forRootAsync(...)`. Backends that need to observe module
+ * configuration (e.g. `DrizzleEventBus` reading `opts.pools` for
+ * pool-filtered drain) inject via this token.
+ *
+ * String-valued (not `Symbol`) so it matches by value across import
+ * boundaries — same convention as `EVENT_BUS`.
+ */
+export const EVENTS_MODULE_OPTIONS = 'EVENTS_MODULE_OPTIONS' as const;

@@ -18,11 +18,18 @@
  * });
  * ```
  *
+ * Per-pool drain isolation (EVT-4):
+ * ```typescript
+ * EventsModule.forRoot({ backend: 'drizzle', pools: ['events_change'] });
+ * ```
+ * Each process restricts its drain loop to the pools listed here. `pools`
+ * is undefined by default → drain all pending rows (backwards-compatible).
+ *
  * `global: true` means entity modules do not need to import EventsModule
  * individually — the EVENT_BUS token is available project-wide.
  */
 import { Module, type DynamicModule } from '@nestjs/common';
-import { EVENT_BUS, REDIS_URL } from './events.tokens';
+import { EVENT_BUS, EVENTS_MODULE_OPTIONS, REDIS_URL } from './events.tokens';
 import { DrizzleEventBus } from './event-bus.drizzle-backend';
 import { MemoryEventBus } from './event-bus.memory-backend';
 import { RedisEventBus } from './event-bus.redis-backend';
@@ -35,6 +42,23 @@ export interface EventsModuleOptions {
    * `redis://localhost:6379` if neither is set.
    */
   redisUrl?: string;
+  /**
+   * Restrict the drain loop to these pools. Each pool name matches the
+   * `domain_events.pool` column (populated from `event.metadata.pool` at
+   * publish time). Leave undefined to drain all pending rows.
+   *
+   * Typical lane split: one process per `events_inbound` /
+   * `events_change` / `events_outbound` so a slow outbound handler
+   * cannot stall change-event propagation (see ADR-022).
+   */
+  pools?: string[];
+  /**
+   * When true, the generated scaffold writes `tenant_id` into each
+   * outbox row and surfaces it on the typed facade. Placeholder here —
+   * EVT-6 wires the behaviour; EVT-4 ships the field so downstream work
+   * isn't blocked.
+   */
+  multiTenant?: boolean;
 }
 
 export interface EventsModuleAsyncOptions {
@@ -52,7 +76,7 @@ export class EventsModule {
       imports: (asyncOptions.imports ?? []) as Parameters<typeof Module>[0]['imports'],
       providers: [
         {
-          provide: 'EVENTS_MODULE_OPTIONS',
+          provide: EVENTS_MODULE_OPTIONS,
           useFactory: asyncOptions.useFactory,
           inject: (asyncOptions.inject ?? []) as (string | symbol | Function)[],
         },
@@ -69,7 +93,7 @@ export class EventsModule {
             }
             throw new Error('EventsModule.forRootAsync: failed to resolve provider');
           },
-          inject: ['EVENTS_MODULE_OPTIONS'],
+          inject: [EVENTS_MODULE_OPTIONS],
         },
       ],
       exports: [EVENT_BUS],
@@ -87,6 +111,7 @@ export class EventsModule {
         module: EventsModule,
         global: true,
         providers: [
+          { provide: EVENTS_MODULE_OPTIONS, useValue: options },
           { provide: REDIS_URL, useValue: resolvedUrl },
           { provide: EVENT_BUS, useClass: RedisEventBus },
           // Register concrete class so NestJS can resolve lifecycle hooks
@@ -104,7 +129,10 @@ export class EventsModule {
     return {
       module: EventsModule,
       global: true,
-      providers: [provider],
+      providers: [
+        { provide: EVENTS_MODULE_OPTIONS, useValue: options },
+        provider,
+      ],
       exports: [EVENT_BUS],
     };
   }
