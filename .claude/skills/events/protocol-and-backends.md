@@ -70,15 +70,22 @@ Strengths: zero new infra beyond Postgres; transactional guarantee; survives pro
 
 `runtime/subsystems/events/event-bus.memory-backend.ts`. Synchronous, in-process.
 
-- **`publish(event)`** — pushes into a `publishedEvents[]` array, dispatches to handlers immediately. **Ignores `tx`** — there is no transactional semantic in memory.
-- **`publishMany(events)`** — calls `publish` in a loop.
+- **`publish(event)`** — pushes into a `publishedEvents[]` array, dispatches to handlers immediately (subject to the pool filter; see below). **Ignores `tx`** — there is no transactional semantic in memory.
+- **`publishMany(events)`** — calls `publish` in a loop (per-event pool filtering applies).
 - **`subscribe(type, handler)`** — same Map-based registry as Drizzle.
 - **`clear()`** — test helper; drops all published events and handlers. Call in `beforeEach`.
-- **`publishedEvents`** — public array for test assertions (`expect(bus.publishedEvents).toContainEqual({...})`).
+- **`publishedEvents`** — public array for test assertions (`expect(bus.publishedEvents).toContainEqual({...})`). Always the complete log; not affected by the pool filter.
+- **`publishedEventsForPool(pool)` / `publishedEventsForDirection(direction)`** — filtered views for targeted assertions (e.g. "only change events were emitted from this use case").
 
 Use in every test that touches the events subsystem. Swap via `EventsModule.forRoot({ backend: 'memory' })`.
 
-**Key test property:** dispatch is synchronous. `await bus.publish(event)` returns only after all subscribers have handled the event. Tests do not need `waitFor` / timers. This is different from Drizzle, where dispatch is async via the polling loop.
+**Pool awareness (EVT-5).** `MemoryEventBus` accepts the same `EventsModuleOptions` (via `@Optional() @Inject(EVENTS_MODULE_OPTIONS)`) as `DrizzleEventBus`, including `opts.pools`. Behaviour mirrors the Drizzle drain:
+- `opts.pools` undefined or empty array → no filter, all events dispatched (Drizzle's WHERE uses `pools && pools.length > 0`; memory matches).
+- `opts.pools` non-empty → handler only fires when `event.metadata.pool` is in the list. Events outside the pool (including those with no `metadata.pool`) are still pushed to `publishedEvents` but not dispatched.
+
+Direct construction still works for unit tests: `new MemoryEventBus()` defaults to `{ backend: 'memory' }` and dispatches everything.
+
+**Key test property:** dispatch is synchronous. `await bus.publish(event)` returns only after all subscribers have handled the event (if dispatch happens at all). Tests do not need `waitFor` / timers. This is different from Drizzle, where dispatch is async via the polling loop.
 
 ### Redis backend
 

@@ -78,7 +78,7 @@ Files that ship to the consumer app (not templates):
 - `runtime/subsystems/events/event-bus.protocol.ts` — `IEventBus`, `DomainEvent`
 - `runtime/subsystems/events/domain-events.schema.ts` — outbox table (will gain `pool`/`direction` columns in Phase A)
 - `runtime/subsystems/events/event-bus.drizzle-backend.ts` — outbox poller (`FOR UPDATE SKIP LOCKED`)
-- `runtime/subsystems/events/event-bus.memory-backend.ts` — sync test backend, exposes `publishedEvents[]` and `clear()`
+- `runtime/subsystems/events/event-bus.memory-backend.ts` — sync test backend, exposes `publishedEvents[]`, `publishedEventsForPool()`, `publishedEventsForDirection()`, `clear()`; accepts `opts.pools` for pool-filtered dispatch that mirrors the Drizzle drain (EVT-5)
 - `runtime/subsystems/events/event-bus.redis-backend.ts` — alternate backend
 - `runtime/subsystems/events/events.module.ts` — `EventsModule.forRoot({ backend })`, `global: true`
 - `runtime/subsystems/events/events.tokens.ts` — `EVENT_BUS` symbol
