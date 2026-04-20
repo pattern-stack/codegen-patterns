@@ -22,6 +22,7 @@ import {
 	resolveGeneratedDir,
 } from '../shared/barrel-generator.js';
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
+import { generateEventCodegen } from '../shared/event-codegen-generator.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -230,6 +231,12 @@ export class EntityNewCommand extends Command {
 			'runtime/subsystems/jobs/generated/scope-entity-type.ts',
 		);
 
+		const eventsDir = path.resolve(ctx.cwd, 'events');
+		const eventCodegenOutputDir = path.resolve(
+			ctx.cwd,
+			'runtime/subsystems/events/generated',
+		);
+
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
@@ -243,6 +250,13 @@ export class EntityNewCommand extends Command {
 			const scopePlan = await generateScopeEntityType({
 				entitiesDir,
 				outputPath: scopeEntityTypePath,
+				dryRun: true,
+			});
+
+			const eventCodegenPlan = await generateEventCodegen({
+				entitiesDir,
+				eventsDir,
+				outputDir: eventCodegenOutputDir,
 				dryRun: true,
 			});
 
@@ -264,6 +278,15 @@ export class EntityNewCommand extends Command {
 						scopeableNames: scopePlan.scopeableNames,
 						content: scopePlan.content,
 					},
+					eventCodegen: {
+						outputDir: eventCodegenPlan.outputDir,
+						eventCount: eventCodegenPlan.eventCount,
+						files: eventCodegenPlan.files.map((f) => ({
+							name: f.name,
+							outputPath: f.outputPath,
+							content: f.content,
+						})),
+					},
 				});
 			} else {
 				printInfo(`Dry run — ${validated.length} entities would be generated:`);
@@ -281,6 +304,9 @@ export class EntityNewCommand extends Command {
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.schemaBarrel}`);
 				printInfo(
 					`ScopeEntityType (${scopePlan.scopeableNames.length} scopeable): ${scopePlan.outputPath}`,
+				);
+				printInfo(
+					`event codegen (${eventCodegenPlan.eventCount} events) → ${eventCodegenPlan.outputDir}`,
 				);
 			}
 			return invalid.length > 0 && !this.continueOnError ? 1 : 0;
@@ -345,6 +371,32 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Regenerate event codegen artifacts (EVT-3) after scope-entity-type.
+		// Same "warn-but-don't-fail" pattern as the barrel and scope steps — one
+		// unexpected exception shouldn't abort the whole `entity new` invocation.
+		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>> | null = null;
+		try {
+			eventCodegenResult = await generateEventCodegen({
+				entitiesDir,
+				eventsDir,
+				outputDir: eventCodegenOutputDir,
+			});
+			if (!isJsonMode()) {
+				for (const issue of eventCodegenResult.issues) {
+					if (issue.severity === 'error') {
+						printError(
+							`event codegen: ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
+						);
+					}
+				}
+			}
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`event codegen failed — ${msg}`);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'entity new',
@@ -367,6 +419,17 @@ export class EntityNewCommand extends Command {
 							scopeableNames: scopeResult.scopeableNames,
 						}
 					: null,
+				eventCodegen: eventCodegenResult
+					? {
+							outputDir: eventCodegenResult.outputDir,
+							eventCount: eventCodegenResult.eventCount,
+							written: eventCodegenResult.written,
+							files: eventCodegenResult.files.map((f) => ({
+								name: f.name,
+								outputPath: f.outputPath,
+							})),
+						}
+					: null,
 			});
 		} else {
 			const total = validated.length + invalid.length;
@@ -386,6 +449,11 @@ export class EntityNewCommand extends Command {
 			if (scopeResult) {
 				printInfo(
 					`scope-entity-type regenerated (${scopeResult.scopeableNames.length} scopeable) → ${path.relative(ctx.cwd, scopeResult.outputPath)}`
+				);
+			}
+			if (eventCodegenResult) {
+				printInfo(
+					`event codegen regenerated (${eventCodegenResult.eventCount} events) → ${path.relative(ctx.cwd, eventCodegenResult.outputDir)}`
 				);
 			}
 		}

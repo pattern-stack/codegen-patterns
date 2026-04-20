@@ -38,14 +38,19 @@ All five files carry `// Generated. Do not edit.` headers and are reproducible f
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `src/generators/event-codegen.ts` (or similar path) | new | Generator class/function |
-| `runtime/subsystems/events/generated/types.ts` | generated | AppDomainEvent + interfaces |
-| `runtime/subsystems/events/generated/schemas.ts` | generated | Zod schemas |
-| `runtime/subsystems/events/generated/registry.ts` | generated | eventRegistry + EventMetadata |
-| `runtime/subsystems/events/generated/bus.ts` | generated | TypedEventBus class |
-| `runtime/subsystems/events/generated/index.ts` | generated | Re-exports |
+| `src/cli/shared/event-codegen-generator.ts` | new | Generator: pure `build*Content()` helpers + `generateEventCodegen()` orchestrator. Mirrors JOB-7's `scope-entity-type-generator.ts` layout exactly. |
+| `src/__tests__/cli/event-codegen-generator.test.ts` | new | Unit tests for the pure content builders and the `generateEventCodegen` entrypoint. |
+| `src/cli/commands/entity.ts` | modify | Wire `generateEventCodegen()` as a post-Hygen step in `EntityNewCommand`, mirroring the JOB-7 `generateScopeEntityType()` hook. |
+| `runtime/subsystems/events/events.tokens.ts` | modify | Add `TYPED_EVENT_BUS` injection token (static — not generated). |
+| `runtime/subsystems/events/index.ts` | modify | Re-export `TYPED_EVENT_BUS` and `TypedEventBus`. |
+| `runtime/subsystems/events/generated/types.ts` | generated | `AppDomainEvent` + per-event interfaces + `EventTypeName` / `EventOfType<T>` / `PayloadOfType<T>`. |
+| `runtime/subsystems/events/generated/schemas.ts` | generated | Zod payload schema per event + `eventPayloadSchemas` map. |
+| `runtime/subsystems/events/generated/registry.ts` | generated | `EventMetadata` interface + `eventRegistry` const + `getEventMetadata<T>()`. |
+| `runtime/subsystems/events/generated/bus.ts` | generated | `TypedEventBus` injectable facade. |
+| `runtime/subsystems/events/generated/index.ts` | generated | Re-export barrel. |
+| `test/run-test.ts` | modify | Register `runtime/subsystems/events/generated` in `OUTPUT_PATHS`; invoke `generateEventCodegen()` against `test/fixtures/events/` as a post-Hygen step. |
 
-The generator is wired into the existing CLI/pipeline (exact wiring TBD by implementing agent — follow the pattern used for entity code generation).
+The generator is wired as a post-Hygen step in `EntityNewCommand.execute()`, peer to the JOB-7 `generateScopeEntityType()` call. Every `entity new` / `entity new --all` invocation fully regenerates the event artifacts — matching ADR-017's "full rescan on any entity change" invariant.
 
 ## Interfaces
 
@@ -103,7 +108,7 @@ import { EVENT_BUS } from '../events.tokens';
 import type { IEventBus, DrizzleTransaction } from '../event-bus.protocol';
 import { eventPayloadSchemas } from './schemas';
 import { getEventMetadata } from './registry';
-import type { EventTypeName, PayloadOfType } from './types';
+import type { EventTypeName, EventOfType, PayloadOfType } from './types';
 
 @Injectable()
 export class TypedEventBus {
@@ -114,12 +119,51 @@ export class TypedEventBus {
     aggregateId: string,
     payload: PayloadOfType<T>,
     opts?: { tx?: DrizzleTransaction; metadata?: Record<string, unknown> },
-  ): Promise<void> { ... }
+  ): Promise<void> {
+    const meta = getEventMetadata(type);
+
+    // EVT-Q5: default-on, gated by CODEGEN_EVENT_VALIDATE. Uses safeParse +
+    // console.warn so a bad publish doesn't crash a hot path.
+    const flag = process.env['CODEGEN_EVENT_VALIDATE'];
+    const shouldValidate =
+      flag === undefined ? true : flag !== 'false' && flag !== '0';
+    if (shouldValidate) {
+      const check = eventPayloadSchemas[type].safeParse(payload);
+      if (!check.success) {
+        console.warn(
+          `[TypedEventBus] payload validation failed for ${String(type)}:`,
+          check.error.issues,
+        );
+      }
+    }
+
+    // EVT-4 contract: stamp pool/direction/version from registry into metadata
+    // so DrizzleEventBus.publish() can populate the explicit columns.
+    await this.bus.publish(
+      {
+        id: randomUUID(),
+        type,
+        aggregateId,
+        aggregateType: meta.aggregate ?? meta.source ?? meta.destination ?? (type as string),
+        payload: payload as Record<string, unknown>,
+        occurredAt: new Date(),
+        metadata: {
+          ...(opts?.metadata ?? {}),
+          pool: meta.pool,
+          direction: meta.direction,
+          version: meta.version,
+        },
+      },
+      opts?.tx,
+    );
+  }
 
   subscribe<T extends EventTypeName>(
     type: T,
     handler: (event: EventOfType<T>) => Promise<void>,
-  ): () => void { ... }
+  ): () => void {
+    return this.bus.subscribe<EventOfType<T>>(type, handler as never);
+  }
 }
 ```
 
@@ -137,16 +181,17 @@ export class TypedEventBus {
 
 ## Acceptance Criteria
 
-- [ ] `runtime/subsystems/events/generated/` exists and contains all five files after `just gen-all` on a project with `events/*.yaml` files.
-- [ ] `AppDomainEvent` union contains exactly one member per declared event YAML.
-- [ ] Each interface has correctly camelCased payload fields matching the YAML snake_case definitions.
-- [ ] Zod schemas use `z.string().uuid()` for `uuid` fields, `z.coerce.date()` for `date`, etc.
-- [ ] `eventRegistry['contact_created'].direction === 'change'` and `.pool === 'events_change'`.
-- [ ] `TypedEventBus.publish<'contact_created'>()` compiles; wrong payload type → TS compile error.
-- [ ] `TypedEventBus.subscribe<'contact_created'>()` — handler param is `ContactCreatedEvent`, not `DomainEvent`.
-- [ ] All generated files carry `// Generated. Do not edit.` header.
-- [ ] Empty project (no `events/*.yaml`) produces stub files; no TS errors.
-- [ ] Baseline snapshot test updated; `just test-baseline` passes.
+- [x] `runtime/subsystems/events/generated/` exists and contains all five files after `just gen-all` on a project with `events/*.yaml` files.
+- [x] `AppDomainEvent` union contains exactly one member per declared event YAML (merged with entity `events:` block desugaring; top-level wins on `type` collision).
+- [x] Each interface has correctly camelCased payload fields matching the YAML snake_case definitions.
+- [x] Zod schemas use `z.string().uuid()` for `uuid` fields, `z.coerce.date()` for `date`, etc.
+- [x] `eventRegistry['contact_created'].direction === 'change'` and `.pool === 'events_change'`.
+- [x] `TypedEventBus.publish<'contact_created'>()` compiles; wrong payload type → TS compile error.
+- [x] `TypedEventBus.subscribe<'contact_created'>()` — handler param is `ContactCreatedEvent`, not `DomainEvent`.
+- [x] `TypedEventBus.publish()` stamps `pool`, `direction`, and `version` from the registry into `event.metadata` before delegating to `IEventBus.publish()`. This is the contract EVT-4 reads when populating the explicit `domain_events` columns.
+- [x] All generated files carry the `// AUTO-GENERATED by @pattern-stack/codegen. Do not edit.` header (consistent with barrel-generator / scope-entity-type-generator).
+- [x] Empty project (no `events/*.yaml`) produces stub files; no TS errors. `EventTypeName = string` in the empty case so downstream code referencing `EventTypeName` (e.g. drain filters) still compiles.
+- [x] Baseline snapshot test updated; `just test-baseline` passes.
 
 ## Testing Strategy
 
@@ -156,9 +201,12 @@ export class TypedEventBus {
 
 ## Open Questions
 
-- EVT-Q2 (generated file location) must be resolved before implementation. Proposed: `runtime/subsystems/events/generated/`.
-- EVT-Q5 (payload validation) affects the `generateBus()` step: whether to always call `.parse()`, call `.safeParse()` with logging, or gate on env flag.
-- EVT-Q6 (TypedEventBus replaces EVENT_BUS in generated code) must be resolved to know if this file also needs to export `TYPED_EVENT_BUS` token.
+All resolved 2026-04-20 — see `docs/specs/EVT-phase-1-issues.md` §Resolved Questions for the full text.
+
+- **EVT-Q2 (generated file location).** Resolved: `runtime/subsystems/events/generated/`.
+- **EVT-Q5 (payload validation).** Resolved: `CODEGEN_EVENT_VALIDATE` env flag, default on, `.safeParse()` + `console.warn` — never throws.
+- **EVT-Q6 (`TypedEventBus` replaces `EVENT_BUS` in generated code).** Resolved: generated code uses `TypedEventBus` exclusively; `TYPED_EVENT_BUS` injection token lives in the static `events.tokens.ts` (not generated) since the token is a stable runtime-library symbol and should remain importable even when `generated/` is empty-stubbed.
+- **EVT-Q8 (versioning coexistence).** Resolved: deferred. `version` field is captured in the registry; no v1/v2 coexistence logic in Phase 1.
 
 ## References
 
