@@ -1,0 +1,20 @@
+type: stripe_payment_received
+direction: inbound
+source: stripe
+version: 1
+description: Stripe charge.succeeded webhook, post-signature-verification.
+payload:
+  event_id:
+    type: string
+    description: Stripe event id (evt_...)
+  customer_id:
+    type: string
+  amount_cents:
+    type: number
+  currency:
+    type: string
+  received_at:
+    type: date
+retry:
+  attempts: 5
+  backoff: exponential

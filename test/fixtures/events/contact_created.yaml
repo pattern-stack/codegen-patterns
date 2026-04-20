@@ -1,0 +1,13 @@
+type: contact_created
+direction: change
+aggregate: contact
+version: 1
+description: Emitted after a contact row is committed.
+payload:
+  contact_id:
+    type: uuid
+  account_id:
+    type: uuid
+    nullable: true
+  created_by:
+    type: uuid
