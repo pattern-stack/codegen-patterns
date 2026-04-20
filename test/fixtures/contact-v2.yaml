@@ -97,6 +97,11 @@ sync:
       read_only_fields:
         - linkedin_url
 
+emits:
+  - contact_created
+  - contact_merged
+  - contact_marked_champion
+
 events:
   - name: contact_created
     queue: domain-events

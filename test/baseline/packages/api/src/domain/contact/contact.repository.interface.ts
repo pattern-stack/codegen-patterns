@@ -4,6 +4,7 @@
  */
 
 import type { Contact } from './contact.entity';
+import type { DrizzleTransaction } from '@shared/events';
 
 /**
  * Type-safe eager loading options.
@@ -31,7 +32,7 @@ export type CreateContactInput = {
 export type UpdateContactInput = Partial<CreateContactInput>;
 
 export interface IContactRepository {
-	create(input: CreateContactInput): Promise<Contact>;
+	create(input: CreateContactInput, tx?: DrizzleTransaction): Promise<Contact>;
 	findById(id: string, include?: ContactWith): Promise<Contact | null>;
 	findAll(include?: ContactWith): Promise<Contact[]>;
 	update(id: string, input: UpdateContactInput): Promise<Contact | null>;

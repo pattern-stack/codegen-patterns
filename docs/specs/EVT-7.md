@@ -1,10 +1,47 @@
 # EVT-7 — Entity `emits:` Support + Use-Case Template Updates
 
 **Issue:** EVT-7
-**Status:** Stub
+**Status:** Implemented (2026-04-20)
 **Phase:** ADR-024 Phase 1 (Phase C per events-codegen-plan.md — independent, may slip to Phase 2 without blocking ADR-023)
 **Depends on:** EVT-2 (event YAML parser, for cross-validation), EVT-3 (TypedEventBus import), EVT-6 (module must be wired).
 **Blocks:** Nothing in Phase 1. Enables typed auto-emission in entity use cases.
+
+## 2026-04-20 Implementation Notes
+
+The plan is preserved above for historical reading. The corrections below
+are drift captured during implementation — they reflect what actually shipped.
+
+1. **Schema target is `EntityDefinitionSchema`, not `EntityConfigSchema`.** The
+   field was added to `EntityDefinitionSchema` in `src/schema/entity-definition.schema.ts`
+   with a regex guard on snake_case names:
+   `z.array(z.string().regex(/^[a-z][a-z0-9_]*$/)).optional()`.
+2. **Cross-validation lives in `src/parser/validate-emits.ts`, not inside `load-entities.ts`.**
+   The parser only mirrors the raw array into `ParsedEntity.emits`. The CLI
+   command (`src/cli/commands/entity.ts`) runs `validateEntityEmits()` as a
+   pre-flight, after `collectMergedEvents()` merges top-level `events/*.yaml`
+   with the inline desugar. This keeps the hot path in `load-entities.ts`
+   free of registry cross-referencing.
+3. **Three-valued semantics.** `emits` is not just "optional" — it is
+   `undefined` (fallback + warning), `[]` (explicit opt-out, no warning),
+   or `string[]` (typed emission). The `|| null` shortcut is explicitly
+   avoided in the parser and prompt so `[]` is preserved.
+4. **Template DI is via the injection token, not a property name.** Generated
+   use cases read `@Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus`
+   (not `this.events`). The `DRIZZLE` token is imported from
+   `@shared/constants/tokens` alongside a `DrizzleClient` type from
+   `@shared/types/drizzle` — the CLP precedent. `@shared/events` re-exports
+   `TYPED_EVENT_BUS`, `TypedEventBus`, and `DrizzleTransaction`.
+5. **Repository `tx?` is per-op, not blanket.** The clean-arch repository
+   interface + inline repo templates append `tx?: DrizzleTransaction` only to
+   the specific create/update/delete signatures whose corresponding
+   `<entity>_<op>` event is declared. Non-emitting entities and non-emitting
+   operations remain byte-stable. The `base_class` strategy already inherits
+   tx-accepting CRUD from `BaseRepository` and needs no template change.
+6. **Warnings are stderr, errors gate generation.** The CLI pre-flight treats
+   validation results as two buckets: `error` (`missing`, `wrong_direction`,
+   `wrong_aggregate`) and `warning` (`no_emits`, `duplicate_emit`). Errors
+   abort the run unless `--continue-on-error` is passed; warnings always
+   print and never gate. A summary line reports counts.
 
 ## Overview
 
@@ -96,12 +133,25 @@ This desugars to an `EventDefinition` with `direction: change` and `aggregate: c
 - Template snapshot tests: generated use-case with `emits:` declared includes `TypedEventBus` injection and `publish()` call.
 - Warning integration test: entity without `emits:` triggers warning output (capture stdout).
 
-## Open Questions
+## Resolved Questions (at implementation)
 
-- **EVT-Q3** (entity `events:` block vs. top-level YAML): resolution determines whether the inline block desugar is primary or secondary path.
-- **EVT-Q4** (`emits:` required vs. optional): resolution determines whether absence is a warning or an error.
-- **EVT-Q9** (pool inheritance for triggered jobs): does not affect EVT-7 directly, but the generated bridge wiring in a future phase must be consistent.
-- Exact payload field names in generated `publish()` call: the implementing agent must map between `EventDefinition.payload` (snake_case keys) and the TS camelCase names (following the same rule as EVT-3).
+- **EVT-Q3** (entity `events:` block vs. top-level YAML): both are accepted.
+  `collectMergedEvents()` merges them with top-level winning on collision.
+  The inline `events:` block is desugared to the same `EventDefinition` shape.
+- **EVT-Q4** (`emits:` required vs. optional): optional, three-valued.
+  Absence → warning + fallback. `[]` → silent opt-out. Non-empty → typed.
+- **EVT-Q9** (pool inheritance for triggered jobs): unchanged — not gated by EVT-7.
+- **Payload mapping**: five-rule fallback resolved inline in `prompt.js`'s
+  `resolveEmitsEvents()`:
+  1. `<entity>_id` or `<camelName>Id` → `entity.id`.
+  2. `created_by` / `updated_by` → `dto.createdBy` / `dto.updatedBy` if
+     present; else `null as unknown as T` with a TODO.
+  3. Any other key present on the just-created entity → `entity.<camelKey>`.
+  4. Else, if present on the DTO → `dto.<camelKey>`.
+  5. Otherwise `null as unknown as T` with a TODO comment on the generated line.
+  Every generated `publish()` block is preceded by a
+  `// TODO: verify payload mapping against events/<type>.yaml` comment so
+  the developer is nudged to audit before shipping.
 
 ## References
 

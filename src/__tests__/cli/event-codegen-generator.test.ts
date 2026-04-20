@@ -24,6 +24,7 @@ import {
 	buildSchemasContent,
 	buildTypesContent,
 	collectEntityEvents,
+	collectMergedEvents,
 	generateEventCodegen,
 	mergeEvents,
 	toCamelCase,
@@ -841,5 +842,70 @@ payload: {}
 			result.issues.some((i) => i.severity === 'error'),
 		).toBe(true);
 		expect(fs.existsSync(path.join(outputDir, 'types.ts'))).toBe(false);
+	});
+});
+
+describe('collectMergedEvents (EVT-7)', () => {
+	test('exposes the same merged events as generateEventCodegen', async () => {
+		const root = mkTempRoot();
+		const entitiesDir = path.join(root, 'entities');
+		const eventsDir = path.join(root, 'events');
+		const outputDir = path.join(root, 'out');
+
+		writeEntityYaml(
+			entitiesDir,
+			'contact',
+			`entity:
+  name: contact
+  plural: contacts
+  table: contacts
+fields:
+  id:
+    type: uuid
+    required: true
+events:
+  - name: contact_merged
+    queue: domain-events
+    body:
+      source_id: uuid
+      target_id: uuid
+`,
+		);
+
+		writeEventYaml(
+			eventsDir,
+			'contact_created',
+			`type: contact_created
+direction: change
+aggregate: contact
+payload:
+  contact_id:
+    type: uuid
+`,
+		);
+
+		const helper = collectMergedEvents({ entitiesDir, eventsDir });
+		const genRun = await generateEventCodegen({
+			entitiesDir,
+			eventsDir,
+			outputDir,
+			dryRun: true,
+		});
+
+		expect(helper.events.map((e) => e.type).sort()).toEqual(
+			genRun.events.map((e) => e.type).sort(),
+		);
+		expect(helper.events.map((e) => e.type)).toContain('contact_created');
+		expect(helper.events.map((e) => e.type)).toContain('contact_merged');
+	});
+
+	test('returns empty events + warning when no dirs exist', () => {
+		const root = mkTempRoot();
+		const entitiesDir = path.join(root, 'missing-entities');
+		const eventsDir = path.join(root, 'missing-events');
+
+		const result = collectMergedEvents({ entitiesDir, eventsDir });
+		expect(result.events).toEqual([]);
+		expect(result.issues.some((i) => i.type === 'no_events_dir')).toBe(true);
 	});
 });

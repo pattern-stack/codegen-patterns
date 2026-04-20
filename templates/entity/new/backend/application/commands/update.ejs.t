@@ -21,12 +21,21 @@ import { <%= repositoryToken %> } from '<%= imports.constants %>';
 import type { I<%= className %>Repository, Update<%= className %>Input } from '<%= imports.domain %>';
 import { <%= className %> } from '<%= imports.domain %>';
 import type { Update<%= className %>Dto } from '<%= imports.schemas %>';
+<% if (hasEmits && updateEventType) { -%>
+import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { DRIZZLE } from '<%= drizzleTokenImport %>';
+import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+<% } -%>
 
 @Injectable()
 export class <%= updateCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
+<% if (hasEmits && updateEventType) { -%>
+		@Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
+		@Inject(DRIZZLE) private readonly db: DrizzleClient,
+<% } -%>
 	) {}
 
 	async execute(id: string, dto: Update<%= className %>Dto): Promise<<%= className %>> {
@@ -45,6 +54,28 @@ export class <%= updateCommandClass %> {
 <% }) -%>
 		};
 
+<% if (hasEmits && updateEventType) { -%>
+		return this.db.transaction(async (tx) => {
+			const entity = await this.<%= camelName %>Repository.update(id, input, tx);
+			if (!entity) {
+				throw new NotFoundException(`<%= className %> with id ${id} not found`);
+			}
+			// TODO: verify payload mapping against events/<%= updateEventType.type %>.yaml
+			await this.typedEvents.publish(
+				'<%= updateEventType.type %>',
+				entity.id,
+				{
+<% updateEventType.payloadMap.forEach((p) => { -%>
+					<%= p.camelKey %>: <%= p.expression %>,<% if (p.todo) { %> // TODO: <%= p.todo %><% } %>
+
+<% }) -%>
+				},
+				{ tx },
+			);
+			// TODO: Add post-update side effects here (non-event hooks, cache invalidation, etc.)
+			return entity;
+		});
+<% } else { -%>
 		const updated = await this.<%= camelName %>Repository.update(id, input);
 		if (!updated) {
 			throw new NotFoundException(`<%= className %> with id ${id} not found`);
@@ -53,6 +84,7 @@ export class <%= updateCommandClass %> {
 		// TODO: Add post-update side effects here (events, cache invalidation, etc.)
 
 		return updated;
+<% } -%>
 	}
 }
 <% } -%>

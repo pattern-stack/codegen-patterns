@@ -21,12 +21,21 @@ import { <%= repositoryToken %> } from '<%= imports.constants %>';
 import type { Create<%= className %>Input, I<%= className %>Repository } from '<%= imports.domain %>';
 import { <%= className %> } from '<%= imports.domain %>';
 import type { Create<%= className %>Dto } from '<%= imports.schemas %>';
+<% if (hasEmits && createEventType) { -%>
+import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { DRIZZLE } from '<%= drizzleTokenImport %>';
+import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+<% } -%>
 
 @Injectable()
 export class <%= createCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
+<% if (hasEmits && createEventType) { -%>
+		@Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
+		@Inject(DRIZZLE) private readonly db: DrizzleClient,
+<% } -%>
 	) {}
 
 	async execute(dto: Create<%= className %>Dto): Promise<<%= className %>> {
@@ -45,11 +54,31 @@ export class <%= createCommandClass %> {
 <% }) -%>
 		};
 
+<% if (hasEmits && createEventType) { -%>
+		return this.db.transaction(async (tx) => {
+			const entity = await this.<%= camelName %>Repository.create(input, tx);
+			// TODO: verify payload mapping against events/<%= createEventType.type %>.yaml
+			await this.typedEvents.publish(
+				'<%= createEventType.type %>',
+				entity.id,
+				{
+<% createEventType.payloadMap.forEach((p) => { -%>
+					<%= p.camelKey %>: <%= p.expression %>,<% if (p.todo) { %> // TODO: <%= p.todo %><% } %>
+
+<% }) -%>
+				},
+				{ tx },
+			);
+			// TODO: Add post-create side effects here (non-event hooks, notifications, etc.)
+			return entity;
+		});
+<% } else { -%>
 		const created = await this.<%= camelName %>Repository.create(input);
 
 		// TODO: Add post-create side effects here (events, notifications, etc.)
 
 		return created;
+<% } -%>
 	}
 }
 <% } -%>

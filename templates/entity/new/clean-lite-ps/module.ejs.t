@@ -3,6 +3,13 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.module : null %>
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
+<% if (hasEmits) { -%>
+/**
+ * EVT-7: This entity emits typed domain events. Use-cases depend on
+ * TYPED_EVENT_BUS + DRIZZLE. Ensure EventsModule is registered in the
+ * root AppModule (global) so these tokens resolve at runtime.
+ */
+<% } -%>
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ clpBelongsTo.forEach(rel => { _%>

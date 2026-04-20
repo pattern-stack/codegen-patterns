@@ -20,18 +20,49 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { <%= repositoryToken %> } from '<%= imports.constants %>';
 import type { I<%= className %>Repository } from '<%= imports.domain %>';
 import { <%= className %> } from '<%= imports.domain %>';
+<% if (hasEmits && deleteEventType) { -%>
+import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { DRIZZLE } from '<%= drizzleTokenImport %>';
+import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+<% } -%>
 
 @Injectable()
 export class <%= deleteCommandClass %> {
 	constructor(
 		@Inject(<%= repositoryToken %>)
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
+<% if (hasEmits && deleteEventType) { -%>
+		@Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
+		@Inject(DRIZZLE) private readonly db: DrizzleClient,
+<% } -%>
 	) {}
 
 	async execute(id: string): Promise<<%= className %>> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
 
+<% if (hasEmits && deleteEventType) { -%>
+		return this.db.transaction(async (tx) => {
+			const entity = await this.<%= camelName %>Repository.delete(id, tx);
+			if (!entity) {
+				throw new NotFoundException(`<%= className %> with id ${id} not found`);
+			}
+			// TODO: verify payload mapping against events/<%= deleteEventType.type %>.yaml
+			await this.typedEvents.publish(
+				'<%= deleteEventType.type %>',
+				entity.id,
+				{
+<% deleteEventType.payloadMap.forEach((p) => { -%>
+					<%= p.camelKey %>: <%= p.expression %>,<% if (p.todo) { %> // TODO: <%= p.todo %><% } %>
+
+<% }) -%>
+				},
+				{ tx },
+			);
+			// TODO: Add post-delete side effects here (cleanup, etc.)
+			return entity;
+		});
+<% } else { -%>
 		const deleted = await this.<%= camelName %>Repository.delete(id);
 		if (!deleted) {
 			throw new NotFoundException(`<%= className %> with id ${id} not found`);
@@ -40,6 +71,7 @@ export class <%= deleteCommandClass %> {
 		// TODO: Add post-delete side effects here (events, cleanup, etc.)
 
 		return deleted;
+<% } -%>
 	}
 }
 <% } -%>

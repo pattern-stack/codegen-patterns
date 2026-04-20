@@ -256,6 +256,12 @@ export default {
     const queriesBlock = definition.queries || null;
     const syncBlock = definition.sync || null;
     const eventsBlock = definition.events || null;
+    // EVT-7: emits is semantically 3-valued — undefined (fallback path),
+    // [] (explicit opt-out), or string[] (typed emission). Preserve the
+    // undefined/null-vs-empty distinction by refusing the || null shortcut.
+    const emitsBlock = Array.isArray(definition.emits)
+      ? definition.emits
+      : null;
 
     // Helper functions
     const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -1150,6 +1156,183 @@ export default {
         })
       : [];
 
+    // ============================================================================
+    // EVT-7: emits — resolve typed events for create/update/delete use-cases.
+    // ============================================================================
+    //
+    // The `emits:` list is guaranteed-valid at this point — the CLI pre-flight
+    // (`validateEntityEmits`) has already run. Our job is to derive:
+    //   • `emitsEvents[]` — one entry per emitted type with payload + mapping.
+    //   • `createEventType` / `updateEventType` / `deleteEventType` — the specific
+    //     `<entity>_<op>` entries for the three standard CRUD use-cases.
+    //   • Payload mapping rules 1..5 (see plan §Payload mapping).
+    //
+    // We re-merge `events/*.yaml` + entity desugar here because we cannot
+    // import the TS generator helpers into a Hygen prompt. The merge is cheap
+    // and has no side effects; the validator has already proven correctness.
+
+    const hasEmits = Array.isArray(emitsBlock) && emitsBlock.length > 0;
+
+    const FIELD_TYPE_TO_TS = {
+      uuid: 'string',
+      string: 'string',
+      number: 'number',
+      boolean: 'boolean',
+      date: 'Date',
+      json: 'Record<string, unknown>',
+    };
+
+    // Load top-level events/<name>.yaml, tolerant of missing dir / bad files.
+    const loadTopLevelEventYamls = (eventsDir) => {
+      if (!fs.existsSync(eventsDir)) return new Map();
+      const byType = new Map();
+      for (const file of fs.readdirSync(eventsDir)) {
+        if (!file.endsWith('.yaml') && !file.endsWith('.yml')) continue;
+        try {
+          const content = fs.readFileSync(path.join(eventsDir, file), 'utf-8');
+          const parsed = yaml.parse(content);
+          if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') {
+            byType.set(parsed.type, parsed);
+          }
+        } catch {
+          // Silently skip — the main event-codegen-generator surfaces parse errors.
+        }
+      }
+      return byType;
+    };
+
+    // Desugar entity events: block into top-level-event shape with
+    // `{ type, direction: 'change', aggregate, payload: { <key>: { type, nullable } } }`.
+    const desugarEntityEventsInline = (entityDefinition) => {
+      const out = new Map();
+      const entityName = entityDefinition?.entity?.name;
+      const evs = entityDefinition?.events ?? [];
+      for (const ev of evs) {
+        const payload = {};
+        for (const [key, t] of Object.entries(ev.body ?? {})) {
+          payload[key] = { type: t, nullable: false };
+        }
+        out.set(ev.name, {
+          type: ev.name,
+          direction: 'change',
+          aggregate: entityName,
+          payload,
+        });
+      }
+      return out;
+    };
+
+    /**
+     * Resolve each emit name into the per-op event descriptor the templates need.
+     */
+    const resolveEmitsEvents = () => {
+      if (!hasEmits) return [];
+
+      const eventsDir = path.resolve(process.cwd(), 'events');
+      const topLevel = loadTopLevelEventYamls(eventsDir);
+      const sugar = desugarEntityEventsInline(definition);
+      // Top-level wins on collision (same policy as event-codegen-generator).
+      const merged = new Map(sugar);
+      for (const [k, v] of topLevel) merged.set(k, v);
+
+      // Build quick lookups keyed by camelCase for payload-mapping rules 3/4.
+      const entityKeysCamel = new Set(
+        processedFields.map((f) => f.camelName),
+      );
+
+      // DTO keys = the fields actually present on CreateXDto (input-eligible).
+      // The CLP + Clean DTOs derive from the same processedFields list (minus
+      // behaviors-computed fields like createdAt/updatedAt/deletedAt). We
+      // approximate here by using all processedFields — the TODO comments on
+      // each generated line make any miss visually obvious.
+      const dtoKeysCamel = new Set(
+        processedFields.map((f) => f.camelName),
+      );
+
+      return emitsBlock.map((emitName) => {
+        const ev = merged.get(emitName);
+        // `validateEntityEmits` has already guaranteed `ev` is defined. If
+        // somehow we get here with an unknown name (e.g. validator bypassed),
+        // emit a TODO-only mapping so the generated file still parses.
+        const payload = ev?.payload ?? {};
+        const payloadKeys = Object.keys(payload).sort();
+
+        const payloadMap = payloadKeys.map((snakeKey) => {
+          const field = payload[snakeKey];
+          const tsType = FIELD_TYPE_TO_TS[field.type] ?? 'unknown';
+          const tsTypeFinal = field.nullable ? `${tsType} | null` : tsType;
+          const camelKey = camelCase(snakeKey);
+
+          let expression;
+          let todo;
+
+          // Rule 1: <entity>_id or <entityName>Id → entity.id
+          if (
+            snakeKey === `${name}_id` ||
+            camelKey === `${camelName}Id`
+          ) {
+            expression = 'entity.id';
+          }
+          // Rule 2: created_by / updated_by → dto.createdBy / dto.updatedBy if present.
+          else if (snakeKey === 'created_by' || snakeKey === 'updated_by') {
+            const dtoKey = camelKey;
+            if (dtoKeysCamel.has(dtoKey)) {
+              expression = `dto.${dtoKey}`;
+            } else {
+              expression = `null as unknown as ${tsTypeFinal}`;
+              todo = `supply ${snakeKey} (not on DTO — wire from auth context)`;
+            }
+          }
+          // Rule 3: field present on just-created entity → entity.<camelKey>
+          else if (entityKeysCamel.has(camelKey)) {
+            expression = `entity.${camelKey}`;
+          }
+          // Rule 4: field present on input DTO (fallback) → dto.<camelKey>
+          else if (dtoKeysCamel.has(camelKey)) {
+            expression = `dto.${camelKey}`;
+          }
+          // Rule 5: otherwise — null placeholder + TODO.
+          else {
+            expression = `null as unknown as ${tsTypeFinal}`;
+            todo = `supply ${snakeKey}`;
+          }
+
+          return {
+            snakeKey,
+            camelKey,
+            tsType: tsTypeFinal,
+            expression,
+            todo,
+          };
+        });
+
+        return {
+          type: emitName,
+          aggregate: ev?.aggregate ?? name,
+          payloadMap,
+        };
+      });
+    };
+
+    const emitsEvents = resolveEmitsEvents();
+    const createEventType =
+      emitsEvents.find((e) => e.type === `${name}_created`) ?? null;
+    const updateEventType =
+      emitsEvents.find((e) => e.type === `${name}_updated`) ?? null;
+    const deleteEventType =
+      emitsEvents.find((e) => e.type === `${name}_deleted`) ?? null;
+
+    // Import paths for the TypedEventBus token + DrizzleClient token/type.
+    // The consumer app wires `@shared/*` aliases to the runtime subsystems
+    // (matching the CLP precedent for `@shared/constants/tokens` and
+    // `@shared/types/drizzle`). When the generated module is consumed, these
+    // aliases resolve to `runtime/subsystems/events/index` and
+    // `runtime/{constants/tokens,types/drizzle}` respectively.
+    const eventsTokenImport = '@shared/events';
+    const typedEventBusImport = '@shared/events';
+    const drizzleTokenImport = '@shared/constants/tokens';
+    const drizzleTypeImport = '@shared/types/drizzle';
+
     const locals = {
       // Database configuration
       databaseDialect,
@@ -1372,6 +1555,17 @@ export default {
       // Events
       hasEvents,
       processedEvents,
+
+      // EVT-7: emits (typed auto-emission via TypedEventBus)
+      hasEmits,
+      emitsEvents,
+      createEventType,
+      updateEventType,
+      deleteEventType,
+      eventsTokenImport,
+      typedEventBusImport,
+      drizzleTokenImport,
+      drizzleTypeImport,
     };
 
     // ========================================================================
@@ -1382,6 +1576,10 @@ export default {
     // template bodies can render without crashing; their `to:` guards resolve
     // to null which causes Hygen to skip file writing.
     // ========================================================================
+    // EVT-7 note: hasEmits / emitsEvents / *EventType / *Import locals are
+    // already in `locals` above and are architecture-neutral — CLP templates
+    // read the same locals to render typed publish blocks in their use-cases.
+
     if (isCleanLitePs) {
       const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
       Object.assign(locals, buildCleanLitePsLocals(definition, locals));

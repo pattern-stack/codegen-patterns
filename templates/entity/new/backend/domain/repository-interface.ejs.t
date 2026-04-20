@@ -13,6 +13,9 @@ import type { <%= className %> } from './<%= name %>.entity';
 <% if (hasEntityRefFields) { -%>
 import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>
+<% if (hasEmits && (createEventType || updateEventType || deleteEventType)) { -%>
+import type { DrizzleTransaction } from '<%= eventsTokenImport %>';
+<% } -%>
 <% if (hasRelationships) { -%>
 
 /**
@@ -44,11 +47,11 @@ export type Create<%= className %>Input = {
 export type Update<%= className %>Input = Partial<Create<%= className %>Input>;
 
 export interface I<%= className %>Repository {
-	create(input: Create<%= className %>Input): Promise<<%= className %>>;
+	create(input: Create<%= className %>Input<%= (hasEmits && createEventType) ? ', tx?: DrizzleTransaction' : '' %>): Promise<<%= className %>>;
 	findById(id: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %> | null>;
 	findAll(<%= hasRelationships ? `include?: ${className}With` : '' %>): Promise<<%= className %>[]>;
-	update(id: string, input: Update<%= className %>Input): Promise<<%= className %> | null>;
-	delete(id: string): Promise<<%= className %> | null>;
+	update(id: string, input: Update<%= className %>Input<%= (hasEmits && updateEventType) ? ', tx?: DrizzleTransaction' : '' %>): Promise<<%= className %> | null>;
+	delete(id: string<%= (hasEmits && deleteEventType) ? ', tx?: DrizzleTransaction' : '' %>): Promise<<%= className %> | null>;
 <% if (hasSoftDelete) { -%>
 	// Soft delete recovery methods
 	restore(id: string): Promise<<%= className %> | null>;

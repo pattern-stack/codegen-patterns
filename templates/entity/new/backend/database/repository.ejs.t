@@ -184,6 +184,9 @@ import { DRIZZLE } from '<%= imports.repositoryToConstants %>';
 <% if (hasEntityRefFields) { -%>
 import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>
+<% if (hasEmits && (createEventType || updateEventType || deleteEventType)) { -%>
+import type { DrizzleTransaction } from '<%= eventsTokenImport %>';
+<% } -%>
 import type {
 	Create<%= className %>Input,
 	I<%= className %>Repository,
@@ -209,11 +212,16 @@ import { <%= plural %> } from '<%= locations.dbSchemaServer.import %>';
 export class <%= className %>Repository implements I<%= className %>Repository {
 	constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
-	async create(input: Create<%= className %>Input): Promise<<%= className %>> {
+	async create(input: Create<%= className %>Input<%= (hasEmits && createEventType) ? ', tx?: DrizzleTransaction' : '' %>): Promise<<%= className %>> {
 <% if (hasTimestamps) { -%>
 		const now = new Date();
 <% } -%>
+<% if (hasEmits && createEventType) { -%>
+		const runner = tx ?? this.db;
+		const result = await runner
+<% } else { -%>
 		const result = await this.db
+<% } -%>
 			.insert(<%= plural %>)
 			.values({
 <% fields.forEach((field) => { -%>
@@ -261,8 +269,13 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 <% } -%>
 	}
 
-	async update(id: string, input: Update<%= className %>Input): Promise<<%= className %> | null> {
+	async update(id: string, input: Update<%= className %>Input<%= (hasEmits && updateEventType) ? ', tx?: DrizzleTransaction' : '' %>): Promise<<%= className %> | null> {
+<% if (hasEmits && updateEventType) { -%>
+		const runner = tx ?? this.db;
+		const result = await runner
+<% } else { -%>
 		const result = await this.db
+<% } -%>
 			.update(<%= plural %>)
 			.set({
 				...input,
@@ -277,7 +290,23 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 		return record ? <%= className %>.fromRecord(record) : null;
 	}
 
-	async delete(id: string): Promise<<%= className %> | null> {
+	async delete(id: string<%= (hasEmits && deleteEventType) ? ', tx?: DrizzleTransaction' : '' %>): Promise<<%= className %> | null> {
+<% if (hasEmits && deleteEventType) { -%>
+		const runner = tx ?? this.db;
+<% if (hasSoftDelete) { -%>
+		// Soft delete - set deletedAt timestamp
+		const result = await runner
+			.update(<%= plural %>)
+			.set({ deletedAt: new Date() })
+			.where(eq(<%= plural %>.id, id))
+			.returning();
+<% } else { -%>
+		const result = await runner
+			.delete(<%= plural %>)
+			.where(eq(<%= plural %>.id, id))
+			.returning();
+<% } -%>
+<% } else { -%>
 <% if (hasSoftDelete) { -%>
 		// Soft delete - set deletedAt timestamp
 		const result = await this.db
@@ -290,6 +319,7 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 			.delete(<%= plural %>)
 			.where(eq(<%= plural %>.id, id))
 			.returning();
+<% } -%>
 <% } -%>
 
 		const record = result[0];
