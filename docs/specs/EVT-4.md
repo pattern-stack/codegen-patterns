@@ -1,7 +1,7 @@
 # EVT-4 — Drizzle Backend Upgrade: Pool Columns + Pool-Filtered Drain
 
 **Issue:** EVT-4
-**Status:** Stub
+**Status:** Shipped
 **Phase:** ADR-024 Phase 1
 **Depends on:** EVT-1 (schema must have `pool`/`direction` columns).
 **Blocks:** EVT-5 (Memory backend behavioral parity).
@@ -52,23 +52,34 @@ EventsModule.forRoot({ backend: 'drizzle', pools: ['events_inbound'] })
 export interface EventsModuleOptions {
   backend: 'drizzle' | 'memory' | 'redis';
   redisUrl?: string;
-  pools?: string[];      // ← NEW: restrict drain to these pools; undefined = drain all
-  multi_tenant?: boolean; // ← NEW (EVT-6 wires this; placeholder here)
+  pools?: string[];       // ← NEW: restrict drain to these pools; undefined = drain all
+  multiTenant?: boolean;  // ← NEW (EVT-6 wires this; placeholder here)
 }
 ```
+
+Note: the YAML config key is `events.multi_tenant` (snake_case, per our
+YAML convention); the TypeScript interface field is `multiTenant`
+(camelCase). The events-codegen parser translates between them.
 
 ```ts
 // event-bus.drizzle-backend.ts constructor
 constructor(
   @Inject(DRIZZLE) private readonly db: DrizzleClient,
-  @Inject(EVENTS_MODULE_OPTIONS) private readonly opts: EventsModuleOptions,
-) {}
+  @Optional() @Inject(EVENTS_MODULE_OPTIONS) opts?: EventsModuleOptions,
+) {
+  // Defaults so direct construction (integration tests not going through
+  // Nest DI) keeps working — `new DrizzleEventBus(db)` is valid.
+  this.opts = opts ?? { backend: 'drizzle' };
+}
 
 // processBatch now pool-aware
 private async processBatch(): Promise<void> {
   const pools = this.opts.pools;
-  // SELECT ... WHERE status='pending' AND (pool = ANY($pools) OR $pools IS NULL)
-  // ... FOR UPDATE SKIP LOCKED
+  // tx.select().from(domainEvents).where(...)
+  //   .orderBy(asc(occurredAt)).limit(50).for('update', { skipLocked: true })
+  // where = pools?.length
+  //   ? and(eq(status,'pending'), inArray(pool, pools))
+  //   : eq(status,'pending')
 }
 ```
 
@@ -101,6 +112,61 @@ private async processBatch(): Promise<void> {
 ## Open Questions
 
 None blocking. EVT-Q7 (stale-event sweeper) resolved: no sweeper needed. The `FOR UPDATE SKIP LOCKED` model is self-healing.
+
+## Implementation Notes (post-ship)
+
+Details discovered / decided during implementation — recorded here so the
+spec doubles as post-implementation truth:
+
+- **`EVENTS_MODULE_OPTIONS` promoted to a typed const.** Previously a bare
+  `'EVENTS_MODULE_OPTIONS'` string literal inside `events.module.ts`, now
+  an exported `const EVENTS_MODULE_OPTIONS = 'EVENTS_MODULE_OPTIONS' as const`
+  in `events.tokens.ts` (mirrors the `EVENT_BUS` convention). Also wired
+  into `EventsModule.forRoot` (previously only `forRootAsync` used it), so
+  the drizzle backend's `@Inject(EVENTS_MODULE_OPTIONS)` actually resolves.
+  `index.ts` re-exports the token.
+- **Constructor takes an optional, defaulted second arg.** The integration
+  test (`test/scaffold/tests/event-bus.test.ts`) constructs the bus
+  directly as `new DrizzleEventBus(db)` — defaulting `opts` to
+  `{ backend: 'drizzle' }` preserves that ergonomic while still letting
+  Nest DI inject the real options object. `@Optional()` on the inject
+  mirrors the same contract for the DI path.
+- **`drainOnce()` test hook.** `processBatch` is private; exposing a public
+  `async drainOnce()` that simply calls `processBatch()` gives the
+  integration test a deterministic way to trigger exactly one polling
+  cycle without timing assumptions. Documented on the class as a test
+  utility.
+- **Row-shape extraction factored into `toInsertValues`.** Both `publish`
+  and `publishMany` call a shared helper that reads `event.metadata.pool`,
+  `event.metadata.direction`, and `event.metadata.tenantId` into the
+  first-class columns. Keeps the two code paths from drifting.
+- **Drizzle query builder replacement.** The raw
+  `sql\`SELECT ... FOR UPDATE SKIP LOCKED\`` call went away entirely. The
+  drain now uses `tx.select().from(domainEvents).where(...).orderBy(...).limit(POLL_BATCH_SIZE).for('update', { skipLocked: true })`,
+  matching the pattern used in `job-worker.ts`. Row shape is now typed via
+  `typeof domainEvents.$inferSelect` instead of hand-mapping snake_case.
+
+### No sweeper — EVT-Q7 confirmation
+
+No stale-event sweeper was added. Rationale: a row is locked by
+`FOR UPDATE SKIP LOCKED` only for the duration of the polling transaction;
+the `status='processed'` / `status='failed'` update runs within that same
+transaction. There is no `claimed_at` (unlike jobs) → no stranded-lock
+recovery is needed.
+
+### Test coverage summary
+
+- Unit: `src/__tests__/runtime/subsystems/event-bus.spec.ts` — 9 new
+  DrizzleEventBus tests exercising the metadata→column mapping (three
+  cases), `publishMany` per-event independence, empty-array no-op, the
+  three WHERE-composition branches (pools set / undefined / empty array),
+  and the defaulted-single-arg constructor. Full file now 26 tests; all
+  passing.
+- Integration: `test/scaffold/tests/event-bus.test.ts` — new
+  `pool-filtered drain` block publishes 2×`events_change` + 2×`events_inbound`
+  rows, calls `drainOnce()` on a bus scoped to `['events_change']`, and
+  asserts only the `events_change` rows flip to `processed`. Gated by
+  `SCAFFOLD_INTEGRATION=1`.
 
 ## References
 

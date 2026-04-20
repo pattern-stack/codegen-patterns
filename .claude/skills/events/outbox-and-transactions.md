@@ -66,25 +66,34 @@ Same guarantee; the facade stamps `id`, `occurredAt`, `metadata.pool`, `metadata
 | `processed_at`      | NULL until drained                                     |
 | `status`            | `pending | processed | failed`                         |
 | `error`             | Last dispatch error message                            |
-| `metadata` (jsonb)  | Routing hints; will carry `pool` and `direction`       |
+| `metadata` (jsonb)  | Routing hints (still carries `pool`/`direction` for protocol stability) |
+| `pool`              | Routing pool column (EVT-1). Populated at insert by `DrizzleEventBus.publish()` from `metadata.pool`. |
+| `direction`         | Routing direction column (EVT-1). Populated from `metadata.direction`. |
+| `tenant_id`         | Optional multi-tenancy column (EVT-1). Populated from `metadata.tenantId` when present. |
 
-**Phase A additions** (from `events-codegen-plan.md` §3): `pool` (text, nullable, indexed) and `direction` (text, nullable, indexed) become first-class columns, populated at insert time from `metadata`. This lets the drain loop filter by pool without unpacking JSON on every poll.
+First-class columns exist so the drain loop can filter by pool without unpacking JSON on every poll. The `metadata` JSON still carries the same values for protocol stability — downstream consumers reading metadata directly keep working.
 
-**Indexes** to add via migration when deploying:
-- `(status, occurred_at)` — polling query
+**Indexes** (declared in the Drizzle schema):
+- `(status, occurred_at)` — base polling query
 - `(aggregate_id, aggregate_type)` — event replay for an entity
-- `(pool, status, occurred_at)` — per-pool drain (Phase A)
+- `(pool, status, occurred_at)` — per-pool drain
 
 ## The polling loop
 
-`runtime/subsystems/events/event-bus.drizzle-backend.ts`:
+`runtime/subsystems/events/event-bus.drizzle-backend.ts` uses the Drizzle
+query builder (not raw SQL) to claim batches:
 
-```sql
-SELECT * FROM domain_events
-WHERE status = 'pending'
-ORDER BY occurred_at ASC
-LIMIT 50
-FOR UPDATE SKIP LOCKED
+```ts
+tx.select()
+  .from(domainEvents)
+  .where(
+    pools?.length
+      ? and(eq(status, 'pending'), inArray(pool, pools))
+      : eq(status, 'pending'),
+  )
+  .orderBy(asc(occurredAt))
+  .limit(50)
+  .for('update', { skipLocked: true });
 ```
 
 Run inside a transaction so the row is locked for the duration of dispatch. `SKIP LOCKED` means multiple worker processes can poll concurrently without double-dispatching. Default interval: 1000ms. Default batch size: 50.
@@ -95,18 +104,11 @@ Run inside a transaction so the row is locked for the duration of dispatch. `SKI
 3. On success: `UPDATE domain_events SET status='processed', processed_at=now() WHERE id=...`.
 4. On failure: retry up to `MAX_RETRIES` (3); if still failing, `UPDATE ... SET status='failed', error=...`. Row is not re-claimed.
 
-Phase A adds pool filtering:
+**Pool filtering (EVT-4, shipped).** Each worker process can restrict itself to a subset of pools by passing `pools: [...]` to `EventsModule.forRoot({...})`. E.g. an inbound-webhook worker drains `events_inbound` only; a change-event worker drains `events_change` only. This is how lane isolation is enforced at the bus layer — the jobs-side pools are the destination for event-triggered work; the bus-side pool-filtered drain is what carries events into those jobs. `pools` defaults to `undefined` → drain all (backwards-compatible default).
 
-```sql
-SELECT * FROM domain_events
-WHERE status = 'pending'
-  AND (pool = ANY($1::text[]) OR $1 IS NULL)
-ORDER BY occurred_at ASC
-LIMIT $2
-FOR UPDATE SKIP LOCKED
-```
+**No stale-event sweeper (EVT-Q7).** Unlike jobs (`job_run.claimed_at`), events have no claim timestamp. The `FOR UPDATE SKIP LOCKED` lock is held only for the polling transaction, and `status='processed'` is updated in that same transaction — so no rows can be stranded in a half-claimed state. If you find yourself tempted to add a "sweep stuck pending" recovery loop, stop: the lock-lifetime model already handles it.
 
-Each worker process can restrict itself to a subset of pools. E.g. an inbound-webhook worker drains `events_inbound` only; a change-event worker drains `events_change` only. This is how lane isolation is enforced at the bus layer — the jobs-side pools are the destination for event-triggered work; the bus-side pool-filtered drain is what carries events into those jobs.
+**Test hook.** `DrizzleEventBus.drainOnce()` runs exactly one `processBatch` cycle and returns. Use it in integration tests instead of sleeping past the poll interval.
 
 ## Idempotency
 

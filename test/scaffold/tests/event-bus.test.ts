@@ -178,3 +178,53 @@ d('subscribe', () => {
     unsub();
   });
 });
+
+d('pool-filtered drain', () => {
+  test(
+    'only claims rows matching opts.pools, leaves others pending (EVT-4)',
+    async () => {
+      const db = getTestDb();
+      // Build a bus whose drain is scoped to events_change only.
+      const scopedBus = new DrizzleEventBus(db as any, {
+        backend: 'drizzle',
+        pools: ['events_change'],
+      });
+
+      // Publish two events to each lane.
+      const changeEvents = [
+        makeEvent({ type: 'change_a', metadata: { pool: 'events_change', direction: 'change' } }),
+        makeEvent({ type: 'change_b', metadata: { pool: 'events_change', direction: 'change' } }),
+      ];
+      const inboundEvents = [
+        makeEvent({ type: 'inbound_a', metadata: { pool: 'events_inbound', direction: 'inbound' } }),
+        makeEvent({ type: 'inbound_b', metadata: { pool: 'events_inbound', direction: 'inbound' } }),
+      ];
+      await scopedBus.publishMany([...changeEvents, ...inboundEvents]);
+
+      // Verify pool column was populated at insert time.
+      const insertedChange = await db
+        .select()
+        .from(domainEvents)
+        .where(eq(domainEvents.id, changeEvents[0].id));
+      expect(insertedChange[0].pool).toBe('events_change');
+      expect(insertedChange[0].direction).toBe('change');
+
+      // No handlers on scopedBus → dispatch is a no-op and rows flip to
+      // 'processed'. Only events_change rows should be claimed.
+      await scopedBus.drainOnce();
+
+      const allRows = await db.select().from(domainEvents);
+      const byId = new Map<string, any>(allRows.map((r: any) => [r.id, r]));
+
+      for (const e of changeEvents) {
+        expect(byId.get(e.id)?.status).toBe('processed');
+        expect(byId.get(e.id)?.pool).toBe('events_change');
+      }
+      for (const e of inboundEvents) {
+        expect(byId.get(e.id)?.status).toBe('pending');
+        expect(byId.get(e.id)?.pool).toBe('events_inbound');
+      }
+    },
+    10_000,
+  );
+});
