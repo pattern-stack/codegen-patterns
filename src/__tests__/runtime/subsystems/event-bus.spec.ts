@@ -238,6 +238,152 @@ describe('MemoryEventBus', () => {
 });
 
 // ============================================================================
+// MemoryEventBus — pool awareness (EVT-5)
+// ============================================================================
+
+describe('MemoryEventBus — pool awareness', () => {
+  // --------------------------------------------------------------------------
+  // publishedEventsForPool / publishedEventsForDirection helpers
+  // --------------------------------------------------------------------------
+  describe('publishedEventsForPool', () => {
+    it('returns only events whose metadata.pool matches', async () => {
+      const bus = new MemoryEventBus();
+      await bus.publish(makeEvent({ id: '1', metadata: { pool: 'events_change' } }));
+      await bus.publish(makeEvent({ id: '2', metadata: { pool: 'events_inbound' } }));
+      await bus.publish(makeEvent({ id: '3', metadata: { pool: 'events_change' } }));
+
+      const changeEvents = bus.publishedEventsForPool('events_change');
+      expect(changeEvents).toHaveLength(2);
+      expect(changeEvents.map((e) => e.id)).toEqual(['1', '3']);
+    });
+
+    it('returns an empty array when no events match the pool', async () => {
+      const bus = new MemoryEventBus();
+      await bus.publish(makeEvent({ metadata: { pool: 'events_inbound' } }));
+      expect(bus.publishedEventsForPool('events_change')).toEqual([]);
+    });
+  });
+
+  describe('publishedEventsForDirection', () => {
+    it('returns only inbound events', async () => {
+      const bus = new MemoryEventBus();
+      await bus.publish(makeEvent({ id: '1', metadata: { direction: 'inbound' } }));
+      await bus.publish(makeEvent({ id: '2', metadata: { direction: 'change' } }));
+      await bus.publish(makeEvent({ id: '3', metadata: { direction: 'inbound' } }));
+
+      const inbound = bus.publishedEventsForDirection('inbound');
+      expect(inbound).toHaveLength(2);
+      expect(inbound.map((e) => e.id)).toEqual(['1', '3']);
+    });
+
+    it('returns only outbound events', async () => {
+      const bus = new MemoryEventBus();
+      await bus.publish(makeEvent({ id: '1', metadata: { direction: 'outbound' } }));
+      await bus.publish(makeEvent({ id: '2', metadata: { direction: 'change' } }));
+
+      const outbound = bus.publishedEventsForDirection('outbound');
+      expect(outbound).toHaveLength(1);
+      expect(outbound[0].id).toBe('1');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // pool-filtered dispatch
+  // --------------------------------------------------------------------------
+  describe('pool-filtered dispatch', () => {
+    it('stores events outside the configured pool but does NOT dispatch them', async () => {
+      const bus = new MemoryEventBus({ backend: 'memory', pools: ['events_change'] });
+      const received: DomainEvent[] = [];
+      bus.subscribe('test_event', async (e) => { received.push(e); });
+
+      const outOfPool = makeEvent({ id: 'oop', metadata: { pool: 'events_inbound' } });
+      await bus.publish(outOfPool);
+
+      // Recorded for assertions, but handler never ran.
+      expect(bus.publishedEvents).toHaveLength(1);
+      expect(bus.publishedEvents[0]).toBe(outOfPool);
+      expect(received).toHaveLength(0);
+    });
+
+    it('dispatches events whose pool is in the configured list', async () => {
+      const bus = new MemoryEventBus({ backend: 'memory', pools: ['events_change'] });
+      const received: DomainEvent[] = [];
+      bus.subscribe('test_event', async (e) => { received.push(e); });
+
+      const inPool = makeEvent({ metadata: { pool: 'events_change' } });
+      await bus.publish(inPool);
+
+      expect(received).toHaveLength(1);
+      expect(received[0]).toBe(inPool);
+    });
+
+    it('dispatches all events when pools is undefined (backwards-compat)', async () => {
+      const bus = new MemoryEventBus(); // no opts
+      const received: DomainEvent[] = [];
+      bus.subscribe('test_event', async (e) => { received.push(e); });
+
+      await bus.publish(makeEvent({ id: '1', metadata: { pool: 'events_change' } }));
+      await bus.publish(makeEvent({ id: '2', metadata: { pool: 'events_inbound' } }));
+      await bus.publish(makeEvent({ id: '3' })); // no metadata
+
+      expect(received).toHaveLength(3);
+    });
+
+    it('treats an empty pools array as "no filter" (matches DrizzleEventBus)', async () => {
+      // DrizzleEventBus's WHERE uses `pools && pools.length > 0`, so an
+      // empty array drops to the status-only predicate and drains
+      // everything. MemoryEventBus mirrors that semantic.
+      const bus = new MemoryEventBus({ backend: 'memory', pools: [] });
+      const received: DomainEvent[] = [];
+      bus.subscribe('test_event', async (e) => { received.push(e); });
+
+      await bus.publish(makeEvent({ id: '1', metadata: { pool: 'events_change' } }));
+      await bus.publish(makeEvent({ id: '2', metadata: { pool: 'events_inbound' } }));
+
+      expect(received).toHaveLength(2);
+    });
+
+    it('does NOT dispatch events without metadata when pools is set', async () => {
+      const bus = new MemoryEventBus({ backend: 'memory', pools: ['events_change'] });
+      const received: DomainEvent[] = [];
+      bus.subscribe('test_event', async (e) => { received.push(e); });
+
+      await bus.publish(makeEvent()); // no metadata at all
+
+      expect(bus.publishedEvents).toHaveLength(1); // still recorded
+      expect(received).toHaveLength(0);           // but not dispatched
+    });
+
+    it('publishMany filters per-event: only matching-pool events dispatch', async () => {
+      const bus = new MemoryEventBus({ backend: 'memory', pools: ['events_change'] });
+      const received: string[] = [];
+      bus.subscribe('test_event', async (e) => { received.push(e.id); });
+
+      await bus.publishMany([
+        makeEvent({ id: 'a', metadata: { pool: 'events_change' } }),
+        makeEvent({ id: 'b', metadata: { pool: 'events_inbound' } }),
+        makeEvent({ id: 'c', metadata: { pool: 'events_change' } }),
+        makeEvent({ id: 'd', metadata: { pool: 'events_outbound' } }),
+      ]);
+
+      // All four are recorded; only two matching dispatched.
+      expect(bus.publishedEvents).toHaveLength(4);
+      expect(received).toEqual(['a', 'c']);
+    });
+
+    it('clear() resets publishedEvents after pool-filtered publishes', async () => {
+      const bus = new MemoryEventBus({ backend: 'memory', pools: ['events_change'] });
+      await bus.publish(makeEvent({ metadata: { pool: 'events_change' } }));
+      await bus.publish(makeEvent({ metadata: { pool: 'events_inbound' } }));
+      expect(bus.publishedEvents).toHaveLength(2);
+
+      bus.clear();
+      expect(bus.publishedEvents).toHaveLength(0);
+    });
+  });
+});
+
+// ============================================================================
 // DrizzleEventBus (mocked Drizzle client — no Docker)
 // ============================================================================
 
