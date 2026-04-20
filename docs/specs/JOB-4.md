@@ -1,8 +1,8 @@
 # JOB-4 — Memory Backends + Unit Test Suite
 
 **Issue:** JOB-4
-**Status:** Draft
-**Last Updated:** 2026-04-18
+**Status:** Implemented
+**Last Updated:** 2026-04-20
 **Depends on:** JOB-2 (protocols), JOB-3 (behaviour spec to match)
 **Phase:** ADR-022 Phase 1
 
@@ -42,8 +42,18 @@ All three services share the same `MemoryJobStore` instance via constructor inje
 | `runtime/subsystems/jobs/job-step-service.memory-backend.ts` | create | `MemoryJobStepService` |
 | `runtime/subsystems/jobs/memory-job-store.ts` | create | `MemoryJobStore` shared container (exported for test resets) |
 | `runtime/subsystems/jobs/index.ts` | modify | Re-export memory classes + `MemoryJobStore` |
-| `runtime/subsystems/jobs/__tests__/job-orchestrator.unit.test.ts` | create | All Phase 1 scenarios |
-| `runtime/subsystems/jobs/__tests__/job-worker.unit.test.ts` | create | `@JobHandler` + two-tick memoization proof |
+| `src/__tests__/runtime/subsystems/job-orchestrator.unit.spec.ts` | create | All Phase 1 scenarios |
+| `src/__tests__/runtime/subsystems/job-worker.unit.spec.ts` | create | `@JobHandler` + two-tick memoization proof |
+
+> **Note (2026-04-20, implementation correction).** The original draft
+> placed the unit tests under `runtime/subsystems/jobs/__tests__/`. That
+> directory is excluded by `tsconfig.build.json` and — more importantly —
+> `just test-unit` runs `bun test src/__tests__/` only. Co-locating the
+> jobs unit tests with the rest of the subsystem tests (cache, events,
+> storage, etc.) matches the established project convention and is what
+> the build+test pipeline actually executes. Files live at the paths in
+> the table above; the `*.spec.ts` suffix matches the other subsystem
+> tests.
 
 ## Interfaces
 
@@ -111,8 +121,8 @@ All mutating ops inside `mutex.run(...)`.
 **`replay(runId)`:**
 - Load; assert terminal. Determine `replay_from` from `JobDefinitionRow`.
 - `scratch`: `stepService.clearStepsForRun(runId)`.
-- `last_step`: find step where `status='failed'`; `stepService.clearStep(runId, stepId)`.
-- `last_checkpoint`: no step modification.
+- `last_step`: delete every non-`completed` step row via `stepService.clearIncompleteSteps(runId)` — parity with the Drizzle backend, which the implementation of JOB-3 collapsed `last_step` onto `"delete where status != 'completed'"`.
+- `last_checkpoint`: same as `last_step` in Phase 1 — `clearIncompleteSteps(runId)`. Phase 1 has no explicit checkpoint markers so the three modes collapse to two distinct behaviours (`scratch` vs. the `last_*` pair). Noted in JOB-3 "Implementation Decisions"; memory backend mirrors it.
 - Reset run fields: `status='pending'`, `attempts++`, clear `started_at`, `finished_at`, `error`.
 
 **`tick(runId)` (called by JobWorker):**
@@ -160,9 +170,11 @@ All mutating ops inside `mutex.run(...)`.
 
 ## Unit Test Suite Design
 
-### `__tests__/job-orchestrator.unit.test.ts`
+### `src/__tests__/runtime/subsystems/job-orchestrator.unit.spec.ts`
 
-`MemoryJobStore.clear()` in `beforeEach`. Direct instantiation (no NestJS) for protocol-level tests.
+Fresh `MemoryJobStore` in `beforeEach` (cheaper and more explicit than
+`clear()`; matches the other subsystem test files). Direct instantiation
+(no NestJS) for protocol-level tests.
 
 **Group 1 — Claim / queue ordering**
 - Insert three pending runs in same pool with priorities `[10, 5, 10]`, run_ats `[T-2s, T-1s, T-3s]`. Assert `claimNext` returns priority-10 with earliest run_at.
@@ -192,25 +204,25 @@ All mutating ops inside `mutex.run(...)`.
 - `last_step`: step A completed, step B failed; replay clears B only.
 - `last_checkpoint`: step A completed; replay + tick; `fn_A` not called (memoized); `fn_B` called.
 
-### `__tests__/job-worker.unit.test.ts`
+### `src/__tests__/runtime/subsystems/job-worker.unit.spec.ts`
 
 NestJS test module to prove decorator + DI integration.
 
-- `TestOnboardingHandler` decorated with `@JobHandler('test_onboarding', { pool: 'batch' })`. Mock `AccountService`. `Test.createTestingModule({ imports: [JobsDomainModule.forRoot({ backend: 'memory' })] })`. Call `orchestrator.start(...)`. Assert mock called.
-- `ctx.step` memoization: step fn mock called once across two ticks.
+- `TestOnboardingHandler` decorated with `@JobHandler('test_onboarding', { pool: 'batch' })`. A plain `AccountService` injectable captures invocations. Because `JobsDomainModule` lands with JOB-5, the test wires the three memory providers (`MemoryJobStore`, `MemoryJobOrchestrator`, `MemoryJobRunService`, `MemoryJobStepService`) directly via `Test.createTestingModule({ providers: [...] })` against the `JOB_ORCHESTRATOR` / `JOB_RUN_SERVICE` / `JOB_STEP_SERVICE` tokens — exactly the shape JOB-5's `forRoot({ backend: 'memory' })` will emit.
+- `ctx.step` memoization: step fn invoked once across two ticks.
 
 All tests run under `just test-unit` with no Docker.
 
 ## Acceptance Criteria
 
-- [ ] Three memory services implement their protocols with no public-API casts
-- [ ] All three collision modes have passing tests
-- [ ] Step memoization: fn not called on second tick if completed on first
-- [ ] Cascade cancel: `Terminate`/`Cancel`/`Abandon` behaviors correct
-- [ ] Dedupe: in-window collapse; outside-window new row
-- [ ] All three replay modes pass
-- [ ] `@JobHandler` decorated class instantiated in NestJS test module; memoizes across two ticks
-- [ ] `just test-unit` passes without Docker
+- [x] Three memory services implement their protocols with no public-API casts
+- [x] All three collision modes have passing tests
+- [x] Step memoization: fn not called on second tick if completed on first
+- [x] Cascade cancel: `Terminate`/`Cancel`/`Abandon` behaviors correct
+- [x] Dedupe: in-window collapse; outside-window new row
+- [x] All three replay modes pass
+- [x] `@JobHandler` decorated class instantiated in NestJS test module; memoizes across two ticks
+- [x] `just test-unit` passes without Docker
 
 ## Scope Boundary
 
@@ -223,7 +235,7 @@ All tests run under `just test-unit` with no Docker.
 
 **OQ-4 — Boot-time validator in memory mode (ADR-022 #4).** Validator skipped entirely in memory mode — no DB rows to validate. Instead, `MemoryJobOrchestrator.start()` throws `UnknownJobTypeError` synchronously when type is not in in-memory registry. Equivalent protection, no DB dependency.
 
-**OQ — Concurrency `queue` simulation.** `start()` detects collision → new run stored with `run_at = MAX_DATE`; incumbent's `runId` registered as blocker; on incumbent terminal transition, blocked run's `run_at` advances to `now()`. Flag for confirmation if Drizzle-side exact semantics differ.
+**OQ — Concurrency `queue` simulation.** `start()` detects collision → new run stored with `run_at = MAX_DATE` (constant `QUEUED_RUN_AT = new Date(8_640_000_000_000_000)`, matching JavaScript's max-date sentinel); incumbent's `runId` registered as blocker via a private `queueBlockers: Map<incumbentId, dependentId[]>`; on incumbent terminal transition (`cancel`, `markCompleted`, `markFailed`) the orchestrator advances every dependent's `run_at` back to `now()` so the next `claimNext(pool)` picks them up. The Drizzle backend achieves the same effect differently — the worker's `processRun` re-checks the concurrency key and re-queues the row if another run is still `running` — but the observable semantics (second run stays un-claimed until the first terminates) match.
 
 ## References
 
