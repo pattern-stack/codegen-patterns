@@ -63,5 +63,25 @@ export type {
   JobContext,
 } from './job-handler.base';
 
-// Subsequent issues add: backends (JOB-3, JOB-4), modules (JOB-5).
+// ─── JOB-3: Drizzle backends + JobWorker ────────────────────────────────
+export { DrizzleJobOrchestrator } from './job-orchestrator.drizzle-backend';
+export { DrizzleJobRunService } from './job-run-service.drizzle-backend';
+export { DrizzleJobStepService } from './job-step-service.drizzle-backend';
+export {
+  JobWorker,
+  JOB_WORKER_OPTIONS,
+  computeBackoff,
+  classifyError,
+  buildClaimQuery,
+  buildStaleSweepQuery,
+} from './job-worker';
+export type { JobWorkerOptions } from './job-worker';
+export {
+  JobCollisionError,
+  JobNotReplayableError,
+  JobTemplateFieldMissingError,
+  JobTypeNotFoundError,
+} from './jobs-errors';
+
+// Subsequent issues add: Memory backends (JOB-4), modules (JOB-5).
 // All net-new — nothing from the old executor layer survives.
