@@ -80,8 +80,10 @@ Files that ship to the consumer app (not templates):
 - `runtime/subsystems/events/event-bus.drizzle-backend.ts` — outbox poller (`FOR UPDATE SKIP LOCKED`)
 - `runtime/subsystems/events/event-bus.memory-backend.ts` — sync test backend, exposes `publishedEvents[]`, `publishedEventsForPool()`, `publishedEventsForDirection()`, `clear()`; accepts `opts.pools` for pool-filtered dispatch that mirrors the Drizzle drain (EVT-5)
 - `runtime/subsystems/events/event-bus.redis-backend.ts` — alternate backend
-- `runtime/subsystems/events/events.module.ts` — `EventsModule.forRoot({ backend })`, `global: true`
-- `runtime/subsystems/events/events.tokens.ts` — `EVENT_BUS` symbol
+- `runtime/subsystems/events/events.module.ts` — `EventsModule.forRoot({ backend, multiTenant? })`, `global: true`; provides `EVENT_BUS`, `TYPED_EVENT_BUS`, `EVENTS_MULTI_TENANT`
+- `runtime/subsystems/events/events.tokens.ts` — `EVENT_BUS`, `TYPED_EVENT_BUS`, `EVENTS_MULTI_TENANT`, `EVENTS_MODULE_OPTIONS` (all string-valued), `REDIS_URL` (Symbol)
+- `runtime/subsystems/events/events-errors.ts` — `MissingTenantIdError` (thrown by `TypedEventBus.publish` when `multiTenant: true` and `metadata.tenantId` missing)
+- `runtime/subsystems/events/generated/bus.ts` — `TypedEventBus`, injects `EVENT_BUS` + `EVENTS_MULTI_TENANT`; stamps `pool` / `direction` / `version` onto publish metadata and enforces tenantId when multi-tenant mode is on
 - `runtime/base-classes/lifecycle-events.ts` — legacy fire-and-forget auto-emission; being replaced by `emits:` declarations
 
 Generator pieces (exist as templates + future generator code):

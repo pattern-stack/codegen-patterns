@@ -25,14 +25,28 @@
  * Each process restricts its drain loop to the pools listed here. `pools`
  * is undefined by default → drain all pending rows (backwards-compatible).
  *
+ * Typed facade + multi-tenancy (EVT-6):
+ * - `TYPED_EVENT_BUS` resolves to the generated `TypedEventBus` wrapping
+ *   whichever backend is selected.
+ * - `multiTenant: true` makes `TypedEventBus.publish` throw
+ *   `MissingTenantIdError` when the caller forgets `metadata.tenantId`.
+ *
  * `global: true` means entity modules do not need to import EventsModule
- * individually — the EVENT_BUS token is available project-wide.
+ * individually — the EVENT_BUS and TYPED_EVENT_BUS tokens are available
+ * project-wide.
  */
-import { Module, type DynamicModule } from '@nestjs/common';
-import { EVENT_BUS, EVENTS_MODULE_OPTIONS, REDIS_URL } from './events.tokens';
+import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import {
+  EVENT_BUS,
+  EVENTS_MODULE_OPTIONS,
+  EVENTS_MULTI_TENANT,
+  REDIS_URL,
+  TYPED_EVENT_BUS,
+} from './events.tokens';
 import { DrizzleEventBus } from './event-bus.drizzle-backend';
 import { MemoryEventBus } from './event-bus.memory-backend';
 import { RedisEventBus } from './event-bus.redis-backend';
+import { TypedEventBus } from './generated/bus';
 
 export interface EventsModuleOptions {
   backend: 'drizzle' | 'memory' | 'redis';
@@ -53,10 +67,19 @@ export interface EventsModuleOptions {
    */
   pools?: string[];
   /**
-   * When true, the generated scaffold writes `tenant_id` into each
-   * outbox row and surfaces it on the typed facade. Placeholder here —
-   * EVT-6 wires the behaviour; EVT-4 ships the field so downstream work
-   * isn't blocked.
+   * Multi-tenancy opt-in (EVT-6).
+   *
+   * When `true`, every `TypedEventBus.publish()` call must supply
+   * `opts.metadata.tenantId` — otherwise it throws `MissingTenantIdError`.
+   * The tenantId is preserved on `event.metadata` and, for the Drizzle
+   * backend, written to `domain_events.tenant_id` (EVT-4).
+   *
+   * Drain-side tenant filtering is deferred — the tenant-context model
+   * (per-process vs. per-request vs. async-local-storage) is still
+   * unsettled; see ADR-024 §Multi-tenancy. Only the publish-side
+   * requirement ships here.
+   *
+   * Defaults to `false`.
    */
   multiTenant?: boolean;
 }
@@ -65,6 +88,19 @@ export interface EventsModuleAsyncOptions {
   useFactory: (...args: unknown[]) => Promise<EventsModuleOptions> | EventsModuleOptions;
   inject?: unknown[];
   imports?: unknown[];
+}
+
+/**
+ * Shared provider set: `TypedEventBus` itself, the `TYPED_EVENT_BUS` token
+ * binding, and the resolved `EVENTS_MULTI_TENANT` flag. Returned from one
+ * place so every `forRoot` branch and `forRootAsync` agree.
+ */
+function buildTypedBusProviders(multiTenant: boolean): Provider[] {
+  return [
+    TypedEventBus,
+    { provide: TYPED_EVENT_BUS, useExisting: TypedEventBus },
+    { provide: EVENTS_MULTI_TENANT, useValue: multiTenant },
+  ];
 }
 
 @Module({})
@@ -81,10 +117,20 @@ export class EventsModule {
           inject: (asyncOptions.inject ?? []) as (string | symbol | Function)[],
         },
         {
+          provide: EVENTS_MULTI_TENANT,
+          useFactory: (options: EventsModuleOptions) => options.multiTenant ?? false,
+          inject: [EVENTS_MODULE_OPTIONS],
+        },
+        {
+          provide: REDIS_URL,
+          useFactory: (options: EventsModuleOptions) =>
+            options.redisUrl ?? process.env['REDIS_URL'] ?? 'redis://localhost:6379',
+          inject: [EVENTS_MODULE_OPTIONS],
+        },
+        {
           provide: EVENT_BUS,
           useFactory: (options: EventsModuleOptions) => {
             const mod = EventsModule.forRoot(options);
-            // Return the provider instance by delegating to forRoot's logic
             const provider = mod.providers?.find(
               (p) => typeof p === 'object' && p !== null && 'provide' in p && p.provide === EVENT_BUS,
             );
@@ -95,14 +141,18 @@ export class EventsModule {
           },
           inject: [EVENTS_MODULE_OPTIONS],
         },
+        TypedEventBus,
+        { provide: TYPED_EVENT_BUS, useExisting: TypedEventBus },
       ],
-      exports: [EVENT_BUS],
+      exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
     };
   }
 
   static forRoot(
     options: EventsModuleOptions = { backend: 'drizzle' },
   ): DynamicModule {
+    const multiTenant = options.multiTenant ?? false;
+
     if (options.backend === 'redis') {
       const resolvedUrl =
         options.redisUrl ?? process.env['REDIS_URL'] ?? 'redis://localhost:6379';
@@ -116,8 +166,9 @@ export class EventsModule {
           { provide: EVENT_BUS, useClass: RedisEventBus },
           // Register concrete class so NestJS can resolve lifecycle hooks
           RedisEventBus,
+          ...buildTypedBusProviders(multiTenant),
         ],
-        exports: [EVENT_BUS],
+        exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
       };
     }
 
@@ -132,8 +183,9 @@ export class EventsModule {
       providers: [
         { provide: EVENTS_MODULE_OPTIONS, useValue: options },
         provider,
+        ...buildTypedBusProviders(multiTenant),
       ],
-      exports: [EVENT_BUS],
+      exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
     };
   }
 }

@@ -443,9 +443,14 @@ describe('buildBusContent', () => {
 		expect(empty).toBe(nonEmpty);
 	});
 
-	test('imports the EVENT_BUS token and IEventBus protocol', () => {
+	test('imports the EVENT_BUS / EVENTS_MULTI_TENANT tokens and IEventBus protocol', () => {
 		const content = buildBusContent([]);
-		expect(content).toContain("import { EVENT_BUS } from '../events.tokens';");
+		expect(content).toContain(
+			"import { EVENT_BUS, EVENTS_MULTI_TENANT } from '../events.tokens';",
+		);
+		expect(content).toContain(
+			"import { MissingTenantIdError } from '../events-errors';",
+		);
 		expect(content).toContain(
 			"import type { IEventBus, DrizzleTransaction } from '../event-bus.protocol';",
 		);
@@ -470,11 +475,21 @@ describe('buildBusContent', () => {
 		expect(content).toContain('...(opts?.metadata ?? {}),');
 	});
 
-	test('@Injectable() and @Inject(EVENT_BUS) are present', () => {
+	test('@Injectable() and @Inject(EVENT_BUS) / @Inject(EVENTS_MULTI_TENANT) are present', () => {
 		const content = buildBusContent([]);
 		expect(content).toContain('@Injectable()');
 		expect(content).toContain('@Inject(EVENT_BUS)');
+		expect(content).toContain('@Inject(EVENTS_MULTI_TENANT)');
 		expect(content).toContain('export class TypedEventBus {');
+	});
+
+	test('throws MissingTenantIdError when multiTenant is true and tenantId is absent', () => {
+		const content = buildBusContent([]);
+		// Publish-side tenant enforcement: module-level `multiTenant` flag +
+		// `opts.metadata.tenantId` absence → throw.
+		expect(content).toContain('this.multiTenant');
+		expect(content).toContain('MissingTenantIdError');
+		expect(content).toContain("opts?.metadata?.['tenantId']");
 	});
 });
 
