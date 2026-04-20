@@ -9,6 +9,8 @@
 
 Add `pool`, `direction`, and (conditionally) `tenant_id` columns to the `domain_events` outbox table. Add a `(pool, status, occurred_at)` composite index for pool-filtered drain queries. This PR is purely additive to the existing schema — no existing logic is changed.
 
+**Drift fix (applied during implementation):** The pre-EVT-1 schema declared zero indexes — the `(status, occurred_at)` and `(aggregate_id, aggregate_type)` indexes existed only as JSDoc comments above the table definition, with a "// add via migration when deploying" disclaimer. Per CLAUDE.md's living-docs rule and the spirit of the AC ("existing indexes preserved"), this PR promotes both pre-existing indexes into the Drizzle index callback at the same time as adding the new EVT-1 index. After this PR the schema declares **three** indexes in code (previously: zero declared, two intended).
+
 ## Context
 
 **What exists.** `runtime/subsystems/events/domain-events.schema.ts` defines the `domain_events` table with columns: `id`, `type`, `aggregate_id`, `aggregate_type`, `payload`, `occurred_at`, `processed_at`, `status`, `error`, `metadata`. Direction and pool information currently lives inside the JSON `metadata` column — this means pool-based drain filtering requires JSON unpacking on every poll row, and adds no index benefit.
@@ -54,13 +56,13 @@ Indexes:
 
 ## Acceptance Criteria
 
-- [ ] `pool text` column present, nullable.
-- [ ] `direction text` column present, nullable.
-- [ ] `tenant_id text` column present with `// conditional` annotation.
-- [ ] `(pool, status, occurred_at)` composite index declared.
-- [ ] Existing `(status, occurred_at)` and `(aggregate_id, aggregate_type)` indexes preserved.
-- [ ] `DomainEventRecord` inferred type includes the new fields.
-- [ ] Unit test: schema imports without error; column names are present.
+- [x] `pool text` column present, nullable.
+- [x] `direction text` column present, nullable.
+- [x] `tenant_id text` column present with `// conditional` annotation.
+- [x] `(pool, status, occurred_at)` composite index declared.
+- [x] Existing `(status, occurred_at)` and `(aggregate_id, aggregate_type)` indexes promoted from JSDoc comment to Drizzle declarations (drift fix — see §Overview).
+- [x] `DomainEventRecord` inferred type includes the new fields.
+- [x] Unit test: schema imports without error; column names are present.
 
 ## Testing Strategy
 
