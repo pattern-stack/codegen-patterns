@@ -388,6 +388,49 @@ describe('on_delete field on belongs_to relationships', () => {
 });
 
 // ============================================================================
+// scopeable flag (JOB-7)
+// ============================================================================
+
+describe('scopeable flag', () => {
+	const base = {
+		entity: { name: 'account', plural: 'accounts', table: 'accounts' },
+		fields: { id: { type: 'uuid', required: true } },
+	};
+
+	it('accepts scopeable: true', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, scopeable: true },
+		});
+		expect(result.success).toBe(true);
+		expect(result.data!.entity.scopeable).toBe(true);
+	});
+
+	it('accepts scopeable: false', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, scopeable: false },
+		});
+		expect(result.success).toBe(true);
+		expect(result.data!.entity.scopeable).toBe(false);
+	});
+
+	it('scopeable is optional — omitting it is valid', () => {
+		const result = EntityDefinitionSchema.safeParse(base);
+		expect(result.success).toBe(true);
+		expect(result.data!.entity.scopeable).toBeUndefined();
+	});
+
+	it('rejects non-boolean scopeable', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, scopeable: 'yes' },
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+// ============================================================================
 // Strict mode — unknown keys still rejected
 // ============================================================================
 

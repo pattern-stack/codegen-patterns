@@ -32,6 +32,8 @@ const OUTPUT_PATHS = [
   'packages/api/src/presentation',
   // Shared packages
   'packages/db/src/entities',
+  // JOB-7: generated scope-entity-type union (post-Hygen step)
+  'runtime/subsystems/jobs/generated',
 ];
 
 function getAllFiles(dir: string, files: string[] = []): string[] {
@@ -130,6 +132,13 @@ function runCodegen() {
   }
 
   console.log('✅ Codegen complete');
+
+  // JOB-7: generate ScopeEntityType union from fixtures (mirrors EntityNewCommand post-step).
+  console.log('   Generating: scope-entity-type.ts');
+  execSync(
+    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${FIXTURES_DIR}', outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
+    { cwd: CODEGEN_DIR, stdio: 'pipe' },
+  );
 
   // Run biome to format generated files (to match baseline formatting)
   console.log('🎨 Running biome format...');

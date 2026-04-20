@@ -21,6 +21,7 @@ import {
 	resolveArchitecture,
 	resolveGeneratedDir,
 } from '../shared/barrel-generator.js';
+import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -224,6 +225,11 @@ export class EntityNewCommand extends Command {
 		const generatedDir = resolveGeneratedDir(ctx);
 		const architecture = resolveArchitecture(ctx);
 
+		const scopeEntityTypePath = path.resolve(
+			ctx.cwd,
+			'runtime/subsystems/jobs/generated/scope-entity-type.ts',
+		);
+
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
@@ -231,6 +237,12 @@ export class EntityNewCommand extends Command {
 				relationshipsDir,
 				generatedDir,
 				architecture,
+				dryRun: true,
+			});
+
+			const scopePlan = await generateScopeEntityType({
+				entitiesDir,
+				outputPath: scopeEntityTypePath,
 				dryRun: true,
 			});
 
@@ -247,6 +259,11 @@ export class EntityNewCommand extends Command {
 						modulesContent: barrelPlan.modulesContent,
 						schemaContent: barrelPlan.schemaContent,
 					},
+					scopeEntityType: {
+						outputPath: scopePlan.outputPath,
+						scopeableNames: scopePlan.scopeableNames,
+						content: scopePlan.content,
+					},
 				});
 			} else {
 				printInfo(`Dry run — ${validated.length} entities would be generated:`);
@@ -262,6 +279,9 @@ export class EntityNewCommand extends Command {
 				printInfo(`Barrels (${barrelPlan.entityCount} entities):`);
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.modulesBarrel}`);
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.schemaBarrel}`);
+				printInfo(
+					`ScopeEntityType (${scopePlan.scopeableNames.length} scopeable): ${scopePlan.outputPath}`,
+				);
 			}
 			return invalid.length > 0 && !this.continueOnError ? 1 : 0;
 		}
@@ -309,6 +329,22 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Regenerate ScopeEntityType union after barrels (full directory rescan).
+		// Always runs for both single-file and --all modes (OQ-1: always rescan).
+		// Warn-but-don't-fail on error to match barrel pattern.
+		let scopeResult: Awaited<ReturnType<typeof generateScopeEntityType>> | null = null;
+		try {
+			scopeResult = await generateScopeEntityType({
+				entitiesDir,
+				outputPath: scopeEntityTypePath,
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`scope-entity-type generation failed — ${msg}`);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'entity new',
@@ -325,6 +361,12 @@ export class EntityNewCommand extends Command {
 							entityCount: barrelResult.entityCount,
 						}
 					: null,
+				scopeEntityType: scopeResult
+					? {
+							outputPath: scopeResult.outputPath,
+							scopeableNames: scopeResult.scopeableNames,
+						}
+					: null,
 			});
 		} else {
 			const total = validated.length + invalid.length;
@@ -339,6 +381,11 @@ export class EntityNewCommand extends Command {
 			if (barrelResult) {
 				printInfo(
 					`barrels regenerated (${barrelResult.entityCount} entities) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`
+				);
+			}
+			if (scopeResult) {
+				printInfo(
+					`scope-entity-type regenerated (${scopeResult.scopeableNames.length} scopeable) → ${path.relative(ctx.cwd, scopeResult.outputPath)}`
 				);
 			}
 		}

@@ -269,7 +269,7 @@ All three test files run under `just test-unit`.
 
 - [x] **OQ-1 — `ScopeRef.entity` type.** **Resolved 2026-04-20: shipped with the parameterised signature `ScopeRef<TInput, TScope extends string = string>`.** Default widens to `string`; JOB-7 narrows `TScope` to the generated `ScopeEntityType` union at the call site without modifying this file.
 
-- [ ] **OQ-2 — `ScopeEntityType` union file location (ADR-022 Open Question #5).** Proposed: emit to `src/shared/jobs/scope-entity-type.ts` in the consumer project. Reasoning: (a) generated, not runtime; (b) `src/shared/` already holds generated cross-cutting types; (c) short, predictable import path `@shared/jobs/scope-entity-type`. Must be confirmed before JOB-7 templates.
+- [x] **OQ-2 — `ScopeEntityType` union file location (ADR-022 Open Question #5).** **Resolved 2026-04-19 (Q5): co-located with the jobs subsystem scaffold at `runtime/subsystems/jobs/generated/scope-entity-type.ts`.** Establishes the `generated/` convention for subsystem-owned generated types (the events epic will mirror with `AppDomainEvent` in `runtime/subsystems/events/generated/`). Supersedes the earlier `src/shared/jobs/...` proposal. Rationale: clearer ownership — the jobs subsystem owns the type — and avoids a cross-cutting `@shared/` path. Shipped by JOB-7 (PR #88).
 
 - [x] **OQ-3 — `JOB_HANDLER_REGISTRY` duplicate-type warning.** **Resolved 2026-04-18: warn in dev, silent in test, throw in production.** Tests intentionally re-register; dev needs visibility; production silent-overwrite is a critical correctness bug. Three-line guard at the decorator's overwrite site.
 

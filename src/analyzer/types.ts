@@ -89,6 +89,8 @@ export interface ParsedEntity {
 	plural: string;
 	table: string;
 	family?: EntityFamily;
+	/** Whether this entity is a valid scope target for job scoping (JOB-7). */
+	scopeable?: boolean;
 	folderStructure: 'nested' | 'flat';
 	fields: Map<string, ParsedField>;
 	relationships: Map<string, ParsedRelationship>;
