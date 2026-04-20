@@ -96,6 +96,7 @@ export {
 	getRelatedEntities,
 	findOrphanEntities,
 	findCircularDependencies,
+	topoSortEntities,
 	checkConsistency,
 	computeStatistics,
 } from './analyzer';

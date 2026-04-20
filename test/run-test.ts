@@ -12,6 +12,9 @@
 import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
 import { dirname, resolve, join, relative } from 'node:path';
+import { loadEntityFromYaml } from '../src/utils/yaml-loader.js';
+import { buildDomainGraph, topoSortEntities } from '../src/analyzer/index.js';
+import type { ParsedEntity } from '../src/analyzer/types.js';
 // run-test.ts lives in <root>/test/ — the script previously sat at
 // tools/codegen/test/ which is why a 3-level '../../..' was used. Computing
 // the parent of import.meta.dir is robust to the script being moved again.
@@ -101,30 +104,99 @@ function captureOutputState(targetDir: string) {
   console.log('✅ Capture complete');
 }
 
-function runCodegen() {
+async function runCodegen() {
   console.log('🔧 Running codegen for all fixtures...');
 
   // Set up test config at ROOT
   setupTestConfig();
 
-  const fixtures = readdirSync(FIXTURES_DIR).filter(f => f.endsWith('.yaml') && !f.startsWith('codegen.config'));
+  // Determine generation order via the analyzer's topological sort.
+  // The codegen template `prompt.js` (checkEntityExists) emits one of two
+  // distinct branches depending on whether a `belongs_to` target's domain
+  // file already exists on disk — so the order in which fixtures are
+  // generated affects the bytes written. readdirSync order is filesystem-
+  // dependent (varies between machines), making the baseline non-
+  // deterministic. topoSortEntities orders dependents AFTER their targets
+  // so dependent entities always see their related entities present.
+  //
+  // We avoid analyzeDomain here because it strict-validates cross-entity
+  // references — the test fixtures intentionally reference entities outside
+  // the fixture set (e.g. `account`), which at codegen time become
+  // "Related entities not yet generated" branches but aren't errors. We
+  // load the entity YAMLs directly and build a minimal graph for the topo
+  // sort.
+  const yamlFiles = readdirSync(FIXTURES_DIR)
+    .filter((f) => (f.endsWith('.yaml') || f.endsWith('.yml')) && !f.startsWith('codegen.config'))
+    .map((f) => join(FIXTURES_DIR, f));
+  const parsedEntities: ParsedEntity[] = [];
+  for (const yamlPath of yamlFiles) {
+    const result = loadEntityFromYaml(yamlPath);
+    if (!result.success) throw new Error(`Failed to parse ${yamlPath}: ${result.error}`);
+    const def = result.definition;
+    parsedEntities.push({
+      name: def.entity.name,
+      plural: def.entity.plural,
+      table: def.entity.table,
+      folderStructure: def.entity.folder_structure ?? 'nested',
+      fields: new Map(),
+      relationships: new Map(
+        Object.entries(def.relationships ?? {}).map(([name, rel]) => [
+          name,
+          {
+            name,
+            type: rel.type,
+            target: rel.target,
+            foreignKey: rel.foreign_key,
+            // Mark resolved=true so the topo sort considers the edge even
+            // if the target isn't in the fixture set; targets outside the
+            // set are filtered out by topoSortEntities itself.
+            resolved: true,
+          },
+        ]),
+      ),
+      behaviors: [],
+      sourcePath: yamlPath,
+    });
+  }
+  const graph = buildDomainGraph(parsedEntities);
+  const { sorted, cycles } = topoSortEntities(parsedEntities, graph);
+  if (cycles.length > 0) {
+    console.warn(
+      `⚠ belongs_to cycle(s) detected — entities in cycles ordered alphabetically: ` +
+      cycles.map((c) => c.join(' -> ')).join('; '),
+    );
+  }
+
+  // Build entity-name -> source-yaml lookup. analyzer drops the .yaml from
+  // the source path, but ParsedEntity.sourcePath retains the absolute path,
+  // so we can use it directly.
+  const fixtures = sorted.map((entity) => entity.sourcePath);
 
   // Use env var or compute from script location (works when running from any directory)
   const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(CODEGEN_DIR, 'templates');
 
+  // Two-pass generation. Pass 1 establishes every entity file on disk so
+  // pass 2's has_many relationships can see their targets. Without pass 2,
+  // an entity declaring `has_many: foo` only emits the relationship-mapping
+  // branch if foo's domain file already existed at generation time — which
+  // can't be true on first emission of either side. Topo sort above orders
+  // belongs_to dependencies but cannot satisfy has_many in the same pass.
   try {
-    for (const fixture of fixtures) {
-      const yamlPath = join(FIXTURES_DIR, fixture);
-      console.log(`   Generating: ${fixture}`);
+    for (let pass = 1; pass <= 2; pass++) {
+      console.log(`   --- Pass ${pass} ---`);
+      for (const yamlPath of fixtures) {
+        const fixture = relative(FIXTURES_DIR, yamlPath);
+        console.log(`   Generating: ${fixture}`);
 
-      try {
-        execSync(`HYGEN_TMPLS="${templatesDir}" bunx hygen entity new --yaml "${yamlPath}"`, {
-          cwd: ROOT,
-          stdio: 'pipe',
-        });
-      } catch (error) {
-        console.error(`   ❌ Failed: ${fixture}`);
-        throw error;
+        try {
+          execSync(`HYGEN_TMPLS="${templatesDir}" bunx hygen entity new --yaml "${yamlPath}"`, {
+            cwd: ROOT,
+            stdio: 'pipe',
+          });
+        } catch (error) {
+          console.error(`   ❌ Failed: ${fixture}`);
+          throw error;
+        }
       }
     }
   } finally {
@@ -235,7 +307,7 @@ switch (command) {
   case 'generate':
     // Clean and generate fresh output
     cleanGenDir();
-    runCodegen();
+    await runCodegen();
     captureOutputState(GEN_DIR);
     break;
 
@@ -253,7 +325,7 @@ switch (command) {
   case 'full':
     // Full test: generate + compare
     cleanGenDir();
-    runCodegen();
+    await runCodegen();
     captureOutputState(GEN_DIR);
     const fullResult = compare();
     console.log('\n--- Results ---');

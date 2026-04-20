@@ -238,3 +238,83 @@ export function buildEntityNodes(graph: DomainGraph): EntityNode[] {
 	}
 	return nodes;
 }
+
+/**
+ * Topologically sort entities so that any entity declaring `belongs_to: X`
+ * appears AFTER X in the result. This makes generators that branch on
+ * "does the related entity's domain file already exist?" deterministic —
+ * by the time a dependent entity is generated, all its targets have been.
+ *
+ * Why this matters: `templates/entity/new/prompt.js` calls `checkEntityExists`
+ * for each `belongs_to` target and emits one of two distinct branches based on
+ * the answer. Without a topo sort, the per-fixture generation order is
+ * filesystem-dependent (`readdirSync`) and the generated code becomes
+ * non-deterministic. The baseline test specifically depends on this order.
+ *
+ * Cycles in the `belongs_to` graph (e.g. self-referential parent FKs, or
+ * mutually-dependent entities) are broken arbitrarily — affected entities
+ * are emitted in their original input order after all acyclic dependencies
+ * have been placed. The cycle is also returned alongside the sorted list so
+ * the caller can warn or fail. Self-references (entity depends on itself)
+ * are NOT cycles for sort purposes — an entity is always considered to
+ * satisfy its own dependency.
+ */
+export function topoSortEntities(
+	entities: ParsedEntity[],
+	graph: DomainGraph,
+): { sorted: ParsedEntity[]; cycles: string[][] } {
+	// Build a "depends on" map: entity → set of entities it must come AFTER.
+	// belongs_to is the only relationship type that imposes a generation-order
+	// dependency — has_many and has_one do not (the inverse side is informed
+	// by belongs_to on the other entity).
+	const dependsOn = new Map<string, Set<string>>();
+	for (const entity of entities) {
+		dependsOn.set(entity.name, new Set());
+	}
+	for (const entity of entities) {
+		for (const rel of entity.relationships.values()) {
+			if (rel.type !== 'belongs_to') continue;
+			if (!rel.resolved) continue;
+			if (rel.target === entity.name) continue; // self-reference is not a dependency
+			if (!dependsOn.has(rel.target)) continue; // target not in input set
+			dependsOn.get(entity.name)!.add(rel.target);
+		}
+	}
+
+	// Kahn's algorithm: repeatedly emit entities whose dependencies are all
+	// satisfied. Tie-break alphabetically so the output is stable across
+	// platforms (readdirSync order varies).
+	const sorted: ParsedEntity[] = [];
+	const remaining = new Map<string, ParsedEntity>();
+	for (const e of entities) remaining.set(e.name, e);
+
+	while (remaining.size > 0) {
+		const ready = [...remaining.keys()]
+			.filter((name) => {
+				const deps = dependsOn.get(name)!;
+				for (const dep of deps) if (remaining.has(dep)) return false;
+				return true;
+			})
+			.sort();
+		if (ready.length === 0) break; // remaining entities form a cycle
+		for (const name of ready) {
+			sorted.push(remaining.get(name)!);
+			remaining.delete(name);
+		}
+	}
+
+	// Anything still in `remaining` is part of one or more cycles — append in
+	// alphabetical order so the result is still deterministic.
+	const stuck = [...remaining.keys()].sort();
+	for (const name of stuck) sorted.push(remaining.get(name)!);
+
+	const cycles = findCircularDependencies(graph).filter((cycle) =>
+		// Only surface cycles that involve belongs_to (the kind that affect
+		// generation order). findCircularDependencies considers all edge
+		// types; a has_many <-> belongs_to pair shows as a cycle there but
+		// does NOT block topo sort here.
+		cycle.length > 1 && cycle.some((name) => stuck.includes(name)),
+	);
+
+	return { sorted, cycles };
+}

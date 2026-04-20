@@ -11,6 +11,7 @@ export {
 	findOrphanEntities,
 	findCircularDependencies,
 	buildEntityNodes,
+	topoSortEntities,
 } from './graph-builder';
 
 export { checkConsistency } from './consistency-checker';
