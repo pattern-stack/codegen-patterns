@@ -83,5 +83,11 @@ export {
   JobTypeNotFoundError,
 } from './jobs-errors';
 
-// Subsequent issues add: Memory backends (JOB-4), modules (JOB-5).
+// ─── JOB-4: Memory backends + shared in-memory store ───────────────────────
+export { MemoryJobStore } from './memory-job-store';
+export { MemoryJobOrchestrator } from './job-orchestrator.memory-backend';
+export { MemoryJobRunService } from './job-run-service.memory-backend';
+export { MemoryJobStepService } from './job-step-service.memory-backend';
+
+// Subsequent issues add: modules (JOB-5).
 // All net-new — nothing from the old executor layer survives.
