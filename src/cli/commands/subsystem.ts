@@ -17,6 +17,10 @@ import { loadContext, type Context } from '../shared/context.js';
 import { checkGitSafety } from '../shared/git-safety.js';
 import { invokeHygen } from '../shared/hygen.js';
 import {
+	localsToHygenArgs as eventsLocalsToHygenArgs,
+	resolveEventsScaffoldLocals,
+} from '../shared/events-scaffold-locals.js';
+import {
 	localsToHygenArgs,
 	resolveJobsScaffoldLocals,
 } from '../shared/jobs-scaffold-locals.js';
@@ -170,6 +174,18 @@ function backendFileFilter(
 			return false;
 		}
 
+		// EVT-8: same pattern for events — the Hygen template
+		// `templates/subsystem/events/domain-events.schema.ejs.t` is the sole
+		// emitter for the events outbox schema, gating the `tenantId` column
+		// on `events.multi_tenant`. Skip here so `copyRuntime` never writes
+		// the always-tenant runtime source file.
+		if (
+			subsystemName === 'events' &&
+			file === 'domain-events.schema.ts'
+		) {
+			return false;
+		}
+
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;
 			if (file.endsWith('.schema.ts')) return false;
@@ -293,6 +309,18 @@ export class SubsystemInstallCommand extends Command {
 					})
 				: null;
 
+		// EVT-8: same pattern for the events subsystem — inject the `events:`
+		// config block, emit the tenancy-aware outbox schema, and drop a
+		// `.gitkeep` so the `generated/` dir exists before `just gen-all`
+		// produces the typed artifacts.
+		const eventsScaffold =
+			desc.name === 'events'
+				? runEventsScaffold(ctx.cwd, ctx.config, {
+						dryRun: this.dryRun,
+						json: isJsonMode(),
+					})
+				: null;
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'subsystem install',
@@ -308,6 +336,7 @@ export class SubsystemInstallCommand extends Command {
 					dependencies: result.dependenciesCopied,
 				},
 				...(jobsScaffold ? { scaffold: jobsScaffold } : {}),
+				...(eventsScaffold ? { scaffold: eventsScaffold } : {}),
 			});
 			return 0;
 		}
@@ -322,6 +351,14 @@ export class SubsystemInstallCommand extends Command {
 					`Jobs scaffold — ${jobsScaffold.planned.length} template targets`,
 				);
 				for (const p of jobsScaffold.planned) {
+					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+				}
+			}
+			if (eventsScaffold?.planned?.length) {
+				printInfo(
+					`Events scaffold — ${eventsScaffold.planned.length} template targets`,
+				);
+				for (const p of eventsScaffold.planned) {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
@@ -343,6 +380,17 @@ export class SubsystemInstallCommand extends Command {
 			} else {
 				printWarning(
 					`jobs scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${jobsScaffold.error ?? 'unknown error'}`,
+				);
+			}
+		}
+		if (eventsScaffold) {
+			if (eventsScaffold.ok) {
+				printSuccess(
+					`events scaffold applied (config block, schema, generated/.gitkeep)`,
+				);
+			} else {
+				printWarning(
+					`events scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${eventsScaffold.error ?? 'unknown error'}`,
 				);
 			}
 		}
@@ -393,6 +441,59 @@ function runJobsScaffold(
 		action: 'jobs',
 		cwd,
 		args: localsToHygenArgs(locals),
+		// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
+		inherit: !opts.json,
+	});
+
+	if (!result.ok) {
+		return {
+			ok: false,
+			planned,
+			error: result.stderr?.trim() || 'hygen exited non-zero',
+		};
+	}
+
+	return { ok: true, planned };
+}
+
+// ---------------------------------------------------------------------------
+// EVT-8 — events subsystem Hygen scaffold wiring
+// ---------------------------------------------------------------------------
+
+interface EventsScaffoldOutcome {
+	ok: boolean;
+	planned: string[];
+	error?: string;
+}
+
+function runEventsScaffold(
+	cwd: string,
+	config: Context['config'],
+	opts: { dryRun: boolean; json: boolean },
+): EventsScaffoldOutcome {
+	const locals = resolveEventsScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+	});
+
+	// Files the three events templates will target (used by --dry-run output
+	// and JSON reporting). Ordering matches the template set.
+	const planned: string[] = [
+		locals.configPath,
+		locals.schemaPath,
+		locals.generatedKeepPath,
+	];
+
+	if (opts.dryRun) {
+		return { ok: true, planned };
+	}
+
+	const result = invokeHygen({
+		generator: 'subsystem',
+		action: 'events',
+		cwd,
+		args: eventsLocalsToHygenArgs(locals),
 		// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
 		inherit: !opts.json,
 	});

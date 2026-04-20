@@ -7,7 +7,7 @@ user-invocable: false
 
 # Events Domain Skill
 
-Events are the domain's immutable record of *something that happened*. They are written inside the same Drizzle transaction as the domain change (transactional outbox), drained asynchronously, and delivered to subscribers. This skill covers the current runtime (`IEventBus`, the `domain_events` outbox, Drizzle/Memory backends) **plus** the in-flight codegen formalization that will generate a typed event registry, typed `TypedEventBus` facade, and direction-based pool routing.
+Events are the domain's immutable record of *something that happened*. They are written inside the same Drizzle transaction as the domain change (transactional outbox), drained asynchronously, and delivered to subscribers. This skill covers the current runtime (`IEventBus`, the `domain_events` outbox, Drizzle/Memory backends) **plus** the shipped events-codegen pipeline (ADR-024 Phase 1) that generates a typed event registry, typed `TypedEventBus` facade, and direction-based pool routing.
 
 ## Mental model
 
@@ -33,9 +33,9 @@ Direction is a **routing** concern, not a payload concern. Payload shape is per-
 **The IEventBus + typed facade story:**
 
 - `IEventBus` (protocol, `runtime/subsystems/events/event-bus.protocol.ts`) stays narrow: `publish(event, tx?)`, `publishMany(events, tx?)`, `subscribe(type, handler)`. It is the hexagonal port. Backends implement it. **It does not know about the generated registry** — that would be circular coupling.
-- `TypedEventBus` (generated into `src/generated/events/bus.ts`, see `event-codegen.md`) is a thin injectable wrapper with typed overloads. It stamps `metadata.pool` and `metadata.direction` onto every publish based on the generated registry. Application code uses `TypedEventBus`; `IEventBus` is the lower-level port.
+- `TypedEventBus` (generated into `runtime/subsystems/events/generated/bus.ts`, see `event-codegen.md`) is a thin injectable wrapper with typed overloads. It stamps `metadata.pool`, `metadata.direction`, and `metadata.version` onto every publish based on the generated registry. Application code uses `TypedEventBus`; `IEventBus` is the lower-level port.
 
-For Phase 1 of the events-codegen work, `IEventBus` is unchanged. The typed facade wraps it without breaking it.
+`IEventBus` was unchanged by the ADR-024 Phase 1 rollout — the typed facade wraps it without breaking it.
 
 ## Task → L1 routing
 
@@ -45,18 +45,20 @@ For Phase 1 of the events-codegen work, `IEventBus` is unchanged. The typed faca
 | The YAML formalization (`events/*.yaml`), generated types/schemas/registry, TypedEventBus facade | `event-codegen.md`  |
 | Why there are three directions, why pools are isolated, cross-link to jobs pools    | `directions-and-pools.md`       |
 | IEventBus contract, Drizzle/Memory backends, adding a new backend                   | `protocol-and-backends.md`      |
+| Deciding what Phase 1 shipped vs. what's deferred (ADR-023 bridge, Phase B, versioning) | `phase-roadmap.md`           |
 
 ## Non-obvious rules (read twice)
 
 1. **Direction is a routing concern, not a payload concern.** Two events with the same payload can have different directions because the drain lane matters. An `inbound` webhook that mirrors a `change` event is still `inbound` — the lane it drains through is what keeps external bursts from stalling internal projections.
 2. **The outbox is transactional.** `IEventBus.publish(event, tx)` inside a Drizzle transaction means the event row is part of the same write. If the transaction rolls back, the event is never persisted. No phantom events. **Always pass `tx` when publishing from a use case that also writes domain state.** Dropping `tx` silently detaches the event from the transaction — the domain write can commit while the event insert fails independently.
 3. **Events do not have a lifecycle; jobs do.** The `status` column on `domain_events` (`pending | processed | failed`) is a *delivery* state for the outbox drain, not a domain state. It is not a retry policy, not a scope, not a cancellable thing. If you need any of those, you want a job triggered by the event.
-4. **The events-codegen formalization (`events/*.yaml`) generates the union, the registry, and the facade.** `events/<name>.yaml` produces entries in `src/generated/events/`:
+4. **The events-codegen formalization (`events/*.yaml`) generates the union, the registry, and the facade — Phase 1 has shipped.** `events/<name>.yaml` produces five files under `runtime/subsystems/events/generated/` (copied into `<paths.subsystems>/events/generated/` on scaffold):
    - `types.ts` — `AppDomainEvent` discriminated union, `EventOfType<T>`, `PayloadOfType<T>`
    - `schemas.ts` — Zod payload schemas, runtime-validated at the publish boundary
    - `registry.ts` — `eventRegistry` keyed by type with `direction`, `pool`, `aggregate`, etc.
    - `bus.ts` — `TypedEventBus` with typed `publish<T>()` and `subscribe<T>()`
-   This system is **a plan in flight**, not yet an ADR. Shape may shift. See `event-codegen.md` for detail and `docs/specs/events-codegen-plan.md` for the source-of-truth design (8 open questions, unresolved).
+   - `index.ts` — re-export surface
+   Governed by ADR-024 (Phase 1 scope = EVT-1..EVT-8). See `event-codegen.md` for the YAML shape and `phase-roadmap.md` for what's deferred.
 5. **Phase ordering matters.** Events codegen is a hard prerequisite for the jobs Event-to-Job Bridge (ADR-023). The bridge reads the event registry to validate trigger references, extract typed scope from payloads, and auto-assign pools. Ship events registry → ship events typed facade → *then* land the bridge. Don't skip.
 6. **Change events MAY be declared via the entity `events:` block.** At parse time the generator desugars the entity block into top-level `events/<name>.yaml` with `direction: change` and `aggregate: <entity>`. Per-entity inline blocks are sugar; they are not a second source of truth.
 7. **Entity auto-emission requires opt-in via `emits:`.** The target design (Phase C) is: entities declare `emits: [contact_created, contact_updated, ...]` in their YAML; generated use-cases emit typed events via `TypedEventBus.publish(type, aggregateId, payload, { tx })` inside the transaction. Silent auto-emission by name is being phased out.
@@ -76,23 +78,25 @@ For Phase 1 of the events-codegen work, `IEventBus` is unchanged. The typed faca
 
 Files that ship to the consumer app (not templates):
 - `runtime/subsystems/events/event-bus.protocol.ts` — `IEventBus`, `DomainEvent`
-- `runtime/subsystems/events/domain-events.schema.ts` — outbox table (will gain `pool`/`direction` columns in Phase A)
-- `runtime/subsystems/events/event-bus.drizzle-backend.ts` — outbox poller (`FOR UPDATE SKIP LOCKED`)
+- `runtime/subsystems/events/domain-events.schema.ts` — outbox table with first-class `pool` / `direction` columns (EVT-1); `tenant_id` is a scaffold-time conditional emitted by the Hygen template, not by this runtime source (EVT-8 precedent mirrors JOB-6)
+- `runtime/subsystems/events/event-bus.drizzle-backend.ts` — outbox poller (`FOR UPDATE SKIP LOCKED`); pool-filtered drain via `opts.pools`
 - `runtime/subsystems/events/event-bus.memory-backend.ts` — sync test backend, exposes `publishedEvents[]`, `publishedEventsForPool()`, `publishedEventsForDirection()`, `clear()`; accepts `opts.pools` for pool-filtered dispatch that mirrors the Drizzle drain (EVT-5)
-- `runtime/subsystems/events/event-bus.redis-backend.ts` — alternate backend
-- `runtime/subsystems/events/events.module.ts` — `EventsModule.forRoot({ backend, multiTenant? })`, `global: true`; provides `EVENT_BUS`, `TYPED_EVENT_BUS`, `EVENTS_MULTI_TENANT`
+- `runtime/subsystems/events/event-bus.redis-backend.ts` — alternate backend (runtime only; not offered by the `subsystem install events` scaffold surface in Phase 1)
+- `runtime/subsystems/events/events.module.ts` — `EventsModule.forRoot({ backend, multiTenant?, pools? })`, `global: true`; provides `EVENT_BUS`, `TYPED_EVENT_BUS`, `EVENTS_MULTI_TENANT`
 - `runtime/subsystems/events/events.tokens.ts` — `EVENT_BUS`, `TYPED_EVENT_BUS`, `EVENTS_MULTI_TENANT`, `EVENTS_MODULE_OPTIONS` (all string-valued), `REDIS_URL` (Symbol)
 - `runtime/subsystems/events/events-errors.ts` — `MissingTenantIdError` (thrown by `TypedEventBus.publish` when `multiTenant: true` and `metadata.tenantId` missing)
-- `runtime/subsystems/events/generated/bus.ts` — `TypedEventBus`, injects `EVENT_BUS` + `EVENTS_MULTI_TENANT`; stamps `pool` / `direction` / `version` onto publish metadata and enforces tenantId when multi-tenant mode is on
+- `runtime/subsystems/events/generated/` — the five generated artifacts (`types.ts`, `schemas.ts`, `registry.ts`, `bus.ts`, `index.ts`) produced from `events/*.yaml` by `event-codegen-generator.ts`; `bus.ts` defines `TypedEventBus`, injects `EVENT_BUS` + `EVENTS_MULTI_TENANT`, stamps `pool` / `direction` / `version` onto publish metadata, and enforces tenantId when multi-tenant mode is on
 - `runtime/base-classes/lifecycle-events.ts` — legacy fire-and-forget auto-emission; being replaced by `emits:` declarations
 
-Generator pieces (exist as templates + future generator code):
-- `templates/subsystems/events/` — scaffolds the above into a consumer app
-- `src/generated/events/` — produced by the events-codegen plan (not yet implemented; see `event-codegen.md`)
+Generator pieces:
+- `templates/subsystem/events/` — scaffolds the above into a consumer app (`prompt.js`, `codegen-config-events-block.ejs.t`, `domain-events.schema.ejs.t`, `generated-keep.ejs.t`)
+- `src/cli/shared/events-scaffold-locals.ts` — resolves Hygen locals (appName, multiTenant, configPath, schemaPath, generatedKeepPath)
+- `src/cli/shared/event-codegen-generator.ts` — produces the five `generated/` files from `events/*.yaml` and entity `events:` / `emits:` blocks
 
 ## Cross-links
 
 - Jobs SKILL.md — the reserved `events_*` pools, the Event-to-Job Bridge (ADR-023 work), why handlers should enqueue jobs rather than do heavy work inline.
 - `docs/adrs/ADR-008-subsystem-architecture.md` — the Protocol → Backend → Factory pattern events follows.
 - `docs/adrs/ADR-022-job-orchestration-domain-model.md` — the job-side story for the pools and the bridge.
-- `docs/specs/events-codegen-plan.md` — the plan for typed events, registry, facade, YAML. **Design in flight.**
+- `docs/adrs/ADR-024-events-domain-formalization.md` — the authoritative ADR governing Phase 1 (shipped via EVT-1..EVT-8).
+- `docs/specs/events-codegen-plan.md` — superseded plan (historical context only; decisions captured in ADR-024 and `event-codegen.md`).
