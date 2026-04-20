@@ -1,5 +1,7 @@
 # Events Codegen Formalization — Plan
 
+> **Status: Superseded by ADR-024** (Phase 1 shipped via EVT-1..EVT-8). Retained for historical context; decisions captured in ADR-024 and `.claude/skills/events/event-codegen.md`.
+
 **Status:** Draft (first pass, 2026-04-17)
 **Owner:** Doug
 **Related:** ADR-008 (subsystem architecture), Jobs Layers 1–4 plan

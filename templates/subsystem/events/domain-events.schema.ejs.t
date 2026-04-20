@@ -1,3 +1,7 @@
+---
+to: "<%= schemaPath %>"
+force: true
+---
 /**
  * Drizzle schema for the domain_events outbox table.
  *
@@ -11,10 +15,9 @@
  *   - `direction`  — `inbound` | `change` | `outbound`; mirrors the routing
  *                    dimension used by jobs' reserved `events_inbound` /
  *                    `events_change` / `events_outbound` pools.
- *   - `tenant_id`  — conditional: emitted only when `events.multi_tenant: true`
- *                    in `codegen.config.yaml`. The runtime source declares it
- *                    unconditionally; EVT-8's scaffold template handles the
- *                    config-driven include/exclude.
+ *   - `tenant_id`  — scaffold-time conditional: emitted only when
+ *                    `events.multi_tenant: true` in `codegen.config.yaml`.
+ *                    See EVT-8 and the JOB-6 precedent for the same pattern.
  *
  * The `metadata` JSON column continues to carry these values for protocol
  * stability; the first-class columns are an optimization for drain filtering.
@@ -53,8 +56,9 @@ export const domainEvents = pgTable(
     pool: text('pool'),
     /** Routing direction: `inbound` | `change` | `outbound`. Populated by DrizzleEventBus.publish() in EVT-4. */
     direction: text('direction'),
-    // conditional: emitted only when events.multi_tenant: true
-    tenantId: text('tenant_id'),
+<% if (multiTenant) { -%>
+    tenantId: text('tenant_id'),                // scaffold-time conditional — see EVT-8
+<% } -%>
   },
   (t) => ({
     /** Polling drain filter (existing — promoted from comment to declaration in EVT-1). */

@@ -196,7 +196,7 @@ describe('subsystem — install (real)', () => {
 		expect(fs.existsSync(path.join(root, 'src/shared/constants/tokens.ts'))).toBe(true);
 	});
 
-	test('memory backend skips .drizzle-backend.ts and .schema.ts', async () => {
+	test('memory backend skips .drizzle-backend.ts; schema is still emitted via Hygen', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -217,7 +217,12 @@ describe('subsystem — install (real)', () => {
 		const installDir = path.join(root, 'src/shared/subsystems/events');
 		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(false);
-		expect(fs.existsSync(path.join(installDir, 'domain-events.schema.ts'))).toBe(false);
+		// EVT-8: copyRuntime skips `domain-events.schema.ts` so the Hygen
+		// template (which gates the tenancy column on `events.multi_tenant`)
+		// is the sole emitter. It uses `force: true` regardless of backend —
+		// switching to the drizzle backend later must not require a
+		// follow-up scaffold step.
+		expect(fs.existsSync(path.join(installDir, 'domain-events.schema.ts'))).toBe(true);
 	});
 
 	test('second install is idempotent without --force', async () => {
