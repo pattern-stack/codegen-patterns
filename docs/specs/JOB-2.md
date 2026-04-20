@@ -2,19 +2,21 @@
 
 **Issue:** JOB-2
 **Status:** Draft
-**Last Updated:** 2026-04-18
+**Last Updated:** 2026-04-20
 **Depends on:** JOB-1 (Drizzle schemas — row types imported by protocols)
 **Blocks:** JOB-3 (Drizzle backends), JOB-4 (Memory backends), JOB-7 (scopeable flag uses `ScopeRef` shape from this issue)
 
 ## Overview
 
-Define the stable public API surface for the job orchestration domain layer: three protocol interfaces (`IJobOrchestrator`, `IJobRunService`, `IJobStepService`), the `JobHandlerBase` abstract class with `JobContext<TInput>`, the `@JobHandler` decorator with its full metadata shape, the `ParentClosePolicy` enum, and injection tokens. No backend implementations ship in this PR. `IJobQueue` and everything in `runtime/subsystems/jobs/` that currently exists is untouched.
+Define the stable public API surface for the job orchestration domain layer: three protocol interfaces (`IJobOrchestrator`, `IJobRunService`, `IJobStepService`), the `JobHandlerBase` abstract class with `JobContext<TInput>`, the `@JobHandler` decorator with its full metadata shape, the `ParentClosePolicy` enum, and injection tokens. No backend implementations ship in this PR. JOB-1's Drizzle schema (tables, enums, row types) is preserved untouched; JOB-2 only adds new files alongside it.
 
 ## Context
 
-The existing `jobs/` subsystem exports `IJobQueue` — a four-method executor port (`enqueue`, `process`, `schedule`, `cancel`) backed by Drizzle, BullMQ, Redis, and Memory. It models *how to dispatch a unit of work*. It does not model runs, hierarchy, scoping, steps, or retry policy. ADR-022 adds an orchestration layer above it. `IJobQueue` remains unchanged; the orchestrator calls `IJobQueue.enqueue('job_run_tick', { runId })` internally when it needs to schedule execution.
+JOB-1 removed the legacy executor layer in its entirety — `IJobQueue`, `JOB_QUEUE`, the four backends (Drizzle/BullMQ/Redis/Memory), and `jobs.module.ts` are all gone. What remains in `runtime/subsystems/jobs/` at the start of JOB-2 is the orchestration schema (`job`, `job_run`, `job_step` tables + enums + row types) and a barrel that re-exports those symbols.
 
-JOB-2 delivers only the TypeScript types and interfaces that every downstream PR (backends, modules, templates) depends on. It is the contract — nothing else.
+ADR-022's single-layer architecture means there is no "above" and "below": the orchestrator writes `job_run` rows directly, and the JobWorker of JOB-3 polls `job_run` via `SELECT ... FOR UPDATE SKIP LOCKED`. No dispatch port sits between them.
+
+JOB-2 delivers only the TypeScript types, interfaces, and the `@JobHandler` decorator/registry that every downstream PR (backends, modules, templates) depends on. It is the contract — nothing else.
 
 ## Architecture
 
@@ -42,7 +44,7 @@ JobHandlerBase<TInput, TOutput>
 | `runtime/subsystems/jobs/job-step-service.protocol.ts` | create | `IJobStepService` with step record and fetch |
 | `runtime/subsystems/jobs/job-handler.base.ts` | create | `JobHandlerBase`, `JobContext<TInput>`, `@JobHandler` decorator, `ParentClosePolicy` enum, handler metadata types |
 | `runtime/subsystems/jobs/jobs-domain.tokens.ts` | create | `JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE` Symbol tokens |
-| `runtime/subsystems/jobs/index.ts` | modify | Re-export all new types alongside existing exports |
+| `runtime/subsystems/jobs/index.ts` | modify | Re-export all new types; existing JOB-1 exports preserved |
 
 ## Interfaces
 
@@ -238,7 +240,7 @@ export const JOB_STEP_SERVICE = Symbol('JOB_STEP_SERVICE');
 3. Create `job-run-service.protocol.ts` (imports `JobRun` from step 2).
 4. Create `job-step-service.protocol.ts` (imports `JobStepRow` from JOB-1).
 5. Create `job-handler.base.ts` — full file; ensure `JOB_HANDLER_REGISTRY` is module-singleton (no circular imports).
-6. Update `runtime/subsystems/jobs/index.ts` — re-export new values with `export` and types with `export type`. Existing executor-layer exports untouched.
+6. Update `runtime/subsystems/jobs/index.ts` — re-export new values with `export` and types with `export type`. Existing JOB-1 schema exports preserved.
 
 ## Testing Strategy
 
@@ -248,7 +250,7 @@ JOB-2 ships no runtime logic, only types and the decorator registry. Tests are c
 
 **Registry test (`__tests__/job-handler.registry.test.ts`):** Import a decorated class; assert `JOB_HANDLER_REGISTRY.get('onboarding')` is populated with correct `handlerClass` and `meta`. A second handler type registers independently. Same-type double-registration overwrites (last-wins) and emits a warning log outside test env.
 
-**Token test (`__tests__/jobs-domain.tokens.test.ts`):** All three tokens are `Symbol`, distinguishable from each other and from `JOB_QUEUE`.
+**Token test (`__tests__/jobs-domain.tokens.test.ts`):** All three tokens are `Symbol` and distinguishable from each other.
 
 All three test files run under `just test-unit`.
 
@@ -260,12 +262,12 @@ All three test files run under `just test-unit`.
 - [ ] `ParentClosePolicy` enum: `Terminate | Cancel | Abandon`.
 - [ ] `@JobHandler<OnboardingInput>('onboarding', meta)` on a class extending `JobHandlerBase<OnboardingInput>` compiles; `ctx.input` is `OnboardingInput` without a cast.
 - [ ] `JobContext` does NOT have `waitFor`, `signal`, or `sleep`; comment in file notes this.
-- [ ] All three domain tokens are `Symbol` values, named distinctly from `JOB_QUEUE`.
-- [ ] `index.ts` re-exports new symbols without removing existing ones.
+- [ ] All three domain tokens are `Symbol` values, each distinct from the others.
+- [ ] `index.ts` re-exports new symbols without removing existing JOB-1 schema exports.
 
 ## Open Questions (with proposed resolutions)
 
-- [ ] **OQ-1 — `ScopeRef.entity` type.** Use a second generic parameter `TScope extends string = string` in `ScopeRef`. Default widens to `string`; JOB-7 can narrow at the call site without modifying this file.
+- [x] **OQ-1 — `ScopeRef.entity` type.** **Resolved 2026-04-20: shipped with the parameterised signature `ScopeRef<TInput, TScope extends string = string>`.** Default widens to `string`; JOB-7 narrows `TScope` to the generated `ScopeEntityType` union at the call site without modifying this file.
 
 - [ ] **OQ-2 — `ScopeEntityType` union file location (ADR-022 Open Question #5).** Proposed: emit to `src/shared/jobs/scope-entity-type.ts` in the consumer project. Reasoning: (a) generated, not runtime; (b) `src/shared/` already holds generated cross-cutting types; (c) short, predictable import path `@shared/jobs/scope-entity-type`. Must be confirmed before JOB-7 templates.
 
@@ -278,6 +280,4 @@ All three test files run under `just test-unit`.
 - ADR-022: `docs/adrs/ADR-022-job-orchestration-domain-model.md`
 - Issue breakdown: `docs/specs/ADR-022-phase-1-issues.md`
 - Protocol style reference: `runtime/subsystems/events/event-bus.protocol.ts`
-- Existing narrow executor: `runtime/subsystems/jobs/job-queue.protocol.ts`
-- Token pattern reference: `runtime/subsystems/jobs/jobs.tokens.ts`
-- Schema row types (dependency): `runtime/subsystems/jobs/job-orchestration.schema.ts` (produced by JOB-1)
+- Schema row types (live dependency): `runtime/subsystems/jobs/job-orchestration.schema.ts` (produced by JOB-1 — `JobRunRow`, `JobStepRow`, and enum value tuples imported by JOB-2 protocols)
