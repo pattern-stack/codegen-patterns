@@ -11,7 +11,7 @@
  * polls `job_run` via `SELECT ... FOR UPDATE SKIP LOCKED`.
  */
 import type { JobRunRow } from './job-orchestration.schema';
-import type { ParentClosePolicy } from './job-handler.base';
+import type { JobHandlerMeta, ParentClosePolicy } from './job-handler.base';
 
 /**
  * Public return type for orchestrator reads. Re-exported as `JobRun` so
@@ -66,6 +66,38 @@ export interface CancelOptions {
   reason?: string;
 }
 
+/**
+ * Boot-time upsert payload — one entry per registered `@JobHandler` class.
+ * Constructed by `JobWorkerModule.onModuleInit` from `HandlerRegistry.getAll()`
+ * and handed to the orchestrator so each backend can persist `job` definitions
+ * in whatever way it stores them (Drizzle: `ON CONFLICT (type) DO UPDATE`
+ * gated by metadata content; memory: populate `MemoryJobStore.jobs`).
+ */
+export interface JobUpsertEntry {
+  type: string;
+  meta: JobHandlerMeta<unknown>;
+  /**
+   * Handler class constructor — the memory backend keeps a reference for
+   * `tick()` execution. Drizzle backend ignores this (worker resolves the
+   * class via `JOB_HANDLER_REGISTRY` at claim time).
+   */
+  handlerClass: new (...args: unknown[]) => unknown;
+}
+
+/**
+ * Pool definition surface as the orchestrator needs it for boot-time row
+ * materialisation. Defined locally here (not imported from
+ * `pool-config.loader.ts`) so the protocol layer keeps zero dependencies on
+ * runtime config wiring — the loader's `PoolDefinition` is structurally
+ * compatible.
+ */
+export interface JobPoolDef {
+  queue: string;
+  concurrency: number;
+  reserved: boolean;
+  description?: string;
+}
+
 export interface IJobOrchestrator {
   /**
    * Create a `pending` `job_run` row and return it. Does NOT block waiting
@@ -86,4 +118,27 @@ export interface IJobOrchestrator {
    * the original is preserved for audit).
    */
   replay(runId: string): Promise<JobRun>;
+
+  /**
+   * Boot-time materialisation of `job` definitions from `@JobHandler`
+   * metadata. Called once per process by `JobWorkerModule.onModuleInit`.
+   *
+   * Drizzle backend: hash-gated `INSERT … ON CONFLICT (type) DO UPDATE …
+   * WHERE` (Q3 resolution 2026-04-19). The `UPDATE` branch executes only
+   * when one of the persisted metadata fields differs from the incoming
+   * payload; `version` bumps only on a real change; concurrent boots with
+   * identical content are idempotent no-ops.
+   *
+   * Memory backend: populates `MemoryJobStore.jobs` and the in-process
+   * handler-class registry consumed by `MemoryJobOrchestrator.tick`.
+   *
+   * Returns the orphaned types — types present in DB but absent from
+   * `entries`. The caller (boot validator) decides whether to throw or
+   * warn. Memory backend always returns `[]` (Q4 resolution 2026-04-19 —
+   * validator skipped in memory mode).
+   */
+  upsertJobRows(
+    entries: JobUpsertEntry[],
+    poolConfig: ReadonlyMap<string, JobPoolDef>,
+  ): Promise<{ orphaned: string[] }>;
 }

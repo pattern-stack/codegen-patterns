@@ -29,6 +29,8 @@ export type {
   StartOptions,
   CancelOptions,
   JobRun,
+  JobUpsertEntry,
+  JobPoolDef,
 } from './job-orchestrator.protocol';
 
 // ─── JOB-2: run-service protocol ───────────────────────────────────────────
@@ -51,6 +53,7 @@ export {
   JobHandler,
   JOB_HANDLER_REGISTRY,
   JOB_HANDLER_METADATA_KEY,
+  HandlerRegistry,
 } from './job-handler.base';
 export type {
   RetryPolicy,
@@ -61,6 +64,7 @@ export type {
   StepOptions,
   SpawnChildOptions,
   JobContext,
+  HandlerRegistryEntry,
 } from './job-handler.base';
 
 // ─── JOB-3: Drizzle backends + JobWorker ────────────────────────────────
@@ -81,6 +85,8 @@ export {
   JobNotReplayableError,
   JobTemplateFieldMissingError,
   JobTypeNotFoundError,
+  BootValidationError,
+  ReservedPoolViolationError,
 } from './jobs-errors';
 
 // ─── JOB-4: Memory backends + shared in-memory store ───────────────────────
@@ -89,5 +95,22 @@ export { MemoryJobOrchestrator } from './job-orchestrator.memory-backend';
 export { MemoryJobRunService } from './job-run-service.memory-backend';
 export { MemoryJobStepService } from './job-step-service.memory-backend';
 
-// Subsequent issues add: modules (JOB-5).
-// All net-new — nothing from the old executor layer survives.
+// ─── JOB-5: domain + worker modules + pool config loader ───────────────────
+export {
+  JobsDomainModule,
+  type JobsDomainModuleOptions,
+  type DrizzleBackendExtensions,
+} from './jobs-domain.module';
+export {
+  JobWorkerModule,
+  JobWorkerOrchestrator,
+  type JobWorkerModuleOptions,
+} from './job-worker.module';
+export {
+  loadPoolConfig,
+  allNonReservedPoolNames,
+  FRAMEWORK_POOLS,
+  RESERVED_POOL_NAMES,
+  type PoolConfig,
+  type PoolDefinition,
+} from './pool-config.loader';

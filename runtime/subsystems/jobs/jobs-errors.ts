@@ -73,3 +73,50 @@ export class JobTemplateFieldMissingError extends Error {
     );
   }
 }
+
+/**
+ * Thrown by `JobWorkerModule.onModuleInit` (Drizzle backend only) when the
+ * `job` table contains type rows for which no `@JobHandler` is registered
+ * in the running process. Surfaces every orphaned type at once so a single
+ * boot tells the operator everything to clean up.
+ *
+ * Skipped entirely in memory mode (Q4 resolution 2026-04-19) — the memory
+ * backend has no DB rows to validate; `MemoryJobOrchestrator.start()`
+ * throws `JobTypeNotFoundError` synchronously for unknown types instead.
+ */
+export class BootValidationError extends Error {
+  readonly name = 'BootValidationError';
+  constructor(public readonly missingHandlers: string[]) {
+    super(
+      `BootValidationError: ${missingHandlers.length} orphaned job type(s) ` +
+        `in 'job' table with no matching @JobHandler in the running process: ` +
+        `[${missingHandlers.join(', ')}]. Either register the handler(s) or ` +
+        `remove the rows.`,
+    );
+  }
+}
+
+/**
+ * Thrown by `JobWorkerModule.onModuleInit` when one or more `@JobHandler`
+ * classes target a `reserved: true` pool from the resolved pool config
+ * (the three `events_*` pools are reserved for the events subsystem
+ * outbox drain). Listing every offender on a single boot avoids the
+ * fix-one-restart-fix-next loop.
+ */
+export class ReservedPoolViolationError extends Error {
+  readonly name = 'ReservedPoolViolationError';
+  constructor(
+    public readonly offenders: ReadonlyArray<{
+      handlerClass: string;
+      pool: string;
+    }>,
+  ) {
+    super(
+      `ReservedPoolViolationError: ${offenders.length} @JobHandler(s) target ` +
+        `reserved pools — reserved pools are framework-only:\n` +
+        offenders
+          .map((o) => `  - ${o.handlerClass} → pool='${o.pool}'`)
+          .join('\n'),
+    );
+  }
+}

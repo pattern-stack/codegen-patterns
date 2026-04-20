@@ -22,7 +22,9 @@ import type {
 import type {
   CancelOptions,
   IJobOrchestrator,
+  JobPoolDef,
   JobRun,
+  JobUpsertEntry,
   StartOptions,
 } from './job-orchestrator.protocol';
 import type {
@@ -195,6 +197,27 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
   /** Test helper — look up a registered handler without exposing the map. */
   getHandlerRegistration(type: string): HandlerRegistration | undefined {
     return this.handlerRegistry.get(type);
+  }
+
+  /**
+   * Boot-time upsert per `IJobOrchestrator.upsertJobRows`. Memory backend
+   * just funnels each entry through `registerHandler`. The validator is
+   * skipped entirely in memory mode (Q4 resolution 2026-04-19), so the
+   * orphaned list is always empty — there are no DB rows to compare against.
+   */
+  async upsertJobRows(
+    entries: JobUpsertEntry[],
+    poolConfig: ReadonlyMap<string, JobPoolDef>,
+  ): Promise<{ orphaned: string[] }> {
+    void poolConfig; // pool validation is the module's responsibility
+    for (const entry of entries) {
+      this.registerHandler(
+        entry.type,
+        entry.meta as JobHandlerMeta<unknown>,
+        entry.handlerClass as new (...args: unknown[]) => JobHandlerBase<unknown>,
+      );
+    }
+    return { orphaned: [] };
   }
 
   // ==========================================================================
