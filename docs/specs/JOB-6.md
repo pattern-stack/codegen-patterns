@@ -1,7 +1,7 @@
 # JOB-6 — Hygen Scaffold Templates: `worker.ts`, `main.ts` Hook, Config Block
 
 **Issue:** JOB-6
-**Status:** Draft
+**Status:** Implemented
 **Last Updated:** 2026-04-19
 **Depends on:** JOB-1 (schema file templated here), JOB-5 (module names must be stable)
 **Blocks:** JOB-8 (multi-tenancy opt-in — tenant_id column conditional lives in this template)
@@ -35,8 +35,12 @@ SubsystemInstallCommand.execute()
 | `templates/subsystem/jobs/main-hook.ejs.t` | create | Injects embedded-mode comment block |
 | `templates/subsystem/jobs/codegen-config-jobs-block.ejs.t` | create | Appends `jobs:` config block |
 | `templates/subsystem/jobs/job-orchestration.schema.ejs.t` | create | **Templated schema: conditional EJS block for `tenantId` column gated on `jobs.multi_tenant` (Q1 2026-04-19)** — overrides/replaces the always-emit runtime source file landed in JOB-1 when scaffolded into a consumer project |
-| `src/cli/commands/subsystem.ts` | modify | Invoke Hygen for `jobs` after `copyRuntime`; `copyRuntime` must skip `job-orchestration.schema.ts` since Hygen template owns it |
-| `test/baseline/` | modify | Update snapshot — two fixtures: single-tenant (no `tenantId`) + multi-tenant (with `tenantId`) |
+| `templates/subsystem/jobs/prompt.js` | create | Hygen prompt — coerces CLI string args into JS booleans so template `<% if (multiTenant) %>` gates work |
+| `src/cli/shared/jobs-scaffold-locals.ts` | create | Pure resolver for Hygen locals (`resolveJobsScaffoldLocals`) + argv serialiser (`localsToHygenArgs`); CLI is a thin wrapper |
+| `src/cli/commands/subsystem.ts` | modify | Invoke Hygen for `jobs` after `copyRuntime`; `copyRuntime` must skip `job-orchestration.schema.ts` since Hygen template owns it. On Hygen failure: warn but exit 0 |
+| `test/run-test.ts` | modify | Render both variants of `job-orchestration.schema.ejs.t` into the baseline capture step (uses a throwaway sandbox to mute the non-schema templates during baseline capture) |
+| `test/baseline/runtime/subsystems/jobs/generated/job-orchestration.schema.single-tenant.ts` | create | Baseline fixture — no `tenantId`, no `tenant_id` references anywhere |
+| `test/baseline/runtime/subsystems/jobs/generated/job-orchestration.schema.multi-tenant.ts` | create | Baseline fixture — includes `tenantId: text('tenant_id')` + JOB-8 guidance comment |
 
 ## Template Variable Model
 
@@ -58,9 +62,18 @@ interface JobsScaffoldLocals {
 ```
 ---
 to: "<%= workerPath %>"
-skip_if: "<%= workerExists %>"
+unless_exists: true
 ---
 ```
+
+**Implementation note (2026-04-19):** the spec draft proposed
+`skip_if: "<%= workerExists %>"`, but Hygen's `skip_if` is a regex matched
+against destination-file content rather than a boolean guard. Rendering it
+to the literal string `"true"` / `"false"` would only skip when that word
+happened to appear in the worker file. `unless_exists: true` is Hygen's
+native primitive for "create once, never overwrite" and matches the
+intended semantics exactly. The CLI still computes `workerExists` for
+dry-run reporting and for the templates-locals unit tests.
 
 Content (template body): minimal NestJS `NestFactory.createApplicationContext` bootstrap — no `app.listen()`. Imports `JobWorkerModule`, `DatabaseModule`, `JobsDomainModule`. Inline `WorkerAppModule` with:
 
@@ -239,18 +252,18 @@ jobs:
    - `src/main.ts` has no duplicate comment block
 
 **Criteria from issue list:**
-- [ ] `worker.ts` imports `JobWorkerModule`; boots NestJS app context without HTTP listener
-- [ ] Config block has five default pools with `reserved: true` on `events_*` three
-- [ ] `just test-baseline` passes
-- [ ] `job-orchestration.schema.ejs.t` rendered with `multiTenant: false` emits a schema file with NO `tenantId` column and NO references to `tenant_id`; rendered with `multiTenant: true` emits the column with the `// scaffold-time conditional — see JOB-8` comment (Q1 resolved 2026-04-19)
-- [ ] `copyRuntime` skips `job-orchestration.schema.ts` so Hygen template is the sole emitter in a scaffolded project
-- [ ] Baseline has two fixture outputs: single-tenant (no column) + multi-tenant (with column)
+- [x] `worker.ts` imports `JobWorkerModule`; boots NestJS app context without HTTP listener
+- [x] Config block has five default pools with `reserved: true` on `events_*` three
+- [x] `just test-baseline` passes
+- [x] `job-orchestration.schema.ejs.t` rendered with `multiTenant: false` emits a schema file with NO `tenantId` column and NO references to `tenant_id`; rendered with `multiTenant: true` emits the column with the `// scaffold-time conditional — see JOB-8` comment (Q1 resolved 2026-04-19)
+- [x] `copyRuntime` skips `job-orchestration.schema.ts` so Hygen template is the sole emitter in a scaffolded project
+- [x] Baseline has two fixture outputs: single-tenant (no column) + multi-tenant (with column)
 
 ## Testing Strategy
 
-- **Baseline snapshot** — `just test-baseline` runs `subsystem install jobs` on fixture project and compares output to committed snapshots. Update as part of PR.
-- **Unit test** for template-variable resolution: extract resolution logic to pure function; test with various config inputs.
-- **Manual walkthrough** documented in PR description: fresh `bun init` project, run the commands, inspect output, verify four-files test plan passes, confirm idempotency on re-run.
+- **Baseline snapshot** — `just test-baseline` (`bun test/run-test.ts full`) renders both variants of `job-orchestration.schema.ejs.t` (single-tenant + multi-tenant) into `runtime/subsystems/jobs/generated/` and compares against `test/baseline/`. The two fixture files live under `test/baseline/runtime/subsystems/jobs/generated/job-orchestration.schema.{single,multi}-tenant.ts`. The baseline capture step uses a throwaway sandbox directory (`test/.jobs-baseline-sandbox`) to mute the non-schema templates (worker.ts, main.ts hook, config block) — they'd otherwise target ROOT during the capture and pollute the workspace.
+- **Unit test** for template-variable resolution: `src/cli/shared/jobs-scaffold-locals.ts` exports `resolveJobsScaffoldLocals` (pure — filesystem probed via injected `fileExists`) and `localsToHygenArgs`. Tests cover the skip_if boolean serialisation contract (worker.ts safety: empty string when absent, `'true'` when present), multi_tenant truthiness (only literal `true` flips the flag — defends against YAML surprises like `'yes'` / `1`), worker_mode normalisation, and custom `paths.subsystems` flowing into `schemaPath`.
+- **Manual walkthrough** — see PR description for scratch-project run. Four-files test plan passes; second run is fully idempotent (worker.ts skipped via `unless_exists: true`, `codegen.config.yaml` `jobs:` block has no duplicate via `skip_if: "jobs:"`, `src/main.ts` JOBS comment has no duplicate via `skip_if: "JobWorkerModule"`, schema is force-re-rendered identically).
 
 No Docker required. Hygen invocation tested via baseline fixture in CI.
 
