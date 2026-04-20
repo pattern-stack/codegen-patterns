@@ -12,6 +12,23 @@
 export const EVENT_BUS = 'EVENT_BUS' as const;
 
 /**
+ * Injection token for the generated `TypedEventBus` facade.
+ *
+ * `TypedEventBus` lives in `runtime/subsystems/events/generated/bus.ts` and
+ * wraps `IEventBus` with project-specific `AppDomainEvent`-typed `publish<T>()`
+ * and `subscribe<T>()`. Use cases inject this token in preference to
+ * `EVENT_BUS` when they want compile-time type safety on event shapes.
+ *
+ * String constant (not Symbol) so it matches by value across import
+ * boundaries — same convention as `EVENT_BUS`.
+ *
+ * Provider registration lands in EVT-6 (EventsModule wiring); the token is
+ * declared here so generated code can import it without depending on the
+ * still-being-formalised module.
+ */
+export const TYPED_EVENT_BUS = 'TYPED_EVENT_BUS' as const;
+
+/**
  * Injection token for the Redis connection URL used by RedisEventBus.
  * Provided automatically by EventsModule.forRoot({ backend: 'redis' }).
  */

@@ -34,6 +34,8 @@ const OUTPUT_PATHS = [
   'packages/db/src/entities',
   // JOB-7: generated scope-entity-type union (post-Hygen step)
   'runtime/subsystems/jobs/generated',
+  // EVT-3: generated event-codegen artifacts (types, schemas, registry, bus, index)
+  'runtime/subsystems/events/generated',
 ];
 
 function getAllFiles(dir: string, files: string[] = []): string[] {
@@ -137,6 +139,17 @@ function runCodegen() {
   console.log('   Generating: scope-entity-type.ts');
   execSync(
     `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${FIXTURES_DIR}', outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
+    { cwd: CODEGEN_DIR, stdio: 'pipe' },
+  );
+
+  // EVT-3: generate event-codegen artifacts from fixture events + entity
+  // `events:` blocks (mirrors EntityNewCommand post-step). Writes five files
+  // under runtime/subsystems/events/generated/.
+  console.log('   Generating: events/generated/ (types, schemas, registry, bus, index)');
+  const eventsFixturesDir = join(FIXTURES_DIR, 'events');
+  const eventCodegenOutputDir = join(ROOT, 'runtime/subsystems/events/generated');
+  execSync(
+    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${FIXTURES_DIR}', eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 
