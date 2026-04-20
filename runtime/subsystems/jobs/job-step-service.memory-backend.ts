@@ -83,23 +83,11 @@ export class MemoryJobStepService implements IJobStepService {
   }
 
   /**
-   * Replay helper — remove a single step row by `stepId`. Mirrors the
-   * `last_step` replay mode (the Drizzle backend collapses `last_step` and
-   * `last_checkpoint` onto "delete non-completed rows"; memory matches that
-   * exact semantic when called from the orchestrator).
-   */
-  clearStep(runId: string, stepId: string): void {
-    const rows = this.store.steps.get(runId);
-    if (!rows) return;
-    const idx = rows.findIndex((r) => r.stepId === stepId);
-    if (idx >= 0) rows.splice(idx, 1);
-  }
-
-  /**
    * Remove every non-`completed` row for the run. Memoized (`completed`)
    * rows are preserved — this is the `last_checkpoint` / `last_step`
    * semantics the Drizzle backend implements via
-   * `DELETE … WHERE status != 'completed'`.
+   * `DELETE … WHERE status != 'completed'`. Both replay modes route here
+   * (Phase 1 collapses `last_step` onto this behaviour; see JOB-3 notes).
    */
   clearIncompleteSteps(runId: string): void {
     const rows = this.store.steps.get(runId);

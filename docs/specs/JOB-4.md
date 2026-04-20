@@ -88,7 +88,7 @@ Plain class with three Maps + `clear()`. Not `@Injectable()` — wired as `useVa
 - Step storage: `Map<runId, JobStepRow[]>` from shared store.
 - `findStep(runId, stepId)`: scan array for run; return first match where `step_id === stepId AND status === 'completed'`. Return `null` if none. Non-completed steps invisible to memoization (matches Drizzle).
 - `recordStep(input)`: assign monotonic `seq` per-run, `randomUUID()` id, push to array, return row. Conflict behavior: overwrite existing entry with same `step_id`.
-- Helper methods: `clearStepsForRun(runId)` (replay=scratch), `clearStep(runId, stepId)` (replay=last_step).
+- Helper methods: `clearStepsForRun(runId)` (replay=scratch), `clearIncompleteSteps(runId)` (replay=last_step / last_checkpoint — both collapse to "delete non-completed rows" in Phase 1, matching the Drizzle backend).
 
 ### 3. `PromiseMutex` (inline private in orchestrator file)
 

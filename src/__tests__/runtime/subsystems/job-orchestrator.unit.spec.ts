@@ -467,10 +467,62 @@ describe('MemoryJobOrchestrator — replay modes (Group 6)', () => {
     expect(store.runs.get(run.id)?.status).toBe('failed');
 
     mutable.failB = false;
-    await orchestrator.replay(run.id);
+    const replayed = await orchestrator.replay(run.id);
+    // Lineage parity — replay preserves rootRunId + parentRunId on the
+    // replayed row (Drizzle backend UPDATEs the same row; memory matches).
+    expect(replayed.rootRunId).toBe(run.rootRunId);
+    expect(replayed.parentRunId).toBe(run.parentRunId);
     await tickUntilTerminal(orchestrator, 'batch');
     // 'a' stayed memoized; only 'b' re-invoked.
     expect(calls).toEqual(['a', 'b', 'b']);
     expect(store.runs.get(run.id)?.status).toBe('completed');
+  });
+});
+
+// ─── Group 7 — run-level retry (rescheduleForRetry path) ───────────────────
+
+describe('MemoryJobOrchestrator — run-level retry (Group 7)', () => {
+  it('retry re-enters as pending with attempts incremented', async () => {
+    const { orchestrator, store } = buildOrchestrator();
+    const calls: string[] = [];
+    const mutable = { failB: true };
+    orchestrator.registerHandler(
+      't.retry.run',
+      {
+        pool: 'batch',
+        // attempts=3 → classifyError on first failure returns 'retry'
+        // (currentAttempts 0 + 1 = 1 < 3), exercising the
+        // `rescheduleForRetry` path that plain failure tests skip.
+        retry: { attempts: 3, backoff: 'fixed', baseMs: 0 },
+      },
+      makeStepHandlerFailB(calls, mutable),
+    );
+
+    const run = await orchestrator.start('t.retry.run', {});
+    const claimed = await orchestrator.claimNext('batch');
+    expect(claimed?.id).toBe(run.id);
+    await orchestrator.tick(run.id);
+
+    const after = store.runs.get(run.id)!;
+    expect(after.status).toBe('pending');
+    expect(after.attempts).toBe(1);
+    expect(after.claimedAt).toBeNull();
+    expect(after.startedAt).toBeNull();
+    // Error is serialised with retryable=true on the retry path.
+    expect(after.error?.retryable).toBe(true);
+    expect(after.error?.attempt).toBe(1);
+    // 'a' completed + memoized; 'b' attempted and failed.
+    expect(calls).toEqual(['a', 'b']);
+
+    // Re-claim + re-tick with the bug fixed — second attempt succeeds.
+    mutable.failB = false;
+    const reclaimed = await orchestrator.claimNext('batch');
+    expect(reclaimed?.id).toBe(run.id);
+    await orchestrator.tick(run.id);
+    const final = store.runs.get(run.id)!;
+    expect(final.status).toBe('completed');
+    expect(final.attempts).toBe(2);
+    // 'a' memoized → not re-called; only 'b' was retried.
+    expect(calls).toEqual(['a', 'b', 'b']);
   });
 });
