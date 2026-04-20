@@ -490,9 +490,14 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     // root_run_id and this run's own parentClosePolicy is 'terminate', cascade.
     if (claimed.parentClosePolicy === 'terminate') {
       try {
+        // JOB-8 — thread the run's own tenantId so the orchestrator's
+        // multi-tenant gate passes. Without this, every terminate-policy
+        // cascade throws MissingTenantIdError under multiTenant=true and
+        // the outer catch silently swallows it — children never cancel.
         await this.orchestrator.cancel(claimed.id, {
           cascade: true,
           reason: 'parent-failed',
+          tenantId: claimed.tenantId,
         });
       } catch (cascadeErr) {
         // cancel is idempotent; failure here is unusual but not fatal.

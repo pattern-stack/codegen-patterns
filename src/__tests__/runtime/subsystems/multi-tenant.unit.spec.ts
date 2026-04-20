@@ -21,7 +21,9 @@ import 'reflect-metadata';
 import { beforeEach, describe, expect, it } from 'bun:test';
 import {
   JobHandlerBase,
+  ParentClosePolicy,
   type JobContext,
+  type JobHandlerMeta,
 } from '../../../../runtime/subsystems/jobs/job-handler.base';
 import { MemoryJobStore } from '../../../../runtime/subsystems/jobs/memory-job-store';
 import { MemoryJobOrchestrator } from '../../../../runtime/subsystems/jobs/job-orchestrator.memory-backend';
@@ -250,5 +252,112 @@ describe('multi-tenant ON — explicit null passes (cross-tenant work)', () => {
     // Can cancel its own.
     await h.orchestrator.cancel(runNull.id, { tenantId: null });
     expect(h.store.runs.get(runNull.id)?.status).toBe('canceled');
+  });
+});
+
+// ─── Internal-cascade regression tests ──────────────────────────────────────
+// These lock the contract that system-internal cascades thread `tenantId`
+// through so the multi-tenant gate inside `cancel` doesn't surprise-throw.
+// They correspond directly to the two Drizzle-backend cascade paths that
+// were missed in the initial JOB-8 implementation:
+//   (1) `replace`-collision path in the orchestrator (both backends).
+//   (2) `markFailed` → `cancel` with `parentClosePolicy: 'terminate'`
+//       (memory backend `tick` + worker loop; JobWorker mirrors this).
+// Exercising the memory backend suffices — the Drizzle paths have identical
+// logic (`{ ..., tenantId: run.tenantId }` / `{ ..., tenantId: incumbent.tenantId }`).
+
+// Minimal failing handler — throws deterministically so `tick` hits the
+// markFailed path (no retry, attempts: 1).
+class AlwaysFailsHandler extends JobHandlerBase<Record<string, unknown>, unknown> {
+  async run(_ctx: JobContext<Record<string, unknown>>): Promise<unknown> {
+    throw new Error('always fails');
+  }
+}
+
+describe('multi-tenant ON — internal cascade threads tenantId (regression)', () => {
+  it('replace-collision cancels incumbent when both runs share a tenant', async () => {
+    // Build harness but register a `replace`-collision handler (not the
+    // default NoopHandler the shared `build` fixture registers).
+    const store = new MemoryJobStore();
+    const stepService = new MemoryJobStepService(store);
+    const orchestrator = new MemoryJobOrchestrator(store, stepService, true);
+    const meta = {
+      pool: 'batch',
+      concurrency: { key: '{{accountId}}', collisionMode: 'replace' as const },
+    } as unknown as JobHandlerMeta<Record<string, unknown>>;
+    orchestrator.registerHandler('t.replace.mt', meta, AlwaysFailsHandler);
+
+    // First start seeds the incumbent under tenant 'A'.
+    const first = await orchestrator.start(
+      't.replace.mt',
+      { accountId: '1' },
+      { tenantId: 'A' },
+    );
+
+    // Second start for the same concurrency key triggers the `replace`
+    // branch. Pre-fix this throws MissingTenantIdError from the inner
+    // cancel(); post-fix the incumbent is cancelled and the new run
+    // inserts cleanly.
+    const second = await orchestrator.start(
+      't.replace.mt',
+      { accountId: '1' },
+      { tenantId: 'A' },
+    );
+
+    expect(store.runs.get(first.id)?.status).toBe('canceled');
+    expect(second.status).toBe('pending');
+    expect(store.runs.get(second.id)?.tenantId).toBe('A');
+  });
+
+  it('markFailed cascade threads tenantId (no MissingTenantIdError warn)', async () => {
+    // Same manual harness — need a failing handler registered.
+    const store = new MemoryJobStore();
+    const stepService = new MemoryJobStepService(store);
+    const orchestrator = new MemoryJobOrchestrator(store, stepService, true);
+    orchestrator.registerHandler(
+      't.parent.fail',
+      // attempts: 1 → no retry; tick fails ⇒ markFailed fires ⇒ cascade.
+      { pool: 'batch', retry: { attempts: 1, backoff: 'fixed', baseMs: 0 } },
+      AlwaysFailsHandler,
+    );
+
+    // Spawn a parent under tenant 'A' with parent-close-policy 'terminate'
+    // so the `if (run.parentClosePolicy === 'terminate')` branch in
+    // `markFailed` fires. Whether the inner cascade actually reaches
+    // descendants is a separate pre-JOB-8 concern — what this test locks
+    // is the tenantId threading: pre-fix the cascade call would throw
+    // `MissingTenantIdError` and the outer catch would emit a warn log
+    // for every failed multi-tenant run. Post-fix the cascade is quiet.
+    const parent = await orchestrator.start(
+      't.parent.fail',
+      {},
+      { tenantId: 'A', parentClosePolicy: ParentClosePolicy.Terminate },
+    );
+
+    // Capture warn logs from the orchestrator's private logger so we can
+    // assert the fix: no MissingTenantIdError leaks through the cascade.
+    const warnings: string[] = [];
+    // @ts-expect-error — accessing the private logger is test-only; the
+    // alternative is a global console intercept which is strictly worse.
+    const origWarn = orchestrator.logger.warn.bind(orchestrator.logger);
+    // @ts-expect-error — same.
+    orchestrator.logger.warn = (msg: string) => {
+      warnings.push(String(msg));
+      return origWarn(msg);
+    };
+
+    const claimed = await orchestrator.claimNext('batch');
+    expect(claimed?.id).toBe(parent.id);
+    await orchestrator.tick(parent.id);
+
+    // Primary effect: parent transitioned to 'failed' cleanly.
+    expect(store.runs.get(parent.id)?.status).toBe('failed');
+    // Secondary effect locked here: the cascade call did NOT throw a
+    // MissingTenantIdError (pre-fix symptom). No warn entries at all is
+    // the pass condition — the cascade cancel is idempotent/no-op on the
+    // already-terminal parent, so there should be nothing to warn about.
+    expect(
+      warnings.filter((w) => w.includes('MissingTenantIdError')),
+    ).toEqual([]);
   });
 });

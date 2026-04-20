@@ -166,7 +166,17 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
           case 'reject':
             throw new JobCollisionError(type, concurrencyKey, incumbent);
           case 'replace':
-            await this.cancel(incumbent.id, { cascade: true, reason: 'replaced' });
+            // JOB-8 — thread the incumbent's own tenantId through the
+            // internal cascade. Without this, every `replace`-collision
+            // start() under multiTenant=true throws MissingTenantIdError
+            // from the inner cancel() call instead of cancelling the
+            // incumbent. Mirrors the memory backend's `cancelLocked(
+            // incumbent.id, ..., incumbent.tenantId)` pattern.
+            await this.cancel(incumbent.id, {
+              cascade: true,
+              reason: 'replaced',
+              tenantId: incumbent.tenantId,
+            });
             break;
           case 'queue':
             // Fall through — row is inserted; claim query gates it until
