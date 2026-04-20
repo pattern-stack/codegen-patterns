@@ -159,8 +159,8 @@ export class JobsDomainModule {
   1. `loadPoolConfig()` → `PoolConfig`
   2. `HandlerRegistry.getAll()` → registered entries
   3. **Reserved-pool validation:** walk entries; if any `meta.pool` matches a `reserved: true` pool, collect offenders; if non-empty, throw `ReservedPoolViolationError` listing class names
-  4. Inject `JOB_ORCHESTRATOR`; call `orchestrator.upsertJobRows(entries, poolConfig)` (method defined on orchestrator protocol; Drizzle uses `ON CONFLICT DO UPDATE` per JOB-3 OQ-3; memory mode populates `store.jobs`)
-  5. **Boot validator (Drizzle only):** if `backend !== 'memory'`, call `runBootValidator(orchestrator, entries)` — query all `Job` rows; for each row with no matching registry entry, accumulate; if any, throw `BootValidationError`
+  4. Inject `JOB_ORCHESTRATOR`; call `orchestrator.upsertJobRows(entries, poolConfig)` (method defined on orchestrator protocol; Drizzle uses `ON CONFLICT (type) DO UPDATE` **gated by a metadata content hash** per Q3 resolution 2026-04-19 — `UPDATE` branch runs only when stored hash ≠ computed hash; `version` bumps only on real change; memory mode populates `store.jobs`)
+  5. **Boot validator (Drizzle only):** if `backend !== 'memory'`, call `runBootValidator(orchestrator, entries)` — query all `Job` rows; for each row with no matching registry entry, accumulate; if any, throw `BootValidationError`. Skipped entirely in memory mode per Q4 resolution 2026-04-19.
   6. Resolve active pool list: `opts.pools ?? allNonReservedPoolNames(poolConfig)`
   7. For each active pool: instantiate `JobWorker(pool, poolConfig.get(pool), orchestrator)`; call `worker.start()`; store in instance array
 - **`onModuleDestroy`:** for each stored worker, `await worker.gracefulStop(opts.shutdownTimeoutMs ?? 30_000)`.
@@ -218,17 +218,16 @@ User-defined `agents: { queue: 'jobs-agents', concurrency: 3 }` in config become
 
 - `JobsDomainModule.forRoot({ backend })` wires three tokens; `global: true`; ADR-008 factory pattern
 - `JobWorkerModule.forRoot({ mode, pools? })` starts one `JobWorker` per active pool on init; stops on destroy
-- Boot validator: missing handler → `BootValidationError` with missing type names listed
-- `@JobHandler` classes upsert into `job` table on init; missing handler (source removed) logs warning (prune → Phase 6)
+- Boot validator (Drizzle only): missing handler → `BootValidationError` with missing type names listed; skipped entirely when `backend: 'memory'` (Q4 resolved 2026-04-19 — no DB rows in memory mode)
+- `@JobHandler` classes upsert into `job` table on init using `ON CONFLICT (type) DO UPDATE` **gated by a metadata content hash** (Q3 resolved 2026-04-19); the `UPDATE` branch executes only when the stored hash differs from the computed hash; `version` column bumps only on a real metadata change; concurrent boots with identical content are idempotent no-ops; handler removed from source logs a warning (prune → Phase 6)
 - Reserved-pool enforcement: user `@JobHandler` targeting `reserved: true` → `ReservedPoolViolationError` at init with class names
-- Validator skipped when `backend: 'memory'`
 - `loadPoolConfig` applies all five framework defaults when config absent; merges user pools; cannot flip `reserved: true`
 
 ## Open Questions (resolved)
 
-**OQ-3 (reiterated from JOB-3) — Job row upsert under horizontal scale.** Use `ON CONFLICT (type) DO UPDATE SET pool=EXCLUDED.pool, retry_policy=EXCLUDED.retry_policy, updated_at=now()`. Last-writer-wins. Safe because same binary = identical metadata. Rejecting `DO NOTHING` (stale rows under rolling deploy) and advisory locks (latency + leak risk).
+**Q3 — `job` table upsert under horizontal scale. Resolved 2026-04-19.** `ON CONFLICT (type) DO UPDATE` gated by a metadata content hash. Compute `hash(metadata)` per handler at boot (include `pool`, `retry_policy`, `timeout_ms`, `concurrency_key_template`, `collision_mode`, `dedupe_key_template`, `dedupe_window_ms`, `priority_default`, `replay_from`, `scope_entity_type`). The `UPDATE` branch runs only when the hash differs from what is stored. `version` column bumps only on a real metadata change — concurrent boots with identical metadata are idempotent no-ops. `DO NOTHING` rejected: under a rolling deploy, old-version instance A would leave a stale row that new-version instance B cannot overwrite. Advisory locks rejected: latency + leak risk.
 
-**Validator in memory mode.** Skipped entirely. Memory-mode tests do not fail validator even with deliberately unregistered types (tests own in-memory state).
+**Q4 — Validator in memory mode. Resolved 2026-04-19.** Skip the validator entirely when `backend: 'memory'`. There are no DB rows in memory mode; the check is meaningless. The validator is exercised by integration tests against real Postgres.
 
 **Backend threading.** `JobWorkerModuleOptions.backend` explicit (default `'drizzle'`). `JobWorkerModule` imports `JobsDomainModule.forRoot({ backend: opts.backend ?? 'drizzle' })` internally.
 

@@ -2,13 +2,13 @@
 
 **Issue:** JOB-6
 **Status:** Draft
-**Last Updated:** 2026-04-18
-**Depends on:** JOB-5 (module names must be stable)
-**Blocks:** JOB-8 (`--upgrade` extends same CLI surface)
+**Last Updated:** 2026-04-19
+**Depends on:** JOB-1 (schema file templated here), JOB-5 (module names must be stable)
+**Blocks:** JOB-8 (multi-tenancy opt-in — tenant_id column conditional lives in this template)
 
 ## Overview
 
-Hygen templates that emit operational glue files when `bun codegen subsystem jobs` runs in a consumer project. Three templates: standalone `worker.ts` at project root, commented embedded-mode guidance injected into `src/main.ts`, and a `jobs:` block appended to `codegen.config.yaml` with all five default pools populated. `SubsystemInstallCommand` is extended to invoke Hygen after `copyRuntime`. Scaffolded once per project, not per entity.
+Hygen templates that emit operational glue files when `bun codegen subsystem jobs` runs in a consumer project. Four templates: standalone `worker.ts` at project root, commented embedded-mode guidance injected into `src/main.ts`, a `jobs:` block appended to `codegen.config.yaml` with all five default pools populated, **and a templated `job-orchestration.schema.ts` that gates the `tenant_id` column on `jobs.multi_tenant` (Q1 2026-04-19 — added to JOB-6 scope because the runtime source file JOB-1 lands is always-emit; the scaffold-time conditional lives in this template layer)**. `SubsystemInstallCommand` is extended to invoke Hygen after `copyRuntime`. Scaffolded once per project, not per entity.
 
 ## Context
 
@@ -34,8 +34,9 @@ SubsystemInstallCommand.execute()
 | `templates/subsystem/jobs/worker.ejs.t` | create | Produces `worker.ts` at project root |
 | `templates/subsystem/jobs/main-hook.ejs.t` | create | Injects embedded-mode comment block |
 | `templates/subsystem/jobs/codegen-config-jobs-block.ejs.t` | create | Appends `jobs:` config block |
-| `src/cli/commands/subsystem.ts` | modify | Invoke Hygen for `jobs` after `copyRuntime` |
-| `test/baseline/` | modify | Update snapshot |
+| `templates/subsystem/jobs/job-orchestration.schema.ejs.t` | create | **Templated schema: conditional EJS block for `tenantId` column gated on `jobs.multi_tenant` (Q1 2026-04-19)** — overrides/replaces the always-emit runtime source file landed in JOB-1 when scaffolded into a consumer project |
+| `src/cli/commands/subsystem.ts` | modify | Invoke Hygen for `jobs` after `copyRuntime`; `copyRuntime` must skip `job-orchestration.schema.ts` since Hygen template owns it |
+| `test/baseline/` | modify | Update snapshot — two fixtures: single-tenant (no `tenantId`) + multi-tenant (with `tenantId`) |
 
 ## Template Variable Model
 
@@ -43,7 +44,7 @@ SubsystemInstallCommand.execute()
 interface JobsScaffoldLocals {
   appName: string;          // basename of cwd if config has no explicit name
   workerMode: 'embedded' | 'standalone';  // default 'embedded'
-  multiTenant: boolean;     // informational only; JOB-8 emits conditional column
+  multiTenant: boolean;     // gates the `tenantId` column in job-orchestration.schema.ejs.t (Q1 2026-04-19) and threads into codegen-config default; JOB-8 wires the service-layer flag
   mainTsPath: string;       // default 'src/main.ts'
   configPath: string;       // default 'codegen.config.yaml'
   workerExists: boolean;    // computed in CLI via fs.existsSync; used in worker template skip_if
@@ -98,6 +99,39 @@ Body (a commented guidance block injected after `NestFactory.create(...)`):
 ```
 
 If `src/main.ts` doesn't exist, Hygen skips silently; CLI layer prints a hint.
+
+### `job-orchestration.schema.ejs.t`
+
+**Added 2026-04-19 to resolve Q1 implementation deferral from JOB-1.**
+
+The runtime source file at `runtime/subsystems/jobs/job-orchestration.schema.ts` (landed in JOB-1) always emits the `tenantId` column. For consumer scaffolds to respect `jobs.multi_tenant: false` (Q1: "single-tenant consumers do NOT have the column"), this template file **replaces** that runtime source during `subsystem install jobs`. `copyRuntime` must be modified to skip `job-orchestration.schema.ts` so Hygen owns the emission.
+
+Front-matter:
+
+```
+---
+to: "<%= schemaPath %>"
+force: true
+---
+```
+
+`schemaPath` defaults to `shared/subsystems/jobs/job-orchestration.schema.ts` (or the equivalent consumer-side path resolved from `paths.subsystems`).
+
+Body: exact EJS port of `runtime/subsystems/jobs/job-orchestration.schema.ts` with a single EJS conditional gating the `tenantId` column definition inside `pgTable 'job_run'`:
+
+```ejs
+<% if (multiTenant) { %>
+  tenantId: text('tenant_id'),                // scaffold-time conditional — see JOB-8
+<% } %>
+```
+
+No other changes to the schema — all enums, other columns, indexes, and exported types are emitted identically in both variants. Index definitions that would reference `tenant_id` (none in Phase 1) must also gate on `multiTenant` if added later.
+
+**Acceptance for this template:**
+- Rendered with `multiTenant: false` → output has no `tenantId` column, no `tenant_id` references anywhere in the file.
+- Rendered with `multiTenant: true` → output includes `tenantId: text('tenant_id')` on `jobRuns`, with the `// scaffold-time conditional — see JOB-8` comment.
+- Baseline snapshot has two fixture outputs (single-tenant + multi-tenant) for this file.
+- Enabling tenancy post-install requires `subsystem install jobs` (which now regenerates the schema) followed by an Atlas migration — no runtime toggle.
 
 ### `codegen-config-jobs-block.ejs.t`
 
@@ -171,9 +205,11 @@ jobs:
 2. **Write `worker.ejs.t`** — front-matter `to`, `skip_if: workerExists`; body as above. Import path `@shared/subsystems/jobs` (consumer-side location after `copyRuntime`).
 3. **Write `main-hook.ejs.t`** — front-matter `to`, `inject: true`, `after: "NestFactory.create"`, `skip_if: "JobWorkerModule"`; body as above.
 4. **Write `codegen-config-jobs-block.ejs.t`** — front-matter `to`, `inject: true`, `append: true`, `skip_if: "jobs:"`; body as above.
-5. **Extend `SubsystemInstallCommand.execute()`** in `src/cli/commands/subsystem.ts`:
+5. **Write `job-orchestration.schema.ejs.t`** — front-matter `to`, `force: true`; body as above (EJS port of runtime source with `<% if (multiTenant) { %>` gate around `tenantId` column).
+6. **Extend `SubsystemInstallCommand.execute()`** in `src/cli/commands/subsystem.ts`:
+   - Modify `copyRuntime` (or its job-subsystem path) to **skip** `job-orchestration.schema.ts` — Hygen template owns emission
    - After `copyRuntime(...)`: `if (this.name === 'jobs' && !this.dryRun)`
-   - Resolve template locals from config + cwd
+   - Resolve template locals from config + cwd (read `jobs.multi_tenant` from `codegen.config.yaml`; default `false` if block absent — matches first-install case)
    - Compute `workerExists` via `fs.existsSync(path.join(ctx.cwd, 'worker.ts'))`
    - Call `invokeHygen({ generator: 'subsystem', action: 'jobs', args: [...], cwd: ctx.cwd })`
    - On Hygen failure: warn but exit 0 — runtime files already written; partial scaffold > hard failure
@@ -206,6 +242,9 @@ jobs:
 - [ ] `worker.ts` imports `JobWorkerModule`; boots NestJS app context without HTTP listener
 - [ ] Config block has five default pools with `reserved: true` on `events_*` three
 - [ ] `just test-baseline` passes
+- [ ] `job-orchestration.schema.ejs.t` rendered with `multiTenant: false` emits a schema file with NO `tenantId` column and NO references to `tenant_id`; rendered with `multiTenant: true` emits the column with the `// scaffold-time conditional — see JOB-8` comment (Q1 resolved 2026-04-19)
+- [ ] `copyRuntime` skips `job-orchestration.schema.ts` so Hygen template is the sole emitter in a scaffolded project
+- [ ] Baseline has two fixture outputs: single-tenant (no column) + multi-tenant (with column)
 
 ## Testing Strategy
 
@@ -217,7 +256,7 @@ No Docker required. Hygen invocation tested via baseline fixture in CI.
 
 ## Scope Boundary
 
-- **Does not** emit `tenant_id` conditional logic — JOB-8
+- **Owns** the `tenant_id` schema conditional (Q1 resolved 2026-04-19 — moved into JOB-6 scope because the runtime source file in JOB-1 is always-emit). JOB-8 wires the service-layer `multiTenant` flag + Atlas docs.
 - **No upgrade path needed** — no existing users; fresh-install is the only path
 - **Does not** generate user-job handler classes — ADR-022 explicitly rejects jobs-as-YAML
 - **Does not** modify `src/main.ts` beyond commented block — uncommenting = consumer decision

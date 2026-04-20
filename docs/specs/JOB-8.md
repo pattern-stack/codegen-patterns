@@ -10,14 +10,14 @@
 
 Two deliverables.
 
-1. **Multi-tenancy opt-in.** When `codegen.config.yaml: jobs.multi_tenant: true`, the service layer accepts and enforces `tenantId` on every mutating and query method. The `tenant_id` column exists unconditionally in the DB (JOB-1 decision); JOB-8 wires the flag into module options and backend logic.
+1. **Multi-tenancy opt-in.** When `codegen.config.yaml: jobs.multi_tenant: true`, the Hygen scaffold emits the `tenant_id` column into the generated schema (scaffold-time conditional — Q1 resolved 2026-04-19, reversing the earlier unconditional-emit proposal) AND the service layer accepts and enforces `tenantId` on every mutating and query method. JOB-8 wires both the schema conditional (via JOB-1 template) and the service-layer flag into module options and backend logic. Enabling tenancy after initial install requires a reinstall (`subsystem install jobs`) and an Atlas migration — no runtime toggle exists.
 2. **Atlas docs.** `docs/CONSUMER-SETUP.md` replaces the `drizzle-kit push` recommendation with a proper Atlas migration workflow.
 
 **Removed from scope (2026-04-18):** The upgrade command (`subsystem upgrade jobs`) was originally scoped here to preserve the existing `job_queue` table for `IJobQueue` consumers. Per project policy (no backwards compat until we have users), this is unnecessary — `subsystem install jobs` overwrites cleanly. JOB-8 is now smaller and more focused.
 
 ## Context
 
-**Why `tenant_id` is not a schema conditional.** JOB-1 resolved the conditional-emit question: the column lands unconditionally as nullable `text`, annotated `// conditionally emitted — see JOB-8`. A `multi_tenant: false` project pays zero cost (column always null, no query changes). Gating lives in the service layer, not the schema. This avoids a migration for projects that enable multi-tenancy later.
+**Resolved 2026-04-19 — `tenant_id` is scaffold-time conditional.** The Q1 resolution reversed the earlier unconditional-emit proposal. The column is emitted into the schema only when `codegen.config.yaml: jobs.multi_tenant: true`. A project that starts with `multi_tenant: false` does not have the column at all — it does not pay the cost of an always-nullable column cluttering the schema. Enabling tenancy after initial install requires a reinstall (`subsystem install jobs`) and an Atlas migration. Per "no backwards compat until we have users" policy, this is acceptable — clean DB state is prioritised over migration convenience. JOB-8 retains the service-layer `multi_tenant` flag, tokens, and `MissingTenantIdError` surface; JOB-1's template owns the schema conditional.
 
 **Why Atlas over drizzle-kit.** The existing `drizzle-kit push` recommendation is a dev-convenience shortcut; it does not produce reviewed migration files. Phase 1 ships real migration infrastructure.
 
@@ -143,12 +143,12 @@ Section contents:
   3. Review generated SQL
   4. `atlas migrate apply --env local` to apply
   5. Commit migration file alongside schema change
-- **Note:** the upgrade command (`bun codegen subsystem upgrade jobs`) emits this hint automatically.
 
 ## Acceptance Criteria
 
 **Multi-tenancy**
-- [ ] `multi_tenant: false` (default): `start()` writes `tenant_id = NULL`; queries skip `tenantId` filter; existing tests unaffected
+- [ ] `multi_tenant: false` (default): the `tenant_id` column is absent from the generated schema entirely (JOB-1 template conditional); service layer does not accept or filter by `tenantId`; existing tests unaffected
+- [ ] Enabling `multi_tenant: true` after initial install requires a reinstall of the jobs subsystem and an Atlas migration — no runtime toggle path exists
 - [ ] `multi_tenant: true`: `start({ tenantId: 'x' })` writes it; `listForScope(..., { tenantId: 'x' })` returns only x
 - [ ] Cross-tenant `cancel()` with wrong `tenantId` is no-op
 - [ ] Both flag states covered in unit tests; `just test-unit` passes
@@ -174,8 +174,8 @@ Section contents:
 
 - ADR-022 — "Multi-tenancy", "Atlas migration workflow"
 - `docs/specs/ADR-022-phase-1-issues.md` — JOB-8 entry
-- `docs/specs/JOB-1.md` — `tenant_id` unconditional column decision
+- `docs/specs/JOB-1.md` — `tenant_id` scaffold-time conditional decision (Q1 resolved 2026-04-19)
 - `docs/specs/JOB-5.md` — `JobsDomainModuleOptions` shape this issue extends
-- `docs/specs/JOB-6.md` — Hygen templates the upgrade command re-invokes
+- `docs/specs/JOB-6.md` — Hygen templates (`subsystem install jobs`)
 - Pattern reference: existing `SubsystemInstallCommand` in `src/cli/commands/subsystem.ts`
 - Doc to update: `docs/CONSUMER-SETUP.md`
