@@ -3,16 +3,19 @@
  * Codegen Test Runner
  *
  * Usage:
- *   bun tools/codegen/test/run-test.ts baseline    Capture baseline output
- *   bun tools/codegen/test/run-test.ts generate    Generate to test/gen/
- *   bun tools/codegen/test/run-test.ts compare     Compare gen/ to baseline/
- *   bun tools/codegen/test/run-test.ts full        Run full test (generate + compare)
+ *   bun test/run-test.ts baseline    Capture baseline output
+ *   bun test/run-test.ts generate    Generate to test/gen/
+ *   bun test/run-test.ts compare     Compare gen/ to baseline/
+ *   bun test/run-test.ts full        Run full test (generate + compare)
  */
 
 import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
-import { resolve, join, relative } from 'node:path';
-const ROOT = resolve(import.meta.dir, '../../..');
+import { dirname, resolve, join, relative } from 'node:path';
+// run-test.ts lives in <root>/test/ — the script previously sat at
+// tools/codegen/test/ which is why a 3-level '../../..' was used. Computing
+// the parent of import.meta.dir is robust to the script being moved again.
+const ROOT = dirname(import.meta.dir);
 const CODEGEN_DIR = resolve(import.meta.dir, '..');
 const TEST_DIR = import.meta.dir;
 const FIXTURES_DIR = join(TEST_DIR, 'fixtures');
