@@ -29,6 +29,20 @@ export const EVENT_BUS = 'EVENT_BUS' as const;
 export const TYPED_EVENT_BUS = 'TYPED_EVENT_BUS' as const;
 
 /**
+ * Injection token for the resolved multi-tenancy flag.
+ *
+ * Provided by `EventsModule.forRoot(...)` as `options.multiTenant ?? false`.
+ * Consumed by `TypedEventBus` to enforce the tenantId-is-required rule at
+ * publish time.
+ *
+ * String constant (not Symbol) so it matches by value across import
+ * boundaries — same convention as the other events tokens. (The jobs
+ * subsystem uses Symbols for the analogous token; events chose strings
+ * from the start and we keep the file internally consistent.)
+ */
+export const EVENTS_MULTI_TENANT = 'EVENTS_MULTI_TENANT' as const;
+
+/**
  * Injection token for the Redis connection URL used by RedisEventBus.
  * Provided automatically by EventsModule.forRoot({ backend: 'redis' }).
  */

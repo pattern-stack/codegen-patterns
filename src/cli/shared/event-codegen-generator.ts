@@ -455,7 +455,8 @@ export function buildRegistryContent(events: EventDefinition[]): string {
  */
 const BUS_BODY = `import { Injectable, Inject } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { EVENT_BUS } from '../events.tokens';
+import { EVENT_BUS, EVENTS_MULTI_TENANT } from '../events.tokens';
+import { MissingTenantIdError } from '../events-errors';
 import type { IEventBus, DrizzleTransaction } from '../event-bus.protocol';
 import { eventPayloadSchemas } from './schemas';
 import { getEventMetadata } from './registry';
@@ -472,10 +473,20 @@ import type { EventTypeName, EventOfType, PayloadOfType } from './types';
  * Validation gating (EVT-Q5): \`CODEGEN_EVENT_VALIDATE\` env flag, default on.
  * Uses \`safeParse\` + \`console.warn\` — never throws, so a bad publish does
  * not crash a hot path.
+ *
+ * Multi-tenancy (EVT-6): when the EventsModule is configured with
+ * \`multiTenant: true\`, every publish must supply \`opts.metadata.tenantId\`
+ * — otherwise \`publish()\` throws \`MissingTenantIdError\`. When \`multiTenant\`
+ * is \`false\` (default), no tenantId is required. If a tenantId IS supplied,
+ * it is preserved on \`event.metadata\` and the Drizzle backend writes it to
+ * \`domain_events.tenant_id\` (EVT-4).
  */
 @Injectable()
 export class TypedEventBus {
-\tconstructor(@Inject(EVENT_BUS) private readonly bus: IEventBus) {}
+\tconstructor(
+\t\t@Inject(EVENT_BUS) private readonly bus: IEventBus,
+\t\t@Inject(EVENTS_MULTI_TENANT) private readonly multiTenant: boolean,
+\t) {}
 
 \tasync publish<T extends EventTypeName>(
 \t\ttype: T,
@@ -496,6 +507,11 @@ export class TypedEventBus {
 \t\t\t\t\tcheck.error.issues,
 \t\t\t\t);
 \t\t\t}
+\t\t}
+
+\t\tconst tenantId = opts?.metadata?.['tenantId'];
+\t\tif (this.multiTenant && (tenantId === undefined || tenantId === null)) {
+\t\t\tthrow new MissingTenantIdError(type as string);
 \t\t}
 
 \t\tconst aggregateType =
