@@ -155,10 +155,6 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
     if (backend !== 'memory' && orphaned.length > 0) {
       throw new BootValidationError(orphaned);
     }
-    if (backend !== 'memory' && orphaned.length === 0) {
-      // No-op — kept as a single explicit branch for symmetry with the
-      // failure path so the validator's responsibility is unambiguous.
-    }
 
     // (6) Resolve active pool list and spawn one worker per pool.
     const activePools =
