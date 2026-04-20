@@ -1,10 +1,15 @@
-export type { IJobQueue, JobOptions } from './job-queue.protocol';
-export { JOB_QUEUE } from './jobs.tokens';
-export { JobsModule } from './jobs.module';
-export type { JobsModuleOptions } from './jobs.module';
-export { jobQueue } from './job-queue.schema';
-export type { JobRow, JobStatus } from './job-queue.schema';
-export { DrizzleJobQueue } from './job-queue.drizzle-backend';
-export { MemoryJobQueue } from './job-queue.memory-backend';
-export { RedisJobQueue } from './job-queue.redis-backend';
-export { BullMQJobQueue } from './job-queue.bullmq-backend';
+export { jobs, jobRuns, jobSteps } from './job-orchestration.schema';
+export type { JobDefinitionRow, JobRunRow, JobStepRow } from './job-orchestration.schema';
+export {
+  jobRunStatusEnum,
+  jobStepKindEnum,
+  jobStepStatusEnum,
+  collisionModeEnum,
+  replayFromEnum,
+  parentClosePolicyEnum,
+  waitKindEnum,
+  triggerSourceEnum,
+} from './job-orchestration.schema';
+
+// Subsequent issues add: protocols (JOB-2), backends (JOB-3, JOB-4),
+// modules (JOB-5). All net-new — nothing from the old executor layer survives.
