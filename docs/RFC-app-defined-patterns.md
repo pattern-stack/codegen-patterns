@@ -63,12 +63,14 @@ Behaviors are column + hook adders. They can't contribute method signatures that
 
 A **Pattern** is:
 
-1. A **base class pair** (repository + service; or entity + repo + service for table-owning patterns) that consumers extend via normal TypeScript inheritance.
-2. A **declarative config surface** — a YAML block or an inner-class config — that parameterizes what the pattern contributes.
-3. A **set of codegen hooks** that let the generator wire the inheritance, propagate column additions, and route method calls without the consumer writing glue.
-4. **Composable** via multi-inherit or explicit `extends: [PatternA, PatternB]`. Orthogonal patterns combine without conflict (e.g. `EventPattern + SyncedPattern + EavPattern`).
+1. A **domain-layer contract** — table columns + repository methods + service methods — that the pattern declares and codegen projects downstream. Patterns own the domain layer (entity + repo + service); controllers, DTOs, and frontend collections are derived from that contract, not owned by it. A pattern may omit part of the trio (a service-only `AuditablePattern` has no table), but it declares the contract explicitly rather than opting into layer slots.
+2. A **declarative config surface** — a YAML block front-door backed by a Zod schema on `definePattern()` as the typed contract.
+3. A **set of codegen hooks** that wire the inheritance, propagate column additions, and route method calls without the consumer writing glue.
+4. **Composable** via explicit `extends: [PatternA, PatternB]`. Orthogonal patterns combine without conflict (e.g. `EventPattern + SyncedPattern + EavPattern`).
 
 Patterns may be **library-shipped** (the initial set below) or **app-defined** (the key DX move).
+
+**Per-entity metadata hand-off.** A pattern's base class often needs entity-specific metadata at runtime (e.g. `CrmEntityRepository` needs to know `opportunities`'s conflict-target columns and updatable column list). Codegen emits the concrete repo's constructor to pass that metadata into `super()` as a `patternConfig` argument. The base class receives it typed, carries it on `this`, and uses it generically. This keeps DI idiomatic, keeps types end-to-end, and avoids static-property or reflect-metadata ceremony.
 
 ### Library-shipped Patterns (initial set)
 
@@ -84,7 +86,7 @@ Port from Pattern Stack, adapted for NestJS + Drizzle:
 | `RelationalPattern` | `entity_a_type/id`, `entity_b_type/id`, `relationship_type` | Pattern Stack `RelationalPattern` |
 | `SyncedPattern` | `external_id`, `provider`, `provider_metadata`, `syncUpsert`, `findByExternalId` | Today's `synced` family |
 
-The current `synced` / `activity` / `knowledge` / `metadata` families become Patterns (with backward-compat aliases). Families as a distinct concept fold into Patterns.
+The current `synced` / `activity` / `knowledge` / `metadata` families fold directly into Patterns — no backward-compat aliases. Per the repo's "no backwards compatibility until we have users" principle (CLAUDE.md), the old `family:` key is deleted in the same change that introduces `patterns:`.
 
 ### App-defined Patterns (the key move)
 
@@ -189,9 +191,9 @@ That's legible to a developer and tractable for an agent. Families-as-today aren
 
 **Phase 1 — Library port (codegen-patterns):**
 1. Introduce `definePattern()` primitive + Pattern registry.
-2. Port `synced` family to `SyncedPattern` with backward-compat alias.
+2. Port `synced` family to `SyncedPattern`; delete the `family:` key outright (no alias).
 3. Port `EventPattern`, `ActorPattern` from Pattern Stack semantics (state machine + identity).
-4. YAML schema: add `pattern:` and `patterns:` + `config:` keys. `family:` becomes a deprecated alias.
+4. YAML schema: add `patterns:` + `config:` keys. `family:` is removed.
 5. Codegen scans `<consumer>/src/patterns/*.pattern.ts` and merges app-defined Patterns into the registry.
 
 **Phase 2 — First consumer (dealbrain-v2):**
@@ -206,14 +208,35 @@ That's legible to a developer and tractable for an agent. Families-as-today aren
 
 ---
 
-## Open Questions
+## Resolved Decisions
 
-1. **Pattern discovery mechanics.** Scan `src/patterns/` at codegen time, or register via a manifest (`codegen.config.yaml: patterns: [./src/patterns/crm-entity.pattern.ts]`)? Scanning is zero-config; manifest is explicit.
-2. **Config surface: YAML block vs inner class.** Pattern Stack uses `class Pattern:` inner config (Python's idiom). TS could mirror with a static property or a separate `config:` YAML block. The YAML block keeps the declarative surface unified; inner class keeps types co-located. Likely both, with YAML as the front door and TS as the typed contract.
-3. **Repository vs Service vs Entity ownership.** Some patterns own all three (`CrmEntityPattern` contributes to entity, repo, service). Some own only repo+service (`EventPattern` adds a `state` column but needs the entity table). Some are service-only (hypothetical `AuditablePattern`). The `definePattern()` API should make this explicit.
-4. **Generated vs hand-written split.** App-defined Patterns are hand-written TS. Entities using them are still codegen'd. Where's the boundary when the Pattern's base class needs entity-specific config (e.g. `CrmEntityRepository` needs to know `opportunities.userId` + `opportunities.externalId` as conflict target)? Likely: the generated concrete repo declares the metadata; the Pattern base uses it generically.
-5. **Backward compat.** How aggressive should family → Pattern migration be? Soft alias for two minor versions, then deprecate?
-6. **Pattern Stack parity.** Do we port the full semantics (change tracking, event emission, reference numbers via DB sequences) or a TS-idiomatic subset? Start with subset; expand on demand.
+_Decisions made 2026-04-19 based on dealbrain-v2 evidence and the operating principles in CLAUDE.md._
+
+1. **Pattern discovery — scan, not manifest.** Codegen scans `src/patterns/*.pattern.ts` at generation time. Zero-config matches how entities and subsystems already work; a manifest surface is over-engineering for a directory of `*.pattern.ts` files.
+2. **Config surface — YAML front door + Zod typed contract.** The YAML `config:` block is the authoring surface; the Zod schema on `definePattern({ config })` is the validated typed contract. No inner-class config.
+3. **Layer ownership — domain-layer contract, downstream is derivation.** Patterns own the entity + repository + service trio (may omit parts). Controllers, DTOs, and frontend collections are projected downstream by codegen from that contract, not owned by the pattern. See "Pattern, defined" above for the explicit contract shape.
+4. **Metadata hand-off — constructor injection.** Codegen emits the concrete repo's constructor passing `patternConfig` into `super()`. Typed, DI-idiomatic, no static property or reflect-metadata. See "Pattern, defined" above.
+5. **Family migration — clean cut, no aliases.** Per CLAUDE.md "no backwards compatibility until users" — the `family:` key is deleted in the same change that introduces `patterns:`. No deprecation window.
+6. **Pattern Stack parity — TS-idiomatic subset, expand on demand.** Start with the semantic core (state machine for `EventPattern`, identity fields for `ActorPattern`, etc.); defer DB-sequence reference numbers, full change tracking, and Python-idiom features until a consumer needs them.
+
+---
+
+## Open Questions (for the implementation ADR)
+
+1. **Minimum viable domain-layer contract shape.** What exactly does `definePattern()` accept for the entity/repo/service contributions? Some candidate shape:
+   ```ts
+   definePattern({
+     name: 'CrmEntity',
+     extends: ['Synced'],
+     columns?: ColumnsContribution,       // additive columns on the entity table
+     repository?: RepoContribution,       // base class + method signatures it adds
+     service?: ServiceContribution,       // base class + method signatures it adds
+     behaviors?: BehaviorName[],          // behaviors the pattern requires
+     config: ZodSchema,                   // per-use config validated at codegen time
+   });
+   ```
+   At least one of `columns` / `repository` / `service` must be present. The ADR should lock the exact shapes and the composition rules (two patterns contributing the same column name is a generation error; same method name is a TS mixin conflict and the app resolves it).
+2. **`patternConfig` shape per pattern.** What metadata does each library-shipped pattern need at runtime, and how does codegen infer it from the entity YAML? For `CrmEntityPattern`: conflict target columns, updatable column list, `external_id` column name. Some of this is derivable from entity YAML; some may need explicit declaration in the `config:` block. The ADR should enumerate the fields for each library-shipped pattern to verify the constructor-injection contract actually carries the necessary info.
 
 ---
 
