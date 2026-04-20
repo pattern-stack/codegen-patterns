@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, gt, inArray, isNotNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, ne, notInArray, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
 import {
@@ -20,7 +20,9 @@ import {
 import type {
   CancelOptions,
   IJobOrchestrator,
+  JobPoolDef,
   JobRun,
+  JobUpsertEntry,
   StartOptions,
 } from './job-orchestrator.protocol';
 import {
@@ -340,6 +342,131 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
     });
 
     return result as JobRun;
+  }
+
+  // ==========================================================================
+  // upsertJobRows — boot-time materialisation of `job` definitions
+  // ==========================================================================
+
+  /**
+   * Hash-gated `INSERT … ON CONFLICT (type) DO UPDATE … WHERE` per Q3
+   * resolution (2026-04-19): the `UPDATE` branch executes only when one
+   * of the persisted metadata fields differs from the incoming payload;
+   * `version` bumps only on real change; concurrent boots with identical
+   * content are idempotent no-ops.
+   *
+   * Why this shape (not `DO NOTHING`, not advisory locks):
+   *   - `DO NOTHING` would let an old-version instance leave a stale row
+   *     that a new-version instance can't overwrite during a rolling deploy.
+   *   - Advisory locks add latency and leak risk under crashes.
+   *   - The `WHERE … IS DISTINCT FROM …` clause makes the conditional
+   *     atomic — no read-modify-write race on `version` between concurrent
+   *     boots.
+   *
+   * Orphan detection: a single `SELECT type FROM job WHERE type NOT IN (...)`
+   * returns the types present in DB but absent from `entries`. Caller (boot
+   * validator) decides whether to throw `BootValidationError`.
+   */
+  async upsertJobRows(
+    entries: JobUpsertEntry[],
+    poolConfig: ReadonlyMap<string, JobPoolDef>,
+  ): Promise<{ orphaned: string[] }> {
+    void poolConfig; // pool validation is the module's responsibility; orchestrator just persists
+
+    for (const entry of entries) {
+      const meta = entry.meta;
+      const pool = meta.pool ?? 'batch';
+      const retryPolicy = meta.retry ?? {
+        attempts: 1,
+        backoff: 'fixed' as const,
+        baseMs: 0,
+      };
+      const concurrencyKeyTemplate =
+        (meta.concurrency as { key?: unknown } | undefined)?.key;
+      const concurrencyKeyTemplateStr =
+        typeof concurrencyKeyTemplate === 'string' ? concurrencyKeyTemplate : null;
+      const collisionMode =
+        (meta.concurrency?.collisionMode as JobDefinitionRow['collisionMode']) ??
+        'queue';
+      const dedupeKeyTemplate =
+        (meta.dedupe as { key?: unknown } | undefined)?.key;
+      const dedupeKeyTemplateStr =
+        typeof dedupeKeyTemplate === 'string' ? dedupeKeyTemplate : null;
+      const dedupeWindowMs = meta.dedupe?.windowMs ?? null;
+      const timeoutMs = meta.timeoutMs ?? null;
+      const replayFrom = meta.replayFrom ?? 'last_checkpoint';
+      const scopeEntityType = meta.scope?.entity ?? null;
+      // Q3 resolution: priority_default and replay_from are part of the
+      // hashed metadata even though they aren't currently set via decorator
+      // metadata above (priority_default has no `@JobHandler` field yet).
+      // Default to 0 to keep UPDATE branch quiet across deploys.
+      const priorityDefault = 0;
+
+      // Hash-gated upsert: every metadata column appears in the WHERE clause
+      // so the UPDATE branch only fires on a real change. `version` bumps
+      // exactly when the WHERE matches.
+      await this.db
+        .insert(jobs)
+        .values({
+          type: entry.type,
+          version: 1,
+          pool,
+          scopeEntityType,
+          retryPolicy,
+          timeoutMs,
+          concurrencyKeyTemplate: concurrencyKeyTemplateStr,
+          collisionMode,
+          dedupeKeyTemplate: dedupeKeyTemplateStr,
+          dedupeWindowMs,
+          priorityDefault,
+          replayFrom,
+        })
+        .onConflictDoUpdate({
+          target: jobs.type,
+          set: {
+            pool: sql`EXCLUDED.pool`,
+            scopeEntityType: sql`EXCLUDED.scope_entity_type`,
+            retryPolicy: sql`EXCLUDED.retry_policy`,
+            timeoutMs: sql`EXCLUDED.timeout_ms`,
+            concurrencyKeyTemplate: sql`EXCLUDED.concurrency_key_template`,
+            collisionMode: sql`EXCLUDED.collision_mode`,
+            dedupeKeyTemplate: sql`EXCLUDED.dedupe_key_template`,
+            dedupeWindowMs: sql`EXCLUDED.dedupe_window_ms`,
+            priorityDefault: sql`EXCLUDED.priority_default`,
+            replayFrom: sql`EXCLUDED.replay_from`,
+            version: sql`${jobs.version} + 1`,
+            updatedAt: sql`now()`,
+          },
+          // The hash gate: every field listed in the Q3 resolution appears
+          // here. `IS DISTINCT FROM` is the null-safe inequality operator;
+          // jsonb cast to text gives stable comparison without invoking a
+          // dedicated hash column (avoids a JOB-1 schema migration).
+          setWhere: sql`
+            ${jobs.pool} IS DISTINCT FROM EXCLUDED.pool OR
+            ${jobs.retryPolicy}::text IS DISTINCT FROM EXCLUDED.retry_policy::text OR
+            ${jobs.timeoutMs} IS DISTINCT FROM EXCLUDED.timeout_ms OR
+            ${jobs.concurrencyKeyTemplate} IS DISTINCT FROM EXCLUDED.concurrency_key_template OR
+            ${jobs.collisionMode} IS DISTINCT FROM EXCLUDED.collision_mode OR
+            ${jobs.dedupeKeyTemplate} IS DISTINCT FROM EXCLUDED.dedupe_key_template OR
+            ${jobs.dedupeWindowMs} IS DISTINCT FROM EXCLUDED.dedupe_window_ms OR
+            ${jobs.priorityDefault} IS DISTINCT FROM EXCLUDED.priority_default OR
+            ${jobs.replayFrom} IS DISTINCT FROM EXCLUDED.replay_from OR
+            ${jobs.scopeEntityType} IS DISTINCT FROM EXCLUDED.scope_entity_type
+          `,
+        });
+    }
+
+    // Orphan detection: any `job` row whose type is not in the registry.
+    const types = entries.map((e) => e.type);
+    const orphans =
+      types.length === 0
+        ? await this.db.select({ type: jobs.type }).from(jobs)
+        : await this.db
+            .select({ type: jobs.type })
+            .from(jobs)
+            .where(notInArray(jobs.type, types));
+
+    return { orphaned: orphans.map((o) => o.type) };
   }
 }
 

@@ -171,3 +171,36 @@ export function JobHandler<TInput>(
     });
   };
 }
+
+// ─── HandlerRegistry — read helpers consumed by JobWorkerModule (JOB-5) ─────
+
+/**
+ * Single entry shape returned by `HandlerRegistry.getAll()` / `.get()` and
+ * exposed to `JobWorkerModule.onModuleInit` for boot-time upserts.
+ *
+ * Structurally compatible with `IJobOrchestrator.upsertJobRows`'s
+ * `JobUpsertEntry` so the worker module can pass entries through verbatim
+ * without re-mapping.
+ */
+export interface HandlerRegistryEntry {
+  type: string;
+  meta: JobHandlerMeta<unknown>;
+  handlerClass: new (...args: unknown[]) => JobHandlerBase<unknown>;
+}
+
+/**
+ * Read facade over `JOB_HANDLER_REGISTRY`. The decorator's write path is
+ * unchanged; this namespace exists so consumers (the worker module, tests)
+ * don't import the raw `Map` and accidentally mutate it.
+ */
+export namespace HandlerRegistry {
+  /** All registered entries in insertion order. */
+  export function getAll(): HandlerRegistryEntry[] {
+    return Array.from(JOB_HANDLER_REGISTRY.values());
+  }
+
+  /** Lookup by job type, or `undefined` if no `@JobHandler` is registered. */
+  export function get(type: string): HandlerRegistryEntry | undefined {
+    return JOB_HANDLER_REGISTRY.get(type);
+  }
+}
