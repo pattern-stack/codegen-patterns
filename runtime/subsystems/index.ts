@@ -9,10 +9,19 @@ export { EVENT_BUS } from './events';
 export type { DomainEvent, IEventBus } from './events';
 export { EventsModule, DrizzleEventBus, MemoryEventBus } from './events';
 
-// Jobs
-export { JOB_QUEUE } from './jobs';
-export type { IJobQueue, JobOptions } from './jobs';
-export { JobsModule, DrizzleJobQueue, MemoryJobQueue } from './jobs';
+// Jobs — orchestration schema only (JOB-1). Protocols / modules land in JOB-2 / JOB-5.
+export { jobs, jobRuns, jobSteps } from './jobs';
+export type { JobDefinitionRow, JobRunRow, JobStepRow } from './jobs';
+export {
+  jobRunStatusEnum,
+  jobStepKindEnum,
+  jobStepStatusEnum,
+  collisionModeEnum,
+  replayFromEnum,
+  parentClosePolicyEnum,
+  waitKindEnum,
+  triggerSourceEnum,
+} from './jobs';
 
 // Cache
 export { CACHE } from './cache';
