@@ -140,6 +140,51 @@ function runCodegen() {
     { cwd: CODEGEN_DIR, stdio: 'pipe' },
   );
 
+  // JOB-6: render both variants of `job-orchestration.schema.ejs.t` so the
+  // baseline captures the scaffold-time `jobs.multi_tenant` conditional in
+  // action. Single-tenant must have zero `tenant_id` references; multi-tenant
+  // must include the column + its JOB-8 guidance comment. The fixtures land
+  // under `runtime/subsystems/jobs/generated/` (already in OUTPUT_PATHS).
+  //
+  // The non-schema templates are muted by pointing their injection targets
+  // at a throwaway sandbox and pre-creating a `worker.ts` there so the
+  // `unless_exists: true` guard fires.
+  const sandbox = join(ROOT, 'test/.jobs-baseline-sandbox');
+  mkdirSync(join(sandbox, 'src'), { recursive: true });
+  writeFileSync(join(sandbox, 'worker.ts'), '// placeholder — keeps Hygen unless_exists satisfied\n');
+  // main.ts and codegen.config.yaml are intentionally absent so the inject
+  // templates print "Cannot inject" and exit non-zero? They don't: Hygen
+  // logs the warning and continues. We verify this in the walkthrough.
+  const variantOutputs = [
+    {
+      label: 'single-tenant',
+      multiTenant: 'false',
+      out: join(ROOT, 'runtime/subsystems/jobs/generated/job-orchestration.schema.single-tenant.ts'),
+    },
+    {
+      label: 'multi-tenant',
+      multiTenant: 'true',
+      out: join(ROOT, 'runtime/subsystems/jobs/generated/job-orchestration.schema.multi-tenant.ts'),
+    },
+  ];
+  for (const v of variantOutputs) {
+    console.log(`   Generating: job-orchestration.schema (${v.label})`);
+    execSync(
+      `HYGEN_TMPLS="${templatesDir}" bunx hygen subsystem jobs ` +
+        `--appName baseline ` +
+        `--workerMode embedded ` +
+        `--multiTenant ${v.multiTenant} ` +
+        `--mainTsPath "${join(sandbox, 'src/main.ts')}" ` +
+        `--configPath "${join(sandbox, 'codegen.config.yaml')}" ` +
+        `--workerExists true ` +
+        `--workerPath "${join(sandbox, 'worker.ts')}" ` +
+        `--schemaPath "${v.out}"`,
+      { cwd: ROOT, stdio: 'pipe' },
+    );
+  }
+  // Clean up sandbox — baseline only cares about the two schema files.
+  rmSync(sandbox, { recursive: true, force: true });
+
   // Run biome to format generated files (to match baseline formatting)
   console.log('🎨 Running biome format...');
   try {

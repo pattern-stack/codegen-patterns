@@ -15,6 +15,11 @@ import type { CommandClass } from 'clipanion';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { checkGitSafety } from '../shared/git-safety.js';
+import { invokeHygen } from '../shared/hygen.js';
+import {
+	localsToHygenArgs,
+	resolveJobsScaffoldLocals,
+} from '../shared/jobs-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
 import {
 	SUBSYSTEMS,
@@ -148,8 +153,23 @@ function isValidBackend(
 	return (desc.backends as string[]).includes(backend);
 }
 
-function backendFileFilter(backend: SubsystemBackend): (file: string) => boolean {
+function backendFileFilter(
+	backend: SubsystemBackend,
+	subsystemName: SubsystemName,
+): (file: string) => boolean {
 	return (file: string) => {
+		// JOB-6 (Q1 2026-04-19): the Hygen template
+		// `templates/subsystem/jobs/job-orchestration.schema.ejs.t` is the sole
+		// emitter for the jobs schema in consumer projects — it gates the
+		// `tenantId` column on `jobs.multi_tenant`. Skipping here ensures
+		// `copyRuntime` never writes the always-tenant runtime source file.
+		if (
+			subsystemName === 'jobs' &&
+			file === 'job-orchestration.schema.ts'
+		) {
+			return false;
+		}
+
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;
 			if (file.endsWith('.schema.ts')) return false;
@@ -253,12 +273,25 @@ export class SubsystemInstallCommand extends Command {
 		const result = await copyRuntime({
 			sourceDir: source,
 			targetDir: subsystemTarget,
-			filter: backendFileFilter(backend),
+			filter: backendFileFilter(backend, desc.name),
 			resolveDeps: true,
 			runtimeRoot: runtimeRoot(),
 			depsTargetRoot: path.resolve(targetRoot, '..'),
 			dryRun: this.dryRun,
 		});
+
+		// JOB-6: after copyRuntime for the jobs subsystem, scaffold the
+		// operational glue (worker.ts, main.ts hook, codegen.config.yaml jobs
+		// block, and the tenancy-aware schema). Dry-run reports planned Hygen
+		// outputs; failure warns but does not fail the install (runtime files
+		// are already written).
+		const jobsScaffold =
+			desc.name === 'jobs'
+				? runJobsScaffold(ctx.cwd, ctx.config, {
+						dryRun: this.dryRun,
+						json: isJsonMode(),
+					})
+				: null;
 
 		if (isJsonMode()) {
 			printJson({
@@ -274,6 +307,7 @@ export class SubsystemInstallCommand extends Command {
 					planned: result.planned,
 					dependencies: result.dependenciesCopied,
 				},
+				...(jobsScaffold ? { scaffold: jobsScaffold } : {}),
 			});
 			return 0;
 		}
@@ -282,6 +316,14 @@ export class SubsystemInstallCommand extends Command {
 			printInfo(`Dry run — ${result.planned.length} files would be written`);
 			for (const p of result.planned) {
 				console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+			}
+			if (jobsScaffold?.planned?.length) {
+				printInfo(
+					`Jobs scaffold — ${jobsScaffold.planned.length} template targets`,
+				);
+				for (const p of jobsScaffold.planned) {
+					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+				}
 			}
 			return 0;
 		}
@@ -293,12 +335,77 @@ export class SubsystemInstallCommand extends Command {
 		if (result.dependenciesCopied.length > 0) {
 			printInfo(`${result.dependenciesCopied.length} runtime dependencies copied`);
 		}
+		if (jobsScaffold) {
+			if (jobsScaffold.ok) {
+				printSuccess(
+					`jobs scaffold applied (worker.ts, main.ts hook, config block, schema)`,
+				);
+			} else {
+				printWarning(
+					`jobs scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${jobsScaffold.error ?? 'unknown error'}`,
+				);
+			}
+		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
 		printInfo(
 			`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
 		);
 		return 0;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// JOB-6 — jobs subsystem Hygen scaffold wiring
+// ---------------------------------------------------------------------------
+
+interface JobsScaffoldOutcome {
+	ok: boolean;
+	planned: string[];
+	error?: string;
+}
+
+function runJobsScaffold(
+	cwd: string,
+	config: Context['config'],
+	opts: { dryRun: boolean; json: boolean },
+): JobsScaffoldOutcome {
+	const locals = resolveJobsScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+	});
+
+	// Files the four jobs templates will target (used by --dry-run output and
+	// JSON reporting). Ordering matches the template set.
+	const planned: string[] = [
+		...(!locals.workerExists ? [locals.workerPath] : []),
+		locals.mainTsPath,
+		locals.configPath,
+		locals.schemaPath,
+	];
+
+	if (opts.dryRun) {
+		return { ok: true, planned };
+	}
+
+	const result = invokeHygen({
+		generator: 'subsystem',
+		action: 'jobs',
+		cwd,
+		args: localsToHygenArgs(locals),
+		// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
+		inherit: !opts.json,
+	});
+
+	if (!result.ok) {
+		return {
+			ok: false,
+			planned,
+			error: result.stderr?.trim() || 'hygen exited non-zero',
+		};
+	}
+
+	return { ok: true, planned };
 }
 
 function capitalize(s: string): string {
