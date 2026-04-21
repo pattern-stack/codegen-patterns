@@ -6,10 +6,11 @@
  *   - SYNC-1 — Drizzle audit-table schemas (#148)
  *   - SYNC-3 — MemoryCursorStore (#149)
  *   - SYNC-5 — ExecuteSyncUseCase + DeepEqualDiffer + recorder/loopback protocols (#150)
- *   - SYNC-4 — Drizzle backends (PostgresCursorStore + DrizzleSyncRunRecorder) (this slice)
+ *   - SYNC-4 — Drizzle backends (#151)
+ *   - SYNC-6 — SyncModule + MemoryRunRecorder + multi-tenancy opt-in (this slice)
  *
- * Module (SYNC-6), scaffold templates (SYNC-7), and docs/skills (SYNC-8)
- * land in their own PRs. See epic #60.
+ * Scaffold templates (SYNC-7) and docs/skills (SYNC-8) land in their own
+ * PRs. See epic #60.
  */
 
 // Protocols
@@ -51,8 +52,8 @@ export {
   SYNC_SINK,
 } from './sync.tokens';
 
-// Errors
-export { MissingTenantIdError } from './sync-errors';
+// Errors + shared guards
+export { MissingTenantIdError, assertTenantId } from './sync-errors';
 
 // Audit schemas (SYNC-1) — Drizzle pgTable declarations + row types + enums
 export {
@@ -71,8 +72,12 @@ export type {
   SyncRunItemRow,
 } from './sync-audit.schema';
 
-// Memory backends (SYNC-3) — test doubles
+// Memory backends (SYNC-3, SYNC-6) — test doubles
 export { MemoryCursorStore } from './sync-cursor-store.memory-backend';
+export {
+  MemoryRunRecorder,
+  type MemoryRunRecord,
+} from './sync-run-recorder.memory-backend';
 
 // Runtime (SYNC-5) — orchestrator + default differ
 export {
@@ -88,3 +93,6 @@ export {
 // Drizzle backends (SYNC-4)
 export { PostgresCursorStore } from './sync-cursor-store.drizzle-backend';
 export { DrizzleSyncRunRecorder } from './sync-run-recorder.drizzle-backend';
+
+// Module (SYNC-6)
+export { SyncModule, type SyncModuleOptions } from './sync.module';
