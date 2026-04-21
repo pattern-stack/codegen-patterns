@@ -4,10 +4,11 @@
  * Slices landed so far:
  *   - SYNC-2 — protocols + DI tokens (#134)
  *   - SYNC-1 — Drizzle audit-table schemas (#148)
- *   - SYNC-3 — MemoryCursorStore (this slice)
+ *   - SYNC-3 — MemoryCursorStore (#149)
+ *   - SYNC-5 — ExecuteSyncUseCase + DeepEqualDiffer (this slice)
  *
- * Drizzle backend (SYNC-4), orchestrator (SYNC-5), and module (SYNC-6) land
- * in their own PRs. See epic #60 for the full plan.
+ * Drizzle backend (SYNC-4), module (SYNC-6), scaffold templates (SYNC-7),
+ * and docs/skills (SYNC-8) land in their own PRs. See epic #60.
  */
 
 // Protocols
@@ -29,14 +30,23 @@ export {
   FieldDiffValueSchema,
 } from './sync-field-diff.protocol';
 export type { ISyncSink } from './sync-sink.protocol';
+export type {
+  CompleteRunInput,
+  ISyncRunRecorder,
+  RecordItemInput,
+  StartRunInput,
+} from './sync-run-recorder.protocol';
+export type { ILoopbackFingerprintStore } from './sync-loopback.protocol';
 
 // Tokens
 export {
   SYNC_CHANGE_SOURCE,
   SYNC_CURSOR_STORE,
   SYNC_FIELD_DIFFER,
+  SYNC_LOOPBACK_FINGERPRINT_STORE,
   SYNC_MODULE_OPTIONS,
   SYNC_MULTI_TENANT,
+  SYNC_RUN_RECORDER,
   SYNC_SINK,
 } from './sync.tokens';
 
@@ -59,3 +69,14 @@ export type {
 
 // Memory backends (SYNC-3) — test doubles
 export { MemoryCursorStore } from './sync-cursor-store.memory-backend';
+
+// Runtime (SYNC-5) — orchestrator + default differ
+export {
+  DeepEqualDiffer,
+  type DeepEqualDifferOptions,
+} from './deep-equal.differ';
+export {
+  ExecuteSyncUseCase,
+  type ExecuteSyncInput,
+  type ExecuteSyncResult,
+} from './execute-sync.use-case';
