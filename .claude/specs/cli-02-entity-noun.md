@@ -82,7 +82,7 @@ Generate a single entity from a YAML definition.
 - `--dry-run` — boolean. Plan what would be written, do not write.
 - `--force` — boolean. Skip git-safety check for uncommitted changes.
 - `--only <target>` — `backend | frontend | clean-lite-ps`. Generate a subset.
-- `--continue-on-error` — boolean. Used with `--all`. Report failures and continue.
+- `--continue-on-error` — boolean (default: `true`, since #120). Used with `--all`. Report failures and continue. Pass `--no-continue-on-error` (Clipanion auto-negation) to make the first failure fatal.
 
 **Behavior:**
 
