@@ -3,10 +3,11 @@
  *
  * Slices landed so far:
  *   - SYNC-2 — protocols + DI tokens (#134)
- *   - SYNC-1 — Drizzle audit-table schemas (this slice)
+ *   - SYNC-1 — Drizzle audit-table schemas (#148)
+ *   - SYNC-3 — MemoryCursorStore (this slice)
  *
- * Backends (SYNC-3/4), orchestrator (SYNC-5), and module (SYNC-6) land in
- * their own PRs. See epic #60 for the full plan.
+ * Drizzle backend (SYNC-4), orchestrator (SYNC-5), and module (SYNC-6) land
+ * in their own PRs. See epic #60 for the full plan.
  */
 
 // Protocols
@@ -55,3 +56,6 @@ export type {
   SyncRunRow,
   SyncRunItemRow,
 } from './sync-audit.schema';
+
+// Memory backends (SYNC-3) — test doubles
+export { MemoryCursorStore } from './sync-cursor-store.memory-backend';
