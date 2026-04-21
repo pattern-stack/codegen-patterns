@@ -22,7 +22,9 @@ export interface SerializedEntity {
   name: string;
   plural: string;
   table: string;
-  family?: string;
+  pattern?: string;
+  patterns?: string[];
+  patternConfig?: Record<string, unknown>;
   fields: Record<string, SerializedField>;
   relationships: Record<string, SerializedRelationship>;
   behaviors: string[];
@@ -124,7 +126,9 @@ export function serializeDomainGraph(graph: DomainGraph): SerializedDomainGraph 
       name: entity.name,
       plural: entity.plural,
       table: entity.table,
-      family: entity.family,
+      pattern: entity.pattern,
+      patterns: entity.patterns,
+      patternConfig: entity.patternConfig,
       fields: serializeFields(entity.fields),
       relationships: serializeRelationships(entity.relationships),
       behaviors: entity.behaviors,

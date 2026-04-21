@@ -230,7 +230,7 @@ function exampleEntityYaml(): string {
 #
 # entity:
 #   name: account
-#   family: synced        # base | synced | activity | metadata | knowledge
+#   pattern: Synced       # Base | Synced | Activity | Metadata | Knowledge (or app-defined)
 #
 # fields:
 #   name:

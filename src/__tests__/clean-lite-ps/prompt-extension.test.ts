@@ -18,7 +18,7 @@ const contactDefinition = {
     name: 'contact',
     plural: 'contacts',
     table: 'contacts',
-    family: 'synced',
+    pattern: 'Synced',
   },
   fields: {
     user_id: { type: 'uuid', required: true },
@@ -37,7 +37,7 @@ const contactDefinition = {
   behaviors: ['timestamps', 'soft_delete'],
 };
 
-// Entity without family key
+// Entity without pattern key
 const noFamilyDefinition = {
   entity: { name: 'task', plural: 'tasks', table: 'tasks' },
   fields: { title: { type: 'string', required: true } },
@@ -45,9 +45,9 @@ const noFamilyDefinition = {
   behaviors: [],
 };
 
-// Activity family entity
+// Activity pattern entity
 const activityDefinition = {
-  entity: { name: 'note', plural: 'notes', table: 'notes', family: 'activity' },
+  entity: { name: 'note', plural: 'notes', table: 'notes', pattern: 'Activity' },
   fields: { body: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['timestamps'],
@@ -81,7 +81,7 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.classNames.outputSchema).toBe('ContactOutputSchema');
   });
 
-  it('maps synced family to SyncedEntityRepository and SyncedEntityService', () => {
+  it('maps Synced pattern to SyncedEntityRepository and SyncedEntityService', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
 
     expect(locals.family).toBe('synced');
@@ -91,7 +91,7 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.serviceBaseImport).toBe('@shared/base-classes/synced-entity-service');
   });
 
-  it('maps activity family to ActivityEntityRepository and ActivityEntityService', () => {
+  it('maps Activity pattern to ActivityEntityRepository and ActivityEntityService', () => {
     const locals = buildCleanLitePsLocals(activityDefinition, EMPTY_BASE_LOCALS);
 
     expect(locals.family).toBe('activity');
@@ -101,7 +101,7 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.serviceBaseImport).toBe('@shared/base-classes/activity-entity-service');
   });
 
-  it('defaults to base family when family key is absent', () => {
+  it('defaults to base when pattern key is absent', () => {
     const locals = buildCleanLitePsLocals(noFamilyDefinition, EMPTY_BASE_LOCALS);
 
     expect(locals.family).toBe('base');
@@ -299,14 +299,14 @@ describe('buildCleanLitePsLocals', () => {
 
   it('produces collision-free class names for different entities sharing a query', () => {
     const accountDef = {
-      entity: { name: 'account', plural: 'accounts', table: 'accounts', family: 'synced' },
+      entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Synced' },
       fields: { domain: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
       queries: [{ by: ['domain'], unique: true }],
     };
     const opportunityDef = {
-      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', family: 'synced' },
+      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Synced' },
       fields: { domain: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],

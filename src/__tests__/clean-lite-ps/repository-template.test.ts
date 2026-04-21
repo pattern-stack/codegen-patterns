@@ -47,7 +47,7 @@ function renderRepository(locals: Record<string, unknown>): string {
 }
 
 const baseEntity = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', family: 'synced' },
+  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Synced' },
   fields: {
     email: { type: 'string', required: true },
   },

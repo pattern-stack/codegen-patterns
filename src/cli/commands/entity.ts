@@ -54,10 +54,29 @@ function listEntityYamls(dir: string): string[] {
 
 interface EntitySummaryRow {
 	name: string;
-	family: string;
+	pattern: string;
 	fields: number;
 	queries: number;
 	file: string;
+}
+
+/**
+ * Render an entity's pattern choice as a single display string for the
+ * summary/list tables. `pattern:` wins; `patterns:` joins with `+`; the
+ * library `Base` pattern is the fallback for entities that declare
+ * neither. Matches the user-facing labels the registry uses.
+ */
+function summarizePatternLabel(entity: {
+	pattern?: string;
+	patterns?: string[];
+}): string {
+	if (typeof entity.pattern === 'string' && entity.pattern.length > 0) {
+		return entity.pattern;
+	}
+	if (Array.isArray(entity.patterns) && entity.patterns.length > 0) {
+		return entity.patterns.join('+');
+	}
+	return 'Base';
 }
 
 function summarizeEntityFile(filePath: string): EntitySummaryRow | null {
@@ -66,7 +85,10 @@ function summarizeEntityFile(filePath: string): EntitySummaryRow | null {
 	const def = result.definition;
 	return {
 		name: def.entity.name,
-		family: (def.entity as { family?: string }).family ?? 'base',
+		pattern: summarizePatternLabel(def.entity as {
+			pattern?: string;
+			patterns?: string[];
+		}),
 		fields: Object.keys(def.fields ?? {}).length,
 		queries: Array.isArray(
 			(def as unknown as { queries?: unknown[] }).queries
@@ -100,24 +122,24 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 	const files = listEntityYamls(ctx.entitiesDir);
 	const rows = files.map(summarizeEntityFile).filter((r): r is EntitySummaryRow => r !== null);
 
-	const families = new Set(rows.map((r) => r.family));
+	const patterns = new Set(rows.map((r) => r.pattern));
 	const queryCount = rows.reduce((sum, r) => sum + r.queries, 0);
 
 	const nameCol = Math.max(4, ...rows.map((r) => r.name.length));
-	const famCol = Math.max(6, ...rows.map((r) => r.family.length));
+	const patCol = Math.max(7, ...rows.map((r) => r.pattern.length));
 
 	const body = rows.map((r) => {
 		const fields = `${r.fields} fields`.padEnd(10);
 		const queries = `${r.queries} queries`.padEnd(10);
 		return `${theme.system(icons.bullet)} ${padRight(r.name, nameCol)}  ${theme.muted(
-			padRight(r.family, famCol)
+			padRight(r.pattern, patCol)
 		)}  ${theme.muted(fields)} ${theme.muted(queries)}`;
 	});
 
 	return {
 		title: 'entities',
 		body,
-		footer: `${rows.length} entities · ${families.size} families · ${queryCount} queries`,
+		footer: `${rows.length} entities · ${patterns.size} patterns · ${queryCount} queries`,
 	};
 }
 
@@ -552,7 +574,7 @@ export class EntityListCommand extends Command {
 		description: 'List defined entities as a table',
 	});
 
-	family = Option.String('--family', { required: false });
+	pattern = Option.String('--pattern', { required: false });
 	format = Option.String('--format', 'plain');
 	json = Option.Boolean('--json', false);
 	cwd = Option.String('--cwd', { required: false });
@@ -576,7 +598,7 @@ export class EntityListCommand extends Command {
 		const rows = files
 			.map(summarizeEntityFile)
 			.filter((r): r is EntitySummaryRow => r !== null)
-			.filter((r) => (this.family ? r.family === this.family : true));
+			.filter((r) => (this.pattern ? r.pattern === this.pattern : true));
 
 		if (isJsonMode()) {
 			printJson({
@@ -587,14 +609,14 @@ export class EntityListCommand extends Command {
 		}
 
 		if (this.format === 'tree') {
-			const byFamily = new Map<string, EntitySummaryRow[]>();
+			const byPattern = new Map<string, EntitySummaryRow[]>();
 			for (const r of rows) {
-				const list = byFamily.get(r.family) ?? [];
+				const list = byPattern.get(r.pattern) ?? [];
 				list.push(r);
-				byFamily.set(r.family, list);
+				byPattern.set(r.pattern, list);
 			}
-			for (const [fam, list] of byFamily) {
-				console.log(theme.system(fam));
+			for (const [pat, list] of byPattern) {
+				console.log(theme.system(pat));
 				for (const r of list) {
 					console.log(`  ${theme.muted(icons.bullet)} ${r.name}  ${theme.muted(`${r.fields} fields`)}`);
 				}
@@ -604,15 +626,15 @@ export class EntityListCommand extends Command {
 
 		// plain
 		const nameW = Math.max(4, ...rows.map((r) => r.name.length));
-		const famW = Math.max(6, ...rows.map((r) => r.family.length));
+		const patW = Math.max(7, ...rows.map((r) => r.pattern.length));
 		console.log(
 			theme.muted(
-				`${padRight('NAME', nameW)}  ${padRight('FAMILY', famW)}  ${padRight('FIELDS', 8)} ${padRight('QUERIES', 8)}`
+				`${padRight('NAME', nameW)}  ${padRight('PATTERN', patW)}  ${padRight('FIELDS', 8)} ${padRight('QUERIES', 8)}`
 			)
 		);
 		for (const r of rows) {
 			console.log(
-				`${padRight(r.name, nameW)}  ${padRight(r.family, famW)}  ${padRight(String(r.fields), 8)} ${padRight(String(r.queries), 8)}`
+				`${padRight(r.name, nameW)}  ${padRight(r.pattern, patW)}  ${padRight(String(r.fields), 8)} ${padRight(String(r.queries), 8)}`
 			);
 		}
 		return 0;

@@ -1,7 +1,7 @@
 /**
  * Schema v2 validation tests
  *
- * Tests for SPEC-002: family, queries, sync, events blocks
+ * Tests for ADR-031 pattern, queries, sync, events blocks
  * and pipelines config schema.
  */
 
@@ -19,37 +19,69 @@ import { resolveBehaviors } from '../../behaviors/index';
 import { resolve } from 'path';
 
 // ============================================================================
-// Entity Family
+// Pattern surface (ADR-031 — supersedes family:)
 // ============================================================================
 
-describe('family enum', () => {
+describe('pattern / patterns / config', () => {
 	const base = {
 		entity: { name: 'test', plural: 'tests', table: 'tests' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
-	it('accepts all four family values', () => {
-		for (const family of ['synced', 'activity', 'knowledge', 'metadata']) {
+	it('accepts a single `pattern:` string', () => {
+		// Names are validated against the registry at codegen time (PATTERN-4),
+		// not by the schema itself — so any string is shape-valid here.
+		for (const pattern of ['Synced', 'Activity', 'Knowledge', 'Metadata', 'CrmEntity']) {
 			const result = EntityDefinitionSchema.safeParse({
 				...base,
-				entity: { ...base.entity, family },
+				entity: { ...base.entity, pattern },
 			});
 			expect(result.success).toBe(true);
 		}
 	});
 
-	it('rejects invalid family', () => {
+	it('accepts a `patterns:` array for multi-pattern composition', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			entity: { ...base.entity, family: 'invalid' },
+			entity: { ...base.entity, patterns: ['CrmEntity', 'Event'] },
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('rejects declaring both `pattern:` and `patterns:`', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, pattern: 'Synced', patterns: ['Event'] },
 		});
 		expect(result.success).toBe(false);
 	});
 
-	it('family is optional', () => {
+	it('rejects the legacy `family:` key (deleted in PATTERN-3 per ADR-031)', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, family: 'synced' },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('accepts a `config:` block keyed by pattern name', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: {
+				...base.entity,
+				pattern: 'CrmEntity',
+				config: { CrmEntity: { entityType: 'opportunity' } },
+			},
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('pattern + patterns + config are optional', () => {
 		const result = EntityDefinitionSchema.safeParse(base);
 		expect(result.success).toBe(true);
-		expect(result.data!.entity.family).toBeUndefined();
+		expect(result.data!.entity.pattern).toBeUndefined();
+		expect(result.data!.entity.patterns).toBeUndefined();
+		expect(result.data!.entity.config).toBeUndefined();
 	});
 });
 
@@ -462,7 +494,7 @@ describe('contact-v2.yaml integration', () => {
 		const result = loadEntityFromYaml(resolve('test/fixtures/contact-v2.yaml'));
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.definition.entity.family).toBe('synced');
+			expect(result.definition.entity.pattern).toBe('Synced');
 			expect(result.definition.queries).toHaveLength(6);
 			expect(result.definition.sync?.electric).toBe(true);
 			expect(result.definition.events).toHaveLength(3);
@@ -473,7 +505,7 @@ describe('contact-v2.yaml integration', () => {
 		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
 		const contact = result.entities[0];
 
-		expect(contact.family).toBe('synced');
+		expect(contact.pattern).toBe('Synced');
 		expect(contact.behaviors).toContain('external_id_tracking');
 		expect(contact.queries).toHaveLength(6);
 		expect(contact.sync?.electric).toBe(true);

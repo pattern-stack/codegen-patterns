@@ -50,7 +50,7 @@ const EMPTY_BASE_LOCALS = {};
 // ============================================================================
 
 const messageDefinitionCascade = {
-  entity: { name: 'message', plural: 'messages', table: 'messages', family: 'base' },
+  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },
@@ -80,7 +80,7 @@ const messageDefinitionSoftDeleteCascade = {
 // ============================================================================
 
 const messageDefinitionRestrict = {
-  entity: { name: 'message', plural: 'messages', table: 'messages', family: 'base' },
+  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },
@@ -101,7 +101,7 @@ const messageDefinitionRestrict = {
 // ============================================================================
 
 const childDefinitionSetNull = {
-  entity: { name: 'comment', plural: 'comments', table: 'comments', family: 'base' },
+  entity: { name: 'comment', plural: 'comments', table: 'comments', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },
@@ -122,7 +122,7 @@ const childDefinitionSetNull = {
 // ============================================================================
 
 const messageDefinitionNoOnDelete = {
-  entity: { name: 'message', plural: 'messages', table: 'messages', family: 'base' },
+  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
   fields: {
     body: { type: 'string', required: true },
   },

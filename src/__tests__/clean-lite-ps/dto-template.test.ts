@@ -53,7 +53,7 @@ function render(template: string, locals: Record<string, unknown>): string {
 
 // Fixture with a decimal field and a json field — covers both bugs.
 const agentDefinition = {
-  entity: { name: 'agent', plural: 'agents', table: 'agents', family: 'synced' },
+  entity: { name: 'agent', plural: 'agents', table: 'agents', pattern: 'Synced' },
   fields: {
     name: { type: 'string', required: true },
     temperature: { type: 'decimal', required: true },
