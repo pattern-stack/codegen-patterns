@@ -502,8 +502,8 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('maps through parser with correct types', () => {
-		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
-		const contact = result.entities[0];
+		const result = loadEntities(resolve('test/fixtures'));
+		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		expect(contact.pattern).toBe('Synced');
 		expect(contact.behaviors).toContain('external_id_tracking');
@@ -515,7 +515,7 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('passes consistency checks', () => {
-		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
+		const result = loadEntities(resolve('test/fixtures'));
 		const graph = buildDomainGraph(result.entities);
 		const issues = checkConsistency(graph);
 
@@ -532,8 +532,8 @@ describe('contact-v2.yaml integration', () => {
 
 describe('cross-block validation', () => {
 	it('catches query referencing unknown field', () => {
-		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
-		const contact = result.entities[0];
+		const result = loadEntities(resolve('test/fixtures'));
+		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Inject a bad query
 		contact.queries = [...(contact.queries ?? []), { by: ['nonexistent_field'] }];
@@ -546,8 +546,8 @@ describe('cross-block validation', () => {
 	});
 
 	it('skips by-field validation for via queries', () => {
-		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
-		const contact = result.entities[0];
+		const result = loadEntities(resolve('test/fixtures'));
+		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Via query with cross-entity field should not error
 		contact.queries = [{ by: ['opportunity_id'], via: 'opportunity_contact_link' }];
@@ -561,8 +561,8 @@ describe('cross-block validation', () => {
 	// dogfood #9: belongs_to FK fields (not separately declared under `fields:`)
 	// must still count as available fields for query validation.
 	it('accepts query on belongs_to FK field even when not declared in fields', () => {
-		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
-		const contact = result.entities[0];
+		const result = loadEntities(resolve('test/fixtures'));
+		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Simulate the buggy scenario: author relies on the belongs_to relationship
 		// to imply the `account_id` column, without also declaring it under `fields:`.
@@ -576,8 +576,8 @@ describe('cross-block validation', () => {
 	});
 
 	it('still rejects query on truly nonexistent field when belongs_to is present', () => {
-		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
-		const contact = result.entities[0];
+		const result = loadEntities(resolve('test/fixtures'));
+		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		contact.fields.delete('account_id');
 		contact.queries = [{ by: ['nonexistent'] }];
@@ -590,8 +590,8 @@ describe('cross-block validation', () => {
 	});
 
 	it('accepts composite query mixing declared field and belongs_to FK', () => {
-		const result = loadEntities(resolve('test/fixtures'), ['contact-v2.yaml']);
-		const contact = result.entities[0];
+		const result = loadEntities(resolve('test/fixtures'));
+		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Drop the declared account_id so only the belongs_to relationship provides it.
 		contact.fields.delete('account_id');
