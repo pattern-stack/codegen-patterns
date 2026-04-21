@@ -15,9 +15,18 @@
  * directly without importing CacheModule. Register once in AppModule.
  *
  * The drizzle backend requires DRIZZLE to be provided globally (e.g., via DatabaseModule).
+ *
+ * Async configuration (`forRootAsync`):
+ * The async factory returns `CacheModuleOptions`; the CACHE provider then
+ * receives DRIZZLE (for the drizzle backend) through Nest DI rather than
+ * hand-constructing with `null` — see issue #108 which flagged the same
+ * shape in `EventsModule.forRootAsync`. DRIZZLE is injected as optional
+ * so memory-backend consumers are not required to wire DatabaseModule.
  */
 import { Module, type DynamicModule } from '@nestjs/common';
 import { CACHE, CACHE_DEFAULT_TTL } from './cache.tokens';
+import { DRIZZLE } from '../../constants/tokens';
+import type { DrizzleClient } from '../../types/drizzle';
 import { DrizzleCacheService } from './cache.drizzle-backend';
 import { MemoryCacheService } from './cache.memory-backend';
 
@@ -33,6 +42,26 @@ export interface CacheModuleAsyncOptions {
   imports?: unknown[];
 }
 
+/** String token for the resolved CacheModuleOptions in the async path. */
+const CACHE_MODULE_OPTIONS = 'CACHE_MODULE_OPTIONS' as const;
+
+function buildCacheAsync(
+  options: CacheModuleOptions,
+  db: DrizzleClient | null,
+): DrizzleCacheService | MemoryCacheService {
+  const defaultTtl = options.defaultTtl ?? null;
+  if (options.backend === 'drizzle') {
+    if (!db) {
+      throw new Error(
+        "CacheModule.forRootAsync: backend: 'drizzle' selected but DRIZZLE provider is not available. " +
+          'Ensure DatabaseModule (or another provider exposing DRIZZLE) is imported before CacheModule.forRootAsync.',
+      );
+    }
+    return new DrizzleCacheService(db, defaultTtl);
+  }
+  return new MemoryCacheService(defaultTtl);
+}
+
 @Module({})
 export class CacheModule {
   static forRootAsync(asyncOptions: CacheModuleAsyncOptions): DynamicModule {
@@ -42,23 +71,17 @@ export class CacheModule {
       imports: (asyncOptions.imports ?? []) as Parameters<typeof Module>[0]['imports'],
       providers: [
         {
-          provide: 'CACHE_MODULE_OPTIONS',
+          provide: CACHE_MODULE_OPTIONS,
           useFactory: asyncOptions.useFactory,
           inject: (asyncOptions.inject ?? []) as (string | symbol | Function)[],
         },
         {
           provide: CACHE,
-          useFactory: (options: CacheModuleOptions) => {
-            if (options.backend === 'drizzle') {
-              return new DrizzleCacheService(
-                null as unknown as Parameters<typeof DrizzleCacheService.prototype.get>[0] extends never ? never : Parameters<typeof DrizzleCacheService['prototype']['get']>[0] extends never ? never : never,
-                options.defaultTtl ?? null,
-              );
-            }
-            return new MemoryCacheService(options.defaultTtl ?? null);
-          },
-          inject: ['CACHE_MODULE_OPTIONS'],
+          useFactory: (options: CacheModuleOptions, db: DrizzleClient | null) =>
+            buildCacheAsync(options, db),
+          inject: [CACHE_MODULE_OPTIONS, { token: DRIZZLE, optional: true }],
         },
+        // Alias the concrete classes to CACHE for typed injection.
         { provide: DrizzleCacheService, useExisting: CACHE },
         { provide: MemoryCacheService, useExisting: CACHE },
       ],

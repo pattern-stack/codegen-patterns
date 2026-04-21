@@ -34,6 +34,15 @@
  * `global: true` means entity modules do not need to import EventsModule
  * individually — the EVENT_BUS and TYPED_EVENT_BUS tokens are available
  * project-wide.
+ *
+ * Async configuration (`forRootAsync`):
+ * The async factory returns `EventsModuleOptions`; the EVENT_BUS provider
+ * then receives its backend dependencies — DRIZZLE for the drizzle
+ * backend, REDIS_URL for the redis backend, the resolved options for the
+ * memory backend — through a proper `useFactory` so Nest DI wires them
+ * correctly. Earlier revisions hand-constructed backends with
+ * `new Class()` which silently left `db` / `redisUrl` undefined
+ * (issue #108).
  */
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import {
@@ -43,6 +52,8 @@ import {
   REDIS_URL,
   TYPED_EVENT_BUS,
 } from './events.tokens';
+import { DRIZZLE } from '../../constants/tokens';
+import type { DrizzleClient } from '../../types/drizzle';
 import { DrizzleEventBus } from './event-bus.drizzle-backend';
 import { MemoryEventBus } from './event-bus.memory-backend';
 import { RedisEventBus } from './event-bus.redis-backend';
@@ -103,6 +114,35 @@ function buildTypedBusProviders(multiTenant: boolean): Provider[] {
   ];
 }
 
+/**
+ * Construct the backend instance for the async path, routing constructor
+ * arguments through Nest-resolved dependencies.
+ *
+ * DRIZZLE is declared optional at inject time so that memory-backend
+ * consumers aren't required to also import `DatabaseModule`. If the
+ * drizzle backend is selected but no DRIZZLE provider is registered, we
+ * throw a clear error instead of silently constructing a broken bus.
+ */
+function buildEventBusAsync(
+  options: EventsModuleOptions,
+  db: DrizzleClient | null,
+  redisUrl: string,
+): unknown {
+  if (options.backend === 'drizzle') {
+    if (!db) {
+      throw new Error(
+        "EventsModule.forRootAsync: backend: 'drizzle' selected but DRIZZLE provider is not available. " +
+          'Ensure DatabaseModule (or another provider exposing DRIZZLE) is imported before EventsModule.forRootAsync.',
+      );
+    }
+    return new DrizzleEventBus(db, options);
+  }
+  if (options.backend === 'redis') {
+    return new RedisEventBus(redisUrl);
+  }
+  return new MemoryEventBus(options);
+}
+
 @Module({})
 export class EventsModule {
   static forRootAsync(asyncOptions: EventsModuleAsyncOptions): DynamicModule {
@@ -129,17 +169,16 @@ export class EventsModule {
         },
         {
           provide: EVENT_BUS,
-          useFactory: (options: EventsModuleOptions) => {
-            const mod = EventsModule.forRoot(options);
-            const provider = mod.providers?.find(
-              (p) => typeof p === 'object' && p !== null && 'provide' in p && p.provide === EVENT_BUS,
-            );
-            if (provider && typeof provider === 'object' && 'useClass' in provider) {
-              return new (provider.useClass as new () => unknown)();
-            }
-            throw new Error('EventsModule.forRootAsync: failed to resolve provider');
-          },
-          inject: [EVENTS_MODULE_OPTIONS],
+          useFactory: (
+            options: EventsModuleOptions,
+            db: DrizzleClient | null,
+            redisUrl: string,
+          ) => buildEventBusAsync(options, db, redisUrl),
+          inject: [
+            EVENTS_MODULE_OPTIONS,
+            { token: DRIZZLE, optional: true },
+            REDIS_URL,
+          ],
         },
         TypedEventBus,
         { provide: TYPED_EVENT_BUS, useExisting: TypedEventBus },
