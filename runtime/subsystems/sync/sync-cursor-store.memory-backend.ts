@@ -14,6 +14,13 @@
  * serialize/deserialize cycle — consumers who care should test against
  * Postgres.
  *
+ * ## Multi-tenancy
+ *
+ * `tenantId` is accepted but ignored. The memory backend's state is
+ * process-local — there's no durable storage where a cross-tenant leak
+ * could occur. Tests that want to assert per-tenant isolation should
+ * target the Drizzle backend.
+ *
  * Not shipped in dealbrain-v2; this is a subsystem-first addition for the
  * test surface. Consumed by:
  *   - SYNC-5 unit tests (`ExecuteSyncUseCase` against synthetic sources)
@@ -30,14 +37,21 @@ export class MemoryCursorStore implements ICursorStore {
    */
   readonly cursors: Map<string, unknown> = new Map();
 
-  async get(subscriptionId: string): Promise<unknown | null> {
+  async get(
+    subscriptionId: string,
+    _tenantId?: string | null,
+  ): Promise<unknown | null> {
     // `Map.get` returns `undefined` for missing keys; the port contract
     // returns `null`. Normalize here so callers can `=== null`-check.
     const value = this.cursors.get(subscriptionId);
     return value === undefined ? null : value;
   }
 
-  async put(subscriptionId: string, cursor: unknown): Promise<void> {
+  async put(
+    subscriptionId: string,
+    cursor: unknown,
+    _tenantId?: string | null,
+  ): Promise<void> {
     // Overwrite semantics — matches the port contract and the Drizzle
     // backend's `ON CONFLICT DO UPDATE` behavior.
     this.cursors.set(subscriptionId, cursor);
