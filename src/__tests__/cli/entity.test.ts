@@ -291,6 +291,61 @@ describe('entity noun — new --dry-run', () => {
 		);
 		expect(result).toBe(2);
 	});
+
+	test('--all tolerates an invalid YAML alongside a valid one (default)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		// Drop an invalid entity YAML (comments only, no `entity:` key) next to
+		// the valid contact fixture — mirrors the scaffold's example.yaml that
+		// originally triggered F12.
+		fs.writeFileSync(
+			path.join(root, 'entities', 'example.yaml'),
+			'# this is a placeholder\n',
+		);
+		const cli = buildCli();
+		const { result, out } = await captureStdoutWrite(() =>
+			cli.run([
+				'entity',
+				'new',
+				'--all',
+				'--dry-run',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.command).toBe('entity new');
+		expect(parsed.totals.planned).toBe(1);
+		expect(parsed.totals.invalid).toBe(1);
+		const names = (parsed.entities as Array<{ name: string }>).map((e) => e.name);
+		expect(names).toContain('contact');
+	});
+
+	test('--all --no-continue-on-error restores fatal exit for invalid YAML', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		fs.writeFileSync(
+			path.join(root, 'entities', 'example.yaml'),
+			'# this is a placeholder\n',
+		);
+		const cli = buildCli();
+		const { result } = await captureStdoutWrite(() =>
+			cli.run([
+				'entity',
+				'new',
+				'--all',
+				'--dry-run',
+				'--force',
+				'--no-continue-on-error',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+	});
 });
 
 describe('entity noun — module shape', () => {
