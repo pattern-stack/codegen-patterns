@@ -18,12 +18,14 @@
  * ## Multi-tenancy
  *
  * When `SYNC_MULTI_TENANT` is true (SYNC-6):
- *   - `startRun` and `recordItem` require non-null `tenantId` on input
- *     (inputs already carry the field; the recorder enforces non-null).
+ *   - `startRun` and `recordItem` require non-null `tenantId` on input.
+ *     Enforcement goes through the shared `assertTenantId` helper so the
+ *     error message shape matches the orchestrator entry point + the
+ *     cursor-store backends.
  *   - `completeRun` does NOT re-check tenancy — the run id was returned
  *     by `startRun` which already enforced it, and run ids are uuids that
- *     aren't guessable cross-tenant. This matches JOB-3's pattern of
- *     trusting the run-id for downstream mutations.
+ *     aren't guessable cross-tenant. Matches JOB-3's pattern of trusting
+ *     the run-id for downstream mutations.
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
@@ -38,7 +40,7 @@ import type {
 import { syncRuns, syncRunItems } from './sync-audit.schema';
 import { FieldDiffSchema } from './sync-field-diff.protocol';
 import { SYNC_MULTI_TENANT } from './sync.tokens';
-import { MissingTenantIdError } from './sync-errors';
+import { assertTenantId } from './sync-errors';
 
 @Injectable()
 export class DrizzleSyncRunRecorder implements ISyncRunRecorder {
@@ -52,9 +54,10 @@ export class DrizzleSyncRunRecorder implements ISyncRunRecorder {
   }
 
   async startRun(input: StartRunInput): Promise<{ id: string }> {
-    if (this.multiTenant && (input.tenantId === undefined || input.tenantId === null)) {
-      throw new MissingTenantIdError('startRun');
-    }
+    assertTenantId(input.tenantId, {
+      multiTenant: this.multiTenant,
+      operation: 'startRun',
+    });
 
     const rows = await this.db
       .insert(syncRuns)
@@ -79,9 +82,10 @@ export class DrizzleSyncRunRecorder implements ISyncRunRecorder {
   }
 
   async recordItem(input: RecordItemInput): Promise<void> {
-    if (this.multiTenant && (input.tenantId === undefined || input.tenantId === null)) {
-      throw new MissingTenantIdError('recordItem');
-    }
+    assertTenantId(input.tenantId, {
+      multiTenant: this.multiTenant,
+      operation: 'recordItem',
+    });
 
     // ADR-0003 contract enforcement — reject malformed changedFields
     // before the DB call fires. `parse` throws a ZodError; callers see

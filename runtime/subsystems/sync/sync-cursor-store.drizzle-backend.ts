@@ -18,9 +18,10 @@
  *
  * When `SYNC_MULTI_TENANT` is true (SYNC-6):
  *   - every read/write is scoped by `AND tenant_id = $tenantId`
- *   - a null/missing `tenantId` throws `MissingTenantIdError`
- *   - explicit `null` also throws — the caller must opt in loudly, matching
- *     JOB-8 / EVT-6 strict-enforcement semantics
+ *   - a null/missing `tenantId` throws `MissingTenantIdError` via the
+ *     shared `assertTenantId` helper (one message shape across the
+ *     orchestrator + both backends, SYNC-6)
+ *   - explicit `null` also throws — matches JOB-8 / EVT-6 strict-enforcement
  *
  * When the flag is off, `tenantId` is ignored. Cross-tenant isolation is
  * the caller's problem in single-tenant deployments.
@@ -32,7 +33,7 @@ import { DRIZZLE } from '../../constants/tokens';
 import type { ICursorStore } from './sync-cursor-store.protocol';
 import { syncSubscriptions } from './sync-audit.schema';
 import { SYNC_MULTI_TENANT } from './sync.tokens';
-import { MissingTenantIdError } from './sync-errors';
+import { assertTenantId } from './sync-errors';
 
 @Injectable()
 export class PostgresCursorStore implements ICursorStore {
@@ -49,7 +50,7 @@ export class PostgresCursorStore implements ICursorStore {
     subscriptionId: string,
     tenantId?: string | null,
   ): Promise<unknown | null> {
-    const where = this.buildWhere(subscriptionId, tenantId, 'get');
+    const where = this.buildWhere(subscriptionId, tenantId, 'cursor.get');
 
     const rows = await this.db
       .select({ cursor: syncSubscriptions.cursor })
@@ -66,7 +67,7 @@ export class PostgresCursorStore implements ICursorStore {
     cursor: unknown,
     tenantId?: string | null,
   ): Promise<void> {
-    const where = this.buildWhere(subscriptionId, tenantId, 'put');
+    const where = this.buildWhere(subscriptionId, tenantId, 'cursor.put');
 
     await this.db
       .update(syncSubscriptions)
@@ -86,15 +87,16 @@ export class PostgresCursorStore implements ICursorStore {
   private buildWhere(
     subscriptionId: string,
     tenantId: string | null | undefined,
-    operation: 'get' | 'put',
+    operation: string,
   ): SQL | undefined {
+    assertTenantId(tenantId, {
+      multiTenant: this.multiTenant,
+      operation,
+    });
     if (this.multiTenant) {
-      if (tenantId === undefined || tenantId === null) {
-        throw new MissingTenantIdError(`cursor.${operation}`);
-      }
       return and(
         eq(syncSubscriptions.id, subscriptionId),
-        eq(syncSubscriptions.tenantId, tenantId),
+        eq(syncSubscriptions.tenantId, tenantId as string),
       );
     }
     return eq(syncSubscriptions.id, subscriptionId);

@@ -48,11 +48,13 @@ import type { IFieldDiffer, FieldDiff } from './sync-field-diff.protocol';
 import type { ISyncSink } from './sync-sink.protocol';
 import type { ISyncRunRecorder } from './sync-run-recorder.protocol';
 import type { ILoopbackFingerprintStore } from './sync-loopback.protocol';
+import { assertTenantId } from './sync-errors';
 import {
   SYNC_CHANGE_SOURCE,
   SYNC_CURSOR_STORE,
   SYNC_FIELD_DIFFER,
   SYNC_LOOPBACK_FINGERPRINT_STORE,
+  SYNC_MULTI_TENANT,
   SYNC_RUN_RECORDER,
   SYNC_SINK,
 } from './sync.tokens';
@@ -115,9 +117,21 @@ export class ExecuteSyncUseCase<T extends Record<string, unknown>> {
     @Optional()
     @Inject(SYNC_LOOPBACK_FINGERPRINT_STORE)
     private readonly loopback?: ILoopbackFingerprintStore<T>,
+    @Optional()
+    @Inject(SYNC_MULTI_TENANT)
+    private readonly multiTenant: boolean = false,
   ) {}
 
   async execute(input: ExecuteSyncInput<T>): Promise<ExecuteSyncResult> {
+    // Defense-in-depth tenancy guard — fire BEFORE startRun so a rejected
+    // input never leaves a dangling `status=running` row. Backends also
+    // enforce (SYNC-4), but failing fast at the orchestrator boundary is
+    // cheaper for observability, metrics, and manual cleanup.
+    assertTenantId(input.tenantId, {
+      multiTenant: this.multiTenant,
+      operation: 'execute',
+    });
+
     const source = input.sourceOverride ?? this.source;
     const startedAt = Date.now();
     const cursorBefore = await this.cursors.get(input.subscription.id, input.tenantId);
