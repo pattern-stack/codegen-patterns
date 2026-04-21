@@ -15,7 +15,7 @@ import { CONTACT_REPOSITORY } from '../../../constants';
 import type { CreateContactInput, IContactRepository } from '../../../domain';
 import { Contact } from '../../../domain';
 import type { CreateContactDto } from '../../schemas';
-import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/events';
+import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/subsystems/events';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
 

@@ -93,7 +93,7 @@ function cleanArchBase() {
     createEventType: null,
     updateEventType: null,
     deleteEventType: null,
-    eventsTokenImport: '@shared/events',
+    eventsTokenImport: '@shared/subsystems/events',
     drizzleTokenImport: '@shared/constants/tokens',
     drizzleTypeImport: '@shared/types/drizzle',
 
@@ -155,7 +155,7 @@ describe('EVT-7 Clean Architecture — create command template', () => {
       locals,
     );
     expect(output).toContain(
-      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/events';",
+      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/subsystems/events';",
     );
     expect(output).toContain(
       "import { DRIZZLE } from '@shared/constants/tokens';",
@@ -208,7 +208,7 @@ describe('EVT-7 Clean Architecture — update command template', () => {
       locals,
     );
     expect(output).toContain(
-      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/events';",
+      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/subsystems/events';",
     );
     expect(output).toContain('return this.db.transaction(async (tx) => {');
     expect(output).toContain(
@@ -253,7 +253,7 @@ describe('EVT-7 Clean Architecture — delete command template', () => {
       locals,
     );
     expect(output).toContain(
-      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/events';",
+      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/subsystems/events';",
     );
     expect(output).toContain('return this.db.transaction(async (tx) => {');
     expect(output).toContain(
@@ -301,7 +301,7 @@ describe('EVT-7 Clean Architecture — repository-interface template', () => {
       locals,
     );
     expect(output).toContain(
-      "import type { DrizzleTransaction } from '@shared/events';",
+      "import type { DrizzleTransaction } from '@shared/subsystems/events';",
     );
     expect(output).toContain(
       'create(input: CreateContactInput, tx?: DrizzleTransaction): Promise<Contact>;',
@@ -346,7 +346,7 @@ function clpBase() {
     createEventType: null,
     updateEventType: null,
     deleteEventType: null,
-    eventsTokenImport: '@shared/events',
+    eventsTokenImport: '@shared/subsystems/events',
     drizzleTokenImport: '@shared/constants/tokens',
     drizzleTypeImport: '@shared/types/drizzle',
   };
@@ -374,7 +374,7 @@ describe('EVT-7 CLP — non-EAV use-case templates', () => {
     };
     const output = renderFrom(CLP_ROOT, 'use-cases/create.ejs.t', locals);
     expect(output).toContain(
-      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/events';",
+      "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/subsystems/events';",
     );
     expect(output).toContain(
       "import { DRIZZLE } from '@shared/constants/tokens';",

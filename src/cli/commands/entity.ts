@@ -29,6 +29,7 @@ import {
 import { validateEntityEmits } from '../../parser/validate-emits.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
+import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -278,15 +279,16 @@ export class EntityNewCommand extends Command {
 		const generatedDir = resolveGeneratedDir(ctx);
 		const architecture = resolveArchitecture(ctx);
 
+		const subsystemsRoot = resolveSubsystemsRoot(ctx);
 		const scopeEntityTypePath = path.resolve(
-			ctx.cwd,
-			'runtime/subsystems/jobs/generated/scope-entity-type.ts',
+			subsystemsRoot,
+			'jobs/generated/scope-entity-type.ts',
 		);
 
 		const eventsDir = path.resolve(ctx.cwd, 'events');
 		const eventCodegenOutputDir = path.resolve(
-			ctx.cwd,
-			'runtime/subsystems/events/generated',
+			subsystemsRoot,
+			'events/generated',
 		);
 
 		if (this.dryRun) {

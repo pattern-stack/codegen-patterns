@@ -14,8 +14,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-
-const DEFAULT_SUBSYSTEMS_REL = 'shared/subsystems';
+import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
 
 export interface JobsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -60,8 +59,10 @@ function workerSkipValue(exists: boolean): string {
  * - `jobs.multi_tenant` defaults to `false` when the block is absent (first
  *   install case). JOB-8 flips this to an opt-in toggle end-to-end.
  * - `worker_mode` mirrors the spec default (`embedded`).
- * - `schemaPath` resolves from `paths.subsystems` (fallback `shared/subsystems`),
- *   then appends `jobs/job-orchestration.schema.ts` — matching exactly the
+ * - `schemaPath` resolves from `paths.subsystems` (or
+ *   `<paths.backend_src>/shared/subsystems` when unset; see
+ *   `subsystems-path.ts`), then appends `jobs/job-orchestration.schema.ts`
+ *   — matching exactly the
  *   location `copyRuntime` would have emitted before we skipped that file.
  */
 export function resolveJobsScaffoldLocals(
@@ -71,15 +72,13 @@ export function resolveJobsScaffoldLocals(
 
 	const jobsBlock = (config?.jobs ?? {}) as Record<string, unknown>;
 
-	const subsystemsRel =
-		(config?.paths?.subsystems as string | undefined) ?? DEFAULT_SUBSYSTEMS_REL;
+	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
 
 	const workerPath = path.resolve(cwd, 'worker.ts');
 	const mainTsPath = path.resolve(cwd, 'src/main.ts');
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const schemaPath = path.resolve(
-		cwd,
-		subsystemsRel,
+		subsystemsRoot,
 		'jobs',
 		'job-orchestration.schema.ts',
 	);

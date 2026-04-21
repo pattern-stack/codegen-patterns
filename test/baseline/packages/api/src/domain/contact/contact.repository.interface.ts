@@ -4,7 +4,7 @@
  */
 
 import type { Contact } from './contact.entity';
-import type { DrizzleTransaction } from '@shared/events';
+import type { DrizzleTransaction } from '@shared/subsystems/events';
 
 /**
  * Type-safe eager loading options.

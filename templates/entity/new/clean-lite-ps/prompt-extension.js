@@ -843,8 +843,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const createEventType = baseLocals?.createEventType ?? null;
   const updateEventType = baseLocals?.updateEventType ?? null;
   const deleteEventType = baseLocals?.deleteEventType ?? null;
-  const eventsTokenImport = baseLocals?.eventsTokenImport ?? '@shared/events';
-  const typedEventBusImport = baseLocals?.typedEventBusImport ?? '@shared/events';
+  const eventsTokenImport =
+    baseLocals?.eventsTokenImport ?? '@shared/subsystems/events';
+  const typedEventBusImport =
+    baseLocals?.typedEventBusImport ?? '@shared/subsystems/events';
   const drizzleTokenImport =
     baseLocals?.drizzleTokenImport ?? '@shared/constants/tokens';
   const drizzleTypeImport =

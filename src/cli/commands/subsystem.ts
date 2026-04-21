@@ -33,6 +33,7 @@ import {
 	type SubsystemBackend,
 	type InstalledSubsystem,
 } from '../shared/subsystem-detect.js';
+import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -46,8 +47,6 @@ import type { NounModule } from '../noun-module.js';
 // paths
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SUBSYSTEMS_REL = 'shared/subsystems';
-
 function runtimeRoot(): string {
 	// src/cli/commands/subsystem.ts → ../../../runtime
 	return path.resolve(import.meta.dirname, '..', '..', '..', 'runtime');
@@ -55,13 +54,6 @@ function runtimeRoot(): string {
 
 function subsystemSource(name: SubsystemName): string {
 	return path.join(runtimeRoot(), 'subsystems', name);
-}
-
-function resolveTargetRoot(ctx: Context, overrideTarget?: string): string {
-	if (overrideTarget) return path.resolve(ctx.cwd, overrideTarget);
-	const configured = ctx.config?.paths?.subsystems as string | undefined;
-	if (configured) return path.resolve(ctx.cwd, configured);
-	return path.resolve(ctx.cwd, DEFAULT_SUBSYSTEMS_REL);
 }
 
 function describeSubsystem(name: string): SubsystemDescriptor | null {
@@ -262,7 +254,7 @@ export class SubsystemInstallCommand extends Command {
 			return 0;
 		}
 
-		const targetRoot = resolveTargetRoot(ctx, this.target);
+		const targetRoot = resolveSubsystemsRoot(ctx, this.target);
 		const subsystemTarget = path.join(targetRoot, desc.name);
 		const source = subsystemSource(desc.name);
 

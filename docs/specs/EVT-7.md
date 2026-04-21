@@ -29,8 +29,8 @@ are drift captured during implementation — they reflect what actually shipped.
    use cases read `@Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus`
    (not `this.events`). The `DRIZZLE` token is imported from
    `@shared/constants/tokens` alongside a `DrizzleClient` type from
-   `@shared/types/drizzle` — the CLP precedent. `@shared/events` re-exports
-   `TYPED_EVENT_BUS`, `TypedEventBus`, and `DrizzleTransaction`.
+   `@shared/types/drizzle` — the CLP precedent. `@shared/subsystems/events`
+   re-exports `TYPED_EVENT_BUS`, `TypedEventBus`, and `DrizzleTransaction`.
 5. **Repository `tx?` is per-op, not blanket.** The clean-arch repository
    interface + inline repo templates append `tx?: DrizzleTransaction` only to
    the specific create/update/delete signatures whose corresponding

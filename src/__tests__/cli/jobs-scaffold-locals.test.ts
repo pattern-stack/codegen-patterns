@@ -39,8 +39,40 @@ describe('resolveJobsScaffoldLocals', () => {
 		expect(locals.mainTsPath).toBe(path.resolve(CWD, 'src/main.ts'));
 		expect(locals.configPath).toBe(path.resolve(CWD, 'codegen.config.yaml'));
 		expect(locals.workerPath).toBe(path.resolve(CWD, 'worker.ts'));
+		// Default derives from `backend_src` (fallback 'src') when
+		// `paths.subsystems` is unset — matches `project init` layout.
 		expect(locals.schemaPath).toBe(
-			path.resolve(CWD, 'shared/subsystems/jobs/job-orchestration.schema.ts'),
+			path.resolve(CWD, 'src/shared/subsystems/jobs/job-orchestration.schema.ts'),
+		);
+	});
+
+	test('paths.backend_src derives default subsystems root when paths.subsystems is unset', () => {
+		const locals = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: { paths: { backend_src: 'packages/api/src' } } as any,
+			fileExists: () => false,
+		});
+		expect(locals.schemaPath).toBe(
+			path.resolve(
+				CWD,
+				'packages/api/src/shared/subsystems/jobs/job-orchestration.schema.ts',
+			),
+		);
+	});
+
+	test('paths.subsystems takes precedence over paths.backend_src', () => {
+		const locals = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: {
+				paths: {
+					backend_src: 'packages/api/src',
+					subsystems: 'custom/subsystems',
+				},
+			} as any,
+			fileExists: () => false,
+		});
+		expect(locals.schemaPath).toBe(
+			path.resolve(CWD, 'custom/subsystems/jobs/job-orchestration.schema.ts'),
 		);
 	});
 

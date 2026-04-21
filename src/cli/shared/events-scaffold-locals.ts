@@ -20,8 +20,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-
-const DEFAULT_SUBSYSTEMS_REL = 'shared/subsystems';
+import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
 
 export interface EventsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -51,8 +50,10 @@ export interface EventsScaffoldLocalsInput {
  * - `events.multi_tenant` defaults to `false` when the block is absent (first
  *   install case). Only the literal `true` flips the flag — defends against
  *   YAML truthy surprises like `'yes'` / `1`.
- * - `schemaPath` resolves from `paths.subsystems` (fallback `shared/subsystems`),
- *   then appends `events/domain-events.schema.ts` — matching exactly the
+ * - `schemaPath` resolves from `paths.subsystems` (or
+ *   `<paths.backend_src>/shared/subsystems` when unset; see
+ *   `subsystems-path.ts`), then appends `events/domain-events.schema.ts`
+ *   — matching exactly the
  *   location `copyRuntime` would have emitted before we skipped that file.
  * - `generatedKeepPath` sits under the same subsystems root as
  *   `events/generated/.gitkeep` so `just gen-all` has a committed directory
@@ -74,19 +75,16 @@ export function resolveEventsScaffoldLocals(
 
 	const eventsBlock = (config?.events ?? {}) as Record<string, unknown>;
 
-	const subsystemsRel =
-		(config?.paths?.subsystems as string | undefined) ?? DEFAULT_SUBSYSTEMS_REL;
+	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
 
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const schemaPath = path.resolve(
-		cwd,
-		subsystemsRel,
+		subsystemsRoot,
 		'events',
 		'domain-events.schema.ts',
 	);
 	const generatedKeepPath = path.resolve(
-		cwd,
-		subsystemsRel,
+		subsystemsRoot,
 		'events',
 		'generated',
 		'.gitkeep',

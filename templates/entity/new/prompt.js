@@ -1323,13 +1323,14 @@ export default {
       emitsEvents.find((e) => e.type === `${name}_deleted`) ?? null;
 
     // Import paths for the TypedEventBus token + DrizzleClient token/type.
-    // The consumer app wires `@shared/*` aliases to the runtime subsystems
-    // (matching the CLP precedent for `@shared/constants/tokens` and
-    // `@shared/types/drizzle`). When the generated module is consumed, these
-    // aliases resolve to `runtime/subsystems/events/index` and
-    // `runtime/{constants/tokens,types/drizzle}` respectively.
-    const eventsTokenImport = '@shared/events';
-    const typedEventBusImport = '@shared/events';
+    // The consumer app wires `@shared/*` aliases to the vendored subsystem
+    // sources (under `<paths.backend_src>/shared/subsystems/…`), matching
+    // where `subsystem install` drops the runtime files and where
+    // `entity new` writes the generated `events/generated/` artifacts. The
+    // `@shared/subsystems/events` path is the barrel at
+    // `<subsystems_root>/events/index.ts`.
+    const eventsTokenImport = '@shared/subsystems/events';
+    const typedEventBusImport = '@shared/subsystems/events';
     const drizzleTokenImport = '@shared/constants/tokens';
     const drizzleTypeImport = '@shared/types/drizzle';
 

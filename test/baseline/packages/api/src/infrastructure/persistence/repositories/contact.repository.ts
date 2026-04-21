@@ -6,7 +6,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq, isNull, isNotNull, and, desc, asc } from 'drizzle-orm';
 import { DRIZZLE } from '../../../constants/tokens';
-import type { DrizzleTransaction } from '@shared/events';
+import type { DrizzleTransaction } from '@shared/subsystems/events';
 import type {
 	CreateContactInput,
 	IContactRepository,
