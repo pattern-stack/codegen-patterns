@@ -23,7 +23,7 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-  family: synced                    # synced | activity | metadata | knowledge
+  pattern: Synced                   # Synced | Activity | Metadata | Knowledge | Base (or app-defined)
 
 fields:
   email:
@@ -123,8 +123,8 @@ modules/                           NestJS module wiring
 ```
 modules/{plural}/
   {entity}.entity.ts               Drizzle table + types
-  {entity}.repository.ts           Extends family base class
-  {entity}.service.ts              Extends family base service
+  {entity}.repository.ts           Extends pattern base class
+  {entity}.service.ts              Extends pattern base service
   {entity}.controller.ts           REST endpoints
   {plural}.module.ts               NestJS module
   dto/                             Create, Update, Output DTOs
@@ -203,7 +203,7 @@ src/                        Generator source code
   formatters/               Console, JSON, markdown output
   __tests__/                Unit tests (mirrors src/ structure)
 runtime/                    Code shipped into consumer projects
-  base-classes/             BaseRepository, BaseService, family bases
+  base-classes/             BaseRepository, BaseService, pattern bases
   subsystems/               Events, Jobs, Cache, Storage
 templates/                  Hygen EJS templates
 test/                       Baseline snapshots, scaffold integration, smoke test

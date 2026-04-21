@@ -11,8 +11,10 @@ import path from 'node:path';
 import yaml from 'yaml';
 import {
   GenerateConfigSchema,
+  PatternsConfigSchema,
   PipelinesConfigSchema,
   type GenerateConfig,
+  type PatternsConfig,
   type PipelinesConfig,
 } from '../schema/pipelines-config.schema.js';
 
@@ -27,6 +29,12 @@ import {
 export interface ProjectConfig {
   pipelines?: PipelinesConfig;
   generate?: GenerateConfig;
+  /**
+   * Array of globs (relative to project root) that `loadAppPatterns()`
+   * expands to discover app-defined patterns (ADR-031, PATTERN-5).
+   * Absent ⇒ defaults to `['src/patterns/*.pattern.ts']`.
+   */
+  patterns?: PatternsConfig;
   [key: string]: unknown;
 }
 
@@ -78,6 +86,22 @@ function loadProjectConfig(cwd = process.cwd()): ProjectConfig | null {
       console.warn(
         `Warning: codegen.config.yaml has an invalid "generate" block:\n` +
           generateResult.error.issues
+            .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+            .join('\n')
+      );
+    }
+
+    // Validate the patterns block (always — we want the default glob applied
+    // even when the key is absent).
+    const rawPatterns =
+      raw && typeof raw === 'object' && 'patterns' in raw ? raw.patterns : undefined;
+    const patternsResult = PatternsConfigSchema.safeParse(rawPatterns);
+    if (patternsResult.success) {
+      raw.patterns = patternsResult.data;
+    } else {
+      console.warn(
+        `Warning: codegen.config.yaml has an invalid "patterns" block:\n` +
+          patternsResult.error.issues
             .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
             .join('\n')
       );

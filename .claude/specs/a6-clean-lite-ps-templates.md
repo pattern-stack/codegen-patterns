@@ -1,9 +1,21 @@
 # Spec A6 — Clean-Lite-PS Template Set
 
-**Status:** Approved for implementation
+**Status:** Shipped. Post-implementation note added 2026-04-21 below.
 **Issue:** A6
-**Related ADRs:** ADR-002, ADR-003, ADR-005
+**Related ADRs:** ADR-002, ADR-003, ~~ADR-005~~ → superseded by [ADR-031](../../docs/adrs/ADR-031-app-defined-patterns.md)
 **Reference output:** `docs/architecture/sketches/contact-module-sketch.md`
+
+> **Post-implementation revision (2026-04-21, PATTERN-5):** this spec was
+> written when the YAML surface was `family: synced | activity | ...` and
+> the base-class choice was driven by a hard-coded `FAMILY_MAP` in
+> `templates/entity/new/clean-lite-ps/prompt-extension.js`. That surface has
+> been replaced by the pattern registry per ADR-031. Read occurrences of
+> "family" below as "library pattern name (lowercase)" and occurrences of
+> `entity.family` as `entity.pattern` (single) or `entity.patterns[0]`
+> (multi). The five library patterns (Base / Synced / Activity / Knowledge
+> / Metadata) are pre-registered; consumer-defined patterns are discovered
+> via `codegen.config.yaml patterns:` globs. See the "App-defined patterns"
+> section of `docs/CONSUMER-SETUP.md` for authoring details.
 
 ---
 

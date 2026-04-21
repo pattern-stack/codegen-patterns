@@ -30,6 +30,14 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
     userTracking: <%= !!hasUserTracking %>,
   };
 <% } -%>
+<% if (hasPatternConfig) { -%>
+
+  // Per-entity `<%= patternName %>` pattern config (from YAML `config:` block).
+  // The pattern's base class declares `protected readonly patternConfig: TConfig`
+  // typed via its `configSchema`; this concrete record is read by the base at
+  // runtime (identical shape to `behaviors: BehaviorConfig`).
+  protected override readonly patternConfig = <%- renderPatternConfigLiteral(patternConfig, '  ', '  ') %> as const;
+<% } -%>
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient) {
     super(db);

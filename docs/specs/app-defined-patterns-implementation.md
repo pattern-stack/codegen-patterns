@@ -7,6 +7,11 @@
 **Scope:** codegen-patterns library changes — Phase 1 only. First consumer integration (dealbrain-v2 `CrmEntityPattern`) is Phase 2.
 
 > **Living-document note (2026-04-19):** This spec was originally drafted before the understand phase examined the existing codebase. Three earlier proposals (a `family:` deprecation alias with `console.warn`, a `generate.patterns` opt-in feature flag, and a `static readonly patternConfig` runtime accessor) contradicted both CLAUDE.md ("no backwards compatibility until users") and the existing `behaviors: BehaviorConfig` instance-property convention in `templates/entity/new/clean-lite-ps/repository.ejs.t`. ADR-031 documents the resolution; this spec was rewritten in the same commit to reflect the final shape.
+>
+> **Post-implementation revision (2026-04-21, PATTERN-5):** every file listed in §7 shipped. Three details discovered during implementation and worth pinning here:
+> 1. **Baseline regen was not required.** PATTERN-3's template bridge (single-line change in `prompt-extension.js` that lowercased `entity.pattern` to index the legacy FAMILY_MAP) produces byte-identical output for all library patterns. PATTERN-5's registry swap preserved that property, so `just test-baseline` passes against the unmodified `test/baseline/` snapshot. The integration gate from `PATTERNS-PHASE-1-PLAN.md` ("byte-identical output for an unchanged fixture") is met transitively through PATTERN-3.
+> 2. **`renderPatternConfigLiteral()` helper added to prompt-extension.js.** The spec's §6 example shows `patternConfig = { entityType: 'opportunity' } as const;` with bare identifier keys and single-quoted strings. A naive `JSON.stringify(patternConfig, null, 2)` emits `{"entityType": "opportunity"}` — valid TS but not idiomatic and brittle under consumer linters. The helper emits the ADR's style directly; unit-tested in `src/__tests__/clean-lite-ps/prompt-extension.test.ts`.
+> 3. **`analyzeDomain()` signature widened non-breakingly.** To plumb `generate.architecture` into the PATTERN-4 project-level warning (clean-pipeline no-op), the second positional argument now accepts either a relationships-dir string (legacy) or an options object `{ relationshipsDir?, architecture? }`. Existing callers (CLI `entity validate`, `project graph`) keep working; pattern-aware callers opt in via the object form.
 
 ---
 

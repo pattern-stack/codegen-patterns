@@ -665,6 +665,118 @@ database:
 
 `paths.generated` must sit inside your `tsconfig.json` `"include"` globs — otherwise TS won't typecheck the barrel.
 
+## App-defined patterns
+
+`pattern:` in entity YAML selects a base-class bundle (repository + service + implied columns + implied behaviors + per-entity config schema) that the generated concrete class extends. See [ADR-031](./adrs/ADR-031-app-defined-patterns.md) for the binding decisions.
+
+### Library-shipped patterns
+
+The codegen package pre-registers five patterns. Consumers never list these in `codegen.config.yaml`:
+
+| Pattern | Repository class | Notes |
+|---------|-----------------|-------|
+| `Base` | `BaseRepository` | Identity pattern — base CRUD only |
+| `Synced` | `SyncedEntityRepository` | Adds `external_id` / `provider` / `provider_metadata` + syncUpsert |
+| `Activity` | `ActivityEntityRepository` | Time-bounded interaction entities (notes, calls, meetings) |
+| `Knowledge` | `KnowledgeEntityRepository` | Long-form content with workflow status + semantic search |
+| `Metadata` | `MetadataEntityRepository` | History-tracked auxiliary rows |
+
+Declare one in entity YAML:
+
+```yaml
+entity:
+  name: opportunity
+  pattern: Synced
+behaviors:
+  - timestamps
+  - soft_delete
+```
+
+### App-defined patterns
+
+Consumers who need a domain abstraction beyond the library set (e.g. a `CrmEntity` bundling EAV routing + canonical field mapping) write their own `*.pattern.ts` file:
+
+```ts
+// src/patterns/crm-entity.pattern.ts
+import { definePattern } from '@pattern-stack/codegen';
+import { z } from 'zod';
+
+export const CrmEntityPattern = definePattern({
+  name: 'CrmEntity',
+  extends: ['Synced'],
+  repositoryClass: 'CrmEntityRepository',
+  serviceClass: 'CrmEntityService',
+  repositoryImport: '@/patterns/crm-entity.pattern',
+  serviceImport: '@/patterns/crm-entity.pattern',
+  configSchema: z.object({ entityType: z.string() }),
+  description: 'CRM entity with EAV dual-write + canonical field routing',
+});
+```
+
+Discovery is via globs in `codegen.config.yaml`:
+
+```yaml
+# codegen.config.yaml
+patterns:
+  - src/patterns/*.pattern.ts          # default when `patterns:` is absent
+  - vendor/internal-patterns/*.pattern.ts
+```
+
+Use it in entity YAML:
+
+```yaml
+entity:
+  name: opportunity
+  pattern: CrmEntity
+  config:
+    CrmEntity:
+      entityType: opportunity
+```
+
+The generated concrete class emits `protected override readonly patternConfig = { entityType: 'opportunity' } as const;` for the pattern's base class to read. No reflection; identical shape to `behaviors: BehaviorConfig`.
+
+### tsconfig alias requirement
+
+App-defined patterns reference their hand-written base classes via path aliases (`@/patterns/crm-entity.pattern`). Codegen emits the string verbatim into the generated `import` — resolution is the consumer's `tsconfig.json` responsibility. Add your alias alongside the others:
+
+```jsonc
+{
+  "compilerOptions": {
+    "paths": {
+      "@shared/*": ["./shared/*"],
+      "@modules/*": ["./modules/*"],
+      "@/*": ["./src/*"]
+    }
+  }
+}
+```
+
+If the alias is missing, TypeScript compile of the generated code fails at import resolution — the codegen step itself does not verify the path resolves on the consumer side.
+
+### Composition (multi-pattern)
+
+Two or more patterns combine via `patterns:`:
+
+```yaml
+entity:
+  name: deal
+  patterns: [CrmEntity, Event]
+  config:
+    CrmEntity: { entityType: opportunity }
+    Event:
+      states:
+        qualifying: [developing, closed_lost]
+      initial_state: qualifying
+```
+
+The **first** pattern in the list wins the base-class selection. Subsequent patterns contribute columns + implied behaviors. Column-name conflicts, unknown pattern names, and invalid `config:` blocks are caught at codegen time with a hard error; `config:` keys for undeclared patterns and `pattern:` declarations under `generate.architecture: clean` produce warnings.
+
+### Caveats (Phase 1)
+
+- **Single-depth `extends` chain only.** A pattern may `extends: ['Synced']` but transitive resolution of `CrmEntity extends Synced extends Base` is deferred.
+- **`clean` pipeline no-op.** The full Clean Architecture backend (`generate.architecture: clean`) does not yet consume `pattern:`. Use `generate.architecture: clean-lite-ps` for pattern-driven emission.
+- **Method-name conflicts are caught by TypeScript**, not codegen. Two patterns declaring methods with the same signature surface as a compile error at the consumer class, not a codegen validation error.
+
 ## EAV dual-write — opt-in per entity
 
 Two YAML flags light up the EAV (entity-attribute-value) surface. Both default to `false` — entities that don't declare them get the non-EAV shape unchanged.
@@ -677,7 +789,7 @@ Declare this on the entity that has a dynamic `fields` bag alongside its core co
 # entities/opportunity.yaml
 entity:
   name: opportunity
-  family: synced
+  pattern: Synced
 eav: true
 fields:
   name:
@@ -702,7 +814,7 @@ Declare this on the entity that IS the value table (e.g. `field_value`). Paired 
 # entities/field_value.yaml
 entity:
   name: field_value
-  family: metadata
+  pattern: Metadata
 eav_value_table: true
 eav_definition_table: field_definition
 fields:
@@ -805,5 +917,5 @@ It shouldn't — that's a bug. File an issue. The only files codegen writes are 
 
 - [ADR-017 — Barrel Files over Hygen Injects](./adrs/ADR-017-barrel-files-over-injects.md) — why `@shared/*` exists and why codegen never mutates your files
 - [ADR-015 — CLI Command Architecture](./adrs/ADR-015-cli-command-architecture.md) — install forms and the noun-verb interface
-- [ADR-005 — Entity Family Base Classes](./adrs/ADR-005-entity-family-base-classes.md) — which family shim you need per entity
+- [ADR-031 — App-Defined Patterns](./adrs/ADR-031-app-defined-patterns.md) — `pattern:` / `patterns:` / `config:` surface; supersedes the legacy ADR-005 `family:` enum
 - [GETTING-STARTED.md](./GETTING-STARTED.md) — entity YAML authoring and the generator lifecycle

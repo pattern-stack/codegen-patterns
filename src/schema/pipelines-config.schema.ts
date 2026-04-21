@@ -192,6 +192,33 @@ export const PipelinesConfigSchema = z.object({
 export type PipelinesConfig = z.infer<typeof PipelinesConfigSchema>;
 
 // ============================================================================
+// Patterns Config (ADR-031, PATTERN-5)
+// ============================================================================
+
+/**
+ * Patterns manifest — array of globs, relative to project root, that
+ * `loadAppPatterns()` expands and dynamic-imports to discover app-defined
+ * patterns. Library-shipped patterns (Base / Synced / Activity / Knowledge
+ * / Metadata) are pre-registered by the codegen package; consumers never
+ * list them.
+ *
+ * Default (when the key is absent): `['src/patterns/*.pattern.ts']`.
+ *
+ * Example:
+ * ```yaml
+ * patterns:
+ *   - src/patterns/*.pattern.ts
+ *   - vendor/internal-patterns/*.pattern.ts
+ * ```
+ */
+export const PatternsConfigSchema = z
+  .array(z.string())
+  .optional()
+  .default(['src/patterns/*.pattern.ts']);
+
+export type PatternsConfig = z.infer<typeof PatternsConfigSchema>;
+
+// ============================================================================
 // Validation Helpers
 // ============================================================================
 

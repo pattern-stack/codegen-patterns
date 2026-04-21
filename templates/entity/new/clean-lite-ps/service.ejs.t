@@ -23,6 +23,13 @@ export class <%= classNames.service %> extends WithAnalytics(
   <%= serviceBaseClass %><<%= classNames.repository %>, <%= classNames.entity %>>,
 ) {
   protected override readonly entityName = '<%= entityName %>';
+<% if (hasPatternConfig) { -%>
+
+  // Per-entity `<%= patternName %>` pattern config (from YAML `config:` block).
+  // Mirrors the repository-side emission; the pattern's base service reads
+  // `this.patternConfig` directly.
+  protected override readonly patternConfig = <%- renderPatternConfigLiteral(patternConfig, '  ', '  ') %> as const;
+<% } -%>
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)

@@ -6,81 +6,102 @@
  */
 
 import pluralizePkg from 'pluralize';
+// The patterns barrel has the side effect of pre-registering the five
+// library-shipped patterns (Base / Synced / Activity / Knowledge /
+// Metadata). App-defined patterns are loaded separately in the parent
+// prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
+// globs before this helper runs — we only read the registry here.
+import { getPattern } from '../../../../src/patterns/registry.js';
+import '../../../../src/patterns/library/index.js';
 
 // ============================================================================
-// Family → Base Class Mapping
+// Pattern registry resolution
 // ============================================================================
 
-const FAMILY_MAP = {
-  'synced': {
-    repositoryBaseClass: 'SyncedEntityRepository',
-    serviceBaseClass: 'SyncedEntityService',
-    repositoryBaseImport: '@shared/base-classes/synced-entity-repository',
-    serviceBaseImport: '@shared/base-classes/synced-entity-service',
-    repositoryInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
-      'findByExternalId, findAllByUserId, findVisibleByUserId, syncUpsert',
-    ],
-    serviceInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete',
-      'findByExternalId, findAllByUserId, findVisibleByUserId',
-    ],
-  },
-  activity: {
-    repositoryBaseClass: 'ActivityEntityRepository',
-    serviceBaseClass: 'ActivityEntityService',
-    repositoryBaseImport: '@shared/base-classes/activity-entity-repository',
-    serviceBaseImport: '@shared/base-classes/activity-entity-service',
-    repositoryInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
-      'findByDateRange, findByUserId, findByOpportunityId, findRecentByOpportunityId',
-    ],
-    serviceInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete',
-      'findByDateRange, findByUserId, findByOpportunityId, findRecentByOpportunityId',
-    ],
-  },
-  knowledge: {
-    repositoryBaseClass: 'KnowledgeEntityRepository',
-    serviceBaseClass: 'KnowledgeEntityService',
-    repositoryBaseImport: '@shared/base-classes/knowledge-entity-repository',
-    serviceBaseImport: '@shared/base-classes/knowledge-entity-service',
-    repositoryInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
-      'semanticSearch, findPendingByOpportunityId, updateStatus, updateStatusBatch',
-    ],
-    serviceInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete',
-      'semanticSearch, findPendingByOpportunityId, updateStatus, updateStatusBatch',
-    ],
-  },
-  metadata: {
-    repositoryBaseClass: 'MetadataEntityRepository',
-    serviceBaseClass: 'MetadataEntityService',
-    repositoryBaseImport: '@shared/base-classes/metadata-entity-repository',
-    serviceBaseImport: '@shared/base-classes/metadata-entity-service',
-    repositoryInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
-      'findByEntityIdAndType, listByEntityId, listHistoryByEntityId',
-    ],
-    serviceInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete',
-      'findByEntityIdAndType, listByEntityId, listHistoryByEntityId',
-    ],
-  },
-  base: {
-    repositoryBaseClass: 'BaseRepository',
-    serviceBaseClass: 'BaseService',
-    repositoryBaseImport: '@shared/base-classes/base-repository',
-    serviceBaseImport: '@shared/base-classes/base-service',
-    repositoryInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
-    ],
-    serviceInheritedMethods: [
-      'findById, findByIds, list, count, exists, create, update, delete',
-    ],
-  },
-};
+
+/**
+ * Serialize a plain object as an idiomatic TypeScript object literal.
+ * Unlike JSON.stringify, this emits bare identifier keys when legal
+ * (matching the ADR-031 §4 example) and single-quoted strings. Only
+ * the shapes that actually appear in validated pattern configs are
+ * supported — strings, numbers, booleans, nulls, nested objects, and
+ * arrays of the same. Anything else falls through to JSON.stringify
+ * to stay safe.
+ */
+function renderPatternConfigLiteral(value, indent = '  ', initialIndent = '') {
+  // `currentIndent` is the indent applied to the closing brace of the
+  // outermost value; nested lines add one more level of `indent`.
+  // Templates that emit this helper inside an already-indented block
+  // (e.g. a class body indented by 2 spaces) should pass the block's
+  // indent as `initialIndent` so the closing brace and child lines line
+  // up correctly with the surrounding code.
+  return _renderLiteral(value, indent, initialIndent);
+}
+
+function _renderLiteral(value, baseIndent, currentIndent) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') {
+    // Single-quoted TS string with \\ + ' escapes. Matches ADR-031 example style.
+    return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    const next = currentIndent + baseIndent;
+    const items = value.map((v) => `${next}${_renderLiteral(v, baseIndent, next)}`);
+    return `[\n${items.join(',\n')},\n${currentIndent}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return '{}';
+    const next = currentIndent + baseIndent;
+    const lines = entries.map(([k, v]) => {
+      const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : `'${k}'`;
+      return `${next}${key}: ${_renderLiteral(v, baseIndent, next)}`;
+    });
+    return `{\n${lines.join(',\n')},\n${currentIndent}}`;
+  }
+  // Anything else — fall back to a safe JSON serialization.
+  return JSON.stringify(value);
+}
+
+/**
+ * Resolve the base-class locals (repository + service class name + import
+ * path + inherited-method comment lines) for an entity by looking up its
+ * declared pattern in the shared registry.
+ *
+ * Resolution order:
+ *   1. `entity.pattern` — single-pattern case. Returns that pattern's record.
+ *   2. `entity.patterns[0]` — multi-pattern case: the first name drives the
+ *      base-class choice. Subsequent patterns contribute columns + implied
+ *      behaviors (PATTERN-4 composition check) but do not change the
+ *      template's repository/service base class.
+ *   3. `'Base'` fallback — library pattern that anchors the identity case.
+ *
+ * Exported for unit-testing; consumers import `buildCleanLitePsLocals`.
+ */
+export function resolvePatternBaseClasses(entity) {
+  const name =
+    (typeof entity.pattern === 'string' && entity.pattern) ||
+    (Array.isArray(entity.patterns) && entity.patterns[0]) ||
+    'Base';
+  const def = getPattern(name) || getPattern('Base');
+  if (!def) {
+    throw new Error(
+      `Pattern '${name}' is not registered, and the library 'Base' pattern ` +
+      `is also missing. Did the patterns barrel fail to load?`,
+    );
+  }
+  return {
+    patternName: def.name,
+    repositoryBaseClass: def.repositoryClass,
+    serviceBaseClass: def.serviceClass,
+    repositoryBaseImport: def.repositoryImport,
+    serviceBaseImport: def.serviceImport,
+    repositoryInheritedMethods: def.repositoryInheritedMethods ?? [],
+    serviceInheritedMethods: def.serviceInheritedMethods ?? [],
+  };
+}
 
 // ============================================================================
 // Helper utilities
@@ -658,27 +679,38 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     ? pascalCase(eavDefinitionEntityPlural)
     : null;
 
-  // Pattern resolution.
+  // Pattern resolution — registry-driven (ADR-031, PATTERN-5).
   //
-  // PATTERN-3 bridge (temporary): we still drive the template off the
-  // legacy lowercased family key, but the YAML surface is now `pattern:`
-  // (single) or `patterns:` (multi). PATTERN-5 replaces this block with a
-  // registry lookup via `src/patterns/registry.ts` and retires FAMILY_MAP.
-  //
-  // Resolution order:
-  //   1. `entity.pattern` — single-pattern case, lowercase the value to
-  //      index into FAMILY_MAP (e.g. 'Synced' -> 'synced').
-  //   2. `entity.patterns[0]` — multi-pattern case: the *first* name wins
-  //      for base-class selection, subsequent patterns will contribute
-  //      columns/behaviors (PATTERN-4 composition) but do not change the
-  //      template's repository/service base class choice.
-  //   3. 'base' — no pattern declared.
-  const patternName =
-    (typeof entity.pattern === 'string' && entity.pattern) ||
-    (Array.isArray(entity.patterns) && entity.patterns[0]) ||
+  // The prior PATTERN-3 bridge that lowercased the pattern name to index
+  // FAMILY_MAP is gone; the registry returns the canonical record. The
+  // shape returned by `resolvePatternBaseClasses` matches the legacy
+  // FAMILY_MAP entries verbatim for the five library patterns so the
+  // emitted output is byte-identical.
+  const patternBase = resolvePatternBaseClasses(entity);
+  const { patternName } = patternBase;
+  // FAMILY_MAP is gone (PATTERN-5); `patternConfigClasses` is the structural
+  // equivalent — repository + service class names + import paths + inherited
+  // method comment lists, sourced directly from the pattern registry.
+  const patternConfigClasses = {
+    repositoryBaseClass: patternBase.repositoryBaseClass,
+    serviceBaseClass: patternBase.serviceBaseClass,
+    repositoryBaseImport: patternBase.repositoryBaseImport,
+    serviceBaseImport: patternBase.serviceBaseImport,
+    repositoryInheritedMethods: patternBase.repositoryInheritedMethods,
+    serviceInheritedMethods: patternBase.serviceInheritedMethods,
+  };
+  // Per-entity pattern config: resolve the matching block from
+  // `config: { <PatternName>: {...} }`. When the pattern has no
+  // configSchema OR the entity doesn't provide one, this stays null and
+  // templates emit no `patternConfig` property.
+  const patternConfigBlock =
+    (definition.config && definition.config[patternName]) ||
+    (definition.entity && definition.entity.config && definition.entity.config[patternName]) ||
     null;
-  const family = patternName ? String(patternName).toLowerCase() : 'base';
-  const familyConfig = FAMILY_MAP[family] || FAMILY_MAP['base'];
+  const hasPatternConfig =
+    patternConfigBlock != null &&
+    typeof patternConfigBlock === 'object' &&
+    Object.keys(patternConfigBlock).length > 0;
 
   // Process entity fields
   const processedFields = processFields(fields);
@@ -888,9 +920,12 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     drizzleTokenImport,
     drizzleTypeImport,
 
-    // Family
-    family,
-    ...familyConfig,
+    // Pattern — registry-driven (ADR-031)
+    patternName,
+    hasPatternConfig,
+    patternConfig: patternConfigBlock,
+    renderPatternConfigLiteral,
+    ...patternConfigClasses,
 
     // Behavior flags (also exposed at top level for template use)
     hasTimestamps,
