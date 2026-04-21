@@ -52,6 +52,8 @@ just stats                           # Statistics only
 just test-unit                       # Unit tests (base classes + subsystems, ~200ms)
 just test-family                     # Family repo integration tests (needs Docker)
 just test-baseline                   # Baseline snapshot test (generate + compare)
+just test-smoke                      # End-to-end smoke: scaffold + generate + typecheck fresh project (~60-120s)
+just test-all                        # test-unit + test-baseline + test-smoke (run on every PR to main via CI)
 just test-integration                # Full integration (Docker + codegen + NestJS)
 just validate                        # End-to-end scaffold validation
 
