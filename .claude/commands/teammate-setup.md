@@ -30,12 +30,12 @@ This project already has agents defined in `.claude/agents/`:
 
 ```bash
 ls .claude/agents/
-ls .claude/agents/team/
 ```
 
-Key agents for dev companion:
+Key agents:
 - **browser-pilot.md** — navigates and inspects the app via headless browser
-- **team/validator.md** — runs validation gates
+- **coordinator.md** — runs the full SDLC loop (understand → plan → spec → implement → validate)
+- **understander / planner / specifier / implementer / validator** — the SDLC phase specialists spawned by the coordinator
 
 ## Setup Steps
 

@@ -1,52 +1,81 @@
-# GitHub Issues Tracker Primitive
+# Task Management: GitHub Issues
 
-Instructions for GitHub Issues integration.
+Use GitHub Issues as the source of truth for work items.
 
 ## Concepts
 
 | GitHub Term | Generic Term | Description |
 |-------------|--------------|-------------|
 | Issue | Work Item | Single unit of work |
-| Milestone | Epic/Sprint | Collection of issues |
+| Milestone | Epic / Sprint | Collection of issues |
 | Label | Tag | Categorization |
-| Project | Board | Kanban-style tracking |
+| Project (v2) | Board | Kanban-style tracking (optional) |
 
 ## Issue Structure
 
-```
-Issue
-├── Title (required)
-├── Body (markdown)
-├── State (open, closed)
-├── Labels (bug, enhancement, etc.)
-├── Assignees
-├── Milestone
-└── Project (optional)
-```
+- **Title** (required) — imperative, concise
+- **Body** (markdown) — context, acceptance criteria, references
+- **State** — `open` | `closed`
+- **Labels** — categorization (see below)
+- **Assignees**
+- **Milestone** (optional) — for epic / sprint grouping
+- **Project** (optional) — for board workflow
 
-## Label Conventions
+## Label Taxonomy
 
-Use labels for primitive resolution:
-- `backend` / `frontend` → language detection
-- `bug` / `feature` / `docs`
-- `priority:high` / `priority:low`
-- `good first issue`
+Labels are how work is categorized. Common groups:
+
+| Group | Examples |
+|-------|----------|
+| Stack (where) | `backend`, `frontend`, `infra`, `docs` |
+| Type (what) | `feature`, `bug`, `chore`, `refactor`, `spike` |
+| Priority | `priority:urgent`, `priority:high`, `priority:low` |
+| Status | `in-progress`, `needs-review`, `blocked` |
+
+Exact label names are per-project. When planning, run `gh label list` to see what's available before assigning.
 
 ## Workflow
 
-GitHub Issues use open/closed states. For richer workflows:
-- Use Projects (beta) for kanban columns
-- Use labels to indicate status (`in-progress`, `needs-review`)
+GitHub Issues have only `open` / `closed` states. For richer workflow:
+- Use **Projects (v2)** for Kanban columns
+- Use **labels** as a lightweight status signal (`in-progress`, `needs-review`)
 
 ## CLI Reference
 
 ```bash
-# Create issue
-gh issue create --title "Title" --body "Description"
-
-# List issues
+# Read
 gh issue list --state open
-
-# View issue
+gh issue list --label feature --limit 20
 gh issue view 123
+gh issue view 123 --json title,body,labels,state
+
+# Write
+gh issue create --title "Title" --body "Description" --label feature,backend
+gh issue edit 123 --add-label in-progress
+gh issue close 123
+
+# PR sizing reference (used by planner to calibrate issue size)
+gh pr list --state merged --limit 10 --json title,additions,deletions
+
+# Labels
+gh label list
+gh label create feature --color 0E8A16
+
+# Milestones
+gh api repos/:owner/:repo/milestones
+```
+
+## Issue Template
+
+```markdown
+## Context
+{why this work matters}
+
+## Acceptance Criteria
+- [ ] {observable outcome 1}
+- [ ] {observable outcome 2}
+
+## References
+- Spec: `.claude/specs/{slug}.md`
+- Related: #N
 ```

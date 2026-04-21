@@ -1,5 +1,29 @@
+# SDLC configuration for codegen-patterns.
+# This file is the reference example for the pattern-stack primitives system.
+#
+# Agents resolve behavior by:
+#   1. Reading the primitive indicated by each field below
+#      (e.g., language -> primitives/language/typescript.md)
+#   2. Looking up concrete commands in `commands:` when running gates
+#
+# When adopting this in a new project, edit each field and each command to
+# match your stack. Delete fields you don't use; add new ones as new
+# primitive categories are introduced.
+
 language: typescript
-framework: nestjs
-quality_profile: strict
-commit_style: conventional
-task_management: github
+framework: nestjs            # optional — primitives/framework/{name}.md (if present)
+quality_profile: strict      # strict | fast
+commit_style: conventional   # conventional | freeform
+task_management: github      # github | linear | jira
+session_logging: enabled     # enabled | disabled
+
+# Concrete commands for quality gates. These override the defaults in the
+# language primitive. Agents (implementer, validator) run these verbatim.
+# Omit a key to fall back to the language primitive's default.
+commands:
+  typecheck: bun run typecheck
+  test: just test-unit
+  test_baseline: just test-baseline
+  test_integration: just test-integration
+  build: bun run build
+  # lint, format_check, format_fix: not configured for this repo
