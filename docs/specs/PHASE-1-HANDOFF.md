@@ -161,7 +161,53 @@ Draft ADR stubs were offered during Phase 1 but user deferred to "after events P
 
 ---
 
-## Follow-up tickets still open
+## TEST-SESSION-1 retrospective (2026-04-20)
+
+Session ran Phase A (setup) and Phase B (baseline smoke) at `~/Projects/dev/codegen-phase1-demo-v2/`. Phases C (stress scenarios), D (viewer validation deep-dive), and E (bug filing) partially complete — Phase E filing done, C+D deferred.
+
+**13 findings surfaced. 7 resolved upstream during the session:**
+
+| # | Summary | Commit |
+|---|---|---|
+| F1 | `subsystem install` ignored `paths.backend_src` | a7bd249 |
+| F2 | `entity new` hardcoded `runtime/subsystems/*/generated` | a7bd249 |
+| F3 | Use-case template imported `@shared/events` (should be `@shared/subsystems/events`) | a7bd249 |
+| F7a/b/c | Generated + vendored code failed under strict tsconfig (override, noUncheckedIndexedAccess) | d6cb061 |
+| F8 | Use-case payloadMap EJS HTML-escaped TypeScript generics | a8243a7 |
+| F9 | Jobs runtime referenced `tenantId` unconditionally; schema was conditional | 8c68a82 |
+| F10 | Generated use-cases omitted `tenantId` from `publish()` metadata | 8c68a82 |
+
+**F9+F10 required an ADR-022 revision** — JOB-Q1's "conditional emission" decision was reversed in favour of always-emit-nullable, with multi-tenancy enforcement remaining at the service layer. Decision documented in ADR-022 on 2026-04-20.
+
+**Living-docs update:** `docs/specs/TEST-SESSION-1.md` §2 bootstrap + §3 YAML examples corrected to match the actual Zod schemas (F5 — committed `f2307fe`).
+
+**6 remaining findings filed as GH issues:**
+
+- #116 (F4) — `paths.events_dir` not configurable
+- #117 (F6) — `project init` default vs spec disagreement
+- #118 (F7 umbrella) — smoke test not gating main (meta-bug: the reason F7a/b/c was missed)
+- #119 (F11) — `project init --force` re-injects main.ts hook
+- #120 (F12) — `entity new --all` aborts aggregately on one bad YAML
+- #121 (F13) — `subsystem install --force` overwrites `multi_tenant` user setting
+
+**What works end-to-end after the session:**
+
+- Fresh consumer bootstrap (`project init` → `subsystem install jobs/events` → `entity new --all`) produces a strict-tsconfig-clean consumer app.
+- `POST /contacts` with `x-tenant-id` header → HTTP 201, `contact_created` event landed in `domain_events` with `direction=change`, `pool=events_change`, drained to `status=processed`.
+- Embedded JobWorker boots clean on `jobs-interactive` + `jobs-batch` pools.
+
+**What Phase C still needs (not exercised in this session):**
+
+- Hand-written `@JobHandler` classes (enrich-contact, sync-deal, notify-crm per spec §3)
+- Dispatch endpoint (POST /admin/test/enqueue or similar) since no REST route auto-wires to IJobOrchestrator
+- S1 (horizontal scale — two workers) — needs standalone `worker.ts` in a second process
+- S7 (Atlas migration round-trip) — Atlas installed, `atlas.hcl` not yet written; drizzle-kit push was used as the dev-loop shortcut
+
+**Next session starting state:** `main` is at `f2307fe`. Demo v2 at `~/Projects/dev/codegen-phase1-demo-v2/` is usable — POST /contacts works, admin UI functional. Phase C can either extend that demo or start fresh.
+
+---
+
+## Follow-up tickets still open (pre-TEST-SESSION-1)
 
 - **#104** — `test-baseline` `.gitignore:22 modules/` pattern eats generated baselines; partially addressed by EVT-7 snapshot fill; general fix pending.
 - **#108** — `EventsModule.forRootAsync` DI bug (constructs backend via `new (provider.useClass)()` with zero args; breaks `DrizzleEventBus`'s `@Inject(DRIZZLE)`). Pre-existing. Unchanged by Phase 1 work. Low-priority — async factory path isn't exercised in tests or scaffold.
