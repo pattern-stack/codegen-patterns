@@ -107,3 +107,9 @@ export {
 	formatMarkdown,
 	formatMermaidGraph,
 } from './formatters';
+
+
+// Re-export patterns surface (definePattern + library patterns + registry).
+// Importing this barrel has the side effect of pre-registering the five
+// library-shipped patterns (Base / Synced / Activity / Knowledge / Metadata).
+export * from './patterns';
