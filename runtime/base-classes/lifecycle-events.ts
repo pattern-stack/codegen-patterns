@@ -138,7 +138,9 @@ export async function emitSafely(
 	if (!eventBus || events.length === 0) return;
 	try {
 		if (events.length === 1) {
-			await eventBus.publish(events[0]);
+			const only = events[0];
+			if (!only) return;
+			await eventBus.publish(only);
 		} else {
 			await eventBus.publishMany(events);
 		}

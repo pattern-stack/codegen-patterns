@@ -13,7 +13,7 @@ import type { JobRun } from './job-orchestrator.protocol';
  * boot validator (JOB-5) has not registered it yet.
  */
 export class JobTypeNotFoundError extends Error {
-  readonly name = 'JobTypeNotFoundError';
+  override readonly name = 'JobTypeNotFoundError';
   constructor(public readonly jobType: string) {
     super(`No job definition registered for type '${jobType}'.`);
   }
@@ -25,7 +25,7 @@ export class JobTypeNotFoundError extends Error {
  * so callers can surface its id or subscribe to its completion event.
  */
 export class JobCollisionError extends Error {
-  readonly name = 'JobCollisionError';
+  override readonly name = 'JobCollisionError';
   constructor(
     public readonly jobType: string,
     public readonly concurrencyKey: string,
@@ -44,7 +44,7 @@ export class JobCollisionError extends Error {
  * fresh execution and therefore requires the source run to be settled.
  */
 export class JobNotReplayableError extends Error {
-  readonly name = 'JobNotReplayableError';
+  override readonly name = 'JobNotReplayableError';
   constructor(
     public readonly runId: string,
     public readonly currentStatus: string,
@@ -62,7 +62,7 @@ export class JobNotReplayableError extends Error {
  * caller sees the misconfiguration synchronously rather than at claim time.
  */
 export class JobTemplateFieldMissingError extends Error {
-  readonly name = 'JobTemplateFieldMissingError';
+  override readonly name = 'JobTemplateFieldMissingError';
   constructor(
     public readonly template: string,
     public readonly field: string,
@@ -91,7 +91,7 @@ export class JobTemplateFieldMissingError extends Error {
  *   tenants). The row is persisted with `tenant_id = NULL`.
  */
 export class MissingTenantIdError extends Error {
-  readonly name = 'MissingTenantIdError';
+  override readonly name = 'MissingTenantIdError';
   constructor(public readonly method: string) {
     super(
       `MissingTenantIdError: JobsDomainModule was configured with ` +
@@ -113,7 +113,7 @@ export class MissingTenantIdError extends Error {
  * throws `JobTypeNotFoundError` synchronously for unknown types instead.
  */
 export class BootValidationError extends Error {
-  readonly name = 'BootValidationError';
+  override readonly name = 'BootValidationError';
   constructor(public readonly missingHandlers: string[]) {
     super(
       `BootValidationError: ${missingHandlers.length} orphaned job type(s) ` +
@@ -132,7 +132,7 @@ export class BootValidationError extends Error {
  * fix-one-restart-fix-next loop.
  */
 export class ReservedPoolViolationError extends Error {
-  readonly name = 'ReservedPoolViolationError';
+  override readonly name = 'ReservedPoolViolationError';
   constructor(
     public readonly offenders: ReadonlyArray<{
       handlerClass: string;

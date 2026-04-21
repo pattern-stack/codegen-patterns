@@ -29,7 +29,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   protected override eventBus: any = undefined;
 
   constructor(
-    protected readonly repository: <%= classNames.repository %>,
+    protected override readonly repository: <%= classNames.repository %>,
 <% if (eavEnabled) { -%>
     private readonly fieldValues: FieldValueService,
 <% } -%>

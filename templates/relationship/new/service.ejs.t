@@ -19,7 +19,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   @Optional() @Inject(EVENT_BUS)
   protected override eventBus: any = undefined;
 
-  constructor(protected readonly repository: <%= classNames.repository %>) {
+  constructor(protected override readonly repository: <%= classNames.repository %>) {
     super(repository);
   }
 

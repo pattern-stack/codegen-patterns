@@ -18,7 +18,7 @@
  * default) to opt out of the requirement entirely.
  */
 export class MissingTenantIdError extends Error {
-  readonly name = 'MissingTenantIdError';
+  override readonly name = 'MissingTenantIdError';
   constructor(public readonly eventType: string) {
     super(
       `Missing tenantId for event '${eventType}'. EventsModule is configured ` +
