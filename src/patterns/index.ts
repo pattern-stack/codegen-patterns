@@ -27,6 +27,12 @@ export {
 	type LoadAppPatternsResult,
 } from './registry.js';
 
+export {
+	validatePatternComposition,
+	validatePatternProject,
+	type PatternProjectContext,
+} from './validate-composition.js';
+
 // Library pattern values — available for consumers that want to reference
 // them programmatically (rare, but cheap to export).
 export {
