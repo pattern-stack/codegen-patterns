@@ -12,7 +12,27 @@
 import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
-const ROOT = resolve(import.meta.dir, '../../..');
+// Repo root — one level up from this file's directory (test/ → repo).
+// The legacy three-dots resolution dated back to when this runner lived
+// under tools/codegen/test/, and writing to the wrong ROOT contaminated
+// the dev machine's enclosing directory with `packages/api/` across every
+// run. Fixing it to the correct repo root means every baseline run starts
+// pristine — which is what CI has always done and what exposed the
+// implicit "populated packages/api from a previous run" assumption the
+// old baseline accidentally depended on.
+const ROOT = resolve(import.meta.dir, '..');
+// Guard: the miscomputed-ROOT bug (three dots instead of two) silently
+// wrote generated output into the directory ENCLOSING the repo, which
+// accumulated contamination across dev runs and made the baseline
+// accidentally pass on macOS while failing on any fresh checkout (CI).
+// Assert the repo-shaped invariant so the miscomputation can't silently
+// recur.
+if (!existsSync(join(ROOT, 'justfile')) || !existsSync(join(ROOT, 'templates'))) {
+  throw new Error(
+    `ROOT does not look like the codegen-patterns repo root: ${ROOT}\n` +
+    `Expected 'justfile' and 'templates/' to exist there.`
+  );
+}
 const CODEGEN_DIR = resolve(import.meta.dir, '..');
 const TEST_DIR = import.meta.dir;
 const FIXTURES_DIR = join(TEST_DIR, 'fixtures');
@@ -108,15 +128,54 @@ function runCodegen() {
   // Set up test config at ROOT
   setupTestConfig();
 
-  const fixtures = readdirSync(FIXTURES_DIR).filter(f => f.endsWith('.yaml') && !f.startsWith('codegen.config'));
+  // Pristine state — wipe every output path under ROOT so the two-pass
+  // generation below genuinely starts from "first run" regardless of what
+  // a previous invocation (or the dev's enclosing directory contamination
+  // when ROOT was miscomputed) left behind. Mirrors the CI environment,
+  // which always starts from a fresh checkout.
+  for (const outputPath of OUTPUT_PATHS) {
+    const abs = join(ROOT, outputPath);
+    if (existsSync(abs)) {
+      rmSync(abs, { recursive: true });
+    }
+  }
+
+  // Sort fixtures alphabetically so run order is deterministic regardless of
+  // the underlying filesystem's `readdir` semantics. Without this, Linux
+  // (ext4 insertion-order) and macOS (APFS effectively stable-but-implementation-defined)
+  // can process the same fixture set in different orders, producing different
+  // output when templates check `targetExists` for cross-entity references.
+  const fixtures = readdirSync(FIXTURES_DIR)
+    .filter(f => f.endsWith('.yaml') && !f.startsWith('codegen.config'))
+    .sort();
 
   // Use env var or compute from script location (works when running from any directory)
   const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(CODEGEN_DIR, 'templates');
 
-  try {
+  // Two-pass generation.
+  //
+  // The entity `repository.ejs.t` template checks `targetExists` for each
+  // relationship — it calls `fs.existsSync('packages/api/src/domain/<target>/<target>.entity.ts')`.
+  // When a relationship's target hasn't been generated yet (first pass), the
+  // template emits a "Related entities not yet generated" fallback; when it
+  // has (second pass), the template emits the full `switch` mapping cases.
+  //
+  // Users running `codegen entity new --all` iteratively hit the steady state
+  // (second-pass shape) quickly in practice. Baselining steady-state output
+  // matches the documented contract and avoids baking filesystem-order
+  // dependency into the snapshot.
+  //
+  // The alternative — baselining first-pass output — would require no second
+  // pass but would make every generated repository carry the "not yet generated"
+  // fallback, which is a less useful documentation artifact. See
+  // issue: baseline was previously passing by accident because the buggy ROOT
+  // resolution wrote into `/Users/.../Projects/packages/api/` and picked up
+  // entity files left over from prior runs.
+  const runPass = (label: string) => {
+    console.log(`   Pass ${label}:`);
     for (const fixture of fixtures) {
       const yamlPath = join(FIXTURES_DIR, fixture);
-      console.log(`   Generating: ${fixture}`);
+      console.log(`     Generating: ${fixture}`);
 
       try {
         execSync(`HYGEN_TMPLS="${templatesDir}" bunx hygen entity new --yaml "${yamlPath}"`, {
@@ -124,10 +183,15 @@ function runCodegen() {
           stdio: 'pipe',
         });
       } catch (error) {
-        console.error(`   ❌ Failed: ${fixture}`);
+        console.error(`     ❌ Failed: ${fixture}`);
         throw error;
       }
     }
+  };
+
+  try {
+    runPass('1 (seeds domain entity files for targetExists checks)');
+    runPass('2 (final output with all cross-entity references resolved)');
   } finally {
     // Always clean up test config
     cleanupTestConfig();
