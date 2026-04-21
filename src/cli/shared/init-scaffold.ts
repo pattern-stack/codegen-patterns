@@ -659,20 +659,37 @@ export async function buildInitPlan(
 	// 10. entities/ + entities/example.yaml
 	entries.push(dirEntry(cwd, path.join(cwd, 'entities')));
 	{
-		const examplePath = path.join(cwd, 'entities', 'example.yaml');
-		if (!fs.existsSync(examplePath)) {
-			entries.push({
-				path: examplePath,
-				relPath: relOf(cwd, examplePath),
-				action: 'create',
-				content: exampleEntityYaml(),
-			});
-		} else {
+		const entitiesDir = path.join(cwd, 'entities');
+		const examplePath = path.join(entitiesDir, 'example.yaml');
+		const hasOtherYamls =
+			fs.existsSync(entitiesDir) &&
+			fs
+				.readdirSync(entitiesDir)
+				.some(
+					(f) =>
+						(f.endsWith('.yaml') || f.endsWith('.yml')) &&
+						f !== 'example.yaml',
+				);
+		if (fs.existsSync(examplePath)) {
 			entries.push({
 				path: examplePath,
 				relPath: relOf(cwd, examplePath),
 				action: 'skip',
 				reason: 'already exists',
+			});
+		} else if (hasOtherYamls) {
+			entries.push({
+				path: examplePath,
+				relPath: relOf(cwd, examplePath),
+				action: 'skip',
+				reason: 'other entities present',
+			});
+		} else {
+			entries.push({
+				path: examplePath,
+				relPath: relOf(cwd, examplePath),
+				action: 'create',
+				content: exampleEntityYaml(),
 			});
 		}
 	}
