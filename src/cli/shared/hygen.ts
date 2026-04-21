@@ -1,9 +1,22 @@
 /**
  * Hygen invocation helper — shared between `entity` and `subsystem` nouns.
  *
- * Extracted verbatim from the legacy src/cli.ts so behavior is identical
- * during the transition. We shell out to `bunx hygen <generator> <action>`
- * with HYGEN_TMPLS pointing at our templates directory.
+ * We shell out to `bunx --bun hygen <generator> <action>` with HYGEN_TMPLS
+ * pointing at our templates directory.
+ *
+ * Why `--bun`: hygen's own shebang is `#!/usr/bin/env node`, so plain
+ * `bunx hygen` runs the generator under Node. Our `prompt.js` files do
+ * `await import('../../../src/patterns/library/index.js')` — where the
+ * physical target is `index.ts`. Node's ESM resolver does not map `.js` to
+ * `.ts`; Bun's does. `--bun` forces Bun to honor the invocation and the
+ * `.js`-pointing-at-`.ts` imports (a convention that matches what the
+ * TypeScript source itself uses internally — e.g. `import '../registry.js'`
+ * inside a `.ts` file under NodeNext module resolution) resolve cleanly.
+ *
+ * Dropping `--bun` silently breaks `test-smoke` and any consumer path that
+ * exercises the pattern registry through the Hygen subprocess. A
+ * unit-level regression test pins the flag in
+ * `src/__tests__/cli/hygen.test.ts`.
  */
 
 import { execSync, type ExecSyncOptions } from 'node:child_process';
@@ -52,7 +65,7 @@ function quoteArg(a: string): string {
 export function invokeHygen(opts: HygenInvocation): HygenResult {
 	const templateRoot = opts.templateRoot ?? defaultTemplateRoot();
 	const extra = (opts.args ?? []).map(quoteArg).join(' ');
-	const command = `bunx hygen ${opts.generator} ${opts.action}${extra ? ' ' + extra : ''}`;
+	const command = `bunx --bun hygen ${opts.generator} ${opts.action}${extra ? ' ' + extra : ''}`;
 
 	const execOpts: ExecSyncOptions = {
 		cwd: opts.cwd ?? process.cwd(),

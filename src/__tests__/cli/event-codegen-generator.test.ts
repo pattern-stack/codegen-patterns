@@ -16,6 +16,7 @@ import { describe, test, expect, afterEach } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 import {
 	buildBusContent,
@@ -492,6 +493,28 @@ describe('buildBusContent', () => {
 		expect(content).toContain('MissingTenantIdError');
 		expect(content).toContain("opts?.metadata?.['tenantId']");
 	});
+
+	// ---------------------------------------------------------------------------
+	// Regression: `noUncheckedIndexedAccess` strict-TS compatibility.
+	//
+	// `eventPayloadSchemas` is typed as `Record<EventTypeName, z.ZodType>`. In
+	// the empty-registry case the emitter degrades `EventTypeName` to `string`
+	// and the schemas object is literally `{}`, so `eventPayloadSchemas[type]`
+	// under `noUncheckedIndexedAccess` is `z.ZodType | undefined`. Calling
+	// `.safeParse()` directly on that was a TS2532 error (caught by smoke the
+	// moment CI started running `just test-all`; see PR for #136). The bus
+	// template must bind the lookup result to a local and guard it.
+	// ---------------------------------------------------------------------------
+	test('guards the schema lookup so strict + noUncheckedIndexedAccess passes', () => {
+		const content = buildBusContent([]);
+		// Must hoist the lookup into a local and guard it.
+		expect(content).toContain('const schema = eventPayloadSchemas[type];');
+		expect(content).toContain('if (schema) {');
+		expect(content).toContain('schema.safeParse(payload)');
+		// Must NOT call safeParse directly on the indexed access (the
+		// exact shape that failed TS2532 under noUncheckedIndexedAccess).
+		expect(content).not.toContain('eventPayloadSchemas[type].safeParse(');
+	});
 });
 
 describe('buildIndexContent', () => {
@@ -501,6 +524,149 @@ describe('buildIndexContent', () => {
 		expect(content).toContain("export * from './schemas';");
 		expect(content).toContain("export * from './registry';");
 		expect(content).toContain("export * from './bus';");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Regression: the bundle of emitted files typechecks under the same strict
+// compilerOptions the smoke harness / consumer tsconfig.json enforces
+// (`strict: true`, `noUncheckedIndexedAccess: true`, etc.).
+//
+// Before the empty-registry schema guard fix (landed alongside the CI
+// bootstrap), this test failed on line 51 of the empty-case bus.ts with
+// TS2532. Covers the concrete regression but also catches any future
+// strict-TS breakage in the emitted content — much faster than waiting on
+// `just test-smoke`.
+// ---------------------------------------------------------------------------
+
+describe('emitted generated/* typechecks under strict + noUncheckedIndexedAccess', () => {
+	function runTscOnEmit(events: EventDefinition[]): {
+		exitCode: number;
+		output: string;
+	} {
+		// Place the tmp dir INSIDE the repo so Node's module-resolution
+		// walks up to the repo's \`node_modules\` and finds zod, @nestjs/*,
+		// and @types/node. Using os.tmpdir() would require a package install
+		// per test — slow and flaky.
+		const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
+		const tmpBase = path.join(repoRoot, 'test', 'tmp', 'evt-emit-tsc');
+		fs.mkdirSync(tmpBase, { recursive: true });
+		const dir = fs.mkdtempSync(path.join(tmpBase, 'case-'));
+		tempDirs.push(dir);
+		const generated = path.join(dir, 'generated');
+		fs.mkdirSync(generated, { recursive: true });
+
+		// Emit the four content builders into ./generated, matching the
+		// layout `generateEventCodegen` produces on disk.
+		fs.writeFileSync(path.join(generated, 'types.ts'), buildTypesContent(events));
+		fs.writeFileSync(
+			path.join(generated, 'schemas.ts'),
+			buildSchemasContent(events),
+		);
+		fs.writeFileSync(
+			path.join(generated, 'registry.ts'),
+			buildRegistryContent(events),
+		);
+		fs.writeFileSync(path.join(generated, 'bus.ts'), buildBusContent(events));
+		fs.writeFileSync(path.join(generated, 'index.ts'), buildIndexContent(events));
+
+		// Minimal stubs for the sibling modules bus.ts imports from '../*'.
+		fs.writeFileSync(
+			path.join(dir, 'event-bus.protocol.ts'),
+			[
+				"export interface DomainEvent {",
+				"  id: string;",
+				"  type: string;",
+				"  aggregateId: string;",
+				"  aggregateType: string;",
+				"  payload: Record<string, unknown>;",
+				"  occurredAt: Date;",
+				"  metadata?: Record<string, unknown>;",
+				"}",
+				"export type DrizzleTransaction = unknown;",
+				"export interface IEventBus {",
+				"  publish(event: DomainEvent, tx?: DrizzleTransaction): Promise<void>;",
+				"  subscribe<T extends DomainEvent>(type: string, handler: (event: T) => Promise<void>): () => void;",
+				"}",
+			].join('\n') + '\n',
+		);
+		fs.writeFileSync(
+			path.join(dir, 'events.tokens.ts'),
+			[
+				"export const EVENT_BUS = Symbol('EVENT_BUS');",
+				"export const EVENTS_MULTI_TENANT = Symbol('EVENTS_MULTI_TENANT');",
+			].join('\n') + '\n',
+		);
+		fs.writeFileSync(
+			path.join(dir, 'events-errors.ts'),
+			"export class MissingTenantIdError extends Error {\n  constructor(type: string) { super(type); }\n}\n",
+		);
+
+		// tsconfig mirroring the smoke harness consumer tsconfig (see
+		// `test/smoke/run-smoke.ts` — it writes the same strict options).
+		fs.writeFileSync(
+			path.join(dir, 'tsconfig.json'),
+			JSON.stringify(
+				{
+					compilerOptions: {
+						lib: ['ESNext'],
+						target: 'ESNext',
+						module: 'Preserve',
+						moduleDetection: 'force',
+						allowJs: true,
+						moduleResolution: 'bundler',
+						allowImportingTsExtensions: true,
+						verbatimModuleSyntax: false,
+						noEmit: true,
+						strict: true,
+						skipLibCheck: true,
+						noFallthroughCasesInSwitch: true,
+						noUncheckedIndexedAccess: true,
+						noImplicitOverride: true,
+						experimentalDecorators: true,
+						emitDecoratorMetadata: true,
+						types: ['bun'],
+					},
+				},
+				null,
+				2,
+			),
+		);
+
+		// Stub package.json so bun/tsc can resolve zod + nestjs from the repo's
+		// node_modules via the nearest upward search.
+		fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"evt-emit-tsc"}\n');
+
+		const res = spawnSync(
+			'bunx',
+			['--bun', 'tsc', '--noEmit', '-p', dir],
+			{
+				cwd: repoRoot,
+				encoding: 'utf-8',
+				timeout: 60_000,
+			},
+		);
+		return {
+			exitCode: res.status ?? -1,
+			output: (res.stdout ?? '') + (res.stderr ?? ''),
+		};
+	}
+
+	test('empty-registry emit typechecks (TS2532 regression — PR #136)', () => {
+		const { exitCode, output } = runTscOnEmit([]);
+		if (exitCode !== 0) {
+			// Surface the raw tsc output so regressions are debuggable from CI logs.
+			throw new Error(`tsc exited ${exitCode}:\n${output}`);
+		}
+		expect(exitCode).toBe(0);
+	});
+
+	test('non-empty-registry emit typechecks', () => {
+		const { exitCode, output } = runTscOnEmit([contactCreated]);
+		if (exitCode !== 0) {
+			throw new Error(`tsc exited ${exitCode}:\n${output}`);
+		}
+		expect(exitCode).toBe(0);
 	});
 });
 
