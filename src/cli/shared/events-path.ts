@@ -7,8 +7,7 @@
  *
  * Resolution order:
  *   1. `paths.events_dir` in `codegen.config.yaml`
- *   2. `paths.events` alias (parallel to `entities` / `entities_dir`)
- *   3. `<cwd>/events` fallback
+ *   2. `<cwd>/events` fallback
  */
 import path from 'node:path';
 
@@ -20,7 +19,7 @@ export function resolveEventsDirFromConfig(
 	cwd: string,
 	config: CodegenConfig | null,
 ): string {
-	const configured = config?.paths?.events_dir ?? config?.paths?.events;
+	const configured = config?.paths?.events_dir;
 	if (typeof configured === 'string' && configured.length > 0) {
 		return path.resolve(cwd, configured);
 	}

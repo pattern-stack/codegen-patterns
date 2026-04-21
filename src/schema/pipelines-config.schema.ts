@@ -153,7 +153,6 @@ export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
 export const PathsConfigSchema = z
   .object({
     events_dir: z.string().optional(),
-    events: z.string().optional(),
     generated: z.string().default("src/generated"),
   })
   .passthrough();
