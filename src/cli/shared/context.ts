@@ -15,6 +15,8 @@ export interface CodegenConfig {
 	paths?: {
 		entities?: string;
 		entities_dir?: string;
+		events?: string;
+		events_dir?: string;
 		subsystems?: string;
 		backend_src?: string;
 		frontend_src?: string;

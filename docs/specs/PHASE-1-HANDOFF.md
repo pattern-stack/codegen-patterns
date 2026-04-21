@@ -183,7 +183,7 @@ Session ran Phase A (setup) and Phase B (baseline smoke) at `~/Projects/dev/code
 
 **6 remaining findings filed as GH issues:**
 
-- #116 (F4) — `paths.events_dir` not configurable
+- ~~#116 (F4) — `paths.events_dir` not configurable~~ (FIXED)
 - #117 (F6) — `project init` default vs spec disagreement
 - #118 (F7 umbrella) — smoke test not gating main (meta-bug: the reason F7a/b/c was missed)
 - #119 (F11) — `project init --force` re-injects main.ts hook

@@ -453,6 +453,7 @@ Minimum viable config for a backend-only clean-lite-ps project:
 paths:
   backend_src: src                  # clean-lite-ps writes to <backend_src>/modules/<plural>/
   entities_dir: entities
+  events_dir: events                # top-level events/*.yaml source for event codegen
   generated: src/generated          # ADR-017 barrels land here
 
 generate:
