@@ -185,7 +185,7 @@ Session ran Phase A (setup) and Phase B (baseline smoke) at `~/Projects/dev/code
 
 - ~~#116 (F4) — `paths.events_dir` not configurable~~ (FIXED)
 - #117 (F6) — `project init` default vs spec disagreement
-- #118 (F7 umbrella) — smoke test not gating main (meta-bug: the reason F7a/b/c was missed)
+- ~~#118 (F7 umbrella) — smoke test not gating main (meta-bug: the reason F7a/b/c was missed)~~ (FIXED)
 - #119 (F11) — `project init --force` re-injects main.ts hook
 - #120 (F12) — `entity new --all` aborts aggregately on one bad YAML
 - #121 (F13) — `subsystem install --force` overwrites `multi_tenant` user setting
