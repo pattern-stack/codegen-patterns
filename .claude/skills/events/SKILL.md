@@ -89,7 +89,8 @@ Files that ship to the consumer app (not templates):
 - `runtime/base-classes/lifecycle-events.ts` — legacy fire-and-forget auto-emission; being replaced by `emits:` declarations
 
 Generator pieces:
-- `templates/subsystem/events/` — scaffolds the above into a consumer app (`prompt.js`, `codegen-config-events-block.ejs.t`, `domain-events.schema.ejs.t`, `generated-keep.ejs.t`)
+- `templates/subsystem/events/` — main scaffold (`prompt.js`, `domain-events.schema.ejs.t`, `generated-keep.ejs.t`) — always emitted on `subsystem install events`
+- `templates/subsystem/events-config/` — config-block scaffold (`prompt.js`, `codegen-config-events-block.ejs.t`) — emitted on first install; `subsystem install events --force` alone preserves an existing block (#121 / F13), `--force-config` opts into regeneration
 - `src/cli/shared/events-scaffold-locals.ts` — resolves Hygen locals (appName, multiTenant, configPath, schemaPath, generatedKeepPath)
 - `src/cli/shared/event-codegen-generator.ts` — produces the five `generated/` files from `events/*.yaml` and entity `events:` / `emits:` blocks
 

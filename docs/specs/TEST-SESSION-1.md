@@ -12,8 +12,9 @@ Phase A + Phase B were executed at `~/Projects/dev/codegen-phase1-demo-v2/`. Thi
 - **F7** (`d6cb061`) — strict-TS fixes (override modifiers across vendored + generated classes; `noUncheckedIndexedAccess` guard in `lifecycle-events.ts`).
 - **F8** (`a8243a7`) — use-case payloadMap emits via `<%- ... %>` (raw) instead of `<%= ... %>` (HTML-escaped).
 - **F9 / F10** (`8c68a82`) — `tenant_id` emitted unconditionally on `job_run` (nullable); use-case template threads an optional `actor: { tenantId, userId }` param and controllers read the `x-tenant-id` / `x-user-id` headers. Decision reversal on JOB-Q1 documented in ADR-022 revision.
+- **F13 resolved 2026-04-20** (#121) — `subsystem install --force` no longer clobbers the `jobs:` / `events:` block in `codegen.config.yaml`; CLI-side detector now skips the inject template when the block is present and exposes `--force-config` for opt-in regeneration.
 
-Unresolved minor findings (F4, F6, F11, F12, F13) are filed as GH issues. Smoke-test gating (F7 umbrella) also filed.
+Unresolved minor findings (F4, F6, F11, F12) are filed as GH issues. Smoke-test gating (F7 umbrella) also filed.
 
 **§3 YAML examples below are the corrected versions.** The pre-revision versions used flat-top-level shapes (`name:`, array-style `fields:/payload:`, `timestamp` field type, `string[]` payload type, outbound events with `aggregate:`) that do not match the Zod schemas in `src/schema/{entity,event}-definition.schema.ts`.
 

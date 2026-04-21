@@ -58,7 +58,11 @@ runtime/subsystems/jobs/
   jobs-domain.module.ts              # JOB-5: DynamicModule wiring tokens
   job-worker.module.ts               # JOB-5: lifecycle, validator, registry scan
   pool-config.loader.ts              # JOB-5: reads codegen.config.yaml: jobs.pools
-templates/subsystem/jobs/            # JOB-6: Hygen scaffold (worker.ts, main hook, config block)
+templates/subsystem/jobs/            # JOB-6: main scaffold (worker.ts, main hook, schema)
+templates/subsystem/jobs-config/     # #121 (F13): config-block inject, invoked independently
+                                     #   - `subsystem install jobs --force` alone preserves an
+                                     #     existing `jobs:` block
+                                     #   - `--force-config` opts into regeneration
 ```
 
 User-authored handler classes live in the consumer app, typically under `src/jobs/` or colocated with their use case. **Jobs are TypeScript classes with `@JobHandler`. There is no jobs-as-YAML codegen — ADR-022 rejected it explicitly.**

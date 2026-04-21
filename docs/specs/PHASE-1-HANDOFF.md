@@ -188,7 +188,7 @@ Session ran Phase A (setup) and Phase B (baseline smoke) at `~/Projects/dev/code
 - #118 (F7 umbrella) — smoke test not gating main (meta-bug: the reason F7a/b/c was missed)
 - #119 (F11) — `project init --force` re-injects main.ts hook
 - #120 (F12) — `entity new --all` aborts aggregately on one bad YAML
-- #121 (F13) — `subsystem install --force` overwrites `multi_tenant` user setting
+- #121 (F13) — `subsystem install --force` overwrites `multi_tenant` user setting  _(resolved 2026-04-20 — default `--force` preserves the block; `--force-config` opts into regeneration)_
 
 **What works end-to-end after the session:**
 
