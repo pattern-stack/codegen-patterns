@@ -66,7 +66,7 @@ export class <%= updateCommandClass %> {
 				entity.id,
 				{
 <% updateEventType.payloadMap.forEach((p) => { -%>
-					<%= p.camelKey %>: <%= p.expression %>,<% if (p.todo) { %> // TODO: <%= p.todo %><% } %>
+					<%= p.camelKey %>: <%- p.expression %>,<% if (p.todo) { %> // TODO: <%= p.todo %><% } %>
 
 <% }) -%>
 				},
