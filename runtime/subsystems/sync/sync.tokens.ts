@@ -13,6 +13,7 @@
  *   @Inject(SYNC_CURSOR_STORE)  private readonly cursors: ICursorStore,
  *   @Inject(SYNC_FIELD_DIFFER)  private readonly differ: IFieldDiffer<CanonicalOpportunity>,
  *   @Inject(SYNC_SINK)          private readonly sink: ISyncSink<CanonicalOpportunity>,
+ *   @Inject(SYNC_RUN_RECORDER)  private readonly recorder: ISyncRunRecorder,
  * ) {}
  * ```
  *
@@ -23,6 +24,20 @@ export const SYNC_CHANGE_SOURCE = 'SYNC_CHANGE_SOURCE' as const;
 export const SYNC_CURSOR_STORE = 'SYNC_CURSOR_STORE' as const;
 export const SYNC_FIELD_DIFFER = 'SYNC_FIELD_DIFFER' as const;
 export const SYNC_SINK = 'SYNC_SINK' as const;
+
+/**
+ * Run-recorder token (SYNC-5). Backed by `ISyncRunRecorder`. Drizzle impl
+ * lands in SYNC-4; tests provide inline fakes.
+ */
+export const SYNC_RUN_RECORDER = 'SYNC_RUN_RECORDER' as const;
+
+/**
+ * Optional loopback-fingerprint store (SYNC-5). Backed by
+ * `ILoopbackFingerprintStore<T>`. `ExecuteSyncUseCase` treats this as
+ * `@Optional()` — consumers without outbound writeback paths don't need it.
+ */
+export const SYNC_LOOPBACK_FINGERPRINT_STORE =
+  'SYNC_LOOPBACK_FINGERPRINT_STORE' as const;
 
 /**
  * Injection token for the resolved `SyncModuleOptions` object (SYNC-6).
