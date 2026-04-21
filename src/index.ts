@@ -7,15 +7,50 @@
 
 import { loadEntities, loadRelationships, resolveReferences, resolveRelationshipReferences } from './parser';
 import { buildDomainGraph, checkConsistency, computeStatistics } from './analyzer';
+import {
+	validatePatternComposition,
+	validatePatternProject,
+} from './patterns/validate-composition.js';
 import type { AnalysisResult, OutputFormat } from './analyzer/types';
 
 /**
- * Analyze a domain from entity and relationship YAML files
+ * Options for `analyzeDomain`. All fields are optional and additive — omitting
+ * them keeps the analyzer's behavior identical to pre-PATTERN-4 callers.
+ */
+export interface AnalyzeDomainOptions {
+	/**
+	 * Path to the relationships directory. Equivalent to the legacy second
+	 * positional argument — preserved for call-site compatibility.
+	 */
+	relationshipsDir?: string;
+	/**
+	 * Selected backend architecture from `codegen.config.yaml
+	 * generate.architecture`. When provided, enables the PATTERN-4 project-level
+	 * check (plan Risk 4) that warns when `pattern:` is declared but the
+	 * selected architecture does not yet consume patterns (e.g. `clean`).
+	 */
+	architecture?: string;
+}
+
+/**
+ * Analyze a domain from entity and relationship YAML files.
+ *
+ * The signature accepts either the legacy `(entitiesDir, relationshipsDir)`
+ * shape or the newer `(entitiesDir, options)` object form. Existing callers
+ * keep working unchanged; pattern-aware callers pass
+ * `{ architecture, relationshipsDir }` to opt into the Risk-4 project-level
+ * warning surface.
  */
 export async function analyzeDomain(
 	entitiesDir: string,
-	relationshipsDir?: string,
+	relationshipsOrOptions?: string | AnalyzeDomainOptions,
 ): Promise<AnalysisResult> {
+	const opts: AnalyzeDomainOptions =
+		typeof relationshipsOrOptions === 'string'
+			? { relationshipsDir: relationshipsOrOptions }
+			: relationshipsOrOptions ?? {};
+	const relationshipsDir = opts.relationshipsDir;
+
 	// Load and parse all entity files
 	const { entities, issues: loadIssues } = loadEntities(entitiesDir);
 
@@ -40,6 +75,18 @@ export async function analyzeDomain(
 	// Check consistency
 	const consistencyIssues = checkConsistency(graph);
 
+	// PATTERN-4 — pattern composition check. Runs AFTER resolveReferences()
+	// (per ADR-031 §3) so entity fields + behaviors are known; the
+	// per-entity validator detects column conflicts, unknown patterns, and
+	// config-schema failures, and the project-level validator covers plan
+	// Risk 4 (warn when `pattern:` is declared under an architecture that
+	// does not yet consume patterns).
+	const patternIssues = entities.flatMap((e) => validatePatternComposition(e));
+	const patternProjectIssues = validatePatternProject({
+		entities,
+		architecture: opts.architecture,
+	});
+
 	// Compute statistics
 	const statistics = computeStatistics(graph);
 
@@ -50,6 +97,8 @@ export async function analyzeDomain(
 		...resolveIssues,
 		...relResolveIssues,
 		...consistencyIssues,
+		...patternIssues,
+		...patternProjectIssues,
 	];
 
 	// Determine validity (only errors make it invalid)
