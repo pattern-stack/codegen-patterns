@@ -120,7 +120,7 @@ export class ExecuteSyncUseCase<T extends Record<string, unknown>> {
   async execute(input: ExecuteSyncInput<T>): Promise<ExecuteSyncResult> {
     const source = input.sourceOverride ?? this.source;
     const startedAt = Date.now();
-    const cursorBefore = await this.cursors.get(input.subscription.id);
+    const cursorBefore = await this.cursors.get(input.subscription.id, input.tenantId);
 
     const { id: runId } = await this.recorder.startRun({
       subscriptionId: input.subscription.id,
@@ -193,7 +193,7 @@ export class ExecuteSyncUseCase<T extends Record<string, unknown>> {
     // overwrite a valid cursor with `null` on a no-change run.
     if (cursorAdvanced && latestCursor !== null && latestCursor !== undefined) {
       try {
-        await this.cursors.put(input.subscription.id, latestCursor);
+        await this.cursors.put(input.subscription.id, latestCursor, input.tenantId);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.error(

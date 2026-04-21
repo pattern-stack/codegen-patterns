@@ -5,10 +5,11 @@
  *   - SYNC-2 — protocols + DI tokens (#134)
  *   - SYNC-1 — Drizzle audit-table schemas (#148)
  *   - SYNC-3 — MemoryCursorStore (#149)
- *   - SYNC-5 — ExecuteSyncUseCase + DeepEqualDiffer (this slice)
+ *   - SYNC-5 — ExecuteSyncUseCase + DeepEqualDiffer + recorder/loopback protocols (#150)
+ *   - SYNC-4 — Drizzle backends (PostgresCursorStore + DrizzleSyncRunRecorder) (this slice)
  *
- * Drizzle backend (SYNC-4), module (SYNC-6), scaffold templates (SYNC-7),
- * and docs/skills (SYNC-8) land in their own PRs. See epic #60.
+ * Module (SYNC-6), scaffold templates (SYNC-7), and docs/skills (SYNC-8)
+ * land in their own PRs. See epic #60.
  */
 
 // Protocols
@@ -50,6 +51,9 @@ export {
   SYNC_SINK,
 } from './sync.tokens';
 
+// Errors
+export { MissingTenantIdError } from './sync-errors';
+
 // Audit schemas (SYNC-1) — Drizzle pgTable declarations + row types + enums
 export {
   syncSubscriptions,
@@ -80,3 +84,7 @@ export {
   type ExecuteSyncInput,
   type ExecuteSyncResult,
 } from './execute-sync.use-case';
+
+// Drizzle backends (SYNC-4)
+export { PostgresCursorStore } from './sync-cursor-store.drizzle-backend';
+export { DrizzleSyncRunRecorder } from './sync-run-recorder.drizzle-backend';
