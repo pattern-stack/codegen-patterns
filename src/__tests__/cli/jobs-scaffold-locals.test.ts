@@ -30,6 +30,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			cwd: CWD,
 			config: null,
 			fileExists: () => false,
+			readFile: () => null,
 		});
 
 		expect(locals.multiTenant).toBe(false);
@@ -51,6 +52,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			cwd: CWD,
 			config: { paths: { backend_src: 'packages/api/src' } } as any,
 			fileExists: () => false,
+			readFile: () => null,
 		});
 		expect(locals.schemaPath).toBe(
 			path.resolve(
@@ -70,6 +72,7 @@ describe('resolveJobsScaffoldLocals', () => {
 				},
 			} as any,
 			fileExists: () => false,
+			readFile: () => null,
 		});
 		expect(locals.schemaPath).toBe(
 			path.resolve(CWD, 'custom/subsystems/jobs/job-orchestration.schema.ts'),
@@ -81,6 +84,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			cwd: CWD,
 			config: { jobs: { multi_tenant: true } } as any,
 			fileExists: () => false,
+			readFile: () => null,
 		});
 		expect(locals.multiTenant).toBe(true);
 	});
@@ -93,6 +97,7 @@ describe('resolveJobsScaffoldLocals', () => {
 				cwd: CWD,
 				config: { jobs: { multi_tenant: raw } } as any,
 				fileExists: () => false,
+				readFile: () => null,
 			});
 			expect(locals.multiTenant).toBe(false);
 		}
@@ -103,6 +108,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			cwd: CWD,
 			config: { jobs: { worker_mode: 'standalone' } } as any,
 			fileExists: () => false,
+			readFile: () => null,
 		});
 		expect(standalone.workerMode).toBe('standalone');
 
@@ -110,6 +116,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			cwd: CWD,
 			config: { jobs: { worker_mode: 'wobbly' } } as any,
 			fileExists: () => false,
+			readFile: () => null,
 		});
 		expect(bogus.workerMode).toBe('embedded');
 	});
@@ -119,6 +126,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			cwd: CWD,
 			config: { paths: { subsystems: 'packages/api/src/subsystems' } } as any,
 			fileExists: () => false,
+			readFile: () => null,
 		});
 		expect(locals.schemaPath).toBe(
 			path.resolve(
@@ -137,6 +145,7 @@ describe('resolveJobsScaffoldLocals', () => {
 				probed.push(p);
 				return p.endsWith('worker.ts');
 			},
+			readFile: () => null,
 		});
 		expect(probed).toEqual([path.resolve(CWD, 'worker.ts')]);
 		expect(locals.workerExists).toBe(true);
@@ -152,8 +161,37 @@ describe('resolveJobsScaffoldLocals', () => {
 					if (!p.endsWith('worker.ts')) never();
 					return false;
 				},
+				readFile: () => null,
 			}),
 		).not.toThrow();
+	});
+
+	test('mainHookInjected: true when main.ts already contains the sentinel', () => {
+		const locals = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: null,
+			fileExists: () => false,
+			readFile: () => '// JOBS — Embedded worker mode (optional)\n',
+		});
+		expect(locals.mainHookInjected).toBe(true);
+	});
+
+	test('mainHookInjected: false when main.ts missing or lacks sentinel', () => {
+		const missing = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: null,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(missing.mainHookInjected).toBe(false);
+
+		const present = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: null,
+			fileExists: () => false,
+			readFile: () => 'async function bootstrap() {}',
+		});
+		expect(present.mainHookInjected).toBe(false);
 	});
 });
 
@@ -167,6 +205,7 @@ describe('localsToHygenArgs', () => {
 		workerExists: false,
 		workerPath: '/abs/worker.ts',
 		schemaPath: '/abs/shared/subsystems/jobs/job-orchestration.schema.ts',
+		mainHookInjected: false,
 	};
 
 	test('multiTenant booleans serialise to the literal strings Hygen expects', () => {
@@ -200,9 +239,21 @@ describe('localsToHygenArgs', () => {
 			'--workerExists',
 			'--workerPath',
 			'--schemaPath',
+			'--mainHookInjected',
 		]) {
 			expect(args).toContain(flag);
 		}
+	});
+
+	test('localsToHygenArgs serialises mainHookInjected empty-string when false', () => {
+		const args = localsToHygenArgs(base);
+		const idx = args.indexOf('--mainHookInjected');
+		expect(idx).toBeGreaterThanOrEqual(0);
+		expect(args[idx + 1]).toBe('');
+
+		const present = localsToHygenArgs({ ...base, mainHookInjected: true });
+		const idx2 = present.indexOf('--mainHookInjected');
+		expect(present[idx2 + 1]).toBe('true');
 	});
 
 	test('paths pass through as absolute', () => {

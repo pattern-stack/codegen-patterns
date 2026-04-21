@@ -413,6 +413,8 @@ function runJobsScaffold(
 		cwd,
 		config,
 		fileExists: (p: string) => fs.existsSync(p),
+		readFile: (p: string) =>
+			fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null,
 	});
 
 	// Files the four jobs templates will target (used by --dry-run output and

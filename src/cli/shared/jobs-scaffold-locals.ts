@@ -33,6 +33,8 @@ export interface JobsScaffoldLocals {
 	workerPath: string;
 	/** Where `job-orchestration.schema.ejs.t` writes the scaffolded schema. */
 	schemaPath: string;
+	/** Sentinel-based idempotence flag for `main-hook.ejs.t`'s `skip_if`. */
+	mainHookInjected: boolean;
 }
 
 export interface JobsScaffoldLocalsInput {
@@ -42,7 +44,14 @@ export interface JobsScaffoldLocalsInput {
 	config: CodegenConfig | null;
 	/** Injected fs probe. Implementations: `(p) => fs.existsSync(p)`. */
 	fileExists: (absolutePath: string) => boolean;
+	/** Injected fs read probe; returns null when the file is absent. */
+	readFile: (absolutePath: string) => string | null;
 }
+
+/** Literal first line of the comment block emitted by `main-hook.ejs.t`. Must
+ * match the template content exactly (including the em-dash) so re-running the
+ * install detects the prior injection and skips. */
+const MAIN_HOOK_SENTINEL = 'JOBS — Embedded worker mode (optional)';
 
 /** Hygen front-matter treats any non-empty string as truthy for `skip_if`, so the
  * boolean-ish locals must render as the literal 'true' / empty string. EJS
@@ -68,7 +77,7 @@ function workerSkipValue(exists: boolean): string {
 export function resolveJobsScaffoldLocals(
 	input: JobsScaffoldLocalsInput,
 ): JobsScaffoldLocals {
-	const { cwd, config, fileExists } = input;
+	const { cwd, config, fileExists, readFile } = input;
 
 	const jobsBlock = (config?.jobs ?? {}) as Record<string, unknown>;
 
@@ -83,6 +92,10 @@ export function resolveJobsScaffoldLocals(
 		'job-orchestration.schema.ts',
 	);
 
+	const mainContent = readFile(mainTsPath);
+	const mainHookInjected =
+		mainContent !== null && mainContent.includes(MAIN_HOOK_SENTINEL);
+
 	return {
 		appName: path.basename(cwd),
 		workerMode: normaliseWorkerMode(jobsBlock.worker_mode),
@@ -92,6 +105,7 @@ export function resolveJobsScaffoldLocals(
 		workerExists: fileExists(workerPath),
 		workerPath,
 		schemaPath,
+		mainHookInjected,
 	};
 }
 
@@ -120,5 +134,6 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 		'--workerExists', workerSkipValue(locals.workerExists),
 		'--workerPath', locals.workerPath,
 		'--schemaPath', locals.schemaPath,
+		'--mainHookInjected', workerSkipValue(locals.mainHookInjected),
 	];
 }
