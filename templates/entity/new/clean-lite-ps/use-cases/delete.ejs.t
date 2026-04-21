@@ -22,7 +22,10 @@ export class <%= classNames.deleteUseCase %> {
     @Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
   ) {}
 
-  async execute(id: string): Promise<void> {
+  async execute(
+    id: string,
+    opts?: { actor?: { tenantId?: string | null; userId?: string } },
+  ): Promise<void> {
     return this.db.transaction(async (tx) => {
       const entity = await this.service.findById(id);
       if (!entity) {
@@ -39,7 +42,12 @@ export class <%= classNames.deleteUseCase %> {
 
 <% }) -%>
         },
-        { tx },
+        {
+          tx,
+          metadata: opts?.actor
+            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+            : undefined,
+        },
       );
     });
   }
@@ -52,7 +60,10 @@ import { <%= classNames.service %> } from '../<%= entityName %>.service';
 export class <%= classNames.deleteUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
-  async execute(id: string): Promise<void> {
+  async execute(
+    id: string,
+    _opts?: { actor?: { tenantId?: string | null; userId?: string } },
+  ): Promise<void> {
     return this.service.delete(id);
   }
 }

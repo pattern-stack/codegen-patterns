@@ -43,6 +43,7 @@ export class <%= classNames.createUseCase %> {
 
   async execute(
     dto: <%= classNames.createDto %> & { fields?: Record<string, unknown> },
+    <%= hasEmits && createEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %>> {
     return this.db.transaction(async (tx) => {
       const { fields, ...core } = dto;
@@ -67,7 +68,12 @@ export class <%= classNames.createUseCase %> {
 
 <% }) -%>
         },
-        { tx },
+        {
+          tx,
+          metadata: opts?.actor
+            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+            : undefined,
+        },
       );
 <% } -%>
       return entity;
@@ -96,7 +102,10 @@ export class <%= classNames.createUseCase %> {
     @Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
   ) {}
 
-  async execute(dto: <%= classNames.createDto %>): Promise<<%= classNames.entity %>> {
+  async execute(
+    dto: <%= classNames.createDto %>,
+    opts?: { actor?: { tenantId?: string | null; userId?: string } },
+  ): Promise<<%= classNames.entity %>> {
     return this.db.transaction(async (tx) => {
       const entity = await this.service.create(dto, tx);
       // TODO: verify payload mapping against events/<%= createEventType.type %>.yaml
@@ -109,7 +118,12 @@ export class <%= classNames.createUseCase %> {
 
 <% }) -%>
         },
-        { tx },
+        {
+          tx,
+          metadata: opts?.actor
+            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+            : undefined,
+        },
       );
       return entity;
     });
@@ -125,7 +139,10 @@ import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
 export class <%= classNames.createUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
-  async execute(dto: <%= classNames.createDto %>): Promise<<%= classNames.entity %>> {
+  async execute(
+    dto: <%= classNames.createDto %>,
+    _opts?: { actor?: { tenantId?: string | null; userId?: string } },
+  ): Promise<<%= classNames.entity %>> {
     return this.service.create(dto);
   }
 }

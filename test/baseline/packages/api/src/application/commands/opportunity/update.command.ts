@@ -23,7 +23,11 @@ export class UpdateOpportunityCommand {
 		private readonly opportunityRepository: IOpportunityRepository,
 	) {}
 
-	async execute(id: string, dto: UpdateOpportunityDto): Promise<Opportunity> {
+	async execute(
+		id: string,
+		dto: UpdateOpportunityDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Opportunity> {
 		const existing = await this.opportunityRepository.findById(id);
 		if (!existing) {
 			throw new NotFoundException(`Opportunity with id ${id} not found`);

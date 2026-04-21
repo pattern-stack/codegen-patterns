@@ -23,7 +23,10 @@ export class CreateDealCommand {
 		private readonly dealRepository: IDealRepository,
 	) {}
 
-	async execute(dto: CreateDealDto): Promise<Deal> {
+	async execute(
+		dto: CreateDealDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Deal> {
 		// TODO: Add pre-create validation and business rules here
 
 		// Map DTO to domain input

@@ -171,7 +171,11 @@ describe('EVT-7 Clean Architecture — create command template', () => {
     expect(output).toContain("'contact_created'");
     expect(output).toContain('contactId: entity.id,');
     expect(output).toContain('accountId: entity.accountId,');
-    expect(output).toContain('{ tx },');
+    // F10: actor threaded through opts → metadata on publish
+    expect(output).toContain('opts?: { actor?: { tenantId?: string | null; userId?: string } }');
+    expect(output).toContain('tx,');
+    expect(output).toContain('metadata: opts?.actor');
+    expect(output).toContain('{ tenantId: opts.actor.tenantId, userId: opts.actor.userId }');
   });
 });
 
@@ -216,7 +220,10 @@ describe('EVT-7 Clean Architecture — update command template', () => {
     );
     expect(output).toContain("'contact_updated'");
     expect(output).toContain('contactId: entity.id,');
-    expect(output).toContain('{ tx },');
+    // F10: actor threaded through opts → metadata on publish
+    expect(output).toContain('opts?: { actor?: { tenantId?: string | null; userId?: string } }');
+    expect(output).toContain('tx,');
+    expect(output).toContain('metadata: opts?.actor');
   });
 });
 
@@ -261,7 +268,10 @@ describe('EVT-7 Clean Architecture — delete command template', () => {
     );
     expect(output).toContain("'contact_deleted'");
     expect(output).toContain('contactId: entity.id,');
-    expect(output).toContain('{ tx },');
+    // F10: actor threaded through opts → metadata on publish
+    expect(output).toContain('opts?: { actor?: { tenantId?: string | null; userId?: string } }');
+    expect(output).toContain('tx,');
+    expect(output).toContain('metadata: opts?.actor');
   });
 });
 

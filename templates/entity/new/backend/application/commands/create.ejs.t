@@ -38,7 +38,10 @@ export class <%= createCommandClass %> {
 <% } -%>
 	) {}
 
-	async execute(dto: Create<%= className %>Dto): Promise<<%= className %>> {
+	async execute(
+		dto: Create<%= className %>Dto,
+		<%= hasEmits && createEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<<%= className %>> {
 		// TODO: Add pre-create validation and business rules here
 
 		// Map DTO to domain input
@@ -67,7 +70,12 @@ export class <%= createCommandClass %> {
 
 <% }) -%>
 				},
-				{ tx },
+				{
+					tx,
+					metadata: opts?.actor
+						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+						: undefined,
+				},
 			);
 			// TODO: Add post-create side effects here (non-event hooks, notifications, etc.)
 			return entity;

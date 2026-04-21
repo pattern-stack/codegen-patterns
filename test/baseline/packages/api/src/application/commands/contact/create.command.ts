@@ -28,7 +28,10 @@ export class CreateContactCommand {
 		@Inject(DRIZZLE) private readonly db: DrizzleClient,
 	) {}
 
-	async execute(dto: CreateContactDto): Promise<Contact> {
+	async execute(
+		dto: CreateContactDto,
+		opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Contact> {
 		// TODO: Add pre-create validation and business rules here
 
 		// Map DTO to domain input
@@ -57,7 +60,12 @@ export class CreateContactCommand {
 					createdBy: null as unknown as string, // TODO: supply created_by (not on DTO — wire from auth context)
 
 				},
-				{ tx },
+				{
+					tx,
+					metadata: opts?.actor
+						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+						: undefined,
+				},
 			);
 			// TODO: Add post-create side effects here (non-event hooks, notifications, etc.)
 			return entity;

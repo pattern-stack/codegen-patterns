@@ -37,7 +37,10 @@ export class <%= deleteCommandClass %> {
 <% } -%>
 	) {}
 
-	async execute(id: string): Promise<<%= className %>> {
+	async execute(
+		id: string,
+		<%= hasEmits && deleteEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<<%= className %>> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
 
@@ -57,7 +60,12 @@ export class <%= deleteCommandClass %> {
 
 <% }) -%>
 				},
-				{ tx },
+				{
+					tx,
+					metadata: opts?.actor
+						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+						: undefined,
+				},
 			);
 			// TODO: Add post-delete side effects here (cleanup, etc.)
 			return entity;

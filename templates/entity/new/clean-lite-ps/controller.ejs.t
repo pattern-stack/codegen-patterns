@@ -3,7 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.controller : nul
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body, Headers<% } %>, NotFoundException, Param, ParseUUIDPipe } from '@nestjs/common';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
 <% if (eavEnabled) { -%>
@@ -68,23 +68,31 @@ export class <%= classNames.controller %> {
   @Post()
   async create(
     @Body(new ZodValidationPipe(<%= classNames.createSchema %>)) dto: <%= classNames.createDto %>,
+    @Headers('x-tenant-id') tenantId?: string,
+    @Headers('x-user-id') userId?: string,
   ): Promise<<%= classNames.entity %>> {
-    return this.createUseCase.execute(dto);
+    return this.createUseCase.execute(dto, { actor: { tenantId, userId } });
   }
 
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(<%= classNames.updateSchema %>)) dto: <%= classNames.updateDto %>,
+    @Headers('x-tenant-id') tenantId?: string,
+    @Headers('x-user-id') userId?: string,
   ): Promise<<%= classNames.entity %>> {
-    const entity = await this.updateUseCase.execute(id, dto);
+    const entity = await this.updateUseCase.execute(id, dto, { actor: { tenantId, userId } });
     if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
     return entity;
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
-    return this.deleteUseCase.execute(id);
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('x-tenant-id') tenantId?: string,
+    @Headers('x-user-id') userId?: string,
+  ): Promise<void> {
+    return this.deleteUseCase.execute(id, { actor: { tenantId, userId } });
   }
 <% } %>
 }

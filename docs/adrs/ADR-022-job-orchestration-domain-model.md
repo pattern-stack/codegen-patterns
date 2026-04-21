@@ -118,7 +118,7 @@ Row-per-execution. State lives here.
 | `parent_close_policy` | `enum` | `terminate \| cancel \| abandon`, default `terminate` |
 | `scope_entity_type` | `text?` | Free text at DB, typed by generated `ScopeEntityType` union |
 | `scope_entity_id` | `text?` | UUID or other primary key |
-| `tenant_id` | `text?` | Opt-in column, present only when `codegen.config.yaml: jobs.multi_tenant: true` |
+| `tenant_id` | `text?` | Always emitted on `job_run`, always nullable. Multi-tenancy is enforced at the `IJobOrchestrator` / `IJobRunService` boundary via the `JOBS_MULTI_TENANT` DI token — the DB column itself stays nullable so that explicit `null` tenant (cross-tenant background work) is a first-class value. Only `job_run` carries the column — `job` definitions are shared across tenants, and `job_step` rows inherit tenancy transitively via `job_run_id`. See 2026-04-20 revision note below. |
 | `tags` | `jsonb` | Freeform key/value |
 | `pool` | `text` | Resolved from `job.pool` at enqueue, cached here for claim query |
 | `priority` | `integer` | |
@@ -407,11 +407,30 @@ Runtime-discovery mode (`JobWorkerModule.forRoot({ discovery: 'runtime' })` that
 ### Multi-tenancy
 
 Opt-in via `codegen.config.yaml: jobs.multi_tenant: true`. When enabled:
-- `tenant_id` column appears on `job_run` and `job_event`
-- Every service method accepts a `tenantId` and filters all queries by it
+- `JOBS_MULTI_TENANT` DI token is `true`; `IJobOrchestrator` / `IJobRunService` methods require a `tenantId` (`undefined` throws `MissingTenantIdError`; explicit `null` passes for cross-tenant background work)
+- Targeted reads and cancels filter by `tenant_id`
 - Worker-side, tenant-based fair queuing is Phase 6 polish; initial implementation is FIFO within a pool
 
-When disabled: column is omitted, methods have no `tenantId` parameter, generated code is simpler.
+When disabled: `JOBS_MULTI_TENANT` is `false`; the service layer does not require a `tenantId`. Both modes store `tenant_id` in a nullable column — runtime code reads `row.tenantId: string | null` uniformly across both modes.
+
+#### Revision 2026-04-20 — reverse JOB-Q1 (unconditional column emission on `job_run`)
+
+**Previous decision (JOB-Q1, 2026-04-19):** `tenant_id` was emitted into the generated `job_run` schema only when `jobs.multi_tenant: true`. Toggling required a reinstall + Atlas migration, and the runtime code (shared by both modes) had to guard every read/write with `if (multiTenant)` branches or the build would break.
+
+**What went wrong.** Downstream demo scaffolds failed `bunx tsc --noEmit` with 10+ errors when generated under `multi_tenant: false`: runtime sites such as `job-orchestrator.drizzle-backend.ts` (line ~178, `tenantId: incumbent.tenantId`), `job-run-service.drizzle-backend.ts` (lines 52–53, `isNull(jobRuns.tenantId)` / `eq(jobRuns.tenantId, ...)`), and memory-store row constructors all referenced a `jobRuns.tenantId` column that the generated Drizzle schema had conditionally removed. The "minimal column" optimisation pushed tenant-awareness into every consumer of the schema, the opposite of its intent.
+
+**New decision.** The `tenant_id` column is emitted unconditionally on `job_run`, always nullable:
+
+- Both modes → `tenantId: text('tenant_id')` (nullable in the DB)
+- Multi-tenancy enforcement moves entirely to the service layer: the `JOBS_MULTI_TENANT` DI token is read by `IJobOrchestrator` / `IJobRunService` implementations; they throw `MissingTenantIdError` when the token is `true` and callers pass `undefined`. Explicit `null` is a first-class value (cross-tenant background work) — storing it in the column is legitimate, which is why `.notNull()` cannot be pushed to the DB.
+
+Only `job_run` changed; `job` (definitions) and `job_step` do not carry `tenant_id`. The orchestrator enforces tenant scope at the `job_run` boundary only — job definitions are shared across tenants (template-level configuration keyed by handler type), and `job_step` rows inherit tenancy transitively from their parent run via `job_run_id`.
+
+Runtime code reads `row.tenantId: string | null` in both modes. The `JOBS_MULTI_TENANT` token and the `MissingTenantIdError` throws at the `IJobOrchestrator.enqueue` / `IJobRunService.*` boundaries remain — multi-tenant consumers still get the "must supply tenantId" guard; single-tenant consumers get a harmless null column.
+
+**Why nullability isn't tightened in multi-tenant mode.** The original spec (F9 integration fix) called for `NOT NULL` when `jobs.multi_tenant: true`. Implementation discovered this conflicts with the already-shipped "explicit `null` for cross-tenant background work" contract in `MissingTenantIdError` / `resolveTenantId` (see `runtime/subsystems/jobs/jobs-errors.ts`). The choice is binary: either forbid cross-tenant background jobs (runtime-level breaking change) or keep the column nullable. This revision keeps the column nullable and keeps the runtime contract intact.
+
+**Atlas migration impact.** Consumers who already installed under the old `multi_tenant: false` pipeline have no `tenant_id` column on `job_run`. Regenerating after this revision produces an additive, nullable-column diff — safe to apply. Consumers already on `multi_tenant: true` see no schema change (they already had a nullable `tenant_id` via the original template).
 
 ### Atlas migration workflow
 

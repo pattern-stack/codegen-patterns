@@ -23,7 +23,10 @@ export class CreatePersonCommand {
 		private readonly personRepository: IPersonRepository,
 	) {}
 
-	async execute(dto: CreatePersonDto): Promise<Person> {
+	async execute(
+		dto: CreatePersonDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Person> {
 		// TODO: Add pre-create validation and business rules here
 
 		// Map DTO to domain input

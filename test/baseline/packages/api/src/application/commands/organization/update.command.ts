@@ -23,7 +23,11 @@ export class UpdateOrganizationCommand {
 		private readonly organizationRepository: IOrganizationRepository,
 	) {}
 
-	async execute(id: string, dto: UpdateOrganizationDto): Promise<Organization> {
+	async execute(
+		id: string,
+		dto: UpdateOrganizationDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Organization> {
 		const existing = await this.organizationRepository.findById(id);
 		if (!existing) {
 			throw new NotFoundException(`Organization with id ${id} not found`);

@@ -38,7 +38,11 @@ export class <%= updateCommandClass %> {
 <% } -%>
 	) {}
 
-	async execute(id: string, dto: Update<%= className %>Dto): Promise<<%= className %>> {
+	async execute(
+		id: string,
+		dto: Update<%= className %>Dto,
+		<%= hasEmits && updateEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<<%= className %>> {
 		const existing = await this.<%= camelName %>Repository.findById(id);
 		if (!existing) {
 			throw new NotFoundException(`<%= className %> with id ${id} not found`);
@@ -70,7 +74,12 @@ export class <%= updateCommandClass %> {
 
 <% }) -%>
 				},
-				{ tx },
+				{
+					tx,
+					metadata: opts?.actor
+						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+						: undefined,
+				},
 			);
 			// TODO: Add post-update side effects here (non-event hooks, cache invalidation, etc.)
 			return entity;

@@ -165,8 +165,8 @@ Section contents:
 ## Acceptance Criteria
 
 **Multi-tenancy**
-- [x] `multi_tenant: false` (default): the `tenant_id` column is absent from the generated schema entirely (JOB-6 template conditional owns this — the conditional moved from JOB-1 to JOB-6 per Q1 resolution 2026-04-19); service layer does not accept or filter by `tenantId`; existing tests unaffected
-- [x] Enabling `multi_tenant: true` after initial install requires a reinstall of the jobs subsystem and an Atlas migration — no runtime toggle path exists
+- [x] `multi_tenant: false` (default): the `tenant_id` column is **always emitted** (nullable) on `job_run`. Runtime code reads `row.tenantId: string | null` uniformly. Service layer does not require or filter by `tenantId`. (Reversed JOB-Q1 on 2026-04-20 as part of the F9 integration fix; see ADR-022 revision note 2026-04-20. Originally spec'd as "column absent entirely" — that turned out to force tenant-awareness into every runtime call site. `job` and `job_step` do not carry `tenant_id`; tenant scope is enforced at the `job_run` boundary only.)
+- [x] `multi_tenant: true`: the `job_run.tenant_id` column stays **nullable** in the DB — multi-tenancy is enforced at the service layer (`JOBS_MULTI_TENANT` DI token, `MissingTenantIdError` on `undefined`) rather than via a `NOT NULL` constraint. This preserves the first-class "explicit `null` tenant for cross-tenant background work" contract in `jobs-errors.ts`. No schema-level diff between flag states — toggling only changes the `JOBS_MULTI_TENANT` provider value.
 - [x] `multi_tenant: true`: `start({ tenantId: 'x' })` writes it; `listForScope(..., { tenantId: 'x' })` returns only x
 - [x] Cross-tenant `cancel()` with wrong `tenantId` is no-op (silent — no existence leak)
 - [x] Strict enforcement: `undefined` `tenantId` throws `MissingTenantIdError` naming the method; explicit `null` passes for cross-tenant background work

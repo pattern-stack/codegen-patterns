@@ -22,7 +22,10 @@ export class DeleteOrganizationCommand {
 		private readonly organizationRepository: IOrganizationRepository,
 	) {}
 
-	async execute(id: string): Promise<Organization> {
+	async execute(
+		id: string,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Organization> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
 

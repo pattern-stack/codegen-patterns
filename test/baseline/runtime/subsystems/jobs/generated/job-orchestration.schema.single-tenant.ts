@@ -134,6 +134,7 @@ export const jobRuns = pgTable(
       .default('terminate'),
     scopeEntityType: text('scope_entity_type'),
     scopeEntityId: text('scope_entity_id'),
+    tenantId: text('tenant_id'),                // F9: always emitted (nullable) — runtime enforces on boundary via JOBS_MULTI_TENANT
     tags: jsonb('tags').notNull().default({}).$type<Record<string, string>>(),
     pool: text('pool').notNull(),
     priority: integer('priority').notNull().default(0),

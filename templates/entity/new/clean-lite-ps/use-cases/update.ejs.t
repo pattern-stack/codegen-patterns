@@ -42,6 +42,7 @@ export class <%= classNames.updateUseCase %> {
   async execute(
     id: string,
     dto: <%= classNames.updateDto %> & { fields?: Record<string, unknown> },
+    <%= hasEmits && updateEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %> | null> {
     return this.db.transaction(async (tx) => {
       const { fields, ...core } = dto;
@@ -67,7 +68,12 @@ export class <%= classNames.updateUseCase %> {
 
 <% }) -%>
         },
-        { tx },
+        {
+          tx,
+          metadata: opts?.actor
+            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+            : undefined,
+        },
       );
 <% } -%>
       return entity;
@@ -96,7 +102,11 @@ export class <%= classNames.updateUseCase %> {
     @Inject(TYPED_EVENT_BUS) private readonly typedEvents: TypedEventBus,
   ) {}
 
-  async execute(id: string, dto: <%= classNames.updateDto %>): Promise<<%= classNames.entity %> | null> {
+  async execute(
+    id: string,
+    dto: <%= classNames.updateDto %>,
+    opts?: { actor?: { tenantId?: string | null; userId?: string } },
+  ): Promise<<%= classNames.entity %> | null> {
     return this.db.transaction(async (tx) => {
       const entity = await this.service.update(id, dto, tx);
       if (!entity) return null;
@@ -110,7 +120,12 @@ export class <%= classNames.updateUseCase %> {
 
 <% }) -%>
         },
-        { tx },
+        {
+          tx,
+          metadata: opts?.actor
+            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
+            : undefined,
+        },
       );
       return entity;
     });
@@ -126,7 +141,11 @@ import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
 export class <%= classNames.updateUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
-  async execute(id: string, dto: <%= classNames.updateDto %>): Promise<<%= classNames.entity %> | null> {
+  async execute(
+    id: string,
+    dto: <%= classNames.updateDto %>,
+    _opts?: { actor?: { tenantId?: string | null; userId?: string } },
+  ): Promise<<%= classNames.entity %> | null> {
     return this.service.update(id, dto);
   }
 }

@@ -23,7 +23,11 @@ export class UpdateContactCommand {
 		private readonly contactRepository: IContactRepository,
 	) {}
 
-	async execute(id: string, dto: UpdateContactDto): Promise<Contact> {
+	async execute(
+		id: string,
+		dto: UpdateContactDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Contact> {
 		const existing = await this.contactRepository.findById(id);
 		if (!existing) {
 			throw new NotFoundException(`Contact with id ${id} not found`);
