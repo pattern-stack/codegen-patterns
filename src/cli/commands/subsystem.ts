@@ -30,6 +30,10 @@ import {
 	localsToHygenArgs,
 	resolveJobsScaffoldLocals,
 } from '../shared/jobs-scaffold-locals.js';
+import {
+	localsToHygenArgs as syncLocalsToHygenArgs,
+	resolveSyncScaffoldLocals,
+} from '../shared/sync-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
 import {
 	SUBSYSTEMS,
@@ -184,6 +188,18 @@ function backendFileFilter(
 			return false;
 		}
 
+		// SYNC-7: same pattern for sync — the Hygen template
+		// `templates/subsystem/sync/sync-audit.schema.ejs.t` is the sole
+		// emitter for the sync audit schema, gating the `tenant_id`
+		// columns on `sync.multi_tenant`. Skip here so `copyRuntime`
+		// never writes the always-tenant runtime source file.
+		if (
+			subsystemName === 'sync' &&
+			file === 'sync-audit.schema.ts'
+		) {
+			return false;
+		}
+
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;
 			if (file.endsWith('.schema.ts')) return false;
@@ -325,6 +341,18 @@ export class SubsystemInstallCommand extends Command {
 					})
 				: null;
 
+		// SYNC-7: sync subsystem — inject the `sync:` config block and emit
+		// the tenancy-aware audit schema. No generated/ dir (sync ships no
+		// codegen artifacts — see sync-scaffold-locals.ts docstring).
+		const syncScaffold =
+			desc.name === 'sync'
+				? runSyncScaffold(ctx.cwd, ctx.config, {
+						dryRun: this.dryRun,
+						json: isJsonMode(),
+						forceConfig: this.forceConfig,
+					})
+				: null;
+
 		// #121 (F13): a parse-error on codegen.config.yaml causes the scaffold
 		// to refuse re-injection rather than silently overwrite. Surface it as
 		// a non-zero exit with a clear message; runtime files were already
@@ -338,6 +366,12 @@ export class SubsystemInstallCommand extends Command {
 		if (eventsScaffold?.configBlockOutcome === 'parse-error') {
 			printError(
 				'codegen.config.yaml is not valid YAML: refusing to inject events config block. Fix the YAML and re-run.',
+			);
+			return 1;
+		}
+		if (syncScaffold?.configBlockOutcome === 'parse-error') {
+			printError(
+				'codegen.config.yaml is not valid YAML: refusing to inject sync config block. Fix the YAML and re-run.',
 			);
 			return 1;
 		}
@@ -358,6 +392,7 @@ export class SubsystemInstallCommand extends Command {
 				},
 				...(jobsScaffold ? { scaffold: jobsScaffold } : {}),
 				...(eventsScaffold ? { scaffold: eventsScaffold } : {}),
+				...(syncScaffold ? { scaffold: syncScaffold } : {}),
 			});
 			return 0;
 		}
@@ -380,6 +415,14 @@ export class SubsystemInstallCommand extends Command {
 					`Events scaffold — ${eventsScaffold.planned.length} template targets`,
 				);
 				for (const p of eventsScaffold.planned) {
+					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+				}
+			}
+			if (syncScaffold?.planned?.length) {
+				printInfo(
+					`Sync scaffold — ${syncScaffold.planned.length} template targets`,
+				);
+				for (const p of syncScaffold.planned) {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
@@ -415,10 +458,26 @@ export class SubsystemInstallCommand extends Command {
 				);
 			}
 		}
+		if (syncScaffold) {
+			if (syncScaffold.ok) {
+				printSuccess(
+					`sync scaffold applied (config block, schema)`,
+				);
+			} else {
+				printWarning(
+					`sync scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${syncScaffold.error ?? 'unknown error'}`,
+				);
+			}
+		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
 		printInfo(
 			`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
 		);
+		if (desc.name === 'sync') {
+			printInfo(
+				`Per-entity: register ExecuteSyncUseCase + your IChangeSource/ISyncSink bindings in a feature module (see SyncModule docstring).`
+			);
+		}
 		return 0;
 	}
 }
@@ -471,7 +530,7 @@ function planConfigBlockAction(
 
 interface ConfigBlockActionInput {
 	cwd: string;
-	actionFolder: 'jobs-config' | 'events-config';
+	actionFolder: 'jobs-config' | 'events-config' | 'sync-config';
 	configPath: string;
 	subsystem: DetectorSubsystemName;
 	outcome: ConfigBlockOutcome;
@@ -722,6 +781,94 @@ function runEventsScaffold(
 		actionFolder: 'events-config',
 		configPath: locals.configPath,
 		subsystem: 'events',
+		outcome: configBlockOutcome,
+		json: opts.json,
+	});
+
+	if (!configResult.ok) {
+		return {
+			ok: false,
+			planned,
+			error: configResult.error,
+			configBlockOutcome,
+		};
+	}
+
+	return { ok: true, planned, configBlockOutcome };
+}
+
+// ---------------------------------------------------------------------------
+// SYNC-7 — sync subsystem Hygen scaffold wiring
+// ---------------------------------------------------------------------------
+
+interface SyncScaffoldOutcome {
+	ok: boolean;
+	planned: string[];
+	error?: string;
+	/** #121 (F13): see JobsScaffoldOutcome. */
+	configBlockOutcome?: ConfigBlockOutcome;
+}
+
+function runSyncScaffold(
+	cwd: string,
+	config: Context['config'],
+	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
+): SyncScaffoldOutcome {
+	const locals = resolveSyncScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+	});
+
+	// Files the sync templates will target (used by --dry-run output and
+	// JSON reporting). Ordering matches the template set. No generated/
+	// entry — sync ships no codegen artifacts (see
+	// sync-scaffold-locals.ts docstring).
+	const planned: string[] = [
+		locals.configPath,
+		locals.schemaPath,
+	];
+
+	// #121 (F13): inspect config BEFORE invoking the main scaffold. Main
+	// scaffold no longer emits the config block — `subsystem/sync-config`
+	// handles that under CLI control.
+	const configBlockOutcome = planConfigBlockAction(
+		locals.configPath,
+		'sync',
+		opts.forceConfig,
+	);
+
+	if (configBlockOutcome === 'parse-error') {
+		return { ok: false, planned, configBlockOutcome };
+	}
+
+	if (opts.dryRun) {
+		return { ok: true, planned, configBlockOutcome };
+	}
+
+	const result = invokeHygen({
+		generator: 'subsystem',
+		action: 'sync',
+		cwd,
+		args: syncLocalsToHygenArgs(locals),
+		// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
+		inherit: !opts.json,
+	});
+
+	if (!result.ok) {
+		return {
+			ok: false,
+			planned,
+			error: result.stderr?.trim() || 'hygen exited non-zero',
+			configBlockOutcome,
+		};
+	}
+
+	const configResult = runConfigBlockAction({
+		cwd,
+		actionFolder: 'sync-config',
+		configPath: locals.configPath,
+		subsystem: 'sync',
 		outcome: configBlockOutcome,
 		json: opts.json,
 	});

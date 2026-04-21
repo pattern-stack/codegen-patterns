@@ -88,9 +88,9 @@ function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: string }> {
 // ---------------------------------------------------------------------------
 
 describe('subsystem — descriptor', () => {
-	test('knows all four subsystems', () => {
+	test('knows all five subsystems', () => {
 		expect(SUBSYSTEMS.map((s) => s.name).sort()).toEqual(
-			['cache', 'events', 'jobs', 'storage'].sort()
+			['cache', 'events', 'jobs', 'storage', 'sync'].sort()
 		);
 	});
 });
@@ -115,7 +115,7 @@ describe('subsystem — summary + list', () => {
 		);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('subsystem list');
-		expect(parsed.subsystems).toHaveLength(4);
+		expect(parsed.subsystems).toHaveLength(5);
 		for (const row of parsed.subsystems) {
 			expect(row.status).toBe('available');
 		}
@@ -378,6 +378,132 @@ describe('subsystem — install F13 (config-block preservation)', () => {
 		);
 		expect(after).toContain('events:');
 		expect(after).toContain('backend: drizzle');
+	});
+});
+
+describe('subsystem — install sync (SYNC-7)', () => {
+	test('copies runtime/subsystems/sync into target + follows deps', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'sync', '--force', '--json', '--cwd', root])
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/sync');
+		expect(fs.existsSync(installDir)).toBe(true);
+		// Core files present.
+		expect(fs.existsSync(path.join(installDir, 'sync.module.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'sync-change-source.protocol.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'execute-sync.use-case.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'deep-equal.differ.ts'))).toBe(true);
+		// Drizzle backends present (default backend).
+		expect(fs.existsSync(path.join(installDir, 'sync-cursor-store.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'sync-run-recorder.drizzle-backend.ts'))).toBe(true);
+		// Memory backends present too — always copied for tests.
+		expect(fs.existsSync(path.join(installDir, 'sync-cursor-store.memory-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'sync-run-recorder.memory-backend.ts'))).toBe(true);
+		// Shared deps copied to parallel tree.
+		expect(fs.existsSync(path.join(root, 'src/shared/types/drizzle.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(root, 'src/shared/constants/tokens.ts'))).toBe(true);
+	});
+
+	test('schema is emitted via Hygen (not copyRuntime) — verified by multi_tenant gating', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'sync', '--force', '--json', '--cwd', root])
+		);
+		expect(result).toBe(0);
+		const schemaPath = path.join(
+			root,
+			'src/shared/subsystems/sync/sync-audit.schema.ts',
+		);
+		expect(fs.existsSync(schemaPath)).toBe(true);
+		// Default install is multi_tenant: false → no tenant_id columns emitted.
+		const schema = fs.readFileSync(schemaPath, 'utf8');
+		expect(schema).not.toContain("text('tenant_id')");
+	});
+
+	test('config block appended to codegen.config.yaml', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'sync', '--force', '--cwd', root]),
+		);
+		const after = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf8');
+		expect(after).toContain('sync:');
+		expect(after).toContain('backend: drizzle');
+		expect(after).toContain('multi_tenant: false');
+	});
+
+	test('memory backend skips .drizzle-backend.ts; schema still emitted via Hygen', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'sync',
+				'--backend',
+				'memory',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			])
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/sync');
+		expect(
+			fs.existsSync(path.join(installDir, 'sync-cursor-store.drizzle-backend.ts')),
+		).toBe(false);
+		expect(
+			fs.existsSync(path.join(installDir, 'sync-run-recorder.drizzle-backend.ts')),
+		).toBe(false);
+		// Memory backends are always present.
+		expect(
+			fs.existsSync(path.join(installDir, 'sync-cursor-store.memory-backend.ts')),
+		).toBe(true);
+		// Schema still emitted (Hygen-driven, backend-independent).
+		expect(
+			fs.existsSync(path.join(installDir, 'sync-audit.schema.ts')),
+		).toBe(true);
+	});
+
+	test('detectInstalledSubsystems finds sync after install', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'sync', '--force', '--cwd', root]),
+		);
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+		const installed = await detectInstalledSubsystems(ctx);
+		expect(installed.map((i) => i.name)).toContain('sync');
+	});
+
+	test('multi_tenant: true in config emits tenant_id columns in schema', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		// Hand-write a config with sync.multi_tenant: true.
+		fs.writeFileSync(
+			path.join(root, 'codegen.config.yaml'),
+			'paths:\n  subsystems: src/shared/subsystems\nsync:\n  backend: drizzle\n  multi_tenant: true\n',
+		);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'sync', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const schema = fs.readFileSync(
+			path.join(root, 'src/shared/subsystems/sync/sync-audit.schema.ts'),
+			'utf8',
+		);
+		expect(schema).toContain("text('tenant_id')");
 	});
 });
 
