@@ -32,3 +32,32 @@ export { CacheModule, DrizzleCacheService, MemoryCacheService } from './cache';
 export { STORAGE } from './storage';
 export type { IStorageService } from './storage';
 export { StorageModule, LocalStorageBackend, MemoryStorageBackend } from './storage';
+
+// Auth
+export {
+  ENCRYPTION_KEY,
+  OAUTH_STATE_STORE,
+  AUTH_INTEGRATION_READER,
+  AUTH_INTEGRATION_TOKEN_WRITER,
+  AuthModule,
+  OAuth2RefreshStrategy,
+  withAuthRetry,
+  IntegrationBrokenError,
+  SessionExpiredError,
+  isSessionExpiredError,
+  EnvEncryptionKey,
+  InMemoryOAuthStateStore,
+} from './auth';
+export type {
+  IAuthStrategy,
+  IEncryptionKey,
+  IOAuthStateStore,
+  IIntegrationReader,
+  IIntegrationTokenWriter,
+  AuthCredentials,
+  AuthResolveOptions,
+  DecryptedIntegration,
+  OAuthStateEntry,
+  IntegrationTokenUpdate,
+  ParsedRefreshResponse,
+} from './auth';
