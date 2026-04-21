@@ -1,82 +1,56 @@
 # ADR-023 Handoff — Event-to-Job Bridge
 
-**Status:** draft ADR written, awaiting second-opinion review before BRIDGE-1..N specs are cut.
+**Status:** ✅ review pass complete (2026-04-21). ADR revised, ready for spec cutting.
 **Primary artifact:** `docs/adrs/ADR-023-event-to-job-bridge.md`
+**Orchestration plan:** `docs/specs/BRIDGE-PHASE-2-PLAN.md`
 **Related context:** ADR-022 (jobs), ADR-024 (events), `.claude/skills/events/phase-roadmap.md` (Phase 2 entry).
 
-## What this is
+## What happened in the review pass
 
-The bridge connects two already-shipped subsystems: the events outbox (ADR-024, EVT-1..8) and the jobs orchestration domain (ADR-022, JOB-1..8). Today that seam is hand-written — consumers subscribe to `IEventBus` and call `IJobOrchestrator.start()` from inside the subscriber. The ADR formalizes it.
+User reviewed the original draft with a second agent on 2026-04-21. The pass produced 10 additions / clarifications, none of which rewrite the original decisions. All are captured inline in the revised ADR under the `2026-04-21 Revision Notes` section at the top.
 
-The reserved `events_inbound | events_change | events_outbound` pools in the jobs subsystem have existed since ADR-022 as placeholders specifically for this bridge. Nothing runs in them today.
+**Decisions 1–6 stand unchanged.** A new **Decision 7** (developer-facing facade) was added. Open Questions 1, 2, 3, and a new 5 are resolved in the revised doc.
 
-## The design in one paragraph
+### Summary of revision content
 
-Triggers are declared on the job (`@JobHandler({ triggers: [{ event, map, when }] })`). Codegen scans handlers and emits a `bridgeRegistry` keyed by event type. When the outbox drain claims a `domain_events` row, it inserts one `bridge_delivery` audit row + one `job_run` row (`type=@framework/bridge_delivery`, `pool=events_<direction>`) per matched trigger. The wrapper `job_run` is claimed by the ordinary job worker; the framework's `BridgeDeliveryHandler` runs it, evaluates `when:`, applies `map:`, and calls `orchestrator.start(userJob, mapped, { parentRunId: self })`. The user job runs in its declared pool, linked to the wrapper as parent so cascade cancel works.
+1. **Three-tier model** framed explicitly: subscribe (in-process, lossy, ms) / direct invoke (request-path, durable, 1 poll cycle) / bridge (async fanout, durable, 2–3 poll cycles). Decision tree included.
+2. **New Decision 7: `IEventFlow` facade** with two verbs — `publish` and `publishAndStart`. Resolves authoring-consistency gap; makes tiers grep-friendly.
+3. **`publishAndStart` + existing `triggers:` collision** resolved by pre-writing `bridge_delivery(status=delivered)` so drain's UNIQUE dedups.
+4. **New subsystem `runtime/subsystems/bridge/`** — resolves Open Q1 + Q3. Has its own `BridgeModule.forRoot({ multiTenant })` that imports Events + Jobs modules.
+5. **Drain atomicity**: per-event transaction within batch loop. Resolves Open Q2.
+6. **Pool alignment guidance** added: two pool layers (events_* wrappers + user pools), pool-per-class-of-work.
+7. **Latency guardrails** on Decision 2: hop-count table, JSDoc on `triggers:` field, "When NOT to use the bridge" CONSUMER-SETUP section committed.
+8. **Reverse-lookup CLI** `codegen events consumers <type>` committed to Phase 2 scope — indexes all three tiers.
+9. **Primer section** *events are facts, jobs are work* for new readers.
+10. **Edge cases added to Consequences**: trigger rename/removal (orphan handling), payload schema evolution rules, multi-tenancy null-tenantId error path, ordering guarantees.
 
-## Six locked decisions (all revisitable; costs noted)
+### Two new rejected alternatives recorded (F, G)
 
-| # | Decision | Reversal cost |
-|---|---|---|
-| 1 | Job-owned triggers via decorator | Low (codegen-only) |
-| 2 | Bridge IS the jobs worker on reserved pools (wrapper `job_run` per delivery) | **Medium — this is the one I'm least certain on** |
-| 3 | Typed TS `map:` / `when:` callbacks (not YAML DSL) | Low |
-| 4 | `bridge_delivery.status = pending/delivered/skipped/failed`, no auto-retry | Low |
-| 5 | Build-time validation against `eventRegistry` | None |
-| 6 | `when:` predicates ship in Phase 2 | Low |
+- **F. Dual-mode triggers** (`mode: 'bridge' | 'immediate'` on the decorator) — rejected; use case doesn't exist yet; would hide execution semantics.
+- **G. Direction-based auto-routing** (direction picks tier automatically) — rejected; direction is provenance, not latency profile.
 
-## Where I'd most want pushback
+## Next step for the executing session
 
-### Decision 2 — wrapper run vs. direct spawn
+Branch off latest `main` and:
 
-Between two variants I considered:
+1. Cut specs: `docs/specs/BRIDGE-1.md` through `docs/specs/BRIDGE-N.md` following the shape of EVT-1..8 / JOB-1..8 / SYNC-1..8. PR stack is in `docs/specs/BRIDGE-PHASE-2-PLAN.md`.
+2. File GitHub issues per spec (one epic + N sub-issues, like `#60 + #126..#133` for SYNC).
+3. Orchestrate per the plan doc's recommendation (single coordinator, sequential `/develop` loops, worktree isolation, three pre-agreed gates).
 
-- **(a) Wrapper runs in reserved pools** (chosen): outbox drain inserts `bridge_delivery` + wrapper `job_run` in reserved pool. Wrapper handler calls `orchestrator.start()` for the user job.
-- **(b) Direct spawn**: outbox drain calls `orchestrator.start()` inline, writes `bridge_delivery` as audit-only. One `job_run` per fanout instead of two.
+The plan doc is **execution-ready**. It specifies file paths, gate locations, dependency order, and the coordinator's first action.
 
-I chose (a) because every operational capability we want (pause fanout, throttle, retry, cancel, schedule, observability) already exists on `job_run` and would need to be reimplemented on `bridge_delivery` in (b). User agreed with (a) on the "control-plane separation" argument.
+## User's known worries — status after revision
 
-Cost of (a): 2× row count per fanout; +1 poll cycle of latency. At realistic rates (100s–1000s/sec), fine. At 10k+/sec with high fanout, revisit.
+- **"`user.created` could generate a bunch of downstream jobs that slow stuff down."** Resolved. Publish is O(1) insert; fanout is async on isolated pools; execution is bounded by pool concurrency. Consequences section names this.
+- **"I want layers of separation for control."** Drove Decision 2 (wrappers over direct spawn). Pool-level concurrency on `events_*` provides the control knob; pool alignment guidance documents how to pick user pools to avoid head-of-line blocking.
+- **"Leaving delegation to implementer style produces inconsistency."** Resolved by Decision 7 (facade).
+- **"I don't love not knowing which path skipped a step."** Resolved by the three-tier model + fanout CLI: all three tiers are visible in the same report; `grep publishAndStart` + `grep @JobHandler.triggers` + `grep @OnEvent` cover them.
+- **"Pools need to align to event types."** Refined: pool-per-class-of-work, not per-event-type. Documented in *Pool alignment guidance*.
 
-**Things an outside reviewer should stress-test:**
-- Is the 2× row count actually free at our target scale, or am I hand-waving? Back-of-envelope for `user.created` with typical fanout.
-- Is the +1 poll cycle latency a real problem for any plausible use case? (Realtime hot paths shouldn't use the bridge — use imperative `orchestrator.start()` from the use case. But is that documented clearly enough?)
-- Does routing wrapper code into reserved pools muddy the "reserved = user can't target" rule? (Proposal: keep the rule; only framework-registered handlers can target.)
+## What the next session should NOT do
 
-### Decision 1 — job-owned vs. event-owned triggers
-
-User originally worried that event-owned triggers would force events to know about jobs. Settled on job-owned. Second opinion question: **is there any reason a declarative event-owned approach would be better at any scale?** (E.g., "this event fans out to these 15 things, visible in one file.") I argued no — the job owns its pool, concurrency, replay; adding trigger spec keeps behavior colocated. But a reviewer who's built reactive systems may have counter-arguments.
-
-### Open question — where `bridgeRegistry` physically lives
-
-Three candidates in the ADR's open questions section:
-- `runtime/subsystems/events/generated/bridge.ts` (events-owned, but events subsystem shouldn't know about jobs)
-- `runtime/subsystems/jobs/generated/bridge.ts` (jobs-owned, but bridge registry consults `eventRegistry`)
-- `runtime/subsystems/bridge/generated/registry.ts` (my lean — new subsystem whose whole job is combining the other two)
-
-Lean is option 3, which implies a new `BridgeModule.forRoot()` that imports `JobsDomainModule` + `EventsModule`. Keeps the import graph clean.
-
-## Reading order for a reviewer
-
-1. **Context + Decision sections of the ADR** (decisions 1 + 2 are the load-bearing ones).
-2. **Alternatives considered** (4 rejected approaches with reasons — easiest place to find disagreement).
-3. **Schema section** for `bridge_delivery` (small table, few columns — quick to evaluate).
-4. **Open questions** at the bottom (all Phase-2 spec concerns, not ADR concerns).
-
-Skip: the framework handler pseudocode is illustrative, not final — BRIDGE-4 will produce the actual implementation.
-
-## User's known worries to sanity-check against
-
-- **"`user.created` could generate a bunch of downstream jobs that slow stuff down."** Resolved in conversation — publish is O(1) insert, fanout is async on isolated pools, execution is bounded by pool concurrency. ADR's consequences section names this explicitly.
-- **"I want layers of separation for control."** Drove decision 2 toward wrappers over direct spawn. Agent should check the control-plane argument holds: does pool-level concurrency on `events_*` actually give the knobs we claim?
-
-## What the next reviewer should NOT do
-
-- Rewrite the ADR. Comments / revision notes only.
+- Rewrite the ADR. It's been through the review pass and is locked for Phase 2.
 - Push for backwards-compat shims. No users exist (CLAUDE.md operating principles).
-- Propose adding a sweeper / retry scheduler for `bridge_delivery.failed`. Explicitly out of scope for Phase 2 (mirrors events outbox stance).
-- Push for event-owned YAML as the *primary* authoring surface. It's deferred as a second, additive codegen source. Either direction is fine; changing the primary surface post-ship is a codegen migration.
-
-## Next task if reviewer approves
-
-Task #3 in the local task list: break ADR-023 into `docs/specs/BRIDGE-1.md` through `BRIDGE-9.md` following the shape of EVT-1..8 / JOB-1..8, plus `docs/specs/ADR-023-phase-2-issues.md` with a dependency graph.
+- Propose adding a sweeper / retry scheduler for `bridge_delivery.failed`. Explicitly out of scope for Phase 2.
+- Re-open dual-mode triggers (F) or auto-routing (G) — rejected alternatives are recorded with reasoning.
+- Push for event-owned YAML as the *primary* authoring surface. It's deferred as a second, additive codegen source.
