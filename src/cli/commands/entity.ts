@@ -160,7 +160,7 @@ export class EntityNewCommand extends Command {
 	dryRun = Option.Boolean('--dry-run', false);
 	force = Option.Boolean('--force', false);
 	only = Option.String('--only', { required: false });
-	continueOnError = Option.Boolean('--continue-on-error', false);
+	continueOnError = Option.Boolean('--continue-on-error', true);
 	json = Option.Boolean('--json', false);
 	cwd = Option.String('--cwd', { required: false });
 	configPath = Option.String('--config', { required: false });
@@ -217,8 +217,9 @@ export class EntityNewCommand extends Command {
 
 		// EVT-7: pre-flight cross-validate each target's `emits:` block against
 		// the merged event registry (top-level events/*.yaml + entity events:
-		// desugar). Errors are fatal (unless --continue-on-error); warnings are
-		// surfaced via printWarning + JSON payload and never gate.
+		// desugar). Invalid emits are reported and skipped by default; pass
+		// --no-continue-on-error to make the first failure fatal. Warnings are
+		// always surfaced via printWarning + JSON payload and never gate.
 		const entitiesDirForEmits =
 			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
 		const eventsDirForEmits = path.resolve(ctx.cwd, 'events');
