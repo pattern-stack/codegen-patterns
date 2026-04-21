@@ -1,9 +1,11 @@
 # ADR-005 — Entity-Family Base Class Inheritance Tree
 
-**Status:** Draft
+**Status:** Superseded by ADR-031 (App-Defined Patterns), 2026-04-19
 **Date:** 2026-04-11
 **Owner:** Doug
-**Related:** ADR-001, ADR-003, ADR-004
+**Related:** ADR-001, ADR-003, ADR-004, ADR-031 (supersedes)
+
+> **Supersedure note (2026-04-19):** Entity families as a closed library-shipped enum (`family: synced | activity | knowledge | metadata`) are replaced by app-defined Patterns. The four family base classes themselves (`SyncedEntityRepository`, etc.) remain as runtime artifacts — they are now referenced by the library-shipped `SyncedPattern`, `ActivityPattern`, `KnowledgePattern`, `MetadataPattern` records rather than by a hard-coded enum. The `family:` YAML key is deleted; entities use `pattern:` instead. The historical context, motivation, and family taxonomy below remain accurate as the design rationale that informed Patterns. See ADR-031 for the current consumer-facing surface.
 
 ## Context
 
