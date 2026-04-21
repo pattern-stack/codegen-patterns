@@ -565,12 +565,22 @@ export class TypedEventBus {
 \t\tconst shouldValidate =
 \t\t\tflag === undefined ? true : flag !== 'false' && flag !== '0';
 \t\tif (shouldValidate) {
-\t\t\tconst check = eventPayloadSchemas[type].safeParse(payload);
-\t\t\tif (!check.success) {
-\t\t\t\tconsole.warn(
-\t\t\t\t\t\`[TypedEventBus] payload validation failed for \${String(type)}:\`,
-\t\t\t\t\tcheck.error.issues,
-\t\t\t\t);
+\t\t\t// \`eventPayloadSchemas\` is typed as \`Record<EventTypeName, z.ZodType>\`,
+\t\t\t// so under \`noUncheckedIndexedAccess\` the indexed lookup widens
+\t\t\t// to \`z.ZodType | undefined\`. When no events are registered at
+\t\t\t// codegen time \`EventTypeName\` degrades to \`string\` and the
+\t\t\t// schemas object is literally \`{}\` — the guard below is the
+\t\t\t// honest handling of that empty-registry case (skip validation;
+\t\t\t// it's a warn-only best-effort check per the class docblock).
+\t\t\tconst schema = eventPayloadSchemas[type];
+\t\t\tif (schema) {
+\t\t\t\tconst check = schema.safeParse(payload);
+\t\t\t\tif (!check.success) {
+\t\t\t\t\tconsole.warn(
+\t\t\t\t\t\t\`[TypedEventBus] payload validation failed for \${String(type)}:\`,
+\t\t\t\t\t\tcheck.error.issues,
+\t\t\t\t\t);
+\t\t\t\t}
 \t\t\t}
 \t\t}
 
