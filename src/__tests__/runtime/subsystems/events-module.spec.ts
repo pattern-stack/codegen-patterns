@@ -247,3 +247,120 @@ describe('EventsModule.forRootAsync', () => {
     await moduleRef.close();
   });
 });
+
+// ============================================================================
+// Regression — issue #108 — forRootAsync must resolve backend constructor
+// args through Nest DI, not hand-construct with zero args.
+// ============================================================================
+
+import { mock } from 'bun:test';
+import { Global } from '@nestjs/common';
+import { DrizzleEventBus } from '../../../../runtime/subsystems/events/event-bus.drizzle-backend';
+import { DRIZZLE } from '../../../../runtime/constants/tokens';
+
+describe('EventsModule.forRootAsync — DI for backend constructor args (#108)', () => {
+  /**
+   * Minimal Drizzle-shaped mock — captures insert().values(...) so the test
+   * can assert publish() actually reached the injected client rather than an
+   * undefined/bare-constructed one.
+   */
+  function makeMockDb() {
+    const insertBuilder = {
+      values: mock(async (_args: unknown) => []),
+    };
+    const db = {
+      insert: mock(() => insertBuilder),
+    };
+    return { db, insertBuilder };
+  }
+
+  it('resolves DRIZZLE through DI for the drizzle backend (regression: used to bare-construct with undefined db)', async () => {
+    const { db, insertBuilder } = makeMockDb();
+
+    // Real consumers expose DRIZZLE via a @Global() DatabaseModule. Mirror
+    // that here so EventsModule.forRootAsync can see the token.
+    @Global()
+    @Module({
+      providers: [{ provide: DRIZZLE, useValue: db }],
+      exports: [DRIZZLE],
+    })
+    class FakeDrizzleModule {}
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        FakeDrizzleModule,
+        EventsModule.forRootAsync({
+          useFactory: () => ({ backend: 'drizzle' }),
+        }),
+      ],
+    }).compile();
+
+    const bus = moduleRef.get(EVENT_BUS);
+    expect(bus).toBeInstanceOf(DrizzleEventBus);
+
+    // Prove publish reached the injected mock DB. Pre-fix the backend was
+    // constructed via `new DrizzleEventBus()` with zero args, leaving `db`
+    // undefined — this call would throw "Cannot read properties of undefined
+    // (reading 'insert')" on the hand-constructed instance.
+    await (bus as DrizzleEventBus).publish({
+      id: 'id-1',
+      type: 'contact_created',
+      aggregateId: 'a-1',
+      aggregateType: 'contact',
+      payload: {},
+      occurredAt: new Date('2026-01-01T00:00:00Z'),
+      metadata: { pool: 'events_change', direction: 'change' },
+    });
+
+    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(insertBuilder.values).toHaveBeenCalledTimes(1);
+
+    await moduleRef.close();
+  });
+
+  it('throws a clear error when the drizzle backend is selected but DRIZZLE is not provided', async () => {
+    // No DRIZZLE provider in the module — the factory should surface a
+    // descriptive error rather than silently constructing a broken bus.
+    await expect(
+      Test.createTestingModule({
+        imports: [
+          EventsModule.forRootAsync({
+            useFactory: () => ({ backend: 'drizzle' }),
+          }),
+        ],
+      }).compile(),
+    ).rejects.toThrow(/DRIZZLE provider is not available/);
+  });
+
+  it('redis backend receives the resolved REDIS_URL via DI (no bare construction)', async () => {
+    // We don't want to actually connect to Redis; assert the instance was
+    // constructed with the expected injected URL. Constructor alone does
+    // not open a connection — that happens in onModuleInit, which
+    // compile() does not invoke.
+    const { RedisEventBus } = await import(
+      '../../../../runtime/subsystems/events/event-bus.redis-backend'
+    );
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        EventsModule.forRootAsync({
+          useFactory: () => ({
+            backend: 'redis',
+            redisUrl: 'redis://test-host:6379/0',
+          }),
+        }),
+      ],
+    }).compile();
+
+    const bus = moduleRef.get(EVENT_BUS);
+    expect(bus).toBeInstanceOf(RedisEventBus);
+    // The constructor stores the URL on a private field; cast to access
+    // for the assertion. The important property is that the URL arrived —
+    // pre-fix it would have been `undefined`.
+    expect((bus as unknown as { redisUrl: string }).redisUrl).toBe(
+      'redis://test-host:6379/0',
+    );
+
+    await moduleRef.close();
+  });
+});

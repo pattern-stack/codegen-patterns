@@ -863,6 +863,8 @@ database:
   dialect: postgres
 ```
 
+`codegen project init` defaults `generate.architecture` to `clean-lite-ps` — the lighter consumer-facing layout used by the scaffold-demo app. To opt into the full Clean Architecture pipeline (separate `domain/`, `application/`, `infrastructure/` directories, separate command/query classes), edit `codegen.config.yaml` and set `generate.architecture: clean`. The two pipelines are mutually exclusive and the scanner only overrides the default when it finds existing domain/application directories (see `docs/specs/TEST-SESSION-1.md` §3).
+
 `paths.generated` must sit inside your `tsconfig.json` `"include"` globs — otherwise TS won't typecheck the barrel.
 
 ## App-defined patterns
