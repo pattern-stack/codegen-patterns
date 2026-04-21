@@ -1,8 +1,21 @@
 # TEST-SESSION-1: Jobs + Events Phase 1 Stress-Test & Viewer
 
-**Date:** 2026-04-20  
-**Scope:** Post Phase 1 — after EVT-7 merges. Validate end-to-end architecture in a real downstream app; build a minimal runtime viewer.  
+**Date:** 2026-04-20
+**Scope:** Post Phase 1 — after EVT-7 merges. Validate end-to-end architecture in a real downstream app; build a minimal runtime viewer.
 **Prerequisites:** EVT-7 merged, EVT-8 scaffold available (or hand-wired if not).
+
+## Revision — 2026-04-20 (live session)
+
+Phase A + Phase B were executed at `~/Projects/dev/codegen-phase1-demo-v2/`. Thirteen findings surfaced, six required upstream fixes before the demo could boot. All six have landed on `main`:
+
+- **F1 / F2 / F3** (`a7bd249`) — `subsystem install` + `entity new`'s generated-artifact paths + use-case template imports all now derive from `paths.backend_src` / `paths.subsystems`.
+- **F7** (`d6cb061`) — strict-TS fixes (override modifiers across vendored + generated classes; `noUncheckedIndexedAccess` guard in `lifecycle-events.ts`).
+- **F8** (`a8243a7`) — use-case payloadMap emits via `<%- ... %>` (raw) instead of `<%= ... %>` (HTML-escaped).
+- **F9 / F10** (`8c68a82`) — `tenant_id` emitted unconditionally on `job_run` (nullable); use-case template threads an optional `actor: { tenantId, userId }` param and controllers read the `x-tenant-id` / `x-user-id` headers. Decision reversal on JOB-Q1 documented in ADR-022 revision.
+
+Unresolved minor findings (F4, F6, F11, F12, F13) are filed as GH issues. Smoke-test gating (F7 umbrella) also filed.
+
+**§3 YAML examples below are the corrected versions.** The pre-revision versions used flat-top-level shapes (`name:`, array-style `fields:/payload:`, `timestamp` field type, `string[]` payload type, outbound events with `aggregate:`) that do not match the Zod schemas in `src/schema/{entity,event}-definition.schema.ts`.
 
 ---
 
@@ -36,22 +49,35 @@ Rationale: `/tmp` is lost on reboot; a sibling directory outside the codegen rep
 mkdir -p ~/Projects/dev/codegen-phase1-demo
 cd ~/Projects/dev/codegen-phase1-demo
 
-# 1. Init bun project + install codegen from local path
+# 1. Init bun project + install codegen from local path + peer deps
 bun init -y
-bun add file:~/Projects/dev/codegen-patterns   # local codegen package
-bun add @nestjs/core @nestjs/common @nestjs/platform-express reflect-metadata rxjs
+bun add file:~/Projects/dev/codegen-patterns
+bun add @nestjs/core @nestjs/common @nestjs/platform-express reflect-metadata rxjs drizzle-orm pg @types/pg @types/express
+bun add -d drizzle-kit
 
-# 2. Create codegen.config.yaml (see §3 for full content)
-# 3. Run subsystem scaffolds
-just -f ~/Projects/dev/codegen-patterns/Justfile gen-subsystem jobs
-just -f ~/Projects/dev/codegen-patterns/Justfile gen-subsystem events
+# 2. Scaffold shared/* tree + codegen.config.yaml + tsconfig aliases
+bun /path/to/codegen-patterns/src/cli/index.ts project init --yes --with-tsconfig
 
-# 4. Write entity YAML files (see §3)
-# 5. Generate all entities
-just -f ~/Projects/dev/codegen-patterns/Justfile gen-all
+# 3. Install subsystems (jobs schema + events outbox + runtime files)
+bun /path/to/codegen-patterns/src/cli/index.ts subsystem install jobs
+bun /path/to/codegen-patterns/src/cli/index.ts subsystem install events --force
 
-# 6. Apply Atlas migrations (see §3)
-# 7. Boot app and hit /admin
+# 4. Delete the placeholder entity, write the real YAMLs
+rm entities/example.yaml
+# ... write entities/{contact,deal,activity}.yaml + events/*.yaml per §3
+
+# 5. Generate all entities + event codegen
+bun /path/to/codegen-patterns/src/cli/index.ts entity new --all
+
+# 6. Start Postgres
+docker compose up -d
+
+# 7. Push schema (dev-loop shortcut; use Atlas for migration round-trip S7)
+DATABASE_URL=postgres://demo:demo@localhost:5434/phase1_demo bunx drizzle-kit push --force
+
+# 8. Hand-write src/main.ts + src/admin/* (see §5). Boot:
+DATABASE_URL=postgres://demo:demo@localhost:5434/phase1_demo bun run src/main.ts
+# GET http://localhost:3000/admin/ → 200
 ```
 
 ### Generated Structure (target)
@@ -69,22 +95,34 @@ codegen-phase1-demo/
 │   ├── deal_created.yaml
 │   ├── deal_stage_changed.yaml
 │   └── crm_sync_requested.yaml
+├── worker.ts                         # scaffold output (jobs subsystem)
 ├── src/
-│   ├── app.module.ts              # hand-written: wires generated modules
-│   ├── main.ts                    # hand-written + scaffold hook
-│   ├── jobs/                      # hand-written @JobHandler classes
+│   ├── app.module.ts                 # hand-written: wires DatabaseModule, EventsModule, JobsDomainModule, JobWorkerModule, GENERATED_MODULES, AdminModule
+│   ├── main.ts                       # hand-written: NestFactory bootstrap
+│   ├── schema.ts                     # re-exports generated + subsystem schemas
+│   ├── jobs/                         # hand-written @JobHandler classes
 │   │   ├── enrich-contact.job.ts
 │   │   ├── sync-deal.job.ts
 │   │   └── notify-crm.job.ts
-│   ├── subscribers/               # hand-written event subscribers
+│   ├── subscribers/                  # hand-written event subscribers
 │   │   └── deal-stage.subscriber.ts
-│   ├── admin/                     # hand-written viewer NestJS module
+│   ├── admin/                        # hand-written viewer NestJS module
 │   │   ├── admin.module.ts
 │   │   └── admin.controller.ts
-│   └── [generated application/ domain/ infrastructure/]
-├── drizzle/
-│   └── schema.ts                  # generated + subsystem schemas
-└── atlas.hcl                      # generated by scaffold
+│   ├── modules/                      # generated entity modules (per architecture)
+│   ├── shared/                       # vendored by `project init`
+│   │   ├── base-classes/
+│   │   ├── constants/tokens.ts
+│   │   ├── database/database.module.ts
+│   │   ├── pipes/zod-validation.pipe.ts
+│   │   ├── types/drizzle.ts
+│   │   └── subsystems/
+│   │       ├── events/               # from `subsystem install events`
+│   │       │   └── generated/        # from `entity new --all`
+│   │       └── jobs/                 # from `subsystem install jobs`
+│   │           └── generated/        # from `entity new --all`
+│   └── generated/                    # barrels (modules.ts, schema.ts)
+└── docker-compose.yml
 ```
 
 ### Docker + Atlas Wiring
@@ -112,137 +150,156 @@ Atlas workflow (from `docs/CONSUMER-SETUP.md`):
 
 ### `codegen.config.yaml` (relevant excerpt)
 
+`project init` emits a complete `codegen.config.yaml`. The subsystem installs then inject `jobs:` / `events:` blocks with sensible defaults. Only override what the session actually needs:
+
 ```yaml
 generate:
-  architecture: backend   # full Clean Architecture
+  architecture: clean-lite-ps   # `project init` default; full `backend` works too
+paths:
+  backend_src: src
+  entities_dir: entities
+  generated: src/generated
+  # paths.subsystems defaults to <backend_src>/shared/subsystems after #F1 fix
+
 jobs:
+  backend: drizzle
+  multi_tenant: true              # toggled per S5 / S7 scenarios
+  worker_mode: embedded
   pools:
-    - name: default
-      workers: 2
-  multi_tenant: false     # toggled to true in migration round-trip scenario
+    events_inbound:  { queue: jobs-events-inbound, concurrency: 20, reserved: true }
+    events_change:   { queue: jobs-events-change, concurrency: 30, reserved: true }
+    events_outbound: { queue: jobs-events-outbound, concurrency: 10, reserved: true }
+    interactive:     { queue: jobs-interactive, concurrency: 20 }
+    batch:           { queue: jobs-batch, concurrency: 5 }
+
 events:
-  multi_tenant: false
+  backend: drizzle
+  multi_tenant: true              # for S5 tenant-isolation coverage
 ```
 
 ### Entity YAML Files
 
+Entity YAML requires `entity: { name, plural, table }` wrapping and `fields:` as a record (key = field name, not an array).
+
 **`entities/contact.yaml`**
 ```yaml
-name: contact
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+
 fields:
-  - name: email
-    type: string
-  - name: first_name
-    type: string
-  - name: last_name
-    type: string
-  - name: enriched_at
-    type: timestamp
-    nullable: true
+  email:       { type: string, required: true }
+  first_name:  { type: string, required: true }
+  last_name:   { type: string, required: true }
+  enriched_at: { type: datetime, required: false }   # `timestamp` is NOT in the field-type enum — use `datetime`
+
 emits:
   - contact_created
   - contact_updated
+
+behaviors:
+  - timestamps
+  - soft_delete
 ```
 
 **`entities/deal.yaml`**
 ```yaml
-name: deal
+entity:
+  name: deal
+  plural: deals
+  table: deals
+
 fields:
-  - name: title
-    type: string
-  - name: stage
-    type: string
-    default: '"prospecting"'
-  - name: contact_id
-    type: uuid
-  - name: amount_cents
-    type: integer
-    nullable: true
+  title:        { type: string, required: true }
+  stage:        { type: string, required: true, default: prospecting }
+  contact_id:   { type: uuid, required: true }
+  amount_cents: { type: integer, required: false }
+
 emits:
   - deal_created
   - deal_stage_changed
+
+behaviors:
+  - timestamps
+  - soft_delete
 ```
 
 **`entities/activity.yaml`** (optional; exercises family repo pattern)
 ```yaml
-name: activity
-family: activity
+entity:
+  name: activity
+  plural: activities
+  table: activities
+  family: activity
+
 fields:
-  - name: type
-    type: string
-  - name: entity_type
-    type: string
-  - name: entity_id
-    type: uuid
+  type:        { type: string, required: true }
+  entity_type: { type: string, required: true }
+  entity_id:   { type: uuid, required: true }
+
+behaviors:
+  - timestamps
 ```
 
 ### `events/*.yaml` Files
 
+Event YAML uses `type:` (not `name:`) top-level. `payload:` is a **record** keyed by snake_case field name. Payload field types are narrower than entity field types: `uuid | string | number | boolean | date | json` — no `string[]`, no `integer`, no `timestamp`/`datetime`. When `direction: change`, `aggregate:` is required; `direction: outbound` uses `destination:` (not `aggregate:`).
+
 **`events/contact_created.yaml`**
 ```yaml
-name: contact_created
+type: contact_created
 direction: change
 aggregate: contact
 version: 1
 payload:
-  - name: contact_id
-    type: string
-  - name: email
-    type: string
+  contact_id: { type: string }
+  email:      { type: string }
 ```
 
 **`events/contact_updated.yaml`**
 ```yaml
-name: contact_updated
+type: contact_updated
 direction: change
 aggregate: contact
 version: 1
 payload:
-  - name: contact_id
-    type: string
-  - name: changed_fields
-    type: string[]
+  contact_id:     { type: string }
+  changed_fields: { type: json }   # array types aren't in the payload enum — use json
 ```
 
 **`events/deal_created.yaml`**
 ```yaml
-name: deal_created
+type: deal_created
 direction: change
 aggregate: deal
 version: 1
 payload:
-  - name: deal_id
-    type: string
-  - name: contact_id
-    type: string
+  deal_id:    { type: uuid }
+  contact_id: { type: uuid }
 ```
 
 **`events/deal_stage_changed.yaml`**
 ```yaml
-name: deal_stage_changed
+type: deal_stage_changed
 direction: change
 aggregate: deal
 version: 1
 payload:
-  - name: deal_id
-    type: string
-  - name: from_stage
-    type: string
-  - name: to_stage
-    type: string
+  deal_id:    { type: uuid }
+  from_stage: { type: string }
+  to_stage:   { type: string }
 ```
 
 **`events/crm_sync_requested.yaml`**
 ```yaml
-name: crm_sync_requested
+type: crm_sync_requested
 direction: outbound
-aggregate: deal
+destination: crm                   # `aggregate:` is only valid with `direction: change`
 version: 1
 payload:
-  - name: deal_id
-    type: string
-  - name: crm_provider
-    type: string
+  deal_id:      { type: uuid }
+  crm_provider: { type: string }
 ```
 
 ### `@JobHandler` Classes
