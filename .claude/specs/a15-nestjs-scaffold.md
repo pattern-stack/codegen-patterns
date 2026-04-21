@@ -332,7 +332,7 @@ Note: Exact versions should match what is already used in the repo root `package
 
 The implementer should confirm which approach avoids changing codegen source, and document the decision in a comment in `database.module.ts`.
 
-**contact-v2.yaml behaviors:** `contact-v2.yaml` includes `external_id_tracking` behavior and `family: crm-synced`. If the codegen does not yet handle these (they may be v2-only schema additions), the scaffold test should use a stripped-down entity YAML that exercises only what codegen currently supports. Document this in a comment at the top of `validate.sh`.
+**contact-v2.yaml behaviors:** `contact-v2.yaml` includes `external_id_tracking` behavior and `pattern: Synced` (previously `family: crm-synced` before ADR-031). If the codegen does not yet handle these (they may be v2-only schema additions), the scaffold test should use a stripped-down entity YAML that exercises only what codegen currently supports. Document this in a comment at the top of `validate.sh`.
 
 **No auth, no guards:** The scaffold controller must be reachable without authentication. Verify the generated controller does not apply `@UseGuards(AuthGuard)` — that pattern appears in Electric SQL controllers, not plain REST. If guards are present, they must be disabled or overridden in the scaffold AppModule.
 

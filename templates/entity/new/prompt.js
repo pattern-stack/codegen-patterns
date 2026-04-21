@@ -221,6 +221,56 @@ function resolveBehaviors(behaviorConfigs) {
   };
 }
 
+
+// ============================================================================
+// Patterns — subprocess-local registry load (PATTERN-5)
+// ============================================================================
+//
+// The Hygen subprocess has no shared memory with the CLI process, so the
+// pattern registry is rebuilt here from scratch. Library patterns register
+// themselves as a side effect of importing the barrel; app-defined patterns
+// are loaded from `codegen.config.yaml patterns:` globs (default
+// `src/patterns/*.pattern.ts`). Both loads are deterministic and
+// side-effect-free — the registry determinism test in
+// `src/__tests__/patterns/registry.test.ts` pins down that the CLI and the
+// subprocess produce identical sorted results for the same file set.
+
+let _patternsLoadPromise = null;
+
+async function ensurePatternsRegistryLoaded() {
+  if (!_patternsLoadPromise) {
+    _patternsLoadPromise = (async () => {
+      // Side-effect import: pre-registers the five library patterns.
+      await import('../../../src/patterns/library/index.js');
+      const { loadAppPatterns } = await import('../../../src/patterns/registry.js');
+
+      // Read the `patterns:` manifest from codegen.config.yaml. Defaults
+      // to a single sensible glob when the key is absent — matches the
+      // ADR-031 default discovery shape.
+      const configPath = path.resolve(process.cwd(), 'codegen.config.yaml');
+      let manifest = ['src/patterns/*.pattern.ts'];
+      if (fs.existsSync(configPath)) {
+        try {
+          const parsed = yaml.parse(fs.readFileSync(configPath, 'utf-8'));
+          if (Array.isArray(parsed?.patterns)) {
+            manifest = parsed.patterns;
+          }
+        } catch {
+          // fall through with the default manifest; a malformed
+          // codegen.config.yaml is already surfaced by the CLI's config
+          // loader elsewhere.
+        }
+      }
+      const result = await loadAppPatterns(manifest, process.cwd());
+      for (const err of result.errors) {
+        // eslint-disable-next-line no-console
+        console.warn(`[codegen] ${err}`);
+      }
+    })();
+  }
+  return _patternsLoadPromise;
+}
+
 export default {
   prompt: async ({ args }) => {
     const yamlPath = args.yaml;
@@ -962,29 +1012,6 @@ export default {
     const frontendEnabled = generateConfig.frontend === true;
 
     // ============================================================================
-    // v2: Family
-    // ============================================================================
-
-    const FAMILY_REPOSITORY_MAP = {
-      'synced': 'SyncedEntityRepository',
-      'activity': 'ActivityEntityRepository',
-      'knowledge': 'KnowledgeEntityRepository',
-      'metadata': 'MetadataEntityRepository',
-    };
-
-    const FAMILY_SERVICE_MAP = {
-      'synced': 'SyncedEntityService',
-      'activity': 'ActivityEntityService',
-      'knowledge': 'KnowledgeEntityService',
-      'metadata': 'MetadataEntityService',
-    };
-
-    const family = entity.family ?? null;
-    const hasFamily = family != null;
-    const familyBaseRepository = family ? (FAMILY_REPOSITORY_MAP[family] ?? null) : null;
-    const familyBaseService = family ? (FAMILY_SERVICE_MAP[family] ?? null) : null;
-
-    // ============================================================================
     // v2: Queries
     // ============================================================================
 
@@ -1533,12 +1560,6 @@ export default {
       isCleanLitePs,
       frontendEnabled,
 
-      // Family
-      family,
-      hasFamily,
-      familyBaseRepository,
-      familyBaseService,
-
       // Queries
       hasQueries,
       processedQueries,
@@ -1582,6 +1603,12 @@ export default {
     // read the same locals to render typed publish blocks in their use-cases.
 
     if (isCleanLitePs) {
+      // Load app-defined patterns (if any) into the registry before the
+      // clean-lite-ps extension reads it. `loadAppPatterns` is idempotent
+      // and deterministic — calling it every run is cheap (one dynamic
+      // import per pattern file) and matches the two-process load story
+      // the registry tests pin down.
+      await ensurePatternsRegistryLoaded();
       const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
       Object.assign(locals, buildCleanLitePsLocals(definition, locals));
     } else {
@@ -1621,6 +1648,14 @@ export default {
         hasSearchQuery: false,
         searchQuery: null,
         hasExternalIdTracking: false,
+        // PATTERN-5 stubs — defined even for non-CLP architectures so the
+        // CLP template bodies render without `ReferenceError`s. The
+        // to:/skip_if: guards prevent file writes, but EJS still walks the
+        // body on every template.
+        patternName: 'Base',
+        hasPatternConfig: false,
+        patternConfig: null,
+        renderPatternConfigLiteral: () => '{}',
       });
     }
 

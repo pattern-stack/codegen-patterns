@@ -233,7 +233,7 @@ This guide covers working inside the `codegen-patterns` repo. To use the generat
 
 ## Next Steps
 
-- **Entity families** — assign `family: synced` (or `activity`, `metadata`, `knowledge`) in your YAML to inherit domain-specific query patterns. See [ADR-005](architecture/adrs/ADR-005-entity-family-base-classes.md).
+- **Patterns** — assign `pattern: Synced` (or `Activity`, `Metadata`, `Knowledge`) in your YAML to inherit the matching library base class (repository + service + query shape). Consumers can also define their own patterns — see [ADR-031](adrs/ADR-031-app-defined-patterns.md) and the "App-defined patterns" section of [CONSUMER-SETUP.md](CONSUMER-SETUP.md#app-defined-patterns).
 - **Declarative queries** — the `queries:` block generates typed repository methods with compound filters and ordering. No hand-written SQL.
 - **Subsystem architecture** — events, jobs, cache, and storage follow the Protocol/Backend/Factory pattern. See [ADR-008](architecture/adrs/ADR-008-subsystem-architecture.md).
 - **Claude Code skill** — run `just install-skill /path/to/my-app` to teach Claude Code how to generate entities in your project.

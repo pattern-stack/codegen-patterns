@@ -84,7 +84,7 @@ describe('buildCleanLitePsLocals', () => {
   it('maps Synced pattern to SyncedEntityRepository and SyncedEntityService', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
 
-    expect(locals.family).toBe('synced');
+    expect(locals.patternName).toBe('Synced');
     expect(locals.repositoryBaseClass).toBe('SyncedEntityRepository');
     expect(locals.serviceBaseClass).toBe('SyncedEntityService');
     expect(locals.repositoryBaseImport).toBe('@shared/base-classes/synced-entity-repository');
@@ -94,7 +94,7 @@ describe('buildCleanLitePsLocals', () => {
   it('maps Activity pattern to ActivityEntityRepository and ActivityEntityService', () => {
     const locals = buildCleanLitePsLocals(activityDefinition, EMPTY_BASE_LOCALS);
 
-    expect(locals.family).toBe('activity');
+    expect(locals.patternName).toBe('Activity');
     expect(locals.repositoryBaseClass).toBe('ActivityEntityRepository');
     expect(locals.serviceBaseClass).toBe('ActivityEntityService');
     expect(locals.repositoryBaseImport).toBe('@shared/base-classes/activity-entity-repository');
@@ -104,7 +104,7 @@ describe('buildCleanLitePsLocals', () => {
   it('defaults to base when pattern key is absent', () => {
     const locals = buildCleanLitePsLocals(noFamilyDefinition, EMPTY_BASE_LOCALS);
 
-    expect(locals.family).toBe('base');
+    expect(locals.patternName).toBe('Base');
     expect(locals.repositoryBaseClass).toBe('BaseRepository');
     expect(locals.serviceBaseClass).toBe('BaseService');
     expect(locals.repositoryBaseImport).toBe('@shared/base-classes/base-repository');
@@ -372,4 +372,205 @@ describe('buildCleanLitePsLocals', () => {
 
     expect(locals.clpOutputPaths.entity).toStartWith('src/');
   });
+});
+
+
+// ============================================================================
+// PATTERN-5 — registry-driven resolution + patternConfig emission
+// ============================================================================
+
+import { registerLibraryPattern, _resetRegistryForTests } from '../../patterns/registry.ts';
+import { z } from 'zod';
+import {
+  ActivityPattern,
+  BasePattern,
+  KnowledgePattern,
+  MetadataPattern,
+  SyncedPattern,
+} from '../../patterns/library/index.ts';
+
+describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
+  it('exposes `patternName` verbatim from the pattern registry', () => {
+    const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
+    expect(locals.patternName).toBe('Synced');
+  });
+
+  it('first entry of `patterns:` wins the base-class resolution', () => {
+    const def = {
+      entity: {
+        name: 'deal',
+        plural: 'deals',
+        table: 'deals',
+        patterns: ['Synced', 'Activity'],
+      },
+      fields: {},
+      relationships: {},
+      behaviors: ['timestamps'],
+    };
+    const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
+    expect(locals.patternName).toBe('Synced');
+    expect(locals.repositoryBaseClass).toBe('SyncedEntityRepository');
+  });
+
+  it('hasPatternConfig is false for patterns that declare no config', () => {
+    const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
+    expect(locals.hasPatternConfig).toBe(false);
+    expect(locals.patternConfig).toBeNull();
+  });
+
+  it('hasPatternConfig is true + patternConfig populated when YAML supplies a config block', () => {
+    // Register a synthetic pattern with a configSchema to drive the test.
+    registerLibraryPattern({
+      name: 'CrmEntityTest',
+      repositoryClass: 'CrmEntityRepository',
+      repositoryImport: '@/patterns/crm-entity.pattern',
+      serviceClass: 'CrmEntityService',
+      serviceImport: '@/patterns/crm-entity.pattern',
+      repositoryInheritedMethods: [],
+      serviceInheritedMethods: [],
+      configSchema: z.object({ entityType: z.string() }),
+    });
+
+    const def = {
+      entity: {
+        name: 'opportunity',
+        plural: 'opportunities',
+        table: 'opportunities',
+        pattern: 'CrmEntityTest',
+      },
+      fields: {},
+      relationships: {},
+      behaviors: [],
+      config: { CrmEntityTest: { entityType: 'opportunity' } },
+    };
+    const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
+    expect(locals.hasPatternConfig).toBe(true);
+    expect(locals.patternConfig).toEqual({ entityType: 'opportunity' });
+    expect(locals.repositoryBaseClass).toBe('CrmEntityRepository');
+    expect(locals.repositoryBaseImport).toBe('@/patterns/crm-entity.pattern');
+    expect(locals.patternName).toBe('CrmEntityTest');
+  });
+
+  it('base-class output is byte-identical to the pre-PATTERN-5 FAMILY_MAP for library patterns', () => {
+    // This test nails down the PATTERN-5 integration gate: the values
+    // returned for library patterns must match what the old FAMILY_MAP
+    // produced. Any future library-pattern edit that drifts the strings
+    // will fail here, which is the desired alarm.
+    const want = {
+      synced: {
+        repositoryBaseClass: 'SyncedEntityRepository',
+        serviceBaseClass: 'SyncedEntityService',
+        repositoryBaseImport: '@shared/base-classes/synced-entity-repository',
+        serviceBaseImport: '@shared/base-classes/synced-entity-service',
+      },
+      activity: {
+        repositoryBaseClass: 'ActivityEntityRepository',
+        serviceBaseClass: 'ActivityEntityService',
+        repositoryBaseImport: '@shared/base-classes/activity-entity-repository',
+        serviceBaseImport: '@shared/base-classes/activity-entity-service',
+      },
+      metadata: {
+        repositoryBaseClass: 'MetadataEntityRepository',
+        serviceBaseClass: 'MetadataEntityService',
+        repositoryBaseImport: '@shared/base-classes/metadata-entity-repository',
+        serviceBaseImport: '@shared/base-classes/metadata-entity-service',
+      },
+      knowledge: {
+        repositoryBaseClass: 'KnowledgeEntityRepository',
+        serviceBaseClass: 'KnowledgeEntityService',
+        repositoryBaseImport: '@shared/base-classes/knowledge-entity-repository',
+        serviceBaseImport: '@shared/base-classes/knowledge-entity-service',
+      },
+      base: {
+        repositoryBaseClass: 'BaseRepository',
+        serviceBaseClass: 'BaseService',
+        repositoryBaseImport: '@shared/base-classes/base-repository',
+        serviceBaseImport: '@shared/base-classes/base-service',
+      },
+    } as const;
+
+    for (const [lowerName, expected] of Object.entries(want)) {
+      const pascal = lowerName.charAt(0).toUpperCase() + lowerName.slice(1);
+      const def = {
+        entity: { name: 't', plural: 'ts', table: 'ts', pattern: pascal },
+        fields: {},
+        relationships: {},
+        behaviors: [],
+      };
+      const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
+      expect(locals.repositoryBaseClass).toBe(expected.repositoryBaseClass);
+      expect(locals.serviceBaseClass).toBe(expected.serviceBaseClass);
+      expect(locals.repositoryBaseImport).toBe(expected.repositoryBaseImport);
+      expect(locals.serviceBaseImport).toBe(expected.serviceBaseImport);
+      expect(locals.patternName).toBe(pascal);
+    }
+  });
+});
+
+describe('renderPatternConfigLiteral — idiomatic TS literal emission', () => {
+  // Import the helper through the same extension barrel the templates do.
+  const mod = require('../../../templates/entity/new/clean-lite-ps/prompt-extension.js') as {
+    buildCleanLitePsLocals: typeof buildCleanLitePsLocals;
+  };
+  // The helper is exposed via the locals object; grab it by rendering a
+  // throwaway entity.
+  const sampleLocals = mod.buildCleanLitePsLocals(
+    {
+      entity: { name: 'x', plural: 'xs', table: 'xs', pattern: 'Base' },
+      fields: {},
+      relationships: {},
+      behaviors: [],
+    },
+    {},
+  ) as { renderPatternConfigLiteral: (v: unknown) => string };
+  const render = sampleLocals.renderPatternConfigLiteral;
+
+  it('emits bare identifier keys + single-quoted strings', () => {
+    expect(render({ entityType: 'opportunity' })).toBe(
+      "{\n  entityType: 'opportunity',\n}",
+    );
+  });
+
+  it('quotes keys that are not valid identifiers', () => {
+    expect(render({ 'with-dash': 1 })).toBe("{\n  'with-dash': 1,\n}");
+  });
+
+  it('handles nested objects', () => {
+    expect(
+      render({
+        states: { qualifying: ['developing', 'closed_lost'] },
+        initial_state: 'qualifying',
+      }),
+    ).toBe(
+      "{\n  states: {\n    qualifying: [\n      'developing',\n      'closed_lost',\n    ],\n  },\n  initial_state: 'qualifying',\n}",
+    );
+  });
+
+  it('handles numbers, booleans, and nulls without quotes', () => {
+    expect(render({ count: 3, active: true, note: null })).toBe(
+      "{\n  count: 3,\n  active: true,\n  note: null,\n}",
+    );
+  });
+
+  it('emits empty objects and arrays compactly', () => {
+    expect(render({})).toBe('{}');
+    expect(render({ arr: [] })).toBe("{\n  arr: [],\n}");
+  });
+
+  it('escapes single quotes within string values', () => {
+    expect(render({ note: "it's" })).toBe("{\n  note: 'it\\'s',\n}");
+  });
+});
+
+// Restore the canonical library registry after this file runs — several
+// library patterns were registered above via `registerLibraryPattern` which
+// would otherwise leak into the next test file in the Bun process.
+import { afterAll as _afterAllForCleanup } from 'bun:test';
+_afterAllForCleanup(() => {
+  _resetRegistryForTests({ includeLibrary: true });
+  registerLibraryPattern(BasePattern);
+  registerLibraryPattern(SyncedPattern);
+  registerLibraryPattern(ActivityPattern);
+  registerLibraryPattern(KnowledgePattern);
+  registerLibraryPattern(MetadataPattern);
 });

@@ -84,10 +84,12 @@ export interface ParsedEntity {
 ### Parser population (`src/parser/load-entities.ts`)
 
 ```typescript
-// inside transformToEntity, next to `family`:
+// inside transformToEntity, next to the pattern surface:
 const entity: ParsedEntity = {
   // ... existing ...
-  family: definition.entity.family,
+  pattern: definition.entity.pattern,
+  patterns: definition.entity.patterns,
+  patternConfig: definition.entity.config,
   scopeable: definition.entity.scopeable ?? false,   // ← ADD
   // ... rest ...
 };
@@ -167,7 +169,7 @@ import type { ScopeEntityType } from '../../../subsystems/jobs/generated/scope-e
 
 ## Implementation Steps
 
-1. **Extend `EntityConfigSchema`** — add `scopeable: z.boolean().optional()` after `family`. `.strict()` stays.
+1. **Extend `EntityConfigSchema`** — add `scopeable: z.boolean().optional()` after the `pattern:` surface (ADR-031). `.strict()` stays.
 2. **Extend `ParsedEntity`** — add `scopeable?: boolean`.
 3. **Populate in parser** — `scopeable: definition.entity.scopeable ?? false` in `transformToEntity`.
 4. **Create generator** — `scope-entity-type-generator.ts` with `collectScopeableNames`, `buildScopeEntityTypeContent`, `generateScopeEntityType`. Match `barrel-generator.ts` style (HEADER constant, `mkdirSync`, same dry-run semantics).

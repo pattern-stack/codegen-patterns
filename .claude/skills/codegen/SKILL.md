@@ -88,7 +88,7 @@ codegen project graph --output graph.json   # export graph JSON
 ```
 
 `codegen init` scaffolds the consumer's shared layer (as of PR #55):
-- `src/shared/base-classes/*` — family bases with optional `tx?: DrizzleTx` on writes
+- `src/shared/base-classes/*` — pattern bases (Base / Synced / Activity / Knowledge / Metadata) with optional `tx?: DrizzleTx` on writes
 - `src/shared/constants/tokens.ts` — `DRIZZLE` DI symbol
 - `src/shared/types/drizzle.ts` — `DrizzleClient` + `DrizzleTx` type aliases
 - `src/shared/http/zod-validation.pipe.ts` — runtime Zod validation on `@Body()`
@@ -123,7 +123,7 @@ entity:
   name: contact                          # singular snake_case
   plural: contacts
   table: contacts
-  family: synced                         # synced | activity | metadata | knowledge | base
+  pattern: Synced                        # Synced | Activity | Metadata | Knowledge | Base (or app-defined)
 
 fields:
   email:
@@ -235,7 +235,7 @@ As of PR #54, generated controllers:
 
 Aligned with codegen-patterns ADR-003 + ADR-004:
 
-- **Repository** — single table. Extends a family base class. No business logic. Accepts optional `tx` on writes.
+- **Repository** — single table. Extends a pattern base class (library or app-defined, per ADR-031). No business logic. Accepts optional `tx` on writes.
 - **Service** — aggregate. Composes repositories. May read any repo cross-domain. May call same-domain services. **May NOT write cross-domain.** Mandatory API boundary.
 - **Use Case** — workflow. Composes multiple services (including cross-domain). Owns the transaction for cross-domain writes. Emits events, calls external ports.
 - **Controller** — thin adapter. Calls use cases only.
