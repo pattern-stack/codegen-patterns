@@ -222,6 +222,49 @@ describe('entity noun — new --dry-run', () => {
 		expect(out).toContain('contact');
 	});
 
+	test('honors paths.events_dir for custom events source directory', async () => {
+		const root = mkSelfContainedProject();
+		tempDirs.push(root);
+		// Overwrite config to point at a custom events dir and drop a
+		// uniquely-named event YAML there. The generated `registry.ts` /
+		// `types.ts` payload will reference the event type by name only if
+		// codegen reads from the custom dir — so grepping JSON output for
+		// the type name proves the resolver honored `paths.events_dir`.
+		fs.writeFileSync(
+			path.join(root, 'codegen.config.yaml'),
+			'paths:\n  entities: entities\n  events_dir: custom-events\n',
+		);
+		fs.mkdirSync(path.join(root, 'custom-events'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'custom-events', 'marker_event_f4.yaml'),
+			[
+				'type: marker_event_f4',
+				'direction: inbound',
+				'source: test',
+				'version: 1',
+				'payload:',
+				'  value:',
+				'    type: string',
+				'',
+			].join('\n'),
+		);
+		const cli = buildCli();
+		const { result, out } = await captureStdoutWrite(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'note.yaml'),
+				'--dry-run',
+				'--force',
+				'--cwd',
+				root,
+				'--json',
+			])
+		);
+		expect(result).toBe(0);
+		expect(out).toContain('marker_event_f4');
+	});
+
 	test('rejects both --all and positional yaml', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);

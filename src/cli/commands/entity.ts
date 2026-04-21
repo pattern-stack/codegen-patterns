@@ -30,6 +30,7 @@ import { validateEntityEmits } from '../../parser/validate-emits.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
+import { resolveEventsDir } from '../shared/events-path.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -221,7 +222,7 @@ export class EntityNewCommand extends Command {
 		// surfaced via printWarning + JSON payload and never gate.
 		const entitiesDirForEmits =
 			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
-		const eventsDirForEmits = path.resolve(ctx.cwd, 'events');
+		const eventsDirForEmits = resolveEventsDir(ctx);
 		const allEntitiesForEmits = loadEntities(entitiesDirForEmits).entities;
 		const validatedNames = new Set(validated.map((v) => v.name));
 		const emitsTargetEntities = allEntitiesForEmits.filter((e) =>
@@ -285,7 +286,7 @@ export class EntityNewCommand extends Command {
 			'jobs/generated/scope-entity-type.ts',
 		);
 
-		const eventsDir = path.resolve(ctx.cwd, 'events');
+		const eventsDir = resolveEventsDir(ctx);
 		const eventCodegenOutputDir = path.resolve(
 			subsystemsRoot,
 			'events/generated',

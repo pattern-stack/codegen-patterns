@@ -507,6 +507,7 @@ export async function buildInitPlan(
 			paths: {
 				backend_src: 'src',
 				entities_dir: 'entities',
+				events_dir: 'events',
 				generated: 'src/generated',
 			},
 			generate: {

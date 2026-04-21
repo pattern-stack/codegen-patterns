@@ -282,6 +282,7 @@ An explicit manifest is one config line, loads zero ambiguity, and matches how t
 # codegen.config.yaml
 paths:
   entities: entities/
+  events_dir: events/
   backend_src: apps/backend/src/
 
 # NEW: explicit pattern manifest
