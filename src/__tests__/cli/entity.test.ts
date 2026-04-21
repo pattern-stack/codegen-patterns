@@ -222,6 +222,49 @@ describe('entity noun — new --dry-run', () => {
 		expect(out).toContain('contact');
 	});
 
+	test('honors paths.events_dir for custom events source directory', async () => {
+		const root = mkSelfContainedProject();
+		tempDirs.push(root);
+		// Overwrite config to point at a custom events dir and drop a
+		// uniquely-named event YAML there. The generated `registry.ts` /
+		// `types.ts` payload will reference the event type by name only if
+		// codegen reads from the custom dir — so grepping JSON output for
+		// the type name proves the resolver honored `paths.events_dir`.
+		fs.writeFileSync(
+			path.join(root, 'codegen.config.yaml'),
+			'paths:\n  entities: entities\n  events_dir: custom-events\n',
+		);
+		fs.mkdirSync(path.join(root, 'custom-events'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'custom-events', 'marker_event_f4.yaml'),
+			[
+				'type: marker_event_f4',
+				'direction: inbound',
+				'source: test',
+				'version: 1',
+				'payload:',
+				'  value:',
+				'    type: string',
+				'',
+			].join('\n'),
+		);
+		const cli = buildCli();
+		const { result, out } = await captureStdoutWrite(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'note.yaml'),
+				'--dry-run',
+				'--force',
+				'--cwd',
+				root,
+				'--json',
+			])
+		);
+		expect(result).toBe(0);
+		expect(out).toContain('marker_event_f4');
+	});
+
 	test('rejects both --all and positional yaml', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
@@ -247,6 +290,61 @@ describe('entity noun — new --dry-run', () => {
 			cli.run(['entity', 'new', '--cwd', root])
 		);
 		expect(result).toBe(2);
+	});
+
+	test('--all tolerates an invalid YAML alongside a valid one (default)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		// Drop an invalid entity YAML (comments only, no `entity:` key) next to
+		// the valid contact fixture — mirrors the scaffold's example.yaml that
+		// originally triggered F12.
+		fs.writeFileSync(
+			path.join(root, 'entities', 'example.yaml'),
+			'# this is a placeholder\n',
+		);
+		const cli = buildCli();
+		const { result, out } = await captureStdoutWrite(() =>
+			cli.run([
+				'entity',
+				'new',
+				'--all',
+				'--dry-run',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.command).toBe('entity new');
+		expect(parsed.totals.planned).toBe(1);
+		expect(parsed.totals.invalid).toBe(1);
+		const names = (parsed.entities as Array<{ name: string }>).map((e) => e.name);
+		expect(names).toContain('contact');
+	});
+
+	test('--all --no-continue-on-error restores fatal exit for invalid YAML', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		fs.writeFileSync(
+			path.join(root, 'entities', 'example.yaml'),
+			'# this is a placeholder\n',
+		);
+		const cli = buildCli();
+		const { result } = await captureStdoutWrite(() =>
+			cli.run([
+				'entity',
+				'new',
+				'--all',
+				'--dry-run',
+				'--force',
+				'--no-continue-on-error',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
 	});
 });
 

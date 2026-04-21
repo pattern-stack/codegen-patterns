@@ -2,7 +2,7 @@
 to: "<%= mainTsPath %>"
 inject: true
 after: "NestFactory.create"
-skip_if: "JobWorkerModule"
+skip_if: "<%= mainHookInjected %>"
 ---
   // JOBS — Embedded worker mode (optional)
   // To run the job worker in-process (single-process deploy), add to AppModule imports:

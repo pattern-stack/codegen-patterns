@@ -40,8 +40,9 @@ are drift captured during implementation — they reflect what actually shipped.
 6. **Warnings are stderr, errors gate generation.** The CLI pre-flight treats
    validation results as two buckets: `error` (`missing`, `wrong_direction`,
    `wrong_aggregate`) and `warning` (`no_emits`, `duplicate_emit`). Errors
-   abort the run unless `--continue-on-error` is passed; warnings always
-   print and never gate. A summary line reports counts.
+   are reported and skipped by default (`--continue-on-error` defaults to
+   `true` since #120); pass `--no-continue-on-error` to abort on the first
+   error. Warnings always print and never gate. A summary line reports counts.
 
 ## Overview
 

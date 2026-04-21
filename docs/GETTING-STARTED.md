@@ -184,6 +184,7 @@ This scans your codebase and generates `codegen.config.yaml`. Then customize:
 paths:
   backend_src: src
   frontend_src: apps/frontend/src
+  events_dir: events             # top-level events/*.yaml source for event codegen
   generated: src/generated       # where barrel files are written (modules.ts, schema.ts)
 
 generate:

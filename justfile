@@ -66,7 +66,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline
+test-all: test-unit test-baseline test-smoke
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
