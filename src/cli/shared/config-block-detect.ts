@@ -12,7 +12,7 @@
  *
  * No filesystem access. No YAML mutation. Callers pass in the raw YAML source.
  */
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, parseDocument } from 'yaml';
 
 export type ConfigBlockState = 'missing' | 'present' | 'parse-error';
 
@@ -59,4 +59,34 @@ export function detectConfigBlock(
 	return Object.prototype.hasOwnProperty.call(map, subsystem)
 		? 'present'
 		: 'missing';
+}
+
+/**
+ * Remove a subsystem's top-level block from a `codegen.config.yaml` source,
+ * returning the rewritten YAML text. Used by the `--force-config` path so
+ * the downstream Hygen inject (with `skip_if: "<name>:"`) can re-append a
+ * fresh default block without fighting `skip_if`.
+ *
+ * Uses `yaml@2`'s Document API, which preserves comments and anchors on
+ * siblings of the removed key. The returned string is guaranteed to parse
+ * cleanly; callers may rely on a downstream `detectConfigBlock` returning
+ * 'missing' afterwards.
+ *
+ * Throws if the source fails to parse. Callers should gate this behind
+ * `detectConfigBlock(...) !== 'parse-error'`.
+ */
+export function stripConfigBlock(
+	yamlSource: string,
+	subsystem: SubsystemName,
+): string {
+	const doc = parseDocument(yamlSource);
+	if (doc.errors.length > 0) {
+		throw new Error(
+			`Cannot strip ${subsystem} block: YAML parse errors — ${doc.errors
+				.map((e) => e.message)
+				.join('; ')}`,
+		);
+	}
+	doc.delete(subsystem);
+	return doc.toString();
 }

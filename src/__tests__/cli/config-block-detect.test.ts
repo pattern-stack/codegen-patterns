@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
 	detectConfigBlock,
+	stripConfigBlock,
 	type SubsystemName,
 } from '../../cli/shared/config-block-detect.js';
 
@@ -115,6 +116,39 @@ describe('detectConfigBlock — parse errors', () => {
 		// eemeli/yaml v2 rejects duplicate keys by default.
 		const src = 'jobs:\n  backend: drizzle\njobs:\n  backend: memory\n';
 		expect(detectConfigBlock(src, 'jobs')).toBe('parse-error');
+	});
+});
+
+describe('stripConfigBlock', () => {
+	test('removes the named block and leaves siblings intact', () => {
+		const src = [
+			'paths:',
+			'  subsystems: src/shared/subsystems',
+			'jobs:',
+			'  backend: drizzle',
+			'  multi_tenant: false',
+			'events:',
+			'  backend: drizzle',
+			'',
+		].join('\n');
+
+		const stripped = stripConfigBlock(src, 'jobs');
+		expect(detectConfigBlock(stripped, 'jobs')).toBe('missing');
+		expect(detectConfigBlock(stripped, 'events')).toBe('present');
+		// paths sibling survives
+		expect(stripped).toContain('paths:');
+		expect(stripped).toContain('subsystems: src/shared/subsystems');
+	});
+
+	test('is a no-op when the block is already absent', () => {
+		const src = 'paths:\n  subsystems: src/shared/subsystems\n';
+		const stripped = stripConfigBlock(src, 'jobs');
+		expect(detectConfigBlock(stripped, 'jobs')).toBe('missing');
+		expect(stripped).toContain('paths:');
+	});
+
+	test('throws on unparseable YAML', () => {
+		expect(() => stripConfigBlock('jobs:\n  backend: "unterm\n', 'jobs')).toThrow();
 	});
 });
 
