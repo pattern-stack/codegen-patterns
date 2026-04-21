@@ -34,3 +34,12 @@ jobs:
 
       - name: Run test suite
         run: just test-all
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-gen-output
+          path: test/gen/
+          retention-days: 14
+          if-no-files-found: ignore
