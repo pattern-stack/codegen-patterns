@@ -23,7 +23,10 @@ export class CreateOrganizationCommand {
 		private readonly organizationRepository: IOrganizationRepository,
 	) {}
 
-	async execute(dto: CreateOrganizationDto): Promise<Organization> {
+	async execute(
+		dto: CreateOrganizationDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Organization> {
 		// TODO: Add pre-create validation and business rules here
 
 		// Map DTO to domain input

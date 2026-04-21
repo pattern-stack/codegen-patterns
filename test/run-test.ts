@@ -32,6 +32,10 @@ const OUTPUT_PATHS = [
   'packages/api/src/presentation',
   // Shared packages
   'packages/db/src/entities',
+  // JOB-7: generated scope-entity-type union (post-Hygen step)
+  'runtime/subsystems/jobs/generated',
+  // EVT-3: generated event-codegen artifacts (types, schemas, registry, bus, index)
+  'runtime/subsystems/events/generated',
 ];
 
 function getAllFiles(dir: string, files: string[] = []): string[] {
@@ -130,6 +134,69 @@ function runCodegen() {
   }
 
   console.log('✅ Codegen complete');
+
+  // JOB-7: generate ScopeEntityType union from fixtures (mirrors EntityNewCommand post-step).
+  console.log('   Generating: scope-entity-type.ts');
+  execSync(
+    `bun -e "import { generateScopeEntityType } from './src/cli/shared/scope-entity-type-generator.js'; await generateScopeEntityType({ entitiesDir: '${FIXTURES_DIR}', outputPath: '${join(ROOT, 'runtime/subsystems/jobs/generated/scope-entity-type.ts')}' });"`,
+    { cwd: CODEGEN_DIR, stdio: 'pipe' },
+  );
+
+  // EVT-3: generate event-codegen artifacts from fixture events + entity
+  // `events:` blocks (mirrors EntityNewCommand post-step). Writes five files
+  // under runtime/subsystems/events/generated/.
+  console.log('   Generating: events/generated/ (types, schemas, registry, bus, index)');
+  const eventsFixturesDir = join(FIXTURES_DIR, 'events');
+  const eventCodegenOutputDir = join(ROOT, 'runtime/subsystems/events/generated');
+  execSync(
+    `bun -e "import { generateEventCodegen } from './src/cli/shared/event-codegen-generator.js'; await generateEventCodegen({ entitiesDir: '${FIXTURES_DIR}', eventsDir: '${eventsFixturesDir}', outputDir: '${eventCodegenOutputDir}' });"`,
+    { cwd: CODEGEN_DIR, stdio: 'pipe' },
+  );
+
+  // JOB-6: render both variants of `job-orchestration.schema.ejs.t` so the
+  // baseline captures the scaffold-time `jobs.multi_tenant` conditional in
+  // action. Single-tenant must have zero `tenant_id` references; multi-tenant
+  // must include the column + its JOB-8 guidance comment. The fixtures land
+  // under `runtime/subsystems/jobs/generated/` (already in OUTPUT_PATHS).
+  //
+  // The non-schema templates are muted by pointing their injection targets
+  // at a throwaway sandbox and pre-creating a `worker.ts` there so the
+  // `unless_exists: true` guard fires.
+  const sandbox = join(ROOT, 'test/.jobs-baseline-sandbox');
+  mkdirSync(join(sandbox, 'src'), { recursive: true });
+  writeFileSync(join(sandbox, 'worker.ts'), '// placeholder — keeps Hygen unless_exists satisfied\n');
+  // main.ts and codegen.config.yaml are intentionally absent so the inject
+  // templates print "Cannot inject" and exit non-zero? They don't: Hygen
+  // logs the warning and continues. We verify this in the walkthrough.
+  const variantOutputs = [
+    {
+      label: 'single-tenant',
+      multiTenant: 'false',
+      out: join(ROOT, 'runtime/subsystems/jobs/generated/job-orchestration.schema.single-tenant.ts'),
+    },
+    {
+      label: 'multi-tenant',
+      multiTenant: 'true',
+      out: join(ROOT, 'runtime/subsystems/jobs/generated/job-orchestration.schema.multi-tenant.ts'),
+    },
+  ];
+  for (const v of variantOutputs) {
+    console.log(`   Generating: job-orchestration.schema (${v.label})`);
+    execSync(
+      `HYGEN_TMPLS="${templatesDir}" bunx hygen subsystem jobs ` +
+        `--appName baseline ` +
+        `--workerMode embedded ` +
+        `--multiTenant ${v.multiTenant} ` +
+        `--mainTsPath "${join(sandbox, 'src/main.ts')}" ` +
+        `--configPath "${join(sandbox, 'codegen.config.yaml')}" ` +
+        `--workerExists true ` +
+        `--workerPath "${join(sandbox, 'worker.ts')}" ` +
+        `--schemaPath "${v.out}"`,
+      { cwd: ROOT, stdio: 'pipe' },
+    );
+  }
+  // Clean up sandbox — baseline only cares about the two schema files.
+  rmSync(sandbox, { recursive: true, force: true });
 
   // Run biome to format generated files (to match baseline formatting)
   console.log('🎨 Running biome format...');

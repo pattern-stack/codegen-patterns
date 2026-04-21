@@ -23,7 +23,11 @@ export class UpdatePersonCommand {
 		private readonly personRepository: IPersonRepository,
 	) {}
 
-	async execute(id: string, dto: UpdatePersonDto): Promise<Person> {
+	async execute(
+		id: string,
+		dto: UpdatePersonDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Person> {
 		const existing = await this.personRepository.findById(id);
 		if (!existing) {
 			throw new NotFoundException(`Person with id ${id} not found`);

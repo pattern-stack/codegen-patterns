@@ -22,7 +22,10 @@ export class DeleteDealCommand {
 		private readonly dealRepository: IDealRepository,
 	) {}
 
-	async execute(id: string): Promise<Deal> {
+	async execute(
+		id: string,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Deal> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
 

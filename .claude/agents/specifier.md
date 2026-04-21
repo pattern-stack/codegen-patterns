@@ -2,7 +2,7 @@
 name: specifier
 description: Creates implementation specs for individual issues. Use after planning to detail the technical approach before coding.
 tools: Read, Glob, Grep
-model: sonnet
+model: inherit
 permissionMode: plan
 ---
 

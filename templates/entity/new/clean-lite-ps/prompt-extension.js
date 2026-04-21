@@ -833,12 +833,42 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     zodChainOutput: zodChainForOutput(f),
   }));
 
+  // EVT-7: emits locals flow through from baseLocals (prompt.js computed them
+  // against the full events registry). When this helper is called in isolation
+  // (e.g. from unit tests) baseLocals.hasEmits may be undefined — provide
+  // null-safe defaults so the CLP templates emits guards evaluate to false
+  // cleanly.
+  const hasEmits = Boolean(baseLocals?.hasEmits);
+  const emitsEvents = baseLocals?.emitsEvents ?? [];
+  const createEventType = baseLocals?.createEventType ?? null;
+  const updateEventType = baseLocals?.updateEventType ?? null;
+  const deleteEventType = baseLocals?.deleteEventType ?? null;
+  const eventsTokenImport =
+    baseLocals?.eventsTokenImport ?? '@shared/subsystems/events';
+  const typedEventBusImport =
+    baseLocals?.typedEventBusImport ?? '@shared/subsystems/events';
+  const drizzleTokenImport =
+    baseLocals?.drizzleTokenImport ?? '@shared/constants/tokens';
+  const drizzleTypeImport =
+    baseLocals?.drizzleTypeImport ?? '@shared/types/drizzle';
+
   return {
     // Clean-Lite-PS identity
     entityName,
     entityNamePascal,
     entityNamePlural,
     entityNamePluralPascal,
+
+    // EVT-7 emits locals (null-safe defaults if baseLocals didn't provide them)
+    hasEmits,
+    emitsEvents,
+    createEventType,
+    updateEventType,
+    deleteEventType,
+    eventsTokenImport,
+    typedEventBusImport,
+    drizzleTokenImport,
+    drizzleTypeImport,
 
     // Family
     family,

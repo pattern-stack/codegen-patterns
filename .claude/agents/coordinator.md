@@ -2,6 +2,7 @@
 name: coordinator
 description: Epic-level coordinator that owns a body of work and runs develop loops per issue. Spawned by /orchestrate to manage one epic or logical grouping of issues. Delegates all implementation to architect/builder/validator teammates.
 tools: Read, Glob, Grep, Bash, Agent, TeamCreate, TaskCreate, TaskList, TaskUpdate, TaskGet, SendMessage
+model: opus[1m]
 permissionMode: bypassPermissions
 ---
 

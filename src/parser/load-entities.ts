@@ -67,6 +67,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		plural: definition.entity.plural,
 		table: definition.entity.table,
 		family: definition.entity.family as EntityFamily | undefined,
+		scopeable: definition.entity.scopeable ?? false,
 		folderStructure: definition.entity.folder_structure ?? 'nested',
 		fields: new Map(),
 		relationships: new Map(),
@@ -157,6 +158,12 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 			body: ev.body,
 			generateHandler: ev.generate_handler,
 		}));
+	}
+
+	// Parse emits (EVT-7). Preserve `undefined` vs `[]` distinction — the
+	// validator treats absence as a warning and explicit empty as opt-out.
+	if (definition.emits !== undefined) {
+		entity.emits = definition.emits;
 	}
 
 	return entity;

@@ -2,7 +2,7 @@
 name: browser-pilot
 description: Browser teammate that navigates, inspects, and interacts with the app — headed (user's browser) or headless (own browser). Spawn as a teammate when debugging UI, verifying visual output, checking console/network errors, or running performance/accessibility audits.
 tools: Read, Glob, Grep, Bash
-model: sonnet
+model: inherit
 mcpServers:
   - chrome-devtools:
       type: stdio

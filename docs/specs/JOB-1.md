@@ -2,7 +2,7 @@
 
 **Issue:** JOB-1
 **Status:** Draft
-**Last Updated:** 2026-04-18
+**Last Updated:** 2026-04-19
 **Phase:** ADR-022 Phase 1
 **Depends on:** Nothing — this is the foundation all other JOB issues build on.
 
@@ -51,7 +51,8 @@ No service code touches this file. JOB-2 imports the `InferSelectModel` row type
 | `runtime/subsystems/jobs/job-queue.memory-backend.ts` | **delete** | Executor-layer backend removed |
 | `runtime/subsystems/jobs/jobs.module.ts` | **delete** | Executor-layer module removed; replaced by `JobsDomainModule` in JOB-5 |
 | `runtime/subsystems/jobs/jobs.tokens.ts` | **delete** | Executor-layer tokens removed; orchestration tokens live in `jobs-domain.tokens.ts` (JOB-2) |
-| `runtime/subsystems/jobs/__tests__/job-orchestration.schema.test.ts` | create | Import smoke test + column-presence assertions |
+| `src/__tests__/runtime/subsystems/job-orchestration.schema.spec.ts` | create | Import smoke test + column-presence assertions |
+| `runtime/subsystems/index.ts` | edit | Drop legacy `JOB_QUEUE` / `IJobQueue` / `JobsModule` re-exports; re-export the new orchestration surface |
 
 ## Interfaces and Column Definitions
 
@@ -108,7 +109,7 @@ Columns:
 - `parentClosePolicy`: `parentClosePolicyEnum('parent_close_policy').notNull().default('terminate')`
 - `scopeEntityType`: `text('scope_entity_type')`, nullable
 - `scopeEntityId`: `text('scope_entity_id')`, nullable
-- `tenantId`: `text('tenant_id')`, nullable — comment: `// conditionally emitted — see JOB-8`
+- `tenantId`: `text('tenant_id')`, nullable. In the **runtime source file** (`runtime/subsystems/jobs/job-orchestration.schema.ts`) this column is emitted unconditionally — the runtime file is the multi-tenant variant. The scaffold-time conditional lives in the Hygen template (JOB-6), which elides this column when `codegen.config.yaml: jobs.multi_tenant` is absent/false. Inline comment on the runtime column: `// scaffold-time conditional in template — see JOB-8`. (Resolved during JOB-1 build, 2026-04-19: earlier draft suggested conditional emission in the runtime file itself, but the runtime file is never consumed directly by tenants' apps — only via the scaffold — so the conditional belongs exclusively in the template.)
 - `tags`: `jsonb('tags').notNull().default({}).$type<Record<string, string>>()`
 - `pool`: `text('pool').notNull()`
 - `priority`: `integer('priority').notNull().default(0)`
@@ -222,7 +223,7 @@ export {
 - Five indexes on `job_run` are declared with names: `idx_job_run_claim`, `idx_job_run_root`, `idx_job_run_scope`, `idx_job_run_dedupe`, `idx_job_run_concurrency`.
 - `idx_job_run_dedupe` and `idx_job_run_concurrency` are partial indexes (`.where(...)` clause present).
 - Two indexes on `job_step` are declared: `idx_job_step_run_step` as `uniqueIndex`, `idx_job_step_timeline` as `index`.
-- `tenant_id` column is present on `job_run` (nullable `text`) with inline comment `// conditionally emitted — see JOB-8`.
+- `tenant_id` column is emitted on `job_run` only when `codegen.config.yaml: jobs.multi_tenant: true` (Q1 resolved 2026-04-19); absent from the schema when `multi_tenant` is omitted or `false`. The Hygen template uses a conditional EJS block (or two schema variants) gated on this config flag. Inline comment when emitted: `// scaffold-time conditional — see JOB-8`.
 - `wait_kind`, `resume_token`, `wait_deadline` columns are present on `job_run` with inline comment `// Phase 3 placeholder — see ADR-025`; no application logic references these columns anywhere in this PR.
 - `JobDefinitionRow`, `JobRunRow`, `JobStepRow` are exported `InferSelectModel` type aliases.
 - All enum objects are exported from `index.ts`.
@@ -230,29 +231,29 @@ export {
 
 ## Testing Strategy
 
-**Unit (no Docker, no Postgres).** `runtime/subsystems/jobs/__tests__/job-orchestration.schema.test.ts`:
+**Unit (no Docker, no Postgres).** `src/__tests__/runtime/subsystems/job-orchestration.schema.spec.ts` (co-located with other subsystem unit tests; `just test-unit` only discovers tests under `src/__tests__/`):
 
-- Import smoke: `import { jobs, jobRuns, jobSteps } from '../job-orchestration.schema'` does not throw.
-- Column presence on `job_run`: assert `jobRuns._.columns` contains keys `id`, `jobType`, `status`, `pool`, `runAt`, `tenantId`, `waitKind`, `resumeToken`, `waitDeadline`, `rootRunId`, `parentRunId`, `concurrencyKey`, `dedupeKey`.
-- Column presence on `job_step`: assert `jobSteps._.columns` contains keys `id`, `jobRunId`, `stepId`, `seq`, `kind`, `status`, `output`.
+- Import smoke: `import { jobs, jobRuns, jobSteps }` does not throw and each is a non-null object.
+- Column presence on `job_run`: use Drizzle's `getTableColumns(jobRuns)` to enumerate columns, then assert keys `id`, `jobType`, `status`, `pool`, `runAt`, `tenantId`, `waitKind`, `resumeToken`, `waitDeadline`, `rootRunId`, `parentRunId`, `concurrencyKey`, `dedupeKey` are all present. (The `_.columns` internal-API access from the original draft is not reliable across Drizzle versions; `getTableColumns` is the documented helper.)
+- Column presence on `job_step`: use `getTableColumns(jobSteps)` and assert `id`, `jobRunId`, `stepId`, `seq`, `kind`, `status`, `output`.
 - Enum values: assert `jobRunStatusEnum.enumValues` includes `'waiting'` and `'timed_out'`.
-- Type check (compile-time only): assign a literal object to `JobRunRow` — verifies `InferSelectModel` resolved without `any` widening.
+- Type check (compile-time only): assign a full literal row to `JobRunRow` — verifies `InferSelectModel` resolved without `any` widening.
+
+**Single-tenant fixture check deferred to JOB-6.** The runtime schema file is always the multi-tenant variant (`tenantId` is present). The conditional live-emit is exercised by JOB-6's Hygen template golden tests, not here.
 
 No integration tests in this PR — JOB-3 owns the first real Postgres round-trip.
 
-## `tenant_id` — Proposed Resolution of Open Question #1
+## `tenant_id` — Resolved: Scaffold-Time Conditional (2026-04-19)
 
-**Question.** Should the conditional-emit mechanism be a separate schema file included/excluded at scaffold time, or a runtime flag checked when the module initialises migrations?
+**Resolved 2026-04-19 (Q1).** The `tenant_id` column is scaffold-time conditional, not unconditionally emitted.
 
-**Proposed answer: land `tenant_id` unconditionally in Phase 1 (this PR), annotate it, and delegate gating to JOB-8.**
+- When `codegen.config.yaml: jobs.multi_tenant: true`: the column is included in the generated schema with comment `// scaffold-time conditional — see JOB-8`.
+- When `multi_tenant` is absent or `false`: the column is not present in the schema at all.
+- Enabling tenancy after initial install requires a reinstall (`subsystem install jobs`) and an Atlas migration. Acceptable per "no backwards compat until we have users" policy — clean DB state is prioritised over migration convenience.
 
-Rationale:
-- The column is `nullable text`. A project that never sets it pays zero cost — no query changes, no JOIN overhead.
-- Scaffold-time file inclusion/exclusion introduces a Hygen conditional in a template that is otherwise straightforward, and means a project that later enables `multi_tenant: true` needs a new migration just to add a column (not just a service-layer change). That migration-safety risk is the stronger concern.
-- Runtime gating inside `forRoot()` (checking config and conditionally applying migrations) is complex and fragile — Drizzle schema objects are static; you cannot conditionally include a column without a second schema variant and a branch in every query that touches `tenant_id`.
-- The clean path: column always exists in the DB; JOB-8 controls whether the service layer reads/writes/filters it. A single Atlas migration diff on a `multi_tenant: false` project shows the column present and null — that is acceptable.
+The earlier proposal in this section (land `tenant_id` unconditionally, delegate gating to JOB-8 service layer) was reversed in favour of clean DB state. The Hygen template for `job-orchestration.schema.ts` uses a conditional EJS block gated on the `multi_tenant` config value.
 
-**Action for JOB-1:** Add `tenantId` to `job_run` as a nullable column with comment `// conditionally emitted — see JOB-8`. No conditional logic in this file.
+**Action for JOB-1:** emit `tenantId` on `job_run` inside a conditional template block gated on `jobs.multi_tenant`. Column spec in "Interfaces and Column Definitions" reflects the multi-tenant variant; implementers must only emit the definition inside the conditional branch.
 
 ## Open Questions
 

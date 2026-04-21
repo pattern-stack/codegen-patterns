@@ -8,6 +8,7 @@ import {
 	Controller,
 	Delete,
 	Get,
+	Headers,
 	Param,
 	ParseUUIDPipe,
 	Post,
@@ -55,21 +56,31 @@ export class OpportunitiesController {
 
 	@Post()
 	@UsePipes(new ZodValidationPipe(createOpportunitySchema))
-	async create(@Body() dto: CreateOpportunityDto): Promise<Opportunity> {
-		return this.createOpportunityCommand.execute(dto);
+	async create(
+		@Body() dto: CreateOpportunityDto,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
+	): Promise<Opportunity> {
+		return this.createOpportunityCommand.execute(dto, { actor: { tenantId, userId } });
 	}
 
 	@Put(':id')
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
 		@Body(new ZodValidationPipe(updateOpportunitySchema)) dto: UpdateOpportunityDto,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
 	): Promise<Opportunity> {
-		return this.updateOpportunityCommand.execute(id, dto);
+		return this.updateOpportunityCommand.execute(id, dto, { actor: { tenantId, userId } });
 	}
 
 	@Delete(':id')
-	async delete(@Param('id', ParseUUIDPipe) id: string): Promise<Opportunity> {
-		return this.deleteOpportunityCommand.execute(id);
+	async delete(
+		@Param('id', ParseUUIDPipe) id: string,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
+	): Promise<Opportunity> {
+		return this.deleteOpportunityCommand.execute(id, { actor: { tenantId, userId } });
 	}
 
 	/**

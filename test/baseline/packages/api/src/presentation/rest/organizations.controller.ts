@@ -8,6 +8,7 @@ import {
 	Get,
 	Body,
 	Delete,
+	Headers,
 	Param,
 	ParseUUIDPipe,
 	Post,
@@ -69,20 +70,30 @@ export class OrganizationsController {
 
 	@Post()
 	@UsePipes(new ZodValidationPipe(createOrganizationSchema))
-	async create(@Body() dto: CreateOrganizationDto): Promise<Organization> {
-		return this.createOrganizationCommand.execute(dto);
+	async create(
+		@Body() dto: CreateOrganizationDto,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
+	): Promise<Organization> {
+		return this.createOrganizationCommand.execute(dto, { actor: { tenantId, userId } });
 	}
 
 	@Put(':id')
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
 		@Body(new ZodValidationPipe(updateOrganizationSchema)) dto: UpdateOrganizationDto,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
 	): Promise<Organization> {
-		return this.updateOrganizationCommand.execute(id, dto);
+		return this.updateOrganizationCommand.execute(id, dto, { actor: { tenantId, userId } });
 	}
 
 	@Delete(':id')
-	async delete(@Param('id', ParseUUIDPipe) id: string): Promise<Organization> {
-		return this.deleteOrganizationCommand.execute(id);
+	async delete(
+		@Param('id', ParseUUIDPipe) id: string,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
+	): Promise<Organization> {
+		return this.deleteOrganizationCommand.execute(id, { actor: { tenantId, userId } });
 	}
 }

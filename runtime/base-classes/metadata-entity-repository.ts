@@ -16,7 +16,7 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
    * Bulk upsert with a caller-specified conflict target.
    * Uses Drizzle's onConflictDoUpdate to merge records.
    */
-  async upsertMany(
+  override async upsertMany(
     inputs: Array<Partial<TEntity>>,
     tx?: DrizzleTx,
     options?: { conflictTarget?: keyof PgTableWithColumns<any>['_']['columns'] }, // eslint-disable-line @typescript-eslint/no-explicit-any

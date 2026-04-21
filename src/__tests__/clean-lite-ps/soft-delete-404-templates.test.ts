@@ -85,7 +85,10 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
     const locals = buildCleanLitePsLocals(baseEntity, {});
     const output = render('controller.ejs.t', locals);
 
-    expect(output).toContain('const entity = await this.updateUseCase.execute(id, dto);');
+    // F10: execute() now takes an actor opts arg threaded from headers
+    expect(output).toContain(
+      'const entity = await this.updateUseCase.execute(id, dto, { actor: { tenantId, userId } });',
+    );
     expect(output).toContain('if (!entity) throw new NotFoundException(`Contact ${id} not found`);');
     // Signature returns Promise<Entity>, not Entity | null.
     expect(output).toMatch(/async update\([\s\S]*?\): Promise<Contact> \{/);
@@ -97,7 +100,10 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
 
     // Per PR #52 dogfooding fix, delete is void. Double-check the 404
     // change didn't regress this. D3 adds ParseUUIDPipe to the @Param.
-    expect(output).toContain("async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void>");
+    // F10: delete signature now also threads actor headers.
+    expect(output).toMatch(
+      /async remove\([\s\S]*?@Param\('id', ParseUUIDPipe\) id: string[\s\S]*?\): Promise<void>/,
+    );
     // No NotFoundException in the delete body — idempotent semantics.
     expect(output).not.toMatch(/remove[\s\S]*?throw new NotFoundException/);
   });

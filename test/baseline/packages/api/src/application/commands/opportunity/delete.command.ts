@@ -22,7 +22,10 @@ export class DeleteOpportunityCommand {
 		private readonly opportunityRepository: IOpportunityRepository,
 	) {}
 
-	async execute(id: string): Promise<Opportunity> {
+	async execute(
+		id: string,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Opportunity> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
 

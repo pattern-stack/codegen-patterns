@@ -21,6 +21,16 @@ import {
 	resolveArchitecture,
 	resolveGeneratedDir,
 } from '../shared/barrel-generator.js';
+import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
+import {
+	collectMergedEvents,
+	generateEventCodegen,
+} from '../shared/event-codegen-generator.js';
+import { validateEntityEmits } from '../../parser/validate-emits.js';
+import { loadEntities } from '../../parser/load-entities.js';
+import type { AnalysisIssue } from '../../analyzer/types.js';
+import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
+import { resolveEventsDir } from '../shared/events-path.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -151,7 +161,7 @@ export class EntityNewCommand extends Command {
 	dryRun = Option.Boolean('--dry-run', false);
 	force = Option.Boolean('--force', false);
 	only = Option.String('--only', { required: false });
-	continueOnError = Option.Boolean('--continue-on-error', false);
+	continueOnError = Option.Boolean('--continue-on-error', true);
 	json = Option.Boolean('--json', false);
 	cwd = Option.String('--cwd', { required: false });
 	configPath = Option.String('--config', { required: false });
@@ -206,6 +216,53 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// EVT-7: pre-flight cross-validate each target's `emits:` block against
+		// the merged event registry (top-level events/*.yaml + entity events:
+		// desugar). Invalid emits are reported and skipped by default; pass
+		// --no-continue-on-error to make the first failure fatal. Warnings are
+		// always surfaced via printWarning + JSON payload and never gate.
+		const entitiesDirForEmits =
+			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const eventsDirForEmits = resolveEventsDir(ctx);
+		const allEntitiesForEmits = loadEntities(entitiesDirForEmits).entities;
+		const validatedNames = new Set(validated.map((v) => v.name));
+		const emitsTargetEntities = allEntitiesForEmits.filter((e) =>
+			validatedNames.has(e.name),
+		);
+		const mergedEventsForEmits = collectMergedEvents({
+			entitiesDir: entitiesDirForEmits,
+			eventsDir: eventsDirForEmits,
+		});
+		const emitsIssues: AnalysisIssue[] = validateEntityEmits(
+			emitsTargetEntities,
+			mergedEventsForEmits.events,
+		);
+		const emitsErrors = emitsIssues.filter((i) => i.severity === 'error');
+		const emitsWarnings = emitsIssues.filter(
+			(i) => i.severity === 'warning',
+		);
+
+		if (emitsErrors.length > 0 && !this.continueOnError) {
+			if (!isJsonMode()) {
+				for (const e of emitsErrors) {
+					printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
+				}
+				return 1;
+			}
+		}
+
+		if (!isJsonMode()) {
+			for (const w of emitsWarnings) {
+				printWarning(w.message);
+			}
+			const noEmitsCount = emitsWarnings.filter(
+				(w) => w.type === 'no_emits',
+			).length;
+			if (noEmitsCount > 0) {
+				printInfo(`${noEmitsCount} entities missing emits:`);
+			}
+		}
+
 		// Git safety — we don't know specific output paths without running Hygen,
 		// so scope the check to the cwd's generated source roots if we can.
 		if (!this.force) {
@@ -224,6 +281,18 @@ export class EntityNewCommand extends Command {
 		const generatedDir = resolveGeneratedDir(ctx);
 		const architecture = resolveArchitecture(ctx);
 
+		const subsystemsRoot = resolveSubsystemsRoot(ctx);
+		const scopeEntityTypePath = path.resolve(
+			subsystemsRoot,
+			'jobs/generated/scope-entity-type.ts',
+		);
+
+		const eventsDir = resolveEventsDir(ctx);
+		const eventCodegenOutputDir = path.resolve(
+			subsystemsRoot,
+			'events/generated',
+		);
+
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
@@ -231,6 +300,19 @@ export class EntityNewCommand extends Command {
 				relationshipsDir,
 				generatedDir,
 				architecture,
+				dryRun: true,
+			});
+
+			const scopePlan = await generateScopeEntityType({
+				entitiesDir,
+				outputPath: scopeEntityTypePath,
+				dryRun: true,
+			});
+
+			const eventCodegenPlan = await generateEventCodegen({
+				entitiesDir,
+				eventsDir,
+				outputDir: eventCodegenOutputDir,
 				dryRun: true,
 			});
 
@@ -247,6 +329,32 @@ export class EntityNewCommand extends Command {
 						modulesContent: barrelPlan.modulesContent,
 						schemaContent: barrelPlan.schemaContent,
 					},
+					scopeEntityType: {
+						outputPath: scopePlan.outputPath,
+						scopeableNames: scopePlan.scopeableNames,
+						content: scopePlan.content,
+					},
+					eventCodegen: {
+						outputDir: eventCodegenPlan.outputDir,
+						eventCount: eventCodegenPlan.eventCount,
+						files: eventCodegenPlan.files.map((f) => ({
+							name: f.name,
+							outputPath: f.outputPath,
+							content: f.content,
+						})),
+					},
+					emits: {
+						warnings: emitsWarnings.map((w) => ({
+							entity: w.entity ?? null,
+							type: w.type,
+							message: w.message,
+						})),
+						errors: emitsErrors.map((e) => ({
+							entity: e.entity ?? null,
+							type: e.type,
+							message: e.message,
+						})),
+					},
 				});
 			} else {
 				printInfo(`Dry run — ${validated.length} entities would be generated:`);
@@ -262,6 +370,12 @@ export class EntityNewCommand extends Command {
 				printInfo(`Barrels (${barrelPlan.entityCount} entities):`);
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.modulesBarrel}`);
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.schemaBarrel}`);
+				printInfo(
+					`ScopeEntityType (${scopePlan.scopeableNames.length} scopeable): ${scopePlan.outputPath}`,
+				);
+				printInfo(
+					`event codegen (${eventCodegenPlan.eventCount} events) → ${eventCodegenPlan.outputDir}`,
+				);
 			}
 			return invalid.length > 0 && !this.continueOnError ? 1 : 0;
 		}
@@ -309,6 +423,48 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Regenerate ScopeEntityType union after barrels (full directory rescan).
+		// Always runs for both single-file and --all modes (OQ-1: always rescan).
+		// Warn-but-don't-fail on error to match barrel pattern.
+		let scopeResult: Awaited<ReturnType<typeof generateScopeEntityType>> | null = null;
+		try {
+			scopeResult = await generateScopeEntityType({
+				entitiesDir,
+				outputPath: scopeEntityTypePath,
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`scope-entity-type generation failed — ${msg}`);
+			}
+		}
+
+		// Regenerate event codegen artifacts (EVT-3) after scope-entity-type.
+		// Same "warn-but-don't-fail" pattern as the barrel and scope steps — one
+		// unexpected exception shouldn't abort the whole `entity new` invocation.
+		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>> | null = null;
+		try {
+			eventCodegenResult = await generateEventCodegen({
+				entitiesDir,
+				eventsDir,
+				outputDir: eventCodegenOutputDir,
+			});
+			if (!isJsonMode()) {
+				for (const issue of eventCodegenResult.issues) {
+					if (issue.severity === 'error') {
+						printError(
+							`event codegen: ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
+						);
+					}
+				}
+			}
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`event codegen failed — ${msg}`);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'entity new',
@@ -325,6 +481,35 @@ export class EntityNewCommand extends Command {
 							entityCount: barrelResult.entityCount,
 						}
 					: null,
+				scopeEntityType: scopeResult
+					? {
+							outputPath: scopeResult.outputPath,
+							scopeableNames: scopeResult.scopeableNames,
+						}
+					: null,
+				eventCodegen: eventCodegenResult
+					? {
+							outputDir: eventCodegenResult.outputDir,
+							eventCount: eventCodegenResult.eventCount,
+							written: eventCodegenResult.written,
+							files: eventCodegenResult.files.map((f) => ({
+								name: f.name,
+								outputPath: f.outputPath,
+							})),
+						}
+					: null,
+				emits: {
+					warnings: emitsWarnings.map((w) => ({
+						entity: w.entity ?? null,
+						type: w.type,
+						message: w.message,
+					})),
+					errors: emitsErrors.map((e) => ({
+						entity: e.entity ?? null,
+						type: e.type,
+						message: e.message,
+					})),
+				},
 			});
 		} else {
 			const total = validated.length + invalid.length;
@@ -339,6 +524,16 @@ export class EntityNewCommand extends Command {
 			if (barrelResult) {
 				printInfo(
 					`barrels regenerated (${barrelResult.entityCount} entities) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`
+				);
+			}
+			if (scopeResult) {
+				printInfo(
+					`scope-entity-type regenerated (${scopeResult.scopeableNames.length} scopeable) → ${path.relative(ctx.cwd, scopeResult.outputPath)}`
+				);
+			}
+			if (eventCodegenResult) {
+				printInfo(
+					`event codegen regenerated (${eventCodegenResult.eventCount} events) → ${path.relative(ctx.cwd, eventCodegenResult.outputDir)}`
 				);
 			}
 		}

@@ -2,7 +2,7 @@
 name: understander
 description: Demonstrates working knowledge of a problem before planning. Use when starting a new feature or exploring a concept. Read-only exploration.
 tools: Read, Glob, Grep, WebFetch, WebSearch
-model: sonnet
+model: inherit
 permissionMode: plan
 ---
 

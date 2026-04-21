@@ -89,6 +89,8 @@ export interface ParsedEntity {
 	plural: string;
 	table: string;
 	family?: EntityFamily;
+	/** Whether this entity is a valid scope target for job scoping (JOB-7). */
+	scopeable?: boolean;
 	folderStructure: 'nested' | 'flat';
 	fields: Map<string, ParsedField>;
 	relationships: Map<string, ParsedRelationship>;
@@ -96,6 +98,13 @@ export interface ParsedEntity {
 	queries?: ParsedQuery[];
 	sync?: ParsedSync;
 	events?: ParsedEvent[];
+	/**
+	 * EVT-7: Opt-in list of event types this entity emits from its generated
+	 * use-cases via `TypedEventBus.publish(...)`. `undefined` ⇒ no `emits:`
+	 * block declared (fallback to untyped lifecycle events + warning);
+	 * `[]` ⇒ explicit opt-out (no warning, no typed emission).
+	 */
+	emits?: string[];
 	sourcePath: string;
 }
 

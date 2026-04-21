@@ -2,7 +2,7 @@
 
 **Issue:** JOB-3
 **Status:** Draft
-**Last Updated:** 2026-04-18
+**Last Updated:** 2026-04-20
 **Depends on:** JOB-1 (schema), JOB-2 (protocols + base types)
 **Blocks:** JOB-4 (memory backends must match this behaviour spec), JOB-5 (module wiring)
 
@@ -70,6 +70,21 @@ b. Transition target to `canceled` atomically: `UPDATE ... WHERE id = $runId AND
 c. If `opts.cascade !== false`: fetch descendants via `WHERE root_run_id = $rootRunId AND id != $runId AND status NOT IN (terminals)`. For each, branch on `parent_close_policy`:
 - `terminate` or `cancel` → transition to `canceled`
 - `abandon` → skip
+
+**`replay(runId)` (added during JOB-3 implementation, 2026-04-20):**
+
+a. Load the target run and its `job` definition. If the run is not in a terminal status (`completed` | `failed` | `timed_out` | `canceled`), throw `JobNotReplayableError`. Phase-1 protocol signature is `replay(runId)` with no options, so the effective replay mode is read from `job.replay_from` alone — user-override lands in a later phase.
+
+b. Resolve effective `replay_from` mode:
+- `scratch` → DELETE all `job_step` rows for this run.
+- `last_step` → DELETE only non-`completed` step rows; completed steps stay memoised so `ctx.step` cache-hits on resume.
+- `last_checkpoint` → **Phase 1 collapses to `last_step`.** The schema has no explicit checkpoint markers yet; delete only non-completed step rows. The two modes diverge in a later phase once `job_step.kind === 'checkpoint'` (ADR-027) is added.
+
+c. UPDATE `job_run`: `status='pending'`, `attempts=0`, `run_at=now()`, `started_at=null`, `finished_at=null`, `claimed_at=null`, `error=null`, `output=null`.
+
+d. Wrap steps (a)+(b)+(c) in a single transaction (per the transaction-boundary table — step reset + run reset must commit together).
+
+e. Return the updated `JobRun`.
 
 ### 2. `job-run-service.drizzle-backend.ts`
 
@@ -176,7 +191,7 @@ g. Remove promise from `inFlight` in finally.
 - `ctx.step` memoizes across retries
 - `replay_from` modes: `scratch` clears all steps; `last_step` clears only failing; `last_checkpoint` preserves all
 - Cascade cancel respects `parent_close_policy` (terminate/cancel/abandon)
-- Stale sweeper recovers stranded `running` rows
+- Stale sweeper: per-`JobWorker` instance, wired via `setInterval` in `onModuleInit`; uses `FOR UPDATE SKIP LOCKED` so concurrent sweepers across horizontally-scaled workers are safe (a row is recovered at most once); recovers stranded `running` rows back to `pending` (Q2 resolved 2026-04-19)
 - SIGTERM drains in-flight, resets uncompleted runs on timeout
 
 ## Testing Strategy
@@ -187,8 +202,8 @@ g. Remove promise from `inFlight` in finally.
 
 ## Open Questions (with proposed resolutions)
 
-**OQ-2 — Stale-claim sweeper placement: per-worker vs. singleton.**
-Proposed: run sweeper on every `JobWorker` instance. The update is self-protecting: `WHERE status='running' AND claimed_at < threshold` — a row only transitions once; subsequent sweepers find no matching rows. Singleton adds coordination complexity (leader election) without meaningful advantage at Phase 1 scale. Document invariant: `staleThresholdMs >= 2 * max_handler_duration`.
+**OQ-2 — Stale-claim sweeper placement. Resolved 2026-04-19.**
+Resolution: sweeper runs on every `JobWorker` instance (per-pool), wired via `setInterval` in `onModuleInit`. The sweep query uses `FOR UPDATE SKIP LOCKED`, making concurrent sweepers across horizontally-scaled workers safe — a row is recovered at most once. Singleton rejected: adds coordination complexity (leader election) without meaningful advantage at Phase 1 scale. Document invariant: `staleThresholdMs >= 2 * max_handler_duration`.
 
 **OQ-3 — `job` table upsert under horizontal scale.**
 Proposed: `ON CONFLICT (type) DO UPDATE SET pool = EXCLUDED.pool, retry_policy = EXCLUDED.retry_policy, version = EXCLUDED.version, updated_at = now()`. Last-writer-wins. All instances of the same app version produce identical metadata — concurrent upserts are harmless. `DO NOTHING` is rejected: under rolling deploy, old-version instance A could leave a stale row that new-version instance B cannot overwrite. Advisory locks rejected: add latency + leak risk.
@@ -198,6 +213,22 @@ Proposed: `ON CONFLICT (type) DO UPDATE SET pool = EXCLUDED.pool, retry_policy =
 - **JOB-4** owns Memory backends (behavioural parity spec) + `JobWorker` unit tests
 - **JOB-5** owns `JobsDomainModule`, `JobWorkerModule`, boot-time validator, handler registry scan, pool config
 - `JobWorker` is backend-agnostic — used by both Drizzle and Memory via protocol injection
+
+## Implementation Decisions (landed with JOB-3, 2026-04-20)
+
+These were resolved during implementation. Kept here so JOB-4 (memory parity) and future maintainers see the rationale.
+
+- **Template evaluation for `concurrency_key_template` and `dedupe_key_template`.** Simple `{{field}}` single-key substitution against the `input` payload — no dotted paths, no Mustache/Handlebars dependency. A missing field throws `JobTemplateFieldMissingError` synchronously at `start()` time, so misconfiguration surfaces to the caller rather than silently producing a literal `"undefined"` key that bypasses dedupe/collision checks. Exported as `evaluateKeyTemplate(template, input)` from `job-orchestrator.drizzle-backend.ts` for reuse by the Memory backend in JOB-4.
+
+- **Error classes.** Four exported from `runtime/subsystems/jobs/jobs-errors.ts`: `JobTypeNotFoundError`, `JobCollisionError` (carries `incumbent: JobRun`), `JobNotReplayableError`, `JobTemplateFieldMissingError`. All re-exported from `runtime/subsystems/jobs/index.ts`. Memory backend (JOB-4) throws the same classes for behavioural parity.
+
+- **`last_step` vs `last_checkpoint` collapse at Phase 1.** Both modes currently delete only non-`completed` step rows, because the `job_step_kind` enum carries only `'task'` at Phase 1. They diverge once ADR-027 adds `checkpoint` as a step kind: `last_checkpoint` will preserve steps up to the most recent `kind='checkpoint'` row, whereas `last_step` will continue to preserve every `completed` step. Flagged for JOB-4 parity and for the ADR-027 implementation.
+
+- **Concurrency-queue release mechanism.** When a `queue`-mode run is claimed but another run with the same `concurrency_key` is already `running`, the worker releases the claim by transitioning the row back to `pending` with `claimed_at=null, started_at=null`. The next poll re-evaluates. No separate "queued" flag — the `status='pending'` + matching-key check is sufficient and keeps the state model flat.
+
+- **Stale-sweeper placement (OQ-2).** Per-worker. The candidate select uses `FOR UPDATE SKIP LOCKED`, so simultaneous sweepers across multiple workers never collide on the same row. Invariant: `staleThresholdMs >= 2 × max_handler_duration`.
+
+- **`nextStepSeq` allocation.** SELECT-max-plus-one at step-record time. Per-run step counts are typically <100; the in-memory counter alternative drifts if the worker crashes mid-run and a replacement worker resumes via stale-claim sweep.
 
 ## References
 

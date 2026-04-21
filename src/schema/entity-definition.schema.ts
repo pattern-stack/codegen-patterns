@@ -486,6 +486,11 @@ const EntityConfigSchema = z
     family: z
       .enum(["base", "synced", "activity", "knowledge", "metadata"])
       .optional(),
+
+    // JOB-7: marks this entity as a valid scope target for job scoping.
+    // Drives the generated ScopeEntityType union in
+    // runtime/subsystems/jobs/generated/scope-entity-type.ts.
+    scopeable: z.boolean().optional(),
   })
   .strict();
 
@@ -782,6 +787,24 @@ export const EntityDefinitionSchema = z
     // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Generates typed event classes, handlers, and queue registration
     events: z.array(EventDeclarationSchema).optional(),
+
+    // EVT-7: Opt-in typed event emission. Each entry names an `EventDefinition`
+    // (top-level `events/<type>.yaml` or an inline `events:` block entry) that
+    // the generated use-cases should publish via `TypedEventBus.publish(...)`
+    // inside a Drizzle transaction.
+    //
+    //   emits: [contact_created, contact_updated]
+    //
+    // Cross-validated in `validateEntityEmits()` against the merged event
+    // registry. `undefined` ⇒ fallback to untyped lifecycle-events + warning;
+    // `[]` ⇒ explicit opt-out, no warning, no typed emission.
+    emits: z
+      .array(
+        z
+          .string()
+          .regex(/^[a-z][a-z0-9_]*$/, 'emits entries must be snake_case event type names'),
+      )
+      .optional(),
 
     // v2: Analytics / semantic layer configuration
     // Cube.js measure packs, custom cube name, and metric definitions

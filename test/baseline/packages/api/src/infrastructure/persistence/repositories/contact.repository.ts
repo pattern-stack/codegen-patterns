@@ -6,6 +6,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq, isNull, isNotNull, and, desc, asc } from 'drizzle-orm';
 import { DRIZZLE } from '../../../constants/tokens';
+import type { DrizzleTransaction } from '@shared/subsystems/events';
 import type {
 	CreateContactInput,
 	IContactRepository,
@@ -20,9 +21,10 @@ import { contacts } from '@repo/db/server/schema';
 export class ContactRepository implements IContactRepository {
 	constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
-	async create(input: CreateContactInput): Promise<Contact> {
+	async create(input: CreateContactInput, tx?: DrizzleTransaction): Promise<Contact> {
 		const now = new Date();
-		const result = await this.db
+		const runner = tx ?? this.db;
+		const result = await runner
 			.insert(contacts)
 			.values({
 				userId: input.userId,

@@ -8,6 +8,7 @@ import {
 	Controller,
 	Delete,
 	Get,
+	Headers,
 	Param,
 	ParseUUIDPipe,
 	Post,
@@ -55,21 +56,31 @@ export class ContactsController {
 
 	@Post()
 	@UsePipes(new ZodValidationPipe(createContactSchema))
-	async create(@Body() dto: CreateContactDto): Promise<Contact> {
-		return this.createContactCommand.execute(dto);
+	async create(
+		@Body() dto: CreateContactDto,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
+	): Promise<Contact> {
+		return this.createContactCommand.execute(dto, { actor: { tenantId, userId } });
 	}
 
 	@Put(':id')
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
 		@Body(new ZodValidationPipe(updateContactSchema)) dto: UpdateContactDto,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
 	): Promise<Contact> {
-		return this.updateContactCommand.execute(id, dto);
+		return this.updateContactCommand.execute(id, dto, { actor: { tenantId, userId } });
 	}
 
 	@Delete(':id')
-	async delete(@Param('id', ParseUUIDPipe) id: string): Promise<Contact> {
-		return this.deleteContactCommand.execute(id);
+	async delete(
+		@Param('id', ParseUUIDPipe) id: string,
+		@Headers('x-tenant-id') tenantId?: string,
+		@Headers('x-user-id') userId?: string,
+	): Promise<Contact> {
+		return this.deleteContactCommand.execute(id, { actor: { tenantId, userId } });
 	}
 
 	/**

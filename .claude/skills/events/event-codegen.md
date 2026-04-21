@@ -1,8 +1,8 @@
 # Event Codegen (YAML → typed facade)
 
-**Status: design in flight.** The full design lives in `docs/specs/events-codegen-plan.md` (draft, 2026-04-17). It has eight open questions (§7 of the plan) that are not yet resolved — the shape below may shift. Treat this file as orientation, not as a contract. When in doubt, read the plan.
+**Status: shipped (Phase 1).** Delivered via EVT-1..EVT-8 under ADR-024. The plan draft at `docs/specs/events-codegen-plan.md` is superseded — ADR-024 is the authoritative design doc.
 
-This file covers: what the formalization is trying to do, the `events/*.yaml` shape, the generated artifacts in `src/generated/events/`, and the typed facade usage pattern. Cross-refs `outbox-and-transactions.md` (publish semantics) and `directions-and-pools.md` (what directions drive).
+This file covers: the `events/*.yaml` shape, the generated artifacts under `runtime/subsystems/events/generated/`, and the typed facade usage pattern. Cross-refs `outbox-and-transactions.md` (publish semantics), `directions-and-pools.md` (what directions drive), and `phase-roadmap.md` (what shipped vs. what's deferred).
 
 ## Why formalize
 
@@ -124,12 +124,12 @@ async execute(input: CreateContactInput): Promise<Contact> {
 }
 ```
 
-## Generated artifacts — `src/generated/events/`
+## Generated artifacts — `runtime/subsystems/events/generated/`
 
-Five files, all generated, none hand-edited:
+Five files, all generated, none hand-edited. In the codegen repo they sit under `runtime/subsystems/events/generated/`; when `subsystem install events` runs they land under `<paths.subsystems>/events/generated/` in the consumer project (default `shared/subsystems/events/generated/`).
 
 ```
-src/generated/events/
+runtime/subsystems/events/generated/
   types.ts         # Typed interfaces + discriminated union
   schemas.ts       # Zod runtime schemas
   registry.ts      # Metadata map keyed by type
@@ -244,42 +244,38 @@ export class TypedEventBus {
 - Every publish stamps `metadata.pool` and `metadata.direction` from the registry. The Drizzle backend reads these and populates the outbox columns at insert time; the drain loop then filters by pool.
 - The generic `IEventBus` port is unchanged. The facade wraps it.
 
-## Phase ordering (from `events-codegen-plan.md` §5)
+## Phase ordering
 
-Not all of the above lands at once. The plan sequences against the jobs plan:
+Phase 1 (EVT-1..EVT-8) is shipped. Everything else is deferred — see `phase-roadmap.md` for the split and the "do not build yet" list.
 
-| When                           | Events work                                              |
-|--------------------------------|----------------------------------------------------------|
-| Before jobs Phase 1            | **Phase 0** — YAML parser, registry.ts only. No facade.  |
-| Before jobs Phase 3 (bridge)   | **Phase A** — types, schemas, facade, pool columns on outbox |
-| During jobs Phase 5 (audit)    | **Phase B** — selective broadcast of JobEvent to bus     |
-| Independent of jobs            | **Phase C** — `emits:` validation, entity template rewrite |
+## Resolved decisions (ADR-024 EVT-Q1..EVT-Q7)
 
-Phase 0 unblocks jobs Phase 1. Phase A unblocks the bridge. Phase C is independent and slips freely.
+The plan draft called out eight open questions before implementation. They are now resolved; keep this list handy when orienting on why the shipped shape looks the way it does.
 
-## The 8 open questions (flagged in the plan)
+1. **Top-level `events/*.yaml` vs. inline entity `events:` — both, with desugar.** Entity `events:` blocks desugar to top-level `events/<name>.yaml` entries at parse time with `direction: change` and `aggregate: <entity>`. Both paths produce the same registry entry.
+2. **Entity `emits:` required for typed auto-emission.** Absence falls back to the legacy `lifecycle-events.ts` untyped path (with a codegen warning). Each `emits:` entry must resolve to an `events/<type>.yaml` with `direction: change` and `aggregate: <entity>` — mismatch is a codegen hard error.
+3. **Payload validation default-on, configurable off via env.** `TypedEventBus.publish` runs `eventPayloadSchemas[type].parse(payload)` unless `CODEGEN_EVENT_VALIDATE=off`. Boundary validation belongs at publish time, not per-handler.
+4. **`TypedEventBus` is the preferred injection; raw `EVENT_BUS` remains available.** New code injects `TYPED_EVENT_BUS`. Legacy use cases and forwarders that need untyped publish keep working via `EVENT_BUS` — no forced migration. ADR-024 encourages `TypedEventBus` but does not delete the raw port.
+5. **`pool` / `direction` are first-class columns on `domain_events`** (EVT-1) and mirrored in `metadata` for protocol stability. First-class columns unlock the pool-filtered drain query without unpacking JSON on every poll (EVT-4).
+6. **Pool inheritance for the ADR-023 bridge is deferred** — the bridge itself is not in Phase 1, so pool-default policy lives with the bridge spec rather than here.
+7. **Selective broadcast of `JobEvent` to the bus is Phase B, deferred** (ADR-026). Not in Phase 1 scope.
+8. **Versioning coexistence (v1 + v2 of the same type) is deferred.** Phase 1 emits a `version` field on `EventMetadata`, stamped on every publish, but the registry currently maps one version per type. A future phase will decide on multi-version coexistence shape.
 
-Do not assume these are answered:
-1. Top-level `events/*.yaml` vs. inline entity `events:` block — keep both with desugar, or drop one?
-2. `emits:` required vs. optional vs. inferred by name?
-3. Payload validation: dev-only, always-on, or configurable?
-4. `TypedEventBus` fully replaces `@Inject(EVENT_BUS)` in generated code, or they coexist?
-5. `pool` / `direction` as metadata only vs. first-class columns vs. protocol fields?
-6. Pool inheritance for event-triggered jobs — default to `batch` or the source `events_*` pool?
-7. Selective broadcast of `JobEvent` to the bus — flag on jobs YAML or codegen-config allowlist?
-8. Versioning — schema-evolution coexistence (v1/v2) or defer?
+Also resolved in implementation:
 
-If a task depends on one of these, check `docs/specs/events-codegen-plan.md` §7 first; the plan will likely be updated before implementation.
+- **EVT-Q7 (outbox sweeper):** no sweeper. `FOR UPDATE SKIP LOCKED` + same-transaction status update means nothing can strand in half-claimed state. See `outbox-and-transactions.md`.
+- **Multi-tenancy column is a scaffold-time conditional** (EVT-8). The runtime `domain-events.schema.ts` always declares `tenantId`; the Hygen scaffold template emits it only when `events.multi_tenant: true`. Mirrors the JOB-6 precedent for `jobs.tenant_id`.
 
 ## Do not
 
 - Do not invent codegen features beyond the plan. The plan has authority; this file is a summary.
 - Do not generate user-pool events. Events are always in `events_*` pools. If you want "a user job runs when this event fires," that is the Event-to-Job Bridge (ADR-023) — the event drains in `events_*`, the *bridge* enqueues a user-pool job.
-- Do not hand-edit `src/generated/events/*.ts`. They are reproduced from `events/*.yaml`.
+- Do not hand-edit `runtime/subsystems/events/generated/*.ts` (or the `<paths.subsystems>/events/generated/` copy in a consumer project). They are reproduced from `events/*.yaml` by `event-codegen-generator.ts`.
 
 ## See also
 
-- `docs/specs/events-codegen-plan.md` — full design, open questions, alternatives
+- `docs/adrs/ADR-024-events-domain-formalization.md` — authoritative Phase 1 ADR
+- `docs/specs/events-codegen-plan.md` — superseded plan (historical context only)
 - `outbox-and-transactions.md` — how the generated facade's `publish(tx)` inherits the outbox guarantee
 - `directions-and-pools.md` — what `direction` drives downstream
 - Jobs SKILL.md → ADR-023 (Event-to-Job Bridge) — consumer of the registry

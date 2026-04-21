@@ -6,6 +6,10 @@ import {
 	EntityDefinitionSchema,
 } from '../schema/entity-definition.schema';
 import {
+	type EventDefinition,
+	EventDefinitionSchema,
+} from '../schema/event-definition.schema';
+import {
 	type RelationshipDefinition,
 	RelationshipDefinitionSchema,
 } from '../schema/relationship-definition.schema';
@@ -225,6 +229,83 @@ export function loadRelationshipsFromYaml(filePaths: string[]): {
 	}
 
 	return { successes, failures };
+}
+
+// ============================================================================
+// Event YAML Loading
+// ============================================================================
+
+export interface EventLoadResult {
+	success: true;
+	definition: EventDefinition;
+	filePath: string;
+}
+
+export interface EventLoadError {
+	success: false;
+	error: string;
+	details?: string[];
+	filePath: string;
+}
+
+export type LoadEventResult = EventLoadResult | EventLoadError;
+
+/**
+ * Load and validate a single event definition from a YAML file.
+ *
+ * Mirrors {@link loadEntityFromYaml}: existence check → readFileSync →
+ * parseYaml → `EventDefinitionSchema.safeParse`. Returns a discriminated
+ * result; callers are expected to aggregate into `AnalysisIssue`s rather
+ * than throw.
+ */
+export function loadEventFromYaml(filePath: string): LoadEventResult {
+	if (!existsSync(filePath)) {
+		return {
+			success: false,
+			error: `File not found: ${filePath}`,
+			filePath,
+		};
+	}
+
+	let content: string;
+	try {
+		content = readFileSync(filePath, 'utf-8');
+	} catch (err) {
+		return {
+			success: false,
+			error: `Failed to read file: ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = parseYaml(content);
+	} catch (err) {
+		return {
+			success: false,
+			error: `Invalid YAML syntax in ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	const result = EventDefinitionSchema.safeParse(parsed);
+	if (!result.success) {
+		return {
+			success: false,
+			error: `Validation failed for ${filePath}`,
+			details: formatZodErrors(result.error),
+			filePath,
+		};
+	}
+
+	return {
+		success: true,
+		definition: result.data,
+		filePath,
+	};
 }
 
 /**

@@ -2,7 +2,7 @@
 name: validator
 description: Validates implementations pass all quality gates. Use after implementation to verify code is ready for review.
 tools: Read, Bash, Glob, Grep
-model: sonnet
+model: inherit
 ---
 
 # Validator Agent

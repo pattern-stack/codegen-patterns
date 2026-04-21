@@ -23,7 +23,11 @@ export class UpdateUserCommand {
 		private readonly userRepository: IUserRepository,
 	) {}
 
-	async execute(id: string, dto: UpdateUserDto): Promise<User> {
+	async execute(
+		id: string,
+		dto: UpdateUserDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<User> {
 		const existing = await this.userRepository.findById(id);
 		if (!existing) {
 			throw new NotFoundException(`User with id ${id} not found`);

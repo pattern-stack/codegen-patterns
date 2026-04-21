@@ -22,7 +22,10 @@ export class DeletePersonCommand {
 		private readonly personRepository: IPersonRepository,
 	) {}
 
-	async execute(id: string): Promise<Person> {
+	async execute(
+		id: string,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Person> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
 

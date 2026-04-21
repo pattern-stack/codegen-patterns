@@ -196,7 +196,7 @@ describe('subsystem — install (real)', () => {
 		expect(fs.existsSync(path.join(root, 'src/shared/constants/tokens.ts'))).toBe(true);
 	});
 
-	test('memory backend skips .drizzle-backend.ts and .schema.ts', async () => {
+	test('memory backend skips .drizzle-backend.ts; schema is still emitted via Hygen', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -217,7 +217,12 @@ describe('subsystem — install (real)', () => {
 		const installDir = path.join(root, 'src/shared/subsystems/events');
 		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(false);
-		expect(fs.existsSync(path.join(installDir, 'domain-events.schema.ts'))).toBe(false);
+		// EVT-8: copyRuntime skips `domain-events.schema.ts` so the Hygen
+		// template (which gates the tenancy column on `events.multi_tenant`)
+		// is the sole emitter. It uses `force: true` regardless of backend —
+		// switching to the drizzle backend later must not require a
+		// follow-up scaffold step.
+		expect(fs.existsSync(path.join(installDir, 'domain-events.schema.ts'))).toBe(true);
 	});
 
 	test('second install is idempotent without --force', async () => {
@@ -261,6 +266,118 @@ describe('subsystem — remove stub', () => {
 		);
 		expect(result).toBe(1);
 		expect(out.toLowerCase()).toContain('not yet implemented');
+	});
+});
+
+describe('subsystem — install F13 (config-block preservation)', () => {
+	test('--force alone preserves an existing events block (multi_tenant user setting)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+
+		// First install emits default events block (multi_tenant: false).
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+
+		// Simulate a user edit: nothing fancy — append a sentinel comment so we
+		// can detect clobber/preservation without depending on YAML formatting.
+		const configPath = path.join(root, 'codegen.config.yaml');
+		const original = fs.readFileSync(configPath, 'utf-8');
+		const edited =
+			original + '\n  # USER-SENTINEL: preserved across --force re-install\n';
+		fs.writeFileSync(configPath, edited, 'utf-8');
+
+		// Second install with --force alone — should NOT clobber.
+		const { result, out } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+
+		const after = fs.readFileSync(configPath, 'utf-8');
+		expect(after).toContain('USER-SENTINEL');
+		expect(out).toContain('already exists');
+		expect(out).toContain('--force-config');
+	});
+
+	test('--force --force-config overwrites the existing block back to defaults', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+
+		const configPath = path.join(root, 'codegen.config.yaml');
+		const original = fs.readFileSync(configPath, 'utf-8');
+		fs.writeFileSync(
+			configPath,
+			original + '\n  # USER-SENTINEL: should NOT survive --force-config\n',
+			'utf-8',
+		);
+
+		const { result, out } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'events',
+				'--force',
+				'--force-config',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+
+		const after = fs.readFileSync(configPath, 'utf-8');
+		expect(after).not.toContain('USER-SENTINEL');
+		// Default block must be back.
+		expect(after).toContain('events:');
+		expect(after).toContain('multi_tenant: false');
+		expect(out).toContain('overwriting existing');
+	});
+
+	test('parse-error in codegen.config.yaml bails with non-zero exit', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+
+		// Corrupt the YAML before the first install so the config detector hits
+		// parse-error. (Must be install-time detectable — runtime copy still
+		// runs first, which is fine; we're only asserting the config injection
+		// refuses to proceed.)
+		const configPath = path.join(root, 'codegen.config.yaml');
+		fs.writeFileSync(
+			configPath,
+			'paths:\n  subsystems: "unterminated\n',
+			'utf-8',
+		);
+
+		const { result, out } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(1);
+		expect(out).toContain('not valid YAML');
+		expect(out).toContain('refusing to inject');
+	});
+
+	test('first install (no block yet) injects defaults — baseline path still works', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+
+		const after = fs.readFileSync(
+			path.join(root, 'codegen.config.yaml'),
+			'utf-8',
+		);
+		expect(after).toContain('events:');
+		expect(after).toContain('backend: drizzle');
 	});
 });
 

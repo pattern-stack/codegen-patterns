@@ -1,8 +1,8 @@
 # JOB-5 — `JobsDomainModule.forRoot()` + `JobWorkerModule.forRoot()` with Pool Config Loader
 
 **Issue:** JOB-5
-**Status:** Draft
-**Last Updated:** 2026-04-18
+**Status:** Implemented
+**Last Updated:** 2026-04-19
 **Depends on:** JOB-2, JOB-3, JOB-4
 **Unblocks:** JOB-6 (templates), JOB-8 (multi-tenancy + upgrade + docs)
 
@@ -34,9 +34,14 @@ PoolConfigLoader  (reads codegen.config.yaml: jobs.pools; applies 5 framework de
 | `runtime/subsystems/jobs/jobs-domain.module.ts` | create | `JobsDomainModule.forRoot()` — token wiring, global |
 | `runtime/subsystems/jobs/job-worker.module.ts` | create | `JobWorkerModule.forRoot()` — lifecycle, validator, registry scan |
 | `runtime/subsystems/jobs/pool-config.loader.ts` | create | Read `codegen.config.yaml: jobs.pools`; merge defaults |
+| `runtime/subsystems/jobs/job-handler.base.ts` | modify | Add `HandlerRegistry` namespace + `HandlerRegistryEntry` (read facade over the existing `JOB_HANDLER_REGISTRY` map) |
+| `runtime/subsystems/jobs/jobs-errors.ts` | modify | Add `BootValidationError` + `ReservedPoolViolationError` |
+| `runtime/subsystems/jobs/job-orchestrator.protocol.ts` | modify | Add `upsertJobRows(entries, poolConfig)` to `IJobOrchestrator` (see "Implementation note: orchestrator protocol extension" below) |
+| `runtime/subsystems/jobs/job-orchestrator.drizzle-backend.ts` | modify | Implement `upsertJobRows` with hash-gated `ON CONFLICT DO UPDATE … WHERE` |
+| `runtime/subsystems/jobs/job-orchestrator.memory-backend.ts` | modify | Implement `upsertJobRows` (delegates to existing `registerHandler`) |
 | `runtime/subsystems/jobs/index.ts` | modify | Re-export modules + types |
-| `runtime/subsystems/jobs/__tests__/jobs-domain.module.test.ts` | create | Nest harness; memory backend; token resolution |
-| `runtime/subsystems/jobs/__tests__/job-worker.module.test.ts` | create | Validator failure, reserved-pool violation, handler upsert |
+| `src/__tests__/runtime/subsystems/jobs-domain.module.spec.ts` | create | Nest harness; memory backend; token resolution. **Note:** placed under `src/__tests__/runtime/subsystems/` (not `runtime/**/__tests__/`) to match the JOB-4 path correction — `tsconfig.build.json` excludes `runtime/**/__tests__/**` and `just test-unit` only globs `src/__tests__/`. |
+| `src/__tests__/runtime/subsystems/job-worker.module.spec.ts` | create | Validator failure, reserved-pool violation, handler upsert, memory-mode validator skip, pool config loader behaviour |
 
 ## Interfaces
 
@@ -159,8 +164,8 @@ export class JobsDomainModule {
   1. `loadPoolConfig()` → `PoolConfig`
   2. `HandlerRegistry.getAll()` → registered entries
   3. **Reserved-pool validation:** walk entries; if any `meta.pool` matches a `reserved: true` pool, collect offenders; if non-empty, throw `ReservedPoolViolationError` listing class names
-  4. Inject `JOB_ORCHESTRATOR`; call `orchestrator.upsertJobRows(entries, poolConfig)` (method defined on orchestrator protocol; Drizzle uses `ON CONFLICT DO UPDATE` per JOB-3 OQ-3; memory mode populates `store.jobs`)
-  5. **Boot validator (Drizzle only):** if `backend !== 'memory'`, call `runBootValidator(orchestrator, entries)` — query all `Job` rows; for each row with no matching registry entry, accumulate; if any, throw `BootValidationError`
+  4. Inject `JOB_ORCHESTRATOR`; call `orchestrator.upsertJobRows(entries, poolConfig)` (method defined on orchestrator protocol; Drizzle uses `ON CONFLICT (type) DO UPDATE` **gated by a metadata content hash** per Q3 resolution 2026-04-19 — `UPDATE` branch runs only when stored hash ≠ computed hash; `version` bumps only on real change; memory mode populates `store.jobs`)
+  5. **Boot validator (Drizzle only):** if `backend !== 'memory'`, call `runBootValidator(orchestrator, entries)` — query all `Job` rows; for each row with no matching registry entry, accumulate; if any, throw `BootValidationError`. Skipped entirely in memory mode per Q4 resolution 2026-04-19.
   6. Resolve active pool list: `opts.pools ?? allNonReservedPoolNames(poolConfig)`
   7. For each active pool: instantiate `JobWorker(pool, poolConfig.get(pool), orchestrator)`; call `worker.start()`; store in instance array
 - **`onModuleDestroy`:** for each stored worker, `await worker.gracefulStop(opts.shutdownTimeoutMs ?? 30_000)`.
@@ -216,19 +221,89 @@ User-defined `agents: { queue: 'jobs-agents', concurrency: 3 }` in config become
 
 ## Acceptance Criteria
 
-- `JobsDomainModule.forRoot({ backend })` wires three tokens; `global: true`; ADR-008 factory pattern
-- `JobWorkerModule.forRoot({ mode, pools? })` starts one `JobWorker` per active pool on init; stops on destroy
-- Boot validator: missing handler → `BootValidationError` with missing type names listed
-- `@JobHandler` classes upsert into `job` table on init; missing handler (source removed) logs warning (prune → Phase 6)
-- Reserved-pool enforcement: user `@JobHandler` targeting `reserved: true` → `ReservedPoolViolationError` at init with class names
-- Validator skipped when `backend: 'memory'`
-- `loadPoolConfig` applies all five framework defaults when config absent; merges user pools; cannot flip `reserved: true`
+- [x] `JobsDomainModule.forRoot({ backend })` wires three tokens; `global: true`; ADR-008 factory pattern
+- [x] `JobWorkerModule.forRoot({ mode, pools? })` starts one `JobWorker` per active pool on init; stops on destroy (production: real `JobWorker` constructed positionally with `DRIZZLE`, `JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`, `JobWorkerOptions`; tests: `workerFactory` escape hatch returns a stub)
+- [x] Boot validator (Drizzle only): missing handler → `BootValidationError` with missing type names listed; skipped entirely when `backend: 'memory'` (Q4 resolved 2026-04-19 — no DB rows in memory mode)
+- [x] `@JobHandler` classes upsert into `job` table on init using `ON CONFLICT (type) DO UPDATE` **gated by a metadata content hash** (Q3 resolved 2026-04-19); the `UPDATE` branch executes only when the stored hash differs from the computed hash; `version` column bumps only on a real metadata change; concurrent boots with identical content are idempotent no-ops; handler removed from source surfaces as `BootValidationError.missingHandlers` (operator decides whether to prune; explicit prune command → Phase 6)
+- [x] Reserved-pool enforcement: user `@JobHandler` targeting `reserved: true` → `ReservedPoolViolationError` at init with class names
+- [x] `loadPoolConfig` applies all five framework defaults when config absent; merges user pools; cannot flip `reserved: true`
+
+## Implementation Notes (post-implementation, 2026-04-19)
+
+### Orchestrator protocol extension — `upsertJobRows`
+
+JOB-5 added a third method to `IJobOrchestrator`:
+
+```ts
+upsertJobRows(
+  entries: JobUpsertEntry[],
+  poolConfig: ReadonlyMap<string, JobPoolDef>,
+): Promise<{ orphaned: string[] }>;
+```
+
+Both backends implement it:
+
+- **Drizzle**: hash-gated `INSERT … ON CONFLICT (type) DO UPDATE … WHERE` (see below). Returns the orphan list via a single `SELECT type FROM job WHERE type NOT IN (…)`.
+- **Memory**: delegates each entry to the existing `MemoryJobOrchestrator.registerHandler` and always returns `{ orphaned: [] }` — there are no DB rows to validate (Q4).
+
+Why `upsertJobRows` lives on the orchestrator (vs. a separate "registry service"):
+the work is scoped to job-table mutation, the orchestrator already owns the
+job-row read/write surface, and this avoids a second injection token for what
+boils down to one call per process. Keeps the protocol compact.
+
+### Hash gating — SQL `IS DISTINCT FROM` per field (no extra column)
+
+Implemented as a single `INSERT … ON CONFLICT (type) DO UPDATE … SET … WHERE
+<field> IS DISTINCT FROM EXCLUDED.<field> OR …` covering every Q3 field
+(`pool`, `retry_policy::text`, `timeout_ms`, `concurrency_key_template`,
+`collision_mode`, `dedupe_key_template`, `dedupe_window_ms`,
+`priority_default`, `replay_from`, `scope_entity_type`). The `WHERE` clause
+on `DO UPDATE` is the gate — when every field matches, the `UPDATE` is
+skipped entirely; `version` and `updated_at` are never touched.
+
+Chose this over a stored hash column to avoid a JOB-1 schema migration. The
+SQL is a single statement, atomic against concurrent boots: PG's `INSERT …
+ON CONFLICT` with `WHERE` semantics rules out the read-modify-write race.
+
+### Reserved-pool ordering
+
+Validation runs **before** the upsert (step 3 of the spec sequence). If the
+user points a handler at `events_*`, the boot fails before any DB mutation —
+no half-written `job` row to clean up.
+
+### `MemoryJobOrchestrator.start()` — equivalent of validator in memory mode
+
+Per Q4, the boot validator is skipped in memory mode. The equivalent
+protection is `MemoryJobOrchestrator.start()` throwing **`JobTypeNotFoundError`**
+synchronously when called with an unregistered `type`. (The original spec
+mentioned `UnknownJobTypeError`; the actual exported class is
+`JobTypeNotFoundError` from JOB-3.)
+
+### `JobWorker` instantiation
+
+The worker module spawns N `JobWorker` instances from a single options shape,
+which doesn't fit Nest's "one provider per token" model. We instantiate
+`JobWorker` outside the container and pass dependencies positionally
+(`new JobWorker(db, orchestrator, runService, stepService, options)`). The
+constructor's `@Inject` decorators remain in place for the standalone
+worker.ts entrypoint that JOB-6 ships — same class, two callsites.
+
+The `DRIZZLE` provider is injected as `@Optional()` on `JobWorkerOrchestrator`
+so memory-mode test modules compile without supplying a Drizzle client.
+Memory-mode tests pass `workerFactory` to inject a stub worker; production
+deployments use the real `JobWorker`.
+
+### Caching the pool config loader
+
+`loadPoolConfig(configPath?)` caches by absolute resolved path. Cache reset
+helper `_resetPoolConfigCacheForTests()` is exported but not re-exported
+from `index.ts` — test-only API.
 
 ## Open Questions (resolved)
 
-**OQ-3 (reiterated from JOB-3) — Job row upsert under horizontal scale.** Use `ON CONFLICT (type) DO UPDATE SET pool=EXCLUDED.pool, retry_policy=EXCLUDED.retry_policy, updated_at=now()`. Last-writer-wins. Safe because same binary = identical metadata. Rejecting `DO NOTHING` (stale rows under rolling deploy) and advisory locks (latency + leak risk).
+**Q3 — `job` table upsert under horizontal scale. Resolved 2026-04-19.** `ON CONFLICT (type) DO UPDATE` gated by a metadata content hash. Compute `hash(metadata)` per handler at boot (include `pool`, `retry_policy`, `timeout_ms`, `concurrency_key_template`, `collision_mode`, `dedupe_key_template`, `dedupe_window_ms`, `priority_default`, `replay_from`, `scope_entity_type`). The `UPDATE` branch runs only when the hash differs from what is stored. `version` column bumps only on a real metadata change — concurrent boots with identical metadata are idempotent no-ops. `DO NOTHING` rejected: under a rolling deploy, old-version instance A would leave a stale row that new-version instance B cannot overwrite. Advisory locks rejected: latency + leak risk.
 
-**Validator in memory mode.** Skipped entirely. Memory-mode tests do not fail validator even with deliberately unregistered types (tests own in-memory state).
+**Q4 — Validator in memory mode. Resolved 2026-04-19.** Skip the validator entirely when `backend: 'memory'`. There are no DB rows in memory mode; the check is meaningless. The validator is exercised by integration tests against real Postgres.
 
 **Backend threading.** `JobWorkerModuleOptions.backend` explicit (default `'drizzle'`). `JobWorkerModule` imports `JobsDomainModule.forRoot({ backend: opts.backend ?? 'drizzle' })` internally.
 

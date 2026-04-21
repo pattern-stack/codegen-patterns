@@ -23,7 +23,11 @@ export class UpdateDealCommand {
 		private readonly dealRepository: IDealRepository,
 	) {}
 
-	async execute(id: string, dto: UpdateDealDto): Promise<Deal> {
+	async execute(
+		id: string,
+		dto: UpdateDealDto,
+		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
+	): Promise<Deal> {
 		const existing = await this.dealRepository.findById(id);
 		if (!existing) {
 			throw new NotFoundException(`Deal with id ${id} not found`);

@@ -242,14 +242,36 @@ JOB-4 (memory backends) starts after JOB-3 merges (behavioural parity). JOB-5 (m
 
 ---
 
-## Open Questions for the Owner
+## Resolved Questions
 
-1. **`tenant_id` conditional emit mechanism.** The ADR says `tenant_id` appears "only when `codegen.config.yaml: jobs.multi_tenant: true`." Should this be a separate schema file that is included/excluded at scaffold time, or a runtime flag checked when `JobsDomainModule.forRoot()` runs Drizzle migrations? The two approaches have different migration-safety trade-offs.
+**Resolved 2026-04-19.**
 
-2. **Stale-claim sweeper placement.** The ADR describes a per-pool stale-claim sweeper but does not specify whether it runs as part of `JobWorker` (one sweeper per pool-worker) or as a separate singleton service in `JobsDomainModule`. With multiple worker processes, a singleton sweeper could double-recover a row that a slow worker is still processing. Clarify expected concurrency model.
+1. **Q1 — `tenant_id` conditional emit mechanism.**
+   _Question:_ Should `tenant_id` be included/excluded at scaffold time or controlled by a runtime flag in `forRoot()`?
+   _Resolution:_ **Scaffold-time include/exclude.** The column is emitted into the schema only when `codegen.config.yaml: jobs.multi_tenant: true`. Enabling tenancy after initial install requires a reinstall and an Atlas migration — acceptable per "no backwards compat until we have users" policy.
+   _Rationale:_ Clean DB state; no always-nullable column cluttering single-tenant installs.
+   _Affects:_ JOB-1, JOB-8.
 
-3. **`job` table upsert on every boot.** The ADR says `Job` rows are populated from `@JobHandler` decorator metadata at boot. If a consumer runs multiple app instances (horizontal scale), every instance will attempt the upsert concurrently. Should the upsert use `ON CONFLICT DO NOTHING`, `ON CONFLICT DO UPDATE`, or an advisory lock? The right choice affects observable `version` bump behaviour.
+2. **Q2 — Stale-claim sweeper placement.**
+   _Question:_ Per-pool sweeper inside `JobWorker`, or singleton service in `JobsDomainModule`?
+   _Resolution:_ **Per-pool sweeper inside `JobWorker`**, wired via `setInterval` in `onModuleInit`. Each worker instance sweeps only the rows for its own pools. The sweep query uses `FOR UPDATE SKIP LOCKED`, making concurrent sweepers across horizontally-scaled workers safe — a row is recovered at most once.
+   _Rationale:_ Matches ADR wording ("per-pool"), scales naturally, requires no leader-election machinery.
+   _Affects:_ JOB-3.
 
-4. **Boot-time validator in the Drizzle backend only.** The registry validator checks that every `Job` DB row has a handler. When `backend: 'memory'` is used (tests), there are no DB rows. Should the validator be skipped entirely in memory mode, or should it cross-check the in-memory registry against what would be in the DB? Clarify test-mode semantics.
+3. **Q3 — `job` table upsert on boot.**
+   _Question:_ `ON CONFLICT DO NOTHING`, `ON CONFLICT DO UPDATE`, or advisory lock?
+   _Resolution:_ **`ON CONFLICT DO UPDATE` gated by a metadata content hash.** Each `@JobHandler` class is upserted at boot; `hash(metadata)` is computed per handler and stored. The `UPDATE` branch executes only when the stored hash differs from the computed hash. The `version` column increments only on a real metadata change. Concurrent boots with identical content are idempotent no-ops.
+   _Rationale:_ Metadata propagates automatically on deploy with no manual step; hash gate keeps `version` semantically meaningful (not noisy on every boot).
+   _Affects:_ JOB-5.
 
-5. **`ScopeEntityType` union file location.** The ADR says the union is the generated output of `scopeable: true` entity flags, but does not specify where in the consumer project it lands. Candidates: `@shared/jobs/scope-entity-type.ts`, `@shared/types/scope-entity-type.ts`, or co-located with the jobs subsystem scaffold. This affects the import path in `@JobHandler` decorator usage and needs to be locked before JOB-7 templates are written.
+4. **Q4 — Boot-time validator in memory mode.**
+   _Question:_ Skip entirely, or cross-check in-memory registry against what would be in the DB?
+   _Resolution:_ **Skip the validator entirely when `backend: 'memory'`.** There are no DB rows in memory mode, so the check is meaningless.
+   _Rationale:_ Pragmatic; the validator is exercised by integration tests against real Postgres.
+   _Affects:_ JOB-5.
+
+5. **Q5 — `ScopeEntityType` union file location.**
+   _Question:_ `@shared/jobs/scope-entity-type.ts`, `@shared/types/scope-entity-type.ts`, or co-located with the jobs subsystem scaffold?
+   _Resolution:_ **Co-located with the jobs subsystem scaffold at `runtime/subsystems/jobs/generated/scope-entity-type.ts`.** The generator writes the union into the subsystem's own `generated/` folder. This establishes the convention for other generated subsystem types (e.g., `AppDomainEvent` in the forthcoming events epic).
+   _Rationale:_ Clearer ownership — the jobs subsystem owns the type; avoids a cross-cutting `@shared/` path.
+   _Affects:_ JOB-7.
