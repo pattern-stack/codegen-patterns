@@ -63,7 +63,7 @@ const valueEntity = {
     name: 'field_value',
     plural: 'field_values',
     table: 'field_values',
-    family: 'metadata',
+    pattern: 'Metadata',
   },
   eav_value_table: true,
   eav_definition_table: 'field_definition',
@@ -219,7 +219,7 @@ describe('clean-lite-ps eav_value_table — composition with eav on owning entit
     // opportunity is an eav-enabled owner.
     const valueLocals = buildCleanLitePsLocals(valueEntity, {});
     const opportunityEntity = {
-      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', family: 'synced' },
+      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Synced' },
       eav: true,
       fields: { name: { type: 'string', required: true }, user_id: { type: 'uuid', required: true } },
       relationships: {},

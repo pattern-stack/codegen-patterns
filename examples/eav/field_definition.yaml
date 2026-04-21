@@ -10,7 +10,7 @@ entity:
   name: field_definition
   plural: field_definitions
   table: field_definitions
-  family: metadata
+  pattern: Metadata
   folder_structure: nested
 
 fields:

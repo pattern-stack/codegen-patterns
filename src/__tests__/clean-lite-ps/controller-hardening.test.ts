@@ -51,7 +51,7 @@ const baseEntity = {
     name: 'contact',
     plural: 'contacts',
     table: 'contacts',
-    family: 'synced',
+    pattern: 'Synced',
   },
   fields: {
     email: { type: 'string', required: true },

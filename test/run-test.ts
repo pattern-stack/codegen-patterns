@@ -191,7 +191,12 @@ function runCodegen() {
         `--configPath "${join(sandbox, 'codegen.config.yaml')}" ` +
         `--workerExists true ` +
         `--workerPath "${join(sandbox, 'worker.ts')}" ` +
-        `--schemaPath "${v.out}"`,
+        `--schemaPath "${v.out}" ` +
+        // Silence the `mainHookInjected is not defined` EJS error in
+        // `templates/subsystem/jobs/main-hook.ejs.t`. The baseline's
+        // throwaway sandbox has no main.ts to inject into, so the flag's
+        // value is irrelevant; we just need *some* string.
+        `--mainHookInjected true`,
       { cwd: ROOT, stdio: 'pipe' },
     );
   }

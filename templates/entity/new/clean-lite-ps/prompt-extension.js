@@ -658,8 +658,26 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     ? pascalCase(eavDefinitionEntityPlural)
     : null;
 
-  // Family resolution
-  const family = entity.family || 'base';
+  // Pattern resolution.
+  //
+  // PATTERN-3 bridge (temporary): we still drive the template off the
+  // legacy lowercased family key, but the YAML surface is now `pattern:`
+  // (single) or `patterns:` (multi). PATTERN-5 replaces this block with a
+  // registry lookup via `src/patterns/registry.ts` and retires FAMILY_MAP.
+  //
+  // Resolution order:
+  //   1. `entity.pattern` — single-pattern case, lowercase the value to
+  //      index into FAMILY_MAP (e.g. 'Synced' -> 'synced').
+  //   2. `entity.patterns[0]` — multi-pattern case: the *first* name wins
+  //      for base-class selection, subsequent patterns will contribute
+  //      columns/behaviors (PATTERN-4 composition) but do not change the
+  //      template's repository/service base class choice.
+  //   3. 'base' — no pattern declared.
+  const patternName =
+    (typeof entity.pattern === 'string' && entity.pattern) ||
+    (Array.isArray(entity.patterns) && entity.patterns[0]) ||
+    null;
+  const family = patternName ? String(patternName).toLowerCase() : 'base';
   const familyConfig = FAMILY_MAP[family] || FAMILY_MAP['base'];
 
   // Process entity fields

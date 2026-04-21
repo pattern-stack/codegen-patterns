@@ -49,7 +49,10 @@ export interface SerializedEntity {
   name: string;
   plural: string;
   table: string;
-  family?: string;
+  // ADR-031 — pattern:/patterns:/config: replace the legacy `family:` key.
+  pattern?: string;
+  patterns?: string[];
+  patternConfig?: Record<string, unknown>;
   fields: Record<string, SerializedField> | [string, SerializedField][];
   relationships: Record<string, SerializedRelationship> | [string, SerializedRelationship][];
   behaviors: string[];
@@ -139,7 +142,8 @@ export function entityToNode(entity: SerializedEntity): GraphNodeData<Serialized
     label: pascalCase(entity.name),
     subtitle: entity.table,
     kind: 'entity',
-    group: entity.family ?? 'base',
+    group:
+      entity.pattern ?? entity.patterns?.[0] ?? 'Base',
     fields: fieldEntries.map(([, f]) => ({
       name: f.name,
       type: f.type,

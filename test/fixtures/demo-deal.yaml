@@ -3,7 +3,7 @@ entity:
   name: deal
   plural: deals
   table: deals
-  family: synced
+  pattern: Synced
   folder_structure: nested
 
 fields:

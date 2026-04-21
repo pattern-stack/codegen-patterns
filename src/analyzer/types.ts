@@ -53,8 +53,6 @@ export interface ParsedRelationship {
 	resolved: boolean;
 }
 
-export type EntityFamily = 'crm-synced' | 'activity' | 'knowledge' | 'metadata';
-
 export interface ParsedQuery {
 	by: string[];
 	unique?: boolean;
@@ -88,7 +86,21 @@ export interface ParsedEntity {
 	name: string;
 	plural: string;
 	table: string;
-	family?: EntityFamily;
+	/**
+	 * Single pattern name (ADR-031). Mutually exclusive with `patterns`.
+	 * Resolves against the pattern registry (`src/patterns/registry.ts`)
+	 * at codegen time.
+	 */
+	pattern?: string;
+	/** Multi-pattern composition. Mutually exclusive with `pattern`. */
+	patterns?: string[];
+	/**
+	 * Per-pattern config map — key is pattern name, value is the raw YAML
+	 * block. Composition validation (PATTERN-4) parses each value against
+	 * the pattern's `configSchema` before codegen emits it as the
+	 * generated class's `patternConfig` property.
+	 */
+	patternConfig?: Record<string, unknown>;
 	/** Whether this entity is a valid scope target for job scoping (JOB-7). */
 	scopeable?: boolean;
 	folderStructure: 'nested' | 'flat';

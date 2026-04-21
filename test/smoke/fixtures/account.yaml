@@ -5,7 +5,7 @@ entity:
   name: account
   plural: accounts
   table: accounts
-  family: synced
+  pattern: Synced
   folder_structure: nested
 
 fields:

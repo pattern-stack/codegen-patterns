@@ -481,18 +481,26 @@ const EntityConfigSchema = z
       .optional()
       .default(["repository", "rest", "trpc"]),
 
-    // v2: Entity family classification (ADR-005)
-    // Determines which base class hierarchy the entity inherits from
-    family: z
-      .enum(["base", "synced", "activity", "knowledge", "metadata"])
-      .optional(),
+    // App-defined patterns (ADR-031, supersedes ADR-005 family:).
+    // `pattern:` and `patterns:` are mutually exclusive — use `pattern:`
+    // for a single pattern and `patterns:` for multi-pattern composition.
+    // Pattern names resolve against the registry at codegen time.
+    pattern: z.string().optional(),
+    patterns: z.array(z.string()).optional(),
+    // Per-pattern config, keyed by pattern name. Each value is validated
+    // against the pattern's `configSchema` in composition validation
+    // (src/patterns/validate-composition.ts — PATTERN-4).
+    config: z.record(z.string(), z.unknown()).optional(),
 
     // JOB-7: marks this entity as a valid scope target for job scoping.
     // Drives the generated ScopeEntityType union in
     // runtime/subsystems/jobs/generated/scope-entity-type.ts.
     scopeable: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((d) => !(d.pattern && d.patterns), {
+    message: "'pattern' and 'patterns' are mutually exclusive",
+  });
 
 export type EntityConfig = z.infer<typeof EntityConfigSchema>;
 

@@ -20,7 +20,9 @@ interface EntityLike {
   name: string;
   plural: string;
   table: string;
-  family?: string;
+  pattern?: string;
+  patterns?: string[];
+  patternConfig?: Record<string, unknown>;
   fields: Map<string, FieldLike>;
   relationships: Map<string, RelLike>;
   behaviors: string[];
@@ -114,7 +116,9 @@ export function serializeDomainGraph(graph: DomainGraphLike): SerializedDomainGr
       name: entity.name,
       plural: entity.plural,
       table: entity.table,
-      family: entity.family,
+      pattern: entity.pattern,
+      patterns: entity.patterns,
+      patternConfig: entity.patternConfig,
       fields: serializeFields(entity.fields),
       relationships: rels,
       behaviors: entity.behaviors,

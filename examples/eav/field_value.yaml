@@ -11,7 +11,7 @@ entity:
   name: field_value
   plural: field_values
   table: field_values
-  family: metadata
+  pattern: Metadata
   folder_structure: nested
 
 fields:

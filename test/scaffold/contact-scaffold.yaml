@@ -2,7 +2,7 @@
 #
 # Stripped-down version of contact-v2.yaml for use by test/scaffold/validate.sh.
 # Differences from contact-v2.yaml:
-#   - family: base (instead of crm-synced) — CrmEntityRepository does not exist yet
+#   - pattern: Base (instead of CrmEntity) — CrmEntityRepository does not exist yet
 #   - No external_id_tracking behavior — not yet supported in templates
 #   - No FK relationships to other entities — avoids circular import issues in scaffold
 #   - No queries/sync/events blocks — those are v2-only schema additions
@@ -14,7 +14,7 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-  family: base
+  pattern: Base
 
 fields:
   first_name:
