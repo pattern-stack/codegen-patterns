@@ -160,8 +160,10 @@ Auto-detect: `just scan` generates a config from project conventions.
 
 - **Unit tests**: `just test-unit` — base classes, subsystems, scanner, schema (~200ms)
 - **Integration tests**: `just test-family` / `just test-integration` — real Postgres via Docker
-- **Baseline tests**: `just test-baseline` — generate + compare to snapshots
-- **241 total tests**, all passing
+- **Smoke test**: `just test-smoke` — end-to-end scaffold + generate + typecheck on a fresh tmp project (~60-120s)
+- **Baseline tests**: `just test-baseline` — generate from `test/fixtures/` into repo-root `packages/api/` and compare to `test/baseline/` snapshots. Two-pass generation (first pass seeds `packages/api/src/domain/*.entity.ts` files so second-pass `targetExists` checks resolve cross-entity references). Start from pristine state — the runner wipes the generated directories on each run.
+- **CI**: `just test-all` (unit + baseline + smoke) runs on every PR to `main` and every push to `main` (`.github/workflows/ci.yml`)
+- **241+ total tests**, all passing
 
 ### Template System
 

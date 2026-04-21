@@ -48,12 +48,22 @@ export class TypedEventBus {
 		const shouldValidate =
 			flag === undefined ? true : flag !== 'false' && flag !== '0';
 		if (shouldValidate) {
-			const check = eventPayloadSchemas[type].safeParse(payload);
-			if (!check.success) {
-				console.warn(
-					`[TypedEventBus] payload validation failed for ${String(type)}:`,
-					check.error.issues,
-				);
+			// `eventPayloadSchemas` is typed as `Record<EventTypeName, z.ZodType>`,
+			// so under `noUncheckedIndexedAccess` the indexed lookup widens
+			// to `z.ZodType | undefined`. When no events are registered at
+			// codegen time `EventTypeName` degrades to `string` and the
+			// schemas object is literally `{}` — the guard below is the
+			// honest handling of that empty-registry case (skip validation;
+			// it's a warn-only best-effort check per the class docblock).
+			const schema = eventPayloadSchemas[type];
+			if (schema) {
+				const check = schema.safeParse(payload);
+				if (!check.success) {
+					console.warn(
+						`[TypedEventBus] payload validation failed for ${String(type)}:`,
+						check.error.issues,
+					);
+				}
 			}
 		}
 
