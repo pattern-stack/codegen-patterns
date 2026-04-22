@@ -85,6 +85,10 @@ If `RETURNING` yields 1 row → fresh insert, proceed to wrapper `job_run` inser
 
 Wrapper `job_run.type = '@framework/bridge_delivery'` (the handler BRIDGE-5 will register). Pool = `events_${row.direction}`. `trigger_source='event'`, `trigger_ref=row.id` (the event id) — these columns already exist on `job_run` per ADR-022.
 
+### Follow-up: site (c) multi-tenancy guard added in BRIDGE-8 (2026-04-22)
+
+`DrizzleBridgeDeliveryRepo.insertDelivery` is site (c) of the three ADR-023 §Multi-tenancy enforcement sites — the last-line repo defense that fires even when callers skip sites (a) `EventFlowService.publishAndStart` and (b) `BridgeDeliveryHandler.run`. BRIDGE-4 shipped without this guard; BRIDGE-8 added it via `@Optional() @Inject(BRIDGE_MULTI_TENANT) multiTenant: boolean = false` on the constructor and an `assertTenantId('DrizzleBridgeDeliveryRepo.insertDelivery', this.multiTenant, row.tenantId)` call before any SQL is issued. Tests in `bridge.module.spec.ts` confirm the throw fires before any SQL hits the `drizzle-orm/pg-proxy` driver. Cross-link: BRIDGE-8 spec Implementation Notes; ADR-023 §Multi-tenancy null-tenantId.
+
 ## Acceptance Criteria
 
 - [x] `DrizzleBridgeDeliveryRepo` implements `IJobBridge`. **Refinement:** uses `INSERT … ON CONFLICT (event_id, trigger_id) DO NOTHING` — the spec asked for an error-mapping path but per the spec's own Implementation Notes the agreed shape was DO NOTHING. The DO NOTHING path surfaces dedup as a silent no-op (the desired behaviour); `UniqueConstraintError` is the memory-backend fidelity tool and not thrown by the Drizzle backend in the normal path. Tests that need to assert "the constraint fired" inspect the existing row via `findDelivery`.

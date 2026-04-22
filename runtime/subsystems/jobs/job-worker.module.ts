@@ -94,7 +94,14 @@ export interface JobWorkerModuleOptions {
   workerFactory?: (options: JobWorkerOptions) => Pick<JobWorker, 'onModuleInit' | 'onModuleDestroy'>;
 }
 
-const JOB_WORKER_MODULE_OPTIONS = Symbol('JOB_WORKER_MODULE_OPTIONS');
+/**
+ * DI token for the resolved `JobWorkerModuleOptions`. Exported so other
+ * subsystems can inject it `@Optional()` and inspect the active
+ * configuration — e.g. `BridgeModule.onModuleInit` checks
+ * `options.pools` against `BRIDGE_RESERVED_POOLS` to fail fast when a
+ * reserved pool isn't being polled (BRIDGE-8).
+ */
+export const JOB_WORKER_MODULE_OPTIONS = Symbol('JOB_WORKER_MODULE_OPTIONS');
 
 /**
  * The lifecycle holder. Named `JobWorkerOrchestrator` in the spec to avoid

@@ -42,11 +42,22 @@ export {
   BRIDGE_OUTBOX_DRAIN_HOOK,
 } from './bridge.tokens';
 
-// Errors (BRIDGE-2 + BRIDGE-3)
+// Errors (BRIDGE-2 + BRIDGE-3 + BRIDGE-8)
 export {
   MissingTenantIdError,
   UniqueConstraintError,
+  BridgeReservedPoolsNotPolledError,
 } from './bridge-errors';
+
+// Multi-tenancy helper (BRIDGE-8)
+export { assertTenantId } from './assert-tenant-id';
+
+// Reserved pools constant (BRIDGE-8) — consumers spread into
+// `JobWorkerModule.forRoot({ pools })`.
+export {
+  BRIDGE_RESERVED_POOLS,
+  type BridgeReservedPool,
+} from './reserved-pools';
 
 // Memory backend (BRIDGE-3)
 export { MemoryBridgeDeliveryRepo } from './bridge-delivery.memory-backend';
@@ -65,3 +76,9 @@ export { BridgeOutboxDrainHook } from './bridge-outbox-drain-hook';
 
 // EventFlow facade (BRIDGE-7)
 export { EventFlowService } from './event-flow.service';
+
+// Module wiring (BRIDGE-8)
+export {
+  BridgeModule,
+  type BridgeModuleOptions,
+} from './bridge.module';

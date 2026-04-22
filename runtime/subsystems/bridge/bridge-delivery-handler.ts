@@ -76,7 +76,7 @@ import type {
   BridgeTriggerEntry,
   IJobBridge,
 } from './bridge.protocol';
-import { MissingTenantIdError } from './bridge-errors';
+import { assertTenantId } from './assert-tenant-id';
 
 /** Stable canonical job type — referenced by BRIDGE-4 wrapper inserts. */
 export const BRIDGE_DELIVERY_JOB_TYPE = '@framework/bridge_delivery' as const;
@@ -132,13 +132,16 @@ export class BridgeDeliveryHandler extends JobHandlerBase<
       return { skipped: true, reason: 'delivery_row_missing' };
     }
 
-    // Step 2 — multi-tenancy gate.
-    if (this.multiTenant && delivery.tenantId === undefined) {
-      // The DB always returns string|null, never undefined; this branch
-      // exists for the in-memory backend's older test fixtures and to
-      // pin the contract in shape-typed tests.
-      throw new MissingTenantIdError('BridgeDeliveryHandler.run');
-    }
+    // Step 2 — multi-tenancy gate. Site (b) of the three ADR-023
+    // §Multi-tenancy enforcement sites; shared helper from BRIDGE-8.
+    // The DB always returns string|null, never undefined; this branch
+    // exists for the in-memory backend's older test fixtures and to
+    // pin the contract in shape-typed tests.
+    assertTenantId(
+      'BridgeDeliveryHandler.run',
+      this.multiTenant,
+      delivery.tenantId,
+    );
 
     // Step 3 — load the typed event row.
     const event = await this.events.findById(delivery.eventId);
