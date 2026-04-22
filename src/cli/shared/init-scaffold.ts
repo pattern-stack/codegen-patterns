@@ -802,7 +802,8 @@ export async function buildInitPlan(
 				path: appModulePath,
 				relPath: relOf(cwd, appModulePath),
 				action: 'skip',
-				reason: 'exists — wire DatabaseModule + GENERATED_MODULES manually',
+				reason:
+					'exists — run `codegen project upgrade-openapi` to patch; see docs/CONSUMER-SETUP.md §OpenAPI for manual wiring',
 			});
 		}
 	}
@@ -825,7 +826,8 @@ export async function buildInitPlan(
 				path: mainPath,
 				relPath: relOf(cwd, mainPath),
 				action: 'skip',
-				reason: 'exists — copy the OpenAPI bootstrap block from CONSUMER-SETUP §OpenAPI manually',
+				reason:
+					'exists — run `codegen project upgrade-openapi` to patch; see docs/CONSUMER-SETUP.md §OpenAPI for manual wiring',
 			});
 		}
 	}

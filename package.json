@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "license": "MIT",
   "type": "module",
@@ -66,6 +66,7 @@
     "glob": "^13.0.6",
     "ora": "^9.3.0",
     "pluralize": "^8.0.0",
+    "ts-morph": "^28.0.0",
     "yaml": "^2.8.3",
     "zod": "^3.22.4"
   },
