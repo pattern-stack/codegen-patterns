@@ -88,9 +88,9 @@ function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: string }> {
 // ---------------------------------------------------------------------------
 
 describe('subsystem — descriptor', () => {
-	test('knows all five subsystems', () => {
+	test('knows all six subsystems', () => {
 		expect(SUBSYSTEMS.map((s) => s.name).sort()).toEqual(
-			['cache', 'events', 'jobs', 'storage', 'sync'].sort()
+			['bridge', 'cache', 'events', 'jobs', 'storage', 'sync'].sort()
 		);
 	});
 });
@@ -115,7 +115,7 @@ describe('subsystem — summary + list', () => {
 		);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('subsystem list');
-		expect(parsed.subsystems).toHaveLength(5);
+		expect(parsed.subsystems).toHaveLength(6);
 		for (const row of parsed.subsystems) {
 			expect(row.status).toBe('available');
 		}

@@ -34,6 +34,10 @@ import {
 	localsToHygenArgs as syncLocalsToHygenArgs,
 	resolveSyncScaffoldLocals,
 } from '../shared/sync-scaffold-locals.js';
+import {
+	localsToHygenArgs as bridgeLocalsToHygenArgs,
+	resolveBridgeScaffoldLocals,
+} from '../shared/bridge-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
 import {
 	SUBSYSTEMS,
@@ -353,6 +357,21 @@ export class SubsystemInstallCommand extends Command {
 					})
 				: null;
 
+		// BRIDGE-9: bridge subsystem — inject the `bridge:` config block and
+		// drop a `generated/.gitkeep` so `bridge-registry-generator.ts` (run
+		// at `just gen-all`) has a committed output directory. No schema
+		// template — `bridge-delivery.schema.ts` ships via `copyRuntime`
+		// (BRIDGE-1's `tenant_id` column is unconditional; multi-tenancy
+		// is a runtime-enforcement concern, not a schema branch).
+		const bridgeScaffold =
+			desc.name === 'bridge'
+				? runBridgeScaffold(ctx.cwd, ctx.config, {
+						dryRun: this.dryRun,
+						json: isJsonMode(),
+						forceConfig: this.forceConfig,
+					})
+				: null;
+
 		// #121 (F13): a parse-error on codegen.config.yaml causes the scaffold
 		// to refuse re-injection rather than silently overwrite. Surface it as
 		// a non-zero exit with a clear message; runtime files were already
@@ -375,6 +394,12 @@ export class SubsystemInstallCommand extends Command {
 			);
 			return 1;
 		}
+		if (bridgeScaffold?.configBlockOutcome === 'parse-error') {
+			printError(
+				'codegen.config.yaml is not valid YAML: refusing to inject bridge config block. Fix the YAML and re-run.',
+			);
+			return 1;
+		}
 
 		if (isJsonMode()) {
 			printJson({
@@ -393,6 +418,7 @@ export class SubsystemInstallCommand extends Command {
 				...(jobsScaffold ? { scaffold: jobsScaffold } : {}),
 				...(eventsScaffold ? { scaffold: eventsScaffold } : {}),
 				...(syncScaffold ? { scaffold: syncScaffold } : {}),
+				...(bridgeScaffold ? { scaffold: bridgeScaffold } : {}),
 			});
 			return 0;
 		}
@@ -423,6 +449,14 @@ export class SubsystemInstallCommand extends Command {
 					`Sync scaffold — ${syncScaffold.planned.length} template targets`,
 				);
 				for (const p of syncScaffold.planned) {
+					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+				}
+			}
+			if (bridgeScaffold?.planned?.length) {
+				printInfo(
+					`Bridge scaffold — ${bridgeScaffold.planned.length} template targets`,
+				);
+				for (const p of bridgeScaffold.planned) {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
@@ -466,6 +500,17 @@ export class SubsystemInstallCommand extends Command {
 			} else {
 				printWarning(
 					`sync scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${syncScaffold.error ?? 'unknown error'}`,
+				);
+			}
+		}
+		if (bridgeScaffold) {
+			if (bridgeScaffold.ok) {
+				printSuccess(
+					`bridge scaffold applied (config block, generated/.gitkeep)`,
+				);
+			} else {
+				printWarning(
+					`bridge scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${bridgeScaffold.error ?? 'unknown error'}`,
 				);
 			}
 		}
@@ -530,7 +575,7 @@ function planConfigBlockAction(
 
 interface ConfigBlockActionInput {
 	cwd: string;
-	actionFolder: 'jobs-config' | 'events-config' | 'sync-config';
+	actionFolder: 'jobs-config' | 'events-config' | 'sync-config' | 'bridge-config';
 	configPath: string;
 	subsystem: DetectorSubsystemName;
 	outcome: ConfigBlockOutcome;
@@ -869,6 +914,87 @@ function runSyncScaffold(
 		actionFolder: 'sync-config',
 		configPath: locals.configPath,
 		subsystem: 'sync',
+		outcome: configBlockOutcome,
+		json: opts.json,
+	});
+
+	if (!configResult.ok) {
+		return {
+			ok: false,
+			planned,
+			error: configResult.error,
+			configBlockOutcome,
+		};
+	}
+
+	return { ok: true, planned, configBlockOutcome };
+}
+
+// ---------------------------------------------------------------------------
+// BRIDGE-9 — bridge subsystem Hygen scaffold wiring
+// ---------------------------------------------------------------------------
+
+interface BridgeScaffoldOutcome {
+	ok: boolean;
+	planned: string[];
+	error?: string;
+	configBlockOutcome?: ConfigBlockOutcome;
+}
+
+function runBridgeScaffold(
+	cwd: string,
+	config: Context['config'],
+	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
+): BridgeScaffoldOutcome {
+	const locals = resolveBridgeScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+	});
+
+	// Planned files: only the .gitkeep + config block. Schema flows through
+	// `copyRuntime` (no template). See bridge-scaffold-locals.ts docstring.
+	const planned: string[] = [
+		locals.configPath,
+		locals.generatedKeepPath,
+	];
+
+	const configBlockOutcome = planConfigBlockAction(
+		locals.configPath,
+		'bridge',
+		opts.forceConfig,
+	);
+
+	if (configBlockOutcome === 'parse-error') {
+		return { ok: false, planned, configBlockOutcome };
+	}
+
+	if (opts.dryRun) {
+		return { ok: true, planned, configBlockOutcome };
+	}
+
+	const result = invokeHygen({
+		generator: 'subsystem',
+		action: 'bridge',
+		cwd,
+		args: bridgeLocalsToHygenArgs(locals),
+		inherit: !opts.json,
+	});
+
+	if (!result.ok) {
+		return {
+			ok: false,
+			planned,
+			error: result.stderr?.trim() || 'hygen exited non-zero',
+			configBlockOutcome,
+		};
+	}
+
+	const configResult = runConfigBlockAction({
+		cwd,
+		actionFolder: 'bridge-config',
+		configPath: locals.configPath,
+		subsystem: 'bridge',
 		outcome: configBlockOutcome,
 		json: opts.json,
 	});

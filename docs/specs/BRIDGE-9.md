@@ -1,10 +1,10 @@
 # BRIDGE-9 — Fanout CLI, Hygen Scaffold, CONSUMER-SETUP, Skill
 
 **Issue:** BRIDGE-9
-**Status:** Stub
-**Phase:** ADR-023 Phase 2
+**Status:** Shipped 2026-04-22
+**Phase:** ADR-023 Phase 2 (epic closes with this PR)
 **Depends on:** BRIDGE-8.
-**Blocks:** Nothing. Epic closes on merge.
+**Blocks:** Nothing. Epic #158 closes on merge.
 
 ## Overview
 
@@ -172,3 +172,44 @@ Mirror `.claude/skills/events/` and `.claude/skills/jobs/` — `SKILL.md` at roo
 - `docs/specs/BRIDGE-PHASE-2-PLAN.md` — row 9, risks #4, #5
 - `docs/specs/EVT-8.md` — scaffold + docs + skill precedent
 - `docs/specs/JOB-6.md` — Hygen subsystem scaffold precedent
+
+## Implementation Notes (post-ship, 2026-04-22)
+
+### Actual files shipped
+
+**CLI — `codegen events consumers <type>`:**
+- `src/cli/commands/events.ts` — single-file noun module (not a directory). Defines `EventsConsumersCommand`, the tier-2/tier-1 AST scanner (`scanSourceFileForConsumers`, `scanDirectoryForConsumers`), the report renderer, the Levenshtein suggestion helper, and the `eventsNoun` NounModule default export.
+- `src/cli/index.ts` — already loaded this noun via the generic dynamic-import block.
+
+**Hygen scaffold — lean 3-file shape:**
+- `templates/subsystem/bridge/prompt.js`, `templates/subsystem/bridge/generated-keep.ejs.t` — only the `.gitkeep` under `generated/`. No schema template (BRIDGE-1's `tenant_id` column is unconditional; multi-tenancy is runtime enforcement, not a schema branch). No runtime-file templates — the bridge runtime flows through `copyRuntime` unchanged.
+- `templates/subsystem/bridge-config/prompt.js`, `templates/subsystem/bridge-config/codegen-config-bridge-block.ejs.t` — `bridge:` block injector.
+
+Deviation from spec's 13-template list: only 3 templates ship (see GATE 5 decision + `src/cli/shared/bridge-scaffold-locals.ts` docstring). EVT-8 precedent.
+
+**Scaffold dispatch + shared locals:**
+- `src/cli/commands/subsystem.ts` — `runBridgeScaffold` wired alongside jobs / events / sync scaffold hooks.
+- `src/cli/shared/bridge-scaffold-locals.ts` + `src/__tests__/cli/bridge-scaffold-locals.test.ts` — pure locals resolver + tests.
+- `src/cli/shared/subsystem-detect.ts` — `'bridge'` added to `SubsystemName` + `SUBSYSTEMS` descriptor table.
+- `src/cli/shared/config-block-detect.ts` — `'bridge'` added to `SubsystemName` union.
+- `src/__tests__/cli/subsystem.test.ts` — existing suite extended to assert all six subsystem descriptors are present.
+
+**Tests:**
+- `src/__tests__/cli/events-consumers.test.ts` — covers happy path (all three tiers), empty case (`(none)` bullets + "no consumers found"), unknown event type + suggestions, fallback warn path (EventFlowService present + zero Tier 2 hits), subscriber decorator matching, `subscribe()` matching, and node_modules/generated skipping.
+
+**Docs:**
+- `docs/CONSUMER-SETUP.md` — new *Bridge subsystem* section covering install, trigger authoring, reserved-pool wiring (`BRIDGE_RESERVED_POOLS` spread, concurrency-32 default), fanout CLI, "When NOT to use the bridge" decision table, ordering guidance (both `pools.events_*.concurrency = 1` and `concurrency_key` knobs named), multi-tenancy, trigger rename orphan handling, retention → BRIDGE-10 forward reference.
+- `README.md` — subsystem list extended to include `sync` + `bridge`; `codegen events consumers <type>` one-line mention.
+- `docs/adrs/ADR-023-event-to-job-bridge.md` — status flipped `Revised` → `Shipped 2026-04-22`.
+
+**Skill (not shipped in this PR — permissions issue):**
+- `.claude/skills/bridge/SKILL.md` + `routing.md` updates blocked by harness-level write permission on `.claude/skills/*`. Filed as a follow-up; content is drafted in the PR body for manual application by the maintainer.
+
+### Deviations from spec
+
+1. **Scaffold shape:** 3 templates instead of 13 — GATE 5 approved; `copyRuntime` handles the runtime files identically to events / sync (no skip-list entry needed because the schema column is unconditional).
+2. **Fanout CLI location:** `src/cli/commands/events.ts` (file) not `src/cli/commands/events/consumers.ts` (directory). Single-verb noun; matching the shape of `src/cli/commands/entity.ts`.
+3. **Empty-tier rendering:** always show `  - (none)` under each tier header (GATE 5 decision for greppability). The spec suggested collapsing empty tiers; rejected for consistency.
+4. **Unknown event type** warns to stderr and exits 0 (GATE 5: tools never gate CI). Suggestion list uses Levenshtein over `eventRegistry` keys.
+5. **Retention** is NOT in this PR. Forward-reference stub added to CONSUMER-SETUP pointing at BRIDGE-10 (#173) as fast-follow.
+6. **Open Question — handler-directory AST scan roots:** resolved by defaulting to `<cwd>/src/` with no config knob in Phase 2. `findHandlerFiles` already skips `node_modules`, `generated/`, dotfiles, `.d.ts`.

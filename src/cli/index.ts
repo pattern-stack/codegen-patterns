@@ -123,6 +123,12 @@ async function loadNouns(): Promise<void> {
 	} catch {
 		// relationship noun not implemented yet
 	}
+	try {
+		const mod = await import('./commands/events.js');
+		if (mod?.default) nouns.push(mod.default as NounModule);
+	} catch {
+		// events noun not implemented yet
+	}
 }
 
 async function loadShortcuts(cli: Cli): Promise<void> {

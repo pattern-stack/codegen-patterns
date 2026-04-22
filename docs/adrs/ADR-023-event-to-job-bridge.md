@@ -1,7 +1,7 @@
 # ADR-023 — Event-to-Job Bridge
 
-**Status:** Revised (ready for spec cutting)
-**Date:** 2026-04-21 (original draft), revised 2026-04-21 (review pass)
+**Status:** Shipped
+**Date:** 2026-04-21 (original draft), revised 2026-04-21 (review pass), shipped 2026-04-22 via BRIDGE-1..9 (PRs #168, #169, #170, #171, #172, #174, #175, #176, BRIDGE-9)
 **Owner:** Doug
 **Related:** ADR-022 (Job Orchestration Domain Model), ADR-024 (Events Domain Formalization), ADR-008 (Subsystem Architecture)
 **Depends on:** ADR-024 Phase 1 (shipped via EVT-1..EVT-8) — typed event registry, `TypedEventBus`, direction-routed outbox
