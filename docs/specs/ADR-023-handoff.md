@@ -54,3 +54,30 @@ The plan doc is **execution-ready**. It specifies file paths, gate locations, de
 - Propose adding a sweeper / retry scheduler for `bridge_delivery.failed`. Explicitly out of scope for Phase 2.
 - Re-open dual-mode triggers (F) or auto-routing (G) — rejected alternatives are recorded with reasoning.
 - Push for event-owned YAML as the *primary* authoring surface. It's deferred as a second, additive codegen source.
+
+## Coordinator notes (implementation-level, surfaced 2026-04-21)
+
+Two items the executing coordinator should absorb when cutting the BRIDGE-N specs. Neither changes the ADR; both sharpen specs at implementation time.
+
+### BRIDGE-4 — per-trigger UNIQUE conflict handling must be explicit
+
+The ADR commits to "per-event tx, `UNIQUE (event_id, trigger_id)` dedups" but does not prescribe the INSERT shape. A naive `INSERT INTO bridge_delivery ...` per matched trigger inside a single per-event transaction will abort the whole transaction on the first UNIQUE conflict — causing **other unrelated triggers for the same event to also fail**. This matters because the facade's `publishAndStart` Case B pre-writes a `bridge_delivery(status=delivered)` row, so the drain *will* legitimately hit UNIQUE collisions on one-of-N triggers.
+
+BRIDGE-4 spec should pick one of:
+
+- **`INSERT ... ON CONFLICT (event_id, trigger_id) DO NOTHING RETURNING id`** per trigger → only spawn wrappers for rows that actually inserted. **Recommended — simplest, no savepoint bookkeeping.**
+- Savepoint per trigger within the per-event tx.
+- `SELECT` existing `(event_id, trigger_id)` rows first, skip matched, batch-INSERT the remainder.
+
+Whichever BRIDGE-4 picks, the spec must say so explicitly and include a test case covering: event with 3 triggers, 1 pre-written by facade, 2 others must still spawn wrappers successfully.
+
+### BRIDGE-9 — CONSUMER-SETUP ordering section must name both options
+
+The ADR's ordering escape hatch reads "set `jobs.pools.events_<direction>.concurrency = 1` to serialize wrappers." That serializes *every* event in that direction globally, which is almost never what consumers actually want. The common case is **per-aggregate ordering** ("all events for user X in order"), which belongs on `concurrency_key` at the user job layer (already exists per ADR-022), not the pool.
+
+BRIDGE-9's CONSUMER-SETUP "Ordering" subsection must name both:
+
+1. **Global direction ordering** — `jobs.pools.events_<direction>.concurrency = 1`. Blunt; serializes all events of that direction. Rarely right.
+2. **Per-aggregate ordering** — `@JobHandler({ concurrency: { key: (input) => input.aggregateId } })` on the user job. Preserves order per aggregate, parallelism across aggregates. Usually right.
+
+Without this, consumers will reach for option 1 and starve their own throughput.
