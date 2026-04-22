@@ -43,8 +43,8 @@ Sequential — each builds on the previous. Assign to a single coordinator runni
 | 1 | `bridge-1/drizzle-schema` | BRIDGE-1 | `runtime/subsystems/bridge/bridge-delivery.schema.ts`: `bridge_delivery` table + `bridge_delivery_status` enum. Round-trip tests. | `just test-unit` green. **CHECKPOINT** after merge (brief direction check). |
 | 2 | `bridge-2/protocols` | BRIDGE-2 | `runtime/subsystems/bridge/bridge.protocol.ts`: `IJobBridge`, `IEventFlow` interfaces; DI tokens (`BRIDGE_DELIVERY_REPO`, `EVENT_FLOW`, `BRIDGE_MULTI_TENANT`); subsystem skeleton barrel `runtime/subsystems/bridge/index.ts`. | `just test-unit` green. |
 | 3 | `bridge-3/memory-backend` | BRIDGE-3 | `MemoryBridgeDeliveryRepo` test double with ergonomic helpers (`getDeliveriesForEvent`, `getByStatus`). | `just test-unit` green. |
-| 4 | `bridge-4/drizzle-backend` | BRIDGE-4 | `DrizzleBridgeDeliveryRepo` (Postgres impl) + outbox drain integration: drain inserts `bridge_delivery + wrapper job_run` per matched trigger inside per-event tx. **GATE** before opening — DB migration surface + drain modification. | `just test-unit` + integration test with real Postgres. |
-| 5 | `bridge-5/framework-handler` | BRIDGE-5 | Framework `BridgeDeliveryHandler` (3 instances, one per reserved pool). Reads `bridge_delivery` → evaluates `when:` → calls `orchestrator.start(userJob)` → updates ledger. Step memoization for replay safety. | `just test-unit` + integration test showing wrapper → user job fanout. |
+| 4 | `bridge-4/drizzle-backend` | BRIDGE-4 | `DrizzleBridgeDeliveryRepo` (Postgres impl) + outbox drain integration: drain inserts `bridge_delivery + wrapper job_run` per matched trigger inside per-event tx. **GATE** before opening — DB migration surface + drain modification. **Implementation order: ships AFTER BRIDGE-5** (resequenced 2026-04-22 — see "Resequence" note below). | `just test-unit` + integration test with real Postgres. |
+| 5 | `bridge-5/framework-handler` | BRIDGE-5 | Framework `BridgeDeliveryHandler` registered on the `events_*` reserved pools (one `@JobHandler` registration; per-direction routing happens via `job_run.pool` set by the drain). Reads `bridge_delivery` → evaluates `when:` → calls `orchestrator.start(userJob)` → updates ledger. Step memoization for replay safety. **Implementation order: ships BEFORE BRIDGE-4** so the `@framework/bridge_delivery` `jobs` row exists by the time BRIDGE-4's wrapper insert needs the FK. | `just test-unit` (handler logic against memory backends). End-to-end wrapper → user job fanout integration test deferred to BRIDGE-4 (drain) / BRIDGE-8 (full wiring). |
 | 6 | `bridge-6/codegen` | BRIDGE-6 | Codegen: scan `@JobHandler.triggers` decorator metadata across handler files; emit `runtime/subsystems/bridge/generated/registry.ts`; build-time validation against `eventRegistry`; `just gen-all` hooks. | `just test-unit` + `just gen-all` succeeds on fixture. |
 | 7 | `bridge-7/eventflow-facade` | BRIDGE-7 | `EventFlowService` implementation of `IEventFlow`. `publish()` delegates to `IEventBus`. `publishAndStart()` does: outbox insert + `orchestrator.start()` + (for Case B) pre-write `bridge_delivery(status=delivered)`. **GATE** before opening — facade dedup semantics against real `bridgeRegistry`. | `just test-unit` green, including Case A/B collision tests. |
 | 8 | `bridge-8/module-wiring` | BRIDGE-8 | `BridgeModule.forRoot({ backend, multiTenant })` wiring repo + facade + registering framework handler on 3 reserved pools. Shared `assertTenantId` enforcement at all boundaries. **GATE** before opening — multi-tenancy review (mirrors JOB-8 / SYNC-6 precedent). | `just test-all` green end-to-end: publish → bridge delivery → user job execution. |
@@ -59,6 +59,16 @@ Sequential — each builds on the previous. Assign to a single coordinator runni
 5. **GATE before BRIDGE-9 opens** — CLI UX + scaffold shape review
 6. Any CI failure not diagnosed in 2 attempts
 7. Any latent bug in another subsystem (events / jobs / sync / patterns / auth) — file separately, don't silently expand scope (discipline from CI-bootstrap and SYNC orchestrations)
+
+### Resequence — BRIDGE-5 ships before BRIDGE-4 (2026-04-22)
+
+Discovered at GATE 2: BRIDGE-4's drain modification inserts wrapper `job_run` rows with `job_type='@framework/bridge_delivery'`. The `job_run.job_type` FK references `jobs.type`, which only gets a row once the `BridgeDeliveryHandler` is registered through the `@JobHandler` decorator and `JobWorkerOrchestrator.upsertJobRows` runs at boot. Without that row, the wrapper insert fails the FK.
+
+Resolution: implement BRIDGE-5 (handler) before BRIDGE-4 (drain integration). Issue numbers, scope, and gates are unchanged — only the implementation order is reversed.
+
+BRIDGE-5 also added two adjacent fixes that the drain depends on:
+- `IEventBus.findById(eventId)` on the events protocol + both backends — the handler re-fetches the authoritative `domain_events` row at claim time.
+- `@framework/*` job-type prefix exempt from `assertNoReservedPoolHandlers` in `runtime/subsystems/jobs/job-worker.module.ts` — the framework handler legitimately targets a reserved pool.
 
 ---
 

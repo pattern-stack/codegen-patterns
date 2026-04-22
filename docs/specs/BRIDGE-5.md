@@ -3,7 +3,7 @@
 **Issue:** BRIDGE-5
 **Status:** Stub
 **Phase:** ADR-023 Phase 2
-**Depends on:** BRIDGE-2, BRIDGE-3, BRIDGE-4.
+**Depends on:** BRIDGE-2, BRIDGE-3. (BRIDGE-4 dependency dropped — see Implementation Notes; BRIDGE-5 now ships before BRIDGE-4 per the 2026-04-22 resequence.)
 **Blocks:** BRIDGE-8.
 
 ## Overview
@@ -69,14 +69,14 @@ BridgeDeliveryHandler
 
 ## Acceptance Criteria
 
-- [ ] `BridgeDeliveryHandler` declared with `@JobHandler({ type: '@framework/bridge_delivery' })`.
-- [ ] Unknown `trigger_id` → `markSkipped(id, 'trigger_unregistered')`. (ADR-023 §Trigger rename or removal.)
-- [ ] `when:` returning false → `markSkipped(id, 'predicate_false')`.
-- [ ] Successful `orchestrator.start` → `markDelivered(id, userRunId)` with `delivered_at` stamped.
-- [ ] Spawn wrapped in `ctx.step('spawn_user_run', ...)` for replay safety.
-- [ ] Exhausted retry → `markFailed(id, error)` with JSON error payload.
-- [ ] Integration: user job row has `parent_run_id` = wrapper id, `trigger_source='event'`, `trigger_ref` = event id.
-- [ ] Tenant threading: `delivery.tenantId` propagates to `orchestrator.start(..., { tenantId })`.
+- [x] `BridgeDeliveryHandler` declared with `@JobHandler('@framework/bridge_delivery', { pool: 'events_change', retry, replayFrom })`.
+- [x] Unknown `trigger_id` → `markSkipped(id, 'trigger_unregistered')`. (ADR-023 §Trigger rename or removal.)
+- [x] `when:` returning false → `markSkipped(id, 'predicate_false')`.
+- [x] Successful `orchestrator.start` → `markDelivered(id, userRunId)` with `delivered_at` stamped.
+- [x] Spawn wrapped in `ctx.step('spawn_user_run', ...)` for replay safety.
+- [~] Exhausted retry → `markFailed(id, error)` — DEFERRED: requires JobWorker integration. The handler propagates throws so the worker's retry policy fires; the `markFailed` path is wired in BRIDGE-8 module init alongside the failure-handler hook.
+- [~] Integration: user job row has `parent_run_id` = wrapper id, `trigger_source='event'`, `trigger_ref` = event id. — DEFERRED to BRIDGE-4 (drain integration test) / BRIDGE-8 (full module wiring). Unit tests pin the call shape: `orchestrator.start(jobType, input, { parentRunId: ctx.run.id, triggerSource: 'event', triggerRef: delivery.eventId, tenantId: delivery.tenantId })`.
+- [x] Tenant threading: `delivery.tenantId` propagates to `orchestrator.start(..., { tenantId })`. `multiTenant=true` + `tenantId === undefined` throws `MissingTenantIdError('BridgeDeliveryHandler.run')`.
 
 ## Testing Strategy
 
@@ -89,7 +89,23 @@ None.
 
 ## Open Questions
 
-- [ ] **Event-fetch port.** The handler needs to re-fetch the `domain_events` row to re-run `when:` / `map:` at claim time (event arguments to those callbacks must be authoritative, not cached from drain time). No existing `IEventBus` method returns a single event by id. Options: (a) extend `IEventBus` with `findById(eventId)`, (b) add to `IJobBridge`, (c) inject a new narrow port. Implementer picks one and updates BRIDGE-2 spec if a new method is added. Flag in PR body.
+- [x] **Event-fetch port — RESOLVED.** Picked option (a): extended `IEventBus` with `findById(eventId): Promise<DomainEvent | null>`. `MemoryEventBus` searches its `publishedEvents` log; `DrizzleEventBus` runs `SELECT … WHERE id = ? LIMIT 1`; `RedisEventBus` returns `null` and warns once (Pub/Sub has no history; bridge usage of Redis backend is unsupported). Touches three files in events/ but is a small, scoped addition.
+
+## Implementation Notes (added in PR per CLAUDE.md living-docs rule)
+
+**`run` not `handle`.** The spec uses `handle(ctx)` in the Architecture sketch. The actual `JobHandlerBase` abstract method is `run(ctx)` (see `runtime/subsystems/jobs/job-handler.base.ts`). Implementation uses the real method name.
+
+**`@JobHandler` signature.** The spec sketches `@JobHandler({ type: '@framework/bridge_delivery', ... })`. The actual decorator is `@JobHandler<TInput>(type: string, meta: JobHandlerMeta<TInput>)`. Implementation uses `@JobHandler<BridgeDeliveryInput>('@framework/bridge_delivery', { pool: 'events_change', retry: { attempts: 3, backoff: 'exponential', baseMs: 250 }, replayFrom: 'last_step' })`.
+
+**One `@JobHandler` registration, three pools at runtime.** The spec called for "three instances, one per reserved pool." That isn't possible with the existing decorator (`JOB_HANDLER_REGISTRY` is keyed by job type, must be unique). Resolution: ONE registration with `pool: 'events_change'`. Wrapper `job_run` rows get their pool set per-row by the drain (`pool: events_<direction>`); workers polling each of `events_inbound`, `events_change`, `events_outbound` independently claim wrappers from their own pool and dispatch to the same handler class. The metadata pool is just a default for orphan-claim semantics; the row pool is what matters for routing.
+
+**Reserved-pool validator exemption.** `assertNoReservedPoolHandlers` in `runtime/subsystems/jobs/job-worker.module.ts` previously rejected ANY `@JobHandler` targeting a reserved pool. Added a one-line exemption: `if (entry.type.startsWith('@framework/')) continue;`. The validator's job is keeping USER handlers out of reserved pools; the framework handler legitimately belongs there. ADR-022's reservation rule is preserved for user handlers.
+
+**`BridgeRegistry` / `BridgeTriggerEntry` types added to `bridge.protocol.ts`.** The codegen-emitted registry's TYPE definition has to live somewhere both BRIDGE-5 (consumes it) and BRIDGE-6 (emits the value) can import from. Putting it in the protocol file keeps "shape vs value" cleanly split: types live in `bridge.protocol.ts`, the value lands in `bridge/generated/registry.ts` (BRIDGE-6).
+
+**`IJobBridge.findDeliveryById(id)` added.** The wrapper input only carries `deliveryId`. The existing `findDelivery(eventId, triggerId)` is the canonical idempotency-key lookup but doesn't help here. Added a primary-key lookup to the protocol and the memory backend; BRIDGE-4 will implement the Drizzle version.
+
+**Plan doc updated.** `docs/specs/BRIDGE-PHASE-2-PLAN.md` rows 4 and 5 carry a "Resequence" note; new "Resequence" subsection explains why BRIDGE-5 ships before BRIDGE-4 implementation-order-wise.
 
 ## References
 

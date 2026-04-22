@@ -67,13 +67,23 @@ export interface IJobBridge {
 
   /**
    * Lookup a delivery by its idempotency key. Returns `null` when no row
-   * matches. Used by the framework handler (BRIDGE-5) to read the row that
-   * the drain wrote, and by the facade in tests / dashboards.
+   * matches. Used in tests / dashboards for the canonical (event, trigger)
+   * lookup — distinct from `findDeliveryById`, which is what the
+   * `BridgeDeliveryHandler` (BRIDGE-5) uses given that the wrapper input
+   * only carries the delivery id.
    */
   findDelivery(
     eventId: string,
     triggerId: string,
   ): Promise<BridgeDeliveryRecord | null>;
+
+  /**
+   * Lookup a delivery by primary key. Drizzle backend (BRIDGE-4):
+   * `SELECT … WHERE id = ? LIMIT 1`. Memory backend (BRIDGE-3): linear
+   * scan (small N). Returns `null` when no row matches — handler treats
+   * that as `delivery_row_missing` and the wrapper completes cleanly.
+   */
+  findDeliveryById(id: string): Promise<BridgeDeliveryRecord | null>;
 
   /**
    * Transition `pending` → `delivered`, populating `user_run_id` and
@@ -204,3 +214,53 @@ export interface IEventFlow {
     opts?: PublishAndStartOptions,
   ): Promise<PublishAndStartResult>;
 }
+
+// ============================================================================
+// bridgeRegistry — emitted by codegen (BRIDGE-6), consumed by drain (BRIDGE-4),
+// the framework handler (BRIDGE-5), and the EventFlow facade (BRIDGE-7).
+// ============================================================================
+
+/**
+ * One entry in the `bridgeRegistry`. Generated from a user job's
+ * `@JobHandler({ triggers: [...] })` decorator metadata in BRIDGE-6.
+ *
+ * The `T extends EventTypeName` parameter is what gives `map`/`when`
+ * callbacks compile-time access to the typed payload via `EventOfType<T>`.
+ * Codegen emits one entry per (job, trigger-index) pair, so `triggerId` is
+ * stable across re-runs.
+ *
+ * `triggerId` shape: `<jobType>#<triggerIndex>`. Forms the second half of
+ * the `bridge_delivery (event_id, trigger_id)` UNIQUE idempotency key.
+ *
+ * `map` is required and returns the input payload to pass to
+ * `IJobOrchestrator.start(jobType, input, ...)` — typed as `unknown` here
+ * because the registry is event-keyed, not job-keyed (one event can fan
+ * out to N jobs with N input shapes).
+ *
+ * `when` is optional. When provided and the predicate returns `false` at
+ * handler time, `BridgeDeliveryHandler` records the delivery as
+ * `skipped` with `skip_reason='predicate_false'` rather than spawning the
+ * user job (ADR-023 §Decision 6).
+ */
+export interface BridgeTriggerEntry<
+  T extends EventTypeName = EventTypeName,
+> {
+  triggerId: string;
+  jobType: string;
+  map: (event: EventOfType<T>) => unknown;
+  when?: (event: EventOfType<T>) => boolean;
+}
+
+/**
+ * Codegen-emitted registry — `Record<EventTypeName, BridgeTriggerEntry[]>`.
+ * Per-event-type ordered array of triggers (declaration order across
+ * handler files, deterministic across codegens so `triggerId` indices stay
+ * stable).
+ *
+ * The mapped-type form (`{ [T in EventTypeName]?: BridgeTriggerEntry<T>[] }`)
+ * gives each entry's `map`/`when` callbacks the right `EventOfType<T>`
+ * narrowing under indexed access.
+ */
+export type BridgeRegistry = {
+  [T in EventTypeName]?: BridgeTriggerEntry<T>[];
+};

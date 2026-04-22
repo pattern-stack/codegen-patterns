@@ -64,4 +64,23 @@ export interface IEventBus {
     eventType: string,
     handler: (event: T) => Promise<void>,
   ): () => void;
+
+  /**
+   * Lookup a single event by its id. Returns `null` when no event matches.
+   *
+   * Added in BRIDGE-5 (ADR-023 Phase 2). The bridge `BridgeDeliveryHandler`
+   * uses this to re-fetch the authoritative `domain_events` row at claim
+   * time so `triggers[].when` and `triggers[].map` callbacks see the
+   * committed payload, not a copy that may have drifted between drain and
+   * handler execution. Other consumers may use it for replay tooling and
+   * audit dashboards.
+   *
+   * Backends:
+   *   - `MemoryEventBus` — searches its in-memory `publishedEvents` log.
+   *   - `DrizzleEventBus` — `SELECT … FROM domain_events WHERE id = ? LIMIT 1`.
+   *   - `RedisEventBus` — Redis Pub/Sub does not retain history; returns
+   *     `null` (and logs a one-time warning at first call). Bridge usage
+   *     of Redis backend is unsupported.
+   */
+  findById(eventId: string): Promise<DomainEvent | null>;
 }

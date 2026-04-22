@@ -170,6 +170,26 @@ export class RedisEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
    * On first handler for a type, subscribes to the per-type Redis channel.
    * On removal of the last handler for a type, unsubscribes from the channel.
    */
+  /**
+   * Lookup by id is unsupported on the Redis Pub/Sub backend — Pub/Sub
+   * does not retain history. Always returns `null`. Logs a warning the
+   * first time it's called so a misconfiguration surfaces visibly. Using
+   * the bridge with the Redis backend is unsupported (the bridge requires
+   * a durable event store).
+   */
+  private warnedFindById = false;
+  async findById(_eventId: string): Promise<DomainEvent | null> {
+    if (!this.warnedFindById) {
+      this.warnedFindById = true;
+      this.logger.warn(
+        'RedisEventBus.findById is unsupported (Pub/Sub has no history). ' +
+          'The bridge subsystem requires a durable event store; switch to ' +
+          'DrizzleEventBus if you need bridge fanout.',
+      );
+    }
+    return null;
+  }
+
   subscribe<T extends DomainEvent = DomainEvent>(
     eventType: string,
     handler: (event: T) => Promise<void>,
