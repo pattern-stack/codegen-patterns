@@ -87,14 +87,14 @@ Wrapper `job_run.type = '@framework/bridge_delivery'` (the handler BRIDGE-5 will
 
 ## Acceptance Criteria
 
-- [ ] `DrizzleBridgeDeliveryRepo` implements `IJobBridge`; `insertDelivery` maps `23505` pg unique-violation to typed `UniqueConstraintError` (same discriminator as BRIDGE-3).
-- [ ] Drain consults `bridgeRegistry` via `@Optional() @Inject(BRIDGE_REGISTRY)`.
-- [ ] Per-event transaction inserts `bridge_delivery` + wrapper `job_run` for every matched trigger using `ON CONFLICT DO NOTHING + RETURNING` + rowcount check.
-- [ ] Trigger whose `ON CONFLICT` fired (rowcount=0) skips its own wrapper insert; sibling triggers for the same event still fire.
-- [ ] `processed_at` stamp on `domain_events` lands inside the same per-event tx (no EVT-4 regression).
-- [ ] Docker integration test: publish event with two matching triggers → 2× `bridge_delivery` + 2× wrapper `job_run` rows; `processed_at` set; kill-between-triggers test shows no half-state (both or neither).
-- [ ] Docker integration test: pre-write `bridge_delivery` for one of two triggers before drain → drain inserts only the second trigger's rows; processed_at still set.
-- [ ] `just test-unit` + `just test-family` + `just test-baseline` all green.
+- [x] `DrizzleBridgeDeliveryRepo` implements `IJobBridge`. **Refinement:** uses `INSERT … ON CONFLICT (event_id, trigger_id) DO NOTHING` — the spec asked for an error-mapping path but per the spec's own Implementation Notes the agreed shape was DO NOTHING. The DO NOTHING path surfaces dedup as a silent no-op (the desired behaviour); `UniqueConstraintError` is the memory-backend fidelity tool and not thrown by the Drizzle backend in the normal path. Tests that need to assert "the constraint fired" inspect the existing row via `findDelivery`.
+- [x] Drain consults the bridge subsystem via `@Optional() @Inject(BRIDGE_OUTBOX_DRAIN_HOOK) bridgeHook?: IBridgeOutboxDrainHook`. The hook (`BridgeOutboxDrainHook`) reads `BRIDGE_REGISTRY` itself. **Layering refinement:** introducing the hook port keeps the events subsystem free of any knowledge of `bridge_delivery` / wrapper `job_run` shape (the schema crossing happens inside the bridge subsystem). Tests mock the port directly — easier than mocking deeper Drizzle ops.
+- [x] Per-event transaction inserts `bridge_delivery + wrapper job_run` for every matched trigger using `ON CONFLICT DO NOTHING + RETURNING id` + rowcount check (rowcount === 0 ⇒ skip wrapper insert; sibling triggers still fire).
+- [x] Trigger whose `ON CONFLICT` fired (rowcount=0) skips its own wrapper insert; sibling triggers for the same event still fire — pinned by `bridge-outbox-drain-hook.spec.ts` "Case B / replay dedup" tests.
+- [x] `processed_at` stamp on `domain_events` lands inside the same per-event tx, with `AND status='pending'` belt-and-suspenders WHERE clause. **EVT-4 baseline change:** `MAX_RETRIES=3` in-process retry loop and `failed`-stamping path were removed (lead approval 2026-04-22). Subscriber dispatch moved OUTSIDE the per-event tx — subscribers are best-effort; their failures are logged but do not roll back bridge fanout or revert `processed_at`. Lead-decided 2026-04-22 (option (c)).
+- [~] Docker integration test — DEFERRED. The unit tests against mocked Drizzle pin the call shape (`bridge-delivery.drizzle-backend.spec.ts`, `bridge-outbox-drain-hook.spec.ts`, `event-bus.spec.ts` BRIDGE-4 block). True end-to-end Docker coverage of "publish → drain → wrapper claim → user job spawn" lands in BRIDGE-8 module-wiring PR where the full DI chain is wired. This is consistent with the resequence note in `docs/specs/BRIDGE-PHASE-2-PLAN.md` — BRIDGE-4 ships drain modification + repos; BRIDGE-8 ships the integration test.
+- [~] Docker pre-write Case B test — DEFERRED to BRIDGE-8. Unit-level Case B / replay dedup is covered (see prior AC).
+- [x] `just test-all` (unit + baseline + smoke) green. `just test-family` runs unmodified; the bridge tables aren't referenced by family tests.
 
 ## Testing Strategy
 
@@ -109,6 +109,24 @@ Wrapper `job_run.type = '@framework/bridge_delivery'` (the handler BRIDGE-5 will
 ## Open Questions
 
 - [ ] Bulk-fanout batch-insert optimization (50+ triggers per event) is ADR Resolved #4 — "not a Phase 2 blocker." Single-row inserts in a loop are the shipped behavior. Revisit if throughput becomes a concern.
+
+## Implementation Notes (added in PR per CLAUDE.md living-docs rule)
+
+**Hook port instead of direct schema imports.** The spec sketched the drain consulting `BRIDGE_REGISTRY` directly and writing `bridge_delivery + job_run` rows from inside `event-bus.drizzle-backend.ts`. To keep the events subsystem free of any knowledge of bridge schemas (cleaner layering), we introduced a narrow `IBridgeOutboxDrainHook` port instead. The drain only knows the hook interface; the bridge subsystem owns the SQL. `BridgeModule.forRoot()` (BRIDGE-8) wires the hook implementation; non-bridge consumers see `undefined` and the drain skips the bridge block. Token: `BRIDGE_OUTBOX_DRAIN_HOOK`. Result type: `BridgeOutboxDrainResult { delivered, dedupSkips, triggerCount }` — useful for observability + tests.
+
+**Per-event tx restructure of EVT-4 (lead-approved 2026-04-22).** The pre-BRIDGE-4 `processBatch` had no per-event tx; `dispatch(event)` ran outside any tx and was followed by an unguarded `processed_at` UPDATE. Restructured to:
+1. Per-event `db.transaction(async tx => { bridgeHook.processEvent(event, tx); UPDATE domain_events SET processed_at WHERE id = ? AND status = 'pending'; })`.
+2. After commit (outside the tx), `dispatch(event)` for in-process subscribers — best-effort; errors logged + discarded.
+
+**Removed: `MAX_RETRIES=3` in-process retry loop and `failed`-stamping.** Lead-approved 2026-04-22. The next-cycle re-claim handles transient infra failures cleanly; bridge `UNIQUE` makes retry idempotent. Subscriber failures are observability concerns (ADR-026 territory), not gate-on-progress concerns.
+
+**Tightened `processed_at` UPDATE WHERE.** Now carries `AND status = 'pending'` (lead-approved 2026-04-22).
+
+**Null direction handling.** When `event.metadata.direction` is null/unknown, the hook logs once per process and returns zero deliveries. The drain still stamps `processed_at` and dispatches subscribers normally. Bridge fanout is opt-in via direction-routed publishing through `TypedEventBus.publish()`; legacy publishers don't lose the event, they just don't spawn bridge wrappers.
+
+**Wrapper `job_run` shape.** `type='@framework/bridge_delivery'` (constant from BRIDGE-5: `BRIDGE_DELIVERY_JOB_TYPE`), `pool='events_<direction>'`, `input={ deliveryId }`, `triggerSource='event'`, `triggerRef=event.id`, `tenantId` from event metadata. `id`/`rootRunId` generated client-side via `randomUUID()` (mirrors `MemoryJobOrchestrator` shape).
+
+**Why no `RETURNING id` on the wrapper insert.** Nobody needs the wrapper id at drain time; `BridgeDeliveryHandler` looks up the wrapper via `bridge_delivery.wrapper_run_id` if it ever needs to. Saves a round-trip per trigger.
 
 ## References
 

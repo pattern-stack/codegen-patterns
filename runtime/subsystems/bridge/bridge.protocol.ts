@@ -25,7 +25,7 @@
  */
 import type { InferInsertModel } from 'drizzle-orm';
 
-import type { DrizzleTransaction } from '../events/event-bus.protocol';
+import type { DrizzleTransaction, DomainEvent } from '../events/event-bus.protocol';
 import type {
   EventOfType,
   EventTypeName,
@@ -264,3 +264,88 @@ export interface BridgeTriggerEntry<
 export type BridgeRegistry = {
   [T in EventTypeName]?: BridgeTriggerEntry<T>[];
 };
+
+
+// ============================================================================
+// IBridgeOutboxDrainHook — port the events outbox drain calls per event
+// ============================================================================
+
+/**
+ * Result of one drain-hook invocation, returned for observability + tests.
+ *
+ * `delivered`: number of `bridge_delivery + wrapper job_run` row pairs the
+ * hook actually inserted for this event (post-`ON CONFLICT DO NOTHING`).
+ *
+ * `dedupSkips`: number of triggers whose `bridge_delivery` insert tripped
+ * `UNIQUE (event_id, trigger_id)` and was skipped (Case B from ADR-023's
+ * facade-eager pre-write, or replay of a previous drain attempt). These
+ * are not failures — they're the dedup mechanism doing its job.
+ *
+ * `triggerCount`: total triggers matched in the registry for this event;
+ * `triggerCount === delivered + dedupSkips`.
+ */
+export interface BridgeOutboxDrainResult {
+  delivered: number;
+  dedupSkips: number;
+  triggerCount: number;
+}
+
+/**
+ * Port the events outbox drain (EVT-4 / `DrizzleEventBus.processBatch`)
+ * calls once per drained event, INSIDE the per-event transaction
+ * (BRIDGE-4). Implemented by `BridgeOutboxDrainHook` in the bridge
+ * subsystem; injected as `@Optional()` into `DrizzleEventBus` so projects
+ * that haven't installed the bridge subsystem keep the EVT-4 baseline.
+ *
+ * Why a port and not direct schema imports inside the events subsystem:
+ *   - Keeps the events subsystem free of any knowledge of bridge_delivery
+ *     and wrapper job_run shape; the layering inversion that ADR-023
+ *     names ("the drain must know about bridge") is captured in this one
+ *     port, not strewn across every bridge column the drain touches.
+ *   - Tests can mock the port and assert call-shape without spinning up
+ *     the full bridge module.
+ *   - `BridgeModule.forRoot()` (BRIDGE-8) wires the implementation; in
+ *     non-bridge consumers the token is undefined and the drain skips
+ *     the bridge block entirely. ADR-023 §Outbox drain atomicity is
+ *     preserved either way (the per-event tx still wraps `processed_at`).
+ */
+export interface IBridgeOutboxDrainHook {
+  /**
+   * Process one drained event's bridge fanout. Called inside the drain's
+   * per-event transaction; the hook writes `bridge_delivery + wrapper
+   * job_run` row pairs for every matched trigger via the supplied `tx`.
+   *
+   * Behaviour:
+   *   1. Looks up `bridgeRegistry[event.type]`. No matches → returns
+   *      `{ delivered: 0, dedupSkips: 0, triggerCount: 0 }`; the drain
+   *      proceeds to dispatch user subscribers + stamp `processed_at`.
+   *   2. For each matched trigger:
+   *      - `INSERT INTO bridge_delivery (event_id, trigger_id, status,
+   *        wrapper_run_id, tenant_id, ...) VALUES (...) ON CONFLICT
+   *        (event_id, trigger_id) DO NOTHING RETURNING id`. Empty
+   *        result ⇒ Case B / replay collision; skip wrapper insert for
+   *        this trigger; sibling triggers still fire normally.
+   *      - On insert success: `INSERT INTO job_run (type=
+   *        '@framework/bridge_delivery', pool='events_<direction>',
+   *        input={ deliveryId }, trigger_source='event', trigger_ref=
+   *        event.id, tenant_id)`. The wrapper row is what the framework
+   *        `BridgeDeliveryHandler` (BRIDGE-5) will eventually claim.
+   *   3. Returns the counts for observability.
+   *
+   * Throwing aborts the per-event tx — bridge inserts roll back, the
+   * `processed_at` stamp is not made, and the event re-claims on the next
+   * drain cycle. Callers should let infra exceptions propagate; recoverable
+   * conditions (null direction, missing registry entry) are handled
+   * inline and do not throw.
+   *
+   * Null `event.metadata.direction` MUST be tolerated: the wrapper pool
+   * is derived from direction; absent direction means the publisher
+   * predates ADR-024 (manual `eventBus.publish(...)` rather than
+   * `TypedEventBus.publish(...)`). Hook should log + return zeros so the
+   * drain still stamps `processed_at` and dispatches subscribers.
+   */
+  processEvent(
+    event: DomainEvent,
+    tx: DrizzleTransaction,
+  ): Promise<BridgeOutboxDrainResult>;
+}
