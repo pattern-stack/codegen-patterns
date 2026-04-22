@@ -7,7 +7,7 @@ user-invocable: false
 
 # Bridge Domain Skill
 
-**Phase status:** Planned, not shipped. ADR-023 revised 2026-04-21; BRIDGE-1..9 specs cut from `docs/specs/BRIDGE-PHASE-2-PLAN.md`. Runtime code at `runtime/subsystems/bridge/` is pending implementation. This skill ships pre-implementation so that the executing session has a single load-on-touch entry point; update the "Current runtime snapshot" section as files land.
+**Phase status:** Shipped 2026-04-22 via BRIDGE-1..9 (PRs #168, #169, #170, #171, #172, #174, #175, #176, #177). ADR-023 status is `Shipped`. Retention sweep (BRIDGE-10 / #173) is a pending fast-follow, explicitly out of Phase 2 scope.
 
 The bridge is the **combiner subsystem** between events (ADR-024) and jobs (ADR-022). Neither events nor jobs imports from the bridge; the bridge imports from both. Its job is to turn "an event was published" into "a job was started" — durably, typed, idempotent, observable.
 
@@ -85,7 +85,6 @@ When `multiTenant=true`, three enforcement sites need `assertTenantId` on entry:
 - **Do not ship a sweeper or retry scheduler** for `bridge_delivery.failed`. Explicitly out of scope for Phase 2 — mirrors events outbox stance.
 - **Do not build event-owned triggers** (`events/<name>.yaml` listing downstream jobs) as the primary authoring surface. Rejected in Alternative D. A future YAML authoring style can be added additively as a second codegen source into the same `bridgeRegistry`.
 - **Do not ship dual-mode triggers** (`mode: 'bridge' | 'immediate'`) or direction-based auto-routing. Rejected as alternatives F and G — use case doesn't exist; direction is provenance, not latency profile.
-- **Do not claim Phase 2 is shipped** until BRIDGE-9 merges. Until then: "defined," "planned," "in-flight" — not "shipped."
 - **Do not use `Date.now()` or randomness for `trigger_id`.** It's codegen-emitted as `<jobType>#<triggerIndex>`, stable across generations so replays resolve to the same `bridge_delivery` row.
 - **Do not drop `tenantId`** when `multiTenant=true`. Event metadata carries it from `TypedEventBus`; the bridge threads it into `job_run.tenant_id` via `orchestrator.start()`. Missing → `MissingTenantIdError` at any of the three enforcement sites.
 
