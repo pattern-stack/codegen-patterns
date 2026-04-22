@@ -37,5 +37,11 @@ export {
   BRIDGE_REGISTRY,
 } from './bridge.tokens';
 
-// Errors (BRIDGE-2)
-export { MissingTenantIdError } from './bridge-errors';
+// Errors (BRIDGE-2 + BRIDGE-3)
+export {
+  MissingTenantIdError,
+  UniqueConstraintError,
+} from './bridge-errors';
+
+// Memory backend (BRIDGE-3)
+export { MemoryBridgeDeliveryRepo } from './bridge-delivery.memory-backend';

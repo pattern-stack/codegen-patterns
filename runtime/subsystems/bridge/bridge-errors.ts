@@ -45,3 +45,38 @@ export class MissingTenantIdError extends Error {
     );
   }
 }
+
+/**
+ * Synthetic error thrown by `MemoryBridgeDeliveryRepo.insertDelivery` when
+ * a duplicate `(event_id, trigger_id)` insert hits the simulated UNIQUE
+ * constraint (BRIDGE-3).
+ *
+ * Carries a `constraint` field equal to the Drizzle constraint name
+ * declared in BRIDGE-1's schema (`uq_bridge_delivery_event_trigger`) so
+ * call sites can branch on the same discriminator regardless of which
+ * backend is wired up. This matters because ADR-023 explicitly leans on
+ * the constraint as the dedup mechanism in two places — outbox replay
+ * and `publishAndStart` Case B — and BRIDGE-4 / BRIDGE-7 will share a
+ * type-check path with BRIDGE-3-driven tests.
+ *
+ * The Drizzle backend (BRIDGE-4) does NOT throw this error: it uses
+ * `INSERT … ON CONFLICT (event_id, trigger_id) DO NOTHING RETURNING id`
+ * per the BRIDGE-4 spec recommendation, so collisions surface as an empty
+ * result set rather than an exception. The error exists so the memory
+ * backend can faithfully model the "duplicate raises" behaviour for tests
+ * that want to assert the constraint actually fires.
+ */
+export class UniqueConstraintError extends Error {
+  override readonly name = 'UniqueConstraintError';
+  constructor(
+    public readonly constraint: string,
+    public readonly eventId: string,
+    public readonly triggerId: string,
+  ) {
+    super(
+      `UniqueConstraintError: duplicate insert into bridge_delivery for ` +
+        `(event_id='${eventId}', trigger_id='${triggerId}') — violates ` +
+        `constraint '${constraint}'.`,
+    );
+  }
+}
