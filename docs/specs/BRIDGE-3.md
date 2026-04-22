@@ -57,12 +57,12 @@ MemoryBridgeDeliveryRepo implements IJobBridge
 
 ## Acceptance Criteria
 
-- [ ] `MemoryBridgeDeliveryRepo` implements `IJobBridge`.
-- [ ] Duplicate `(event_id, trigger_id)` insert throws `UniqueConstraintError` with a discriminator constant equal to the Drizzle constraint name.
-- [ ] `findDelivery` returns `null` on miss.
-- [ ] `markDelivered` / `markSkipped` / `markFailed` update in place; unknown id throws.
-- [ ] `getDeliveriesForEvent`, `getByStatus`, `clear` helpers present.
-- [ ] Unit tests pass in `just test-unit` — no Docker.
+- [x] `MemoryBridgeDeliveryRepo` implements `IJobBridge`.
+- [x] Duplicate `(event_id, trigger_id)` insert throws `UniqueConstraintError` with `constraint='uq_bridge_delivery_event_trigger'` (matches BRIDGE-1's named UNIQUE constraint).
+- [x] `findDelivery` returns `null` on miss.
+- [x] `markDelivered` / `markSkipped` / `markFailed` update in place; unknown id throws.
+- [x] `getDeliveriesForEvent`, `getByStatus`, `clear` helpers present.
+- [x] Unit tests pass in `just test-unit` — no Docker.
 
 ## Testing Strategy
 
@@ -75,6 +75,12 @@ None.
 ## Open Questions
 
 None.
+
+## Implementation Notes (added post-merge per CLAUDE.md living-docs rule)
+
+**Constraint discriminator name.** The spec said the discriminator should equal Drizzle's auto-generated constraint name `bridge_delivery_event_id_trigger_id_unique`, but BRIDGE-1 declared the constraint with an explicit name (`uq_bridge_delivery_event_trigger`) via Drizzle's `unique('uq_bridge_delivery_event_trigger')` shorthand. The memory backend's `UniqueConstraintError.constraint` value uses the explicit name so it matches what the Drizzle backend (BRIDGE-4) will see in `pg`'s constraint-violation error metadata. Recorded so BRIDGE-4's ON CONFLICT path and BRIDGE-7's facade tests both branch on the same string.
+
+**Facade Case B simulation test.** Added an extra describe block (`facade Case B simulation`) that pre-writes a `(status='delivered', wrapper_run_id=null)` row and then attempts a drain-style insert with the same `(event_id, trigger_id)`. Asserts the constraint trips AND the existing facade row is not overwritten. Pins the dedup contract that BRIDGE-7 implements and BRIDGE-4 catches.
 
 ## References
 
