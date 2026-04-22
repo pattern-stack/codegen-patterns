@@ -14,7 +14,8 @@ force: true
 <% } -%>
  */
 
-import { Module } from '@nestjs/common';
+import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { <%= repositoryToken %> } from '<%= imports.moduleToConstants %>';
 import { <%= getByIdQueryClass %> } from '<%= imports.moduleToGetByIdQuery %>';
 <% if (!exposeElectric) { -%>
@@ -33,6 +34,9 @@ import { declarativeQueryClasses } from '<%= imports.moduleToDeclarativeQueries 
 <% } -%>
 <% if (exposeRest || exposeElectric) { -%>
 import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController %>';
+<% } -%>
+<% if (generate.dtos) { -%>
+import { create<%= className %>Schema, update<%= className %>Schema } from '<%= imports.moduleToDto %>';
 <% } -%>
 
 @Module({
@@ -70,4 +74,18 @@ import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController
 <% } -%>
 	],
 })
-export class <%= classNamePlural %>Module {}
+export class <%= classNamePlural %>Module<% if (generate.dtos) { %> implements OnModuleInit<% } %> {
+<% if (generate.dtos) { -%>
+	// OPENAPI-2: register this entity's Zod schemas with the shared
+	// OpenApiRegistry at module init. OPENAPI-4 awaits `build()` at boot
+	// to emit the full /docs-json document.
+	constructor(
+		@Inject(OPENAPI_REGISTRY) private readonly openApi: OpenApiRegistry,
+	) {}
+
+	onModuleInit(): void {
+		this.openApi.registerSchema('Create<%= className %>Dto', create<%= className %>Schema);
+		this.openApi.registerSchema('Update<%= className %>Dto', update<%= className %>Schema);
+	}
+<% } -%>
+}

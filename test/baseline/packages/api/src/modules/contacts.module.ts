@@ -7,7 +7,8 @@
  * root AppModule (global) so these tokens resolve at runtime.
  */
 
-import { Module } from '@nestjs/common';
+import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { CONTACT_REPOSITORY } from '../constants/tokens';
 import { GetContactByIdQuery } from '../application/queries/contact/get-by-id.query';
 import { ListContactsQuery } from '../application/queries/contact/list.query';
@@ -18,6 +19,7 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
 import { ContactRepository } from '../infrastructure/persistence/repositories/contact.repository';
 import { declarativeQueryClasses } from '../application/queries/contact/declarative-queries';
 import { ContactsController } from '../presentation/rest/contacts.controller';
+import { createContactSchema, updateContactSchema } from '../application/schemas/contact.dto';
 
 @Module({
 	imports: [DatabaseModule],
@@ -44,4 +46,16 @@ import { ContactsController } from '../presentation/rest/contacts.controller';
 		...declarativeQueryClasses,
 	],
 })
-export class ContactsModule {}
+export class ContactsModule implements OnModuleInit {
+	// OPENAPI-2: register this entity's Zod schemas with the shared
+	// OpenApiRegistry at module init. OPENAPI-4 awaits `build()` at boot
+	// to emit the full /docs-json document.
+	constructor(
+		@Inject(OPENAPI_REGISTRY) private readonly openApi: OpenApiRegistry,
+	) {}
+
+	onModuleInit(): void {
+		this.openApi.registerSchema('CreateContactDto', createContactSchema);
+		this.openApi.registerSchema('UpdateContactDto', updateContactSchema);
+	}
+}

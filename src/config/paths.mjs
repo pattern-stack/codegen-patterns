@@ -479,6 +479,11 @@ export function getImportPaths({ isNested }) {
     moduleToDatabaseModule: () => relativeImport(moduleDir, databaseModulePath),
     moduleToController: (controllerFile) =>
       relativeImport(moduleDir, joinPath(BACKEND_LAYERS.controllers, controllerFile)),
+    // From module to the entity's DTO file (application/schemas/<entity>.dto).
+    // Consumed by OPENAPI-2 — generated modules register each DTO's Zod
+    // schema with the shared OpenApiRegistry at onModuleInit.
+    moduleToDto: (dtoFile) =>
+      relativeImport(moduleDir, joinPath(BACKEND_LAYERS.schemas, dtoFile)),
 
     // From repository to constants (relative path)
     repositoryToConstants: () => relativeImport(repositoriesDir, constantsTokenPath),

@@ -575,6 +575,8 @@ export default {
       moduleToConstants: importHelpers.moduleToConstants(),
       moduleToDatabaseModule: importHelpers.moduleToDatabaseModule(),
       moduleToController: importHelpers.moduleToController(fileNames.controller.replace('.ts', '')),
+      // OPENAPI-2: module imports DTO file to register Zod schemas at onModuleInit.
+      moduleToDto: importHelpers.moduleToDto(fileNames.dto.replace('.ts', '')),
       // From controller (presentation/rest/) to queries/commands
       controllerToGetByIdQuery: importHelpers.controllerToQuery(name, fileNames.getByIdQuery.replace('.ts', '')),
       controllerToListQuery: importHelpers.controllerToQuery(name, fileNames.listQuery.replace('.ts', '')),
