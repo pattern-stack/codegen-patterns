@@ -69,8 +69,13 @@ export interface InitOptions {
  * Absolute path to the codegen runtime source tree (bundled with the CLI).
  */
 function runtimeRoot(): string {
-	// src/cli/shared/init-scaffold.ts → ../../../runtime
-	return path.resolve(import.meta.dirname, '..', '..', '..', 'runtime');
+	// Dev: src/cli/shared/ → ../../../runtime. Published npm tarball ships
+	// runtime at dist/runtime/; dist/src/cli/index.js → ../../../runtime
+	// doesn't exist, so fall back to dist/runtime/.
+	const pkgRoot = path.resolve(import.meta.dirname, '..', '..', '..');
+	const topLevel = path.join(pkgRoot, 'runtime');
+	if (fs.existsSync(topLevel)) return topLevel;
+	return path.join(pkgRoot, 'dist', 'runtime');
 }
 
 /**

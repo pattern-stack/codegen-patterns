@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "license": "MIT",
   "type": "module",
@@ -42,6 +42,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepublishOnly": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "cdp": "bun src/cli/index.ts",
     "test": "bun test/run-test.ts full",

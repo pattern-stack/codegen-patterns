@@ -62,8 +62,14 @@ import type { NounModule } from '../noun-module.js';
 // ---------------------------------------------------------------------------
 
 function runtimeRoot(): string {
-	// src/cli/commands/subsystem.ts → ../../../runtime
-	return path.resolve(import.meta.dirname, '..', '..', '..', 'runtime');
+	// Dev (source): src/cli/commands/subsystem.ts → ../../../runtime
+	// Published (bundled): dist/src/cli/index.js → ../../../runtime doesn't exist,
+	// but dist/runtime does. Prefer the top-level runtime/ when present (dev),
+	// fall back to dist/runtime/ (published npm tarball layout).
+	const pkgRoot = path.resolve(import.meta.dirname, '..', '..', '..');
+	const topLevel = path.join(pkgRoot, 'runtime');
+	if (fs.existsSync(topLevel)) return topLevel;
+	return path.join(pkgRoot, 'dist', 'runtime');
 }
 
 function subsystemSource(name: SubsystemName): string {
