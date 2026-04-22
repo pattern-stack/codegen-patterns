@@ -68,3 +68,15 @@ private async loadPeer() {
 ## Gate
 
 **CHECKPOINT** after merge. Coordinator reports: registry shape, peer-dep wiring sanity check, lazy-import behavior confirmed.
+
+## Implementation notes (post-merge)
+
+Decisions locked during implementation that deviate from the pre-implementation sketch:
+
+- **`OPENAPI_REGISTRY` is a string constant**, not a `Symbol`. Matches the convention used by `runtime/subsystems/analytics/analytics.tokens.ts` and `runtime/subsystems/bridge/bridge.tokens.ts` (value-equal across import boundaries; bridge docs the reason inline).
+- **`build()` is async** (`Promise<OpenAPIObject>`). The `@anatine/zod-openapi` peer is lazy-imported on first use per the `analytics/cube-backend.ts` pattern; synchronous `build()` would require a pre-init step or a synchronous load, both worse than awaiting at boot. OPENAPI-4's Swagger bootstrap awaits once at startup.
+- **Duplicate `registerSchema(name, ...)` throws `DuplicateSchemaError`.** Silent overwrite was rejected as too surprising.
+- **Peer API shape:** `@anatine/zod-openapi@^2.2.8` exports `generateSchema(zodRef, useOutput?, version?)` returning a single `SchemaObject` — NOT an `OpenAPIGenerator` producing a full document. The registry assembles the top-level `OpenAPIObject` itself (`openapi: '3.0.3'`, `info`, `paths`, `components.schemas`) and calls `generateSchema(..., false, '3.0')` per registered schema.
+- **`OpenAPIObject` typed locally** — `openapi3-ts` was not added as a dep. The local interface covers what OPENAPI-2/3/4 need; if downstream wants richer typing, pulling `openapi3-ts` in as a dev dep is one line.
+- **`loadPeer` is `protected`** (not `private`) so tests can subclass to exercise the try/catch path directly. Minor access-level relaxation for testability.
+- Peer resolution **caches on success only** — a failed load throws each time, so installing the peer after the first attempt and retrying works without a process restart.
