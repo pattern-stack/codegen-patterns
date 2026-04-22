@@ -340,12 +340,16 @@ async function bootstrap(): Promise<void> {
     // decorator scanner produced. Controllers reference schemas by
     // \`$ref\` (OPENAPI-3), so this merge is what actually resolves the
     // refs consumers see in /docs-json.
+    // Registry schemas are typed Record<string, unknown> locally
+    // (avoids depending on openapi3-ts); the runtime shape matches Nest's
+    // SchemaObject — generateSchema(zodRef, false, '3.0') emits valid
+    // OpenAPI 3.0 schema objects. Cast to satisfy Nest's stricter typing.
     nestDocument.components = {
       ...nestDocument.components,
       schemas: {
         ...(nestDocument.components?.schemas ?? {}),
         ...registryDocument.components.schemas,
-      },
+      } as NonNullable<typeof nestDocument.components>['schemas'],
     };
 
     SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument);
