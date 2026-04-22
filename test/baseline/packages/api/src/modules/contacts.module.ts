@@ -19,7 +19,7 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
 import { ContactRepository } from '../infrastructure/persistence/repositories/contact.repository';
 import { declarativeQueryClasses } from '../application/queries/contact/declarative-queries';
 import { ContactsController } from '../presentation/rest/contacts.controller';
-import { createContactSchema, updateContactSchema } from '../application/schemas/contact.dto';
+import { createContactSchema, updateContactSchema, contactResponseSchema } from '../application/schemas/contact.dto';
 
 @Module({
 	imports: [DatabaseModule],
@@ -57,5 +57,6 @@ export class ContactsModule implements OnModuleInit {
 	onModuleInit(): void {
 		this.openApi.registerSchema('CreateContactDto', createContactSchema);
 		this.openApi.registerSchema('UpdateContactDto', updateContactSchema);
+		this.openApi.registerSchema('ContactResponseDto', contactResponseSchema);
 	}
 }

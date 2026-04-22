@@ -14,7 +14,7 @@ import { UpdateOpportunityCommand } from '../application/commands/opportunity/up
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { OpportunityRepository } from '../infrastructure/persistence/repositories/opportunity.repository';
 import { OpportunitiesController } from '../presentation/rest/opportunities.controller';
-import { createOpportunitySchema, updateOpportunitySchema } from '../application/schemas/opportunity.dto';
+import { createOpportunitySchema, updateOpportunitySchema, opportunityResponseSchema } from '../application/schemas/opportunity.dto';
 
 @Module({
 	imports: [DatabaseModule],
@@ -49,5 +49,6 @@ export class OpportunitiesModule implements OnModuleInit {
 	onModuleInit(): void {
 		this.openApi.registerSchema('CreateOpportunityDto', createOpportunitySchema);
 		this.openApi.registerSchema('UpdateOpportunityDto', updateOpportunitySchema);
+		this.openApi.registerSchema('OpportunityResponseDto', opportunityResponseSchema);
 	}
 }

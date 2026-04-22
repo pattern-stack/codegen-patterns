@@ -40,6 +40,7 @@ const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 const RUNTIME_DEPS = [
 	'@nestjs/common@10',
 	'@nestjs/core@10',
+	'@nestjs/swagger@7',
 	'drizzle-orm@0.45',
 	'reflect-metadata@0.2',
 	'pg@8',

@@ -43,3 +43,34 @@ export const update<%= className %>Schema = z.object({
 });
 
 export type Update<%= className %>Dto = z.infer<typeof update<%= className %>Schema>;
+
+// OPENAPI-3: response schema — mirrors the select shape of this entity so
+// controller `@ApiResponse({ schema: { $ref: '.../<%= className %>ResponseDto' } })`
+// decorators resolve to a fully-typed document on /docs-json.
+export const <%= camelName %>ResponseSchema = z.object({
+	id: z.string().uuid(),
+<% fields.forEach((field) => { -%>
+<% let zodChain = field.zodType; -%>
+<% if (field.type === 'string' && field.maxLength) { zodChain += `.max(${field.maxLength})`; } -%>
+<% if (field.type === 'string' && field.minLength) { zodChain += `.min(${field.minLength})`; } -%>
+<% if (['integer', 'decimal'].includes(field.type) && field.min !== undefined) { zodChain += `.min(${field.min})`; } -%>
+<% if (['integer', 'decimal'].includes(field.type) && field.max !== undefined) { zodChain += `.max(${field.max})`; } -%>
+<% if (field.choices) { zodChain = `z.enum([${field.choices.map(c => `'${c}'`).join(', ')}])`; } -%>
+<% if (field.nullable) { zodChain += '.nullable()'; } -%>
+	<%- field.camelName %>: <%- zodChain %>,
+<% }) -%>
+<% if (hasTimestamps) { -%>
+	createdAt: z.coerce.date(),
+	updatedAt: z.coerce.date(),
+<% } -%>
+<% if (hasSoftDelete) { -%>
+	deletedAt: z.coerce.date().nullable(),
+<% } -%>
+<% if (hasTemporalValidity) { -%>
+	validFrom: z.coerce.date().nullable(),
+	validTo: z.coerce.date().nullable(),
+	isActive: z.boolean(),
+<% } -%>
+});
+
+export type <%= className %>ResponseDto = z.infer<typeof <%= camelName %>ResponseSchema>;

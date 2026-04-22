@@ -14,7 +14,7 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
 import { ElectricModule } from '../infrastructure/electric/electric.module';
 import { OrganizationRepository } from '../infrastructure/persistence/repositories/organization.repository';
 import { OrganizationsController } from '../presentation/rest/organizations.controller';
-import { createOrganizationSchema, updateOrganizationSchema } from '../application/schemas/organization.dto';
+import { createOrganizationSchema, updateOrganizationSchema, organizationResponseSchema } from '../application/schemas/organization.dto';
 
 @Module({
 	imports: [DatabaseModule, ElectricModule],
@@ -47,5 +47,6 @@ export class OrganizationsModule implements OnModuleInit {
 	onModuleInit(): void {
 		this.openApi.registerSchema('CreateOrganizationDto', createOrganizationSchema);
 		this.openApi.registerSchema('UpdateOrganizationDto', updateOrganizationSchema);
+		this.openApi.registerSchema('OrganizationResponseDto', organizationResponseSchema);
 	}
 }

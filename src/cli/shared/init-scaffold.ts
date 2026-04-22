@@ -149,6 +149,14 @@ const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
 	{ runtime: 'shared/openapi/registry.ts', target: 'src/shared/openapi/registry.ts' },
 	{ runtime: 'shared/openapi/registry.tokens.ts', target: 'src/shared/openapi/registry.tokens.ts' },
 	{ runtime: 'shared/openapi/errors.ts', target: 'src/shared/openapi/errors.ts' },
+	// OPENAPI-3: shared error response schema referenced by every generated
+	// controller's 4xx `@ApiResponse` `$ref`. Auto-registered in the registry
+	// constructor so consumer projects expose `ErrorResponseDto` on
+	// `/docs-json` without per-entity duplication.
+	{
+		runtime: 'shared/openapi/error-response.dto.ts',
+		target: 'src/shared/openapi/error-response.dto.ts',
+	},
 	{ runtime: 'shared/openapi/index.ts', target: 'src/shared/openapi/index.ts' },
 ];
 

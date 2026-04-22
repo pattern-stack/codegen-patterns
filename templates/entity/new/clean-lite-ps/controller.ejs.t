@@ -4,6 +4,7 @@ skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body, Headers<% } %>, NotFoundException, Param, ParseUUIDPipe } from '@nestjs/common';
+import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
 <% if (eavEnabled) { -%>
@@ -22,6 +23,11 @@ import type { <%= classNames.updateDto %> } from './dto/update-<%= entityName %>
 <% } -%>
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
 
+// OPENAPI-3: decorators reference registered schemas by `$ref` because
+// CLP DTOs are Zod-derived types (OPENAPI-2 registers them by name at
+// onModuleInit). `ErrorResponseDto` is auto-registered by the shared
+// registry.
+@ApiBearerAuth()
 @Controller('<%= entityNamePlural %>')
 export class <%= classNames.controller %> {
   constructor(
@@ -39,22 +45,47 @@ export class <%= classNames.controller %> {
 <% } -%>
   ) {}
 
+  @ApiOperation({ summary: 'List <%= entityNamePlural %>', operationId: 'list<%= classNames.entity %>s' })
+  @ApiResponse({
+    status: 200,
+    schema: { type: 'array', items: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } },
+  })
+  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @Get()
   async getAll(): Promise<<%= classNames.entity %>[]> {
     return this.listUseCase.execute();
   }
 <% if (eavEnabled) { %>
+  @ApiOperation({
+    summary: 'List <%= entityNamePlural %> with EAV fields',
+    operationId: 'list<%= classNames.entity %>sWithFields',
+  })
+  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @Get('with-fields')
   async getAllWithFields(): Promise<Array<<%= classNames.entity %> & { fields: Record<string, unknown> }>> {
     return this.listWithFieldsUseCase.execute();
   }
 <% } %>
+  @ApiOperation({ summary: 'Find <%= entityName %> by id', operationId: 'find<%= classNames.entity %>ById' })
+  @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
+  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @Get(':id')
   async getById(@Param('id', ParseUUIDPipe) id: string): Promise<<%= classNames.entity %>> {
     // Use case throws NotFoundException on null/undefined (D2)
     return this.findByIdUseCase.execute(id);
   }
 <% if (eavEnabled) { %>
+  @ApiOperation({
+    summary: 'Find <%= entityName %> with EAV fields',
+    operationId: 'find<%= classNames.entity %>ByIdWithFields',
+  })
+  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @Get(':id/with-fields')
   async getByIdWithFields(
     @Param('id', ParseUUIDPipe) id: string,
@@ -65,6 +96,11 @@ export class <%= classNames.controller %> {
   }
 <% } %>
 <% if (generateWrites) { %>
+  @ApiOperation({ summary: 'Create <%= entityName %>', operationId: 'create<%= classNames.entity %>' })
+  @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.createDto %>' } })
+  @ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
+  @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @Post()
   async create(
     @Body(new ZodValidationPipe(<%= classNames.createSchema %>)) dto: <%= classNames.createDto %>,
@@ -74,6 +110,13 @@ export class <%= classNames.controller %> {
     return this.createUseCase.execute(dto, { actor: { tenantId, userId } });
   }
 
+  @ApiOperation({ summary: 'Update <%= entityName %>', operationId: 'update<%= classNames.entity %>' })
+  @ApiBody({ schema: { $ref: '#/components/schemas/<%= classNames.updateDto %>' } })
+  @ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } })
+  @ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -86,6 +129,11 @@ export class <%= classNames.controller %> {
     return entity;
   }
 
+  @ApiOperation({ summary: 'Delete <%= entityName %>', operationId: 'delete<%= classNames.entity %>' })
+  @ApiResponse({ status: 204 })
+  @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @Delete(':id')
   async remove(
     @Param('id', ParseUUIDPipe) id: string,

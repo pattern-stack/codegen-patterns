@@ -30,3 +30,23 @@ export const updateContactSchema = z.object({
 });
 
 export type UpdateContactDto = z.infer<typeof updateContactSchema>;
+
+// OPENAPI-3: response schema — mirrors the select shape of this entity so
+// controller `@ApiResponse({ schema: { $ref: '.../ContactResponseDto' } })`
+// decorators resolve to a fully-typed document on /docs-json.
+export const contactResponseSchema = z.object({
+	id: z.string().uuid(),
+	userId: z.string().uuid(),
+	accountId: z.string().uuid().nullable(),
+	firstName: z.string().max(100),
+	lastName: z.string().max(100),
+	email: z.string().max(255),
+	title: z.string().max(200).nullable(),
+	phone: z.string().max(50).nullable(),
+	linkedinUrl: z.string().max(500).nullable(),
+	createdAt: z.coerce.date(),
+	updatedAt: z.coerce.date(),
+	deletedAt: z.coerce.date().nullable(),
+});
+
+export type ContactResponseDto = z.infer<typeof contactResponseSchema>;
