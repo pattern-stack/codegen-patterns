@@ -1189,6 +1189,21 @@ Reference the registered name from a controller decorator:
   precedent — see ADR notes for OPENAPI-1). `main.ts` awaits once at
   bootstrap; nothing else should call `build()` in a hot path.
 
+- **Programmatic smoke tests must call `app.init()`.** `NestFactory.
+  create(AppModule)` resolves DI but does NOT fire lifecycle hooks —
+  `onModuleInit` is only invoked after `await app.init()` (or
+  `app.listen()`). Generated entity modules register their Zod schemas
+  in `onModuleInit`, so a programmatic `/docs-json` check must `await
+  app.init()` before `registry.build()` or the schemas map will be
+  empty. Only matters for tests; real `app.listen()` runs `init()`
+  internally.
+    ```ts
+    const app = await NestFactory.create(AppModule, { logger: false });
+    await app.init();                         // ← critical
+    const registry = app.get(OPENAPI_REGISTRY);
+    const doc = await registry.build({ title, version });
+    ```
+
 - **Schema names are unique across the process.** Registering the same
   name twice throws `DuplicateSchemaError`. If two entities both want a
   `PaginationCursor` schema, name them with their owner's prefix
