@@ -19,24 +19,27 @@ export {
 } from './bridge-delivery.schema';
 export type { BridgeDeliveryRecord } from './bridge-delivery.schema';
 
-// Protocols (BRIDGE-2 + BRIDGE-5 BridgeRegistry types)
+// Protocols (BRIDGE-2 + BRIDGE-5 registry + BRIDGE-4 drain hook)
 export type {
   IJobBridge,
   IEventFlow,
+  IBridgeOutboxDrainHook,
   BridgeDeliveryInsert,
+  BridgeOutboxDrainResult,
   BridgeRegistry,
   BridgeTriggerEntry,
   PublishAndStartOptions,
   PublishAndStartResult,
 } from './bridge.protocol';
 
-// DI tokens (BRIDGE-2)
+// DI tokens (BRIDGE-2 + BRIDGE-4 drain hook)
 export {
   BRIDGE_DELIVERY_REPO,
   EVENT_FLOW,
   BRIDGE_MULTI_TENANT,
   BRIDGE_MODULE_OPTIONS,
   BRIDGE_REGISTRY,
+  BRIDGE_OUTBOX_DRAIN_HOOK,
 } from './bridge.tokens';
 
 // Errors (BRIDGE-2 + BRIDGE-3)
@@ -55,3 +58,7 @@ export {
   BridgeDeliveryJobType,
   type BridgeDeliveryInput,
 } from './bridge-delivery-handler';
+
+// Drizzle backend + outbox-drain hook (BRIDGE-4)
+export { DrizzleBridgeDeliveryRepo } from './bridge-delivery.drizzle-backend';
+export { BridgeOutboxDrainHook } from './bridge-outbox-drain-hook';

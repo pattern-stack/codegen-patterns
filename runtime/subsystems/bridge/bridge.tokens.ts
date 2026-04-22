@@ -51,3 +51,18 @@ export const BRIDGE_MODULE_OPTIONS = 'BRIDGE_MODULE_OPTIONS' as const;
  * depending on the still-being-formalised module.
  */
 export const BRIDGE_REGISTRY = 'BRIDGE_REGISTRY' as const;
+
+
+/**
+ * Token for the `IBridgeOutboxDrainHook` implementation (BRIDGE-4).
+ * Injected `@Optional()` into `DrizzleEventBus` — when the bridge
+ * subsystem is not installed the token is undefined and the events
+ * outbox drain skips the bridge block entirely (preserves EVT-4
+ * baseline behaviour).
+ *
+ * Resolution order: `BridgeModule.forRoot()` provides this token in
+ * BRIDGE-8 alongside the rest of the bridge subsystem. `EventsModule`
+ * itself never provides it; the events subsystem stays unaware of the
+ * bridge unless the consumer wires it.
+ */
+export const BRIDGE_OUTBOX_DRAIN_HOOK = 'BRIDGE_OUTBOX_DRAIN_HOOK' as const;

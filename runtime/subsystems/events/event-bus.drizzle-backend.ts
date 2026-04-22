@@ -36,13 +36,13 @@ import { domainEvents } from './domain-events.schema';
 import { DRIZZLE } from '../../constants/tokens';
 import { EVENTS_MODULE_OPTIONS } from './events.tokens';
 import type { EventsModuleOptions } from './events.module';
+import { BRIDGE_OUTBOX_DRAIN_HOOK } from '../bridge/bridge.tokens';
+import type { IBridgeOutboxDrainHook } from '../bridge/bridge.protocol';
 
 /** How long to wait between polling cycles (ms). */
 const POLL_INTERVAL_MS = 1_000;
 /** Max events claimed per polling cycle to bound memory usage. */
 const POLL_BATCH_SIZE = 50;
-/** Max processing attempts before marking an event failed. */
-const MAX_RETRIES = 3;
 
 /**
  * Row shape built from `metadata` for writing into `domain_events`. Keeps
@@ -81,6 +81,20 @@ export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
     @Optional() @Inject(EVENTS_MODULE_OPTIONS) opts?: EventsModuleOptions,
+    /**
+     * Bridge subsystem hook (BRIDGE-4). Optional — when the bridge
+     * subsystem is not installed in the consuming app, this token is
+     * undefined and the drain skips the bridge block entirely (preserves
+     * EVT-4 baseline behaviour).
+     *
+     * When provided, `processEvent` is invoked once per drained event
+     * INSIDE the per-event tx, before `processed_at` is stamped. The
+     * hook owns all knowledge of `bridge_delivery + wrapper job_run`
+     * shapes; the events subsystem stays unaware of bridge schemas.
+     */
+    @Optional()
+    @Inject(BRIDGE_OUTBOX_DRAIN_HOOK)
+    private readonly bridgeHook: IBridgeOutboxDrainHook | null = null,
   ) {
     // Default so direct construction (e.g. integration tests not going
     // through Nest DI) keeps working without an explicit options object.
@@ -184,6 +198,33 @@ export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy
     }, POLL_INTERVAL_MS);
   }
 
+  /**
+   * Drain one batch (BRIDGE-4 restructure of EVT-4).
+   *
+   * Two-phase per drained event:
+   *
+   *   1. **Per-event transaction** — bridge fanout (`bridgeHook.processEvent`)
+   *      + `processed_at` stamp. Both write through the same `tx`. A throw
+   *      inside the tx (only infra-level failures should reach here, since
+   *      the hook tolerates null direction and registry misses inline)
+   *      rolls back the bridge inserts AND the `processed_at` stamp; the
+   *      event re-claims on the next drain cycle. Bridge `UNIQUE
+   *      (event_id, trigger_id)` makes the retry idempotent.
+   *
+   *   2. **After commit** — dispatch in-process subscribers (`IEventBus.subscribe`
+   *      handlers). This deliberately runs OUTSIDE the per-event tx (lead
+   *      decision 2026-04-22): subscribers are best-effort and must not
+   *      gate forward progress or roll back bridge fanout. Subscriber
+   *      errors are caught + logged; `processed_at` is already committed.
+   *      The old `MAX_RETRIES=3` in-process retry loop and the
+   *      `failed`-stamping path were removed in BRIDGE-4 along with their
+   *      coupling.
+   *
+   * The `processed_at` UPDATE carries `AND status='pending'` (BRIDGE-4
+   * tightening — without it, a hypothetical double-claim could double-stamp
+   * the timestamp). The per-event tx + `FOR UPDATE SKIP LOCKED` claim
+   * make this defensive belt-and-suspenders.
+   */
   private async processBatch(): Promise<void> {
     const pools = this.opts.pools;
 
@@ -194,7 +235,10 @@ export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy
 
     // Claim a batch with FOR UPDATE SKIP LOCKED so multiple pollers don't
     // double-dispatch. The lock is released when the outer transaction
-    // commits after we flip status to 'processed' (or 'failed').
+    // commits — which is fine because the immediately-following per-event
+    // tx flips status='processed' under its own `AND status='pending'`
+    // guard, so a re-claim of the same row in a subsequent batch is a
+    // no-op UPDATE.
     const rows = await this.db.transaction(async (tx) => {
       return tx
         .select()
@@ -216,30 +260,44 @@ export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy
         metadata: (row.metadata ?? undefined) as Record<string, unknown> | undefined,
       };
 
-      let attempt = 0;
-      let lastError: unknown;
-      while (attempt < MAX_RETRIES) {
-        try {
-          await this.dispatch(event);
-          // Mark processed
-          await this.db
+      // Phase 1 — per-event tx: bridge fanout + processed_at stamp.
+      try {
+        await this.db.transaction(async (tx) => {
+          if (this.bridgeHook) {
+            await this.bridgeHook.processEvent(event, tx);
+          }
+          await tx
             .update(domainEvents)
             .set({ status: 'processed', processedAt: new Date() })
-            .where(eq(domainEvents.id, event.id));
-          lastError = undefined;
-          break;
-        } catch (err) {
-          lastError = err;
-          attempt++;
-        }
+            .where(
+              and(
+                eq(domainEvents.id, event.id),
+                eq(domainEvents.status, 'pending'),
+              ),
+            );
+        });
+      } catch (err) {
+        // Infra-level failure inside the per-event tx — bridge inserts
+        // and processed_at both rolled back. Log and move on; the next
+        // drain cycle re-claims the row. UNIQUE on bridge_delivery makes
+        // the retry idempotent.
+        this.logger.error(
+          `Per-event tx failed for event id=${event.id} type=${event.type}: ${err}`,
+        );
+        continue;
       }
 
-      if (lastError !== undefined) {
-        const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
-        await this.db
-          .update(domainEvents)
-          .set({ status: 'failed', error: errorMessage })
-          .where(and(eq(domainEvents.id, event.id), eq(domainEvents.status, 'pending')));
+      // Phase 2 — best-effort subscriber dispatch. Errors are logged
+      // and discarded; processed_at is already committed. Subscribers
+      // are observability + cache-busts + small ancillary work; they
+      // must not gate forward progress.
+      try {
+        await this.dispatch(event);
+      } catch (err) {
+        this.logger.error(
+          `Subscriber dispatch failed for event id=${event.id} type=${event.type} ` +
+            `(processed_at already committed; failure does not retry): ${err}`,
+        );
       }
     }
   }
