@@ -1,5 +1,6 @@
 # OPENAPI-4 — Swagger bootstrap + consumer config
 
+**Status:** Shipped 2026-04-22 (PR #TBD). Epic closed.
 **Epic:** #TBD (OpenAPI Phase 1)
 **Depends on:** OPENAPI-1, OPENAPI-2, OPENAPI-3
 **Blocks:** epic closes
@@ -71,3 +72,106 @@ Wire `SwaggerModule.setup()` into the generated `main.ts`, mounting Swagger UI a
 - [ ] Close epic #TBD.
 - [ ] Close #61 (the original issue that motivated this epic).
 - [ ] Flag ADR-026 / observability-api as unblocked.
+
+## Implementation notes (post-merge)
+
+Decisions locked during implementation that deviate from the pre-implementation sketch:
+
+1. **No `templates/project/main.ts.ejs.t` file exists.** The spec assumed there
+   was a Hygen-authored `main.ts` template; in fact `codegen project init`
+   emits `main.ts` (and `app.module.ts`) inline from `src/cli/shared/init-
+   scaffold.ts`. The same inline-emit pattern is used for
+   `database.module.ts`, the GENERATED_MODULES barrel, and the schema
+   re-export. OPENAPI-4 extends this by adding a new `mainTsContent()`
+   function alongside the existing `appModuleContent()`. `init-scaffold`
+   emits `src/main.ts` only when it is missing — consumers who already own
+   `main.ts` (custom Helmet/CORS/logging) copy the Swagger block manually
+   from CONSUMER-SETUP §OpenAPI.
+
+2. **`OpenApiModule` is an inline `@Global()` module.** The spec assumed a
+   simple AppModule-level provider would suffice. NestJS's DI scoping means
+   providers declared at `AppModule.providers` only reach modules that
+   explicitly import AppModule — generated feature modules (`AccountsModule`,
+   `ContactsModule`, …) do not. Exporting from AppModule doesn't help either
+   — `exports` only flows downstream to *imported* modules. The fix: wrap
+   the registry provider in a `@Global()` module declared inline in
+   `app.module.ts`. `@Global()` broadcasts the token to every module in the
+   graph, which is exactly the semantics the OPENAPI-2 design assumed. This
+   was caught by the new `/docs-json` verification step in smoke — Nest
+   threw `UnknownDependenciesException` for `OPENAPI_REGISTRY` in
+   `AccountsModule` without the `@Global()` wrapper.
+
+3. **`main.ts` uses a two-pass document build.** The registry only knows
+   about schemas (populated by generated modules at onModuleInit). Paths
+   come from controller decorators, which only Nest's `SwaggerModule.
+   createDocument` can scan. `main.ts` therefore runs:
+   1. `await registry.build({...})` → registry document (schemas only).
+   2. `SwaggerModule.createDocument(app, docBuilder.build())` → Nest
+      document (paths + a subset of schemas from `type: ClassRef` decorator
+      hints).
+   Then merges (1)'s schemas on top of (2). Our Zod-derived schemas win
+   for any name collision — they are the source of truth. Earlier drafts
+   tried to use the registry's document directly as the `SwaggerModule.
+   setup` input; that produced an empty `paths` map because the registry
+   has no way to know about `@Get('/contacts')` decorators.
+
+4. **`BearerAuth` is applied via `DocumentBuilder.addBearerAuth()`.** The
+   spec showed manual `document.components.securitySchemes` mutation. Using
+   the DocumentBuilder API gives us identical output with less code and
+   uses the same pathway the NestJS examples recommend. Behavior is
+   unchanged: a `bearer` scheme (`type: http`, `scheme: bearer`,
+   `bearerFormat: JWT`) is registered globally and Swagger UI's "Authorize"
+   button picks it up.
+
+5. **`openapi-config` is a config-only pseudo-subsystem.** It has no
+   `runtime/subsystems/openapi/` directory — the runtime helpers were
+   already vendored by `codegen project init` (OPENAPI-2's
+   `VENDORED_RUNTIME_FILES` addition). The `SubsystemInstallCommand` was
+   extended with an `executeOpenApiConfig(ctx)` short-circuit that runs
+   only the `subsystem/openapi-config` Hygen action (config-block inject)
+   and skips `copyRuntime` entirely. Detection is parallel: since there's
+   no `*.protocol.ts` file, `detectInstalledSubsystems` instead looks for
+   the `openapi:` key at the top level of `codegen.config.yaml`. Listed
+   in `SUBSYSTEMS` with backend `'config-only'` so it appears in
+   `codegen subsystem list`.
+
+6. **Smoke test: programmatic, not HTTP.** The spec suggested "boot and
+   curl `/docs-json`"; the alternative suggestion of importing AppModule
+   programmatically turned out to be the right call. HTTP boot requires
+   Postgres (the DRIZZLE factory opens a connection pool), several seconds
+   of startup, and TCP port availability. The new `test/smoke/verify-
+   openapi.ts` imports the generated AppModule, calls
+   `NestFactory.create()` (no `app.listen()` — no socket opens; `pg.Pool`
+   doesn't connect until a query runs), builds the same two-pass document
+   `main.ts` does, and asserts against the in-memory result. Runs in
+   ~300ms on top of the existing smoke, vs ~3–5s for a full HTTP boot +
+   curl.
+
+7. **`@nestjs/platform-express` added to smoke deps.** `NestFactory.
+   create()` needs a platform adapter; Express is the default. Added to
+   `RUNTIME_DEPS` in `test/smoke/run-smoke.ts`. Not documented as a
+   consumer peer dep because it's a direct dep of every NestJS HTTP app
+   regardless of OpenAPI.
+
+8. **Docs sample in CONSUMER-SETUP diverges slightly from the init
+   output.** The CONSUMER-SETUP sample shows the OpenApiModule as an
+   inline `class` declaration, matching the emitted code. For the "paste
+   into your existing main.ts" snippet, the simplified
+   `document.components.securitySchemes` mutation form is shown (not the
+   DocumentBuilder two-pass form) because that snippet assumes the
+   consumer already has their own `NestFactory.create()` call and only
+   needs the Swagger wiring — the DocumentBuilder pass is optional when
+   they don't care about Nest-scanned paths. An experienced consumer can
+   swap to the DocumentBuilder form if they want the path auto-scan;
+   documented in the §Gotchas.
+
+9. **Accepted openapi version drift.** Registry emits `3.0.3`;
+   `SwaggerModule.createDocument` emits `3.0.0`. Since we use the Nest
+   document as the base (for paths), the final document is `3.0.0`. The
+   "four locked decisions" said 3.0.x; the specific patch level is
+   Nest's choice. Verify-openapi accepts any `3.0.*`.
+
+10. **Epic count in subsystem list tests bumped from 6 to 7.** Adding
+    `openapi-config` to the `SUBSYSTEMS` descriptor list (so it shows up
+    in `codegen subsystem list` + summary) flipped two unit tests;
+    updated the expected names array + the `toHaveLength(6)` assertion.

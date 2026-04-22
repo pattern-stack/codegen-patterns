@@ -16,7 +16,14 @@ import { parse as parseYaml, parseDocument } from 'yaml';
 
 export type ConfigBlockState = 'missing' | 'present' | 'parse-error';
 
-export type SubsystemName = 'jobs' | 'events' | 'cache' | 'storage' | 'sync' | 'bridge';
+export type SubsystemName =
+	| 'jobs'
+	| 'events'
+	| 'cache'
+	| 'storage'
+	| 'sync'
+	| 'bridge'
+	| 'openapi';
 
 /**
  * Detect whether a subsystem's top-level config block is present in a

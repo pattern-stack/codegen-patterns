@@ -126,3 +126,4 @@ src/cli/commands/events/consumers.ts      # `codegen events consumers <type>` fa
 - `docs/adrs/ADR-022-job-orchestration-domain-model.md` — reserved `events_*` pools originate here; `trigger_source='event'` + `trigger_ref=<event_id>` columns on `job_run` already anticipated this ADR.
 - `docs/adrs/ADR-024-events-domain-formalization.md` — the typed event registry this ADR builds on.
 - `docs/adrs/ADR-026-job-observability.md` (not yet written) — selective job lifecycle events; flows back through this bridge.
+- `.claude/skills/openapi/SKILL.md` — OpenAPI/Swagger surface (shipped 2026-04-22 via OPENAPI-1..4). ADR-026's `/ops/*` controllers will consume the registry + decorators this skill documents.

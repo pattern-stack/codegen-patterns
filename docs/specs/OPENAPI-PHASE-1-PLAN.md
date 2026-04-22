@@ -1,10 +1,17 @@
 # OpenAPI + Swagger Phase 1 — Orchestration Plan
 
-**Status:** Ready for orchestration.
+**Status:** Shipped 2026-04-22 via PRs #183 (OPENAPI-1), #185 (OPENAPI-2), #186 (OPENAPI-3), and #TBD (OPENAPI-4). Epic closed. #61 closed.
 **Captured:** 2026-04-22
 **Scope:** codegen-patterns library changes only. Wires `@anatine/zod-openapi` into generated NestJS apps so every controller ships a typed `/docs-json` + Swagger UI at `/docs`.
 **Unblocks:** ADR-026 / observability plane Phase 1 (`observability-api` needs this for `/ops/*` controllers).
 **Closes:** #61 (OpenAPI component schemas — bridge Zod DTOs into /docs-json).
+
+## Post-ship notes
+
+- `templates/project/main.ts.ejs.t` doesn't exist — `main.ts` + `app.module.ts` are emitted inline from `src/cli/shared/init-scaffold.ts`. OPENAPI-4 added `mainTsContent()` alongside `appModuleContent()`. See OPENAPI-4 Implementation Notes §1.
+- `OpenApiModule` is an inline `@Global()` wrapper around the registry provider in the emitted `app.module.ts`. Plain AppModule-level providers don't reach imported feature modules — NestJS DI scoping rule. See OPENAPI-4 Implementation Notes §2.
+- `main.ts` uses a two-pass document build: registry (schemas) + `SwaggerModule.createDocument` (paths) merged. See OPENAPI-4 Implementation Notes §3.
+- Smoke test verifies `/docs-json` via programmatic `NestFactory.create()` + in-memory document build, not HTTP boot. ~300ms overhead on existing smoke. See OPENAPI-4 Implementation Notes §6.
 
 ---
 

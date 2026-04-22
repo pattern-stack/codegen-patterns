@@ -88,9 +88,13 @@ function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: string }> {
 // ---------------------------------------------------------------------------
 
 describe('subsystem — descriptor', () => {
-	test('knows all six subsystems', () => {
+	test('knows all subsystems (six + openapi-config)', () => {
+		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem —
+		// no runtime dir, no Protocol→Backend pair. Listed here so
+		// `codegen subsystem list` / `codegen subsystem` summary surface
+		// it alongside the real subsystems.
 		expect(SUBSYSTEMS.map((s) => s.name).sort()).toEqual(
-			['bridge', 'cache', 'events', 'jobs', 'storage', 'sync'].sort()
+			['bridge', 'cache', 'events', 'jobs', 'openapi-config', 'storage', 'sync'].sort()
 		);
 	});
 });
@@ -115,7 +119,7 @@ describe('subsystem — summary + list', () => {
 		);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('subsystem list');
-		expect(parsed.subsystems).toHaveLength(6);
+		expect(parsed.subsystems).toHaveLength(7); // +openapi-config (OPENAPI-4)
 		for (const row of parsed.subsystems) {
 			expect(row.status).toBe('available');
 		}

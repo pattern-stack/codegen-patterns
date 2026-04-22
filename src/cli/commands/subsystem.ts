@@ -273,6 +273,14 @@ export class SubsystemInstallCommand extends Command {
 			return 2;
 		}
 
+		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem.
+		// It ships no runtime files (the registry is vendored at `project
+		// init`); installing it means injecting the `openapi:` block into
+		// codegen.config.yaml. Short-circuit the full runtime-copy flow.
+		if (desc.name === 'openapi-config') {
+			return this.executeOpenApiConfig(ctx);
+		}
+
 		const installed = await detectInstalledSubsystems(ctx);
 		const already = installed.find((i) => i.name === desc.name);
 		if (already && !this.force) {
@@ -531,6 +539,79 @@ export class SubsystemInstallCommand extends Command {
 		}
 		return 0;
 	}
+
+	/**
+	 * OPENAPI-4: install flow for the config-only `openapi-config`
+	 * pseudo-subsystem.
+	 *
+	 * Nothing to copy — `src/shared/openapi/*` was already vendored by
+	 * `codegen project init`. This method just invokes the
+	 * `subsystem/openapi-config` Hygen action to inject the `openapi:`
+	 * block into `codegen.config.yaml`, honoring the same `--force-config`
+	 * semantics as jobs/events/sync/bridge.
+	 */
+	private async executeOpenApiConfig(ctx: Context): Promise<number> {
+		const configPath = path.join(ctx.cwd, 'codegen.config.yaml');
+
+		const outcome = planConfigBlockAction(configPath, 'openapi', this.forceConfig);
+		if (outcome === 'parse-error') {
+			printError(
+				'codegen.config.yaml is not valid YAML: refusing to inject openapi config block. Fix the YAML and re-run.',
+			);
+			return 1;
+		}
+
+		if (this.dryRun) {
+			if (isJsonMode()) {
+				printJson({
+					command: 'subsystem install',
+					subsystem: 'openapi-config',
+					dryRun: true,
+					configBlockOutcome: outcome,
+					planned: [configPath],
+				});
+			} else {
+				printInfo(`Dry run — openapi config block would be ${outcome}`);
+				console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, configPath) || configPath}`);
+			}
+			return 0;
+		}
+
+		const configResult = runConfigBlockAction({
+			cwd: ctx.cwd,
+			actionFolder: 'openapi-config',
+			configPath,
+			subsystem: 'openapi',
+			outcome,
+			json: isJsonMode(),
+		});
+
+		if (!configResult.ok) {
+			printError(
+				`openapi-config install failed: ${configResult.error ?? 'unknown error'}`,
+			);
+			return 1;
+		}
+
+		if (isJsonMode()) {
+			printJson({
+				command: 'subsystem install',
+				subsystem: 'openapi-config',
+				configBlockOutcome: outcome,
+				configPath,
+			});
+			return 0;
+		}
+
+		printSuccess(`openapi config block ${outcome === 'skipped' ? 'already present' : 'installed'}.`);
+		printInfo(
+			'Install the peer deps: bun add @nestjs/swagger @anatine/zod-openapi',
+		);
+		printInfo(
+			'Swagger UI mounts at /docs once main.ts calls SwaggerModule.setup(...) — see CONSUMER-SETUP.md §OpenAPI.',
+		);
+		return 0;
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -581,7 +662,7 @@ function planConfigBlockAction(
 
 interface ConfigBlockActionInput {
 	cwd: string;
-	actionFolder: 'jobs-config' | 'events-config' | 'sync-config' | 'bridge-config';
+	actionFolder: 'jobs-config' | 'events-config' | 'sync-config' | 'bridge-config' | 'openapi-config';
 	configPath: string;
 	subsystem: DetectorSubsystemName;
 	outcome: ConfigBlockOutcome;
