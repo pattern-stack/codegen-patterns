@@ -8,8 +8,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Context } from './context.js';
 
-export type SubsystemName = 'events' | 'jobs' | 'cache' | 'storage' | 'sync' | 'bridge';
-export type SubsystemBackend = 'drizzle' | 'memory' | 'local' | 'unknown';
+export type SubsystemName =
+	| 'events'
+	| 'jobs'
+	| 'cache'
+	| 'storage'
+	| 'sync'
+	| 'bridge'
+	| 'openapi-config';
+export type SubsystemBackend = 'drizzle' | 'memory' | 'local' | 'config-only' | 'unknown';
 
 export interface InstalledSubsystem {
 	name: SubsystemName;
@@ -61,6 +68,16 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 		backends: ['drizzle', 'memory'],
 		defaultBackend: 'drizzle',
 	},
+	{
+		// OPENAPI-4. "Config-only" pseudo-subsystem — the runtime helpers
+		// (OpenApiRegistry, ErrorResponseDto) are already vendored by
+		// `codegen project init`. Installing this subsystem just injects the
+		// `openapi:` block into codegen.config.yaml.
+		name: 'openapi-config',
+		description: 'OpenAPI/Swagger config block (registry is vendored at init)',
+		backends: ['config-only'],
+		defaultBackend: 'config-only',
+	},
 ];
 
 const KNOWN_NAMES = SUBSYSTEMS.map((s) => s.name);
@@ -99,6 +116,10 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 		if (!fs.existsSync(root)) continue;
 		for (const name of KNOWN_NAMES) {
 			if (seen.has(name)) continue;
+			// OPENAPI-4: `openapi-config` is config-only — no runtime dir,
+			// no *.protocol.ts. Detection happens via the `openapi:` block
+			// in codegen.config.yaml (see below).
+			if (name === 'openapi-config') continue;
 			const dir = path.join(root, name);
 			if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
 			// A subsystem is installed when the directory contains any *.protocol.ts
@@ -111,6 +132,33 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 				path: dir,
 				backend: inferBackend(dir, name),
 			});
+		}
+	}
+
+	// OPENAPI-4: detect `openapi-config` by presence of the `openapi:` key
+	// in codegen.config.yaml. Runtime files were vendored at `project init`.
+	if (!seen.has('openapi-config')) {
+		const configPath = path.resolve(
+			ctx.cwd,
+			ctx.config ? 'codegen.config.yaml' : 'codegen.config.yaml',
+		);
+		if (fs.existsSync(configPath)) {
+			try {
+				const source = fs.readFileSync(configPath, 'utf-8');
+				// Lightweight top-level-key check; full parse-aware detection
+				// lives in `config-block-detect.ts` but we don't need its
+				// error surface here — a false negative just means the CLI
+				// offers to install it again, which is idempotent.
+				if (/^openapi\s*:/m.test(source)) {
+					found.push({
+						name: 'openapi-config',
+						path: configPath,
+						backend: 'config-only',
+					});
+				}
+			} catch {
+				// Ignore read errors — detection is best-effort.
+			}
 		}
 	}
 

@@ -202,20 +202,170 @@ export class DatabaseModule {}
 // of truth; no runtime re-export shim is emitted.
 
 function appModuleContent(): string {
-	return `import { Module } from '@nestjs/common';
+	return `import { Global, Module } from '@nestjs/common';
 import { DatabaseModule } from './shared/database/database.module';
 import { GENERATED_MODULES } from './generated/modules';
+import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
 
 /**
- * AppModule — wires DatabaseModule (global) + the GENERATED_MODULES barrel.
+ * OpenApiModule — @Global() wrapper around the OPENAPI_REGISTRY singleton.
+ *
+ * OPENAPI-4: every generated entity module \`@Inject(OPENAPI_REGISTRY)\` to
+ * register its Zod DTOs at onModuleInit (OPENAPI-2). NestJS's DI scoping
+ * means providers declared in AppModule are NOT automatically visible
+ * inside imported feature modules — exports from AppModule only flow to
+ * modules that explicitly import AppModule, which feature modules don't.
+ * Making the provider module \`@Global()\` broadcasts the token to every
+ * module in the application graph; each generated module picks it up
+ * without needing to import anything extra.
+ *
+ * \`useValue: new OpenApiRegistry()\` locks the instance to one per
+ * process. Never instantiate \`new OpenApiRegistry()\` elsewhere — a
+ * forked registry forks the schema table and produces a partial
+ * /docs-json at boot.
+ */
+@Global()
+@Module({
+  providers: [{ provide: OPENAPI_REGISTRY, useValue: new OpenApiRegistry() }],
+  exports: [OPENAPI_REGISTRY],
+})
+class OpenApiModule {}
+
+/**
+ * AppModule — wires DatabaseModule (global) + the OpenApiModule (global)
+ * + the GENERATED_MODULES barrel.
  *
  * DatabaseModule must come first — it provides the DRIZZLE token that every
- * generated repository depends on.
+ * generated repository depends on. OpenApiModule follows so the registry
+ * is in the global injector before any generated module's onModuleInit
+ * fires. main.ts reads the built registry at boot to produce the Swagger
+ * document (OPENAPI-4).
  */
 @Module({
-  imports: [DatabaseModule, ...GENERATED_MODULES],
+  imports: [DatabaseModule, OpenApiModule, ...GENERATED_MODULES],
 })
 export class AppModule {}
+`;
+}
+
+/**
+ * Default `src/main.ts` — NestFactory bootstrap + conditional Swagger setup.
+ *
+ * OPENAPI-4: the Swagger block is gated on `config.openapi?.enabled`
+ * loaded from `codegen.config.yaml` at startup. Disabled mode skips the
+ * entire SwaggerModule.setup call so no `/docs` or `/docs-json` routes are
+ * registered; the registry still exists (it's a singleton provider) but is
+ * never built.
+ *
+ * Emitted only when `src/main.ts` is missing — never clobbers an existing
+ * bootstrap file. Consumers with a pre-authored main.ts should copy the
+ * Swagger block verbatim (see CONSUMER-SETUP §OpenAPI).
+ */
+function mainTsContent(): string {
+	return `import 'reflect-metadata';
+import fs from 'node:fs';
+import path from 'node:path';
+import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { parse as parseYaml } from 'yaml';
+import { AppModule } from './app.module';
+import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
+
+interface OpenApiConfig {
+  enabled?: boolean;
+  path?: string;
+  title?: string;
+  version?: string;
+  description?: string;
+  auth?: 'bearer' | 'none';
+}
+
+interface CodegenConfig {
+  openapi?: OpenApiConfig;
+}
+
+/**
+ * Load \`codegen.config.yaml\` to pick up the \`openapi:\` block. Missing or
+ * malformed → no config (Swagger disabled). The registry is the source of
+ * truth for the document content; this just toggles whether Swagger UI
+ * mounts + which metadata the header shows.
+ */
+function loadConfig(): CodegenConfig {
+  const configPath = path.resolve(process.cwd(), 'codegen.config.yaml');
+  if (!fs.existsSync(configPath)) return {};
+  try {
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const parsed = parseYaml(raw);
+    return (parsed && typeof parsed === 'object' ? parsed : {}) as CodegenConfig;
+  } catch {
+    return {};
+  }
+}
+
+async function bootstrap(): Promise<void> {
+  const config = loadConfig();
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+
+  if (config.openapi?.enabled) {
+    // OPENAPI-4: build the document in two passes.
+    //
+    //   1. Our vendored \`OpenApiRegistry\` owns the component schemas
+    //      (Zod-derived DTOs registered by every generated module at
+    //      onModuleInit — OPENAPI-2).
+    //   2. \`SwaggerModule.createDocument\` scans controller decorators
+    //      (@Api* — OPENAPI-3) and produces the \`paths\` map. Our
+    //      schemas then get merged into the \`components.schemas\` it
+    //      emits by reference.
+    //
+    // Both passes are needed: Nest's scanner is the source of truth for
+    // paths (it knows the routes); the registry is the source of truth
+    // for schemas (Zod can't be inferred from reflection metadata).
+    const registry = app.get<OpenApiRegistry>(OPENAPI_REGISTRY);
+    const registryDocument = await registry.build({
+      title: config.openapi.title ?? 'API',
+      version: config.openapi.version ?? '0.0.0',
+      description: config.openapi.description,
+    });
+
+    const docBuilder = new DocumentBuilder()
+      .setTitle(config.openapi.title ?? 'API')
+      .setVersion(config.openapi.version ?? '0.0.0');
+    if (config.openapi.description) docBuilder.setDescription(config.openapi.description);
+    if ((config.openapi.auth ?? 'bearer') === 'bearer') docBuilder.addBearerAuth();
+
+    const nestDocument = SwaggerModule.createDocument(app, docBuilder.build());
+
+    // Merge registry-owned component schemas on top of whatever Nest's
+    // decorator scanner produced. Controllers reference schemas by
+    // \`$ref\` (OPENAPI-3), so this merge is what actually resolves the
+    // refs consumers see in /docs-json.
+    // Registry schemas are typed Record<string, unknown> locally
+    // (avoids depending on openapi3-ts); the runtime shape matches Nest's
+    // SchemaObject — generateSchema(zodRef, false, '3.0') emits valid
+    // OpenAPI 3.0 schema objects. Cast to satisfy Nest's stricter typing.
+    nestDocument.components = {
+      ...nestDocument.components,
+      schemas: {
+        ...(nestDocument.components?.schemas ?? {}),
+        ...registryDocument.components.schemas,
+      } as NonNullable<typeof nestDocument.components>['schemas'],
+    };
+
+    SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument);
+  }
+
+  const port = Number(process.env.PORT ?? 3000);
+  await app.listen(port);
+  // eslint-disable-next-line no-console
+  console.log(\`Application listening on http://localhost:\${port}\`);
+}
+
+bootstrap().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error('Failed to start application:', err);
+  process.exit(1);
+});
 `;
 }
 
@@ -653,6 +803,29 @@ export async function buildInitPlan(
 				relPath: relOf(cwd, appModulePath),
 				action: 'skip',
 				reason: 'exists — wire DatabaseModule + GENERATED_MODULES manually',
+			});
+		}
+	}
+
+	// 8b. src/main.ts — NestFactory bootstrap + conditional Swagger setup
+	// (OPENAPI-4). Never clobber an existing main.ts — consumers who own
+	// their own bootstrap (custom logging, Helmet, cors, etc.) copy the
+	// Swagger block manually from CONSUMER-SETUP §OpenAPI.
+	{
+		const mainPath = path.join(cwd, 'src', 'main.ts');
+		if (!fs.existsSync(mainPath)) {
+			entries.push({
+				path: mainPath,
+				relPath: relOf(cwd, mainPath),
+				action: 'create',
+				content: mainTsContent(),
+			});
+		} else {
+			entries.push({
+				path: mainPath,
+				relPath: relOf(cwd, mainPath),
+				action: 'skip',
+				reason: 'exists — copy the OpenAPI bootstrap block from CONSUMER-SETUP §OpenAPI manually',
 			});
 		}
 	}

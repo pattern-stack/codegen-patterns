@@ -40,11 +40,20 @@ const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 const RUNTIME_DEPS = [
 	'@nestjs/common@10',
 	'@nestjs/core@10',
+	// OPENAPI-4: NestFactory.create(AppModule) needs a platform adapter.
+	// Express is the default; the generated main.ts + smoke verify-openapi
+	// both use it implicitly.
+	'@nestjs/platform-express@10',
 	'@nestjs/swagger@7',
+	'@anatine/zod-openapi@2',
 	'drizzle-orm@0.45',
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',
+	// OPENAPI-4: main.ts bootstrap reads codegen.config.yaml to pick up
+	// the `openapi:` block. The jobs pool loader already imports from
+	// yaml, so this isn't new infra — just a pin for consumer installs.
+	'yaml@2',
 ];
 const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
 
@@ -234,7 +243,39 @@ async function main(): Promise<number> {
 			log('tsc OK (consumer-emitted code is syntax-clean)');
 		}
 
-		// 7. TODO: bunx nest build — requires nest-cli + tsc-watch shimmery that
+		// 7. OPENAPI-4: verify /docs-json is populated by importing the
+		//    generated AppModule programmatically and calling
+		//    registry.build(). Skipping HTTP boot — faster + deterministic.
+		//
+		//    The generated AppModule in src/ wires the OPENAPI_REGISTRY
+		//    provider (OPENAPI-4's `init-scaffold` change); every entity
+		//    module registers its DTO schemas at onModuleInit (OPENAPI-2).
+		//    Here we spin up a standalone application context (no HTTP
+		//    listener), fetch the registry, build the document, and assert
+		//    the shape the spec requires.
+		if (exitCode === 0) {
+			log('verifying /docs-json via programmatic AppModule import');
+			const verifyResult = runSilent(
+				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-openapi.ts')} ${tmpDir}`,
+				tmpDir,
+			);
+			if (verifyResult.code !== 0) {
+				console.error(verifyResult.out);
+				console.error(verifyResult.err);
+				logError('openapi verification failed');
+				exitCode = 1;
+			} else {
+				log('openapi OK (/docs-json shape verified)');
+				// Surface the verify script's own log lines for visibility.
+				if (verifyResult.out.trim()) {
+					for (const line of verifyResult.out.split('\n')) {
+						if (line.trim()) log(`  ${line}`);
+					}
+				}
+			}
+		}
+
+		// 8. TODO: bunx nest build — requires nest-cli + tsc-watch shimmery that
 		//    we'd rather not tangle with yet. The tsc --noEmit check above covers
 		//    the same compilation graph for the smoke purpose.
 	} catch (err: unknown) {
