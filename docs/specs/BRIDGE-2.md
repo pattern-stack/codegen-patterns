@@ -67,12 +67,12 @@ bridge-errors.ts
 
 ## Acceptance Criteria
 
-- [ ] `IEventFlow.publish<T extends EventType>(event: TypedEvent<T>): Promise<void>` declared.
-- [ ] `IEventFlow.publishAndStart<T, J>(event, jobType, input, opts?)` declared with `opts.parentRunId?` and `opts.tenantId?: string | null`.
-- [ ] `IJobBridge` has five methods: `insertDelivery`, `findDelivery`, `markDelivered`, `markSkipped`, `markFailed`. All accept optional `tx` last-arg.
-- [ ] Tokens are string-valued `as const`.
-- [ ] `MissingTenantIdError` exported; constructor takes the call-site name; error message names that site.
-- [ ] Type-level test compiles without casts.
+- [x] `IEventFlow.publish<T extends EventTypeName>(event: EventOfType<T>, tx?: DrizzleTransaction): Promise<void>` declared.
+- [x] `IEventFlow.publishAndStart<T extends EventTypeName>(event: EventOfType<T>, jobType: string, input: unknown, opts?: PublishAndStartOptions): Promise<PublishAndStartResult>` declared with `opts.parentRunId?: string` and `opts.tenantId?: string | null`.
+- [x] `IJobBridge` has five methods: `insertDelivery`, `findDelivery`, `markDelivered`, `markSkipped`, `markFailed`. All accept optional `tx` last-arg.
+- [x] Tokens are string-valued `as const`.
+- [x] `MissingTenantIdError` exported; constructor takes the call-site name; error message names that site.
+- [x] Type-level test compiles without casts.
 
 ## Testing Strategy
 
@@ -85,6 +85,16 @@ None.
 ## Open Questions
 
 None. Token-shape (string vs Symbol) resolved by EVT-6 precedent.
+
+## Implementation Notes (added post-merge per CLAUDE.md living-docs rule)
+
+**Generated type names.** ADR-023 §Decision 7 sketches `IEventFlow` with placeholder type variables `EventType` and `TypedEvent<T>`. The actual generated event types — emitted by the events codegen at `runtime/subsystems/events/generated/types.ts` — are named `EventTypeName` and `EventOfType<T>`. The `IEventFlow` interface uses the real generated names so the contract typechecks against current codegen output without casts. The verb shape and behaviour are unchanged; only the type-variable names differ.
+
+**Job-type parameter typing.** The ADR sketch also shows `JobType` and `JobInputOf<J>`. The jobs subsystem currently models the orchestrator's `start` as `start(type: string, input: unknown, …)` with no generated `JobType` union analogous to events' `EventTypeName` (the `job` table is upserted from `@JobHandler` decorators at boot, not from a project-wide YAML registry). The facade matches that shape today: `publishAndStart(event, jobType: string, input: unknown, …)`. Tightening to a generated `JobType` union is a post-Phase-2 follow-up that requires generated job typing first; recorded as a soft TODO, not a Phase 2 blocker.
+
+**`tx?: DrizzleTransaction` on `publish`.** Added beyond the ADR sketch so the facade implementation in BRIDGE-7 can thread the same transaction through `IEventBus.publish` (already accepts an optional `tx`) and the Case B `bridge_delivery` pre-write. Same-tx invariant for `publishAndStart` is restated in JSDoc on the interface.
+
+**`BridgeDeliveryInsert`.** The repo's `insertDelivery` row argument is typed as `InferInsertModel<typeof bridgeDelivery>` so adding a column to `bridge_delivery` propagates to every backend without a manual sync step. Exported from the barrel.
 
 ## References
 
