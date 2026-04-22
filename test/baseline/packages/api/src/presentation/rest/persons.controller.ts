@@ -15,6 +15,13 @@ import {
 	Put,
 	UsePipes,
 } from '@nestjs/common';
+import {
+	ApiBearerAuth,
+	ApiBody,
+	ApiOperation,
+	ApiParam,
+	ApiResponse,
+} from '@nestjs/swagger';
 import { GetPersonByIdQuery } from '../../application/queries/person/get-by-id.query';
 import { ListPersonsQuery } from '../../application/queries/person/list.query';
 import {
@@ -29,6 +36,13 @@ import { UpdatePersonCommand } from '../../application/commands/person/update.co
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { Person } from '../../domain';
 
+// OPENAPI-3: controller decorators reference schemas by `$ref` rather
+// than `type:` class references because generated DTOs are Zod-derived
+// types (not NestJS classes). Schemas are registered by name in the
+// `OpenApiRegistry` at onModuleInit (OPENAPI-2); these `$ref` URIs point
+// at those registered entries. `ErrorResponseDto` is auto-registered by
+// the shared registry.
+@ApiBearerAuth()
 @Controller('persons')
 export class PersonsController {
 	constructor(
@@ -39,11 +53,22 @@ export class PersonsController {
 		private readonly deletePersonCommand: DeletePersonCommand,
 	) {}
 
+	@ApiOperation({ summary: 'List persons', operationId: 'listPersons' })
+	@ApiResponse({
+		status: 200,
+		schema: { type: 'array', items: { $ref: '#/components/schemas/PersonResponseDto' } },
+	})
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
 	async findAll(): Promise<Person[]> {
 		return this.listPersonsQuery.execute();
 	}
 
+	@ApiOperation({ summary: 'Find person by id', operationId: 'findPersonById' })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/PersonResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
@@ -51,6 +76,11 @@ export class PersonsController {
 		return this.getPersonByIdQuery.execute(id);
 	}
 
+	@ApiOperation({ summary: 'Create person', operationId: 'createPerson' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/CreatePersonDto' } })
+	@ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/PersonResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Post()
 	@UsePipes(new ZodValidationPipe(createPersonSchema))
 	async create(
@@ -61,6 +91,13 @@ export class PersonsController {
 		return this.createPersonCommand.execute(dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Update person', operationId: 'updatePerson' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/UpdatePersonDto' } })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/PersonResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Put(':id')
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
@@ -71,6 +108,11 @@ export class PersonsController {
 		return this.updatePersonCommand.execute(id, dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Delete person', operationId: 'deletePerson' })
+	@ApiResponse({ status: 204 })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,

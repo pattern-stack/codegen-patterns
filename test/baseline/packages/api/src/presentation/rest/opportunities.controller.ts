@@ -16,6 +16,13 @@ import {
 	Query,
 	UsePipes,
 } from '@nestjs/common';
+import {
+	ApiBearerAuth,
+	ApiBody,
+	ApiOperation,
+	ApiParam,
+	ApiResponse,
+} from '@nestjs/swagger';
 import { GetOpportunityByIdQuery } from '../../application/queries/opportunity/get-by-id.query';
 import { ListOpportunitiesQuery } from '../../application/queries/opportunity/list.query';
 import {
@@ -31,6 +38,13 @@ import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { Opportunity } from '../../domain';
 import type { OpportunityWith } from '../../domain';
 
+// OPENAPI-3: controller decorators reference schemas by `$ref` rather
+// than `type:` class references because generated DTOs are Zod-derived
+// types (not NestJS classes). Schemas are registered by name in the
+// `OpenApiRegistry` at onModuleInit (OPENAPI-2); these `$ref` URIs point
+// at those registered entries. `ErrorResponseDto` is auto-registered by
+// the shared registry.
+@ApiBearerAuth()
 @Controller('opportunities')
 export class OpportunitiesController {
 	constructor(
@@ -41,11 +55,22 @@ export class OpportunitiesController {
 		private readonly deleteOpportunityCommand: DeleteOpportunityCommand,
 	) {}
 
+	@ApiOperation({ summary: 'List opportunities', operationId: 'listOpportunities' })
+	@ApiResponse({
+		status: 200,
+		schema: { type: 'array', items: { $ref: '#/components/schemas/OpportunityResponseDto' } },
+	})
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
 	async findAll(@Query('include') include?: string): Promise<Opportunity[]> {
 		return this.listOpportunitiesQuery.execute(this.parseInclude(include));
 	}
 
+	@ApiOperation({ summary: 'Find opportunity by id', operationId: 'findOpportunityById' })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/OpportunityResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
@@ -54,6 +79,11 @@ export class OpportunitiesController {
 		return this.getOpportunityByIdQuery.execute(id, this.parseInclude(include));
 	}
 
+	@ApiOperation({ summary: 'Create opportunity', operationId: 'createOpportunity' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/CreateOpportunityDto' } })
+	@ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/OpportunityResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Post()
 	@UsePipes(new ZodValidationPipe(createOpportunitySchema))
 	async create(
@@ -64,6 +94,13 @@ export class OpportunitiesController {
 		return this.createOpportunityCommand.execute(dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Update opportunity', operationId: 'updateOpportunity' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/UpdateOpportunityDto' } })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/OpportunityResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Put(':id')
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
@@ -74,6 +111,11 @@ export class OpportunitiesController {
 		return this.updateOpportunityCommand.execute(id, dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Delete opportunity', operationId: 'deleteOpportunity' })
+	@ApiResponse({ status: 204 })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,

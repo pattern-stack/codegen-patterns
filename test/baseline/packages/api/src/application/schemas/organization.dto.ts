@@ -22,3 +22,16 @@ export const updateOrganizationSchema = z.object({
 });
 
 export type UpdateOrganizationDto = z.infer<typeof updateOrganizationSchema>;
+
+// OPENAPI-3: response schema — mirrors the select shape of this entity so
+// controller `@ApiResponse({ schema: { $ref: '.../OrganizationResponseDto' } })`
+// decorators resolve to a fully-typed document on /docs-json.
+export const organizationResponseSchema = z.object({
+	id: z.string().uuid(),
+	tenantId: z.string().uuid(),
+	name: z.string().max(255),
+	domain: z.string().max(255).nullable(),
+	parentId: z.string().uuid().nullable(),
+});
+
+export type OrganizationResponseDto = z.infer<typeof organizationResponseSchema>;

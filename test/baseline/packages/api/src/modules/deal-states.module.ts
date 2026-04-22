@@ -14,7 +14,7 @@ import { UpdateDealStateCommand } from '../application/commands/deal_state/updat
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { DealStateRepository } from '../infrastructure/persistence/repositories/deal-state.repository';
 import { DealStatesController } from '../presentation/rest/deal-states.controller';
-import { createDealStateSchema, updateDealStateSchema } from '../application/schemas/deal-state.dto';
+import { createDealStateSchema, updateDealStateSchema, dealStateResponseSchema } from '../application/schemas/deal-state.dto';
 
 @Module({
 	imports: [DatabaseModule],
@@ -49,5 +49,6 @@ export class DealStatesModule implements OnModuleInit {
 	onModuleInit(): void {
 		this.openApi.registerSchema('CreateDealStateDto', createDealStateSchema);
 		this.openApi.registerSchema('UpdateDealStateDto', updateDealStateSchema);
+		this.openApi.registerSchema('DealStateResponseDto', dealStateResponseSchema);
 	}
 }

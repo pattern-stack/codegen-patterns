@@ -36,7 +36,7 @@ import { declarativeQueryClasses } from '<%= imports.moduleToDeclarativeQueries 
 import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController %>';
 <% } -%>
 <% if (generate.dtos) { -%>
-import { create<%= className %>Schema, update<%= className %>Schema } from '<%= imports.moduleToDto %>';
+import { create<%= className %>Schema, update<%= className %>Schema, <%= camelName %>ResponseSchema } from '<%= imports.moduleToDto %>';
 <% } -%>
 
 @Module({
@@ -86,6 +86,7 @@ export class <%= classNamePlural %>Module<% if (generate.dtos) { %> implements O
 	onModuleInit(): void {
 		this.openApi.registerSchema('Create<%= className %>Dto', create<%= className %>Schema);
 		this.openApi.registerSchema('Update<%= className %>Dto', update<%= className %>Schema);
+		this.openApi.registerSchema('<%= className %>ResponseDto', <%= camelName %>ResponseSchema);
 	}
 <% } -%>
 }

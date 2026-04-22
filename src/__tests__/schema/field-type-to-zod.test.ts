@@ -72,10 +72,18 @@ function render(template: string, locals: Record<string, unknown>): string {
 // Minimal locals matching what prompt.js provides to the DTO template
 const minimalLocals = {
 	className: 'Deal',
+	// OPENAPI-3: response schema uses the entity's camelName as the Zod
+	// binding name (e.g., `dealResponseSchema`).
+	camelName: 'deal',
 	isCleanArchitecture: true,
 	generate: { dtos: true },
 	outputPaths: { dto: 'deal.dto.ts' },
 	hasEntityRefFields: false,
+	// OPENAPI-3: response schema spread — these flags gate the trailing
+	// timestamp / soft-delete / temporal-validity blocks.
+	hasTimestamps: false,
+	hasSoftDelete: false,
+	hasTemporalValidity: false,
 	locations: { dbContextEngine: { import: '@shared/db' } },
 	fields: [
 		{

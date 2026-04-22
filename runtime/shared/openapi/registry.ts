@@ -14,6 +14,7 @@
  */
 import type { z } from 'zod';
 
+import { ERROR_RESPONSE_SCHEMA_NAME, errorResponseSchema } from './error-response.dto';
 import { OpenApiPeerDepMissingError, DuplicateSchemaError } from './errors';
 
 export type HttpMethod = 'get' | 'post' | 'patch' | 'delete' | 'put';
@@ -65,6 +66,13 @@ export class OpenApiRegistry {
   private pathEntries = new Map<string, Map<HttpMethod, PathSpec>>();
   private peer: PeerModule | null = null;
 
+  constructor() {
+    // Auto-register the shared error response schema so controllers that
+    // reference `#/components/schemas/ErrorResponseDto` always resolve
+    // (OPENAPI-3). Consumers can `reset()` + re-register in tests.
+    this.zodSchemas.set(ERROR_RESPONSE_SCHEMA_NAME, errorResponseSchema);
+  }
+
   registerSchema(name: string, schema: z.ZodType): void {
     if (this.zodSchemas.has(name)) {
       throw new DuplicateSchemaError(name);
@@ -114,11 +122,16 @@ export class OpenApiRegistry {
     };
   }
 
-  /** Test helper — clears all registered schemas and paths. */
+  /**
+   * Test helper — clears registered schemas and paths, then re-seeds the
+   * core `ErrorResponseDto` entry so post-reset state matches the
+   * invariant established in the constructor.
+   */
   reset(): void {
     this.zodSchemas.clear();
     this.pathEntries.clear();
     this.peer = null;
+    this.zodSchemas.set(ERROR_RESPONSE_SCHEMA_NAME, errorResponseSchema);
   }
 
   protected async loadPeer(): Promise<PeerModule> {

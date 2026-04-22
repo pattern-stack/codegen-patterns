@@ -15,7 +15,7 @@ import { DatabaseModule } from '../infrastructure/database/database.module';
 import { DealRepository } from '../infrastructure/persistence/repositories/deal.repository';
 import { declarativeQueryClasses } from '../application/queries/deal/declarative-queries';
 import { DealsController } from '../presentation/rest/deals.controller';
-import { createDealSchema, updateDealSchema } from '../application/schemas/deal.dto';
+import { createDealSchema, updateDealSchema, dealResponseSchema } from '../application/schemas/deal.dto';
 
 @Module({
 	imports: [DatabaseModule],
@@ -53,5 +53,6 @@ export class DealsModule implements OnModuleInit {
 	onModuleInit(): void {
 		this.openApi.registerSchema('CreateDealDto', createDealSchema);
 		this.openApi.registerSchema('UpdateDealDto', updateDealSchema);
+		this.openApi.registerSchema('DealResponseDto', dealResponseSchema);
 	}
 }

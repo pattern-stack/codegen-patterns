@@ -13,3 +13,8 @@ export type {
 } from './registry';
 export { OPENAPI_REGISTRY } from './registry.tokens';
 export { OpenApiPeerDepMissingError, DuplicateSchemaError } from './errors';
+export {
+  ERROR_RESPONSE_SCHEMA_NAME,
+  errorResponseSchema,
+} from './error-response.dto';
+export type { ErrorResponseDto } from './error-response.dto';

@@ -14,7 +14,7 @@ import { UpdateUserCommand } from '../application/commands/user/update.command';
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { UserRepository } from '../infrastructure/persistence/repositories/user.repository';
 import { UsersController } from '../presentation/rest/users.controller';
-import { createUserSchema, updateUserSchema } from '../application/schemas/user.dto';
+import { createUserSchema, updateUserSchema, userResponseSchema } from '../application/schemas/user.dto';
 
 @Module({
 	imports: [DatabaseModule],
@@ -49,5 +49,6 @@ export class UsersModule implements OnModuleInit {
 	onModuleInit(): void {
 		this.openApi.registerSchema('CreateUserDto', createUserSchema);
 		this.openApi.registerSchema('UpdateUserDto', updateUserSchema);
+		this.openApi.registerSchema('UserResponseDto', userResponseSchema);
 	}
 }

@@ -16,6 +16,13 @@ import {
 	Query,
 	UsePipes,
 } from '@nestjs/common';
+import {
+	ApiBearerAuth,
+	ApiBody,
+	ApiOperation,
+	ApiParam,
+	ApiResponse,
+} from '@nestjs/swagger';
 import { GetContactByIdQuery } from '../../application/queries/contact/get-by-id.query';
 import { ListContactsQuery } from '../../application/queries/contact/list.query';
 import {
@@ -31,6 +38,13 @@ import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { Contact } from '../../domain';
 import type { ContactWith } from '../../domain';
 
+// OPENAPI-3: controller decorators reference schemas by `$ref` rather
+// than `type:` class references because generated DTOs are Zod-derived
+// types (not NestJS classes). Schemas are registered by name in the
+// `OpenApiRegistry` at onModuleInit (OPENAPI-2); these `$ref` URIs point
+// at those registered entries. `ErrorResponseDto` is auto-registered by
+// the shared registry.
+@ApiBearerAuth()
 @Controller('contacts')
 export class ContactsController {
 	constructor(
@@ -41,11 +55,22 @@ export class ContactsController {
 		private readonly deleteContactCommand: DeleteContactCommand,
 	) {}
 
+	@ApiOperation({ summary: 'List contacts', operationId: 'listContacts' })
+	@ApiResponse({
+		status: 200,
+		schema: { type: 'array', items: { $ref: '#/components/schemas/ContactResponseDto' } },
+	})
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
 	async findAll(@Query('include') include?: string): Promise<Contact[]> {
 		return this.listContactsQuery.execute(this.parseInclude(include));
 	}
 
+	@ApiOperation({ summary: 'Find contact by id', operationId: 'findContactById' })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/ContactResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
@@ -54,6 +79,11 @@ export class ContactsController {
 		return this.getContactByIdQuery.execute(id, this.parseInclude(include));
 	}
 
+	@ApiOperation({ summary: 'Create contact', operationId: 'createContact' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/CreateContactDto' } })
+	@ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/ContactResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Post()
 	@UsePipes(new ZodValidationPipe(createContactSchema))
 	async create(
@@ -64,6 +94,13 @@ export class ContactsController {
 		return this.createContactCommand.execute(dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Update contact', operationId: 'updateContact' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/UpdateContactDto' } })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/ContactResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Put(':id')
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
@@ -74,6 +111,11 @@ export class ContactsController {
 		return this.updateContactCommand.execute(id, dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Delete contact', operationId: 'deleteContact' })
+	@ApiResponse({ status: 204 })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,

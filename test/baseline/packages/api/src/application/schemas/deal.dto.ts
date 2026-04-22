@@ -28,3 +28,22 @@ export const updateDealSchema = z.object({
 });
 
 export type UpdateDealDto = z.infer<typeof updateDealSchema>;
+
+// OPENAPI-3: response schema — mirrors the select shape of this entity so
+// controller `@ApiResponse({ schema: { $ref: '.../DealResponseDto' } })`
+// decorators resolve to a fully-typed document on /docs-json.
+export const dealResponseSchema = z.object({
+	id: z.string().uuid(),
+	name: z.string().max(255),
+	amount: z.coerce.string().nullable(),
+	stage: z.enum(['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']),
+	ownerId: z.string().uuid(),
+	accountId: z.string().uuid(),
+	closeDate: z.coerce.date().nullable(),
+	probability: z.number().int().nullable(),
+	createdAt: z.coerce.date(),
+	updatedAt: z.coerce.date(),
+	deletedAt: z.coerce.date().nullable(),
+});
+
+export type DealResponseDto = z.infer<typeof dealResponseSchema>;

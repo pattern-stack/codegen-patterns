@@ -18,6 +18,13 @@ import {
 	UseGuards,
 	UsePipes,
 } from '@nestjs/common';
+import {
+	ApiBearerAuth,
+	ApiBody,
+	ApiOperation,
+	ApiParam,
+	ApiResponse,
+} from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { AuthGuard } from '../../core/guards/auth.guard';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
@@ -37,6 +44,7 @@ import { GetOrganizationByIdQuery } from '../../application/queries/organization
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { Organization } from '../../domain';
 
+@ApiBearerAuth()
 @Controller('organizations')
 @UseGuards(AuthGuard)
 export class OrganizationsController {
@@ -48,6 +56,8 @@ export class OrganizationsController {
 		private readonly deleteOrganizationCommand: DeleteOrganizationCommand,
 	) {}
 
+	@ApiOperation({ summary: 'List organizations (Electric SQL proxy)', operationId: 'listOrganizations' })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
 	async findAll(
 		@CurrentUser() user: User,
@@ -63,11 +73,21 @@ export class OrganizationsController {
 		});
 	}
 
+	@ApiOperation({ summary: 'Find organization by id', operationId: 'findOrganizationById' })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/OrganizationResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Get(':id')
 	async findById(@Param('id', ParseUUIDPipe) id: string): Promise<Organization> {
 		return this.getOrganizationByIdQuery.execute(id);
 	}
 
+	@ApiOperation({ summary: 'Create organization', operationId: 'createOrganization' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/CreateOrganizationDto' } })
+	@ApiResponse({ status: 201, schema: { $ref: '#/components/schemas/OrganizationResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Post()
 	@UsePipes(new ZodValidationPipe(createOrganizationSchema))
 	async create(
@@ -78,6 +98,13 @@ export class OrganizationsController {
 		return this.createOrganizationCommand.execute(dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Update organization', operationId: 'updateOrganization' })
+	@ApiBody({ schema: { $ref: '#/components/schemas/UpdateOrganizationDto' } })
+	@ApiResponse({ status: 200, schema: { $ref: '#/components/schemas/OrganizationResponseDto' } })
+	@ApiResponse({ status: 400, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Put(':id')
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
@@ -88,6 +115,11 @@ export class OrganizationsController {
 		return this.updateOrganizationCommand.execute(id, dto, { actor: { tenantId, userId } });
 	}
 
+	@ApiOperation({ summary: 'Delete organization', operationId: 'deleteOrganization' })
+	@ApiResponse({ status: 204 })
+	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
+	@ApiParam({ name: 'id', type: 'string', format: 'uuid' })
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,

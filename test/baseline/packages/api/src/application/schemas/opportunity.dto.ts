@@ -32,3 +32,21 @@ export const updateOpportunitySchema = z.object({
 });
 
 export type UpdateOpportunityDto = z.infer<typeof updateOpportunitySchema>;
+
+// OPENAPI-3: response schema — mirrors the select shape of this entity so
+// controller `@ApiResponse({ schema: { $ref: '.../OpportunityResponseDto' } })`
+// decorators resolve to a fully-typed document on /docs-json.
+export const opportunityResponseSchema = z.object({
+	id: z.string().uuid(),
+	tenantId: z.string().uuid(),
+	name: z.string().max(255),
+	organizationId: z.string().uuid(),
+	ownerId: z.string().uuid(),
+	stateId: z.string().uuid(),
+	amount: z.coerce.string().nullable(),
+	currency: z.string().max(3).nullable(),
+	expectedCloseDate: z.coerce.date().nullable(),
+	closedAt: z.coerce.date().nullable(),
+});
+
+export type OpportunityResponseDto = z.infer<typeof opportunityResponseSchema>;

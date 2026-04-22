@@ -65,13 +65,30 @@ describe('OpenApiRegistry', () => {
     expect(() => registry.registerSchema('User', schema)).toThrow(DuplicateSchemaError);
   });
 
-  it('build() with no registrations returns a valid OpenAPIObject with empty components.schemas', async () => {
+  it('build() with no registrations returns a valid OpenAPIObject containing only the auto-registered ErrorResponseDto', async () => {
+    // OPENAPI-3 auto-registers `ErrorResponseDto` on construction so
+    // generated controllers always have `$ref` targets for 4xx responses.
     const doc = await registry.build({ title: 'Empty', version: '0.0.1' });
 
     expect(doc.info.title).toBe('Empty');
     expect(doc.info.version).toBe('0.0.1');
     expect(doc.paths).toEqual({});
-    expect(doc.components.schemas).toEqual({});
+    expect(Object.keys(doc.components.schemas)).toEqual(['ErrorResponseDto']);
+  });
+
+  it('auto-registers ErrorResponseDto with the expected shape', async () => {
+    const doc = await registry.build({ title: 'T', version: '1.0.0' });
+    const err = doc.components.schemas.ErrorResponseDto as {
+      type: string;
+      properties: Record<string, { type?: string; oneOf?: unknown[] }>;
+      required?: string[];
+    };
+
+    expect(err.type).toBe('object');
+    // Zod `.int()` maps to OpenAPI's `integer` type (not `number`).
+    expect(err.properties.statusCode.type).toBe('integer');
+    expect(err.properties.error.type).toBe('string');
+    expect(err.required).toEqual(['statusCode', 'message']);
   });
 
   it('pins openapi version to 3.0.3', async () => {
@@ -110,14 +127,14 @@ describe('OpenApiRegistry', () => {
     );
   });
 
-  it('reset() clears registered schemas and paths', async () => {
+  it('reset() clears registered schemas and paths but re-seeds ErrorResponseDto', async () => {
     registry.registerSchema('User', z.object({ id: z.string() }));
     registry.registerPath('/users', 'get', { summary: 'List' });
 
     registry.reset();
 
     const doc = await registry.build({ title: 'T', version: '1.0.0' });
-    expect(doc.components.schemas).toEqual({});
+    expect(Object.keys(doc.components.schemas)).toEqual(['ErrorResponseDto']);
     expect(doc.paths).toEqual({});
   });
 });
