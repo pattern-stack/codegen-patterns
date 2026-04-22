@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "license": "MIT",
   "type": "module",
@@ -97,7 +97,9 @@
       "optional": true
     }
   },
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "devDependencies": {
     "@cubejs-client/core": "^1.0.0",
     "@nestjs/common": "10",
