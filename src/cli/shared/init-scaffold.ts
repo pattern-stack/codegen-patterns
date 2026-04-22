@@ -143,6 +143,13 @@ const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
 	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'src/shared/pipes/zod-validation.pipe.ts' },
 	// EAV helpers — referenced by generated services on `eav_value_table` entities
 	{ runtime: 'eav-helpers.ts', target: 'src/shared/eav-helpers.ts' },
+	// OpenAPI registry (OPENAPI-1/2) — generated modules register Zod DTOs
+	// here at onModuleInit; OPENAPI-4 mounts Swagger UI off the same registry.
+	// `@anatine/zod-openapi` is an optional peer dep (lazy-imported on build).
+	{ runtime: 'shared/openapi/registry.ts', target: 'src/shared/openapi/registry.ts' },
+	{ runtime: 'shared/openapi/registry.tokens.ts', target: 'src/shared/openapi/registry.tokens.ts' },
+	{ runtime: 'shared/openapi/errors.ts', target: 'src/shared/openapi/errors.ts' },
+	{ runtime: 'shared/openapi/index.ts', target: 'src/shared/openapi/index.ts' },
 ];
 
 function databaseModuleContent(): string {

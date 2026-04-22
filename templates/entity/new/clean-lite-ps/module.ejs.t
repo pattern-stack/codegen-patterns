@@ -10,7 +10,8 @@ force: true
  * root AppModule (global) so these tokens resolve at runtime.
  */
 <% } -%>
-import { Module } from '@nestjs/common';
+import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ clpBelongsTo.forEach(rel => { _%>
 // import { <%= rel.relatedEntityPascal %>sModule } from '../<%= rel.relatedPlural %>/<%= rel.relatedPlural %>.module';
@@ -25,6 +26,10 @@ import { <%= eavDefinitionPluralPascal %>Module } from '../<%= eavDefinitionEnti
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import { <%= classNames.service %> } from './<%= entityName %>.service';
 import { <%= classNames.controller %> } from './<%= entityName %>.controller';
+// OPENAPI-2: Zod schemas registered with OpenApiRegistry at module init.
+import { <%= classNames.createSchema %> } from './dto/create-<%= entityName %>.dto';
+import { <%= classNames.updateSchema %> } from './dto/update-<%= entityName %>.dto';
+import { <%= classNames.outputSchema %> } from './dto/<%= entityName %>-output.dto';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
 <% if (eavEnabled) { -%>
@@ -83,4 +88,21 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
   ],
   exports: [<%= classNames.service %>],  // Only service is exported (ADR-002)
 })
-export class <%= classNames.module %> {}
+export class <%= classNames.module %> implements OnModuleInit {
+  // OPENAPI-2: register this entity's Zod schemas with the shared
+  // OpenApiRegistry at module init. OPENAPI-4 awaits `build()` at boot
+  // to emit the full /docs-json document.
+  constructor(
+    @Inject(OPENAPI_REGISTRY) private readonly openApi: OpenApiRegistry,
+  ) {}
+
+  onModuleInit(): void {
+    this.openApi.registerSchema('<%= classNames.createDto %>', <%= classNames.createSchema %>);
+    this.openApi.registerSchema('<%= classNames.updateDto %>', <%= classNames.updateSchema %>);
+    // CLP pipeline names the response schema <Entity>OutputDto (matches
+    // classNames.outputDto); the OPENAPI-2 spec sketch uses "ResponseDto"
+    // but existing CLP code already publishes OutputDto everywhere, so we
+    // keep consistency. OPENAPI-3 decorators reference the same name.
+    this.openApi.registerSchema('<%= classNames.outputDto %>', <%= classNames.outputSchema %>);
+  }
+}

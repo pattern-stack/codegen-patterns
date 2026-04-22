@@ -56,3 +56,14 @@ Naming convention: `<Operation><Entity>Dto` (e.g., `CreateAccountDto`, `UpdateAc
 - [ ] Smoke test's generated project exposes populated `components.schemas` on `/docs-json`.
 - [ ] No duplicate schema registrations across entities (if two entities both register `CreateFooDto`, registry warns/errors per OPENAPI-1 decision).
 - [ ] Module template imports are clean — no unused imports.
+
+## Implementation notes (post-merge)
+
+1. **DTO templates untouched** — existing templates already export `create<Entity>Schema` + `update<Entity>Schema` (backend) / `createSchema`, `updateSchema`, `outputSchema` (clean-lite-ps). No DTO-side work was needed.
+2. **Vendored runtime path.** `runtime/shared/openapi/*` was added to `VENDORED_RUNTIME_FILES` in `src/cli/shared/init-scaffold.ts` so `codegen project init` copies the registry into consumer projects at `src/shared/openapi/*`. Generated modules `import from '@shared/openapi'` and that alias resolves into the consumer's own src tree — required to avoid the dual-drizzle type-identity clash documented inline in `init-scaffold.ts`.
+3. **Clean-lite-ps response DTO naming.** Spec sketch used `<Entity>ResponseDto`. CLP's existing convention is `<Entity>OutputDto` (wired everywhere else in CLP). Registered as `OutputDto` to avoid a mismatch between the registry key and the rest of the CLP pipeline. OPENAPI-3 decorators will reference the same key.
+4. **Backend pipeline registers Create + Update only.** It has no response DTO today; only two schemas are registered per entity. CLP registers three (Create + Update + Output).
+5. **Registry injected via `@Inject(OPENAPI_REGISTRY)`; class imported as type only.** Matches the "registry provided by AppModule, not the entity module" intent — no runtime class reference in the generated module file.
+6. **`generate.dtos: false` gate.** Backend DTO emission already respects this flag; the registration imports mirror the same gate so no unused imports appear when DTOs are disabled. CLP has no equivalent flag (CLP always emits DTOs when enabled).
+7. **Known gap between OPENAPI-2 and OPENAPI-4:** generated modules inject `OPENAPI_REGISTRY` but no provider supplies it yet. `AppModule` wiring lands in OPENAPI-4. Smoke test uses `tsc --noEmit` only, so this DI gap is invisible to CI — a Nest boot between OPENAPI-2 and OPENAPI-4 would throw at resolution. Acceptable per the epic plan; OPENAPI-4 resolves.
+8. **`entityNamePascal` not yet in CLP template locals.** `prompt-extension.js` has it in closure scope only; the OutputDto schema name was derived from `classNames.outputDto` instead. If OPENAPI-3/4 need `entityNamePascal` directly in CLP templates, add it to locals in `prompt-extension.js`.
