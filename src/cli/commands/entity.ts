@@ -22,6 +22,7 @@ import {
 	resolveGeneratedDir,
 } from '../shared/barrel-generator.js';
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
+import { generateBridgeRegistry } from '../shared/bridge-registry-generator.js';
 import {
 	collectMergedEvents,
 	generateEventCodegen,
@@ -314,6 +315,13 @@ export class EntityNewCommand extends Command {
 			subsystemsRoot,
 			'events/generated',
 		);
+		const bridgeRegistryOutputDir = path.resolve(
+			subsystemsRoot,
+			'bridge/generated',
+		);
+		// Default handlers dir; consumer can override via codegen.config.yaml later.
+		// Recursive scan tolerates absent dir (returns empty registry).
+		const bridgeHandlersDir = path.resolve(ctx.cwd, 'src/jobs');
 
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
@@ -335,6 +343,13 @@ export class EntityNewCommand extends Command {
 				entitiesDir,
 				eventsDir,
 				outputDir: eventCodegenOutputDir,
+				dryRun: true,
+			});
+
+			const bridgeRegistryPlan = await generateBridgeRegistry({
+				handlersDir: bridgeHandlersDir,
+				eventsGeneratedDir: eventCodegenOutputDir,
+				outputDir: bridgeRegistryOutputDir,
 				dryRun: true,
 			});
 
@@ -360,6 +375,16 @@ export class EntityNewCommand extends Command {
 						outputDir: eventCodegenPlan.outputDir,
 						eventCount: eventCodegenPlan.eventCount,
 						files: eventCodegenPlan.files.map((f) => ({
+							name: f.name,
+							outputPath: f.outputPath,
+							content: f.content,
+						})),
+					},
+					bridgeRegistry: {
+						outputDir: bridgeRegistryPlan.outputDir,
+						triggerCount: bridgeRegistryPlan.triggerCount,
+						eventTypeCount: bridgeRegistryPlan.eventTypeCount,
+						files: bridgeRegistryPlan.files.map((f) => ({
 							name: f.name,
 							outputPath: f.outputPath,
 							content: f.content,
@@ -487,6 +512,23 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Bridge registry codegen (BRIDGE-6, ADR-023 Phase 2). Runs AFTER event
+		// codegen so the freshly-emitted eventRegistry is available for
+		// build-time validation. Same warn-but-don't-fail pattern as siblings.
+		let bridgeRegistryResult: Awaited<ReturnType<typeof generateBridgeRegistry>> | null = null;
+		try {
+			bridgeRegistryResult = await generateBridgeRegistry({
+				handlersDir: bridgeHandlersDir,
+				eventsGeneratedDir: eventCodegenOutputDir,
+				outputDir: bridgeRegistryOutputDir,
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printError(`bridge registry codegen failed — ${msg}`);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'entity new',
@@ -518,6 +560,14 @@ export class EntityNewCommand extends Command {
 								name: f.name,
 								outputPath: f.outputPath,
 							})),
+						}
+					: null,
+				bridgeRegistry: bridgeRegistryResult
+					? {
+							outputDir: bridgeRegistryResult.outputDir,
+							triggerCount: bridgeRegistryResult.triggerCount,
+							eventTypeCount: bridgeRegistryResult.eventTypeCount,
+							written: bridgeRegistryResult.written,
 						}
 					: null,
 				emits: {
