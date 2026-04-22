@@ -103,6 +103,8 @@ Cascade cancel walks via `root_run_id`, not recursive `parent_run_id` chases.
 
 `events_inbound`, `events_change`, `events_outbound` are `reserved: true`. These exist for the `IEventBus` outbox drain, one pool per `DomainEvent.direction`. A user `@JobHandler({ pool: 'events_change' })` **must fail at module init** with `ReservedPoolViolationError` (JOB-5). Do not attempt to "just write to that queue" — use `IEventBus` from the events subsystem and let the bridge enqueue.
 
+**Framework-owned `@framework/bridge_delivery` handlers DO run in reserved pools** (one instance per direction) per ADR-023 Phase 2. The reservation keeps them uncluttered for exactly that handler — user jobs still cannot target them. See `.claude/skills/bridge/SKILL.md` (pending BRIDGE-1..9 implementation).
+
 Default user pool is `batch`. `interactive` must be opted in explicitly.
 
 ### Concurrency collision modes

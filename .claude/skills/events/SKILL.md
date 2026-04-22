@@ -94,10 +94,25 @@ Generator pieces:
 - `src/cli/shared/events-scaffold-locals.ts` — resolves Hygen locals (appName, multiTenant, configPath, schemaPath, generatedKeepPath)
 - `src/cli/shared/event-codegen-generator.ts` — produces the five `generated/` files from `events/*.yaml` and entity `events:` / `emits:` blocks
 
+## Three tiers of event-driven work (ADR-023)
+
+Subscribers are one of three sanctioned patterns. Pick by durability and latency:
+
+| Tier | Mechanism | Durability | Latency | Use for |
+|---|---|---|---|---|
+| 1. Subscribe | `IEventBus.subscribe()` / `@OnEvent` (in-process) | None (at-most-once) | ~ms | metrics, cache busts, logs |
+| 2. Direct invoke | `eventFlow.publishAndStart(...)` (facade, Phase 2 planned) | Yes (caller tx) | ~1 poll cycle | request-path work needing durability |
+| 3. Bridge | `@JobHandler({ triggers: [...] })` (Phase 2 planned) | Yes (outbox + ledger) | 2–3 poll cycles | durable async fanout |
+
+Tier 2 and Tier 3 ship with BRIDGE-1..9 (ADR-023 Phase 2, defined not shipped). Today, only Tier 1 is runtime-available.
+
 ## Cross-links
 
-- Jobs SKILL.md — the reserved `events_*` pools, the Event-to-Job Bridge (ADR-023 work), why handlers should enqueue jobs rather than do heavy work inline.
+- Jobs SKILL.md — the reserved `events_*` pools, the Event-to-Job Bridge (ADR-023), why handlers should enqueue jobs rather than do heavy work inline.
+- Bridge SKILL.md (`.claude/skills/bridge/SKILL.md`) — the combiner subsystem (Phase 2 planned, pending BRIDGE-1..9 implementation).
 - `docs/adrs/ADR-008-subsystem-architecture.md` — the Protocol → Backend → Factory pattern events follows.
 - `docs/adrs/ADR-022-job-orchestration-domain-model.md` — the job-side story for the pools and the bridge.
+- `docs/adrs/ADR-023-event-to-job-bridge.md` — the authoritative ADR governing Phase 2 (revised, specs cut, implementation pending).
 - `docs/adrs/ADR-024-events-domain-formalization.md` — the authoritative ADR governing Phase 1 (shipped via EVT-1..EVT-8).
+- `docs/specs/BRIDGE-PHASE-2-PLAN.md` — orchestration plan for the 9-PR bridge rollout.
 - `docs/specs/events-codegen-plan.md` — superseded plan (historical context only; decisions captured in ADR-024 and `event-codegen.md`).

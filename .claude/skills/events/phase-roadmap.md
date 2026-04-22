@@ -25,13 +25,29 @@ Nothing else in the events domain is Phase 1.
 
 ## Phase 2 — Event-to-Job Bridge (ADR-023)
 
-Not in Phase 1. The bridge lives on the **jobs** side but reads from the events registry. Adds:
-- `IJobBridge` protocol + `job_trigger`, `bridge_delivery` tables (jobs subsystem).
-- Event-bus subscriber that matches triggers against `eventRegistry` and enqueues job runs.
-- Typed scope extraction from payloads using the generated event schemas.
-- Build-time validation: trigger references must match a known event type, and the pool assigned on the job side must match `eventRegistry[type].pool`.
+**Defined, not shipped.** ADR-023 revised 2026-04-21; BRIDGE-1..9 specs cut from `docs/specs/BRIDGE-PHASE-2-PLAN.md`. Implementation pending.
 
-Depends on the shipped events registry (Phase 1) — that's why EVT-1..EVT-8 had to land first. Until the bridge lands:
+The bridge is its **own subsystem** at `runtime/subsystems/bridge/` — the *combiner* of events and jobs, owned by neither. Seven locked decisions:
+
+1. **Triggers are job-owned** via `@JobHandler({ triggers: [{ event, map, when }] })`. Events subsystem stays zero-knowledge about jobs.
+2. **Bridge IS the jobs worker** draining reserved `events_*` pools. Each delivery produces a wrapper `job_run` (framework-owned `@framework/bridge_delivery`) + a `bridge_delivery` ledger row; the wrapper handler spawns the user-pool job.
+3. **Typed TS callbacks** for `map:` / `when:` (not YAML DSL) — typechecked against `PayloadOfType<T>`.
+4. **Four-state `bridge_delivery.status`** (`pending | delivered | skipped | failed`). No auto-retry; wrapper's own retry policy handles infra blips.
+5. **Build-time validation** against `eventRegistry` — unknown event types hard-error at `just gen-all`.
+6. **`when:` predicates** ship in Phase 2.
+7. **`IEventFlow` facade** with two verbs — `publish()` and `publishAndStart()` — as the injectable request-path surface. Collision between `publishAndStart` + a declared `triggers:` entry is resolved by pre-writing `bridge_delivery(status=delivered)` so the drain's `UNIQUE(event_id, trigger_id)` dedups.
+
+Three-tier model (see ADR-023 §*Three tiers of event-driven work*):
+
+| Tier | Mechanism | Durability | Latency |
+|---|---|---|---|
+| 1. Subscribe | `IEventBus.subscribe()` / `@OnEvent` in-process | None | ~ms |
+| 2. Direct invoke | `eventFlow.publishAndStart(...)` | Yes (caller tx) | ~1 poll cycle |
+| 3. Bridge | `@JobHandler({ triggers: [...] })` | Yes (outbox + ledger) | 2–3 poll cycles |
+
+A new CLI — `codegen events consumers <type>` — indexes all three tiers and ships in Phase 2 (BRIDGE-9).
+
+Depends on the shipped events registry (Phase 1) — that's why EVT-1..EVT-8 had to land first. Until BRIDGE-1..9 merge:
 - **Do NOT** subscribe a heavy handler directly to `IEventBus` inside a consumer service. Publish the event from the use case (inside the transaction), and enqueue a job from a separate use case call site rather than inside a subscriber. Subscribers that make HTTP/external calls block the outbox drain.
 - If you absolutely need a reactive bridge today, write a thin subscriber that calls `IJobOrchestrator.start(...)` and nothing else. Leave a `// TODO(ADR-023)` comment so the generated bridge can replace it cleanly.
 

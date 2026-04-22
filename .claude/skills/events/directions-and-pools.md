@@ -78,19 +78,35 @@ Collapsing the three directions into one pool re-creates exactly this problem. C
 
 **The lane is the isolation primitive.** Priority-based scheduling within a single queue is strictly weaker — under sustained load, priority-based schedulers can still starve low-priority work. Separate lanes cannot.
 
-## Event-triggered jobs — pool inheritance (OPEN QUESTION)
+## Event-triggered jobs — two pool layers (resolved by ADR-023)
 
-When the Event-to-Job Bridge (ADR-023) enqueues a user job in response to an event, which pool does the triggered job land in?
+ADR-023 (revised 2026-04-21) resolves this: bridge-driven fanout spans **two pool layers**, and user jobs land in their **declared `@JobHandler.pool`** — no inheritance, no `batch` default.
 
-Proposed default (from `events-codegen-plan.md` §6 + §7 Q6): **triggered jobs default to `batch`, not the source event's reserved pool.** Rationale: the reserved `events_*` pools carry the bus drain itself; user work that reacts to an event is still user work and should land in user-pool isolation.
+**Pool A (reserved `events_*`):** framework-owned `@framework/bridge_delivery` wrapper runs. Cheap (~1ms per wrapper: registry lookup, `when:` evaluation, `orchestrator.start`, ledger update). Run at high concurrency (e.g., 32). Not usually a bottleneck.
 
-Example:
-- Event `stripe_payment_received` drains in `events_inbound`.
-- A job `start_onboarding` is triggered by that event.
-- The bridge enqueues `start_onboarding` into `batch` (user pool), **not** `events_inbound`.
-- `events_inbound`'s drain-loop handler only does the minimum work to hand off: unpack the event, enqueue the job, done.
+**Pool B (user pools):** the actual user job. Where contention happens. Author chooses the pool via `@JobHandler.pool`.
 
-**This is an open question in the plan.** An alternative is for triggered jobs to inherit the source pool, which simplifies back-pressure accounting but muddies reserved-pool semantics. Check `events-codegen-plan.md` §7 Q6 before assuming.
+```
+publish(user.signup)
+   │
+   ▼
+┌──────────────────────┐
+│ wrapper job_run      │ ← Pool A: events_change (reserved, framework)
+└──────────┬───────────┘
+           │ wrapper.handle() calls orchestrator.start(userJob)
+           ▼
+┌──────────────────────┐
+│ user job_run         │ ← Pool B: @JobHandler.pool (e.g. outbound_email)
+└──────────────────────┘
+```
+
+**Rule of thumb:** pool-per-class-of-work, not per-event-type. One event can fan out into many different user pools (see ADR-023 §*Pool alignment guidance*).
+
+**Ordering guarantee.** Reserved-pool concurrency > 1 means no implicit ordering between sequential events for the same user pool. If a consumer needs "A before B" ordering:
+- **Coarse**: set `jobs.pools.events_<direction>.concurrency = 1` — serializes ALL wrappers in that direction. Blunt.
+- **Granular (preferred)**: set `concurrency_key` on the user `@JobHandler` (e.g. `account:{input.account_id}`) with `collisionMode: 'queue'` — serializes per-aggregate, parallel across aggregates.
+
+Default configuration gives parallelism, not ordering.
 
 ## Custom pools — not for events
 
@@ -110,4 +126,5 @@ If you find yourself wanting a fourth event pool ("events_telemetry", "events_au
 - `outbox-and-transactions.md` — the drain loop pool filter
 - `event-codegen.md` — how `direction` is declared and stamped
 - Jobs SKILL.md + ADR-022 — pool definitions and worker concurrency
-- `docs/specs/events-codegen-plan.md` §6 — bridge pool inheritance (open)
+- `docs/adrs/ADR-023-event-to-job-bridge.md` — two-pool-layer model, pool alignment guidance, ordering guarantees
+- Bridge SKILL.md (`.claude/skills/bridge/SKILL.md`) — subsystem-specific guidance (pending BRIDGE-1..9 implementation)
