@@ -124,9 +124,11 @@ export class OpenApiRegistry {
   protected async loadPeer(): Promise<PeerModule> {
     if (this.peer) return this.peer;
     try {
-      // Re-resolved on each failure so consumers can install the peer
-      // and retry without restarting the process.
-      const mod = (await import('@anatine/zod-openapi')) as PeerModule;
+      // Computed specifier: prevents tsc from resolving this import at
+      // typecheck time. Consumers vendor this file but may not install
+      // @anatine/zod-openapi (optional peer).
+      const specifier: string = '@anatine/zod-openapi';
+      const mod = (await import(specifier)) as PeerModule;
       this.peer = mod;
       return mod;
     } catch {
