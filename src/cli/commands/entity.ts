@@ -522,6 +522,11 @@ export class EntityNewCommand extends Command {
 				eventsGeneratedDir: eventCodegenOutputDir,
 				outputDir: bridgeRegistryOutputDir,
 			});
+			if (bridgeRegistryResult.skipped && !isJsonMode()) {
+				printInfo(
+					'bridge subsystem not installed — skipping bridge registry codegen',
+				);
+			}
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (!isJsonMode()) {

@@ -336,6 +336,12 @@ describe('generateBridgeRegistry — orchestration', () => {
     handlersDir = path.join(root, 'src/jobs');
     outputDir = path.join(root, 'runtime/subsystems/bridge/generated');
     fs.mkdirSync(handlersDir, { recursive: true });
+    // Simulate bridge subsystem installed (issue #191 gate).
+    fs.mkdirSync(path.dirname(outputDir), { recursive: true });
+    fs.writeFileSync(
+      path.join(path.dirname(outputDir), 'bridge.protocol.ts'),
+      'export type BridgeRegistry = Record<string, unknown>;\n',
+    );
   });
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true });
@@ -410,6 +416,47 @@ describe('generateBridgeRegistry — orchestration', () => {
     await generateBridgeRegistry({ handlersDir, eventsGeneratedDir, outputDir });
     const second = fs.readFileSync(path.join(outputDir, 'registry.ts'), 'utf8');
     expect(second).toBe(first);
+  });
+
+  describe('bridge subsystem not installed (issue #191)', () => {
+    beforeEach(() => {
+      // Remove the stub installed by the outer beforeEach.
+      fs.rmSync(path.join(path.dirname(outputDir), 'bridge.protocol.ts'));
+    });
+
+    it('skips generation and does not write registry.ts', async () => {
+      writeHandler(handlersDir, 'a.ts', HANDLER_TEMPLATE('a_job', `
+  triggers: [{ event: 'evt_x', map: (e) => ({}) }],
+`));
+      const result = await generateBridgeRegistry({ handlersDir, outputDir });
+      expect(result.skipped).toBe(true);
+      expect(result.written).toBe(false);
+      expect(result.triggerCount).toBe(0);
+      expect(result.files).toHaveLength(0);
+      expect(fs.existsSync(path.join(outputDir, 'registry.ts'))).toBe(false);
+    });
+
+    it('removes a stray registry.ts left by a prior run', async () => {
+      fs.mkdirSync(outputDir, { recursive: true });
+      const stray = path.join(outputDir, 'registry.ts');
+      fs.writeFileSync(stray, '// stray\n');
+      const result = await generateBridgeRegistry({ handlersDir, outputDir });
+      expect(result.skipped).toBe(true);
+      expect(fs.existsSync(stray)).toBe(false);
+    });
+
+    it('dryRun=true leaves stray registry.ts alone', async () => {
+      fs.mkdirSync(outputDir, { recursive: true });
+      const stray = path.join(outputDir, 'registry.ts');
+      fs.writeFileSync(stray, '// stray\n');
+      const result = await generateBridgeRegistry({
+        handlersDir,
+        outputDir,
+        dryRun: true,
+      });
+      expect(result.skipped).toBe(true);
+      expect(fs.existsSync(stray)).toBe(true);
+    });
   });
 
   it('dryRun=true does not write', async () => {
@@ -518,6 +565,11 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
     const handlersDir = path.join(root, 'src/jobs');
     const outputDir = path.join(root, 'runtime/subsystems/bridge/generated');
     fs.mkdirSync(handlersDir, { recursive: true });
+    fs.mkdirSync(path.dirname(outputDir), { recursive: true });
+    fs.writeFileSync(
+      path.join(path.dirname(outputDir), 'bridge.protocol.ts'),
+      'export type BridgeRegistry = Record<string, unknown>;\n',
+    );
     writeHandler(handlersDir, 'dup.ts', HANDLER_TEMPLATE('dup_job', `
   triggers: [
     { event: 'evt_x', map: (e) => ({}) },

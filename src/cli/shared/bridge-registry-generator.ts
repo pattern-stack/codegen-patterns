@@ -92,6 +92,13 @@ export interface BridgeRegistryResult {
   eventTypeCount: number;
   written: boolean;
   files: BridgeRegistryFileOutput[];
+  /**
+   * True when the bridge subsystem is not installed in the consumer tree
+   * (no `bridge.protocol.ts` sibling to `outputDir`) and generation was
+   * skipped to avoid emitting a file with a dangling import. Any stray
+   * `registry.ts` left behind from a prior run is removed in this case.
+   */
+  skipped: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +466,30 @@ export async function generateBridgeRegistry(
 ): Promise<BridgeRegistryResult> {
   const { handlersDir, eventsGeneratedDir, outputDir, dryRun = false } = opts;
 
+  // 0. Gate on bridge subsystem installation (issue #191). The emitted
+  //    `registry.ts` imports `../bridge.protocol`, which only exists
+  //    after `codegen subsystem install bridge` has vendored the runtime
+  //    files. Consumers with a `bridge:` block in `codegen.config.yaml`
+  //    but no installed subsystem would otherwise end up with a broken
+  //    file on every `entity new --all`. Skip entirely and clean up any
+  //    stray artifact from a previous run.
+  const bridgeProtocolPath = path.resolve(outputDir, '..', 'bridge.protocol.ts');
+  if (!fs.existsSync(bridgeProtocolPath)) {
+    const strayPath = path.join(outputDir, OUTPUT_FILE_NAME);
+    if (!dryRun && fs.existsSync(strayPath)) {
+      fs.rmSync(strayPath);
+    }
+    return {
+      outputDir,
+      triggerCount: 0,
+      triggers: [],
+      eventTypeCount: 0,
+      written: false,
+      files: [],
+      skipped: true,
+    };
+  }
+
   // 1. Scan handler files.
   const triggers = scanHandlerFiles(handlersDir);
 
@@ -495,5 +526,6 @@ export async function generateBridgeRegistry(
     eventTypeCount,
     written,
     files: [file],
+    skipped: false,
   };
 }
