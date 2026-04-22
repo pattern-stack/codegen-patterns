@@ -1,6 +1,6 @@
 # BRIDGE Phase 2 — Orchestration Plan
 
-**Status:** Ready for orchestration (execution will happen on a different machine).
+**Status:** Shipped 2026-04-22 (BRIDGE-1..9). Epic #158 closed.
 **Captured:** 2026-04-21
 **Scope:** codegen-patterns library changes only. Consumer adoption is outside this plan.
 **Read before orchestrating:** `docs/adrs/ADR-023-event-to-job-bridge.md` (revised 2026-04-21) and `docs/specs/ADR-023-handoff.md`. Both are ADR-locked; no design work remains.

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Context } from './context.js';
 
-export type SubsystemName = 'events' | 'jobs' | 'cache' | 'storage' | 'sync';
+export type SubsystemName = 'events' | 'jobs' | 'cache' | 'storage' | 'sync' | 'bridge';
 export type SubsystemBackend = 'drizzle' | 'memory' | 'local' | 'unknown';
 
 export interface InstalledSubsystem {
@@ -52,6 +52,12 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	{
 		name: 'sync',
 		description: 'External-system sync engine (IChangeSource<T> + orchestrator + audit log)',
+		backends: ['drizzle', 'memory'],
+		defaultBackend: 'drizzle',
+	},
+	{
+		name: 'bridge',
+		description: 'Event-to-job bridge (durable async fanout via @JobHandler.triggers)',
 		backends: ['drizzle', 'memory'],
 		defaultBackend: 'drizzle',
 	},
