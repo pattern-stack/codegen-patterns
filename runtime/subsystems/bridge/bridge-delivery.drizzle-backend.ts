@@ -22,7 +22,7 @@
  * `mark{Delivered,Skipped,Failed}`) are straightforward
  * `SELECT … LIMIT 1` / `UPDATE … WHERE id = ?` queries.
  */
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { eq, and } from 'drizzle-orm';
 
 import { DRIZZLE } from '../../constants/tokens';
@@ -35,15 +35,37 @@ import type {
   BridgeDeliveryInsert,
   IJobBridge,
 } from './bridge.protocol';
+import { assertTenantId } from './assert-tenant-id';
+import { BRIDGE_MULTI_TENANT } from './bridge.tokens';
 
 @Injectable()
 export class DrizzleBridgeDeliveryRepo implements IJobBridge {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleClient) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleClient,
+    /**
+     * Site (c) of the three ADR-023 §Multi-tenancy enforcement sites.
+     * `@Optional()` so unit tests / non-bridge mounts that don't provide
+     * the token still construct the repo cleanly; defaults to `false`,
+     * which makes `assertTenantId` a no-op.
+     */
+    @Optional()
+    @Inject(BRIDGE_MULTI_TENANT)
+    private readonly multiTenant: boolean = false,
+  ) {}
 
   async insertDelivery(
     row: BridgeDeliveryInsert,
     tx?: DrizzleTransaction,
   ): Promise<void> {
+    // Multi-tenancy gate — last-line defense. Even if callers skipped
+    // sites (a) `EventFlowService.publishAndStart` and (b)
+    // `BridgeDeliveryHandler.run`, a direct repo call still fails fast
+    // BEFORE any SQL is issued.
+    assertTenantId(
+      'DrizzleBridgeDeliveryRepo.insertDelivery',
+      this.multiTenant,
+      row.tenantId,
+    );
     const client = (tx ?? this.db) as DrizzleClient;
     // ON CONFLICT DO NOTHING — surfaces dedup as silent no-op so the
     // per-event tx stays atomic across sibling triggers. RETURNING is

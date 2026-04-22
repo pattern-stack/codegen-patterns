@@ -70,7 +70,7 @@ import type {
   PublishAndStartOptions,
   PublishAndStartResult,
 } from './bridge.protocol';
-import { MissingTenantIdError } from './bridge-errors';
+import { assertTenantId } from './assert-tenant-id';
 
 @Injectable()
 export class EventFlowService implements IEventFlow {
@@ -103,10 +103,14 @@ export class EventFlowService implements IEventFlow {
     opts: PublishAndStartOptions = {},
   ): Promise<PublishAndStartResult> {
     // Multi-tenancy gate — throw before any DB write so failures surface
-    // at the call site, not from inside an aborted tx.
-    if (this.multiTenant && opts.tenantId === undefined) {
-      throw new MissingTenantIdError('EventFlowService.publishAndStart');
-    }
+    // at the call site, not from inside an aborted tx. Site (a) of the
+    // three ADR-023 §Multi-tenancy enforcement sites; shared helper from
+    // BRIDGE-8 keeps all three sites in lock-step.
+    assertTenantId(
+      'EventFlowService.publishAndStart',
+      this.multiTenant,
+      opts.tenantId,
+    );
     // Resolve null → null (cross-tenant work) once, so the same value
     // flows to both the eager start AND the bridge_delivery row.
     const tenantId: string | null = opts.tenantId ?? null;

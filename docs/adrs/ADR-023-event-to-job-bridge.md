@@ -460,7 +460,9 @@ Keyed by event type, ordered array per type (preserves declaration order across 
 
 ### `BridgeModule` and subsystem boundaries
 
-New subsystem at `runtime/subsystems/bridge/`. Its `BridgeModule.forRoot({ multiTenant })` imports `JobsDomainModule` + `EventsModule`, registers the framework `BridgeDeliveryHandler` on all three reserved pools, wires the `IJobBridge` and `IEventFlow` tokens, and exposes them globally.
+**2026-04-22 — clarification:** the framework handler is registered ONCE via `@JobHandler('@framework/bridge_delivery', ...)`; the three reserved pools are claimed by three workers, each routing claimed rows to the same handler class via `JOB_HANDLER_REGISTRY` lookup. What `BridgeModule` actually does is provide the handler class as a Nest provider (so DI resolves its constructor deps) AND fail-fast at boot if `JobWorkerModule` isn't polling all three reserved pools (`BRIDGE_RESERVED_POOLS` const + `BridgeReservedPoolsNotPolledError`). Per-direction routing happens via `job_run.pool='events_<direction>'` set by `BridgeOutboxDrainHook` (BRIDGE-4). The reserved-pool validator exemption (BRIDGE-5) lets the framework handler legitimately target a reserved pool.
+
+New subsystem at `runtime/subsystems/bridge/`. Its `BridgeModule.forRoot({ backend, multiTenant })` provides the framework `BridgeDeliveryHandler` as a Nest provider (auto-registered in `JOB_HANDLER_REGISTRY` by the `@JobHandler` decorator at module load), wires the `IJobBridge` and `IEventFlow` tokens, runs the boot-time pool check described above, and exposes everything globally.
 
 This is the *combiner*: neither events nor jobs subsystems know about the bridge. The bridge imports from both.
 
@@ -584,7 +586,7 @@ Summary:
 
 ## Resolved questions
 
-1. **Wrapper handler registration** — *resolved*: `BridgeModule.forRoot()` registers the framework `BridgeDeliveryHandler` on all three reserved pools (`events_inbound`, `events_change`, `events_outbound`) at module init. See *`BridgeModule` and subsystem boundaries* above.
+1. **Wrapper handler registration** — *resolved* (revised 2026-04-22): the framework `BridgeDeliveryHandler` is registered ONCE via the `@JobHandler('@framework/bridge_delivery', ...)` decorator (auto-registered in `JOB_HANDLER_REGISTRY` at module load). Per-direction routing happens via `job_run.pool='events_<direction>'` set by `BridgeOutboxDrainHook`; workers polling each of the three reserved pools (`events_inbound`, `events_change`, `events_outbound`) claim wrappers from their own pool and dispatch to the same handler class. `BridgeModule` ships `BRIDGE_RESERVED_POOLS` for consumers to spread into `JobWorkerModule.forRoot({ pools })` and runs a boot-time check that throws `BridgeReservedPoolsNotPolledError` if any reserved pool isn't polled. See *`BridgeModule` and subsystem boundaries* above.
 2. **Outbox-drain atomicity** — *resolved*: per-event transaction inside the drain's batch loop; marks `processed_at` + inserts `bridge_delivery` + wrapper `job_run` together. See *Outbox drain atomicity*.
 3. **Where `bridgeRegistry` lives** — *resolved*: `runtime/subsystems/bridge/generated/registry.ts`, owned by the new bridge subsystem. See *The `bridgeRegistry` shape* above.
 4. **Bulk fanout performance** — *unresolved; not a Phase 2 blocker*: an event with 50 interested triggers produces 50 `bridge_delivery` + 50 wrapper rows in the drain transaction. Measure first; if problematic, batch-insert both tables.

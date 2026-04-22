@@ -66,6 +66,36 @@ export class MissingTenantIdError extends Error {
  * backend can faithfully model the "duplicate raises" behaviour for tests
  * that want to assert the constraint actually fires.
  */
+/**
+ * Thrown by `BridgeModule.onModuleInit` when `JobWorkerModule` is wired
+ * alongside the bridge but its active `pools` list does not include one
+ * or more of the three reserved bridge pools (`events_inbound`,
+ * `events_change`, `events_outbound`).
+ *
+ * Without a worker polling those pools, the wrapper `job_run` rows the
+ * outbox drain inserts (BRIDGE-4) sit `pending` forever — a silent
+ * footgun where `eventFlow.publish(...)` returns success but no user
+ * job ever spawns. The boot-time check converts that into a fail-fast.
+ *
+ * Operators can either (a) add `...BRIDGE_RESERVED_POOLS` to their
+ * `JobWorkerModule.forRoot({ pools })` configuration so the same
+ * process polls the reserved pools, or (b) run a separate worker
+ * process per reserved pool for lane isolation (ADR-022 §Pool
+ * isolation).
+ */
+export class BridgeReservedPoolsNotPolledError extends Error {
+  override readonly name = 'BridgeReservedPoolsNotPolledError';
+  constructor(public readonly missingPools: readonly string[]) {
+    super(
+      `BridgeModule loaded but JobWorkerModule is not polling reserved ` +
+        `pool '${missingPools[0]}'. Add ...BRIDGE_RESERVED_POOLS to your ` +
+        `JobWorkerModule.forRoot({ pools }) configuration. Missing pools: ` +
+        `${missingPools.join(', ')}. (Bridge-fanout wrappers will sit ` +
+        `pending forever without these pollers.)`,
+    );
+  }
+}
+
 export class UniqueConstraintError extends Error {
   override readonly name = 'UniqueConstraintError';
   constructor(
