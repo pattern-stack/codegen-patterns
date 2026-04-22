@@ -62,3 +62,6 @@ export {
 // Drizzle backend + outbox-drain hook (BRIDGE-4)
 export { DrizzleBridgeDeliveryRepo } from './bridge-delivery.drizzle-backend';
 export { BridgeOutboxDrainHook } from './bridge-outbox-drain-hook';
+
+// EventFlow facade (BRIDGE-7)
+export { EventFlowService } from './event-flow.service';

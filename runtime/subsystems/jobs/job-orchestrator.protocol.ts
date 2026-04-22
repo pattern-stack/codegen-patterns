@@ -124,8 +124,22 @@ export interface IJobOrchestrator {
    * Create a `pending` `job_run` row and return it. Does NOT block waiting
    * for the worker to pick the run up; consumers that need completion
    * semantics should subscribe to the emitted completion event.
+   *
+   * **Optional `tx` last-arg** (added 2026-04-22 for ADR-023 BRIDGE-7):
+   * pass an in-flight Drizzle transaction to thread the row insert + any
+   * dedupe/collision lookups onto an existing tx. Used by
+   * `EventFlowService.publishAndStart` to bundle the outbox insert,
+   * eager `job_run`, and `bridge_delivery` Case-B pre-write into one
+   * atomic transaction. Memory backend ignores the parameter (its
+   * "transaction" is a process-wide mutex). Drizzle backend uses the
+   * standard `tx ?? this.db` pattern.
    */
-  start(type: string, input: unknown, opts?: StartOptions): Promise<JobRun>;
+  start(
+    type: string,
+    input: unknown,
+    opts?: StartOptions,
+    tx?: import('../events/event-bus.protocol').DrizzleTransaction,
+  ): Promise<JobRun>;
 
   /**
    * Cancel a run (and, by default, its entire root-run subtree). Idempotent

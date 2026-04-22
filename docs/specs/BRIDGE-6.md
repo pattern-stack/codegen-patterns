@@ -98,6 +98,10 @@ None.
 
 ## Implementation Notes (added in PR per CLAUDE.md living-docs rule)
 
+**BRIDGE-7 follow-up patch (2026-04-22) — `DuplicateTriggerError`.** Added in the BRIDGE-7 PR alongside the `EventFlowService`. Catches the case where two `@JobHandler.triggers` entries declare the same `(event, jobType)` pair — without it, the facade's Case B pre-write loop would still be correct (it pre-writes all matches; lead decision 2026-04-22 ask 2), but the drain would still spawn two wrappers and handlers would call `orchestrator.start` twice → double-spawn. Build-time rejection is the cleaner long-term fix (lead decision 2026-04-22 ask 3 — belt+suspenders). New `validateNoDuplicateTriggers(triggers)` runs in `generateBridgeRegistry` before the `eventRegistry` validation; tested in `bridge-registry-generator.test.ts` describe block "validateNoDuplicateTriggers (BRIDGE-7 follow-up)".
+
+
+
 **AST toolchain.** No `ts-morph` in deps — used the TypeScript Compiler API directly (`ts.createSourceFile` + `ts.forEachChild` recursion). Lighter than ts-morph for our narrow needs (decorator + array-literal walk).
 
 **Hooked into `entity new --all`** after event codegen completes. Same `try/catch` warn-but-don't-fail pattern as scope-entity-type and event codegen — except `UnknownTriggerEventError` is surfaced via `printError` (not `printWarning`) because it indicates a real authoring bug. The catch still prevents one validation throw from aborting the whole `entity new` invocation.
