@@ -111,6 +111,53 @@ const HEADER =
  * not exist in the generated `eventRegistry`. ADR-023 §Decision 5
  * (build-time validation against `eventRegistry`).
  */
+/**
+ * Thrown when the registry would emit two triggers with the same
+ * `(event, jobType)` pair. ADR-023 §`publishAndStart` + existing
+ * `triggers:` collision: exactly one execution per `(event, trigger)`
+ * pair. Two triggers with the same `(event, jobType)` would produce
+ * two wrappers + two user-job spawns — the bridge ledger UNIQUE only
+ * dedups by `triggerId`, which is `<jobType>#<index>` and therefore
+ * differs between the two entries.
+ *
+ * The facade's Case B pre-write loop pre-writes one delivery per
+ * matching trigger, so it stays correct even with duplicates. But the
+ * codegen catching this at build time is the cleaner long-term fix
+ * (lead decision 2026-04-22 — belt+suspenders): authors see the
+ * mistake immediately rather than debugging double-spawned jobs.
+ *
+ * To resolve: either rename the second trigger's job type, or remove
+ * one of the two `@JobHandler.triggers[]` entries pointing at the same
+ * (event, job) pair.
+ */
+export class DuplicateTriggerError extends Error {
+  override readonly name = 'DuplicateTriggerError';
+  constructor(
+    public readonly event: string,
+    public readonly jobType: string,
+    public readonly occurrences: ReadonlyArray<{
+      sourceFile: string;
+      sourceLine: number;
+      triggerId: string;
+    }>,
+  ) {
+    super(
+      `DuplicateTriggerError: ${occurrences.length} @JobHandler.triggers ` +
+        `entries declare event '${event}' → jobType '${jobType}'. ADR-023 ` +
+        `requires exactly one execution per (event, trigger) pair; ` +
+        `duplicates would double-spawn the user job. Occurrences:\n` +
+        occurrences
+          .map(
+            (o) =>
+              `  - ${o.triggerId} at ${o.sourceFile}:${o.sourceLine}`,
+          )
+          .join('\n') +
+        `\nFix: rename the second job type, or remove one of the ` +
+        `duplicate trigger entries.`,
+    );
+  }
+}
+
 export class UnknownTriggerEventError extends Error {
   override readonly name = 'UnknownTriggerEventError';
   constructor(
@@ -301,6 +348,37 @@ export function readKnownEventTypes(eventsGeneratedDir?: string): string[] {
  * Skips validation when `knownEventTypes` is empty (no registry to
  * validate against).
  */
+/**
+ * Throws `DuplicateTriggerError` on the first `(event, jobType)` pair
+ * that appears in two or more scanned triggers. Codegen-time guard for
+ * the facade's same-tx invariant (BRIDGE-7).
+ */
+export function validateNoDuplicateTriggers(
+  triggers: ScannedTrigger[],
+): void {
+  // Group by `${event}\u0000${jobType}` (NUL separator avoids any
+  // collision with string contents).
+  const grouped = new Map<
+    string,
+    Array<{ sourceFile: string; sourceLine: number; triggerId: string }>
+  >();
+  for (const t of triggers) {
+    const key = `${t.event}\u0000${t.jobType}`;
+    const list = grouped.get(key) ?? [];
+    list.push({
+      sourceFile: t.sourceFile,
+      sourceLine: t.sourceLine,
+      triggerId: t.triggerId,
+    });
+    grouped.set(key, list);
+  }
+  for (const [key, occurrences] of grouped) {
+    if (occurrences.length < 2) continue;
+    const [event, jobType] = key.split('\u0000');
+    throw new DuplicateTriggerError(event!, jobType!, occurrences);
+  }
+}
+
 export function validateAgainstEventRegistry(
   triggers: ScannedTrigger[],
   knownEventTypes: string[],
@@ -384,7 +462,12 @@ export async function generateBridgeRegistry(
   // 1. Scan handler files.
   const triggers = scanHandlerFiles(handlersDir);
 
-  // 2. Validate against eventRegistry (no-op if registry not present).
+  // 2a. Reject duplicate (event, jobType) pairs (BRIDGE-7 follow-up to
+  //     BRIDGE-6: facade's same-tx invariant requires one trigger per
+  //     such pair; without this guard, duplicates double-spawn).
+  validateNoDuplicateTriggers(triggers);
+
+  // 2b. Validate against eventRegistry (no-op if registry not present).
   const knownEventTypes = readKnownEventTypes(eventsGeneratedDir);
   validateAgainstEventRegistry(triggers, knownEventTypes);
 

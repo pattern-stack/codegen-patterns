@@ -245,6 +245,12 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
     type: string,
     input: unknown,
     opts: StartOptions = {},
+    // BRIDGE-7: signature parity with Drizzle backend. The memory backend
+    // has no real transactions (its "atomic" boundary is a process-wide
+    // mutex acquired by the body below), so the parameter is intentionally
+    // ignored. Accepting it lets EventFlowService unit tests exercise the
+    // same code path without two stub orchestrators.
+    _tx?: unknown,
   ): Promise<JobRun> {
     // JOB-8 — resolve tenant gate outside the mutex so the error throws
     // synchronously-ish from the caller's stack rather than via the mutex's

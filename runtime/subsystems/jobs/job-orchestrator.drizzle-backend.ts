@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, gt, inArray, isNotNull, ne, notInArray, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
+import type { DrizzleTransaction } from '../events/event-bus.protocol';
 import { DRIZZLE } from '../../constants/tokens';
 import {
   jobRuns,
@@ -104,15 +105,26 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
   // start
   // ==========================================================================
 
-  async start(type: string, input: unknown, opts: StartOptions = {}): Promise<JobRun> {
+  async start(
+    type: string,
+    input: unknown,
+    opts: StartOptions = {},
+    tx?: DrizzleTransaction,
+  ): Promise<JobRun> {
     const payload = (input ?? {}) as Record<string, unknown>;
 
     // JOB-8 — resolve tenant gate up front so `multi_tenant=true` +
     // undefined surfaces before any row is touched.
     const tenantId = this.resolveTenantId('start', opts.tenantId);
 
+    // BRIDGE-7: thread the optional caller tx through every read/write
+    // in this method so EventFlowService.publishAndStart can bundle the
+    // outbox insert, the eager job_run insert, and (for Case B) the
+    // bridge_delivery pre-write into a single transaction.
+    const client = (tx ?? this.db) as DrizzleClient;
+
     // 1a. Load job definition.
-    const [def] = await this.db
+    const [def] = await client
       .select()
       .from(jobs)
       .where(eq(jobs.type, type))
@@ -124,7 +136,7 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
     if (definition.dedupeKeyTemplate && definition.dedupeWindowMs) {
       const dedupeKey = evaluateKeyTemplate(definition.dedupeKeyTemplate, payload);
       const windowStart = new Date(Date.now() - definition.dedupeWindowMs);
-      const existing = await this.db
+      const existing = await client
         .select()
         .from(jobRuns)
         .where(
@@ -150,7 +162,7 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
         definition.concurrencyKeyTemplate,
         payload,
       );
-      const inFlight = await this.db
+      const inFlight = await client
         .select()
         .from(jobRuns)
         .where(
@@ -190,7 +202,7 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
     const newId = randomUUID();
     let rootRunId: string = newId;
     if (opts.parentRunId) {
-      const [parent] = await this.db
+      const [parent] = await client
         .select({ rootRunId: jobRuns.rootRunId })
         .from(jobRuns)
         .where(eq(jobRuns.id, opts.parentRunId))
@@ -208,7 +220,7 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
         ? evaluateKeyTemplate(definition.dedupeKeyTemplate, payload)
         : null;
 
-    const [inserted] = await this.db
+    const [inserted] = await client
       .insert(jobRuns)
       .values({
         id: newId,

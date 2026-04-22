@@ -90,14 +90,14 @@ Just `eventBus.publish(event)` — no tx required because caller didn't hand one
 
 ## Acceptance Criteria
 
-- [ ] `EventFlowService implements IEventFlow`.
-- [ ] `publish()` delegates to `IEventBus.publish()`.
-- [ ] Case A (no registry entry for `(event.type, jobType)`): `publishAndStart` writes outbox + starts job; no `bridge_delivery` row written; returns `{ runId }`.
-- [ ] Case B (registry has entry): additional `bridge_delivery(status='delivered', wrapper_run_id=null, user_run_id=<runId>)` pre-write.
-- [ ] All three DB writes in Case B happen inside one transaction (test asserts with a fail-injected `insertDelivery` mock: `orchestrator.start` side effects rolled back).
-- [ ] Later drain attempting to insert same `(event_id, trigger_id)` hits ON CONFLICT DO NOTHING (BRIDGE-4), skips wrapper spawn. Combined integration test in BRIDGE-8.
-- [ ] Multi-tenancy gate at function entry (full enforcement lands in BRIDGE-8; structural hook in place here).
-- [ ] Registry lookup O(1); no perf concern.
+- [x] `EventFlowService implements IEventFlow`.
+- [x] `publish()` delegates to `IEventBus.publish()`. Optional `tx?` threaded through (matches `IEventFlow.publish` BRIDGE-2 signature).
+- [x] Case A (no registry entry for `(event.type, jobType)`): `publishAndStart` writes outbox + starts job; no `bridge_delivery` row written; returns `{ runId }`. Pinned by 2 tests (registry-with-different-jobType + empty-registry).
+- [x] Case B (registry has entry): pre-write `bridge_delivery(status='delivered', wrapper_run_id=null, user_run_id=<runId>)` for **EVERY matching trigger** (lead decision 2026-04-22 — `filter()` not `find()` so duplicate-trigger registries don't double-spawn).
+- [x] All three DB writes in Case B happen inside one transaction. Pinned by call-ordering test (`bus.publish` → `orchestrator.start` → `repo.insertDelivery`) + rollback test (`insertDelivery` throw → tx callback marked rolled back; throw propagates).
+- [x] Later drain attempting to insert same `(event_id, trigger_id)` is dedup'd. Pinned by memory-backend `UniqueConstraintError` test (BRIDGE-3 fidelity simulates BRIDGE-4 ON CONFLICT). End-to-end integration in BRIDGE-8.
+- [x] Multi-tenancy gate at function entry: throws `MissingTenantIdError('EventFlowService.publishAndStart')` when `multiTenant=true && opts?.tenantId === undefined`. Pinned by 3 tests (throw, explicit-null pass-through, explicit-string pass-through to BOTH eager start AND bridge_delivery).
+- [x] Registry lookup is `Map<eventType, BridgeTriggerEntry[]>` keyed read + linear scan over typically-1–5 entries. Effectively O(1) at consumer scale.
 
 ## Testing Strategy
 
@@ -111,7 +111,19 @@ Just `eventBus.publish(event)` — no tx required because caller didn't hand one
 
 ## Open Questions
 
-- [ ] **Protocol `tx` parameter propagation.** If `IEventBus.publish(event)` doesn't already accept `tx?: DrizzleClient`, extending it here is a cross-subsystem modification. Confirm in PR body; update BRIDGE-2 or EVT/JOB spec notes accordingly.
+- [x] **Protocol `tx` parameter propagation — RESOLVED.** `IEventBus.publish(event, tx?)` already accepts `tx` (EVT-4). `IJobBridge.insertDelivery(row, tx?)` already accepts `tx` (BRIDGE-2). `IJobOrchestrator.start(type, input, opts?)` did NOT — extended to `start(type, input, opts?, tx?)` in this PR (lead-approved option (a) at GATE 3). Drizzle backend uses `client = tx ?? this.db` (standard pattern); memory backend ignores. JOB-3 spec updated with appended Implementation Note.
+
+## Implementation Notes (added in PR per CLAUDE.md living-docs rule)
+
+**Same-tx invariant — three writes, one tx.** `db.transaction(async tx => { eventBus.publish(event, tx); orchestrator.start(jobType, input, opts, tx); for (m of matchingTriggers) bridgeRepo.insertDelivery({...}, tx); })`. A throw anywhere in the body propagates and rolls back all three writes; the bridge `UNIQUE (event_id, trigger_id)` makes the next-cycle drain re-claim idempotent.
+
+**Pre-write ALL matching triggers (lead decision 2026-04-22, GATE 3 ask 2).** The facade uses `registry.filter(t => t.jobType === jobType)`, not `find()`. Rationale: duplicate `(event, jobType)` pairs in the registry would otherwise leave one trigger un-pre-written, the drain would spawn a wrapper for that triggerId, and the wrapper handler would call `orchestrator.start` for the same `(event, jobType)` → double-spawn. With filter+loop, every matching trigger is pre-written so the drain's ON CONFLICT skips them all. BRIDGE-6 codegen now also rejects duplicates at build time (see BRIDGE-6 follow-up below) — belt+suspenders.
+
+**`IJobOrchestrator.start` extended with optional `tx?` (lead decision 2026-04-22, GATE 3 ask 1).** Cross-subsystem modification: `runtime/subsystems/jobs/job-orchestrator.protocol.ts` interface signature gained a fourth optional parameter; `runtime/subsystems/jobs/job-orchestrator.drizzle-backend.ts` uses `client = (tx ?? this.db) as DrizzleClient` for every read/write inside `start()` (the existing pattern from `DrizzleEventBus.publish` and `DrizzleBridgeDeliveryRepo`); memory backend accepts the parameter as `_tx?: unknown` and ignores it (its "atomic" boundary is a process-wide mutex). No behaviour change for existing callers — `tx` defaults to `undefined`. JOB-3 spec updated with an appended Implementation Note.
+
+**BRIDGE-6 follow-up — codegen `DuplicateTriggerError` (lead decision 2026-04-22, GATE 3 ask 3).** Same-PR patch to `src/cli/shared/bridge-registry-generator.ts`: new `validateNoDuplicateTriggers(triggers)` that throws `DuplicateTriggerError` on the first `(event, jobType)` pair that appears twice. Hooked into `generateBridgeRegistry` before `validateAgainstEventRegistry`. Error message lists every offending occurrence with file + line + triggerId so authors can pick which one to remove. BRIDGE-6 spec Implementation Notes updated.
+
+**Multi-tenancy gate at entry, not inside tx.** Throw before `db.transaction(...)` so the failure surfaces at the call site, not via "tx aborted with error: MissingTenantIdError". Same precedent as `BridgeDeliveryHandler.run` (BRIDGE-5).
 
 ## References
 

@@ -17,8 +17,10 @@ import {
   generateBridgeRegistry,
   readKnownEventTypes,
   scanHandlerFiles,
+  DuplicateTriggerError,
   UnknownTriggerEventError,
   validateAgainstEventRegistry,
+  validateNoDuplicateTriggers,
   type ScannedTrigger,
 } from '../../cli/shared/bridge-registry-generator';
 import ts from 'typescript';
@@ -421,5 +423,114 @@ describe('generateBridgeRegistry — orchestration', () => {
     });
     expect(result.written).toBe(false);
     expect(fs.existsSync(path.join(outputDir, 'registry.ts'))).toBe(false);
+  });
+});
+
+
+describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
+  // ADR-023 §`publishAndStart` + `triggers:` collision: exactly one
+  // execution per (event, trigger) pair. Two triggers with the same
+  // (event, jobType) double-spawn the user job because triggerId differs
+  // by index. The codegen catches this at build time so authors don't
+  // debug double-spawned jobs in production.
+  it('passes when no duplicates', () => {
+    const triggers: ScannedTrigger[] = [
+      {
+        jobType: 'a_job',
+        triggerId: 'a_job#0',
+        event: 'evt_x',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/a.ts',
+        sourceLine: 1,
+      },
+      {
+        jobType: 'b_job',
+        triggerId: 'b_job#0',
+        event: 'evt_x',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/b.ts',
+        sourceLine: 1,
+      },
+    ];
+    expect(() => validateNoDuplicateTriggers(triggers)).not.toThrow();
+  });
+
+  it('throws DuplicateTriggerError on (event, jobType) duplicate', () => {
+    const triggers: ScannedTrigger[] = [
+      {
+        jobType: 'a_job',
+        triggerId: 'a_job#0',
+        event: 'evt_x',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/file_one.ts',
+        sourceLine: 5,
+      },
+      {
+        jobType: 'a_job',
+        triggerId: 'a_job#1',
+        event: 'evt_x',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/file_two.ts',
+        sourceLine: 12,
+      },
+    ];
+    let caught: unknown;
+    try {
+      validateNoDuplicateTriggers(triggers);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(DuplicateTriggerError);
+    const err = caught as DuplicateTriggerError;
+    expect(err.event).toBe('evt_x');
+    expect(err.jobType).toBe('a_job');
+    expect(err.occurrences).toHaveLength(2);
+    expect(err.message).toContain('a_job#0');
+    expect(err.message).toContain('a_job#1');
+    expect(err.message).toContain('/tmp/file_one.ts:5');
+    expect(err.message).toContain('/tmp/file_two.ts:12');
+  });
+
+  it('allows the same jobType to map a different event (no false collision)', () => {
+    const triggers: ScannedTrigger[] = [
+      {
+        jobType: 'a_job',
+        triggerId: 'a_job#0',
+        event: 'evt_x',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/a.ts',
+        sourceLine: 1,
+      },
+      {
+        jobType: 'a_job',
+        triggerId: 'a_job#1',
+        event: 'evt_y',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/a.ts',
+        sourceLine: 5,
+      },
+    ];
+    expect(() => validateNoDuplicateTriggers(triggers)).not.toThrow();
+  });
+
+  it('generateBridgeRegistry surfaces DuplicateTriggerError end-to-end', async () => {
+    const root = makeTmpDir('orch-dup');
+    const handlersDir = path.join(root, 'src/jobs');
+    const outputDir = path.join(root, 'runtime/subsystems/bridge/generated');
+    fs.mkdirSync(handlersDir, { recursive: true });
+    writeHandler(handlersDir, 'dup.ts', HANDLER_TEMPLATE('dup_job', `
+  triggers: [
+    { event: 'evt_x', map: (e) => ({}) },
+    { event: 'evt_x', map: (e) => ({}) },
+  ],
+`));
+    expect(
+      generateBridgeRegistry({
+        handlersDir,
+        eventsGeneratedDir: undefined,
+        outputDir,
+      }),
+    ).rejects.toBeInstanceOf(DuplicateTriggerError);
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });
