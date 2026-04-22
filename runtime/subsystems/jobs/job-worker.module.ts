@@ -221,6 +221,12 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
   ): void {
     const offenders: Array<{ handlerClass: string; pool: string }> = [];
     for (const entry of entries) {
+      // Framework-owned handlers (`@framework/*` job types) are allowed in
+      // reserved pools — that is in fact the entire point of the reserved
+      // `events_*` pools (ADR-022 + ADR-023). The reserved-pool guard
+      // exists to keep USER handlers out, not the framework's own
+      // bridge-delivery handler. BRIDGE-5 introduced this exemption.
+      if (entry.type.startsWith('@framework/')) continue;
       const declaredPool = entry.meta.pool ?? 'batch';
       const def = poolConfig.get(declaredPool);
       if (def?.reserved) {

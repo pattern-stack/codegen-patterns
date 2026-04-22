@@ -76,6 +76,13 @@ export class MemoryBridgeDeliveryRepo implements IJobBridge {
     return this.deliveries.get(key(eventId, triggerId)) ?? null;
   }
 
+  async findDeliveryById(id: string): Promise<BridgeDeliveryRecord | null> {
+    for (const record of this.deliveries.values()) {
+      if (record.id === id) return record;
+    }
+    return null;
+  }
+
   async markDelivered(id: string, userRunId: string): Promise<void> {
     const record = this.findById(id);
     record.status = 'delivered';

@@ -19,11 +19,13 @@ export {
 } from './bridge-delivery.schema';
 export type { BridgeDeliveryRecord } from './bridge-delivery.schema';
 
-// Protocols (BRIDGE-2)
+// Protocols (BRIDGE-2 + BRIDGE-5 BridgeRegistry types)
 export type {
   IJobBridge,
   IEventFlow,
   BridgeDeliveryInsert,
+  BridgeRegistry,
+  BridgeTriggerEntry,
   PublishAndStartOptions,
   PublishAndStartResult,
 } from './bridge.protocol';
@@ -45,3 +47,11 @@ export {
 
 // Memory backend (BRIDGE-3)
 export { MemoryBridgeDeliveryRepo } from './bridge-delivery.memory-backend';
+
+// Framework handler (BRIDGE-5)
+export {
+  BridgeDeliveryHandler,
+  BRIDGE_DELIVERY_JOB_TYPE,
+  BridgeDeliveryJobType,
+  type BridgeDeliveryInput,
+} from './bridge-delivery-handler';

@@ -119,6 +119,30 @@ export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy
     await client.insert(domainEvents).values(events.map(toInsertValues));
   }
 
+  async findById(eventId: string): Promise<DomainEvent | null> {
+    const rows = await this.db
+      .select()
+      .from(domainEvents)
+      .where(eq(domainEvents.id, eventId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      type: row.type,
+      aggregateId: row.aggregateId,
+      aggregateType: row.aggregateType,
+      payload: row.payload as Record<string, unknown>,
+      occurredAt:
+        row.occurredAt instanceof Date
+          ? row.occurredAt
+          : new Date(row.occurredAt as unknown as string),
+      metadata: (row.metadata ?? undefined) as
+        | Record<string, unknown>
+        | undefined,
+    };
+  }
+
   subscribe<T extends DomainEvent = DomainEvent>(
     eventType: string,
     handler: (event: T) => Promise<void>,

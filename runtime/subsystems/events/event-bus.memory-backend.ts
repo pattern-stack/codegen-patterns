@@ -60,6 +60,10 @@ export class MemoryEventBus implements IEventBus {
     }
   }
 
+  async findById(eventId: string): Promise<DomainEvent | null> {
+    return this.publishedEvents.find((e) => e.id === eventId) ?? null;
+  }
+
   subscribe<T extends DomainEvent = DomainEvent>(
     eventType: string,
     handler: (event: T) => Promise<void>,
