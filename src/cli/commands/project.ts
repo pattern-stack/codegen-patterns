@@ -41,6 +41,7 @@ import { scanProject, generateConfig } from '../../scanner/index.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { buildInitPlan, writePlan, type InitPlan } from '../shared/init-scaffold.js';
+import { ProjectUpgradeOpenapiCommand } from './project-upgrade-openapi.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -834,6 +835,7 @@ const projectNoun: NounModule = {
 		ProjectConfigCommand,
 		ProjectInspectCommand,
 		ProjectGraphCommand,
+		ProjectUpgradeOpenapiCommand,
 	] as CommandClass[],
 	summary,
 	hints,
