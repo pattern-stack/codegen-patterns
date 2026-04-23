@@ -29,6 +29,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { DRIZZLE } from '../../constants/tokens';
 import type { DrizzleClient } from '../../types/drizzle';
 import { HandlerRegistry, type HandlerRegistryEntry } from './job-handler.base';
@@ -126,6 +127,7 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
      * without supplying a `DRIZZLE` provider.
      */
     @Optional() @Inject(DRIZZLE) private readonly db: DrizzleClient | null = null,
+    private readonly moduleRef?: ModuleRef,
   ) {}
 
   // ============================================================================
@@ -270,12 +272,20 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
           `pass 'workerFactory' to inject a stub.`,
       );
     }
+    if (!this.moduleRef) {
+      throw new Error(
+        `JobWorkerModule: ModuleRef not available — cannot construct JobWorker ` +
+          `with handler DI support. Ensure the orchestrator is resolved through ` +
+          `the Nest container (not instantiated manually in tests).`,
+      );
+    }
     return new JobWorker(
       this.db,
       this.orchestrator,
       this.runService,
       this.stepService,
       workerOptions,
+      this.moduleRef,
     );
   }
 }

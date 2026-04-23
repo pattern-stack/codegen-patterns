@@ -14,6 +14,7 @@
  */
 // TODO(logging-subsystem): swap to ILogger once ADR-028 lands
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { and, asc, desc, eq, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
@@ -194,6 +195,7 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(JOB_RUN_SERVICE) private readonly runService: IJobRunService,
     @Inject(JOB_STEP_SERVICE) private readonly stepService: IJobStepService,
     @Inject(JOB_WORKER_OPTIONS) private readonly options: JobWorkerOptions,
+    private readonly moduleRef: ModuleRef,
   ) {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.staleSweeperIntervalMs =
@@ -419,9 +421,16 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     const meta = registryEntry.meta as JobHandlerMeta<unknown>;
     const HandlerClass = registryEntry.handlerClass;
 
-    // (c) Build JobContext. Phase 1: instantiate handler with no args.
-    //     DI-for-handlers lands with JOB-5's boot wiring.
-    const handler = new HandlerClass() as JobHandlerBase<unknown>;
+    // (c) Build JobContext. Instantiate handler via Nest's ModuleRef so
+    //     `@Inject` constructor params resolve. `create({ strict: false })`
+    //     walks the whole module graph for providers (handlers don't need to
+    //     be registered as providers themselves; the @JobHandler decorator
+    //     is the only registration required). A fresh instance per run
+    //     mirrors the contract handlers were authored against and keeps
+    //     run-scoped state from leaking across claims.
+    const handler = (await this.moduleRef.create(
+      HandlerClass as unknown as new (...args: unknown[]) => unknown,
+    )) as JobHandlerBase<unknown>;
     const ctx: JobContext<unknown> = {
       input: claimed.input,
       run: claimed as JobRun,
