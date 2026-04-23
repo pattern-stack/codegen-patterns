@@ -81,7 +81,7 @@ All fields optional except `type` (the string positional arg). Defaults come fro
 | `timeoutMs` | number | Hard wall-clock cap across all retries. Breach → `status='timed_out'`. |
 | `replayFrom` | `'scratch' \| 'last_step' \| 'last_checkpoint'` | Default `'last_checkpoint'`. Only affects behaviour on `replay(runId)`. |
 
-Constructor injection works like any Nest provider — no special setup. Declare the handler in `providers` (or an entity/feature module's providers) so Nest can resolve its deps.
+Constructor injection works like any Nest provider, but with one hard requirement: **the handler class MUST be registered as a provider in its owning module** (or an entity/feature module's `providers`). `@JobHandler` registers the class with the job registry for orchestration, but it does NOT register it with Nest's DI container — that's on you. The worker resolves handlers via `moduleRef.get(HandlerClass, { strict: false })`; a handler that isn't a registered provider will throw at claim time with an unresolvable-provider error. Cross-module `@Inject` deps work as long as the providing module is imported in the handler's owning module.
 
 ## Using `JobContext`
 

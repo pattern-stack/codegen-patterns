@@ -421,16 +421,22 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     const meta = registryEntry.meta as JobHandlerMeta<unknown>;
     const HandlerClass = registryEntry.handlerClass;
 
-    // (c) Build JobContext. Instantiate handler via Nest's ModuleRef so
-    //     `@Inject` constructor params resolve. `create({ strict: false })`
-    //     walks the whole module graph for providers (handlers don't need to
-    //     be registered as providers themselves; the @JobHandler decorator
-    //     is the only registration required). A fresh instance per run
-    //     mirrors the contract handlers were authored against and keeps
-    //     run-scoped state from leaking across claims.
-    const handler = (await this.moduleRef.create(
+    // (c) Build JobContext. Resolve the handler instance from Nest's DI
+    //     graph so its `@Inject` constructor params (which may come from
+    //     any module in the app graph) are satisfied. `moduleRef.create()`
+    //     would otherwise instantiate a fresh class within JobWorkerModule's
+    //     scope only — which blows up with "not a provider of the current
+    //     module" for any handler that consumes a service from a peer
+    //     module (e.g. CrmSyncJob injecting CrmSyncFactory from CrmModule).
+    //     Consequence: handlers MUST be registered as providers in their
+    //     owning module (@Injectable + `providers: [HandlerClass]`). The
+    //     @JobHandler decorator handles registry registration only, not DI.
+    //     See the jobs skill's handler-authoring.md for the registration
+    //     rule.
+    const handler = this.moduleRef.get(
       HandlerClass as unknown as new (...args: unknown[]) => unknown,
-    )) as JobHandlerBase<unknown>;
+      { strict: false },
+    ) as JobHandlerBase<unknown>;
     const ctx: JobContext<unknown> = {
       input: claimed.input,
       run: claimed as JobRun,

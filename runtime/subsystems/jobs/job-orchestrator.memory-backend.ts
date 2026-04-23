@@ -596,10 +596,14 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
     // ModuleRef so `@Inject` constructor params work. ModuleRef is
     // @Optional() — zero-dep test stubs that construct this orchestrator
     // manually still hit the legacy `new HandlerClass()` path.
+    // `get({ strict: false })` (not `create()`) — the handler must be a
+    // provider in its owning module so cross-module @Inject dependencies
+    // resolve. See job-worker.ts for the full rationale.
     const handler = this.moduleRef
-      ? ((await this.moduleRef.create(
+      ? (this.moduleRef.get(
           HandlerClass as unknown as new (...args: unknown[]) => unknown,
-        )) as JobHandlerBase<unknown>)
+          { strict: false },
+        ) as JobHandlerBase<unknown>)
       : new HandlerClass();
 
     const ctx: JobContext<unknown> = {

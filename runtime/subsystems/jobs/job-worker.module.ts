@@ -177,8 +177,16 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
             `the resolved pool config. Configured pools: [${[...poolConfig.keys()].join(', ')}].`,
         );
       }
+      // `pool` here is the logical pool name (e.g. 'crm_sync') — the same
+      // value the orchestrator persists into `job_run.pool` from
+      // `@JobHandler.meta.pool`, and therefore the value the worker's
+      // claim query filters on. `def.queue` is a display/routing alias
+      // (e.g. 'jobs-crm-sync') used by BullMQ-style backends for queue
+      // naming; it MUST NOT be passed as the claim-filter pool, or the
+      // worker will never match any row and the pool silently never
+      // drains. See v0.4.4 fix notes.
       const workerOptions: JobWorkerOptions = {
-        pool: def.queue,
+        pool: poolName,
         concurrency: def.concurrency,
         shutdownTimeoutMs:
           this.options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
@@ -192,7 +200,7 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
       worker.onModuleInit();
       this.workers.push(worker);
       this.logger.log(
-        `JobWorker started: pool='${def.queue}' concurrency=${def.concurrency}`,
+        `JobWorker started: pool='${poolName}' (queue='${def.queue}') concurrency=${def.concurrency}`,
       );
     }
   }
