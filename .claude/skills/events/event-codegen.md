@@ -71,7 +71,7 @@ payload:
 - `aggregate` — entity name (required for `direction: change`; optional elsewhere)
 - `source` — inbound only; logical origin ("stripe", "email")
 - `destination` — outbound only; logical target ("crm", "slack")
-- `payload` — snake_case keys → camelCase TS props; types `uuid | string | number | boolean | date | json`
+- `payload` — snake_case keys → camelCase TS props; types `uuid | string | number | boolean | date | json | array`. For `array`, an `items:` scalar type is required (`items: uuid | string | number | boolean | date`) and emits `T[]` + `z.array(T)`. `json` means "arbitrary JSON object" (`Record<string, unknown>` / `z.record(z.unknown())`) — do NOT use `json` for array-shaped payloads, Zod will reject them at validation time.
 - `pool` — optional override; constrained to the reserved pools of the *same category* (a `change` event cannot opt into `events_inbound`). User pools (`batch`, `interactive`) are NEVER valid targets for events.
 - `retry` — `{ attempts, backoff }`, hints surfaced to the bus
 - `version` — integer, defaults to 1 (schema evolution; not exercised yet)

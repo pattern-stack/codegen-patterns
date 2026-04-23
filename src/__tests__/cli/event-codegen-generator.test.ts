@@ -289,6 +289,35 @@ describe('buildTypesContent — all six field types', () => {
 	});
 });
 
+describe('buildTypesContent / buildSchemasContent — array field', () => {
+	test('emits T[] in TS and z.array(scalar) in Zod for array + items', () => {
+		const ev: EventDefinition = {
+			type: 'crm_sync_started',
+			direction: 'change',
+			aggregate: 'integration',
+			version: 1,
+			payload: {
+				entity_types: { type: 'array', items: 'string', nullable: false },
+				ids: { type: 'array', items: 'uuid', nullable: false },
+				optional_ids: { type: 'array', items: 'uuid', nullable: true },
+			},
+			retry: { attempts: 3, backoff: 'exponential' },
+			pool: 'events_change',
+		};
+		const typesContent = buildTypesContent([ev]);
+		expect(typesContent).toContain('entityTypes: string[];');
+		expect(typesContent).toContain('ids: string[];');
+		expect(typesContent).toContain('optionalIds: string[] | null;');
+
+		const schemasContent = buildSchemasContent([ev]);
+		expect(schemasContent).toContain('entityTypes: z.array(z.string()),');
+		expect(schemasContent).toContain('ids: z.array(z.string().uuid()),');
+		expect(schemasContent).toContain(
+			'optionalIds: z.array(z.string().uuid()).nullable(),',
+		);
+	});
+});
+
 // ---------------------------------------------------------------------------
 // buildSchemasContent
 // ---------------------------------------------------------------------------
