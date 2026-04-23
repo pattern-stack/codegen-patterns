@@ -319,9 +319,18 @@ export class EntityNewCommand extends Command {
 			subsystemsRoot,
 			'bridge/generated',
 		);
-		// Default handlers dir; consumer can override via codegen.config.yaml later.
+		// Handlers dir resolves under `paths.backend_src` (matching where the
+		// rest of the backend tree lives) with `src` as final fallback — the
+		// same default `subsystems-path.ts` uses for `subsystems` root.
 		// Recursive scan tolerates absent dir (returns empty registry).
-		const bridgeHandlersDir = path.resolve(ctx.cwd, 'src/jobs');
+		const backendSrcForHandlers =
+			(ctx.config as { paths?: { backend_src?: string } } | null | undefined)
+				?.paths?.backend_src ?? 'src';
+		const bridgeHandlersDir = path.resolve(
+			ctx.cwd,
+			backendSrcForHandlers,
+			'jobs',
+		);
 
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
