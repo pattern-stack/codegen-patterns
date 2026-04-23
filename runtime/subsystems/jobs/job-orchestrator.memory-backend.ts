@@ -14,7 +14,8 @@
  * the orchestrator's mutex.
  */
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type {
   JobDefinitionRow,
   JobRunRow,
@@ -139,6 +140,7 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
     private readonly store: MemoryJobStore,
     private readonly stepService: MemoryJobStepService,
     @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   /**
@@ -590,7 +592,15 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
     }
     const meta = registration.meta;
     const HandlerClass = registration.handlerClass;
-    const handler = new HandlerClass();
+    // Match the Drizzle backend: resolve the handler through Nest's
+    // ModuleRef so `@Inject` constructor params work. ModuleRef is
+    // @Optional() — zero-dep test stubs that construct this orchestrator
+    // manually still hit the legacy `new HandlerClass()` path.
+    const handler = this.moduleRef
+      ? ((await this.moduleRef.create(
+          HandlerClass as unknown as new (...args: unknown[]) => unknown,
+        )) as JobHandlerBase<unknown>)
+      : new HandlerClass();
 
     const ctx: JobContext<unknown> = {
       input: run.input,
