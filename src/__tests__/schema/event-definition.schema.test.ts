@@ -350,3 +350,63 @@ describe('EventDefinitionSchema — defaults and transform', () => {
 		}
 	});
 });
+
+describe('EventDefinitionSchema — array payload fields', () => {
+	it('accepts type: array with scalar items', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			direction: 'change',
+			aggregate: 'integration',
+			payload: {
+				entity_types: { type: 'array', items: 'string' },
+			},
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.payload.entity_types?.type).toBe('array');
+			expect(result.data.payload.entity_types?.items).toBe('string');
+		}
+	});
+
+	it("rejects type: 'array' without items", () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			direction: 'change',
+			aggregate: 'integration',
+			payload: { entity_types: { type: 'array' } },
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((i) => i.path.includes('items'))).toBe(
+				true,
+			);
+		}
+	});
+
+	it("rejects items: on a non-array type", () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			direction: 'change',
+			aggregate: 'integration',
+			payload: { entity_types: { type: 'string', items: 'string' } },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it("rejects nested arrays (items must be scalar, not 'array' or 'json')", () => {
+		const resultArray = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			direction: 'change',
+			aggregate: 'integration',
+			payload: { entity_types: { type: 'array', items: 'array' } },
+		});
+		expect(resultArray.success).toBe(false);
+		const resultJson = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			direction: 'change',
+			aggregate: 'integration',
+			payload: { entity_types: { type: 'array', items: 'json' } },
+		});
+		expect(resultJson.success).toBe(false);
+	});
+});

@@ -107,7 +107,9 @@ export function toPascalCase(input: string): string {
 // TS-type and Zod mapping tables (EventFieldType → TS / Zod)
 // ---------------------------------------------------------------------------
 
-const TS_TYPE_BY_FIELD: Record<EventFieldType, string> = {
+// For non-array types only. `array` goes through its own branch that also
+// needs the `items` hint to emit `T[]` / `z.array(T)`.
+const TS_TYPE_BY_FIELD: Record<Exclude<EventFieldType, 'array'>, string> = {
 	uuid: 'string',
 	string: 'string',
 	number: 'number',
@@ -116,7 +118,7 @@ const TS_TYPE_BY_FIELD: Record<EventFieldType, string> = {
 	json: 'Record<string, unknown>',
 };
 
-const ZOD_EXPR_BY_FIELD: Record<EventFieldType, string> = {
+const ZOD_EXPR_BY_FIELD: Record<Exclude<EventFieldType, 'array'>, string> = {
 	uuid: 'z.string().uuid()',
 	string: 'z.string()',
 	number: 'z.number()',
@@ -126,12 +128,25 @@ const ZOD_EXPR_BY_FIELD: Record<EventFieldType, string> = {
 };
 
 function tsTypeForField(field: EventPayloadField): string {
-	const base = TS_TYPE_BY_FIELD[field.type];
+	let base: string;
+	if (field.type === 'array') {
+		// Schema validation guarantees `items` is defined for `type: 'array'`.
+		const itemType = field.items as Exclude<EventFieldType, 'array' | 'json'>;
+		base = `${TS_TYPE_BY_FIELD[itemType]}[]`;
+	} else {
+		base = TS_TYPE_BY_FIELD[field.type];
+	}
 	return field.nullable ? `${base} | null` : base;
 }
 
 function zodExprForField(field: EventPayloadField): string {
-	const base = ZOD_EXPR_BY_FIELD[field.type];
+	let base: string;
+	if (field.type === 'array') {
+		const itemType = field.items as Exclude<EventFieldType, 'array' | 'json'>;
+		base = `z.array(${ZOD_EXPR_BY_FIELD[itemType]})`;
+	} else {
+		base = ZOD_EXPR_BY_FIELD[field.type];
+	}
 	return field.nullable ? `${base}.nullable()` : base;
 }
 

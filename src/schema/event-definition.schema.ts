@@ -27,8 +27,24 @@ export const EVENT_FIELD_TYPES = [
 	"boolean",
 	"date",
 	"json",
+	"array",
 ] as const;
 export type EventFieldType = (typeof EVENT_FIELD_TYPES)[number];
+
+/**
+ * Scalar types permitted as `items` of an `array` field. Intentionally narrower
+ * than the full field-type set: nested arrays and nested objects inside a
+ * payload array cross the line from "wire format" into "embedded schema" and
+ * should be modelled either as a separate event or as a `json` blob.
+ */
+export const EVENT_ARRAY_ITEM_TYPES = [
+	"uuid",
+	"string",
+	"number",
+	"boolean",
+	"date",
+] as const;
+export type EventArrayItemType = (typeof EVENT_ARRAY_ITEM_TYPES)[number];
 
 export const RESERVED_EVENT_POOLS = [
 	"events_inbound",
@@ -56,20 +72,40 @@ export const DIRECTION_TO_POOL: Record<EventDirection, EventPool> = {
 
 const EventDirectionSchema = z.enum(EVENT_DIRECTIONS);
 const EventFieldTypeSchema = z.enum(EVENT_FIELD_TYPES);
+const EventArrayItemTypeSchema = z.enum(EVENT_ARRAY_ITEM_TYPES);
 const EventPoolSchema = z.enum(RESERVED_EVENT_POOLS);
 
 /**
  * Per-payload-field metadata. `nullable: true` means the field may be `null`
  * on the wire; `description` is surfaced into the generated interface/Zod
- * schema as a JSDoc.
+ * schema as a JSDoc. `items` is required when `type: 'array'` and rejected
+ * otherwise — enforces "array-ness is declared, item shape is declared"
+ * without opening the door to arbitrary nesting.
  */
 const EventPayloadFieldSchema = z
 	.object({
 		type: EventFieldTypeSchema,
+		items: EventArrayItemTypeSchema.optional(),
 		nullable: z.boolean().optional().default(false),
 		description: z.string().optional(),
 	})
-	.strict();
+	.strict()
+	.superRefine((data, ctx) => {
+		if (data.type === "array" && data.items === undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "'items' is required when type is 'array'",
+				path: ["items"],
+			});
+		}
+		if (data.type !== "array" && data.items !== undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: `'items' is only valid when type is 'array' (got '${data.type}')`,
+				path: ["items"],
+			});
+		}
+	});
 
 export type EventPayloadField = z.infer<typeof EventPayloadFieldSchema>;
 
