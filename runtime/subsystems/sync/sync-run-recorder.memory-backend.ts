@@ -30,8 +30,27 @@ import type {
   ISyncRunRecorder,
   RecordItemInput,
   StartRunInput,
+  SyncRunSummary,
 } from './sync-run-recorder.protocol';
 import { FieldDiffSchema } from './sync-field-diff.protocol';
+
+/**
+ * Optional per-subscription metadata a test can seed on the memory backend
+ * so `listRecent` can surface `integrationId`. The memory recorder's write
+ * path never persists subscription rows (it only stores runs + items), so
+ * `listRecent` has no way to derive `integrationId` on its own. Tests that
+ * care about the field should populate `subscriptions` before calling
+ * `listRecent`; calls that don't seed get an empty string and a stable
+ * shape (see `listRecent` below).
+ */
+export interface MemorySyncSubscription {
+  integrationId: string;
+  adapter: string;
+  domain: string;
+  externalRef: string | null;
+  lastSyncAt?: Date | null;
+  updatedAt: Date;
+}
 
 /**
  * Concrete run row as held in memory. Shape mirrors the interesting
@@ -68,6 +87,15 @@ export class MemoryRunRecorder implements ISyncRunRecorder {
    * in Postgres.
    */
   readonly items: Map<string, RecordItemInput[]> = new Map();
+
+  /**
+   * Seedable subscription metadata — tests populate this to make
+   * `listRecent` return meaningful `integrationId` values. The memory
+   * backend doesn't track subscriptions on its own (only runs + items), so
+   * this map is the intentional extension point: tests write entries for
+   * the subscription ids they use, production code never touches it.
+   */
+  readonly subscriptions: Map<string, MemorySyncSubscription> = new Map();
 
   async startRun(input: StartRunInput): Promise<{ id: string }> {
     const id = crypto.randomUUID();
@@ -121,10 +149,43 @@ export class MemoryRunRecorder implements ISyncRunRecorder {
     run.completedAt = new Date();
   }
 
+  async listRecent(
+    limit: number,
+    subscriptionId?: string,
+    _tenantId?: string | null,
+  ): Promise<SyncRunSummary[]> {
+    // Memory backend accepts tenantId for contract symmetry but does not
+    // filter on it — state is process-local and cross-tenant isolation is
+    // not meaningful here (matches MemoryCursorStore behavior).
+    const all = Array.from(this.runs.values());
+    const filtered =
+      subscriptionId === undefined
+        ? all
+        : all.filter((r) => r.subscriptionId === subscriptionId);
+    return filtered
+      .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
+      .slice(0, limit)
+      .map((r) => ({
+        id: r.id,
+        subscriptionId: r.subscriptionId,
+        // integrationId is only knowable if the test seeded subscriptions
+        // metadata; empty string otherwise. The Drizzle backend resolves
+        // it via JOIN, which is the production path.
+        integrationId:
+          this.subscriptions.get(r.subscriptionId)?.integrationId ?? '',
+        status: r.status,
+        startedAt: r.startedAt,
+        completedAt: r.completedAt,
+        recordsProcessed: r.recordsProcessed,
+        tenantId: r.tenantId,
+      }));
+  }
+
   /** Reset state. Tests call this in `beforeEach`. */
   clear(): void {
     this.runs.clear();
     this.items.clear();
+    this.subscriptions.clear();
   }
 
   // ─── test ergonomics ─────────────────────────────────────────────────

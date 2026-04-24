@@ -25,6 +25,28 @@
  * hide who's enforcing. Matches JOB-8 / EVT-6 precedent — tenant ids flow
  * through input shapes, not through wrapper layers.
  */
+/**
+ * Denormalized snapshot of one `sync_subscriptions` row for the OBS-5
+ * observability composer (epic #195). `cursor` is opaque (the port's
+ * contract); the rest is subscription metadata needed to label the snapshot
+ * in a dashboard/API surface.
+ *
+ * The Drizzle backend reads this directly from `sync_subscriptions`. Memory
+ * backends derive it from the seedable `subscriptions` side-map — tests
+ * that want meaningful snapshots must seed first.
+ */
+export interface CursorSnapshot {
+  readonly subscriptionId: string;
+  readonly integrationId: string;
+  readonly adapter: string;
+  readonly domain: string;
+  readonly externalRef: string | null;
+  readonly cursor: unknown | null;
+  readonly lastSyncAt: Date | null;
+  readonly updatedAt: Date;
+  readonly tenantId: string | null;
+}
+
 export interface ICursorStore {
   /**
    * Return the last persisted cursor for `subscriptionId`, or `null`.
@@ -50,4 +72,15 @@ export interface ICursorStore {
     cursor: unknown,
     tenantId?: string | null,
   ): Promise<void>;
+
+  /**
+   * Return one `CursorSnapshot` per `sync_subscriptions` row, ordered by
+   * `updated_at DESC`. Consumed by the OBS-5 observability composer to
+   * surface current cursor state per subscription.
+   *
+   * @param tenantId  required by Drizzle backend when `SYNC_MULTI_TENANT`
+   *                  is on (throws `MissingTenantIdError` otherwise); memory
+   *                  backend accepts but ignores.
+   */
+  listAll(tenantId?: string | null): Promise<CursorSnapshot[]>;
 }

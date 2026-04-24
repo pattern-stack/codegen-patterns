@@ -123,4 +123,110 @@ describe('MemoryCursorStore', () => {
       expect(store.cursors.has('sub-1')).toBe(true);
     });
   });
+
+  describe('listAll (OBS-4)', () => {
+    it('returns [] when no cursors have been put', async () => {
+      expect(await store.listAll()).toEqual([]);
+    });
+
+    it('returns one snapshot per cursor, ordered by updatedAt DESC', async () => {
+      await store.put('sub-a', { v: 1 });
+      await store.put('sub-b', { v: 2 });
+      await store.put('sub-c', { v: 3 });
+
+      store.subscriptions.set('sub-a', {
+        integrationId: 'int-a',
+        adapter: 'salesforce',
+        domain: 'opportunity',
+        externalRef: null,
+        updatedAt: new Date(1_000),
+      });
+      store.subscriptions.set('sub-b', {
+        integrationId: 'int-b',
+        adapter: 'hubspot',
+        domain: 'contact',
+        externalRef: 'filter-x',
+        updatedAt: new Date(3_000),
+      });
+      store.subscriptions.set('sub-c', {
+        integrationId: 'int-c',
+        adapter: 'github',
+        domain: 'issue',
+        externalRef: null,
+        updatedAt: new Date(2_000),
+      });
+
+      const snapshots = await store.listAll();
+      expect(snapshots.map((s) => s.subscriptionId)).toEqual([
+        'sub-b',
+        'sub-c',
+        'sub-a',
+      ]);
+    });
+
+    it('emits empty metadata when no subscription is seeded', async () => {
+      await store.put('sub-a', { v: 1 });
+      const [snapshot] = await store.listAll();
+      expect(snapshot).toEqual({
+        subscriptionId: 'sub-a',
+        integrationId: '',
+        adapter: '',
+        domain: '',
+        externalRef: null,
+        cursor: { v: 1 },
+        lastSyncAt: null,
+        updatedAt: new Date(0),
+        tenantId: null,
+      });
+    });
+
+    it('preserves seeded metadata end-to-end', async () => {
+      await store.put('sub-a', { systemModstamp: '2026-04-21' });
+      store.subscriptions.set('sub-a', {
+        integrationId: 'int-a',
+        adapter: 'salesforce',
+        domain: 'opportunity',
+        externalRef: 'filter-1',
+        lastSyncAt: new Date(4_000),
+        updatedAt: new Date(5_000),
+      });
+
+      const [snapshot] = await store.listAll();
+      expect(snapshot).toEqual({
+        subscriptionId: 'sub-a',
+        integrationId: 'int-a',
+        adapter: 'salesforce',
+        domain: 'opportunity',
+        externalRef: 'filter-1',
+        cursor: { systemModstamp: '2026-04-21' },
+        lastSyncAt: new Date(4_000),
+        updatedAt: new Date(5_000),
+        tenantId: null,
+      });
+    });
+
+    it('ignores tenantId (memory backend does not filter on it)', async () => {
+      await store.put('sub-a', { v: 1 });
+      await store.put('sub-b', { v: 2 });
+
+      const snapshots = await store.listAll('tenant-a');
+      expect(snapshots).toHaveLength(2);
+    });
+
+    it('clear() wipes subscriptions metadata too', async () => {
+      await store.put('sub-a', { v: 1 });
+      store.subscriptions.set('sub-a', {
+        integrationId: 'int-a',
+        adapter: 'salesforce',
+        domain: 'opportunity',
+        externalRef: null,
+        updatedAt: new Date(1_000),
+      });
+
+      store.clear();
+
+      expect(store.subscriptions.size).toBe(0);
+      expect(await store.listAll()).toEqual([]);
+    });
+  });
 });

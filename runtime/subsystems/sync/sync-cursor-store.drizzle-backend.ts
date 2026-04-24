@@ -27,10 +27,13 @@
  * the caller's problem in single-tenant deployments.
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, eq, type SQL } from 'drizzle-orm';
+import { and, desc, eq, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
-import type { ICursorStore } from './sync-cursor-store.protocol';
+import type {
+  CursorSnapshot,
+  ICursorStore,
+} from './sync-cursor-store.protocol';
 import { syncSubscriptions } from './sync-audit.schema';
 import { SYNC_MULTI_TENANT } from './sync.tokens';
 import { assertTenantId } from './sync-errors';
@@ -77,6 +80,45 @@ export class PostgresCursorStore implements ICursorStore {
         updatedAt: new Date(),
       })
       .where(where);
+  }
+
+  async listAll(tenantId?: string | null): Promise<CursorSnapshot[]> {
+    assertTenantId(tenantId, {
+      multiTenant: this.multiTenant,
+      operation: 'cursor.listAll',
+    });
+
+    const where = this.multiTenant
+      ? eq(syncSubscriptions.tenantId, tenantId as string)
+      : undefined;
+
+    const rows = await this.db
+      .select({
+        id: syncSubscriptions.id,
+        integrationId: syncSubscriptions.integrationId,
+        adapter: syncSubscriptions.adapter,
+        domain: syncSubscriptions.domain,
+        externalRef: syncSubscriptions.externalRef,
+        cursor: syncSubscriptions.cursor,
+        lastSyncAt: syncSubscriptions.lastSyncAt,
+        updatedAt: syncSubscriptions.updatedAt,
+        tenantId: syncSubscriptions.tenantId,
+      })
+      .from(syncSubscriptions)
+      .where(where)
+      .orderBy(desc(syncSubscriptions.updatedAt));
+
+    return rows.map((row) => ({
+      subscriptionId: row.id,
+      integrationId: row.integrationId,
+      adapter: row.adapter,
+      domain: row.domain,
+      externalRef: row.externalRef,
+      cursor: row.cursor ?? null,
+      lastSyncAt: row.lastSyncAt,
+      updatedAt: row.updatedAt,
+      tenantId: row.tenantId,
+    }));
   }
 
   /**
