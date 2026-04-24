@@ -9,9 +9,17 @@
  * registry (see `src/cli/shared/hygen.ts` — the registry loads twice per
  * `entity new` invocation).
  *
+ * Two pattern kinds share this surface:
+ *   - **domain** (default; ADR-031) — `PatternDefinition`. Contributes
+ *     repository/service base classes, columns, behaviors to entities that
+ *     declare `pattern:`/`patterns:` in YAML.
+ *   - **orchestration** (ADR-032) — `OrchestrationPatternDefinition`. Declares
+ *     a DI registry + optional dispatcher scaffold. Not entity-attached;
+ *     codegen emits a NestJS module under `src/orchestration/` instead.
+ *
  * See `docs/adrs/ADR-031-app-defined-patterns.md` §"Decision 1" for the
- * binding surface and `docs/specs/app-defined-patterns-implementation.md` §1
- * for the file-by-file rationale.
+ * domain binding surface and `docs/adrs/ADR-032-orchestration-patterns.md`
+ * for the orchestration kind.
  */
 
 import type { ZodSchema } from 'zod';
@@ -32,6 +40,13 @@ export interface PatternColumnContribution {
 }
 
 /**
+ * Discriminator for the two pattern shapes. Default is `"domain"` to preserve
+ * Phase 1 (ADR-031) behaviour — every existing PatternDefinition without a
+ * `kind` field continues to register as a domain pattern.
+ */
+export type PatternKind = 'domain' | 'orchestration';
+
+/**
  * The full pattern metadata record. Every `definePattern({...})` call
  * returns a value of this shape; the library and consumer registries
  * store these and look them up by `name`.
@@ -39,6 +54,14 @@ export interface PatternColumnContribution {
 export interface PatternDefinition<TConfig = unknown> {
 	/** Unique name used in YAML — e.g. `pattern: Synced` */
 	name: string;
+
+	/**
+	 * ADR-032: defaults to `"domain"`. Phase 3 adds `"orchestration"` as a
+	 * disjoint shape (see `OrchestrationPatternDefinition`). Domain
+	 * `PatternDefinition` instances must omit this field or set it to
+	 * `"domain"`; the loader routes orchestration values to a separate map.
+	 */
+	kind?: 'domain';
 
 	/**
 	 * Built-in patterns this extends, by name. Phase 1 supports single-depth
@@ -118,6 +141,11 @@ export function definePattern<TConfig = unknown>(
  * exists to anchor the `extends` chain without contributing anything).
  * Stricter shape rules belong in the registry's "at-least-one-contribution"
  * check, not here.
+ *
+ * This function is intentionally **kind-agnostic** — both
+ * `PatternDefinition` (domain) and `OrchestrationPatternDefinition`
+ * (orchestration) pass. The discriminator routing happens in the loader
+ * via `isOrchestrationPattern()`/`isDomainPattern()`.
  */
 export function isPatternDefinition(val: unknown): val is PatternDefinition {
 	return (
@@ -126,4 +154,101 @@ export function isPatternDefinition(val: unknown): val is PatternDefinition {
 		'name' in val &&
 		typeof (val as { name: unknown }).name === 'string'
 	);
+}
+
+// ============================================================================
+// Orchestration kind (ADR-032)
+// ============================================================================
+
+/**
+ * One registry's declarative shape. ADR-032 §"The Proposal".
+ *
+ * Phase 3-1 records this; Phase 3-2 codegen reads it to emit token files,
+ * provider blocks, and dispatcher overload signatures. Phase 3-1 validates
+ * only what is statically checkable from this record alone — see
+ * `validate-orchestration.ts` for the rules and their deferral notes.
+ */
+export interface OrchestrationRegistrySpec {
+	/**
+	 * Type alias the consumer's tsconfig resolves (e.g. `"CrmAdapterDomain"`).
+	 * Phase 3-1 stores this string verbatim. Resolution that the path actually
+	 * imports a concrete TS enum is deferred to Phase 3-2 emission, where
+	 * codegen will need to read the consumer's source tree.
+	 */
+	keyType: string;
+	/** Same shape as `keyType` — the registry's value-type interface ref. */
+	valueType: string;
+	entries: ReadonlyArray<{
+		/** Stable string key — must be unique within this registry. */
+		key: string;
+		/**
+		 * Concrete provider class name (NOT a DI token string). Codegen will
+		 * import this and use it as the constructor injectable.
+		 * Phase 3-1 records it; Phase 3-2 verifies it resolves.
+		 */
+		provider: string;
+	}>;
+}
+
+/**
+ * Orchestration pattern — declarative DI registry + optional dispatcher
+ * scaffold. ADR-032 §"The Proposal" + Decisions 1-8.
+ *
+ * Disjoint from `PatternDefinition` (domain): no columns, no
+ * repository/service base class, no entity-level patternConfig. Composition
+ * with domain patterns happens only at the DI layer in the consumer's
+ * generated code, not in entity YAML.
+ */
+export interface OrchestrationPatternDefinition {
+	name: string;
+	kind: 'orchestration';
+	/** Primary registry (always present). */
+	registry: OrchestrationRegistrySpec;
+	/**
+	 * Sibling registries that share the primary registry's key space.
+	 * ADR-032 Decision 2 — co-keyed groups are a first-class field.
+	 * Validator enforces matching `keyType` across the group.
+	 */
+	coKeyedRegistries?: ReadonlyArray<OrchestrationRegistrySpec>;
+	/** Optional dispatcher scaffold spec (ADR-032 Decision 4 + 5). */
+	dispatcher?: {
+		/** Class name to emit (e.g. `"CrmPortsDispatcher"`). */
+		className: string;
+		/**
+		 * Method name the consumer overrides in their subclass to fill the
+		 * assembly body (ADR-032 Decision 5).
+		 */
+		assemblySlot: string;
+	};
+	/** One-line description for help output and error messages. */
+	description?: string;
+}
+
+/** Union for callers that need to handle both shapes. */
+export type AnyPatternDefinition =
+	| PatternDefinition
+	| OrchestrationPatternDefinition;
+
+export function isOrchestrationPattern(
+	def: AnyPatternDefinition,
+): def is OrchestrationPatternDefinition {
+	return (def as { kind?: PatternKind }).kind === 'orchestration';
+}
+
+export function isDomainPattern(
+	def: AnyPatternDefinition,
+): def is PatternDefinition {
+	return !isOrchestrationPattern(def);
+}
+
+/**
+ * Identity function that returns its argument unchanged — orchestration
+ * counterpart to `definePattern()`. The body is trivial on purpose; the
+ * point is to give TypeScript a hook so consumer fixtures get full
+ * compile-time checking against `OrchestrationPatternDefinition`.
+ */
+export function defineOrchestrationPattern(
+	def: OrchestrationPatternDefinition,
+): OrchestrationPatternDefinition {
+	return def;
 }

@@ -158,6 +158,8 @@ Library-shipped patterns (`SyncedPattern`, `ActivityPattern`, etc.) are pre-regi
 
 The Hygen subprocess (`templates/entity/new/prompt.js`) re-loads the registry independently using the same glob, since it has no shared memory with the CLI process. Both sides do deterministic side-effect-free reads of the same files; the duplication is one extra dynamic import per generation and is acceptable.
 
+**Pattern-kind routing (ADR-032 Phase 3-1).** The loader now branches on the loaded value's `kind` field. Domain patterns (default, no `kind` or `kind: 'domain'`) land in `APP_PATTERNS`; orchestration patterns (`kind: 'orchestration'`) land in the disjoint `ORCHESTRATION_APP_PATTERNS` map and are looked up via `getOrchestrationPattern()` instead of `getPattern()`. The two maps are name-disjoint at load time — registering the same `name` across kinds is a project-level error caught by `validateOrchestrationProject` (`pattern_name_collision`). Same-kind name duplicates within either map are also load-time errors via `LoadAppPatternsResult.errors` (the previous silent-overwrite behaviour was wrong by the architectural-correctness rule).
+
 ## Drifts From the Implementation Spec
 
 The 755-line implementation spec (`docs/specs/app-defined-patterns-implementation.md`, dated 2026-04-18) was drafted before the understand phase examined the existing code in depth. Three of its proposals contradict either the existing codebase or CLAUDE.md and are explicitly overridden here. The spec is being updated in the same commit as this ADR (per CLAUDE.md "specs are living documentation").

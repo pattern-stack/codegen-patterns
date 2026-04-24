@@ -111,12 +111,17 @@ The consumer imports the generated module and invokes the dispatcher. The assemb
 
 | Situation | Mode | Resolution |
 |---|---|---|
-| Two orchestration patterns declare the same `registry.token` | Generation-time hard error | Stop; names must be unique across all patterns |
-| An orchestration pattern references a `keyType` that codegen can't resolve | Generation-time hard error | Same — consumer must author the enum |
-| An orchestration pattern's entries reference a provider that isn't exported by any known module | Generation-time warning | Continue — DI validates at boot |
-| A domain pattern and an orchestration pattern share a name | Generation-time hard error | Names live in one registry |
+| Two orchestration patterns declare the same name | Load-time hard error | Stop; names must be unique across all patterns. Enforced in Phase 3-1 by `loadAppPatterns()` (`registry.ts`) — the duplicate is rejected before it can silently overwrite. |
+| An orchestration pattern references a `keyType` that codegen can't resolve | Phase 3-2 emission-time hard error | Phase 3-1 stores the type-alias string verbatim; resolution against the consumer's tsconfig requires the source-tree access codegen has during emission. |
+| An orchestration pattern's entries reference a provider that isn't exported by any known module | Phase 3-2 emission-time warning | Same reason — Phase 3-1 records `provider: string`; Phase 3-2 emits the import; DI validates at boot. |
+| A domain pattern and an orchestration pattern share a name | Generation-time hard error | Names live in one registry. Enforced in Phase 3-1 by `validateOrchestrationProject` as `pattern_name_collision`. |
 
-These mirror ADR-031 §3's column-conflict rules.
+These mirror ADR-031 §3's column-conflict rules. The Phase 3-1 validator additionally enforces three intra-pattern shape rules that are statically checkable from the registry record alone:
+
+- **`pattern_entries_empty`** — a registry (primary or co-keyed) declared with `entries: []`.
+- **`pattern_entry_malformed`** — an entry with a missing or non-string `key` / `provider`.
+- **`pattern_entry_key_duplicate`** — two entries in the same registry sharing a `key`.
+- **`pattern_cokeyed_keytype_mismatch`** — a co-keyed sibling whose `keyType` diverges from the primary registry's (Decision 2).
 
 ---
 
@@ -308,10 +313,10 @@ A YAML entity declaration can reference `pattern: Synced` or `patterns: [CrmEnti
 
 ## Implementation sequence
 
-**Phase 3-1 — Schema + registry discovery (upstream).**
-1. Extend `PatternDefinition` with `kind` discriminator + orchestration field set.
-2. Extend the pattern discovery pipeline (ADR-031 §5) to route orchestration patterns to a separate validator.
-3. Add the orchestration conflict detector (`src/patterns/validate-orchestration.ts`), mirroring `src/patterns/validate-composition.ts`.
+**Phase 3-1 — Schema + registry discovery (upstream).** *Shipped.*
+1. Extend `PatternDefinition` with `kind` discriminator + add disjoint `OrchestrationPatternDefinition` shape (`src/patterns/pattern-definition.ts`).
+2. Extend the pattern discovery pipeline (ADR-031 §5) to route orchestration patterns to a separate `ORCHESTRATION_APP_PATTERNS` map (`src/patterns/registry.ts`); domain map gains symmetric duplicate-name protection in the same change.
+3. Add the orchestration conflict detector (`src/patterns/validate-orchestration.ts`), mirroring `src/patterns/validate-composition.ts`. Wired into `analyzeDomain()`. Issues emitted: `pattern_name_collision`, `pattern_entries_empty`, `pattern_entry_malformed`, `pattern_entry_key_duplicate`, `pattern_cokeyed_keytype_mismatch`. Loader-time `LoadAppPatternsResult.errors` carries the orchestration ↔ orchestration name-duplicate case (caught before the silent-overwrite window).
 4. **No code emission yet.** Validation + schema only.
 
 **Phase 3-2 — Token + registry emission (upstream).**
