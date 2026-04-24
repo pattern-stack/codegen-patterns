@@ -1,6 +1,8 @@
 # Directions & Pools
 
-The events subsystem has exactly three directions: `inbound`, `change`, `outbound`. Each drains through its own reserved pool in the jobs subsystem. This file explains the distinction, why the pools are kept separate, and how events and jobs connect across that boundary.
+The events subsystem has exactly three **directions** for domain-tier events: `inbound`, `change`, `outbound`. Each drains through its own reserved pool in the jobs subsystem. This file explains the distinction, why the pools are kept separate, and how events and jobs connect across that boundary.
+
+There is also a fourth class: **audit-tier events** (`tier: audit`), which have no direction and no pool. They flow through the outbox but the bridge refuses to bind jobs to them. See §Tier at the bottom.
 
 ## The three directions
 
@@ -110,9 +112,30 @@ Default configuration gives parallelism, not ordering.
 
 ## Custom pools — not for events
 
-Users can declare custom pools in `codegen.config.yaml` (e.g., an `agents` pool for long-running LLM jobs). Those pools **cannot be targets for events** — the reserved-pool set (`events_inbound | events_change | events_outbound`) is the whole legal universe of event pools. A user pool can host event-*triggered* jobs (after the bridge runs), but events themselves only ever drain through the three reserved lanes.
+Users can declare custom pools in `codegen.config.yaml` (e.g., an `agents` pool for long-running LLM jobs). Those pools **cannot be targets for events** — the reserved-pool set (`events_inbound | events_change | events_outbound`) is the whole legal universe of domain-event pools. A user pool can host event-*triggered* jobs (after the bridge runs), but events themselves only ever drain through the three reserved lanes.
 
-If you find yourself wanting a fourth event pool ("events_telemetry", "events_audit"), stop and model the underlying concern differently — either split into an existing direction, or treat the thing as an audit table rather than a domain event.
+If you find yourself wanting a fourth *pool* for event traffic, stop — that's almost always the `tier: audit` case (see below), not a new pool.
+
+## Tier: audit events have no direction and no pool
+
+The tier field (`domain` | `audit`, default `domain`) is orthogonal to direction. It controls **whether the event is bridge-eligible**:
+
+| tier     | direction       | pool           | can a job trigger on it? |
+|----------|-----------------|----------------|--------------------------|
+| `domain` | required        | from direction | yes                      |
+| `audit`  | MUST be omitted | **null**       | **no — codegen error**   |
+
+Audit events represent facts about the system itself ("a sync run completed," "a feature was used") rather than facts about domain data flow. They still land in `domain_events` and are queryable/replayable like any other event, but:
+
+- Neither `pool` nor `direction` is stamped. Both columns are NULL.
+- The bridge dispatcher refuses to bind jobs to them. A `triggers: [crm_sync_completed]` on a job YAML where that event is `tier: audit` fails codegen with a pointed error.
+- Subscribers via `IEventBus.subscribe()` may still opt in directly. Audit events are not firewalled from in-process listeners, only from the bridge.
+
+**When to reach for it:** polling/sync lifecycle events, feature-use telemetry, background-task cycle markers, anything where you want the outbox record but explicitly do NOT want downstream work to spawn. The motivating case: a CRM polling sync emitting a `found_row` event per scanned record was silently queuing thousands of inert bridge jobs per run. The `audit` tier fixes this cleanly.
+
+**When NOT to use it:** anything a subscriber could legitimately react to by writing domain state or enqueuing work. That's a domain event.
+
+Full design: `docs/specs/events-codegen-plan.md` §4.
 
 ## Do not
 
