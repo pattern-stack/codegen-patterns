@@ -23,7 +23,7 @@
  * `SELECT … LIMIT 1` / `UPDATE … WHERE id = ?` queries.
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gte, isNull, sql } from 'drizzle-orm';
 
 import { DRIZZLE } from '../../constants/tokens';
 import type { DrizzleClient } from '../../types/drizzle';
@@ -34,6 +34,7 @@ import type { BridgeDeliveryRecord } from './bridge-delivery.schema';
 import type {
   BridgeDeliveryInsert,
   IJobBridge,
+  StatusHistogram,
 } from './bridge.protocol';
 import { assertTenantId } from './assert-tenant-id';
 import { BRIDGE_MULTI_TENANT } from './bridge.tokens';
@@ -145,5 +146,63 @@ export class DrizzleBridgeDeliveryRepo implements IJobBridge {
       .update(bridgeDelivery)
       .set({ status: 'failed', error })
       .where(eq(bridgeDelivery.id, id));
+  }
+
+  /**
+   * Observability read — see `IJobBridge.getStatusHistogram` JSDoc for the
+   * tenant-filter and windowHours contract.
+   *
+   * Tenant-filter note: this method intentionally does NOT call
+   * `assertTenantId`. The write methods on this repo (`insertDelivery`)
+   * treat `tenantId === undefined` as a misconfiguration and fail fast.
+   * Reads are different — `undefined` is the supported "cross-tenant
+   * admin view" mode that OBS-5 uses to render a framework-wide health
+   * panel. Callers that need strict tenant scoping pass an explicit
+   * string or `null`.
+   *
+   * Cast note: `count(*)::int` is applied in SQL so the node-pg driver
+   * returns a `number` instead of the default `bigint → string` for
+   * `count(*)`. Don't relax this cast — consumers (and the protocol)
+   * type the result as `number`.
+   */
+  async getStatusHistogram(
+    windowHours: number,
+    tenantId?: string | null,
+  ): Promise<StatusHistogram> {
+    if (!Number.isFinite(windowHours) || windowHours <= 0) {
+      throw new RangeError('windowHours must be positive');
+    }
+
+    const cutoff = sql<Date>`now() - make_interval(hours => ${windowHours})`;
+
+    const conditions = [gte(bridgeDelivery.attemptedAt, cutoff)];
+    if (tenantId === null) {
+      conditions.push(isNull(bridgeDelivery.tenantId));
+    } else if (typeof tenantId === 'string') {
+      conditions.push(eq(bridgeDelivery.tenantId, tenantId));
+    }
+    // tenantId === undefined → no tenant filter (cross-tenant view).
+
+    const rows = await this.db
+      .select({
+        status: bridgeDelivery.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(bridgeDelivery)
+      .where(and(...conditions))
+      .groupBy(bridgeDelivery.status);
+
+    const histogram: StatusHistogram = {
+      pending: 0,
+      delivered: 0,
+      skipped: 0,
+      failed: 0,
+    };
+    for (const row of rows) {
+      // row.status is typed as the enum union; narrow is safe because the
+      // enum values match StatusHistogram keys 1:1 (BRIDGE-1 schema).
+      histogram[row.status as keyof StatusHistogram] = Number(row.count);
+    }
+    return histogram;
   }
 }

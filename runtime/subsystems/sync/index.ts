@@ -20,7 +20,10 @@ export type {
   IChangeSource,
   SyncSubscriptionView,
 } from './sync-change-source.protocol';
-export type { ICursorStore } from './sync-cursor-store.protocol';
+export type {
+  CursorSnapshot,
+  ICursorStore,
+} from './sync-cursor-store.protocol';
 export type {
   DiffResult,
   FieldDiff,
@@ -37,6 +40,7 @@ export type {
   ISyncRunRecorder,
   RecordItemInput,
   StartRunInput,
+  SyncRunSummary,
 } from './sync-run-recorder.protocol';
 export type { ILoopbackFingerprintStore } from './sync-loopback.protocol';
 
@@ -77,6 +81,7 @@ export { MemoryCursorStore } from './sync-cursor-store.memory-backend';
 export {
   MemoryRunRecorder,
   type MemoryRunRecord,
+  type MemorySyncSubscription,
 } from './sync-run-recorder.memory-backend';
 
 // Runtime (SYNC-5) — orchestrator + default differ

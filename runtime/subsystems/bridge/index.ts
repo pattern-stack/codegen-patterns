@@ -30,6 +30,7 @@ export type {
   BridgeTriggerEntry,
   PublishAndStartOptions,
   PublishAndStartResult,
+  StatusHistogram,
 } from './bridge.protocol';
 
 // DI tokens (BRIDGE-2 + BRIDGE-4 drain hook)

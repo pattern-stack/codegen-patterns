@@ -28,7 +28,7 @@
  *     the run-id for downstream mutations.
  */
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, type SQL } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
 import type {
@@ -36,8 +36,9 @@ import type {
   ISyncRunRecorder,
   RecordItemInput,
   StartRunInput,
+  SyncRunSummary,
 } from './sync-run-recorder.protocol';
-import { syncRuns, syncRunItems } from './sync-audit.schema';
+import { syncRuns, syncRunItems, syncSubscriptions } from './sync-audit.schema';
 import { FieldDiffSchema } from './sync-field-diff.protocol';
 import { SYNC_MULTI_TENANT } from './sync.tokens';
 import { assertTenantId } from './sync-errors';
@@ -104,6 +105,65 @@ export class DrizzleSyncRunRecorder implements ISyncRunRecorder {
       error: input.error ?? null,
       tenantId: input.tenantId ?? null,
     });
+  }
+
+  async listRecent(
+    limit: number,
+    subscriptionId?: string,
+    tenantId?: string | null,
+  ): Promise<SyncRunSummary[]> {
+    assertTenantId(tenantId, {
+      multiTenant: this.multiTenant,
+      operation: 'listRecent',
+    });
+
+    // JOIN against sync_subscriptions to resolve `integration_id` per run.
+    // `sync_runs.subscription_id` is a non-null FK so INNER JOIN is correct;
+    // there should be no orphaned runs.
+    const conditions: SQL[] = [];
+    if (subscriptionId !== undefined) {
+      conditions.push(eq(syncRuns.subscriptionId, subscriptionId));
+    }
+    if (this.multiTenant) {
+      conditions.push(eq(syncRuns.tenantId, tenantId as string));
+    }
+    const where =
+      conditions.length === 0
+        ? undefined
+        : conditions.length === 1
+          ? conditions[0]
+          : and(...conditions);
+
+    const rows = await this.db
+      .select({
+        id: syncRuns.id,
+        subscriptionId: syncRuns.subscriptionId,
+        integrationId: syncSubscriptions.integrationId,
+        status: syncRuns.status,
+        startedAt: syncRuns.startedAt,
+        completedAt: syncRuns.completedAt,
+        recordsProcessed: syncRuns.recordsProcessed,
+        tenantId: syncRuns.tenantId,
+      })
+      .from(syncRuns)
+      .innerJoin(
+        syncSubscriptions,
+        eq(syncRuns.subscriptionId, syncSubscriptions.id),
+      )
+      .where(where)
+      .orderBy(desc(syncRuns.startedAt))
+      .limit(limit);
+
+    return rows.map((row) => ({
+      id: row.id,
+      subscriptionId: row.subscriptionId,
+      integrationId: row.integrationId,
+      status: row.status,
+      startedAt: row.startedAt,
+      completedAt: row.completedAt,
+      recordsProcessed: row.recordsProcessed,
+      tenantId: row.tenantId,
+    }));
   }
 
   async completeRun(runId: string, input: CompleteRunInput): Promise<void> {

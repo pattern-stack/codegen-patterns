@@ -192,6 +192,123 @@ describe('MemoryBridgeDeliveryRepo — test helpers', () => {
   });
 });
 
+describe('MemoryBridgeDeliveryRepo — getStatusHistogram (OBS-3)', () => {
+  let repo: MemoryBridgeDeliveryRepo;
+
+  beforeEach(() => {
+    repo = new MemoryBridgeDeliveryRepo();
+  });
+
+  it('returns all-zero histogram when no deliveries exist', async () => {
+    const h = await repo.getStatusHistogram(24);
+    expect(h).toEqual({ pending: 0, delivered: 0, skipped: 0, failed: 0 });
+  });
+
+  it('counts one delivery in each status correctly', async () => {
+    const now = new Date();
+    const pending = row(EVENT_A, 'trig#0', { attemptedAt: now });
+    const delivered = row(EVENT_A, 'trig#1', { attemptedAt: now });
+    const skipped = row(EVENT_A, 'trig#2', { attemptedAt: now });
+    const failed = row(EVENT_A, 'trig#3', { attemptedAt: now });
+    await repo.insertDelivery(pending);
+    await repo.insertDelivery(delivered);
+    await repo.insertDelivery(skipped);
+    await repo.insertDelivery(failed);
+    await repo.markDelivered(delivered.id!, 'run-d');
+    await repo.markSkipped(skipped.id!, 'predicate_false');
+    await repo.markFailed(failed.id!, { message: 'boom' });
+
+    const h = await repo.getStatusHistogram(24);
+    expect(h).toEqual({ pending: 1, delivered: 1, skipped: 1, failed: 1 });
+  });
+
+  it('excludes deliveries attempted before the windowHours cutoff', async () => {
+    const old = new Date(Date.now() - 48 * 3_600_000); // 48h ago
+    const recent = new Date();
+    await repo.insertDelivery(row(EVENT_A, 'old#0', { attemptedAt: old }));
+    await repo.insertDelivery(row(EVENT_A, 'new#0', { attemptedAt: recent }));
+
+    const h = await repo.getStatusHistogram(24); // 24h window
+    expect(h).toEqual({ pending: 1, delivered: 0, skipped: 0, failed: 0 });
+  });
+
+  it('includes deliveries exactly at the boundary (>= cutoff)', async () => {
+    // Freeze the comparison: put the delivery at exactly cutoff by using
+    // an attemptedAt that is `now - windowHours * 3_600_000` — this is
+    // the precise boundary. We rely on the implementation using `<`
+    // (strict) to exclude BELOW cutoff, so equal should be INCLUDED.
+    const windowHours = 1;
+    const boundary = new Date(Date.now() - windowHours * 3_600_000);
+    await repo.insertDelivery(
+      row(EVENT_A, 'boundary#0', { attemptedAt: boundary }),
+    );
+    const h = await repo.getStatusHistogram(windowHours);
+    expect(h.pending).toBe(1);
+  });
+
+  it('tenantId undefined matches all rows regardless of tenant', async () => {
+    const now = new Date();
+    await repo.insertDelivery(
+      row(EVENT_A, 'a#0', { attemptedAt: now, tenantId: 't-1' }),
+    );
+    await repo.insertDelivery(
+      row(EVENT_A, 'b#0', { attemptedAt: now, tenantId: 't-2' }),
+    );
+    await repo.insertDelivery(
+      row(EVENT_A, 'c#0', { attemptedAt: now, tenantId: null }),
+    );
+    const h = await repo.getStatusHistogram(24);
+    expect(h.pending).toBe(3);
+  });
+
+  it('tenantId === null matches only rows with tenantId IS NULL', async () => {
+    const now = new Date();
+    await repo.insertDelivery(
+      row(EVENT_A, 'a#0', { attemptedAt: now, tenantId: 't-1' }),
+    );
+    await repo.insertDelivery(
+      row(EVENT_A, 'b#0', { attemptedAt: now, tenantId: null }),
+    );
+    await repo.insertDelivery(
+      row(EVENT_A, 'c#0', { attemptedAt: now, tenantId: null }),
+    );
+    const h = await repo.getStatusHistogram(24, null);
+    expect(h.pending).toBe(2);
+  });
+
+  it('tenantId === string matches only rows where tenantId equals that string', async () => {
+    const now = new Date();
+    await repo.insertDelivery(
+      row(EVENT_A, 'a#0', { attemptedAt: now, tenantId: 't-1' }),
+    );
+    await repo.insertDelivery(
+      row(EVENT_A, 'b#0', { attemptedAt: now, tenantId: 't-1' }),
+    );
+    await repo.insertDelivery(
+      row(EVENT_A, 'c#0', { attemptedAt: now, tenantId: 't-2' }),
+    );
+    await repo.insertDelivery(
+      row(EVENT_A, 'd#0', { attemptedAt: now, tenantId: null }),
+    );
+    const h = await repo.getStatusHistogram(24, 't-1');
+    expect(h.pending).toBe(2);
+  });
+
+  it('returns zero-fill for statuses with no matching rows', async () => {
+    const now = new Date();
+    const r = row(EVENT_A, 'only-pending#0', { attemptedAt: now });
+    await repo.insertDelivery(r);
+    const h = await repo.getStatusHistogram(24);
+    expect(h).toEqual({ pending: 1, delivered: 0, skipped: 0, failed: 0 });
+  });
+
+  it('throws RangeError for windowHours <= 0', async () => {
+    expect(repo.getStatusHistogram(0)).rejects.toThrow(RangeError);
+    expect(repo.getStatusHistogram(-1)).rejects.toThrow(RangeError);
+    expect(repo.getStatusHistogram(Number.NaN)).rejects.toThrow(RangeError);
+  });
+});
+
 describe('MemoryBridgeDeliveryRepo — facade Case B simulation', () => {
   // ADR-023 §`publishAndStart` + existing `triggers:` collision: the
   // facade pre-writes a (status='delivered', wrapper_run_id=null) row;

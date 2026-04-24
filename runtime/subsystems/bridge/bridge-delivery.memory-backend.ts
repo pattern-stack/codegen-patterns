@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   BridgeDeliveryInsert,
   IJobBridge,
+  StatusHistogram,
 } from './bridge.protocol';
 import type { BridgeDeliveryRecord } from './bridge-delivery.schema';
 import { UniqueConstraintError } from './bridge-errors';
@@ -103,6 +104,42 @@ export class MemoryBridgeDeliveryRepo implements IJobBridge {
     const record = this.findById(id);
     record.status = 'failed';
     record.error = error;
+  }
+
+  /**
+   * Observability read — see `IJobBridge.getStatusHistogram` JSDoc for the
+   * tenant-filter and windowHours contract.
+   *
+   * Unlike `insertDelivery`, this read does NOT call `assertTenantId`:
+   * `tenantId === undefined` is the supported cross-tenant admin view.
+   */
+  async getStatusHistogram(
+    windowHours: number,
+    tenantId?: string | null,
+  ): Promise<StatusHistogram> {
+    if (!Number.isFinite(windowHours) || windowHours <= 0) {
+      throw new RangeError('windowHours must be positive');
+    }
+
+    const cutoffMs = Date.now() - windowHours * 3_600_000;
+    const histogram: StatusHistogram = {
+      pending: 0,
+      delivered: 0,
+      skipped: 0,
+      failed: 0,
+    };
+
+    for (const record of this.deliveries.values()) {
+      if (record.attemptedAt.getTime() < cutoffMs) continue;
+      if (tenantId === null && record.tenantId !== null) continue;
+      if (typeof tenantId === 'string' && record.tenantId !== tenantId) {
+        continue;
+      }
+      // tenantId === undefined → no tenant filter.
+      histogram[record.status] += 1;
+    }
+
+    return histogram;
   }
 
   // ─── Test helpers ────────────────────────────────────────────────────────
