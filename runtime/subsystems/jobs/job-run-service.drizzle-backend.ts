@@ -7,7 +7,7 @@
  * `idx_job_run_scope`, whereas orchestrator mutates individual runs by id.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
 import { jobRuns, type JobRunRow } from './job-orchestration.schema';
@@ -17,6 +17,8 @@ import type {
   ListForScopeOptions,
   CancelForScopeOptions,
   RescheduleForScopeOptions,
+  PoolStatusCount,
+  JobRunFailure,
 } from './job-run-service.protocol';
 import type { IJobOrchestrator } from './job-orchestrator.protocol';
 import { JOB_ORCHESTRATOR, JOBS_MULTI_TENANT } from './jobs-domain.tokens';
@@ -154,6 +156,56 @@ export class DrizzleJobRunService implements IJobRunService {
       .update(jobRuns)
       .set({ runAt: newRunAt, updatedAt: new Date() })
       .where(and(...conditions));
+  }
+
+  async countByPoolAndStatus(
+    tenantId?: string | null,
+  ): Promise<PoolStatusCount[]> {
+    const tenantCond = this.tenantCondition('countByPoolAndStatus', tenantId);
+    const rows = await this.db
+      .select({
+        pool: jobRuns.pool,
+        status: jobRuns.status,
+        count: sql<number>`count(*)::int`.as('count'),
+      })
+      .from(jobRuns)
+      .where(tenantCond ?? undefined)
+      .groupBy(jobRuns.pool, jobRuns.status);
+
+    return rows.map((r) => ({
+      pool: r.pool,
+      status: r.status,
+      count: Number(r.count),
+    }));
+  }
+
+  async listRecentFailed(
+    limit: number,
+    tenantId?: string | null,
+  ): Promise<JobRunFailure[]> {
+    const conditions = [eq(jobRuns.status, 'failed' as const)];
+    const tenantCond = this.tenantCondition('listRecentFailed', tenantId);
+    if (tenantCond) conditions.push(tenantCond);
+
+    const rows = await this.db
+      .select()
+      .from(jobRuns)
+      .where(and(...conditions))
+      .orderBy(desc(jobRuns.finishedAt), desc(jobRuns.updatedAt))
+      .limit(limit);
+
+    return rows.map((r) => ({
+      runId: r.id,
+      jobType: r.jobType,
+      pool: r.pool,
+      scopeEntityType: r.scopeEntityType,
+      scopeEntityId: r.scopeEntityId,
+      tenantId: r.tenantId,
+      attempts: r.attempts,
+      errorMessage: r.error?.message ?? null,
+      failedAt: r.finishedAt ?? r.updatedAt,
+      createdAt: r.createdAt,
+    }));
   }
 
   /**

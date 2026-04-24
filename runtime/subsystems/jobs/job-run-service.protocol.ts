@@ -44,6 +44,33 @@ export interface RescheduleForScopeOptions {
   tenantId?: string | null;
 }
 
+/**
+ * One row per `(pool, status)` combination currently present in `job_run`.
+ * Used by observability to render pool-depth dashboards (OBS-2).
+ */
+export interface PoolStatusCount {
+  pool: string;
+  status: JobRun['status'];
+  count: number;
+}
+
+/**
+ * Summary row for the "recent failed runs" observability widget (OBS-2). A
+ * narrow projection over `JobRun` — just the fields a dashboard needs.
+ */
+export interface JobRunFailure {
+  runId: string;
+  jobType: string;
+  pool: string;
+  scopeEntityType: string | null;
+  scopeEntityId: string | null;
+  tenantId: string | null;
+  attempts: number;
+  errorMessage: string | null;
+  failedAt: Date;
+  createdAt: Date;
+}
+
 export interface IJobRunService {
   /**
    * Return runs attached to `(entityType, entityId)`. Backed by
@@ -76,4 +103,23 @@ export interface IJobRunService {
     newRunAt: Date,
     opts?: RescheduleForScopeOptions,
   ): Promise<void>;
+
+  /**
+   * Aggregate live counts of `job_run` rows grouped by `(pool, status)`
+   * (OBS-2). Tenant gate follows the same rules as `listForScope`:
+   *   - `multiTenant` off → parameter ignored.
+   *   - `multiTenant` on + string → filters `tenant_id = :tenantId`.
+   *   - `multiTenant` on + null   → filters `tenant_id IS NULL`.
+   *   - `multiTenant` on + undefined → throws `MissingTenantIdError`.
+   */
+  countByPoolAndStatus(tenantId?: string | null): Promise<PoolStatusCount[]>;
+
+  /**
+   * Most-recent `failed` runs, newest first (OBS-2). `limit` is required.
+   * Tenant gate follows `countByPoolAndStatus`.
+   */
+  listRecentFailed(
+    limit: number,
+    tenantId?: string | null,
+  ): Promise<JobRunFailure[]>;
 }
