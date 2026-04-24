@@ -106,7 +106,7 @@ docs/                   # ADRs
 
 ### Infrastructure Subsystems (ADR-008)
 
-Four subsystems following Protocol → Backend → Factory pattern:
+Five subsystems following Protocol → Backend → Factory pattern:
 
 | Subsystem | Protocol | Default Backend | Test Backend |
 |-----------|----------|----------------|--------------|
@@ -114,6 +114,7 @@ Four subsystems following Protocol → Backend → Factory pattern:
 | Jobs | `IJobQueue` | Drizzle (pg-boss) | Memory |
 | Cache | `ICacheService` | Drizzle (TTL) | Memory |
 | Storage | `IStorageService` | Local filesystem | Memory |
+| Observability | `IObservabilityService` | Drizzle (read-only facade) | Memory |
 
 All use `DynamicModule.forRoot({ backend })` with `global: true`.
 

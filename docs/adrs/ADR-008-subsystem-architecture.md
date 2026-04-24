@@ -41,11 +41,12 @@ export const EVENT_BUS = Symbol('EVENT_BUS');
 export const JOB_QUEUE = Symbol('JOB_QUEUE');
 export const CACHE = Symbol('CACHE');
 export const STORAGE = Symbol('STORAGE');
+export const OBSERVABILITY = Symbol('OBSERVABILITY'); // added 2026-04-22 — 5th subsystem
 ```
 
 ### Infrastructure Subsystems
 
-Four infrastructure subsystems are generated as one-time scaffolds. None of these exist yet — this ADR proposes their creation via new `bun codegen subsystem <name>` commands and corresponding templates.
+Five infrastructure subsystems are generated as one-time scaffolds. None of these exist yet — this ADR proposes their creation via new `bun codegen subsystem <name>` commands and corresponding templates.
 
 #### Events
 
@@ -210,6 +211,69 @@ export interface IStorageService {
 **Memory backend** stores Buffers in a Map. For tests.
 
 No Drizzle backend — files in Postgres is an antipattern. Users implement S3/GCS backends by implementing `IStorageService`.
+
+#### Observability (added 2026-04-22)
+
+```
+subsystems/observability/
+├── observability.protocol.ts         # IObservabilityService (5 core methods)
+├── observability.drizzle-backend.ts  # Postgres queries over framework tables
+├── observability.memory-backend.ts   # Seedable fixture backend for tests
+├── observability.module.ts           # ObservabilityModule.forRoot({ backend, reporters })
+├── observability.tokens.ts           # OBSERVABILITY, OBSERVABILITY_REPORTERS
+├── reporters/
+│   └── bridge-metrics.reporter.ts    # Opt-in 60s log sampler over bridge_delivery
+└── index.ts
+```
+
+**Protocol — the five core methods:**
+```typescript
+export interface IObservabilityService {
+  getPoolDepths(): Promise<PoolDepth[]>;
+  getRecentSyncRuns(limit: number, integrationId?: string): Promise<SyncRunSummary[]>;
+  getBridgeDeliveryHistogram(windowHours: number): Promise<StatusHistogram>;
+  getRecentFailedJobs(limit: number): Promise<JobRunFailure[]>;
+  getCursors(): Promise<CursorSnapshot[]>;
+}
+```
+
+The subsystem owns **no tables**. It's a read-only query facade over state
+that other subsystems (jobs, bridge, events, sync) already persist:
+`job_run`, `bridge_delivery`, `domain_events`, `sync_runs`, `sync_subscriptions`.
+
+**Build-first-extract-later trigger:** two concrete consumers in dealbrain
+(`BridgeMetricsReporter` sampler and `StackStatusService` `/dev/status`
+endpoint) ran the same ad-hoc SQL over framework tables. That's the
+extraction trigger — #195.
+
+**Drizzle backend** implements the five methods via SQL. Enrichment columns
+on sync runs (integration/adapter/domain) come from a join against
+`sync_subscriptions`, which owns those labels. The histogram windows on
+`COALESCE(delivered_at, attempted_at)` so terminal skipped/failed rows are
+counted alongside delivered.
+
+**Memory backend** is a fixture holder with `seed*` methods — tests stage
+slices and the protocol reads return them verbatim. No replay simulation.
+
+**Reporters** (`reporters/`) are orthogonal to backends. `BridgeMetricsReporter`
+is the first: a 60s interval sampler that logs per-window
+`(status × eventType × skipReason)` aggregates. Opt in via
+`ObservabilityModule.forRoot({ ..., reporters: { bridgeMetrics: true } })`.
+Gated so consumers without the bridge subsystem don't pay the
+`@nestjs/schedule` + bridge-schema import tax.
+
+**Extensions** (per CLAUDE.md "core/extensions"): Drizzle-specific
+capabilities that don't belong on the core interface — `pg_stat_activity`
+sampling, advisory-lock inspection, `LISTEN/NOTIFY` tie-ins — live as
+methods on the drizzle backend class. Consumers opting in accept
+backend-specific coupling. A future OTel exporter backend would likewise
+expose span-export extensions without lifting them into the core
+protocol.
+
+**No lifecycle hooks on the backends themselves.** The drizzle backend
+runs on-demand queries; the memory backend is state-only. Reporters may
+have their own `OnModuleInit`/`OnModuleDestroy` (e.g. timer setup), but
+those are per-reporter concerns.
 
 ### Lifecycle Management
 
