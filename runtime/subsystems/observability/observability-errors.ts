@@ -10,7 +10,7 @@
 export class ObservabilityError extends Error {
   constructor(
     message: string,
-    readonly cause?: unknown,
+    override readonly cause?: unknown,
   ) {
     super(message);
     this.name = 'ObservabilityError';

@@ -105,16 +105,34 @@ export async function copyRuntime(opts: RuntimeCopyOptions): Promise<RuntimeCopy
 	// Queue of source paths to copy; value is the destination path.
 	const queue: Array<{ src: string; dest: string; isDep: boolean }> = [];
 
-	// Enumerate files in sourceDir
-	const entries = fs.readdirSync(sourceDir);
-	for (const entry of entries) {
-		const src = path.join(sourceDir, entry);
-		const stat = fs.statSync(src);
-		if (!stat.isFile()) continue;
-		if (!entry.endsWith('.ts') && !entry.endsWith('.tsx')) continue;
-		if (filter && !filter(entry)) continue;
-		queue.push({ src, dest: path.join(targetDir, entry), isDep: false });
+	// Enumerate files in sourceDir, recursing into subdirectories so nested
+	// runtime layouts (e.g. observability/reporters/, auth/backends/oauth-*)
+	// reach the user project intact. Preserves the relative path under
+	// sourceDir when computing the destination.
+	//
+	// Skips `generated/` directories by convention — those are produced by
+	// post-install codegen steps (event codegen, scope-entity-type, etc.)
+	// and must not be shipped as static snapshots from the runtime source.
+	function walk(dir: string): void {
+		for (const entry of fs.readdirSync(dir)) {
+			const src = path.join(dir, entry);
+			const stat = fs.statSync(src);
+			if (stat.isDirectory()) {
+				if (entry === 'generated') continue;
+				walk(src);
+				continue;
+			}
+			if (!stat.isFile()) continue;
+			if (!entry.endsWith('.ts') && !entry.endsWith('.tsx')) continue;
+			const rel = path.relative(sourceDir, src);
+			// Filter sees the relative path from sourceDir so callers can
+			// discriminate on subdirectory when needed; historically they
+			// only passed bare filenames, so also support the basename.
+			if (filter && !filter(rel) && !filter(entry)) continue;
+			queue.push({ src, dest: path.join(targetDir, rel), isDep: false });
+		}
 	}
+	walk(sourceDir);
 
 	const visited = new Set<string>();
 

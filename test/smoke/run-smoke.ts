@@ -216,6 +216,34 @@ async function main(): Promise<number> {
 		// 5. Run `codegen entity new --all`.
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
 
+		// 5.5. Install the observability subsystem (combiner — ADR-025).
+		// No backend flag, no schema; copies runtime/subsystems/observability via
+		// copyRuntime, injects `observability:` into codegen.config.yaml, and
+		// appends a TODO hint to app.module.ts directing the human to wire
+		// ObservabilityModule.forRoot() AFTER Events/Jobs/Bridge/Sync.
+		//
+		// No siblings installed in this smoke — observability must typecheck
+		// standalone because its @Optional() sibling injections degrade to
+		// empty results when ports are absent (per OBS-5 contract).
+		run(`bun ${CLI_PATH} subsystem install observability`, tmpDir);
+
+		// Verify install artifacts appeared.
+		const configYamlPath = path.join(tmpDir, 'codegen.config.yaml');
+		const configYaml = fs.readFileSync(configYamlPath, 'utf8');
+		if (!configYaml.includes('observability:')) {
+			throw new Error(
+				'observability: block missing from codegen.config.yaml after install',
+			);
+		}
+
+		const appModulePath = path.join(tmpDir, 'src/app.module.ts');
+		const appModule = fs.readFileSync(appModulePath, 'utf8');
+		if (!appModule.includes('ObservabilityModule.forRoot')) {
+			throw new Error(
+				'ObservabilityModule TODO hint missing from app.module.ts after install',
+			);
+		}
+
 		// 6. Syntax-check the scaffolded project.
 		//
 		// Uses `tsc --noEmit --skipLibCheck` to catch parse errors and
