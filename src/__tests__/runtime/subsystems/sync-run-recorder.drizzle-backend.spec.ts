@@ -326,6 +326,102 @@ describe('DrizzleSyncRunRecorder — multi-tenant', () => {
   });
 });
 
+describe('DrizzleSyncRunRecorder.listRecent (OBS-4) — single-tenant', () => {
+  let recorder: DrizzleSyncRunRecorder;
+  let captures: Captured[];
+  let db: DrizzleClient;
+
+  beforeEach(() => {
+    ({ db, captures } = makeCapturingDb({ rows: [] }));
+    recorder = new DrizzleSyncRunRecorder(db);
+  });
+
+  it('returns [] when no runs exist', async () => {
+    expect(await recorder.listRecent(10)).toEqual([]);
+    expect(captures).toHaveLength(1);
+  });
+
+  it('JOINs sync_runs against sync_subscriptions and SELECTs integration_id', async () => {
+    await recorder.listRecent(5);
+    expect(captures).toHaveLength(1);
+    const [{ sql }] = captures;
+    expect(sql.toLowerCase()).toContain('select');
+    expect(sql).toContain('"sync_runs"');
+    expect(sql).toContain('"sync_subscriptions"');
+    expect(sql.toLowerCase()).toContain('join');
+    expect(sql).toContain('"integration_id"');
+    // ORDER BY started_at DESC LIMIT.
+    expect(sql.toLowerCase()).toContain('order by');
+    expect(sql.toLowerCase()).toContain('desc');
+    expect(sql.toLowerCase()).toContain('limit');
+  });
+
+  it('does not include records_processed from a correlated subquery — reads the column directly', async () => {
+    await recorder.listRecent(5);
+    const [{ sql }] = captures;
+    expect(sql).toContain('"records_processed"');
+    // No nested `select count` — we read the denormalized column.
+    expect(sql.toLowerCase()).not.toContain('count(');
+  });
+
+  it('binds subscriptionId when provided', async () => {
+    await recorder.listRecent(5, 'sub-1');
+    const [{ sql, params }] = captures;
+    expect(params).toContain('sub-1');
+    // Filter lands on sync_runs.subscription_id (the FK), not the join target id.
+    expect(sql).toContain('"subscription_id"');
+  });
+
+  it('ignores tenantId when multi-tenant mode is off', async () => {
+    await recorder.listRecent(5, undefined, 'tenant-a');
+    const [{ sql, params }] = captures;
+    // `tenant_id` appears in the SELECT projection (column on sync_runs),
+    // but must NOT appear in a WHERE/filter. Single-tenant has no WHERE
+    // when subscriptionId is also omitted.
+    expect(sql.toLowerCase()).not.toContain('where');
+    expect(params).not.toContain('tenant-a');
+  });
+});
+
+describe('DrizzleSyncRunRecorder.listRecent (OBS-4) — multi-tenant', () => {
+  let recorder: DrizzleSyncRunRecorder;
+  let captures: Captured[];
+  let db: DrizzleClient;
+
+  beforeEach(() => {
+    ({ db, captures } = makeCapturingDb({ rows: [] }));
+    recorder = new DrizzleSyncRunRecorder(db, true);
+  });
+
+  it('throws MissingTenantIdError when tenantId is omitted', async () => {
+    await expect(recorder.listRecent(5)).rejects.toBeInstanceOf(
+      MissingTenantIdError,
+    );
+    expect(captures).toHaveLength(0);
+  });
+
+  it('throws MissingTenantIdError when tenantId is explicit null', async () => {
+    await expect(recorder.listRecent(5, undefined, null)).rejects.toBeInstanceOf(
+      MissingTenantIdError,
+    );
+  });
+
+  it('binds tenantId into the WHERE clause', async () => {
+    await recorder.listRecent(5, undefined, 'tenant-a');
+    expect(captures).toHaveLength(1);
+    const [{ sql, params }] = captures;
+    expect(sql.toLowerCase()).toContain('tenant_id');
+    expect(params).toContain('tenant-a');
+  });
+
+  it('combines subscriptionId + tenantId filters', async () => {
+    await recorder.listRecent(5, 'sub-1', 'tenant-a');
+    const [{ params }] = captures;
+    expect(params).toContain('sub-1');
+    expect(params).toContain('tenant-a');
+  });
+});
+
 describe('DrizzleSyncRunRecorder — multiTenant constructor default', () => {
   it('defaults multiTenant to false when the token is not provided', async () => {
     const { db, captures } = makeCapturingDb({

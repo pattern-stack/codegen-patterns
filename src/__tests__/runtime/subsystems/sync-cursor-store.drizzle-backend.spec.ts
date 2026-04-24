@@ -194,6 +194,85 @@ describe('PostgresCursorStore — multi-tenant', () => {
   });
 });
 
+describe('PostgresCursorStore.listAll (OBS-4) — single-tenant', () => {
+  let store: PostgresCursorStore;
+  let captures: Captured[];
+  let db: DrizzleClient;
+
+  beforeEach(() => {
+    ({ db, captures } = makeCapturingDb({ rows: [] }));
+    store = new PostgresCursorStore(db);
+  });
+
+  it('returns [] when no subscriptions exist', async () => {
+    expect(await store.listAll()).toEqual([]);
+    expect(captures).toHaveLength(1);
+    const [{ sql }] = captures;
+    expect(sql.toLowerCase()).toContain('select');
+    expect(sql).toContain('"sync_subscriptions"');
+  });
+
+  it('SELECTs subscription metadata ORDERed by updated_at DESC', async () => {
+    await store.listAll();
+    expect(captures).toHaveLength(1);
+    const [{ sql }] = captures;
+    expect(sql).toContain('"sync_subscriptions"');
+    expect(sql).toContain('"integration_id"');
+    expect(sql).toContain('"adapter"');
+    expect(sql).toContain('"domain"');
+    expect(sql).toContain('"external_ref"');
+    expect(sql).toContain('"cursor"');
+    expect(sql).toContain('"last_sync_at"');
+    expect(sql).toContain('"updated_at"');
+    // ORDER BY updated_at DESC.
+    expect(sql.toLowerCase()).toContain('order by');
+    expect(sql.toLowerCase()).toContain('desc');
+    // Single-tenant: no WHERE clause at all (tenant_id appears only in
+    // the SELECT projection, since it's a column on sync_subscriptions).
+    expect(sql.toLowerCase()).not.toContain('where');
+  });
+
+  it('ignores tenantId when multi-tenant mode is off', async () => {
+    await store.listAll('tenant-a');
+    const [{ sql, params }] = captures;
+    // No WHERE clause — tenant_id in SELECT projection is the column,
+    // not a filter.
+    expect(sql.toLowerCase()).not.toContain('where');
+    expect(params).not.toContain('tenant-a');
+  });
+});
+
+describe('PostgresCursorStore.listAll (OBS-4) — multi-tenant', () => {
+  let store: PostgresCursorStore;
+  let captures: Captured[];
+  let db: DrizzleClient;
+
+  beforeEach(() => {
+    ({ db, captures } = makeCapturingDb({ rows: [] }));
+    store = new PostgresCursorStore(db, true);
+  });
+
+  it('throws MissingTenantIdError when tenantId is omitted', async () => {
+    await expect(store.listAll()).rejects.toBeInstanceOf(MissingTenantIdError);
+    expect(captures).toHaveLength(0);
+  });
+
+  it('throws MissingTenantIdError when tenantId is explicit null', async () => {
+    await expect(store.listAll(null)).rejects.toBeInstanceOf(
+      MissingTenantIdError,
+    );
+    expect(captures).toHaveLength(0);
+  });
+
+  it('WHERE includes tenant_id and binds the param', async () => {
+    await store.listAll('tenant-a');
+    expect(captures).toHaveLength(1);
+    const [{ sql, params }] = captures;
+    expect(sql.toLowerCase()).toContain('tenant_id');
+    expect(params).toContain('tenant-a');
+  });
+});
+
 describe('PostgresCursorStore — multiTenant constructor default', () => {
   it('defaults multiTenant to false when the token is not provided', async () => {
     // When the @Optional() inject yields undefined, the store falls back

@@ -67,6 +67,36 @@ export interface CompleteRunInput {
 }
 
 // ============================================================================
+// Read projection — `listRecent`
+// ============================================================================
+
+/**
+ * Denormalized view of one `sync_runs` row, JOINed against
+ * `sync_subscriptions` to surface `integrationId` in a single read. Consumed
+ * by the OBS-5 observability composer (epic #195).
+ *
+ * `recordsProcessed` is the denormalized column on `sync_runs` — it does NOT
+ * count `sync_run_items` rows. A correlated subquery per run would be
+ * required for a true item count; deferred as a follow-up if needed.
+ *
+ * Memory backends can't know `integrationId` without subscription metadata
+ * — see each memory backend for the seedable `subscriptions` side-map that
+ * tests populate. When metadata is missing, memory backends emit an empty
+ * string so the shape stays stable (documented in the memory backend).
+ */
+export interface SyncRunSummary {
+  readonly id: string;
+  readonly subscriptionId: string;
+  /** Resolved by Drizzle via JOIN; empty string from memory if not seeded. */
+  readonly integrationId: string;
+  readonly status: 'running' | 'success' | 'no_changes' | 'failed';
+  readonly startedAt: Date;
+  readonly completedAt: Date | null;
+  readonly recordsProcessed: number;
+  readonly tenantId: string | null;
+}
+
+// ============================================================================
 // ISyncRunRecorder
 // ============================================================================
 
@@ -83,4 +113,24 @@ export interface ISyncRunRecorder {
    * `'failed'` when the iteration body threw.
    */
   completeRun(runId: string, input: CompleteRunInput): Promise<void>;
+
+  /**
+   * Recent `sync_runs` rows ordered by `started_at DESC`, capped at `limit`.
+   *
+   * Filter is `subscriptionId` — the natural FK on `sync_runs`. An
+   * integration-wide view requires filtering on `sync_subscriptions.integration_id`
+   * through the JOIN and is deferred as a follow-up (epic #195 OBS-4 spec).
+   *
+   * @param limit           hard cap on rows returned (no implicit default)
+   * @param subscriptionId  optional FK filter; omit for cross-subscription view
+   * @param tenantId        required by Drizzle backend when
+   *                        `SYNC_MULTI_TENANT` is on (throws
+   *                        `MissingTenantIdError` otherwise); memory backend
+   *                        accepts but ignores
+   */
+  listRecent(
+    limit: number,
+    subscriptionId?: string,
+    tenantId?: string | null,
+  ): Promise<SyncRunSummary[]>;
 }

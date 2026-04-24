@@ -27,7 +27,11 @@
  *   - SYNC-6 module tests (`SyncModule.forRoot({ backend: 'memory' })`)
  */
 import { Injectable } from '@nestjs/common';
-import type { ICursorStore } from './sync-cursor-store.protocol';
+import type {
+  CursorSnapshot,
+  ICursorStore,
+} from './sync-cursor-store.protocol';
+import type { MemorySyncSubscription } from './sync-run-recorder.memory-backend';
 
 @Injectable()
 export class MemoryCursorStore implements ICursorStore {
@@ -36,6 +40,17 @@ export class MemoryCursorStore implements ICursorStore {
    * or pre-seed state; production callers MUST go through `get`/`put`.
    */
   readonly cursors: Map<string, unknown> = new Map();
+
+  /**
+   * Seedable subscription metadata for `listAll` — the memory backend
+   * stores only `subscriptionId → cursor` in its write path, so the
+   * snapshot shape (`integrationId`, `adapter`, `domain`, `externalRef`,
+   * timestamps) has no natural source without test seeding. Tests populate
+   * this map; unseeded entries get empty-string metadata and `new Date(0)`
+   * timestamps so the shape stays stable. Production paths go through the
+   * Drizzle backend.
+   */
+  readonly subscriptions: Map<string, MemorySyncSubscription> = new Map();
 
   async get(
     subscriptionId: string,
@@ -57,8 +72,32 @@ export class MemoryCursorStore implements ICursorStore {
     this.cursors.set(subscriptionId, cursor);
   }
 
+  async listAll(_tenantId?: string | null): Promise<CursorSnapshot[]> {
+    // Accepts tenantId for contract symmetry but does not filter on it —
+    // the memory backend never enforces tenancy (see class-level comment).
+    const snapshots: CursorSnapshot[] = [];
+    for (const [subscriptionId, cursor] of this.cursors.entries()) {
+      const meta = this.subscriptions.get(subscriptionId);
+      snapshots.push({
+        subscriptionId,
+        integrationId: meta?.integrationId ?? '',
+        adapter: meta?.adapter ?? '',
+        domain: meta?.domain ?? '',
+        externalRef: meta?.externalRef ?? null,
+        cursor: cursor ?? null,
+        lastSyncAt: meta?.lastSyncAt ?? null,
+        updatedAt: meta?.updatedAt ?? new Date(0),
+        tenantId: null,
+      });
+    }
+    return snapshots.sort(
+      (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
+    );
+  }
+
   /** Reset state. Tests call this in `beforeEach`. */
   clear(): void {
     this.cursors.clear();
+    this.subscriptions.clear();
   }
 }
