@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-04-19
 **Owner:** Doug
-**Related:** ADR-005 (superseded), ADR-008 (Subsystem Architecture, mirrored shape)
+**Related:** ADR-005 (superseded), ADR-008 (Subsystem Architecture, mirrored shape), ADR-032 (Orchestration Patterns — extends this ADR with a second `pattern:` kind for DI registries + dispatch)
 **RFC:** `docs/RFC-app-defined-patterns.md`
 **Implementation spec:** `docs/specs/app-defined-patterns-implementation.md`
 

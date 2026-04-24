@@ -1,7 +1,7 @@
-# RFC: Orchestration Patterns (Phase 3 successor to ADR-031)
+# ADR-032: Orchestration Patterns
 
-**Status:** Approved — Q1–Q4 locked 2026-04-23. Ready to promote to ADR-032 and implement.
-**Date:** 2026-04-22 (drafted), 2026-04-23 (decisions locked)
+**Status:** Accepted
+**Date:** 2026-04-23
 **Author:** Doug + Claude
 **Relates to:** Issue #196, ADR-031 (App-Defined Patterns Phase 1), `docs/RFC-app-defined-patterns.md`, ADR-008 (Subsystem Architecture)
 **Research notes:** `docs/specs/RFC-orchestration-patterns-research.md`
