@@ -14,6 +14,8 @@ import type {
   ListForScopeOptions,
   CancelForScopeOptions,
   RescheduleForScopeOptions,
+  PoolStatusCount,
+  JobRunFailure,
 } from './job-run-service.protocol';
 import type { IJobOrchestrator } from './job-orchestrator.protocol';
 import { JOB_ORCHESTRATOR, JOBS_MULTI_TENANT } from './jobs-domain.tokens';
@@ -125,6 +127,54 @@ export class MemoryJobRunService implements IJobRunService {
         updatedAt: new Date(),
       });
     }
+  }
+
+  async countByPoolAndStatus(
+    tenantId?: string | null,
+  ): Promise<PoolStatusCount[]> {
+    const tenantCheck = this.tenantPredicate('countByPoolAndStatus', tenantId);
+    const map = new Map<string, PoolStatusCount>();
+    for (const r of this.store.runs.values()) {
+      if (tenantCheck && !tenantCheck(r)) continue;
+      const key = `${r.pool}\0${r.status}`;
+      const cur = map.get(key);
+      if (cur) {
+        cur.count += 1;
+      } else {
+        map.set(key, { pool: r.pool, status: r.status, count: 1 });
+      }
+    }
+    return Array.from(map.values());
+  }
+
+  async listRecentFailed(
+    limit: number,
+    tenantId?: string | null,
+  ): Promise<JobRunFailure[]> {
+    const tenantCheck = this.tenantPredicate('listRecentFailed', tenantId);
+    const failed: JobRunRow[] = [];
+    for (const r of this.store.runs.values()) {
+      if (r.status !== 'failed') continue;
+      if (tenantCheck && !tenantCheck(r)) continue;
+      failed.push(r);
+    }
+    failed.sort((a, b) => {
+      const at = (a.finishedAt ?? a.updatedAt).getTime();
+      const bt = (b.finishedAt ?? b.updatedAt).getTime();
+      return bt - at;
+    });
+    return failed.slice(0, limit).map((r) => ({
+      runId: r.id,
+      jobType: r.jobType,
+      pool: r.pool,
+      scopeEntityType: r.scopeEntityType,
+      scopeEntityId: r.scopeEntityId,
+      tenantId: r.tenantId,
+      attempts: r.attempts,
+      errorMessage: r.error?.message ?? null,
+      failedAt: r.finishedAt ?? r.updatedAt,
+      createdAt: r.createdAt,
+    }));
   }
 
   /**

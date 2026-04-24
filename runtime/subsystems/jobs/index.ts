@@ -40,6 +40,8 @@ export type {
   ListForScopeOptions,
   CancelForScopeOptions,
   RescheduleForScopeOptions,
+  PoolStatusCount,
+  JobRunFailure,
 } from './job-run-service.protocol';
 
 // ─── JOB-2: step-service protocol ──────────────────────────────────────────
