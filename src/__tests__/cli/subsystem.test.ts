@@ -88,13 +88,14 @@ function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: string }> {
 // ---------------------------------------------------------------------------
 
 describe('subsystem — descriptor', () => {
-	test('knows all subsystems (six + openapi-config)', () => {
-		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem —
-		// no runtime dir, no Protocol→Backend pair. Listed here so
+	test('knows all subsystems (six + openapi-config + observability)', () => {
+		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem.
+		// OBS-7: `observability` is a combiner pseudo-subsystem (ADR-025) —
+		// composes sibling read ports via @Optional() DI. Listed here so
 		// `codegen subsystem list` / `codegen subsystem` summary surface
-		// it alongside the real subsystems.
+		// them alongside the real subsystems.
 		expect(SUBSYSTEMS.map((s) => s.name).sort()).toEqual(
-			['bridge', 'cache', 'events', 'jobs', 'openapi-config', 'storage', 'sync'].sort()
+			['bridge', 'cache', 'events', 'jobs', 'observability', 'openapi-config', 'storage', 'sync'].sort()
 		);
 	});
 });
@@ -119,7 +120,7 @@ describe('subsystem — summary + list', () => {
 		);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('subsystem list');
-		expect(parsed.subsystems).toHaveLength(7); // +openapi-config (OPENAPI-4)
+		expect(parsed.subsystems).toHaveLength(8); // +openapi-config (OPENAPI-4), +observability (OBS-7)
 		for (const row of parsed.subsystems) {
 			expect(row.status).toBe('available');
 		}

@@ -38,6 +38,10 @@ import {
 	localsToHygenArgs as bridgeLocalsToHygenArgs,
 	resolveBridgeScaffoldLocals,
 } from '../shared/bridge-scaffold-locals.js';
+import {
+	localsToHygenArgs as observabilityLocalsToHygenArgs,
+	resolveObservabilityScaffoldLocals,
+} from '../shared/observability-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
 import {
 	SUBSYSTEMS,
@@ -386,6 +390,20 @@ export class SubsystemInstallCommand extends Command {
 					})
 				: null;
 
+		// OBS-7: observability combiner subsystem — injects the placeholder
+		// `observability:` config block and appends a TODO comment block to
+		// `app.module.ts` directing the human to wire
+		// `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync.
+		// No schema, no worker, no generated/ dir (ADR-025).
+		const observabilityScaffold =
+			desc.name === 'observability'
+				? runObservabilityScaffold(ctx.cwd, ctx.config, {
+						dryRun: this.dryRun,
+						json: isJsonMode(),
+						forceConfig: this.forceConfig,
+					})
+				: null;
+
 		// #121 (F13): a parse-error on codegen.config.yaml causes the scaffold
 		// to refuse re-injection rather than silently overwrite. Surface it as
 		// a non-zero exit with a clear message; runtime files were already
@@ -414,6 +432,12 @@ export class SubsystemInstallCommand extends Command {
 			);
 			return 1;
 		}
+		if (observabilityScaffold?.configBlockOutcome === 'parse-error') {
+			printError(
+				'codegen.config.yaml is not valid YAML: refusing to inject observability config block. Fix the YAML and re-run.',
+			);
+			return 1;
+		}
 
 		if (isJsonMode()) {
 			printJson({
@@ -433,6 +457,7 @@ export class SubsystemInstallCommand extends Command {
 				...(eventsScaffold ? { scaffold: eventsScaffold } : {}),
 				...(syncScaffold ? { scaffold: syncScaffold } : {}),
 				...(bridgeScaffold ? { scaffold: bridgeScaffold } : {}),
+				...(observabilityScaffold ? { scaffold: observabilityScaffold } : {}),
 			});
 			return 0;
 		}
@@ -471,6 +496,14 @@ export class SubsystemInstallCommand extends Command {
 					`Bridge scaffold — ${bridgeScaffold.planned.length} template targets`,
 				);
 				for (const p of bridgeScaffold.planned) {
+					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+				}
+			}
+			if (observabilityScaffold?.planned?.length) {
+				printInfo(
+					`Observability scaffold — ${observabilityScaffold.planned.length} template targets`,
+				);
+				for (const p of observabilityScaffold.planned) {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
@@ -528,10 +561,30 @@ export class SubsystemInstallCommand extends Command {
 				);
 			}
 		}
+		if (observabilityScaffold) {
+			if (observabilityScaffold.ok) {
+				printSuccess(
+					`observability scaffold applied (config block, app.module.ts hint)`,
+				);
+			} else {
+				printWarning(
+					`observability scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${observabilityScaffold.error ?? 'unknown error'}`,
+				);
+			}
+		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
-		printInfo(
-			`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
-		);
+		// OBS-7: observability is a combiner (ADR-025) — no backend selection,
+		// and module order matters (composes siblings via @Optional() DI).
+		// Emit a targeted hint instead of the default `forRoot({ backend })` one.
+		if (desc.name === 'observability') {
+			printInfo(
+				'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync in app.module.ts',
+			);
+		} else {
+			printInfo(
+				`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
+			);
+		}
 		if (desc.name === 'sync') {
 			printInfo(
 				`Per-entity: register ExecuteSyncUseCase + your IChangeSource/ISyncSink bindings in a feature module (see SyncModule docstring).`
@@ -662,7 +715,13 @@ function planConfigBlockAction(
 
 interface ConfigBlockActionInput {
 	cwd: string;
-	actionFolder: 'jobs-config' | 'events-config' | 'sync-config' | 'bridge-config' | 'openapi-config';
+	actionFolder:
+		| 'jobs-config'
+		| 'events-config'
+		| 'sync-config'
+		| 'bridge-config'
+		| 'openapi-config'
+		| 'observability-config';
 	configPath: string;
 	subsystem: DetectorSubsystemName;
 	outcome: ConfigBlockOutcome;
@@ -1082,6 +1141,85 @@ function runBridgeScaffold(
 		actionFolder: 'bridge-config',
 		configPath: locals.configPath,
 		subsystem: 'bridge',
+		outcome: configBlockOutcome,
+		json: opts.json,
+	});
+
+	if (!configResult.ok) {
+		return {
+			ok: false,
+			planned,
+			error: configResult.error,
+			configBlockOutcome,
+		};
+	}
+
+	return { ok: true, planned, configBlockOutcome };
+}
+
+// ---------------------------------------------------------------------------
+// OBS-7 — observability subsystem Hygen scaffold wiring
+// ---------------------------------------------------------------------------
+
+interface ObservabilityScaffoldOutcome {
+	ok: boolean;
+	planned: string[];
+	error?: string;
+	configBlockOutcome?: ConfigBlockOutcome;
+}
+
+function runObservabilityScaffold(
+	cwd: string,
+	config: Context['config'],
+	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
+): ObservabilityScaffoldOutcome {
+	const locals = resolveObservabilityScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+	});
+
+	// Planned files: the `observability:` config block + the TODO comment
+	// block appended to `app.module.ts`. No schema, no worker, no
+	// generated/ (combiner subsystem — ADR-025).
+	const planned: string[] = [locals.configPath, locals.appModulePath];
+
+	const configBlockOutcome = planConfigBlockAction(
+		locals.configPath,
+		'observability',
+		opts.forceConfig,
+	);
+
+	if (configBlockOutcome === 'parse-error') {
+		return { ok: false, planned, configBlockOutcome };
+	}
+
+	if (opts.dryRun) {
+		return { ok: true, planned, configBlockOutcome };
+	}
+
+	const result = invokeHygen({
+		generator: 'subsystem',
+		action: 'observability',
+		cwd,
+		args: observabilityLocalsToHygenArgs(locals),
+		inherit: !opts.json,
+	});
+
+	if (!result.ok) {
+		return {
+			ok: false,
+			planned,
+			error: result.stderr?.trim() || 'hygen exited non-zero',
+			configBlockOutcome,
+		};
+	}
+
+	const configResult = runConfigBlockAction({
+		cwd,
+		actionFolder: 'observability-config',
+		configPath: locals.configPath,
+		subsystem: 'observability',
 		outcome: configBlockOutcome,
 		json: opts.json,
 	});
