@@ -45,7 +45,14 @@ export {
 export {
   ObservabilityModule,
   type ObservabilityModuleOptions,
+  type ObservabilityReportersOptions,
+  type BridgeMetricsReporterConfig,
 } from './observability.module';
+
+// Reporters barrel — re-exported for test and internal reference. Consumers
+// do NOT construct these classes directly; they are auto-registered by
+// `ObservabilityModule.forRoot()` when enabled via options.
+export * from './reporters';
 
 // Errors
 export { ObservabilityError } from './observability-errors';
