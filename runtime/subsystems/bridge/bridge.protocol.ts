@@ -49,6 +49,26 @@ import type {
  */
 export type BridgeDeliveryInsert = InferInsertModel<typeof bridgeDelivery>;
 
+/**
+ * Status histogram returned by IJobBridge.getStatusHistogram.
+ *
+ * Keys match the bridge_delivery_status enum values (bridge-delivery.schema.ts).
+ * Missing statuses in the underlying result set are zero-filled so consumers
+ * can render a fixed 4-row chart without branching.
+ *
+ * PHASE 1: plain counts only. The time-bucketed variant (per-interval series
+ * for a sparkline / timeline chart) is reserved for the Cube.js analytics
+ * layer (see epic-195-architecture-decisions.md §6) and must NOT be added to
+ * this protocol. If a consumer needs buckets, that's a signal to route the
+ * query through Cube, not to grow the core contract.
+ */
+export type StatusHistogram = {
+  pending: number;
+  delivered: number;
+  skipped: number;
+  failed: number;
+};
+
 export interface IJobBridge {
   /**
    * Insert a `bridge_delivery` row.
@@ -118,6 +138,36 @@ export interface IJobBridge {
     error: Record<string, unknown>,
     tx?: DrizzleTransaction,
   ): Promise<void>;
+
+  /**
+   * Count bridge_delivery rows by status, filtered to rows where
+   * attemptedAt >= (now - windowHours) and (optionally) tenantId matches.
+   *
+   * Tenant semantics mirror the jobs subsystem (job-orchestrator.protocol.ts):
+   *   - tenantId omitted or explicit undefined: no tenant filter (counts across
+   *     all tenants — appropriate for framework-internal admin dashboards).
+   *   - tenantId === null: match rows where tenant_id IS NULL (cross-tenant
+   *     housekeeping deliveries).
+   *   - tenantId === '<string>': match rows where tenant_id = '<string>'.
+   *
+   * Returns all-zero StatusHistogram when no rows match — never empty object,
+   * never undefined. Consumers rely on fixed keys for rendering.
+   *
+   * `windowHours` must be positive; implementations throw `RangeError` for
+   * `windowHours <= 0`. No upper bound is enforced — the caller is
+   * responsible for choosing a sensible window.
+   *
+   * Unlike the write methods on this port, this read intentionally does NOT
+   * invoke `assertTenantId`: `tenantId === undefined` is a supported
+   * cross-tenant admin view, not a policy violation.
+   *
+   * PHASE 1: plain counts only. Do NOT add a bucketing / time-series variant
+   * to this method or the protocol — see StatusHistogram JSDoc.
+   */
+  getStatusHistogram(
+    windowHours: number,
+    tenantId?: string | null,
+  ): Promise<StatusHistogram>;
 }
 
 // ============================================================================

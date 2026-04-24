@@ -144,3 +144,90 @@ describe('DrizzleBridgeDeliveryRepo — state transitions', () => {
     expect(captures[0]!.params).toContain(DELIVERY_ID);
   });
 });
+
+describe('DrizzleBridgeDeliveryRepo — getStatusHistogram (OBS-3)', () => {
+  it('issues GROUP BY status with count(*)::int cast and now()-interval cutoff', async () => {
+    const { db, captures } = makeCapturingDb([]);
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+
+    await repo.getStatusHistogram(24);
+
+    expect(captures).toHaveLength(1);
+    const sql = captures[0]!.sql.toLowerCase();
+    expect(sql).toContain('from "bridge_delivery"');
+    expect(sql).toContain('group by');
+    expect(sql).toContain('"status"');
+    expect(sql).toContain('count(*)::int');
+    // Cutoff predicate should be a now()-interval expression, not a
+    // JS-computed timestamp — this guards against accidentally depending
+    // on client clock sync.
+    expect(sql).toContain('now()');
+    expect(sql).toContain('make_interval');
+    expect(captures[0]!.params).toContain(24);
+  });
+
+  it('returns zero-filled histogram when the query returns no rows', async () => {
+    const { db } = makeCapturingDb([]); // empty result set
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+    const h = await repo.getStatusHistogram(24);
+    expect(h).toEqual({ pending: 0, delivered: 0, skipped: 0, failed: 0 });
+  });
+
+  it('zero-fills statuses missing from the result set', async () => {
+    // pg-proxy returns arrays-of-arrays in driver order; Drizzle maps
+    // columns positionally. Our select is { status, count } — so the
+    // row shape is [status, count].
+    const { db } = makeCapturingDb([
+      ['pending', 3],
+      ['delivered', 7],
+    ]);
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+    const h = await repo.getStatusHistogram(24);
+    expect(h).toEqual({ pending: 3, delivered: 7, skipped: 0, failed: 0 });
+  });
+
+  it('casts count to number even if the driver surfaces a string', async () => {
+    // Guard against a regression where we drop the ::int cast and the
+    // driver yields bigint strings.
+    const { db } = makeCapturingDb([
+      ['failed', '42'],
+    ]);
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+    const h = await repo.getStatusHistogram(1);
+    expect(h.failed).toBe(42);
+    expect(typeof h.failed).toBe('number');
+  });
+
+  it('adds tenant_id IS NULL filter when tenantId === null', async () => {
+    const { db, captures } = makeCapturingDb([]);
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+    await repo.getStatusHistogram(24, null);
+    const sql = captures[0]!.sql.toLowerCase();
+    expect(sql).toContain('"tenant_id" is null');
+  });
+
+  it('adds tenant_id = ? filter when tenantId is a string', async () => {
+    const { db, captures } = makeCapturingDb([]);
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+    await repo.getStatusHistogram(24, 't-1');
+    const sql = captures[0]!.sql.toLowerCase();
+    expect(sql).toContain('"tenant_id" =');
+    expect(captures[0]!.params).toContain('t-1');
+  });
+
+  it('omits tenant filter when tenantId is undefined', async () => {
+    const { db, captures } = makeCapturingDb([]);
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+    await repo.getStatusHistogram(24);
+    const sql = captures[0]!.sql.toLowerCase();
+    expect(sql).not.toContain('"tenant_id"');
+  });
+
+  it('throws RangeError for windowHours <= 0 (no SQL issued)', async () => {
+    const { db, captures } = makeCapturingDb([]);
+    const repo = new DrizzleBridgeDeliveryRepo(db);
+    expect(repo.getStatusHistogram(0)).rejects.toThrow(RangeError);
+    expect(repo.getStatusHistogram(-5)).rejects.toThrow(RangeError);
+    expect(captures).toHaveLength(0);
+  });
+});
