@@ -15,8 +15,15 @@ export type SubsystemName =
 	| 'storage'
 	| 'sync'
 	| 'bridge'
-	| 'openapi-config';
-export type SubsystemBackend = 'drizzle' | 'memory' | 'local' | 'config-only' | 'unknown';
+	| 'openapi-config'
+	| 'observability';
+export type SubsystemBackend =
+	| 'drizzle'
+	| 'memory'
+	| 'local'
+	| 'config-only'
+	| 'combiner'
+	| 'unknown';
 
 export interface InstalledSubsystem {
 	name: SubsystemName;
@@ -78,6 +85,17 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 		backends: ['config-only'],
 		defaultBackend: 'config-only',
 	},
+	{
+		// OBS-7 / ADR-025. Combiner subsystem — no schema, no worker, no
+		// generated/ dir. `ObservabilityModule` composes sibling read ports
+		// (events/jobs/bridge/sync) via @Optional() DI. The `combiner`
+		// pseudo-backend is parallel to `openapi-config`'s `config-only`.
+		name: 'observability',
+		description:
+			'Observability combiner — composes sibling read ports via @Optional() DI (ADR-025)',
+		backends: ['combiner'],
+		defaultBackend: 'combiner',
+	},
 ];
 
 const KNOWN_NAMES = SUBSYSTEMS.map((s) => s.name);
@@ -94,6 +112,10 @@ function candidateRoots(cwd: string, configured?: string): string[] {
 }
 
 function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
+	// OBS-7: observability is a combiner subsystem (ADR-025) — no
+	// drizzle/memory split, no backend files beyond the service itself.
+	// Short-circuit so we never mis-report it as 'unknown'.
+	if (name === 'observability') return 'combiner';
 	const hasDrizzle = fs.existsSync(path.join(dir, `${name.replace(/s$/, '')}-bus.drizzle-backend.ts`))
 		|| fs.readdirSync(dir).some((f) => f.endsWith('.drizzle-backend.ts'));
 	const hasMemory = fs.readdirSync(dir).some((f) => f.endsWith('.memory-backend.ts'));
