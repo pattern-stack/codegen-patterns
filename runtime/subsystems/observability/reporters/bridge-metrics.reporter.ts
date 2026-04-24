@@ -44,6 +44,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -81,10 +82,18 @@ export class BridgeMetricsReporter implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BridgeMetricsReporter.name);
   private readonly intervalMs: number;
   private lastTickAt: Date;
+  /**
+   * Timer handle retained as a field when `SchedulerRegistry` isn't
+   * available (optional dep). `SchedulerRegistry` is the Nest-idiomatic
+   * home for interval cleanup, but global-module wiring across consumer
+   * topologies doesn't always make it injectable here — the fallback
+   * keeps the reporter self-sufficient.
+   */
+  private ownedTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
-    private readonly scheduler: SchedulerRegistry,
+    @Optional() private readonly scheduler: SchedulerRegistry | null = null,
   ) {
     this.intervalMs = this.resolveIntervalMs();
     // Initialize the window tail at boot so the first tick reports only
@@ -102,12 +111,23 @@ export class BridgeMetricsReporter implements OnModuleInit, OnModuleDestroy {
     // Allow the process to exit naturally in test runs — setInterval
     // otherwise pins the event loop open.
     timer.unref?.();
-    this.scheduler.addInterval(INTERVAL_NAME, timer);
+
+    if (this.scheduler) {
+      this.scheduler.addInterval(INTERVAL_NAME, timer);
+    } else {
+      // Fallback: retain the handle ourselves so onModuleDestroy can
+      // clear it without Nest's SchedulerRegistry.
+      this.ownedTimer = timer;
+    }
   }
 
   onModuleDestroy(): void {
-    if (this.scheduler.getIntervals().includes(INTERVAL_NAME)) {
+    if (this.scheduler && this.scheduler.getIntervals().includes(INTERVAL_NAME)) {
       this.scheduler.deleteInterval(INTERVAL_NAME);
+    }
+    if (this.ownedTimer !== null) {
+      clearInterval(this.ownedTimer);
+      this.ownedTimer = null;
     }
   }
 
