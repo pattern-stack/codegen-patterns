@@ -11,6 +11,11 @@ import {
 	validatePatternComposition,
 	validatePatternProject,
 } from './patterns/validate-composition.js';
+import { validateOrchestrationProject } from './patterns/validate-orchestration.js';
+import {
+	getAllOrchestrationPatterns,
+	getAllPatternNames,
+} from './patterns/registry.js';
 import type { AnalysisResult, OutputFormat } from './analyzer/types';
 
 /**
@@ -87,6 +92,16 @@ export async function analyzeDomain(
 		architecture: opts.architecture,
 	});
 
+	// ADR-032 Phase 3-1 — orchestration pattern project-level validator.
+	// Compares orchestration names against the domain name set (cross-kind
+	// collision is a hard error), and walks each orchestration pattern's
+	// registry shape for malformed entries, duplicate keys, and co-keyed
+	// keyType drift.
+	const orchestrationProjectIssues = validateOrchestrationProject({
+		orchestrationPatterns: getAllOrchestrationPatterns(),
+		domainPatternNames: getAllPatternNames(),
+	});
+
 	// Compute statistics
 	const statistics = computeStatistics(graph);
 
@@ -99,6 +114,7 @@ export async function analyzeDomain(
 		...consistencyIssues,
 		...patternIssues,
 		...patternProjectIssues,
+		...orchestrationProjectIssues,
 	];
 
 	// Determine validity (only errors make it invalid)

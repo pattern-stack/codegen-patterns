@@ -1,12 +1,16 @@
 /**
  * Pattern Registry — library + app pattern storage and discovery.
  *
- * Two stores keyed by pattern name:
+ * Three stores keyed by pattern name:
  *   - `LIBRARY_PATTERNS` — seeded by the codegen package itself when the
  *     `src/patterns/library/*` barrel imports execute. Consumers never
- *     list these in `codegen.config.yaml patterns:`.
+ *     list these in `codegen.config.yaml patterns:`. Domain only.
  *   - `APP_PATTERNS`     — populated by `loadAppPatterns()` from a
  *     consumer-supplied glob set (default `src/patterns/*.pattern.ts`).
+ *     Domain only.
+ *   - `ORCHESTRATION_APP_PATTERNS` — populated by the same loader,
+ *     routed by `kind: 'orchestration'` (ADR-032). No library
+ *     orchestration patterns ship in Phase 3-1.
  *
  * `getPattern()` checks app patterns first so a consumer could, in
  * principle, shadow a library pattern by using the same `name`. That's
@@ -26,7 +30,10 @@ import { glob } from 'glob';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+	isOrchestrationPattern,
 	isPatternDefinition,
+	type AnyPatternDefinition,
+	type OrchestrationPatternDefinition,
 	type PatternDefinition,
 } from './pattern-definition.js';
 
@@ -36,6 +43,15 @@ import {
 
 const LIBRARY_PATTERNS: Map<string, PatternDefinition> = new Map();
 const APP_PATTERNS: Map<string, PatternDefinition> = new Map();
+
+/**
+ * Orchestration patterns (ADR-032). Library never ships orchestration
+ * patterns in Phase 3-1 — only the app-pattern map exists for this kind.
+ * If a library-shipped orchestration pattern ever lands, add a parallel
+ * `LIBRARY_ORCHESTRATION_PATTERNS` map; for now keep storage minimal.
+ */
+const ORCHESTRATION_APP_PATTERNS: Map<string, OrchestrationPatternDefinition> =
+	new Map();
 
 /**
  * Every pattern must contribute *something* — either at least one column
@@ -54,6 +70,50 @@ function assertHasContribution(def: PatternDefinition): void {
 		throw new Error(
 			`Pattern '${def.name}' contributes nothing — at least one of ` +
 				'`columns`, `repositoryClass`, or `serviceClass` is required.',
+		);
+	}
+}
+
+/**
+ * Orchestration counterpart to `assertHasContribution`. An orchestration
+ * pattern's minimum contribution is one registry with at least one entry —
+ * a registry with zero entries would emit a token + module that nothing
+ * resolves to, almost certainly a typo. Detailed entry validation
+ * (duplicate keys, malformed entries, co-keyed mismatches) lives in the
+ * project-level validator so loader behaviour stays symmetrical with the
+ * domain side: load is non-throwing for content-level issues, validator
+ * is the single authoritative reporter.
+ */
+function assertOrchestrationContribution(
+	def: OrchestrationPatternDefinition,
+): void {
+	if (!def.registry || typeof def.registry !== 'object') {
+		throw new Error(
+			`Orchestration pattern '${def.name}' is missing a 'registry' field.`,
+		);
+	}
+	if (
+		typeof def.registry.keyType !== 'string' ||
+		def.registry.keyType.length === 0
+	) {
+		throw new Error(
+			`Orchestration pattern '${def.name}' registry.keyType must be a non-empty string.`,
+		);
+	}
+	if (
+		typeof def.registry.valueType !== 'string' ||
+		def.registry.valueType.length === 0
+	) {
+		throw new Error(
+			`Orchestration pattern '${def.name}' registry.valueType must be a non-empty string.`,
+		);
+	}
+	if (
+		!Array.isArray(def.registry.entries) ||
+		def.registry.entries.length === 0
+	) {
+		throw new Error(
+			`Orchestration pattern '${def.name}' registry.entries must contain at least one entry.`,
 		);
 	}
 }
@@ -79,17 +139,24 @@ export function registerLibraryPattern(def: PatternDefinition): void {
 // ============================================================================
 
 /**
- * Resolve a pattern by name. App patterns shadow library patterns with
- * the same name — useful in principle but not a documented feature.
+ * Resolve a **domain** pattern by name. App patterns shadow library
+ * patterns with the same name — useful in principle but not a documented
+ * feature.
+ *
+ * Orchestration patterns live in a disjoint store; use
+ * `getOrchestrationPattern()` to look those up. The two surfaces are
+ * intentionally separate (ADR-032 Decision 8) so callers don't have to
+ * narrow the result on every callsite.
  */
 export function getPattern(name: string): PatternDefinition | undefined {
 	return APP_PATTERNS.get(name) ?? LIBRARY_PATTERNS.get(name);
 }
 
 /**
- * Return every registered pattern name (library + app), sorted for
+ * Return every registered domain pattern name (library + app), sorted for
  * deterministic output. The two-process determinism test relies on this
- * ordering being stable across processes.
+ * ordering being stable across processes. Orchestration names are NOT
+ * included — see `getOrchestrationPatternNames()`.
  */
 export function getAllPatternNames(): string[] {
 	const set = new Set<string>([
@@ -107,6 +174,33 @@ export function getLibraryPatternNames(): string[] {
 /** App-only view — mainly for debugging and tests. */
 export function getAppPatternNames(): string[] {
 	return [...APP_PATTERNS.keys()].sort();
+}
+
+// ============================================================================
+// Orchestration accessors (ADR-032)
+// ============================================================================
+
+/** Resolve an orchestration pattern by name. */
+export function getOrchestrationPattern(
+	name: string,
+): OrchestrationPatternDefinition | undefined {
+	return ORCHESTRATION_APP_PATTERNS.get(name);
+}
+
+/** Sorted list of orchestration pattern names. */
+export function getOrchestrationPatternNames(): string[] {
+	return [...ORCHESTRATION_APP_PATTERNS.keys()].sort();
+}
+
+/**
+ * Every registered orchestration pattern, sorted by name. The
+ * project-level validator iterates this list in one place so issue
+ * ordering is stable across processes.
+ */
+export function getAllOrchestrationPatterns(): OrchestrationPatternDefinition[] {
+	return getOrchestrationPatternNames().map(
+		(n) => ORCHESTRATION_APP_PATTERNS.get(n)!,
+	);
 }
 
 // ============================================================================
@@ -174,14 +268,49 @@ export async function loadAppPatterns(
 			for (const [key, val] of Object.entries(mod)) {
 				if (!key.endsWith('Pattern')) continue;
 				if (!isPatternDefinition(val)) continue;
-				try {
-					assertHasContribution(val);
+
+				// Route on `kind`. Domain (default) and orchestration land in
+				// disjoint maps; same-name collisions within either map are
+				// load-time errors (silent overwrite was wrong by CLAUDE.md
+				// "architectural correctness" — see ADR-032 §Composition rules
+				// row 1).
+				if (isOrchestrationPattern(val as unknown as AnyPatternDefinition)) {
+					const orch = val as unknown as OrchestrationPatternDefinition;
+					try {
+						assertOrchestrationContribution(orch);
+					} catch (assertErr) {
+						errors.push(
+							`Orchestration pattern '${orch.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
+						);
+						continue;
+					}
+					const existingOrch = ORCHESTRATION_APP_PATTERNS.get(orch.name);
+					if (existingOrch && existingOrch !== orch) {
+						errors.push(
+							`Orchestration pattern '${orch.name}' in ${relPath(filePath, cwd)} duplicates a previously loaded orchestration pattern. Pattern names must be unique.`,
+						);
+						continue;
+					}
+					ORCHESTRATION_APP_PATTERNS.set(orch.name, orch);
+					loaded.add(orch.name);
+				} else {
+					try {
+						assertHasContribution(val);
+					} catch (assertErr) {
+						errors.push(
+							`Pattern '${val.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
+						);
+						continue;
+					}
+					const existingDom = APP_PATTERNS.get(val.name);
+					if (existingDom && existingDom !== val) {
+						errors.push(
+							`Pattern '${val.name}' in ${relPath(filePath, cwd)} duplicates a previously loaded app pattern. Pattern names must be unique.`,
+						);
+						continue;
+					}
 					APP_PATTERNS.set(val.name, val);
 					loaded.add(val.name);
-				} catch (assertErr) {
-					errors.push(
-						`Pattern '${val.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
-					);
 				}
 			}
 		} catch (err) {
@@ -212,6 +341,7 @@ export function _resetRegistryForTests(
 	opts: { includeLibrary?: boolean } = {},
 ): void {
 	APP_PATTERNS.clear();
+	ORCHESTRATION_APP_PATTERNS.clear();
 	if (opts.includeLibrary) {
 		LIBRARY_PATTERNS.clear();
 	}
