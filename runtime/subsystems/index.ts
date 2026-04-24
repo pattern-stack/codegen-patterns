@@ -33,6 +33,29 @@ export { STORAGE } from './storage';
 export type { IStorageService } from './storage';
 export { StorageModule, LocalStorageBackend, MemoryStorageBackend } from './storage';
 
+// Observability (ADR-008, 5th subsystem)
+export { OBSERVABILITY, OBSERVABILITY_REPORTERS } from './observability';
+export type {
+  CursorSnapshot,
+  IObservabilityService,
+  JobRunFailure,
+  PoolDepth,
+  StatusHistogram,
+  SyncRunSummary,
+} from './observability';
+export {
+  ObservabilityModule,
+  DrizzleObservabilityService,
+  MemoryObservabilityService,
+  BridgeMetricsReporter,
+} from './observability';
+export type {
+  ObservabilityModuleOptions,
+  ObservabilityReporterOptions,
+  BridgeMetricsRow,
+  BridgeMetricsTick,
+} from './observability';
+
 // Auth
 export {
   ENCRYPTION_KEY,
