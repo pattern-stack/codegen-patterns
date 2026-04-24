@@ -1,167 +1,92 @@
 /**
- * IObservabilityService — core contract for the observability subsystem
- * (ADR-008, 5th subsystem in the infrastructure family alongside events,
- * jobs, cache, storage).
+ * IObservability — read-only composer port for the observability combiner
+ * subsystem (ADR-025, OBS-5).
  *
- * The contract is a **read-only reflection surface** over framework-owned
- * tables (`job_run`, `bridge_delivery`, `domain_events`, `sync_runs`,
- * `sync_subscriptions`). The subsystem itself owns no tables — it's a query
- * facade over state the other subsystems already persist.
+ * Every method:
+ *   - Accepts an optional `tenantId`, passed VERBATIM to the owning sibling
+ *     port. Observability never re-implements tenant filtering — that is
+ *     the owning subsystem's job (jobs / bridge / sync). See
+ *     `.claude/skills/observability/SKILL.md` §3.
+ *       - `undefined` — "not provided"; sibling default semantics apply.
+ *       - `null`      — explicit cross-tenant match (sibling-specific).
+ *       - `string`    — filter to that single tenant.
+ *   - Returns an empty shape (not throws) when the owning sibling port is
+ *     absent in the consumer's DI container. Consumers get a graceful
+ *     degradation instead of a boot failure.
  *
- * # Core + extensions (per CLAUDE.md "Backend swappability")
- *
- * The five methods below are the **core contract** — every backend MUST
- * implement them. App code that calls only these is portable across
- * backends (drizzle / memory / future OpenTelemetry exporter / etc).
- *
- * Backend-specific capabilities (e.g. Postgres `pg_stat_activity` sampling,
- * an OTel span exporter, a Prometheus scrape endpoint) are exposed as
- * **extensions** on the concrete backend class, not lifted into this
- * interface. Consumers opting into extensions accept backend-specific
- * coupling — that's the whole point; the core contract is what guarantees
- * portability.
- *
- * # The five core methods
- *
- * Finalized against two concrete consumers in `dealbrain-v2`:
- *   - `BridgeMetricsReporter` (60s sampler over `bridge_delivery`)
- *   - `StackStatusService` (on-demand `GET /dev/status` snapshot).
- *
- * Every distinct SQL query those two files run is covered by one of these
- * five methods (or relocated entirely — see `reporters/`).
+ * Phase-1 scope (epic #195): five reads composed from four sibling ports.
+ * Cross-subsystem JOIN analytics are deferred to the Cube.js layer
+ * (ADR-025 §Phase-1 scope note; skill §5).
  */
-export interface IObservabilityService {
+
+import type {
+  JobRunFailure,
+  PoolStatusCount,
+} from '../jobs/job-run-service.protocol';
+import type { StatusHistogram } from '../bridge/bridge.protocol';
+import type { SyncRunSummary } from '../sync/sync-run-recorder.protocol';
+import type { CursorSnapshot } from '../sync/sync-cursor-store.protocol';
+
+export interface IObservability {
   /**
-   * Current pool depths for the jobs subsystem.
+   * Live `(pool, status)` counts across `job_run`. Delegates to
+   * `IJobRunService.countByPoolAndStatus`.
    *
-   * One row per pool that has at least one pending or running `job_run`.
-   * Empty pools (no activity) are omitted — the surface is "what's
-   * active", not a pool-config dump.
-   *
-   * `claimedAgeP95Ms` is the p95 of `(now - claimed_at)` in milliseconds
-   * over currently-running runs, or `null` when the pool has no running
-   * runs. Useful for spotting stuck workers.
+   * Empty array when the jobs subsystem is not installed.
    */
-  getPoolDepths(): Promise<PoolDepth[]>;
+  getPoolDepths(tenantId?: string | null): Promise<PoolStatusCount[]>;
 
   /**
-   * Recent sync_runs, most-recent-first.
+   * Most-recent `failed` job runs, newest first. Delegates to
+   * `IJobRunService.listRecentFailed`.
    *
-   * When `integrationId` is provided, the query filters to that integration;
-   * when omitted, returns the N most recent runs across all integrations.
-   * For "last N per integration" fan-out, callers run the method per
-   * integration id rather than adding a per-group LATERAL variant to the
-   * core — LATERAL is a Postgres-ism that doesn't port cleanly to memory
-   * or hypothetical OTel/Redis backends.
+   * Empty array when the jobs subsystem is not installed.
+   */
+  getRecentFailedJobs(
+    limit: number,
+    tenantId?: string | null,
+  ): Promise<JobRunFailure[]>;
+
+  /**
+   * Bridge-delivery status counts over a trailing window. Delegates to
+   * `IJobBridge.getStatusHistogram`.
    *
-   * @param limit cap on rows returned
-   * @param integrationId optional integration filter
+   * Returns an all-zero histogram (`{ pending: 0, delivered: 0, skipped: 0,
+   * failed: 0 }`) when the bridge subsystem is not installed — matches the
+   * bridge protocol's "fixed keys, zero-filled" contract.
+   */
+  getBridgeDeliveryHistogram(
+    windowHours: number,
+    tenantId?: string | null,
+  ): Promise<StatusHistogram>;
+
+  /**
+   * Recent `sync_runs` (optionally filtered by subscription). Delegates to
+   * `ISyncRunRecorder.listRecent`.
+   *
+   * Empty array when the sync subsystem is not installed.
    */
   getRecentSyncRuns(
     limit: number,
-    integrationId?: string,
+    subscriptionId?: string,
+    tenantId?: string | null,
   ): Promise<SyncRunSummary[]>;
 
   /**
-   * Count of `bridge_delivery` rows grouped by terminal status over a
-   * trailing window.
+   * Cursor state per enabled `sync_subscriptions` row. Delegates to
+   * `ICursorStore.listAll`.
    *
-   * The window is measured against `COALESCE(delivered_at, attempted_at)`
-   * so terminal `skipped` / `failed` rows are counted alongside
-   * `delivered`. Rows still `pending` at query time appear under
-   * `'pending'` if they fall in the window.
-   *
-   * @param windowHours trailing window size; typical values are 1h
-   * (dashboards) or 24h (daily summary).
+   * Empty array when the sync subsystem is not installed.
    */
-  getBridgeDeliveryHistogram(windowHours: number): Promise<StatusHistogram>;
-
-  /**
-   * Most recent `job_run` rows with `status = 'failed'`, newest-first.
-   *
-   * Intended for on-demand ops drill-down (dashboard panel, `/dev/status`
-   * endpoint). Consumers that need structured alerting should subscribe to
-   * job events via the jobs subsystem directly rather than polling this.
-   */
-  getRecentFailedJobs(limit: number): Promise<JobRunFailure[]>;
-
-  /**
-   * Cursor state per enabled `sync_subscriptions` row.
-   *
-   * Returns the opaque cursor payload verbatim — strategies type it
-   * internally (poll: `{ systemModstamp }`, cdc: `{ replayId }`, webhook:
-   * `{ ts }`), but the observability surface stays untyped so it works
-   * across adapter shapes.
-   */
-  getCursors(): Promise<CursorSnapshot[]>;
+  getCursors(tenantId?: string | null): Promise<CursorSnapshot[]>;
 }
 
-// ─── Return shapes ───────────────────────────────────────────────────────
-
-export interface PoolDepth {
-  /** Pool name (matches `job_run.pool`). */
-  name: string;
-  /** Count of `status = 'pending'` runs. */
-  pending: number;
-  /** Count of `status = 'running'` runs. */
-  running: number;
-  /**
-   * p95 of `now - claimed_at` in ms over currently-running runs, or null
-   * when the pool has no running runs.
-   */
-  claimedAgeP95Ms: number | null;
-}
-
-export interface SyncRunSummary {
-  id: string;
-  /** Subscription id the run belongs to (FK → `sync_subscriptions.id`). */
-  subscriptionId: string;
-  /**
-   * Integration id — recovered via join on `sync_subscriptions` so
-   * consumers don't have to re-hydrate the subscription to answer
-   * "which integration ran?".
-   */
-  integrationId: string | null;
-  /** Adapter label from the subscription (e.g. `'salesforce'`). */
-  adapter: string | null;
-  /** Domain label from the subscription (e.g. `'opportunity'`). */
-  domain: string | null;
-  direction: string;
-  action: string;
-  status: string;
-  recordsFound: number;
-  recordsProcessed: number;
-  durationMs: number | null;
-  error: string | null;
-  startedAt: Date;
-  completedAt: Date | null;
-}
-
-/**
- * Histogram of bridge-delivery rows keyed by status. Keys are a subset of
- * `'pending' | 'delivered' | 'skipped' | 'failed'`; statuses with zero
- * rows in the window are omitted.
- */
-export type StatusHistogram = Record<string, number>;
-
-export interface JobRunFailure {
-  id: string;
-  jobType: string;
-  pool: string;
-  status: string;
-  error: unknown;
-  startedAt: Date | null;
-  finishedAt: Date | null;
-  attempts: number;
-}
-
-export interface CursorSnapshot {
-  /** `sync_subscriptions.id`. */
-  subscriptionId: string;
-  integrationId: string;
-  adapter: string;
-  domain: string;
-  /** Opaque cursor payload; null until the first successful run advances it. */
-  lastCursor: unknown;
-  lastSyncAt: Date | null;
-}
+// Re-export composed return types so consumers of IObservability can import
+// them from a single module without reaching into every sibling subsystem.
+export type {
+  PoolStatusCount,
+  JobRunFailure,
+  StatusHistogram,
+  SyncRunSummary,
+  CursorSnapshot,
+};

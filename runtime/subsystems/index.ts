@@ -33,27 +33,21 @@ export { STORAGE } from './storage';
 export type { IStorageService } from './storage';
 export { StorageModule, LocalStorageBackend, MemoryStorageBackend } from './storage';
 
-// Observability (ADR-008, 5th subsystem)
-export { OBSERVABILITY, OBSERVABILITY_REPORTERS } from './observability';
+// Observability (ADR-025 combiner subsystem, OBS-5)
+export {
+  OBSERVABILITY,
+  OBSERVABILITY_MODULE_OPTIONS,
+  ObservabilityModule,
+  type ObservabilityModuleOptions,
+  ObservabilityError,
+} from './observability';
 export type {
-  CursorSnapshot,
-  IObservabilityService,
+  IObservability,
+  PoolStatusCount,
   JobRunFailure,
-  PoolDepth,
   StatusHistogram,
   SyncRunSummary,
-} from './observability';
-export {
-  ObservabilityModule,
-  DrizzleObservabilityService,
-  MemoryObservabilityService,
-  BridgeMetricsReporter,
-} from './observability';
-export type {
-  ObservabilityModuleOptions,
-  ObservabilityReporterOptions,
-  BridgeMetricsRow,
-  BridgeMetricsTick,
+  CursorSnapshot,
 } from './observability';
 
 // Auth

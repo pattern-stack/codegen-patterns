@@ -1,35 +1,51 @@
 /**
- * Observability subsystem public API (ADR-008, 5th subsystem).
+ * Observability combiner subsystem — public API (ADR-025, OBS-5).
  *
- * Import token + protocol in services/controllers:
- * ```typescript
- * import { OBSERVABILITY, type IObservabilityService } from '@pattern-stack/codegen/runtime/subsystems/observability';
- * ```
+ * Re-exports the protocol, composed return types, DI tokens, module, and
+ * error base class.
  *
- * Import the module in AppModule:
- * ```typescript
- * import { ObservabilityModule } from '@pattern-stack/codegen/runtime/subsystems/observability';
- * ObservabilityModule.forRoot({ backend: 'drizzle', reporters: { bridgeMetrics: true } })
+ * Deliberately does NOT export `ObservabilityService` — consumers inject
+ * the `OBSERVABILITY` token, not the concrete class. Keeps the combiner's
+ * authoring surface one-way (consumers see the port, never the impl) and
+ * leaves room to swap the impl in phase 2 without a public-API bump.
+ *
+ * Usage:
+ * ```ts
+ * import {
+ *   OBSERVABILITY,
+ *   ObservabilityModule,
+ *   type IObservability,
+ * } from '@pattern-stack/codegen/runtime/subsystems/observability';
+ *
+ * // In AppModule
+ * ObservabilityModule.forRoot(),
+ *
+ * // In a consumer service
+ * constructor(@Inject(OBSERVABILITY) private readonly obs: IObservability) {}
  * ```
  */
-export { OBSERVABILITY, OBSERVABILITY_REPORTERS } from './observability.tokens';
+
+// Protocol + composed return types (re-exported through the protocol file)
 export type {
-  CursorSnapshot,
-  IObservabilityService,
+  IObservability,
+  PoolStatusCount,
   JobRunFailure,
-  PoolDepth,
   StatusHistogram,
   SyncRunSummary,
+  CursorSnapshot,
 } from './observability.protocol';
+
+// DI tokens
+export {
+  OBSERVABILITY,
+  OBSERVABILITY_MODULE_OPTIONS,
+} from './observability.tokens';
+
+// Module wiring
 export {
   ObservabilityModule,
   type ObservabilityModuleOptions,
-  type ObservabilityReporterOptions,
 } from './observability.module';
-export { DrizzleObservabilityService } from './observability.drizzle-backend';
-export { MemoryObservabilityService } from './observability.memory-backend';
-export {
-  BridgeMetricsReporter,
-  type BridgeMetricsRow,
-  type BridgeMetricsTick,
-} from './reporters/bridge-metrics.reporter';
+
+// Errors
+export { ObservabilityError } from './observability-errors';
