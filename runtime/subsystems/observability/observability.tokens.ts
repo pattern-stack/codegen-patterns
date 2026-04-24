@@ -1,18 +1,27 @@
 /**
- * Injection token for the observability service (ADR-008, 5th subsystem).
+ * Observability combiner subsystem — DI tokens (ADR-025, OBS-5).
  *
- * ```typescript
- * constructor(@Inject(OBSERVABILITY) private readonly obs: IObservabilityService) {}
+ * String constants (not Symbols), matching the events / bridge / sync
+ * convention. The jobs subsystem uses Symbols for its analogous tokens;
+ * observability stays internally consistent with its sibling combiner
+ * (bridge) because the two are structurally paired (ADR-025).
+ *
+ * Usage in consumers:
+ * ```ts
+ * constructor(@Inject(OBSERVABILITY) private readonly obs: IObservability) {}
  * ```
- *
- * Per ADR-008, tokens use `Symbol()` for collision avoidance.
  */
-export const OBSERVABILITY = Symbol('OBSERVABILITY');
 
 /**
- * Opt-in config token that tells the module whether to register the
- * `BridgeMetricsReporter` sampler. Consumers without the bridge subsystem
- * leave this `false` (the default) so the module doesn't import the
- * reporter's bridge-schema deps.
+ * Token for the `IObservability` composer facade (OBS-5). Resolves to the
+ * single `ObservabilityService` instance registered by
+ * `ObservabilityModule.forRoot(...)`.
  */
-export const OBSERVABILITY_REPORTERS = Symbol('OBSERVABILITY_REPORTERS');
+export const OBSERVABILITY = 'OBSERVABILITY' as const;
+
+/**
+ * Token for the resolved `ObservabilityModuleOptions` object. Provided by
+ * `ObservabilityModule.forRoot(...)`. Reserved for phase 2 — the current
+ * options shape is empty; OBS-6 will extend it with a `reporters` field.
+ */
+export const OBSERVABILITY_MODULE_OPTIONS = 'OBSERVABILITY_MODULE_OPTIONS' as const;
