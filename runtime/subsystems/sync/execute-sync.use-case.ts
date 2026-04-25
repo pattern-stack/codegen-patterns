@@ -7,7 +7,7 @@
  * Flow per run:
  *
  *   1. `recorder.startRun(...)` — opens a `sync_runs` row in 'running'.
- *   2. for each change yielded by `source.listChanges(subscription)`:
+ *   2. for each change yielded by `source.listChanges(subscription, cursorBefore)`:
  *        a. if loopback store says "echo of own write" → skip, record
  *           as `status: 'skipped'`, `operation: 'noop'`, changedFields `{}`.
  *        b. differ.diff(existing, incoming) → 'noop' short-circuits to
@@ -153,7 +153,7 @@ export class ExecuteSyncUseCase<T extends Record<string, unknown>> {
     let status: 'success' | 'no_changes' | 'failed' = 'no_changes';
 
     try {
-      for await (const change of source.listChanges(input.subscription)) {
+      for await (const change of source.listChanges(input.subscription, cursorBefore)) {
         recordsFound++;
         latestCursor = change.cursor;
         cursorAdvanced = true;

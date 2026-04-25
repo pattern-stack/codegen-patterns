@@ -67,9 +67,10 @@ export class SalesforceOpportunityChangeSource
 
   async *listChanges(
     sub: SyncSubscriptionView,
+    cursor: unknown | null,
   ): AsyncIterable<Change<CanonicalOpportunity>> {
-    const cursor = sub.cursor as { systemModstamp?: string } | null;
-    const since = cursor?.systemModstamp ?? '1970-01-01T00:00:00Z';
+    const typed = cursor as { systemModstamp?: string } | null;
+    const since = typed?.systemModstamp ?? '1970-01-01T00:00:00Z';
 
     // Session refresh happens before the query — withAuthRetry wraps
     // the SFDC client to force a refresh on 401 and retry once.

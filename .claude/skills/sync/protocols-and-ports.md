@@ -14,7 +14,10 @@ The one port every sync adapter implements. Three detection modes
 ```ts
 interface IChangeSource<T> {
   readonly label: string;  // e.g. 'salesforce-poll-opportunity'
-  listChanges(subscription: SyncSubscriptionView): AsyncIterable<Change<T>>;
+  listChanges(
+    subscription: SyncSubscriptionView,
+    cursor: unknown | null,
+  ): AsyncIterable<Change<T>>;
 }
 
 interface Change<T> {
