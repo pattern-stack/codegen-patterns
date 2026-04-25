@@ -10,7 +10,15 @@
  * `Change.source` / `dedupKey` / `providerChangedFields` metadata fields,
  * not in separate ports.
  *
- * See epic #60 (parent) and upstream ADR-008 subsystem architecture.
+ * Cursor is passed by-value as the second argument (#226-2 / ADR-033). The
+ * orchestrator owns cursor lifecycle (read-before-iterate, advance-on-yield,
+ * persist-on-success); the primitive receives the current value at the start
+ * of each run rather than reading it from a side store. This eliminates the
+ * "two readers of the same row" problem that arose when adapters injected
+ * `ICursorStore` directly.
+ *
+ * See epic #60 (parent), ADR-033 (config-driven change sources), and
+ * upstream ADR-008 subsystem architecture.
  */
 
 // ============================================================================
@@ -91,9 +99,16 @@ export interface IChangeSource<T> {
 
   /**
    * Async-iterate upstream changes, newest cursor last. The orchestrator
+   * passes the current persisted cursor by-value as the second argument and
    * persists `change.cursor` as it advances; strategies MUST yield at least
    * one change before the async iterable completes if anything changed
    * upstream, otherwise cursor advance is a no-op.
+   *
+   * `cursor` is opaque at this seam — the primitive's cursor strategy types
+   * it internally. `null` means "first run, no cursor yet."
    */
-  listChanges(subscription: SyncSubscriptionView): AsyncIterable<Change<T>>;
+  listChanges(
+    subscription: SyncSubscriptionView,
+    cursor: unknown | null,
+  ): AsyncIterable<Change<T>>;
 }

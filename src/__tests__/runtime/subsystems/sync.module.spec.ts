@@ -51,7 +51,10 @@ interface CanonicalOpp extends Record<string, unknown> {
 class EmptySource implements IChangeSource<CanonicalOpp> {
   readonly label = 'test';
   // eslint-disable-next-line @typescript-eslint/require-yield
-  async *listChanges(_sub: SyncSubscriptionView): AsyncIterable<Change<CanonicalOpp>> {
+  async *listChanges(
+    _sub: SyncSubscriptionView,
+    _cursor: unknown | null,
+  ): AsyncIterable<Change<CanonicalOpp>> {
     // yields nothing
     return;
   }
@@ -59,7 +62,10 @@ class EmptySource implements IChangeSource<CanonicalOpp> {
 
 class OneChangeSource implements IChangeSource<CanonicalOpp> {
   readonly label = 'test';
-  async *listChanges(_sub: SyncSubscriptionView): AsyncIterable<Change<CanonicalOpp>> {
+  async *listChanges(
+    _sub: SyncSubscriptionView,
+    _cursor: unknown | null,
+  ): AsyncIterable<Change<CanonicalOpp>> {
     yield {
       externalId: 'ext-1',
       operation: 'created',

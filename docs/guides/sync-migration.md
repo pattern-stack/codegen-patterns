@@ -85,10 +85,11 @@ export class SalesforceOpportunityChangeSource
   constructor(private readonly sfdc: SalesforceClient) {}
 
   async *listChanges(
-    sub: SyncSubscriptionView,
+    _sub: SyncSubscriptionView,
+    cursor: unknown | null,
   ): AsyncIterable<Change<CanonicalOpportunity>> {
-    const cursor = sub.cursor as { systemModstamp?: string } | null;
-    const since = cursor?.systemModstamp ?? '1970-01-01T00:00:00Z';
+    const typed = cursor as { systemModstamp?: string } | null;
+    const since = typed?.systemModstamp ?? '1970-01-01T00:00:00Z';
     const records = await this.sfdc.query(
       `SELECT ... FROM Opportunity WHERE SystemModstamp > ${since}`,
     );

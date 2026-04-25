@@ -45,10 +45,13 @@ interface CanonicalOpp extends Record<string, unknown> {
 
 class ArrayChangeSource implements IChangeSource<CanonicalOpp> {
   readonly label = 'test-array';
+  readonly seenCursors: Array<unknown | null> = [];
   constructor(private readonly changes: Change<CanonicalOpp>[]) {}
   async *listChanges(
     _sub: SyncSubscriptionView,
+    cursor: unknown | null,
   ): AsyncIterable<Change<CanonicalOpp>> {
+    this.seenCursors.push(cursor);
     for (const c of this.changes) yield c;
   }
 }
@@ -61,6 +64,7 @@ class ThrowingChangeSource implements IChangeSource<CanonicalOpp> {
   ) {}
   async *listChanges(
     _sub: SyncSubscriptionView,
+    _cursor: unknown | null,
   ): AsyncIterable<Change<CanonicalOpp>> {
     for (const c of this.initial) yield c;
     throw this.err;
@@ -510,6 +514,36 @@ describe('ExecuteSyncUseCase', () => {
         'tenant-a',
       );
       expect(recorder.items[0].tenantId).toBe('tenant-a');
+    });
+  });
+
+  describe('cursor passthrough (#226-2)', () => {
+    it('passes null cursor on first run (no prior persisted cursor)', async () => {
+      const source = new ArrayChangeSource([]);
+      const orch = makeOrchestrator(source, sink, recorder, cursors);
+      await orch.execute(makeInput());
+
+      expect(source.seenCursors).toEqual([null]);
+    });
+
+    it('passes the persisted cursor value on subsequent runs', async () => {
+      // Seed the cursor store with a prior value.
+      await cursors.put(SUB.id, { systemModstamp: '2026-04-21T10:00:00Z' });
+
+      const change: Change<CanonicalOpp> = {
+        externalId: 'ext-1',
+        operation: 'created',
+        record: { external_id: 'ext-1', amount: 100 },
+        cursor: { systemModstamp: '2026-04-21T13:00:00Z' },
+        source: 'poll',
+      };
+      const source = new ArrayChangeSource([change]);
+      const orch = makeOrchestrator(source, sink, recorder, cursors);
+      await orch.execute(makeInput());
+
+      expect(source.seenCursors).toEqual([
+        { systemModstamp: '2026-04-21T10:00:00Z' },
+      ]);
     });
   });
 
