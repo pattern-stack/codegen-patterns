@@ -87,6 +87,15 @@ meaningful.
    event_id, provider-hinted changed fields) live in `Change<T>`
    metadata: `source`, `dedupKey`, `providerChangedFields`. Don't
    introduce mode-specific ports — we rejected that design explicitly.
+   "CDC" here means *cursor-based event endpoints* (Stripe-style
+   `events?starting_after=...`) — those map to `PollChangeSource<T>`
+   with `poll.provenance: 'cdc'` (#226-4); the primitive stamps
+   `Change<T>.source = 'cdc'` and reads `dedupKey` from
+   `poll.cursor.field`. Long-lived stream subscriptions (SFDC
+   Pub-Sub gRPC, Debezium/Kafka, Postgres logical replication) are a
+   separate primitive deferred to #226-8 — they need a different
+   substrate (`subscribe(onChange, onError)`, server-paced
+   backpressure, ack-on-yield) and shouldn't be retrofitted here.
 
 2. **Cursors are opaque at the port seam, and the orchestrator owns
    the lifecycle.** `ICursorStore.get/put` takes `unknown`. Each
@@ -227,6 +236,16 @@ Files that ship to the consumer app (not templates):
   and `Change<T>.source` provenance (`'poll'` default; `'cdc'` opt-in
   via `poll.provenance` for Stripe-style event endpoints — #226-4)
   (#226-3 / ADR-033)
+- `runtime/subsystems/sync/webhook-change-source.ts` —
+  `WebhookChangeSource<T>` webhook-mode primitive: parameterized by a
+  parsed `DetectionConfig` (`mode: 'webhook'`) + a consumer-supplied
+  `WebhookFetchCallback<T>` that iterates the consumer-owned inbound
+  staging queue. Stamps `Change<T>.source = 'webhook'`, populates
+  `dedupKey` from `webhook.eventIdField`, derives `externalId` from
+  the mapping table's `external_id` target, composes middleware via
+  the locked `ChangeMiddleware<T>` shape. Passive iterator — does NOT
+  drive the orchestrator. Inbound staging-table schema is
+  consumer-owned and deferred per ADR-0002 §Phase 4. (#226-4)
 - `runtime/subsystems/sync/sync-run-recorder.protocol.ts` —
   `ISyncRunRecorder` + `StartRunInput` / `RecordItemInput` /
   `CompleteRunInput`
