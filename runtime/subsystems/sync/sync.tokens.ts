@@ -32,14 +32,6 @@ export const SYNC_SINK = 'SYNC_SINK' as const;
 export const SYNC_RUN_RECORDER = 'SYNC_RUN_RECORDER' as const;
 
 /**
- * Optional loopback-fingerprint store (SYNC-5). Backed by
- * `ILoopbackFingerprintStore<T>`. `ExecuteSyncUseCase` treats this as
- * `@Optional()` — consumers without outbound writeback paths don't need it.
- */
-export const SYNC_LOOPBACK_FINGERPRINT_STORE =
-  'SYNC_LOOPBACK_FINGERPRINT_STORE' as const;
-
-/**
  * Injection token for the resolved `SyncModuleOptions` object (SYNC-6).
  *
  * Backends that need to observe module configuration (e.g. `multiTenant`

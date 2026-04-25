@@ -74,7 +74,7 @@ meaningful.
 | When the task involves… | Read |
 |---|---|
 | Designing a new `IChangeSource<T>` (signature `(subscription, cursor) => AsyncIterable<Change<T>>` per ADR-033) / `ISyncSink<T>` / custom `IFieldDiffer<T>` | `protocols-and-ports.md` |
-| The orchestrator's run lifecycle, cursor advance, per-item failure, loopback | `orchestrator-flow.md` |
+| The orchestrator's run lifecycle, cursor advance, per-item failure | `orchestrator-flow.md` |
 | `sync_runs` / `sync_run_items` / `sync_subscriptions` shape, `changed_fields` (ADR-0003), worked queries | `audit-model.md` |
 | Writing a feature module, migrating from bespoke sync, multi-tenancy wiring | `consumer-patterns.md` |
 
@@ -270,8 +270,15 @@ Files that ship to the consumer app (not templates):
   `DeepEqualDiffer<T>` with canonical ignore list; `providerChangedFields`
   CDC hint; Date → ISO string + decimal-string ↔ number normalizations
 - `runtime/subsystems/sync/execute-sync.use-case.ts` — the generic
-  orchestrator. `@Optional() SYNC_LOOPBACK_FINGERPRINT_STORE` +
-  `@Optional() SYNC_MULTI_TENANT`. Entry-point `assertTenantId` guard
+  orchestrator. `@Optional() SYNC_MULTI_TENANT`. Entry-point
+  `assertTenantId` guard. Loopback suppression is composed into the
+  `IChangeSource`'s middleware chain via `createLoopbackMiddleware`
+  (#226-5 / ADR-033) — no orchestrator-side branch.
+- `runtime/subsystems/sync/loopback.middleware.ts` —
+  `createLoopbackMiddleware(store)` factory; the canonical
+  `ChangeMiddleware<T>` consumers compose into their primitive's
+  middleware chain when they need to suppress echoes of their own
+  outbound writes (#226-5 / ADR-033)
 - `runtime/subsystems/sync/sync.module.ts` —
   `SyncModule.forRoot({ backend, multiTenant? })`; `global: true`
 - `runtime/subsystems/sync/sync.tokens.ts` — string-valued tokens

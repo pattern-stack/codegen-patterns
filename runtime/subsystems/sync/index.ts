@@ -70,6 +70,11 @@ export type {
   ComposeChangeMiddleware,
 } from './sync-middleware.protocol';
 
+// Loopback middleware factory (#226-5) — replaces the orchestrator's prior
+// `@Optional() SYNC_LOOPBACK_FINGERPRINT_STORE` branch. Consumers compose
+// `createLoopbackMiddleware(store)` into their primitive's middleware chain.
+export { createLoopbackMiddleware } from './loopback.middleware';
+
 // Poll primitive (#226-3) — generic poll-mode IChangeSource<T>
 export {
   PollChangeSource,
@@ -94,7 +99,6 @@ export {
   SYNC_CHANGE_SOURCE,
   SYNC_CURSOR_STORE,
   SYNC_FIELD_DIFFER,
-  SYNC_LOOPBACK_FINGERPRINT_STORE,
   SYNC_MODULE_OPTIONS,
   SYNC_MULTI_TENANT,
   SYNC_RUN_RECORDER,

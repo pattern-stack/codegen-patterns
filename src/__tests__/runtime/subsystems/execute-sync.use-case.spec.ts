@@ -8,13 +8,17 @@
  *
  *   - created / updated / deleted happy paths
  *   - noop emission when differ returns 'noop'
- *   - loopback skip path (with in-memory fingerprint stub)
  *   - per-item failure does not fail the whole run; counts.failed increments
  *   - cursor advance on successful run
  *
  * Plus: all-failed run is marked 'failed'; empty iterable → 'no_changes';
  * source iterator throw still persists last-good cursor; deletion of a
  * missing record records as 'noop'.
+ *
+ * Loopback suppression moved out of the orchestrator in #226-5 — it now
+ * lives in `createLoopbackMiddleware(store)` and is asserted in
+ * `loopback.middleware.spec.ts`. The orchestrator no longer special-cases
+ * echoes; tests here stop covering that branch.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { MemoryCursorStore } from '../../../../runtime/subsystems/sync/sync-cursor-store.memory-backend';
@@ -31,7 +35,6 @@ import type {
   RecordItemInput,
   CompleteRunInput,
 } from '../../../../runtime/subsystems/sync/sync-run-recorder.protocol';
-import type { ILoopbackFingerprintStore } from '../../../../runtime/subsystems/sync/sync-loopback.protocol';
 
 // ─── Canonical shape for tests ──────────────────────────────────────────────
 
@@ -129,26 +132,6 @@ class FakeRecorder implements ISyncRunRecorder {
   }
 }
 
-class AllowAllLoopback
-  implements ILoopbackFingerprintStore<CanonicalOpp>
-{
-  async isEchoOfOwnWrite(): Promise<boolean> {
-    return false;
-  }
-}
-
-class EchoIds
-  implements ILoopbackFingerprintStore<CanonicalOpp>
-{
-  constructor(private readonly echoed: Set<string>) {}
-  async isEchoOfOwnWrite(
-    _entityType: string,
-    externalId: string,
-  ): Promise<boolean> {
-    return this.echoed.has(externalId);
-  }
-}
-
 // ─── Shared fixtures ────────────────────────────────────────────────────────
 
 const SUB: SyncSubscriptionView = {
@@ -178,7 +161,6 @@ function makeOrchestrator(
   sink: ISyncSink<CanonicalOpp>,
   recorder: ISyncRunRecorder,
   cursors: MemoryCursorStore,
-  loopback?: ILoopbackFingerprintStore<CanonicalOpp>,
 ) {
   return new ExecuteSyncUseCase<CanonicalOpp>(
     source,
@@ -186,7 +168,6 @@ function makeOrchestrator(
     new DeepEqualDiffer<CanonicalOpp>(),
     sink,
     recorder,
-    loopback,
   );
 }
 
@@ -347,48 +328,6 @@ describe('ExecuteSyncUseCase', () => {
       // but we assert `upsertByExternalId` did not run by checking the
       // map still points to `existing`).
       expect(sink.rows.get('ext-1')).toBe(existing);
-    });
-  });
-
-  describe('loopback skip', () => {
-    it('records skipped+noop and does not call the sink', async () => {
-      const change: Change<CanonicalOpp> = {
-        externalId: 'echo-1',
-        operation: 'updated',
-        record: { external_id: 'echo-1', amount: 100 },
-        cursor: { v: 1 },
-        source: 'poll',
-      };
-      const source = new ArrayChangeSource([change]);
-      const loopback = new EchoIds(new Set(['echo-1']));
-      const orch = makeOrchestrator(source, sink, recorder, cursors, loopback);
-      await orch.execute(makeInput());
-
-      expect(recorder.items[0].operation).toBe('noop');
-      expect(recorder.items[0].status).toBe('skipped');
-      expect(sink.rows.has('echo-1')).toBe(false);
-    });
-
-    it('processes non-echoed records normally', async () => {
-      const change: Change<CanonicalOpp> = {
-        externalId: 'ext-1',
-        operation: 'created',
-        record: { external_id: 'ext-1', amount: 100 },
-        cursor: { v: 1 },
-        source: 'poll',
-      };
-      const source = new ArrayChangeSource([change]);
-      const orch = makeOrchestrator(
-        source,
-        sink,
-        recorder,
-        cursors,
-        new AllowAllLoopback(),
-      );
-      await orch.execute(makeInput());
-
-      expect(recorder.items[0].status).toBe('success');
-      expect(recorder.items[0].operation).toBe('created');
     });
   });
 
