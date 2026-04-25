@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DetectionConfigSchema } from "../../runtime/subsystems/sync";
 
 /**
  * Entity Definition Schema
@@ -791,6 +792,19 @@ export const EntityDefinitionSchema = z
     // v2: Integration sync configuration (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Electric SQL + provider sync (Salesforce, HubSpot, etc.)
     sync: SyncConfigSchema.optional(),
+
+    // #226-6: Config-driven change-source detection (ADR-033).
+    //
+    // Declarative detection config consumed by the runtime change-source
+    // primitives (`PollChangeSource<T>` / `WebhookChangeSource<T>`) and by
+    // the per-entity factory module emitted by Phase 2 codegen (#226-7).
+    // The Zod schema is the canonical source of filter / mapping / cursor
+    // shape and is imported from `runtime/subsystems/sync` so this
+    // validator and the runtime parser stay in lockstep — drift between
+    // the two sites must be a compile error, not a runtime mismatch.
+    //
+    // Optional and additive: existing entity YAMLs are unaffected.
+    detection: DetectionConfigSchema.optional(),
 
     // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Generates typed event classes, handlers, and queue registration

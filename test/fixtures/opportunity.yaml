@@ -74,3 +74,31 @@ relationships:
     type: belongs_to
     target: deal_state
     foreign_key: state_id
+
+# Config-driven change-source detection (#226-6, ADR-033).
+# Schema-validated by the canonical DetectionConfigSchema from
+# runtime/subsystems/sync. No codegen emission yet — that lands in #226-7.
+detection:
+  mode: poll
+  poll:
+    cursor:
+      kind: systemModstamp
+      field: SystemModstamp
+  mapping:
+    - source: Name
+      target: name
+    - source: Amount
+      target: amount
+      transform: decimal-string
+    - source: CloseDate
+      target: expected_close_date
+      transform: date-iso
+    - source: OwnerId
+      target: owner_id
+  filters:
+    - field: IsDeleted
+      op: eq
+      value: false
+    - field: StageName
+      op: neq
+      value: "Closed Lost"

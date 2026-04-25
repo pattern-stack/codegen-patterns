@@ -15,8 +15,10 @@ surface — `ISyncSink<T>`. Everything else (cursor persistence, diffing,
 per-record audit, run lifecycle) is provided by the subsystem.
 
 This skill covers the Phase 1 runtime (SYNC-1..SYNC-8, epic #60). Phase
-2 (the `syncable:` YAML flag + codegen-produced per-entity sync binding
-modules) is gated on the App-Defined Patterns RFC and not shipped.
+2 lands in two halves: the entity-YAML `detection:` block is now
+schema-validated upstream against the canonical `DetectionConfigSchema`
+(ADR-033, #226-6); the codegen factory-module emission that consumes
+the parsed block is still pending (#226-7).
 
 ## Mental model
 
