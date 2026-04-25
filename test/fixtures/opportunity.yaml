@@ -75,9 +75,13 @@ relationships:
     target: deal_state
     foreign_key: state_id
 
-# Config-driven change-source detection (#226-6, ADR-033).
+# Config-driven change-source detection (#226-6, #226-7, ADR-033).
 # Schema-validated by the canonical DetectionConfigSchema from
-# runtime/subsystems/sync. No codegen emission yet — that lands in #226-7.
+# runtime/subsystems/sync. The `mapping` array MUST include an entry
+# whose `target` is `external_id` — `PollChangeSource<T>` derives
+# `Change.externalId` from this entry at construction. The codegen
+# factory module emission (#226-7) wires this config into a
+# per-entity `<entity>-sync-source.module.ts`.
 detection:
   mode: poll
   poll:
@@ -85,6 +89,8 @@ detection:
       kind: systemModstamp
       field: SystemModstamp
   mapping:
+    - source: Id
+      target: external_id
     - source: Name
       target: name
     - source: Amount

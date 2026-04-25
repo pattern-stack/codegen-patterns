@@ -736,6 +736,80 @@ Consumers inject `ExecuteSyncUseCase<CanonicalOpportunity>` wherever they
 want to trigger a run — a scheduled job, a CLI command, a webhook
 handler, an operator UI button.
 
+### Detection block — config-driven `PollChangeSource` emission (#226-7)
+
+Hand-authoring an `IChangeSource<T>` is still supported (next subsection),
+but for the common poll case you can declare detection in the entity YAML
+and let codegen emit the wiring. Add a `detection:` block alongside
+`fields:` / `relationships:`:
+
+```yaml
+# entities/opportunity.yaml
+entity:
+  name: opportunity
+  # ...
+
+detection:
+  mode: poll
+  poll:
+    cursor:
+      kind: systemModstamp
+      field: SystemModstamp
+  mapping:
+    # Required: at least one entry whose `target` is `external_id` so the
+    # primitive can populate `Change.externalId` from the canonical record.
+    - source: Id
+      target: external_id
+    - source: Name
+      target: name
+  filters:
+    - field: IsDeleted
+      op: eq
+      value: false
+```
+
+`codegen entity new entities/opportunity.yaml` then emits
+`<paths.modules>/opportunity-sync-source.module.ts` containing:
+
+- A consumer-side adapter token (`OPPORTUNITY_SYNC_ADAPTER`) you bind to
+  a `PollFetchCallback<Opportunity>` in your feature module.
+- An optional loopback-store token (`OPPORTUNITY_SYNC_LOOPBACK_STORE`).
+  Bind it to an `ILoopbackFingerprintStore<Opportunity>` and the factory
+  composes `createLoopbackMiddleware(store)` automatically (#226-5,
+  ADR-033).
+- A `SYNC_CHANGE_SOURCE` provider whose `useFactory` constructs
+  `new PollChangeSource({ adapter, config: detectionConfig, middlewares })`
+  with the YAML-validated detection literal inlined.
+
+Wire the generated module from your feature module:
+
+```ts
+import {
+  OpportunitySyncSourceModule,
+  OPPORTUNITY_SYNC_ADAPTER,
+} from '../modules/opportunity-sync-source.module';
+
+@Module({
+  imports: [OpportunitySyncSourceModule],
+  providers: [
+    {
+      provide: OPPORTUNITY_SYNC_ADAPTER,
+      useFactory: (sfdc: SalesforceClient) =>
+        async function* ({ subscription, cursor, filters }) {
+          // ... query the upstream provider, yield { record, cursor } pairs.
+        },
+      inject: [SalesforceClient],
+    },
+    { provide: SYNC_SINK, useClass: OpportunitySyncSink },
+    ExecuteSyncUseCase,
+  ],
+})
+export class OpportunitySyncFeatureModule {}
+```
+
+Webhook factory emission and per-subscription filter overrides are deferred
+until a real consumer demands them; today the codegen path is poll-only.
+
 ### `IChangeSource<T>` — one port, three modes
 
 Three detection modes converge on a single port (ADR rejecting separate

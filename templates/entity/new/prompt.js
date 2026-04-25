@@ -306,6 +306,10 @@ export default {
     const queriesBlock = definition.queries || null;
     const syncBlock = definition.sync || null;
     const eventsBlock = definition.events || null;
+    // #226-6 / #226-7: per-entity sync detection config. When present,
+    // the codegen emits a `<entity>-sync-source.module.ts` factory that
+    // wires `PollChangeSource` against the consumer's adapter.
+    const detectionBlock = definition.detection || null;
     // EVT-7: emits is semantically 3-valued — undefined (fallback path),
     // [] (explicit opt-out), or string[] (typed emission). Preserve the
     // undefined/null-vs-empty distinction by refusing the || null shortcut.
@@ -524,6 +528,11 @@ export default {
 
       // Modules (always generated)
       module: `${src}/${paths.modules}/${fileNames.module}`,
+
+      // Per-entity sync-source module (#226-7) — emitted only when the
+      // entity YAML has a `detection:` block. The template's `skip_if`
+      // gate falls back to skipping when this path is null.
+      syncSourceModule: `${src}/${paths.modules}/${name}-sync-source.module.ts`,
     };
 
     // Step 2: Apply mode filter (null = skip generation)
@@ -552,6 +561,10 @@ export default {
       repository: allPaths.repository,
       controller: allPaths.controller,
       module: allPaths.module,
+
+      // #226-7: only emit when a detection: block is present. Null path
+      // satisfies the template's `skip_if: !syncSourceOutputPath` guard.
+      syncSourceModule: detectionBlock != null ? allPaths.syncSourceModule : null,
     };
 
     // Import paths using centralized config
@@ -1575,6 +1588,38 @@ export default {
       syncElectric,
       hasSyncProviders,
       syncProviders,
+
+      // Sync detection (#226-7) — per-entity factory module emission.
+      // Null when the entity YAML has no `detection:` block; templates
+      // gate emission via `skip_if: !hasDetection`.
+      hasDetection: detectionBlock != null,
+      detectionConfig: detectionBlock,
+      // JSON-encoded literal injected into the generated module so the
+      // factory passes a plain object (matches the runtime `DetectionConfig`
+      // shape one-to-one — no Zod parse at runtime; codegen has already
+      // validated at YAML load time via the schema).
+      detectionConfigJson: detectionBlock != null
+        ? JSON.stringify(detectionBlock, null, 2)
+        : null,
+      // Per-entity adapter-injection token, e.g. `OPPORTUNITY_SYNC_ADAPTER`.
+      // Consumer-registered (per #226 Q6) — the generated module exports
+      // the token symbol but does NOT bind it; the consumer feature module
+      // provides the `PollFetchCallback<CanonicalT>`.
+      syncAdapterToken: `${entity.name.toUpperCase()}_SYNC_ADAPTER`,
+      // Optional loopback fingerprint store token. The generated factory
+      // accepts an `@Optional()` injection; when the consumer provides
+      // a binding, `createLoopbackMiddleware(store)` is composed into
+      // the primitive's middleware chain.
+      syncLoopbackToken: `${entity.name.toUpperCase()}_SYNC_LOOPBACK_STORE`,
+      // Module class name, e.g. `OpportunitySyncSourceModule`.
+      syncSourceModuleClass: `${className}SyncSourceModule`,
+      // Import specifier from the sync-source module's location to the
+      // entity's domain class. Modules and domain are sibling layers, so
+      // the path is stable: `../domain/<entity>/<entity>.entity` when
+      // nested, or `../domain/<entity>.entity` when flat.
+      syncSourceToEntityImport: paths.domain.endsWith(`/${name}`)
+        ? `../domain/${name}/${name}.entity`
+        : `../domain/${name}.entity`,
 
       // Events
       hasEvents,
