@@ -161,6 +161,32 @@ queries:
   - by: [user_id, status]    # → FindContactByUserIdAndStatusUseCase (compound)
 ```
 
+## Sync Detection (`detection:` block)
+
+Entities that participate in the sync subsystem may declare a `detection:` block describing how upstream changes are detected. The block is parsed by the canonical `DetectionConfigSchema` shipped from `runtime/subsystems/sync` — primitives (`PollChangeSource<T>`, `WebhookChangeSource<T>`) and the per-entity factory module emitted by codegen consume the same parsed shape, so YAML and runtime stay in lockstep (ADR-033, epic #226).
+
+```yaml
+detection:
+  mode: poll                       # poll | webhook
+  poll:
+    cursor:
+      kind: systemModstamp         # systemModstamp | replayId | timestamp | eventId
+      field: SystemModstamp
+    provenance: poll               # 'poll' (default) or 'cdc' for Stripe-style event endpoints
+  mapping:
+    - source: Name
+      target: name
+    - source: Amount
+      target: amount
+      transform: decimal-string    # opt-in tag adapters interpret
+  filters:                         # flat AND of resolved triples
+    - field: IsDeleted
+      op: eq                       # eq | neq | in | nin | gt | gte | lt | lte
+      value: false
+```
+
+`webhook` mode requires a `webhook.eventIdField` naming the column on the consumer-owned inbound staging row that populates `Change<T>.dedupKey`. The block is optional and additive — entities without a `detection:` block are unaffected. Codegen emission of the per-entity factory module lands in #226-7; this PR validates the schema only.
+
 ## Configuration
 
 `codegen.config.yaml` in your project root:
