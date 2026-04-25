@@ -324,6 +324,101 @@ describe('PollChangeSource — label', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// CDC-as-provenance (#226-4)
+// ---------------------------------------------------------------------------
+
+describe('PollChangeSource — cdc-as-provenance', () => {
+  function makeCdcConfig(): DetectionConfig {
+    return {
+      mode: 'poll',
+      poll: {
+        cursor: { kind: 'eventId', field: 'event_id' },
+        provenance: 'cdc',
+      },
+      mapping: [{ source: 'id', target: 'external_id' }],
+      filters: [],
+    };
+  }
+
+  interface CdcRecord {
+    external_id: string;
+    event_id: string;
+  }
+
+  it('stamps source: "cdc" when poll.provenance === "cdc"', async () => {
+    const adapter: PollFetchCallback<CdcRecord> = async function* () {
+      yield {
+        record: { external_id: 'X1', event_id: 'evt_001' },
+        cursor: { eventId: 'evt_001' },
+      };
+    };
+    const src = new PollChangeSource<CdcRecord>({
+      adapter,
+      config: makeCdcConfig(),
+    });
+    const out = await collect(src.listChanges(subscription, null));
+    expect(out).toHaveLength(1);
+    expect(out[0].source).toBe('cdc');
+  });
+
+  it('populates dedupKey from the cursor.field when provenance === "cdc"', async () => {
+    const adapter: PollFetchCallback<CdcRecord> = async function* () {
+      yield {
+        record: { external_id: 'X1', event_id: 'evt_dedup_42' },
+        cursor: { eventId: 'evt_dedup_42' },
+      };
+      yield {
+        record: { external_id: 'X2', event_id: 'evt_dedup_43' },
+        cursor: { eventId: 'evt_dedup_43' },
+      };
+    };
+    const src = new PollChangeSource<CdcRecord>({
+      adapter,
+      config: makeCdcConfig(),
+    });
+    const out = await collect(src.listChanges(subscription, null));
+    expect(out[0].dedupKey).toBe('evt_dedup_42');
+    expect(out[1].dedupKey).toBe('evt_dedup_43');
+  });
+
+  it('does NOT populate dedupKey when provenance defaults to "poll"', async () => {
+    const adapter: PollFetchCallback<OppRecord> = async function* () {
+      yield {
+        record: { external_id: 'A1', name: 'a', modstamp: 't' },
+        cursor: { systemModstamp: 't' },
+      };
+    };
+    const src = new PollChangeSource<OppRecord>({
+      adapter,
+      config: makeConfig(),
+    });
+    const [change] = await collect(src.listChanges(subscription, null));
+    expect(change.source).toBe('poll');
+    expect(change.dedupKey).toBeUndefined();
+  });
+
+  it('throws if a record is missing the configured cursor.field when provenance === "cdc"', async () => {
+    const adapter: PollFetchCallback<CdcRecord> = async function* () {
+      yield {
+        record: { external_id: 'X1' } as CdcRecord,
+        cursor: { eventId: 'evt_001' },
+      };
+    };
+    const src = new PollChangeSource<CdcRecord>({
+      adapter,
+      config: makeCdcConfig(),
+    });
+    await expect(
+      (async () => {
+        for await (const _c of src.listChanges(subscription, null)) {
+          // drain
+        }
+      })(),
+    ).rejects.toThrow(/event_id/);
+  });
+});
+
 // Compile-time guard: PollFetchContext must NOT include userId/tenantId.
 // This is a structural assertion via TypeScript — if the shape grows
 // these fields the line below stops compiling.
