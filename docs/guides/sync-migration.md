@@ -248,11 +248,119 @@ drift-detection queries) actually read the old log.
   { provide: SYNC_FIELD_DIFFER, useValue: new DeepEqualDiffer({ ignore: ['sync_version', 'internal_meta'] }) }
   ```
 
-- **Loopback-fingerprint suppression is opt-in.** If your pipeline has an
-  outbound writeback path that echoes back on the next inbound poll,
-  bind an `ILoopbackFingerprintStore` to `SYNC_LOOPBACK_FINGERPRINT_STORE`
-  in your feature module. The orchestrator's `@Optional()` inject means
-  absence is fine — if you don't need it, don't provide it.
+- **Loopback-fingerprint suppression ships as middleware.** If your
+  pipeline has an outbound writeback path that echoes back on the next
+  inbound poll, compose `createLoopbackMiddleware(store)` into your
+  primitive's middleware chain. As of #226-5 (ADR-033) the orchestrator
+  no longer accepts a `SYNC_LOOPBACK_FINGERPRINT_STORE` token — loopback
+  is owned by the change-source seam, not the orchestrator. The
+  `ILoopbackFingerprintStore<T>` protocol is unchanged.
+
+## Step 6 — Migrating from a hand-authored `IChangeSource` to a `detection:` block
+
+By the time you reach this step you have one or more concrete classes
+implementing `IChangeSource<T>` per provider+entity. The codegen
+factory (#226-7) lets you replace the bulk of those classes with a YAML
+declaration whenever the shape is poll-mode + flat-AND filters + a
+single cursor strategy. Custom adapters that need richer expressions
+(OR / NOT, per-subscription overrides, long-lived streaming) stay
+hand-authored — see the "out of scope" notes below.
+
+**Translate your adapter into a `detection:` block.** For each entity
+you currently sync, identify the four pieces in your hand-authored
+class:
+
+1. The cursor type the adapter persists in `Change.cursor` —
+   `{ systemModstamp }` for SFDC, `{ replayId }` for CDC, etc.
+2. The provider field → canonical mapping table.
+3. The pre-fetch filters the adapter applies (the WHERE clause the
+   provider query uses).
+4. The provider field whose value becomes `Change.externalId`.
+
+Drop them into the entity YAML next to `fields:`:
+
+```yaml
+detection:
+  mode: poll
+  poll:
+    cursor:
+      kind: systemModstamp     # ← from (1)
+      field: SystemModstamp
+  mapping:                       # ← from (2) + (4)
+    - source: Id                 # the (4) entry — `target` MUST be `external_id`
+      target: external_id
+    - source: Name
+      target: name
+  filters:                       # ← from (3)
+    - field: IsDeleted
+      op: eq
+      value: false
+```
+
+Run `codegen entity new` (or `--all`). The pipeline now emits
+`<paths.modules>/<entity>-sync-source.module.ts` with the consumer-side
+adapter token, the optional loopback-store token, and the
+`SYNC_CHANGE_SOURCE` provider that constructs `PollChangeSource` from
+the YAML literal.
+
+**Replace the adapter class with a callback.** The factory expects
+a `PollFetchCallback<T>` at the generated `<ENTITY>_SYNC_ADAPTER`
+token — a single function that takes
+`{ subscription, cursor, filters }` and yields
+`{ record, cursor }` pairs. The bulk of the old class (provider HTTP
+client wiring, auth refresh, response → canonical mapping) becomes the
+callback body; the `IChangeSource` boilerplate (filter resolution,
+`externalId` derivation, `Change<T>` shape, middleware composition) is
+gone — the primitive owns it.
+
+```ts
+@Module({
+  imports: [OpportunitySyncSourceModule],
+  providers: [
+    {
+      provide: OPPORTUNITY_SYNC_ADAPTER,
+      useFactory: (sfdc: SalesforceClient) =>
+        async function* ({ subscription, cursor, filters }) {
+          const since = (cursor as { systemModstamp?: string } | null)
+            ?.systemModstamp ?? '1970-01-01T00:00:00Z';
+          const where = [`SystemModstamp > ${since}`, ...filters.map(toSoql)].join(' AND ');
+          const records = await sfdc.query(`SELECT ... FROM Opportunity WHERE ${where}`);
+          for (const r of records) {
+            yield {
+              record: toCanonicalOpportunity(r),
+              cursor: { systemModstamp: r.SystemModstamp },
+            };
+          }
+        },
+      inject: [SalesforceClient],
+    },
+    { provide: SYNC_SINK, useClass: OpportunitySyncSink },
+    ExecuteSyncUseCase,
+  ],
+})
+export class OpportunitySyncFeatureModule {}
+```
+
+**Compose loopback opt-in.** If your old adapter pre-filtered echoes,
+bind an `ILoopbackFingerprintStore<T>` to the per-entity loopback token
+the factory exposes (e.g. `OPPORTUNITY_SYNC_LOOPBACK_STORE`); the
+factory wraps the primitive with `createLoopbackMiddleware(store)`
+automatically. Otherwise leave the token unbound — the optional inject
+degrades to an empty middleware chain.
+
+**Delete the hand-authored adapter class.** The provider-specific
+wiring is now the callback body; the `IChangeSource` shell is provided
+by codegen.
+
+**Out of scope for the codegen factory (today):**
+- **Webhook-mode emission** — supported in the runtime
+  (`WebhookChangeSource<T>`) but no codegen template yet (deferred
+  per #226-7 until a real consumer demands it).
+- **Per-subscription filter overrides** — `subscription.config` does
+  not exist (decision Q3); per-tenant divergence is achievable today by
+  binding distinct `PollChangeSource` instances per tenant.
+- **Long-lived streaming primitives** (SFDC Pub-Sub, Debezium) — a
+  separate primitive deferred to #226-8.
 
 ## Further reading
 

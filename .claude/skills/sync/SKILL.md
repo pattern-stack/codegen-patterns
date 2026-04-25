@@ -14,11 +14,13 @@ the codebase. Per-provider code implements a single port —
 surface — `ISyncSink<T>`. Everything else (cursor persistence, diffing,
 per-record audit, run lifecycle) is provided by the subsystem.
 
-This skill covers the Phase 1 runtime (SYNC-1..SYNC-8, epic #60). Phase
-2 lands in two halves: the entity-YAML `detection:` block is now
+This skill covers the Phase 1 runtime (SYNC-1..SYNC-8, epic #60) plus
+Phase 2 codegen emission. The entity-YAML `detection:` block is
 schema-validated upstream against the canonical `DetectionConfigSchema`
-(ADR-033, #226-6); the codegen factory-module emission that consumes
-the parsed block is still pending (#226-7).
+(ADR-033, #226-6) and consumed by the per-entity factory module
+emitted at `<paths.modules>/<entity>-sync-source.module.ts` (#226-7).
+PollChangeSource emission shipped; webhook factory + long-lived
+streaming primitives deferred until a real consumer demands them.
 
 ## Mental model
 
@@ -295,6 +297,15 @@ Generator pieces:
   `--force-config` opts into regeneration (F13 pattern)
 - `src/cli/shared/sync-scaffold-locals.ts` — resolves Hygen locals
   (appName, multiTenant, configPath, schemaPath — NO generatedKeepPath)
+- `templates/entity/new/backend/modules/core/sync-source.ejs.t` —
+  per-entity factory module template (#226-7). Fires when the entity
+  YAML has a `detection:` block; emits a NestJS module declaring the
+  consumer-side adapter + optional loopback-store tokens, inlining the
+  parsed detection literal, and binding `SYNC_CHANGE_SOURCE` to a
+  factory that constructs `new PollChangeSource({ adapter, config,
+  middlewares })`. Loopback wiring uses `createLoopbackMiddleware(store)`
+  composition (post-#226-5 — no orchestrator-side fingerprint store).
+  Webhook factory emission deferred.
 
 ## Cross-links
 
