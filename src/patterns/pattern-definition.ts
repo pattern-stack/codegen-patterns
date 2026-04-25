@@ -170,14 +170,38 @@ export function isPatternDefinition(val: unknown): val is PatternDefinition {
  */
 export interface OrchestrationRegistrySpec {
 	/**
+	 * Identifier for co-keyed sibling registries (ADR-032 Phase 3-2/3, O-1).
+	 *
+	 * The PRIMARY registry never carries a `name` — its tokens / methods are
+	 * derived from the pattern name alone (`${PATTERN_CONST}_REGISTRY`,
+	 * `select(...)`). Each co-keyed sibling MUST carry an explicit `name`
+	 * which the emitter uppercases for the token suffix and PascalCases for
+	 * the dispatcher method suffix:
+	 *
+	 *   `coKeyedRegistries: [{ name: 'auth', valueType: 'IAuthStrategy' ... }]`
+	 *   ⇒ `CRM_PORTS_AUTH_REGISTRY` token + `selectAuth(...)` method.
+	 *
+	 * No auto-stripping of "I" prefix or "Strategy/Port/Adapter/Provider"
+	 * suffixes — authors pick what reads right.
+	 */
+	name?: string;
+	/**
 	 * Type alias the consumer's tsconfig resolves (e.g. `"CrmAdapterDomain"`).
 	 * Phase 3-1 stores this string verbatim. Resolution that the path actually
 	 * imports a concrete TS enum is deferred to Phase 3-2 emission, where
 	 * codegen will need to read the consumer's source tree.
 	 */
 	keyType: string;
+	/**
+	 * Module specifier the emitter writes into `import type { keyType } from
+	 * '<keyTypeImport>'`. Required at Phase 3-2 emission; the generator emits
+	 * `pattern_missing_import_path` if absent. (ADR-032 Phase 3-2 §3.4 / O-3.)
+	 */
+	keyTypeImport?: string;
 	/** Same shape as `keyType` — the registry's value-type interface ref. */
 	valueType: string;
+	/** Module specifier for `valueType` import. See `keyTypeImport`. */
+	valueTypeImport?: string;
 	entries: ReadonlyArray<{
 		/** Stable string key — must be unique within this registry. */
 		key: string;
@@ -187,6 +211,8 @@ export interface OrchestrationRegistrySpec {
 		 * Phase 3-1 records it; Phase 3-2 verifies it resolves.
 		 */
 		provider: string;
+		/** Module specifier for `provider` import. See `keyTypeImport`. */
+		providerImport?: string;
 	}>;
 }
 

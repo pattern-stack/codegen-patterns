@@ -79,6 +79,13 @@ export const BASE_PATHS = {
 
   // Manifest output directory
   manifestDir: projectConfig?.paths?.manifest_dir ?? ".codegen",
+
+  // Orchestration emission root (ADR-032 Phase 3-2, O-6).
+  // Default sits under backendSrc so it co-locates with src/modules/ and
+  // src/subsystems/ in the consumer's tree; override via paths.orchestration_src.
+  orchestrationSrc:
+    projectConfig?.paths?.orchestration_src ??
+    `${projectConfig?.paths?.backend_src ?? "app/backend/src"}/orchestration`,
 };
 
 const posixPath = path.posix;
@@ -164,6 +171,19 @@ export const PACKAGE_PATHS = {
 export function getBackendPath(layer, subpath = "") {
   const basePath = joinPath(BASE_PATHS.backendSrc, BACKEND_LAYERS[layer]);
   return subpath ? joinPath(basePath, subpath) : basePath;
+}
+
+/**
+ * Get the orchestration emission directory (ADR-032 Phase 3-2).
+ *
+ * Honors `paths.orchestration_src`; defaults to `${backend_src}/orchestration`.
+ * Returns a relative path (from project root). When `slug` is provided, joins
+ * the per-pattern subdirectory (e.g. `crm-ports`).
+ */
+export function getOrchestrationPath(slug = "") {
+  return slug
+    ? joinPath(BASE_PATHS.orchestrationSrc, slug)
+    : BASE_PATHS.orchestrationSrc;
 }
 
 export function getFrontendPath(layer, subpath = "") {
@@ -652,6 +672,7 @@ export default {
   DATABASE_CONFIG,
   // Helper functions
   getBackendPath,
+  getOrchestrationPath,
   getFrontendPath,
   getEntityPaths,
   getEntityFileNames,

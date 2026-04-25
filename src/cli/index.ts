@@ -129,6 +129,12 @@ async function loadNouns(): Promise<void> {
 	} catch {
 		// events noun not implemented yet
 	}
+	try {
+		const mod = await import('./commands/orchestration.js');
+		if (mod?.default) nouns.push(mod.default as NounModule);
+	} catch {
+		// orchestration noun not implemented yet
+	}
 }
 
 async function loadShortcuts(cli: Cli): Promise<void> {
