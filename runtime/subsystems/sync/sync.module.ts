@@ -15,12 +15,12 @@
  *
  *   - `SYNC_CHANGE_SOURCE` — per-provider per-entity; consumer binds in
  *     their feature module (e.g. `OpportunitySyncModule` provides a
- *     `SalesforceOpportunityChangeSource`).
+ *     `SalesforceOpportunityChangeSource`). Loopback suppression — when
+ *     needed — is composed into the primitive's middleware chain via
+ *     `createLoopbackMiddleware(store)` (#226-5 / ADR-033); the
+ *     orchestrator no longer accepts a fingerprint store directly.
  *   - `SYNC_SINK` — per canonical entity; consumer binds in their feature
  *     module.
- *   - `SYNC_LOOPBACK_FINGERPRINT_STORE` — optional; consumer provides
- *     only when they have outbound writeback paths. `@Optional()` at the
- *     orchestrator seam means absence is fine.
  *   - `ExecuteSyncUseCase` — registered by the feature module alongside
  *     its source + sink bindings. Providing the orchestrator here would
  *     force Nest to resolve SYNC_CHANGE_SOURCE + SYNC_SINK at module

@@ -8,22 +8,27 @@
  *
  *   1. `recorder.startRun(...)` — opens a `sync_runs` row in 'running'.
  *   2. for each change yielded by `source.listChanges(subscription, cursorBefore)`:
- *        a. if loopback store says "echo of own write" → skip, record
- *           as `status: 'skipped'`, `operation: 'noop'`, changedFields `{}`.
- *        b. differ.diff(existing, incoming) → 'noop' short-circuits to
+ *        a. differ.diff(existing, incoming) → 'noop' short-circuits to
  *           a noop audit row (no sink write).
- *        c. sink.upsertByExternalId / softDeleteByExternalId → records
+ *        b. sink.upsertByExternalId / softDeleteByExternalId → records
  *           the local id on the audit row.
- *        d. per-item try/catch — a failed item increments the failed
+ *        c. per-item try/catch — a failed item increments the failed
  *           counter and records `status: 'failed'` with `error`, but
  *           does NOT abort the run.
- *        e. advance `latestCursor = change.cursor` as the iterator moves.
+ *        d. advance `latestCursor = change.cursor` as the iterator moves.
  *   3. `cursors.put(subscription.id, latestCursor)` when the loop completes
  *      AND at least one cursor advance happened. On exceptions from the
  *      source iterator (auth expiry, network error), we persist the
  *      last-good cursor so the next run resumes from the last known
  *      successful position.
  *   4. `finally { recorder.completeRun(...) }` — always terminates the run.
+ *
+ * Loopback suppression — when a consumer's writes echo back on the next
+ * inbound poll/CDC/webhook — is composed into the source's middleware
+ * chain via `createLoopbackMiddleware(store)` (#226-5 / ADR-033). The
+ * orchestrator no longer special-cases echoes: middleware drops them
+ * before they reach this loop. Consumers that don't have outbound
+ * writeback paths simply omit the middleware.
  *
  * ## Generics
  *
@@ -36,8 +41,6 @@
  * is strictly provider-agnostic:
  *   - `entityType` is `string` throughout; no `'opportunity' | 'account' | ...`
  *     narrowing leaks into the use case
- *   - `loopback.isEchoOfOwnWrite` is typed against the same `T`, not a CRM
- *     union
  *   - dealbrain's `SyncRunRecorderService` class injection replaced with the
  *     `ISyncRunRecorder` protocol (backend lands in SYNC-4)
  */
@@ -47,13 +50,11 @@ import type { ICursorStore } from './sync-cursor-store.protocol';
 import type { IFieldDiffer, FieldDiff } from './sync-field-diff.protocol';
 import type { ISyncSink } from './sync-sink.protocol';
 import type { ISyncRunRecorder } from './sync-run-recorder.protocol';
-import type { ILoopbackFingerprintStore } from './sync-loopback.protocol';
 import { assertTenantId } from './sync-errors';
 import {
   SYNC_CHANGE_SOURCE,
   SYNC_CURSOR_STORE,
   SYNC_FIELD_DIFFER,
-  SYNC_LOOPBACK_FINGERPRINT_STORE,
   SYNC_MULTI_TENANT,
   SYNC_RUN_RECORDER,
   SYNC_SINK,
@@ -114,9 +115,6 @@ export class ExecuteSyncUseCase<T extends Record<string, unknown>> {
     @Inject(SYNC_FIELD_DIFFER) private readonly differ: IFieldDiffer<T>,
     @Inject(SYNC_SINK) private readonly sink: ISyncSink<T>,
     @Inject(SYNC_RUN_RECORDER) private readonly recorder: ISyncRunRecorder,
-    @Optional()
-    @Inject(SYNC_LOOPBACK_FINGERPRINT_STORE)
-    private readonly loopback?: ILoopbackFingerprintStore<T>,
     @Optional()
     @Inject(SYNC_MULTI_TENANT)
     private readonly multiTenant: boolean = false,
@@ -249,27 +247,6 @@ export class ExecuteSyncUseCase<T extends Record<string, unknown>> {
     input: ExecuteSyncInput<T>,
     change: Change<T>,
   ): Promise<void> {
-    // Loopback filter — skip echoes of our own outbound writes.
-    if (this.loopback) {
-      const isEcho = await this.loopback.isEchoOfOwnWrite(
-        input.subscription.domain,
-        change.externalId,
-        change.record,
-      );
-      if (isEcho) {
-        await this.recorder.recordItem({
-          syncRunId: runId,
-          entityType: input.subscription.domain,
-          externalId: change.externalId,
-          operation: 'noop',
-          status: 'skipped',
-          changedFields: {},
-          tenantId: input.tenantId,
-        });
-        return;
-      }
-    }
-
     // Deletion branch — no diff, no upsert; soft-delete via sink.
     if (change.operation === 'deleted') {
       const result = await this.sink.softDeleteByExternalId(
