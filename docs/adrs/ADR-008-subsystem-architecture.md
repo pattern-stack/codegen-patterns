@@ -6,6 +6,16 @@
 **Related:** ADR-001, ADR-003, ADR-005
 **Unblocks:** #15 (A11), #16 (A12)
 
+> **Revision note (2026-04-25)** — ADR-033 refines the sync subsystem's
+> change-source seam under this Protocol → Backend → Factory pattern:
+> `IChangeSource<T>` remains the single port (no per-mode split), but
+> per-entity *configuration* (filter / mapping / cursor strategy) moves
+> into a declarative `DetectionConfig` Zod schema, and reusable
+> primitives (`PollChangeSource<T>`, `WebhookChangeSource<T>`) replace
+> hand-authored adapter classes. Loopback fingerprint suppression also
+> moves out of the orchestrator into a stock `ChangeMiddleware<T>`
+> factory. See `docs/adrs/ADR-033-config-driven-change-sources.md`.
+
 ## Context
 
 ADR-003 establishes the sharp test: if an operation produces side effects outside the database, it belongs in a use case. Use cases may emit events, enqueue jobs, call external systems, and manage cache/storage. But the infrastructure that receives those calls — the event bus, job queue, cache service, storage service, and integration adapters — does not exist yet.
