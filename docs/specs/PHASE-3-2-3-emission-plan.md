@@ -1,6 +1,6 @@
 # Phase 3-2 + 3-3 Emission Plan — Orchestration Patterns
 
-**Status:** Draft (planner output, not implementation)
+**Status:** Implemented (Phase 3-2 + 3-3 shipped on `main`).
 **Relates to:** ADR-032, Phase 3-1 (already shipped)
 **Scope:** Codegen emission of `src/orchestration/${slug}/` modules from `OrchestrationPatternDefinition` records. Byte-identical golden test against a CRM-shaped fixture.
 
@@ -68,7 +68,7 @@ export type CrmPortsRegistryMap     = Map<CrmAdapterDomain, ICrmPort>;
 export type CrmPortsAuthRegistryMap = Map<CrmAdapterDomain, IAuthStrategy>;
 ```
 
-Symbol name per registry is `${PATTERN_CONST}_REGISTRY` for the primary and `${PATTERN_CONST}_${VALUE_TYPE_SLUG}_REGISTRY` for co-keyed siblings (value type slug derived from `valueType`, e.g. `IAuthStrategy` → `AUTH`). See Open Question O-1 for the naming rule.
+Symbol name per registry is `${PATTERN_CONST}_REGISTRY` for the primary and `${PATTERN_CONST}_${NAME_UPPER}_REGISTRY` for co-keyed siblings, where `${NAME_UPPER}` is the SCREAMING_SNAKE form of the sibling's required `name:` field (locked O-1; no auto-stripping of `I` prefixes or `Strategy/Port/Adapter/Provider` suffixes — authors pick the identifier that reads right). The implementation rejects co-keyed siblings missing `name:` with `pattern_cokeyed_missing_name` at emission time.
 
 ### 1.3 `registry.providers.ts`
 
@@ -150,7 +150,7 @@ EJS shape (single `select` method, primary registry only):
   }
 ```
 
-When `coKeyedRegistries` is present, each sibling gets its **own** method named by value-type-slug (rule in O-1): `selectAuth(key: ...)` for `IAuthStrategy`. Each such method re-emits the same overload pattern against the sibling's entries + valueType. This keeps type-narrowing per-registry and avoids invented tuple types.
+When `coKeyedRegistries` is present, each sibling gets its **own** method named `select${NamePascal}` where `Name` is the sibling's required `name:` field. For `name: 'auth'` ⇒ `selectAuth(key: ...)`. Each such method re-emits the same overload pattern against the sibling's entries + valueType. This keeps type-narrowing per-registry and avoids invented tuple types.
 
 Full rendered output for the worked example:
 
@@ -247,15 +247,19 @@ Template: `index.ejs.t`. Barrel — re-exports tokens, map types, dispatcher cla
 
 ```yaml
 paths:
-  orchestration_src: src/orchestration   # default
+  orchestration_src: app/backend/src/orchestration   # default = `${backend_src}/orchestration`
 ```
+
+The default tracks `paths.backend_src` (locked O-6); pass an explicit `orchestration_src` to override.
 
 ### 2.2 Additions in `src/config/paths.mjs`
 
 Add to `BASE_PATHS`:
 
 ```js
-orchestrationSrc: projectConfig?.paths?.orchestration_src ?? 'src/orchestration',
+orchestrationSrc:
+  projectConfig?.paths?.orchestration_src ??
+  `${projectConfig?.paths?.backend_src ?? 'app/backend/src'}/orchestration`,
 ```
 
 Add a helper mirroring `getBackendPath`:
@@ -433,6 +437,29 @@ All 9 operator gates locked. Decisions in §5.1, original tradeoff writeups pres
 **R-7. `DynamicModule` + `global: true`.** ADR-008 subsystems use `global: true`. Orchestration modules don't currently — each consumer has to import `CrmPortsOrchestrationModule.forRoot()` in their feature module. That's the intended behaviour per Decision 7 ("coordinates across CRM + integrations + events") but flagging so the operator can override before landing.
 
 ---
+
+## 6.1 Implementation notes (post-ship, 2026-04-25)
+
+- **Zero-pattern emission is a no-op on disk.** When the registry contains
+  no orchestration patterns, the actual generation pass writes nothing —
+  consumers without a `src/patterns/` tree don't see a stray empty
+  `orchestration/` directory after `entity new`. Dry-run plans still
+  include the would-be top-level barrel for visibility.
+- **`pattern_cokeyed_missing_name` is the new emission-time error code.**
+  Locked O-1 made the sibling `name:` mandatory; the generator throws
+  `OrchestrationEmissionError` on missing names rather than silently
+  picking a derived identifier. Tests cover this.
+- **The `entity new` post-step warns-but-doesn't-fail.** The orchestration
+  emission errors are surfaced via `printError` (for emission errors) and
+  `printWarning` (for unexpected exceptions) but never abort the rest of
+  the codegen pipeline — same contract as the bridge / events / scope
+  post-steps.
+- **Provider factory args are disambiguated by index** (e.g.
+  `salesforceCrmAdapter_0`) rather than by class name. This keeps the
+  emitter trivial when two registries import the same class name through
+  different paths (R-6 in §6) — declaration order is the only thing that
+  matters for the inject array, and the index suffix removes any factory-
+  arg name collision.
 
 ## 7. Implementation order
 

@@ -24,6 +24,15 @@ import {
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
 import { generateBridgeRegistry } from '../shared/bridge-registry-generator.js';
 import {
+	OrchestrationEmissionError,
+	generateOrchestrationModules,
+} from '../shared/orchestration-generator.js';
+import {
+	_resetRegistryForTests,
+	getAllOrchestrationPatterns,
+	loadAppPatterns,
+} from '../../patterns/registry.js';
+import {
 	collectMergedEvents,
 	generateEventCodegen,
 } from '../shared/event-codegen-generator.js';
@@ -332,6 +341,41 @@ export class EntityNewCommand extends Command {
 			'jobs',
 		);
 
+		// Orchestration emission root (ADR-032 Phase 3-2 / O-6). Defaults to
+		// `${backend_src}/orchestration`, override via `paths.orchestration_src`.
+		const orchestrationConfigured = (
+			ctx.config as { paths?: { orchestration_src?: string } } | null | undefined
+		)?.paths?.orchestration_src;
+		const orchestrationOutputRoot = path.resolve(
+			ctx.cwd,
+			typeof orchestrationConfigured === 'string' && orchestrationConfigured.length > 0
+				? orchestrationConfigured
+				: path.join(backendSrcForHandlers, 'orchestration'),
+		);
+
+		// Pattern globs used to discover orchestration patterns. Default
+		// matches the Phase 3-1 loader: `src/patterns/*.pattern.ts`.
+		const orchestrationGlobs: string[] = (() => {
+			const fromCfg = (ctx.config as { patterns?: unknown } | null | undefined)
+				?.patterns;
+			if (Array.isArray(fromCfg) && fromCfg.length > 0) {
+				return fromCfg.filter((g): g is string => typeof g === 'string');
+			}
+			return ['src/patterns/*.pattern.ts'];
+		})();
+
+		// Helper — reload registry + return orchestration patterns. Wrapped
+		// in a try to keep failures non-fatal (post-step contract).
+		const loadOrchestrationPatterns = async () => {
+			try {
+				_resetRegistryForTests({ includeLibrary: false });
+				await loadAppPatterns(orchestrationGlobs, ctx.cwd);
+				return getAllOrchestrationPatterns();
+			} catch {
+				return [];
+			}
+		};
+
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
@@ -361,6 +405,23 @@ export class EntityNewCommand extends Command {
 				outputDir: bridgeRegistryOutputDir,
 				dryRun: true,
 			});
+
+			// Orchestration emission plan (ADR-032 Phase 3-2/3). Best-effort —
+			// emission errors warn-but-don't-fail the dry-run report.
+			const orchestrationPatterns = await loadOrchestrationPatterns();
+			let orchestrationPlan: ReturnType<typeof generateOrchestrationModules> | null = null;
+			try {
+				orchestrationPlan = generateOrchestrationModules({
+					patterns: orchestrationPatterns,
+					outputRoot: orchestrationOutputRoot,
+					dryRun: true,
+				});
+			} catch (err: unknown) {
+				if (!isJsonMode()) {
+					const msg = err instanceof Error ? err.message : String(err);
+					printWarning(`orchestration codegen plan failed — ${msg}`);
+				}
+			}
 
 			if (isJsonMode()) {
 				printJson({
@@ -399,6 +460,21 @@ export class EntityNewCommand extends Command {
 							content: f.content,
 						})),
 					},
+					orchestration: orchestrationPlan
+						? {
+								outputRoot: orchestrationPlan.outputRoot,
+								patterns: orchestrationPlan.patterns.map((p) => ({
+									name: p.patternName,
+									slug: p.slug,
+									outputDir: p.outputDir,
+								})),
+								files: orchestrationPlan.files.map((f) => ({
+									name: f.name,
+									outputPath: f.outputPath,
+									relativePath: f.relativePath,
+								})),
+							}
+						: null,
 					emits: {
 						warnings: emitsWarnings.map((w) => ({
 							entity: w.entity ?? null,
@@ -543,6 +619,29 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Orchestration emission (ADR-032 Phase 3-2/3). Same warn-but-don't-fail
+		// pattern as the other post-steps. Hooked here so `just gen-all` keeps
+		// being a single "build everything" entrypoint per Phase 3-2 §3.2.
+		let orchestrationResult:
+			| ReturnType<typeof generateOrchestrationModules>
+			| null = null;
+		try {
+			const orchestrationPatterns = await loadOrchestrationPatterns();
+			orchestrationResult = generateOrchestrationModules({
+				patterns: orchestrationPatterns,
+				outputRoot: orchestrationOutputRoot,
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				if (err instanceof OrchestrationEmissionError) {
+					printError(msg);
+				} else {
+					printWarning(`orchestration codegen failed — ${msg}`);
+				}
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'entity new',
@@ -584,6 +683,20 @@ export class EntityNewCommand extends Command {
 							written: bridgeRegistryResult.written,
 						}
 					: null,
+				orchestration: orchestrationResult
+					? {
+							outputRoot: orchestrationResult.outputRoot,
+							written: orchestrationResult.written,
+							patterns: orchestrationResult.patterns.map((p) => ({
+								name: p.patternName,
+								slug: p.slug,
+							})),
+							files: orchestrationResult.files.map((f) => ({
+								name: f.name,
+								relativePath: f.relativePath,
+							})),
+						}
+					: null,
 				emits: {
 					warnings: emitsWarnings.map((w) => ({
 						entity: w.entity ?? null,
@@ -620,6 +733,11 @@ export class EntityNewCommand extends Command {
 			if (eventCodegenResult) {
 				printInfo(
 					`event codegen regenerated (${eventCodegenResult.eventCount} events) → ${path.relative(ctx.cwd, eventCodegenResult.outputDir)}`
+				);
+			}
+			if (orchestrationResult && orchestrationResult.patterns.length > 0) {
+				printInfo(
+					`orchestration regenerated (${orchestrationResult.patterns.length} patterns, ${orchestrationResult.files.length} files) → ${path.relative(ctx.cwd, orchestrationResult.outputRoot)}`,
 				);
 			}
 		}

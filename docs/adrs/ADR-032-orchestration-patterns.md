@@ -319,15 +319,25 @@ A YAML entity declaration can reference `pattern: Synced` or `patterns: [CrmEnti
 3. Add the orchestration conflict detector (`src/patterns/validate-orchestration.ts`), mirroring `src/patterns/validate-composition.ts`. Wired into `analyzeDomain()`. Issues emitted: `pattern_name_collision`, `pattern_entries_empty`, `pattern_entry_malformed`, `pattern_entry_key_duplicate`, `pattern_cokeyed_keytype_mismatch`. Loader-time `LoadAppPatternsResult.errors` carries the orchestration ↔ orchestration name-duplicate case (caught before the silent-overwrite window).
 4. **No code emission yet.** Validation + schema only.
 
-**Phase 3-2 — Token + registry emission (upstream).**
+**Phase 3-2 — Token + registry emission (upstream).** *Shipped 2026-04-25.*
 1. Emit the token file per Decision 3 (codegen-derived `Symbol()` + typed map alias).
 2. Emit the `DynamicModule` with `forRoot({ overrides })` plumbing per Decision 6 (frozen-after-construction Map).
 3. Byte-identical-output test: generate against a fixture modeled on `CRM_PORT_REGISTRY` and diff against a hand-written golden file.
 
-**Phase 3-3 — Dispatcher scaffold emission (upstream).**
+**Phase 3-3 — Dispatcher scaffold emission (upstream).** *Shipped 2026-04-25.*
 1. Emit the `${PatternName}Dispatcher` class per Decision 4 (overload signatures from entries).
 2. Emit the assembly-slot contract: the dispatcher is subclassable; consumer extends it and adds their assembly method(s) per Decision 5.
-3. Land all emitted artifacts under `src/orchestration/${pattern-slug}/` per Decision 7.
+3. Land all emitted artifacts under `${paths.orchestration_src}/${pattern-slug}/` (default `${backend_src}/orchestration/`) per Decision 7.
+
+Implementation locked these refinements during Phase 3-2/3 build (see `docs/specs/PHASE-3-2-3-emission-plan.md` §5.1 for the operator gates and §6.1 for post-ship notes):
+
+- O-1: Co-keyed siblings carry an explicit `name:` field; `${PATTERN_CONST}_${NAME_UPPER}_REGISTRY` token + `select${NamePascal}(...)` method are derived from it. No auto-stripping of `I`/`Strategy`/`Port`/`Adapter`/`Provider`.
+- O-2: Pure-TS template literals (no Hygen). Generator lives in `src/cli/shared/orchestration-generator.ts`.
+- O-3: `OrchestrationRegistrySpec` carries optional `keyTypeImport`, `valueTypeImport`, and per-entry `providerImport`. Missing fields are rejected at emission time as `pattern_missing_import_path`.
+- O-4: Dispatcher base emits nothing for `assemblySlot` beyond a documentation comment (issue #224 tracks unifying observability hooks across all pattern-emitted bases).
+- O-6: Default `paths.orchestration_src` is `${backend_src}/orchestration`.
+- O-7: Top-level `${orchestration_src}/index.ts` re-exports each pattern's per-pattern barrel; only emitted when ≥1 pattern is registered.
+- New CLI verb `codegen orchestration {gen|list|validate}`; `entity new` invokes the same generator as a non-fatal post-step so `just gen-all` keeps building everything.
 
 **Phase 3-4 — First consumer migration (dealbrain-v2).**
 1. Author `src/patterns/crm-ports.pattern.ts` with the two co-keyed registries + dispatcher slot.
