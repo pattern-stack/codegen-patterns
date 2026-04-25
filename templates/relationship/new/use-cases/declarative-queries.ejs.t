@@ -7,21 +7,21 @@ force: true
  * Declarative Query Use Cases for <%= classNames.entity %>
  * Generated from queries: block in relationship YAML — do not edit directly.
  *
- * Each query is an injectable use case class that delegates to the repository.
+ * Each query is an injectable use case class that delegates to the service.
  * Register all via `declarativeQueryClasses` in the module providers.
  */
 
 import { Injectable } from '@nestjs/common';
-import { <%= classNames.repository %> } from '../<%= name %>.repository';
+import { <%= classNames.service %> } from '../<%= name %>.service';
 import type { <%= classNames.entity %> } from '../<%= name %>.entity';
 
 <% processedQueries.forEach((q) => { -%>
 @Injectable()
 export class <%= q.useCaseClassName %> {
-  constructor(private readonly repository: <%= classNames.repository %>) {}
+  constructor(private readonly service: <%= classNames.service %>) {}
 
   async execute(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
-    return this.repository.<%= q.methodName %>(<%= q.params.map(p => p.camelName).join(', ') %>);
+    return this.service.<%= q.methodName %>(<%= q.params.map(p => p.camelName).join(', ') %>);
   }
 }
 
