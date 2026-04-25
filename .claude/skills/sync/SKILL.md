@@ -162,6 +162,17 @@ meaningful.
     — drift between the two sites must be a compile error, not a
     runtime mismatch. See ADR-033 (`docs/adrs/ADR-033-config-driven-change-sources.md`).
 
+11. **`userId` / `tenantId` are NOT in `PollFetchContext`.** The poll
+    primitive's adapter callback receives exactly
+    `{ subscription, cursor, filters }` (decision memo Q5). Run-scope
+    identity (`userId`, `tenantId`) is closed over by the consumer at
+    adapter construction (or resolved inside the callback via consumer
+    services) — never threaded through the port seam. Threading it
+    forces port expansion every time run-context grows, and the
+    orchestrator already enforces tenancy at `execute()` entry. The
+    same rule applies to `WebhookChangeSource<T>` when it lands in
+    #226-4. See ADR-033 + decision memo Q5.
+
 ## Do not
 
 - Do not introduce `IPollSource`, `ICdcSource`, or `IWebhookSource`.
@@ -207,6 +218,13 @@ Files that ship to the consumer app (not templates):
   `ChangeIterator<T>` + `ChangeMiddleware<T>` types; the universal
   composition seam consumed by primitives (loopback ships here in
   #226-5) (ADR-033)
+- `runtime/subsystems/sync/poll-change-source.ts` —
+  `PollChangeSource<T>` poll-mode primitive: parameterized by a parsed
+  `DetectionConfig` + `PollFetchCallback<T>`; owns filter resolution
+  (flat-AND), field-mapping → `externalId`, middleware composition,
+  and `Change<T>.source` provenance (`'poll'` default; `'cdc'` opt-in
+  via `poll.provenance` for Stripe-style event endpoints — #226-4)
+  (#226-3 / ADR-033)
 - `runtime/subsystems/sync/sync-run-recorder.protocol.ts` —
   `ISyncRunRecorder` + `StartRunInput` / `RecordItemInput` /
   `CompleteRunInput`

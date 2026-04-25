@@ -70,6 +70,15 @@ export type {
   ComposeChangeMiddleware,
 } from './sync-middleware.protocol';
 
+// Poll primitive (#226-3) — generic poll-mode IChangeSource<T>
+export {
+  PollChangeSource,
+  type PollChangeSourceOptions,
+  type PollCursor,
+  type PollFetchCallback,
+  type PollFetchContext,
+} from './poll-change-source';
+
 // Tokens
 export {
   SYNC_CHANGE_SOURCE,
