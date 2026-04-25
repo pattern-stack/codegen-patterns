@@ -44,6 +44,32 @@ export type {
 } from './sync-run-recorder.protocol';
 export type { ILoopbackFingerprintStore } from './sync-loopback.protocol';
 
+// DetectionConfig (#226-1) — Zod schema + inferred types; canonical source
+// of filter/mapping shape consumed by primitives + codegen YAML validator
+export {
+  CursorStrategySchema,
+  DetectionConfigSchema,
+  FieldMappingSchema,
+  PollDetectionSchema,
+  ResolvedFilterSchema,
+  WebhookDetectionSchema,
+} from './detection-config.schema';
+export type {
+  CursorStrategy,
+  DetectionConfig,
+  FieldMapping,
+  PollDetection,
+  ResolvedFilter,
+  WebhookDetection,
+} from './detection-config.schema';
+
+// Middleware (#226-1) — composable wrapper around the cursor-aware iterator
+export type {
+  ChangeIterator,
+  ChangeMiddleware,
+  ComposeChangeMiddleware,
+} from './sync-middleware.protocol';
+
 // Tokens
 export {
   SYNC_CHANGE_SOURCE,
