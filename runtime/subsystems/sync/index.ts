@@ -84,6 +84,16 @@ export {
   type PollFetchContext,
 } from './poll-change-source';
 
+// Webhook primitive (#226-4) — generic webhook-mode IChangeSource<T>
+// driven by a consumer-owned inbound staging queue iterator
+export {
+  WebhookChangeSource,
+  type WebhookChangeSourceOptions,
+  type WebhookCursor,
+  type WebhookFetchCallback,
+  type WebhookFetchContext,
+} from './webhook-change-source';
+
 // Tokens
 export {
   SYNC_CHANGE_SOURCE,

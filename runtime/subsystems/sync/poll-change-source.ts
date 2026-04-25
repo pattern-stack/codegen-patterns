@@ -115,6 +115,14 @@ export class PollChangeSource<T> implements IChangeSource<T> {
   private readonly filters: readonly ResolvedFilter[];
   private readonly externalIdSourceField: string;
   private readonly source: ChangeSource;
+  /**
+   * When `poll.provenance === 'cdc'`, the field on the emitted record from
+   * which `Change<T>.dedupKey` is read — sourced from `poll.cursor.field`
+   * (Stripe-style event endpoints carry the event id on the record itself
+   * and the cursor advances over the same id). `null` for default poll
+   * provenance, which does NOT populate `dedupKey`.
+   */
+  private readonly dedupKeySourceField: string | null;
   private readonly composed: ChangeIterator<T>;
 
   constructor(opts: PollChangeSourceOptions<T>) {
@@ -144,7 +152,12 @@ export class PollChangeSource<T> implements IChangeSource<T> {
     this.filters = config.filters;
     // Provenance: `mode: 'poll'` defaults to `'poll'`; opt into `'cdc'` via
     // `poll.provenance` (Stripe-style event endpoints — wired in #226-4).
-    this.source = config.poll.provenance === 'cdc' ? 'cdc' : 'poll';
+    // CDC provenance also stamps `dedupKey` from the cursor's `field`, since
+    // those endpoints surface a per-event id on each record (the same id the
+    // cursor advances over).
+    const isCdc = config.poll.provenance === 'cdc';
+    this.source = isCdc ? 'cdc' : 'poll';
+    this.dedupKeySourceField = isCdc ? config.poll.cursor.field : null;
 
     this.label =
       opts.label ?? `poll-change-source:${externalIdMapping.source}`;
@@ -186,6 +199,19 @@ export class PollChangeSource<T> implements IChangeSource<T> {
           `PollChangeSource: record missing string '${this.externalIdSourceField}' — emitted records MUST carry the canonical external id keyed by the mapping target`,
         );
       }
+      let dedupKey: string | undefined;
+      if (this.dedupKeySourceField !== null) {
+        const dedupRaw = (record as Record<string, unknown>)[
+          this.dedupKeySourceField
+        ];
+        if (typeof dedupRaw !== 'string' || dedupRaw.length === 0) {
+          throw new Error(
+            `PollChangeSource: cdc-provenance record missing string '${this.dedupKeySourceField}' — when poll.provenance === 'cdc' the cursor.field must be present on each record so dedupKey can be populated`,
+          );
+        }
+        dedupKey = dedupRaw;
+      }
+
       const change: Change<T> = {
         externalId: externalIdRaw,
         // Polling cannot distinguish create vs. update vs. delete on its
@@ -198,6 +224,7 @@ export class PollChangeSource<T> implements IChangeSource<T> {
         record,
         cursor: nextCursor,
         source: this.source,
+        ...(dedupKey !== undefined ? { dedupKey } : {}),
       };
       yield change;
     }
