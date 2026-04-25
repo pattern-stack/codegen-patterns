@@ -9,7 +9,7 @@ Think deeply and create an implementation spec for the requested feature or chan
 
 ## Spec Format
 
-Write the spec to `.claude/specs/<date>-<kebab-case-name>.md`:
+Write the spec to `ai-docs/specs/<date>-<kebab-case-name>.md`:
 
 ```markdown
 # <Feature Name>

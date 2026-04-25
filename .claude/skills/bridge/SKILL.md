@@ -77,6 +77,8 @@ Default configuration gives parallelism, not ordering. For per-aggregate orderin
 When `multiTenant=true`, three enforcement sites need `assertTenantId` on entry:
 (a) `EventFlowService.publishAndStart`, (b) `BridgeDeliveryHandler.handle`, (c) `DrizzleBridgeDeliveryRepo.insertDelivery` (before write). Same error shape at every site — precedent: JOB-8 / SYNC-6.
 
+**Read methods deliberately bypass `assertTenantId`** (introduced via OBS-3, `IJobBridge.getStatusHistogram`). Reads with `tenantId === undefined` mean *cross-tenant view* by design — appropriate for framework-internal admin dashboards. Writes still fail loud on missing tenant context. When adding a new read method to `IJobBridge`, do NOT call `assertTenantId`; document the cross-tenant semantics in JSDoc instead. The asymmetry is intentional: writes have a single-tenant correctness invariant; reads can legitimately scope to all tenants.
+
 ## Do not
 
 - **Do not collapse the three tiers** into "the bridge is the only path." Tier 1 subscribers remain valid for cheap in-process reactions. Tier 2 (`publishAndStart`) is the request-path durable option. Tier 3 (`triggers:`) is async fanout. The right tool depends on durability + latency needs.

@@ -43,7 +43,7 @@ agent-logs/
     │   └── summary.json       ← Structured gate results
     │
     ├── artifacts/             ← Reusable outputs (symlinks or copies)
-    │   ├── specs/             ← Links to .claude/specs/
+    │   ├── specs/             ← Links to ai-docs/specs/
     │   └── branches.md        ← Branch → issue mapping
     │
     └── summary.md             ← Human-readable session summary
@@ -148,8 +148,8 @@ outputs:
   issues_created: [PROJ-42, PROJ-43, PROJ-44]
   prs_created: ["#123"]
   specs_written:
-    - .claude/specs/proj-42-shortcuts-registry.md
-    - .claude/specs/proj-43-shortcuts-ui.md
+    - ai-docs/specs/proj-42-shortcuts-registry.md
+    - ai-docs/specs/proj-43-shortcuts-ui.md
 ```
 
 ## Phase Artifacts

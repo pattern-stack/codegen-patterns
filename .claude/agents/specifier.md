@@ -18,7 +18,7 @@ Read project config from @.claude/sdlc.yml for:
 - `language`: typescript/python patterns
 - `quality_profile`: strictness level
 
-Reference existing specs in `.claude/specs/` for format examples.
+Reference existing specs in `ai-docs/specs/` for format examples.
 
 ## Instructions
 
@@ -118,7 +118,7 @@ Things that need decisions:
 
 ### 8. Produce Spec Document
 
-Write to `.claude/specs/{issue-slug}.md`:
+Write to `ai-docs/specs/{issue-slug}.md`:
 
 ```markdown
 # {Issue Title} Spec
@@ -169,14 +169,14 @@ Write to `.claude/specs/{issue-slug}.md`:
 
 ## References
 
-- Related spec: `.claude/specs/{related}.md`
+- Related spec: `ai-docs/specs/{related}.md`
 - Pattern example: `path/to/similar/implementation`
 ```
 
 ## Output Format
 
 Always produce:
-1. **Spec file** saved to `.claude/specs/{issue-slug}.md`
+1. **Spec file** saved to `ai-docs/specs/{issue-slug}.md`
 2. **Summary** for human review (the Overview + Architecture sections)
 
 ## Constraints
