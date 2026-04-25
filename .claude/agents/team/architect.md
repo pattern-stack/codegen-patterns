@@ -39,7 +39,7 @@ Commands tell you which mode to operate in:
 **Spec mode** — Create implementation specs for individual issues.
 - Define file tree, interfaces (pseudocode), implementation steps
 - Reference existing patterns in the codebase
-- Output: Spec file at `.claude/specs/{issue-slug}.md`
+- Output: Spec file at `ai-docs/specs/{issue-slug}.md`
 
 ### Expertise
 - Entity-driven code generation patterns

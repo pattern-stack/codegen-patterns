@@ -65,7 +65,7 @@ Observability reads are scoped to a single owning subsystem per method. Cross-su
 
 ## Phase 1 scope
 
-In: OBS-1..OBS-8 (see `.claude/specs/epic-195-plan.md`).
+In: OBS-1..OBS-8 (see `ai-docs/specs/epic-195-plan.md`).
 
 Out (phase 2+): Drizzle extensions, Prom/OTel exporters, StackStatusService wiring, Cube.js, time-bucketed histograms, events reads.
 
@@ -84,28 +84,47 @@ Out (phase 2+): Drizzle extensions, Prom/OTel exporters, StackStatusService wiri
 
 ## Current runtime snapshot
 
-**None.** `runtime/subsystems/observability/` does not exist yet. OBS-5..OBS-8 will populate it. Rewrite this section when they land.
+Epic #195 fully shipped. All eight phase-1 issues (OBS-1..OBS-8) merged.
 
-Expected files (per plan):
 ```
 runtime/subsystems/observability/
-  observability.protocol.ts
-  observability.service.ts
-  observability.module.ts
-  observability.tokens.ts
-  observability-errors.ts
-  reporters/bridge-metrics.reporter.ts
-  reporters/index.ts
-  index.ts
+  observability.protocol.ts        # IObservability + composed types
+  observability.service.ts         # ObservabilityService — single composer class
+  observability.module.ts          # ObservabilityModule.forRoot({ reporters? }), global: true
+  observability.tokens.ts          # OBSERVABILITY, OBSERVABILITY_MODULE_OPTIONS
+  observability-errors.ts          # ObservabilityError base
+  index.ts                         # Barrel — protocol + types + tokens + module + errors
+  reporters/
+    bridge-metrics.reporter.ts     # @Injectable, OnModuleInit + setInterval, opt-in via options
+    index.ts
+
+src/__tests__/runtime/subsystems/
+  observability.service.spec.ts            # composer delegation + @Optional() degradation
+  observability.module.spec.ts             # module wiring tests
+  observability.bridge-metrics.reporter.spec.ts  # reporter lifecycle + tenant passthrough
+  job-run-service.observability.unit.spec.ts     # OBS-2 jobs port-extension tests
+
+templates/subsystem/observability/
+  prompt.js
+  main-hook.ejs.t                  # Comment hint into app.module.ts (jobs-pattern)
+
+templates/subsystem/observability-config/
+  prompt.js
+  codegen-config-observability-block.ejs.t   # observability: defaults block
 ```
+
+CLI install: `codegen subsystem install observability` (or `just gen-subsystem observability`).
+Backend literal in CLI registry: `'combiner'` (parallel to `'config-only'`).
+
+Phase 1 surface complete. Phase 2 deferred per scope.
 
 ## Cross-links
 
 - `docs/adrs/ADR-025-combiner-subsystems.md`
 - `docs/adrs/ADR-008-subsystem-architecture.md`
 - `docs/adrs/ADR-023-event-to-job-bridge.md`
-- `.claude/specs/epic-195-architecture-decisions.md`
-- `.claude/specs/epic-195-plan.md`
+- `ai-docs/specs/epic-195-architecture-decisions.md`
+- `ai-docs/specs/epic-195-plan.md`
 - `.claude/skills/bridge/SKILL.md`
 - `.claude/skills/jobs/SKILL.md`
 - `.claude/skills/events/SKILL.md`

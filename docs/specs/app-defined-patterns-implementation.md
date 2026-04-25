@@ -520,7 +520,7 @@ The pattern's base class declares `protected readonly patternConfig: TConfig` (t
 | `templates/entity/new/clean-lite-ps/service.ejs.t` | modify | Same |
 | Test fixtures: `test/fixtures/contact-v2.yaml`, `demo-deal.yaml`, `test/smoke/fixtures/*.yaml`, `test/scaffold/contact-scaffold.yaml`, `examples/eav/*.yaml` | modify | `family: synced` → `pattern: Synced` |
 | `src/__tests__/schema/schema-v2.test.ts` and clean-lite-ps tests | modify | Replace `family` references with `pattern` references |
-| Docs: `docs/CONSUMER-SETUP.md`, `docs/GETTING-STARTED.md`, `README.md`, `.claude/skills/codegen/SKILL.md`, `.claude/specs/{a6,a15}-*.md`, `docs/specs/JOB-7.md` | modify | Update `family` → `pattern` references |
+| Docs: `docs/CONSUMER-SETUP.md`, `docs/GETTING-STARTED.md`, `README.md`, `.claude/skills/codegen/SKILL.md`, `ai-docs/specs/{a6,a15}-*.md`, `docs/specs/JOB-7.md` | modify | Update `family` → `pattern` references |
 
 ---
 

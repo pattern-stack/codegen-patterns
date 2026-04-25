@@ -1,3 +1,37 @@
+# OBS-1: ADR + skill scaffold for combiner subsystem pattern — Spec
+
+**Issue:** #202 (OBS-1)
+**Status:** Draft
+**Last Updated:** 2026-04-23
+
+## Overview
+
+Two documentation artifacts to ship in one PR:
+1. New ADR introducing "combiner subsystem" as a named pattern distinct from ADR-008 infrastructure subsystems
+2. New `.claude/skills/observability/SKILL.md` patterned after `.claude/skills/bridge/SKILL.md`
+
+No code changes.
+
+## ADR number
+
+**ADR-025.** On-disk numbering shows 008 → 011 → 015..024 → 030 → 031 (two files at 031). Lowest vacant slot after 024 is 025. (An earlier draft suggested 028 as a defensive choice against reserved-but-unwritten slots; verified on disk — 025/026/027 are truly vacant.)
+
+Filename: `docs/adrs/ADR-025-combiner-subsystems.md`
+
+## Files
+
+| File | Action | Purpose |
+|------|--------|---------|
+| `docs/adrs/ADR-025-combiner-subsystems.md` | create | Name the combiner pattern; contrast with ADR-008; close the two-layer rule |
+| `.claude/skills/observability/SKILL.md` | create | Domain skill for observability work |
+
+## Drafted ADR content
+
+Full content to write to `docs/adrs/ADR-025-combiner-subsystems.md`:
+
+---
+
+```markdown
 # ADR-025 — Combiner Subsystems
 
 **Status:** Draft
@@ -21,7 +55,7 @@ Two real subsystems do not own state and do not fit ADR-008:
 
 Epic #195's original framing called observability "the 5th infrastructure subsystem." That framing is structurally dishonest: it would promise a backend toggle the subsystem cannot deliver, and it would invite future contributors to write parallel `Memory`/`Drizzle` observability backends that are indistinguishable pass-throughs. Bridge already lives in the codebase as the right shape but was introduced without a name for that shape. This ADR names it.
 
-While naming the pattern, this ADR also closes a second ambiguity that has surfaced repeatedly during implementation: whether framework subsystems are two-layer (protocol → backend) or three-layer (protocol → service → repo). They are two-layer. The `use-case → service → repo` rule is entity-pipeline-only. This has been implicit since ADR-008 but is absent from the ADR text and surfaced as an open question during epic #195 planning (see `ai-docs/specs/observability-subsystem-shape-understanding.md`).
+While naming the pattern, this ADR also closes a second ambiguity that has surfaced repeatedly during implementation: whether framework subsystems are two-layer (protocol → backend) or three-layer (protocol → service → repo). They are two-layer. The `use-case → service → repo` rule is entity-pipeline-only. This has been implicit since ADR-008 but is absent from the ADR text and surfaced as an open question during epic #195 planning (see `.claude/specs/observability-subsystem-shape-understanding.md`).
 
 ## Decision
 
@@ -127,4 +161,141 @@ Put the observability composer in the consumer app rather than in `runtime/subsy
 - ADR-022 — Job Orchestration Domain Model (one of the subsystems bridge composes)
 - Epic #195 — Observability subsystem (the second combiner, in-flight)
 - Issue #200 — Surfaced the two-layer rule for framework subsystems
-- `ai-docs/specs/epic-195-architecture-decisions.md` — locked decisions this ADR implements
+- `.claude/specs/epic-195-architecture-decisions.md` — locked decisions this ADR implements
+```
+
+---
+
+## Drafted skill content
+
+Full content to write to `.claude/skills/observability/SKILL.md`:
+
+---
+
+```markdown
+---
+name: observability
+description: Load when working on the Observability combiner subsystem. Triggers include anything under `runtime/subsystems/observability/`; the `IObservability` protocol or `OBSERVABILITY` token; `ObservabilityModule.forRoot()` wiring; `ObservabilityService` and its composed sibling ports (`IJobRunService`, `IJobBridge`, sync recorder/cursor ports); reporters living under `runtime/subsystems/observability/reporters/`; relocation of `BridgeMetricsReporter`; the `just gen-subsystem observability` scaffold; and any work referencing ADR-025, epic #195, or OBS-1..OBS-8 specs.
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+user-invocable: false
+---
+
+# Observability Domain Skill
+
+**Phase status:** In-flight via epic #195 (OBS-1..OBS-8). ADR-025 is `Draft`. Phase 1 ships the composer, per-sibling read additions, `BridgeMetricsReporter` relocation, and the CLI scaffold. Phase 2 (Drizzle extensions, Prometheus/OTel exporters, Cube.js cross-table analytics) is deferred.
+
+Observability is the **combiner subsystem** that composes read-side reporting across jobs, bridge, sync, and the cursor store. Its job is to turn "how is the system doing?" into a single typed port — multi-tenant-safe, backend-inherited, dashboard-grade.
+
+## Mental model
+
+**Read-only composer, not an infrastructure subsystem.** Observability is a combiner per ADR-025 — owns no schema, no `backend` key on `forRoot()`, single `ObservabilityService` class. The "backend" for observability is whatever backends the composed subsystems are running; portability is inherited, not declared.
+
+**Five core reads in phase 1:**
+
+| Method | Delegates to | Owning subsystem |
+|---|---|---|
+| `getPoolDepths(tenantId?)` | `IJobRunService.countByPoolAndStatus` | jobs |
+| `getRecentFailedJobs(limit, tenantId?)` | `IJobRunService.listRecentFailed` | jobs |
+| `getBridgeDeliveryHistogram(windowHours, tenantId?)` | `IJobBridge.getStatusHistogram` | bridge |
+| `getRecentSyncRuns(limit, subscriptionId?, tenantId?)` | `ISyncRunRecorder.listRecent` | sync |
+| `getCursors(tenantId?)` | `ICursorStore.listAll` | sync (cursor store lives in sync) |
+
+**Reporters are internal consumers, not protocol extensions.** `BridgeMetricsReporter` lives under `runtime/subsystems/observability/reporters/`, injects `OBSERVABILITY`, runs on `OnModuleInit` + `setInterval`. It consumes `IObservability` — does not extend the protocol.
+
+**Graceful subsystem absence.** `ObservabilityService` uses `@Optional()` for each sibling port injection. Missing sibling → empty result (e.g., zero histogram), not throw.
+
+## Non-obvious rules
+
+### 1. Combiner shape, not infrastructure subsystem
+
+Observability is a **combiner subsystem** per ADR-025. Do not retrofit it with a `backend` key to preserve symmetry with events/jobs/cache/storage. The asymmetry is the point. A single `ObservabilityService` class is correct.
+
+### 2. Framework subsystems are two-layer (protocol → backend)
+
+Framework subsystems follow **protocol → backend**. No intermediate service layer. "Service" in class names denotes a port role, not a Clean Architecture tier. The `use-case → service → repo` rule applies **only** to entity-pipeline code, not framework subsystems.
+
+### 3. Multi-tenancy: always delegate to the owning port
+
+Every `IObservability` method accepts optional `tenantId` and passes it through to the owning port. **Never re-implement tenant filtering in `ObservabilityService`.** This is the biggest footgun — if observability duplicates the WHERE clause, the next tenancy change silently misses it.
+
+### 4. New reads land in the owning subsystem first
+
+If a consumer needs a new read, the extension goes on the owning port (`IJobRunService`, etc.), implemented in both backends, accepting optional `tenantId`. Then observability composes it. Do not add tabular SQL to `ObservabilityService` that duplicates semantic knowledge the owning subsystem already encodes.
+
+### 5. Cross-table JOIN analytics defer to Cube.js
+
+Observability reads are scoped to a single owning subsystem per method. Cross-subsystem JOINs belong in a future Cube.js layer.
+
+### 6. Histograms are plain counts in phase 1
+
+`getBridgeDeliveryHistogram` returns `{ pending, delivered, skipped, failed }`. No time bucketing — that's Cube.js territory.
+
+### 7. Reporters consume the facade, never sibling tables
+
+`BridgeMetricsReporter` injects `OBSERVABILITY`, calls `observability.getBridgeDeliveryHistogram()`. Must not inject `BRIDGE_DELIVERY_REPO` or similar directly.
+
+### 8. Drizzle extensions are phase 2 only
+
+`pg_stat_activity`, `pg_stat_statements`, `LISTEN/NOTIFY` — deferred.
+
+## Phase 1 scope
+
+In: OBS-1..OBS-8 (see `.claude/specs/epic-195-plan.md`).
+
+Out (phase 2+): Drizzle extensions, Prom/OTel exporters, StackStatusService wiring, Cube.js, time-bucketed histograms, events reads.
+
+## Do not
+
+- Do not introduce Memory/Drizzle backend variants of `ObservabilityService`
+- Do not add a `backend` key to `ObservabilityModule.forRoot()`
+- Do not re-implement tenant filtering in `ObservabilityService`
+- Do not reach into sibling tables from `ObservabilityService` or reporters
+- Do not add cross-subsystem JOIN queries (Cube.js territory)
+- Do not extend the protocol surface from inside `reporters/`
+- Do not land `pg_stat_*` or `LISTEN/NOTIFY` in phase 1
+- Do not grow the histogram signature to bucket widths or time series
+- Do not invent a `use-case → service → repo` layering inside `runtime/subsystems/observability/`
+- Do not retain the old app-side `BridgeMetricsReporter` as a shim after OBS-6 lands
+
+## Current runtime snapshot
+
+**None.** `runtime/subsystems/observability/` does not exist yet. OBS-5..OBS-8 will populate it. Rewrite this section when they land.
+
+Expected files (per plan):
+```
+runtime/subsystems/observability/
+  observability.protocol.ts
+  observability.service.ts
+  observability.module.ts
+  observability.tokens.ts
+  observability-errors.ts
+  reporters/bridge-metrics.reporter.ts
+  reporters/index.ts
+  index.ts
+```
+
+## Cross-links
+
+- `docs/adrs/ADR-025-combiner-subsystems.md`
+- `docs/adrs/ADR-008-subsystem-architecture.md`
+- `docs/adrs/ADR-023-event-to-job-bridge.md`
+- `.claude/specs/epic-195-architecture-decisions.md`
+- `.claude/specs/epic-195-plan.md`
+- `.claude/skills/bridge/SKILL.md`
+- `.claude/skills/jobs/SKILL.md`
+- `.claude/skills/events/SKILL.md`
+```
+
+## Acceptance criteria
+
+- [ ] `docs/adrs/ADR-025-combiner-subsystems.md` exists with content above
+- [ ] `.claude/skills/observability/SKILL.md` exists with content above
+- [ ] No code changes
+- [ ] Pre-existing ADR-031 collision (two files at slot 031) is NOT touched — pre-existing issue, not ours
+
+## References
+
+- Epic: #195
+- Plan: `.claude/specs/epic-195-plan.md`
+- Decisions: `.claude/specs/epic-195-architecture-decisions.md`
+- Understandings: `.claude/specs/epic-195-understanding.md`, `observability-subsystem-shape-understanding.md`, `observability-app-service-layer-understanding.md`

@@ -43,7 +43,7 @@ Agent(
 
 The architect:
 - Reads the issue and explores relevant code
-- Produces a spec at `.claude/specs/{issue-slug}.md`
+- Produces a spec at `ai-docs/specs/{issue-slug}.md`
 - Reports back with the spec summary
 
 Review the spec. If it looks wrong, send feedback and have them revise. Otherwise proceed.

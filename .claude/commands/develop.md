@@ -35,7 +35,7 @@ Determine what was provided:
 
 1. **Issue ID** (e.g., `{ISSUE-ID}`):
    - Fetch issue from configured task tracker (see `task_management` primitive)
-   - Check for existing spec in `.claude/specs/`
+   - Check for existing spec in `ai-docs/specs/`
    - Resume from appropriate phase
 
 2. **Free text**:
@@ -159,7 +159,7 @@ Determine what was provided:
   - Pseudocode level - not full implementation
   - Must list all files touched (new + modified)
   - Must define interfaces/types
-- **Output:** Spec file at `.claude/specs/{issue-slug}.md`
+- **Output:** Spec file at `ai-docs/specs/{issue-slug}.md`
 
 **Output Format:**
 ```markdown

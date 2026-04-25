@@ -22,7 +22,7 @@ docs/
     ├── archive/             # Completed or abandoned specs
     └── {date}-{name}.md    # Active specs
 
-.claude/specs/               # Agent-generated specs (from /develop workflow)
+ai-docs/specs/               # Agent-generated specs (from /develop workflow)
 ```
 
 ## Instructions
@@ -40,7 +40,7 @@ docs/
 ### Creating a Spec
 
 1. Read existing specs for format examples
-2. Create `docs/specs/{YYYY-MM-DD}-{kebab-title}.md` or `.claude/specs/{issue-slug}.md` with:
+2. Create `docs/specs/{YYYY-MM-DD}-{kebab-title}.md` or `ai-docs/specs/{issue-slug}.md` with:
    - `status: draft` initially
    - Goal, Architecture, Files, Implementation Steps, Open Questions
 3. Fill in enough detail that an implementer can code without guessing
@@ -49,7 +49,7 @@ docs/
 
 1. Add a blockquote at the top: `> **Archived:** {what was built, where, key stats}`
 2. Update status to `implemented` or `abandoned`
-3. Move to `docs/specs/archive/` or `.claude/specs/archive/`
+3. Move to `docs/specs/archive/` or `ai-docs/specs/archive/`
 
 ### Status Conventions
 

@@ -24,7 +24,7 @@ Read the language primitive from `.claude/primitives/language/{language}.md`.
 ### 1. Receive Spec
 
 Input:
-- Approved spec file from `.claude/specs/{issue-slug}.md`
+- Approved spec file from `ai-docs/specs/{issue-slug}.md`
 - Issue ID for branch naming
 
 Validate spec has:

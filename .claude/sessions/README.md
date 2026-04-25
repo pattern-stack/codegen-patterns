@@ -57,7 +57,7 @@ phases:
     "{ISSUE-ID}":
       status: pending | in_progress | approved
       approved_at: null | timestamp
-      file: .claude/specs/{issue-slug}.md
+      file: ai-docs/specs/{issue-slug}.md
 
   implement:
     "{ISSUE-ID}":
