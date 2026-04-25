@@ -12,7 +12,7 @@ execute(input)
   ├─ cursorBefore = cursors.get(subId, tenantId)
   ├─ runId = recorder.startRun({subId, direction, action, cursorBefore, tenantId})
   │
-  ├─ for await (change of source.listChanges(sub)):
+  ├─ for await (change of source.listChanges(sub, cursorBefore)):
   │    recordsFound++
   │    latestCursor = change.cursor
   │    cursorAdvanced = true

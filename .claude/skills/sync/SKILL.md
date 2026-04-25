@@ -71,7 +71,7 @@ meaningful.
 
 | When the task involves… | Read |
 |---|---|
-| Designing a new `IChangeSource<T>` / `ISyncSink<T>` / custom `IFieldDiffer<T>` | `protocols-and-ports.md` |
+| Designing a new `IChangeSource<T>` (signature `(subscription, cursor) => AsyncIterable<Change<T>>` per ADR-033) / `ISyncSink<T>` / custom `IFieldDiffer<T>` | `protocols-and-ports.md` |
 | The orchestrator's run lifecycle, cursor advance, per-item failure, loopback | `orchestrator-flow.md` |
 | `sync_runs` / `sync_run_items` / `sync_subscriptions` shape, `changed_fields` (ADR-0003), worked queries | `audit-model.md` |
 | Writing a feature module, migrating from bespoke sync, multi-tenancy wiring | `consumer-patterns.md` |
@@ -79,15 +79,24 @@ meaningful.
 ## Non-obvious rules (read twice)
 
 1. **One port for three modes.** Poll, CDC, and webhook adapters ALL
-   implement `IChangeSource<T>`. Per-mode concerns (CDC replay_id,
-   webhook event_id, provider-hinted changed fields) live in `Change<T>`
+   implement `IChangeSource<T>` —
+   `listChanges(subscription, cursor): AsyncIterable<Change<T>>`
+   (#226-2 / ADR-033). Per-mode concerns (CDC replay_id, webhook
+   event_id, provider-hinted changed fields) live in `Change<T>`
    metadata: `source`, `dedupKey`, `providerChangedFields`. Don't
    introduce mode-specific ports — we rejected that design explicitly.
 
-2. **Cursors are opaque at the port seam.** `ICursorStore.get/put`
-   takes `unknown`. Each strategy types its cursor internally (poll:
-   `{ systemModstamp }`, CDC: `{ replayId }`, webhook: `{ ts }`). The
-   orchestrator doesn't interpret the shape; it just persists what the
+2. **Cursors are opaque at the port seam, and the orchestrator owns
+   the lifecycle.** `ICursorStore.get/put` takes `unknown`. Each
+   strategy types its cursor internally (poll: `{ systemModstamp }`,
+   CDC: `{ replayId }`, webhook: `{ ts }`). The orchestrator is the
+   only reader of `ICursorStore` — it `get`s the cursor before the
+   run, passes it by value as the second argument to
+   `IChangeSource.listChanges(subscription, cursor)` (#226-2 / ADR-033),
+   advances `latestCursor = change.cursor` as the iterator yields,
+   and `put`s on success. Primitives never inject `ICursorStore`;
+   that would create two readers of the same row. The orchestrator
+   doesn't interpret the cursor shape; it just persists what the
    iterator last yielded.
 
 3. **All-failed runs still advance the cursor.** If every record in a
