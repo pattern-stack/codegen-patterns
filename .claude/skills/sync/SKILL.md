@@ -140,6 +140,19 @@ meaningful.
    for it — that would produce redundant repositories/services
    shadowing the subsystem. Same stance as `job_run`.
 
+10. **`DetectionConfig` is the canonical filter / mapping shape.** The
+    per-entity `DetectionConfig` Zod schema in
+    `runtime/subsystems/sync/detection-config.schema.ts` is the single
+    source of truth for filter, field-mapping, and cursor-strategy
+    shape across the subsystem. Runtime primitives
+    (`PollChangeSource<T>` / `WebhookChangeSource<T>`) parse it at
+    construction; the codegen YAML validator imports the same schema;
+    the per-entity factory module emitted by Phase 2 codegen consumes
+    its parsed value. Primitives and codegen factories must derive
+    their behavior from `DetectionConfig` rather than inline literals
+    — drift between the two sites must be a compile error, not a
+    runtime mismatch. See ADR-033 (`docs/adrs/ADR-033-config-driven-change-sources.md`).
+
 ## Do not
 
 - Do not introduce `IPollSource`, `ICdcSource`, or `IWebhookSource`.
@@ -175,6 +188,16 @@ Files that ship to the consumer app (not templates):
 - `runtime/subsystems/sync/sync-field-diff.protocol.ts` —
   `IFieldDiffer<T>`, `DiffResult`, `FieldDiffSchema` (Zod — ADR-0003)
 - `runtime/subsystems/sync/sync-sink.protocol.ts` — `ISyncSink<T>`
+- `runtime/subsystems/sync/detection-config.schema.ts` —
+  `DetectionConfigSchema` (Zod): discriminated union over
+  `mode: 'poll' | 'webhook'`; flat-AND `ResolvedFilter` triples
+  (`eq | neq | in | nin | gt | gte | lt | lte`); `CursorStrategy`
+  tagged union (`systemModstamp | replayId | timestamp | eventId`);
+  `poll.provenance: 'cdc'` knob (ADR-033)
+- `runtime/subsystems/sync/sync-middleware.protocol.ts` —
+  `ChangeIterator<T>` + `ChangeMiddleware<T>` types; the universal
+  composition seam consumed by primitives (loopback ships here in
+  #226-5) (ADR-033)
 - `runtime/subsystems/sync/sync-run-recorder.protocol.ts` —
   `ISyncRunRecorder` + `StartRunInput` / `RecordItemInput` /
   `CompleteRunInput`
