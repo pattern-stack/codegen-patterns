@@ -54,6 +54,19 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ serviceInheritedMethods.forEach(line => { _%>
   //   <%= line %>
 <%_ }) _%>
+<% if (hasDeclarativeQueries) { %>
+  // ═══════════════════════════════════════════════════════════════════════
+  // Declarative queries (from queries: block in entity YAML)
+  // Pass-through to repository — keeps use-cases on the service layer so
+  // cross-cutting concerns (analytics, events) stay uniform.
+  // ═══════════════════════════════════════════════════════════════════════
+<%_ processedQueries.forEach((q) => { _%>
+
+  async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
+    return this.repository.<%= q.methodName %>(<%= q.params.map(p => p.camelName).join(', ') %>);
+  }
+<%_ }) _%>
+<% } %>
 <% if (eavEnabled) { %>
   /**
    * EAV paired read (ADR-13): fetch the entity and merge dynamic `field_values`
