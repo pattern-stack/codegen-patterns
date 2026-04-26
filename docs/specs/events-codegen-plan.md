@@ -62,6 +62,7 @@ top-level files.
 
 ```ts
 const EventDirectionSchema = z.enum(['inbound', 'change', 'outbound']);
+const EventTierSchema = z.enum(['domain', 'audit']);
 
 const EventPayloadFieldSchema = z.object({
   type: z.enum(['uuid', 'string', 'number', 'boolean', 'date', 'json']),
@@ -71,7 +72,18 @@ const EventPayloadFieldSchema = z.object({
 
 const EventDefinitionSchema = z.object({
   type: z.string().regex(/^[a-z][a-z0-9_]*$/),
-  direction: EventDirectionSchema,
+
+  // Tier — orthogonal to direction. Controls whether this event is
+  // eligible for bridge triggers (domain) or is purely observational
+  // (audit). Default: 'domain'. When 'audit', the event still flows
+  // through the outbox and is queryable/replayable, but the bridge
+  // dispatcher refuses to bind jobs to it. See §4.2 below.
+  tier: EventTierSchema.optional().default('domain'),
+
+  // Direction describes the data-flow axis of domain events. Required
+  // when tier === 'domain'; optional (and typically omitted) when
+  // tier === 'audit' because audit events are not about data flow.
+  direction: EventDirectionSchema.optional(),
 
   // Aggregate / source binding.
   //   - for `change`: required, must be a declared entity name
@@ -87,7 +99,8 @@ const EventDefinitionSchema = z.object({
   // Pool is *derived* from direction unless explicitly overridden.
   // Override is constrained to reserved pools of the same category; a `change`
   // event cannot opt into `events_inbound`. User pools (batch/interactive) are
-  // NOT valid targets for events.
+  // NOT valid targets for events. When tier === 'audit', pool MUST be
+  // omitted — audit events have no pool (see §4.2).
   pool: z.enum(['events_inbound', 'events_change', 'events_outbound']).optional(),
 
   // Routing / retry metadata surfaced to the bus backend.
@@ -99,7 +112,15 @@ const EventDefinitionSchema = z.object({
   // Optional free-form metadata pinned at codegen time (e.g. schema version).
   version: z.number().int().positive().default(1),
   description: z.string().optional(),
-}).strict();
+}).strict().refine(
+  // Cross-field rule 1: domain events require direction.
+  (e) => e.tier !== 'domain' || e.direction !== undefined,
+  { message: 'tier: domain requires direction (inbound | change | outbound)' },
+).refine(
+  // Cross-field rule 2: audit events must not declare pool.
+  (e) => e.tier !== 'audit' || e.pool === undefined,
+  { message: 'tier: audit events must not declare pool — audit events have no pool' },
+);
 ```
 
 Derivation rule (`direction` → default `pool`):
@@ -168,6 +189,29 @@ retry:
   attempts: 3
   backoff: exponential
 ```
+
+**4. Audit / lifecycle (NOT a data-flow event)**
+
+```yaml
+# events/crm_sync_completed.yaml
+type: crm_sync_completed
+tier: audit                 # ← bypasses bridge binding; no pool/direction
+aggregate: integration      # still has an aggregate for query-by-scope
+version: 1
+description: |
+  A CRM sync run finished. Fires once per run completion. Observational only —
+  no domain state mutated because of this event firing; the row mutations were
+  already signaled by crm_entity_persisted.
+payload:
+  integration_id: { type: uuid }
+  provider:       { type: string }
+  counts:         { type: json }
+  duration_ms:    { type: number }
+```
+
+Note: no `direction`, no `pool`. The typed facade stamps neither. The event
+still lands in `domain_events` and is queryable/replayable like any other;
+it just never becomes a job trigger.
 
 ## 2. Generated artifacts in `src/generated/events/`
 
@@ -385,7 +429,102 @@ trigger / in-memory fill during `publish` — preferred: the generated
 `TypedEventBus.publish` passes pool both in metadata and as an explicit column
 (the backend can pluck it).
 
-## 4. Auto-emission from entity templates
+## 4. Event tiers: domain vs audit
+
+### 4.1 What the tier field means
+
+Two tiers, declared via optional `tier:` field on every event, default
+`domain`:
+
+| tier     | semantics                                                      | bridge eligible? | pool                      |
+|----------|----------------------------------------------------------------|------------------|---------------------------|
+| `domain` | A fact about the application's domain data flow.               | yes              | derived from `direction` |
+| `audit`  | A fact about the system itself (a sync ran; a feature was used; a background task completed its cycle). Observational. | **no**           | **none**                  |
+
+The axis is **orthogonal to direction**. Every domain event has a direction
+(inbound / change / outbound describes where data flows). An audit event
+does not: "the sync finished" is not data flowing between systems.
+
+### 4.2 Why the distinction matters
+
+When every emitted event flows through the event-to-job bridge, high-volume
+"I did a thing" observations silently amplify into queued jobs. A polling
+sync that scans 2000 rows and emits an audit-ish event per scan fills the
+reserved `events_change` pool with 2000 jobs-to-decide-whether-to-enqueue,
+even when the net domain change is zero. This has actually happened; it's
+the motivating case for introducing the tier.
+
+The discipline the tier enforces:
+
+- **Domain events = facts other components may want to react to.** Job
+  triggers bind to them. Volume should track the rate of real domain
+  change.
+- **Audit events = facts you want to record and inspect, but no consumer
+  should react via a job.** Volume can be high. They live in the outbox
+  so the observability viewer can show them, and so they replay correctly
+  for debugging, but the bridge treats them as inert.
+
+### 4.3 Behavior of audit events
+
+- `tier: audit` events MAY omit `direction`, MUST omit `pool`.
+- The generated registry stamps `metadata.pool = null, metadata.direction = null`
+  at publish time for audit events.
+- The typed facade validates payload shape identically to domain events.
+- The outbox insert is identical — audit events land in `domain_events`
+  and are queryable, replayable, and visible to the observability viewer.
+- **The event-to-job bridge dispatcher treats audit-tier events as
+  non-triggerable.** A job YAML that declares a trigger on an audit-tier
+  event MUST fail codegen with a hard error:
+  `Job 'xyz' triggers on audit-tier event 'crm_sync_completed'. Audit events are not bridge-eligible. Use a domain event, or remove the trigger.`
+- Subscribers via `IEventBus.subscribe()` CAN still listen to audit events
+  explicitly. This is the escape hatch for custom in-process listeners
+  (metrics emitters, log shippers) that want the event stream but opt
+  out of the job/queue machinery. Subscriptions are declarative opt-in;
+  they do not queue work by default.
+
+### 4.4 When to use audit
+
+Rule of thumb:
+
+- Would a well-behaved subscriber react by writing another row, sending a
+  notification, or enqueuing work? → **domain**.
+- Would a well-behaved subscriber react by updating a dashboard, bumping
+  a counter, or logging? → **audit**.
+- Uncertain? Default is `domain`. If nothing ends up binding and the
+  volume is high, downgrade to `audit` with a note in the YAML `description`.
+
+### 4.5 Worked example
+
+The CRM sync on a polling cadence:
+
+```yaml
+# events/crm_sync_started.yaml      tier: audit    (lifecycle fact)
+# events/crm_sync_completed.yaml    tier: audit    (lifecycle fact)
+# events/crm_sync_failed.yaml       tier: audit    (lifecycle fact)
+# events/crm_entity_persisted.yaml  tier: domain   (actual domain write occurred)
+#                                   direction: change, aggregate: <entity>
+```
+
+Per run of the sync: 3 audit events (start, end-or-fail) + N domain events
+(one per entity that *actually changed*, post-diff). The bridge sees the
+N domain events. The queue stays proportional to real change.
+
+### 4.6 Relationship to the `direction` axis
+
+`direction` is a data-flow label for domain events. It can be one of three
+values. `tier: audit` events do not have a direction because they are not
+about data moving between systems. The axes do not compose beyond these
+rules:
+
+- `tier: domain` ⇒ `direction` is required; pool derives from direction.
+- `tier: audit` ⇒ `direction` omitted; no pool.
+
+There is no `tier: audit, direction: inbound` state. An inbound webhook
+IS a domain event (data flowed in); the receiver-side lifecycle ("I
+finished processing the webhook batch") is a separate audit event if
+you want to track it.
+
+## 5. Auto-emission from entity templates
 
 ### Today
 
@@ -463,7 +602,7 @@ async execute(input: CreateContactInput): Promise<Contact> {
 No more reliance on `BaseService` silently emitting events for declared
 change types — that path becomes the fallback only.
 
-## 5. Phase integration with the jobs plan
+## 6. Phase integration with the jobs plan
 
 The jobs plan is Layers 1–6, with the Event-to-Job Bridge sitting at Phase 3
 (triggers from event types). The bridge needs:
@@ -501,7 +640,7 @@ This final phase is independent of jobs and can slip without blocking.
 5. Jobs Phase 4, 5, 6 proceed; Events Phase B interleaves at jobs Phase 5
 6. Events Phase C (entity auto-emission rewrite) ships standalone
 
-## 6. Connection to the Event-to-Job Bridge
+## 7. Connection to the Event-to-Job Bridge
 
 ### Safe reference from Job YAML
 
@@ -568,7 +707,7 @@ overrides. This keeps user jobs off the reserved pools by default:
 
 This is a subtle point and probably worth an open question (#Q6).
 
-## 7. Open questions
+## 8. Open questions
 
 1. **Top-level `events/*.yaml` vs. inline entity `events:` block — keep both,
    desugar, or drop one?** Proposal above keeps both, with inline as sugar

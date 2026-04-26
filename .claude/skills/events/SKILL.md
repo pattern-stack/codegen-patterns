@@ -20,6 +20,19 @@ If you are tempted to put `status`, `attempts`, or `retry_policy` fields on an e
 
 **Three event directions** — this is the single most important routing concern in the subsystem:
 
+**Two event tiers — domain vs audit — orthogonal to direction:**
+
+| tier     | semantics                                                                | bridge eligible? | pool                      |
+|----------|--------------------------------------------------------------------------|------------------|---------------------------|
+| `domain` | A fact other components may want to react to.                            | yes              | derived from `direction`  |
+| `audit`  | A fact about the system itself (a sync ran, a feature was used). Observational only. | **no**           | **none** (pool & direction both null) |
+
+Default is `domain`. Use `audit` for high-volume lifecycle events that should be queryable/replayable in the outbox but must not spawn jobs — the motivating case was a polling CRM sync emitting per-row "I scanned this" events that flooded the reserved change pool with a thousand inert jobs. The discipline: **domain events are facts consumers react to; audit events are facts humans inspect.** If a well-behaved subscriber would write another row or enqueue work, it's domain; if they'd bump a counter or update a dashboard, it's audit.
+
+Full design: `docs/specs/events-codegen-plan.md` §4.
+
+**Three event directions — for domain events only:**
+
 | direction  | what it carries                                     | example                          | default pool       |
 |------------|-----------------------------------------------------|----------------------------------|--------------------|
 | `inbound`  | external → us. Webhooks, pub/sub, inbound email     | `stripe_payment_received`        | `events_inbound`   |
@@ -27,6 +40,8 @@ If you are tempted to put `status`, `attempts`, or `retry_policy` fields on an e
 | `outbound` | us → external. Webhooks fired, sync pushes          | `webhook_outbound_contact_sync`  | `events_outbound`  |
 
 Direction is a **routing** concern, not a payload concern. Payload shape is per-event-type. The same direction can carry wildly different payloads; two events with identical payloads can have different directions. Don't collapse them.
+
+Audit-tier events do NOT have a direction — they are not about data movement between systems.
 
 **Reserved `events_*` pools** — the jobs subsystem (ADR-022, jobs SKILL.md) reserves three pools — `events_inbound`, `events_change`, `events_outbound` — *exclusively* for the IEventBus outbox drain. User `@JobHandler` decorations that target a reserved pool fail at build time. These pools exist so a slow outbound handler cannot stall change-event propagation. The Drizzle outbox drain loop claims rows by pool (see `outbox-and-transactions.md`).
 
@@ -62,6 +77,7 @@ Direction is a **routing** concern, not a payload concern. Payload shape is per-
 5. **Phase ordering matters.** Events codegen is a hard prerequisite for the jobs Event-to-Job Bridge (ADR-023). The bridge reads the event registry to validate trigger references, extract typed scope from payloads, and auto-assign pools. Ship events registry → ship events typed facade → *then* land the bridge. Don't skip.
 6. **Change events MAY be declared via the entity `events:` block.** At parse time the generator desugars the entity block into top-level `events/<name>.yaml` with `direction: change` and `aggregate: <entity>`. Per-entity inline blocks are sugar; they are not a second source of truth.
 7. **Entity auto-emission requires opt-in via `emits:`.** The target design (Phase C) is: entities declare `emits: [contact_created, contact_updated, ...]` in their YAML; generated use-cases emit typed events via `TypedEventBus.publish(type, aggregateId, payload, { tx })` inside the transaction. Silent auto-emission by name is being phased out.
+8. **Tier: audit events are outbox-only, never bridge-eligible.** `tier: audit` in the YAML produces registry entries with `pool: null, direction: null`. The bridge dispatcher skips them by construction. Audit events still flow through the outbox so the observability viewer can query/replay them, but they never spawn a job. A job YAML that names an audit event as a trigger MUST fail codegen — the error message names the event and points to §4 of the plan.
 
 ## Do not
 

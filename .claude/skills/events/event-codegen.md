@@ -67,16 +67,17 @@ payload:
 
 **Fields:**
 - `type` — unique snake_case business key, matches filename
-- `direction` — `inbound | change | outbound`; drives default pool
+- `tier` — optional; `domain | audit`; default `domain`. Audit events bypass the bridge; see §Tier below and plan §4.
+- `direction` — `inbound | change | outbound`; drives default pool. **Required for `tier: domain`, omitted for `tier: audit`.**
 - `aggregate` — entity name (required for `direction: change`; optional elsewhere)
 - `source` — inbound only; logical origin ("stripe", "email")
 - `destination` — outbound only; logical target ("crm", "slack")
 - `payload` — snake_case keys → camelCase TS props; types `uuid | string | number | boolean | date | json | array`. For `array`, an `items:` scalar type is required (`items: uuid | string | number | boolean | date`) and emits `T[]` + `z.array(T)`. `json` means "arbitrary JSON object" (`Record<string, unknown>` / `z.record(z.unknown())`) — do NOT use `json` for array-shaped payloads, Zod will reject them at validation time.
-- `pool` — optional override; constrained to the reserved pools of the *same category* (a `change` event cannot opt into `events_inbound`). User pools (`batch`, `interactive`) are NEVER valid targets for events.
+- `pool` — optional override; constrained to the reserved pools of the *same category* (a `change` event cannot opt into `events_inbound`). User pools (`batch`, `interactive`) are NEVER valid targets for events. **MUST be omitted when `tier: audit`.**
 - `retry` — `{ attempts, backoff }`, hints surfaced to the bus
 - `version` — integer, defaults to 1 (schema evolution; not exercised yet)
 
-**Default pool from direction:**
+**Default pool from direction (domain tier only):**
 
 | direction  | default pool       |
 |------------|--------------------|
@@ -85,6 +86,46 @@ payload:
 | `outbound` | `events_outbound`  |
 
 Override is rarely needed. If you find yourself overriding, revisit the direction.
+
+## Tier: domain vs audit
+
+`tier` classifies what kind of fact the event represents, and controls whether the bridge can bind jobs to it. Default `domain` — normal event, behaves exactly as before. `audit` is the escape hatch for **lifecycle / observational events that should exist in the outbox but must not spawn work**.
+
+| tier     | direction       | pool           | bridge binding | notes                                            |
+|----------|-----------------|----------------|----------------|--------------------------------------------------|
+| `domain` | required        | from direction | allowed        | existing behavior                                |
+| `audit`  | omitted         | null           | **rejected**   | outbox-only, observability viewer sees it        |
+
+```yaml
+# events/crm_sync_completed.yaml
+type: crm_sync_completed
+tier: audit                  # ← this is the escape hatch
+aggregate: integration       # still scoped to an aggregate for query-by-id
+version: 1
+description: |
+  A CRM sync run finished. Observational — no domain state changed because of
+  this event firing; row mutations were already signaled by crm_entity_persisted.
+payload:
+  integration_id: { type: uuid }
+  provider:       { type: string }
+  counts:         { type: json }
+  duration_ms:    { type: number }
+```
+
+**What the generator stamps for audit events:** registry entry has `pool: null, direction: null`. Typed facade writes `metadata.pool = null, metadata.direction = null`. First-class columns (when shipped) land as NULL. Observability viewer renders no pool chip — correct, because there is no pool.
+
+**Bridge enforcement:** a job YAML that declares `triggers: [crm_sync_completed]` when `crm_sync_completed` is `tier: audit` MUST fail codegen. Error: `Job 'xyz' triggers on audit-tier event 'crm_sync_completed'. Audit events are not bridge-eligible. Use a domain event, or remove the trigger.`
+
+**Use when:**
+- Polling/sync lifecycle events (`*_sync_started`, `*_sync_completed`, `*_sync_failed`)
+- Feature-use telemetry
+- Background-task cycle markers
+- Anything high-volume where downstream reaction is "record it" not "do more work"
+
+**Do NOT use for:**
+- Anything a subscriber might legitimately react to by writing domain state or enqueuing work. That's a domain event.
+
+Full design: `docs/specs/events-codegen-plan.md` §4.
 
 ## Entity `events:` block is sugar
 
