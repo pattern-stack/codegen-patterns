@@ -1134,6 +1134,14 @@ export default {
     // v2: Sync
     // ============================================================================
 
+    // ADR-033.1 / ADR-033.2: provider-keyed detection block.
+    // Provider key order is YAML insertion order (preserved by yaml.parse).
+    const detectionBlock = (definition.detection && typeof definition.detection === 'object')
+      ? definition.detection
+      : null;
+    const detectionProviders = detectionBlock ? Object.keys(detectionBlock) : [];
+    const hasDetection = detectionProviders.length > 0;
+
     const hasSyncBlock = syncBlock != null;
     const syncElectric = hasSyncBlock ? (syncBlock.electric ?? false) : false;
     const rawSyncProviders = hasSyncBlock ? (syncBlock.providers ?? {}) : {};
@@ -1575,6 +1583,10 @@ export default {
       syncElectric,
       hasSyncProviders,
       syncProviders,
+
+      // Detection (ADR-033.1 / ADR-033.2 typed provider artifacts)
+      hasDetection,
+      detectionProviders,
 
       // Events
       hasEvents,
