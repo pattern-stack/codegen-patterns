@@ -13,10 +13,18 @@ import type { EventTypeName, EventOfType, PayloadOfType } from './types';
 /**
  * Typed facade over IEventBus.
  *
- * Stamps `pool`, `direction`, and `version` into `event.metadata` from
- * the generated `eventRegistry` before delegating to `IEventBus.publish()`.
- * Downstream backends (DrizzleEventBus) read those values to populate the
- * explicit `domain_events` columns.
+ * Stamps `pool`, `direction`, `tier`, and `version` into `event.metadata`
+ * from the generated `eventRegistry` before delegating to
+ * `IEventBus.publish()`. Downstream backends (DrizzleEventBus) read those
+ * values to populate the explicit `domain_events` columns.
+ *
+ * Tier stamping (AUDIT-3): every event carries `metadata.tier`, sourced
+ * from the registry. For `tier: 'audit'` events, the bus FORCES
+ * `metadata.pool = null` and `metadata.direction = null` regardless of
+ * any caller-supplied values in `opts.metadata` — audit routing is
+ * bus-stamped, not caller-controlled. Caller overrides are silently
+ * dropped with a debug-level log (callers should not be specifying these
+ * for audit events; see ai-docs/specs/issue-242/plan.md §AUDIT-3).
  *
  * Validation gating (EVT-Q5): `CODEGEN_EVENT_VALIDATE` env flag, default on.
  * Uses `safeParse` + `console.warn` — never throws, so a bad publish does
@@ -75,6 +83,30 @@ export class TypedEventBus {
 		const aggregateType =
 			meta.aggregate ?? meta.source ?? meta.destination ?? (type as string);
 
+		// AUDIT-3: build metadata with tier-aware routing stamping. For
+		// `tier: 'audit'` events the bus FORCES pool/direction to null,
+		// even if the caller supplied them in opts.metadata. Audit routing
+		// is bus-stamped, not caller-controlled (see plan §AUDIT-3).
+		const baseMetadata: Record<string, unknown> = { ...(opts?.metadata ?? {}) };
+		if (meta.tier === 'audit') {
+			if (
+				baseMetadata['pool'] !== undefined ||
+				baseMetadata['direction'] !== undefined
+			) {
+				console.debug(
+					`[TypedEventBus] tier:audit event '${String(type)}' had pool/direction in opts.metadata; overriding to null.`,
+				);
+			}
+			baseMetadata['pool'] = null;
+			baseMetadata['direction'] = null;
+			baseMetadata['tier'] = 'audit';
+		} else {
+			baseMetadata['pool'] = meta.pool;
+			baseMetadata['direction'] = meta.direction;
+			baseMetadata['tier'] = 'domain';
+		}
+		baseMetadata['version'] = meta.version;
+
 		await this.bus.publish(
 			{
 				id: randomUUID(),
@@ -83,12 +115,7 @@ export class TypedEventBus {
 				aggregateType,
 				payload: payload as Record<string, unknown>,
 				occurredAt: new Date(),
-				metadata: {
-					...(opts?.metadata ?? {}),
-					pool: meta.pool,
-					direction: meta.direction,
-					version: meta.version,
-				},
+				metadata: baseMetadata,
 			},
 			opts?.tx,
 		);

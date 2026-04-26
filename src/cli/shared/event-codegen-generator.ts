@@ -554,10 +554,18 @@ import type { EventTypeName, EventOfType, PayloadOfType } from './types';
 /**
  * Typed facade over IEventBus.
  *
- * Stamps \`pool\`, \`direction\`, and \`version\` into \`event.metadata\` from
- * the generated \`eventRegistry\` before delegating to \`IEventBus.publish()\`.
- * Downstream backends (DrizzleEventBus) read those values to populate the
- * explicit \`domain_events\` columns.
+ * Stamps \`pool\`, \`direction\`, \`tier\`, and \`version\` into \`event.metadata\`
+ * from the generated \`eventRegistry\` before delegating to
+ * \`IEventBus.publish()\`. Downstream backends (DrizzleEventBus) read those
+ * values to populate the explicit \`domain_events\` columns.
+ *
+ * Tier stamping (AUDIT-3): every event carries \`metadata.tier\`, sourced
+ * from the registry. For \`tier: 'audit'\` events, the bus FORCES
+ * \`metadata.pool = null\` and \`metadata.direction = null\` regardless of
+ * any caller-supplied values in \`opts.metadata\` — audit routing is
+ * bus-stamped, not caller-controlled. Caller overrides are silently
+ * dropped with a debug-level log (callers should not be specifying these
+ * for audit events; see ai-docs/specs/issue-242/plan.md §AUDIT-3).
  *
  * Validation gating (EVT-Q5): \`CODEGEN_EVENT_VALIDATE\` env flag, default on.
  * Uses \`safeParse\` + \`console.warn\` — never throws, so a bad publish does
@@ -616,6 +624,30 @@ export class TypedEventBus {
 \t\tconst aggregateType =
 \t\t\tmeta.aggregate ?? meta.source ?? meta.destination ?? (type as string);
 
+\t\t// AUDIT-3: build metadata with tier-aware routing stamping. For
+\t\t// \`tier: 'audit'\` events the bus FORCES pool/direction to null,
+\t\t// even if the caller supplied them in opts.metadata. Audit routing
+\t\t// is bus-stamped, not caller-controlled (see plan §AUDIT-3).
+\t\tconst baseMetadata: Record<string, unknown> = { ...(opts?.metadata ?? {}) };
+\t\tif (meta.tier === 'audit') {
+\t\t\tif (
+\t\t\t\tbaseMetadata['pool'] !== undefined ||
+\t\t\t\tbaseMetadata['direction'] !== undefined
+\t\t\t) {
+\t\t\t\tconsole.debug(
+\t\t\t\t\t\`[TypedEventBus] tier:audit event '\${String(type)}' had pool/direction in opts.metadata; overriding to null.\`,
+\t\t\t\t);
+\t\t\t}
+\t\t\tbaseMetadata['pool'] = null;
+\t\t\tbaseMetadata['direction'] = null;
+\t\t\tbaseMetadata['tier'] = 'audit';
+\t\t} else {
+\t\t\tbaseMetadata['pool'] = meta.pool;
+\t\t\tbaseMetadata['direction'] = meta.direction;
+\t\t\tbaseMetadata['tier'] = 'domain';
+\t\t}
+\t\tbaseMetadata['version'] = meta.version;
+
 \t\tawait this.bus.publish(
 \t\t\t{
 \t\t\t\tid: randomUUID(),
@@ -624,12 +656,7 @@ export class TypedEventBus {
 \t\t\t\taggregateType,
 \t\t\t\tpayload: payload as Record<string, unknown>,
 \t\t\t\toccurredAt: new Date(),
-\t\t\t\tmetadata: {
-\t\t\t\t\t...(opts?.metadata ?? {}),
-\t\t\t\t\tpool: meta.pool,
-\t\t\t\t\tdirection: meta.direction,
-\t\t\t\t\tversion: meta.version,
-\t\t\t\t},
+\t\t\t\tmetadata: baseMetadata,
 \t\t\t},
 \t\t\topts?.tx,
 \t\t);
