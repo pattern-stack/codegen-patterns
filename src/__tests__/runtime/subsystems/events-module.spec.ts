@@ -161,6 +161,97 @@ describe('EventsModule.forRoot({ backend: "memory" })', () => {
     await moduleRef.close();
   });
 
+  // ---------------------------------------------------------------------------
+  // AUDIT-3: tier stamping + audit-routing override behavior.
+  //
+  // Domain events stamp `metadata.tier = 'domain'` alongside pool/direction
+  // from the registry. Audit events stamp `metadata.tier = 'audit'` and
+  // FORCE pool/direction to null even if the caller supplied non-null
+  // overrides in opts.metadata (silent override + debug-level log).
+  // ---------------------------------------------------------------------------
+
+  it('TypedEventBus.publish() stamps tier=domain on domain events alongside pool/direction', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [EventsModule.forRoot({ backend: 'memory' })],
+    }).compile();
+
+    const typed = moduleRef.get(TYPED_EVENT_BUS) as TypedEventBus;
+    const memoryBus = moduleRef.get(EVENT_BUS) as MemoryEventBus;
+
+    const received: DomainEvent[] = [];
+    memoryBus.subscribe(EVENT_TYPE, async (e) => { received.push(e); });
+
+    await typed.publish(EVENT_TYPE, 'c-1', PAYLOAD);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.metadata?.['tier']).toBe('domain');
+    expect(received[0]?.metadata?.['pool']).toBe('events_change');
+    expect(received[0]?.metadata?.['direction']).toBe('change');
+
+    await moduleRef.close();
+  });
+
+  it('TypedEventBus.publish() stamps tier=audit and forces pool/direction null on audit events', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [EventsModule.forRoot({ backend: 'memory' })],
+    }).compile();
+
+    const typed = moduleRef.get(TYPED_EVENT_BUS) as TypedEventBus;
+    const memoryBus = moduleRef.get(EVENT_BUS) as MemoryEventBus;
+
+    const AUDIT_TYPE = 'crm_sync_started' as const;
+    const AUDIT_PAYLOAD = {
+      runId: '11111111-1111-1111-1111-111111111111',
+      source: 'salesforce',
+    };
+
+    const received: DomainEvent[] = [];
+    memoryBus.subscribe(AUDIT_TYPE, async (e) => { received.push(e); });
+
+    await typed.publish(AUDIT_TYPE, 'run-1', AUDIT_PAYLOAD);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.metadata?.['tier']).toBe('audit');
+    expect(received[0]?.metadata?.['pool']).toBeNull();
+    expect(received[0]?.metadata?.['direction']).toBeNull();
+
+    await moduleRef.close();
+  });
+
+  it('TypedEventBus.publish() silently overrides caller-supplied pool/direction on audit events', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [EventsModule.forRoot({ backend: 'memory' })],
+    }).compile();
+
+    const typed = moduleRef.get(TYPED_EVENT_BUS) as TypedEventBus;
+    const memoryBus = moduleRef.get(EVENT_BUS) as MemoryEventBus;
+
+    const AUDIT_TYPE = 'crm_sync_started' as const;
+    const AUDIT_PAYLOAD = {
+      runId: '11111111-1111-1111-1111-111111111111',
+      source: 'salesforce',
+    };
+
+    const received: DomainEvent[] = [];
+    memoryBus.subscribe(AUDIT_TYPE, async (e) => { received.push(e); });
+
+    // Caller (incorrectly) tries to set pool/direction on an audit event.
+    // The bus must silently override these to null. Per spec, this is a
+    // documented contract — not an error — accompanied by a debug-level log.
+    await typed.publish(AUDIT_TYPE, 'run-1', AUDIT_PAYLOAD, {
+      metadata: { pool: 'events_change', direction: 'change', extra: 'kept' },
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.metadata?.['tier']).toBe('audit');
+    expect(received[0]?.metadata?.['pool']).toBeNull();
+    expect(received[0]?.metadata?.['direction']).toBeNull();
+    // Other caller-supplied metadata fields are preserved.
+    expect(received[0]?.metadata?.['extra']).toBe('kept');
+
+    await moduleRef.close();
+  });
+
   it('TypedEventBus.publish() succeeds and preserves tenantId when multiTenant: true and tenantId is supplied', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [EventsModule.forRoot({ backend: 'memory', multiTenant: true })],

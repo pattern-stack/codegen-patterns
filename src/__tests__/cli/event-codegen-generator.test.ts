@@ -544,13 +544,30 @@ describe('buildBusContent', () => {
 		expect(content).not.toContain('.parse(payload)');
 	});
 
-	test('stamps pool/direction/version into metadata from the registry', () => {
+	test('stamps pool/direction/version/tier into metadata from the registry', () => {
 		const content = buildBusContent([]);
-		expect(content).toContain('pool: meta.pool,');
-		expect(content).toContain('direction: meta.direction,');
-		expect(content).toContain('version: meta.version,');
+		// Domain branch: pool/direction sourced from registry; tier='domain'.
+		expect(content).toContain("baseMetadata['pool'] = meta.pool;");
+		expect(content).toContain("baseMetadata['direction'] = meta.direction;");
+		expect(content).toContain("baseMetadata['tier'] = 'domain';");
+		expect(content).toContain("baseMetadata['version'] = meta.version;");
 		// opts.metadata is spread first so registry overrides
-		expect(content).toContain('...(opts?.metadata ?? {}),');
+		expect(content).toContain('...(opts?.metadata ?? {})');
+	});
+
+	test('AUDIT-3: tier:audit forces pool/direction null and stamps tier=audit', () => {
+		const content = buildBusContent([]);
+		// Audit branch present and gates on registry tier.
+		expect(content).toContain("if (meta.tier === 'audit') {");
+		expect(content).toContain("baseMetadata['pool'] = null;");
+		expect(content).toContain("baseMetadata['direction'] = null;");
+		expect(content).toContain("baseMetadata['tier'] = 'audit';");
+		// Caller-supplied pool/direction on audit events are silently dropped
+		// with a debug-level log (not an error).
+		expect(content).toContain('console.debug(');
+		expect(content).toContain(
+			"had pool/direction in opts.metadata; overriding to null.",
+		);
 	});
 
 	test('@Injectable() and @Inject(EVENT_BUS) / @Inject(EVENTS_MULTI_TENANT) are present', () => {
