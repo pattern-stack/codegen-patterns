@@ -94,6 +94,10 @@ export {
   type WebhookFetchContext,
 } from './webhook-change-source';
 
+// buildChangeSource (#250, ADR-033.1 b) — mode-dispatching factory consumed
+// by codegen-emitted provider modules' `useFactory` wiring
+export { buildChangeSource } from './build-change-source';
+
 // Tokens
 export {
   SYNC_CHANGE_SOURCE,
