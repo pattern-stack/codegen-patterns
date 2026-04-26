@@ -22,6 +22,11 @@ export const contactMergedPayloadSchema = z.object({
 	targetId: z.string().uuid(),
 }).strict();
 
+export const crmSyncStartedPayloadSchema = z.object({
+	runId: z.string().uuid(),
+	source: z.string(),
+}).strict();
+
 export const dealCreatedPayloadSchema = z.object({
 	accountId: z.string().uuid(),
 	dealId: z.string().uuid(),
@@ -52,6 +57,7 @@ export const eventPayloadSchemas = {
 	'contact_created': contactCreatedPayloadSchema,
 	'contact_marked_champion': contactMarkedChampionPayloadSchema,
 	'contact_merged': contactMergedPayloadSchema,
+	'crm_sync_started': crmSyncStartedPayloadSchema,
 	'deal_created': dealCreatedPayloadSchema,
 	'deal_stage_changed': dealStageChangedPayloadSchema,
 	'stripe_payment_received': stripePaymentReceivedPayloadSchema,

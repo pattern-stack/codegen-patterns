@@ -17,9 +17,12 @@ import {
   generateBridgeRegistry,
   readKnownEventTypes,
   scanHandlerFiles,
+  AuditEventTriggerError,
   DuplicateTriggerError,
   UnknownTriggerEventError,
+  readEventTiers,
   validateAgainstEventRegistry,
+  validateNoAuditTriggers,
   validateNoDuplicateTriggers,
   type ScannedTrigger,
 } from '../../cli/shared/bridge-registry-generator';
@@ -38,14 +41,21 @@ function writeHandler(dir: string, file: string, content: string): string {
   return full;
 }
 
-function writeEventsRegistry(dir: string, eventTypes: string[]): string {
+function writeEventsRegistry(
+  dir: string,
+  eventTypes: Array<string | { type: string; tier: 'domain' | 'audit' }>,
+): string {
   const generatedDir = path.join(dir, 'events/generated');
   fs.mkdirSync(generatedDir, { recursive: true });
+  const entries = eventTypes.map((e) => {
+    const obj = typeof e === 'string' ? { type: e, tier: 'domain' as const } : e;
+    return `\t'${obj.type}': {\n\t\ttype: '${obj.type}',\n\t\ttier: '${obj.tier}',\n\t},`;
+  });
   const lines: string[] = [
     "// AUTO-GENERATED",
     "import type { EventTypeName } from './types';",
     'export const eventRegistry = {',
-    ...eventTypes.map((t) => `\t'${t}': {\n\t\ttype: '${t}',\n\t},`),
+    ...entries,
     '} as const satisfies Record<EventTypeName, unknown>;',
   ];
   fs.writeFileSync(path.join(generatedDir, 'registry.ts'), lines.join('\n'));
@@ -271,6 +281,92 @@ describe('validateAgainstEventRegistry', () => {
   });
 });
 
+describe('readEventTiers', () => {
+  it('parses tier per event from the generated registry', () => {
+    const root = makeTmpDir('tiers');
+    const generatedDir = writeEventsRegistry(root, [
+      'contact_created',
+      { type: 'crm_sync_started', tier: 'audit' },
+    ]);
+    const tiers = readEventTiers(generatedDir);
+    expect(tiers.get('contact_created')).toBe('domain');
+    expect(tiers.get('crm_sync_started')).toBe('audit');
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('returns empty map when registry missing', () => {
+    expect(readEventTiers()).toEqual(new Map());
+    expect(readEventTiers('/nope/does/not/exist')).toEqual(new Map());
+  });
+});
+
+describe('validateNoAuditTriggers (AUDIT-2)', () => {
+  it('throws AuditEventTriggerError when a trigger references an audit event', () => {
+    const triggers: ScannedTrigger[] = [
+      {
+        jobType: 'log_sync_start',
+        triggerId: 'log_sync_start#0',
+        event: 'crm_sync_started',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/log.ts',
+        sourceLine: 5,
+      },
+    ];
+    const tiers = new Map<string, 'domain' | 'audit'>([
+      ['crm_sync_started', 'audit'],
+    ]);
+    let caught: unknown;
+    try {
+      validateNoAuditTriggers(triggers, tiers);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AuditEventTriggerError);
+    const err = caught as AuditEventTriggerError;
+    expect(err.event).toBe('crm_sync_started');
+    expect(err.jobType).toBe('log_sync_start');
+    expect(err.triggerId).toBe('log_sync_start#0');
+    expect(err.message).toContain(
+      "@JobHandler('log_sync_start') trigger 'log_sync_start#0' references audit-tier event 'crm_sync_started'",
+    );
+    expect(err.message).toContain('Audit events are not bridge-eligible');
+    expect(err.message).toContain('§AUDIT-2');
+  });
+
+  it('does not throw for domain-tier triggers', () => {
+    const triggers: ScannedTrigger[] = [
+      {
+        jobType: 'send_welcome',
+        triggerId: 'send_welcome#0',
+        event: 'contact_created',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/x.ts',
+        sourceLine: 1,
+      },
+    ];
+    const tiers = new Map<string, 'domain' | 'audit'>([
+      ['contact_created', 'domain'],
+    ]);
+    expect(() => validateNoAuditTriggers(triggers, tiers)).not.toThrow();
+  });
+
+  it('skips validation when tier map is empty', () => {
+    const triggers: ScannedTrigger[] = [
+      {
+        jobType: 'x',
+        triggerId: 'x#0',
+        event: 'whatever',
+        mapSource: '() => ({})',
+        sourceFile: '/tmp/x.ts',
+        sourceLine: 1,
+      },
+    ];
+    expect(() =>
+      validateNoAuditTriggers(triggers, new Map()),
+    ).not.toThrow();
+  });
+});
+
 describe('buildBridgeRegistryContent', () => {
   it('emits empty registry when no triggers', () => {
     const out = buildBridgeRegistryContent([]);
@@ -388,6 +484,24 @@ describe('generateBridgeRegistry — orchestration', () => {
     expect(out).toContain("'send_welcome_email#0'");
     expect(out).toContain("'sync_contact_to_hubspot#0'");
     expect(out).toContain("'sync_contact_to_hubspot#1'");
+  });
+
+  it('throws AuditEventTriggerError when a handler triggers on an audit-tier event', async () => {
+    writeHandler(handlersDir, 'audit-trigger.ts', HANDLER_TEMPLATE('log_sync_start', `
+  triggers: [
+    { event: 'crm_sync_started', map: (e) => ({}) },
+  ],
+`));
+    const eventsGeneratedDir = writeEventsRegistry(root, [
+      { type: 'crm_sync_started', tier: 'audit' },
+    ]);
+    expect(
+      generateBridgeRegistry({
+        handlersDir,
+        eventsGeneratedDir,
+        outputDir,
+      }),
+    ).rejects.toBeInstanceOf(AuditEventTriggerError);
   });
 
   it('throws UnknownTriggerEventError when handler references unknown event', async () => {

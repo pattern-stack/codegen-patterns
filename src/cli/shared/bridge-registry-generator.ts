@@ -165,6 +165,30 @@ export class DuplicateTriggerError extends Error {
   }
 }
 
+/**
+ * Thrown when a `@JobHandler` trigger references an event whose registry
+ * entry has `tier: 'audit'`. Audit events are observational and not
+ * bridge-eligible by design (AUDIT-2). See
+ * `ai-docs/specs/issue-242/plan.md` §AUDIT-2.
+ */
+export class AuditEventTriggerError extends Error {
+  override readonly name = 'AuditEventTriggerError';
+  constructor(
+    public readonly event: string,
+    public readonly jobType: string,
+    public readonly triggerId: string,
+    public readonly sourceFile: string,
+    public readonly sourceLine: number,
+  ) {
+    super(
+      `AuditEventTriggerError: @JobHandler('${jobType}') trigger '${triggerId}' ` +
+        `references audit-tier event '${event}'. Audit events are not ` +
+        `bridge-eligible. Use a domain event, or remove the trigger. ` +
+        `Source: ${sourceFile}:${sourceLine}. See ai-docs/specs/issue-242/plan.md §AUDIT-2.`,
+    );
+  }
+}
+
 export class UnknownTriggerEventError extends Error {
   override readonly name = 'UnknownTriggerEventError';
   constructor(
@@ -351,6 +375,62 @@ export function readKnownEventTypes(eventsGeneratedDir?: string): string[] {
 }
 
 /**
+ * Read the generated `events/registry.ts` file and extract the `tier`
+ * field for each event entry. Returns a Map keyed by event type. Events
+ * without a `tier` field (older registries pre-AUDIT-2) are reported as
+ * `domain` for safety.
+ *
+ * Lightweight regex scan — same approach as `readKnownEventTypes`. The
+ * file is codegen-stable and machine-emitted.
+ */
+export function readEventTiers(
+  eventsGeneratedDir?: string,
+): Map<string, 'domain' | 'audit'> {
+  const out = new Map<string, 'domain' | 'audit'>();
+  if (!eventsGeneratedDir) return out;
+  const registryPath = path.join(eventsGeneratedDir, 'registry.ts');
+  if (!fs.existsSync(registryPath)) return out;
+  const text = fs.readFileSync(registryPath, 'utf8');
+  // Match each entry block:
+  //   'event_type': {
+  //     type: 'event_type',
+  //     tier: 'audit',
+  //     ...
+  //   },
+  // The tier line, when present, is the first or second line after the key.
+  const re =
+    /'([a-zA-Z0-9_.-]+)':\s*\{[^}]*?tier:\s*'(domain|audit)'/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    out.set(m[1]!, m[2] as 'domain' | 'audit');
+  }
+  return out;
+}
+
+/**
+ * Throws `AuditEventTriggerError` on the first trigger whose event has
+ * `tier: 'audit'` in the events registry. AUDIT-2: audit events are not
+ * bridge-eligible.
+ */
+export function validateNoAuditTriggers(
+  triggers: ScannedTrigger[],
+  eventTiers: Map<string, 'domain' | 'audit'>,
+): void {
+  if (eventTiers.size === 0) return;
+  for (const t of triggers) {
+    if (eventTiers.get(t.event) === 'audit') {
+      throw new AuditEventTriggerError(
+        t.event,
+        t.jobType,
+        t.triggerId,
+        t.sourceFile,
+        t.sourceLine,
+      );
+    }
+  }
+}
+
+/**
  * Throws `UnknownTriggerEventError` on first unknown trigger event.
  * Skips validation when `knownEventTypes` is empty (no registry to
  * validate against).
@@ -501,6 +581,11 @@ export async function generateBridgeRegistry(
   // 2b. Validate against eventRegistry (no-op if registry not present).
   const knownEventTypes = readKnownEventTypes(eventsGeneratedDir);
   validateAgainstEventRegistry(triggers, knownEventTypes);
+
+  // 2c. Reject triggers on audit-tier events (AUDIT-2). Audit events
+  //     are observational and not bridge-eligible by design.
+  const eventTiers = readEventTiers(eventsGeneratedDir);
+  validateNoAuditTriggers(triggers, eventTiers);
 
   // 3. Build content.
   const content = buildBridgeRegistryContent(triggers);

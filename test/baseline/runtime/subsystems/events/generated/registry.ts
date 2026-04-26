@@ -6,8 +6,9 @@ import type { EventTypeName } from './types';
 
 export interface EventMetadata {
 	type: EventTypeName;
-	direction: 'inbound' | 'change' | 'outbound';
-	pool: 'events_inbound' | 'events_change' | 'events_outbound';
+	tier: 'domain' | 'audit';
+	direction: 'inbound' | 'change' | 'outbound' | null;
+	pool: 'events_inbound' | 'events_change' | 'events_outbound' | null;
 	aggregate?: string;
 	source?: string;
 	destination?: string;
@@ -18,6 +19,7 @@ export interface EventMetadata {
 export const eventRegistry = {
 	'contact_created': {
 		type: 'contact_created',
+		tier: 'domain',
 		direction: 'change',
 		pool: 'events_change',
 		aggregate: 'contact',
@@ -26,6 +28,7 @@ export const eventRegistry = {
 	},
 	'contact_marked_champion': {
 		type: 'contact_marked_champion',
+		tier: 'domain',
 		direction: 'change',
 		pool: 'events_change',
 		aggregate: 'contact',
@@ -34,14 +37,24 @@ export const eventRegistry = {
 	},
 	'contact_merged': {
 		type: 'contact_merged',
+		tier: 'domain',
 		direction: 'change',
 		pool: 'events_change',
 		aggregate: 'contact',
 		version: 1,
 		retry: { attempts: 3, backoff: 'exponential' },
 	},
+	'crm_sync_started': {
+		type: 'crm_sync_started',
+		tier: 'audit',
+		direction: null,
+		pool: null,
+		version: 1,
+		retry: { attempts: 3, backoff: 'exponential' },
+	},
 	'deal_created': {
 		type: 'deal_created',
+		tier: 'domain',
 		direction: 'change',
 		pool: 'events_change',
 		aggregate: 'deal',
@@ -50,6 +63,7 @@ export const eventRegistry = {
 	},
 	'deal_stage_changed': {
 		type: 'deal_stage_changed',
+		tier: 'domain',
 		direction: 'change',
 		pool: 'events_change',
 		aggregate: 'deal',
@@ -58,6 +72,7 @@ export const eventRegistry = {
 	},
 	'stripe_payment_received': {
 		type: 'stripe_payment_received',
+		tier: 'domain',
 		direction: 'inbound',
 		pool: 'events_inbound',
 		source: 'stripe',
@@ -66,6 +81,7 @@ export const eventRegistry = {
 	},
 	'webhook_outbound_contact_sync': {
 		type: 'webhook_outbound_contact_sync',
+		tier: 'domain',
 		direction: 'outbound',
 		pool: 'events_outbound',
 		aggregate: 'contact',
