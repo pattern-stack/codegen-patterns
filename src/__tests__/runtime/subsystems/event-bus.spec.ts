@@ -238,6 +238,55 @@ describe('MemoryEventBus', () => {
 });
 
 // ============================================================================
+// MemoryEventBus — tier routing invariant (AUDIT-1)
+// ============================================================================
+
+describe('MemoryEventBus — tier routing invariant', () => {
+  it("throws when publishing a tier='audit' event with a non-null pool", async () => {
+    const bus = new MemoryEventBus();
+    const event = makeEvent({
+      type: 'crm_sync_started',
+      metadata: { tier: 'audit', pool: 'events_change' },
+    });
+    await expect(bus.publish(event)).rejects.toThrow(
+      "MemoryEventBus: tier='audit' events must have null pool and direction",
+    );
+    // Event was rejected before being recorded.
+    expect(bus.publishedEvents).toHaveLength(0);
+  });
+
+  it("throws when publishing a tier='audit' event with a non-null direction", async () => {
+    const bus = new MemoryEventBus();
+    const event = makeEvent({
+      type: 'crm_sync_started',
+      metadata: { tier: 'audit', direction: 'change' },
+    });
+    await expect(bus.publish(event)).rejects.toThrow(
+      "MemoryEventBus: tier='audit' events must have null pool and direction",
+    );
+    expect(bus.publishedEvents).toHaveLength(0);
+  });
+
+  it("accepts a tier='audit' event with null/undefined pool and direction", async () => {
+    const bus = new MemoryEventBus();
+    const event = makeEvent({
+      type: 'crm_sync_started',
+      metadata: { tier: 'audit' },
+    });
+    await expect(bus.publish(event)).resolves.toBeUndefined();
+    expect(bus.publishedEvents).toHaveLength(1);
+  });
+
+  it("does not gate non-audit events on the tier invariant", async () => {
+    const bus = new MemoryEventBus();
+    // Domain event with pool — this is the existing happy path.
+    const event = makeEvent({ metadata: { tier: 'domain', pool: 'events_change', direction: 'change' } });
+    await expect(bus.publish(event)).resolves.toBeUndefined();
+    expect(bus.publishedEvents).toHaveLength(1);
+  });
+});
+
+// ============================================================================
 // MemoryEventBus — pool awareness (EVT-5)
 // ============================================================================
 

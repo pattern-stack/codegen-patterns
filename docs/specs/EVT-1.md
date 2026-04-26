@@ -9,7 +9,9 @@
 
 Add `pool`, `direction`, and (conditionally) `tenant_id` columns to the `domain_events` outbox table. Add a `(pool, status, occurred_at)` composite index for pool-filtered drain queries. This PR is purely additive to the existing schema — no existing logic is changed.
 
-**Drift fix (applied during implementation):** The pre-EVT-1 schema declared zero indexes — the `(status, occurred_at)` and `(aggregate_id, aggregate_type)` indexes existed only as JSDoc comments above the table definition, with a "// add via migration when deploying" disclaimer. Per CLAUDE.md's living-docs rule and the spirit of the AC ("existing indexes preserved"), this PR promotes both pre-existing indexes into the Drizzle index callback at the same time as adding the new EVT-1 index. After this PR the schema declares **three** indexes in code (previously: zero declared, two intended).
+**Drift fix (applied during implementation):** The pre-EVT-1 schema declared zero indexes — the `(status, occurred_at)` and `(aggregate_id, aggregate_type)` indexes existed only as JSDoc comments above the table definition, with a "// add via migration when deploying" disclaimer. Per CLAUDE.md's living-docs rule and the spirit of the AC ("existing indexes preserved"), this PR promotes both pre-existing indexes into the Drizzle index callback at the same time as adding the new EVT-1 index. After this PR the schema declared **three** indexes in code (previously: zero declared, two intended).
+
+> **Revision 2026-04-26 (AUDIT-1):** The `domain_events` schema gained a `tier text not null default 'domain'` column, a table-level CHECK constraint (`domain_events_tier_routing_check`) enforcing the audit ⇔ null-pool/direction invariant, and a `(tier, status, occurred_at)` index. The "three indexes" claim above is now **four** in code. See `ai-docs/specs/issue-242/plan.md` §AUDIT-1 for the full rationale.
 
 ## Context
 
