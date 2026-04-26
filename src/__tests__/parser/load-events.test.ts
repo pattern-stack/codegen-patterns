@@ -24,11 +24,11 @@ const FIXTURE_DIR = resolve(__dirname, '../../../test/fixtures/events');
 // ----------------------------------------------------------------------------
 
 describe('loadEvents — happy path against checked-in fixtures', () => {
-	it('loads three valid event YAMLs with zero error issues', () => {
+	it('loads four valid event YAMLs (3 domain + 1 audit) with zero error issues', () => {
 		const result = loadEvents(FIXTURE_DIR, ['contact']);
 		const errorIssues = result.issues.filter((i) => i.severity === 'error');
 		expect(errorIssues).toEqual([]);
-		expect(result.events).toHaveLength(3);
+		expect(result.events).toHaveLength(4);
 	});
 
 	it('returns events sorted alphabetically by filename', () => {
@@ -36,15 +36,21 @@ describe('loadEvents — happy path against checked-in fixtures', () => {
 		const types = result.events.map((e) => e.type);
 		expect(types).toEqual([
 			'contact_created',
+			'crm_sync_started',
 			'stripe_payment_received',
 			'webhook_outbound_contact_sync',
 		]);
 	});
 
-	it('populates pool on every returned event (derived or explicit)', () => {
+	it('populates pool on every domain-tier event (derived or explicit); audit events have no pool', () => {
 		const result = loadEvents(FIXTURE_DIR, ['contact']);
 		for (const ev of result.events) {
-			expect(ev.pool).toMatch(/^events_(inbound|change|outbound)$/);
+			if (ev.tier === 'audit') {
+				expect(ev.pool).toBeUndefined();
+				expect(ev.direction).toBeUndefined();
+			} else {
+				expect(ev.pool).toMatch(/^events_(inbound|change|outbound)$/);
+			}
 		}
 	});
 });

@@ -114,7 +114,15 @@ payload:
 
 **What the generator stamps for audit events:** registry entry has `pool: null, direction: null`. Typed facade writes `metadata.pool = null, metadata.direction = null`. First-class columns (when shipped) land as NULL. Observability viewer renders no pool chip — correct, because there is no pool.
 
-**Bridge enforcement:** a job YAML that declares `triggers: [crm_sync_completed]` when `crm_sync_completed` is `tier: audit` MUST fail codegen. Error: `Job 'xyz' triggers on audit-tier event 'crm_sync_completed'. Audit events are not bridge-eligible. Use a domain event, or remove the trigger.`
+**Codegen errors (AUDIT-2 — three hard-error paths):**
+
+1. `tier: 'audit'` + `pool: <X>` →
+   `Event '<type>' is tier:audit; pool MUST be omitted (got '<X>'). Audit events have no pool. See ai-docs/specs/issue-242/plan.md §AUDIT-2.`
+   Source: `EventDefinitionSchema` superRefine in `src/schema/event-definition.schema.ts`.
+2. `tier: 'audit'` + `direction: <X>` → analogous wording for `direction`.
+3. A `@JobHandler('<jobType>', { triggers: [...] })` that points at an audit-tier event →
+   `AuditEventTriggerError: @JobHandler('<jobType>') trigger '<triggerId>' references audit-tier event '<eventType>'. Audit events are not bridge-eligible. Use a domain event, or remove the trigger.`
+   Source: `validateNoAuditTriggers` in `src/cli/shared/bridge-registry-generator.ts`. Reads `tier` from the emitted events `registry.ts`; runs after `validateAgainstEventRegistry`.
 
 **Use when:**
 - Polling/sync lifecycle events (`*_sync_started`, `*_sync_completed`, `*_sync_failed`)

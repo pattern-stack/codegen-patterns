@@ -383,7 +383,7 @@ describe('EventDefinitionSchema — tier', () => {
 			);
 			expect(issue).toBeDefined();
 			expect(issue?.message).toBe(
-				"'pool' must be omitted when tier is 'audit' (got 'events_change'). Audit events have no pool.",
+				"Event 'crm_sync_started' is tier:audit; pool MUST be omitted (got 'events_change'). Audit events have no pool. See ai-docs/specs/issue-242/plan.md §AUDIT-2.",
 			);
 		}
 	});
@@ -401,7 +401,7 @@ describe('EventDefinitionSchema — tier', () => {
 			);
 			expect(issue).toBeDefined();
 			expect(issue?.message).toBe(
-				"'direction' must be omitted when tier is 'audit' (got 'change'). Audit events have no direction.",
+				"Event 'crm_sync_started' is tier:audit; direction MUST be omitted (got 'change'). Audit events have no direction. See ai-docs/specs/issue-242/plan.md §AUDIT-2.",
 			);
 		}
 	});

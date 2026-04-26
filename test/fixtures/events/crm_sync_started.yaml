@@ -1,0 +1,9 @@
+type: crm_sync_started
+tier: audit
+version: 1
+description: A CRM sync run kicked off (audit/observational, not bridge-eligible).
+payload:
+  run_id:
+    type: uuid
+  source:
+    type: string

@@ -114,6 +114,23 @@ const webhookOutboundContactSync: EventDefinition = {
 	pool: 'events_outbound',
 };
 
+/**
+ * Audit-tier fixture (AUDIT-2). No `direction`, no `pool`, no
+ * `aggregate`/`source`/`destination`. The Zod schema enforces this
+ * shape; the generator must emit `tier: 'audit'`, `direction: null`,
+ * `pool: null`.
+ */
+const crmSyncStarted = {
+	type: 'crm_sync_started',
+	tier: 'audit',
+	version: 1,
+	description: 'A CRM sync run kicked off (audit/observational).',
+	payload: {
+		run_id: { type: 'uuid', nullable: false },
+	},
+	retry: { attempts: 3, backoff: 'exponential' },
+} as unknown as EventDefinition;
+
 // ---------------------------------------------------------------------------
 // Case helpers
 // ---------------------------------------------------------------------------
@@ -444,6 +461,36 @@ describe('buildRegistryContent — non-empty', () => {
 		expect(content).toContain('version: 1,');
 		expect(content).toContain(
 			"retry: { attempts: 5, backoff: 'exponential' },",
+		);
+	});
+
+	test('emits tier on every entry; domain entries keep direction/pool string literals', () => {
+		const content = buildRegistryContent([contactCreated]);
+		expect(content).toContain("tier: 'domain',");
+		expect(content).toContain("direction: 'change',");
+		expect(content).toContain("pool: 'events_change',");
+	});
+
+	test('audit events emit tier:audit with direction:null and pool:null', () => {
+		const content = buildRegistryContent([crmSyncStarted]);
+		expect(content).toContain("'crm_sync_started': {");
+		expect(content).toContain("tier: 'audit',");
+		expect(content).toContain('direction: null,');
+		expect(content).toContain('pool: null,');
+		// Audit entries have no aggregate/source/destination by construction.
+		expect(content).not.toContain("aggregate: '");
+		expect(content).not.toContain("source: '");
+		expect(content).not.toContain("destination: '");
+	});
+
+	test('EventMetadata interface widens direction/pool to nullable and adds tier', () => {
+		const content = buildRegistryContent([]);
+		expect(content).toContain("tier: 'domain' | 'audit';");
+		expect(content).toContain(
+			"direction: 'inbound' | 'change' | 'outbound' | null;",
+		);
+		expect(content).toContain(
+			"pool: 'events_inbound' | 'events_change' | 'events_outbound' | null;",
 		);
 	});
 

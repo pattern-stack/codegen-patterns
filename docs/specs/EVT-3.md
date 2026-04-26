@@ -214,3 +214,16 @@ All resolved 2026-04-20 — see `docs/specs/EVT-phase-1-issues.md` §Resolved Qu
 - `docs/specs/events-codegen-plan.md` §2 — original artifact designs (superseded by ADR-024)
 - `docs/specs/JOB-7.md` — `ScopeEntityType` generator as a simpler analog
 - `runtime/subsystems/events/event-bus.protocol.ts` — `DomainEvent` shape imported by generated types
+
+## Revision — 2026-04-26 (AUDIT-2)
+
+The codegen contract gains **audit-tier validation**. Generator and bridge-generator now surface three hard errors with templated messages (see `ai-docs/specs/issue-242/plan.md` §AUDIT-2):
+
+1. `tier: 'audit'` with a `pool` field — `EventDefinitionSchema` rejects with
+   `Event '<type>' is tier:audit; pool MUST be omitted (got '<X>'). Audit events have no pool. See ai-docs/specs/issue-242/plan.md §AUDIT-2.`
+2. `tier: 'audit'` with a `direction` field — analogous wording.
+3. `@JobHandler('<jobType>')` trigger referencing an audit-tier event — `bridge-registry-generator` raises `AuditEventTriggerError`.
+
+The emitted `registry.ts` interface widens accordingly: every entry has `tier: 'domain' | 'audit'`; `direction` and `pool` are now `... | null` to accommodate audit entries whose registry rows are emitted as `direction: null, pool: null`. Domain entries are unchanged in shape (string literals).
+
+Implementation: `src/cli/shared/event-codegen-generator.ts` (`buildRegistryContent`, `REGISTRY_INTERFACE`), `src/cli/shared/bridge-registry-generator.ts` (`AuditEventTriggerError`, `readEventTiers`, `validateNoAuditTriggers`), `src/schema/event-definition.schema.ts` (refinement messages).

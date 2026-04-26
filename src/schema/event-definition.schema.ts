@@ -201,14 +201,14 @@ const EventDefinitionSchemaRefined = EventDefinitionSchemaCore.superRefine(
 			if (data.pool !== undefined) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
-					message: `'pool' must be omitted when tier is 'audit' (got '${data.pool}'). Audit events have no pool.`,
+					message: `Event '${data.type}' is tier:audit; pool MUST be omitted (got '${data.pool}'). Audit events have no pool. See ai-docs/specs/issue-242/plan.md §AUDIT-2.`,
 					path: ["pool"],
 				});
 			}
 			if (data.direction !== undefined) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
-					message: `'direction' must be omitted when tier is 'audit' (got '${data.direction}'). Audit events have no direction.`,
+					message: `Event '${data.type}' is tier:audit; direction MUST be omitted (got '${data.direction}'). Audit events have no direction. See ai-docs/specs/issue-242/plan.md §AUDIT-2.`,
 					path: ["direction"],
 				});
 			}
