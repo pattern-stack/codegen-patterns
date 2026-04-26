@@ -72,6 +72,18 @@ Reserved `events_*` pools get high concurrency (default 32) — they host cheap 
 
 Default configuration gives parallelism, not ordering. For per-aggregate ordering, prefer `concurrency_key` on the user `@JobHandler` (granular, parallel across aggregates) over `pool.concurrency = 1` (blunt, serializes all wrappers in that direction).
 
+### Audit-tier guard (defense-in-depth)
+
+`tier:audit` events (lifecycle / observability — `crm_sync_started`, etc.) are **not bridge-eligible**. The codegen-side validator (AUDIT-2) blocks the registry from listing them as triggers, so the registry is the **primary** enforcement. `BridgeOutboxDrainHook.processEvent` adds a **defense-in-depth** runtime guard at the very top of the method:
+
+- If `event.metadata.tier === 'audit'`, the hook short-circuits, writes no `bridge_delivery` rows, and returns `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 1 }`.
+- A WARN log fires once per `(event_type, process)` via a `Set<string>` (`warnedAuditTypes`) — finer-grained than the once-per-process `warnedNullDirection` flag, so drift in a specific event type surfaces without flooding logs across many types.
+- Reaching the guard is a drift signal: an out-of-band `bridge_trigger` row exists, or there's version skew during deploy. The `auditBlocked` count on `BridgeOutboxDrainResult` rides on every per-event drain return so observability layers can aggregate without a new protocol method.
+
+Spec reference: `ai-docs/specs/issue-242/plan.md` §AUDIT-4.
+
+There is **no** `IObservability` read for audit-blocks today — see plan §AUDIT-4 "Why no `IObservability` read in this PR." Two clean follow-up paths if a consumer asks: a `getBridgeAuditBlocks(windowHours)` read on the bridge port + observability composer, or a self-published `bridge.audit_blocked` audit-tier event surfaced by the AUDIT-5 viewer.
+
 ### Multi-tenancy
 
 When `multiTenant=true`, three enforcement sites need `assertTenantId` on entry:

@@ -822,7 +822,7 @@ describe('DrizzleEventBus — BRIDGE-4 drain modification', () => {
     const hook = {
       processEvent: mock(async (event: DomainEvent, tx: unknown) => {
         hookCalls.push({ event, tx });
-        return { delivered: 0, dedupSkips: 0, triggerCount: 0 };
+        return { delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 0 };
       }),
     };
     const bus = new DrizzleEventBus(
