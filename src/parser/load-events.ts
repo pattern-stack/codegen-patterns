@@ -218,6 +218,7 @@ export function desugarEntityEvents(
 
 		const def: EventDefinition = {
 			type: ev.name,
+			tier: 'domain',
 			direction: 'change',
 			aggregate: entityName,
 			payload,

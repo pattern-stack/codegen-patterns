@@ -8,13 +8,23 @@
  * First-class routing columns (EVT-1):
  *   - `pool`       — populated by DrizzleEventBus.publish() (EVT-4); enables
  *                    pool-filtered drain queries without unpacking metadata JSON.
+ *                    NULL when `tier='audit'` (audit events are not routed).
  *   - `direction`  — `inbound` | `change` | `outbound`; mirrors the routing
  *                    dimension used by jobs' reserved `events_inbound` /
  *                    `events_change` / `events_outbound` pools.
+ *                    NULL when `tier='audit'`.
  *   - `tenant_id`  — conditional: emitted only when `events.multi_tenant: true`
  *                    in `codegen.config.yaml`. The runtime source declares it
  *                    unconditionally; EVT-8's scaffold template handles the
  *                    config-driven include/exclude.
+ *
+ * Audit-tier column (AUDIT-1):
+ *   - `tier`       — `'domain'` | `'audit'`. Defaults to `'domain'`. Audit-tier
+ *                    rows are observability-only (subscribers may observe but
+ *                    the bridge MUST NOT spawn jobs from them); they have null
+ *                    `pool` and `direction` by construction. The CHECK
+ *                    constraint `domain_events_tier_routing_check` enforces
+ *                    `tier='audit' ⇔ (pool IS NULL AND direction IS NULL)`.
  *
  * The `metadata` JSON column continues to carry these values for protocol
  * stability; the first-class columns are an optimization for drain filtering.
@@ -23,8 +33,11 @@
  *   - (status, occurred_at)             — polling drain filter
  *   - (aggregate_id, aggregate_type)    — event replay per aggregate
  *   - (pool, status, occurred_at)       — per-pool drain filter (EVT-1)
+ *   - (tier, status, occurred_at)       — per-tier filter for the observability
+ *                                          viewer's tier toggle (AUDIT-1).
  */
 import {
+  check,
   index,
   jsonb,
   pgTable,
@@ -32,6 +45,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import type { InferSelectModel } from 'drizzle-orm';
 
 export const domainEvents = pgTable(
@@ -49,10 +63,17 @@ export const domainEvents = pgTable(
     /** Error message from the last failed dispatch attempt. */
     error: text('error'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>(),
-    /** Routing pool (e.g. `events_inbound`, `events_change`, `events_outbound`). Populated by DrizzleEventBus.publish() in EVT-4. */
+    /** Routing pool (e.g. `events_inbound`, `events_change`, `events_outbound`). Populated by DrizzleEventBus.publish() in EVT-4. NULL when `tier='audit'`. */
     pool: text('pool'),
-    /** Routing direction: `inbound` | `change` | `outbound`. Populated by DrizzleEventBus.publish() in EVT-4. */
+    /** Routing direction: `inbound` | `change` | `outbound`. Populated by DrizzleEventBus.publish() in EVT-4. NULL when `tier='audit'`. */
     direction: text('direction'),
+    /**
+     * Event tier: `'domain'` (default) or `'audit'`. Audit-tier rows are
+     * observability-only and have null `pool`/`direction` by construction —
+     * enforced by the `domain_events_tier_routing_check` CHECK constraint
+     * declared below. (AUDIT-1)
+     */
+    tier: text('tier').notNull().default('domain'),
     // conditional: emitted only when events.multi_tenant: true
     tenantId: text('tenant_id'),
   },
@@ -71,6 +92,22 @@ export const domainEvents = pgTable(
     idxDomainEventsPoolStatusOccurredAt: index(
       'idx_domain_events_pool_status_occurred_at',
     ).on(t.pool, t.status, t.occurredAt),
+    /** Per-tier filter (AUDIT-1). Backs the observability viewer's tier toggle. */
+    idxDomainEventsTierStatusOccurredAt: index(
+      'idx_domain_events_tier_status_occurred_at',
+    ).on(t.tier, t.status, t.occurredAt),
+    /**
+     * Tier ↔ routing-fields invariant (AUDIT-1):
+     *   - `tier` is one of `'domain' | 'audit'`.
+     *   - `tier='audit'` ⇔ `pool IS NULL AND direction IS NULL`.
+     *   - `tier='domain'` ⇒ `pool` and `direction` are populated (the
+     *     DrizzleEventBus inserts always supply them; the bus stamps them
+     *     in AUDIT-3).
+     */
+    tierRoutingCheck: check(
+      'domain_events_tier_routing_check',
+      sql`${t.tier} in ('domain','audit') AND ((${t.tier} = 'audit') = (${t.pool} is null and ${t.direction} is null))`,
+    ),
   }),
 );
 

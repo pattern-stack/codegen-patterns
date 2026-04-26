@@ -351,6 +351,92 @@ describe('EventDefinitionSchema — defaults and transform', () => {
 	});
 });
 
+// ----------------------------------------------------------------------------
+// Tier (AUDIT-1)
+// ----------------------------------------------------------------------------
+
+describe('EventDefinitionSchema — tier', () => {
+	it('parses an audit event (no direction, no pool) and leaves pool/direction undefined', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			tier: 'audit',
+			payload: {},
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.tier).toBe('audit');
+			expect(result.data.pool).toBeUndefined();
+			expect(result.data.direction).toBeUndefined();
+		}
+	});
+
+	it("rejects tier:'audit' with a pool (templated message)", () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			tier: 'audit',
+			pool: 'events_change',
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const issue = result.error.issues.find(
+				(i) => i.path.join('.') === 'pool',
+			);
+			expect(issue).toBeDefined();
+			expect(issue?.message).toBe(
+				"'pool' must be omitted when tier is 'audit' (got 'events_change'). Audit events have no pool.",
+			);
+		}
+	});
+
+	it("rejects tier:'audit' with a direction (templated message)", () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'crm_sync_started',
+			tier: 'audit',
+			direction: 'change',
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const issue = result.error.issues.find(
+				(i) => i.path.join('.') === 'direction',
+			);
+			expect(issue).toBeDefined();
+			expect(issue?.message).toBe(
+				"'direction' must be omitted when tier is 'audit' (got 'change'). Audit events have no direction.",
+			);
+		}
+	});
+
+	it("rejects tier:'domain' (default) without direction", () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'contact_created',
+			payload: {},
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const issue = result.error.issues.find(
+				(i) => i.path.join('.') === 'direction',
+			);
+			expect(issue).toBeDefined();
+			expect(issue?.message).toBe(
+				"'direction' is required when tier is 'domain'",
+			);
+		}
+	});
+
+	it('defaults tier to domain when omitted', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'contact_created',
+			direction: 'change',
+			aggregate: 'contact',
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.tier).toBe('domain');
+			expect(result.data.pool).toBe('events_change');
+		}
+	});
+});
+
 describe('EventDefinitionSchema — array payload fields', () => {
 	it('accepts type: array with scalar items', () => {
 		const result = EventDefinitionSchema.safeParse({

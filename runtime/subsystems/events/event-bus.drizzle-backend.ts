@@ -54,6 +54,11 @@ function toInsertValues(event: DomainEvent) {
   const pool = (metadata?.['pool'] as string | undefined) ?? null;
   const direction = (metadata?.['direction'] as string | undefined) ?? null;
   const tenantId = (metadata?.['tenantId'] as string | undefined) ?? null;
+  // AUDIT-1: tier defaults to 'domain' when absent. The DB CHECK
+  // constraint (`domain_events_tier_routing_check`) enforces the
+  // tier ⇔ routing-fields invariant at the storage boundary; no
+  // JS-side assertion is needed here.
+  const tier = (metadata?.['tier'] as string | undefined) ?? 'domain';
   return {
     id: event.id,
     type: event.type,
@@ -66,6 +71,7 @@ function toInsertValues(event: DomainEvent) {
     metadata: event.metadata,
     pool,
     direction,
+    tier,
     tenantId,
   };
 }
