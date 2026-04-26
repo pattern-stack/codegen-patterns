@@ -577,6 +577,9 @@ export default {
       moduleToController: importHelpers.moduleToController(fileNames.controller.replace('.ts', '')),
       // OPENAPI-2: module imports DTO file to register Zod schemas at onModuleInit.
       moduleToDto: importHelpers.moduleToDto(fileNames.dto.replace('.ts', '')),
+      // ADR-033.1: sync-source module imports the entity type from the
+      // domain barrel for the IChangeSource<T> type parameter.
+      moduleToDomain: importHelpers.moduleToDomain(),
       // From controller (presentation/rest/) to queries/commands
       controllerToGetByIdQuery: importHelpers.controllerToQuery(name, fileNames.getByIdQuery.replace('.ts', '')),
       controllerToListQuery: importHelpers.controllerToQuery(name, fileNames.listQuery.replace('.ts', '')),
@@ -1134,6 +1137,22 @@ export default {
     // v2: Sync
     // ============================================================================
 
+    // ADR-033.1 / ADR-033.2: provider-keyed detection block.
+    // Provider key order is YAML insertion order (preserved by yaml.parse).
+    const detectionBlock = (definition.detection && typeof definition.detection === 'object')
+      ? definition.detection
+      : null;
+    const detectionProviders = detectionBlock ? Object.keys(detectionBlock) : [];
+    const hasDetection = detectionProviders.length > 0;
+
+    // Render the per-entity DetectionConfigs map as a TS object literal.
+    // JSON.stringify produces valid TS for the canonical DetectionConfig shape
+    // (strings, numbers, booleans, arrays, plain objects). Provider keys keep
+    // YAML insertion order. Used by sync-source.ejs.t.
+    const detectionConfigsLiteral = hasDetection
+      ? JSON.stringify(detectionBlock, null, 2)
+      : '{}';
+
     const hasSyncBlock = syncBlock != null;
     const syncElectric = hasSyncBlock ? (syncBlock.electric ?? false) : false;
     const rawSyncProviders = hasSyncBlock ? (syncBlock.providers ?? {}) : {};
@@ -1575,6 +1594,11 @@ export default {
       syncElectric,
       hasSyncProviders,
       syncProviders,
+
+      // Detection (ADR-033.1 / ADR-033.2 typed provider artifacts)
+      hasDetection,
+      detectionProviders,
+      detectionConfigsLiteral,
 
       // Events
       hasEvents,
