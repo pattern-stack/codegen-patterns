@@ -496,6 +496,7 @@ export function getImportPaths({ isNested }) {
     moduleToRepository: (repositoryFile) =>
       relativeImport(moduleDir, joinPath(BACKEND_LAYERS.repositories, repositoryFile)),
     moduleToConstants: () => relativeImport(moduleDir, constantsTokenPath),
+    moduleToDomain: () => relativeImport(moduleDir, BACKEND_LAYERS.domain),
     moduleToDatabaseModule: () => relativeImport(moduleDir, databaseModulePath),
     moduleToController: (controllerFile) =>
       relativeImport(moduleDir, joinPath(BACKEND_LAYERS.controllers, controllerFile)),

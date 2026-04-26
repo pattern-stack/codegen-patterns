@@ -736,6 +736,76 @@ Consumers inject `ExecuteSyncUseCase<CanonicalOpportunity>` wherever they
 want to trigger a run — a scheduled job, a CLI command, a webhook
 handler, an operator UI button.
 
+### `detection:` block — provider-keyed codegen factory module
+
+The entity-YAML `detection:` block (ADR-033.1) declares one
+`DetectionConfig` per integration provider. Codegen emits exactly one
+`<entity>-sync-source.module.ts` per entity, regardless of provider
+count.
+
+```yaml
+# entities/opportunity.yaml
+sync:
+  providers:
+    hubspot-crm: { remote_entity: deal,        direction: inbound }
+    salesforce-crm: { remote_entity: Opportunity, direction: inbound }
+
+detection:
+  hubspot-crm:
+    mode: poll
+    poll: { cursor: { kind: timestamp, field: hs_lastmodifieddate } }
+    mapping: [ ... ]
+    filters: [ ... ]
+  salesforce-crm:
+    mode: poll
+    poll: { cursor: { kind: systemModstamp, field: SystemModstamp } }
+    mapping: [ ... ]
+    filters: [ ... ]
+```
+
+The generated `src/modules/opportunity-sync-source.module.ts` exports
+exactly two runtime symbols (plus the module class):
+
+| Token | Type | Direction |
+|---|---|---|
+| `OPPORTUNITY_POLL_FETCH_REGISTRY` | `Record<string, PollFetchCallback<Opportunity>>` | consumer-supplied |
+| `OPPORTUNITY_CHANGE_SOURCES` | `ReadonlyMap<string, IChangeSource<Opportunity>>` | factory output |
+
+The internal `OPPORTUNITY_DETECTION_CONFIGS` const lifts the parsed
+YAML into a `Record<string, DetectionConfig>` keyed by provider name.
+The factory's `useFactory` iterates `Object.entries` once and calls
+`buildChangeSource(cfg, fetches[provider])` for each — no
+`isMultiProvider` branch, no per-provider symbols. Adding a provider
+to YAML changes the configs map's contents and changes nothing in the
+generated symbol space.
+
+Wire the registry in your feature module:
+
+```ts
+import { OPPORTUNITY_POLL_FETCH_REGISTRY, OPPORTUNITY_CHANGE_SOURCES, OpportunitySyncSourceModule } from '@modules/opportunity-sync-source.module';
+import type { OpportunityProvider } from '@modules/opportunity-sync-source.providers';
+import { hubspotFetchOpportunities, salesforceFetchOpportunities } from './my-fetches';
+
+@Module({
+  imports: [OpportunitySyncSourceModule],
+  providers: [
+    {
+      provide: OPPORTUNITY_POLL_FETCH_REGISTRY,
+      useValue: {
+        'hubspot-crm':    hubspotFetchOpportunities,
+        'salesforce-crm': salesforceFetchOpportunities,
+      } satisfies Record<OpportunityProvider, PollFetchCallback<Opportunity>>,
+    },
+  ],
+})
+export class OpportunitySyncWiringModule {}
+```
+
+The sibling `<entity>-sync-source.providers.ts` artifact (ADR-033.2)
+exports the `<EntityName>Provider` literal-union type — using
+`Record<OpportunityProvider, ...>` (or the `satisfies` form above)
+turns provider-key typos into compile errors.
+
 ### `IChangeSource<T>` — one port, three modes
 
 Three detection modes converge on a single port (ADR rejecting separate

@@ -1,5 +1,5 @@
 ---
-to: "<%= isCleanArchitecture && hasDetection ? `${basePaths.backendSrc}/${paths.modules}/${name}-sync-source.providers.ts` : null %>"
+to: "<%= hasDetection ? `${basePaths.backendSrc}/${paths.modules}/${name}-sync-source.providers.ts` : null %>"
 skip_if: <%= !hasDetection %>
 force: true
 ---

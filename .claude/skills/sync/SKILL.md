@@ -14,11 +14,15 @@ the codebase. Per-provider code implements a single port —
 surface — `ISyncSink<T>`. Everything else (cursor persistence, diffing,
 per-record audit, run lifecycle) is provided by the subsystem.
 
-This skill covers the Phase 1 runtime (SYNC-1..SYNC-8, epic #60). Phase
-2 lands in two halves: the entity-YAML `detection:` block is now
-schema-validated upstream against the canonical `DetectionConfigSchema`
-(ADR-033, #226-6); the codegen factory-module emission that consumes
-the parsed block is still pending (#226-7).
+This skill covers the Phase 1 runtime (SYNC-1..SYNC-8, epic #60). Phase 2
+PollChangeSource emission shipped (provider-keyed): the entity-YAML
+`detection:` block is schema-validated against the canonical
+`DetectionConfigSchema` (ADR-033, #226-6) and emits one
+`<entity>-sync-source.module.ts` per entity (ADR-033.1 c, #251). The
+generated module exposes `<ENTITY>_POLL_FETCH_REGISTRY` (consumer fills)
+and `<ENTITY>_CHANGE_SOURCES: ReadonlyMap<string, IChangeSource<T>>`
+(factory output via `buildChangeSource`). Webhook-side codegen + CDC
+streaming emission are deferred.
 
 ## Mental model
 
@@ -288,6 +292,14 @@ Files that ship to the consumer app (not templates):
 
 Generator pieces:
 
+- `templates/entity/new/backend/modules/core/sync-source.ejs.t` —
+  per-entity Phase 2 factory module emission (ADR-033.1 c, #251). One
+  `<entity>-sync-source.module.ts` per entity, regardless of provider
+  count; exports `<ENTITY>_POLL_FETCH_REGISTRY` +
+  `<ENTITY>_CHANGE_SOURCES: ReadonlyMap<string, IChangeSource<T>>`.
+- `templates/entity/new/backend/modules/core/sync-source.providers.ejs.t`
+  — sibling typed-provider artifact (ADR-033.2): const tuple +
+  literal-union type for compile-time consumer-registry checks.
 - `templates/subsystem/sync/` — main scaffold (`prompt.js`,
   `sync-audit.schema.ejs.t`) — emitted on `subsystem install sync`
 - `templates/subsystem/sync-config/` — config-block scaffold — emitted

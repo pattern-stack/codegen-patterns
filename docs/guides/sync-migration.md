@@ -254,6 +254,73 @@ drift-detection queries) actually read the old log.
   in your feature module. The orchestrator's `@Optional()` inject means
   absence is fine — if you don't need it, don't provide it.
 
+## Migrating from a hand-authored `IChangeSource` to a provider-keyed `detection:` block
+
+Before ADR-033.1 c (#251) shipped, consumers wired one
+`IChangeSource<T>` per `(entity, provider)` tuple in their own NestJS
+module — the canonical example is
+[pattern-stack/sales-patterns-ts#60](https://github.com/pattern-stack/sales-patterns-ts/pull/60),
+which hand-authored six tuples (3 entities × 2 providers).
+
+**Before — one module per `(entity, provider)` tuple:**
+
+```ts
+@Module({
+  providers: [
+    HubspotOpportunityChangeSource,
+    SalesforceOpportunityChangeSource,
+    { provide: HUBSPOT_OPPORTUNITY_CHANGE_SOURCE,    useExisting: HubspotOpportunityChangeSource },
+    { provide: SALESFORCE_OPPORTUNITY_CHANGE_SOURCE, useExisting: SalesforceOpportunityChangeSource },
+  ],
+  exports: [HUBSPOT_OPPORTUNITY_CHANGE_SOURCE, SALESFORCE_OPPORTUNITY_CHANGE_SOURCE],
+})
+export class HandAuthoredOpportunitySyncModule {}
+```
+
+Each adapter class boilerplated the cursor-management + diffing scaffold
+the runtime now owns; provider names appeared in TS symbols
+(`HUBSPOT_OPPORTUNITY_CHANGE_SOURCE`, `SalesforceOpportunityChangeSource`),
+so adding a third provider was a six-file edit.
+
+**After — entity YAML drives a single generated module:**
+
+```yaml
+# entities/opportunity.yaml
+detection:
+  hubspot-crm:    { mode: poll, poll: { ... }, mapping: [...], filters: [...] }
+  salesforce-crm: { mode: poll, poll: { ... }, mapping: [...], filters: [...] }
+```
+
+```ts
+// src/modules/opportunity-sync-source.module.ts (generated)
+export const OPPORTUNITY_POLL_FETCH_REGISTRY = Symbol('OPPORTUNITY_POLL_FETCH_REGISTRY');
+export const OPPORTUNITY_CHANGE_SOURCES      = Symbol('OPPORTUNITY_CHANGE_SOURCES');
+
+@Module({
+  providers: [{
+    provide: OPPORTUNITY_CHANGE_SOURCES,
+    inject: [OPPORTUNITY_POLL_FETCH_REGISTRY],
+    useFactory: (fetches) =>
+      new Map(Object.entries(OPPORTUNITY_DETECTION_CONFIGS).map(
+        ([provider, cfg]) => [provider, buildChangeSource(cfg, fetches[provider])],
+      )),
+  }],
+  exports: [OPPORTUNITY_CHANGE_SOURCES],
+})
+export class OpportunitySyncSourceModule {}
+```
+
+The consumer ships only the typed fetch callbacks plus the registry
+binding; cursor management, mapping application, and filter evaluation
+are owned by `buildChangeSource()`'s `PollChangeSource<T>` /
+`WebhookChangeSource<T>` primitives. Adding `salesforce-crm` to a
+hubspot-only entity is a one-line YAML diff. See
+[CONSUMER-SETUP.md#detection-block---provider-keyed-codegen-factory-module](../CONSUMER-SETUP.md#detection-block--provider-keyed-codegen-factory-module)
+for the full registry-binding shape.
+
+Once this migration completes, the hand-authored modules in
+sales-patterns-ts#60 become deletable.
+
 ## Further reading
 
 - [Sync subsystem](../CONSUMER-SETUP.md#sync-subsystem) — fresh-install
