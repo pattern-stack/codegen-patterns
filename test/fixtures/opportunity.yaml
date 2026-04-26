@@ -75,30 +75,62 @@ relationships:
     target: deal_state
     foreign_key: state_id
 
-# Config-driven change-source detection (#226-6, ADR-033).
-# Schema-validated by the canonical DetectionConfigSchema from
-# runtime/subsystems/sync. No codegen emission yet — that lands in #226-7.
+sync:
+  providers:
+    hubspot-crm:
+      remote_entity: deal
+      direction: inbound
+    salesforce-crm:
+      remote_entity: Opportunity
+      direction: inbound
+
+# Provider-keyed change-source detection (ADR-033.1).
+# Each provider is an independent DetectionConfig. Cross-checked against
+# sync.providers above by EntityDefinitionSchema.superRefine.
 detection:
-  mode: poll
-  poll:
-    cursor:
-      kind: systemModstamp
-      field: SystemModstamp
-  mapping:
-    - source: Name
-      target: name
-    - source: Amount
-      target: amount
-      transform: decimal-string
-    - source: CloseDate
-      target: expected_close_date
-      transform: date-iso
-    - source: OwnerId
-      target: owner_id
-  filters:
-    - field: IsDeleted
-      op: eq
-      value: false
-    - field: StageName
-      op: neq
-      value: "Closed Lost"
+  hubspot-crm:
+    mode: poll
+    poll:
+      cursor:
+        kind: timestamp
+        field: hs_lastmodifieddate
+    mapping:
+      - source: dealname
+        target: name
+      - source: amount
+        target: amount
+        transform: decimal-string
+      - source: closedate
+        target: expected_close_date
+        transform: date-iso
+      - source: hubspot_owner_id
+        target: owner_id
+    filters:
+      - field: pipeline
+        op: neq
+        value: archived
+
+  salesforce-crm:
+    mode: poll
+    poll:
+      cursor:
+        kind: systemModstamp
+        field: SystemModstamp
+    mapping:
+      - source: Name
+        target: name
+      - source: Amount
+        target: amount
+        transform: decimal-string
+      - source: CloseDate
+        target: expected_close_date
+        transform: date-iso
+      - source: OwnerId
+        target: owner_id
+    filters:
+      - field: IsDeleted
+        op: eq
+        value: false
+      - field: StageName
+        op: neq
+        value: "Closed Lost"

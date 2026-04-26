@@ -793,18 +793,19 @@ export const EntityDefinitionSchema = z
     // Electric SQL + provider sync (Salesforce, HubSpot, etc.)
     sync: SyncConfigSchema.optional(),
 
-    // #226-6: Config-driven change-source detection (ADR-033).
+    // ADR-033.1: Provider-keyed change-source detection.
     //
-    // Declarative detection config consumed by the runtime change-source
-    // primitives (`PollChangeSource<T>` / `WebhookChangeSource<T>`) and by
-    // the per-entity factory module emitted by Phase 2 codegen (#226-7).
-    // The Zod schema is the canonical source of filter / mapping / cursor
-    // shape and is imported from `runtime/subsystems/sync` so this
-    // validator and the runtime parser stay in lockstep — drift between
-    // the two sites must be a compile error, not a runtime mismatch.
+    // Map of provider name → DetectionConfig. Single-provider entities use
+    // a one-key map; multi-provider entities list each provider as a
+    // separate key. Each value is an independent `DetectionConfig` (its
+    // own mode/cursor/mapping/filters) sourced from the canonical schema
+    // in `runtime/subsystems/sync` so this validator and the runtime
+    // parser stay in lockstep.
     //
-    // Optional and additive: existing entity YAMLs are unaffected.
-    detection: DetectionConfigSchema.optional(),
+    // Within-file cross-check (ADR-033.1 §6): every key here must also
+    // appear in `sync.providers` — see the superRefine on
+    // `EntityDefinitionSchema` below.
+    detection: z.record(z.string(), DetectionConfigSchema).optional(),
 
     // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Generates typed event classes, handlers, and queue registration
@@ -842,7 +843,20 @@ export const EntityDefinitionSchema = z
         "(e.g. `eav_definition_table: 'field_definition'`).",
       path: ['eav_definition_table'],
     },
-  );
+  )
+  .superRefine((entity, ctx) => {
+    if (!entity.detection) return;
+    const declared = new Set(Object.keys(entity.sync?.providers ?? {}));
+    for (const provider of Object.keys(entity.detection)) {
+      if (!declared.has(provider)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['detection', provider],
+          message: `Provider '${provider}' used in detection: but not declared in sync.providers. Known providers: ${[...declared].join(', ')}`,
+        });
+      }
+    }
+  });
 
 export type EntityDefinition = z.infer<typeof EntityDefinitionSchema>;
 
