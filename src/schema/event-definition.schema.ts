@@ -20,6 +20,20 @@ import { z } from "zod";
 export const EVENT_DIRECTIONS = ["inbound", "change", "outbound"] as const;
 export type EventDirection = (typeof EVENT_DIRECTIONS)[number];
 
+/**
+ * Event tiers (AUDIT-1):
+ *   - `domain` (default) — facts other components may react to. Bridge-eligible.
+ *     Carries a `direction` and routes through the corresponding
+ *     `events_*` pool.
+ *   - `audit` — observational facts about the system itself (sync ran, feature
+ *     used). NOT bridge-eligible. MUST have no `direction` and no `pool`.
+ *
+ * See `ai-docs/specs/issue-242/plan.md` for the full design and the EVT
+ * skill (`.claude/skills/events/SKILL.md`) for the runtime contract.
+ */
+export const EVENT_TIERS = ["domain", "audit"] as const;
+export type EventTier = (typeof EVENT_TIERS)[number];
+
 export const EVENT_FIELD_TYPES = [
 	"uuid",
 	"string",
@@ -71,6 +85,7 @@ export const DIRECTION_TO_POOL: Record<EventDirection, EventPool> = {
 // ============================================================================
 
 const EventDirectionSchema = z.enum(EVENT_DIRECTIONS);
+const EventTierSchema = z.enum(EVENT_TIERS);
 const EventFieldTypeSchema = z.enum(EVENT_FIELD_TYPES);
 const EventArrayItemTypeSchema = z.enum(EVENT_ARRAY_ITEM_TYPES);
 const EventPoolSchema = z.enum(RESERVED_EVENT_POOLS);
@@ -136,7 +151,8 @@ const EventDefinitionSchemaCore = z
 				SNAKE_CASE_RE,
 				"Event type must be snake_case starting with a letter",
 			),
-		direction: EventDirectionSchema,
+		tier: EventTierSchema.optional().default("domain"),
+		direction: EventDirectionSchema.optional(),
 		pool: EventPoolSchema.optional(),
 		aggregate: z.string().regex(SNAKE_CASE_RE).optional(),
 		source: z.string().min(1).optional(),
@@ -161,17 +177,58 @@ const EventDefinitionSchemaCore = z
 /**
  * Cross-field refinements (in order):
  *
- *   1. `direction: change` ⇒ `aggregate` is required.
- *   2. `source` is only valid when `direction: inbound` (strict direction gating).
- *   3. `destination` is only valid when `direction: outbound` (strict direction gating).
- *   4. An explicit `pool` must match `DIRECTION_TO_POOL[direction]`.
+ *   1. Tier invariants (AUDIT-1):
+ *      a. `tier: 'audit'` ⇒ `pool` MUST be omitted.
+ *      b. `tier: 'audit'` ⇒ `direction` MUST be omitted.
+ *      c. `tier: 'domain'` ⇒ `direction` is required.
+ *   2. `direction: change` ⇒ `aggregate` is required.
+ *   3. `source` is only valid when `direction: inbound` (strict direction gating).
+ *   4. `destination` is only valid when `direction: outbound` (strict direction gating).
+ *   5. An explicit `pool` must match `DIRECTION_TO_POOL[direction]`.
  *
- * Strict gating on #2/#3 is a deliberate choice: silent acceptance breeds
+ * Strict gating on #3/#4 is a deliberate choice: silent acceptance breeds
  * drift. The ADR defines `source` as inbound-only and `destination` as
  * outbound-only.
+ *
+ * Refinements #2..#5 are domain-tier-only — audit events have no
+ * direction/pool/aggregate/source/destination semantics.
  */
 const EventDefinitionSchemaRefined = EventDefinitionSchemaCore.superRefine(
 	(data, ctx) => {
+		// AUDIT-1 — tier invariants. These run first because the rest of
+		// the refinements assume domain semantics (direction populated).
+		if (data.tier === "audit") {
+			if (data.pool !== undefined) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: `'pool' must be omitted when tier is 'audit' (got '${data.pool}'). Audit events have no pool.`,
+					path: ["pool"],
+				});
+			}
+			if (data.direction !== undefined) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: `'direction' must be omitted when tier is 'audit' (got '${data.direction}'). Audit events have no direction.`,
+					path: ["direction"],
+				});
+			}
+			// Skip the domain-tier refinements below — they reference
+			// `direction`, which is intentionally absent for audit.
+			return;
+		}
+
+		// tier === 'domain' — direction must be present.
+		if (data.direction === undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "'direction' is required when tier is 'domain'",
+				path: ["direction"],
+			});
+			// Bail out — the remaining refinements all read `direction`
+			// and would otherwise produce confusing cascade errors.
+			return;
+		}
+
 		if (data.direction === "change" && !data.aggregate) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
@@ -210,14 +267,29 @@ const EventDefinitionSchemaRefined = EventDefinitionSchemaCore.superRefine(
 );
 
 /**
- * Final schema: derive `pool` from `direction` when not explicitly set. After
- * `parse()`, every `EventDefinition` has `pool` populated.
+ * Final schema: derive `pool` from `direction` when not explicitly set.
+ *
+ * After `parse()`:
+ *   - Domain events (`tier === 'domain'`): `pool` and `direction` are both
+ *     populated; `pool` is derived from `direction` when not explicit.
+ *   - Audit events (`tier === 'audit'`): `pool` and `direction` both stay
+ *     `undefined` — audit events have no routing fields by construction
+ *     (mirrors the `domain_events` CHECK constraint, AUDIT-1).
  */
 export const EventDefinitionSchema = EventDefinitionSchemaRefined.transform(
-	(parsed) => ({
-		...parsed,
-		pool: parsed.pool ?? DIRECTION_TO_POOL[parsed.direction],
-	}),
+	(parsed) => {
+		if (parsed.tier === "audit") {
+			// Audit events: no pool/direction derivation. Both stay undefined.
+			return parsed;
+		}
+		// tier === 'domain': direction is guaranteed present by the refinement.
+		// Narrow the type for the lookup.
+		const direction = parsed.direction as EventDirection;
+		return {
+			...parsed,
+			pool: parsed.pool ?? DIRECTION_TO_POOL[direction],
+		};
+	},
 );
 
 export type EventDefinition = z.infer<typeof EventDefinitionSchema>;

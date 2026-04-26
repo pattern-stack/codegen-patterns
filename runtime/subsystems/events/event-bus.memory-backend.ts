@@ -44,6 +44,11 @@ export class MemoryEventBus implements IEventBus {
   }
 
   async publish(event: DomainEvent): Promise<void> {
+    // Mirror the `domain_events_tier_routing_check` DB constraint at the
+    // memory backend boundary so misuse fails the same way regardless of
+    // backend (AUDIT-1).
+    this.assertTierRouting(event);
+
     // Always record the event — even if this process is configured with a
     // pool filter that excludes it. Test code relies on `publishedEvents`
     // being a complete log of what was published, not a filtered view.
@@ -115,6 +120,28 @@ export class MemoryEventBus implements IEventBus {
     if (!pools || pools.length === 0) return true;
     const eventPool = event.metadata?.['pool'];
     return typeof eventPool === 'string' && pools.includes(eventPool);
+  }
+
+  /**
+   * Mirror the `domain_events_tier_routing_check` DB CHECK at the memory
+   * backend (AUDIT-1). Audit-tier events MUST have null/undefined
+   * `pool` and `direction` in metadata; the bridge dispatcher relies on
+   * this invariant.
+   */
+  private assertTierRouting(event: DomainEvent): void {
+    const tier = event.metadata?.['tier'];
+    if (tier !== 'audit') return;
+    const pool = event.metadata?.['pool'];
+    const direction = event.metadata?.['direction'];
+    const poolIsNull = pool === null || pool === undefined;
+    const directionIsNull = direction === null || direction === undefined;
+    if (!poolIsNull || !directionIsNull) {
+      throw new Error(
+        `MemoryEventBus: tier='audit' events must have null pool and direction ` +
+          `(got pool=${String(pool)}, direction=${String(direction)}). ` +
+          `This mirrors the domain_events CHECK constraint.`,
+      );
+    }
   }
 
   private async dispatch(event: DomainEvent): Promise<void> {
