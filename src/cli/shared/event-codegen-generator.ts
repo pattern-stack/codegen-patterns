@@ -447,8 +447,9 @@ export function buildSchemasContent(events: EventDefinition[]): string {
 const REGISTRY_INTERFACE = [
 	'export interface EventMetadata {',
 	'\ttype: EventTypeName;',
-	"\tdirection: 'inbound' | 'change' | 'outbound';",
-	"\tpool: 'events_inbound' | 'events_change' | 'events_outbound';",
+	"\ttier: 'domain' | 'audit';",
+	"\tdirection: 'inbound' | 'change' | 'outbound' | null;",
+	"\tpool: 'events_inbound' | 'events_change' | 'events_outbound' | null;",
 	'\taggregate?: string;',
 	'\tsource?: string;',
 	'\tdestination?: string;',
@@ -495,10 +496,18 @@ export function buildRegistryContent(events: EventDefinition[]): string {
 
 	chunks.push(`export const eventRegistry = {`);
 	for (const ev of sorted) {
+		const tier = ev.tier ?? 'domain';
 		chunks.push(`\t'${ev.type}': {`);
 		chunks.push(`\t\ttype: '${ev.type}',`);
-		chunks.push(`\t\tdirection: '${ev.direction}',`);
-		chunks.push(`\t\tpool: '${ev.pool}',`);
+		chunks.push(`\t\ttier: '${tier}',`);
+		if (tier === 'audit') {
+			// Audit events have no routing fields (AUDIT-1/AUDIT-2 invariant).
+			chunks.push(`\t\tdirection: null,`);
+			chunks.push(`\t\tpool: null,`);
+		} else {
+			chunks.push(`\t\tdirection: '${ev.direction}',`);
+			chunks.push(`\t\tpool: '${ev.pool}',`);
+		}
 		if (ev.aggregate !== undefined) {
 			chunks.push(`\t\taggregate: '${ev.aggregate}',`);
 		}

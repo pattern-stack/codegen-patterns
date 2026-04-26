@@ -34,6 +34,16 @@ export interface ContactMergedEvent extends DomainEvent {
 	};
 }
 
+/** A CRM sync run kicked off (audit/observational, not bridge-eligible). */
+export interface CrmSyncStartedEvent extends DomainEvent {
+	readonly type: 'crm_sync_started';
+	readonly aggregateType: 'crm_sync_started';
+	readonly payload: {
+		runId: string;
+		source: string;
+	};
+}
+
 export interface DealCreatedEvent extends DomainEvent {
 	readonly type: 'deal_created';
 	readonly aggregateType: 'deal';
@@ -84,6 +94,7 @@ export type AppDomainEvent =
 	| ContactCreatedEvent
 	| ContactMarkedChampionEvent
 	| ContactMergedEvent
+	| CrmSyncStartedEvent
 	| DealCreatedEvent
 	| DealStageChangedEvent
 	| StripePaymentReceivedEvent
