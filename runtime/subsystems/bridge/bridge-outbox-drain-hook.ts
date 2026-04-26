@@ -58,6 +58,7 @@ const POOL_BY_DIRECTION: Record<string, string> = {
 export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
   private readonly logger = new Logger(BridgeOutboxDrainHook.name);
   private warnedNullDirection = false;
+  private readonly warnedAuditTypes = new Set<string>();
 
   constructor(
     @Optional()
@@ -69,9 +70,29 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
     event: DomainEvent,
     tx: DrizzleTransaction,
   ): Promise<BridgeOutboxDrainResult> {
+    // Audit-tier guard (defense-in-depth — AUDIT-4). Audit events are not
+    // bridge-eligible: the codegen-side validator (AUDIT-2) blocks the
+    // registry from listing them as triggers. Reaching this branch means
+    // registry/runtime drift — an out-of-band `bridge_trigger` insert, or
+    // version skew during deploy. Refuse fanout, surface drift via WARN.
+    if (event.metadata?.['tier'] === 'audit') {
+      this.warnAuditBlockedOnce(event);
+      return {
+        delivered: 0,
+        dedupSkips: 0,
+        triggerCount: 0,
+        auditBlocked: 1,
+      };
+    }
+
     const triggers = this.lookupTriggers(event.type);
     if (triggers.length === 0) {
-      return { delivered: 0, dedupSkips: 0, triggerCount: 0 };
+      return {
+        delivered: 0,
+        dedupSkips: 0,
+        triggerCount: 0,
+        auditBlocked: 0,
+      };
     }
 
     const direction =
@@ -95,7 +116,12 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
             `outbox row.`,
         );
       }
-      return { delivered: 0, dedupSkips: 0, triggerCount: triggers.length };
+      return {
+        delivered: 0,
+        dedupSkips: 0,
+        triggerCount: triggers.length,
+        auditBlocked: 0,
+      };
     }
 
     let delivered = 0;
@@ -163,7 +189,22 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
       delivered++;
     }
 
-    return { delivered, dedupSkips, triggerCount: triggers.length };
+    return {
+      delivered,
+      dedupSkips,
+      triggerCount: triggers.length,
+      auditBlocked: 0,
+    };
+  }
+
+  private warnAuditBlockedOnce(event: DomainEvent): void {
+    if (this.warnedAuditTypes.has(event.type)) return;
+    this.warnedAuditTypes.add(event.type);
+    this.logger.warn(
+      `Bridge guard blocked audit-tier event '${event.type}' (event.id=${event.id}). ` +
+        `Registry says this event is not bridge-eligible; a bridge_trigger row exists ` +
+        `out-of-band. Investigate registry/runtime drift.`,
+    );
   }
 
   private lookupTriggers(

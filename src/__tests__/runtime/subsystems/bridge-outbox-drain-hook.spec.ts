@@ -11,7 +11,8 @@
  *     that trigger; sibling triggers still fire
  *   - tenant_id propagation
  */
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { Logger } from '@nestjs/common';
 
 import {
   BridgeOutboxDrainHook,
@@ -113,7 +114,12 @@ describe('BridgeOutboxDrainHook — registry lookup', () => {
     const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
     const { tx, calls } = makeTx([]);
     const result = await hook.processEvent(event(), tx as never);
-    expect(result).toEqual({ delivered: 0, dedupSkips: 0, triggerCount: 0 });
+    expect(result).toEqual({
+      delivered: 0,
+      dedupSkips: 0,
+      triggerCount: 0,
+      auditBlocked: 0,
+    });
     expect(calls).toHaveLength(0);
   });
 });
@@ -130,6 +136,7 @@ describe('BridgeOutboxDrainHook — null direction tolerance', () => {
       delivered: 0,
       dedupSkips: 0,
       triggerCount: 2, // matched but un-routable
+      auditBlocked: 0,
     });
     expect(calls).toHaveLength(0);
   });
@@ -147,6 +154,7 @@ describe('BridgeOutboxDrainHook — happy path', () => {
       delivered: 2,
       dedupSkips: 0,
       triggerCount: 2,
+      auditBlocked: 0,
     });
 
     // Expect 4 inserts: 2 delivery + 2 wrapper, interleaved.
@@ -208,6 +216,7 @@ describe('BridgeOutboxDrainHook — Case B / replay dedup', () => {
       delivered: 1,
       dedupSkips: 1,
       triggerCount: 2,
+      auditBlocked: 0,
     });
 
     // 1 dedup-skipped delivery insert + 1 successful delivery insert + 1
@@ -229,6 +238,7 @@ describe('BridgeOutboxDrainHook — Case B / replay dedup', () => {
       delivered: 0,
       dedupSkips: 2,
       triggerCount: 2,
+      auditBlocked: 0,
     });
     expect(calls.filter((c) => c.table === 'job_run')).toHaveLength(0);
   });
@@ -277,5 +287,117 @@ describe('BridgeOutboxDrainHook — tenant propagation', () => {
     const wrapper = calls.find((c) => c.table === 'job_run')!;
     expect(delivery.values['tenantId']).toBeNull();
     expect(wrapper.values['tenantId']).toBeNull();
+  });
+});
+
+// ─── Audit-tier guard (AUDIT-4) ──────────────────────────────────────────────
+
+describe('BridgeOutboxDrainHook — audit-tier guard', () => {
+  let warnSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    // Spy on the NestJS Logger prototype since the hook constructs its own
+    // private Logger instance. Reset between tests so per-test WARN counts
+    // are isolated. (`spyOn` returns a persistent spy across tests; clear
+    // the call log per test.)
+    warnSpy = spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    warnSpy.mockClear();
+  });
+
+  function auditEvent(overrides: Partial<DomainEvent> = {}): DomainEvent {
+    return event({
+      id: 'audit-evt-1',
+      type: 'crm_sync_started',
+      metadata: { tier: 'audit', pool: null, direction: null },
+      ...overrides,
+    });
+  }
+
+  it('blocks fanout when an audit event reaches an out-of-band trigger', async () => {
+    // Out-of-band: registry has a trigger registered for an audit event
+    // type (codegen-side AUDIT-2 should have prevented this — simulating
+    // registry/runtime drift).
+    const hook = new BridgeOutboxDrainHook({
+      crm_sync_started: [
+        {
+          triggerId: 'side_effect_job#0',
+          jobType: 'side_effect_job',
+          map: () => ({}),
+        },
+      ],
+    } as unknown as BridgeRegistry);
+    const { tx, calls } = makeTx([]);
+
+    const result = await hook.processEvent(auditEvent(), tx as never);
+
+    expect(result).toEqual({
+      delivered: 0,
+      dedupSkips: 0,
+      triggerCount: 0,
+      auditBlocked: 1,
+    });
+    expect(calls).toHaveLength(0); // no bridge_delivery rows written
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const message = String(warnSpy.mock.calls[0]![0]);
+    expect(message).toContain(
+      "Bridge guard blocked audit-tier event 'crm_sync_started'",
+    );
+    expect(message).toContain('event.id=audit-evt-1');
+    expect(message).toContain('Investigate registry/runtime drift.');
+  });
+
+  it('dedups WARN per event type within a single process', async () => {
+    const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+
+    const a = await hook.processEvent(auditEvent(), makeTx([]).tx as never);
+    const b = await hook.processEvent(
+      auditEvent({ id: 'audit-evt-2' }),
+      makeTx([]).tx as never,
+    );
+
+    expect(a.auditBlocked).toBe(1);
+    expect(b.auditBlocked).toBe(1);
+    // Same event type → WARN only once across the two calls.
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits a fresh WARN when a different audit event type is seen', async () => {
+    const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+
+    await hook.processEvent(auditEvent(), makeTx([]).tx as never);
+    await hook.processEvent(
+      auditEvent({ id: 'audit-evt-2', type: 'crm_sync_completed' }),
+      makeTx([]).tx as never,
+    );
+
+    // Two distinct event types → WARN fires once per type.
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(String(warnSpy.mock.calls[0]![0])).toContain(
+      "'crm_sync_started'",
+    );
+    expect(String(warnSpy.mock.calls[1]![0])).toContain(
+      "'crm_sync_completed'",
+    );
+  });
+
+  it('does not fire on domain events with valid triggers', async () => {
+    const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
+    const { tx } = makeTx([['del-1'], ['del-2']]);
+    const result = await hook.processEvent(event(), tx as never);
+    expect(result.auditBlocked).toBe(0);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not fire on domain events with no triggers', async () => {
+    const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+    const { tx } = makeTx([]);
+    const result = await hook.processEvent(event(), tx as never);
+    expect(result).toEqual({
+      delivered: 0,
+      dedupSkips: 0,
+      triggerCount: 0,
+      auditBlocked: 0,
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

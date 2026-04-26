@@ -7,6 +7,22 @@
 **Depends on:** ADR-024 Phase 1 (shipped via EVT-1..EVT-8) — typed event registry, `TypedEventBus`, direction-routed outbox
 **Unblocks:** ADR-026 (JobEvent Observability — selective job lifecycle → events broadcast)
 
+## 2026-04-26 Revision Note — Audit-tier guard (AUDIT-4)
+
+The bridge outbox drain hook (`runtime/subsystems/bridge/bridge-outbox-drain-hook.ts`) gains a top-of-`processEvent` guard for `tier:audit` events. This is a **defense-in-depth** addition; the codegen-side validator from AUDIT-2 (which hard-errors on a job declaring `triggers: [<audit_event>]`) remains the **primary** enforcement.
+
+Behaviour:
+
+- If `event.metadata.tier === 'audit'`, the hook returns `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 1 }` immediately — no `bridge_delivery` row is written, no wrapper `job_run` is spawned.
+- A WARN fires once per `(event_type, process)` via a private `Set<string>` (`warnedAuditTypes`). Finer-grained than the once-per-process `warnedNullDirection` flag; drift in a specific event type surfaces without flooding logs across many types.
+- `BridgeOutboxDrainResult` gains `auditBlocked: number`. `0` on every non-audit return path; `1` when the guard fires. Per-event observability data that rides on the existing return shape — no new protocol method, no new state on the hook.
+
+Why a runtime guard at all when codegen already errors: catches drift the codegen path cannot — out-of-band `bridge_trigger` inserts (manual ops, recovery scripts, faulty migrations) and version skew during rolling deploys (old generator, new bus). Reaching the guard is by definition unexpected; the WARN is the operator-facing surface and `auditBlocked` is the machine-readable surface.
+
+No `IObservability` read for audit-blocks ships in this PR. Two clean follow-up paths exist if production needs aggregate visibility — `getBridgeAuditBlocks(windowHours)` on the bridge port + observability composer, or self-published `bridge.audit_blocked` audit-tier events surfaced by the AUDIT-5 viewer. File AUDIT-6 if a real consumer asks.
+
+Spec: `ai-docs/specs/issue-242/plan.md` §AUDIT-4. Sequenced after AUDIT-3 (the bus stamps `metadata.tier` so the guard has something to read).
+
 ## 2026-04-21 Revision Notes
 
 This ADR was reviewed on 2026-04-21 against the draft shipped in PR #9cca553. Refinements below are **additions**, not rewrites — every original decision stands.

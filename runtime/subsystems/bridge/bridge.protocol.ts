@@ -333,11 +333,21 @@ export type BridgeRegistry = {
  *
  * `triggerCount`: total triggers matched in the registry for this event;
  * `triggerCount === delivered + dedupSkips`.
+ *
+ * `auditBlocked`: number of events the dispatcher refused to fan out
+ * because their `metadata.tier === 'audit'`. Audit-tier events are not
+ * bridge-eligible; codegen errors block the registry from listing them
+ * as triggers, so a non-zero value here indicates registry/runtime drift
+ * (an out-of-band `bridge_trigger` insert, version skew during deploy).
+ * Per-event: `0` when the guard does not fire, `1` when it does. Add it
+ * to per-batch logging if your drain caller aggregates results. See
+ * ai-docs/specs/issue-242/plan.md §AUDIT-4.
  */
 export interface BridgeOutboxDrainResult {
   delivered: number;
   dedupSkips: number;
   triggerCount: number;
+  auditBlocked: number;
 }
 
 /**
@@ -366,9 +376,18 @@ export interface IBridgeOutboxDrainHook {
    * job_run` row pairs for every matched trigger via the supplied `tx`.
    *
    * Behaviour:
+   *   0. **Audit-tier guard (defense-in-depth).** If
+   *      `event.metadata.tier === 'audit'`, returns
+   *      `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 1 }`
+   *      immediately and logs a per-`(event_type, process)` WARN. The
+   *      codegen-side validator (AUDIT-2) is the primary enforcement;
+   *      this guard catches out-of-band `bridge_trigger` inserts and
+   *      version skew during deploy. See
+   *      ai-docs/specs/issue-242/plan.md §AUDIT-4.
    *   1. Looks up `bridgeRegistry[event.type]`. No matches → returns
-   *      `{ delivered: 0, dedupSkips: 0, triggerCount: 0 }`; the drain
-   *      proceeds to dispatch user subscribers + stamp `processed_at`.
+   *      `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 0 }`;
+   *      the drain proceeds to dispatch user subscribers + stamp
+   *      `processed_at`.
    *   2. For each matched trigger:
    *      - `INSERT INTO bridge_delivery (event_id, trigger_id, status,
    *        wrapper_run_id, tenant_id, ...) VALUES (...) ON CONFLICT
