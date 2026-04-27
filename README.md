@@ -220,6 +220,20 @@ See [docs/CONSUMER-SETUP.md](docs/CONSUMER-SETUP.md) for the full consumer contr
 
 See [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) for a walkthrough of entity YAML authoring.
 
+## Releasing
+
+Before any `just release`, the post-publish smoke must pass:
+
+```bash
+just test-post-publish     # ~60-120s on a typical macOS dev machine
+```
+
+It runs `npm pack`, installs the tarball into a fresh tmp project, exercises `project init` + `subsystem install events` + `entity new` against a multi-provider `detection:` fixture, and typechecks. The `release` recipe invokes it as a precondition. CI also runs it on every PR to `main` and every release tag (`v*.*.*`).
+
+This catches the entire class of bug where code works in the source checkout but fails for npm consumers because the published `files` manifest is a strict subset (three 0.x releases shipped broken before this gate existed — see #190).
+
+Pass `--full` to extend coverage to `subsystem install jobs` and `subsystem install bridge`. Pass `--keep` to preserve the tmp project for inspection.
+
 ## Project Layout
 
 ```
