@@ -33,6 +33,7 @@
     }
   },
   "bin": {
+    "codegen": "dist/src/cli/index.js",
     "cdp": "dist/src/cli/index.js"
   },
   "files": [
