@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-04-26
+
+### Fixed
+
+- **`fix(publish)`** — remove stray `"private": true` field introduced incidentally in `0.6.2` (PR #273). `0.6.2` could not be published to npm (`EPRIVATE` error from `npm publish`). `0.6.3` is functionally identical to `0.6.2` plus the manifest fix.
+
 ## [0.6.2] — 2026-04-26
 
 Critical hotfix for #272 + #269. `0.6.1` shipped with a tarball-only failure mode: `cdp entity` died with `Unknown Syntax Error: Extraneous positional argument ("entity")` because the entity noun silently failed to register. The actual cause was hidden by a bare `try { ... } catch {}` in `loadNouns()` swallowing the import error.

@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "license": "MIT",
   "type": "module",
@@ -148,6 +148,5 @@
     "example": "examples",
     "test": "test"
   },
-  "author": "",
-  "private": true
+  "author": ""
 }
