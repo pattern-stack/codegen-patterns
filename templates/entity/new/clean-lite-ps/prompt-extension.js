@@ -825,6 +825,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     declarativeQueries: hasDeclarativeQueries
       ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
       : null,
+    // ADR-033.1 §8 — sync-source module emission for clean-lite-ps. Co-located
+    // with the entity feature module under src/modules/<plural>/. Closes #267.
+    syncSourceModule: `${srcRoot}/modules/${entityNamePlural}/${entityName}-sync-source.module.ts`,
+    syncSourceProviders: `${srcRoot}/modules/${entityNamePlural}/${entityName}-sync-source.providers.ts`,
+  };
+
+  // Architecture-specific imports for clean-lite-ps. The sync-source module
+  // imports the entity type sibling-style (`./<entity>.entity`) since the
+  // module file lives next to the entity file in the same feature folder.
+  const clpImports = {
+    syncSourceToEntity: `./${entityName}.entity`,
   };
 
   // Class names
@@ -952,6 +963,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // Output paths
     clpOutputPaths: outputPaths,
+
+    // Architecture-specific imports (ADR-033.1 §8 — sync-source closes #267)
+    clpImports,
 
     // Class names
     classNames,

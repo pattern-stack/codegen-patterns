@@ -49,6 +49,9 @@ function renderModule(detectionBlock: Record<string, unknown>): string {
     hasDetection: Object.keys(detectionBlock).length > 0,
     detectionConfigsLiteral: JSON.stringify(detectionBlock, null, 2),
     imports: { moduleToDomain: '../domain' },
+    isCleanLitePs: false,
+    clpOutputPaths: undefined,
+    clpImports: undefined,
   });
 }
 
