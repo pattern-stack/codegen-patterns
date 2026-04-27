@@ -125,6 +125,39 @@ release:
     git push origin "v${version}"
     echo "Tagged and pushed v${version}"
 
+# Publish current origin/main to npm (clean worktree, no branch-state assumptions)
+publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    git fetch origin main
+
+    version=$(git show origin/main:package.json | jq -r .version)
+    is_private=$(git show origin/main:package.json | jq -r '.private // false')
+
+    if [ "$is_private" = "true" ]; then
+        echo "ERROR: package.json on origin/main has private:true — refusing to publish."
+        echo "Remove the field, tag a new release, then retry."
+        exit 1
+    fi
+
+    workdir="/tmp/codegen-publish-${version}-$$"
+    echo "Publishing @pattern-stack/codegen@${version} from origin/main"
+    echo "Worktree: ${workdir}"
+
+    trap 'cd /; git worktree remove --force "${workdir}" 2>/dev/null || true' EXIT
+
+    git worktree add "${workdir}" origin/main
+    cd "${workdir}"
+
+    mise trust >/dev/null 2>&1 || true
+    mise install >/dev/null 2>&1 || true
+
+    bun install
+    npm publish
+
+    echo "✓ Published @pattern-stack/codegen@${version}"
+
 # ─── Install Skill ────────────────────────────────────────────────────────────
 
 # Install the codegen Claude Code skill into a target project
