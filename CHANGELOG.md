@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-04-26
+
+Critical hotfix for #266. `0.6.0` shipped with a broken `entity new` command for every npm consumer: `templates/entity/new/prompt.js` and `templates/entity/new/clean-lite-ps/prompt-extension.js` import runtime helpers from `../../../src/config/*.mjs` and `../../../src/patterns/registry.js`, but the `package.json:files` manifest excluded `src/`. Every published-tarball invocation died with `ResolveMessage: Cannot find module '../../../src/config/paths.mjs'`. The repo's smoke + baseline tests didn't catch this because they run from the source checkout, where the relative paths resolve directly.
+
+### Fixed
+
+- **`fix(release)` #266** — extend `package.json:files` with the narrow set of `src/` paths that templates reach for at runtime: `src/config/*.mjs`, `src/schema/naming-config.schema.mjs`, `src/patterns/registry.ts`, `src/patterns/pattern-definition.ts`, `src/patterns/library/*.ts`. Narrow paths (not a broad `src/` entry) so test files and CLI source stay out of the tarball. Verified by `npm pack && npm install ./pack.tgz && entity new` against a real fixture entity — generation now succeeds end-to-end.
+
+### Added
+
+- **Prevention test** at `src/__tests__/templates/files-manifest-coverage.test.ts`: statically scans every `templates/**/*.{js,mjs,cjs}` for relative imports that escape the `templates/` tree, resolves each against the source layout (with `.js → .ts` rewrite for Bun TS-aware ESM), and asserts the resolved path matches at least one entry in `package.json:files`. Fails CI when a future template adds a cross-package import without updating the manifest. Closes the hole identified in #190 (post-publish smoke proposal).
+
 ## [0.6.0] — 2026-04-26
 
 Sync subsystem Phase 2: configurable change sources land. Detection mode is now declarative — entity YAML carries a `detection:` block parsed into a typed `DetectionConfig`, and codegen emits a per-entity Map factory module that wires consumer-supplied adapter callbacks to the right primitive. Plus audit-tier event classification (epic #242 phases 1–4).
