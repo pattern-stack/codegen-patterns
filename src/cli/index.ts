@@ -5,10 +5,6 @@
  * Registers every noun module with a single Clipanion Cli instance. Each
  * noun contributes its Command classes plus an auto-generated zero-verb
  * summary command (see {@link noun-module.ts}).
- *
- * The transition plan: this binary runs alongside the legacy `src/cli.ts`
- * until all nouns are migrated. `package.json` `bin.codegen` only flips to
- * this file once enough nouns are in place.
  */
 
 import { readFileSync } from 'node:fs';
@@ -21,6 +17,14 @@ import { renderPane } from './ui/pane.js';
 import { renderHints } from './ui/hints.js';
 import { theme } from './ui/theme.js';
 import { icons } from './ui/icons.js';
+import entityNoun from './commands/entity.js';
+import subsystemNoun from './commands/subsystem.js';
+import projectNoun from './commands/project.js';
+import devNoun from './commands/dev.js';
+import relationshipNoun from './commands/relationship.js';
+import eventsNoun from './commands/events.js';
+import orchestrationNoun from './commands/orchestration.js';
+import initShortcut from './shortcuts/init.js';
 
 // ---------------------------------------------------------------------------
 // Package metadata
@@ -85,66 +89,21 @@ class RootSummaryCommand extends Command {
 }
 
 // ---------------------------------------------------------------------------
-// Registry — populated by each phase as nouns are implemented.
+// Registry — every noun module is statically imported. Static imports are
+// resolved by the bundler (tsup) and at module-init by Node, so a failure
+// here crashes the CLI loudly with the real error rather than silently
+// dropping a noun (the failure mode that produced #272 / #269).
 // ---------------------------------------------------------------------------
 
-const nouns: NounModule[] = [];
-
-// Phase 2 will push entityNoun here; Phase 3 will push subsystemNoun.
-// Dynamic imports avoid pulling in noun code until it exists.
-async function loadNouns(): Promise<void> {
-	try {
-		const mod = await import('./commands/entity.js');
-		if (mod?.default) nouns.push(mod.default as NounModule);
-	} catch {
-		// entity noun not implemented yet
-	}
-	try {
-		const mod = await import('./commands/subsystem.js');
-		if (mod?.default) nouns.push(mod.default as NounModule);
-	} catch {
-		// subsystem noun not implemented yet
-	}
-	try {
-		const mod = await import('./commands/project.js');
-		if (mod?.default) nouns.push(mod.default as NounModule);
-	} catch {
-		// project noun not implemented yet
-	}
-	try {
-		const mod = await import('./commands/dev.js');
-		if (mod?.default) nouns.push(mod.default as NounModule);
-	} catch {
-		// dev noun not implemented yet
-	}
-	try {
-		const mod = await import('./commands/relationship.js');
-		if (mod?.default) nouns.push(mod.default as NounModule);
-	} catch {
-		// relationship noun not implemented yet
-	}
-	try {
-		const mod = await import('./commands/events.js');
-		if (mod?.default) nouns.push(mod.default as NounModule);
-	} catch {
-		// events noun not implemented yet
-	}
-	try {
-		const mod = await import('./commands/orchestration.js');
-		if (mod?.default) nouns.push(mod.default as NounModule);
-	} catch {
-		// orchestration noun not implemented yet
-	}
-}
-
-async function loadShortcuts(cli: Cli): Promise<void> {
-	try {
-		const mod = await import('./shortcuts/init.js');
-		if (mod?.default) cli.register(mod.default);
-	} catch {
-		// shortcut not implemented
-	}
-}
+const nouns: NounModule[] = [
+	entityNoun,
+	subsystemNoun,
+	projectNoun,
+	devNoun,
+	relationshipNoun,
+	eventsNoun,
+	orchestrationNoun,
+];
 
 // ---------------------------------------------------------------------------
 // Bootstrap
@@ -154,8 +113,6 @@ async function main(): Promise<void> {
 	// Detect --json early so UI helpers short-circuit from the first call.
 	const argv = process.argv.slice(2);
 	if (argv.includes('--json')) setJsonMode(true);
-
-	await loadNouns();
 
 	const cli = new Cli({
 		binaryLabel: 'codegen',
@@ -167,7 +124,7 @@ async function main(): Promise<void> {
 	cli.register(Builtins.VersionCommand);
 	cli.register(RootSummaryCommand);
 
-	await loadShortcuts(cli);
+	cli.register(initShortcut);
 
 	for (const noun of nouns) {
 		for (const CommandClass of noun.commandClasses) {

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-04-26
+
+### Fixed
+
+- **`fix(publish)`** — remove stray `"private": true` field introduced incidentally in `0.6.2` (PR #273). `0.6.2` could not be published to npm (`EPRIVATE` error from `npm publish`). `0.6.3` is functionally identical to `0.6.2` plus the manifest fix.
+
+## [0.6.2] — 2026-04-26
+
+Critical hotfix for #272 + #269. `0.6.1` shipped with a tarball-only failure mode: `cdp entity` died with `Unknown Syntax Error: Extraneous positional argument ("entity")` because the entity noun silently failed to register. The actual cause was hidden by a bare `try { ... } catch {}` in `loadNouns()` swallowing the import error.
+
+### Fixed
+
+- **`fix(release)` #272** — root cause: `typescript` was declared in `devDependencies` but `import ts from 'typescript'` runs at module init from `src/cli/shared/bridge-registry-generator.ts` and `src/cli/commands/events.ts`. tsup externalizes `dependencies` / `peerDependencies` only — devDeps get inlined into `dist/src/cli/index.js`. The CJS `typescript` package then triggers `Dynamic require of "fs" is not supported` when its body runs inside the ESM bundle, killing the entity-noun import. The repo's source-checkout smoke (`just test-smoke`) doesn't catch this because it runs against `src/`, not the bundled tarball, where `typescript` resolves through Node's normal module loader. Fix: move `typescript` to `dependencies`. ts-morph already depended on it transitively; this just makes the direct import path correct.
+- **`fix(cli)` #269** — `loadNouns()`'s per-noun `try { ... } catch {}` blocks silently dropped any noun whose import failed, so #272 surfaced as a cryptic "extraneous argument" error from clipanion instead of the real `Dynamic require of "fs"` ImportError. Replaced the dynamic-import + try/catch loader with static top-of-file imports and a flat `nouns` array. Static imports fail loudly at module-init with the real error; there is nothing left to catch. The defensive try/catch was a phase-transition artefact (intent: "skip unimplemented nouns") with no remaining purpose — every noun is now implemented and required.
+
+### Prevention
+
+The post-publish smoke (#190 / PR #271) catches this regression class: it packs the tarball, installs into a fresh tmp project, and exercises `cdp entity new --all` end-to-end. Once that lands on `main`, any future devDep-vs-bundle drift will fail CI on the publish path rather than on first npm-install by a downstream consumer.
+
 ## [0.6.1] — 2026-04-26
 
 Critical hotfix for #266. `0.6.0` shipped with a broken `entity new` command for every npm consumer: `templates/entity/new/prompt.js` and `templates/entity/new/clean-lite-ps/prompt-extension.js` import runtime helpers from `../../../src/config/*.mjs` and `../../../src/patterns/registry.js`, but the `package.json:files` manifest excluded `src/`. Every published-tarball invocation died with `ResolveMessage: Cannot find module '../../../src/config/paths.mjs'`. The repo's smoke + baseline tests didn't catch this because they run from the source checkout, where the relative paths resolve directly.
