@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-04-27
+
+Two consumer-DX fixes surfaced by a fresh `cdp project init` run.
+
+### Fixed
+
+- **`fix(init)` #277** — typed the empty `GENERATED_MODULES` barrel emitted by `cdp project init`. The scaffold previously emitted `export const GENERATED_MODULES: unknown[] = []`, which fails `tsc --noEmit` against the scaffolded `app.module.ts` (`...GENERATED_MODULES` spread doesn't satisfy NestJS's `imports:` type) on day one of any new consumer project. Now typed as `Array<Type | DynamicModule | Promise<DynamicModule> | ForwardReference>`. Entity-populated barrels remain unaffected — class refs already satisfy `Type`.
+
+### Changed
+
+- **`fix(bin)` #277** — added `codegen` as the primary bin name in `package.json`. The previous bin name `cdp` collides with an unrelated published npm package, so `bunx cdp ...` (without a local install) silently fetches and runs the wrong package. The CLI banner, README, and downstream docs all already refer to the binary as `codegen`. `cdp` is preserved as an alias for backwards compatibility.
+
 ## [0.6.3] — 2026-04-26
 
 ### Fixed
