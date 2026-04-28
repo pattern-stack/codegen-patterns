@@ -1,0 +1,98 @@
+# auth-integrations: Integration
+# Canonical OAuth2 integration row — one per (user_id, provider) pair.
+# Vendored alongside the auth subsystem to satisfy IIntegrationReader /
+# IIntegrationTokenWriter / IIntegrationGrantSink ports out of the box.
+#
+# `provider` stays a string (not enum) intentionally so consumers can add
+# provider keys ('hubspot-crm', 'salesforce-crm', 'google', …) without
+# forking the entity YAML. Strategy lookup happens in code via
+# STRATEGY_REGISTRY.
+
+entity:
+  name: integration
+  plural: integrations
+  table: integrations
+  pattern: Base
+  folder_structure: nested
+
+fields:
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  # Provider slug — matches the strategy.provider in STRATEGY_REGISTRY.
+  # Stays string (not enum) so adding a new provider is a code change,
+  # not a YAML/migration change. See README.
+  provider:
+    type: string
+    required: true
+    index: true
+    max_length: 64
+
+  external_account_id:
+    type: string
+    nullable: true
+    max_length: 255
+
+  # Ciphertexts — encryption is applied inside the IntegrationsService
+  # facade + adapter layer (via IEncryptionKey). The DB row only ever
+  # holds the encrypted form; decryption happens on read in the reader
+  # adapter.
+  access_token_encrypted:
+    type: string
+    nullable: true
+
+  refresh_token_encrypted:
+    type: string
+    nullable: true
+
+  expires_at:
+    type: datetime
+    nullable: true
+
+  # NOTE: typed `json` rather than `string_array` deliberately. The
+  # `string_array` codegen field type currently emits `z.unknown()` in
+  # generated DTOs (open bug #281). Storing as `json` keeps the column
+  # shape correct (jsonb holding string[]) without DTO regressions.
+  # Once #281 lands, this can be re-typed to `string_array` without
+  # behavior change. Do NOT "clean up" until then.
+  scopes:
+    type: json
+    nullable: true
+
+  # SFDC-specific instance URL; null for providers that don't need it.
+  instance_url:
+    type: string
+    nullable: true
+    max_length: 512
+
+  provider_metadata:
+    type: json
+    nullable: true
+
+  status:
+    type: enum
+    choices: [active, requires_reauth, revoked]
+    required: true
+    default: active
+    index: true
+
+behaviors:
+  - timestamps
+
+queries:
+  # Primary lookup: "does this user already have a connection to this
+  # provider?" — used by createOrUpdateFromOAuthGrant + every consumer
+  # that loads tokens for an outbound API call.
+  - by: [user_id, provider]
+    unique: true
+
+  # Settings page: list a user's connected integrations, newest first.
+  - by: [user_id]
+    order: created_at desc
+
+  # Operational query: find broken integrations needing reauth across
+  # all users (admin / monitoring).
+  - by: [provider, status]
+    order: updated_at desc
