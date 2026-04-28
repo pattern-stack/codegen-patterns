@@ -16,7 +16,9 @@ export type SubsystemName =
 	| 'sync'
 	| 'bridge'
 	| 'openapi-config'
-	| 'observability';
+	| 'observability'
+	| 'auth'
+	| 'auth-integrations';
 export type SubsystemBackend =
 	| 'drizzle'
 	| 'memory'
@@ -96,6 +98,34 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 		backends: ['combiner'],
 		defaultBackend: 'combiner',
 	},
+	{
+		// #287. Auth subsystem (PR #289) — AuthModule + ports + OAuth state
+		// store + AuthController. Backends: drizzle (prod, persists OAuth
+		// state in `auth_oauth_state`) or memory (dev/tests). Detection in
+		// `detectInstalledSubsystems` is a special case: auth's protocols
+		// live under `protocols/`, not at the subsystem root, so we look
+		// for `auth.module.ts` instead of `*.protocol.ts`.
+		name: 'auth',
+		description:
+			'OAuth integration auth (AuthModule + ports + state store)',
+		backends: ['drizzle', 'memory'],
+		defaultBackend: 'drizzle',
+	},
+	{
+		// #287. Auth-integrations starter (PR #290) — vendored from
+		// `examples/auth-integrations/`, NOT from `runtime/subsystems/`.
+		// Bundles a canonical `integration` entity yaml + the three
+		// integration-store-port adapters + the `IntegrationsService`
+		// facade. Single-backend (drizzle); the runtime adapters call
+		// directly into the codegen-emitted `IntegrationService` from the
+		// entity layer. Detection: presence of
+		// `<sharedRoot>/integrations/integrations-auth.module.ts`.
+		name: 'auth-integrations',
+		description:
+			'Vendored integrations entity + adapters (consumes auth subsystem)',
+		backends: ['drizzle'],
+		defaultBackend: 'drizzle',
+	},
 ];
 
 const KNOWN_NAMES = SUBSYSTEMS.map((s) => s.name);
@@ -116,6 +146,13 @@ function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 	// drizzle/memory split, no backend files beyond the service itself.
 	// Short-circuit so we never mis-report it as 'unknown'.
 	if (name === 'observability') return 'combiner';
+	// #287: auth + auth-integrations don't follow the *-bus.drizzle-backend.ts
+	// shape. Auth's drizzle backend lives at
+	// `backends/state-store.drizzle-backend.ts`; the memory variant is
+	// always installed alongside (for tests) so we always report 'drizzle'
+	// for the listing. auth-integrations is single-backend (drizzle only).
+	if (name === 'auth') return 'drizzle';
+	if (name === 'auth-integrations') return 'drizzle';
 	const hasDrizzle = fs.existsSync(path.join(dir, `${name.replace(/s$/, '')}-bus.drizzle-backend.ts`))
 		|| fs.readdirSync(dir).some((f) => f.endsWith('.drizzle-backend.ts'));
 	const hasMemory = fs.readdirSync(dir).some((f) => f.endsWith('.memory-backend.ts'));
@@ -142,11 +179,21 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 			// no *.protocol.ts. Detection happens via the `openapi:` block
 			// in codegen.config.yaml (see below).
 			if (name === 'openapi-config') continue;
+			// #287: auth-integrations does NOT live under <root>/<name>/ —
+			// its files vendor into <root>/../integrations/ (sibling of
+			// `subsystems/`). Detect it separately below.
+			if (name === 'auth-integrations') continue;
 			const dir = path.join(root, name);
 			if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
 			// A subsystem is installed when the directory contains any *.protocol.ts
+			// #287: auth's protocols live under `<dir>/protocols/`, not at the
+			// subsystem root. Special-case it: presence of `auth.module.ts`
+			// means installed.
 			const files = fs.readdirSync(dir);
-			const hasProtocol = files.some((f) => f.endsWith('.protocol.ts'));
+			let hasProtocol = files.some((f) => f.endsWith('.protocol.ts'));
+			if (name === 'auth') {
+				hasProtocol = files.includes('auth.module.ts');
+			}
 			if (!hasProtocol) continue;
 			seen.add(name);
 			found.push({
@@ -181,6 +228,34 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 			} catch {
 				// Ignore read errors — detection is best-effort.
 			}
+		}
+	}
+
+	// #287: detect `auth-integrations` by presence of the vendored
+	// `integrations-auth.module.ts` under the consumer's shared root. The
+	// shared root resolves the same way as in `auth-integrations-scaffold-locals.ts`:
+	// `paths.shared` (if set) else `<paths.backend_src>/shared`.
+	if (!seen.has('auth-integrations')) {
+		const backendSrc =
+			(ctx.config?.paths?.backend_src as string | undefined) ?? 'src';
+		const sharedConfigured = (
+			ctx.config?.paths as Record<string, unknown> | undefined
+		)?.shared;
+		const sharedRoot =
+			typeof sharedConfigured === 'string' && sharedConfigured.length > 0
+				? path.resolve(ctx.cwd, sharedConfigured)
+				: path.resolve(ctx.cwd, backendSrc, 'shared');
+		const moduleFile = path.join(
+			sharedRoot,
+			'integrations',
+			'integrations-auth.module.ts',
+		);
+		if (fs.existsSync(moduleFile)) {
+			found.push({
+				name: 'auth-integrations',
+				path: path.dirname(moduleFile),
+				backend: 'drizzle',
+			});
 		}
 	}
 
