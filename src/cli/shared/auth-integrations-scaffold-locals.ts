@@ -44,8 +44,8 @@ const SHARED_DIR_NAME = 'shared';
  * Default entity-yaml directory for the vendored `integration.yaml`.
  * Spec'd as `definitions/entities/` in #287 (the convention the
  * `examples/auth-integrations` starter ships with). Overridable via
- * `paths.definitions` in `codegen.config.yaml` if the consumer keeps their
- * yaml elsewhere.
+ * `paths.entities` (or legacy `paths.entities_dir`) in
+ * `codegen.config.yaml` if the consumer keeps their yaml elsewhere.
  */
 const DEFAULT_DEFINITIONS_DIR = 'definitions/entities';
 
@@ -92,7 +92,8 @@ export interface AuthIntegrationsScaffoldLocalsInput {
  * - `sharedRoot` resolves to `<cwd>/<paths.shared>` if set, else
  *   `<cwd>/<paths.backend_src>/shared`. The integrations adapters land
  *   under `<sharedRoot>/integrations/`.
- * - `definitionsPath` resolves to `<cwd>/<paths.definitions>` if set,
+ * - `definitionsPath` resolves to `<cwd>/<paths.entities>/integration.yaml`
+ *   (or legacy `<cwd>/<paths.entities_dir>/integration.yaml`) if set,
  *   else `<cwd>/definitions/entities/integration.yaml`. (The
  *   `examples/auth-integrations/definitions/entities/integration.yaml`
  *   convention.)
@@ -119,12 +120,21 @@ export function resolveAuthIntegrationsScaffoldLocals(
 			? path.resolve(cwd, sharedConfigured)
 			: path.resolve(cwd, backendSrc, SHARED_DIR_NAME);
 
-	const definitionsConfigured = (
-		config?.paths as Record<string, unknown> | undefined
-	)?.definitions;
+	// Honor the consumer's configured entity-yaml directory. Order matches
+	// `Context.entitiesDir` resolution: `paths.entities` first, then legacy
+	// `paths.entities_dir`. (Older `paths.definitions` is NOT a real key and
+	// was a hotfix-fixed bug — #303.)
+	const pathsRaw = config?.paths as Record<string, unknown> | undefined;
+	const entitiesConfigured =
+		typeof pathsRaw?.entities === 'string' && pathsRaw.entities.length > 0
+			? pathsRaw.entities
+			: typeof pathsRaw?.entities_dir === 'string' &&
+				  pathsRaw.entities_dir.length > 0
+				? pathsRaw.entities_dir
+				: null;
 	const definitionsPath =
-		typeof definitionsConfigured === 'string' && definitionsConfigured.length > 0
-			? path.resolve(cwd, definitionsConfigured, 'integration.yaml')
+		entitiesConfigured !== null
+			? path.resolve(cwd, entitiesConfigured, 'integration.yaml')
 			: path.resolve(cwd, DEFAULT_DEFINITIONS_DIR, 'integration.yaml');
 
 	const appModulePath = path.resolve(cwd, backendSrc, 'app.module.ts');

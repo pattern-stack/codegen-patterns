@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import {
   AUTH_INTEGRATION_GRANT_SINK,
   AUTH_INTEGRATION_READER,
@@ -32,7 +32,14 @@ import { MarkIntegrationRequiresReauthUseCase } from './use-cases/mark-integrati
  *   - AUTH_INTEGRATION_READER       → IntegrationReaderAdapter
  *   - AUTH_INTEGRATION_TOKEN_WRITER → IntegrationTokenWriterAdapter
  *   - AUTH_INTEGRATION_GRANT_SINK   → IntegrationGrantSinkAdapter
+ *
+ * `@Global()` is required: `AuthController` lives inside `AuthModule`'s
+ * own injector and resolves the `AUTH_INTEGRATION_*` providers exposed
+ * here. Without `@Global()`, the controller's injector cannot see these
+ * tokens and Nest fails to boot. Same pattern as the `auth-bindings`
+ * module shipped in #93.
  */
+@Global()
 @Module({
   imports: [IntegrationsModule],
   providers: [

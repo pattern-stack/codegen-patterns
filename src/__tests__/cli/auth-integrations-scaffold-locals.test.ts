@@ -5,7 +5,8 @@
  *   - default locals on first install
  *   - custom paths.backend_src flows into appModulePath + sharedRoot
  *   - paths.shared overrides the derived sharedRoot
- *   - paths.definitions overrides the default integration.yaml location
+ *   - paths.entities (and legacy paths.entities_dir) overrides the
+ *     default integration.yaml location
  *   - authModuleRegistered detection (presence + absence)
  *   - localsToHygenArgs forwards only the keys Hygen needs
  */
@@ -67,16 +68,44 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 		expect(locals.sharedRoot).toBe(path.resolve(CWD, 'custom/shared'));
 	});
 
-	test('paths.definitions overrides the default integration.yaml location', () => {
+	test('paths.entities overrides the default integration.yaml location', () => {
 		const locals = resolveAuthIntegrationsScaffoldLocals({
 			cwd: CWD,
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			config: { paths: { definitions: 'entities' } } as any,
+			config: { paths: { entities: 'definitions/entities' } } as any,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(locals.definitionsPath).toBe(
+			path.resolve(CWD, 'definitions/entities/integration.yaml'),
+		);
+	});
+
+	test('legacy paths.entities_dir is honored', () => {
+		const locals = resolveAuthIntegrationsScaffoldLocals({
+			cwd: CWD,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			config: { paths: { entities_dir: 'entities' } } as any,
 			fileExists: () => false,
 			readFile: () => null,
 		});
 		expect(locals.definitionsPath).toBe(
 			path.resolve(CWD, 'entities/integration.yaml'),
+		);
+	});
+
+	test('paths.entities wins over legacy paths.entities_dir', () => {
+		const locals = resolveAuthIntegrationsScaffoldLocals({
+			cwd: CWD,
+			config: {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				paths: { entities: 'a', entities_dir: 'b' } as any,
+			},
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(locals.definitionsPath).toBe(
+			path.resolve(CWD, 'a/integration.yaml'),
 		);
 	});
 

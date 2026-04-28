@@ -353,6 +353,50 @@ describe('subsystem — install (real)', () => {
 			expect(matches.length).toBeLessThanOrEqual(1);
 		}
 	});
+	// #303: vendored adapters must NOT keep bare-package imports — those
+	// fail to resolve through the package's `exports` map and would pin
+	// against the publisher's compiled token Symbols rather than the
+	// consumer's vendored auth subsystem (duplicate-DI hazard).
+	test('auth-integrations install rewrites bare auth imports to relative paths', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+
+		const integrationsDir = path.join(root, 'src/shared/integrations');
+		const files = fs
+			.readdirSync(integrationsDir, { withFileTypes: true, recursive: true })
+			.filter((d) => d.isFile() && d.name.endsWith('.ts'))
+			.map((d) =>
+				path.join(
+					(d as fs.Dirent & { parentPath?: string }).parentPath ??
+						integrationsDir,
+					d.name,
+				),
+			);
+		expect(files.length).toBeGreaterThan(0);
+		for (const file of files) {
+			const src = fs.readFileSync(file, 'utf-8');
+			expect(src).not.toContain('@pattern-stack/codegen/runtime/subsystems/auth');
+		}
+
+		// And at least one file should now import from a relative
+		// `…/subsystems/auth` path.
+		const moduleSrc = fs.readFileSync(
+			path.join(integrationsDir, 'integrations-auth.module.ts'),
+			'utf-8',
+		);
+		expect(moduleSrc).toMatch(/from\s+['"]\.\.[^'"]*subsystems\/auth['"]/);
+	});
 });
 
 describe('subsystem — detection', () => {

@@ -59,7 +59,10 @@ import {
 	type SubsystemBackend,
 	type InstalledSubsystem,
 } from '../shared/subsystem-detect.js';
-import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
+import {
+	resolveSubsystemsRoot,
+	resolveSubsystemsRootFromConfig,
+} from '../shared/subsystems-path.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -1525,11 +1528,18 @@ interface AuthIntegrationsCopyResult {
  * Recursively copy `srcDir` → `destDir`. Idempotent: existing files are
  * skipped unless `force` is true. Returns the lists of copied vs skipped
  * absolute destination paths.
+ *
+ * Optional `transform` rewrites file contents on copy (used by the
+ * auth-integrations install to swap bare `@pattern-stack/codegen/runtime/
+ * subsystems/auth` imports for relative paths into the consumer's
+ * vendored auth subsystem). Binary files are left as-is — `transform`
+ * is only invoked for `.ts`/`.tsx` files.
  */
 function copyTreeIdempotent(
 	srcDir: string,
 	destDir: string,
 	force: boolean,
+	transform?: (content: string, destPath: string) => string,
 ): AuthIntegrationsCopyResult {
 	const written: string[] = [];
 	const skipped: string[] = [];
@@ -1550,7 +1560,14 @@ function copyTreeIdempotent(
 				continue;
 			}
 			fs.mkdirSync(path.dirname(destPath), { recursive: true });
-			fs.copyFileSync(srcPath, destPath);
+			const isTextSource =
+				transform && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'));
+			if (isTextSource && transform) {
+				const raw = fs.readFileSync(srcPath, 'utf-8');
+				fs.writeFileSync(destPath, transform(raw, destPath), 'utf-8');
+			} else {
+				fs.copyFileSync(srcPath, destPath);
+			}
 			written.push(destPath);
 		}
 	};
@@ -1559,6 +1576,52 @@ function copyTreeIdempotent(
 	fs.mkdirSync(destDir, { recursive: true });
 	walk(srcDir, destDir);
 	return { written, skipped };
+}
+
+/**
+ * Build a transform that rewrites every
+ * `from '@pattern-stack/codegen/runtime/subsystems/auth'` import in the
+ * vendored auth-integrations adapters to a relative path that resolves
+ * against the consumer's vendored auth subsystem at
+ * `<subsystemsRoot>/auth`.
+ *
+ * Two reasons we can't keep the bare imports:
+ *   1. The package's `exports` map exposes `./runtime/*` against
+ *      `dist/runtime/*` (compiled `.d.ts` + `.js`), not against deep
+ *      subdirectory paths — so `tsc --noEmit` fails to resolve the
+ *      sub-path in published consumers.
+ *   2. Even when types resolve, the package re-emits its own copies
+ *      of the auth tokens at runtime; injecting against those tokens
+ *      vs the consumer's vendored copy creates duplicate-DI-token
+ *      bugs (different Symbol identities).
+ *
+ * Vendoring the auth subsystem means there's exactly one set of token
+ * Symbols, owned by the consumer, and these adapters import from it
+ * directly via relative paths.
+ */
+const AUTH_BARE_IMPORT_RE =
+	/(['"])@pattern-stack\/codegen\/runtime\/subsystems\/auth\1/g;
+
+function buildAuthImportRewriter(
+	subsystemsRoot: string,
+): (content: string, destPath: string) => string {
+	const authRoot = path.join(subsystemsRoot, 'auth');
+	return (content: string, destPath: string): string => {
+		if (!AUTH_BARE_IMPORT_RE.test(content)) {
+			AUTH_BARE_IMPORT_RE.lastIndex = 0;
+			return content;
+		}
+		AUTH_BARE_IMPORT_RE.lastIndex = 0;
+		let rel = path.relative(path.dirname(destPath), authRoot);
+		if (!rel.startsWith('.')) rel = `./${rel}`;
+		// Use forward slashes regardless of platform — TS module specifiers
+		// are POSIX even on Windows.
+		const relPosix = rel.split(path.sep).join('/');
+		return content.replace(
+			AUTH_BARE_IMPORT_RE,
+			(_match, quote: string) => `${quote}${relPosix}${quote}`,
+		);
+	};
 }
 
 interface AuthIntegrationsScaffoldOutcome {
@@ -1616,11 +1679,15 @@ function runAuthIntegrationsScaffold(
 		};
 	}
 
-	// Vendor the adapters tree.
+	// Vendor the adapters tree, rewriting the bare-package auth imports
+	// to relative paths that resolve against the consumer's vendored
+	// auth subsystem (see buildAuthImportRewriter).
+	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
 	const adapterCopy = copyTreeIdempotent(
 		adaptersSrc,
 		adaptersDest,
 		opts.force,
+		buildAuthImportRewriter(subsystemsRoot),
 	);
 
 	// Vendor the integration.yaml.
