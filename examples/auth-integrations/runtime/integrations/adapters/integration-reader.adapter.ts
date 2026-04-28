@@ -5,7 +5,7 @@ import {
   type IEncryptionKey,
   type IIntegrationReader,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { IntegrationService } from '../../modules/integrations/integration.service';
+import { IntegrationService } from '../integration.service';
 
 /**
  * `IIntegrationReader` adapter — fetches the integration row by id and

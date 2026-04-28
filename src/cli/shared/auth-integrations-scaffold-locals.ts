@@ -41,6 +41,14 @@ const FALLBACK_BACKEND_SRC = 'src';
 const SHARED_DIR_NAME = 'shared';
 
 /**
+ * Default modules directory — where codegen emits the `integration`
+ * entity module under clean-lite-ps. The auth-integrations install
+ * vendors next to the codegen output to keep the integrations surface
+ * unified (#303 fix #5). Override via `paths.modules_dir`.
+ */
+const DEFAULT_MODULES_DIR = 'modules';
+
+/**
  * Default entity-yaml directory for the vendored `integration.yaml`.
  * Spec'd as `definitions/entities/` in #287 (the convention the
  * `examples/auth-integrations` starter ships with). Overridable via
@@ -55,10 +63,22 @@ export interface AuthIntegrationsScaffoldLocals {
 	/** Where `app-module-hook.ejs.t` appends the IntegrationsAuthModule TODO. */
 	appModulePath: string;
 	/**
-	 * Where the integrations adapters land — `<sharedRoot>/integrations/...`.
-	 * Resolves from `paths.shared` if set, else `<paths.backend_src>/shared`.
+	 * Legacy field: where `<sharedRoot>/integrations/...` would have
+	 * landed before #303 fix #5. Kept for diagnostic logging only —
+	 * vendoring now goes under `vendorRoot/integrations/` (next to the
+	 * codegen-emitted entity module).
 	 */
 	sharedRoot: string;
+	/**
+	 * Where the integrations starter is vendored — `<vendorRoot>/integrations/`.
+	 * Resolves from `paths.modules_dir` if set, else
+	 * `<paths.backend_src>/modules`. Co-locates the vendored adapters,
+	 * facade, oauth use-cases, and `IntegrationsAuthModule` with the
+	 * codegen-emitted `integration` entity module so the whole
+	 * integrations surface lives under one folder (matches dealbrain-v2
+	 * precedent; #303 fix #5).
+	 */
+	vendorRoot: string;
 	/**
 	 * Where the vendored `integration.yaml` lands. Resolves from
 	 * `paths.definitions` if set, else `<cwd>/definitions/entities/integration.yaml`.
@@ -90,8 +110,12 @@ export interface AuthIntegrationsScaffoldLocalsInput {
  * - `appModulePath` resolves to `<cwd>/<paths.backend_src>/app.module.ts`,
  *   falling back to `<cwd>/src/app.module.ts`.
  * - `sharedRoot` resolves to `<cwd>/<paths.shared>` if set, else
- *   `<cwd>/<paths.backend_src>/shared`. The integrations adapters land
- *   under `<sharedRoot>/integrations/`.
+ *   `<cwd>/<paths.backend_src>/shared`. Legacy: pre-#303-fix-#5
+ *   vendor target. Retained for diagnostics only.
+ * - `vendorRoot` resolves to `<cwd>/<paths.modules_dir>` if set, else
+ *   `<cwd>/<paths.backend_src>/modules`. The auth-integrations starter
+ *   is vendored under `<vendorRoot>/integrations/` next to the
+ *   codegen-emitted `integration` entity module (#303 fix #5).
  * - `definitionsPath` resolves to `<cwd>/<paths.entities>/integration.yaml`
  *   (or legacy `<cwd>/<paths.entities_dir>/integration.yaml`) if set,
  *   else `<cwd>/definitions/entities/integration.yaml`. (The
@@ -113,24 +137,33 @@ export function resolveAuthIntegrationsScaffoldLocals(
 			? config.paths.backend_src
 			: FALLBACK_BACKEND_SRC;
 
-	const sharedConfigured = (config?.paths as Record<string, unknown> | undefined)
-		?.shared;
+	const pathsAny = config?.paths as Record<string, unknown> | undefined;
+
+	const sharedConfigured = pathsAny?.shared;
 	const sharedRoot =
 		typeof sharedConfigured === 'string' && sharedConfigured.length > 0
 			? path.resolve(cwd, sharedConfigured)
 			: path.resolve(cwd, backendSrc, SHARED_DIR_NAME);
 
+	// #303 fix #5: vendor target lives next to the codegen-emitted
+	// integration entity module, NOT under shared/. Default mirrors the
+	// clean-lite-ps emit path (`<backendSrc>/modules/`).
+	const modulesConfigured = pathsAny?.modules_dir;
+	const vendorRoot =
+		typeof modulesConfigured === 'string' && modulesConfigured.length > 0
+			? path.resolve(cwd, modulesConfigured)
+			: path.resolve(cwd, backendSrc, DEFAULT_MODULES_DIR);
+
 	// Honor the consumer's configured entity-yaml directory. Order matches
 	// `Context.entitiesDir` resolution: `paths.entities` first, then legacy
 	// `paths.entities_dir`. (Older `paths.definitions` is NOT a real key and
 	// was a hotfix-fixed bug — #303.)
-	const pathsRaw = config?.paths as Record<string, unknown> | undefined;
 	const entitiesConfigured =
-		typeof pathsRaw?.entities === 'string' && pathsRaw.entities.length > 0
-			? pathsRaw.entities
-			: typeof pathsRaw?.entities_dir === 'string' &&
-				  pathsRaw.entities_dir.length > 0
-				? pathsRaw.entities_dir
+		typeof pathsAny?.entities === 'string' && pathsAny.entities.length > 0
+			? pathsAny.entities
+			: typeof pathsAny?.entities_dir === 'string' &&
+				  pathsAny.entities_dir.length > 0
+				? pathsAny.entities_dir
 				: null;
 	const definitionsPath =
 		entitiesConfigured !== null
@@ -149,6 +182,7 @@ export function resolveAuthIntegrationsScaffoldLocals(
 		appName: path.basename(cwd),
 		appModulePath,
 		sharedRoot,
+		vendorRoot,
 		definitionsPath,
 		authModuleRegistered,
 	};

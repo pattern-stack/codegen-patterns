@@ -4,15 +4,15 @@ import {
   AUTH_INTEGRATION_READER,
   AUTH_INTEGRATION_TOKEN_WRITER,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { IntegrationsModule } from '../../modules/integrations/integrations.module';
-import { IntegrationGrantSinkAdapter } from './integration-grant-sink.adapter';
-import { IntegrationReaderAdapter } from './integration-reader.adapter';
-import { IntegrationTokenWriterAdapter } from './integration-token-writer.adapter';
-import { IntegrationsService } from './integrations.service';
-import { CreateOrUpdateFromOAuthGrantUseCase } from './use-cases/create-or-update-from-oauth-grant.use-case';
-import { DisconnectIntegrationUseCase } from './use-cases/disconnect-integration.use-case';
-import { ListUserIntegrationsUseCase } from './use-cases/list-user-integrations.use-case';
-import { MarkIntegrationRequiresReauthUseCase } from './use-cases/mark-integration-requires-reauth.use-case';
+import { IntegrationsModule } from './integrations.module';
+import { IntegrationGrantSinkAdapter } from './adapters/integration-grant-sink.adapter';
+import { IntegrationReaderAdapter } from './adapters/integration-reader.adapter';
+import { IntegrationTokenWriterAdapter } from './adapters/integration-token-writer.adapter';
+import { IntegrationsService } from './facade/integrations.service';
+import { CreateOrUpdateFromOAuthGrantUseCase } from './oauth/use-cases/create-or-update-from-oauth-grant.use-case';
+import { DisconnectIntegrationUseCase } from './oauth/use-cases/disconnect-integration.use-case';
+import { ListUserIntegrationsUseCase } from './oauth/use-cases/list-user-integrations.use-case';
+import { MarkIntegrationRequiresReauthUseCase } from './oauth/use-cases/mark-integration-requires-reauth.use-case';
 
 /**
  * `IntegrationsAuthModule` — wires the consumer-side adapters that

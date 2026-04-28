@@ -372,7 +372,7 @@ describe('subsystem — install (real)', () => {
 			]),
 		);
 
-		const integrationsDir = path.join(root, 'src/shared/integrations');
+		const integrationsDir = path.join(root, 'src/modules/integrations');
 		const files = fs
 			.readdirSync(integrationsDir, { withFileTypes: true, recursive: true })
 			.filter((d) => d.isFile() && d.name.endsWith('.ts'))
@@ -396,6 +396,92 @@ describe('subsystem — install (real)', () => {
 			'utf-8',
 		);
 		expect(moduleSrc).toMatch(/from\s+['"]\.\.[^'"]*subsystems\/auth['"]/);
+	});
+
+	// #303 fix #5: vendor target lives under <modules>/integrations/, with
+	// adapters/, facade/, and oauth/use-cases/ subfolders, alongside the
+	// codegen-emitted integration entity module.
+	test('auth-integrations install vendors under <modules>/integrations with subfolder layout', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+
+		const base = path.join(root, 'src/modules/integrations');
+		expect(
+			fs.existsSync(
+				path.join(base, 'adapters/integration-reader.adapter.ts'),
+			),
+		).toBe(true);
+		expect(
+			fs.existsSync(
+				path.join(base, 'adapters/integration-token-writer.adapter.ts'),
+			),
+		).toBe(true);
+		expect(
+			fs.existsSync(
+				path.join(base, 'adapters/integration-grant-sink.adapter.ts'),
+			),
+		).toBe(true);
+		expect(fs.existsSync(path.join(base, 'facade/integrations.service.ts'))).toBe(
+			true,
+		);
+		expect(
+			fs.existsSync(
+				path.join(
+					base,
+					'oauth/use-cases/create-or-update-from-oauth-grant.use-case.ts',
+				),
+			),
+		).toBe(true);
+		expect(fs.existsSync(path.join(base, 'integrations-auth.module.ts'))).toBe(
+			true,
+		);
+
+		// The legacy <shared>/integrations/ vendor target must be empty —
+		// the new layout replaces it.
+		expect(
+			fs.existsSync(path.join(root, 'src/shared/integrations')),
+		).toBe(false);
+	});
+
+	test('auth-integrations install honors paths.modules_dir override', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		// Override modules_dir.
+		const configPath = path.join(root, 'codegen.config.yaml');
+		fs.writeFileSync(
+			configPath,
+			'paths:\n  subsystems: src/shared/subsystems\n  modules_dir: src/features\n',
+		);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(
+			fs.existsSync(
+				path.join(
+					root,
+					'src/features/integrations/integrations-auth.module.ts',
+				),
+			),
+		).toBe(true);
 	});
 });
 

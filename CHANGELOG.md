@@ -6,7 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ## [0.6.7] — 2026-04-28
 
-Hotfix bundle for `cdp subsystem install auth-integrations`. 0.6.5 / 0.6.6 shipped the auth-integrations starter and install template, but every downstream consumer ran into four blockers on a fresh install. None of them surfaced from the source-checkout smoke (the install code resolves examples/ via the package root, which exists in dev) — they only exposed themselves through `npm install + bunx cdp subsystem install auth-integrations` against the published tarball. Surfaced by integration-patterns Wave 0b.
+Hotfix bundle for `cdp subsystem install auth-integrations`. 0.6.5 / 0.6.6 shipped the auth-integrations starter and install template, but every downstream consumer ran into four blockers on a fresh install. None of them surfaced from the source-checkout smoke (the install code resolves examples/ via the package root, which exists in dev) — they only exposed themselves through `npm install + bunx cdp subsystem install auth-integrations` against the published tarball. Bundles a fifth fix that unifies the integrations folder layout. Surfaced by integration-patterns Wave 0b.
+
+### Changed
+
+- **BREAKING — `fix(cli)` #303 (fix #5)** — `cdp subsystem install auth-integrations` now vendors the starter under `<paths.backend_src>/modules/integrations/` (override via `paths.modules_dir`), next to the codegen-emitted `integration` entity module. Previously: `<paths.backend_src>/shared/integrations/`. The starter's runtime tree is now organized under `adapters/`, `facade/`, and `oauth/use-cases/` subfolders to avoid collision with codegen output, and `IntegrationsAuthModule` lives at the integrations folder root. Relative imports inside the vendored files (and the bare-package auth import rewriter, fix #3) target the new layout. Detection (`detectInstalledSubsystems`) checks the new vendor target first and falls back to the legacy shared/integrations location for any pre-0.6.7 install. Pre-1.0; the only downstream consumer of 0.6.5/0.6.6 is integration-patterns Wave 0b (unmerged).
 
 ### Fixed
 

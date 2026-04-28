@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { IntegrationService } from '../../../modules/integrations/integration.service';
-import type { Integration } from '../../../modules/integrations/integration.entity';
+import { IntegrationService } from '../../integration.service';
+import type { Integration } from '../../integration.entity';
 
 /**
  * Lists a user's integrations newest-first. Used by the settings page

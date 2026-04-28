@@ -4,8 +4,8 @@ import {
   type IEncryptionKey,
   type IntegrationGrantInput,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { IntegrationService } from '../../../modules/integrations/integration.service';
-import type { Integration } from '../../../modules/integrations/integration.entity';
+import { IntegrationService } from '../../integration.service';
+import type { Integration } from '../../integration.entity';
 
 /**
  * Persists an OAuth2 grant from the authorize-code callback (initial
