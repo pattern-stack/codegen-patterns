@@ -194,6 +194,42 @@ describe('AuthController', () => {
     expect((caught as HttpException).getStatus()).toBe(404);
   });
 
+  it('propagates IUserContext failures from /connect', async () => {
+    const stateStore = new MemoryOAuthStateStore();
+    const userContext: IUserContext = {
+      getCurrentUserId: async () => {
+        throw new Error('no session');
+      },
+    };
+    const grantSink: IIntegrationGrantSink = {
+      createOrUpdateFromOAuthGrant: async () => {},
+    };
+    const registry: ProviderStrategyRegistry = new Map<string, ProviderStrategy>([
+      ['hubspot', makeFakeStrategy('hubspot')],
+    ]);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: STRATEGY_REGISTRY, useValue: registry },
+        { provide: AUTH_USER_CONTEXT, useValue: userContext },
+        { provide: OAUTH_STATE_STORE, useValue: stateStore },
+        { provide: AUTH_INTEGRATION_GRANT_SINK, useValue: grantSink },
+        {
+          provide: AUTH_OPTIONS,
+          useValue: { redirectUriBase: 'https://api.example.test' },
+        },
+      ],
+    }).compile();
+    const controller = moduleRef.get(AuthController);
+
+    const res = makeRes();
+    await expect(
+      controller.connect('hubspot', undefined, {}, res.res),
+    ).rejects.toThrow('no session');
+    // No state should have been minted, no redirect issued.
+    expect(res.captured.length).toBe(0);
+  });
+
   it('rejects /callback when code or state is missing', async () => {
     const { controller } = await makeController();
     let caught: unknown;

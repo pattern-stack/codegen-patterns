@@ -40,7 +40,7 @@ export interface IOAuthStateStore {
 export class OAuthStateError extends Error {
   constructor(
     message: string,
-    public readonly reason: 'missing' | 'expired' | 'replay',
+    public readonly reason: 'missing' | 'expired',
   ) {
     super(message);
     this.name = 'OAuthStateError';

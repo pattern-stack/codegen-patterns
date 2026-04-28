@@ -127,10 +127,10 @@ export class AuthModule {
     }
 
     const encryptionKeyProvider = resolveEncryptionKeyProvider(
-      resolved.encryptionKey ?? 'env',
+      resolved.encryptionKey!,
     );
     const oauthStateStoreProvider = resolveOAuthStateStoreProvider(
-      resolved.oauthStateStore ?? 'memory',
+      resolved.oauthStateStore!,
     );
     const optionsProvider: Provider = {
       provide: AUTH_OPTIONS,

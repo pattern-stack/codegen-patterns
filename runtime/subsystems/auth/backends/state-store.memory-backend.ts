@@ -61,10 +61,6 @@ export class MemoryOAuthStateStore implements IOAuthStateStore {
   async consume(state: string): Promise<OAuthStateRecord> {
     const slot = this.store.get(state);
     if (!slot) {
-      // Could be unknown OR a replay (already deleted on a previous consume).
-      // From the caller's perspective the safer label is 'replay' if we
-      // wanted to track that, but without a tombstone we can't distinguish —
-      // surface as 'missing' (which the controller treats the same way).
       throw new OAuthStateError(
         `OAuth state token unknown or already consumed`,
         'missing',
