@@ -274,7 +274,7 @@ async function main(): Promise<number> {
 		//   - auth-oauth-state.schema.ts via Hygen (sole emitter);
 		//   - `auth:` block into codegen.config.yaml;
 		//   - AuthModule.forRoot TODO into app.module.ts;
-		//   - TOKEN_ENCRYPTION_KEY + AUTH_REDIRECT_URI_BASE into .env.config.
+		//   - INTEGRATION_TOKEN_ENCRYPTION_KEY + AUTH_REDIRECT_URI_BASE into .env.config.
 		run(`bun ${CLI_PATH} subsystem install auth`, tmpDir);
 
 		const configYamlAfterAuth = fs.readFileSync(configYamlPath, 'utf8');
@@ -290,8 +290,8 @@ async function main(): Promise<number> {
 			throw new Error('.env.config not created by auth install');
 		}
 		const envConfig = fs.readFileSync(envConfigPath, 'utf8');
-		if (!envConfig.includes('TOKEN_ENCRYPTION_KEY=')) {
-			throw new Error('TOKEN_ENCRYPTION_KEY missing from .env.config after auth install');
+		if (!envConfig.includes('INTEGRATION_TOKEN_ENCRYPTION_KEY=')) {
+			throw new Error('INTEGRATION_TOKEN_ENCRYPTION_KEY missing from .env.config after auth install');
 		}
 
 		// 5.7. #287 — install the auth-integrations starter. Vendors:

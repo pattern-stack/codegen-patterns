@@ -7,7 +7,7 @@
  * `OAuth2RefreshStrategy` template-method base in `../runtime/`.
  *
  * See `docs/adrs/ADR-031-auth-subsystem.md` and
- * `docs/gate-1-auth-extraction-findings.md` (inbound from dealbrain-v2) for
+ * `docs/gate-1-auth-extraction-findings.md` (extraction-source findings) for
  * the rationale.
  */
 

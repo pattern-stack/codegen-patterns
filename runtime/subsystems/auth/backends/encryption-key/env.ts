@@ -6,7 +6,7 @@
  * ciphertexts — prevents replay-style inference. Auth tag enforces integrity;
  * any tampering throws on decrypt.
  *
- * Key source: `TOKEN_ENCRYPTION_KEY` env var, 32 bytes base64-encoded.
+ * Key source: `INTEGRATION_TOKEN_ENCRYPTION_KEY` env var, 32 bytes base64-encoded.
  * Generate via `openssl rand -base64 32`.
  *
  * Future backend: `kms.ts` (AWS/GCP KMS) for production deployments that
@@ -18,7 +18,7 @@ import type { IEncryptionKey } from '../../protocols/encryption-key';
 export interface EnvEncryptionKeyOptions {
   /** Defaults to `process.env`. Tests inject a fixture. */
   env?: NodeJS.ProcessEnv;
-  /** Defaults to `'TOKEN_ENCRYPTION_KEY'`. */
+  /** Defaults to `'INTEGRATION_TOKEN_ENCRYPTION_KEY'`. */
   envVar?: string;
 }
 
@@ -32,7 +32,7 @@ export class EnvEncryptionKey implements IEncryptionKey {
 
   constructor(opts: EnvEncryptionKeyOptions = {}) {
     const env = opts.env ?? process.env;
-    const envVar = opts.envVar ?? 'TOKEN_ENCRYPTION_KEY';
+    const envVar = opts.envVar ?? 'INTEGRATION_TOKEN_ENCRYPTION_KEY';
     const raw = env[envVar];
     if (!raw) {
       throw new Error(

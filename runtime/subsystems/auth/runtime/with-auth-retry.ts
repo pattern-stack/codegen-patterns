@@ -6,7 +6,7 @@
  * on the refreshed token propagates rather than looping, so transient
  * adapter bugs can't hang the caller.
  *
- * Generalisation over dealbrain's original SFDC-specific version: the
+ * Generalisation over the extraction source's SFDC-specific original: the
  * session-expired classifier is injected. Providers mark their session-
  * expired errors (via `instanceof` of a marker class, or by setting a known
  * property) and pass a classifier matching that shape.

@@ -82,7 +82,7 @@ export type {
   IIntegrationGrantSink,
   IntegrationGrantInput,
   IUserContext,
-  ProviderStrategy,
+  IProviderStrategy,
   ProviderStrategyRegistry,
   ExchangedTokens,
   AuthCredentials,

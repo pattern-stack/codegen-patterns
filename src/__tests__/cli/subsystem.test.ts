@@ -288,11 +288,11 @@ describe('subsystem — install (real)', () => {
 		const parsed = JSON.parse(out);
 		expect(parsed.status).toBe('already-installed');
 
-		// Files unchanged — no duplicate auth: block, TOKEN_ENCRYPTION_KEY
+		// Files unchanged — no duplicate auth: block, INTEGRATION_TOKEN_ENCRYPTION_KEY
 		// not regenerated, no duplicate AuthModule TODO.
 		expect(fs.readFileSync(configPath, 'utf-8')).toBe(configBefore);
 		expect(fs.readFileSync(envConfigPath, 'utf-8')).toBe(envBefore);
-		const tokenLines = envBefore.match(/^TOKEN_ENCRYPTION_KEY=/gm) ?? [];
+		const tokenLines = envBefore.match(/^INTEGRATION_TOKEN_ENCRYPTION_KEY=/gm) ?? [];
 		expect(tokenLines.length).toBe(1);
 		if (fs.existsSync(appModulePath)) {
 			expect(fs.readFileSync(appModulePath, 'utf-8')).toBe(appModuleBefore);

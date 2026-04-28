@@ -21,9 +21,9 @@
  *   - `app-module-hook.ejs.t` — appends a TODO comment block to
  *     app.module.ts directing the human to register
  *     `AuthModule.forRoot({ ... })`. Same convention as observability.
- *   - `env-config.ejs.t` — appends `TOKEN_ENCRYPTION_KEY=<b64>` and
- *     `AUTH_REDIRECT_URI_BASE=<url>` to `.env.config`. Idempotent via
- *     `skip_if: "TOKEN_ENCRYPTION_KEY"` — re-running install does NOT
+ *   - `env-config.ejs.t` — appends `INTEGRATION_TOKEN_ENCRYPTION_KEY=<b64>`
+ *     and `AUTH_REDIRECT_URI_BASE=<url>` to `.env.config`. Idempotent via
+ *     `skip_if: "INTEGRATION_TOKEN_ENCRYPTION_KEY"` — re-running install does NOT
  *     regenerate the key (rotation is a separate operation).
  *
  * Auth has NO `multi_tenant` knob (see auth-scaffold-locals.ts docstring).

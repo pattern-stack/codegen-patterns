@@ -436,7 +436,7 @@ export class SubsystemInstallCommand extends Command {
 		// #287: auth subsystem scaffold — emits the `auth_oauth_state`
 		// drizzle schema, appends the `auth:` config block, appends the
 		// `AuthModule.forRoot` TODO to `app.module.ts`, and appends
-		// `TOKEN_ENCRYPTION_KEY` + `AUTH_REDIRECT_URI_BASE` to `.env.config`.
+		// `INTEGRATION_TOKEN_ENCRYPTION_KEY` + `AUTH_REDIRECT_URI_BASE` to `.env.config`.
 		const authScaffold =
 			desc.name === 'auth'
 				? runAuthScaffold(ctx.cwd, ctx.config, {

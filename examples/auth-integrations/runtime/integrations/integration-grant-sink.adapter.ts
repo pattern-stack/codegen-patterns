@@ -9,7 +9,7 @@ import { CreateOrUpdateFromOAuthGrantUseCase } from './use-cases/create-or-updat
  * `IIntegrationGrantSink` adapter — pass-through to
  * `CreateOrUpdateFromOAuthGrantUseCase`. The auth subsystem's
  * `AuthController.callback` invokes this after
- * `ProviderStrategy.exchangeCodeForTokens`.
+ * `IProviderStrategy.exchangeCodeForTokens`.
  *
  * This adapter injects the use case directly (not the
  * `IntegrationsService` facade) for symmetry with the reader and

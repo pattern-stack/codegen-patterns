@@ -29,7 +29,7 @@
  *   type IIntegrationGrantSink,
  *   type IntegrationGrantInput,
  *   type IUserContext,
- *   type ProviderStrategy,
+ *   type IProviderStrategy,
  *   type ProviderStrategyRegistry,
  *   type ExchangedTokens,
  * } from '@pattern-stack/codegen/runtime/subsystems/auth';
@@ -58,7 +58,7 @@ export type {
 } from './protocols/integration-store';
 export type { IUserContext } from './protocols/user-context';
 export type {
-  ProviderStrategy,
+  IProviderStrategy,
   ProviderStrategyRegistry,
   ExchangedTokens,
 } from './protocols/provider-strategy';

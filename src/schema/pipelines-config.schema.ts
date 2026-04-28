@@ -64,7 +64,7 @@ export const FrontendPipelineSchema = z.object({
   /**
    * Named preset that collapses the ~12 individual frontend config knobs
    * into a single opinionated bundle. Resolved elsewhere in the codegen.
-   * Examples: 'dealbrain', 'tanstack-electric'
+   * Examples: 'tanstack-electric'
    */
   preset: z.string().optional(),
 });
@@ -178,7 +178,7 @@ export type PathsConfig = z.infer<typeof PathsConfigSchema>;
  *     architecture: clean-lite-ps
  *   frontend:
  *     enabled: true
- *     preset: dealbrain
+ *     preset: tanstack-electric
  *   shared:
  *     enabled: true
  * ```

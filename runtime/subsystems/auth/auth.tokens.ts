@@ -23,7 +23,7 @@
  * `HUBSPOT_AUTH_STRATEGY`) by each integration module — this subsystem does
  * not mandate a single `AUTH_STRATEGY` token because an app typically has
  * many concurrent strategies, one per provider. They are dispatched through
- * `STRATEGY_REGISTRY` (a `ReadonlyMap<slug, ProviderStrategy>`), populated
+ * `STRATEGY_REGISTRY` (a `ReadonlyMap<slug, IProviderStrategy>`), populated
  * by per-provider modules via a `useFactory` provider.
  */
 export const ENCRYPTION_KEY = Symbol('ENCRYPTION_KEY');

@@ -4,7 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.5] — 2026-04-27
+## [0.6.6] — 2026-04-27
+
+Bundled cleanup PR for the auth subsystem surfaced during integration-patterns review. Pre-1.0, so two breaking renames are taken without compatibility shims.
+
+### Changed
+
+- **BREAKING — env var rename.** `TOKEN_ENCRYPTION_KEY` → `INTEGRATION_TOKEN_ENCRYPTION_KEY`. The auth subsystem only encrypts integration tokens; the scoped name is clearer about what the key protects and avoids colliding with other token-encryption keys a consumer might own. Read site (`runtime/subsystems/auth/backends/encryption-key/env.ts`), install template (`templates/subsystem/auth/env-config.ejs.t` + idempotency `skip_if`), CLI scaffold helpers, tests, and docs all moved together. Consumers running 0.6.5 must rename the env var and the `skip_if` line in their generated `.env.config`.
+- **BREAKING — interface rename.** `ProviderStrategy` → `IProviderStrategy` to match the rest of the auth port naming (`IIntegrationReader`, `IUserContext`, `IOAuthStateStore`, `IEncryptionKey`). Convention documented at the top of `runtime/subsystems/auth/protocols/provider-strategy.ts`: `I*` for behavioral ports, no prefix for data DTOs / template-method abstract classes. `ProviderStrategyRegistry` (a `ReadonlyMap` value-shape) keeps its name.
+- **OSS-hygiene scrub.** Removed or generalized references to the upstream extraction-source consumer across `runtime/`, `examples/`, and user-facing docs. ADRs and RFCs that document decision history retain their references intentionally.
+
+
 
 Auth subsystem reaches consumers. `runtime/subsystems/auth/`, the `auth-integrations` starter, and the `cdp subsystem install auth` + `auth-integrations` templates were all merged on `main` (PRs #289, #290, #292, #293, #294, #295) but the published artifact was still pinned at `0.6.4`. This release ships them.
 

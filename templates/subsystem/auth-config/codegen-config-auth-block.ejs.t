@@ -6,7 +6,7 @@ skip_if: "auth:"
 ---
 
 auth:
-  # ── Encryption key (TOKEN_ENCRYPTION_KEY from .env.config) ──
+  # ── Encryption key (INTEGRATION_TOKEN_ENCRYPTION_KEY from .env.config) ──
   encryption_key: env
 
   # ── OAuth state store (drizzle for prod, memory for tests) ──

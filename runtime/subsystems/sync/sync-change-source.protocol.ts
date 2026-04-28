@@ -6,7 +6,7 @@
  * depend on a specific backend implementation.
  *
  * Three detection modes (poll / cdc / webhook) converge on this single port
- * per ADR-0002 (dealbrain-v2). Per-mode differences live in the
+ * per ADR-0002 (the upstream consumer). Per-mode differences live in the
  * `Change.source` / `dedupKey` / `providerChangedFields` metadata fields,
  * not in separate ports.
  *
