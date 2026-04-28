@@ -84,7 +84,7 @@ change.
 ## `provider` is `string`, not `enum`
 
 Adding a new provider (`google`, `gusto`, …) should be a code change (a new
-`ProviderStrategy` registered in `STRATEGY_REGISTRY`), not a YAML/migration
+`IProviderStrategy` registered in `STRATEGY_REGISTRY`), not a YAML/migration
 change. The string column matches the strategy registry's key type and
 supports any provider slug your app cares about.
 

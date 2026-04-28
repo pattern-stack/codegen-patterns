@@ -5,7 +5,7 @@
  * per-field diff (`{ from, to }`) for every field whose value changed.
  * Returns `'noop'` when the record is unchanged.
  *
- * Design decisions (extracted from dealbrain-v2 + HS-9 findings):
+ * Design decisions (extracted from the upstream consumer + HS-9 findings):
  *
  * 1. **Ignore list** — row metadata that sinks/services stamp unconditionally
  *    so upstream cannot reasonably disagree:

@@ -19,12 +19,12 @@
  *     reserved for `project upgrade-*` flows, and a TODO comment with the
  *     full ready-to-paste snippet is friendlier than a half-correct AST
  *     patch.
- *   - `env-config.ejs.t` — appends `TOKEN_ENCRYPTION_KEY=<freshly
+ *   - `env-config.ejs.t` — appends `INTEGRATION_TOKEN_ENCRYPTION_KEY=<freshly
  *     generated 32-byte b64>` plus the `AUTH_REDIRECT_URI_BASE` knob to
  *     `.env.config`. The encryption key is generated ONCE per install (no
  *     idempotent re-run) — re-running with `--force` does not regenerate
- *     it because `skip_if: "TOKEN_ENCRYPTION_KEY"` short-circuits the
- *     inject. This is correct: rotating the key is a separate, auditable
+ *     it because `skip_if: "INTEGRATION_TOKEN_ENCRYPTION_KEY"` short-circuits
+ *     the inject. This is correct: rotating the key is a separate, auditable
  *     operation and silently regenerating it on re-install would invalidate
  *     every encrypted token in the consumer's database.
  *
@@ -59,7 +59,7 @@ export interface AuthScaffoldLocals {
 	schemaPath: string;
 	/** Where `app-module-hook.ejs.t` appends the `AuthModule.forRoot` TODO. */
 	appModulePath: string;
-	/** Where `env-config.ejs.t` appends `TOKEN_ENCRYPTION_KEY=...`. */
+	/** Where `env-config.ejs.t` appends `INTEGRATION_TOKEN_ENCRYPTION_KEY=...`. */
 	envConfigPath: string;
 	/**
 	 * Default `http://localhost:3000`; overridable via
@@ -99,7 +99,7 @@ export interface AuthScaffoldLocalsInput {
  *   against null / undefined / non-string YAML surprises).
  * - `tokenEncryptionKey` is generated via `crypto.randomBytes(32)` at
  *   resolve time. The b64 encoding is 44 chars — matches what
- *   `EnvEncryptionKey` expects from `process.env.TOKEN_ENCRYPTION_KEY`.
+ *   `EnvEncryptionKey` expects from `process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY`.
  */
 export function resolveAuthScaffoldLocals(
 	input: AuthScaffoldLocalsInput,

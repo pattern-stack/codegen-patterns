@@ -17,5 +17,5 @@ skip_if: "AuthModule"
 //     redirectUriBase: process.env.AUTH_REDIRECT_URI_BASE ?? '<%= redirectUriBase %>',
 //   }),
 //
-// Requires TOKEN_ENCRYPTION_KEY in your environment (see .env.config).
+// Requires INTEGRATION_TOKEN_ENCRYPTION_KEY in your environment (see .env.config).
 // Provide an IUserContext adapter (your app's session/JWT scheme).

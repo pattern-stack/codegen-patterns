@@ -6,7 +6,7 @@
  * those rows — consumers implement these narrow ports against whatever
  * `integrations` table their app uses.
  *
- * In dealbrain-v2 (the extraction source) both ports are satisfied by a
+ * In the extraction-source app both ports are satisfied by a
  * pair of thin adapters over `IntegrationService` + `RefreshIntegrationUseCase`.
  * The codegen-patterns `examples/auth-integrations/` starter (separate PR)
  * ships a canonical `integration.yaml` whose generated service + use case
@@ -70,7 +70,7 @@ export interface IIntegrationTokenWriter {
  * authorize-code callback (i.e. the user just connected a new provider, or
  * re-connected an existing one).
  *
- * `AuthController.callback` invokes this after `ProviderStrategy.exchangeCodeForTokens`.
+ * `AuthController.callback` invokes this after `IProviderStrategy.exchangeCodeForTokens`.
  * The subsystem itself never imports a concrete `IntegrationsService` — the
  * consumer's `auth-integrations` starter (or any equivalent) adapts this
  * port. Keeps the auth subsystem standalone: a non-codegen consumer can

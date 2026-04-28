@@ -41,7 +41,7 @@
  * is strictly provider-agnostic:
  *   - `entityType` is `string` throughout; no `'opportunity' | 'account' | ...`
  *     narrowing leaks into the use case
- *   - dealbrain's `SyncRunRecorderService` class injection replaced with the
+ *   - the upstream consumer's `SyncRunRecorderService` class injection replaced with the
  *     `ISyncRunRecorder` protocol (backend lands in SYNC-4)
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';

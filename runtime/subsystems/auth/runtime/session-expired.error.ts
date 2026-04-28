@@ -8,8 +8,8 @@
  * the `isSessionExpiredError` predicate to decide whether to force-refresh
  * and retry once.
  *
- * This discriminator replaces the SFDC-only `instanceof` check from
- * dealbrain-v2's original `withAuthRetry`. See
+ * This discriminator replaces the SFDC-only `instanceof` check from the
+ * extraction-source app's original `withAuthRetry`. See
  * `docs/gate-1-auth-extraction-findings.md` (recommendation 4).
  */
 export class SessionExpiredError extends Error {

@@ -1,7 +1,7 @@
 /**
  * AuthController — round-trip the connect/callback dance with port stand-ins.
  *
- * Uses a fake `ProviderStrategy` (only the two new connect-flow methods are
+ * Uses a fake `IProviderStrategy` (only the two new connect-flow methods are
  * relevant — the refresh path is exercised by `oauth2-refresh.strategy.spec.ts`),
  * a fake `IUserContext`, the real `MemoryOAuthStateStore`, and a fake
  * `IIntegrationGrantSink` that just captures calls.
@@ -30,7 +30,7 @@ import {
 } from '../../../../../runtime/subsystems/auth/auth.tokens';
 import type {
   ExchangedTokens,
-  ProviderStrategy,
+  IProviderStrategy,
   ProviderStrategyRegistry,
 } from '../../../../../runtime/subsystems/auth/protocols/provider-strategy';
 import type { IUserContext } from '../../../../../runtime/subsystems/auth/protocols/user-context';
@@ -56,7 +56,7 @@ function makeRes() {
   return { res, captured };
 }
 
-function makeFakeStrategy(slug: string): ProviderStrategy {
+function makeFakeStrategy(slug: string): IProviderStrategy {
   const tokens: ExchangedTokens = {
     accessToken: `at-${slug}`,
     refreshToken: `rt-${slug}`,
@@ -74,7 +74,7 @@ function makeFakeStrategy(slug: string): ProviderStrategy {
     resolve: mock(async () => {
       throw new Error('not used');
     }),
-  } as unknown as ProviderStrategy;
+  } as unknown as IProviderStrategy;
 }
 
 async function makeController(opts?: {
@@ -94,7 +94,7 @@ async function makeController(opts?: {
   const strategy = makeFakeStrategy('hubspot');
   const registry: ProviderStrategyRegistry =
     opts?.registry ??
-    new Map<string, ProviderStrategy>([['hubspot', strategy]]);
+    new Map<string, IProviderStrategy>([['hubspot', strategy]]);
 
   const moduleRef = await Test.createTestingModule({
     controllers: [AuthController],
@@ -204,7 +204,7 @@ describe('AuthController', () => {
     const grantSink: IIntegrationGrantSink = {
       createOrUpdateFromOAuthGrant: async () => {},
     };
-    const registry: ProviderStrategyRegistry = new Map<string, ProviderStrategy>([
+    const registry: ProviderStrategyRegistry = new Map<string, IProviderStrategy>([
       ['hubspot', makeFakeStrategy('hubspot')],
     ]);
     const moduleRef = await Test.createTestingModule({

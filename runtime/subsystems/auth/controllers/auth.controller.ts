@@ -9,7 +9,7 @@
  *     302-redirects to the post-connect path.
  *
  * Hexagonal seams:
- *   - `STRATEGY_REGISTRY` (ReadonlyMap<slug, ProviderStrategy>) — dispatch.
+ *   - `STRATEGY_REGISTRY` (ReadonlyMap<slug, IProviderStrategy>) — dispatch.
  *     Concrete per-provider strategies live consumer-side and contribute
  *     entries via a `useFactory` in the consumer's app module.
  *   - `AUTH_USER_CONTEXT` (IUserContext) — resolves "who is this request"
@@ -44,7 +44,7 @@ import type { AuthModuleOptions } from '../auth.module';
 import type { IOAuthStateStore } from '../protocols/oauth-state-store';
 import type { IUserContext } from '../protocols/user-context';
 import type {
-  ProviderStrategy,
+  IProviderStrategy,
   ProviderStrategyRegistry,
 } from '../protocols/provider-strategy';
 import type { IIntegrationGrantSink } from '../protocols/integration-store';
@@ -131,7 +131,7 @@ export class AuthController {
     );
   }
 
-  private requireStrategy(slug: string): ProviderStrategy {
+  private requireStrategy(slug: string): IProviderStrategy {
     const strategy = this.registry.get(slug);
     if (!strategy) {
       throw new HttpException(

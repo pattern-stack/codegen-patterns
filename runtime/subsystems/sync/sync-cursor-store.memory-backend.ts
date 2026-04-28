@@ -21,7 +21,7 @@
  * could occur. Tests that want to assert per-tenant isolation should
  * target the Drizzle backend.
  *
- * Not shipped in dealbrain-v2; this is a subsystem-first addition for the
+ * Not shipped in the upstream consumer; this is a subsystem-first addition for the
  * test surface. Consumed by:
  *   - SYNC-5 unit tests (`ExecuteSyncUseCase` against synthetic sources)
  *   - SYNC-6 module tests (`SyncModule.forRoot({ backend: 'memory' })`)

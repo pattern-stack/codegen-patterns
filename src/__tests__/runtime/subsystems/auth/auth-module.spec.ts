@@ -23,15 +23,15 @@ import type {
 } from '../../../../../runtime/subsystems/auth/protocols/oauth-state-store';
 
 describe('AuthModule.forRoot', () => {
-  const previousKey = process.env['TOKEN_ENCRYPTION_KEY'];
+  const previousKey = process.env['INTEGRATION_TOKEN_ENCRYPTION_KEY'];
 
   beforeAll(() => {
-    process.env['TOKEN_ENCRYPTION_KEY'] = randomBytes(32).toString('base64');
+    process.env['INTEGRATION_TOKEN_ENCRYPTION_KEY'] = randomBytes(32).toString('base64');
   });
 
   afterAll(() => {
-    if (previousKey === undefined) delete process.env['TOKEN_ENCRYPTION_KEY'];
-    else process.env['TOKEN_ENCRYPTION_KEY'] = previousKey;
+    if (previousKey === undefined) delete process.env['INTEGRATION_TOKEN_ENCRYPTION_KEY'];
+    else process.env['INTEGRATION_TOKEN_ENCRYPTION_KEY'] = previousKey;
   });
 
   it('provides defaults (EnvEncryptionKey + MemoryOAuthStateStore, no controller)', async () => {

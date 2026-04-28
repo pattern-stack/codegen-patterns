@@ -2,8 +2,8 @@
  * Abstract base class for OAuth2 refresh-token strategies.
  *
  * Template-method pattern: `resolve()` is concrete; four small hooks inject
- * provider specifics. Validated across two providers in dealbrain-v2
- * (SalesforceAuthStrategy, HubSpotAuthStrategy) before extraction here — see
+ * provider specifics. Validated across two providers (Salesforce, HubSpot)
+ * in the extraction-source app before being extracted here — see
  * `docs/gate-1-auth-extraction-findings.md` for the "build first, extract
  * later" evidence.
  *
