@@ -155,6 +155,25 @@ function filterConsumerErrors(output: string, tmpDir: string): string[] {
 			continue;
 		}
 
+		// #287: the vendored `auth-integrations` adapters under
+		// `src/shared/integrations/` import from
+		// `apps/api/src/modules/integrations/integration.service` (etc.) —
+		// the codegen layer that `cdp entity new integration` would emit.
+		// We don't run that step in this smoke (it would require also
+		// scaffolding a Drizzle schema for `integrations` and bundling a
+		// fixture). The adapters are deliberately vendored-with-broken-imports
+		// so the consumer can `cdp entity new integration` against their own
+		// integration entity. Filter these out — they're scope-of-consumer
+		// errors, not generator bugs.
+		if (line.includes('shared/integrations/') || line.includes('shared\\integrations\\')) {
+			continue;
+		}
+		// Also tolerate the `@pattern-stack/codegen/runtime/subsystems/auth`
+		// barrel import — the smoke project doesn't `bun add` the package.
+		if (line.includes("'@pattern-stack/codegen/")) {
+			continue;
+		}
+
 		errors.push(line);
 	}
 	return errors;
@@ -237,10 +256,69 @@ async function main(): Promise<number> {
 		}
 
 		const appModulePath = path.join(tmpDir, 'src/app.module.ts');
-		const appModule = fs.readFileSync(appModulePath, 'utf8');
+		let appModule = fs.readFileSync(appModulePath, 'utf8');
 		if (!appModule.includes('ObservabilityModule.forRoot')) {
 			throw new Error(
 				'ObservabilityModule TODO hint missing from app.module.ts after install',
+			);
+		}
+
+		// 5.6. #287 — install the auth subsystem. Drops:
+		//   - runtime/subsystems/auth/ via copyRuntime (protocols, ports,
+		//     backends except schema, controller, runtime helpers, module);
+		//   - auth-oauth-state.schema.ts via Hygen (sole emitter);
+		//   - `auth:` block into codegen.config.yaml;
+		//   - AuthModule.forRoot TODO into app.module.ts;
+		//   - TOKEN_ENCRYPTION_KEY + AUTH_REDIRECT_URI_BASE into .env.config.
+		run(`bun ${CLI_PATH} subsystem install auth`, tmpDir);
+
+		const configYamlAfterAuth = fs.readFileSync(configYamlPath, 'utf8');
+		if (!configYamlAfterAuth.includes('auth:')) {
+			throw new Error('auth: block missing from codegen.config.yaml after install');
+		}
+		appModule = fs.readFileSync(appModulePath, 'utf8');
+		if (!appModule.includes('AuthModule')) {
+			throw new Error('AuthModule TODO hint missing from app.module.ts after auth install');
+		}
+		const envConfigPath = path.join(tmpDir, '.env.config');
+		if (!fs.existsSync(envConfigPath)) {
+			throw new Error('.env.config not created by auth install');
+		}
+		const envConfig = fs.readFileSync(envConfigPath, 'utf8');
+		if (!envConfig.includes('TOKEN_ENCRYPTION_KEY=')) {
+			throw new Error('TOKEN_ENCRYPTION_KEY missing from .env.config after auth install');
+		}
+
+		// 5.7. #287 — install the auth-integrations starter. Vendors:
+		//   - examples/auth-integrations/runtime/integrations/** →
+		//       <sharedRoot>/integrations/** (full-file copies, not via Hygen);
+		//   - examples/auth-integrations/definitions/entities/integration.yaml →
+		//       <cwd>/definitions/entities/integration.yaml;
+		//   - IntegrationsAuthModule TODO into app.module.ts.
+		run(`bun ${CLI_PATH} subsystem install auth-integrations`, tmpDir);
+
+		const integrationsAuthModulePath = path.join(
+			tmpDir,
+			'src/shared/integrations/integrations-auth.module.ts',
+		);
+		if (!fs.existsSync(integrationsAuthModulePath)) {
+			throw new Error(
+				'integrations-auth.module.ts not vendored by auth-integrations install',
+			);
+		}
+		const integrationYamlPath = path.join(
+			tmpDir,
+			'definitions/entities/integration.yaml',
+		);
+		if (!fs.existsSync(integrationYamlPath)) {
+			throw new Error(
+				'integration.yaml not vendored by auth-integrations install',
+			);
+		}
+		appModule = fs.readFileSync(appModulePath, 'utf8');
+		if (!appModule.includes('IntegrationsAuthModule')) {
+			throw new Error(
+				'IntegrationsAuthModule TODO hint missing from app.module.ts after auth-integrations install',
 			);
 		}
 

@@ -97,6 +97,8 @@ codegen subsystem install storage    # file storage (local filesystem)
 codegen subsystem install sync       # external-system sync engine (IChangeSource + orchestrator + audit log)
 codegen subsystem install bridge     # event-to-job bridge (durable async fanout via @JobHandler.triggers)
 codegen subsystem install openapi-config  # OpenAPI/Swagger — Zod DTOs as /docs-json + Swagger UI. See docs/CONSUMER-SETUP.md §OpenAPI
+codegen subsystem install auth       # OAuth integration auth (AuthModule + ports + state store + AuthController)
+codegen subsystem install auth-integrations  # vendored integrations entity + adapters (consumes auth subsystem)
 codegen subsystem list               # show installed + available
 
 codegen events consumers <type>      # list all Tier 1/2/3 consumers of an event type

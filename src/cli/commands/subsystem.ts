@@ -42,6 +42,14 @@ import {
 	localsToHygenArgs as observabilityLocalsToHygenArgs,
 	resolveObservabilityScaffoldLocals,
 } from '../shared/observability-scaffold-locals.js';
+import {
+	localsToHygenArgs as authLocalsToHygenArgs,
+	resolveAuthScaffoldLocals,
+} from '../shared/auth-scaffold-locals.js';
+import {
+	localsToHygenArgs as authIntegrationsLocalsToHygenArgs,
+	resolveAuthIntegrationsScaffoldLocals,
+} from '../shared/auth-integrations-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
 import {
 	SUBSYSTEMS,
@@ -214,6 +222,18 @@ function backendFileFilter(
 			return false;
 		}
 
+		// #287: same pattern as events/jobs/sync — the auth Hygen template
+		// `templates/subsystem/auth/auth-oauth-state.schema.ejs.t` is the
+		// sole emitter for the `auth_oauth_state` schema in consumer
+		// projects. Skipping here ensures `copyRuntime` never writes the
+		// runtime source file.
+		if (
+			subsystemName === 'auth' &&
+			file === 'auth-oauth-state.schema.ts'
+		) {
+			return false;
+		}
+
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;
 			if (file.endsWith('.schema.ts')) return false;
@@ -283,6 +303,15 @@ export class SubsystemInstallCommand extends Command {
 		// codegen.config.yaml. Short-circuit the full runtime-copy flow.
 		if (desc.name === 'openapi-config') {
 			return this.executeOpenApiConfig(ctx);
+		}
+
+		// #287: auth-integrations is vendored from `examples/auth-integrations/`,
+		// not from `runtime/subsystems/`. The shape is so different
+		// (full-file copies of adapters + entity yaml; no ports/backends
+		// dance) that it short-circuits the `copyRuntime` flow entirely.
+		// Same parallel structure as `executeOpenApiConfig`.
+		if (desc.name === 'auth-integrations') {
+			return this.executeAuthIntegrations(ctx);
 		}
 
 		const installed = await detectInstalledSubsystems(ctx);
@@ -404,6 +433,19 @@ export class SubsystemInstallCommand extends Command {
 					})
 				: null;
 
+		// #287: auth subsystem scaffold — emits the `auth_oauth_state`
+		// drizzle schema, appends the `auth:` config block, appends the
+		// `AuthModule.forRoot` TODO to `app.module.ts`, and appends
+		// `TOKEN_ENCRYPTION_KEY` + `AUTH_REDIRECT_URI_BASE` to `.env.config`.
+		const authScaffold =
+			desc.name === 'auth'
+				? runAuthScaffold(ctx.cwd, ctx.config, {
+						dryRun: this.dryRun,
+						json: isJsonMode(),
+						forceConfig: this.forceConfig,
+					})
+				: null;
+
 		// #121 (F13): a parse-error on codegen.config.yaml causes the scaffold
 		// to refuse re-injection rather than silently overwrite. Surface it as
 		// a non-zero exit with a clear message; runtime files were already
@@ -438,6 +480,12 @@ export class SubsystemInstallCommand extends Command {
 			);
 			return 1;
 		}
+		if (authScaffold?.configBlockOutcome === 'parse-error') {
+			printError(
+				'codegen.config.yaml is not valid YAML: refusing to inject auth config block. Fix the YAML and re-run.',
+			);
+			return 1;
+		}
 
 		if (isJsonMode()) {
 			printJson({
@@ -458,6 +506,7 @@ export class SubsystemInstallCommand extends Command {
 				...(syncScaffold ? { scaffold: syncScaffold } : {}),
 				...(bridgeScaffold ? { scaffold: bridgeScaffold } : {}),
 				...(observabilityScaffold ? { scaffold: observabilityScaffold } : {}),
+				...(authScaffold ? { scaffold: authScaffold } : {}),
 			});
 			return 0;
 		}
@@ -504,6 +553,14 @@ export class SubsystemInstallCommand extends Command {
 					`Observability scaffold — ${observabilityScaffold.planned.length} template targets`,
 				);
 				for (const p of observabilityScaffold.planned) {
+					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+				}
+			}
+			if (authScaffold?.planned?.length) {
+				printInfo(
+					`Auth scaffold — ${authScaffold.planned.length} template targets`,
+				);
+				for (const p of authScaffold.planned) {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
@@ -572,6 +629,17 @@ export class SubsystemInstallCommand extends Command {
 				);
 			}
 		}
+		if (authScaffold) {
+			if (authScaffold.ok) {
+				printSuccess(
+					`auth scaffold applied (schema, config block, app.module.ts hint, .env.config key)`,
+				);
+			} else {
+				printWarning(
+					`auth scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${authScaffold.error ?? 'unknown error'}`,
+				);
+			}
+		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
 		// OBS-7: observability is a combiner (ADR-025) — no backend selection,
 		// and module order matters (composes siblings via @Optional() DI).
@@ -580,6 +648,18 @@ export class SubsystemInstallCommand extends Command {
 			printInfo(
 				'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync in app.module.ts',
 			);
+		} else if (desc.name === 'auth') {
+			// #287: auth's forRoot shape is richer than `{ backend }` —
+			// it takes encryptionKey, oauthStateStore, enableController,
+			// redirectUriBase. The TODO appended to app.module.ts has the
+			// full snippet; emit the next-steps block instead of the
+			// generic forRoot hint.
+			printInfo('auth subsystem installed.');
+			printInfo('Next steps:');
+			printInfo("  1. Provide an IUserContext adapter (your app's session/JWT scheme — req is typed `unknown`, narrow to your framework's Request inside the adapter).");
+			printInfo('  2. Install the auth-integrations starter:  cdp subsystem install auth-integrations');
+			printInfo('  3. Bind per-provider strategies into STRATEGY_REGISTRY (HubSpot, SFDC, Google, ...).');
+			printInfo('  4. Configure provider client_id/client_secret in secrets/secrets.yaml.');
 		} else {
 			printInfo(
 				`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
@@ -665,6 +745,95 @@ export class SubsystemInstallCommand extends Command {
 		);
 		return 0;
 	}
+
+	/**
+	 * #287: install flow for the `auth-integrations` starter.
+	 *
+	 * Source is `examples/auth-integrations/`, NOT `runtime/subsystems/`,
+	 * so this method short-circuits the `copyRuntime` flow. It vendors the
+	 * adapters tree + the canonical `integration.yaml`, then invokes the
+	 * `subsystem auth-integrations` Hygen action to append the
+	 * `IntegrationsAuthModule` TODO to `app.module.ts`.
+	 *
+	 * Idempotent: pre-existing files are skipped unless `--force` is set.
+	 */
+	private async executeAuthIntegrations(ctx: Context): Promise<number> {
+		const installed = await detectInstalledSubsystems(ctx);
+		const already = installed.find((i) => i.name === 'auth-integrations');
+		if (already && !this.force) {
+			if (isJsonMode()) {
+				printJson({
+					command: 'subsystem install',
+					subsystem: 'auth-integrations',
+					status: 'already-installed',
+					path: already.path,
+					backend: already.backend,
+				});
+			} else {
+				printInfo(
+					`auth-integrations is already installed at ${already.path} (pass --force to reinstall)`,
+				);
+			}
+			return 0;
+		}
+
+		const scaffold = runAuthIntegrationsScaffold(ctx.cwd, ctx.config, {
+			dryRun: this.dryRun,
+			json: isJsonMode(),
+			force: this.force,
+		});
+
+		if (!scaffold.ok) {
+			printError(
+				`auth-integrations install failed: ${scaffold.error ?? 'unknown error'}`,
+			);
+			return 1;
+		}
+
+		if (isJsonMode()) {
+			printJson({
+				command: 'subsystem install',
+				subsystem: 'auth-integrations',
+				dryRun: this.dryRun,
+				planned: scaffold.planned,
+				written: scaffold.written ?? [],
+				skipped: scaffold.skipped ?? [],
+				authModuleRegistered: scaffold.authModuleRegistered ?? false,
+			});
+			return 0;
+		}
+
+		if (this.dryRun) {
+			printInfo(
+				`Dry run — auth-integrations would vendor adapters + integration.yaml + append TODO`,
+			);
+			for (const p of scaffold.planned) {
+				console.log(
+					`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`,
+				);
+			}
+			return 0;
+		}
+
+		const writtenCount = scaffold.written?.length ?? 0;
+		const skippedCount = scaffold.skipped?.length ?? 0;
+		printSuccess(
+			`auth-integrations starter vendored (${writtenCount} files written, ${skippedCount} skipped).`,
+		);
+
+		if (scaffold.authModuleRegistered === false) {
+			printWarning(
+				'AuthModule.forRoot(...) not detected in app.module.ts. Run `cdp subsystem install auth` first — IntegrationsAuthModule requires ENCRYPTION_KEY from it.',
+			);
+		}
+
+		printInfo('auth-integrations starter vendored.');
+		printInfo('Next steps:');
+		printInfo('  1. Run `cdp entity new integration` to scaffold the codegen layer (apps/api/src/modules/integrations/integration.service) the adapters import.');
+		printInfo('  2. Ensure AuthModule.forRoot(...) is registered in AppModule (run `cdp subsystem install auth` if not).');
+		printInfo('  3. Wire IntegrationsAuthModule into AppModule (see TODO appended to app.module.ts).');
+		return 0;
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -721,7 +890,8 @@ interface ConfigBlockActionInput {
 		| 'sync-config'
 		| 'bridge-config'
 		| 'openapi-config'
-		| 'observability-config';
+		| 'observability-config'
+		| 'auth-config';
 	configPath: string;
 	subsystem: DetectorSubsystemName;
 	outcome: ConfigBlockOutcome;
@@ -1234,6 +1404,275 @@ function runObservabilityScaffold(
 	}
 
 	return { ok: true, planned, configBlockOutcome };
+}
+
+// ---------------------------------------------------------------------------
+// #287 — auth subsystem Hygen scaffold wiring
+// ---------------------------------------------------------------------------
+
+interface AuthScaffoldOutcome {
+	ok: boolean;
+	planned: string[];
+	error?: string;
+	configBlockOutcome?: ConfigBlockOutcome;
+}
+
+function runAuthScaffold(
+	cwd: string,
+	config: Context['config'],
+	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
+): AuthScaffoldOutcome {
+	const locals = resolveAuthScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+	});
+
+	// Files the auth templates will target (used by --dry-run output and
+	// JSON reporting). Ordering matches the template set: schema first
+	// (sole emitter — see backendFileFilter), then config block, then
+	// app.module.ts TODO, then .env.config.
+	const planned: string[] = [
+		locals.schemaPath,
+		locals.configPath,
+		locals.appModulePath,
+		locals.envConfigPath,
+	];
+
+	const configBlockOutcome = planConfigBlockAction(
+		locals.configPath,
+		'auth',
+		opts.forceConfig,
+	);
+
+	if (configBlockOutcome === 'parse-error') {
+		return { ok: false, planned, configBlockOutcome };
+	}
+
+	if (opts.dryRun) {
+		return { ok: true, planned, configBlockOutcome };
+	}
+
+	// Hygen's `inject: append:` requires the target to exist. `.env.config`
+	// almost certainly does NOT exist on a fresh `project init` — touch it
+	// here so the inject lands. (codegen.config.yaml + app.module.ts both
+	// land via `project init`, but `.env.config` is auth-subsystem-specific.)
+	if (!fs.existsSync(locals.envConfigPath)) {
+		fs.mkdirSync(path.dirname(locals.envConfigPath), { recursive: true });
+		fs.writeFileSync(locals.envConfigPath, '', 'utf-8');
+	}
+
+	const result = invokeHygen({
+		generator: 'subsystem',
+		action: 'auth',
+		cwd,
+		args: authLocalsToHygenArgs(locals),
+		inherit: !opts.json,
+	});
+
+	if (!result.ok) {
+		return {
+			ok: false,
+			planned,
+			error: result.stderr?.trim() || 'hygen exited non-zero',
+			configBlockOutcome,
+		};
+	}
+
+	const configResult = runConfigBlockAction({
+		cwd,
+		actionFolder: 'auth-config',
+		configPath: locals.configPath,
+		subsystem: 'auth',
+		outcome: configBlockOutcome,
+		json: opts.json,
+	});
+
+	if (!configResult.ok) {
+		return {
+			ok: false,
+			planned,
+			error: configResult.error,
+			configBlockOutcome,
+		};
+	}
+
+	return { ok: true, planned, configBlockOutcome };
+}
+
+// ---------------------------------------------------------------------------
+// #287 — auth-integrations starter vendor flow
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the on-disk root of the bundled `examples/auth-integrations`
+ * starter. Mirrors `runtimeRoot()`'s dev-vs-published-tarball logic:
+ * dev source has the directory at the package root; the published tarball
+ * mirrors it under `dist/examples/auth-integrations/`.
+ */
+function authIntegrationsExamplesRoot(): string {
+	const pkgRoot = path.resolve(import.meta.dirname, '..', '..', '..');
+	const topLevel = path.join(pkgRoot, 'examples', 'auth-integrations');
+	if (fs.existsSync(topLevel)) return topLevel;
+	return path.join(pkgRoot, 'dist', 'examples', 'auth-integrations');
+}
+
+interface AuthIntegrationsCopyResult {
+	written: string[];
+	skipped: string[];
+}
+
+/**
+ * Recursively copy `srcDir` → `destDir`. Idempotent: existing files are
+ * skipped unless `force` is true. Returns the lists of copied vs skipped
+ * absolute destination paths.
+ */
+function copyTreeIdempotent(
+	srcDir: string,
+	destDir: string,
+	force: boolean,
+): AuthIntegrationsCopyResult {
+	const written: string[] = [];
+	const skipped: string[] = [];
+
+	const walk = (src: string, dest: string): void => {
+		const entries = fs.readdirSync(src, { withFileTypes: true });
+		for (const entry of entries) {
+			const srcPath = path.join(src, entry.name);
+			const destPath = path.join(dest, entry.name);
+			if (entry.isDirectory()) {
+				fs.mkdirSync(destPath, { recursive: true });
+				walk(srcPath, destPath);
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			if (fs.existsSync(destPath) && !force) {
+				skipped.push(destPath);
+				continue;
+			}
+			fs.mkdirSync(path.dirname(destPath), { recursive: true });
+			fs.copyFileSync(srcPath, destPath);
+			written.push(destPath);
+		}
+	};
+
+	if (!fs.existsSync(srcDir)) return { written, skipped };
+	fs.mkdirSync(destDir, { recursive: true });
+	walk(srcDir, destDir);
+	return { written, skipped };
+}
+
+interface AuthIntegrationsScaffoldOutcome {
+	ok: boolean;
+	planned: string[];
+	error?: string;
+	written?: string[];
+	skipped?: string[];
+	authModuleRegistered?: boolean;
+}
+
+function runAuthIntegrationsScaffold(
+	cwd: string,
+	config: Context['config'],
+	opts: { dryRun: boolean; json: boolean; force: boolean },
+): AuthIntegrationsScaffoldOutcome {
+	const locals = resolveAuthIntegrationsScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+		readFile: (p: string) =>
+			fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null,
+	});
+
+	const examplesRoot = authIntegrationsExamplesRoot();
+	if (!fs.existsSync(examplesRoot)) {
+		return {
+			ok: false,
+			planned: [],
+			error: `auth-integrations starter source missing: ${examplesRoot}`,
+		};
+	}
+
+	const adaptersSrc = path.join(examplesRoot, 'runtime', 'integrations');
+	const adaptersDest = path.join(locals.sharedRoot, 'integrations');
+	const integrationYamlSrc = path.join(
+		examplesRoot,
+		'definitions',
+		'entities',
+		'integration.yaml',
+	);
+	const integrationYamlDest = locals.definitionsPath;
+
+	const planned: string[] = [
+		adaptersDest,
+		integrationYamlDest,
+		locals.appModulePath,
+	];
+
+	if (opts.dryRun) {
+		return {
+			ok: true,
+			planned,
+			authModuleRegistered: locals.authModuleRegistered,
+		};
+	}
+
+	// Vendor the adapters tree.
+	const adapterCopy = copyTreeIdempotent(
+		adaptersSrc,
+		adaptersDest,
+		opts.force,
+	);
+
+	// Vendor the integration.yaml.
+	let yamlWritten = false;
+	let yamlSkipped = false;
+	try {
+		if (fs.existsSync(integrationYamlDest) && !opts.force) {
+			yamlSkipped = true;
+		} else if (fs.existsSync(integrationYamlSrc)) {
+			fs.mkdirSync(path.dirname(integrationYamlDest), { recursive: true });
+			fs.copyFileSync(integrationYamlSrc, integrationYamlDest);
+			yamlWritten = true;
+		}
+	} catch (err) {
+		return {
+			ok: false,
+			planned,
+			error: `failed to vendor integration.yaml: ${
+				err instanceof Error ? err.message : String(err)
+			}`,
+			authModuleRegistered: locals.authModuleRegistered,
+		};
+	}
+
+	// Inject the app.module.ts TODO via Hygen.
+	const result = invokeHygen({
+		generator: 'subsystem',
+		action: 'auth-integrations',
+		cwd,
+		args: authIntegrationsLocalsToHygenArgs(locals),
+		inherit: !opts.json,
+	});
+
+	if (!result.ok) {
+		return {
+			ok: false,
+			planned,
+			error: result.stderr?.trim() || 'hygen exited non-zero',
+			written: adapterCopy.written.concat(yamlWritten ? [integrationYamlDest] : []),
+			skipped: adapterCopy.skipped.concat(yamlSkipped ? [integrationYamlDest] : []),
+			authModuleRegistered: locals.authModuleRegistered,
+		};
+	}
+
+	return {
+		ok: true,
+		planned,
+		written: adapterCopy.written.concat(yamlWritten ? [integrationYamlDest] : []),
+		skipped: adapterCopy.skipped.concat(yamlSkipped ? [integrationYamlDest] : []),
+		authModuleRegistered: locals.authModuleRegistered,
+	};
 }
 
 function capitalize(s: string): string {
