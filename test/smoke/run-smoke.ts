@@ -303,13 +303,56 @@ async function main(): Promise<number> {
 		//   - IntegrationsAuthModule TODO into app.module.ts.
 		run(`bun ${CLI_PATH} subsystem install auth-integrations`, tmpDir);
 
-		const integrationsAuthModulePath = path.join(
+		// #303 fix #5: vendor target is `<modules>/integrations/` with
+		// subfolders (`adapters/`, `facade/`, `oauth/use-cases/`). Assert
+		// one file from every layer plus the root module so the smoke
+		// catches any future regression in the install template's layout.
+		const integrationsRoot = path.join(tmpDir, 'src/modules/integrations');
+		const expectedVendoredFiles = [
+			'integrations-auth.module.ts',
+			'adapters/integration-reader.adapter.ts',
+			'adapters/integration-token-writer.adapter.ts',
+			'adapters/integration-grant-sink.adapter.ts',
+			'facade/integrations.service.ts',
+			'oauth/use-cases/create-or-update-from-oauth-grant.use-case.ts',
+			'oauth/use-cases/disconnect-integration.use-case.ts',
+			'oauth/use-cases/list-user-integrations.use-case.ts',
+			'oauth/use-cases/mark-integration-requires-reauth.use-case.ts',
+		];
+		for (const rel of expectedVendoredFiles) {
+			const abs = path.join(integrationsRoot, rel);
+			if (!fs.existsSync(abs)) {
+				throw new Error(
+					`expected vendored file missing after auth-integrations install: ${rel}`,
+				);
+			}
+		}
+
+		// #303 fix #3: vendored adapters must NOT carry the bare-package
+		// `@pattern-stack/codegen/runtime/subsystems/auth` import — those
+		// fail to resolve through the package's `exports` map AND would
+		// pin against publisher-side token Symbols (duplicate-DI hazard).
+		// The install rewrites them to relative paths into the consumer's
+		// vendored auth subsystem at copy time.
+		for (const rel of expectedVendoredFiles) {
+			const abs = path.join(integrationsRoot, rel);
+			const src = fs.readFileSync(abs, 'utf-8');
+			if (src.includes('@pattern-stack/codegen/runtime/subsystems/auth')) {
+				throw new Error(
+					`vendored ${rel} still imports from '@pattern-stack/codegen/runtime/subsystems/auth' — install-time rewriter regression (#303 fix #3)`,
+				);
+			}
+		}
+
+		// #303 fix #5: the legacy `<shared>/integrations/` vendor target
+		// must be empty — the new layout fully replaces it.
+		const legacySharedIntegrations = path.join(
 			tmpDir,
-			'src/modules/integrations/integrations-auth.module.ts',
+			'src/shared/integrations',
 		);
-		if (!fs.existsSync(integrationsAuthModulePath)) {
+		if (fs.existsSync(legacySharedIntegrations)) {
 			throw new Error(
-				'integrations-auth.module.ts not vendored by auth-integrations install',
+				`legacy vendor target ${legacySharedIntegrations} should not exist after auth-integrations install (#303 fix #5)`,
 			);
 		}
 		// Honor the entities_dir set by `project init` (defaults to
