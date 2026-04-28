@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-04-27
+
+Auth subsystem reaches consumers. `runtime/subsystems/auth/`, the `auth-integrations` starter, and the `cdp subsystem install auth` + `auth-integrations` templates were all merged on `main` (PRs #289, #290, #292, #293, #294, #295) but the published artifact was still pinned at `0.6.4`. This release ships them.
+
+### Added
+
+- **`feat(auth)` #289** — provider-agnostic `AuthController` mounting `GET /auth/:provider/connect` and `GET /auth/:provider/callback`, plus the `IUserContext` / `IOAuthStateStore` / `IIntegrationGrantSink` ports and memory + drizzle state-store backends. `OAuth2RefreshStrategy` extracted as a template-method base class. See `runtime/subsystems/auth/`.
+- **`feat(examples)` #290** — `examples/auth-integrations/` starter: canonical `integration.yaml` entity + adapters that satisfy the three `AUTH_INTEGRATION_*` ports + `IntegrationsService` facade.
+- **`feat(cdp)` #293** — `cdp subsystem install auth` and `cdp subsystem install auth-integrations` templates. The auth template emits `auth_oauth_state` drizzle schema, appends `TOKEN_ENCRYPTION_KEY` + `AUTH_REDIRECT_URI_BASE` to `.env.config`, and drops a TODO into `app.module.ts`. `auth-integrations` vendors the starter under `apps/api/src/shared/integrations/`.
+
 ## [0.6.4] — 2026-04-27
 
 Two consumer-DX fixes surfaced by a fresh `cdp project init` run.
