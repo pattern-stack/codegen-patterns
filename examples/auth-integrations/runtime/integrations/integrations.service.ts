@@ -84,8 +84,7 @@ export class IntegrationsService {
   async listByUser(userId: string): Promise<Array<Omit<Integration, 'accessTokenEncrypted' | 'refreshTokenEncrypted'>>> {
     const rows = await this.listUseCase.execute(userId);
     return rows.map((row) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { accessTokenEncrypted, refreshTokenEncrypted, ...safe } = row;
+      const { accessTokenEncrypted: _accessTokenEncrypted, refreshTokenEncrypted: _refreshTokenEncrypted, ...safe } = row;
       return safe;
     });
   }
@@ -125,7 +124,7 @@ export class IntegrationsService {
    * `DecryptedIntegration.accessToken`'s "empty if never granted"
    * contract.
    */
-  async decrypt(row: Integration): Promise<DecryptedIntegrationRow> {
+  private async decrypt(row: Integration): Promise<DecryptedIntegrationRow> {
     const accessToken = row.accessTokenEncrypted
       ? await this.encryption.decrypt(row.accessTokenEncrypted)
       : '';
