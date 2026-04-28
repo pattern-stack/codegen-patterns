@@ -258,6 +258,101 @@ describe('subsystem — install (real)', () => {
 		const parsed = JSON.parse(out);
 		expect(parsed.status).toBe('already-installed');
 	});
+
+	// #294: mirror the events idempotency check for `auth` and
+	// `auth-integrations`. Confirms second-run no-op behaviour survives
+	// future template changes — no duplicate config blocks, no duplicate
+	// env vars, no duplicate app.module.ts imports.
+	test('second auth install is idempotent without --force', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'auth', '--force', '--cwd', root]),
+		);
+
+		const configPath = path.join(root, 'codegen.config.yaml');
+		const envConfigPath = path.join(root, '.env.config');
+		const appModulePath = path.join(root, 'src/app.module.ts');
+		const configBefore = fs.readFileSync(configPath, 'utf-8');
+		const envBefore = fs.readFileSync(envConfigPath, 'utf-8');
+		const appModuleBefore = fs.existsSync(appModulePath)
+			? fs.readFileSync(appModulePath, 'utf-8')
+			: '';
+
+		// Second run — no --force.
+		const { result, out } = await capture(() =>
+			cli.run(['subsystem', 'install', 'auth', '--json', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.status).toBe('already-installed');
+
+		// Files unchanged — no duplicate auth: block, TOKEN_ENCRYPTION_KEY
+		// not regenerated, no duplicate AuthModule TODO.
+		expect(fs.readFileSync(configPath, 'utf-8')).toBe(configBefore);
+		expect(fs.readFileSync(envConfigPath, 'utf-8')).toBe(envBefore);
+		const tokenLines = envBefore.match(/^TOKEN_ENCRYPTION_KEY=/gm) ?? [];
+		expect(tokenLines.length).toBe(1);
+		if (fs.existsSync(appModulePath)) {
+			expect(fs.readFileSync(appModulePath, 'utf-8')).toBe(appModuleBefore);
+		}
+	});
+
+	test('second auth-integrations install is idempotent without --force', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+
+		const appModulePath = path.join(root, 'src/app.module.ts');
+		const integrationYamlPath = path.join(
+			root,
+			'definitions/entities/integration.yaml',
+		);
+		const appModuleBefore = fs.existsSync(appModulePath)
+			? fs.readFileSync(appModulePath, 'utf-8')
+			: '';
+		const yamlBefore = fs.existsSync(integrationYamlPath)
+			? fs.readFileSync(integrationYamlPath, 'utf-8')
+			: '';
+
+		const { result, out } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.status).toBe('already-installed');
+
+		// Vendored YAML + app.module.ts unchanged on second run; no duplicate
+		// IntegrationsAuthModule TODO appended.
+		if (fs.existsSync(integrationYamlPath)) {
+			expect(fs.readFileSync(integrationYamlPath, 'utf-8')).toBe(yamlBefore);
+		}
+		if (fs.existsSync(appModulePath)) {
+			const after = fs.readFileSync(appModulePath, 'utf-8');
+			expect(after).toBe(appModuleBefore);
+			const matches = after.match(/IntegrationsAuthModule/g) ?? [];
+			// At most one occurrence (the TODO from first install).
+			expect(matches.length).toBeLessThanOrEqual(1);
+		}
+	});
 });
 
 describe('subsystem — detection', () => {

@@ -33,9 +33,10 @@
  * `generated/` dir (no codegen artifacts; the runtime ports + adapters are
  * directly importable).
  *
- * This module is filesystem-unaware except via injected probes — callers
- * pass `fileExists(p)` rather than us reaching for `node:fs` directly. That
- * keeps the unit test suite pure (see cli/auth-scaffold-locals.test.ts).
+ * This module is filesystem-unaware — the resolver is pure (config + cwd).
+ * The CLI's `runAuthScaffold` handles the `.env.config` touch externally
+ * before invoking Hygen (subsystem.ts:1460-1463), so no fs probe is needed
+ * here. Keeps the unit test suite pure (see cli/auth-scaffold-locals.test.ts).
  */
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -81,8 +82,6 @@ export interface AuthScaffoldLocalsInput {
 	cwd: string;
 	/** Parsed codegen.config.yaml (may be null on a brand-new init). */
 	config: CodegenConfig | null;
-	/** Injected fs probe. Implementations: `(p) => fs.existsSync(p)`. */
-	fileExists: (absolutePath: string) => boolean;
 }
 
 /**
@@ -106,7 +105,6 @@ export function resolveAuthScaffoldLocals(
 	input: AuthScaffoldLocalsInput,
 ): AuthScaffoldLocals {
 	const { cwd, config } = input;
-	void input.fileExists;
 
 	const backendSrc =
 		typeof config?.paths?.backend_src === 'string' &&

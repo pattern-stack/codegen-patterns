@@ -1425,7 +1425,6 @@ function runAuthScaffold(
 	const locals = resolveAuthScaffoldLocals({
 		cwd,
 		config,
-		fileExists: (p: string) => fs.existsSync(p),
 	});
 
 	// Files the auth templates will target (used by --dry-run output and

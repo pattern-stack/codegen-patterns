@@ -165,6 +165,11 @@ function filterConsumerErrors(output: string, tmpDir: string): string[] {
 		// so the consumer can `cdp entity new integration` against their own
 		// integration entity. Filter these out — they're scope-of-consumer
 		// errors, not generator bugs.
+		//
+		// #294: revisited — running `cdp entity new integration` in smoke
+		// surfaces a separate codegen enum literal-type bug (status: text →
+		// string vs DecryptedIntegration.status's literal union). Filed as
+		// a follow-up; reinstating this filter until that's resolved.
 		if (line.includes('shared/integrations/') || line.includes('shared\\integrations\\')) {
 			continue;
 		}

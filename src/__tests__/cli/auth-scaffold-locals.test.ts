@@ -26,7 +26,6 @@ describe('resolveAuthScaffoldLocals', () => {
 		const locals = resolveAuthScaffoldLocals({
 			cwd: CWD,
 			config: null,
-			fileExists: () => false,
 		});
 
 		expect(locals.appName).toBe('auth-fixture');
@@ -47,7 +46,6 @@ describe('resolveAuthScaffoldLocals', () => {
 			cwd: CWD,
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			config: { auth: { redirect_uri_base: 'https://api.example.com' } } as any,
-			fileExists: () => false,
 		});
 		expect(locals.redirectUriBase).toBe('https://api.example.com');
 	});
@@ -69,7 +67,6 @@ describe('resolveAuthScaffoldLocals', () => {
 			cwd: CWD,
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			config: { paths: { backend_src: 'packages/api/src' } } as any,
-			fileExists: () => false,
 		});
 		expect(locals.appModulePath).toBe(
 			path.resolve(CWD, 'packages/api/src/app.module.ts'),
@@ -92,7 +89,6 @@ describe('resolveAuthScaffoldLocals', () => {
 				},
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			} as any,
-			fileExists: () => false,
 		});
 		expect(locals.schemaPath).toBe(
 			path.resolve(CWD, 'custom/subsystems/auth/auth-oauth-state.schema.ts'),
@@ -103,7 +99,6 @@ describe('resolveAuthScaffoldLocals', () => {
 		const locals = resolveAuthScaffoldLocals({
 			cwd: CWD,
 			config: null,
-			fileExists: () => false,
 		});
 		// 32 bytes encoded as base64 = 44 ascii chars (with one '=' pad).
 		expect(locals.tokenEncryptionKey.length).toBe(44);
@@ -120,27 +115,14 @@ describe('resolveAuthScaffoldLocals', () => {
 		const a = resolveAuthScaffoldLocals({
 			cwd: CWD,
 			config: null,
-			fileExists: () => false,
 		});
 		const b = resolveAuthScaffoldLocals({
 			cwd: CWD,
 			config: null,
-			fileExists: () => false,
 		});
 		expect(a.tokenEncryptionKey).not.toBe(b.tokenEncryptionKey);
 	});
 
-	test('fileExists probe is permitted to be unused', () => {
-		expect(() =>
-			resolveAuthScaffoldLocals({
-				cwd: CWD,
-				config: null,
-				fileExists: () => {
-					throw new Error('should not be called');
-				},
-			}),
-		).not.toThrow();
-	});
 });
 
 describe('localsToHygenArgs', () => {
