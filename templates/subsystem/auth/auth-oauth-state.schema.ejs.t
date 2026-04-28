@@ -2,6 +2,7 @@
 to: "<%= schemaPath %>"
 force: true
 ---
+// Schema barrel append tracked in #284 — same gap as events/jobs/sync today.
 /**
  * Drizzle schema for the `auth_oauth_state` table — backs the
  * `DrizzleOAuthStateStore` (`state-store.drizzle-backend.ts`).
