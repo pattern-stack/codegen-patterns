@@ -5,7 +5,7 @@ import {
   type IIntegrationTokenWriter,
   type IntegrationTokenUpdate,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { IntegrationService } from '../../modules/integrations/integration.service';
+import { IntegrationService } from '../integration.service';
 
 /**
  * `IIntegrationTokenWriter` adapter — encrypts the new access token

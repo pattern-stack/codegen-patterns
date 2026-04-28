@@ -17,36 +17,48 @@ examples/auth-integrations/
     entities/
       integration.yaml                      # canonical entity (run cdp entity new)
 
-  runtime/integrations/                     # vendored to apps/api/src/shared/integrations/
-    integration-reader.adapter.ts           # IIntegrationReader impl
-    integration-token-writer.adapter.ts     # IIntegrationTokenWriter impl
-    integration-grant-sink.adapter.ts       # IIntegrationGrantSink impl
-    integrations-auth.module.ts             # binds the three AUTH_INTEGRATION_* tokens
-    integrations.service.ts                 # consumer-facing facade
-    use-cases/
-      create-or-update-from-oauth-grant.use-case.ts
-      mark-integration-requires-reauth.use-case.ts
-      disconnect-integration.use-case.ts
-      list-user-integrations.use-case.ts
+  runtime/integrations/                     # vendored next to the codegen-emitted
+                                            #   integration entity module — i.e.
+                                            #   <backend_src>/modules/integrations/
+                                            #   (override via paths.modules_dir).
+    adapters/
+      integration-reader.adapter.ts         # IIntegrationReader impl
+      integration-token-writer.adapter.ts   # IIntegrationTokenWriter impl
+      integration-grant-sink.adapter.ts     # IIntegrationGrantSink impl
+    facade/
+      integrations.service.ts               # consumer-facing facade
+    oauth/
+      use-cases/
+        create-or-update-from-oauth-grant.use-case.ts
+        mark-integration-requires-reauth.use-case.ts
+        disconnect-integration.use-case.ts
+        list-user-integrations.use-case.ts
+    integrations-auth.module.ts             # @Global() — binds the three
+                                            #   AUTH_INTEGRATION_* tokens.
 ```
 
-## How to install (manual; pending #287)
+## How to install
 
-A future `cdp subsystem install auth-integrations` command will vendor these
-files for you. Until then:
+```bash
+cdp subsystem install auth          # one-time: vendor the auth subsystem
+cdp subsystem install auth-integrations
+cdp entity new integration          # emits the entity module next to the vendor
+```
 
-1. Install + register the auth subsystem (`AuthModule.forRoot({ ... })`).
-2. Copy `definitions/entities/integration.yaml` into your project's
-   `definitions/entities/` directory.
-3. Run `cdp entity new --all` (or `cdp entity new integration`). This emits
-   `apps/api/src/modules/integrations/` (entity, repository, service, module,
-   DTOs, use cases).
-4. Copy `runtime/integrations/` into `apps/api/src/shared/integrations/`.
-5. Import `IntegrationsAuthModule` from
-   `apps/api/src/shared/integrations/integrations-auth.module.ts` in your
-   `AppModule` (or wherever you compose feature modules). Order it AFTER
-   `AuthModule.forRoot(...)` — `IntegrationsAuthModule` depends on the
-   `ENCRYPTION_KEY` provider that `AuthModule` registers.
+The `auth-integrations` install:
+- copies `definitions/entities/integration.yaml` into your configured
+  `paths.entities` (or legacy `paths.entities_dir`) directory.
+- vendors `runtime/integrations/**` under
+  `<backend_src>/modules/integrations/` (override via `paths.modules_dir`),
+  rewriting bare `@pattern-stack/codegen/runtime/subsystems/auth` imports to
+  relative paths that resolve against the vendored auth subsystem at
+  `<paths.subsystems>/auth`.
+- appends a TODO to `<backend_src>/app.module.ts` reminding you to register
+  `IntegrationsAuthModule` AFTER `AuthModule.forRoot(...)`.
+
+`IntegrationsAuthModule` is `@Global()` because `AuthController` (inside
+`AuthModule`'s injector) resolves the `AUTH_INTEGRATION_*` providers exposed
+by it.
 
 ## Two interfaces, two purposes
 

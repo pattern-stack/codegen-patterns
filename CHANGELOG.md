@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.7] — 2026-04-28
+
+Hotfix bundle for `cdp subsystem install auth-integrations`. 0.6.5 / 0.6.6 shipped the auth-integrations starter and install template, but every downstream consumer ran into four blockers on a fresh install. None of them surfaced from the source-checkout smoke (the install code resolves examples/ via the package root, which exists in dev) — they only exposed themselves through `npm install + bunx cdp subsystem install auth-integrations` against the published tarball. Bundles a fifth fix that unifies the integrations folder layout. Surfaced by integration-patterns Wave 0b.
+
+### Changed
+
+- **BREAKING — `fix(cli)` #303 (fix #5)** — `cdp subsystem install auth-integrations` now vendors the starter under `<paths.backend_src>/modules/integrations/` (override via `paths.modules_dir`), next to the codegen-emitted `integration` entity module. Previously: `<paths.backend_src>/shared/integrations/`. The starter's runtime tree is now organized under `adapters/`, `facade/`, and `oauth/use-cases/` subfolders to avoid collision with codegen output, and `IntegrationsAuthModule` lives at the integrations folder root. Relative imports inside the vendored files (and the bare-package auth import rewriter, fix #3) target the new layout. Detection (`detectInstalledSubsystems`) checks the new vendor target first and falls back to the legacy shared/integrations location for any pre-0.6.7 install. Pre-1.0; the only downstream consumer of 0.6.5/0.6.6 is integration-patterns Wave 0b (unmerged).
+
+### Fixed
+
+- **P0 — `fix(packaging)` #303** — added `examples/auth-integrations/**` to `package.json:files`. The 0.6.6 tarball did not include the starter source; `cdp subsystem install auth-integrations` therefore failed to find `node_modules/@pattern-stack/codegen/examples/auth-integrations/` and aborted the vendor copy. Narrowed to the auth-integrations subtree only — internal `examples/` (eav etc.) stay out of the published artifact. Prevention: `src/__tests__/templates/auth-integrations-files-coverage.test.ts` walks every file under `examples/auth-integrations/` and asserts it matches a `files` pattern.
+- **`fix(cli)` #303** — `cdp subsystem install auth-integrations` no longer drops `integration.yaml` at the wrong path. The scaffold-locals resolver was reading `paths.definitions` (a key that doesn't exist in the schema); switched to `paths.entities` with a fallback to legacy `paths.entities_dir`, matching the resolution order in `Context.entitiesDir` and `cdp project init`. Default location (`<cwd>/definitions/entities/integration.yaml`) is unchanged.
+- **`fix(cli)` #303** — vendored adapters under `<sharedRoot>/integrations/` no longer carry bare-package imports `from '@pattern-stack/codegen/runtime/subsystems/auth'`. Those imports both fail `tsc --noEmit` (the package's `exports` map points at compiled `dist/runtime/*` files, not deep subpaths) AND would inject against the publisher's compiled token Symbols rather than the consumer's vendored auth subsystem (duplicate-DI hazard). The install logic now rewrites every such specifier to a relative path resolving against `<subsystemsRoot>/auth` at copy time.
+- **`fix(examples)` #303** — `IntegrationsAuthModule` is now `@Global()`. `AuthController` lives inside `AuthModule`'s injector and resolves the `AUTH_INTEGRATION_*` providers exposed by `IntegrationsAuthModule`; without `@Global()`, Nest fails to boot. Same root cause as the auth-bindings module pattern in integration-patterns PR #93.
+
 ## [0.6.6] — 2026-04-27
 
 Bundled cleanup PR for the auth subsystem surfaced during integration-patterns review. Pre-1.0, so two breaking renames are taken without compatibility shims.

@@ -4,12 +4,12 @@ import {
   type IEncryptionKey,
   type IntegrationGrantInput,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { IntegrationService } from '../../modules/integrations/integration.service';
-import type { Integration } from '../../modules/integrations/integration.entity';
-import { CreateOrUpdateFromOAuthGrantUseCase } from './use-cases/create-or-update-from-oauth-grant.use-case';
-import { DisconnectIntegrationUseCase } from './use-cases/disconnect-integration.use-case';
-import { ListUserIntegrationsUseCase } from './use-cases/list-user-integrations.use-case';
-import { MarkIntegrationRequiresReauthUseCase } from './use-cases/mark-integration-requires-reauth.use-case';
+import { IntegrationService } from '../integration.service';
+import type { Integration } from '../integration.entity';
+import { CreateOrUpdateFromOAuthGrantUseCase } from '../oauth/use-cases/create-or-update-from-oauth-grant.use-case';
+import { DisconnectIntegrationUseCase } from '../oauth/use-cases/disconnect-integration.use-case';
+import { ListUserIntegrationsUseCase } from '../oauth/use-cases/list-user-integrations.use-case';
+import { MarkIntegrationRequiresReauthUseCase } from '../oauth/use-cases/mark-integration-requires-reauth.use-case';
 
 /**
  * Decrypted integration shape — used by consumer code that needs to

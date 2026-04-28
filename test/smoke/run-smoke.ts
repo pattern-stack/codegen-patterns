@@ -155,22 +155,21 @@ function filterConsumerErrors(output: string, tmpDir: string): string[] {
 			continue;
 		}
 
-		// #287: the vendored `auth-integrations` adapters under
-		// `src/shared/integrations/` import from
-		// `apps/api/src/modules/integrations/integration.service` (etc.) —
-		// the codegen layer that `cdp entity new integration` would emit.
-		// We don't run that step in this smoke (it would require also
-		// scaffolding a Drizzle schema for `integrations` and bundling a
-		// fixture). The adapters are deliberately vendored-with-broken-imports
-		// so the consumer can `cdp entity new integration` against their own
-		// integration entity. Filter these out — they're scope-of-consumer
-		// errors, not generator bugs.
-		//
-		// #294: revisited — running `cdp entity new integration` in smoke
-		// surfaces a separate codegen enum literal-type bug (status: text →
-		// string vs DecryptedIntegration.status's literal union). Filed as
-		// a follow-up; reinstating this filter until that's resolved.
-		if (line.includes('shared/integrations/') || line.includes('shared\\integrations\\')) {
+		// #287 / #303 fix #5: the vendored `auth-integrations` starter
+		// (under `<modules>/integrations/{adapters,facade,oauth,
+		// integrations-auth.module.ts}`) imports from the codegen-emitted
+		// integration entity module — `<modules>/integrations/integration.service`,
+		// `<modules>/integrations/integration.entity`, `<modules>/integrations/integrations.module`.
+		// We don't run `cdp entity new integration` in this smoke (it
+		// would require also scaffolding a Drizzle schema for `integrations`
+		// and bundling a fixture, AND it surfaces a separate codegen enum
+		// literal-type bug — filed as follow-up). Filter errors emitted
+		// from inside the vendored subfolders only — narrow filter so a
+		// real codegen bug in `<modules>/integrations/integration.{entity,
+		// service,...}.ts` would still surface.
+		const vendoredIntegrationsPattern =
+			/modules[/\\]integrations[/\\](?:adapters|facade|oauth|integrations-auth\.module\.ts)/;
+		if (vendoredIntegrationsPattern.test(line)) {
 			continue;
 		}
 		// Also tolerate the `@pattern-stack/codegen/runtime/subsystems/auth`
@@ -294,26 +293,74 @@ async function main(): Promise<number> {
 			throw new Error('INTEGRATION_TOKEN_ENCRYPTION_KEY missing from .env.config after auth install');
 		}
 
-		// 5.7. #287 — install the auth-integrations starter. Vendors:
+		// 5.7. #287 / #303 fix #5 — install the auth-integrations starter. Vendors:
 		//   - examples/auth-integrations/runtime/integrations/** →
-		//       <sharedRoot>/integrations/** (full-file copies, not via Hygen);
+		//       <vendorRoot>/integrations/** (full-file copies, not via Hygen).
+		//       `vendorRoot` defaults to `<paths.backend_src>/modules` per fix #5;
+		//       starter sits next to the codegen-emitted integration entity module.
 		//   - examples/auth-integrations/definitions/entities/integration.yaml →
-		//       <cwd>/definitions/entities/integration.yaml;
+		//       <paths.entities>/integration.yaml (defaults to definitions/entities/);
 		//   - IntegrationsAuthModule TODO into app.module.ts.
 		run(`bun ${CLI_PATH} subsystem install auth-integrations`, tmpDir);
 
-		const integrationsAuthModulePath = path.join(
+		// #303 fix #5: vendor target is `<modules>/integrations/` with
+		// subfolders (`adapters/`, `facade/`, `oauth/use-cases/`). Assert
+		// one file from every layer plus the root module so the smoke
+		// catches any future regression in the install template's layout.
+		const integrationsRoot = path.join(tmpDir, 'src/modules/integrations');
+		const expectedVendoredFiles = [
+			'integrations-auth.module.ts',
+			'adapters/integration-reader.adapter.ts',
+			'adapters/integration-token-writer.adapter.ts',
+			'adapters/integration-grant-sink.adapter.ts',
+			'facade/integrations.service.ts',
+			'oauth/use-cases/create-or-update-from-oauth-grant.use-case.ts',
+			'oauth/use-cases/disconnect-integration.use-case.ts',
+			'oauth/use-cases/list-user-integrations.use-case.ts',
+			'oauth/use-cases/mark-integration-requires-reauth.use-case.ts',
+		];
+		for (const rel of expectedVendoredFiles) {
+			const abs = path.join(integrationsRoot, rel);
+			if (!fs.existsSync(abs)) {
+				throw new Error(
+					`expected vendored file missing after auth-integrations install: ${rel}`,
+				);
+			}
+		}
+
+		// #303 fix #3: vendored adapters must NOT carry the bare-package
+		// `@pattern-stack/codegen/runtime/subsystems/auth` import — those
+		// fail to resolve through the package's `exports` map AND would
+		// pin against publisher-side token Symbols (duplicate-DI hazard).
+		// The install rewrites them to relative paths into the consumer's
+		// vendored auth subsystem at copy time.
+		for (const rel of expectedVendoredFiles) {
+			const abs = path.join(integrationsRoot, rel);
+			const src = fs.readFileSync(abs, 'utf-8');
+			if (src.includes('@pattern-stack/codegen/runtime/subsystems/auth')) {
+				throw new Error(
+					`vendored ${rel} still imports from '@pattern-stack/codegen/runtime/subsystems/auth' — install-time rewriter regression (#303 fix #3)`,
+				);
+			}
+		}
+
+		// #303 fix #5: the legacy `<shared>/integrations/` vendor target
+		// must be empty — the new layout fully replaces it.
+		const legacySharedIntegrations = path.join(
 			tmpDir,
-			'src/shared/integrations/integrations-auth.module.ts',
+			'src/shared/integrations',
 		);
-		if (!fs.existsSync(integrationsAuthModulePath)) {
+		if (fs.existsSync(legacySharedIntegrations)) {
 			throw new Error(
-				'integrations-auth.module.ts not vendored by auth-integrations install',
+				`legacy vendor target ${legacySharedIntegrations} should not exist after auth-integrations install (#303 fix #5)`,
 			);
 		}
+		// Honor the entities_dir set by `project init` (defaults to
+		// `entities/`). Fix #2 reads `paths.entities` → `paths.entities_dir`,
+		// matching `Context.entitiesDir`.
 		const integrationYamlPath = path.join(
 			tmpDir,
-			'definitions/entities/integration.yaml',
+			'entities/integration.yaml',
 		);
 		if (!fs.existsSync(integrationYamlPath)) {
 			throw new Error(

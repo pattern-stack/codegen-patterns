@@ -3,7 +3,7 @@ import type {
   IIntegrationGrantSink,
   IntegrationGrantInput,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { CreateOrUpdateFromOAuthGrantUseCase } from './use-cases/create-or-update-from-oauth-grant.use-case';
+import { CreateOrUpdateFromOAuthGrantUseCase } from '../oauth/use-cases/create-or-update-from-oauth-grant.use-case';
 
 /**
  * `IIntegrationGrantSink` adapter — pass-through to

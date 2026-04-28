@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { IntegrationService } from '../../../modules/integrations/integration.service';
-import type { Integration } from '../../../modules/integrations/integration.entity';
+import { IntegrationService } from '../../integration.service';
+import type { Integration } from '../../integration.entity';
 
 /**
  * Flips an integration's status to `requires_reauth`. Called when the

@@ -231,31 +231,43 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 		}
 	}
 
-	// #287: detect `auth-integrations` by presence of the vendored
-	// `integrations-auth.module.ts` under the consumer's shared root. The
-	// shared root resolves the same way as in `auth-integrations-scaffold-locals.ts`:
-	// `paths.shared` (if set) else `<paths.backend_src>/shared`.
+	// #287 / #303 fix #5: detect `auth-integrations` by presence of the
+	// vendored `integrations-auth.module.ts`. The vendor target moved
+	// from `<sharedRoot>/integrations/` to `<vendorRoot>/integrations/`
+	// (default `<paths.backend_src>/modules/integrations/`, override via
+	// `paths.modules_dir`). Resolution mirrors
+	// `auth-integrations-scaffold-locals.ts`. Falls back to the legacy
+	// shared/integrations location for any pre-0.6.7 installs.
 	if (!seen.has('auth-integrations')) {
 		const backendSrc =
 			(ctx.config?.paths?.backend_src as string | undefined) ?? 'src';
-		const sharedConfigured = (
-			ctx.config?.paths as Record<string, unknown> | undefined
-		)?.shared;
+		const pathsAny = ctx.config?.paths as
+			| Record<string, unknown>
+			| undefined;
+		const modulesConfigured = pathsAny?.modules_dir;
+		const vendorRoot =
+			typeof modulesConfigured === 'string' && modulesConfigured.length > 0
+				? path.resolve(ctx.cwd, modulesConfigured)
+				: path.resolve(ctx.cwd, backendSrc, 'modules');
+		const sharedConfigured = pathsAny?.shared;
 		const sharedRoot =
 			typeof sharedConfigured === 'string' && sharedConfigured.length > 0
 				? path.resolve(ctx.cwd, sharedConfigured)
 				: path.resolve(ctx.cwd, backendSrc, 'shared');
-		const moduleFile = path.join(
-			sharedRoot,
-			'integrations',
-			'integrations-auth.module.ts',
-		);
-		if (fs.existsSync(moduleFile)) {
-			found.push({
-				name: 'auth-integrations',
-				path: path.dirname(moduleFile),
-				backend: 'drizzle',
-			});
+
+		const candidates = [
+			path.join(vendorRoot, 'integrations', 'integrations-auth.module.ts'),
+			path.join(sharedRoot, 'integrations', 'integrations-auth.module.ts'),
+		];
+		for (const moduleFile of candidates) {
+			if (fs.existsSync(moduleFile)) {
+				found.push({
+					name: 'auth-integrations',
+					path: path.dirname(moduleFile),
+					backend: 'drizzle',
+				});
+				break;
+			}
 		}
 	}
 
