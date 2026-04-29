@@ -18,6 +18,12 @@ import { type InferSelectModel } from 'drizzle-orm';
 import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
 <%_ } _%>
 <%_ }) _%>
+<%_ if (typeof clpEnumFields !== 'undefined' && clpEnumFields.length > 0) { _%>
+
+<%_ clpEnumFields.forEach(ef => { _%>
+export const <%= ef.enumName %> = pgEnum('<%= ef.dbName %>', [<%- ef.choices.map(c => `'${c}'`).join(', ') %>]);
+<%_ }) _%>
+<%_ } _%>
 
 export const <%= entityNamePlural %> = pgTable(
   '<%= entityNamePlural %>',
