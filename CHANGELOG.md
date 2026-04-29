@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-04-28
+
+Hotfix for enum codegen in the `clean-lite-ps` template pipeline. Surfaced during integration-patterns Wave 0b: enum-typed YAML fields emitted a Drizzle `text()` column instead of a `pgEnum`, so `InferSelectModel` resolved to `string` instead of the literal-union type and forced hand-casts in consumer code (e.g. `as DecryptedIntegrationRow['status']`).
+
+### Fixed
+
+- **`fix(codegen)` — clean-lite-ps enum emission.** `templates/entity/new/clean-lite-ps/prompt-extension.js` now produces `pgEnum` declarations + column references for any field with `choices` (or `type: enum`), matching the backend pipeline at `templates/entity/new/backend/database/schema.ejs.t:66-104`. Generated entity files now contain `export const xEnum = pgEnum('x', [...])` ahead of the `pgTable(...)` block and reference `xEnum('x').notNull()` inside the column map. `pgEnum` is added to the `drizzle-orm/pg-core` import list automatically when any enum field is present. The emitted `InferSelectModel` type now narrows to the literal union — consumers can drop `as Row['status']` casts. New unit coverage: `src/__tests__/clean-lite-ps/entity-enum-template.test.ts`.
+
+### Migration note
+
+Not a breaking change for the emitted code shape (the field's TypeScript type narrows — a strict superset of what consumer code can do). Existing Postgres databases generated against 0.6.7 or earlier will need a one-time `CREATE TYPE … AS ENUM (...)` + `ALTER TABLE … ALTER COLUMN x TYPE x_enum USING x::x_enum;` migration, since the column was previously `text`. Greenfield projects, or anyone regenerating before the first migration runs, are unaffected.
+
 ## [0.6.7] — 2026-04-28
 
 Hotfix bundle for `cdp subsystem install auth-integrations`. 0.6.5 / 0.6.6 shipped the auth-integrations starter and install template, but every downstream consumer ran into four blockers on a fresh install. None of them surfaced from the source-checkout smoke (the install code resolves examples/ via the package root, which exists in dev) — they only exposed themselves through `npm install + bunx cdp subsystem install auth-integrations` against the published tarball. Bundles a fifth fix that unifies the integrations folder layout. Surfaced by integration-patterns Wave 0b.
