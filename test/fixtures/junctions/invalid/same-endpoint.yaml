@@ -1,0 +1,8 @@
+# `between` endpoints must be distinct — this names the same entity twice.
+pattern: Junction
+between: [contact, contact]
+
+fields:
+  role:
+    type: enum
+    values: [a, b]

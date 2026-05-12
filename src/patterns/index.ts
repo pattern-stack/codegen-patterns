@@ -53,7 +53,15 @@ export {
 export {
 	ActivityPattern,
 	BasePattern,
+	JunctionPattern,
 	KnowledgePattern,
 	MetadataPattern,
 	SyncedPattern,
+} from './library/index.js';
+
+// BaseJunctionFields — re-exported for downstream template / codegen leaves
+// that need to reason about the shared junction shape.
+export {
+	BaseJunctionFields,
+	BASE_JUNCTION_FIELD_NAMES,
 } from './library/index.js';

@@ -1,0 +1,20 @@
+# Opportunity ↔ Activity junction (cross-domain).
+#
+# Opportunity lives in the CRM domain; Activity lives in the interactions
+# domain. The schema accepts both intra- and cross-domain pairings; entity
+# existence is resolved by the analyzer in a later leaf, not here.
+
+pattern: Junction
+between: [opportunity, activity]
+temporal: true
+sourced: true
+
+fields:
+  role:
+    type: enum
+    values: [primary_engagement, supporting_touch]
+    nullable: true
+
+queries:
+  - by: [opportunity_id]
+  - by: [activity_id]

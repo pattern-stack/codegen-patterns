@@ -1,0 +1,12 @@
+# `fields:` redeclares `is_primary`, which is reserved by BaseJunctionFields.
+# The schema must reject this with a message naming the offending column.
+pattern: Junction
+between: [opportunity, contact]
+
+fields:
+  is_primary:
+    type: boolean
+    nullable: false
+  role:
+    type: enum
+    values: [champion, end_user]
