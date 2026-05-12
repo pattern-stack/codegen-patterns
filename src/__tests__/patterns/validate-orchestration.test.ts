@@ -32,6 +32,7 @@ import '../../patterns/index.ts';
 import {
 	ActivityPattern,
 	BasePattern,
+	JunctionPattern,
 	KnowledgePattern,
 	MetadataPattern,
 	SyncedPattern,
@@ -46,6 +47,7 @@ afterAll(() => {
 	registerLibraryPattern(ActivityPattern);
 	registerLibraryPattern(KnowledgePattern);
 	registerLibraryPattern(MetadataPattern);
+	registerLibraryPattern(JunctionPattern);
 });
 
 // ============================================================================
