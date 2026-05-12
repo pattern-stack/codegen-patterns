@@ -53,10 +53,14 @@ architectural_notes:
       core: |
         Service-layer composition via FK + repo calls. Portable across
         backend and client. ALL generated cross-entity API methods use this.
-        Examples:
-          - AccountService.contacts(id) = contactRepo.findByAccountId(id)
-          - OpportunityService.contacts.list(id) = junctionRepo.findByOpportunityId(id)
-              then contactRepo.findManyByIds(contactIds)
+        Examples (paginated where the cardinality demands it — see
+        canonical_shape below):
+          - AccountService.contacts(id, { cursor?, limit? })
+              = contactRepo.findByAccountId(id, opts)
+          - OpportunityService.contacts.list(id, { cursor?, limit? })
+              = junctionRepo.findByOpportunityId(id, opts)
+                then contactRepo.findManyByIds(linkContactIds)
+                returning Array<{ entity: Contact, link: OpportunityContactLink }>
           - ContactService.account(id) = accountRepo.findById(contact.accountId)
       extension: |
         Drizzle `relations()` const + `with: { ... }` query helper. Backend
@@ -64,6 +68,46 @@ architectural_notes:
         run client-side (admin tools, reports, migrations, debugging).
         Generated code MUST NOT use it. The templates SHIP the `relations()`
         const as opt-in table metadata, not as the canonical access path.
+        Confirmed disposition: keep emission as-is. It's free table metadata,
+        doesn't break ElectricSQL replication, and gives extension-path code
+        an ergonomic ad-hoc query option.
+    canonical_shape:
+      # These rules cascade into every leaf that emits cross-entity access in
+      # generated code. They are the contract junction-association-codegen
+      # must satisfy and that codegen-patterns#358 (close the relationship gap
+      # on entity codegen) must satisfy.
+      pagination_default: |
+        `has_many` traversal and junction `.list()` association methods are
+        paginated by default. Opts param shape: `{ cursor?: string; limit?: number }`.
+        Implementer adopts whatever pagination convention `queries:`-block
+        emission already uses if present; otherwise cursor-based is canonical.
+        Scalar `belongs_to` traversal (single-target) is not paginated.
+      list_association_return_shape: |
+        Junction `.list()` methods return a composed join-shaped DTO array:
+        `Array<{ entity: TargetEntity, link: JunctionLink }>`. Outer key is
+        `entity` (not `target` — "target" is internal template-pass
+        nomenclature and reads internally). Rationale: consumers need the
+        link metadata for UI like "primary contact" badges; returning just
+        `TargetEntity[]` forces a second round-trip; returning just
+        `JunctionLink[]` forces consumers to fetch and zip the entities
+        themselves.
+      junction_association_placement: |
+        Mirror association methods on BOTH parent services in a junction
+        pairing, delegating to one shared junction service. Example pattern
+        (verb-shape reads naturally from each entity's perspective):
+          - OpportunityService.attachContact(oppId, contactId, link)
+          - ContactService.addToOpportunity(contactId, oppId, link)
+        Both delegate to OpportunityContactService.attach(oppId, contactId, link).
+        Same for detach / list / setPrimary.
+
+        Default: ALWAYS mirror.
+
+        Heuristic for opting OUT of mirroring (BOTH conditions must hold):
+          1. The inverse method would have no natural caller (the junction
+             semantics are inherently directional and consumers never start
+             from the "passive" side).
+          2. The inverse method would require a name that reads as misleading.
+        In all other cases — including all wave-1 crm-domain pairings — mirror.
     applies_to:
       - relationship-verification           # audit doc is the worked example
       - junction-pattern-definition         # junction services compose
@@ -76,7 +120,8 @@ architectural_notes:
       example, the CLAUDE.md "core contract + opt-in extensions" principle this
       derives from, and the dissolution of the r2 "Option A vs Option B"
       synthesis question (which only mattered under the extension-centric
-      framing).
+      framing). The follow-up issue closing the entity-codegen service-method
+      gap is codegen-patterns#358.
 
 issues:
   - key: junction-pattern-definition

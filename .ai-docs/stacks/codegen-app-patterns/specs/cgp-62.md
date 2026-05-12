@@ -1,14 +1,15 @@
 ---
 issue: CGP-62
 status: awaiting-strategy-review
-revision: 3
-supersedes_comment: https://github.com/pattern-stack/dealbrain-integrations/issues/62#issuecomment-4432870852
+revision: 4
+supersedes_comment: https://github.com/pattern-stack/dealbrain-integrations/issues/62#issuecomment-4433157599
 related:
   - .ai-docs/plans/codegen-app-patterns.yaml  # leaf: relationship-verification
   - docs/RFC-app-defined-patterns.md
   - docs/adrs/ADR-031-app-defined-patterns.md
   - docs/adrs/ADR-021-on-delete-semantics.md
   - commits: 8a5bc13, ef5e898, 269ab3f, 01bb917
+  - codegen-patterns#358  # follow-up: emit service-layer composition methods for `relationships:` block
 upstream_repo: pattern-stack/codegen-patterns
 parallel_with: CGP-XX  # junction-pattern-definition (independent leaf)
 ---
@@ -19,50 +20,67 @@ parallel_with: CGP-XX  # junction-pattern-definition (independent leaf)
 
 - **r1** — plan leaf description.
 - **r2** ([comment 4432870852](https://github.com/pattern-stack/dealbrain-integrations/issues/62#issuecomment-4432870852)) — initial spec; correctly mapped the Drizzle template anatomy (4-part: bucketing → targetExists → `relations()` → barrel), but framed Drizzle `relations()` as **the** cross-entity access mechanism. That framing is wrong for this project.
-- **r3 (this)** — reframes cross-entity access around **service-layer composition via FK + repo calls** (core), with Drizzle `relations()` demoted to **opt-in table metadata** for hand-written ad-hoc queries (extension). The file inventory, smoke fixtures, smoke assertions, and 4-part Drizzle technical map are **preserved unchanged** as reference material — only the architectural narrative changes.
+- **r3** ([comment 4433157599](https://github.com/pattern-stack/dealbrain-integrations/issues/62#issuecomment-4433157599)) — reframed cross-entity access around **service-layer composition via FK + repo calls** (core), with Drizzle `relations()` demoted to **opt-in table metadata** for hand-written ad-hoc queries (extension). Left seven open questions unresolved.
+- **r4 (this)** — folds maintainer answers into the architecture body. Empirically grepped current templates and confirmed a gap (no service-layer composition methods emitted today for `relationships:` blocks); filed follow-up [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358) to close the gap. Locks the canonical shape (paginated `has_many`, mirrored junction association methods, composed-DTO list return) so `junction-association-codegen` inherits a definite contract. r3 file inventory and smoke fixtures preserved unchanged.
 
 ## Goal
 
 Verify that the Relationship pattern (already shipped upstream in commits `8a5bc13`, `ef5e898`, `269ab3f`, `01bb917`) covers what the wave-1 `crm-domain` stack will need, **without re-implementing it**. Three deliverables, all narrowly scoped:
 
-1. **Audit note** in `docs/` that (a) documents the canonical service-layer composition pattern for cross-entity access, (b) enumerates each crm-domain relationship shape and the supporting commit, and (c) maps the Drizzle template anatomy as reference appendix.
-2. **Cross-entity emission documentation** capturing how `junction-association-codegen` (CGP-XX, sibling leaf) will plug into the existing emission layers and the canonical service-composition pattern. The lever it reuses is the **service-method composition pattern**, not Drizzle's `with: { ... }` joins.
-3. **One smoke test** exercising self-ref `belongs_to` + cross-entity `belongs_to`/`has_many` against a crm-domain-shaped fixture set. The smoke asserts that `relations()` table-metadata still ships (so hand-written ad-hoc queries can use it) and that the generated service surfaces the composition methods.
+1. **Audit note** in `docs/` that (a) documents the canonical service-layer composition pattern for cross-entity access, (b) enumerates each crm-domain relationship shape and the supporting commit, (c) **names the empirically-confirmed gap** that today's templates do not yet emit service-layer composition methods (only Drizzle `relations()` + an inverse-FK finder on the declaring repo), and (d) maps the Drizzle template anatomy as reference appendix. Audit references the follow-up issue [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358) that will close the gap.
+2. **Cross-entity emission documentation** capturing how `junction-association-codegen` (CGP-XX, sibling leaf) will plug into the existing emission layers and the canonical service-composition pattern. The lever it reuses is the **service-method composition pattern**, not Drizzle's `with: { ... }` joins. Because today's templates do not yet emit composition methods on the entity side, junction-association-codegen will be the leaf that introduces the pattern in code — this audit defines the contract it must satisfy (paginated `has_many`, mirrored attach/detach/list/setPrimary methods, composed join-shaped DTO return).
+3. **One smoke test** exercising self-ref `belongs_to` + cross-entity `belongs_to`/`has_many` against a crm-domain-shaped fixture set. The smoke asserts that **whatever today's codegen emits** ships correctly — currently the Drizzle `relations()` table-metadata block plus the declaring-side `findBy<FK>Id` finder. Composition-method assertions are explicitly deferred until codegen-patterns#358 lands.
 
-If any gap is uncovered during the audit, **raise a separate issue** rather than expanding scope. This issue is verification, not extension.
+If any further gap is uncovered during the audit, raise a separate issue rather than expanding scope. This issue is verification + contract-definition, not extension.
 
-## Architecture (the reframe)
+## Architecture (canonical, post-maintainer-answers)
 
 ### The API path — service-layer composition via FK + repo (the **core contract**)
 
-Cross-entity access in generated code goes through **service methods** that compose by calling multiple **single-table repos**. There is no SQL JOIN at this layer.
+Cross-entity access in generated code goes through **service methods** that compose by calling multiple **single-table repos**. There is no SQL JOIN at this layer. **`has_many` traversal is paginated by default** (maintainer answer Q2):
 
 ```typescript
-// AccountService.contacts(accountId) — has_many traversal via inverse FK.
-async contacts(accountId: string): Promise<Contact[]> {
-  return this.contactRepo.findByAccountId(accountId);  // one query, one table
+// AccountService.contacts(id) — has_many traversal via inverse FK, paginated.
+async contacts(
+  accountId: string,
+  opts?: { cursor?: string; limit?: number },
+): Promise<Contact[]> {
+  return this.contactRepo.findByAccountId(accountId, opts);  // one query, one table
 }
 
-// OpportunityService.contacts.list(opportunityId) — many-to-many via junction.
-async list(opportunityId: string): Promise<Contact[]> {
-  const links = await this.junctionRepo.findByOpportunityId(opportunityId);  // query 1
-  return this.contactRepo.findManyByIds(links.map(l => l.contactId));        // query 2
+// OpportunityService.contacts.list(id) — many-to-many via junction, paginated,
+// composed join-shaped DTO (maintainer answer Q4).
+async list(
+  opportunityId: string,
+  opts?: { cursor?: string; limit?: number },
+): Promise<Array<{ entity: Contact; link: OpportunityContactLink }>> {
+  const links = await this.junctionRepo.findByOpportunityId(opportunityId, opts);  // query 1
+  const contacts = await this.contactRepo.findManyByIds(links.map(l => l.contactId)); // query 2
+  return links.map(link => ({
+    entity: contacts.find(c => c.id === link.contactId)!,
+    link,
+  }));
 }
 
-// ContactService.account(contactId) — belongs_to traversal via owning FK.
+// ContactService.account(contactId) — belongs_to traversal via owning FK, scalar.
 async account(contactId: string): Promise<Account | null> {
-  const contact = await this.contactRepo.findById(contactId);
+  const contact = await this.repository.findById(contactId);
   return contact ? this.accountRepo.findById(contact.accountId) : null;
 }
 ```
 
 Two queries, no JOIN. The repos are pure single-table CRUD. The composition lives in the service.
 
+**Naming choices fixed by maintainer answers:**
+
+- **Pagination shape** — `{ cursor?, limit? }`. Cursor-based by default; implementer should grep for existing pagination convention in `queries:`-block emission first and adopt whatever is already in place. If no existing convention exists, this is the canonical shape.
+- **List-association DTO outer key** — `entity` (not `target`). Rationale: from a consumer's perspective, the thing they reached for is the **entity** at the other end of the link; "target" reads internally and re-uses a template-pass concept (`targetExists`) for a different purpose. Pairs cleanly with `link` for the junction-row metadata.
+
 ### Why — the ElectricSQL-parity rationale
 
 The project replicates tables to the client via ElectricSQL (table-shaped replication, not query-shaped). Joins cannot resolve prior to replication: the client receives `accounts`, `contacts`, `opportunities`, and the junction table as **separate replicated rowsets**, then composes locally.
 
-If the backend composes the same way — service-layer methods calling single-table repos — then **one composition pattern exists across both sides**. Backend `OpportunityService.contacts.list()` and client `OpportunityModel.contacts.list()` have identical shapes, identical query counts, identical pagination semantics, identical edge cases.
+If the backend composes the same way — service-layer methods calling single-table repos — then **one composition pattern exists across both sides**. Backend `OpportunityService.contacts.list()` and client `OpportunityModel.contacts.list()` have identical shapes, identical query counts, identical pagination semantics, identical edge cases. Pagination, in particular, falls out naturally: cursor-based pagination over a junction-table query has the same shape on backend (Postgres cursor) and client (Electric local-replica cursor).
 
 The alternative — backend uses Drizzle's `db.query.opportunities.findMany({ with: { contacts: true } })` while the client composes locally — forks the code paths *and* the mental model. The client never gets the join; only the backend does. Code review, debugging, and reasoning about query cost all bifurcate.
 
@@ -75,23 +93,57 @@ The same principle that says "don't pretend all databases are equivalent" (CLAUD
 
 ### Drizzle `relations()` — table metadata (the **opt-in extension**)
 
-The current templates emit a `<plural>Relations = relations(<plural>, ({ one, many }) => ({ ... }))` const on each entity's schema file. This is real and useful:
+The current templates emit a `<plural>Relations = relations(<plural>, ({ one, many }) => ({ ... }))` const on each entity's schema file. **Resolution (maintainer answer Q5): keep this emission as-is.** It's free typed metadata that:
 
-- It declares typed bidirectional navigation at the **schema** layer (not the service layer).
-- It enables hand-written `db.query.accounts.findMany({ with: { contacts: true } })` for ad-hoc backend queries that knowingly will not replicate (admin tools, reports, migrations, debugging).
-- It costs nothing at runtime if unused — it's a typed const, not a query plan.
+- Declares typed bidirectional navigation at the **schema** layer (not the service layer).
+- Enables hand-written `db.query.accounts.findMany({ with: { contacts: true } })` for ad-hoc backend queries that knowingly will not replicate (admin tools, reports, migrations, debugging).
+- Costs nothing at runtime if unused — it's a typed const, not a query plan.
+- Does **not** break ElectricSQL parity. ElectricSQL replicates the underlying tables regardless of what consts the schema file exports; `relations()` is type information for hand-written queries, not a runtime requirement.
 
 **Generated service methods do not use `with:` joins.** They go through the canonical composition path. The `relations()` const is an extension the templates ship for free; consumers who reach past the service layer accept that they're using a backend-specific path.
 
 This is identical to BullMQ-backend exposing Bull Board mounting in CLAUDE.md's example: it's not pretending all backends are equivalent, it's giving consumers the choice to opt into backend-specific capability.
 
-### What this means for `junction-association-codegen`
+### Junction association placement — mirror both sides (maintainer answer Q3)
 
-The sibling leaf (CGP-XX) emits typed association methods on canonical ports (`OpportunityPort.contacts.{attach,detach,list,setPrimary}`, mirrored on `ContactPort`). Under the r2 framing those methods would be Drizzle-`with:`-shaped; under r3 they are **service methods that compose `junctionRepo` + `entityRepo` calls**.
+For a junction pairing like `opportunity_contact`, association methods are **mirrored on both parent services**, delegating to one shared junction service:
 
-The integration seam in `barrel-generator.ts:189-244` is preserved (junction modules merge into the barrel the same way). What changes is the **shape of methods emitted at the seam**: each association method is a service method whose body is two single-table repo calls.
+```typescript
+// Symmetric API — both sides expose the verb-shape that reads naturally from
+// each entity's perspective.
+class OpportunityService {
+  // ...
+  async attachContact(opportunityId: string, contactId: string, link: NewLink): Promise<Link> {
+    return this.opportunityContactService.attach(opportunityId, contactId, link);
+  }
+  contacts = {
+    list: (id: string, opts?: PaginationOpts) => this.opportunityContactService.listByOpportunity(id, opts),
+    detach: (oppId: string, contactId: string) => this.opportunityContactService.detach(oppId, contactId),
+    setPrimary: (oppId: string, contactId: string) => this.opportunityContactService.setPrimary(oppId, contactId),
+  };
+}
 
-This is the load-bearing reuse contract between this leaf and `junction-association-codegen`: the canonical association-method pattern is service-layer composition. Junction codegen extends the pattern; it does not invent a parallel one.
+class ContactService {
+  // ...
+  async addToOpportunity(contactId: string, opportunityId: string, link: NewLink): Promise<Link> {
+    return this.opportunityContactService.attach(opportunityId, contactId, link);
+  }
+  opportunities = {
+    list: (id: string, opts?: PaginationOpts) => this.opportunityContactService.listByContact(id, opts),
+    detach: (contactId: string, oppId: string) => this.opportunityContactService.detach(oppId, contactId),
+    setPrimary: (contactId: string, oppId: string) => this.opportunityContactService.setPrimary(oppId, contactId),
+  };
+}
+```
+
+The maintainer's example wording is preserved structurally — `attachContact` on Opportunity and `addToOpportunity` on Contact — even though the exact verb naming should be picked by the implementer of `junction-association-codegen` to match whatever the rest of the generated surface already does (likely consistent prefix per direction).
+
+**Heuristic for when NOT to mirror** — default is *always mirror*. Skip mirroring only when **both** of these hold:
+
+1. The inverse method would have no natural caller. Example: a junction whose semantics are inherently directional and consumers never start from the "passive" side.
+2. The inverse method would require a name that reads as misleading to anyone using it. (Subjective; mirror unless the implementer can name a specific shorter, clearer name and even then prefer mirror.)
+
+In all other cases — including all crm-domain wave-1 pairings — mirror.
 
 ### The r2 "Option A vs Option B" question dissolves
 
@@ -99,24 +151,61 @@ The prior spec asked: "Do both halves of a `relationships:` block need to be dec
 
 Under service-layer composition:
 
-- `AccountService.contacts(id)` is implemented as `this.contactRepo.findByAccountId(id)`. It needs **only the FK column on `contacts`** to exist. The `contact.yaml` `belongs_to: account` declaration is sufficient.
-- The inverse `has_many` declaration on `account.yaml` is needed only if the consumer wants the typed-`with:` navigation in `relations()` — i.e. only if they reach into the extension.
+- `AccountService.contacts(id)` is implemented as `this.contactRepo.findByAccountId(id, opts)`. It needs **only the FK column on `contacts`** to exist. The `contact.yaml` `belongs_to: account` declaration is sufficient on the data side.
+- The inverse `has_many` declaration on `account.yaml` is needed for two distinct reasons under the canonical pattern: (1) it's what tells codegen to emit `AccountService.contacts(id)` (since the target entity has no idea what other entities point at it without this hint), and (2) it's what makes the Drizzle extension path work bidirectionally.
 
-So the audit's recommendation collapses: declare both halves **if** you want the Drizzle extension path to work; declare only the owning side **if** you only need the canonical service-layer path. `crm-domain/plan.yaml` already declares both halves on `account.yaml` (`relationships.contacts: { type: has_many, ... }`), so this is moot for wave-1.
+So the audit's recommendation collapses cleanly: declare both halves. The inverse declaration is no longer just for the extension path — it's also the codegen signal for the inverse service method. `crm-domain/plan.yaml` already declares both halves on `account.yaml` (`relationships.contacts: { type: has_many, ... }` and `relationships.opportunities: { type: has_many, ... }`), so this is moot for wave-1.
 
 The audit doc names the prior Option A/B framing explicitly and explains why it dissolves, so a future reader who finds the r2 comment isn't confused.
+
+### What this means for `junction-association-codegen`
+
+The sibling leaf (CGP-XX) emits typed association methods on the canonical ports of both pairing entities. Because today's templates do not yet emit composition methods (see "Empirical state" below), junction-association-codegen will be the **first leaf to introduce the pattern in emitted code**. The contract it must satisfy:
+
+- **Pagination**: `has_many`-style methods (`.list()` on the junction) take `{ cursor?, limit? }`.
+- **Mirroring**: emit on both parent services, delegating to one shared junction service.
+- **List return**: composed join-shaped DTO `{ entity: TargetEntity, link: JunctionLink }`. Outer key `entity`.
+- **No `with:` joins**: bodies compose two single-table repo calls.
+
+The integration seam in `barrel-generator.ts:189-244` is preserved (junction modules merge into the barrel the same way). What changes is the **shape of methods emitted at the seam**: each association method is a service method whose body is two single-table repo calls.
+
+This is the load-bearing reuse contract between this leaf and `junction-association-codegen`: the canonical association-method pattern is service-layer composition. Junction codegen extends the pattern; it does not invent a parallel one.
+
+## Empirical state — what today's templates actually emit
+
+The audit doc must lead with what's currently in the templates, so a fresh reader sees the gap, not just the target shape. Result of `git grep` across `templates/`:
+
+**On the declaring entity (the side carrying the FK in YAML) — clean architecture only:**
+
+- `templates/entity/new/backend/domain/repository-interface.ejs.t:61-63` — `belongsToRelations.forEach` emits `findBy<FK>Pascal>(id: string, include?: <Class>With): Promise<Class[]>` on the repo interface. The `include?: <Class>With` parameter is **Drizzle-`with:`-extension-path shape leaking into the repo interface** — an anti-pattern under the reframe (audit doc will recommend dropping it in a follow-up issue, but the audit itself does not change templates).
+- `templates/entity/new/backend/database/repository.ejs.t:362-380` — implementation of the above.
+- `templates/entity/new/backend/database/schema.ejs.t:224-244` — Drizzle `relations()` const (extension-path metadata; keep).
+- `templates/entity/new/backend/domain/entity.ejs.t:57-65, 95-103` — optional eager-loaded readonly fields on the domain class (`public readonly contacts?: Contact[]`). Again `with:`-flavored shape.
+
+**On the target entity (the inverse side) — nothing emitted on the service or repo.** No template consumes `hasManyRelations` to emit a service method or a repo method on the target.
+
+**Clean-Lite-PS pipeline — emits literally nothing relationship-driven on the service or repo.** `templates/entity/new/clean-lite-ps/{service,repository}.ejs.t` contain zero `relationships`/`belongsTo`/`hasMany` references. The Drizzle `relations()` block does not even ship in this pipeline (verified by absence of consumers in the pipeline). The clean-lite-ps gap is the larger one.
+
+### Resolution — file a follow-up codegen-patterns issue
+
+Filed as **[codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358)**: "Emit service-layer composition methods for per-entity `relationships:` block (FK-based, no Drizzle joins)". The issue body cites the four templates above by file:line, names the gap on both pipelines (the clean-lite-ps gap is larger), restates the canonical shape from this audit, and references this spec as the contract reference.
+
+The audit doc references #358 explicitly so future readers see the gap-closure path. **The smoke test in this leaf ships against today's codegen output, not against the post-#358 surface.** Composition-method assertions are deferred until #358 lands.
 
 ## Approach
 
 ### Audit deliverable shape
 
-Single docs file: `docs/relationship-pattern-audit.md`. Five sections:
+Single docs file: `docs/relationship-pattern-audit.md`. Six sections:
 
-1. **The API path (core)** — service-layer composition pattern with worked examples drawn from crm-domain (the three shown above plus a junction example once `opportunity_contact` is in scope). Explicit "no SQL JOIN at this layer; two queries; the client does the same composition" framing.
+1. **Canonical API path (core)** — service-layer composition pattern with the three worked examples above (paginated `has_many`, paginated junction `.list()` with composed DTO, scalar `belongs_to`). Explicit "no SQL JOIN at this layer; two queries; the client does the same composition" framing. Includes the junction-association mirroring pattern with the named heuristic for opting out.
 2. **ElectricSQL-parity rationale** — why the architecture is what it is. Cites CLAUDE.md's core-vs-extension principle. One-paragraph summary suitable for a fresh reader.
-3. **Drizzle `relations()` as table metadata (extension)** — documents what the templates emit, what it enables (hand-written ad-hoc queries), and explicitly: generated service methods do not use `with:` joins.
-4. **CRM-domain coverage table** — each row pairs a relationship shape (e.g. "self-ref `belongs_to` on `account.parent_account_id`") to the supporting commit/file/line. Sourced from `dealbrain-integrations/.ai-docs/stacks/crm-domain/plan.yaml`.
-5. **Appendix: anatomy of what ships today** — the 4-part Drizzle map (bucketing → targetExists → `relations()` emission → barrel) preserved from r2 as reference for implementers navigating the templates. Demoted from "the architecture" to "the table-metadata implementation".
+3. **Empirical state today** — what each pipeline actually emits, by file:line. Names the gap. References the follow-up issue [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358). Notes the maintainer's lean toward `domain/<name>/` layout under clean-lite-ps as a future-reapproach candidate (see Open questions Q7-equivalent below).
+4. **Drizzle `relations()` as table metadata (extension)** — documents what the templates emit, what it enables (hand-written ad-hoc queries), the rationale for keeping it (free table metadata, doesn't break Electric replication, gives extension-path code an ergonomic ad-hoc query option), and explicitly: generated service methods do not use `with:` joins.
+5. **CRM-domain coverage table** — each row pairs a relationship shape (e.g. "self-ref `belongs_to` on `account.parent_account_id`") to the supporting commit/file/line. Sourced from `dealbrain-integrations/.ai-docs/stacks/crm-domain/plan.yaml`.
+6. **Appendix: anatomy of the Drizzle emission layers** — the 4-part Drizzle map (bucketing → targetExists → `relations()` emission → barrel) preserved from r2 as reference for implementers navigating the templates. Demoted from "the architecture" to "the table-metadata implementation".
+
+**Audit doc location** — implementer's choice (maintainer answer to the location question: "don't care"). The spec author's lean remains `docs/relationship-pattern-audit.md` (standalone — the audit verifies an already-merged pattern, not part of an in-flight implementation spec). The issue allows appending to `docs/specs/app-defined-patterns-implementation.md` as an alternative. Note the call in the audit doc so future readers see the rationale even though it's minor.
 
 #### Appendix — anatomy of the Drizzle emission layers (reference)
 
@@ -129,23 +218,23 @@ These four parts are how the templates currently emit table-metadata `relations(
 | **Drizzle `relations()` emission** | `templates/entity/new/backend/database/schema.ejs.t:224-244` | Emits a single `<plural>Relations = relations(<plural>, ({ one, many }) => ({ ... }))` block on the declaring entity's schema file. `belongs_to` emits `one(<targetPlural>, { fields: [...], references: [...] })`; `has_many` emits `many(<targetPlural>)`; `has_one` emits `one(<targetPlural>)`. Enables hand-written `db.query.X.findMany({ with: { Y: true } })` *only if* both sides declared. |
 | **Schema-aware barrel** | `src/cli/shared/barrel-generator.ts:189-244` | Computes module + schema file paths per architecture so cross-entity imports resolve at the right depth (the `01bb917` fix). Junction modules from mechanism (A) merge with regular modules here — this is the integration seam `junction-association-codegen` extends to wire generated junction services into the canonical port surface. |
 
-### Disambiguating the two "Relationship" mechanisms (preserved from r2)
+### Disambiguating the two "Relationship" mechanisms (preserved from r3)
 
 The four cited commits ship **two distinct things** that share the name "relationship". The audit must distinguish them, because `crm-domain` needs only one of them and `junction-association-codegen` will reuse mechanics from both. The lever for downstream reuse is mechanism (B) — and within (B), the **service-method composition pattern**, not the Drizzle const.
 
 - **(A) First-class relationship definitions** — top-level `definitions/relationships/<name>.yaml` parsed by `loadRelationshipFromYaml()` (`src/utils/yaml-loader.ts:1` onward). These produce their own junction entity via the `templates/relationship/new/` Hygen pipeline (entity + repo + service + DTOs + controller + module + use-cases). Shipped by `8a5bc13` (schema/parser/analyzer) and `ef5e898` (templates + CLI). Discovery + barrel inclusion via `collectRelationships()` in `src/cli/shared/barrel-generator.ts:156`. **`crm-domain` does not use this mechanism.**
 
-- **(B) Per-entity `relationships:` block** — `belongs_to`/`has_many`/`has_one` declared inside an entity YAML. Processed by both backend template pipelines: clean in `templates/entity/new/prompt.js:838-927` and clean-lite-ps in `templates/entity/new/clean-lite-ps/prompt-extension.js:302-410, 769-820`. Predates the four cited commits but `269ab3f` fixed a self-ref `belongs_to` bug in clean-lite-ps. **`crm-domain` uses this mechanism for `Account.parent_account_id`, `Contact.account_id`, `Opportunity.account_id`.** This is also the mechanism `junction-association-codegen` extends — specifically the **service-composition** half of what mechanism (B) ships.
+- **(B) Per-entity `relationships:` block** — `belongs_to`/`has_many`/`has_one` declared inside an entity YAML. Processed by both backend template pipelines: clean in `templates/entity/new/prompt.js:838-927` and clean-lite-ps in `templates/entity/new/clean-lite-ps/prompt-extension.js:302-410, 769-820`. Predates the four cited commits but `269ab3f` fixed a self-ref `belongs_to` bug in clean-lite-ps. **`crm-domain` uses this mechanism for `Account.parent_account_id`, `Contact.account_id`, `Opportunity.account_id`.** This is also the mechanism `junction-association-codegen` extends — specifically the **service-composition** half of what mechanism (B) ships (currently empty, see Empirical state above).
 
 The audit doc names this distinction explicitly so a fresh reader does not lose ninety minutes the same way the r2 author did.
 
-### Smoke test shape (preserved from r2)
+### Smoke test shape (preserved from r3)
 
 A new smoke fixture set (`test/smoke/fixtures/crm/`) plus a `--scenario relationship` flag on `test/smoke/run-smoke.ts`. The harness body is unchanged; the flag swaps `FIXTURES_DIR`. The spec mandates **one harness invocation** so CI cost stays predictable.
 
 Fixtures cover exactly the crm-domain shapes:
 
-- `account.yaml` — self-ref `belongs_to parent_account` on `parent_account_id`. Also declares `relationships.contacts: { type: has_many, target: contact, foreign_key: account_id }` and `relationships.opportunities: { type: has_many, target: opportunity, foreign_key: account_id }` (the inverse `has_many` declarations enable the extension path; they are not required for the core path).
+- `account.yaml` — self-ref `belongs_to parent_account` on `parent_account_id`. Also declares `relationships.contacts: { type: has_many, target: contact, foreign_key: account_id }` and `relationships.opportunities: { type: has_many, target: opportunity, foreign_key: account_id }` (the inverse `has_many` declarations enable both the extension path AND the post-#358 service-method emission; under today's templates only the extension path is exercised).
 - `contact.yaml` — `belongs_to account` on `account_id`.
 - `opportunity.yaml` — `belongs_to account` on `account_id`.
 
@@ -156,7 +245,7 @@ Tests pass when:
 - `contacts.entity.ts` contains `account: one(accounts, { fields: [contacts.accountId], references: [accounts.id] })`.
 - `opportunities.entity.ts` contains the analogous `account: one(accounts, ...)`.
 
-These assertions verify the **extension path table-metadata still ships**. The smoke does not currently assert the service-composition surface (see Open questions — that's a junction-association-codegen concern, since per-entity `relationships:` may not emit service-layer composition methods today; templates emit only the Drizzle const).
+These assertions verify the **extension path table-metadata still ships**. The smoke does **not** assert the service-composition surface — that surface does not exist in today's templates (see Empirical state). Once [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358) lands, a follow-up issue should add service-composition assertions (e.g. grep that `AccountService` has a `contacts(accountId, opts?)` method).
 
 No DB push, no Postgres dependency — schema correctness via TS compile + targeted grep is sufficient for this smoke.
 
@@ -170,15 +259,15 @@ flowchart LR
   P3 -->|schema.ejs.t L224-244| S3[opportunitiesRelations<br/>extension metadata]
   S1 & S2 & S3 -->|barrel-generator| B[barrel<br/>cross-entity imports resolve]
   B --> T[tsc --noEmit<br/>green]
-  P1 & P2 & P3 -.canonical API path.-> C[service-layer composition<br/>findByAccountId + repo calls]
-  C -.documented in audit.-> AD[docs/relationship-pattern-audit.md]
+  P1 & P2 & P3 -.canonical API path<br/>NOT emitted today.-> C[service-layer composition<br/>findByAccountId + paginated repo call<br/>tracked in codegen-patterns#358]
+  C -.documented + contract-defined.-> AD[docs/relationship-pattern-audit.md]
 ```
 
 ## File-level plan
 
 ### Create
 
-- `docs/relationship-pattern-audit.md` — sections 1-5 per above. Leads with the service-layer composition architecture; Drizzle anatomy is appendix. ~350-500 lines (longer than r2 because of the architecture sections; the Drizzle-anatomy content is unchanged, just relocated). Cites every claim with `<file>:<line>`.
+- `docs/relationship-pattern-audit.md` — sections 1-6 per above. Leads with the canonical service-layer composition architecture; empirical-state section names the gap and references `codegen-patterns#358`; Drizzle anatomy is appendix. ~400-550 lines. Cites every claim with `<file>:<line>`.
 - `test/smoke/fixtures/crm/account.yaml` — self-ref `belongs_to` + two `has_many` (contacts, opportunities). Pattern: `Synced`.
 - `test/smoke/fixtures/crm/contact.yaml` — `belongs_to account`. No junction declarations (sibling leaves cover those).
 - `test/smoke/fixtures/crm/opportunity.yaml` — `belongs_to account`. Minimal extra fields (`name`, `amount`, `stage` enum) so DTO emission is exercised non-trivially.
@@ -191,7 +280,7 @@ flowchart LR
 
 ### Explicitly **not** modified
 
-- `templates/entity/new/prompt.js`, `clean-lite-ps/prompt-extension.js`, `backend/database/schema.ejs.t`, `relationship/new/**`, `src/parser/`, `src/analyzer/`, `src/schema/relationship-definition.schema.ts`, `src/utils/yaml-loader.ts`, `src/cli/commands/relationship.ts`, `src/cli/shared/barrel-generator.ts` — this is verification, not extension. If the audit finds a gap, file a separate issue.
+- `templates/entity/new/prompt.js`, `clean-lite-ps/prompt-extension.js`, `backend/database/schema.ejs.t`, `backend/domain/repository-interface.ejs.t`, `backend/database/repository.ejs.t`, `backend/application/**`, `clean-lite-ps/service.ejs.t`, `relationship/new/**`, `src/parser/`, `src/analyzer/`, `src/schema/relationship-definition.schema.ts`, `src/utils/yaml-loader.ts`, `src/cli/commands/relationship.ts`, `src/cli/shared/barrel-generator.ts` — this is verification + contract-definition, not template extension. Gap-closure is owned by [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358).
 
 ## Interfaces
 
@@ -226,15 +315,20 @@ Assertion helpers added near the end of `runSmoke()`:
 function assertRelationshipEmission(generatedSrc: string): void {
   const reads = (p: string): string => fs.readFileSync(path.join(generatedSrc, p), 'utf8');
 
-  const accountSchema = reads('domain/account/account.entity.ts'); // path per clean-lite-ps layout
+  // Path layout per existing verifyTypecheck() convention — implementer matches
+  // whatever the default scenario already reads. Today's clean-lite-ps emits
+  // under `src/modules/<plural>/<name>.entity.ts`; the maintainer's lean is
+  // toward `domain/<name>/<name>.entity.ts` (noted in audit Empirical state as a
+  // future-reapproach candidate, NOT changed in this leaf).
+  const accountSchema = reads('<existing-clp-layout>/account/account.entity.ts');
   assertContains(accountSchema, /parentAccount:\s*one\(accounts,/);
   assertContains(accountSchema, /contacts:\s*many\(contacts\)/);
   assertContains(accountSchema, /opportunities:\s*many\(opportunities\)/);
 
-  const contactSchema = reads('domain/contact/contact.entity.ts');
+  const contactSchema = reads('<existing-clp-layout>/contact/contact.entity.ts');
   assertContains(contactSchema, /account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[contacts\.accountId\]/);
 
-  const oppSchema = reads('domain/opportunity/opportunity.entity.ts');
+  const oppSchema = reads('<existing-clp-layout>/opportunity/opportunity.entity.ts');
   assertContains(oppSchema, /account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[opportunities\.accountId\]/);
 }
 
@@ -245,7 +339,7 @@ function assertContains(haystack: string, needle: RegExp): void {
 }
 ```
 
-Path layout under `generatedSrc` is whatever the existing smoke harness already uses for the default scenario — the implementer reads the same path the default scenario reads (do **not** hardcode; mirror existing `verifyTypecheck()` conventions in `run-smoke.ts`).
+Path layout under `generatedSrc` is whatever the existing smoke harness already uses for the default scenario — the implementer reads the same path the default scenario reads (do **not** hardcode; mirror existing `verifyTypecheck()` conventions in `run-smoke.ts`). Assertion regexes are shape-correct regardless of path.
 
 ## Tests
 
@@ -257,7 +351,7 @@ The smoke test **is** the test. Coverage matrix:
 | Cross-entity `belongs_to` | `contact.yaml`, `opportunity.yaml` | Regex on `account: one(accounts, { fields: [...accountId], references: [...id] })` in both schema files. |
 | Inverse `has_many` (extension-path metadata) | `account.yaml.relationships.{contacts,opportunities}` | Regex on `contacts: many(contacts)` and `opportunities: many(opportunities)` in `account.entity.ts`. Verifies the extension path table-metadata still ships. |
 | Barrel-import-depth (regression of `01bb917`) | All three fixtures | `bunx tsc --noEmit` succeeds. Module-resolution failure at the wrong import depth would emit TS2307. |
-| Service-layer composition surface | (deferred) | Not asserted in this leaf — see Open questions. The canonical API path is documented in the audit; whether today's templates emit service methods for per-entity `relationships:` blocks is one of the questions this audit answers. |
+| Service-layer composition surface | (deferred to codegen-patterns#358) | Not asserted in this leaf. The canonical API path is documented in the audit; today's templates do not emit it. Follow-up smoke assertions live with #358. |
 | Audit doc accuracy | `docs/relationship-pattern-audit.md` | Manually verified during human Gate-1 review. |
 
 CI wiring: `just test-all` calls `test-smoke` (existing) + `test-smoke-relationship` (new). Total added CI time: ~60-120s. The existing `test-smoke` is preserved untouched.
@@ -266,36 +360,30 @@ Unit tests are **not** added. The schema/parser/analyzer paths for first-class r
 
 ## Out of scope
 
-- Any change to template logic, parser, analyzer, or schema. Verification-only.
-- Inverse-relation synthesis (auto-emit `has_many` from a declared `belongs_to`). Under the reframe this is a low-stakes extension-path-only concern; if anyone wants it, separate issue.
-- Junction pattern work — entirely owned by sibling leaves (`junction-pattern-definition`, `junction-hygen-templates`, `junction-association-codegen`, `junction-test-fixtures`).
-- Stripping `relations()` emission from the templates. Out of scope. The audit's recommendation (see Open questions) is to **keep** it as opt-in extension metadata.
+- Any change to template logic, parser, analyzer, or schema. Verification + contract-definition only.
+- Closing the service-composition gap. That work is owned by [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358).
+- Inverse-relation synthesis (auto-emit `has_many` from a declared `belongs_to`). Under the reframe, declaring both halves is required anyway (signals codegen to emit the inverse service method post-#358); no synthesis needed.
+- Junction pattern work — entirely owned by sibling leaves (`junction-pattern-definition`, `junction-hygen-templates`, `junction-association-codegen`, `junction-test-fixtures`). This audit defines the contract `junction-association-codegen` must satisfy (paginated, mirrored, composed-DTO list return).
+- Stripping `relations()` emission from the templates. Resolved: keep as opt-in extension metadata (maintainer answer Q5).
+- Dropping the `include?: <Class>With` parameter from repo interfaces. Recommended in the audit (it's extension-path shape leaking into the core contract); execution is part of #358 or its own follow-up.
 - Postgres integration test for relationship FK constraints. The smoke test verifies *codegen output*; FK enforcement is a Drizzle/Postgres responsibility tested by `test-family` (already green).
 - `user_integration` from `crm-domain/plan.yaml` — has no relationships in scope; outside this leaf.
 - Account_contact / opportunity_contact junctions — Junction pattern, not Relationship. Sibling leaves cover them.
+- Changing the on-disk layout under clean-lite-ps. Maintainer lean is toward `domain/<name>/<name>.entity.ts` over today's `src/modules/<plural>/<name>.entity.ts`, noted in the audit's Empirical-state section as a future-reapproach candidate. Not changed in this leaf.
 
 ## Open questions
 
-1. **Does today's per-entity-`relationships:` codegen emit service-layer composition methods, or only the Drizzle `relations()` const?** The reframe makes this the load-bearing question for the leaf. Answer it in the audit by `git grep` on the templates:
-   - If templates already emit `AccountService.contacts(id)` style methods that call `contactRepo.findByAccountId(id)` — document the shape, declare it the canonical pattern, point `junction-association-codegen` at it.
-   - If templates emit only the Drizzle const — name the gap explicitly. `junction-association-codegen` will be the leaf that adds the service-composition layer; this audit's role is to confirm the gap and define the contract (method shape, return type, pagination policy) downstream codegen will fill.
-   - Either way, the audit doc must answer this with file:line citations, not speculation.
-2. **What shape do service-layer composition methods take for `has_many` traversal?** Three plausible shapes:
-   - **List (eager)** — `accountService.contacts(id): Promise<Contact[]>`. Simplest; matches the worked examples above. Risk: unbounded result on hot rows.
-   - **Paginated** — `accountService.contacts(id, { limit, offset }): Promise<Contact[]>`. Safer default; requires the repo to support pagination.
-   - **Lazy** — `accountService.contacts(id): { list, count, page }`. Most flexible; heaviest API surface.
-   This is a junction-association-codegen design choice. The audit doc should name the options and recommend one (lean toward paginated — matches client-side ElectricSQL composition more naturally).
-3. **For junction services specifically: do association methods (`attach`, `detach`, `list`, `setPrimary`) live on the parent service, the junction service, or both?** Three patterns:
-   - Methods on the parent service only — `OpportunityService.contacts.attach(opportunityId, contactId, metadata)`. Hides the junction.
-   - Methods on the junction service only — `OpportunityContactService.attach(...)`. Surfaces the junction.
-   - Mirror on both sides — `OpportunityService.contacts.attach()` AND `ContactService.opportunities.attach()`, both delegating to a single junction service. Symmetric API.
-   This audit names the question; `junction-association-codegen` answers it. Recommendation: mirror on both sides, single junction service implementation (DRY + symmetric API).
-4. **What does a `list` association method return** — junction rows (with `is_primary`, `started_at`, etc.), target entities (just the `Contact[]`), or a join-shaped DTO composed in the service (`{ contact: Contact, link: { isPrimary, startedAt, ... } }`)? The third option is what's natural in the worked examples (consumers need the metadata to render "primary contact" badges). Lean toward the third; name in audit.
-5. **Should `relations()` emission be kept at all, or stripped?** Recommendation: **keep**. It's free typed metadata that doesn't break ElectricSQL parity (it's not on the canonical API path), it enables hand-written ad-hoc backend queries, and removing it would force every admin/migration script to hand-write join SQL. Name the question explicitly so a future reader understands the decision.
-6. **Audit-note location.** `docs/relationship-pattern-audit.md` is the spec author's recommendation (standalone — the audit is verification of an already-merged pattern, not part of an in-flight implementation spec). The issue allows appending to `docs/specs/app-defined-patterns-implementation.md` as an alternative. Validator may override.
-7. **Smoke project's on-disk layout under `clean-lite-ps`** — is it `<projectRoot>/src/modules/<plural>/<name>.entity.ts` or `<projectRoot>/domain/<name>/<name>.entity.ts`? Implementer reads existing `verifyTypecheck()` and matches. Assertion regexes above are shape-correct regardless of path.
+All r3 open questions are resolved. Resolutions baked into the spec body above:
+
+- **Q1 (does today's codegen emit service-layer composition methods?)** → No. Empirically confirmed via grep of `templates/`. Filed [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358) to close the gap. Audit doc leads with the empirical state.
+- **Q2 (has_many traversal shape)** → Paginated by default. `{ cursor?, limit? }` opts param. Worked examples updated.
+- **Q3 (junction association placement)** → Mirror both sides. Heuristic for opting out named.
+- **Q4 (list-association return shape)** → Composed join-shaped DTO `{ entity, link }`. Outer key chosen as `entity`.
+- **Q5 (keep or strip `relations()`)** → Keep as opt-in extension metadata. Rationale documented.
+- **Q6 (audit doc location)** → Implementer's choice; spec author leans toward standalone `docs/relationship-pattern-audit.md`.
+- **Q7 (smoke project on-disk layout under clean-lite-ps)** → Match existing `verifyTypecheck()` convention (today: `src/modules/<plural>/...`). Audit notes maintainer's lean toward `domain/<name>/...` as a future-reapproach candidate.
 
 ### Questions dropped from r2
 
 - **Whether an inverse-synthesis pass exists** — preserved as a low-stakes implementation detail in the audit appendix; under the reframe its answer doesn't change the architecture. (It only affects whether the extension path "just works" or requires both halves declared.)
-- **Option A vs Option B remediation framing** — dissolved. See "The r2 Option A/B question dissolves" above. Audit doc names the prior framing and the resolution so the r2 comment isn't a confusing artifact.
+- **Option A vs Option B remediation framing** — dissolved. See "The r2 Option A/B question dissolves" above. Audit doc names the prior framing and the resolution so the r2/r3 comments aren't confusing artifacts.
