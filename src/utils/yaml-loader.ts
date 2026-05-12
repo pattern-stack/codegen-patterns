@@ -13,6 +13,10 @@ import {
 	type RelationshipDefinition,
 	RelationshipDefinitionSchema,
 } from '../schema/relationship-definition.schema';
+import {
+	type JunctionDefinition,
+	JunctionDefinitionSchema,
+} from '../schema/junction-definition.schema';
 
 export interface LoadResult {
 	success: true;
@@ -308,19 +312,127 @@ export function loadEventFromYaml(filePath: string): LoadEventResult {
 	};
 }
 
+// ============================================================================
+// Junction YAML Loading
+// ============================================================================
+
+export interface JunctionLoadResult {
+	success: true;
+	definition: JunctionDefinition;
+	filePath: string;
+}
+
+export interface JunctionLoadError {
+	success: false;
+	error: string;
+	details?: string[];
+	filePath: string;
+}
+
+export type LoadJunctionResult = JunctionLoadResult | JunctionLoadError;
+
 /**
- * Detect whether a YAML file is an entity or relationship definition.
+ * Load and validate a junction definition from a YAML file.
+ *
+ * Mirrors {@link loadRelationshipFromYaml}: existence check → readFileSync →
+ * parseYaml → `JunctionDefinitionSchema.safeParse`. Returns a discriminated
+ * result; callers are expected to aggregate into `AnalysisIssue`s rather
+ * than throw.
+ */
+export function loadJunctionFromYaml(filePath: string): LoadJunctionResult {
+	if (!existsSync(filePath)) {
+		return {
+			success: false,
+			error: `File not found: ${filePath}`,
+			filePath,
+		};
+	}
+
+	let content: string;
+	try {
+		content = readFileSync(filePath, 'utf-8');
+	} catch (err) {
+		return {
+			success: false,
+			error: `Failed to read file: ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = parseYaml(content);
+	} catch (err) {
+		return {
+			success: false,
+			error: `Invalid YAML syntax in ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	const result = JunctionDefinitionSchema.safeParse(parsed);
+	if (!result.success) {
+		return {
+			success: false,
+			error: `Validation failed for ${filePath}`,
+			details: formatZodErrors(result.error),
+			filePath,
+		};
+	}
+
+	return {
+		success: true,
+		definition: result.data,
+		filePath,
+	};
+}
+
+/**
+ * Load multiple junction files.
+ */
+export function loadJunctionsFromYaml(filePaths: string[]): {
+	successes: JunctionLoadResult[];
+	failures: JunctionLoadError[];
+} {
+	const successes: JunctionLoadResult[] = [];
+	const failures: JunctionLoadError[] = [];
+
+	for (const filePath of filePaths) {
+		const result = loadJunctionFromYaml(filePath);
+		if (result.success) {
+			successes.push(result);
+		} else {
+			failures.push(result);
+		}
+	}
+
+	return { successes, failures };
+}
+
+/**
+ * Detect whether a YAML file is an entity, relationship, or junction definition.
  * Checks for the top-level discriminator key.
+ *
+ * Junctions are discriminated by `pattern: Junction` (a literal value, not
+ * just key presence) so an entity YAML that happens to carry `pattern:
+ * Synced` is NOT mistaken for a junction file.
  */
 export function detectYamlType(
 	filePath: string,
-): 'entity' | 'relationship' | 'unknown' {
+): 'entity' | 'relationship' | 'junction' | 'unknown' {
 	if (!existsSync(filePath)) return 'unknown';
 
 	try {
 		const content = readFileSync(filePath, 'utf-8');
 		const parsed = parseYaml(content) as Record<string, unknown>;
 		if (parsed && typeof parsed === 'object') {
+			// Junction discriminator is value-sensitive (must be exactly the
+			// literal 'Junction'). Check BEFORE 'entity' so we don't mistake
+			// a top-level junction file for an entity simply because both
+			// schemas could in principle nest a `pattern:` key.
+			if (parsed.pattern === 'Junction') return 'junction';
 			if ('entity' in parsed) return 'entity';
 			if ('relationship' in parsed) return 'relationship';
 		}

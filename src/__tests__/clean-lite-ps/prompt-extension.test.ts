@@ -384,6 +384,7 @@ import { z } from 'zod';
 import {
   ActivityPattern,
   BasePattern,
+  JunctionPattern,
   KnowledgePattern,
   MetadataPattern,
   SyncedPattern,
@@ -573,4 +574,5 @@ _afterAllForCleanup(() => {
   registerLibraryPattern(ActivityPattern);
   registerLibraryPattern(KnowledgePattern);
   registerLibraryPattern(MetadataPattern);
+  registerLibraryPattern(JunctionPattern);
 });

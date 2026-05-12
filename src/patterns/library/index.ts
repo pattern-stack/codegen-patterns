@@ -11,6 +11,7 @@
 import { registerLibraryPattern } from '../registry.js';
 import { ActivityPattern } from './activity.pattern.js';
 import { BasePattern } from './base.pattern.js';
+import { JunctionPattern } from './junction.pattern.js';
 import { KnowledgePattern } from './knowledge.pattern.js';
 import { MetadataPattern } from './metadata.pattern.js';
 import { SyncedPattern } from './synced.pattern.js';
@@ -20,11 +21,17 @@ registerLibraryPattern(SyncedPattern);
 registerLibraryPattern(ActivityPattern);
 registerLibraryPattern(KnowledgePattern);
 registerLibraryPattern(MetadataPattern);
+registerLibraryPattern(JunctionPattern);
 
 export {
 	ActivityPattern,
 	BasePattern,
+	JunctionPattern,
 	KnowledgePattern,
 	MetadataPattern,
 	SyncedPattern,
 };
+export {
+	BaseJunctionFields,
+	BASE_JUNCTION_FIELD_NAMES,
+} from './base-junction-fields.js';
