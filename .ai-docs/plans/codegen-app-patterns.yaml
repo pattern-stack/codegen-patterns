@@ -123,6 +123,34 @@ architectural_notes:
       framing). The follow-up issue closing the entity-codegen service-method
       gap is codegen-patterns#358.
 
+external_dependencies:
+  # Surfaced by the cgp-62 r3 audit: today's entity codegen does NOT emit
+  # service-layer composition methods for per-entity `relationships:` blocks.
+  # The follow-up codegen-patterns#358 closes that gap; downstream leaves in
+  # this stack depend on it landing first.
+  - repo: pattern-stack/codegen-patterns
+    issue: 358
+    title: "Emit service-layer composition methods for per-entity `relationships:` block (FK-based, no Drizzle joins)"
+    url: https://github.com/pattern-stack/codegen-patterns/issues/358
+    blocks:
+      - junction-association-codegen
+      - junction-test-fixtures           # transitively (depends on junction-association-codegen)
+      - tracker-hygiene-close-stale      # transitively (depends on all leaves)
+    rationale: |
+      #358 establishes the service-method emission machinery (paginated
+      cursor-shape, composed join-shape DTOs, no Drizzle `with:` joins per
+      architectural_notes.cross_entity_access). junction-association-codegen
+      extends that machinery to junction associations; without #358 there is
+      nothing to extend. Discovered empirically in cgp-62 r3 audit by
+      `git grep` of templates — neither clean nor clean-lite-ps emit the
+      target shape today.
+    interim_workaround: |
+      Wave-1 consumer (`dealbrain-integrations` HubSpot CRM work) hand-writes
+      the service-layer composition methods against the canonical shape
+      defined in architectural_notes.cross_entity_access.canonical_shape.
+      Hand-written code serves as the executable spec for #358; when #358
+      lands, generated services replace hand-written services mechanically.
+
 issues:
   - key: junction-pattern-definition
     title: "Junction pattern: definition + BaseJunctionFields + schema + registry"
@@ -162,42 +190,59 @@ issues:
 
       - Junction table template (Drizzle schema): primary key on the composite of the two FK columns, the role column (typed from per-pairing enum), and the `BaseJunctionFields` columns. Cross-domain pairings still emit a single junction table.
       - Junction repo template: typed CRUD plus pairing-aware finders.
-      - Junction service template: ApplicationService binding to the junction repo per the L7 layer rules (one entity, one source).
+      - Junction service template: ApplicationService **shell** binding to the junction repo per the L7 layer rules (one entity, one source). Emits the constructor + the inherited junction-repo CRUD only. **Does NOT emit the fan-out association methods** (`attachContact`, `detachContact`, `list`, `setPrimary` on parent services; `attach`, `detach`, `list`, `setPrimary` on the junction service itself). Those land via `junction-association-codegen` (#60) once `codegen-patterns#358` provides the service-method emission machinery — see `external_dependencies` at the plan root.
       - Template smoke fixtures driven by minimal YAML so the templates can be exercised without the full crm-domain wired up.
 
       Coordinate output naming with how `Relationship` pattern templates already emit (commits `ef5e898`, `01bb917`) so junction barrels import at the right depth.
 
+      **Scope note:** Per the architectural_notes.cross_entity_access core/extension boundary, this leaf ships the **structural** templates (table + repo + service shell). Cross-entity fan-out (the composition methods that span the two parent entities + the junction) is deferred. This leaf is unblocked and can ship before #358; #60 cannot.
+
       Acceptance:
-      - Running codegen against an intra-domain junction YAML (e.g. `opportunity_contact`) produces a valid Drizzle table, repo, and service that compile.
+      - Running codegen against an intra-domain junction YAML (e.g. `opportunity_contact`) produces a valid Drizzle table, repo, and service shell that compile.
       - Same for a cross-domain pairing (e.g. `opportunity_activity`).
       - Barrel imports resolve at the correct depth (no regression of the issue fixed in `01bb917`).
+      - Service shell carries the canonical class shape junction-association-codegen will later extend; no fan-out methods are present yet.
 
   - key: junction-association-codegen
     title: "Junction pattern: association methods on canonical ports"
     layer: L0
     upstream_repo: pattern-stack/codegen-patterns
     depends_on: [junction-hygen-templates]
+    external_depends_on:
+      - pattern-stack/codegen-patterns#358   # see `external_dependencies` at plan root
     parallel_with: []
     labels: ["wave-1-hubspot-crm", "domain:codegen"]
     description: |
       **Upstream repo:** [pattern-stack/codegen-patterns](https://github.com/pattern-stack/codegen-patterns).
 
-      Emit typed association methods on the canonical ports of both entities in a junction pairing — e.g. `OpportunityPort.contacts.{attach,detach,list,setPrimary}` and the mirror on `ContactPort`. Methods accept/return the junction-row metadata (`is_primary`, `started_at`, etc.) so consumers don't have to reach past the port.
+      **⚠️ Blocked on [pattern-stack/codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358)** — see `external_dependencies` at the plan root for rationale and interim workaround. Do NOT start this leaf until #358 lands.
+
+      Emit typed association methods on the parent services of both entities in a junction pairing, mirrored per `architectural_notes.cross_entity_access.canonical_shape.junction_association_placement`:
+
+      - `OpportunityService.attachContact(oppId, contactId, link)` AND `ContactService.addToOpportunity(contactId, oppId, link)` — both delegate to `OpportunityContactService.attach(oppId, contactId, link)`.
+      - Same mirror for `detach`, `list`, `setPrimary`.
+      - `list` returns `Array<{ entity: TargetEntity, link: JunctionLink }>` (the composed join-shape DTO per `canonical_shape.list_association_return_shape`). Paginated `{ cursor?, limit? }` per `canonical_shape.pagination_default`.
+      - All methods accept/return `BaseJunctionFields` metadata so consumers do not have to reach past the canonical port.
 
       Sequenced after `junction-hygen-templates` because association codegen consumes emitted type names and repo class shapes from the template output — parallelism here is a false economy.
 
-      **Reuse Relationship's cross-entity emission mechanism.** Relationship already solves this problem (`Account.contacts()` is emitted onto `AccountRepository`/`AccountService` by `contact.yaml`'s `belongs_to`, not by `account.yaml`). The mechanism is documented as a deliverable of `relationship-verification` — start there. If Junction's needs diverge (e.g. methods on both sides instead of just the FK target), extend the mechanism rather than forking a parallel one; document the extension inline.
+      **Why #358 blocks this leaf:** the cgp-62 r3 audit (`.ai-docs/stacks/codegen-app-patterns/specs/cgp-62.md`) empirically found that today's entity codegen does NOT emit service-layer composition methods for per-entity `relationships:` blocks — neither clean nor clean-lite-ps. There is no upstream mechanism to "reuse and extend" for junction associations until #358 establishes the service-method emission machinery (paginated cursor-shape, composed join-shape DTOs, no Drizzle `with:` joins). #358 closes that gap; this leaf extends the same machinery to mirrored junction associations.
 
       Acceptance:
-      - Codegen against `opportunity_contact` fixture emits matching association methods on both `OpportunityPort` and `ContactPort` with correct types.
+      - #358 is merged and the service-method emission machinery is live in the templates.
+      - Codegen against `opportunity_contact` fixture emits matching association methods on both `OpportunityService` and `ContactService`, plus the junction service, with correct types per `canonical_shape`.
       - Methods round-trip `BaseJunctionFields` metadata.
+      - `list` returns the composed join-shape DTO; pagination matches the project pagination convention #358 adopted.
       - Cross-domain pairing (`opportunity_activity`) emits methods on both sides without violating layer rules (no cross-domain writes outside use cases).
+      - The mirror-both-sides rule and the named opt-out heuristic are honored — the test fixture pairings should not legitimately trigger opt-out; if any does, surface in the PR description.
 
   - key: junction-test-fixtures
     title: "Junction pattern: test fixtures (opportunity_contact + opportunity_activity)"
     layer: L0
     upstream_repo: pattern-stack/codegen-patterns
     depends_on: [junction-hygen-templates, junction-association-codegen]
+    external_depends_on:
+      - pattern-stack/codegen-patterns#358   # transitively via junction-association-codegen
     parallel_with: []
     labels: ["wave-1-hubspot-crm", "domain:codegen"]
     description: |
@@ -252,6 +297,8 @@ issues:
       - junction-association-codegen
       - junction-test-fixtures
       - relationship-verification
+    external_depends_on:
+      - pattern-stack/codegen-patterns#358   # transitively via junction-association-codegen
     parallel_with: []
     labels: ["wave-1-hubspot-crm", "domain:codegen"]
     description: |

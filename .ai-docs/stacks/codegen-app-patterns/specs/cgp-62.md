@@ -184,7 +184,13 @@ The audit doc must lead with what's currently in the templates, so a fresh reade
 
 **On the target entity (the inverse side) — nothing emitted on the service or repo.** No template consumes `hasManyRelations` to emit a service method or a repo method on the target.
 
-**Clean-Lite-PS pipeline — emits literally nothing relationship-driven on the service or repo.** `templates/entity/new/clean-lite-ps/{service,repository}.ejs.t` contain zero `relationships`/`belongsTo`/`hasMany` references. The Drizzle `relations()` block does not even ship in this pipeline (verified by absence of consumers in the pipeline). The clean-lite-ps gap is the larger one.
+**Clean-Lite-PS pipeline — emits a partial `relations()` block, nothing on the service or repo.** `templates/entity/new/clean-lite-ps/{service,repository}.ejs.t` contain zero `relationships`/`belongsTo`/`hasMany` references. The `relations()` const **does** ship from `templates/entity/new/clean-lite-ps/entity.ejs.t:59-69` — but only with `one()` calls for `belongs_to` declarations; the iterator is `clpBelongsTo` (line 62) and never touches `has_many`. So:
+
+- A clean-lite-ps `account.yaml` with `belongs_to: parent_account` + `has_many: contacts` + `has_many: opportunities` emits `accountsRelations = relations(accounts, ({ one }) => ({ parentAccount: one(accounts, { ... }) }))`. The `has_many` declarations are **silently ignored** by the entity template — they produce no Drizzle metadata, no service methods, no repo methods.
+- `processBelongsTo` lives at `clean-lite-ps/prompt-extension.js:312-362`; output paths at `:822-829` set entity emission to `${srcRoot}/modules/${plural}/${name}.entity.ts`. There is no `processHasMany` — `grep -n "hasMany\|has_many" clean-lite-ps/prompt-extension.js` returns zero hits.
+- `hasRelationsBlock = belongsTo.length > 0` (`prompt-extension.js:820`) — the `relations()` const itself is suppressed when an entity only has `has_many` and no `belongs_to`.
+
+The clean-lite-ps gap is the larger one: even the **table-metadata extension path** is unidirectional (one-side only). The clean pipeline emits bidirectional `relations()` via `schema.ejs.t:224-244` (`one()` for belongsTo/hasOne, `many()` for hasMany); clean-lite-ps does not. Closing this side of the gap is in scope for codegen-patterns#358 (or a sibling issue) but **not** in scope for this audit leaf.
 
 ### Resolution — file a follow-up codegen-patterns issue
 
@@ -213,9 +219,9 @@ These four parts are how the templates currently emit table-metadata `relations(
 
 | Part | Entry point | What it does |
 |---|---|---|
-| **Per-entity bucketing pass** | `templates/entity/new/prompt.js:838-883` (and the parallel pass at `templates/entity/new/clean-lite-ps/prompt-extension.js:769-787`) | Reads `entity.relationships`, partitions into `belongsToRelations` / `hasManyRelations` / `hasOneRelations`, derives Pascal/plural/foreign-key permutations once and reuses across templates. |
+| **Per-entity bucketing pass** | Clean: `templates/entity/new/prompt.js:838-883` partitions into `belongsToRelations` / `hasManyRelations` / `hasOneRelations`. Clean-lite-ps: `templates/entity/new/clean-lite-ps/prompt-extension.js:312-362` (`processBelongsTo`) — there is **no parallel `processHasMany` or `processHasOne`**, so on the clean-lite-ps pipeline only `belongs_to` is bucketed. `prompt-extension.js:820` (`hasRelationsBlock = belongsTo.length > 0`) gates emission of the `relations()` const on whether any `belongs_to` exists. |
 | **Target-existence check** | `templates/entity/new/prompt.js:887-912` (`checkEntityExists` + `targetExists` marking) | Each relationship is annotated with whether the **target** entity's `<name>.entity.ts` already exists on disk. Templates use this to suppress imports/methods that would dangle. This is why baseline tests two-pass: pass 1 seeds entity files, pass 2 emits with `targetExists: true`. |
-| **Drizzle `relations()` emission** | `templates/entity/new/backend/database/schema.ejs.t:224-244` | Emits a single `<plural>Relations = relations(<plural>, ({ one, many }) => ({ ... }))` block on the declaring entity's schema file. `belongs_to` emits `one(<targetPlural>, { fields: [...], references: [...] })`; `has_many` emits `many(<targetPlural>)`; `has_one` emits `one(<targetPlural>)`. Enables hand-written `db.query.X.findMany({ with: { Y: true } })` *only if* both sides declared. |
+| **Drizzle `relations()` emission** | Clean: `templates/entity/new/backend/database/schema.ejs.t:224-244` — emits `<plural>Relations = relations(<plural>, ({ one, many }) => ({ ... }))`. `belongs_to` → `one(<targetPlural>, { fields: [...], references: [...] })`; `has_many` → `many(<targetPlural>)`; `has_one` → `one(<targetPlural>)`. Bidirectional. Clean-lite-ps: `templates/entity/new/clean-lite-ps/entity.ejs.t:59-69` — emits `<plural>Relations = relations(<plural>, ({ one }) => ({ ... }))`. **Only `belongs_to` is iterated** (`clpBelongsTo` at line 62); `has_many` declarations are dropped. Unidirectional on the FK-bearing side. The clean-lite-ps half-emission is a documented gap (Empirical state above + codegen-patterns#358). |
 | **Schema-aware barrel** | `src/cli/shared/barrel-generator.ts:189-244` | Computes module + schema file paths per architecture so cross-entity imports resolve at the right depth (the `01bb917` fix). Junction modules from mechanism (A) merge with regular modules here — this is the integration seam `junction-association-codegen` extends to wire generated junction services into the canonical port surface. |
 
 ### Disambiguating the two "Relationship" mechanisms (preserved from r3)
@@ -241,11 +247,11 @@ Fixtures cover exactly the crm-domain shapes:
 Tests pass when:
 - `bunx tsc --noEmit` succeeds on the generated project.
 - `accounts.entity.ts` contains `parentAccount: one(accounts, ...)` (self-ref relation key derives from FK column per `269ab3f`).
-- `accounts.entity.ts` contains `contacts: many(contacts)` and `opportunities: many(opportunities)`.
+- `accounts.entity.ts` contains the `accountsRelations = relations(accounts, ({ one }) => ({ ... }))` const itself — **and asserts negatively that `many(` does not appear inside that const**. Under clean-lite-ps the entity-template iterator only walks `belongs_to`, so the `has_many: contacts` and `has_many: opportunities` declarations on `account.yaml` are silently dropped. The negative assertion names this gap in the test surface itself (matches Empirical state above); a follow-up smoke iteration after codegen-patterns#358 will flip this to a positive assertion on `contacts: many(contacts)` + `opportunities: many(opportunities)` once clean-lite-ps's entity template iterates `hasMany`.
 - `contacts.entity.ts` contains `account: one(accounts, { fields: [contacts.accountId], references: [accounts.id] })`.
 - `opportunities.entity.ts` contains the analogous `account: one(accounts, ...)`.
 
-These assertions verify the **extension path table-metadata still ships**. The smoke does **not** assert the service-composition surface — that surface does not exist in today's templates (see Empirical state). Once [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358) lands, a follow-up issue should add service-composition assertions (e.g. grep that `AccountService` has a `contacts(accountId, opts?)` method).
+These assertions verify the **clean-lite-ps extension-path table-metadata that the templates actually ship today** — the `belongs_to`-only half of `relations()`. The smoke does **not** assert the service-composition surface — that surface does not exist in today's templates (see Empirical state). Once [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358) lands, follow-up smoke assertions should (a) flip the `many(` negative assertion to a positive one and (b) add service-composition assertions (e.g. grep that `AccountService` has a `contacts(accountId, opts?)` method).
 
 No DB push, no Postgres dependency — schema correctness via TS compile + targeted grep is sufficient for this smoke.
 
@@ -280,7 +286,11 @@ flowchart LR
 
 ### Explicitly **not** modified
 
-- `templates/entity/new/prompt.js`, `clean-lite-ps/prompt-extension.js`, `backend/database/schema.ejs.t`, `backend/domain/repository-interface.ejs.t`, `backend/database/repository.ejs.t`, `backend/application/**`, `clean-lite-ps/service.ejs.t`, `relationship/new/**`, `src/parser/`, `src/analyzer/`, `src/schema/relationship-definition.schema.ts`, `src/utils/yaml-loader.ts`, `src/cli/commands/relationship.ts`, `src/cli/shared/barrel-generator.ts` — this is verification + contract-definition, not template extension. Gap-closure is owned by [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358).
+- `templates/entity/new/prompt.js`, `backend/database/schema.ejs.t`, `backend/domain/repository-interface.ejs.t`, `backend/database/repository.ejs.t`, `backend/application/**`, `clean-lite-ps/service.ejs.t`, `relationship/new/**`, `src/parser/`, `src/analyzer/`, `src/schema/relationship-definition.schema.ts`, `src/utils/yaml-loader.ts`, `src/cli/commands/relationship.ts`, `src/cli/shared/barrel-generator.ts` — this is verification + contract-definition, not template extension. Gap-closure is owned by [codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358).
+
+### In-scope template fix (discovered during implementation)
+
+`templates/entity/new/clean-lite-ps/{prompt-extension.js, entity.ejs.t}` — narrow self-ref typecheck fix discovered when the smoke first ran. Self-referential `belongs_to` on clean-lite-ps emits `.references(() => accounts.id, ...)`, which fails TS strict-mode typecheck with TS7022/TS7024 (circular initializer). Fix: gate on `belongsTo.some(r => r.isSelfFk)` and annotate the callback as `(): AnyPgColumn => accounts.id`, plus a type-only import of `AnyPgColumn` from `drizzle-orm/pg-core`. Non-self-FK output is byte-identical. Documented in the audit doc under "Bug shipped in this PR". The bug pre-dated this PR (it existed at fe7b9c8, the cgp-62 r4 spec commit); baseline tests don't run `tsc` so it was never caught. Spec discipline normally says "raise a separate issue for gaps" — the deviation is justified per CLAUDE.md's "specs are living documentation" rule: the smoke can't ship green without the fix.
 
 ## Interfaces
 
@@ -313,33 +323,58 @@ Assertion helpers added near the end of `runSmoke()`:
 // Only runs under --scenario relationship. The existing scenario keeps its
 // single existing assertion (tsc --noEmit succeeds).
 function assertRelationshipEmission(generatedSrc: string): void {
-  const reads = (p: string): string => fs.readFileSync(path.join(generatedSrc, p), 'utf8');
+  const reads = (p: string): string =>
+    fs.readFileSync(path.join(generatedSrc, p), 'utf8');
 
-  // Path layout per existing verifyTypecheck() convention — implementer matches
-  // whatever the default scenario already reads. Today's clean-lite-ps emits
-  // under `src/modules/<plural>/<name>.entity.ts`; the maintainer's lean is
-  // toward `domain/<name>/<name>.entity.ts` (noted in audit Empirical state as a
-  // future-reapproach candidate, NOT changed in this leaf).
-  const accountSchema = reads('<existing-clp-layout>/account/account.entity.ts');
+  // Path layout — today's clean-lite-ps emits at
+  // `src/modules/<plural>/<name>.entity.ts` per the output paths in
+  // clean-lite-ps/prompt-extension.js:822-829. The smoke project's
+  // `generatedSrc` resolves to `<tmpDir>/src`.
+
+  const accountSchema = reads('modules/accounts/account.entity.ts');
+  // Self-ref belongs_to (regression of 269ab3f — `parent_account_id` →
+  // `parentAccount`, distinct from the table's own snake_case identifier).
   assertContains(accountSchema, /parentAccount:\s*one\(accounts,/);
-  assertContains(accountSchema, /contacts:\s*many\(contacts\)/);
-  assertContains(accountSchema, /opportunities:\s*many\(opportunities\)/);
+  // The `relations()` const ships on the belongs_to side.
+  assertContains(accountSchema, /export const accountsRelations\s*=\s*relations\(accounts/);
+  // **Negative assertion — names the empirical gap in the test surface.**
+  // Clean-lite-ps's entity template iterates `clpBelongsTo` only (entity.ejs.t:62);
+  // `has_many` declarations on `account.yaml` are silently dropped. When
+  // codegen-patterns#358 lands and the iterator adds `hasMany`, flip this to
+  // a positive assertion on `contacts: many(contacts)` + `opportunities: many(...)`.
+  assertNotContains(accountSchema, /\bmany\(/);
 
-  const contactSchema = reads('<existing-clp-layout>/contact/contact.entity.ts');
-  assertContains(contactSchema, /account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[contacts\.accountId\]/);
+  const contactSchema = reads('modules/contacts/contact.entity.ts');
+  assertContains(
+    contactSchema,
+    /account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[contacts\.accountId\]/,
+  );
 
-  const oppSchema = reads('<existing-clp-layout>/opportunity/opportunity.entity.ts');
-  assertContains(oppSchema, /account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[opportunities\.accountId\]/);
+  const oppSchema = reads('modules/opportunities/opportunity.entity.ts');
+  assertContains(
+    oppSchema,
+    /account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[opportunities\.accountId\]/,
+  );
 }
 
 function assertContains(haystack: string, needle: RegExp): void {
   if (!needle.test(haystack)) {
-    throw new Error(`Smoke assertion failed: expected to find ${needle} in generated output.`);
+    throw new Error(
+      `Smoke assertion failed: expected to find ${needle} in generated output.`,
+    );
+  }
+}
+
+function assertNotContains(haystack: string, needle: RegExp): void {
+  if (needle.test(haystack)) {
+    throw new Error(
+      `Smoke assertion failed: did not expect to find ${needle} in generated output (gap-naming negative assertion).`,
+    );
   }
 }
 ```
 
-Path layout under `generatedSrc` is whatever the existing smoke harness already uses for the default scenario — the implementer reads the same path the default scenario reads (do **not** hardcode; mirror existing `verifyTypecheck()` conventions in `run-smoke.ts`). Assertion regexes are shape-correct regardless of path.
+Path layout under `generatedSrc` is `<tmpDir>/src` (per `clean-lite-ps/prompt-extension.js:822-829`). Entity files live at `modules/<plural>/<name>.entity.ts` under that root. Assertion regexes are shape-correct regardless of path.
 
 ## Tests
 
@@ -349,7 +384,8 @@ The smoke test **is** the test. Coverage matrix:
 |---|---|---|
 | Self-ref `belongs_to` (regression of `269ab3f`) | `account.yaml.relationships.parent_account` | `assertRelationshipEmission` regex on `parentAccount: one(accounts, ...)`. Also implicitly: `tsc --noEmit` would fail with TS2300 if the `269ab3f` fix regressed (duplicate `accounts` import). |
 | Cross-entity `belongs_to` | `contact.yaml`, `opportunity.yaml` | Regex on `account: one(accounts, { fields: [...accountId], references: [...id] })` in both schema files. |
-| Inverse `has_many` (extension-path metadata) | `account.yaml.relationships.{contacts,opportunities}` | Regex on `contacts: many(contacts)` and `opportunities: many(opportunities)` in `account.entity.ts`. Verifies the extension path table-metadata still ships. |
+| Inverse `has_many` (extension-path metadata, clean-lite-ps emit gap) | `account.yaml.relationships.{contacts,opportunities}` | **Negative** regex (`assertNotContains(/\bmany\(/)`) in `account.entity.ts`. Names the gap that clean-lite-ps's entity template only iterates `belongs_to`. Pivots to a positive assertion (`contacts: many(...)` + `opportunities: many(...)`) when codegen-patterns#358 closes the gap. |
+| `relations()` const presence (clean-lite-ps belongs_to side) | All three fixtures (each has a `belongs_to`) | Regex on `export const <plural>Relations = relations(<plural>` in each entity file. Verifies the emission gate (`hasRelationsBlock = belongsTo.length > 0`) fires correctly. |
 | Barrel-import-depth (regression of `01bb917`) | All three fixtures | `bunx tsc --noEmit` succeeds. Module-resolution failure at the wrong import depth would emit TS2307. |
 | Service-layer composition surface | (deferred to codegen-patterns#358) | Not asserted in this leaf. The canonical API path is documented in the audit; today's templates do not emit it. Follow-up smoke assertions live with #358. |
 | Audit doc accuracy | `docs/relationship-pattern-audit.md` | Manually verified during human Gate-1 review. |

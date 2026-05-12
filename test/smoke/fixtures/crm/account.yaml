@@ -1,0 +1,49 @@
+# Smoke fixture (relationship scenario): account
+#
+# Exercises:
+#   - Self-ref `belongs_to` (parent_account_id → parentAccount one()).
+#     Regression of `269ab3f` — self-ref relation key must derive from FK
+#     column name to avoid colliding with the table's snake_case identifier.
+#   - `has_many` declarations on the inverse side. Under clean-lite-ps these
+#     are silently dropped by the entity template today (see
+#     `cgp-62.md` empirical-state section + codegen-patterns#358). Smoke
+#     asserts this negatively (the `many(` token must NOT appear in
+#     `account.entity.ts`).
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  pattern: Synced
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  parent_account_id:
+    type: uuid
+    required: false
+    index: true
+    foreign_key: accounts.id
+
+behaviors:
+  - timestamps
+
+relationships:
+  parent_account:
+    type: belongs_to
+    target: account
+    foreign_key: parent_account_id
+  contacts:
+    type: has_many
+    target: contact
+    foreign_key: account_id
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: account_id
+
+queries:
+  - by: [parent_account_id]

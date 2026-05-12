@@ -1,0 +1,48 @@
+# Smoke fixture (relationship scenario): opportunity
+#
+# Cross-entity `belongs_to account` plus a non-trivial enum field (`stage`)
+# so DTO emission is exercised on top of the relationship paths. Mirrors
+# the wave-1 `crm-domain` opportunity shape closely enough to catch
+# emission drift but stays minimal — no junction declarations (sibling
+# leaves cover those).
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+  pattern: Synced
+  folder_structure: nested
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  amount:
+    type: decimal
+    required: false
+
+  stage:
+    type: enum
+    choices: [prospect, qualified, proposal, negotiation, closed_won, closed_lost]
+    required: true
+    default: prospect
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+queries:
+  - by: [account_id]
+  - by: [stage]
