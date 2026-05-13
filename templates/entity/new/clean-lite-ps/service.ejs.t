@@ -17,6 +17,22 @@ import { toEavRows, mergeEavRows } from '@shared/eav-helpers';
 import type { DrizzleTx } from '@shared/types/drizzle';
 import { <%= eavDefinitionPascal %>Repository } from '../<%= eavDefinitionEntityPlural %>/<%= eavDefinitionEntity %>.repository';
 <% } -%>
+<%_ /* CGP-358b — service-layer composition: import target repos for belongs_to relationships */ _%>
+<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
+<%_ const uniqueBelongsToTargets = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
+<%_ uniqueBelongsToTargets.forEach(rel => { _%>
+import { <%= rel.relatedEntityPascal %>Repository } from '../<%= rel.relatedPlural %>/<%= rel.relatedEntity %>.repository';
+import type { <%= rel.relatedEntityPascal %> } from '../<%= rel.relatedPlural %>/<%= rel.relatedEntity %>.entity';
+<%_ }) _%>
+<%_ } _%>
+<%_ /* CGP-358b — import target repos for has_many relationships */ _%>
+<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
+<%_ const uniqueHasManyTargets = [...new Map(clpExistingHasMany.filter(r => !r.isSelfRef).map(r => [r.target, r])).values()]; _%>
+<%_ uniqueHasManyTargets.forEach(rel => { _%>
+import { <%= rel.targetClass %>Repository } from '../<%= rel.targetPlural %>/<%= rel.target %>.repository';
+import type { <%= rel.targetClass %> } from '../<%= rel.targetPlural %>/<%= rel.target %>.entity';
+<%_ }) _%>
+<%_ } _%>
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -43,6 +59,20 @@ export class <%= classNames.service %> extends WithAnalytics(
 <% if (eavValueTable) { -%>
     private readonly definitionRepo: <%= eavDefinitionPascal %>Repository,
 <% } -%>
+<%_ /* CGP-358b — inject target repos for belongs_to (non-self-ref) */ _%>
+<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
+<%_ const uniqueBelongsToTargets2 = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
+<%_ uniqueBelongsToTargets2.forEach(rel => { _%>
+    private readonly <%= rel.relatedEntity.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) %>Repo: <%= rel.relatedEntityPascal %>Repository,
+<%_ }) _%>
+<%_ } _%>
+<%_ /* CGP-358b — inject target repos for has_many (non-self-ref) */ _%>
+<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
+<%_ const uniqueHasManyTargets2 = [...new Map(clpExistingHasMany.filter(r => !r.isSelfRef).map(r => [r.target, r])).values()]; _%>
+<%_ uniqueHasManyTargets2.forEach(rel => { _%>
+    private readonly <%= rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) %>Repo: <%= rel.targetClass %>Repository,
+<%_ }) _%>
+<%_ } _%>
   ) {
     super(repository);
   }
@@ -67,6 +97,55 @@ export class <%= classNames.service %> extends WithAnalytics(
   }
 <%_ }) _%>
 <% } %>
+<%_ /* CGP-358b — service-layer composition methods for relationships */ _%>
+<%_ const hasBelongsToComposition = typeof clpBelongsTo !== 'undefined' && clpBelongsTo.length > 0; _%>
+<%_ const hasHasManyComposition = typeof clpExistingHasMany !== 'undefined' && clpExistingHasMany.length > 0; _%>
+<%_ if (hasBelongsToComposition || hasHasManyComposition) { _%>
+  // ═══════════════════════════════════════════════════════════════════════
+  // Relationship composition methods (CGP-358b / CGP-62)
+  // Two queries, no SQL JOIN. Core-contract path; relations() const stays
+  // as opt-in extension for hand-written Drizzle queries.
+  // ═══════════════════════════════════════════════════════════════════════
+<%_ } _%>
+<%_ if (hasBelongsToComposition) { _%>
+<%_ clpBelongsTo.forEach(rel => { _%>
+<%_ const relCamel = rel.relatedEntity.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
+<%_ const entityCamel = entityName.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
+
+  /**
+   * Fetch the <%= rel.relatedEntityPascal %> parent for this <%= entityNamePascal %>.
+   * Two repo calls: find self by id → find target by FK.
+   */
+  async <%= rel.relationKey %>(<%- entityCamel %>Id: string): Promise<<%= rel.relatedEntityPascal %> | null> {
+    const entity = await this.repository.findById(<%- entityCamel %>Id);
+    if (!entity) return null;
+<%_ if (rel.isSelfFk) { _%>
+    return entity.<%= rel.camelField %> ? this.repository.findById(entity.<%= rel.camelField %>) : null;
+<%_ } else { _%>
+    return entity.<%= rel.camelField %> ? this.<%= relCamel %>Repo.findById(entity.<%= rel.camelField %>) : null;
+<%_ } _%>
+  }
+<%_ }) _%>
+<%_ } _%>
+<%_ if (hasHasManyComposition) { _%>
+<%_ clpExistingHasMany.forEach(rel => { _%>
+<%_ const relCamel = rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
+<%_ const entityCamel = entityName.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); _%>
+<%_ const fkPascal = rel.inverseForeignKeyPascal; _%>
+
+  /**
+   * Fetch <%= rel.name %> for this <%= entityNamePascal %> by FK traversal.
+   * Single repo call with optional cursor/limit pagination.
+   */
+  async <%= rel.name %>(<%- entityCamel %>Id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= rel.targetClass %>[]> {
+<%_ if (rel.isSelfRef) { _%>
+    return this.repository.findBy<%= fkPascal %>(<%- entityCamel %>Id, opts);
+<%_ } else { _%>
+    return this.<%= relCamel %>Repo.findBy<%= fkPascal %>(<%- entityCamel %>Id, opts);
+<%_ } _%>
+  }
+<%_ }) _%>
+<%_ } _%>
 <% if (eavEnabled) { %>
   /**
    * EAV paired read (ADR-13): fetch the entity and merge dynamic `field_values`

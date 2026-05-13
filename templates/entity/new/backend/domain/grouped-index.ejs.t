@@ -14,23 +14,6 @@ force: true
 <% if (hasEntityRefFields) { -%>
 import type { EntityType } from '<%= locations.dbSchemaServer.import %>';
 <% } -%>
-<%
-// Collect unique non-self-referential imports
-const importedEntities = new Set();
-[...belongsToRelations, ...hasManyRelations, ...hasOneRelations].forEach((rel) => {
-  if (rel.target !== name) {
-    importedEntities.add(rel.target);
-  }
-});
--%>
-<% if (importedEntities.size > 0) { -%>
-
-<% importedEntities.forEach((target) => {
-  const targetClass = target.charAt(0).toUpperCase() + target.slice(1).replace(/_([a-z])/g, (_, c) => c.toUpperCase());
--%>
-import type { <%= targetClass %> } from '../<%= target %>';
-<% }) -%>
-<% } -%>
 
 // ============================================================================
 // Entity
@@ -54,27 +37,11 @@ export class <%= className %> {
 		public readonly validTo: Date | null,
 		public readonly isActive: boolean,
 <% } -%>
-<% if (hasRelationships) { -%>
-		// Loaded relations (optional, populated when eager-loaded)
-<% belongsToRelations.forEach((rel) => { -%>
-		public readonly <%= rel.name %>?: <%= rel.targetClass %>,
-<% }) -%>
-<% hasManyRelations.forEach((rel) => { -%>
-		public readonly <%= rel.name %>?: <%= rel.targetClass %>[],
-<% }) -%>
-<% hasOneRelations.forEach((rel) => { -%>
-		public readonly <%= rel.name %>?: <%= rel.targetClass %>,
-<% }) -%>
-<% } -%>
 	) {}
 
 	static fromRecord(
 		// biome-ignore lint/suspicious/noExplicitAny: Drizzle records have dynamic shape
 		record: Record<string, any>,
-<% if (hasRelationships) { -%>
-		// biome-ignore lint/suspicious/noExplicitAny: Returns different entity types
-		mapRelation?: (name: string, data: unknown) => any,
-<% } -%>
 	): <%= className %> {
 		return new <%= className %>(
 			record.id,
@@ -93,17 +60,6 @@ export class <%= className %> {
 			record.validTo,
 			record.isActive,
 <% } -%>
-<% if (hasRelationships) { -%>
-<% belongsToRelations.forEach((rel) => { -%>
-			record.<%= rel.name %> ? mapRelation?.('<%= rel.name %>', record.<%= rel.name %>) : undefined,
-<% }) -%>
-<% hasManyRelations.forEach((rel) => { -%>
-			record.<%= rel.name %> ? mapRelation?.('<%= rel.name %>', record.<%= rel.name %>) : undefined,
-<% }) -%>
-<% hasOneRelations.forEach((rel) => { -%>
-			record.<%= rel.name %> ? mapRelation?.('<%= rel.name %>', record.<%= rel.name %>) : undefined,
-<% }) -%>
-<% } -%>
 		);
 	}
 }
@@ -111,18 +67,6 @@ export class <%= className %> {
 // ============================================================================
 // Repository Interface
 // ============================================================================
-<% if (hasRelationships) { -%>
-
-/**
- * Type-safe eager loading options.
- * Pass to repository methods to include related entities.
- */
-export type <%= className %>With = {
-<% relationships.forEach((rel) => { -%>
-	<%= rel.name %>?: boolean;
-<% }) -%>
-};
-<% } -%>
 
 /**
  * Domain-level input types for repository operations.
@@ -143,8 +87,8 @@ export type Update<%= className %>Input = Partial<Create<%= className %>Input>;
 
 export interface I<%= className %>Repository {
 	create(input: Create<%= className %>Input): Promise<<%= className %>>;
-	findById(id: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %> | null>;
-	findAll(<%= hasRelationships ? `include?: ${className}With` : '' %>): Promise<<%= className %>[]>;
+	findById(id: string): Promise<<%= className %> | null>;
+	findAll(): Promise<<%= className %>[]>;
 	update(id: string, input: Update<%= className %>Input): Promise<<%= className %> | null>;
 	delete(id: string): Promise<<%= className %> | null>;
 <% if (hasSoftDelete) { -%>
@@ -154,10 +98,10 @@ export interface I<%= className %>Repository {
 	findOnlyDeleted(): Promise<<%= className %>[]>;
 <% } -%>
 <% belongsToRelations.forEach((rel) => { -%>
-	findBy<%= rel.foreignKeyPascal %>(id: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %>[]>;
+	findBy<%= rel.foreignKeyPascal %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= className %>[]>;
 <% }) -%>
 <% entityRefFields.forEach((ref) => { -%>
-	findBy<%= ref.pascalName %>(entityType: EntityType, entityId: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %>[]>;
+	findBy<%= ref.pascalName %>(entityType: EntityType, entityId: string): Promise<<%= className %>[]>;
 <% }) -%>
 }
 <% } -%>

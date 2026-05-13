@@ -5,6 +5,8 @@
  * all variables required by the clean-lite-ps template set.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import pluralizePkg from 'pluralize';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Synced / Activity / Knowledge /
@@ -307,6 +309,57 @@ function mapOnDelete(onDelete) {
 }
 
 /**
+ * Process has_many relationships into HasManyRelation[].
+ *
+ * Mirrors processBelongsTo. The `foreign_key` declared on a has_many
+ * relationship is the inverse FK living on the *target* entity's table —
+ * e.g. `account.relationships.contacts: { foreign_key: account_id }` means
+ * contacts.account_id. The method name on AccountRepository would be
+ * `findByAccountId`.
+ */
+function processHasMany(relationships, parentEntityNamePlural, fs, path, srcRoot) {
+  if (!relationships) return [];
+
+  const result = [];
+
+  for (const [relName, rel] of Object.entries(relationships)) {
+    if (rel.type !== 'has_many') continue;
+
+    const target = rel.target;
+    const inverseForeignKey = rel.foreign_key;
+    const targetPlural = pluralize(target);
+    const isSelfRef = targetPlural === parentEntityNamePlural;
+
+    // Check whether the target entity has already been generated.
+    // Only include targets that exist so the import block doesn't
+    // reference files that aren't on disk yet (two-pass generation).
+    let targetExists = false;
+    if (fs && path && srcRoot) {
+      const nestedPath = path.resolve(srcRoot, 'modules', targetPlural, `${target}.entity.ts`);
+      const flatPath = path.resolve(srcRoot, 'modules', `${target}.entity.ts`);
+      targetExists = fs.existsSync(nestedPath) || fs.existsSync(flatPath) || isSelfRef;
+    } else {
+      targetExists = isSelfRef;
+    }
+
+    result.push({
+      name: relName,
+      target,
+      targetClass: pascalCase(target),
+      targetPlural,
+      inverseForeignKey,
+      inverseForeignKeyCamel: camelCase(inverseForeignKey),
+      inverseForeignKeyPascal: pascalCase(inverseForeignKey),
+      isSelfRef,
+      targetExists,
+      importPath: `../${targetPlural}/${target}.repository`,
+    });
+  }
+
+  return result;
+}
+
+/**
  * Process belongs_to relationships into BelongsToRelation[]
  */
 function processBelongsTo(relationships, parentEntityNamePlural) {
@@ -364,7 +417,7 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
 /**
  * Collect drizzle imports needed for entity fields
  */
-function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking) {
+function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany = []) {
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
@@ -394,7 +447,7 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
     imports.add('jsonb');
   }
 
-  if (belongsTo.length > 0) {
+  if (belongsTo.length > 0 || hasMany.length > 0) {
     imports.add('relations');
   }
 
@@ -769,6 +822,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Process belongs_to relationships
   const belongsTo = processBelongsTo(relationships, entityNamePlural);
 
+  // Process has_many relationships (CGP-358b)
+  const hasMany = processHasMany(relationships, entityNamePlural, fs, path, srcRoot);
+
   // Issue #41 — warn when a soft-delete entity declares non-restrict on_delete on any
   // belongs_to relation. The FK constraint applies to hard-delete only;
   // developers expecting soft-delete cascade must use activeParentFilter() instead.
@@ -815,9 +871,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     }));
 
   // Drizzle imports needed
-  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking);
-  // Whether relations() import is needed
-  const hasRelationsBlock = belongsTo.length > 0;
+  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany);
+  // Whether relations() import is needed (CGP-358b: also trigger on has_many)
+  const hasRelationsBlock = belongsTo.length > 0 || hasMany.length > 0;
 
   // Output paths
   const outputPaths = {
@@ -1026,5 +1082,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     hasMultiFieldQuery,
     hasOrderedQuery,
     hasViaQuery,
+
+    // CGP-358b: has_many relationships for service-layer composition
+    clpHasMany: hasMany,
+    clpHasManyRelations: hasMany.length > 0,
+    clpExistingHasMany: hasMany.filter((r) => r.targetExists),
   };
 }
