@@ -10,31 +10,23 @@
  * Each scenario × both architectures (clean-lite-ps by default; pass
  * --architecture clean for the second pass) = four total code paths.
  *
- * Flow per scenario + architecture:
- *   1. Create a fresh tmp project.
- *   2. bun init + install pinned peer deps.
- *   3. codegen project init --yes --with-tsconfig
- *   4. Copy scenario entities into entities/.
- *   5. codegen entity new --all --force (generates parent entity files).
- *   6. Copy scenario junctions into junctions/.
- *   7. codegen junction new --all --force (generates junction files).
- *   8. bunx tsc --noEmit --skipLibCheck.
- *   9. Grep assertions on generated output.
+ * Bootstrap (tmp project, deps, codegen run) is delegated to
+ * `test/junction/_helpers.ts` so snapshot tests can share the same path.
+ * This file owns the compile + grep gate.
  */
 
-import { execSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
-
-const VALID_SCENARIOS = ['junction', 'junction-cross-domain'] as const;
-type Scenario = (typeof VALID_SCENARIOS)[number];
-
-const VALID_ARCHITECTURES = ['clean-lite-ps', 'clean'] as const;
-type Architecture = (typeof VALID_ARCHITECTURES)[number];
+import {
+  bootstrapJunctionProject,
+  SCENARIO_META,
+  VALID_ARCHITECTURES,
+  VALID_SCENARIOS,
+  type Architecture,
+  type Scenario,
+} from '../junction/_helpers';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -83,35 +75,6 @@ if (!VALID_ARCHITECTURES.includes(architectureArg)) {
   process.exit(2);
 }
 
-const KEEP = process.env.KEEP_SMOKE_DIR === '1';
-
-// Fixture directories per scenario
-const FIXTURES_DIR_MAP: Record<Scenario, string> = {
-  'junction':              path.join(REPO_ROOT, 'test', 'smoke', 'fixtures-junction'),
-  'junction-cross-domain': path.join(REPO_ROOT, 'test', 'smoke', 'fixtures-junction-cross-domain'),
-};
-
-// Expected junction + left/right entity names per scenario
-const SCENARIO_META: Record<Scenario, { junctionName: string; leftEnt: string; rightEnt: string; hasRole: boolean }> = {
-  'junction':              { junctionName: 'opportunity_contact', leftEnt: 'opportunity', rightEnt: 'contact', hasRole: true },
-  'junction-cross-domain': { junctionName: 'opportunity_activity', leftEnt: 'opportunity', rightEnt: 'activity', hasRole: false },
-};
-
-// Pinned deps (same as run-smoke.ts)
-const RUNTIME_DEPS = [
-  '@nestjs/common@10',
-  '@nestjs/core@10',
-  '@nestjs/platform-express@10',
-  '@nestjs/swagger@7',
-  '@anatine/zod-openapi@2',
-  'drizzle-orm@0.45',
-  'reflect-metadata@0.2',
-  'pg@8',
-  'zod@3',
-  'yaml@2',
-];
-const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
-
 // ---------------------------------------------------------------------------
 // Logging
 // ---------------------------------------------------------------------------
@@ -127,15 +90,6 @@ function logError(msg: string): void { console.error(`${elapsed()} [FAIL] ${msg}
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function run(cmd: string, cwd: string, env: NodeJS.ProcessEnv = {}): void {
-  log(`$ ${cmd}`);
-  execSync(cmd, {
-    cwd,
-    stdio: 'inherit',
-    env: { ...process.env, ...env },
-  });
-}
 
 function runSilent(cmd: string, cwd: string): { code: number; out: string; err: string } {
   const parts = cmd.split(' ');
@@ -164,19 +118,6 @@ function filterConsumerErrors(output: string): string[] {
     errors.push(line);
   }
   return errors;
-}
-
-function cleanup(dir: string): void {
-  if (KEEP) {
-    log(`keeping tmp dir (KEEP_SMOKE_DIR=1): ${dir}`);
-    return;
-  }
-  try {
-    fs.rmSync(dir, { recursive: true, force: true });
-    log(`cleaned up ${dir}`);
-  } catch (err: unknown) {
-    logError(`cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
 }
 
 function pascalCase(s: string): string {
@@ -233,8 +174,6 @@ function assertJunctionEmission(
     ? `src/modules/${pluralName}`
     : `app/backend/src/domain/${pluralName}`;
 
-  const leftCamel = camelCase(`${leftEnt}_id`);
-  const rightCamel = camelCase(`${rightEnt}_id`);
   const leftPascal = pascalCase(leftEnt);
   const rightPascal = pascalCase(rightEnt);
 
@@ -273,9 +212,6 @@ function assertJunctionEmission(
   }
 
   // ── Repository file ──────────────────────────────────────────────────────
-  const repoDir = architecture === 'clean-lite-ps'
-    ? junctionDir
-    : `app/backend/src/infrastructure/persistence/drizzle`;
   const repoFile = reads(
     architecture === 'clean-lite-ps'
       ? `${junctionDir}/${junctionName}.repository.ts`
@@ -298,9 +234,6 @@ function assertJunctionEmission(
   assertContains(repoFile, /limit\?:\s*number/, 'repo: limit pagination param');
 
   // ── Service file ─────────────────────────────────────────────────────────
-  const svcDir = architecture === 'clean-lite-ps'
-    ? junctionDir
-    : `app/backend/src/application/${pluralName}`;
   const svcFile = reads(
     architecture === 'clean-lite-ps'
       ? `${junctionDir}/${junctionName}.service.ts`
@@ -380,7 +313,7 @@ function pluralize(s: string): string {
   return s + 's';
 }
 
-function assertBarrelIncludes(generatedSrc: string, pluralName: string, architecture: Architecture): void {
+function assertBarrelIncludes(generatedSrc: string, pluralName: string, _architecture: Architecture): void {
   const modulesBarrel = path.join(generatedSrc, 'src/generated/modules.ts');
   const schemaBarrel = path.join(generatedSrc, 'src/generated/schema.ts');
 
@@ -402,91 +335,25 @@ function assertBarrelIncludes(generatedSrc: string, pluralName: string, architec
 }
 
 // ---------------------------------------------------------------------------
-// codegen.config.yaml injection for architecture override
-// ---------------------------------------------------------------------------
-
-function writeCodegenConfig(tmpDir: string, architecture: Architecture): void {
-  const configPath = path.join(tmpDir, 'codegen.config.yaml');
-  // Minimal config that sets the architecture and leaves other settings to
-  // defaults. project init creates this file; we overwrite the generate block.
-  const content = [
-    'generate:',
-    `  architecture: ${architecture}`,
-    'paths:',
-    '  backend_src: src',
-    '  entities: entities',
-    '  generated: src/generated',
-  ].join('\n') + '\n';
-
-  fs.writeFileSync(configPath, content);
-  log(`wrote codegen.config.yaml (architecture: ${architecture})`);
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<number> {
   log(`smoke-junction scenario=${scenarioArg} architecture=${architectureArg}`);
 
-  const fixturesDir = FIXTURES_DIR_MAP[scenarioArg];
-  if (!fs.existsSync(fixturesDir)) {
-    logError(`Fixtures directory not found: ${fixturesDir}`);
-    return 1;
-  }
-
-  const tmpBase = os.tmpdir();
-  const tmpDir = fs.mkdtempSync(path.join(tmpBase, `codegen-smoke-junction-`));
-  log(`tmp dir: ${tmpDir}`);
-
   let exitCode = 0;
+  let result: Awaited<ReturnType<typeof bootstrapJunctionProject>> | null = null;
 
   try {
-    // 1. bun init -y
-    run('bun init -y', tmpDir);
-
-    // 2. Install runtime deps
-    run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
-    run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
-
-    // 3. codegen project init
-    run(`bun ${CLI_PATH} project init --yes --with-tsconfig`, tmpDir);
-
-    // Overwrite codegen.config.yaml to set the target architecture.
-    writeCodegenConfig(tmpDir, architectureArg);
-
-    // 4. Copy entity fixtures into entities/
-    const entityFixturesDir = path.join(fixturesDir, 'entities');
-    const entitiesDir = path.join(tmpDir, 'entities');
-    fs.mkdirSync(entitiesDir, { recursive: true });
-    // Remove example.yaml that init dropped
-    const examplePath = path.join(entitiesDir, 'example.yaml');
-    if (fs.existsSync(examplePath)) fs.rmSync(examplePath);
-    for (const f of fs.readdirSync(entityFixturesDir)) {
-      if (!f.endsWith('.yaml') && !f.endsWith('.yml')) continue;
-      fs.copyFileSync(path.join(entityFixturesDir, f), path.join(entitiesDir, f));
-      log(`copied entity fixture: ${f}`);
-    }
-
-    // 5. codegen entity new --all
-    run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
-
-    // 6. Copy junction fixtures into junctions/
-    const junctionFixturesDir = path.join(fixturesDir, 'junctions');
-    const junctionsDir = path.join(tmpDir, 'junctions');
-    fs.mkdirSync(junctionsDir, { recursive: true });
-    for (const f of fs.readdirSync(junctionFixturesDir)) {
-      if (!f.endsWith('.yaml') && !f.endsWith('.yml')) continue;
-      fs.copyFileSync(path.join(junctionFixturesDir, f), path.join(junctionsDir, f));
-      log(`copied junction fixture: ${f}`);
-    }
-
-    // 7. codegen junction new --all
-    run(`bun ${CLI_PATH} junction new --all --force`, tmpDir);
+    result = await bootstrapJunctionProject({
+      scenario: scenarioArg,
+      architecture: architectureArg,
+      log,
+    });
 
     // 8. bunx tsc --noEmit --skipLibCheck
     log('running bunx tsc --noEmit --skipLibCheck');
-    const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
+    const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', result.projectDir);
     const consumerErrors = filterConsumerErrors(tsc.out + tsc.err);
     if (consumerErrors.length > 0) {
       for (const line of consumerErrors) console.error(line);
@@ -503,8 +370,8 @@ async function main(): Promise<number> {
         ? junctionName.slice(0, -1) + 'ies'
         : junctionName + 's';
 
-      assertJunctionEmission(tmpDir, scenarioArg, architectureArg);
-      assertBarrelIncludes(tmpDir, pluralName, architectureArg);
+      assertJunctionEmission(result.projectDir, scenarioArg, architectureArg);
+      assertBarrelIncludes(result.projectDir, pluralName, architectureArg);
     }
 
   } catch (err: unknown) {
@@ -514,7 +381,7 @@ async function main(): Promise<number> {
     }
     exitCode = 1;
   } finally {
-    cleanup(tmpDir);
+    if (result) result.cleanup();
   }
 
   if (exitCode === 0) {

@@ -1,0 +1,516 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`junction emission snapshot — opportunity_contact (clean-lite-ps) emits opportunity_contact.entity.ts 1`] = `
+"import {
+  boolean,
+  numeric,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { relations, type InferSelectModel } from 'drizzle-orm';
+import { opportunities } from '../opportunities/opportunity.entity';
+import { contacts } from '../contacts/contact.entity';
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+export const opportunityContactRoleEnum = pgEnum('opportunity_contact_role', [
+  'champion',
+  'decision_maker',
+  'influencer',
+]);
+
+// ============================================================================
+// Table
+// ============================================================================
+
+export const opportunityContacts = pgTable(
+  'opportunity_contacts',
+  {
+    // FK columns — composite primary key (no surrogate id: Q4 resolution)
+    opportunityId: uuid('opportunity_id').notNull().references(() => opportunities.id, { onDelete: 'restrict' }),
+    contactId: uuid('contact_id').notNull().references(() => contacts.id, { onDelete: 'restrict' }),
+
+    // Role enum (per-pairing; declared in junction YAML's fields.role.choices)
+    role: opportunityContactRoleEnum('role'),
+
+    // BaseJunctionFields — is_primary is always emitted
+    isPrimary: boolean('is_primary').notNull().default(false),
+
+    // Temporal window (temporal: true, default)
+    startedAt: timestamp('started_at'),
+    endedAt: timestamp('ended_at'),
+
+    // Provenance (sourced: true, default)
+    sourcedFrom: text('sourced_from'),
+    confidence: numeric('confidence', { precision: 5, scale: 4 }),
+    matchedAt: timestamp('matched_at'),
+
+    // Timestamps
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
+    primaryKey({ columns: [table.opportunityId, table.contactId] }),
+  ],
+);
+
+export type OpportunityContact = InferSelectModel<typeof opportunityContacts>;
+export type OpportunityContactInsert = typeof opportunityContacts.$inferInsert;
+
+// ============================================================================
+// Relations — extension-path metadata for db.query.X.findMany({ with: ... })
+// Generated code does NOT consume these; they exist for hand-written admin
+// queries and for #60's fan-out methods once they land.
+// ============================================================================
+
+export const opportunityContactsRelations = relations(opportunityContacts, ({ one }) => ({
+  opportunity: one(opportunities, {
+    fields: [opportunityContacts.opportunityId],
+    references: [opportunities.id],
+  }),
+  contact: one(contacts, {
+    fields: [opportunityContacts.contactId],
+    references: [contacts.id],
+  }),
+}));
+"
+`;
+
+exports[`junction emission snapshot — opportunity_contact (clean-lite-ps) emits opportunity_contact.repository.ts 1`] = `
+"import { Injectable, Inject } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { DRIZZLE } from '@shared/constants/tokens';
+import type { DrizzleClient } from '@shared/types/drizzle';
+import { BaseRepository } from '@shared/base-classes/base-repository';
+import { opportunityContacts, type OpportunityContact } from './opportunity_contact.entity';
+
+@Injectable()
+export class OpportunityContactRepository extends BaseRepository<OpportunityContact> {
+  readonly table = opportunityContacts;
+
+  // Junctions track temporal validity via started_at / ended_at, NOT via
+  // deleted_at. is_primary flips replace soft-delete semantics (Q5 resolution).
+  protected override readonly behaviors = {
+    timestamps: true,
+    softDelete: false,
+    userTracking: false,
+  };
+
+  constructor(@Inject(DRIZZLE) db: DrizzleClient) {
+    super(db);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Pairing-aware finders — hardcoded in v1 (Q2 resolution: no declarative
+  // queries block on junctions; every junction needs exactly these two methods).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Fetch all junction rows where opportunity_id matches.
+   *
+   * Pagination shape: { cursor?, limit? } — canonical per cgp-62 r4.
+   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
+   */
+  async findByOpportunityId(
+    opportunityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityContact[]> {
+    const rows = await this.baseQuery()
+      .where(eq(this.table.opportunityId, opportunityId))
+      .limit(opts?.limit ?? 100);
+    return rows as OpportunityContact[];
+  }
+
+  /**
+   * Fetch all junction rows where contact_id matches.
+   *
+   * Pagination shape: { cursor?, limit? } — canonical per cgp-62 r4.
+   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
+   */
+  async findByContactId(
+    contactId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityContact[]> {
+    const rows = await this.baseQuery()
+      .where(eq(this.table.contactId, contactId))
+      .limit(opts?.limit ?? 100);
+    return rows as OpportunityContact[];
+  }
+
+  // Inherited from BaseRepository:
+  //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
+}
+"
+`;
+
+exports[`junction emission snapshot — opportunity_contact (clean-lite-ps) emits opportunity_contact.service.ts 1`] = `
+"import { Injectable, Inject, Optional } from '@nestjs/common';
+import { WithAnalytics } from '@shared/base-classes/with-analytics';
+import { EVENT_BUS } from '@shared/constants/tokens';
+import { BaseService } from '@shared/base-classes/base-service';
+import { OpportunityContactRepository } from './opportunity_contact.repository';
+import type { OpportunityContact } from './opportunity_contact.entity';
+import { OpportunityRepository } from '../opportunities/opportunity.repository';
+import type { Opportunity } from '../opportunities/opportunity.entity';
+import { ContactRepository } from '../contacts/contact.repository';
+import type { Contact } from '../contacts/contact.entity';
+
+/**
+ * Pick of the link-side mutable fields that callers may supply when
+ * attaching. Subset of \`OpportunityContact\` minus the two FK columns
+ * (those come from the method args).
+ */
+export type OpportunityContactLinkInput = Partial<
+  Pick<OpportunityContact,
+    'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt' | 'role'
+  >
+>;
+
+@Injectable()
+export class OpportunityContactService extends WithAnalytics(
+  BaseService<OpportunityContactRepository, OpportunityContact>,
+) {
+  protected override readonly entityName = 'opportunity_contact';
+
+  /** Injected by NestJS when EventsModule is registered. */
+  @Optional() @Inject(EVENT_BUS)
+  protected override eventBus: any = undefined;
+
+  constructor(
+    protected override readonly repository: OpportunityContactRepository,
+    private readonly opportunityRepo: OpportunityRepository,
+    private readonly contactRepo: ContactRepository,
+  ) {
+    super(repository);
+  }
+
+  // Pairing-aware pass-throughs — mirror the repo's two finders so use-cases
+  // and #60's fan-out methods both delegate through the service layer, keeping
+  // analytics/events instrumentation uniform (per relationship's service.ejs.t).
+
+  /**
+   * Fetch all junction rows for a given opportunity_id.
+   */
+  async findByOpportunityId(
+    opportunityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityContact[]> {
+    return this.repository.findByOpportunityId(opportunityId, opts);
+  }
+
+  /**
+   * Fetch all junction rows for a given contact_id.
+   */
+  async findByContactId(
+    contactId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityContact[]> {
+    return this.repository.findByContactId(contactId, opts);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // CGP-60 — canonical fan-out methods
+  // Mirrored, paginated, composed \`{ entity, link }\` shape. Always emitted
+  // on the junction service; parent-side \`attach<Right>\` / \`addTo<Left>\` /
+  // etc. inject templates delegate here. \`list\` is implemented with two
+  // single-table queries (no Drizzle \`with:\`).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Create a junction row linking a opportunity and a contact.
+   * Returns the persisted row.
+   *
+   * **Idempotency:** NOT idempotent at the service layer in v1. A duplicate
+   * pair raises the DB-level composite-PK unique-constraint error from the
+   * underlying repository's \`create\`. Callers requiring idempotency should
+   * either check existence via \`findByOpportunityId\` + filter,
+   * or wrap the call in try/catch on the unique-violation error. A future
+   * leaf may add a transactional check-then-create here if a consumer
+   * surfaces the need (track as a follow-up if so).
+   */
+  async attach(
+    opportunityId: string,
+    contactId: string,
+    link?: OpportunityContactLinkInput,
+  ): Promise<OpportunityContact> {
+    return this.create({
+      opportunityId: opportunityId,
+      contactId: contactId,
+      ...(link ?? {}),
+    } as unknown as Partial<OpportunityContact>);
+  }
+
+  /**
+   * Remove the junction row linking \`opportunityId\` and
+   * \`contactId\`. No-op if no row exists.
+   */
+  async detach(
+    opportunityId: string,
+    contactId: string,
+  ): Promise<void> {
+    const links = await this.repository.findByOpportunityId(opportunityId);
+    const match = links.find(
+      (l) => (l as any).contactId === contactId,
+    );
+    if (match) {
+      await this.delete((match as any).id ?? \`\${opportunityId}:\${contactId}\`);
+    }
+  }
+
+  /**
+   * List the targets associated with one side of the junction, composed as
+   * \`{ entity, link }\`. Implementation: one repo call for the links, one
+   * \`findByIds\` call for the targets — no SQL JOIN. Cursor pagination by
+   * right-entity \`id\` (matches CGP-358 has_many shape; time-ordered cursor
+   * is deferred per spec Open Q3).
+   */
+  async listAssoc(
+    side: 'left' | 'right',
+    anchorId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: Opportunity | Contact; link: OpportunityContact }>> {
+    if (side === 'left') {
+      const links = await this.repository.findByOpportunityId(anchorId, opts);
+      const targetIds = links.map((l) => (l as any).contactId as string);
+      const targets = await this.contactRepo.findByIds(targetIds);
+      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      return links.map((link) => ({
+        entity: byId.get((link as any).contactId)! as Contact,
+        link,
+      }));
+    } else {
+      const links = await this.repository.findByContactId(anchorId, opts);
+      const targetIds = links.map((l) => (l as any).opportunityId as string);
+      const targets = await this.opportunityRepo.findByIds(targetIds);
+      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      return links.map((link) => ({
+        entity: byId.get((link as any).opportunityId)! as Opportunity,
+        link,
+      }));
+    }
+  }
+
+  /**
+   * Mark the (\`opportunityId\`, \`contactId\`) row
+   * as \`is_primary: true\`. Demoting other rows on the same side is the
+   * caller's concern in v1; future leaves may add transactional demotion.
+   */
+  async setPrimary(
+    opportunityId: string,
+    contactId: string,
+  ): Promise<void> {
+    const links = await this.repository.findByOpportunityId(opportunityId);
+    const match = links.find(
+      (l) => (l as any).contactId === contactId,
+    );
+    if (match) {
+      await this.update(
+        (match as any).id ?? \`\${opportunityId}:\${contactId}\`,
+        { isPrimary: true } as unknown as Partial<OpportunityContact>,
+      );
+    }
+  }
+
+  // Inherited from BaseService:
+  //   findById, findByIds, list, count, exists, create, update, delete
+}
+"
+`;
+
+exports[`junction emission snapshot — opportunity_contact (clean-lite-ps) emits opportunity.service.ts (left parent — junction accessor) 1`] = `
+"import { Injectable, Inject, Optional } from '@nestjs/common';
+// CGP-60 — junction service + types (forwardRef resolves circular module dep)
+import { forwardRef } from '@nestjs/common';
+import { OpportunityContactService, OpportunityContactLinkInput } from '../opportunity_contacts/opportunity_contact.service';
+import type { OpportunityContact } from '../opportunity_contacts/opportunity_contact.entity';
+import type { Contact } from '../contacts/contact.entity';
+
+import { WithAnalytics } from '@shared/base-classes/with-analytics';
+import { EVENT_BUS } from '@shared/constants/tokens';
+import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
+import { OpportunityRepository } from './opportunity.repository';
+import type { Opportunity } from './opportunity.entity';
+
+@Injectable()
+export class OpportunityService extends WithAnalytics(
+  SyncedEntityService<OpportunityRepository, Opportunity>,
+) {
+  protected override readonly entityName = 'opportunity';
+
+  /** Injected by NestJS when EventsModule is registered. */
+  @Optional() @Inject(EVENT_BUS)
+  protected override eventBus: any = undefined;
+
+  constructor(
+    protected override readonly repository: OpportunityRepository,
+  ) {
+    super(repository);
+  }
+
+  // Lifecycle events (created/updated/deleted + per-field changes) are emitted
+  // automatically by BaseService when the events subsystem is installed.
+  //
+  // ═══════════════════════════════════════════════════════════════════════
+  // CGP-60 — fan-out to Contact (junction: opportunity_contact)
+  // Delegates to OpportunityContactService. Per-junction marker keeps
+  // idempotency; multiple junctions on the same parent each emit their own
+  // block. \`forwardRef\` resolves the circular module import (parent module
+  // imports junction module; junction module imports parent modules for
+  // repo DI).
+  // ═══════════════════════════════════════════════════════════════════════
+  // junction:opportunity_contact:left-fan-out
+
+  @Inject(forwardRef(() => OpportunityContactService))
+  private readonly opportunityContactService!: OpportunityContactService;
+
+  async attachContact(
+    opportunityId: string,
+    contactId: string,
+    link?: OpportunityContactLinkInput,
+  ): Promise<OpportunityContact> {
+    return this.opportunityContactService.attach(opportunityId, contactId, link);
+  }
+
+  async detachContact(
+    opportunityId: string,
+    contactId: string,
+  ): Promise<void> {
+    return this.opportunityContactService.detach(opportunityId, contactId);
+  }
+
+  async contactsList(
+    opportunityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: Contact; link: OpportunityContact }>> {
+    return this.opportunityContactService.listAssoc('left', opportunityId, opts) as Promise<
+      Array<{ entity: Contact; link: OpportunityContact }>
+    >;
+  }
+
+  async contactsSetPrimary(
+    opportunityId: string,
+    contactId: string,
+  ): Promise<void> {
+    return this.opportunityContactService.setPrimary(opportunityId, contactId);
+  }
+
+
+  // Inherited from SyncedEntityService:
+  //   findById, findByIds, list, count, exists, create, update, delete
+  //   findByExternalId, findAllByUserId, findVisibleByUserId
+
+
+
+}
+"
+`;
+
+exports[`junction emission snapshot — opportunity_contact (clean-lite-ps) emits contact.service.ts (right parent — junction accessor) 1`] = `
+"import { Injectable, Inject, Optional } from '@nestjs/common';
+// CGP-60 — junction service + types (forwardRef resolves circular module dep)
+import { forwardRef } from '@nestjs/common';
+import { OpportunityContactService, OpportunityContactLinkInput } from '../opportunity_contacts/opportunity_contact.service';
+import type { OpportunityContact } from '../opportunity_contacts/opportunity_contact.entity';
+import type { Opportunity } from '../opportunities/opportunity.entity';
+
+import { WithAnalytics } from '@shared/base-classes/with-analytics';
+import { EVENT_BUS } from '@shared/constants/tokens';
+import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
+import { ContactRepository } from './contact.repository';
+import type { Contact } from './contact.entity';
+import { AccountRepository } from '../accounts/account.repository';
+import type { Account } from '../accounts/account.entity';
+
+@Injectable()
+export class ContactService extends WithAnalytics(
+  SyncedEntityService<ContactRepository, Contact>,
+) {
+  protected override readonly entityName = 'contact';
+
+  /** Injected by NestJS when EventsModule is registered. */
+  @Optional() @Inject(EVENT_BUS)
+  protected override eventBus: any = undefined;
+
+  constructor(
+    protected override readonly repository: ContactRepository,
+    private readonly accountRepo: AccountRepository,
+  ) {
+    super(repository);
+  }
+
+  // Lifecycle events (created/updated/deleted + per-field changes) are emitted
+  // automatically by BaseService when the events subsystem is installed.
+  //
+  // ═══════════════════════════════════════════════════════════════════════
+  // CGP-60 — fan-out to Opportunity (junction: opportunity_contact)
+  // Delegates to OpportunityContactService. See left-side block for the
+  // forwardRef + per-junction marker rationale.
+  // ═══════════════════════════════════════════════════════════════════════
+  // junction:opportunity_contact:right-fan-out
+
+  @Inject(forwardRef(() => OpportunityContactService))
+  private readonly opportunityContactService!: OpportunityContactService;
+
+  async addToOpportunity(
+    contactId: string,
+    opportunityId: string,
+    link?: OpportunityContactLinkInput,
+  ): Promise<OpportunityContact> {
+    return this.opportunityContactService.attach(opportunityId, contactId, link);
+  }
+
+  async removeFromOpportunity(
+    contactId: string,
+    opportunityId: string,
+  ): Promise<void> {
+    return this.opportunityContactService.detach(opportunityId, contactId);
+  }
+
+  async opportunitiesList(
+    contactId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: Opportunity; link: OpportunityContact }>> {
+    return this.opportunityContactService.listAssoc('right', contactId, opts) as Promise<
+      Array<{ entity: Opportunity; link: OpportunityContact }>
+    >;
+  }
+
+  async opportunitiesSetPrimary(
+    contactId: string,
+    opportunityId: string,
+  ): Promise<void> {
+    return this.opportunityContactService.setPrimary(opportunityId, contactId);
+  }
+
+
+  // Inherited from SyncedEntityService:
+  //   findById, findByIds, list, count, exists, create, update, delete
+  //   findByExternalId, findAllByUserId, findVisibleByUserId
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Relationship composition methods (CGP-358b / CGP-62)
+  // Two queries, no SQL JOIN. Core-contract path; relations() const stays
+  // as opt-in extension for hand-written Drizzle queries.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Fetch the Account parent for this Contact.
+   * Two repo calls: find self by id → find target by FK.
+   */
+  async account(contactId: string): Promise<Account | null> {
+    const entity = await this.repository.findById(contactId);
+    if (!entity) return null;
+    return entity.accountId ? this.accountRepo.findById(entity.accountId) : null;
+  }
+
+
+}
+"
+`;

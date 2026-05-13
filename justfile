@@ -53,6 +53,11 @@ test-smoke-junction-cross-domain:
 test-smoke-junction-cross-domain-clean:
     bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean
 
+# Junction snapshot tests — locks emitted output of junction codegen against drift.
+# Regenerate after intentional template changes: bun test --update-snapshots test/junction/
+test-junction:
+    bun test test/junction/
+
 # Run the relationship-scenario smoke (CGP-62): self-ref + cross-entity
 # belongs_to + has_many against the CRM fixture set. Verifies the
 # clean-lite-ps Drizzle relations() emission shape. ~60-120s.
@@ -94,7 +99,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain
+test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
