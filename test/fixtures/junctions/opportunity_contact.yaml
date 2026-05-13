@@ -1,0 +1,21 @@
+# Opportunity ↔ Contact junction (intra-domain).
+#
+# Explicit many-to-many between two CRM entities. The `role` enum is
+# declared inline — never imported from another pairing. This is the
+# canonical "valid intra-domain" fixture for src/__tests__/schema/.
+
+pattern: Junction
+between: [opportunity, contact]
+temporal: true
+sourced: true
+
+fields:
+  role:
+    type: enum
+    values: [champion, decision_maker, influencer, blocker, end_user]
+    nullable: false
+
+queries:
+  - by: [opportunity_id]
+  - by: [contact_id]
+  - by: [opportunity_id, is_primary]

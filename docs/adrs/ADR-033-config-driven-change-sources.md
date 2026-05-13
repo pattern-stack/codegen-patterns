@@ -112,6 +112,8 @@ type PollFetchContext = {
 
 `userId` / `tenantId` are *run-scoped* (they arrive on `ExecuteSyncUseCase.execute(input)`, not on the source). Threading them through the port forces signature expansion every time run context grows. Adapter closures own provider auth lookup — the consumer registers a `PollFetchCallback<T>` against a token, and that callback closes over whatever services it needs.
 
+`T` in `PollFetchCallback<T>` is the entity/domain type — the persisted Drizzle row's TS type. Wire-format conversions (ISO-string → Date, decimal-string → number, etc.) happen via `DetectionConfig.mapping[].transform` before the callback's record reaches `Change<T>`; consumers do not maintain a parallel canonical TS type. See ADR-033.1 §10 for the full rationale.
+
 ### 7. Per-entity YAML, generated factory module
 
 The `detection:` block lives in per-entity YAML (`entities/<entity>.yaml`). `codegen.config.yaml: sync:` keeps subsystem-wide settings only (backend, multiTenant, schema/config paths). The per-entity factory module emitted by Phase 2 codegen looks like:
@@ -135,6 +137,8 @@ export class OpportunitySyncSourceModule {}
 ```
 
 Adapter-callback tokens (`OPPORTUNITY_POLL_ADAPTER` here) are consumer-registered. The codegen factory composes the locked middleware list and binds to `SYNC_CHANGE_SOURCE`.
+
+`Opportunity` here (and the `T` parameter generally) is the entity type. `mapping[].transform` is the seat for any wire→entity field conversion the consumer needs — the change-source primitive applies the mapping before yielding `Change<T>` to the orchestrator. See ADR-033.1 §10.
 
 ## Rationale (Q1–Q6 cross-reference)
 

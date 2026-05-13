@@ -1,0 +1,316 @@
+plan:
+  slug: codegen-app-patterns
+  summary: "Ship Junction pattern (definition + templates + association codegen + fixtures) and verify Relationship pattern against crm-domain YAML"
+  type: epic
+  repo: pattern-stack/dealbrain-integrations  # cross-repo: tracker lives here; code lands per-issue `upstream_repo`
+  parent_issue: wave-1-hubspot-crm # nests under wave-1 project issue
+  milestone: wave-1-hubspot-crm
+  # Issues tracked HERE (pattern-stack/dealbrain-integrations) for wave-1 visibility.
+  # Branches and PRs land in the upstream repo declared per-issue via `upstream_repo`.
+  epic_title: "App-Defined Patterns step 1: Junction (ship) + Relationship (verify)"
+  epic_body: |
+    **Source repo:** [pattern-stack/codegen-patterns](https://github.com/pattern-stack/codegen-patterns) — Junction implementation, branches, and PRs land there. Tracking lives here for wave-1 rollup visibility.
+
+    Graduates the App-Defined Patterns RFC's first deliverables. The wave-1 `crm-domain` stack consumes both patterns; Relationship is already landed upstream, so this stack ships Junction and verifies Relationship against the consumer YAML.
+
+    **In scope:**
+    - **Junction pattern** — explicit many-to-many with metadata. Accepts `between: [<entity>, <entity>]` (intra- or cross-domain). Emits junction table, repo, service, association methods on canonical ports. Includes `BaseJunctionFields` shared shape (`is_primary`, `started_at`, `ended_at`, `sourced_from`, `confidence`, `matched_at`). Per-pairing YAML declares its own role enum + pairing-specific fields (role enums are NOT shared across pairings, per this project's CLAUDE.md "Explicit junctions" convention).
+    - **Relationship verification** — Relationship pattern is already shipped upstream (commits `8a5bc13`, `ef5e898`, `269ab3f`, `01bb917`). Audit it against the actual `crm-domain` YAML needs (self-ref Account, belongs_to/has_many on Contact/Opportunity) and add a smoke test.
+    - **Tracker hygiene** — close stale wave-1 issues with pointers to landed commits.
+
+    **Out of scope:** redesign of the app-defined-patterns RFC; new app-defined patterns beyond Junction.
+
+    **References:**
+    - `../INTEGRATION-STACK.md` §5.3
+    - `codegen-patterns/docs/adrs/ADR-031-app-defined-patterns.md`
+    - `codegen-patterns/docs/RFC-app-defined-patterns.md`
+    - `codegen-patterns/docs/specs/app-defined-patterns-implementation.md`
+    - Existing library patterns as structural reference: `codegen-patterns/src/patterns/library/{activity,synced,knowledge,metadata,base}.pattern.ts`
+    - Registry stores: `codegen-patterns/src/patterns/registry.ts` (`LIBRARY_PATTERNS` + `APP_PATTERNS`)
+    - Pattern contract: `codegen-patterns/src/patterns/pattern-definition.ts`
+  stack:
+    base: main # branches rooted on codegen-patterns/main (per-issue upstream_repo)
+    depends_on: [] # independent — runs in parallel with foundation/strategies
+
+architectural_notes:
+  cross_entity_access:
+    rule: |
+      Cross-entity access in generated code MUST go through service-layer
+      composition via FK + single-table repo calls. No SQL JOINs at the
+      service layer. Drizzle `relations()` consts continue to be emitted as
+      table metadata, but generated service methods MUST NOT use Drizzle's
+      `with: { ... }` query helper.
+    rationale: |
+      ElectricSQL replicates tables 1:1 (table-shaped, not query-shaped).
+      Joins cannot resolve prior to replication — the client receives
+      separate replicated rowsets and must compose locally. If the backend
+      composes the same way (service-layer methods calling single-table
+      repos), one composition pattern exists across both sides: same shape,
+      same query count, same pagination semantics, same edge cases. The
+      alternative (backend uses `with:` joins; client composes locally)
+      forks the code paths and the mental model.
+    core_vs_extension:
+      core: |
+        Service-layer composition via FK + repo calls. Portable across
+        backend and client. ALL generated cross-entity API methods use this.
+        Examples (paginated where the cardinality demands it — see
+        canonical_shape below):
+          - AccountService.contacts(id, { cursor?, limit? })
+              = contactRepo.findByAccountId(id, opts)
+          - OpportunityService.contacts.list(id, { cursor?, limit? })
+              = junctionRepo.findByOpportunityId(id, opts)
+                then contactRepo.findManyByIds(linkContactIds)
+                returning Array<{ entity: Contact, link: OpportunityContactLink }>
+          - ContactService.account(id) = accountRepo.findById(contact.accountId)
+      extension: |
+        Drizzle `relations()` const + `with: { ... }` query helper. Backend
+        only. Useful for hand-written ad-hoc queries that knowingly will not
+        run client-side (admin tools, reports, migrations, debugging).
+        Generated code MUST NOT use it. The templates SHIP the `relations()`
+        const as opt-in table metadata, not as the canonical access path.
+        Confirmed disposition: keep emission as-is. It's free table metadata,
+        doesn't break ElectricSQL replication, and gives extension-path code
+        an ergonomic ad-hoc query option.
+    canonical_shape:
+      # These rules cascade into every leaf that emits cross-entity access in
+      # generated code. They are the contract junction-association-codegen
+      # must satisfy and that codegen-patterns#358 (close the relationship gap
+      # on entity codegen) must satisfy.
+      pagination_default: |
+        `has_many` traversal and junction `.list()` association methods are
+        paginated by default. Opts param shape: `{ cursor?: string; limit?: number }`.
+        Implementer adopts whatever pagination convention `queries:`-block
+        emission already uses if present; otherwise cursor-based is canonical.
+        Scalar `belongs_to` traversal (single-target) is not paginated.
+      list_association_return_shape: |
+        Junction `.list()` methods return a composed join-shaped DTO array:
+        `Array<{ entity: TargetEntity, link: JunctionLink }>`. Outer key is
+        `entity` (not `target` — "target" is internal template-pass
+        nomenclature and reads internally). Rationale: consumers need the
+        link metadata for UI like "primary contact" badges; returning just
+        `TargetEntity[]` forces a second round-trip; returning just
+        `JunctionLink[]` forces consumers to fetch and zip the entities
+        themselves.
+      junction_association_placement: |
+        Mirror association methods on BOTH parent services in a junction
+        pairing, delegating to one shared junction service. Example pattern
+        (verb-shape reads naturally from each entity's perspective):
+          - OpportunityService.attachContact(oppId, contactId, link)
+          - ContactService.addToOpportunity(contactId, oppId, link)
+        Both delegate to OpportunityContactService.attach(oppId, contactId, link).
+        Same for detach / list / setPrimary.
+
+        Default: ALWAYS mirror.
+
+        Heuristic for opting OUT of mirroring (BOTH conditions must hold):
+          1. The inverse method would have no natural caller (the junction
+             semantics are inherently directional and consumers never start
+             from the "passive" side).
+          2. The inverse method would require a name that reads as misleading.
+        In all other cases — including all wave-1 crm-domain pairings — mirror.
+    applies_to:
+      - relationship-verification           # audit doc is the worked example
+      - junction-pattern-definition         # junction services compose
+      - junction-hygen-templates            # repo + service templates emit FK queries, not joins
+      - junction-association-codegen        # association methods are service methods that compose
+      - junction-test-fixtures              # fixtures exercise the service-composition path
+      - all-future-leaves-touching-cross-entity-codegen
+    reference: |
+      See .ai-docs/stacks/codegen-app-patterns/specs/cgp-62.md for the worked
+      example, the CLAUDE.md "core contract + opt-in extensions" principle this
+      derives from, and the dissolution of the r2 "Option A vs Option B"
+      synthesis question (which only mattered under the extension-centric
+      framing). The follow-up issue closing the entity-codegen service-method
+      gap is codegen-patterns#358.
+
+external_dependencies:
+  # Surfaced by the cgp-62 r3 audit: today's entity codegen does NOT emit
+  # service-layer composition methods for per-entity `relationships:` blocks.
+  # The follow-up codegen-patterns#358 closes that gap; downstream leaves in
+  # this stack depend on it landing first.
+  - repo: pattern-stack/codegen-patterns
+    issue: 358
+    title: "Emit service-layer composition methods for per-entity `relationships:` block (FK-based, no Drizzle joins)"
+    url: https://github.com/pattern-stack/codegen-patterns/issues/358
+    blocks:
+      - junction-association-codegen
+      - junction-test-fixtures           # transitively (depends on junction-association-codegen)
+      - tracker-hygiene-close-stale      # transitively (depends on all leaves)
+    rationale: |
+      #358 establishes the service-method emission machinery (paginated
+      cursor-shape, composed join-shape DTOs, no Drizzle `with:` joins per
+      architectural_notes.cross_entity_access). junction-association-codegen
+      extends that machinery to junction associations; without #358 there is
+      nothing to extend. Discovered empirically in cgp-62 r3 audit by
+      `git grep` of templates — neither clean nor clean-lite-ps emit the
+      target shape today.
+    interim_workaround: |
+      Wave-1 consumer (`dealbrain-integrations` HubSpot CRM work) hand-writes
+      the service-layer composition methods against the canonical shape
+      defined in architectural_notes.cross_entity_access.canonical_shape.
+      Hand-written code serves as the executable spec for #358; when #358
+      lands, generated services replace hand-written services mechanically.
+
+issues:
+  - key: junction-pattern-definition
+    title: "Junction pattern: definition + BaseJunctionFields + schema + registry"
+    layer: L0
+    upstream_repo: pattern-stack/codegen-patterns
+    depends_on: []
+    parallel_with: [relationship-verification]
+    labels: ["wave-1-hubspot-crm", "domain:codegen"]
+    description: |
+      **Upstream repo:** [pattern-stack/codegen-patterns](https://github.com/pattern-stack/codegen-patterns) — implementation, branch, and PR live there. This issue tracks wave-1 visibility only.
+
+      Land the Junction `PatternDefinition` and its surrounding wiring in one PR:
+
+      - `src/patterns/library/junction.pattern.ts` implementing the `PatternDefinition` contract (`src/patterns/pattern-definition.ts`). Structural reference: existing `activity.pattern.ts` and `synced.pattern.ts`.
+      - `BaseJunctionFields` shared shape exposing `is_primary`, `started_at`, `ended_at`, `sourced_from`, `confidence`, `matched_at`.
+      - YAML schema validation for `pattern: Junction` accepting `between: [<entity>, <entity>]` (intra- or cross-domain). Per-pairing role enum + pairing-specific fields declared inside the consumer YAML, NOT shared across pairings (per `CLAUDE.md` "Explicit junctions").
+      - Register the pattern in `src/patterns/registry.ts` `LIBRARY_PATTERNS` store and add the barrel export.
+      - Unit-level schema tests covering valid/invalid `pattern: Junction` YAML, including coexistence with the existing `relationships:` block in the same entity.
+
+      Acceptance:
+      - `pattern: Junction` YAML parses and validates for both intra-domain (`between: [opportunity, contact]`) and cross-domain (`between: [opportunity, activity]`) shapes.
+      - Junction definition is discoverable through `LIBRARY_PATTERNS` and exported from the library barrel.
+      - Schema rejects YAML that shares a role enum across pairings.
+      - Coexists with `relationships:` in the same entity YAML without conflict.
+
+  - key: junction-hygen-templates
+    title: "Junction pattern: Hygen templates (table + repo + service)"
+    layer: L0
+    upstream_repo: pattern-stack/codegen-patterns
+    depends_on: [junction-pattern-definition]
+    parallel_with: []
+    labels: ["wave-1-hubspot-crm", "domain:codegen"]
+    description: |
+      **Upstream repo:** [pattern-stack/codegen-patterns](https://github.com/pattern-stack/codegen-patterns).
+
+      Author the Hygen templates that the Junction pattern drives:
+
+      - Junction table template (Drizzle schema): primary key on the composite of the two FK columns, the role column (typed from per-pairing enum), and the `BaseJunctionFields` columns. Cross-domain pairings still emit a single junction table.
+      - Junction repo template: typed CRUD plus pairing-aware finders.
+      - Junction service template: ApplicationService **shell** binding to the junction repo per the L7 layer rules (one entity, one source). Emits the constructor + the inherited junction-repo CRUD only. **Does NOT emit the fan-out association methods** (`attachContact`, `detachContact`, `list`, `setPrimary` on parent services; `attach`, `detach`, `list`, `setPrimary` on the junction service itself). Those land via `junction-association-codegen` (#60) once `codegen-patterns#358` provides the service-method emission machinery — see `external_dependencies` at the plan root.
+      - Template smoke fixtures driven by minimal YAML so the templates can be exercised without the full crm-domain wired up.
+
+      Coordinate output naming with how `Relationship` pattern templates already emit (commits `ef5e898`, `01bb917`) so junction barrels import at the right depth.
+
+      **Scope note:** Per the architectural_notes.cross_entity_access core/extension boundary, this leaf ships the **structural** templates (table + repo + service shell). Cross-entity fan-out (the composition methods that span the two parent entities + the junction) is deferred. This leaf is unblocked and can ship before #358; #60 cannot.
+
+      Acceptance:
+      - Running codegen against an intra-domain junction YAML (e.g. `opportunity_contact`) produces a valid Drizzle table, repo, and service shell that compile.
+      - Same for a cross-domain pairing (e.g. `opportunity_activity`).
+      - Barrel imports resolve at the correct depth (no regression of the issue fixed in `01bb917`).
+      - Service shell carries the canonical class shape junction-association-codegen will later extend; no fan-out methods are present yet.
+
+  - key: junction-association-codegen
+    title: "Junction pattern: association methods on canonical ports"
+    layer: L0
+    upstream_repo: pattern-stack/codegen-patterns
+    depends_on: [junction-hygen-templates]
+    external_depends_on:
+      - pattern-stack/codegen-patterns#358   # see `external_dependencies` at plan root
+    parallel_with: []
+    labels: ["wave-1-hubspot-crm", "domain:codegen"]
+    description: |
+      **Upstream repo:** [pattern-stack/codegen-patterns](https://github.com/pattern-stack/codegen-patterns).
+
+      **⚠️ Blocked on [pattern-stack/codegen-patterns#358](https://github.com/pattern-stack/codegen-patterns/issues/358)** — see `external_dependencies` at the plan root for rationale and interim workaround. Do NOT start this leaf until #358 lands.
+
+      Emit typed association methods on the parent services of both entities in a junction pairing, mirrored per `architectural_notes.cross_entity_access.canonical_shape.junction_association_placement`:
+
+      - `OpportunityService.attachContact(oppId, contactId, link)` AND `ContactService.addToOpportunity(contactId, oppId, link)` — both delegate to `OpportunityContactService.attach(oppId, contactId, link)`.
+      - Same mirror for `detach`, `list`, `setPrimary`.
+      - `list` returns `Array<{ entity: TargetEntity, link: JunctionLink }>` (the composed join-shape DTO per `canonical_shape.list_association_return_shape`). Paginated `{ cursor?, limit? }` per `canonical_shape.pagination_default`.
+      - All methods accept/return `BaseJunctionFields` metadata so consumers do not have to reach past the canonical port.
+
+      Sequenced after `junction-hygen-templates` because association codegen consumes emitted type names and repo class shapes from the template output — parallelism here is a false economy.
+
+      **Why #358 blocks this leaf:** the cgp-62 r3 audit (`.ai-docs/stacks/codegen-app-patterns/specs/cgp-62.md`) empirically found that today's entity codegen does NOT emit service-layer composition methods for per-entity `relationships:` blocks — neither clean nor clean-lite-ps. There is no upstream mechanism to "reuse and extend" for junction associations until #358 establishes the service-method emission machinery (paginated cursor-shape, composed join-shape DTOs, no Drizzle `with:` joins). #358 closes that gap; this leaf extends the same machinery to mirrored junction associations.
+
+      Acceptance:
+      - #358 is merged and the service-method emission machinery is live in the templates.
+      - Codegen against `opportunity_contact` fixture emits matching association methods on both `OpportunityService` and `ContactService`, plus the junction service, with correct types per `canonical_shape`.
+      - Methods round-trip `BaseJunctionFields` metadata.
+      - `list` returns the composed join-shape DTO; pagination matches the project pagination convention #358 adopted.
+      - Cross-domain pairing (`opportunity_activity`) emits methods on both sides without violating layer rules (no cross-domain writes outside use cases).
+      - The mirror-both-sides rule and the named opt-out heuristic are honored — the test fixture pairings should not legitimately trigger opt-out; if any does, surface in the PR description.
+
+  - key: junction-test-fixtures
+    title: "Junction pattern: test fixtures (opportunity_contact + opportunity_activity)"
+    layer: L0
+    upstream_repo: pattern-stack/codegen-patterns
+    depends_on: [junction-hygen-templates, junction-association-codegen]
+    external_depends_on:
+      - pattern-stack/codegen-patterns#358   # transitively via junction-association-codegen
+    parallel_with: []
+    labels: ["wave-1-hubspot-crm", "domain:codegen"]
+    description: |
+      **Upstream repo:** [pattern-stack/codegen-patterns](https://github.com/pattern-stack/codegen-patterns).
+
+      End-to-end fixtures that exercise the full Junction pipeline (definition → templates → association codegen):
+
+      - `opportunity_contact` (intra-domain): YAML with role enum (e.g. `champion`, `decision_maker`, `influencer`), pairing-specific fields, and `BaseJunctionFields` defaults.
+      - `opportunity_activity` (cross-domain): YAML pairing entities from different domains; verifies a single junction table emits across the domain boundary.
+      - Snapshot or integration tests asserting the emitted schema, repo, service, and association methods match expectations.
+      - Coexistence test: same entity YAML carries both `pattern: Junction` and a `relationships:` block.
+
+      Acceptance:
+      - Both fixtures generate cleanly and the emitted code compiles.
+      - Snapshot tests are committed and pass in CI.
+      - Coexistence case (Junction + Relationship in the same entity) generates without conflict.
+
+  - key: relationship-verification
+    title: "Relationship pattern: audit + smoke test against crm-domain YAML"
+    layer: L0
+    upstream_repo: pattern-stack/codegen-patterns
+    depends_on: []
+    parallel_with: [junction-pattern-definition]
+    labels: ["wave-1-hubspot-crm", "domain:codegen"]
+    description: |
+      **Upstream repo:** [pattern-stack/codegen-patterns](https://github.com/pattern-stack/codegen-patterns).
+
+      Relationship pattern is already shipped upstream (`8a5bc13`, `ef5e898`, `269ab3f`, `01bb917`). Verify it covers what wave-1 `crm-domain` actually needs:
+
+      - Self-ref `belongs_to` on `Account` (parent account).
+      - `belongs_to` + `has_many` on `Contact` and `Opportunity`.
+      - Confirm `relationships:` parses, generates valid Drizzle FKs, and emits typed association methods against representative `crm-domain` YAML fixtures.
+
+      Deliverables:
+      - Short audit note in `codegen-patterns/docs/` (or appended to the implementation spec) listing each crm-domain relationship shape and the upstream commit that supports it.
+      - One smoke test exercising self-ref + belongs_to + has_many against a crm-domain-shaped fixture.
+      - **Document the cross-entity emission mechanism** Relationship uses to contribute methods onto entities other than the one declaring the relationship (e.g. how `contact.yaml`'s `belongs_to: account` causes `Account.contacts()` to appear on `AccountRepository`/`AccountService`). This is the lever `junction-association-codegen` will reuse — capture the entry point, the contribution pass, and any pre/post-template hooks. Live in the same docs note as the audit.
+
+      Acceptance:
+      - Audit note enumerates every crm-domain relationship shape with the supporting commit.
+      - Cross-entity emission mechanism is documented in enough detail that a fresh implementer can reuse it without re-reading the Relationship source.
+      - Smoke test green in CI.
+      - If any gap is found, raise it as a separate issue rather than expanding scope here.
+
+  - key: tracker-hygiene-close-stale
+    title: "Tracker hygiene: close stale wave-1 issues (#13, #14, #15)"
+    layer: L0
+    upstream_repo: pattern-stack/dealbrain-integrations
+    depends_on:
+      - junction-pattern-definition
+      - junction-hygen-templates
+      - junction-association-codegen
+      - junction-test-fixtures
+      - relationship-verification
+    external_depends_on:
+      - pattern-stack/codegen-patterns#358   # transitively via junction-association-codegen
+    parallel_with: []
+    labels: ["wave-1-hubspot-crm", "domain:codegen"]
+    description: |
+      **Tracker repo:** [pattern-stack/dealbrain-integrations](https://github.com/pattern-stack/dealbrain-integrations) — no code change; tracker writes only.
+
+      After the Junction PRs land and Relationship verification is green, reconcile the stale wave-1 tracker issues. Per Gate 0 decision (plan chat): all three are close-and-replace.
+
+      - [#14](https://github.com/pattern-stack/dealbrain-integrations/issues/14) (Junction, unimplemented) — close as superseded by the four new Junction leaves: `junction-pattern-definition`, `junction-hygen-templates`, `junction-association-codegen`, `junction-test-fixtures`. Closing comment lists the new tracker issue URLs and the merged upstream PRs.
+      - [#15](https://github.com/pattern-stack/dealbrain-integrations/issues/15) (Relationship) — close as already shipped upstream. Closing comment cites commits `8a5bc13` (schema/parser/analyzer), `ef5e898` (Hygen templates + CLI), `269ab3f` (self-ref belongs_to fix), `01bb917` (junction barrel import-depth fix), plus a pointer to the `relationship-verification` issue/PR for the consumer audit.
+      - [#13](https://github.com/pattern-stack/dealbrain-integrations/issues/13) (epic) — close once #14 and #15 are closed and all child leaves are done, with a summary of what shipped where (upstream PRs in `pattern-stack/codegen-patterns` + the verification + this hygiene leaf).
+
+      Acceptance:
+      - All three issues (#13, #14, #15) have closing comments with full URLs to the superseding issues, the merged upstream PRs, and (for #15) the four supporting commit SHAs.
+      - The wave-1 project board reflects only live work.
+      - No tracker writes happen before all upstream PRs are merged and `relationship-verification` is green.

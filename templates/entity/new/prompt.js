@@ -1644,6 +1644,7 @@ export default {
       const _p = definition.entity?.plural || _n + 's';
       Object.assign(locals, {
         clpOutputPaths: undefined,
+        clpImports: undefined,
         entityName: _n,
         entityNamePlural: _p,
         entityNamePascal: _n,

@@ -201,7 +201,7 @@ const EXTERNAL_ID_TRACKING_FIELDS = new Set([
 /**
  * Build a Drizzle column chain for a field
  */
-function buildDrizzleChain(fieldName, field, drizzleType) {
+function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
   const nullable = field.nullable ?? false;
   const required = field.required ?? false;
   const hasDefault = field.default !== undefined && field.default !== null;
@@ -211,7 +211,11 @@ function buildDrizzleChain(fieldName, field, drizzleType) {
   // schemas using z.coerce.date() align with the entity type.
   // `timestamp` already defaults to Date — no mode override needed.
   let chain;
-  if (drizzleType === 'date') {
+  if (drizzleType === 'enum' && enumName) {
+    // Reference the pgEnum declaration emitted at the top of the entity file.
+    // The column name argument keeps the snake_case YAML field name.
+    chain = `${enumName}('${fieldName}')`;
+  } else if (drizzleType === 'date') {
     chain = `${drizzleType}('${fieldName}', { mode: 'date' })`;
   } else {
     chain = `${drizzleType}('${fieldName}')`;
@@ -247,7 +251,15 @@ function processFields(fields) {
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
 
-    const drizzleType = DRIZZLE_TYPE_MAP[type] || 'text';
+    // Enum-typed fields (or any field with a `choices` list) emit a
+    // Postgres-native pgEnum declaration + column reference, so the
+    // generated `InferSelectModel` type narrows to the literal union
+    // instead of falling back to `string`. Matches the backend pipeline
+    // (templates/entity/new/backend/database/schema.ejs.t:66-104).
+    const drizzleType = hasChoices
+      ? 'enum'
+      : (DRIZZLE_TYPE_MAP[type] || 'text');
+    const enumName = hasChoices ? camelCase(fieldName) + 'Enum' : null;
     const tsType = hasChoices
       ? choices.map((c) => `'${c}'`).join(' | ')
       : (TS_TYPE_MAP[type] || 'unknown');
@@ -255,7 +267,7 @@ function processFields(fields) {
       ? `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`
       : (ZOD_TYPE_MAP[type] || 'z.unknown()');
 
-    const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType);
+    const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType, enumName);
 
     processed.push({
       name: fieldName,
@@ -271,6 +283,7 @@ function processFields(fields) {
       drizzleChain,
       choices,
       hasChoices,
+      enumName,
     });
   }
 
@@ -355,6 +368,12 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
+    if (field.drizzleType === 'enum') {
+      // Enum columns reference a `pgEnum` declaration emitted at the top
+      // of the entity file; the helper itself comes from drizzle-orm/pg-core.
+      imports.add('pgEnum');
+      continue;
+    }
     const importName = DRIZZLE_IMPORT_MAP[field.drizzleType];
     if (importName) imports.add(importName);
   }
@@ -783,6 +802,18 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const fkFieldNames = new Set(belongsTo.map((r) => r.field));
   const nonFkFields = processedFields.filter((f) => !fkFieldNames.has(f.name));
 
+  // Enum field declarations — surface a separate collection so the entity
+  // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
+  // the `pgTable(...)` block. Both FK-filtered and unfiltered processing
+  // include the same enum fields; they're never FKs.
+  const clpEnumFields = processedFields
+    .filter((f) => f.hasChoices && f.enumName)
+    .map((f) => ({
+      enumName: f.enumName,
+      dbName: f.name,
+      choices: f.choices,
+    }));
+
   // Drizzle imports needed
   const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking);
   // Whether relations() import is needed
@@ -825,6 +856,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     declarativeQueries: hasDeclarativeQueries
       ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
       : null,
+    // ADR-033.1 §8 — sync-source module emission for clean-lite-ps. Co-located
+    // with the entity feature module under src/modules/<plural>/. Closes #267.
+    syncSourceModule: `${srcRoot}/modules/${entityNamePlural}/${entityName}-sync-source.module.ts`,
+    syncSourceProviders: `${srcRoot}/modules/${entityNamePlural}/${entityName}-sync-source.providers.ts`,
+  };
+
+  // Architecture-specific imports for clean-lite-ps. The sync-source module
+  // imports the entity type sibling-style (`./<entity>.entity`) since the
+  // module file lives next to the entity file in the same feature folder.
+  const clpImports = {
+    syncSourceToEntity: `./${entityName}.entity`,
   };
 
   // Class names
@@ -953,6 +995,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // Output paths
     clpOutputPaths: outputPaths,
 
+    // Architecture-specific imports (ADR-033.1 §8 — sync-source closes #267)
+    clpImports,
+
     // Class names
     classNames,
 
@@ -966,6 +1011,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // Drizzle
     clpDrizzleImports: drizzleEntityImports,
     clpHasRelationsBlock: hasRelationsBlock,
+    // A self-referential belongs_to FK requires the `references()` callback
+    // to carry a `: AnyPgColumn` return-type annotation; otherwise TypeScript's
+    // strict mode flags the table const with TS7022/TS7024 (circular initializer).
+    // Surfaced by the cgp-62 relationship-scenario smoke when generating a CRM
+    // account with a `parent_account_id` self-FK.
+    clpHasSelfFk: belongsTo.some((rel) => rel.isSelfFk),
+    clpEnumFields,
 
     // Declarative queries
     processedQueries,

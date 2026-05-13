@@ -1,5 +1,5 @@
 ---
-to: "<%= hasDetection ? `${basePaths.backendSrc}/${paths.modules}/${name}-sync-source.module.ts` : null %>"
+to: "<%= hasDetection ? (isCleanLitePs ? clpOutputPaths.syncSourceModule : `${basePaths.backendSrc}/${paths.modules}/${name}-sync-source.module.ts`) : null %>"
 skip_if: <%= !hasDetection %>
 force: true
 ---
@@ -10,7 +10,7 @@ import type {
   IChangeSource,
   PollFetchCallback,
 } from '@shared/subsystems/sync';
-import type { <%= className %> } from '<%= imports.moduleToDomain %>';
+import type { <%= className %> } from '<%= isCleanLitePs ? clpImports.syncSourceToEntity : imports.moduleToDomain %>';
 
 const <%= name.toUpperCase() %>_DETECTION_CONFIGS: Record<string, DetectionConfig> = <%- detectionConfigsLiteral %>;
 

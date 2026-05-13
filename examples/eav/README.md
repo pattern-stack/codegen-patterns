@@ -24,7 +24,7 @@ The generated repositories give you typed CRUD on both tables, but **dual-write 
 - Add a `findByIdWithFields()` that joins `field_values` onto the entity row on read
 - Route between entity columns and EAV based on whether a field is declared in `field_definition`
 
-This is the same pattern `dealbrain-v2` hand-writes today in its `CrmEntityRepository<T>` + `CrmEntityService<T>` base classes.
+This is the same pattern `the upstream consumer` hand-writes today in its `CrmEntityRepository<T>` + `CrmEntityService<T>` base classes.
 
 ## TODO: promote to a first-class `EavPattern`
 

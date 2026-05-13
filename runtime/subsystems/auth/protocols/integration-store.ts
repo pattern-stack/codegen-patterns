@@ -6,7 +6,7 @@
  * those rows — consumers implement these narrow ports against whatever
  * `integrations` table their app uses.
  *
- * In dealbrain-v2 (the extraction source) both ports are satisfied by a
+ * In the extraction-source app both ports are satisfied by a
  * pair of thin adapters over `IntegrationService` + `RefreshIntegrationUseCase`.
  * The codegen-patterns `examples/auth-integrations/` starter (separate PR)
  * ships a canonical `integration.yaml` whose generated service + use case
@@ -63,4 +63,41 @@ export interface IntegrationTokenUpdate {
 
 export interface IIntegrationTokenWriter {
   persistRefresh(update: IntegrationTokenUpdate): Promise<void>;
+}
+
+/**
+ * Grant-sink port — persists a freshly-minted OAuth2 grant from the
+ * authorize-code callback (i.e. the user just connected a new provider, or
+ * re-connected an existing one).
+ *
+ * `AuthController.callback` invokes this after `IProviderStrategy.exchangeCodeForTokens`.
+ * The subsystem itself never imports a concrete `IntegrationsService` — the
+ * consumer's `auth-integrations` starter (or any equivalent) adapts this
+ * port. Keeps the auth subsystem standalone: a non-codegen consumer can
+ * satisfy the port against its own integrations storage.
+ *
+ * Semantics:
+ *   - Upserts on `(userId, provider)`. Repeated grants for the same pair
+ *     replace the prior tokens (re-connect flow).
+ *   - Implementations are responsible for encrypting tokens at rest.
+ *   - `expiresAt` / `refreshToken` / `scope` / `externalAccountId` /
+ *     `providerMetadata` are optional because not every provider supplies
+ *     them (e.g. some providers omit `expires_in`; not every flow returns
+ *     a refresh token on first grant).
+ */
+export interface IntegrationGrantInput {
+  userId: string;
+  /** Provider slug — must match the strategy's `provider`. */
+  provider: string;
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: Date;
+  scope?: string[];
+  externalAccountId?: string;
+  /** Provider-specific bag (SFDC `instance_url`, Google `sub`, …). */
+  providerMetadata?: Record<string, unknown>;
+}
+
+export interface IIntegrationGrantSink {
+  createOrUpdateFromOAuthGrant(input: IntegrationGrantInput): Promise<void>;
 }

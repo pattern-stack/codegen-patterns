@@ -4,6 +4,65 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-04-28
+
+Hotfix for enum codegen in the `clean-lite-ps` template pipeline. Surfaced during integration-patterns Wave 0b: enum-typed YAML fields emitted a Drizzle `text()` column instead of a `pgEnum`, so `InferSelectModel` resolved to `string` instead of the literal-union type and forced hand-casts in consumer code (e.g. `as DecryptedIntegrationRow['status']`).
+
+### Fixed
+
+- **`fix(codegen)` — clean-lite-ps enum emission.** `templates/entity/new/clean-lite-ps/prompt-extension.js` now produces `pgEnum` declarations + column references for any field with `choices` (or `type: enum`), matching the backend pipeline at `templates/entity/new/backend/database/schema.ejs.t:66-104`. Generated entity files now contain `export const xEnum = pgEnum('x', [...])` ahead of the `pgTable(...)` block and reference `xEnum('x').notNull()` inside the column map. `pgEnum` is added to the `drizzle-orm/pg-core` import list automatically when any enum field is present. The emitted `InferSelectModel` type now narrows to the literal union — consumers can drop `as Row['status']` casts. New unit coverage: `src/__tests__/clean-lite-ps/entity-enum-template.test.ts`.
+
+### Migration note
+
+Not a breaking change for the emitted code shape (the field's TypeScript type narrows — a strict superset of what consumer code can do). Existing Postgres databases generated against 0.6.7 or earlier will need a one-time `CREATE TYPE … AS ENUM (...)` + `ALTER TABLE … ALTER COLUMN x TYPE x_enum USING x::x_enum;` migration, since the column was previously `text`. Greenfield projects, or anyone regenerating before the first migration runs, are unaffected.
+
+## [0.6.7] — 2026-04-28
+
+Hotfix bundle for `cdp subsystem install auth-integrations`. 0.6.5 / 0.6.6 shipped the auth-integrations starter and install template, but every downstream consumer ran into four blockers on a fresh install. None of them surfaced from the source-checkout smoke (the install code resolves examples/ via the package root, which exists in dev) — they only exposed themselves through `npm install + bunx cdp subsystem install auth-integrations` against the published tarball. Bundles a fifth fix that unifies the integrations folder layout. Surfaced by integration-patterns Wave 0b.
+
+### Changed
+
+- **BREAKING — `fix(cli)` #303 (fix #5)** — `cdp subsystem install auth-integrations` now vendors the starter under `<paths.backend_src>/modules/integrations/` (override via `paths.modules_dir`), next to the codegen-emitted `integration` entity module. Previously: `<paths.backend_src>/shared/integrations/`. The starter's runtime tree is now organized under `adapters/`, `facade/`, and `oauth/use-cases/` subfolders to avoid collision with codegen output, and `IntegrationsAuthModule` lives at the integrations folder root. Relative imports inside the vendored files (and the bare-package auth import rewriter, fix #3) target the new layout. Detection (`detectInstalledSubsystems`) checks the new vendor target first and falls back to the legacy shared/integrations location for any pre-0.6.7 install. Pre-1.0; the only downstream consumer of 0.6.5/0.6.6 is integration-patterns Wave 0b (unmerged).
+
+### Fixed
+
+- **P0 — `fix(packaging)` #303** — added `examples/auth-integrations/**` to `package.json:files`. The 0.6.6 tarball did not include the starter source; `cdp subsystem install auth-integrations` therefore failed to find `node_modules/@pattern-stack/codegen/examples/auth-integrations/` and aborted the vendor copy. Narrowed to the auth-integrations subtree only — internal `examples/` (eav etc.) stay out of the published artifact. Prevention: `src/__tests__/templates/auth-integrations-files-coverage.test.ts` walks every file under `examples/auth-integrations/` and asserts it matches a `files` pattern.
+- **`fix(cli)` #303** — `cdp subsystem install auth-integrations` no longer drops `integration.yaml` at the wrong path. The scaffold-locals resolver was reading `paths.definitions` (a key that doesn't exist in the schema); switched to `paths.entities` with a fallback to legacy `paths.entities_dir`, matching the resolution order in `Context.entitiesDir` and `cdp project init`. Default location (`<cwd>/definitions/entities/integration.yaml`) is unchanged.
+- **`fix(cli)` #303** — vendored adapters under `<sharedRoot>/integrations/` no longer carry bare-package imports `from '@pattern-stack/codegen/runtime/subsystems/auth'`. Those imports both fail `tsc --noEmit` (the package's `exports` map points at compiled `dist/runtime/*` files, not deep subpaths) AND would inject against the publisher's compiled token Symbols rather than the consumer's vendored auth subsystem (duplicate-DI hazard). The install logic now rewrites every such specifier to a relative path resolving against `<subsystemsRoot>/auth` at copy time.
+- **`fix(examples)` #303** — `IntegrationsAuthModule` is now `@Global()`. `AuthController` lives inside `AuthModule`'s injector and resolves the `AUTH_INTEGRATION_*` providers exposed by `IntegrationsAuthModule`; without `@Global()`, Nest fails to boot. Same root cause as the auth-bindings module pattern in integration-patterns PR #93.
+
+## [0.6.6] — 2026-04-27
+
+Bundled cleanup PR for the auth subsystem surfaced during integration-patterns review. Pre-1.0, so two breaking renames are taken without compatibility shims.
+
+### Changed
+
+- **BREAKING — env var rename.** `TOKEN_ENCRYPTION_KEY` → `INTEGRATION_TOKEN_ENCRYPTION_KEY`. The auth subsystem only encrypts integration tokens; the scoped name is clearer about what the key protects and avoids colliding with other token-encryption keys a consumer might own. Read site (`runtime/subsystems/auth/backends/encryption-key/env.ts`), install template (`templates/subsystem/auth/env-config.ejs.t` + idempotency `skip_if`), CLI scaffold helpers, tests, and docs all moved together. Consumers running 0.6.5 must rename the env var and the `skip_if` line in their generated `.env.config`.
+- **BREAKING — interface rename.** `ProviderStrategy` → `IProviderStrategy` to match the rest of the auth port naming (`IIntegrationReader`, `IUserContext`, `IOAuthStateStore`, `IEncryptionKey`). Convention documented at the top of `runtime/subsystems/auth/protocols/provider-strategy.ts`: `I*` for behavioral ports, no prefix for data DTOs / template-method abstract classes. `ProviderStrategyRegistry` (a `ReadonlyMap` value-shape) keeps its name.
+- **OSS-hygiene scrub.** Removed or generalized references to the upstream extraction-source consumer across `runtime/`, `examples/`, and user-facing docs. ADRs and RFCs that document decision history retain their references intentionally.
+
+
+
+Auth subsystem reaches consumers. `runtime/subsystems/auth/`, the `auth-integrations` starter, and the `cdp subsystem install auth` + `auth-integrations` templates were all merged on `main` (PRs #289, #290, #292, #293, #294, #295) but the published artifact was still pinned at `0.6.4`. This release ships them.
+
+### Added
+
+- **`feat(auth)` #289** — provider-agnostic `AuthController` mounting `GET /auth/:provider/connect` and `GET /auth/:provider/callback`, plus the `IUserContext` / `IOAuthStateStore` / `IIntegrationGrantSink` ports and memory + drizzle state-store backends. `OAuth2RefreshStrategy` extracted as a template-method base class. See `runtime/subsystems/auth/`.
+- **`feat(examples)` #290** — `examples/auth-integrations/` starter: canonical `integration.yaml` entity + adapters that satisfy the three `AUTH_INTEGRATION_*` ports + `IntegrationsService` facade.
+- **`feat(cdp)` #293** — `cdp subsystem install auth` and `cdp subsystem install auth-integrations` templates. The auth template emits `auth_oauth_state` drizzle schema, appends `TOKEN_ENCRYPTION_KEY` + `AUTH_REDIRECT_URI_BASE` to `.env.config`, and drops a TODO into `app.module.ts`. `auth-integrations` vendors the starter under `apps/api/src/shared/integrations/`.
+
+## [0.6.4] — 2026-04-27
+
+Two consumer-DX fixes surfaced by a fresh `cdp project init` run.
+
+### Fixed
+
+- **`fix(init)` #277** — typed the empty `GENERATED_MODULES` barrel emitted by `cdp project init`. The scaffold previously emitted `export const GENERATED_MODULES: unknown[] = []`, which fails `tsc --noEmit` against the scaffolded `app.module.ts` (`...GENERATED_MODULES` spread doesn't satisfy NestJS's `imports:` type) on day one of any new consumer project. Now typed as `Array<Type | DynamicModule | Promise<DynamicModule> | ForwardReference>`. Entity-populated barrels remain unaffected — class refs already satisfy `Type`.
+
+### Changed
+
+- **`fix(bin)` #277** — added `codegen` as the primary bin name in `package.json`. The previous bin name `cdp` collides with an unrelated published npm package, so `bunx cdp ...` (without a local install) silently fetches and runs the wrong package. The CLI banner, README, and downstream docs all already refer to the binary as `codegen`. `cdp` is preserved as an alias for backwards compatibility.
+
 ## [0.6.3] — 2026-04-26
 
 ### Fixed

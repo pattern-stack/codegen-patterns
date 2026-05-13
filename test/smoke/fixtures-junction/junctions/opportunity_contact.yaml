@@ -1,0 +1,8 @@
+# Intra-domain junction fixture — smoke scenario A
+# Exercises: role enum, temporal + sourced defaults, composite PK
+pattern: Junction
+between: [opportunity, contact]
+fields:
+  role:
+    type: enum
+    choices: [champion, decision_maker, influencer]

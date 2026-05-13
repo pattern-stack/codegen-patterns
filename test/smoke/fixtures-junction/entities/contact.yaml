@@ -1,0 +1,30 @@
+# Minimal parent entity — contact (Synced pattern)
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  pattern: Synced
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    foreign_key: accounts.id
+  first_name:
+    type: string
+    required: true
+  last_name:
+    type: string
+    required: true
+  email:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id

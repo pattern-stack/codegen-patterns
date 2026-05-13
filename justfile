@@ -37,6 +37,28 @@ test-unit:
 test-smoke:
     bun test/smoke/run-smoke.ts
 
+# Junction smoke: intra-domain pairing (opportunity × contact), clean-lite-ps
+test-smoke-junction:
+    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps
+
+# Junction smoke: intra-domain pairing, clean (full Clean Architecture)
+test-smoke-junction-clean:
+    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean
+
+# Junction smoke: cross-domain pairing (opportunity × activity), clean-lite-ps
+test-smoke-junction-cross-domain:
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps
+
+# Junction smoke: cross-domain pairing, clean
+test-smoke-junction-cross-domain-clean:
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean
+
+# Run the relationship-scenario smoke (CGP-62): self-ref + cross-entity
+# belongs_to + has_many against the CRM fixture set. Verifies the
+# clean-lite-ps Drizzle relations() emission shape. ~60-120s.
+test-smoke-relationship:
+    bun test/smoke/run-smoke.ts --scenario relationship
+
 # Run baseline test (generate + compare to baseline)
 test-baseline:
     bun test/run-test.ts full
@@ -66,7 +88,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline test-smoke
+test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain
 
 # Post-publish smoke — npm pack + install into tmp project + run consumer
 # flows. Catches tarball-vs-checkout mismatches the in-source `test-smoke`

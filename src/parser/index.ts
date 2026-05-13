@@ -11,6 +11,7 @@ export {
 	resolveRelationshipReferences,
 	loadEntityFromYaml,
 	loadRelationshipFromYaml,
+	loadJunctionFromYaml,
 	type LoadEntitiesResult,
 	type LoadRelationshipsResult,
 } from './load-entities';

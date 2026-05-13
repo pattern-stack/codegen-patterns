@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen",
-  "version": "0.6.3",
+  "version": "0.6.8",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "license": "MIT",
   "type": "module",
@@ -33,12 +33,14 @@
     }
   },
   "bin": {
+    "codegen": "dist/src/cli/index.js",
     "cdp": "dist/src/cli/index.js"
   },
   "files": [
     "dist",
     "runtime",
     "templates",
+    "examples/auth-integrations/**",
     "src/config/*.mjs",
     "src/schema/naming-config.schema.mjs",
     "src/patterns/registry.ts",

@@ -14,10 +14,9 @@
  * a backend in Phase 1; consumers that need loopback suppression provide
  * their own (redis-hashed, memory TTL, etc.).
  *
- * `entityType` is `string` (not a union) — per dealbrain-v2's HS-9 findings
- * the CRM-specific narrowing `'opportunity' | 'account' | 'contact'` bled
- * into the port and had to be removed. Consumers narrow internally if they
- * want.
+ * `entityType` is `string` (not a union) — per HS-9 findings the
+ * CRM-specific narrowing `'opportunity' | 'account' | 'contact'` bled into
+ * the port and had to be removed. Consumers narrow internally if they want.
  */
 
 export interface ILoopbackFingerprintStore<T = unknown> {

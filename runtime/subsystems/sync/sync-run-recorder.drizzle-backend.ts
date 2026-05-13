@@ -1,7 +1,7 @@
 /**
  * DrizzleSyncRunRecorder — Drizzle-backed `ISyncRunRecorder` (SYNC-4).
  *
- * Generic write path only — extracted from dealbrain-v2's
+ * Generic write path only — extracted from the source app's
  * `SyncRunRecorderService`, minus CRM-specific convenience methods. Those
  * stay consumer-owned; the subsystem ships the substrate.
  *

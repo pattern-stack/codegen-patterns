@@ -1,0 +1,7 @@
+# Attempts to indirect this junction's role enum to another pairing's
+# definition. There is no syntax for cross-pairing enum reuse — the role
+# enum lives inside this file or not at all. `.strict()` rejects the
+# unknown `role_enum_ref` key.
+pattern: Junction
+between: [opportunity, contact]
+role_enum_ref: opportunity_account

@@ -88,14 +88,27 @@ function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: string }> {
 // ---------------------------------------------------------------------------
 
 describe('subsystem — descriptor', () => {
-	test('knows all subsystems (six + openapi-config + observability)', () => {
+	test('knows all subsystems (six + openapi-config + observability + auth + auth-integrations)', () => {
 		// OPENAPI-4: `openapi-config` is a config-only pseudo-subsystem.
 		// OBS-7: `observability` is a combiner pseudo-subsystem (ADR-025) —
 		// composes sibling read ports via @Optional() DI. Listed here so
 		// `codegen subsystem list` / `codegen subsystem` summary surface
 		// them alongside the real subsystems.
+		// #287: `auth` (runtime subsystem from PR #289) and `auth-integrations`
+		// (vendored starter from PR #290) are listed here too.
 		expect(SUBSYSTEMS.map((s) => s.name).sort()).toEqual(
-			['bridge', 'cache', 'events', 'jobs', 'observability', 'openapi-config', 'storage', 'sync'].sort()
+			[
+				'auth',
+				'auth-integrations',
+				'bridge',
+				'cache',
+				'events',
+				'jobs',
+				'observability',
+				'openapi-config',
+				'storage',
+				'sync',
+			].sort()
 		);
 	});
 });
@@ -120,7 +133,7 @@ describe('subsystem — summary + list', () => {
 		);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('subsystem list');
-		expect(parsed.subsystems).toHaveLength(8); // +openapi-config (OPENAPI-4), +observability (OBS-7)
+		expect(parsed.subsystems).toHaveLength(10); // +openapi-config (OPENAPI-4), +observability (OBS-7), +auth +auth-integrations (#287)
 		for (const row of parsed.subsystems) {
 			expect(row.status).toBe('available');
 		}
@@ -244,6 +257,231 @@ describe('subsystem — install (real)', () => {
 		expect(result).toBe(0);
 		const parsed = JSON.parse(out);
 		expect(parsed.status).toBe('already-installed');
+	});
+
+	// #294: mirror the events idempotency check for `auth` and
+	// `auth-integrations`. Confirms second-run no-op behaviour survives
+	// future template changes — no duplicate config blocks, no duplicate
+	// env vars, no duplicate app.module.ts imports.
+	test('second auth install is idempotent without --force', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'auth', '--force', '--cwd', root]),
+		);
+
+		const configPath = path.join(root, 'codegen.config.yaml');
+		const envConfigPath = path.join(root, '.env.config');
+		const appModulePath = path.join(root, 'src/app.module.ts');
+		const configBefore = fs.readFileSync(configPath, 'utf-8');
+		const envBefore = fs.readFileSync(envConfigPath, 'utf-8');
+		const appModuleBefore = fs.existsSync(appModulePath)
+			? fs.readFileSync(appModulePath, 'utf-8')
+			: '';
+
+		// Second run — no --force.
+		const { result, out } = await capture(() =>
+			cli.run(['subsystem', 'install', 'auth', '--json', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.status).toBe('already-installed');
+
+		// Files unchanged — no duplicate auth: block, INTEGRATION_TOKEN_ENCRYPTION_KEY
+		// not regenerated, no duplicate AuthModule TODO.
+		expect(fs.readFileSync(configPath, 'utf-8')).toBe(configBefore);
+		expect(fs.readFileSync(envConfigPath, 'utf-8')).toBe(envBefore);
+		const tokenLines = envBefore.match(/^INTEGRATION_TOKEN_ENCRYPTION_KEY=/gm) ?? [];
+		expect(tokenLines.length).toBe(1);
+		if (fs.existsSync(appModulePath)) {
+			expect(fs.readFileSync(appModulePath, 'utf-8')).toBe(appModuleBefore);
+		}
+	});
+
+	test('second auth-integrations install is idempotent without --force', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+
+		const appModulePath = path.join(root, 'src/app.module.ts');
+		const integrationYamlPath = path.join(
+			root,
+			'definitions/entities/integration.yaml',
+		);
+		const appModuleBefore = fs.existsSync(appModulePath)
+			? fs.readFileSync(appModulePath, 'utf-8')
+			: '';
+		const yamlBefore = fs.existsSync(integrationYamlPath)
+			? fs.readFileSync(integrationYamlPath, 'utf-8')
+			: '';
+
+		const { result, out } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.status).toBe('already-installed');
+
+		// Vendored YAML + app.module.ts unchanged on second run; no duplicate
+		// IntegrationsAuthModule TODO appended.
+		if (fs.existsSync(integrationYamlPath)) {
+			expect(fs.readFileSync(integrationYamlPath, 'utf-8')).toBe(yamlBefore);
+		}
+		if (fs.existsSync(appModulePath)) {
+			const after = fs.readFileSync(appModulePath, 'utf-8');
+			expect(after).toBe(appModuleBefore);
+			const matches = after.match(/IntegrationsAuthModule/g) ?? [];
+			// At most one occurrence (the TODO from first install).
+			expect(matches.length).toBeLessThanOrEqual(1);
+		}
+	});
+	// #303: vendored adapters must NOT keep bare-package imports — those
+	// fail to resolve through the package's `exports` map and would pin
+	// against the publisher's compiled token Symbols rather than the
+	// consumer's vendored auth subsystem (duplicate-DI hazard).
+	test('auth-integrations install rewrites bare auth imports to relative paths', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+
+		const integrationsDir = path.join(root, 'src/modules/integrations');
+		const files = fs
+			.readdirSync(integrationsDir, { withFileTypes: true, recursive: true })
+			.filter((d) => d.isFile() && d.name.endsWith('.ts'))
+			.map((d) =>
+				path.join(
+					(d as fs.Dirent & { parentPath?: string }).parentPath ??
+						integrationsDir,
+					d.name,
+				),
+			);
+		expect(files.length).toBeGreaterThan(0);
+		for (const file of files) {
+			const src = fs.readFileSync(file, 'utf-8');
+			expect(src).not.toContain('@pattern-stack/codegen/runtime/subsystems/auth');
+		}
+
+		// And at least one file should now import from a relative
+		// `…/subsystems/auth` path.
+		const moduleSrc = fs.readFileSync(
+			path.join(integrationsDir, 'integrations-auth.module.ts'),
+			'utf-8',
+		);
+		expect(moduleSrc).toMatch(/from\s+['"]\.\.[^'"]*subsystems\/auth['"]/);
+	});
+
+	// #303 fix #5: vendor target lives under <modules>/integrations/, with
+	// adapters/, facade/, and oauth/use-cases/ subfolders, alongside the
+	// codegen-emitted integration entity module.
+	test('auth-integrations install vendors under <modules>/integrations with subfolder layout', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+
+		const base = path.join(root, 'src/modules/integrations');
+		expect(
+			fs.existsSync(
+				path.join(base, 'adapters/integration-reader.adapter.ts'),
+			),
+		).toBe(true);
+		expect(
+			fs.existsSync(
+				path.join(base, 'adapters/integration-token-writer.adapter.ts'),
+			),
+		).toBe(true);
+		expect(
+			fs.existsSync(
+				path.join(base, 'adapters/integration-grant-sink.adapter.ts'),
+			),
+		).toBe(true);
+		expect(fs.existsSync(path.join(base, 'facade/integrations.service.ts'))).toBe(
+			true,
+		);
+		expect(
+			fs.existsSync(
+				path.join(
+					base,
+					'oauth/use-cases/create-or-update-from-oauth-grant.use-case.ts',
+				),
+			),
+		).toBe(true);
+		expect(fs.existsSync(path.join(base, 'integrations-auth.module.ts'))).toBe(
+			true,
+		);
+
+		// The legacy <shared>/integrations/ vendor target must be empty —
+		// the new layout replaces it.
+		expect(
+			fs.existsSync(path.join(root, 'src/shared/integrations')),
+		).toBe(false);
+	});
+
+	test('auth-integrations install honors paths.modules_dir override', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		// Override modules_dir.
+		const configPath = path.join(root, 'codegen.config.yaml');
+		fs.writeFileSync(
+			configPath,
+			'paths:\n  subsystems: src/shared/subsystems\n  modules_dir: src/features\n',
+		);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'auth-integrations',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(
+			fs.existsSync(
+				path.join(
+					root,
+					'src/features/integrations/integrations-auth.module.ts',
+				),
+			),
+		).toBe(true);
 	});
 });
 

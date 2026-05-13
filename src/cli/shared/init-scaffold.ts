@@ -383,7 +383,10 @@ function emptyModulesBarrel(): string {
 	return `// AUTO-GENERATED — DO NOT EDIT.
 // Regenerated on every \`codegen entity new\` / \`codegen entity new --all\`.
 // See ADR-017.
-export const GENERATED_MODULES: unknown[] = [];
+import type { DynamicModule, ForwardReference, Type } from '@nestjs/common';
+export const GENERATED_MODULES: Array<
+	Type | DynamicModule | Promise<DynamicModule> | ForwardReference
+> = [];
 `;
 }
 

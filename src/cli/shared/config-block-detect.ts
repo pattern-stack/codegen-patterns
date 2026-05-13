@@ -24,7 +24,8 @@ export type SubsystemName =
 	| 'sync'
 	| 'bridge'
 	| 'openapi'
-	| 'observability';
+	| 'observability'
+	| 'auth';
 
 /**
  * Detect whether a subsystem's top-level config block is present in a

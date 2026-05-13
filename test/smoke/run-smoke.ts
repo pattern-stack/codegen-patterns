@@ -27,7 +27,31 @@ import path from 'node:path';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
-const FIXTURES_DIR = path.join(REPO_ROOT, 'test', 'smoke', 'fixtures');
+
+// CGP-62: `--scenario` selects which fixture set the smoke generates against.
+// `default` (no flag) preserves the historical behavior. `relationship`
+// swaps in `test/smoke/fixtures/crm/` (account self-ref + cross-entity
+// belongs_to + has_many) and runs `assertRelationshipEmission()` after
+// entity generation to verify the clean-lite-ps `relations()` emission.
+type Scenario = 'default' | 'relationship';
+
+const SCENARIO: Scenario = ((): Scenario => {
+	const idx = process.argv.indexOf('--scenario');
+	if (idx === -1) return 'default';
+	const value = process.argv[idx + 1];
+	if (value !== 'default' && value !== 'relationship') {
+		console.error(
+			`Unknown --scenario: ${value}. Expected 'default' or 'relationship'.`,
+		);
+		process.exit(2);
+	}
+	return value;
+})();
+
+const FIXTURES_DIR =
+	SCENARIO === 'relationship'
+		? path.join(REPO_ROOT, 'test', 'smoke', 'fixtures', 'crm')
+		: path.join(REPO_ROOT, 'test', 'smoke', 'fixtures');
 
 const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 
@@ -155,6 +179,29 @@ function filterConsumerErrors(output: string, tmpDir: string): string[] {
 			continue;
 		}
 
+		// #287 / #303 fix #5: the vendored `auth-integrations` starter
+		// (under `<modules>/integrations/{adapters,facade,oauth,
+		// integrations-auth.module.ts}`) imports from the codegen-emitted
+		// integration entity module — `<modules>/integrations/integration.service`,
+		// `<modules>/integrations/integration.entity`, `<modules>/integrations/integrations.module`.
+		// We don't run `cdp entity new integration` in this smoke (it
+		// would require also scaffolding a Drizzle schema for `integrations`
+		// and bundling a fixture, AND it surfaces a separate codegen enum
+		// literal-type bug — filed as follow-up). Filter errors emitted
+		// from inside the vendored subfolders only — narrow filter so a
+		// real codegen bug in `<modules>/integrations/integration.{entity,
+		// service,...}.ts` would still surface.
+		const vendoredIntegrationsPattern =
+			/modules[/\\]integrations[/\\](?:adapters|facade|oauth|integrations-auth\.module\.ts)/;
+		if (vendoredIntegrationsPattern.test(line)) {
+			continue;
+		}
+		// Also tolerate the `@pattern-stack/codegen/runtime/subsystems/auth`
+		// barrel import — the smoke project doesn't `bun add` the package.
+		if (line.includes("'@pattern-stack/codegen/")) {
+			continue;
+		}
+
 		errors.push(line);
 	}
 	return errors;
@@ -171,6 +218,90 @@ function cleanup(dir: string): void {
 	} catch (err: unknown) {
 		logError(`cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Relationship-scenario assertions (CGP-62)
+// ---------------------------------------------------------------------------
+
+function assertContains(haystack: string, needle: RegExp, source: string): void {
+	if (!needle.test(haystack)) {
+		throw new Error(
+			`Smoke assertion failed (${source}): expected to match ${needle} in generated output.`,
+		);
+	}
+}
+
+function assertNotContains(haystack: string, needle: RegExp, source: string): void {
+	if (needle.test(haystack)) {
+		throw new Error(
+			`Smoke assertion failed (${source}): did not expect ${needle} — see cgp-62 empirical-state + codegen-patterns#358.`,
+		);
+	}
+}
+
+/**
+ * Verify the clean-lite-ps Drizzle `relations()` emission for the CRM
+ * fixture set. Asserts the *extension path table-metadata that today's
+ * templates actually ship* — the `belongs_to` side of `relations()`.
+ *
+ * Layout: `clean-lite-ps/prompt-extension.js:822-829` emits each entity at
+ * `${srcRoot}/modules/${plural}/${name}.entity.ts`. The smoke project's
+ * `srcRoot` is `<tmpDir>/src` (per `codegen project init --yes`).
+ *
+ * Coverage:
+ *   - Self-ref `belongs_to`        (regression of `269ab3f`)
+ *   - Cross-entity `belongs_to`    (account FK on contact + opportunity)
+ *   - `relations()` const presence (emission gate `hasRelationsBlock`)
+ *   - **Negative `many(` assertion** — clean-lite-ps's entity template
+ *     iterates `belongs_to` only; `has_many` declarations are silently
+ *     dropped. The negative assertion names this gap in the test surface
+ *     itself. Flip to positive once codegen-patterns#358 lands.
+ */
+function assertRelationshipEmission(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const accountSchema = reads('modules/accounts/account.entity.ts');
+	assertContains(
+		accountSchema,
+		/parentAccount:\s*one\(accounts,/,
+		'accounts.entity.ts self-ref belongs_to',
+	);
+	assertContains(
+		accountSchema,
+		/export const accountsRelations\s*=\s*relations\(accounts/,
+		'accounts.entity.ts relations() const',
+	);
+	assertNotContains(
+		accountSchema,
+		/\bmany\(/,
+		'accounts.entity.ts has_many gap (clean-lite-ps drops has_many)',
+	);
+
+	const contactSchema = reads('modules/contacts/contact.entity.ts');
+	assertContains(
+		contactSchema,
+		/account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[contacts\.accountId\]/,
+		'contacts.entity.ts belongs_to account',
+	);
+	assertContains(
+		contactSchema,
+		/export const contactsRelations\s*=\s*relations\(contacts/,
+		'contacts.entity.ts relations() const',
+	);
+
+	const opportunitySchema = reads('modules/opportunities/opportunity.entity.ts');
+	assertContains(
+		opportunitySchema,
+		/account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[opportunities\.accountId\]/,
+		'opportunities.entity.ts belongs_to account',
+	);
+	assertContains(
+		opportunitySchema,
+		/export const opportunitiesRelations\s*=\s*relations\(opportunities/,
+		'opportunities.entity.ts relations() const',
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +347,16 @@ async function main(): Promise<number> {
 		// 5. Run `codegen entity new --all`.
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
 
+		// 5.1. CGP-62 — under the `relationship` scenario, assert the
+		// clean-lite-ps Drizzle `relations()` emission shape on the CRM
+		// fixtures. Runs before subsystem installs so a failure shortcuts
+		// the slower steps; the install steps don't rewrite entity files.
+		if (SCENARIO === 'relationship') {
+			log('asserting clean-lite-ps relations() emission for CRM fixtures');
+			assertRelationshipEmission(tmpDir);
+			log('relationship emission OK');
+		}
+
 		// 5.5. Install the observability subsystem (combiner — ADR-025).
 		// No backend flag, no schema; copies runtime/subsystems/observability via
 		// copyRuntime, injects `observability:` into codegen.config.yaml, and
@@ -237,10 +378,117 @@ async function main(): Promise<number> {
 		}
 
 		const appModulePath = path.join(tmpDir, 'src/app.module.ts');
-		const appModule = fs.readFileSync(appModulePath, 'utf8');
+		let appModule = fs.readFileSync(appModulePath, 'utf8');
 		if (!appModule.includes('ObservabilityModule.forRoot')) {
 			throw new Error(
 				'ObservabilityModule TODO hint missing from app.module.ts after install',
+			);
+		}
+
+		// 5.6. #287 — install the auth subsystem. Drops:
+		//   - runtime/subsystems/auth/ via copyRuntime (protocols, ports,
+		//     backends except schema, controller, runtime helpers, module);
+		//   - auth-oauth-state.schema.ts via Hygen (sole emitter);
+		//   - `auth:` block into codegen.config.yaml;
+		//   - AuthModule.forRoot TODO into app.module.ts;
+		//   - INTEGRATION_TOKEN_ENCRYPTION_KEY + AUTH_REDIRECT_URI_BASE into .env.config.
+		run(`bun ${CLI_PATH} subsystem install auth`, tmpDir);
+
+		const configYamlAfterAuth = fs.readFileSync(configYamlPath, 'utf8');
+		if (!configYamlAfterAuth.includes('auth:')) {
+			throw new Error('auth: block missing from codegen.config.yaml after install');
+		}
+		appModule = fs.readFileSync(appModulePath, 'utf8');
+		if (!appModule.includes('AuthModule')) {
+			throw new Error('AuthModule TODO hint missing from app.module.ts after auth install');
+		}
+		const envConfigPath = path.join(tmpDir, '.env.config');
+		if (!fs.existsSync(envConfigPath)) {
+			throw new Error('.env.config not created by auth install');
+		}
+		const envConfig = fs.readFileSync(envConfigPath, 'utf8');
+		if (!envConfig.includes('INTEGRATION_TOKEN_ENCRYPTION_KEY=')) {
+			throw new Error('INTEGRATION_TOKEN_ENCRYPTION_KEY missing from .env.config after auth install');
+		}
+
+		// 5.7. #287 / #303 fix #5 — install the auth-integrations starter. Vendors:
+		//   - examples/auth-integrations/runtime/integrations/** →
+		//       <vendorRoot>/integrations/** (full-file copies, not via Hygen).
+		//       `vendorRoot` defaults to `<paths.backend_src>/modules` per fix #5;
+		//       starter sits next to the codegen-emitted integration entity module.
+		//   - examples/auth-integrations/definitions/entities/integration.yaml →
+		//       <paths.entities>/integration.yaml (defaults to definitions/entities/);
+		//   - IntegrationsAuthModule TODO into app.module.ts.
+		run(`bun ${CLI_PATH} subsystem install auth-integrations`, tmpDir);
+
+		// #303 fix #5: vendor target is `<modules>/integrations/` with
+		// subfolders (`adapters/`, `facade/`, `oauth/use-cases/`). Assert
+		// one file from every layer plus the root module so the smoke
+		// catches any future regression in the install template's layout.
+		const integrationsRoot = path.join(tmpDir, 'src/modules/integrations');
+		const expectedVendoredFiles = [
+			'integrations-auth.module.ts',
+			'adapters/integration-reader.adapter.ts',
+			'adapters/integration-token-writer.adapter.ts',
+			'adapters/integration-grant-sink.adapter.ts',
+			'facade/integrations.service.ts',
+			'oauth/use-cases/create-or-update-from-oauth-grant.use-case.ts',
+			'oauth/use-cases/disconnect-integration.use-case.ts',
+			'oauth/use-cases/list-user-integrations.use-case.ts',
+			'oauth/use-cases/mark-integration-requires-reauth.use-case.ts',
+		];
+		for (const rel of expectedVendoredFiles) {
+			const abs = path.join(integrationsRoot, rel);
+			if (!fs.existsSync(abs)) {
+				throw new Error(
+					`expected vendored file missing after auth-integrations install: ${rel}`,
+				);
+			}
+		}
+
+		// #303 fix #3: vendored adapters must NOT carry the bare-package
+		// `@pattern-stack/codegen/runtime/subsystems/auth` import — those
+		// fail to resolve through the package's `exports` map AND would
+		// pin against publisher-side token Symbols (duplicate-DI hazard).
+		// The install rewrites them to relative paths into the consumer's
+		// vendored auth subsystem at copy time.
+		for (const rel of expectedVendoredFiles) {
+			const abs = path.join(integrationsRoot, rel);
+			const src = fs.readFileSync(abs, 'utf-8');
+			if (src.includes('@pattern-stack/codegen/runtime/subsystems/auth')) {
+				throw new Error(
+					`vendored ${rel} still imports from '@pattern-stack/codegen/runtime/subsystems/auth' — install-time rewriter regression (#303 fix #3)`,
+				);
+			}
+		}
+
+		// #303 fix #5: the legacy `<shared>/integrations/` vendor target
+		// must be empty — the new layout fully replaces it.
+		const legacySharedIntegrations = path.join(
+			tmpDir,
+			'src/shared/integrations',
+		);
+		if (fs.existsSync(legacySharedIntegrations)) {
+			throw new Error(
+				`legacy vendor target ${legacySharedIntegrations} should not exist after auth-integrations install (#303 fix #5)`,
+			);
+		}
+		// Honor the entities_dir set by `project init` (defaults to
+		// `entities/`). Fix #2 reads `paths.entities` → `paths.entities_dir`,
+		// matching `Context.entitiesDir`.
+		const integrationYamlPath = path.join(
+			tmpDir,
+			'entities/integration.yaml',
+		);
+		if (!fs.existsSync(integrationYamlPath)) {
+			throw new Error(
+				'integration.yaml not vendored by auth-integrations install',
+			);
+		}
+		appModule = fs.readFileSync(appModulePath, 'utf8');
+		if (!appModule.includes('IntegrationsAuthModule')) {
+			throw new Error(
+				'IntegrationsAuthModule TODO hint missing from app.module.ts after auth-integrations install',
 			);
 		}
 

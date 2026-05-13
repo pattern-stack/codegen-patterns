@@ -537,3 +537,4 @@ export function resolveRelationshipReferences(
 
 export { loadEntityFromYaml } from '../utils/yaml-loader';
 export { loadRelationshipFromYaml } from '../utils/yaml-loader';
+export { loadJunctionFromYaml } from '../utils/yaml-loader';

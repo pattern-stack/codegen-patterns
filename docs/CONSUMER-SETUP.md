@@ -909,7 +909,7 @@ Drizzle backends.
 
 ### Migration from a bespoke sync pipeline
 
-Consumers already running custom sync code (e.g. dealbrain-v2's CRM sync):
+Consumers already running custom sync code (e.g. the upstream consumer's CRM sync):
 see [docs/guides/sync-migration.md](guides/sync-migration.md) for the
 step-by-step path.
 
@@ -944,11 +944,11 @@ export class AppModule {}
 
 `AuthModule` is `global: true`. It provides `ENCRYPTION_KEY` and
 `OAUTH_STATE_STORE` tokens. Defaults: `EnvEncryptionKey` (reads
-`TOKEN_ENCRYPTION_KEY` from env) and `InMemoryOAuthStateStore`.
+`INTEGRATION_TOKEN_ENCRYPTION_KEY` from env) and `InMemoryOAuthStateStore`.
 
 ### Env vars
 
-- `TOKEN_ENCRYPTION_KEY` — 32-byte base64 string. Required when
+- `INTEGRATION_TOKEN_ENCRYPTION_KEY` — 32-byte base64 string. Required when
   `encryptionKey: 'env'`. Generate with `openssl rand -base64 32`.
 
 ### Environment setup

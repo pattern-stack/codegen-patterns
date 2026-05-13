@@ -153,7 +153,15 @@ export function validateEntities(entitiesDir: string): {
 export * from './analyzer/types';
 
 // Re-export parser utilities
-export { loadEntities, loadRelationships, loadEntityFromYaml, loadRelationshipFromYaml } from './parser';
+export { loadEntities, loadRelationships, loadEntityFromYaml, loadRelationshipFromYaml, loadJunctionFromYaml } from './parser';
+
+// Re-export junction definition schema surface
+export {
+	JunctionDefinitionSchema,
+	validateJunctionDefinition,
+	safeValidateJunctionDefinition,
+	type JunctionDefinition,
+} from './schema/junction-definition.schema';
 
 // Re-export analyzer utilities
 export {

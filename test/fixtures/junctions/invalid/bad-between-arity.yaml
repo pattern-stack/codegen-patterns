@@ -1,0 +1,8 @@
+# `between` MUST be exactly two endpoints — this fixture has three.
+pattern: Junction
+between: [opportunity, contact, activity]
+
+fields:
+  role:
+    type: enum
+    values: [a, b]

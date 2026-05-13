@@ -119,3 +119,20 @@ export function invokeRelationshipNew(absoluteYamlPath: string, cwd?: string): H
 		cwd,
 	});
 }
+
+/**
+ * Convenience wrapper for generating one junction from a YAML path.
+ *
+ * The `--bun` flag in invokeHygen is preserved — junction's prompt.js
+ * imports TypeScript source (e.g. patterns/library/index.ts) via
+ * `.js`-pointing-at-`.ts` imports under NodeNext module resolution.
+ * Bun's ESM resolver handles that mapping; Node's does not.
+ */
+export function invokeJunctionNew(absoluteYamlPath: string, cwd?: string): HygenResult {
+	return invokeHygen({
+		generator: 'junction',
+		action: 'new',
+		args: ['--yaml', absoluteYamlPath],
+		cwd,
+	});
+}

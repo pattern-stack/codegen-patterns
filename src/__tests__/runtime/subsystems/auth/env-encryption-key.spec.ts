@@ -7,7 +7,7 @@ import { EnvEncryptionKey } from '../../../../../runtime/subsystems/auth/backend
 
 function fixtureEnv(): NodeJS.ProcessEnv {
   return {
-    TOKEN_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
+    INTEGRATION_TOKEN_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
   };
 }
 
@@ -15,7 +15,7 @@ describe('EnvEncryptionKey', () => {
   describe('construction', () => {
     it('throws when the env var is missing', () => {
       expect(() => new EnvEncryptionKey({ env: {} })).toThrow(
-        /TOKEN_ENCRYPTION_KEY is not set/,
+        /INTEGRATION_TOKEN_ENCRYPTION_KEY is not set/,
       );
     });
 
@@ -23,7 +23,7 @@ describe('EnvEncryptionKey', () => {
       expect(
         () =>
           new EnvEncryptionKey({
-            env: { TOKEN_ENCRYPTION_KEY: Buffer.from('too short').toString('base64') },
+            env: { INTEGRATION_TOKEN_ENCRYPTION_KEY: Buffer.from('too short').toString('base64') },
           }),
       ).toThrow(/must decode to 32 bytes/);
     });
