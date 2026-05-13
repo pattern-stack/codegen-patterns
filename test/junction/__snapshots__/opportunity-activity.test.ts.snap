@@ -1,0 +1,285 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits opportunity_activity.entity.ts 1`] = `
+"import {
+  boolean,
+  numeric,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { relations, type InferSelectModel } from 'drizzle-orm';
+import { opportunities } from '../opportunities/opportunity.entity';
+import { activities } from '../activities/activity.entity';
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+// ============================================================================
+// Table
+// ============================================================================
+
+export const opportunityActivities = pgTable(
+  'opportunity_activities',
+  {
+    // FK columns — composite primary key (no surrogate id: Q4 resolution)
+    opportunityId: uuid('opportunity_id').notNull().references(() => opportunities.id, { onDelete: 'restrict' }),
+    activityId: uuid('activity_id').notNull().references(() => activities.id, { onDelete: 'restrict' }),
+
+    // BaseJunctionFields — is_primary is always emitted
+    isPrimary: boolean('is_primary').notNull().default(false),
+
+    // Temporal window (temporal: true, default)
+    startedAt: timestamp('started_at'),
+    endedAt: timestamp('ended_at'),
+
+    // Provenance (sourced: true, default)
+    sourcedFrom: text('sourced_from'),
+    confidence: numeric('confidence', { precision: 5, scale: 4 }),
+    matchedAt: timestamp('matched_at'),
+
+    // Timestamps
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
+    primaryKey({ columns: [table.opportunityId, table.activityId] }),
+  ],
+);
+
+export type OpportunityActivity = InferSelectModel<typeof opportunityActivities>;
+export type OpportunityActivityInsert = typeof opportunityActivities.$inferInsert;
+
+// ============================================================================
+// Relations — extension-path metadata for db.query.X.findMany({ with: ... })
+// Generated code does NOT consume these; they exist for hand-written admin
+// queries and for #60's fan-out methods once they land.
+// ============================================================================
+
+export const opportunityActivitiesRelations = relations(opportunityActivities, ({ one }) => ({
+  opportunity: one(opportunities, {
+    fields: [opportunityActivities.opportunityId],
+    references: [opportunities.id],
+  }),
+  activity: one(activities, {
+    fields: [opportunityActivities.activityId],
+    references: [activities.id],
+  }),
+}));
+"
+`;
+
+exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits opportunity_activity.repository.ts 1`] = `
+"import { Injectable, Inject } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { DRIZZLE } from '@shared/constants/tokens';
+import type { DrizzleClient } from '@shared/types/drizzle';
+import { BaseRepository } from '@shared/base-classes/base-repository';
+import { opportunityActivities, type OpportunityActivity } from './opportunity_activity.entity';
+
+@Injectable()
+export class OpportunityActivityRepository extends BaseRepository<OpportunityActivity> {
+  readonly table = opportunityActivities;
+
+  // Junctions track temporal validity via started_at / ended_at, NOT via
+  // deleted_at. is_primary flips replace soft-delete semantics (Q5 resolution).
+  protected override readonly behaviors = {
+    timestamps: true,
+    softDelete: false,
+    userTracking: false,
+  };
+
+  constructor(@Inject(DRIZZLE) db: DrizzleClient) {
+    super(db);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Pairing-aware finders — hardcoded in v1 (Q2 resolution: no declarative
+  // queries block on junctions; every junction needs exactly these two methods).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Fetch all junction rows where opportunity_id matches.
+   *
+   * Pagination shape: { cursor?, limit? } — canonical per cgp-62 r4.
+   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
+   */
+  async findByOpportunityId(
+    opportunityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityActivity[]> {
+    const rows = await this.baseQuery()
+      .where(eq(this.table.opportunityId, opportunityId))
+      .limit(opts?.limit ?? 100);
+    return rows as OpportunityActivity[];
+  }
+
+  /**
+   * Fetch all junction rows where activity_id matches.
+   *
+   * Pagination shape: { cursor?, limit? } — canonical per cgp-62 r4.
+   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
+   */
+  async findByActivityId(
+    activityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityActivity[]> {
+    const rows = await this.baseQuery()
+      .where(eq(this.table.activityId, activityId))
+      .limit(opts?.limit ?? 100);
+    return rows as OpportunityActivity[];
+  }
+
+  // Inherited from BaseRepository:
+  //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
+}
+"
+`;
+
+exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits opportunity_activity.service.ts 1`] = `
+"import { Injectable, Inject, Optional } from '@nestjs/common';
+import { WithAnalytics } from '@shared/base-classes/with-analytics';
+import { EVENT_BUS } from '@shared/constants/tokens';
+import { BaseService } from '@shared/base-classes/base-service';
+import { OpportunityActivityRepository } from './opportunity_activity.repository';
+import type { OpportunityActivity } from './opportunity_activity.entity';
+
+@Injectable()
+export class OpportunityActivityService extends WithAnalytics(
+  BaseService<OpportunityActivityRepository, OpportunityActivity>,
+) {
+  protected override readonly entityName = 'opportunity_activity';
+
+  /** Injected by NestJS when EventsModule is registered. */
+  @Optional() @Inject(EVENT_BUS)
+  protected override eventBus: any = undefined;
+
+  constructor(protected override readonly repository: OpportunityActivityRepository) {
+    super(repository);
+  }
+
+  // Pairing-aware pass-throughs — mirror the repo's two finders so use-cases
+  // and #60's fan-out methods both delegate through the service layer, keeping
+  // analytics/events instrumentation uniform (per relationship's service.ejs.t).
+
+  /**
+   * Fetch all junction rows for a given opportunity_id.
+   *
+   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
+   */
+  async findByOpportunityId(
+    opportunityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityActivity[]> {
+    return this.repository.findByOpportunityId(opportunityId, opts);
+  }
+
+  /**
+   * Fetch all junction rows for a given activity_id.
+   *
+   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
+   */
+  async findByActivityId(
+    activityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<OpportunityActivity[]> {
+    return this.repository.findByActivityId(activityId, opts);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Fan-out association methods (attach/detach/list/setPrimary) are NOT
+  // emitted here. They land via junction-association-codegen
+  // (pattern-stack/dealbrain-integrations#60) once
+  // pattern-stack/codegen-patterns#358 establishes the service-method
+  // emission machinery.
+  //
+  // Until #60 lands, consumers hand-write fan-out methods in their own
+  // service files against the canonical shape documented in
+  // .ai-docs/stacks/codegen-app-patterns/specs/cgp-62.md (see
+  // architectural_notes.cross_entity_access.canonical_shape in the stack
+  // plan). The hand-written methods are the executable spec for #60.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Inherited from BaseService:
+  //   findById, findByIds, list, count, exists, create, update, delete
+}
+"
+`;
+
+exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits opportunity.service.ts (left parent — junction accessor) 1`] = `
+"import { Injectable, Inject, Optional } from '@nestjs/common';
+import { WithAnalytics } from '@shared/base-classes/with-analytics';
+import { EVENT_BUS } from '@shared/constants/tokens';
+import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
+import { OpportunityRepository } from './opportunity.repository';
+import type { Opportunity } from './opportunity.entity';
+
+@Injectable()
+export class OpportunityService extends WithAnalytics(
+  SyncedEntityService<OpportunityRepository, Opportunity>,
+) {
+  protected override readonly entityName = 'opportunity';
+
+  /** Injected by NestJS when EventsModule is registered. */
+  @Optional() @Inject(EVENT_BUS)
+  protected override eventBus: any = undefined;
+
+  constructor(
+    protected override readonly repository: OpportunityRepository,
+  ) {
+    super(repository);
+  }
+
+  // Lifecycle events (created/updated/deleted + per-field changes) are emitted
+  // automatically by BaseService when the events subsystem is installed.
+  //
+  // Inherited from SyncedEntityService:
+  //   findById, findByIds, list, count, exists, create, update, delete
+  //   findByExternalId, findAllByUserId, findVisibleByUserId
+
+
+
+}
+"
+`;
+
+exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits activity.service.ts (right parent — junction accessor) 1`] = `
+"import { Injectable, Inject, Optional } from '@nestjs/common';
+import { WithAnalytics } from '@shared/base-classes/with-analytics';
+import { EVENT_BUS } from '@shared/constants/tokens';
+import { ActivityEntityService } from '@shared/base-classes/activity-entity-service';
+import { ActivityRepository } from './activity.repository';
+import type { Activity } from './activity.entity';
+
+@Injectable()
+export class ActivityService extends WithAnalytics(
+  ActivityEntityService<ActivityRepository, Activity>,
+) {
+  protected override readonly entityName = 'activity';
+
+  /** Injected by NestJS when EventsModule is registered. */
+  @Optional() @Inject(EVENT_BUS)
+  protected override eventBus: any = undefined;
+
+  constructor(
+    protected override readonly repository: ActivityRepository,
+  ) {
+    super(repository);
+  }
+
+  // Lifecycle events (created/updated/deleted + per-field changes) are emitted
+  // automatically by BaseService when the events subsystem is installed.
+  //
+  // Inherited from ActivityEntityService:
+  //   findById, findByIds, list, count, exists, create, update, delete
+  //   findByDateRange, findByUserId, findByOpportunityId, findRecentByOpportunityId
+
+
+
+}
+"
+`;
