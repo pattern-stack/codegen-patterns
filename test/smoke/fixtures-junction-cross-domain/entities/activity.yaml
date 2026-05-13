@@ -1,0 +1,18 @@
+# Minimal parent entity — activity (Activity pattern)
+# Exercises cross-pattern pairing in smoke scenario B
+entity:
+  name: activity
+  plural: activities
+  table: activities
+  pattern: Activity
+
+fields:
+  type:
+    type: string
+    required: true
+  subject:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps

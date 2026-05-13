@@ -1,0 +1,5 @@
+# Cross-domain junction fixture — smoke scenario B
+# Exercises: cross-pattern pairing (Synced × Activity), no role enum,
+# temporal and sourced defaults
+pattern: Junction
+between: [opportunity, activity]

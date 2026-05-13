@@ -22,6 +22,7 @@ import subsystemNoun from './commands/subsystem.js';
 import projectNoun from './commands/project.js';
 import devNoun from './commands/dev.js';
 import relationshipNoun from './commands/relationship.js';
+import junctionNoun from './commands/junction.js';
 import eventsNoun from './commands/events.js';
 import orchestrationNoun from './commands/orchestration.js';
 import initShortcut from './shortcuts/init.js';
@@ -101,6 +102,7 @@ const nouns: NounModule[] = [
 	projectNoun,
 	devNoun,
 	relationshipNoun,
+	junctionNoun,
 	eventsNoun,
 	orchestrationNoun,
 ];

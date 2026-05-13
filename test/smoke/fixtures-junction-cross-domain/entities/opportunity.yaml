@@ -1,0 +1,14 @@
+# Minimal parent entity — opportunity (Synced pattern)
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+  pattern: Synced
+
+fields:
+  name:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps

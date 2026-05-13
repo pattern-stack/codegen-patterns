@@ -1,0 +1,15 @@
+# Minimal parent entity — account
+# Required because contact.yaml has belongs_to: account.
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  pattern: Synced
+
+fields:
+  name:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps

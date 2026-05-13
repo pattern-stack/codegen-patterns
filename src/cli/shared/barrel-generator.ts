@@ -32,6 +32,7 @@ import type { Context } from './context.js';
 import {
 	loadEntityFromYaml,
 	loadRelationshipFromYaml,
+	loadJunctionFromYaml,
 	detectYamlType,
 } from '../../utils/yaml-loader.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
@@ -48,10 +49,16 @@ export interface BarrelGeneratorOptions {
 	entitiesDir: string;
 	/**
 	 * Absolute path to the relationships directory. Optional — when present
-	 * junction modules are included in the generated barrels alongside entity
+	 * relationship modules are included in the generated barrels alongside entity
 	 * modules. Falls back to <cwd>/relationships when omitted.
 	 */
 	relationshipsDir?: string;
+	/**
+	 * Absolute path to the junctions directory. Optional — when present
+	 * junction modules are included in the generated barrels alongside entity
+	 * and relationship modules. Falls back to <cwd>/junctions when omitted.
+	 */
+	junctionsDir?: string;
 	/** Absolute path to the directory the barrels should be written into. */
 	generatedDir: string;
 	/** Architecture flavor — drives where entity modules live on disk. */
@@ -162,6 +169,46 @@ function collectRelationships(relationshipsDir: string): EntityInfo[] {
 		const rel = result.definition.relationship;
 		const name = rel.name;
 		const plural = rel.table ?? pluralize(name);
+		junctions.push({ name, plural });
+	}
+	junctions.sort((a, b) => a.name.localeCompare(b.name));
+	return junctions;
+}
+
+/**
+ * Discover junction YAML files and return them in the same shape as entities.
+ * Junction modules are peer modules to entity and relationship modules in the
+ * barrel — the import-depth fix from commit 01bb917 covers them automatically
+ * because all three feed through the same entityFilePaths() codepath.
+ */
+export function listJunctionYamls(junctionsDir: string): string[] {
+	if (!fs.existsSync(junctionsDir)) return [];
+	return fs
+		.readdirSync(junctionsDir)
+		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+		.map((f) => path.join(junctionsDir, f))
+		.filter((full) => detectYamlType(full) === 'junction')
+		.sort();
+}
+
+/**
+ * Derive the junction name from a JunctionDefinition.
+ * Q8 resolution: insertion order — between: [opportunity, contact] → 'opportunity_contact'.
+ * Explicit `name:` on the YAML overrides the derivation.
+ */
+function deriveJunctionName(def: { name?: string; between: [string, string] }): string {
+	return def.name ?? `${def.between[0]}_${def.between[1]}`;
+}
+
+function collectJunctions(junctionsDir: string): EntityInfo[] {
+	const files = listJunctionYamls(junctionsDir);
+	const junctions: EntityInfo[] = [];
+	for (const file of files) {
+		const result = loadJunctionFromYaml(file);
+		if (!result.success) continue;
+		const def = result.definition;
+		const name = deriveJunctionName(def);
+		const plural = def.table ?? pluralize(name);
 		junctions.push({ name, plural });
 	}
 	junctions.sort((a, b) => a.name.localeCompare(b.name));
@@ -298,6 +345,7 @@ export async function regenerateBarrels(
 		ctx,
 		entitiesDir,
 		relationshipsDir = path.resolve(ctx.cwd, 'relationships'),
+		junctionsDir = path.resolve(ctx.cwd, 'junctions'),
 		generatedDir,
 		architecture,
 		backendSrc = resolveBackendSrc(ctx),
@@ -305,13 +353,18 @@ export async function regenerateBarrels(
 	} = opts;
 	const cwd = ctx.cwd;
 
-	// Entities and relationship junctions produce peer modules on disk — merge
-	// both into the same deterministic list so the generated barrel reflects
-	// the full module graph. Relationships are silently skipped if the dir
-	// doesn't exist (the common case for projects with no junctions yet).
+	// Entities, relationship modules, and junction modules all produce peer
+	// modules on disk — merge all three into the same deterministic list so the
+	// generated barrel reflects the full module graph. Relationships and junctions
+	// are silently skipped if their dirs don't exist (the common case for projects
+	// that haven't generated any yet).
+	//
+	// All three feed through entityFilePaths() so the import-depth fix from
+	// commit 01bb917 covers junctions automatically.
 	const entities = [
 		...collectEntities(entitiesDir),
 		...collectRelationships(relationshipsDir),
+		...collectJunctions(junctionsDir),
 	].sort((a, b) => a.name.localeCompare(b.name));
 
 	// Compute barrel paths relative to project root so imports line up.
