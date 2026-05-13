@@ -50,6 +50,8 @@ const OUTPUT_PATHS = [
   'packages/api/src/infrastructure/persistence',
   'packages/api/src/modules',
   'packages/api/src/presentation',
+  // Generated injection tokens (accumulated across entities by the inject template)
+  'packages/api/src/constants',
   // Shared packages
   'packages/db/src/entities',
   // JOB-7: generated scope-entity-type union (post-Hygen step)
@@ -139,6 +141,19 @@ function runCodegen() {
       rmSync(abs, { recursive: true });
     }
   }
+
+  // Seed the constants/tokens.ts anchor file before running codegen.
+  // Hygen's inject+append templates cannot create new files — they require
+  // the target to already exist. Without this seed, the `_inject-token.ejs.t`
+  // template prints "Cannot inject to …/constants/tokens.ts: doesn't exist"
+  // and the baseline snapshot omits the file entirely. Seeding it here mirrors
+  // what happens in a real project where `project init` creates the file first.
+  const constantsDir = join(ROOT, 'packages/api/src/constants');
+  mkdirSync(constantsDir, { recursive: true });
+  writeFileSync(
+    join(constantsDir, 'tokens.ts'),
+    '// Generated entity repository tokens\n',
+  );
 
   // Sort fixtures alphabetically so run order is deterministic regardless of
   // the underlying filesystem's `readdir` semantics. Without this, Linux
@@ -281,6 +296,40 @@ function runCodegen() {
   console.log('✅ Format complete');
 }
 
+/**
+ * Run TypeScript typecheck over the generated packages/api/src output.
+ *
+ * Uses test/tsconfig.baseline.json which maps @shared/* aliases to the
+ * runtime/ subsystem sources so the check runs without a full bun install.
+ * The node_modules for NestJS decorators are resolved via test/scaffold/.
+ *
+ * Runs over the live packages/api/src generated output (not the snapshot),
+ * so it must be called after runCodegen() has produced fresh output.
+ *
+ * This gate catches template regressions (e.g., stale <Class>With imports
+ * or missing type exports) that snapshot comparison alone cannot catch —
+ * snapshot tests verify the *shape* of generated text; typecheck verifies
+ * that the shape actually compiles. CGP-358 validator report surfaced this
+ * gap: controller + grouped-index templates emitted <Class>With after the
+ * domain type was removed, but no typecheck gate caught it until CI.
+ */
+function typecheckBaseline() {
+  const tsconfig = join(TEST_DIR, 'tsconfig.baseline.json');
+  console.log('Typechecking generated clean-pipeline output (packages/api/src)...');
+  try {
+    execSync(
+      `bunx tsc --noEmit --project "${tsconfig}"`,
+      { cwd: ROOT, stdio: 'pipe' },
+    );
+    console.log('Typecheck passed');
+  } catch (err: unknown) {
+    const error = err as { stdout?: Buffer; stderr?: Buffer };
+    const output = [error.stdout?.toString(), error.stderr?.toString()].filter(Boolean).join('\n');
+    console.error('Typecheck failed over generated clean-pipeline output:\n' + output);
+    process.exit(1);
+  }
+}
+
 function compareFiles(file1: string, file2: string): { match: boolean; diff?: string } {
   if (!existsSync(file1) && !existsSync(file2)) {
     return { match: true };
@@ -362,7 +411,7 @@ switch (command) {
   case 'baseline':
     // Capture current output as baseline
     captureOutputState(BASELINE_DIR);
-    console.log('\n📋 Baseline captured. Run "bun tools/codegen/test/run-test.ts full" after refactoring to verify.');
+    console.log('\n📋 Baseline captured. Run "bun test/run-test.ts full" after refactoring to verify.');
     break;
 
   case 'generate':
@@ -370,6 +419,11 @@ switch (command) {
     cleanGenDir();
     runCodegen();
     captureOutputState(GEN_DIR);
+    break;
+
+  case 'typecheck':
+    // Typecheck the generated output in packages/api/src (does not regenerate)
+    typecheckBaseline();
     break;
 
   case 'compare':
@@ -384,9 +438,10 @@ switch (command) {
     break;
 
   case 'full':
-    // Full test: generate + compare
+    // Full test: generate + typecheck + compare
     cleanGenDir();
     runCodegen();
+    typecheckBaseline();
     captureOutputState(GEN_DIR);
     const fullResult = compare();
     console.log('\n--- Results ---');

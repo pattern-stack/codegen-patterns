@@ -6,5 +6,5 @@
  * when using separate file layout (file_grouping: "separate")
  */
 
-export * from './deal_state.entity';
-export * from './deal_state.repository.interface';
+export * from './deal-state.entity';
+export * from './deal-state.repository.interface';

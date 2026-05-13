@@ -13,7 +13,6 @@ import {
 	ParseUUIDPipe,
 	Post,
 	Put,
-	Query,
 	UsePipes,
 } from '@nestjs/common';
 import {
@@ -36,7 +35,6 @@ import { DeleteDealCommand } from '../../application/commands/deal/delete.comman
 import { UpdateDealCommand } from '../../application/commands/deal/update.command';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { Deal } from '../../domain';
-import type { DealWith } from '../../domain';
 
 // OPENAPI-3: controller decorators reference schemas by `$ref` rather
 // than `type:` class references because generated DTOs are Zod-derived
@@ -62,8 +60,8 @@ export class DealsController {
 	})
 	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
-	async findAll(@Query('include') include?: string): Promise<Deal[]> {
-		return this.listDealsQuery.execute(this.parseInclude(include));
+	async findAll(): Promise<Deal[]> {
+		return this.listDealsQuery.execute();
 	}
 
 	@ApiOperation({ summary: 'Find deal by id', operationId: 'findDealById' })
@@ -74,9 +72,8 @@ export class DealsController {
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Query('include') include?: string,
 	): Promise<Deal> {
-		return this.getDealByIdQuery.execute(id, this.parseInclude(include));
+		return this.getDealByIdQuery.execute(id);
 	}
 
 	@ApiOperation({ summary: 'Create deal', operationId: 'createDeal' })
@@ -124,17 +121,5 @@ export class DealsController {
 	): Promise<Deal> {
 		return this.deleteDealCommand.execute(id, { actor: { tenantId, userId } });
 	}
-
-	/**
-	 * Parse comma-separated include query param into typed options.
-	 * Example: ?include=account,owner → { account: true, owner: true }
-	 */
-	private parseInclude(include?: string): DealWith | undefined {
-		if (!include) return undefined;
-		const parts = include.split(',').map((s) => s.trim());
-		return {
-			owner: parts.includes('owner'),
-			account: parts.includes('account'),
-		};
-	}
 }
+

@@ -13,7 +13,6 @@ import {
 	ParseUUIDPipe,
 	Post,
 	Put,
-	Query,
 	UsePipes,
 } from '@nestjs/common';
 import {
@@ -36,7 +35,6 @@ import { DeleteDealStateCommand } from '../../application/commands/deal_state/de
 import { UpdateDealStateCommand } from '../../application/commands/deal_state/update.command';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { DealState } from '../../domain';
-import type { DealStateWith } from '../../domain';
 
 // OPENAPI-3: controller decorators reference schemas by `$ref` rather
 // than `type:` class references because generated DTOs are Zod-derived
@@ -62,8 +60,8 @@ export class DealStatesController {
 	})
 	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
-	async findAll(@Query('include') include?: string): Promise<DealState[]> {
-		return this.listDealStatesQuery.execute(this.parseInclude(include));
+	async findAll(): Promise<DealState[]> {
+		return this.listDealStatesQuery.execute();
 	}
 
 	@ApiOperation({ summary: 'Find deal_state by id', operationId: 'findDealStateById' })
@@ -74,9 +72,8 @@ export class DealStatesController {
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Query('include') include?: string,
 	): Promise<DealState> {
-		return this.getDealStateByIdQuery.execute(id, this.parseInclude(include));
+		return this.getDealStateByIdQuery.execute(id);
 	}
 
 	@ApiOperation({ summary: 'Create deal_state', operationId: 'createDealState' })
@@ -124,16 +121,5 @@ export class DealStatesController {
 	): Promise<DealState> {
 		return this.deleteDealStateCommand.execute(id, { actor: { tenantId, userId } });
 	}
-
-	/**
-	 * Parse comma-separated include query param into typed options.
-	 * Example: ?include=account,owner → { account: true, owner: true }
-	 */
-	private parseInclude(include?: string): DealStateWith | undefined {
-		if (!include) return undefined;
-		const parts = include.split(',').map((s) => s.trim());
-		return {
-			opportunities: parts.includes('opportunities'),
-		};
-	}
 }
+

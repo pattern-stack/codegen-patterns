@@ -122,3 +122,4 @@ export class PersonsController {
 		return this.deletePersonCommand.execute(id, { actor: { tenantId, userId } });
 	}
 }
+

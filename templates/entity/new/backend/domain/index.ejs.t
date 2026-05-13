@@ -11,5 +11,5 @@ force: true
  * when using separate file layout (file_grouping: "separate")
  */
 
-export * from './<%= name %>.entity';
-export * from './<%= name %>.repository.interface';
+export * from './<%= fileNames.entity.replace('.ts', '') %>';
+export * from './<%= fileNames.repositoryInterface.replace('.ts', '') %>';
