@@ -239,7 +239,7 @@ function assertJunctionEmission(
   // relations() extension const
   assertContains(
     entityFile,
-    new RegExp(`${pluralName}Relations\\s*=\\s*relations\\(${camelCase(pluralName)}`),
+    new RegExp(`${camelCase(pluralName)}Relations\\s*=\\s*relations\\(${camelCase(pluralName)}`),
     'entity: relations() extension const',
   );
 

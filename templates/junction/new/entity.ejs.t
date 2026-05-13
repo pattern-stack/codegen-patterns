@@ -6,9 +6,8 @@ import {
 <%_ drizzleImports.filter(i => i !== 'relations').forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
-  relations,
 } from 'drizzle-orm/pg-core';
-import { type InferSelectModel } from 'drizzle-orm';
+import { relations, type InferSelectModel } from 'drizzle-orm';
 import { <%= leftTable %> } from '../<%= leftTable %>/<%= leftEntity %>.entity';
 <%_ if (leftEntity !== rightEntity) { _%>
 import { <%= rightTable %> } from '../<%= rightTable %>/<%= rightEntity %>.entity';
