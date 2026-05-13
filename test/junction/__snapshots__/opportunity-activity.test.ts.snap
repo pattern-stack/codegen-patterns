@@ -147,6 +147,21 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { OpportunityActivityRepository } from './opportunity_activity.repository';
 import type { OpportunityActivity } from './opportunity_activity.entity';
+import { OpportunityRepository } from '../opportunities/opportunity.repository';
+import type { Opportunity } from '../opportunities/opportunity.entity';
+import { ActivityRepository } from '../activities/activity.repository';
+import type { Activity } from '../activities/activity.entity';
+
+/**
+ * Pick of the link-side mutable fields that callers may supply when
+ * attaching. Subset of \`OpportunityActivity\` minus the two FK columns
+ * (those come from the method args).
+ */
+export type OpportunityActivityLinkInput = Partial<
+  Pick<OpportunityActivity,
+    'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt'
+  >
+>;
 
 @Injectable()
 export class OpportunityActivityService extends WithAnalytics(
@@ -158,7 +173,11 @@ export class OpportunityActivityService extends WithAnalytics(
   @Optional() @Inject(EVENT_BUS)
   protected override eventBus: any = undefined;
 
-  constructor(protected override readonly repository: OpportunityActivityRepository) {
+  constructor(
+    protected override readonly repository: OpportunityActivityRepository,
+    private readonly opportunityRepo: OpportunityRepository,
+    private readonly activityRepo: ActivityRepository,
+  ) {
     super(repository);
   }
 
@@ -168,8 +187,6 @@ export class OpportunityActivityService extends WithAnalytics(
 
   /**
    * Fetch all junction rows for a given opportunity_id.
-   *
-   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
    */
   async findByOpportunityId(
     opportunityId: string,
@@ -180,8 +197,6 @@ export class OpportunityActivityService extends WithAnalytics(
 
   /**
    * Fetch all junction rows for a given activity_id.
-   *
-   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
    */
   async findByActivityId(
     activityId: string,
@@ -190,19 +205,108 @@ export class OpportunityActivityService extends WithAnalytics(
     return this.repository.findByActivityId(activityId, opts);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Fan-out association methods (attach/detach/list/setPrimary) are NOT
-  // emitted here. They land via junction-association-codegen
-  // (pattern-stack/dealbrain-integrations#60) once
-  // pattern-stack/codegen-patterns#358 establishes the service-method
-  // emission machinery.
-  //
-  // Until #60 lands, consumers hand-write fan-out methods in their own
-  // service files against the canonical shape documented in
-  // .ai-docs/stacks/codegen-app-patterns/specs/cgp-62.md (see
-  // architectural_notes.cross_entity_access.canonical_shape in the stack
-  // plan). The hand-written methods are the executable spec for #60.
-  // ─────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // CGP-60 — canonical fan-out methods
+  // Mirrored, paginated, composed \`{ entity, link }\` shape. Always emitted
+  // on the junction service; parent-side \`attach<Right>\` / \`addTo<Left>\` /
+  // etc. inject templates delegate here. \`list\` is implemented with two
+  // single-table queries (no Drizzle \`with:\`).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Create a junction row linking a opportunity and a activity.
+   * Returns the persisted row.
+   *
+   * **Idempotency:** NOT idempotent at the service layer in v1. A duplicate
+   * pair raises the DB-level composite-PK unique-constraint error from the
+   * underlying repository's \`create\`. Callers requiring idempotency should
+   * either check existence via \`findByOpportunityId\` + filter,
+   * or wrap the call in try/catch on the unique-violation error. A future
+   * leaf may add a transactional check-then-create here if a consumer
+   * surfaces the need (track as a follow-up if so).
+   */
+  async attach(
+    opportunityId: string,
+    activityId: string,
+    link?: OpportunityActivityLinkInput,
+  ): Promise<OpportunityActivity> {
+    return this.create({
+      opportunityId: opportunityId,
+      activityId: activityId,
+      ...(link ?? {}),
+    } as unknown as Partial<OpportunityActivity>);
+  }
+
+  /**
+   * Remove the junction row linking \`opportunityId\` and
+   * \`activityId\`. No-op if no row exists.
+   */
+  async detach(
+    opportunityId: string,
+    activityId: string,
+  ): Promise<void> {
+    const links = await this.repository.findByOpportunityId(opportunityId);
+    const match = links.find(
+      (l) => (l as any).activityId === activityId,
+    );
+    if (match) {
+      await this.delete((match as any).id ?? \`\${opportunityId}:\${activityId}\`);
+    }
+  }
+
+  /**
+   * List the targets associated with one side of the junction, composed as
+   * \`{ entity, link }\`. Implementation: one repo call for the links, one
+   * \`findByIds\` call for the targets — no SQL JOIN. Cursor pagination by
+   * right-entity \`id\` (matches CGP-358 has_many shape; time-ordered cursor
+   * is deferred per spec Open Q3).
+   */
+  async listAssoc(
+    side: 'left' | 'right',
+    anchorId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: Opportunity | Activity; link: OpportunityActivity }>> {
+    if (side === 'left') {
+      const links = await this.repository.findByOpportunityId(anchorId, opts);
+      const targetIds = links.map((l) => (l as any).activityId as string);
+      const targets = await this.activityRepo.findByIds(targetIds);
+      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      return links.map((link) => ({
+        entity: byId.get((link as any).activityId)! as Activity,
+        link,
+      }));
+    } else {
+      const links = await this.repository.findByActivityId(anchorId, opts);
+      const targetIds = links.map((l) => (l as any).opportunityId as string);
+      const targets = await this.opportunityRepo.findByIds(targetIds);
+      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      return links.map((link) => ({
+        entity: byId.get((link as any).opportunityId)! as Opportunity,
+        link,
+      }));
+    }
+  }
+
+  /**
+   * Mark the (\`opportunityId\`, \`activityId\`) row
+   * as \`is_primary: true\`. Demoting other rows on the same side is the
+   * caller's concern in v1; future leaves may add transactional demotion.
+   */
+  async setPrimary(
+    opportunityId: string,
+    activityId: string,
+  ): Promise<void> {
+    const links = await this.repository.findByOpportunityId(opportunityId);
+    const match = links.find(
+      (l) => (l as any).activityId === activityId,
+    );
+    if (match) {
+      await this.update(
+        (match as any).id ?? \`\${opportunityId}:\${activityId}\`,
+        { isPrimary: true } as unknown as Partial<OpportunityActivity>,
+      );
+    }
+  }
 
   // Inherited from BaseService:
   //   findById, findByIds, list, count, exists, create, update, delete
@@ -212,6 +316,12 @@ export class OpportunityActivityService extends WithAnalytics(
 
 exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits opportunity.service.ts (left parent — junction accessor) 1`] = `
 "import { Injectable, Inject, Optional } from '@nestjs/common';
+// CGP-60 — junction service + types (forwardRef resolves circular module dep)
+import { forwardRef } from '@nestjs/common';
+import { OpportunityActivityService, OpportunityActivityLinkInput } from '../opportunity_activities/opportunity_activity.service';
+import type { OpportunityActivity } from '../opportunity_activities/opportunity_activity.entity';
+import type { Activity } from '../activities/activity.entity';
+
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
@@ -237,6 +347,51 @@ export class OpportunityService extends WithAnalytics(
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
   // automatically by BaseService when the events subsystem is installed.
   //
+  // ═══════════════════════════════════════════════════════════════════════
+  // CGP-60 — fan-out to Activity (junction: opportunity_activity)
+  // Delegates to OpportunityActivityService. Per-junction marker keeps
+  // idempotency; multiple junctions on the same parent each emit their own
+  // block. \`forwardRef\` resolves the circular module import (parent module
+  // imports junction module; junction module imports parent modules for
+  // repo DI).
+  // ═══════════════════════════════════════════════════════════════════════
+  // junction:opportunity_activity:left-fan-out
+
+  @Inject(forwardRef(() => OpportunityActivityService))
+  private readonly opportunityActivityService!: OpportunityActivityService;
+
+  async attachActivity(
+    opportunityId: string,
+    activityId: string,
+    link?: OpportunityActivityLinkInput,
+  ): Promise<OpportunityActivity> {
+    return this.opportunityActivityService.attach(opportunityId, activityId, link);
+  }
+
+  async detachActivity(
+    opportunityId: string,
+    activityId: string,
+  ): Promise<void> {
+    return this.opportunityActivityService.detach(opportunityId, activityId);
+  }
+
+  async activitiesList(
+    opportunityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: Activity; link: OpportunityActivity }>> {
+    return this.opportunityActivityService.listAssoc('left', opportunityId, opts) as Promise<
+      Array<{ entity: Activity; link: OpportunityActivity }>
+    >;
+  }
+
+  async activitiesSetPrimary(
+    opportunityId: string,
+    activityId: string,
+  ): Promise<void> {
+    return this.opportunityActivityService.setPrimary(opportunityId, activityId);
+  }
+
+
   // Inherited from SyncedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
   //   findByExternalId, findAllByUserId, findVisibleByUserId
@@ -249,6 +404,12 @@ export class OpportunityService extends WithAnalytics(
 
 exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits activity.service.ts (right parent — junction accessor) 1`] = `
 "import { Injectable, Inject, Optional } from '@nestjs/common';
+// CGP-60 — junction service + types (forwardRef resolves circular module dep)
+import { forwardRef } from '@nestjs/common';
+import { OpportunityActivityService, OpportunityActivityLinkInput } from '../opportunity_activities/opportunity_activity.service';
+import type { OpportunityActivity } from '../opportunity_activities/opportunity_activity.entity';
+import type { Opportunity } from '../opportunities/opportunity.entity';
+
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { ActivityEntityService } from '@shared/base-classes/activity-entity-service';
@@ -274,6 +435,48 @@ export class ActivityService extends WithAnalytics(
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
   // automatically by BaseService when the events subsystem is installed.
   //
+  // ═══════════════════════════════════════════════════════════════════════
+  // CGP-60 — fan-out to Opportunity (junction: opportunity_activity)
+  // Delegates to OpportunityActivityService. See left-side block for the
+  // forwardRef + per-junction marker rationale.
+  // ═══════════════════════════════════════════════════════════════════════
+  // junction:opportunity_activity:right-fan-out
+
+  @Inject(forwardRef(() => OpportunityActivityService))
+  private readonly opportunityActivityService!: OpportunityActivityService;
+
+  async addToOpportunity(
+    activityId: string,
+    opportunityId: string,
+    link?: OpportunityActivityLinkInput,
+  ): Promise<OpportunityActivity> {
+    return this.opportunityActivityService.attach(opportunityId, activityId, link);
+  }
+
+  async removeFromOpportunity(
+    activityId: string,
+    opportunityId: string,
+  ): Promise<void> {
+    return this.opportunityActivityService.detach(opportunityId, activityId);
+  }
+
+  async opportunitiesList(
+    activityId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: Opportunity; link: OpportunityActivity }>> {
+    return this.opportunityActivityService.listAssoc('right', activityId, opts) as Promise<
+      Array<{ entity: Opportunity; link: OpportunityActivity }>
+    >;
+  }
+
+  async opportunitiesSetPrimary(
+    activityId: string,
+    opportunityId: string,
+  ): Promise<void> {
+    return this.opportunityActivityService.setPrimary(opportunityId, activityId);
+  }
+
+
   // Inherited from ActivityEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
   //   findByDateRange, findByUserId, findByOpportunityId, findRecentByOpportunityId
