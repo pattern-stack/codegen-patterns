@@ -32,6 +32,9 @@ import { <%= className %>Repository } from '<%= imports.moduleToRepository %>';
 <% if (hasDeclarativeQueries) { -%>
 import { declarativeQueryClasses } from '<%= imports.moduleToDeclarativeQueries %>';
 <% } -%>
+<% if (hasRelationships && !isGrouped) { -%>
+import { relationshipQueryClasses } from '<%= imports.moduleToRelationshipQueries %>';
+<% } -%>
 <% if (exposeRest || exposeElectric) { -%>
 import { <%= classNamePlural %>Controller } from '<%= imports.moduleToController %>';
 <% } -%>
@@ -59,6 +62,10 @@ import { create<%= className %>Schema, update<%= className %>Schema, <%= camelNa
 		// Declarative queries
 		...declarativeQueryClasses,
 <% } -%>
+<% if (hasRelationships && !isGrouped) { -%>
+		// Relationship composition queries
+		...relationshipQueryClasses,
+<% } -%>
 	],
 	exports: [
 		<%= repositoryToken %>,
@@ -71,6 +78,9 @@ import { create<%= className %>Schema, update<%= className %>Schema, <%= camelNa
 		<%= deleteCommandClass %>,
 <% if (hasDeclarativeQueries) { -%>
 		...declarativeQueryClasses,
+<% } -%>
+<% if (hasRelationships && !isGrouped) { -%>
+		...relationshipQueryClasses,
 <% } -%>
 	],
 })

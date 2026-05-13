@@ -5,3 +5,4 @@
 
 export * from './get-by-id.query';
 export * from './list.query';
+export * from './relationships.queries';

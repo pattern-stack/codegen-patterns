@@ -14,6 +14,7 @@ import { UpdateDealCommand } from '../application/commands/deal/update.command';
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { DealRepository } from '../infrastructure/persistence/repositories/deal.repository';
 import { declarativeQueryClasses } from '../application/queries/deal/declarative-queries';
+import { relationshipQueryClasses } from '../application/queries/deal/relationships.queries';
 import { DealsController } from '../presentation/rest/deals.controller';
 import { createDealSchema, updateDealSchema, dealResponseSchema } from '../application/schemas/deal.dto';
 
@@ -31,6 +32,8 @@ import { createDealSchema, updateDealSchema, dealResponseSchema } from '../appli
 		DeleteDealCommand,
 		// Declarative queries
 		...declarativeQueryClasses,
+		// Relationship composition queries
+		...relationshipQueryClasses,
 	],
 	exports: [
 		DEAL_REPOSITORY,
@@ -40,6 +43,7 @@ import { createDealSchema, updateDealSchema, dealResponseSchema } from '../appli
 		UpdateDealCommand,
 		DeleteDealCommand,
 		...declarativeQueryClasses,
+		...relationshipQueryClasses,
 	],
 })
 export class DealsModule implements OnModuleInit {

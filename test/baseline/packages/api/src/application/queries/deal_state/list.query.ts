@@ -12,7 +12,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { DEALSTATE_REPOSITORY } from '../../../constants';
-import type { IDealStateRepository, DealStateWith } from '../../../domain';
+import type { IDealStateRepository } from '../../../domain';
 import { DealState } from '../../../domain';
 
 @Injectable()
@@ -22,8 +22,8 @@ export class ListDealStatesQuery {
 		private readonly dealStateRepository: IDealStateRepository,
 	) {}
 
-	async execute(include?: DealStateWith): Promise<DealState[]> {
+	async execute(): Promise<DealState[]> {
 		// TODO: Add filtering, pagination, sorting as needed
-		return this.dealStateRepository.findAll(include);
+		return this.dealStateRepository.findAll();
 	}
 }

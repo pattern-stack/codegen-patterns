@@ -8,8 +8,6 @@
  * All entities should follow this structure for consistent imports.
  */
 
-import type { Opportunity } from '../opportunity/opportunity.entity';
-
 export class DealState {
 	constructor(
 		public readonly id: string,
@@ -20,15 +18,11 @@ export class DealState {
 		public readonly sortOrder: number,
 		public readonly probabilityDefault: number | null,
 		public readonly color: string | null,
-		// Loaded relations (optional, populated when eager-loaded)
-		public readonly opportunities?: Opportunity[],
 	) {}
 
 	static fromRecord(
 		// biome-ignore lint/suspicious/noExplicitAny: Drizzle records have dynamic shape
 		record: Record<string, any>,
-		// biome-ignore lint/suspicious/noExplicitAny: Returns different entity types
-		mapRelation?: (name: string, data: unknown) => any,
 	): DealState {
 		return new DealState(
 			record.id,
@@ -39,7 +33,6 @@ export class DealState {
 			record.sortOrder,
 			record.probabilityDefault,
 			record.color,
-			record.opportunities ? mapRelation?.('opportunities', record.opportunities) : undefined,
 		);
 	}
 }

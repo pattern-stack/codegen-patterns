@@ -10,7 +10,7 @@
 
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ORGANIZATION_REPOSITORY } from '../../../constants';
-import type { IOrganizationRepository, OrganizationWith } from '../../../domain';
+import type { IOrganizationRepository } from '../../../domain';
 import { Organization } from '../../../domain';
 
 @Injectable()
@@ -20,10 +20,10 @@ export class GetOrganizationByIdQuery {
 		private readonly organizationRepository: IOrganizationRepository,
 	) {}
 
-	async execute(id: string, include?: OrganizationWith): Promise<Organization> {
+	async execute(id: string): Promise<Organization> {
 		// TODO: Add authorization check if needed (row-level security)
 
-		const entity = await this.organizationRepository.findById(id, include);
+		const entity = await this.organizationRepository.findById(id);
 		if (!entity) {
 			throw new NotFoundException(`Organization with id ${id} not found`);
 		}

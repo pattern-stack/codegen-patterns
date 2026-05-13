@@ -11,4 +11,7 @@ force: true
 
 export * from './<%= fileNames.getByIdQuery.replace('.ts', '') %>';
 export * from './<%= fileNames.listQuery.replace('.ts', '') %>';
+<% if (hasRelationships && !isGrouped) { -%>
+export * from './relationships.queries';
+<% } -%>
 <% } -%>

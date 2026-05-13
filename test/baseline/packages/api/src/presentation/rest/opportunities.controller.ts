@@ -13,7 +13,6 @@ import {
 	ParseUUIDPipe,
 	Post,
 	Put,
-	Query,
 	UsePipes,
 } from '@nestjs/common';
 import {
@@ -36,7 +35,6 @@ import { DeleteOpportunityCommand } from '../../application/commands/opportunity
 import { UpdateOpportunityCommand } from '../../application/commands/opportunity/update.command';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { Opportunity } from '../../domain';
-import type { OpportunityWith } from '../../domain';
 
 // OPENAPI-3: controller decorators reference schemas by `$ref` rather
 // than `type:` class references because generated DTOs are Zod-derived
@@ -62,8 +60,8 @@ export class OpportunitiesController {
 	})
 	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
-	async findAll(@Query('include') include?: string): Promise<Opportunity[]> {
-		return this.listOpportunitiesQuery.execute(this.parseInclude(include));
+	async findAll(): Promise<Opportunity[]> {
+		return this.listOpportunitiesQuery.execute();
 	}
 
 	@ApiOperation({ summary: 'Find opportunity by id', operationId: 'findOpportunityById' })
@@ -74,9 +72,8 @@ export class OpportunitiesController {
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Query('include') include?: string,
 	): Promise<Opportunity> {
-		return this.getOpportunityByIdQuery.execute(id, this.parseInclude(include));
+		return this.getOpportunityByIdQuery.execute(id);
 	}
 
 	@ApiOperation({ summary: 'Create opportunity', operationId: 'createOpportunity' })
@@ -124,18 +121,5 @@ export class OpportunitiesController {
 	): Promise<Opportunity> {
 		return this.deleteOpportunityCommand.execute(id, { actor: { tenantId, userId } });
 	}
-
-	/**
-	 * Parse comma-separated include query param into typed options.
-	 * Example: ?include=account,owner → { account: true, owner: true }
-	 */
-	private parseInclude(include?: string): OpportunityWith | undefined {
-		if (!include) return undefined;
-		const parts = include.split(',').map((s) => s.trim());
-		return {
-			organization: parts.includes('organization'),
-			owner: parts.includes('owner'),
-			state: parts.includes('state'),
-		};
-	}
 }
+

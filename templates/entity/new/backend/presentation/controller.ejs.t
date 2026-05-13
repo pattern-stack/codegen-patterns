@@ -19,9 +19,6 @@ import {
 	ParseUUIDPipe,
 	Post,
 	Put,
-<% if (hasRelationships) { -%>
-	Query,
-<% } -%>
 	UsePipes,
 } from '@nestjs/common';
 import {
@@ -44,9 +41,6 @@ import { <%= deleteCommandClass %> } from '<%= imports.controllerToDeleteCommand
 import { <%= updateCommandClass %> } from '<%= imports.controllerToUpdateCommand %>';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { <%= className %> } from '<%= imports.controllerToDomain %>';
-<% if (hasRelationships) { -%>
-import type { <%= className %>With } from '<%= imports.controllerToDomain %>';
-<% } -%>
 
 // OPENAPI-3: controller decorators reference schemas by `$ref` rather
 // than `type:` class references because generated DTOs are Zod-derived
@@ -72,12 +66,8 @@ export class <%= classNamePlural %>Controller {
 	})
 	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
-	async findAll(<%- hasRelationships ? `@Query('include') include?: string` : '' %>): Promise<<%= className %>[]> {
-<% if (hasRelationships) { -%>
-		return this.list<%= classNamePlural %>Query.execute(this.parseInclude(include));
-<% } else { -%>
+	async findAll(): Promise<<%= className %>[]> {
 		return this.list<%= classNamePlural %>Query.execute();
-<% } -%>
 	}
 
 	@ApiOperation({ summary: 'Find <%= name %> by id', operationId: 'find<%= className %>ById' })
@@ -88,15 +78,8 @@ export class <%= classNamePlural %>Controller {
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
-<% if (hasRelationships) { -%>
-		@Query('include') include?: string,
-<% } -%>
 	): Promise<<%= className %>> {
-<% if (hasRelationships) { -%>
-		return this.get<%= className %>ByIdQuery.execute(id, this.parseInclude(include));
-<% } else { -%>
 		return this.get<%= className %>ByIdQuery.execute(id);
-<% } -%>
 	}
 
 	@ApiOperation({ summary: 'Create <%= name %>', operationId: 'create<%= className %>' })
@@ -144,23 +127,8 @@ export class <%= classNamePlural %>Controller {
 	): Promise<<%= className %>> {
 		return this.delete<%= className %>Command.execute(id, { actor: { tenantId, userId } });
 	}
-<% if (hasRelationships) { -%>
-
-	/**
-	 * Parse comma-separated include query param into typed options.
-	 * Example: ?include=account,owner → { account: true, owner: true }
-	 */
-	private parseInclude(include?: string): <%= className %>With | undefined {
-		if (!include) return undefined;
-		const parts = include.split(',').map((s) => s.trim());
-		return {
-<% relationships.forEach((rel) => { -%>
-			<%= rel.name %>: parts.includes('<%= rel.name %>'),
-<% }) -%>
-		};
-	}
-<% } -%>
 }
+
 <% } -%>
 <% if (exposeElectric) { -%>
 /**

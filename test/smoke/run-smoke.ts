@@ -258,10 +258,24 @@ function assertNotContains(haystack: string, needle: RegExp, source: string): vo
  *     dropped. The negative assertion names this gap in the test surface
  *     itself. Flip to positive once codegen-patterns#358 lands.
  */
+/**
+ * Verify the clean-lite-ps relationship emission for the CRM fixture set.
+ * CGP-358b: asserts service-layer composition methods + full relations() emission.
+ *
+ * Coverage (CGP-358b):
+ *   - Self-ref `belongs_to`        (regression of `269ab3f`)
+ *   - Cross-entity `belongs_to`    (account FK on contact + opportunity)
+ *   - `relations()` const presence (emission gate `hasRelationsBlock`)
+ *   - `many()` calls for `has_many` declarations (POSITIVE — was negative before CGP-358b landed)
+ *   - Service composition methods: `contacts(accountId, opts)` on AccountService
+ *   - Service composition methods: `account(contactId)` on ContactService
+ *   - Absence of `include?`, `With`, `findByIdWithRelations` (CGP-358 destructive cleanup)
+ */
 function assertRelationshipEmission(tmpDir: string): void {
 	const reads = (rel: string): string =>
 		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
 
+	// ── account.entity.ts ───────────────────────────────────────────────────
 	const accountSchema = reads('modules/accounts/account.entity.ts');
 	assertContains(
 		accountSchema,
@@ -273,12 +287,34 @@ function assertRelationshipEmission(tmpDir: string): void {
 		/export const accountsRelations\s*=\s*relations\(accounts/,
 		'accounts.entity.ts relations() const',
 	);
-	assertNotContains(
+	// CGP-358b: has_many now emits many() calls — flip was negative, now positive
+	assertContains(
 		accountSchema,
 		/\bmany\(/,
-		'accounts.entity.ts has_many gap (clean-lite-ps drops has_many)',
+		'accounts.entity.ts has_many emits many() (CGP-358b)',
+	);
+	assertContains(
+		accountSchema,
+		/contacts:\s*many\(contacts\)/,
+		'accounts.entity.ts contacts: many(contacts)',
 	);
 
+	// ── account.service.ts ──────────────────────────────────────────────────
+	const accountService = reads('modules/accounts/account.service.ts');
+	// CGP-358b: composition method for has_many contacts
+	assertContains(
+		accountService,
+		/async contacts\(accountId: string, opts\?:/,
+		'accounts.service.ts contacts(accountId, opts) composition method',
+	);
+	// No eager-load shape
+	assertNotContains(
+		accountService,
+		/AccountsWith|findByIdWithRelations|include\?:/,
+		'accounts.service.ts must not reference eager-load shape',
+	);
+
+	// ── contact.entity.ts ───────────────────────────────────────────────────
 	const contactSchema = reads('modules/contacts/contact.entity.ts');
 	assertContains(
 		contactSchema,
@@ -291,6 +327,16 @@ function assertRelationshipEmission(tmpDir: string): void {
 		'contacts.entity.ts relations() const',
 	);
 
+	// ── contact.service.ts ──────────────────────────────────────────────────
+	const contactService = reads('modules/contacts/contact.service.ts');
+	// CGP-358b: composition method for belongs_to account
+	assertContains(
+		contactService,
+		/async account\(contactId: string\)/,
+		'contacts.service.ts account(contactId) composition method',
+	);
+
+	// ── opportunity.entity.ts ───────────────────────────────────────────────
 	const opportunitySchema = reads('modules/opportunities/opportunity.entity.ts');
 	assertContains(
 		opportunitySchema,
@@ -345,7 +391,17 @@ async function main(): Promise<number> {
 		}
 
 		// 5. Run `codegen entity new --all`.
+		//
+		// For the relationship scenario, run TWICE (two-pass) so cross-entity
+		// `has_many` targets are on disk for the second pass — this seeds the
+		// `clpExistingHasMany` check and ensures many() calls are emitted for
+		// all targets, not just those that happen to be generated first.
+		// (Mirrors the baseline test's two-pass strategy in test/run-test.ts.)
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+		if (SCENARIO === 'relationship') {
+			log('second pass (relationship scenario — seeds clpExistingHasMany)');
+			run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the
 		// clean-lite-ps Drizzle `relations()` emission shape on the CRM

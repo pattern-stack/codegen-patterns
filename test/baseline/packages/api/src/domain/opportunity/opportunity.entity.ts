@@ -8,10 +8,6 @@
  * All entities should follow this structure for consistent imports.
  */
 
-import type { Organization } from '../organization/organization.entity';
-import type { User } from '../user/user.entity';
-import type { DealState } from '../deal_state/deal_state.entity';
-
 export class Opportunity {
 	constructor(
 		public readonly id: string,
@@ -24,17 +20,11 @@ export class Opportunity {
 		public readonly currency: string | null,
 		public readonly expectedCloseDate: Date | null,
 		public readonly closedAt: Date | null,
-		// Loaded relations (optional, populated when eager-loaded)
-		public readonly organization?: Organization,
-		public readonly owner?: User,
-		public readonly state?: DealState,
 	) {}
 
 	static fromRecord(
 		// biome-ignore lint/suspicious/noExplicitAny: Drizzle records have dynamic shape
 		record: Record<string, any>,
-		// biome-ignore lint/suspicious/noExplicitAny: Returns different entity types
-		mapRelation?: (name: string, data: unknown) => any,
 	): Opportunity {
 		return new Opportunity(
 			record.id,
@@ -47,9 +37,6 @@ export class Opportunity {
 			record.currency,
 			record.expectedCloseDate,
 			record.closedAt,
-			record.organization ? mapRelation?.('organization', record.organization) : undefined,
-			record.owner ? mapRelation?.('owner', record.owner) : undefined,
-			record.state ? mapRelation?.('state', record.state) : undefined,
 		);
 	}
 }

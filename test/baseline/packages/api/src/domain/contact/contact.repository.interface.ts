@@ -7,15 +7,6 @@ import type { Contact } from './contact.entity';
 import type { DrizzleTransaction } from '@shared/subsystems/events';
 
 /**
- * Type-safe eager loading options.
- * Pass to repository methods to include related entities.
- */
-export type ContactWith = {
-	account?: boolean;
-	user?: boolean;
-};
-
-/**
  * Domain-level input types for repository operations.
  */
 export type CreateContactInput = {
@@ -33,20 +24,18 @@ export type UpdateContactInput = Partial<CreateContactInput>;
 
 export interface IContactRepository {
 	create(input: CreateContactInput, tx?: DrizzleTransaction): Promise<Contact>;
-	findById(id: string, include?: ContactWith): Promise<Contact | null>;
-	findAll(include?: ContactWith): Promise<Contact[]>;
+	findById(id: string): Promise<Contact | null>;
+	findAll(): Promise<Contact[]>;
 	update(id: string, input: UpdateContactInput): Promise<Contact | null>;
 	delete(id: string): Promise<Contact | null>;
 	// Soft delete recovery methods
 	restore(id: string): Promise<Contact | null>;
 	findWithDeleted(): Promise<Contact[]>;
 	findOnlyDeleted(): Promise<Contact[]>;
-	findByAccountId(id: string, include?: ContactWith): Promise<Contact[]>;
-	findByUserId(id: string, include?: ContactWith): Promise<Contact[]>;
+	findByAccountId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Contact[]>;
+	findByUserId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Contact[]>;
 	// Declarative queries (from queries: block in entity YAML)
-	findByUserId(userId: string): Promise<Contact[]>;
 	findByEmail(email: string): Promise<Contact | null>;
-	findByAccountId(accountId: string): Promise<Contact[]>;
 	findByUserIdAndAccountId(userId: string, accountId: string): Promise<Contact[]>;
 	findByOpportunityId(opportunityId: string): Promise<Contact[]>;
 	findEmailsByOpportunityId(opportunityId: string): Promise<string[]>;

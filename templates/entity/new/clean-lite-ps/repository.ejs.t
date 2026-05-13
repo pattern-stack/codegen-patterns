@@ -4,7 +4,17 @@ skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 import { Injectable, Inject } from '@nestjs/common';
-<% if (hasDeclarativeQueries) { -%>
+<%_
+// CGP-358: FK methods with opts take priority over same-named declarative query impl.
+// Always emit FK methods; skip declarative body when FK covers same name.
+const _fkMethods = (typeof clpBelongsTo !== 'undefined') ? clpBelongsTo : [];
+const _fkMethodNamesCLP = new Set(_fkMethods.map(rel => {
+  const _p = rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1);
+  return `findBy${_p}`;
+}));
+const _needsEq = hasDeclarativeQueries || _fkMethods.length > 0;
+_%>
+<% if (_needsEq) { -%>
 import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';
 <% } -%>
 <% if (eavValueTable) { -%>
@@ -48,6 +58,12 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
   // Declarative queries (from queries: block in entity YAML)
   // ═══════════════════════════════════════════════════════════════════════
 <%_ processedQueries.forEach((q) => { _%>
+<%_
+// CGP-358: Skip declarative impl when a FK method covers this method name.
+// FK methods accept opts, making them a superset of a plain non-unique single-param query.
+const _skipClpDq = _fkMethodNamesCLP.has(q.methodName) && !q.isUnique && !q.hasVia && !q.hasSelect;
+_%>
+<%_ if (!_skipClpDq) { _%>
 
   async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.isUnique) { -%>
@@ -61,11 +77,27 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
     return rows as <%= classNames.entity %>[];
 <% } -%>
   }
+<%_ } _%>
 <%_ }) _%>
 <% } else { -%>
 
   // TODO: Add entity-specific query methods here.
 <% } -%>
+<%_ if (_fkMethods.length > 0) { _%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FK traversal methods (from belongs_to relationships — CGP-358b)
+  // Called by service-layer composition methods on the inverse (has_many) side.
+  // ═══════════════════════════════════════════════════════════════════════
+<%_ _fkMethods.forEach(rel => { _%>
+
+  async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= classNames.entity %>[]> {
+    let q = this.baseQuery().where(eq(this.table['<%= rel.camelField %>'], id));
+    if (opts?.limit) q = (q as any).limit(opts.limit);
+    return (await q) as <%= classNames.entity %>[];
+  }
+<%_ }) _%>
+<%_ } _%>
 <% if (eavValueTable) { -%>
 
   // ═══════════════════════════════════════════════════════════════════════

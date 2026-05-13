@@ -10,9 +10,8 @@ import type {
 	CreateDealStateInput,
 	IDealStateRepository,
 	UpdateDealStateInput,
-	DealStateWith,
 } from '../../../domain';
-import { DealState, Opportunity } from '../../../domain';
+import { DealState } from '../../../domain';
 import type { DrizzleDB } from '../database.module';
 import { deal_states } from '@repo/db/server/schema';
 
@@ -38,21 +37,18 @@ export class DealStateRepository implements IDealStateRepository {
 		return DealState.fromRecord(record);
 	}
 
-	async findById(id: string, include?: DealStateWith): Promise<DealState | null> {
-		const record = await this.db.query.deal_states.findFirst({
-			where: eq(deal_states.id, id),
-			with: this.buildWithClause(include),
-		});
+	async findById(id: string): Promise<DealState | null> {
+		const result = await this.baseQuery()
+			.where(eq(deal_states.id, id))
+			.limit(1);
 
-		return record ? this.mapToEntity(record) : null;
+		const record = result[0];
+		return record ? DealState.fromRecord(record) : null;
 	}
 
-	async findAll(include?: DealStateWith): Promise<DealState[]> {
-		const records = await this.db.query.deal_states.findMany({
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
+	async findAll(): Promise<DealState[]> {
+		const records = await this.baseQuery();
+		return records.map(DealState.fromRecord);
 	}
 
 	async update(id: string, input: UpdateDealStateInput): Promise<DealState | null> {
@@ -80,26 +76,5 @@ export class DealStateRepository implements IDealStateRepository {
 
 	private baseQuery() {
 		return this.db.select().from(deal_states);
-	}
-
-	private buildWithClause(include?: DealStateWith) {
-		if (!include) return undefined;
-		// Drizzle expects `true` or object, not `false`. Only include truthy values.
-		const result: Record<string, true> = {};
-		if (include.opportunities) result.opportunities = true;
-		return Object.keys(result).length > 0 ? result : undefined;
-	}
-
-	// biome-ignore lint/suspicious/noExplicitAny: Drizzle relational query returns dynamic shape
-	private mapToEntity(record: any): DealState {
-		return DealState.fromRecord(record, (name, data) => {
-			switch (name) {
-				case 'opportunities':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle records
-					return (data as any[]).map((r) => Opportunity.fromRecord(r));
-				default:
-					return data;
-			}
-		});
 	}
 }

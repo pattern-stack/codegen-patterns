@@ -13,7 +13,6 @@ import {
 	ParseUUIDPipe,
 	Post,
 	Put,
-	Query,
 	UsePipes,
 } from '@nestjs/common';
 import {
@@ -36,7 +35,6 @@ import { DeleteUserCommand } from '../../application/commands/user/delete.comman
 import { UpdateUserCommand } from '../../application/commands/user/update.command';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { User } from '../../domain';
-import type { UserWith } from '../../domain';
 
 // OPENAPI-3: controller decorators reference schemas by `$ref` rather
 // than `type:` class references because generated DTOs are Zod-derived
@@ -62,8 +60,8 @@ export class UsersController {
 	})
 	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
-	async findAll(@Query('include') include?: string): Promise<User[]> {
-		return this.listUsersQuery.execute(this.parseInclude(include));
+	async findAll(): Promise<User[]> {
+		return this.listUsersQuery.execute();
 	}
 
 	@ApiOperation({ summary: 'Find user by id', operationId: 'findUserById' })
@@ -74,9 +72,8 @@ export class UsersController {
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Query('include') include?: string,
 	): Promise<User> {
-		return this.getUserByIdQuery.execute(id, this.parseInclude(include));
+		return this.getUserByIdQuery.execute(id);
 	}
 
 	@ApiOperation({ summary: 'Create user', operationId: 'createUser' })
@@ -124,17 +121,5 @@ export class UsersController {
 	): Promise<User> {
 		return this.deleteUserCommand.execute(id, { actor: { tenantId, userId } });
 	}
-
-	/**
-	 * Parse comma-separated include query param into typed options.
-	 * Example: ?include=account,owner → { account: true, owner: true }
-	 */
-	private parseInclude(include?: string): UserWith | undefined {
-		if (!include) return undefined;
-		const parts = include.split(',').map((s) => s.trim());
-		return {
-			person: parts.includes('person'),
-			owned_opportunities: parts.includes('owned_opportunities'),
-		};
-	}
 }
+

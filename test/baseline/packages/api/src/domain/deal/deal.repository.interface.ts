@@ -6,15 +6,6 @@
 import type { Deal } from './deal.entity';
 
 /**
- * Type-safe eager loading options.
- * Pass to repository methods to include related entities.
- */
-export type DealWith = {
-	owner?: boolean;
-	account?: boolean;
-};
-
-/**
  * Domain-level input types for repository operations.
  */
 export type CreateDealInput = {
@@ -31,19 +22,17 @@ export type UpdateDealInput = Partial<CreateDealInput>;
 
 export interface IDealRepository {
 	create(input: CreateDealInput): Promise<Deal>;
-	findById(id: string, include?: DealWith): Promise<Deal | null>;
-	findAll(include?: DealWith): Promise<Deal[]>;
+	findById(id: string): Promise<Deal | null>;
+	findAll(): Promise<Deal[]>;
 	update(id: string, input: UpdateDealInput): Promise<Deal | null>;
 	delete(id: string): Promise<Deal | null>;
 	// Soft delete recovery methods
 	restore(id: string): Promise<Deal | null>;
 	findWithDeleted(): Promise<Deal[]>;
 	findOnlyDeleted(): Promise<Deal[]>;
-	findByOwnerId(id: string, include?: DealWith): Promise<Deal[]>;
-	findByAccountId(id: string, include?: DealWith): Promise<Deal[]>;
+	findByOwnerId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Deal[]>;
+	findByAccountId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Deal[]>;
 	// Declarative queries (from queries: block in entity YAML)
-	findByOwnerId(ownerId: string): Promise<Deal[]>;
-	findByAccountId(accountId: string): Promise<Deal[]>;
 	findByStage(stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost'): Promise<Deal[]>;
 	findByOwnerIdAndStage(ownerId: string, stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost'): Promise<Deal[]>;
 }

@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": "..",
+    "paths": {
+      "@shared/subsystems/*": ["runtime/subsystems/*"],
+      "@shared/constants/*": ["runtime/constants/*"],
+      "@shared/types/*": ["runtime/types/*"],
+      "@shared/openapi": ["runtime/shared/openapi/index.ts"],
+      "@shared/openapi/*": ["runtime/shared/openapi/*"],
+      "@shared/*": ["runtime/shared/*", "test/scaffold/shared/*"]
+    }
+  },
+  "include": [
+    "../packages/api/src/domain/**/*"
+  ]
+}

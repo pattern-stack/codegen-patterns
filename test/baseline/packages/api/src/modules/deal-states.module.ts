@@ -13,6 +13,7 @@ import { DeleteDealStateCommand } from '../application/commands/deal_state/delet
 import { UpdateDealStateCommand } from '../application/commands/deal_state/update.command';
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { DealStateRepository } from '../infrastructure/persistence/repositories/deal-state.repository';
+import { relationshipQueryClasses } from '../application/queries/deal_state/relationships.queries';
 import { DealStatesController } from '../presentation/rest/deal-states.controller';
 import { createDealStateSchema, updateDealStateSchema, dealStateResponseSchema } from '../application/schemas/deal-state.dto';
 
@@ -28,6 +29,8 @@ import { createDealStateSchema, updateDealStateSchema, dealStateResponseSchema }
 		CreateDealStateCommand,
 		UpdateDealStateCommand,
 		DeleteDealStateCommand,
+		// Relationship composition queries
+		...relationshipQueryClasses,
 	],
 	exports: [
 		DEALSTATE_REPOSITORY,
@@ -36,6 +39,7 @@ import { createDealStateSchema, updateDealStateSchema, dealStateResponseSchema }
 		CreateDealStateCommand,
 		UpdateDealStateCommand,
 		DeleteDealStateCommand,
+		...relationshipQueryClasses,
 	],
 })
 export class DealStatesModule implements OnModuleInit {

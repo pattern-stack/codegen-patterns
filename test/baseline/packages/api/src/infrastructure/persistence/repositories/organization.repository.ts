@@ -10,9 +10,8 @@ import type {
 	CreateOrganizationInput,
 	IOrganizationRepository,
 	UpdateOrganizationInput,
-	OrganizationWith,
 } from '../../../domain';
-import { Organization, Opportunity } from '../../../domain';
+import { Organization } from '../../../domain';
 import type { DrizzleDB } from '../database.module';
 import { organizations } from '@repo/db/server/schema';
 
@@ -35,21 +34,18 @@ export class OrganizationRepository implements IOrganizationRepository {
 		return Organization.fromRecord(record);
 	}
 
-	async findById(id: string, include?: OrganizationWith): Promise<Organization | null> {
-		const record = await this.db.query.organizations.findFirst({
-			where: eq(organizations.id, id),
-			with: this.buildWithClause(include),
-		});
+	async findById(id: string): Promise<Organization | null> {
+		const result = await this.baseQuery()
+			.where(eq(organizations.id, id))
+			.limit(1);
 
-		return record ? this.mapToEntity(record) : null;
+		const record = result[0];
+		return record ? Organization.fromRecord(record) : null;
 	}
 
-	async findAll(include?: OrganizationWith): Promise<Organization[]> {
-		const records = await this.db.query.organizations.findMany({
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
+	async findAll(): Promise<Organization[]> {
+		const records = await this.baseQuery();
+		return records.map(Organization.fromRecord);
 	}
 
 	async update(id: string, input: UpdateOrganizationInput): Promise<Organization | null> {
@@ -79,41 +75,11 @@ export class OrganizationRepository implements IOrganizationRepository {
 		return this.db.select().from(organizations);
 	}
 
-	async findByParentId(id: string, include?: OrganizationWith): Promise<Organization[]> {
-		const records = await this.db.query.organizations.findMany({
-			where: eq(organizations.parentId, id),
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
-	}
-
-	private buildWithClause(include?: OrganizationWith) {
-		if (!include) return undefined;
-		// Drizzle expects `true` or object, not `false`. Only include truthy values.
-		const result: Record<string, true> = {};
-		if (include.parent) result.parent = true;
-		if (include.children) result.children = true;
-		if (include.opportunities) result.opportunities = true;
-		return Object.keys(result).length > 0 ? result : undefined;
-	}
-
-	// biome-ignore lint/suspicious/noExplicitAny: Drizzle relational query returns dynamic shape
-	private mapToEntity(record: any): Organization {
-		return Organization.fromRecord(record, (name, data) => {
-			switch (name) {
-				case 'parent':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
-					return Organization.fromRecord(data as any);
-				case 'children':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle records
-					return (data as any[]).map((r) => Organization.fromRecord(r));
-				case 'opportunities':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle records
-					return (data as any[]).map((r) => Opportunity.fromRecord(r));
-				default:
-					return data;
-			}
-		});
+	async findByParentId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Organization[]> {
+		let q = this.baseQuery()
+			.where(eq(organizations.parentId, id));
+		if (opts?.limit) q = (q as any).limit(opts.limit);
+		const records = await q;
+		return records.map(Organization.fromRecord);
 	}
 }

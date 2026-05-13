@@ -19,20 +19,8 @@ import type {
 	Create<%= className %>Input,
 	I<%= className %>Repository,
 	Update<%= className %>Input,
-<% if (hasRelationships) { -%>
-	<%= className %>With,
-<% } -%>
 } from '../../../domain';
-<%
-// Collect unique entity imports - only include relationships with existing target entities
-const entityImports = new Set([className]);
-if (hasExistingRelationships) {
-  [...existingBelongsTo, ...existingHasMany, ...existingHasOne].forEach((rel) => {
-    entityImports.add(rel.targetClass);
-  });
-}
--%>
-import { <%- [...entityImports].join(', ') %> } from '../../../domain';
+import { <%= className %> } from '../../../domain';
 import { <%= plural %> } from '<%= locations.dbSchemaServer.import %>';
 
 @Injectable()
@@ -57,12 +45,20 @@ export class <%= className %>Repository
 	protected toEntity(record: typeof <%= plural %>.$inferSelect): <%= className %> {
 		return <%= className %>.fromRecord(record);
 	}
+<%_
+// CGP-358: FK methods with opts take priority over same-named declarative query impl.
+// Always emit FK methods with opts; skip the declarative query body when a FK method
+// covers the same method name (simple single-FK, non-unique, non-via, non-select).
+// The declarative use-case class still works because opts is optional.
+const _fkMethodNames = new Set(belongsToRelations.map(rel => `findBy${rel.foreignKeyPascal}`));
+_%>
 <% belongsToRelations.forEach((rel) => { -%>
 
-	async findBy<%= rel.foreignKeyPascal %>(id: string): Promise<<%= className %>[]> {
-		const records = await this.baseQuery()
+	async findBy<%= rel.foreignKeyPascal %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= className %>[]> {
+		let q = this.baseQuery()
 			.where(eq(this.table.<%= rel.foreignKeyCamel %>, id));
-		return records.map((r) => this.toEntity(r));
+		if (opts?.limit) q = (q as any).limit(opts.limit);
+		return (await q).map((r) => this.toEntity(r));
 	}
 <% }) -%>
 <% entityRefFields.forEach((ref) => { -%>
@@ -84,6 +80,12 @@ export class <%= className %>Repository
 	// Declarative queries (from queries: block in entity YAML)
 	// ═══════════════════════════════════════════════════════════════════════
 <% processedQueries.forEach((q) => { -%>
+<%_
+// Skip declarative impl when a FK method already covers this method name.
+// FK methods accept opts so they're a superset of a plain single-param non-unique query.
+const _skipDqImpl = _fkMethodNames.has(q.methodName) && !q.isUnique && !q.hasVia && !q.hasSelect;
+_%>
+<% if (!_skipDqImpl) { -%>
 
 	async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.hasVia) { -%>
@@ -107,70 +109,8 @@ export class <%= className %>Repository
 		return records.map(r => this.toEntity(r));
 <% } -%>
 	}
-<% }) -%>
 <% } -%>
-<% if (hasRelationships) { -%>
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// Relationship loading (extends base class)
-	// ═══════════════════════════════════════════════════════════════════════
-
-	async findByIdWithRelations(
-		id: string,
-		include?: <%= className %>With,
-	): Promise<<%= className %> | null> {
-		const record = await this.db.query.<%= plural %>.findFirst({
-			where: eq(<%= plural %>.id, id),
-			with: this.buildWithClause(include),
-		});
-		return record ? this.mapToEntityWithRelations(record) : null;
-	}
-
-	async findAllWithRelations(include?: <%= className %>With): Promise<<%= className %>[]> {
-		const records = await this.db.query.<%= plural %>.findMany({
-			with: this.buildWithClause(include),
-		});
-		return records.map((r) => this.mapToEntityWithRelations(r));
-	}
-
-	private buildWithClause(include?: <%= className %>With) {
-		if (!include) return undefined;
-		const result: Record<string, true> = {};
-<% relationships.forEach((rel) => { -%>
-		if (include.<%= rel.name %>) result.<%= rel.name %> = true;
 <% }) -%>
-		return Object.keys(result).length > 0 ? result : undefined;
-	}
-
-	// biome-ignore lint/suspicious/noExplicitAny: Drizzle relational query returns dynamic shape
-	private mapToEntityWithRelations(record: any): <%= className %> {
-<% if (hasExistingRelationships) { -%>
-		return <%= className %>.fromRecord(record, (name, data) => {
-			switch (name) {
-<% existingBelongsTo.forEach((rel) => { -%>
-				case '<%= rel.name %>':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
-					return <%= rel.targetClass %>.fromRecord(data as any);
-<% }) -%>
-<% existingHasMany.forEach((rel) => { -%>
-				case '<%= rel.name %>':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle records
-					return (data as any[]).map((r) => <%= rel.targetClass %>.fromRecord(r));
-<% }) -%>
-<% existingHasOne.forEach((rel) => { -%>
-				case '<%= rel.name %>':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
-					return <%= rel.targetClass %>.fromRecord(data as any);
-<% }) -%>
-				default:
-					return data;
-			}
-		});
-<% } else { -%>
-		// Related entities not yet generated - return entity without relationship mapping
-		return <%= className %>.fromRecord(record);
-<% } -%>
-	}
 <% } -%>
 }
 <% } else { -%>
@@ -191,20 +131,8 @@ import type {
 	Create<%= className %>Input,
 	I<%= className %>Repository,
 	Update<%= className %>Input,
-<% if (hasRelationships) { -%>
-	<%= className %>With,
-<% } -%>
 } from '../../../domain';
-<%
-// Collect unique entity imports - only include relationships with existing target entities
-const entityImports = new Set([className]);
-if (hasExistingRelationships) {
-  [...existingBelongsTo, ...existingHasMany, ...existingHasOne].forEach((rel) => {
-    entityImports.add(rel.targetClass);
-  });
-}
--%>
-import { <%- [...entityImports].join(', ') %> } from '../../../domain';
+import { <%= className %> } from '../../../domain';
 import type { DrizzleDB } from '../database.module';
 import { <%= plural %> } from '<%= locations.dbSchemaServer.import %>';
 
@@ -238,35 +166,18 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 		return <%= className %>.fromRecord(record);
 	}
 
-	async findById(id: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %> | null> {
-<% if (hasRelationships) { -%>
-		const record = await this.db.query.<%= plural %>.findFirst({
-			where: eq(<%= plural %>.id, id),
-			with: this.buildWithClause(include),
-		});
-
-		return record ? this.mapToEntity(record) : null;
-<% } else { -%>
+	async findById(id: string): Promise<<%= className %> | null> {
 		const result = await this.baseQuery()
 			.where(eq(<%= plural %>.id, id))
 			.limit(1);
 
 		const record = result[0];
 		return record ? <%= className %>.fromRecord(record) : null;
-<% } -%>
 	}
 
-	async findAll(<%= hasRelationships ? `include?: ${className}With` : '' %>): Promise<<%= className %>[]> {
-<% if (hasRelationships) { -%>
-		const records = await this.db.query.<%= plural %>.findMany({
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
-<% } else { -%>
+	async findAll(): Promise<<%= className %>[]> {
 		const records = await this.baseQuery();
 		return records.map(<%= className %>.fromRecord);
-<% } -%>
 	}
 
 	async update(id: string, input: Update<%= className %>Input<%= (hasEmits && updateEventType) ? ', tx?: DrizzleTransaction' : '' %>): Promise<<%= className %> | null> {
@@ -359,38 +270,24 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 		return this.db.select().from(<%= plural %>);
 <% } -%>
 	}
+<%_
+// CGP-358: FK methods with opts take priority over same-named declarative query impl.
+// Always emit FK methods with opts; skip declarative body when FK covers it.
+const _fkMethodNamesInline = new Set(belongsToRelations.map(rel => `findBy${rel.foreignKeyPascal}`));
+_%>
 <% belongsToRelations.forEach((rel) => { -%>
 
-	async findBy<%= rel.foreignKeyPascal %>(id: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %>[]> {
-<% if (hasRelationships) { -%>
-		const records = await this.db.query.<%= plural %>.findMany({
-			where: eq(<%= plural %>.<%= rel.foreignKeyCamel %>, id),
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
-<% } else { -%>
-		const records = await this.baseQuery()
+	async findBy<%= rel.foreignKeyPascal %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= className %>[]> {
+		let q = this.baseQuery()
 			.where(eq(<%= plural %>.<%= rel.foreignKeyCamel %>, id));
-
+		if (opts?.limit) q = (q as any).limit(opts.limit);
+		const records = await q;
 		return records.map(<%= className %>.fromRecord);
-<% } -%>
 	}
 <% }) -%>
 <% entityRefFields.forEach((ref) => { -%>
 
-	async findBy<%= ref.pascalName %>(entityType: EntityType, entityId: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %>[]> {
-<% if (hasRelationships) { -%>
-		const records = await this.db.query.<%= plural %>.findMany({
-			where: and(
-				eq(<%= plural %>.<%= ref.camelName %>EntityType, entityType),
-				eq(<%= plural %>.<%= ref.camelName %>EntityId, entityId)
-			),
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
-<% } else { -%>
+	async findBy<%= ref.pascalName %>(entityType: EntityType, entityId: string): Promise<<%= className %>[]> {
 		const records = await this.baseQuery()
 			.where(
 				and(
@@ -400,7 +297,6 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 			);
 
 		return records.map(<%= className %>.fromRecord);
-<% } -%>
 	}
 <% }) -%>
 <% if (hasDeclarativeQueries) { -%>
@@ -409,6 +305,11 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 	// Declarative queries (from queries: block in entity YAML)
 	// ═══════════════════════════════════════════════════════════════════════
 <% processedQueries.forEach((q) => { -%>
+<%_
+// Skip declarative impl when a FK method already covers this method name.
+const _skipDqImplInline = _fkMethodNamesInline.has(q.methodName) && !q.isUnique && !q.hasVia && !q.hasSelect;
+_%>
+<% if (!_skipDqImplInline) { -%>
 
 	async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.hasVia) { -%>
@@ -432,49 +333,8 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 		return records.map(<%= className %>.fromRecord);
 <% } -%>
 	}
-<% }) -%>
 <% } -%>
-<% if (hasRelationships) { -%>
-
-	private buildWithClause(include?: <%= className %>With) {
-		if (!include) return undefined;
-		// Drizzle expects `true` or object, not `false`. Only include truthy values.
-		const result: Record<string, true> = {};
-<% relationships.forEach((rel) => { -%>
-		if (include.<%= rel.name %>) result.<%= rel.name %> = true;
 <% }) -%>
-		return Object.keys(result).length > 0 ? result : undefined;
-	}
-
-	// biome-ignore lint/suspicious/noExplicitAny: Drizzle relational query returns dynamic shape
-	private mapToEntity(record: any): <%= className %> {
-<% if (hasExistingRelationships) { -%>
-		return <%= className %>.fromRecord(record, (name, data) => {
-			switch (name) {
-<% existingBelongsTo.forEach((rel) => { -%>
-				case '<%= rel.name %>':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
-					return <%= rel.targetClass %>.fromRecord(data as any);
-<% }) -%>
-<% existingHasMany.forEach((rel) => { -%>
-				case '<%= rel.name %>':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle records
-					return (data as any[]).map((r) => <%= rel.targetClass %>.fromRecord(r));
-<% }) -%>
-<% existingHasOne.forEach((rel) => { -%>
-				case '<%= rel.name %>':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
-					return <%= rel.targetClass %>.fromRecord(data as any);
-<% }) -%>
-				default:
-					return data;
-			}
-		});
-<% } else { -%>
-		// Related entities not yet generated - return entity without relationship mapping
-		return <%= className %>.fromRecord(record);
-<% } -%>
-	}
 <% } -%>
 }
 <% } -%>

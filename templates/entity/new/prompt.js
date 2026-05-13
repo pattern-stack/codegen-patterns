@@ -568,6 +568,7 @@ export default {
       moduleToGetByIdQuery: importHelpers.moduleToQuery(name, fileNames.getByIdQuery.replace('.ts', '')),
       moduleToListQuery: importHelpers.moduleToQuery(name, fileNames.listQuery.replace('.ts', '')),
       moduleToDeclarativeQueries: importHelpers.moduleToQuery(name, 'declarative-queries'),
+      moduleToRelationshipQueries: importHelpers.moduleToQuery(name, 'relationships.queries'),
       moduleToCreateCommand: importHelpers.moduleToCommand(name, fileNames.createCommand.replace('.ts', '')),
       moduleToUpdateCommand: importHelpers.moduleToCommand(name, fileNames.updateCommand.replace('.ts', '')),
       moduleToDeleteCommand: importHelpers.moduleToCommand(name, fileNames.deleteCommand.replace('.ts', '')),

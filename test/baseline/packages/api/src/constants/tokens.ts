@@ -1,0 +1,15 @@
+// Generated entity repository tokens
+export const CONTACT_REPOSITORY = Symbol('CONTACT_REPOSITORY');
+
+export const DEALSTATE_REPOSITORY = Symbol('DEALSTATE_REPOSITORY');
+
+export const DEAL_REPOSITORY = Symbol('DEAL_REPOSITORY');
+
+export const OPPORTUNITY_REPOSITORY = Symbol('OPPORTUNITY_REPOSITORY');
+
+export const ORGANIZATION_REPOSITORY = Symbol('ORGANIZATION_REPOSITORY');
+
+export const PERSON_REPOSITORY = Symbol('PERSON_REPOSITORY');
+
+export const USER_REPOSITORY = Symbol('USER_REPOSITORY');
+

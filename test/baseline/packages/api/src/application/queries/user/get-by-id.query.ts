@@ -10,7 +10,7 @@
 
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { USER_REPOSITORY } from '../../../constants';
-import type { IUserRepository, UserWith } from '../../../domain';
+import type { IUserRepository } from '../../../domain';
 import { User } from '../../../domain';
 
 @Injectable()
@@ -20,10 +20,10 @@ export class GetUserByIdQuery {
 		private readonly userRepository: IUserRepository,
 	) {}
 
-	async execute(id: string, include?: UserWith): Promise<User> {
+	async execute(id: string): Promise<User> {
 		// TODO: Add authorization check if needed (row-level security)
 
-		const entity = await this.userRepository.findById(id, include);
+		const entity = await this.userRepository.findById(id);
 		if (!entity) {
 			throw new NotFoundException(`User with id ${id} not found`);
 		}

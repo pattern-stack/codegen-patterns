@@ -59,9 +59,15 @@ test-smoke-junction-cross-domain-clean:
 test-smoke-relationship:
     bun test/smoke/run-smoke.ts --scenario relationship
 
-# Run baseline test (generate + compare to baseline)
+# Run baseline test (generate + typecheck + compare to baseline)
 test-baseline:
     bun test/run-test.ts full
+
+# Typecheck the clean-pipeline generated output in packages/api/src
+# Uses test/tsconfig.baseline.json with runtime/ @shared/* aliases
+# (no regeneration — run after test-baseline or just gen-all)
+typecheck-baseline:
+    bun test/run-test.ts typecheck
 
 # Capture current output as new baseline
 baseline:

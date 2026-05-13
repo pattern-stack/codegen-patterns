@@ -13,7 +13,6 @@ import {
 	ParseUUIDPipe,
 	Post,
 	Put,
-	Query,
 	UsePipes,
 } from '@nestjs/common';
 import {
@@ -36,7 +35,6 @@ import { DeleteContactCommand } from '../../application/commands/contact/delete.
 import { UpdateContactCommand } from '../../application/commands/contact/update.command';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { Contact } from '../../domain';
-import type { ContactWith } from '../../domain';
 
 // OPENAPI-3: controller decorators reference schemas by `$ref` rather
 // than `type:` class references because generated DTOs are Zod-derived
@@ -62,8 +60,8 @@ export class ContactsController {
 	})
 	@ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
 	@Get()
-	async findAll(@Query('include') include?: string): Promise<Contact[]> {
-		return this.listContactsQuery.execute(this.parseInclude(include));
+	async findAll(): Promise<Contact[]> {
+		return this.listContactsQuery.execute();
 	}
 
 	@ApiOperation({ summary: 'Find contact by id', operationId: 'findContactById' })
@@ -74,9 +72,8 @@ export class ContactsController {
 	@Get(':id')
 	async findById(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Query('include') include?: string,
 	): Promise<Contact> {
-		return this.getContactByIdQuery.execute(id, this.parseInclude(include));
+		return this.getContactByIdQuery.execute(id);
 	}
 
 	@ApiOperation({ summary: 'Create contact', operationId: 'createContact' })
@@ -124,17 +121,5 @@ export class ContactsController {
 	): Promise<Contact> {
 		return this.deleteContactCommand.execute(id, { actor: { tenantId, userId } });
 	}
-
-	/**
-	 * Parse comma-separated include query param into typed options.
-	 * Example: ?include=account,owner → { account: true, owner: true }
-	 */
-	private parseInclude(include?: string): ContactWith | undefined {
-		if (!include) return undefined;
-		const parts = include.split(',').map((s) => s.trim());
-		return {
-			account: parts.includes('account'),
-			user: parts.includes('user'),
-		};
-	}
 }
+
