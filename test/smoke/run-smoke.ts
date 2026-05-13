@@ -27,7 +27,31 @@ import path from 'node:path';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
-const FIXTURES_DIR = path.join(REPO_ROOT, 'test', 'smoke', 'fixtures');
+
+// CGP-62: `--scenario` selects which fixture set the smoke generates against.
+// `default` (no flag) preserves the historical behavior. `relationship`
+// swaps in `test/smoke/fixtures/crm/` (account self-ref + cross-entity
+// belongs_to + has_many) and runs `assertRelationshipEmission()` after
+// entity generation to verify the clean-lite-ps `relations()` emission.
+type Scenario = 'default' | 'relationship';
+
+const SCENARIO: Scenario = ((): Scenario => {
+	const idx = process.argv.indexOf('--scenario');
+	if (idx === -1) return 'default';
+	const value = process.argv[idx + 1];
+	if (value !== 'default' && value !== 'relationship') {
+		console.error(
+			`Unknown --scenario: ${value}. Expected 'default' or 'relationship'.`,
+		);
+		process.exit(2);
+	}
+	return value;
+})();
+
+const FIXTURES_DIR =
+	SCENARIO === 'relationship'
+		? path.join(REPO_ROOT, 'test', 'smoke', 'fixtures', 'crm')
+		: path.join(REPO_ROOT, 'test', 'smoke', 'fixtures');
 
 const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 
@@ -197,6 +221,90 @@ function cleanup(dir: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Relationship-scenario assertions (CGP-62)
+// ---------------------------------------------------------------------------
+
+function assertContains(haystack: string, needle: RegExp, source: string): void {
+	if (!needle.test(haystack)) {
+		throw new Error(
+			`Smoke assertion failed (${source}): expected to match ${needle} in generated output.`,
+		);
+	}
+}
+
+function assertNotContains(haystack: string, needle: RegExp, source: string): void {
+	if (needle.test(haystack)) {
+		throw new Error(
+			`Smoke assertion failed (${source}): did not expect ${needle} — see cgp-62 empirical-state + codegen-patterns#358.`,
+		);
+	}
+}
+
+/**
+ * Verify the clean-lite-ps Drizzle `relations()` emission for the CRM
+ * fixture set. Asserts the *extension path table-metadata that today's
+ * templates actually ship* — the `belongs_to` side of `relations()`.
+ *
+ * Layout: `clean-lite-ps/prompt-extension.js:822-829` emits each entity at
+ * `${srcRoot}/modules/${plural}/${name}.entity.ts`. The smoke project's
+ * `srcRoot` is `<tmpDir>/src` (per `codegen project init --yes`).
+ *
+ * Coverage:
+ *   - Self-ref `belongs_to`        (regression of `269ab3f`)
+ *   - Cross-entity `belongs_to`    (account FK on contact + opportunity)
+ *   - `relations()` const presence (emission gate `hasRelationsBlock`)
+ *   - **Negative `many(` assertion** — clean-lite-ps's entity template
+ *     iterates `belongs_to` only; `has_many` declarations are silently
+ *     dropped. The negative assertion names this gap in the test surface
+ *     itself. Flip to positive once codegen-patterns#358 lands.
+ */
+function assertRelationshipEmission(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const accountSchema = reads('modules/accounts/account.entity.ts');
+	assertContains(
+		accountSchema,
+		/parentAccount:\s*one\(accounts,/,
+		'accounts.entity.ts self-ref belongs_to',
+	);
+	assertContains(
+		accountSchema,
+		/export const accountsRelations\s*=\s*relations\(accounts/,
+		'accounts.entity.ts relations() const',
+	);
+	assertNotContains(
+		accountSchema,
+		/\bmany\(/,
+		'accounts.entity.ts has_many gap (clean-lite-ps drops has_many)',
+	);
+
+	const contactSchema = reads('modules/contacts/contact.entity.ts');
+	assertContains(
+		contactSchema,
+		/account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[contacts\.accountId\]/,
+		'contacts.entity.ts belongs_to account',
+	);
+	assertContains(
+		contactSchema,
+		/export const contactsRelations\s*=\s*relations\(contacts/,
+		'contacts.entity.ts relations() const',
+	);
+
+	const opportunitySchema = reads('modules/opportunities/opportunity.entity.ts');
+	assertContains(
+		opportunitySchema,
+		/account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[opportunities\.accountId\]/,
+		'opportunities.entity.ts belongs_to account',
+	);
+	assertContains(
+		opportunitySchema,
+		/export const opportunitiesRelations\s*=\s*relations\(opportunities/,
+		'opportunities.entity.ts relations() const',
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -238,6 +346,16 @@ async function main(): Promise<number> {
 
 		// 5. Run `codegen entity new --all`.
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+
+		// 5.1. CGP-62 — under the `relationship` scenario, assert the
+		// clean-lite-ps Drizzle `relations()` emission shape on the CRM
+		// fixtures. Runs before subsystem installs so a failure shortcuts
+		// the slower steps; the install steps don't rewrite entity files.
+		if (SCENARIO === 'relationship') {
+			log('asserting clean-lite-ps relations() emission for CRM fixtures');
+			assertRelationshipEmission(tmpDir);
+			log('relationship emission OK');
+		}
 
 		// 5.5. Install the observability subsystem (combiner — ADR-025).
 		// No backend flag, no schema; copies runtime/subsystems/observability via

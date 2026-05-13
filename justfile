@@ -53,6 +53,12 @@ test-smoke-junction-cross-domain:
 test-smoke-junction-cross-domain-clean:
     bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean
 
+# Run the relationship-scenario smoke (CGP-62): self-ref + cross-entity
+# belongs_to + has_many against the CRM fixture set. Verifies the
+# clean-lite-ps Drizzle relations() emission shape. ~60-120s.
+test-smoke-relationship:
+    bun test/smoke/run-smoke.ts --scenario relationship
+
 # Run baseline test (generate + compare to baseline)
 test-baseline:
     bun test/run-test.ts full
@@ -82,7 +88,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline test-smoke test-smoke-junction test-smoke-junction-cross-domain
+test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

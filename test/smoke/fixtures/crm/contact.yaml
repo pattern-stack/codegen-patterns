@@ -1,0 +1,47 @@
+# Smoke fixture (relationship scenario): contact
+#
+# Cross-entity `belongs_to account` on `account_id`. Verifies clean-lite-ps
+# emits `account: one(accounts, { fields: [contacts.accountId], references:
+# [accounts.id] })` in the `contactsRelations` const.
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  pattern: Synced
+  folder_structure: nested
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  first_name:
+    type: string
+    required: true
+    max_length: 100
+
+  last_name:
+    type: string
+    required: true
+    max_length: 100
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+queries:
+  - by: [account_id]
+  - by: [email]
+    unique: true

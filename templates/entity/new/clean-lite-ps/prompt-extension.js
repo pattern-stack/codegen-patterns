@@ -1011,6 +1011,12 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // Drizzle
     clpDrizzleImports: drizzleEntityImports,
     clpHasRelationsBlock: hasRelationsBlock,
+    // A self-referential belongs_to FK requires the `references()` callback
+    // to carry a `: AnyPgColumn` return-type annotation; otherwise TypeScript's
+    // strict mode flags the table const with TS7022/TS7024 (circular initializer).
+    // Surfaced by the cgp-62 relationship-scenario smoke when generating a CRM
+    // account with a `parent_account_id` self-FK.
+    clpHasSelfFk: belongsTo.some((rel) => rel.isSelfFk),
     clpEnumFields,
 
     // Declarative queries
