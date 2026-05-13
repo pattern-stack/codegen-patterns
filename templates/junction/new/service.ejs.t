@@ -8,6 +8,21 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { <%= classNames.repository %> } from './<%= name %>.repository';
 import type { <%= classNames.entity %> } from './<%= name %>.entity';
+import { <%= leftRepositoryClass %> } from '<%= leftRepoImportFromJunction %>';
+import type { <%= leftEntityPascal %> } from '<%= leftEntityImportFromJunction %>';
+import { <%= rightRepositoryClass %> } from '<%= rightRepoImportFromJunction %>';
+import type { <%= rightEntityPascal %> } from '<%= rightEntityImportFromJunction %>';
+
+/**
+ * Pick of the link-side mutable fields that callers may supply when
+ * attaching. Subset of `<%= classNames.entity %>` minus the two FK columns
+ * (those come from the method args).
+ */
+export type <%= entityNamePascal %>LinkInput = Partial<
+  Pick<<%= classNames.entity %>,
+    'isPrimary'<% if (temporal) { %> | 'startedAt' | 'endedAt'<% } %><% if (sourced) { %> | 'sourcedFrom' | 'confidence' | 'matchedAt'<% } %><% if (hasRole) { %> | 'role'<% } %>
+  >
+>;
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -19,7 +34,11 @@ export class <%= classNames.service %> extends WithAnalytics(
   @Optional() @Inject(EVENT_BUS)
   protected override eventBus: any = undefined;
 
-  constructor(protected override readonly repository: <%= classNames.repository %>) {
+  constructor(
+    protected override readonly repository: <%= classNames.repository %>,
+    private readonly <%= leftEntityCamel %>Repo: <%= leftRepositoryClass %>,
+    private readonly <%= rightEntityCamel %>Repo: <%= rightRepositoryClass %>,
+  ) {
     super(repository);
   }
 
@@ -29,8 +48,6 @@ export class <%= classNames.service %> extends WithAnalytics(
 
   /**
    * Fetch all junction rows for a given <%= leftColumn %>.
-   *
-   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
    */
   async findBy<%= leftEntityPascal %>Id(
     <%= leftColumnCamel %>: string,
@@ -41,8 +58,6 @@ export class <%= classNames.service %> extends WithAnalytics(
 
   /**
    * Fetch all junction rows for a given <%= rightColumn %>.
-   *
-   * FIXME: align with codegen-patterns#358 pagination shape if it diverges.
    */
   async findBy<%= rightEntityPascal %>Id(
     <%= rightColumnCamel %>: string,
@@ -51,19 +66,100 @@ export class <%= classNames.service %> extends WithAnalytics(
     return this.repository.findBy<%= rightEntityPascal %>Id(<%= rightColumnCamel %>, opts);
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Fan-out association methods (attach/detach/list/setPrimary) are NOT
-  // emitted here. They land via junction-association-codegen
-  // (pattern-stack/dealbrain-integrations#60) once
-  // pattern-stack/codegen-patterns#358 establishes the service-method
-  // emission machinery.
-  //
-  // Until #60 lands, consumers hand-write fan-out methods in their own
-  // service files against the canonical shape documented in
-  // .ai-docs/stacks/codegen-app-patterns/specs/cgp-62.md (see
-  // architectural_notes.cross_entity_access.canonical_shape in the stack
-  // plan). The hand-written methods are the executable spec for #60.
-  // ─────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // CGP-60 — canonical fan-out methods
+  // Mirrored, paginated, composed `{ entity, link }` shape. Always emitted
+  // on the junction service; parent-side `attach<Right>` / `addTo<Left>` /
+  // etc. inject templates delegate here. `list` is implemented with two
+  // single-table queries (no Drizzle `with:`).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Create (or upsert via the repo's create method) a junction row linking
+   * a <%= leftEntity %> and a <%= rightEntity %>. Returns the persisted row.
+   */
+  async attach(
+    <%= leftEntityCamel %>Id: string,
+    <%= rightEntityCamel %>Id: string,
+    link?: <%= entityNamePascal %>LinkInput,
+  ): Promise<<%= classNames.entity %>> {
+    return this.create({
+      <%= leftColumnCamel %>: <%= leftEntityCamel %>Id,
+      <%= rightColumnCamel %>: <%= rightEntityCamel %>Id,
+      ...(link ?? {}),
+    } as unknown as Partial<<%= classNames.entity %>>);
+  }
+
+  /**
+   * Remove the junction row linking `<%= leftEntityCamel %>Id` and
+   * `<%= rightEntityCamel %>Id`. No-op if no row exists.
+   */
+  async detach(
+    <%= leftEntityCamel %>Id: string,
+    <%= rightEntityCamel %>Id: string,
+  ): Promise<void> {
+    const links = await this.repository.findBy<%= leftEntityPascal %>Id(<%= leftEntityCamel %>Id);
+    const match = links.find(
+      (l) => (l as any).<%= rightColumnCamel %> === <%= rightEntityCamel %>Id,
+    );
+    if (match) {
+      await this.delete((match as any).id ?? `${<%= leftEntityCamel %>Id}:${<%= rightEntityCamel %>Id}`);
+    }
+  }
+
+  /**
+   * List the targets associated with one side of the junction, composed as
+   * `{ entity, link }`. Implementation: one repo call for the links, one
+   * `findByIds` call for the targets — no SQL JOIN. Cursor pagination by
+   * right-entity `id` (matches CGP-358 has_many shape; time-ordered cursor
+   * is deferred per spec Open Q3).
+   */
+  async listAssoc(
+    side: 'left' | 'right',
+    anchorId: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: <%= leftEntityPascal %> | <%= rightEntityPascal %>; link: <%= classNames.entity %> }>> {
+    if (side === 'left') {
+      const links = await this.repository.findBy<%= leftEntityPascal %>Id(anchorId, opts);
+      const targetIds = links.map((l) => (l as any).<%= rightColumnCamel %> as string);
+      const targets = await this.<%= rightEntityCamel %>Repo.findByIds(targetIds);
+      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      return links.map((link) => ({
+        entity: byId.get((link as any).<%= rightColumnCamel %>)! as <%= rightEntityPascal %>,
+        link,
+      }));
+    } else {
+      const links = await this.repository.findBy<%= rightEntityPascal %>Id(anchorId, opts);
+      const targetIds = links.map((l) => (l as any).<%= leftColumnCamel %> as string);
+      const targets = await this.<%= leftEntityCamel %>Repo.findByIds(targetIds);
+      const byId = new Map(targets.map((t) => [(t as any).id, t]));
+      return links.map((link) => ({
+        entity: byId.get((link as any).<%= leftColumnCamel %>)! as <%= leftEntityPascal %>,
+        link,
+      }));
+    }
+  }
+
+  /**
+   * Mark the (`<%= leftEntityCamel %>Id`, `<%= rightEntityCamel %>Id`) row
+   * as `is_primary: true`. Demoting other rows on the same side is the
+   * caller's concern in v1; future leaves may add transactional demotion.
+   */
+  async setPrimary(
+    <%= leftEntityCamel %>Id: string,
+    <%= rightEntityCamel %>Id: string,
+  ): Promise<void> {
+    const links = await this.repository.findBy<%= leftEntityPascal %>Id(<%= leftEntityCamel %>Id);
+    const match = links.find(
+      (l) => (l as any).<%= rightColumnCamel %> === <%= rightEntityCamel %>Id,
+    );
+    if (match) {
+      await this.update(
+        (match as any).id ?? `${<%= leftEntityCamel %>Id}:${<%= rightEntityCamel %>Id}`,
+        { isPrimary: true } as unknown as Partial<<%= classNames.entity %>>,
+      );
+    }
+  }
 
   // Inherited from BaseService:
   //   findById, findByIds, list, count, exists, create, update, delete
