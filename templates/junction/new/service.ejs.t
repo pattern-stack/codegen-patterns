@@ -75,8 +75,16 @@ export class <%= classNames.service %> extends WithAnalytics(
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Create (or upsert via the repo's create method) a junction row linking
-   * a <%= leftEntity %> and a <%= rightEntity %>. Returns the persisted row.
+   * Create a junction row linking a <%= leftEntity %> and a <%= rightEntity %>.
+   * Returns the persisted row.
+   *
+   * **Idempotency:** NOT idempotent at the service layer in v1. A duplicate
+   * pair raises the DB-level composite-PK unique-constraint error from the
+   * underlying repository's `create`. Callers requiring idempotency should
+   * either check existence via `findBy<%= leftEntityPascal %>Id` + filter,
+   * or wrap the call in try/catch on the unique-violation error. A future
+   * leaf may add a transactional check-then-create here if a consumer
+   * surfaces the need (track as a follow-up if so).
    */
   async attach(
     <%= leftEntityCamel %>Id: string,
