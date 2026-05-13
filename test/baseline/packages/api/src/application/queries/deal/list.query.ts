@@ -12,7 +12,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { DEAL_REPOSITORY } from '../../../constants';
-import type { IDealRepository, DealWith } from '../../../domain';
+import type { IDealRepository } from '../../../domain';
 import { Deal } from '../../../domain';
 
 @Injectable()
@@ -22,8 +22,8 @@ export class ListDealsQuery {
 		private readonly dealRepository: IDealRepository,
 	) {}
 
-	async execute(include?: DealWith): Promise<Deal[]> {
+	async execute(): Promise<Deal[]> {
 		// TODO: Add filtering, pagination, sorting as needed
-		return this.dealRepository.findAll(include);
+		return this.dealRepository.findAll();
 	}
 }

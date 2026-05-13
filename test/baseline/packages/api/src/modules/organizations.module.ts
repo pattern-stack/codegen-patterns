@@ -13,6 +13,7 @@ import { UpdateOrganizationCommand } from '../application/commands/organization/
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { ElectricModule } from '../infrastructure/electric/electric.module';
 import { OrganizationRepository } from '../infrastructure/persistence/repositories/organization.repository';
+import { relationshipQueryClasses } from '../application/queries/organization/relationships.queries';
 import { OrganizationsController } from '../presentation/rest/organizations.controller';
 import { createOrganizationSchema, updateOrganizationSchema, organizationResponseSchema } from '../application/schemas/organization.dto';
 
@@ -27,6 +28,8 @@ import { createOrganizationSchema, updateOrganizationSchema, organizationRespons
 		CreateOrganizationCommand,
 		UpdateOrganizationCommand,
 		DeleteOrganizationCommand,
+		// Relationship composition queries
+		...relationshipQueryClasses,
 	],
 	exports: [
 		ORGANIZATION_REPOSITORY,
@@ -34,6 +37,7 @@ import { createOrganizationSchema, updateOrganizationSchema, organizationRespons
 		CreateOrganizationCommand,
 		UpdateOrganizationCommand,
 		DeleteOrganizationCommand,
+		...relationshipQueryClasses,
 	],
 })
 export class OrganizationsModule implements OnModuleInit {

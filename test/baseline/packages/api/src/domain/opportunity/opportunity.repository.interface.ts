@@ -6,16 +6,6 @@
 import type { Opportunity } from './opportunity.entity';
 
 /**
- * Type-safe eager loading options.
- * Pass to repository methods to include related entities.
- */
-export type OpportunityWith = {
-	organization?: boolean;
-	owner?: boolean;
-	state?: boolean;
-};
-
-/**
  * Domain-level input types for repository operations.
  */
 export type CreateOpportunityInput = {
@@ -34,11 +24,11 @@ export type UpdateOpportunityInput = Partial<CreateOpportunityInput>;
 
 export interface IOpportunityRepository {
 	create(input: CreateOpportunityInput): Promise<Opportunity>;
-	findById(id: string, include?: OpportunityWith): Promise<Opportunity | null>;
-	findAll(include?: OpportunityWith): Promise<Opportunity[]>;
+	findById(id: string): Promise<Opportunity | null>;
+	findAll(): Promise<Opportunity[]>;
 	update(id: string, input: UpdateOpportunityInput): Promise<Opportunity | null>;
 	delete(id: string): Promise<Opportunity | null>;
-	findByOrganizationId(id: string, include?: OpportunityWith): Promise<Opportunity[]>;
-	findByOwnerId(id: string, include?: OpportunityWith): Promise<Opportunity[]>;
-	findByStateId(id: string, include?: OpportunityWith): Promise<Opportunity[]>;
+	findByOrganizationId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]>;
+	findByOwnerId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]>;
+	findByStateId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]>;
 }

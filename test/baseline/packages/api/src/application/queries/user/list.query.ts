@@ -12,7 +12,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { USER_REPOSITORY } from '../../../constants';
-import type { IUserRepository, UserWith } from '../../../domain';
+import type { IUserRepository } from '../../../domain';
 import { User } from '../../../domain';
 
 @Injectable()
@@ -22,8 +22,8 @@ export class ListUsersQuery {
 		private readonly userRepository: IUserRepository,
 	) {}
 
-	async execute(include?: UserWith): Promise<User[]> {
+	async execute(): Promise<User[]> {
 		// TODO: Add filtering, pagination, sorting as needed
-		return this.userRepository.findAll(include);
+		return this.userRepository.findAll();
 	}
 }

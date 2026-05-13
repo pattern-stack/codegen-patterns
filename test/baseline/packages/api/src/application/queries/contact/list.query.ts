@@ -12,7 +12,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { CONTACT_REPOSITORY } from '../../../constants';
-import type { IContactRepository, ContactWith } from '../../../domain';
+import type { IContactRepository } from '../../../domain';
 import { Contact } from '../../../domain';
 
 @Injectable()
@@ -22,8 +22,8 @@ export class ListContactsQuery {
 		private readonly contactRepository: IContactRepository,
 	) {}
 
-	async execute(include?: ContactWith): Promise<Contact[]> {
+	async execute(): Promise<Contact[]> {
 		// TODO: Add filtering, pagination, sorting as needed
-		return this.contactRepository.findAll(include);
+		return this.contactRepository.findAll();
 	}
 }

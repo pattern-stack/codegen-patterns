@@ -6,16 +6,6 @@
 import type { Organization } from './organization.entity';
 
 /**
- * Type-safe eager loading options.
- * Pass to repository methods to include related entities.
- */
-export type OrganizationWith = {
-	parent?: boolean;
-	children?: boolean;
-	opportunities?: boolean;
-};
-
-/**
  * Domain-level input types for repository operations.
  */
 export type CreateOrganizationInput = {
@@ -29,9 +19,9 @@ export type UpdateOrganizationInput = Partial<CreateOrganizationInput>;
 
 export interface IOrganizationRepository {
 	create(input: CreateOrganizationInput): Promise<Organization>;
-	findById(id: string, include?: OrganizationWith): Promise<Organization | null>;
-	findAll(include?: OrganizationWith): Promise<Organization[]>;
+	findById(id: string): Promise<Organization | null>;
+	findAll(): Promise<Organization[]>;
 	update(id: string, input: UpdateOrganizationInput): Promise<Organization | null>;
 	delete(id: string): Promise<Organization | null>;
-	findByParentId(id: string, include?: OrganizationWith): Promise<Organization[]>;
+	findByParentId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Organization[]>;
 }

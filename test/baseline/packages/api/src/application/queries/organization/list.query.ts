@@ -12,7 +12,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { ORGANIZATION_REPOSITORY } from '../../../constants';
-import type { IOrganizationRepository, OrganizationWith } from '../../../domain';
+import type { IOrganizationRepository } from '../../../domain';
 import { Organization } from '../../../domain';
 
 @Injectable()
@@ -22,8 +22,8 @@ export class ListOrganizationsQuery {
 		private readonly organizationRepository: IOrganizationRepository,
 	) {}
 
-	async execute(include?: OrganizationWith): Promise<Organization[]> {
+	async execute(): Promise<Organization[]> {
 		// TODO: Add filtering, pagination, sorting as needed
-		return this.organizationRepository.findAll(include);
+		return this.organizationRepository.findAll();
 	}
 }

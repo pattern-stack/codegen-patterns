@@ -10,7 +10,7 @@
 
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CONTACT_REPOSITORY } from '../../../constants';
-import type { IContactRepository, ContactWith } from '../../../domain';
+import type { IContactRepository } from '../../../domain';
 import { Contact } from '../../../domain';
 
 @Injectable()
@@ -20,10 +20,10 @@ export class GetContactByIdQuery {
 		private readonly contactRepository: IContactRepository,
 	) {}
 
-	async execute(id: string, include?: ContactWith): Promise<Contact> {
+	async execute(id: string): Promise<Contact> {
 		// TODO: Add authorization check if needed (row-level security)
 
-		const entity = await this.contactRepository.findById(id, include);
+		const entity = await this.contactRepository.findById(id);
 		if (!entity) {
 			throw new NotFoundException(`Contact with id ${id} not found`);
 		}

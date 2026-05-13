@@ -6,15 +6,6 @@
 import type { User } from './user.entity';
 
 /**
- * Type-safe eager loading options.
- * Pass to repository methods to include related entities.
- */
-export type UserWith = {
-	person?: boolean;
-	owned_opportunities?: boolean;
-};
-
-/**
  * Domain-level input types for repository operations.
  */
 export type CreateUserInput = {
@@ -27,9 +18,9 @@ export type UpdateUserInput = Partial<CreateUserInput>;
 
 export interface IUserRepository {
 	create(input: CreateUserInput): Promise<User>;
-	findById(id: string, include?: UserWith): Promise<User | null>;
-	findAll(include?: UserWith): Promise<User[]>;
+	findById(id: string): Promise<User | null>;
+	findAll(): Promise<User[]>;
 	update(id: string, input: UpdateUserInput): Promise<User | null>;
 	delete(id: string): Promise<User | null>;
-	findByPersonId(id: string, include?: UserWith): Promise<User[]>;
+	findByPersonId(id: string, opts?: { cursor?: string; limit?: number }): Promise<User[]>;
 }

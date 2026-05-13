@@ -8,33 +8,23 @@
  * All entities should follow this structure for consistent imports.
  */
 
-import type { Person } from '../person/person.entity';
-import type { Opportunity } from '../opportunity/opportunity.entity';
-
 export class User {
 	constructor(
 		public readonly id: string,
 		public readonly tenantId: string,
 		public readonly email: string,
 		public readonly personId: string | null,
-		// Loaded relations (optional, populated when eager-loaded)
-		public readonly person?: Person,
-		public readonly owned_opportunities?: Opportunity[],
 	) {}
 
 	static fromRecord(
 		// biome-ignore lint/suspicious/noExplicitAny: Drizzle records have dynamic shape
 		record: Record<string, any>,
-		// biome-ignore lint/suspicious/noExplicitAny: Returns different entity types
-		mapRelation?: (name: string, data: unknown) => any,
 	): User {
 		return new User(
 			record.id,
 			record.tenantId,
 			record.email,
 			record.personId,
-			record.person ? mapRelation?.('person', record.person) : undefined,
-			record.owned_opportunities ? mapRelation?.('owned_opportunities', record.owned_opportunities) : undefined,
 		);
 	}
 }

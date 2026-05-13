@@ -6,14 +6,6 @@
 import type { DealState } from './deal_state.entity';
 
 /**
- * Type-safe eager loading options.
- * Pass to repository methods to include related entities.
- */
-export type DealStateWith = {
-	opportunities?: boolean;
-};
-
-/**
  * Domain-level input types for repository operations.
  */
 export type CreateDealStateInput = {
@@ -30,8 +22,8 @@ export type UpdateDealStateInput = Partial<CreateDealStateInput>;
 
 export interface IDealStateRepository {
 	create(input: CreateDealStateInput): Promise<DealState>;
-	findById(id: string, include?: DealStateWith): Promise<DealState | null>;
-	findAll(include?: DealStateWith): Promise<DealState[]>;
+	findById(id: string): Promise<DealState | null>;
+	findAll(): Promise<DealState[]>;
 	update(id: string, input: UpdateDealStateInput): Promise<DealState | null>;
 	delete(id: string): Promise<DealState | null>;
 }

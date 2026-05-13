@@ -11,9 +11,8 @@ import type {
 	CreateContactInput,
 	IContactRepository,
 	UpdateContactInput,
-	ContactWith,
 } from '../../../domain';
-import { Contact, User } from '../../../domain';
+import { Contact } from '../../../domain';
 import type { DrizzleDB } from '../database.module';
 import { contacts } from '@repo/db/server/schema';
 
@@ -44,21 +43,18 @@ export class ContactRepository implements IContactRepository {
 		return Contact.fromRecord(record);
 	}
 
-	async findById(id: string, include?: ContactWith): Promise<Contact | null> {
-		const record = await this.db.query.contacts.findFirst({
-			where: eq(contacts.id, id),
-			with: this.buildWithClause(include),
-		});
+	async findById(id: string): Promise<Contact | null> {
+		const result = await this.baseQuery()
+			.where(eq(contacts.id, id))
+			.limit(1);
 
-		return record ? this.mapToEntity(record) : null;
+		const record = result[0];
+		return record ? Contact.fromRecord(record) : null;
 	}
 
-	async findAll(include?: ContactWith): Promise<Contact[]> {
-		const records = await this.db.query.contacts.findMany({
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
+	async findAll(): Promise<Contact[]> {
+		const records = await this.baseQuery();
+		return records.map(Contact.fromRecord);
 	}
 
 	async update(id: string, input: UpdateContactInput): Promise<Contact | null> {
@@ -115,45 +111,31 @@ export class ContactRepository implements IContactRepository {
 		return this.db.select().from(contacts).where(isNull(contacts.deletedAt));
 	}
 
-	async findByAccountId(id: string, include?: ContactWith): Promise<Contact[]> {
-		const records = await this.db.query.contacts.findMany({
-			where: eq(contacts.accountId, id),
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
+	async findByAccountId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Contact[]> {
+		let q = this.baseQuery()
+			.where(eq(contacts.accountId, id));
+		if (opts?.limit) q = (q as any).limit(opts.limit);
+		const records = await q;
+		return records.map(Contact.fromRecord);
 	}
 
-	async findByUserId(id: string, include?: ContactWith): Promise<Contact[]> {
-		const records = await this.db.query.contacts.findMany({
-			where: eq(contacts.userId, id),
-			with: this.buildWithClause(include),
-		});
-
-		return records.map((r) => this.mapToEntity(r));
+	async findByUserId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Contact[]> {
+		let q = this.baseQuery()
+			.where(eq(contacts.userId, id));
+		if (opts?.limit) q = (q as any).limit(opts.limit);
+		const records = await q;
+		return records.map(Contact.fromRecord);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// Declarative queries (from queries: block in entity YAML)
 	// ═══════════════════════════════════════════════════════════════════════
 
-	async findByUserId(userId: string): Promise<Contact[]> {
-		const records = await this.baseQuery()
-			.where(eq(contacts.userId, userId));
-		return records.map(Contact.fromRecord);
-	}
-
 	async findByEmail(email: string): Promise<Contact | null> {
 		const records = await this.baseQuery()
 			.where(eq(contacts.email, email))
 			.limit(1);
 		return records[0] ? Contact.fromRecord(records[0]) : null;
-	}
-
-	async findByAccountId(accountId: string): Promise<Contact[]> {
-		const records = await this.baseQuery()
-			.where(eq(contacts.accountId, accountId)).orderBy(desc(contacts.createdAt));
-		return records.map(Contact.fromRecord);
 	}
 
 	async findByUserIdAndAccountId(userId: string, accountId: string): Promise<Contact[]> {
@@ -176,27 +158,5 @@ export class ContactRepository implements IContactRepository {
 			.innerJoin(opportunityContactLink, eq(opportunityContactLink.contactId, contacts.id))
 			.where(eq(opportunityContactLink.opportunityId, opportunityId));
 		return junctionRecords.map(r => r.email);
-	}
-
-	private buildWithClause(include?: ContactWith) {
-		if (!include) return undefined;
-		// Drizzle expects `true` or object, not `false`. Only include truthy values.
-		const result: Record<string, true> = {};
-		if (include.account) result.account = true;
-		if (include.user) result.user = true;
-		return Object.keys(result).length > 0 ? result : undefined;
-	}
-
-	// biome-ignore lint/suspicious/noExplicitAny: Drizzle relational query returns dynamic shape
-	private mapToEntity(record: any): Contact {
-		return Contact.fromRecord(record, (name, data) => {
-			switch (name) {
-				case 'user':
-					// biome-ignore lint/suspicious/noExplicitAny: Cast for Drizzle record
-					return User.fromRecord(data as any);
-				default:
-					return data;
-			}
-		});
 	}
 }

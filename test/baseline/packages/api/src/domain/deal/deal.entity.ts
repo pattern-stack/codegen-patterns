@@ -8,9 +8,6 @@
  * All entities should follow this structure for consistent imports.
  */
 
-import type { User } from '../user/user.entity';
-import type { Account } from '../account/account.entity';
-
 export class Deal {
 	constructor(
 		public readonly id: string,
@@ -24,16 +21,11 @@ export class Deal {
 		public readonly createdAt: Date,
 		public readonly updatedAt: Date,
 		public readonly deletedAt: Date | null,
-		// Loaded relations (optional, populated when eager-loaded)
-		public readonly owner?: User,
-		public readonly account?: Account,
 	) {}
 
 	static fromRecord(
 		// biome-ignore lint/suspicious/noExplicitAny: Drizzle records have dynamic shape
 		record: Record<string, any>,
-		// biome-ignore lint/suspicious/noExplicitAny: Returns different entity types
-		mapRelation?: (name: string, data: unknown) => any,
 	): Deal {
 		return new Deal(
 			record.id,
@@ -47,8 +39,6 @@ export class Deal {
 			record.createdAt,
 			record.updatedAt,
 			record.deletedAt,
-			record.owner ? mapRelation?.('owner', record.owner) : undefined,
-			record.account ? mapRelation?.('account', record.account) : undefined,
 		);
 	}
 }

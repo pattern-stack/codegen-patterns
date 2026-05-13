@@ -10,7 +10,7 @@
 
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { OPPORTUNITY_REPOSITORY } from '../../../constants';
-import type { IOpportunityRepository, OpportunityWith } from '../../../domain';
+import type { IOpportunityRepository } from '../../../domain';
 import { Opportunity } from '../../../domain';
 
 @Injectable()
@@ -20,10 +20,10 @@ export class GetOpportunityByIdQuery {
 		private readonly opportunityRepository: IOpportunityRepository,
 	) {}
 
-	async execute(id: string, include?: OpportunityWith): Promise<Opportunity> {
+	async execute(id: string): Promise<Opportunity> {
 		// TODO: Add authorization check if needed (row-level security)
 
-		const entity = await this.opportunityRepository.findById(id, include);
+		const entity = await this.opportunityRepository.findById(id);
 		if (!entity) {
 			throw new NotFoundException(`Opportunity with id ${id} not found`);
 		}

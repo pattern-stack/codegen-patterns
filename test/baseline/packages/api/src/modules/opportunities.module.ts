@@ -13,6 +13,7 @@ import { DeleteOpportunityCommand } from '../application/commands/opportunity/de
 import { UpdateOpportunityCommand } from '../application/commands/opportunity/update.command';
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { OpportunityRepository } from '../infrastructure/persistence/repositories/opportunity.repository';
+import { relationshipQueryClasses } from '../application/queries/opportunity/relationships.queries';
 import { OpportunitiesController } from '../presentation/rest/opportunities.controller';
 import { createOpportunitySchema, updateOpportunitySchema, opportunityResponseSchema } from '../application/schemas/opportunity.dto';
 
@@ -28,6 +29,8 @@ import { createOpportunitySchema, updateOpportunitySchema, opportunityResponseSc
 		CreateOpportunityCommand,
 		UpdateOpportunityCommand,
 		DeleteOpportunityCommand,
+		// Relationship composition queries
+		...relationshipQueryClasses,
 	],
 	exports: [
 		OPPORTUNITY_REPOSITORY,
@@ -36,6 +39,7 @@ import { createOpportunitySchema, updateOpportunitySchema, opportunityResponseSc
 		CreateOpportunityCommand,
 		UpdateOpportunityCommand,
 		DeleteOpportunityCommand,
+		...relationshipQueryClasses,
 	],
 })
 export class OpportunitiesModule implements OnModuleInit {

@@ -18,6 +18,7 @@ import { UpdateContactCommand } from '../application/commands/contact/update.com
 import { DatabaseModule } from '../infrastructure/database/database.module';
 import { ContactRepository } from '../infrastructure/persistence/repositories/contact.repository';
 import { declarativeQueryClasses } from '../application/queries/contact/declarative-queries';
+import { relationshipQueryClasses } from '../application/queries/contact/relationships.queries';
 import { ContactsController } from '../presentation/rest/contacts.controller';
 import { createContactSchema, updateContactSchema, contactResponseSchema } from '../application/schemas/contact.dto';
 
@@ -35,6 +36,8 @@ import { createContactSchema, updateContactSchema, contactResponseSchema } from 
 		DeleteContactCommand,
 		// Declarative queries
 		...declarativeQueryClasses,
+		// Relationship composition queries
+		...relationshipQueryClasses,
 	],
 	exports: [
 		CONTACT_REPOSITORY,
@@ -44,6 +47,7 @@ import { createContactSchema, updateContactSchema, contactResponseSchema } from 
 		UpdateContactCommand,
 		DeleteContactCommand,
 		...declarativeQueryClasses,
+		...relationshipQueryClasses,
 	],
 })
 export class ContactsModule implements OnModuleInit {

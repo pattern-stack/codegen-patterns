@@ -12,7 +12,7 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { OPPORTUNITY_REPOSITORY } from '../../../constants';
-import type { IOpportunityRepository, OpportunityWith } from '../../../domain';
+import type { IOpportunityRepository } from '../../../domain';
 import { Opportunity } from '../../../domain';
 
 @Injectable()
@@ -22,8 +22,8 @@ export class ListOpportunitiesQuery {
 		private readonly opportunityRepository: IOpportunityRepository,
 	) {}
 
-	async execute(include?: OpportunityWith): Promise<Opportunity[]> {
+	async execute(): Promise<Opportunity[]> {
 		// TODO: Add filtering, pagination, sorting as needed
-		return this.opportunityRepository.findAll(include);
+		return this.opportunityRepository.findAll();
 	}
 }

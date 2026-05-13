@@ -10,7 +10,7 @@
 
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DEALSTATE_REPOSITORY } from '../../../constants';
-import type { IDealStateRepository, DealStateWith } from '../../../domain';
+import type { IDealStateRepository } from '../../../domain';
 import { DealState } from '../../../domain';
 
 @Injectable()
@@ -20,10 +20,10 @@ export class GetDealStateByIdQuery {
 		private readonly dealStateRepository: IDealStateRepository,
 	) {}
 
-	async execute(id: string, include?: DealStateWith): Promise<DealState> {
+	async execute(id: string): Promise<DealState> {
 		// TODO: Add authorization check if needed (row-level security)
 
-		const entity = await this.dealStateRepository.findById(id, include);
+		const entity = await this.dealStateRepository.findById(id);
 		if (!entity) {
 			throw new NotFoundException(`DealState with id ${id} not found`);
 		}

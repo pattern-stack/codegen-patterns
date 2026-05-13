@@ -8,8 +8,6 @@
  * All entities should follow this structure for consistent imports.
  */
 
-import type { Opportunity } from '../opportunity/opportunity.entity';
-
 export class Organization {
 	constructor(
 		public readonly id: string,
@@ -17,17 +15,11 @@ export class Organization {
 		public readonly name: string,
 		public readonly domain: string | null,
 		public readonly parentId: string | null,
-		// Loaded relations (optional, populated when eager-loaded)
-		public readonly parent?: Organization,
-		public readonly children?: Organization[],
-		public readonly opportunities?: Opportunity[],
 	) {}
 
 	static fromRecord(
 		// biome-ignore lint/suspicious/noExplicitAny: Drizzle records have dynamic shape
 		record: Record<string, any>,
-		// biome-ignore lint/suspicious/noExplicitAny: Returns different entity types
-		mapRelation?: (name: string, data: unknown) => any,
 	): Organization {
 		return new Organization(
 			record.id,
@@ -35,9 +27,6 @@ export class Organization {
 			record.name,
 			record.domain,
 			record.parentId,
-			record.parent ? mapRelation?.('parent', record.parent) : undefined,
-			record.children ? mapRelation?.('children', record.children) : undefined,
-			record.opportunities ? mapRelation?.('opportunities', record.opportunities) : undefined,
 		);
 	}
 }
