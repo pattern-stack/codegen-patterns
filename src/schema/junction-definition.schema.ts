@@ -94,6 +94,21 @@ export const JunctionDefinitionSchema = z
 		 * validated downstream by the codegen layer.
 		 */
 		queries: z.array(z.any()).optional(),
+
+		/**
+		 * Per-side opt-out for parent-service fan-out (CGP-60). When a side
+		 * is `false`, the `_inject-parent-service-*` templates emit nothing
+		 * on that side (and the corresponding module wiring is skipped).
+		 * The junction service body is always emitted regardless. Defaults
+		 * to `{ left: true, right: true }`.
+		 */
+		expose_on_parent: z
+			.object({
+				left: z.boolean().optional().default(true),
+				right: z.boolean().optional().default(true),
+			})
+			.optional()
+			.default({ left: true, right: true }),
 	})
 	.strict()
 	.refine((d) => d.between[0] !== d.between[1], {
