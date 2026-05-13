@@ -264,6 +264,8 @@ import { EVENT_BUS } from '@shared/constants/tokens';
 import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
 import { ContactRepository } from './contact.repository';
 import type { Contact } from './contact.entity';
+import { AccountRepository } from '../accounts/account.repository';
+import type { Account } from '../accounts/account.entity';
 
 @Injectable()
 export class ContactService extends WithAnalytics(
@@ -277,6 +279,7 @@ export class ContactService extends WithAnalytics(
 
   constructor(
     protected override readonly repository: ContactRepository,
+    private readonly accountRepo: AccountRepository,
   ) {
     super(repository);
   }
@@ -288,6 +291,21 @@ export class ContactService extends WithAnalytics(
   //   findById, findByIds, list, count, exists, create, update, delete
   //   findByExternalId, findAllByUserId, findVisibleByUserId
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Relationship composition methods (CGP-358b / CGP-62)
+  // Two queries, no SQL JOIN. Core-contract path; relations() const stays
+  // as opt-in extension for hand-written Drizzle queries.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Fetch the Account parent for this Contact.
+   * Two repo calls: find self by id → find target by FK.
+   */
+  async account(contactId: string): Promise<Account | null> {
+    const entity = await this.repository.findById(contactId);
+    if (!entity) return null;
+    return entity.accountId ? this.accountRepo.findById(entity.accountId) : null;
+  }
 
 
 }
