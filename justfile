@@ -101,6 +101,14 @@ validate:
 # Run all tests
 test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction
 
+# Post-publish smoke — npm pack + install into tmp project + run consumer
+# flows. Catches tarball-vs-checkout mismatches the in-source `test-smoke`
+# can't (since that one runs from the repo checkout where src/ is always
+# present). Required to pass before any release. Pass `--full` to also
+# install jobs + bridge subsystems; pass `--keep` to preserve the tmp dir.
+test-post-publish *args:
+    bash test/post-publish-smoke.sh {{args}}
+
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
 # Validate entity YAML files
@@ -149,10 +157,14 @@ bump level="patch":
     jq --arg v "$new" '.version = $v' package.json > "$tmp" && mv "$tmp" package.json
     echo "Bumped $current → $new"
 
-# Tag and push a release (run after bump + commit)
+# Tag and push a release (run after bump + commit). Gated on the
+# post-publish smoke — three 0.x releases shipped broken because the
+# in-source smoke didn't catch tarball/checkout mismatches (#190).
 release:
     #!/usr/bin/env bash
     set -euo pipefail
+    echo "Running post-publish smoke before tagging..."
+    bash test/post-publish-smoke.sh
     version=$(jq -r .version package.json)
     git tag -a "v${version}" -m "Release v${version}"
     git push origin "v${version}"
