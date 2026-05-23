@@ -1,0 +1,267 @@
+/**
+ * Subsystem barrel generator — writes `<generated>/subsystems.ts`, the
+ * AppModule-facing barrel of `forRoot()` dynamic-module calls for every
+ * subsystem listed in `codegen.config.yaml`'s `subsystems.install` block.
+ *
+ * The consumer wires the barrel exactly once:
+ *
+ *   // app.module.ts
+ *   import { SUBSYSTEM_MODULES } from './generated/subsystems';
+ *   @Module({ imports: [DatabaseModule, ...SUBSYSTEM_MODULES, ...GENERATED_MODULES] })
+ *
+ * Every `entity new` / `subsystem install` invocation fully regenerates the
+ * file from `codegen.config.yaml` + the detected install set. Deterministic.
+ *
+ * Today's coverage: events, jobs (+ job-worker embedded mode), bridge, sync.
+ * Auth / auth-integrations / observability are out of scope; their AppModule
+ * wiring still goes by hand (each has init-time options the generator can't
+ * synthesize from config alone). Add a composer entry below when ready to
+ * include them.
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+import type { Context } from './context.js';
+import { resolveGeneratedDir } from './barrel-generator.js';
+import {
+	detectInstalledSubsystems,
+	type InstalledSubsystem,
+	type SubsystemName,
+} from './subsystem-detect.js';
+import { resolveSubsystemsRoot } from './subsystems-path.js';
+
+// ---------------------------------------------------------------------------
+// Options + result types
+// ---------------------------------------------------------------------------
+
+export interface SubsystemBarrelOptions {
+	ctx: Context;
+	/** Defaults to `<resolveGeneratedDir(ctx)>`. */
+	generatedDir?: string;
+	dryRun?: boolean;
+}
+
+export interface SubsystemBarrelResult {
+	/** Absolute path to the written file (or where it would be written). */
+	subsystemBarrel: string;
+	/** Names actually emitted into the barrel. */
+	emitted: SubsystemName[];
+	/** Names in install list but skipped (e.g. composer not implemented). */
+	skipped: SubsystemName[];
+	content: string;
+	written: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Per-subsystem composers
+// ---------------------------------------------------------------------------
+
+interface ComposerInput {
+	/** Relative path from project root to the subsystems root (e.g. `src/shared/subsystems`). */
+	subsystemsRel: string;
+	/** Per-subsystem config block from codegen.config.yaml (snake_case keys). */
+	cfg: Record<string, unknown> | undefined;
+}
+
+interface ComposerOutput {
+	/** Lines like `import { EventsModule } from '<path>/events/events.module';` */
+	imports: string[];
+	/** Lines emitted into the `SUBSYSTEM_MODULES` array body, indented. */
+	calls: string[];
+}
+
+type Composer = (input: ComposerInput) => ComposerOutput;
+
+function quoteOpts(opts: Record<string, unknown>): string {
+	const entries = Object.entries(opts).filter(([, v]) => v !== undefined);
+	if (entries.length === 0) return '';
+	return (
+		'{ ' +
+		entries
+			.map(([k, v]) => `${k}: ${typeof v === 'string' ? `'${v}'` : String(v)}`)
+			.join(', ') +
+		' }'
+	);
+}
+
+const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
+	events: ({ subsystemsRel, cfg }) => {
+		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
+		const multiTenant = Boolean(cfg?.multi_tenant);
+		return {
+			imports: [
+				`import { EventsModule } from '${subsystemsRel}/events/events.module';`,
+			],
+			calls: [
+				`\tEventsModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
+			],
+		};
+	},
+
+	jobs: ({ subsystemsRel, cfg }) => {
+		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
+		const multiTenant = Boolean(cfg?.multi_tenant);
+		const workerMode = ((cfg?.worker_mode as string | undefined) ?? 'standalone').trim();
+		const imports = [
+			`import { JobsDomainModule } from '${subsystemsRel}/jobs/jobs-domain.module';`,
+		];
+		const calls = [
+			`\tJobsDomainModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
+		];
+		// JOB-7: `worker_mode: 'embedded'` runs the worker in-process alongside the
+		// HTTP app. `'standalone'` (default) means the user runs `bun worker.ts`
+		// separately and we don't include JobWorkerModule in AppModule.
+		if (workerMode === 'embedded') {
+			imports.push(
+				`import { JobWorkerModule } from '${subsystemsRel}/jobs/job-worker.module';`
+			);
+			calls.push(`\tJobWorkerModule.forRoot({ mode: 'embedded' }),`);
+		}
+		return { imports, calls };
+	},
+
+	bridge: ({ subsystemsRel, cfg }) => {
+		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
+		const multiTenant = Boolean(cfg?.multi_tenant);
+		return {
+			imports: [
+				`import { BridgeModule } from '${subsystemsRel}/bridge/bridge.module';`,
+			],
+			calls: [
+				`\tBridgeModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
+			],
+		};
+	},
+
+	sync: ({ subsystemsRel, cfg }) => {
+		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
+		const multiTenant = Boolean(cfg?.multi_tenant);
+		return {
+			imports: [
+				`import { SyncModule } from '${subsystemsRel}/sync/sync.module';`,
+			],
+			calls: [
+				`\tSyncModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
+			],
+		};
+	},
+};
+
+const COMPOSABLE_ORDER: SubsystemName[] = ['events', 'jobs', 'bridge', 'sync'];
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+const HEADER = `// AUTO-GENERATED by @pattern-stack/codegen. DO NOT EDIT.
+// Subsystem composition barrel — reflects \`subsystems.install\` in
+// codegen.config.yaml and the per-subsystem option blocks
+// (\`events:\`, \`jobs:\`, \`bridge:\`, \`sync:\`).
+//
+// Wire into AppModule once:
+//
+//   import { SUBSYSTEM_MODULES } from './generated/subsystems';
+//   @Module({ imports: [DatabaseModule, ...SUBSYSTEM_MODULES, ...GENERATED_MODULES] })
+//
+// Regenerated by every \`codegen entity new\` / \`codegen subsystem install\`.
+
+`;
+
+/**
+ * Build the subsystem barrel content from a detected install set + config.
+ * Pure — no fs side effects, no DI. Useful for unit tests.
+ */
+export function buildSubsystemBarrel(
+	installed: InstalledSubsystem[],
+	config: Record<string, unknown> | null | undefined,
+	subsystemsRel: string
+): { content: string; emitted: SubsystemName[]; skipped: SubsystemName[] } {
+	const installedNames = new Set(installed.map((i) => i.name));
+	const emitted: SubsystemName[] = [];
+	const skipped: SubsystemName[] = [];
+
+	const allImports: string[] = [`import type { DynamicModule } from '@nestjs/common';`];
+	const allCalls: string[] = [];
+
+	for (const name of COMPOSABLE_ORDER) {
+		if (!installedNames.has(name)) continue;
+		const composer = COMPOSERS[name];
+		if (!composer) {
+			skipped.push(name);
+			continue;
+		}
+		const cfg = (config?.[name] as Record<string, unknown> | undefined) ?? undefined;
+		const out = composer({ subsystemsRel, cfg });
+		allImports.push(...out.imports);
+		allCalls.push(...out.calls);
+		emitted.push(name);
+	}
+
+	// Names in install order that have no composer yet — log for visibility.
+	for (const inst of installed) {
+		if (!COMPOSABLE_ORDER.includes(inst.name) && !COMPOSERS[inst.name]) {
+			skipped.push(inst.name);
+		}
+	}
+
+	if (allCalls.length === 0) {
+		return {
+			content: HEADER + `export const SUBSYSTEM_MODULES: DynamicModule[] = [];\n`,
+			emitted,
+			skipped,
+		};
+	}
+
+	const body =
+		allImports.join('\n') +
+		'\n\n' +
+		`export const SUBSYSTEM_MODULES: DynamicModule[] = [\n${allCalls.join('\n')}\n];\n`;
+	return { content: HEADER + body, emitted, skipped };
+}
+
+/**
+ * Detect installed subsystems + load config, then write
+ * `<generated>/subsystems.ts`. Returns the result + a written flag.
+ */
+export async function regenerateSubsystemBarrel(
+	opts: SubsystemBarrelOptions
+): Promise<SubsystemBarrelResult> {
+	const { ctx, dryRun = false } = opts;
+	const generatedDir = opts.generatedDir ?? resolveGeneratedDir(ctx);
+
+	const installed = await detectInstalledSubsystems(ctx);
+
+	// Subsystems root → barrel can import via a relative path that works
+	// wherever the generated barrel ends up. `resolveSubsystemsRoot` returns
+	// an absolute path; honors `paths.subsystems` override or falls back to
+	// `<paths.backend_src>/shared/subsystems`.
+	const subsystemsAbs = resolveSubsystemsRoot(ctx);
+	const barrelAbs = path.resolve(generatedDir, 'subsystems.ts');
+	let subsystemsRel = path
+		.relative(path.dirname(barrelAbs), subsystemsAbs)
+		.split(path.sep)
+		.join('/');
+	if (!subsystemsRel.startsWith('.')) subsystemsRel = './' + subsystemsRel;
+
+	const { content, emitted, skipped } = buildSubsystemBarrel(
+		installed,
+		ctx.config as Record<string, unknown> | null | undefined,
+		subsystemsRel
+	);
+
+	let written = false;
+	if (!dryRun) {
+		fs.mkdirSync(path.dirname(barrelAbs), { recursive: true });
+		fs.writeFileSync(barrelAbs, content);
+		written = true;
+	}
+
+	return {
+		subsystemBarrel: barrelAbs,
+		emitted,
+		skipped,
+		content,
+		written,
+	};
+}

@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-05-23
+
+Auto-emits `<generated>/subsystems.ts` — a `SUBSYSTEM_MODULES` barrel of `forRoot()` calls for every installed subsystem. Removes the "did I forget to wire `SyncModule`?" class of silent-failure bug when a subsystem is declared in `subsystems.install` but never imported into AppModule.
+
+### Added
+
+- **`feat(codegen)` — subsystem composition barrel.** New `src/cli/shared/subsystem-barrel-generator.ts` emits `<generated>/subsystems.ts`:
+
+  ```ts
+  // AUTO-GENERATED — wire into AppModule once:
+  // @Module({ imports: [DatabaseModule, ...SUBSYSTEM_MODULES, ...GENERATED_MODULES] })
+  import type { DynamicModule } from '@nestjs/common';
+  import { EventsModule } from '../shared/subsystems/events/events.module';
+  import { JobsDomainModule } from '../shared/subsystems/jobs/jobs-domain.module';
+  import { JobWorkerModule } from '../shared/subsystems/jobs/job-worker.module';
+  import { BridgeModule } from '../shared/subsystems/bridge/bridge.module';
+  import { SyncModule } from '../shared/subsystems/sync/sync.module';
+
+  export const SUBSYSTEM_MODULES: DynamicModule[] = [
+    EventsModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+    JobsDomainModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+    JobWorkerModule.forRoot({ mode: 'embedded' }),
+    BridgeModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+    SyncModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+  ];
+  ```
+
+  Composer coverage: `events`, `jobs` (+ `JobWorkerModule` when `worker_mode: 'embedded'`), `bridge`, `sync`. `auth`, `auth-integrations`, `observability` are out of scope (their `forRoot` shapes take init-time arguments — encryption keys, IUserContext adapters — that can't be synthesized from config alone; hand-wire those).
+
+- **Auto-regen wiring.** `codegen entity new --all` and `codegen subsystem install <name>` now call `regenerateSubsystemBarrel({ ctx, generatedDir })` after their existing barrel work. Soft-fail (warn-only) to match the entity-barrel pattern.
+
+- **8 unit tests** under `src/__tests__/cli/subsystem-barrel-generator.test.ts` covering empty install set, single-subsystem composition, full-minimum-set ordering, `worker_mode: 'embedded'` toggle, `multi_tenant` propagation, unsupported subsystem reporting via `skipped`, default options when config block is missing.
+
+### Migration
+
+Greenfield: re-run `codegen entity new --all` and add `...SUBSYSTEM_MODULES` to your AppModule's `imports`. The barrel is opt-in — existing AppModules continue to work without it.
+
+The 4 subsystems composer currently supports are the ones consumers actually wire today; widening the composer set is straightforward — see `COMPOSERS` map in `subsystem-barrel-generator.ts`.
+
+### Known interaction
+
+If your project uses `SyncModule.forRoot({ backend: 'drizzle', multiTenant: false })`, tsc will surface pre-existing `tenantId`-reference errors in `sync-cursor-store.drizzle-backend.ts` / `sync-run-recorder.drizzle-backend.ts` when the subsystem barrel transitively pulls those files into typecheck scope. This is an unrelated upstream issue (multi-tenancy-off + drizzle backend wasn't typecheck-clean before this PR either; consumers worked around it by excluding `src/shared/subsystems` from tsconfig). Either keep the exclude in place, or set `multi_tenant: true` in your sync config to add the `tenant_id` column the backends reference.
+
+## [0.7.2] — 2026-05-23
+
+Hotfix for the sync subsystem differ — `external_id_tracking` columns (added by the `external_id_tracking` behavior) were always emitting field diffs even when they hadn't changed in vendor input, producing churn. (Shipped on `main` between 0.7.1 and the junction-import dedupe; previously unreleased.)
+
 ## [0.7.1] — 2026-05-23
 
 Hotfix for the junction emit pipeline (CGP-60, shipped in 0.7.0). When a parent entity participated in **multiple junctions** (e.g. `contact` appearing as the right side of both `account_contact` and `opportunity_contact`), each junction's `_inject-parent-{service,module}-import-clp-{left,right}.ejs.t` template emitted the same shared `import { forwardRef } from '@nestjs/common';` line independently — producing duplicate-import TS errors (TS2300 `Duplicate identifier 'forwardRef'`). The same loop also re-emitted the counterparty entity type import (`import type { Account } from '../accounts/account.entity'`), which collided with the parent's own `belongs_to` import emitted by `service.ejs.t`.

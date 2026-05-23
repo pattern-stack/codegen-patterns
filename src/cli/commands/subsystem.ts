@@ -51,6 +51,8 @@ import {
 	resolveAuthIntegrationsScaffoldLocals,
 } from '../shared/auth-integrations-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
+import { resolveGeneratedDir } from '../shared/barrel-generator.js';
+import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
 import {
 	SUBSYSTEMS,
 	detectInstalledSubsystems,
@@ -644,6 +646,19 @@ export class SubsystemInstallCommand extends Command {
 			}
 		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
+
+		// Refresh the subsystem composition barrel (<generated>/subsystems.ts)
+		// so AppModule's `...SUBSYSTEM_MODULES` picks up the new install on
+		// the next boot. Soft-fail — the barrel is opt-in; consumers who haven't
+		// wired it see no behavioral change.
+		try {
+			const generatedDir = resolveGeneratedDir(ctx);
+			await regenerateSubsystemBarrel({ ctx, generatedDir });
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			printWarning(`subsystem barrel regeneration failed — ${msg}`);
+		}
+
 		// OBS-7: observability is a combiner (ADR-025) — no backend selection,
 		// and module order matters (composes siblings via @Optional() DI).
 		// Emit a targeted hint instead of the default `forRoot({ backend })` one.
