@@ -228,8 +228,9 @@ describe('ExecuteSyncUseCase', () => {
       expect(recorder.items[0].operation).toBe('created');
       expect(recorder.items[0].status).toBe('success');
       expect(recorder.items[0].localId).toBe('local-ext-1');
+      // external_id is sync-tracking metadata (record identity), not a domain
+      // attribute — the differ ignores it, so it never appears in changedFields.
       expect(recorder.items[0].changedFields).toEqual({
-        external_id: { from: null, to: 'ext-1' },
         amount: { from: null, to: 100 },
         stageName: { from: null, to: 'Prospecting' },
       });
@@ -374,14 +375,17 @@ describe('ExecuteSyncUseCase', () => {
         {
           externalId: 'a',
           operation: 'created',
-          record: { external_id: 'a' },
+          // amount is a real domain field so the diff isn't noop — without it
+          // the record carries only the (ignored) external_id and short-circuits
+          // before reaching the sink, so it could never fail.
+          record: { external_id: 'a', amount: 1 },
           cursor: { v: 1 },
           source: 'poll',
         },
         {
           externalId: 'b',
           operation: 'created',
-          record: { external_id: 'b' },
+          record: { external_id: 'b', amount: 2 },
           cursor: { v: 2 },
           source: 'poll',
         },
