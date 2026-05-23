@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-05-23
+
+Hotfix for the junction emit pipeline (CGP-60, shipped in 0.7.0). When a parent entity participated in **multiple junctions** (e.g. `contact` appearing as the right side of both `account_contact` and `opportunity_contact`), each junction's `_inject-parent-{service,module}-import-clp-{left,right}.ejs.t` template emitted the same shared `import { forwardRef } from '@nestjs/common';` line independently — producing duplicate-import TS errors (TS2300 `Duplicate identifier 'forwardRef'`). The same loop also re-emitted the counterparty entity type import (`import type { Account } from '../accounts/account.entity'`), which collided with the parent's own `belongs_to` import emitted by `service.ejs.t`.
+
+### Fixed
+
+- **`fix(codegen)` — junction import dedupe across multi-junction parents.** Split each of the 4 existing junction inject templates (`_inject-parent-{service,module}-import-clp-{left,right}.ejs.t`) into 3 narrower inject templates with broader `skip_if` guards:
+  - `_inject-parent-{service,module}-forwardref-clp-{left,right}.ejs.t` — emits only `import { forwardRef }`, gated by `skip_if: "import { forwardRef"` (matches actual import line, not body usage)
+  - `_inject-parent-service-counterparty-clp-{left,right}.ejs.t` — emits the counterparty entity type import, gated by `skip_if: "from '<counterparty-path>'"` (matches any prior import from that path, including the parent's `belongs_to` import)
+  - Existing `_inject-parent-{service,module}-import-clp-{left,right}.ejs.t` — narrowed to just the junction-specific imports (already had a per-junction `skip_if`)
+- Updated junction snapshot tests (`test/junction/__snapshots__/opportunity-contact.test.ts.snap`, `opportunity-activity.test.ts.snap`) to reflect the new split-block layout.
+
+### Migration note
+
+No breaking change for the emitted code semantics — the output is functionally identical for single-junction projects, and now actually compiles for multi-junction projects. Greenfield re-emit is safe; existing emitted files re-emit cleanly via `--force`.
+
 ## [0.6.8] — 2026-04-28
 
 Hotfix for enum codegen in the `clean-lite-ps` template pipeline. Surfaced during integration-patterns Wave 0b: enum-typed YAML fields emitted a Drizzle `text()` column instead of a `pgEnum`, so `InferSelectModel` resolved to `string` instead of the literal-union type and forced hand-casts in consumer code (e.g. `as DecryptedIntegrationRow['status']`).

@@ -4,8 +4,6 @@ inject: true
 after: "from '@nestjs/common';"
 skip_if: "<%= classNames.service %> }"
 ---
-// CGP-60 — junction service + types (forwardRef resolves circular module dep)
-import { forwardRef } from '@nestjs/common';
+// CGP-60 — junction service + types
 import { <%= classNames.service %>, <%= entityNamePascal %>LinkInput } from '<%= junctionServiceImportFromRight %>';
 import type { <%= entityNamePascal %> } from '../<%= entityNamePlural %>/<%= name %>.entity';
-import type { <%= leftEntityPascal %> } from '<%= leftEntityImportFromJunction %>';

@@ -316,10 +316,13 @@ export class OpportunityActivityService extends WithAnalytics(
 
 exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits opportunity.service.ts (left parent — junction accessor) 1`] = `
 "import { Injectable, Inject, Optional } from '@nestjs/common';
-// CGP-60 — junction service + types (forwardRef resolves circular module dep)
-import { forwardRef } from '@nestjs/common';
+// CGP-60 — junction service + types
 import { OpportunityActivityService, OpportunityActivityLinkInput } from '../opportunity_activities/opportunity_activity.service';
 import type { OpportunityActivity } from '../opportunity_activities/opportunity_activity.entity';
+
+// CGP-60 — forwardRef resolves circular module dep (junction → parent)
+import { forwardRef } from '@nestjs/common';
+
 import type { Activity } from '../activities/activity.entity';
 
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
@@ -404,10 +407,13 @@ export class OpportunityService extends WithAnalytics(
 
 exports[`junction emission snapshot — opportunity_activity (clean-lite-ps) emits activity.service.ts (right parent — junction accessor) 1`] = `
 "import { Injectable, Inject, Optional } from '@nestjs/common';
-// CGP-60 — junction service + types (forwardRef resolves circular module dep)
-import { forwardRef } from '@nestjs/common';
+// CGP-60 — junction service + types
 import { OpportunityActivityService, OpportunityActivityLinkInput } from '../opportunity_activities/opportunity_activity.service';
 import type { OpportunityActivity } from '../opportunity_activities/opportunity_activity.entity';
+
+// CGP-60 — forwardRef resolves circular module dep (junction → parent)
+import { forwardRef } from '@nestjs/common';
+
 import type { Opportunity } from '../opportunities/opportunity.entity';
 
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
