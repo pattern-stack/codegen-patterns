@@ -19,8 +19,17 @@ export type { EventCategory } from './lifecycle-events';
 export { BaseFindByIdUseCase, BaseListUseCase } from './base-read-use-cases';
 export type { IFindByIdService, IListService } from './base-read-use-cases';
 
+// Sync upsert config (consumed by SyncedEntityRepository + JunctionSyncRepository)
+export type { SyncUpsertConfig, SyncFkResolver } from './sync-upsert-config';
+
 // Family-specific repository base classes
 export { SyncedEntityRepository } from './synced-entity-repository';
+export {
+  JunctionSyncRepository,
+  buildCompositeExternalId,
+  parseCompositeExternalId,
+} from './junction-sync-repository';
+export type { JunctionSyncConfig } from './junction-sync-repository';
 export { ActivityEntityRepository } from './activity-entity-repository';
 export { MetadataEntityRepository } from './metadata-entity-repository';
 export { KnowledgeEntityRepository } from './knowledge-entity-repository';
