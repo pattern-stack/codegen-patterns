@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.service : null %
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject, Optional } from '@nestjs/common';
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';

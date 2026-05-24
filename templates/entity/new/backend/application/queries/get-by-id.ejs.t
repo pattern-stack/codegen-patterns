@@ -3,6 +3,7 @@ to: "<%= generate.queries ? outputPaths.getByIdQuery : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.getByIdQuery) { -%>
 /**
  * Get <%= className %> By ID Query

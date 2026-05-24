@@ -3,6 +3,7 @@ to: "<%= (isCleanArchitecture && hasRelationships && !isGrouped) ? `${basePaths.
 skip_if: <%= !(isCleanArchitecture && hasRelationships && !isGrouped) %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (isCleanArchitecture && hasRelationships && !isGrouped) { -%>
 /**
  * Relationship Composition Queries for <%= className %>

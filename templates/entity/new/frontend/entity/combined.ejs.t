@@ -3,6 +3,7 @@ to: "<%= generate.structure === 'monolithic' ? `${locations.frontendGenerated.pa
 skip_if: <%= !frontendEnabled || (generate.structure !== 'monolithic') %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 /**
  * <%= className %> - Generated Entity Module
  *

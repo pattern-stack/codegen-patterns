@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.searchUseCase : 
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.searchUseCase %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (hasSearchQuery) { -%>
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq<% if (searchQuery.searchField) { %>, ilike<% } %>, type SQL } from 'drizzle-orm';

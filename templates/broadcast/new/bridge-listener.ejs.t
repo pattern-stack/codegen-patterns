@@ -2,6 +2,7 @@
 to: src/infrastructure/broadcast/broadcast-bridge.listener.ts
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Logger } from '@nestjs/common'
 import { OnEvent } from '@nestjs/event-emitter'
 import { WebSocketBroadcastBackend } from './websocket-broadcast.backend'

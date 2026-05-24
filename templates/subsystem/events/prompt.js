@@ -16,6 +16,8 @@
  * imported. So no workerPath / workerMode / mainTsPath locals here.
  */
 
+import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+
 function coerceBool(raw) {
   if (raw === true) return true;
   if (raw === false) return false;
@@ -34,6 +36,12 @@ export default {
       generatedKeepPath:
         args.generatedKeepPath ??
         "shared/subsystems/events/generated/.gitkeep",
+      // @generated DO-NOT-EDIT banner — the events subsystem schema is
+      // force-overwritten on every `subsystem install`.
+      generatedBanner: renderGeneratedBanner({
+        generator: "subsystem events",
+        seam: "the codegen.config.yaml events block, then re-run `codegen subsystem install`",
+      }),
     };
   },
 };

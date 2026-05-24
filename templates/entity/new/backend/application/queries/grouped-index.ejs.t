@@ -3,6 +3,7 @@ to: "<%= generate.queries ? outputPaths.queriesGroupedIndex : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.queriesGroupedIndex) { -%>
 /**
  * <%= className %> Queries Module

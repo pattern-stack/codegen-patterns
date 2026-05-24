@@ -3,6 +3,7 @@ to: "<%= generate.queries ? outputPaths.listQuery : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.listQuery) { -%>
 /**
  * List <%= classNamePlural %> Query

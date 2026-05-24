@@ -3,6 +3,7 @@ to: <%= outputPaths.domainGroupedIndex %>
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.domainGroupedIndex) { -%>
 /**
  * <%= className %> Domain Module

@@ -2,6 +2,7 @@
 to: src/infrastructure/broadcast/memory-broadcast.backend.ts
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable } from '@nestjs/common'
 import type {
   BroadcastBackend,

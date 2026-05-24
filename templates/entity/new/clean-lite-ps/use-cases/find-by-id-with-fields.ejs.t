@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.findByIdWithFiel
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.findByIdWithFieldsUseCase %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable } from '@nestjs/common';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';

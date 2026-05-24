@@ -2,6 +2,7 @@
 to: "<%= schemaPath %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 /**
  * Drizzle schema for the sync subsystem audit/observability tables (SYNC-1).
  *

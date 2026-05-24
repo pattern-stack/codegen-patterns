@@ -2,6 +2,7 @@
 to: src/infrastructure/broadcast/broadcast.module.ts
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Module } from '@nestjs/common'
 import { WebSocketBroadcastBackend } from './websocket-broadcast.backend'
 import { MemoryBroadcastBackend } from './memory-broadcast.backend'

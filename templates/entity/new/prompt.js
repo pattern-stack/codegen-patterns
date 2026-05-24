@@ -24,6 +24,7 @@ import {
   getGenerateConfig,
 } from "../../../src/config/paths.mjs";
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";
+import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 
 // ============================================================================
 // Behavior Registry (inline to avoid import issues with Hygen)
@@ -1383,7 +1384,25 @@ export default {
     const drizzleTokenImport = '@shared/constants/tokens';
     const drizzleTypeImport = '@shared/types/drizzle';
 
+    // @generated banner — single line stamped at the top of every
+    // force-overwritten output. `yamlPath` is the consumer-relative source
+    // (e.g. `entities/opportunity.yaml`). Extension seam differs by
+    // architecture: clean-lite-ps customises via patterns, clean via the
+    // base-class behavior config / repository subclass.
+    const generatedBanner = renderGeneratedBanner({
+      // Relative to cwd so the banner is portable across machines (an absolute
+      // path would bake a developer's checkout root into every output).
+      source: path.relative(process.cwd(), fullPath),
+      generator: 'entity',
+      seam: isCleanLitePs
+        ? 'a pattern (src/patterns/*.pattern.ts) or the entity YAML'
+        : 'the entity YAML or a base-class behavior config',
+    });
+
     const locals = {
+      // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
+      generatedBanner,
+
       // Database configuration
       databaseDialect,
       schemaDir: BASE_PATHS.schemaDir,

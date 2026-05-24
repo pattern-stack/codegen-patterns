@@ -23,6 +23,8 @@
  * Phase 2 timing for `examples/sync/`.
  */
 
+import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+
 function coerceBool(raw) {
   if (raw === true) return true;
   if (raw === false) return false;
@@ -38,6 +40,12 @@ export default {
       configPath: args.configPath ?? "codegen.config.yaml",
       schemaPath:
         args.schemaPath ?? "shared/subsystems/sync/sync-audit.schema.ts",
+      // @generated DO-NOT-EDIT banner — the sync subsystem schema is
+      // force-overwritten on every `subsystem install`.
+      generatedBanner: renderGeneratedBanner({
+        generator: "subsystem sync",
+        seam: "the codegen.config.yaml sync block, then re-run `codegen subsystem install`",
+      }),
     };
   },
 };

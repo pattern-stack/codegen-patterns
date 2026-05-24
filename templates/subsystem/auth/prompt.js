@@ -29,6 +29,8 @@
  * Auth has NO `multi_tenant` knob (see auth-scaffold-locals.ts docstring).
  */
 
+import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+
 export default {
   prompt: async ({ args }) => {
     return {
@@ -41,6 +43,12 @@ export default {
       envConfigPath: args.envConfigPath ?? ".env.config",
       redirectUriBase: args.redirectUriBase ?? "http://localhost:3000",
       tokenEncryptionKey: args.tokenEncryptionKey ?? "",
+      // @generated DO-NOT-EDIT banner — the auth subsystem schema is
+      // force-overwritten on every `subsystem install`.
+      generatedBanner: renderGeneratedBanner({
+        generator: "subsystem auth",
+        seam: "the codegen.config.yaml auth block, then re-run `codegen subsystem install`",
+      }),
     };
   },
 };

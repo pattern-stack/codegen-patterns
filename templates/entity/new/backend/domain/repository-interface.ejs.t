@@ -3,6 +3,7 @@ to: <%= outputPaths.repositoryInterface %>
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.repositoryInterface) { -%>
 /**
  * <%= className %> Repository Interface

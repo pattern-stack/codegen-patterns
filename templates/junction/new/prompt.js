@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
 import pluralizePkg from "pluralize";
+import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -391,7 +392,20 @@ export default {
     // Return all template locals
     // ======================================================================
 
+    // @generated DO-NOT-EDIT banner — stamped at the top of every
+    // force-overwritten junction output. `yamlPath` is the consumer-relative
+    // source definition.
+    const generatedBanner = renderGeneratedBanner({
+      // Relative to cwd so the banner is portable across machines.
+      source: path.relative(cwd, fullPath),
+      generator: 'junction',
+      seam: 'the junction YAML',
+    });
+
     return {
+      // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
+      generatedBanner,
+
       // Identity
       name: junctionName,
       entityNamePascal,

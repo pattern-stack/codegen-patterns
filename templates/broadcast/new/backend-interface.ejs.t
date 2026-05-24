@@ -2,6 +2,7 @@
 to: src/infrastructure/broadcast/broadcast-backend.interface.ts
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 export type BroadcastHandler = (
   eventType: string,
   payload: Record<string, unknown>,

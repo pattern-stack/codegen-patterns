@@ -3,6 +3,7 @@ to: "<%= hasDetection ? (isCleanLitePs ? clpOutputPaths.syncSourceModule : `${ba
 skip_if: <%= !hasDetection %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Module } from '@nestjs/common';
 import { buildChangeSource } from '@shared/subsystems/sync';
 import type {
