@@ -3,7 +3,10 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import {
+  buildCleanLitePsLocals,
+  resolveImpliedBehaviors,
+} from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
 
 // Minimal base locals (the real version has many more fields, but we only need
 // the shape to test the extension itself)
@@ -505,6 +508,62 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
       expect(locals.serviceBaseImport).toBe(expected.serviceBaseImport);
       expect(locals.patternName).toBe(pascal);
     }
+  });
+});
+
+describe('impliedBehaviors fold — pattern-implied behaviors merge into emit', () => {
+  // A pattern: Synced entity with NO explicit external_id_tracking behavior.
+  const syncedNoExplicitBehavior = {
+    entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Synced' },
+    fields: { name: { type: 'string', required: true } },
+    relationships: {},
+    behaviors: ['timestamps'],
+  };
+
+  it('resolveImpliedBehaviors returns external_id_tracking for pattern: Synced', () => {
+    expect(resolveImpliedBehaviors(syncedNoExplicitBehavior.entity)).toContain(
+      'external_id_tracking',
+    );
+  });
+
+  it('resolveImpliedBehaviors walks the patterns: [...] array form', () => {
+    const multi = { name: 'deal', plural: 'deals', table: 'deals', patterns: ['Synced'] };
+    expect(resolveImpliedBehaviors(multi)).toContain('external_id_tracking');
+  });
+
+  it('resolveImpliedBehaviors returns [] for a pattern with no impliedBehaviors', () => {
+    expect(resolveImpliedBehaviors({ name: 'task', plural: 'tasks', pattern: 'Base' })).toEqual([]);
+  });
+
+  it('a Synced entity gets hasExternalIdTracking even without re-declaring the behavior', () => {
+    const locals = buildCleanLitePsLocals(syncedNoExplicitBehavior, EMPTY_BASE_LOCALS);
+    expect(locals.hasExternalIdTracking).toBe(true);
+  });
+
+  it('explicit external_id_tracking declaration stays a no-op (silent dedup)', () => {
+    const explicit = {
+      ...syncedNoExplicitBehavior,
+      behaviors: ['timestamps', 'external_id_tracking'],
+    };
+    const implied = buildCleanLitePsLocals(syncedNoExplicitBehavior, EMPTY_BASE_LOCALS);
+    const declared = buildCleanLitePsLocals(explicit, EMPTY_BASE_LOCALS);
+
+    // Re-declaring the implied behavior must not change the resolved flag or
+    // the Drizzle imports — explicit and implied paths converge.
+    expect(declared.hasExternalIdTracking).toBe(true);
+    expect(implied.hasExternalIdTracking).toBe(true);
+    expect(declared.clpDrizzleImports).toEqual(implied.clpDrizzleImports);
+  });
+
+  it('a Base entity (no pattern) does NOT gain external_id_tracking', () => {
+    const base = {
+      entity: { name: 'task', plural: 'tasks', table: 'tasks', pattern: 'Base' },
+      fields: { title: { type: 'string', required: true } },
+      relationships: {},
+      behaviors: [],
+    };
+    const locals = buildCleanLitePsLocals(base, EMPTY_BASE_LOCALS);
+    expect(locals.hasExternalIdTracking).toBe(false);
   });
 });
 
