@@ -105,6 +105,38 @@ export function resolvePatternBaseClasses(entity) {
   };
 }
 
+/**
+ * Resolve the behaviors implied by an entity's declared pattern(s).
+ *
+ * A pattern (e.g. `Synced`) may declare `impliedBehaviors` — behaviors the
+ * entity gets for free without re-declaring them in its `behaviors:` array.
+ * Walks every declared pattern (both the `pattern: X` and `patterns: [...]`
+ * shapes), unions their `impliedBehaviors`, and returns a deduped list.
+ * Unknown patterns are skipped silently — composition validation surfaces
+ * those separately (src/patterns/validate-composition.ts).
+ *
+ * @param {object} entity - the entity block from the parsed YAML
+ * @returns {string[]} deduped implied behavior names
+ */
+export function resolveImpliedBehaviors(entity) {
+  const names = [];
+  if (typeof entity.pattern === 'string' && entity.pattern) {
+    names.push(entity.pattern);
+  }
+  if (Array.isArray(entity.patterns)) {
+    names.push(...entity.patterns);
+  }
+
+  const implied = new Set();
+  for (const name of names) {
+    const def = getPattern(name);
+    for (const b of def?.impliedBehaviors ?? []) {
+      implied.add(b);
+    }
+  }
+  return Array.from(implied);
+}
+
 // ============================================================================
 // Helper utilities
 // ============================================================================
@@ -441,10 +473,13 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
     imports.add('timestamp');
   }
 
-  // external_id_tracking behavior injects varchar + jsonb columns
+  // external_id_tracking behavior injects varchar + jsonb columns plus a
+  // unique index over (provider, external_id) — the ON CONFLICT target the
+  // sync sink's syncUpsert relies on.
   if (hasExternalIdTracking) {
     imports.add('varchar');
     imports.add('jsonb');
+    imports.add('uniqueIndex');
   }
 
   if (belongsTo.length > 0 || hasMany.length > 0) {
@@ -787,8 +822,20 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Process entity fields
   const processedFields = processFields(fields);
 
-  // Behavior flags (re-read from behaviors array for clean-lite-ps use)
-  const behaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
+  // Behavior flags (re-read from behaviors array for clean-lite-ps use).
+  //
+  // Fold in the resolved pattern's `impliedBehaviors` (ADR-031): an entity
+  // declaring e.g. `pattern: Synced` need not re-declare the
+  // `external_id_tracking` behavior — the pattern contributes it. Deduped
+  // with any explicit `behaviors:` entries, explicit-first so order is
+  // stable for pre-existing fixtures. Mirrors the dedup in
+  // src/patterns/validate-composition.ts.
+  const explicitBehaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
+  const impliedBehaviorNames = resolveImpliedBehaviors(entity);
+  const behaviorNames = [
+    ...explicitBehaviorNames,
+    ...impliedBehaviorNames.filter((b) => !explicitBehaviorNames.includes(b)),
+  ];
   const hasTimestamps = behaviorNames.includes('timestamps');
   const hasSoftDelete = behaviorNames.includes('soft_delete');
   const hasUserTracking = behaviorNames.includes('user_tracking');

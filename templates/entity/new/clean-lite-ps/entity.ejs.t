@@ -64,6 +64,12 @@ export const <%= entityNamePlural %> = pgTable(
     deletedAt: timestamp('deleted_at'),
 <%_ } _%>
   },
+<%_ if (hasExternalIdTracking) { _%>
+  (t) => [
+    // external_id_tracking behavior — ON CONFLICT target for syncUpsert
+    uniqueIndex('uq_<%= entityNamePlural %>_provider_external_id').on(t.provider, t.externalId),
+  ],
+<%_ } _%>
 );
 <%_ if (clpHasRelationsBlock) { _%>
 <%_ const needsMany = typeof clpExistingHasMany !== 'undefined' && clpExistingHasMany.length > 0; _%>
