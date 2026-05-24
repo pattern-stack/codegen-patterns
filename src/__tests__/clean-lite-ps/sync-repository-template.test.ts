@@ -129,6 +129,34 @@ describe('buildSyncSurface derivation', () => {
     ]);
     expect(cfg.projectionColumns).not.toContain('provider');
   });
+
+  it('marks a required FK resolver strict and leaves a nullable FK opportunistic', () => {
+    // strictness is sourced from the FK FIELD's `required` — NOT the
+    // relationship-level `nullable` (which defaults true when undeclared).
+    const belongsTo = [
+      {
+        field: 'account_id', camelField: 'accountId', relationKey: 'account',
+        relatedTable: 'accounts', relatedEntity: 'account', isSelfFk: false,
+        nullable: true, importPath: '../accounts/account.entity',
+      },
+      {
+        field: 'parent_id', camelField: 'parentId', relationKey: 'parent',
+        relatedTable: 'leads', relatedEntity: 'lead', isSelfFk: true,
+        nullable: true, importPath: '../leads/lead.entity',
+      },
+    ];
+    const fields = {
+      account_id: { type: 'uuid', required: true, foreign_key: 'accounts.id' },
+      parent_id: { type: 'uuid', nullable: true, foreign_key: 'leads.id' },
+    };
+    const surface = buildSyncSurface('Synced', [], belongsTo, true, false, false, fields) as any;
+    const byCol = Object.fromEntries(surface.fkResolvers.map((r: any) => [r.column, r]));
+    // required, non-null FK column → strict (unresolved parent = failed item)
+    expect(byCol.accountId.strict).toBe(true);
+    // nullable FK (self-FK hierarchy) → opportunistic, even though the
+    // relationship-level nullable would have defaulted the same way
+    expect(byCol.parentId.strict).toBe(false);
+  });
 });
 
 // ============================================================================

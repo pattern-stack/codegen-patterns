@@ -109,7 +109,7 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
     writeColumns: [<%- clpSyncConfig.writeColumns.map((c) => `'${c}'`).join(', ') %>],
     fkResolvers: [
 <%_ clpSyncFkResolvers.forEach((fk) => { _%>
-      { column: '<%= fk.column %>', writeKey: '<%= fk.writeKey %>', refTable: <%- fk.isSelfFk ? "'self'" : fk.refTable %> },
+      { column: '<%= fk.column %>', writeKey: '<%= fk.writeKey %>', refTable: <%- fk.isSelfFk ? "'self'" : fk.refTable %><%= fk.strict ? ', strict: true' : '' %> },
 <%_ }); _%>
     ],
     projectionColumns: [<%- clpSyncConfig.projectionColumns.map((c) => `'${c}'`).join(', ') %>],

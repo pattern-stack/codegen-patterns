@@ -741,7 +741,7 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
  * @param {boolean} eavEnabled
  * @param {boolean} hasSoftDelete
  */
-export function buildSyncSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete) {
+export function buildSyncSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields) {
   if (patternName !== 'Synced') return null;
 
   // Copy-through columns: every non-FK declared field. external_id_tracking
@@ -758,6 +758,13 @@ export function buildSyncSurface(patternName, processedFields, belongsTo, hasTim
     refTable: rel.isSelfFk ? 'self' : rel.relatedTable,
     isSelfFk: rel.isSelfFk,
     nullable: rel.nullable,
+    // Strict resolution (throw on unresolved parent → failed item) when the FK
+    // COLUMN is required/non-null; opportunistic null otherwise. Sourced from
+    // the FK field's `required` — the relationship-level `nullable` is
+    // unreliable (defaults true when undeclared, e.g. a `belongs_to` with no
+    // explicit `nullable:`). Nullable FKs (e.g. self-FK hierarchies) stay
+    // opportunistic. (#374)
+    strict: fields?.[rel.field]?.required === true,
     relatedTable: rel.relatedTable,
     relatedEntity: rel.relatedEntity,
     importPath: rel.importPath,
@@ -1155,6 +1162,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     hasTimestamps,
     eavEnabled,
     hasSoftDelete,
+    fields,
   );
 
   // EVT-7: emits locals flow through from baseLocals (prompt.js computed them
