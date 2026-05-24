@@ -36,8 +36,10 @@ export const opportunityContacts = pgTable(
     opportunityId: uuid('opportunity_id').notNull().references(() => opportunities.id, { onDelete: 'restrict' }),
     contactId: uuid('contact_id').notNull().references(() => contacts.id, { onDelete: 'restrict' }),
 
-    // Role enum (per-pairing; declared in junction YAML's fields.role.choices)
-    role: opportunityContactRoleEnum('role'),
+    // Role enum (per-pairing; declared in junction YAML's fields.role.choices).
+    // NOT NULL because role is part of the junction's identity (composite PK
+    // below): the same pair with two different roles is two distinct rows.
+    role: opportunityContactRoleEnum('role').notNull(),
 
     // BaseJunctionFields — is_primary is always emitted
     isPrimary: boolean('is_primary').notNull().default(false),
@@ -56,8 +58,12 @@ export const opportunityContacts = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => [
-    // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
-    primaryKey({ columns: [table.opportunityId, table.contactId] }),
+    // Composite primary key on the two FK columns PLUS role (Q4 resolution: no
+    // surrogate id). Role is part of the junction's identity — the same pair
+    // with two different roles is two distinct rows (e.g. a contact who is both
+    // \`champion\` and \`decision_maker\` on one opportunity). This is the
+    // ON CONFLICT target for syncUpsert on role-bearing junctions.
+    primaryKey({ columns: [table.opportunityId, table.contactId, table.role] }),
   ],
 );
 
