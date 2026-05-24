@@ -123,6 +123,9 @@ const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
 	{ runtime: 'base-classes/base-service.ts', target: 'src/shared/base-classes/base-service.ts' },
 	{ runtime: 'base-classes/synced-entity-repository.ts', target: 'src/shared/base-classes/synced-entity-repository.ts' },
 	{ runtime: 'base-classes/synced-entity-service.ts', target: 'src/shared/base-classes/synced-entity-service.ts' },
+	// Inbound-sync write surface (#374) — deps of synced/junction repos
+	{ runtime: 'base-classes/sync-upsert-config.ts', target: 'src/shared/base-classes/sync-upsert-config.ts' },
+	{ runtime: 'base-classes/junction-sync-repository.ts', target: 'src/shared/base-classes/junction-sync-repository.ts' },
 	{ runtime: 'base-classes/activity-entity-repository.ts', target: 'src/shared/base-classes/activity-entity-repository.ts' },
 	{ runtime: 'base-classes/activity-entity-service.ts', target: 'src/shared/base-classes/activity-entity-service.ts' },
 	{ runtime: 'base-classes/metadata-entity-repository.ts', target: 'src/shared/base-classes/metadata-entity-repository.ts' },

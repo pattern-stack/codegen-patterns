@@ -123,7 +123,7 @@ export abstract class SyncedEntityRepository<
         .insert(this.table)
         .values(values as never)
         .onConflictDoUpdate({
-          target: cfg.conflictTarget.map((c) => this.table[c]),
+          target: cfg.conflictTarget.map((c: string) => this.table[c]),
           set: set as never,
         })
         .returning();
