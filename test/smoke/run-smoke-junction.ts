@@ -180,10 +180,13 @@ function assertJunctionEmission(
   // ── Entity file ──────────────────────────────────────────────────────────
   const entityFile = reads(`${junctionDir}/${junctionName}.entity.ts`);
 
-  // Composite PK on left + right FK columns
+  // Composite PK on left + right FK columns. When the junction carries a role
+  // discriminator (#372), the role column joins the PK as a third member.
   assertContains(
     entityFile,
-    /primaryKey\(\{\s*columns:\s*\[table\.\w+Id,\s*table\.\w+Id\]/,
+    hasRole
+      ? /primaryKey\(\{\s*columns:\s*\[table\.\w+Id,\s*table\.\w+Id,\s*table\.role\]/
+      : /primaryKey\(\{\s*columns:\s*\[table\.\w+Id,\s*table\.\w+Id\]/,
     'entity: composite PK',
   );
 
