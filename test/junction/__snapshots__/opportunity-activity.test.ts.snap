@@ -80,11 +80,43 @@ import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
-import { BaseRepository } from '@shared/base-classes/base-repository';
+import { JunctionSyncRepository } from '@shared/base-classes/junction-sync-repository';
+import type { JunctionSyncConfig } from '@shared/base-classes/junction-sync-repository';
+import { opportunities } from '../opportunities/opportunity.entity';
+import { activities } from '../activities/activity.entity';
 import { opportunityActivities, type OpportunityActivity } from './opportunity_activity.entity';
 
+/**
+ * Canonical fields a synced opportunity_activity junction write carries (#374). BOTH
+ * parent FKs are named by their vendor external ids and resolved STRICTLY in
+ * the tx (a missing parent throws → the orchestrator records a failed item and
+ * continues). \`userId\` is run context (no column on the junction).
+ */
+export interface OpportunityActivitySyncWrite {
+  readonly opportunityExternalId: string;
+  readonly activityExternalId: string;
+  readonly userId: string;
+}
+
+/**
+ * Canonical-projected view of a opportunity_activity junction row, keyed for the sync
+ * differ (#374). \`id\` is the COMPOSITE externalId (the junction has no
+ * surrogate id); the FKs are the LOCAL resolved uuids.
+ */
+export interface OpportunityActivitySyncProjection {
+  readonly id: string;
+  readonly opportunityId: string;
+  readonly activityId: string;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
 @Injectable()
-export class OpportunityActivityRepository extends BaseRepository<OpportunityActivity> {
+export class OpportunityActivityRepository extends JunctionSyncRepository<
+  OpportunityActivity,
+  OpportunityActivitySyncWrite,
+  OpportunityActivitySyncProjection
+> {
   readonly table = opportunityActivities;
 
   // Junctions track temporal validity via started_at / ended_at, NOT via
@@ -93,6 +125,14 @@ export class OpportunityActivityRepository extends BaseRepository<OpportunityAct
     timestamps: true,
     softDelete: false,
     userTracking: false,
+  };
+
+  // Inbound-sync write surface (#374). Both endpoints resolve strictly against
+  // the live parent tables; role-bearing junctions conflict on (left,right,role).
+  protected readonly syncConfig: JunctionSyncConfig = {
+    left: { column: 'opportunityId', refTable: opportunities },
+    right: { column: 'activityId', refTable: activities },
+    roleColumn: null,
   };
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient) {
@@ -136,8 +176,9 @@ export class OpportunityActivityRepository extends BaseRepository<OpportunityAct
     return rows as OpportunityActivity[];
   }
 
-  // Inherited from BaseRepository:
+  // Inherited from JunctionSyncRepository (+ BaseRepository):
   //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
+  //   syncUpsertOne, findByExternalIdProjected, softDeleteByExternalId
 }
 "
 `;
