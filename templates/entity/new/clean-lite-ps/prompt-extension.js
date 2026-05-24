@@ -723,6 +723,132 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
 }
 
 // ============================================================================
+// Sync write-surface derivation (#374)
+// ============================================================================
+
+/**
+ * Pre-compute the inbound-sync write surface for a `pattern: Synced` entity.
+ * Keeps the EJS thin + unit-testable: the template hand-emits the syncConfig
+ * literal (so `refTable` can carry a LIVE Drizzle table handle, which
+ * renderPatternConfigLiteral cannot express) using these locals.
+ *
+ * Returns null when the entity is not Synced.
+ *
+ * @param {string} patternName     resolved pattern name
+ * @param {object[]} processedFields  nonFkFields (camel + tsType + nullable)
+ * @param {object[]} belongsTo      clpBelongsTo entries
+ * @param {boolean} hasTimestamps
+ * @param {boolean} eavEnabled
+ * @param {boolean} hasSoftDelete
+ */
+export function buildSyncSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields) {
+  if (patternName !== 'Synced') return null;
+
+  // Copy-through columns: every non-FK declared field. external_id_tracking
+  // columns (external_id/provider/provider_metadata) are injected by the
+  // behavior, NOT present in processedFields, so they're already excluded.
+  const writeColumns = processedFields.map((f) => f.camelName);
+
+  // FK resolvers — one per belongs_to. writeKey = `${relationKey}ExternalId`
+  // (Decision 4). refTable is the string 'self' for self-FKs, else the parent
+  // table var name (emitted as a live identifier by the template).
+  const fkResolvers = belongsTo.map((rel) => ({
+    column: rel.camelField,
+    writeKey: `${rel.relationKey}ExternalId`,
+    refTable: rel.isSelfFk ? 'self' : rel.relatedTable,
+    isSelfFk: rel.isSelfFk,
+    nullable: rel.nullable,
+    // Strict resolution (throw on unresolved parent → failed item) when the FK
+    // COLUMN is required/non-null; opportunistic null otherwise. Sourced from
+    // the FK field's `required` — the relationship-level `nullable` is
+    // unreliable (defaults true when undeclared, e.g. a `belongs_to` with no
+    // explicit `nullable:`). Nullable FKs (e.g. self-FK hierarchies) stay
+    // opportunistic. (#374)
+    strict: fields?.[rel.field]?.required === true,
+    relatedTable: rel.relatedTable,
+    relatedEntity: rel.relatedEntity,
+    importPath: rel.importPath,
+  }));
+
+  // Projection columns: id + externalId + copy-through + local FK columns +
+  // timestamps. Omits provider/provider_metadata.
+  const projectionColumns = [
+    'id',
+    'externalId',
+    ...writeColumns,
+    ...belongsTo.map((rel) => rel.camelField),
+    ...(hasTimestamps ? ['createdAt', 'updatedAt'] : []),
+  ];
+
+  // The syncConfig object literal the template hand-emits. fkResolvers carry a
+  // sentinel so the template can swap `refTable` to either 'self' or the live
+  // table identifier.
+  const syncConfig = {
+    conflictTarget: ['provider', 'externalId'],
+    writeColumns,
+    projectionColumns,
+    eav: !!eavEnabled,
+    softDelete: !!hasSoftDelete,
+  };
+
+  // TSyncWrite fields: externalId:string, copy-through (typed, nullable-aware),
+  // one `<writeKey>?: string | null` per FK, fields?: Record<string, unknown>.
+  const writeFields = processedFields.map((f) => ({
+    camelName: f.camelName,
+    tsType: f.nullable ? `${f.tsType} | null` : f.tsType,
+  }));
+  const writeFkFields = fkResolvers.map((fk) => ({
+    name: fk.writeKey,
+    tsType: 'string | null',
+  }));
+
+  // TSyncProjection fields: id + externalId + copy-through (typed) + each local
+  // FK column (typed string, nullable per rel) + createdAt/updatedAt.
+  const projectionFields = [
+    { camelName: 'id', tsType: 'string' },
+    { camelName: 'externalId', tsType: 'string' },
+    ...processedFields.map((f) => ({
+      camelName: f.camelName,
+      tsType: f.nullable ? `${f.tsType} | null` : f.tsType,
+    })),
+    ...belongsTo.map((rel) => ({
+      camelName: rel.camelField,
+      tsType: rel.nullable ? 'string | null' : 'string',
+    })),
+    ...(hasTimestamps
+      ? [
+          { camelName: 'createdAt', tsType: 'Date' },
+          { camelName: 'updatedAt', tsType: 'Date' },
+        ]
+      : []),
+  ];
+
+  // Parent-table imports for non-self FKs, deduped (#368). Each entry imports
+  // the parent table var from its entity file. The entity's OWN table import is
+  // emitted separately by the template; we exclude self-FKs here.
+  const parentImportMap = new Map();
+  for (const fk of fkResolvers) {
+    if (fk.isSelfFk) continue;
+    if (!parentImportMap.has(fk.relatedTable)) {
+      parentImportMap.set(fk.relatedTable, {
+        table: fk.relatedTable,
+        importPath: fk.importPath,
+      });
+    }
+  }
+  const parentTableImports = Array.from(parentImportMap.values());
+
+  return {
+    syncConfig,
+    fkResolvers,
+    writeFields,
+    writeFkFields,
+    projectionFields,
+    parentTableImports,
+  };
+}
+
+// ============================================================================
 // Main export
 // ============================================================================
 
@@ -1028,6 +1154,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     zodChainOutput: zodChainForOutput(f),
   }));
 
+  // Sync write-surface derivation (#374) — null unless pattern: Synced.
+  const syncSurface = buildSyncSurface(
+    patternName,
+    nonFkFields,
+    belongsTo,
+    hasTimestamps,
+    eavEnabled,
+    hasSoftDelete,
+    fields,
+  );
+
   // EVT-7: emits locals flow through from baseLocals (prompt.js computed them
   // against the full events registry). When this helper is called in isolation
   // (e.g. from unit tests) baseLocals.hasEmits may be undefined — provide
@@ -1071,6 +1208,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     patternConfig: patternConfigBlock,
     renderPatternConfigLiteral,
     ...patternConfigClasses,
+
+    // Sync write-surface (#374) — emitted only for pattern: Synced. The
+    // template hand-emits the syncConfig literal (live refTable handles) +
+    // TSyncWrite/TSyncProjection from these.
+    hasSyncSurface: syncSurface !== null,
+    clpSyncConfig: syncSurface?.syncConfig ?? null,
+    clpSyncFkResolvers: syncSurface?.fkResolvers ?? [],
+    clpSyncWriteFields: syncSurface?.writeFields ?? [],
+    clpSyncWriteFkFields: syncSurface?.writeFkFields ?? [],
+    clpSyncProjectionFields: syncSurface?.projectionFields ?? [],
+    clpSyncParentTableImports: syncSurface?.parentTableImports ?? [],
 
     // Behavior flags (also exposed at top level for template use)
     hasTimestamps,

@@ -378,6 +378,63 @@ export default {
     const rightEntityCamel = camelCase(rightEntity);
 
     // ======================================================================
+    // Inbound-sync write surface (#374)
+    // ======================================================================
+    // The junction sync identity is the tuple (leftId, rightId[, role]); its
+    // externalId is a COMPOSITE string. Both parent FKs resolve strictly. FK
+    // write-keys use `${camelCase(entity)}ExternalId` (matches the reference).
+
+    const leftSyncWriteKey = `${leftEntityCamel}ExternalId`;
+    const rightSyncWriteKey = `${rightEntityCamel}ExternalId`;
+    const roleColumnCamel = hasRole ? 'role' : null;
+    // Role TS type — literal union from the enum choices, else absent.
+    const roleTsType = hasRole
+      ? roleChoices.map((c) => `'${c}'`).join(' | ')
+      : null;
+
+    // JunctionSyncConfig literal fields. refTable is emitted as a live table
+    // identifier (leftTable/rightTable) by the template.
+    const syncConfig = {
+      leftColumn: leftColumnCamel,
+      leftRefTable: leftTable,
+      rightColumn: rightColumnCamel,
+      rightRefTable: rightTable,
+      roleColumn: roleColumnCamel,
+    };
+
+    // TSyncWrite fields: both parent external ids + optional role + userId.
+    const syncWriteFields = [
+      { name: leftSyncWriteKey, tsType: 'string' },
+      { name: rightSyncWriteKey, tsType: 'string' },
+      ...(hasRole ? [{ name: 'role', tsType: roleTsType }] : []),
+      { name: 'userId', tsType: 'string' },
+    ];
+
+    // TSyncProjection fields: composite id + local FK columns + optional role +
+    // timestamps. No surrogate id column on a junction.
+    const syncProjectionFields = [
+      { name: 'id', tsType: 'string' },
+      { name: leftColumnCamel, tsType: 'string' },
+      { name: rightColumnCamel, tsType: 'string' },
+      ...(hasRole ? [{ name: 'role', tsType: roleTsType }] : []),
+      { name: 'createdAt', tsType: 'Date' },
+      { name: 'updatedAt', tsType: 'Date' },
+    ];
+
+    // Parent-table imports for the FK resolvers, deduped (#368). Junction
+    // endpoints are distinct by schema, so two imports unless they collide.
+    const syncParentImports = [];
+    const seenSyncImports = new Set();
+    for (const imp of [
+      { table: leftTable, importPath: leftEntityImportFromJunction },
+      { table: rightTable, importPath: rightEntityImportFromJunction },
+    ]) {
+      if (seenSyncImports.has(imp.table)) continue;
+      seenSyncImports.add(imp.table);
+      syncParentImports.push(imp);
+    }
+
+    // ======================================================================
     // Class names
     // ======================================================================
 
@@ -464,6 +521,18 @@ export default {
       // Parent table Drizzle var names (for FK .references())
       leftTable,
       rightTable,
+
+      // ──────────────────────────────────────────────────────────────────
+      // Inbound-sync write surface (#374)
+      // ──────────────────────────────────────────────────────────────────
+      leftSyncWriteKey,
+      rightSyncWriteKey,
+      roleColumnCamel,
+      roleTsType,
+      junctionSyncConfig: syncConfig,
+      syncWriteFields,
+      syncProjectionFields,
+      syncParentImports,
 
       // ──────────────────────────────────────────────────────────────────
       // CGP-60 — fan-out locals

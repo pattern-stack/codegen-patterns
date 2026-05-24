@@ -221,7 +221,9 @@ function assertJunctionEmission(
       : `app/backend/src/infrastructure/persistence/drizzle/${junctionName.replace(/_/g, '-')}.repository.ts`,
   );
 
-  assertContains(repoFile, /extends BaseRepository<\w+>/, 'repo: extends BaseRepository');
+  // #374: junctions now extend JunctionSyncRepository (which extends BaseRepository)
+  // to inherit the inbound-sync write surface (syncUpsertOne/etc.).
+  assertContains(repoFile, /extends JunctionSyncRepository</, 'repo: extends JunctionSyncRepository');
   assertContains(
     repoFile,
     new RegExp(`findBy${leftPascal}Id\\s*\\(`),
