@@ -2,6 +2,7 @@
 to: "<%= outputPaths.outputDto %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { z } from 'zod';
 
 export const <%= classNames.outputSchema %> = z.object({

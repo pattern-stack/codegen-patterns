@@ -2,6 +2,7 @@
 to: "<%= outputPaths.repository %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject } from '@nestjs/common';
 <% if (hasDeclarativeQueries) { -%>
 import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';

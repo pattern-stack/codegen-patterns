@@ -9,6 +9,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import yaml from 'yaml'
+import { renderGeneratedBanner } from '../../_shared/generated-banner.mjs'
 
 // ============================================================================
 // Default Configuration
@@ -243,7 +244,19 @@ export default {
       events: events.sort(),
     }))
 
+    // @generated DO-NOT-EDIT banner — stamped at the top of every
+    // force-overwritten broadcast output. `args.yaml` (when provided) is the
+    // consumer-relative source config; otherwise defaults are used.
+    const generatedBanner = renderGeneratedBanner({
+      source: args.yaml,
+      generator: 'broadcast',
+      seam: 'the broadcast config YAML',
+    })
+
     return {
+      // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
+      generatedBanner,
+
       // Basic config
       name: broadcast.name,
       websocketPath: broadcast.websocket?.path ?? '/ws/broadcast',

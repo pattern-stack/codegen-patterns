@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.searchController
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.searchController %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (hasSearchQuery) { -%>
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';

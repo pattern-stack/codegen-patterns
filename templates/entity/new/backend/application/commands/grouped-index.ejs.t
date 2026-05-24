@@ -3,6 +3,7 @@ to: "<%= generate.commands ? outputPaths.commandsGroupedIndex : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.commandsGroupedIndex) { -%>
 /**
  * <%= className %> Commands Module

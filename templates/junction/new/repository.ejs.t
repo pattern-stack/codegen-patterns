@@ -2,6 +2,7 @@
 to: "<%= outputPaths.repository %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';

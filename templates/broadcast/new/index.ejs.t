@@ -2,6 +2,7 @@
 to: src/infrastructure/broadcast/index.ts
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 // Interfaces
 export type { BroadcastBackend, BroadcastHandler } from './broadcast-backend.interface'
 export { BROADCAST_BACKEND } from './broadcast-backend.interface'

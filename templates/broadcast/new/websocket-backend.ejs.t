@@ -2,6 +2,7 @@
 to: src/infrastructure/broadcast/websocket-broadcast.backend.ts
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Logger } from '@nestjs/common'
 import {
   WebSocketGateway,

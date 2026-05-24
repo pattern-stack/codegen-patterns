@@ -2,6 +2,7 @@
 to: src/infrastructure/broadcast/channel.ts
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import type { BroadcastBackend, BroadcastHandler } from './broadcast-backend.interface'
 
 /**

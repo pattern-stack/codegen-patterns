@@ -2,6 +2,7 @@
 to: "<%= schemaPath %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 /**
  * Drizzle schema for the domain_events outbox table.
  *

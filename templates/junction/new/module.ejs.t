@@ -2,6 +2,7 @@
 to: "<%= outputPaths.module %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Module, forwardRef } from '@nestjs/common';
 import { DatabaseModule } from '@shared/database/database.module';
 

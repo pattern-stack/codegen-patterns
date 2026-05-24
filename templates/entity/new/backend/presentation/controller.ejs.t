@@ -3,6 +3,7 @@ to: "<%= (exposeRest || exposeElectric) ? `${basePaths.backendSrc}/${paths.contr
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (exposeRest) { -%>
 /**
  * <%= classNamePlural %> Controller
