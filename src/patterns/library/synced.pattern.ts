@@ -23,7 +23,8 @@ export const SyncedPattern = definePattern({
 	serviceImport: '@shared/base-classes/synced-entity-service',
 	repositoryInheritedMethods: [
 		'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
-		'findByExternalId, findAllByUserId, findVisibleByUserId, syncUpsert',
+		'findByExternalId, findManyByExternalIds, findAllByUserId, findVisibleByUserId',
+		'syncUpsertOne, findByExternalIdProjected, softDeleteByExternalId, syncUpsert',
 	],
 	serviceInheritedMethods: [
 		'findById, findByIds, list, count, exists, create, update, delete',
