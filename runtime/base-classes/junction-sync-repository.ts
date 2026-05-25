@@ -165,21 +165,32 @@ export abstract class JunctionSyncRepository<
   }
 
   /**
-   * Project a raw junction row to the differ shape. `id` is the COMPOSITE
-   * externalId (the junction has no surrogate id). Override to widen the
-   * projection beyond the identity tuple (the template emits a concrete
-   * `toProjection` carrying the role + local FKs + timestamps).
+   * Project a raw junction row to the differ shape: the COMPOSITE externalId
+   * `id` (junctions have no surrogate id) plus the local FK columns, role (when
+   * role-bearing) and timestamps — matching the emitted
+   * `<Junction>SyncProjection` interface (id + leftId + rightId + role? +
+   * createdAt + updatedAt). Junction projections are purely structural, so this
+   * is fully generic over `syncConfig` — no per-junction override is emitted.
    */
   protected toProjection(
-    _row: TEntity,
+    row: TEntity,
     write: Record<string, unknown>,
     _provider: string,
   ): TSyncProjection {
     const cfg = this.syncConfig;
+    const r = row as Record<string, unknown>;
     const leftExt = write[`${cfg.left.column.replace(/Id$/, '')}ExternalId`] as string;
     const rightExt = write[`${cfg.right.column.replace(/Id$/, '')}ExternalId`] as string;
-    const role = cfg.roleColumn ? (write['role'] as string) : undefined;
-    return { id: buildCompositeExternalId(leftExt, rightExt, role) } as TSyncProjection;
+    const role = cfg.roleColumn ? (r[cfg.roleColumn] as string | undefined) : undefined;
+    const out: Record<string, unknown> = {
+      id: buildCompositeExternalId(leftExt, rightExt, role),
+      [cfg.left.column]: r[cfg.left.column],
+      [cfg.right.column]: r[cfg.right.column],
+    };
+    if (cfg.roleColumn) out[cfg.roleColumn] = r[cfg.roleColumn];
+    out['createdAt'] = r['createdAt'];
+    out['updatedAt'] = r['updatedAt'];
+    return out as TSyncProjection;
   }
 
   /** Build the identity WHERE clause `(left, right[, role])`. */
