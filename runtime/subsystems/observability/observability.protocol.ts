@@ -21,11 +21,48 @@
 
 import type {
   JobRunFailure,
+  JobRunPage,
+  JobRunSummary,
+  ListJobRunsQuery,
   PoolStatusCount,
 } from '../jobs/job-run-service.protocol';
+import type {
+  EventPage,
+  EventSummary,
+  ListEventsQuery,
+} from '../events/event-read.protocol';
 import type { StatusHistogram } from '../bridge/bridge.protocol';
 import type { SyncRunSummary } from '../sync/sync-run-recorder.protocol';
 import type { CursorSnapshot } from '../sync/sync-cursor-store.protocol';
+
+/**
+ * One chronological entry in a correlation timeline (OBS-LIST-1). Either a
+ * `job_run` or a `domain_event` sharing the same `rootRunId`, tagged with a
+ * `kind` discriminator and a single `at` timestamp used for ordering.
+ */
+export type CorrelationTimelineEntry =
+  | { kind: 'job_run'; at: Date; run: JobRunSummary }
+  | { kind: 'event'; at: Date; event: EventSummary };
+
+/**
+ * Stitched view of everything correlated to a single `rootRunId`
+ * (OBS-LIST-1): the job runs sharing that root plus the domain events whose
+ * `metadata.rootRunId` matches, merged into one ascending timeline with a
+ * small roll-up summary.
+ */
+export interface CorrelationTimeline {
+  rootRunId: string;
+  /** Ascending by `at`. Job runs ordered by `createdAt`; events by `occurredAt`. */
+  entries: CorrelationTimelineEntry[];
+  summary: {
+    runCount: number;
+    eventCount: number;
+    /** Earliest `at` across all entries, or `null` when empty. */
+    startedAt: Date | null;
+    /** Latest `at` across all entries, or `null` when empty. */
+    lastActivityAt: Date | null;
+  };
+}
 
 export interface IObservability {
   /**
@@ -79,6 +116,39 @@ export interface IObservability {
    * Empty array when the sync subsystem is not installed.
    */
   getCursors(tenantId?: string | null): Promise<CursorSnapshot[]>;
+
+  /**
+   * Paginated, filterable `job_run` list (OBS-LIST-1). Delegates to
+   * `IJobRunService.listJobRuns`. Keyset pagination on `created_at`.
+   *
+   * Returns an empty page (`{ items: [], nextCursor: null }`) when the jobs
+   * subsystem is not installed.
+   */
+  listJobRuns(query?: ListJobRunsQuery): Promise<JobRunPage>;
+
+  /**
+   * Paginated, filterable `domain_events` list (OBS-LIST-1). Delegates to
+   * `IEventReadPort.listEvents`. Keyset pagination on `occurred_at`.
+   *
+   * Returns an empty page when the events read port is not installed (e.g.
+   * the events subsystem is absent, or its backend is `redis` which retains
+   * no history).
+   */
+  listEvents(query?: ListEventsQuery): Promise<EventPage>;
+
+  /**
+   * Stitch the job runs and domain events sharing a `rootRunId` into a
+   * single ascending timeline + summary (OBS-LIST-1). Composes
+   * `IJobRunService.listJobRuns` (filtered by the run tree) and
+   * `IEventReadPort.listEvents({ rootRunId })`.
+   *
+   * Returns an empty timeline (zero counts, null bounds) when neither the
+   * jobs subsystem nor the events read port is installed.
+   */
+  getCorrelationTimeline(
+    rootRunId: string,
+    tenantId?: string | null,
+  ): Promise<CorrelationTimeline>;
 }
 
 // Re-export composed return types so consumers of IObservability can import
@@ -86,6 +156,12 @@ export interface IObservability {
 export type {
   PoolStatusCount,
   JobRunFailure,
+  JobRunSummary,
+  JobRunPage,
+  ListJobRunsQuery,
+  EventSummary,
+  EventPage,
+  ListEventsQuery,
   StatusHistogram,
   SyncRunSummary,
   CursorSnapshot,

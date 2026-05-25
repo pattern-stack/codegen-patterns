@@ -47,6 +47,7 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import {
   EVENT_BUS,
+  EVENT_READ_PORT,
   EVENTS_MODULE_OPTIONS,
   EVENTS_MULTI_TENANT,
   REDIS_URL,
@@ -180,10 +181,21 @@ export class EventsModule {
             REDIS_URL,
           ],
         },
+        {
+          // Read port (OBS-LIST-1). Drizzle + memory backends implement
+          // IEventReadPort on the EVENT_BUS instance; the redis backend
+          // retains no history, so EVENT_READ_PORT resolves to `null` and
+          // optional consumers (the observability combiner) degrade to
+          // empty results.
+          provide: EVENT_READ_PORT,
+          useFactory: (options: EventsModuleOptions, bus: unknown) =>
+            options.backend === 'redis' ? null : bus,
+          inject: [EVENTS_MODULE_OPTIONS, EVENT_BUS],
+        },
         TypedEventBus,
         { provide: TYPED_EVENT_BUS, useExisting: TypedEventBus },
       ],
-      exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
+      exports: [EVENT_BUS, EVENT_READ_PORT, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
     };
   }
 
@@ -222,9 +234,13 @@ export class EventsModule {
       providers: [
         { provide: EVENTS_MODULE_OPTIONS, useValue: options },
         provider,
+        // Read port (OBS-LIST-1): drizzle + memory backends implement
+        // IEventReadPort on the same instance as EVENT_BUS. The redis
+        // backend retains no history and does not provide this token.
+        { provide: EVENT_READ_PORT, useExisting: EVENT_BUS },
         ...buildTypedBusProviders(multiTenant),
       ],
-      exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
+      exports: [EVENT_BUS, EVENT_READ_PORT, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
     };
   }
 }

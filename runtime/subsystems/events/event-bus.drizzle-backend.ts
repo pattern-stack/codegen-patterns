@@ -29,10 +29,20 @@
  * via EventsModule.forRoot({ backend: '...' }) without touching use cases.
  */
 import { Injectable, OnModuleDestroy, OnModuleInit, Inject, Logger, Optional } from '@nestjs/common';
-import { eq, and, inArray, asc, type SQL } from 'drizzle-orm';
+import { eq, and, inArray, asc, desc, gte, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { DomainEvent, DrizzleTransaction, IEventBus } from './event-bus.protocol';
+import type {
+  EventPage,
+  IEventReadPort,
+  ListEventsQuery,
+} from './event-read.protocol';
+import {
+  clampEventLimit,
+  decodeEventCursor,
+  encodeEventCursor,
+} from './event-keyset-cursor';
 import type { DrizzleClient } from '../../types/drizzle';
-import { domainEvents } from './domain-events.schema';
+import { domainEvents, type DomainEventRecord } from './domain-events.schema';
 import { DRIZZLE } from '../../constants/tokens';
 import { EVENTS_MODULE_OPTIONS } from './events.tokens';
 import type { EventsModuleOptions } from './events.module';
@@ -76,8 +86,43 @@ function toInsertValues(event: DomainEvent) {
   };
 }
 
+/**
+ * Project a raw `domain_events` row into the narrow `EventSummary` shape.
+ * Shared with the memory backend via this helper kept module-local to each
+ * backend (the events subsystem has no cross-backend projection file yet;
+ * the two are byte-identical and small).
+ */
+function toEventSummary(r: DomainEventRecord) {
+  const metadata = (r.metadata ?? undefined) as
+    | Record<string, unknown>
+    | undefined;
+  const rootRunId = metadata?.['rootRunId'];
+  return {
+    id: r.id,
+    type: r.type,
+    aggregateId: r.aggregateId,
+    aggregateType: r.aggregateType,
+    status: r.status,
+    pool: r.pool,
+    direction: r.direction,
+    tier: r.tier,
+    rootRunId: typeof rootRunId === 'string' ? rootRunId : null,
+    tenantId: r.tenantId,
+    occurredAt:
+      r.occurredAt instanceof Date
+        ? r.occurredAt
+        : new Date(r.occurredAt as unknown as string),
+    processedAt:
+      r.processedAt == null
+        ? null
+        : r.processedAt instanceof Date
+          ? r.processedAt
+          : new Date(r.processedAt as unknown as string),
+  };
+}
+
 @Injectable()
-export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy {
+export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DrizzleEventBus.name);
   private polling = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -176,6 +221,67 @@ export class DrizzleEventBus implements IEventBus, OnModuleInit, OnModuleDestroy
     return () => {
       set.delete(h);
     };
+  }
+
+  // ============================================================================
+  // IEventReadPort (OBS-LIST-1)
+  // ============================================================================
+
+  async listEvents(query: ListEventsQuery = {}): Promise<EventPage> {
+    const limit = clampEventLimit(query.limit);
+    const conditions: SQL<unknown>[] = [];
+
+    if (query.poolId) conditions.push(eq(domainEvents.pool, query.poolId));
+    if (query.direction)
+      conditions.push(eq(domainEvents.direction, query.direction));
+    if (query.since) conditions.push(gte(domainEvents.occurredAt, query.since));
+    if (query.rootRunId) {
+      // Filter on the JSON correlation id: metadata->>'rootRunId'.
+      conditions.push(
+        sql`${domainEvents.metadata}->>'rootRunId' = ${query.rootRunId}`,
+      );
+    }
+    if (query.tenantId !== undefined) {
+      conditions.push(
+        query.tenantId === null
+          ? (sql`${domainEvents.tenantId} is null` as SQL<unknown>)
+          : eq(domainEvents.tenantId, query.tenantId),
+      );
+    }
+
+    // Keyset seek: WHERE (occurred_at, id) < (cursorOccurredAt, cursorId).
+    if (query.cursor) {
+      const keyset = decodeEventCursor(query.cursor);
+      if (keyset) {
+        conditions.push(
+          or(
+            lt(domainEvents.occurredAt, keyset.occurredAt),
+            and(
+              eq(domainEvents.occurredAt, keyset.occurredAt),
+              lt(domainEvents.id, keyset.id),
+            ),
+          )!,
+        );
+      }
+    }
+
+    const rows = (await this.db
+      .select()
+      .from(domainEvents)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(domainEvents.occurredAt), desc(domainEvents.id))
+      .limit(limit + 1)) as DomainEventRecord[];
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const items = page.map(toEventSummary);
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeEventCursor({ occurredAt: last.occurredAt, id: last.id })
+        : null;
+
+    return { items, nextCursor };
   }
 
   // ============================================================================
