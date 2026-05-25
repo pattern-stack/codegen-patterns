@@ -45,7 +45,12 @@ type RedisClient = any;
 async function createRedisClient(url: string): Promise<RedisClient> {
   let Redis: { new (url: string): RedisClient };
   try {
-    const mod = await import('ioredis');
+    // Indirect the specifier through a `string` so TS does not statically
+    // resolve `ioredis` at compile time — consumers on other backends never
+    // install it. Matches the optional-peer pattern in
+    // `runtime/shared/openapi/registry.ts` (@anatine/zod-openapi).
+    const specifier: string = 'ioredis';
+    const mod = await import(specifier);
     Redis = mod.default ?? mod;
   } catch {
     throw new Error(

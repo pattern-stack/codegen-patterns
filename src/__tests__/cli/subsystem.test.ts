@@ -497,6 +497,38 @@ describe('subsystem — detection', () => {
 		const installed = await detectInstalledSubsystems(ctx);
 		expect(installed.map((i) => i.name)).toContain('events');
 	});
+
+	// Regression: `project init` baseline-vendors `event-bus.protocol.ts`, and
+	// installing events transitively vendors `bridge.protocol.ts`, without a
+	// full install of either. Detection must NOT report a subsystem installed
+	// from its protocol alone — otherwise `subsystem install events` no-ops and
+	// the generated barrel imports a non-existent `*.module.ts`. Key off the
+	// module file the barrel actually imports.
+	test('detectInstalledSubsystems ignores protocol-only events/bridge (no module)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const eventsDir = path.join(root, 'src/shared/subsystems/events');
+		const bridgeDir = path.join(root, 'src/shared/subsystems/bridge');
+		fs.mkdirSync(eventsDir, { recursive: true });
+		fs.mkdirSync(bridgeDir, { recursive: true });
+		// Protocols present (as after `project init` + events install), but no
+		// `events.module.ts` / `bridge.module.ts`.
+		fs.writeFileSync(path.join(eventsDir, 'event-bus.protocol.ts'), 'export {};\n');
+		fs.writeFileSync(path.join(bridgeDir, 'bridge.protocol.ts'), 'export {};\n');
+
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+		const names = (await detectInstalledSubsystems(ctx)).map((i) => i.name);
+		expect(names).not.toContain('events');
+		expect(names).not.toContain('bridge');
+
+		// Adding the module files flips detection to installed.
+		fs.writeFileSync(path.join(eventsDir, 'events.module.ts'), 'export {};\n');
+		fs.writeFileSync(path.join(bridgeDir, 'bridge.module.ts'), 'export {};\n');
+		const ctx2 = await loadContext({ cwd: root, skipDetection: true });
+		const names2 = (await detectInstalledSubsystems(ctx2)).map((i) => i.name);
+		expect(names2).toContain('events');
+		expect(names2).toContain('bridge');
+	});
 });
 
 describe('subsystem — remove stub', () => {

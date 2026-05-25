@@ -1,0 +1,84 @@
+# Post-publish smoke fixture: lead
+# Exercises multi-provider `detection:` codegen path (#266 regression).
+# Each provider (hubspot-crm, salesforce-crm) is an independent DetectionConfig;
+# rendering this block runs the template code that imports cross-package
+# helpers from src/, which is exactly what shipped broken in 0.6.0.
+entity:
+  name: lead
+  plural: leads
+  table: leads
+  pattern: Synced
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+  amount:
+    type: decimal
+    nullable: true
+
+  expected_close_date:
+    type: date
+    nullable: true
+
+behaviors:
+  - timestamps
+
+sync:
+  providers:
+    hubspot-crm:
+      remote_entity: lead
+      direction: inbound
+    salesforce-crm:
+      remote_entity: Lead
+      direction: inbound
+
+detection:
+  hubspot-crm:
+    mode: poll
+    poll:
+      cursor:
+        kind: timestamp
+        field: hs_lastmodifieddate
+    mapping:
+      - source: dealname
+        target: name
+      - source: email
+        target: email
+      - source: amount
+        target: amount
+        transform: decimal-string
+      - source: closedate
+        target: expected_close_date
+        transform: date-iso
+    filters:
+      - field: pipeline
+        op: neq
+        value: archived
+
+  salesforce-crm:
+    mode: poll
+    poll:
+      cursor:
+        kind: systemModstamp
+        field: SystemModstamp
+    mapping:
+      - source: Name
+        target: name
+      - source: Email
+        target: email
+      - source: Amount
+        target: amount
+        transform: decimal-string
+
+queries:
+  - by: [email]
+    unique: true
