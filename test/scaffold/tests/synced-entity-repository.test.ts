@@ -30,6 +30,17 @@ beforeAll(async () => {
   class TestCrmRepository extends SyncedEntityRepository<CrmEntity> {
     readonly table = crmEntities;
     protected readonly behaviors = { timestamps: true, softDelete: true, userTracking: false };
+    // #374: syncConfig is now abstract on the base. A minimal config keeps this
+    // hand-written test repo compiling; the generic sync surface is unit-tested
+    // separately in src/__tests__/runtime/base-classes/.
+    protected readonly syncConfig = {
+      conflictTarget: ['provider', 'externalId'],
+      writeColumns: ['name'],
+      fkResolvers: [],
+      projectionColumns: ['id', 'externalId', 'name'],
+      eav: false,
+      softDelete: true,
+    };
   }
 
   repo = new TestCrmRepository(getTestDb() as any);
@@ -111,8 +122,8 @@ d('findAllByUserId', () => {
 });
 
 d('abstract stubs', () => {
-  test('syncUpsert throws not implemented', async () => {
-    await expect(repo.syncUpsert([])).rejects.toThrow('syncUpsert not implemented');
+  test('syncUpsert returns [] for empty input (#374: now concrete)', async () => {
+    await expect(repo.syncUpsert([])).resolves.toEqual([]);
   });
 
   test('findVisibleByUserId throws not implemented', async () => {

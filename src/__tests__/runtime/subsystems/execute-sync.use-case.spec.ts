@@ -78,6 +78,10 @@ class FakeSink implements ISyncSink<CanonicalOpp> {
   readonly rows = new Map<string, CanonicalOpp>();
   /** External ids for which `upsertByExternalId` should throw. */
   failOn = new Set<string>();
+  /** Count of `upsertByExternalId` calls — lets tests assert reprojection. */
+  upsertCalls = 0;
+  /** Capability flag — `true` opts the sink into always-reproject on noop. */
+  reprojectsOnNoop?: boolean;
 
   async findByExternalId(
     _userId: string,
@@ -91,6 +95,7 @@ class FakeSink implements ISyncSink<CanonicalOpp> {
     record: CanonicalOpp,
     _provider: string,
   ): Promise<{ id: string; saved: CanonicalOpp }> {
+    this.upsertCalls++;
     if (this.failOn.has(record.external_id)) {
       throw new Error(`sink boom for ${record.external_id}`);
     }
@@ -228,8 +233,9 @@ describe('ExecuteSyncUseCase', () => {
       expect(recorder.items[0].operation).toBe('created');
       expect(recorder.items[0].status).toBe('success');
       expect(recorder.items[0].localId).toBe('local-ext-1');
+      // external_id is sync-tracking metadata (record identity), not a domain
+      // attribute — the differ ignores it, so it never appears in changedFields.
       expect(recorder.items[0].changedFields).toEqual({
-        external_id: { from: null, to: 'ext-1' },
         amount: { from: null, to: 100 },
         stageName: { from: null, to: 'Prospecting' },
       });
@@ -322,12 +328,70 @@ describe('ExecuteSyncUseCase', () => {
       await orch.execute(makeInput());
 
       expect(recorder.items[0].operation).toBe('noop');
+      expect(recorder.items[0].localId).toBeNull();
       expect(recorder.items[0].changedFields).toEqual({});
       // Sink.upsertByExternalId was not called — row in the map is the
       // pre-existing reference (the change-record copy would also equal,
       // but we assert `upsertByExternalId` did not run by checking the
       // map still points to `existing`).
+      expect(sink.upsertCalls).toBe(0);
       expect(sink.rows.get('ext-1')).toBe(existing);
+    });
+  });
+
+  describe('reprojectsOnNoop capability (#375)', () => {
+    it('calls upsertByExternalId on a noop diff when the sink declares it', async () => {
+      sink.reprojectsOnNoop = true;
+      const existing: CanonicalOpp = {
+        external_id: 'ext-1',
+        amount: 100,
+        stageName: 'Prospecting',
+      };
+      sink.rows.set('ext-1', existing);
+      const change: Change<CanonicalOpp> = {
+        externalId: 'ext-1',
+        operation: 'updated',
+        // Canonically identical → differ returns 'noop'. A custom-field-only
+        // edit (EAV bag) looks exactly like this to the canonical differ.
+        record: { ...existing },
+        cursor: { v: 1 },
+        source: 'poll',
+      };
+      const source = new ArrayChangeSource([change]);
+      const orch = makeOrchestrator(source, sink, recorder, cursors);
+      await orch.execute(makeInput());
+
+      // The sink WAS called so it can reproject side data the differ can't see.
+      expect(sink.upsertCalls).toBe(1);
+      // Canonical state is unchanged → audit operation is still 'noop'...
+      expect(recorder.items[0].operation).toBe('noop');
+      expect(recorder.items[0].changedFields).toEqual({});
+      // ...but the local id returned by the upsert is captured.
+      expect(recorder.items[0].localId).toBe('local-ext-1');
+    });
+
+    it('still short-circuits on a noop diff when the sink does not declare it', async () => {
+      // reprojectsOnNoop is undefined (absent) — byte-identical to today.
+      const existing: CanonicalOpp = {
+        external_id: 'ext-1',
+        amount: 100,
+        stageName: 'Prospecting',
+      };
+      sink.rows.set('ext-1', existing);
+      const change: Change<CanonicalOpp> = {
+        externalId: 'ext-1',
+        operation: 'updated',
+        record: { ...existing },
+        cursor: { v: 1 },
+        source: 'poll',
+      };
+      const source = new ArrayChangeSource([change]);
+      const orch = makeOrchestrator(source, sink, recorder, cursors);
+      await orch.execute(makeInput());
+
+      expect(sink.upsertCalls).toBe(0);
+      expect(recorder.items[0].operation).toBe('noop');
+      expect(recorder.items[0].localId).toBeNull();
     });
   });
 
@@ -374,14 +438,17 @@ describe('ExecuteSyncUseCase', () => {
         {
           externalId: 'a',
           operation: 'created',
-          record: { external_id: 'a' },
+          // amount is a real domain field so the diff isn't noop — without it
+          // the record carries only the (ignored) external_id and short-circuits
+          // before reaching the sink, so it could never fail.
+          record: { external_id: 'a', amount: 1 },
           cursor: { v: 1 },
           source: 'poll',
         },
         {
           externalId: 'b',
           operation: 'created',
-          record: { external_id: 'b' },
+          record: { external_id: 'b', amount: 2 },
           cursor: { v: 2 },
           source: 'poll',
         },

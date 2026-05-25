@@ -112,5 +112,13 @@ export {
 // Controller
 export { AuthController } from './controllers/auth.controller';
 
+// Middleware — RequesterContext boundary (bridges auth → ambient tenant scope)
+export {
+  installRequesterContext,
+  makeRequesterContextMiddleware,
+  resolveRequesterContext,
+  type RequesterContextOptions,
+} from './middleware/requester-context';
+
 // Module
 export { AuthModule, type AuthModuleOptions } from './auth.module';

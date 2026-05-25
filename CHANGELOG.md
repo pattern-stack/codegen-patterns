@@ -4,6 +4,176 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-05-25
+
+Closes the loop on ambient tenant scoping (0.8.0): adds the **RequesterContext
+boundary** that turns an authenticated request into ambient scope, so scoping
+actually engages over HTTP — including Swagger's "Authorize" bearer flow. See
+ADR-0002 (`ai-docs/adrs/0002-requester-context-boundary.md`).
+
+### Added
+
+- **`feat(auth)` — `RequesterContextMiddleware` + `installRequesterContext`.** New
+  `runtime/subsystems/auth/middleware/requester-context.ts`. The Express-style
+  middleware resolves the requester via the consumer's `IUserContext` and runs the
+  rest of the request inside `withRequester(...)`, so every downstream repository
+  read/write is auto-scoped (ADR-0001) with no threaded `userId`. ALS-correct
+  (middleware, not interceptor). `installRequesterContext(app)` is the one-liner
+  for `main.ts`: resolves `AUTH_USER_CONTEXT` from the root container
+  (`app.get(token, { strict: false })`), no-ops with a warning when unbound.
+  Exported from the auth barrel. Verified over real HTTP — two concurrent requests
+  with different bearer tokens each observe their own scope; an unauthenticated
+  request observes none (`requester-context.http.spec.ts`).
+- **`feat(auth)` — optional `IUserContext.resolveRequester(req)`.** Supplies the
+  full `org`/`superuser` `RequesterContext` (org member list resolved at the
+  boundary). Backward compatible: when absent, the boundary derives plain `'user'`
+  scope from `getCurrentUserId`.
+
+### Changed
+
+- **`feat(scaffold)` — generated `main.ts` persists Swagger auth.**
+  `SwaggerModule.setup(...)` now passes `{ swaggerOptions: { persistAuthorization:
+  true } }`, so the "Authorize" bearer token survives reloads and keeps flowing as
+  the `Authorization` header the boundary reads. The generated `main.ts` also
+  carries a commented `installRequesterContext(app)` hint (not a static import — so
+  scaffolds without the auth subsystem still compile).
+
+### Notes
+
+- Wiring is opt-in: add `installRequesterContext(app)` to your bootstrap after
+  `NestFactory.create`. Auto-patching it in at `subsystem install auth` time (like
+  the Swagger block) is a deferred follow-up (ADR-0002). A tRPC-side boundary and
+  junction-repo scoping remain deferred.
+
+## [0.8.0] — 2026-05-25
+
+Adds **ambient tenant scoping** to `BaseRepository`: user-owned repos filter every
+read/write by the requester automatically, instead of relying on hand-threaded
+`userId` parameters. Ports the proven `dealbrain` `RequesterContext` pattern into
+the codegen substrate. See ADR-0001 (`ai-docs/adrs/0001-ambient-tenant-scoping.md`).
+
+### Added
+
+- **`feat(runtime)` — `tenant-context.ts` ambient scope primitive.** New
+  `runtime/base-classes/tenant-context.ts`: an `AsyncLocalStorage`-backed
+  `RequesterContext { userId, organizationId, scope?, orgUserIds? }` with
+  `withRequester(ctx, fn)` (set at a boundary), `requireRequester()` /
+  `tryGetRequester()` (read inside repos), and `withUserScope` / `withOrgScope` /
+  `withSuperuserScope` helpers. Scope model (`'user' | 'org' | 'superuser'`)
+  copied verbatim from `dealbrain` `packages/integrations/src/framework`.
+  Vendored into consumers via `init-scaffold` and exported from the base-classes
+  barrel.
+- **`feat(runtime)` — `BaseRepository.scopePredicate()` + `scopeAnd()`.** When a
+  repo declares `behaviors.userTracking` (i.e. the entity has the `user_tracking`
+  behavior) and an ambient `RequesterContext` is active, `findById`, `findByIds`,
+  `list`, `count`, `update`, and `delete` automatically filter by `user_id`:
+  `= ctx.userId` (`user`), `IN ctx.orgUserIds` (`org`; empty ⇒ matches nothing),
+  or unfiltered (`superuser`). **No new per-entity config knob** — it rides the
+  existing (previously dormant) `userTracking` flag. No template changes.
+- **Unit coverage** — `base-repository.spec.ts` gains a scoping suite that renders
+  real Drizzle SQL (via `QueryBuilder`) to assert the emitted `WHERE` per scope,
+  gating (off when `userTracking` false / no context), strict-mode throw, and the
+  combined soft-delete + scope + leaf predicate.
+
+### Changed
+
+- **`scopeEnforcement` (lenient default).** With no ambient context active, a
+  `userTracking` repo is **not** scoped — adopting ambient scoping is additive,
+  and isolation engages only once a boundary installs `withRequester(...)`. Set
+  `protected readonly scopeEnforcement = 'strict'` on a repo or family base to
+  make a missing boundary throw (fail-loud). Validated against
+  `dealbrain-integrations` (no `userTracking` repos today): typecheck + 737 tests
+  green, behavior unchanged.
+
+### Fixed
+
+- **`fix(runtime)` — soft-delete guard no longer dropped on `findById` /
+  `list({where})` / bespoke query methods.** Drizzle's `.where()` *overrides* a
+  prior `.where()` on a `$dynamic()` query, so the soft-delete `isNull` filter
+  that `baseQuery()` added was being silently discarded whenever a leaf method
+  chained its own `.where()` — only no-arg `list()` and `count()` actually
+  excluded soft-deleted rows. `baseQuery(extra?)` now folds soft-delete + scope +
+  the leaf predicate into a single AND-joined `WHERE`.
+  - **Migration:** on `soft_delete` entities, `findById(id)` and `list({ where })`
+    now correctly **exclude** soft-deleted rows (previously returned them). Code
+    that relied on the old behavior to read a soft-deleted row must query
+    `deletedAt` explicitly.
+
+## [0.7.8] — 2026-05-25
+
+Fixes a NestJS DI-resolution bug in cross-entity module wiring. A generated service that injects a sibling entity's **repository** — junction `.list()` composition (CGP-60), EAV value→definition resolution (`eav_value_table`) — failed at runtime because the sibling module exported only its **service**, never its repository (ADR-002). The code typechecked (`tsc` can't see DI wiring), so it shipped and only surfaced on a consumer's first `NestFactory` boot (dealbrain-integrations).
+
+### Fixed
+
+- **`fix(templates)` — entity modules export their repository.** `templates/entity/new/clean-lite-ps/module.ejs.t` now emits `exports: [<Service>, <Repository>]`. Cross-module consumers already imported the sibling *module*; the repository was just never exported, so DI couldn't resolve it. Exporting it means the consumer injects the **home-module instance** — the only place the repo's own dependencies are wired (e.g. an EAV entity's repository injects `FieldValueService` for the sync dual-write transaction, so it can only be constructed in its home module; local-providing it elsewhere can't satisfy that dep). ADR-002 revised: the repository is part of a module's public surface; use-case internals stay unexported.
+
+### Added
+
+- **DI-resolution smoke gate (`test/smoke/verify-boot.ts`).** Boots the generated `AppModule` via `NestFactory.create` + `app.init()` — instantiating every provider across every module — wired into the junction smoke (`run-smoke-junction.ts` step 10). Closes the gap that let the bug ship: the junction + EAV pipelines were gated only by `tsc` + grep, neither of which exercises runtime DI. Verified: reverting the repository export passes `tsc` but fails the boot gate with the exact `UnknownDependencies` error.
+
+## [0.7.3] — 2026-05-23
+
+Auto-emits `<generated>/subsystems.ts` — a `SUBSYSTEM_MODULES` barrel of `forRoot()` calls for every installed subsystem. Removes the "did I forget to wire `SyncModule`?" class of silent-failure bug when a subsystem is declared in `subsystems.install` but never imported into AppModule.
+
+### Added
+
+- **`feat(codegen)` — subsystem composition barrel.** New `src/cli/shared/subsystem-barrel-generator.ts` emits `<generated>/subsystems.ts`:
+
+  ```ts
+  // AUTO-GENERATED — wire into AppModule once:
+  // @Module({ imports: [DatabaseModule, ...SUBSYSTEM_MODULES, ...GENERATED_MODULES] })
+  import type { DynamicModule } from '@nestjs/common';
+  import { EventsModule } from '../shared/subsystems/events/events.module';
+  import { JobsDomainModule } from '../shared/subsystems/jobs/jobs-domain.module';
+  import { JobWorkerModule } from '../shared/subsystems/jobs/job-worker.module';
+  import { BridgeModule } from '../shared/subsystems/bridge/bridge.module';
+  import { SyncModule } from '../shared/subsystems/sync/sync.module';
+
+  export const SUBSYSTEM_MODULES: DynamicModule[] = [
+    EventsModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+    JobsDomainModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+    JobWorkerModule.forRoot({ mode: 'embedded' }),
+    BridgeModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+    SyncModule.forRoot({ backend: 'drizzle', multiTenant: false }),
+  ];
+  ```
+
+  Composer coverage: `events`, `jobs` (+ `JobWorkerModule` when `worker_mode: 'embedded'`), `bridge`, `sync`. `auth`, `auth-integrations`, `observability` are out of scope (their `forRoot` shapes take init-time arguments — encryption keys, IUserContext adapters — that can't be synthesized from config alone; hand-wire those).
+
+- **Auto-regen wiring.** `codegen entity new --all` and `codegen subsystem install <name>` now call `regenerateSubsystemBarrel({ ctx, generatedDir })` after their existing barrel work. Soft-fail (warn-only) to match the entity-barrel pattern.
+
+- **8 unit tests** under `src/__tests__/cli/subsystem-barrel-generator.test.ts` covering empty install set, single-subsystem composition, full-minimum-set ordering, `worker_mode: 'embedded'` toggle, `multi_tenant` propagation, unsupported subsystem reporting via `skipped`, default options when config block is missing.
+
+### Migration
+
+Greenfield: re-run `codegen entity new --all` and add `...SUBSYSTEM_MODULES` to your AppModule's `imports`. The barrel is opt-in — existing AppModules continue to work without it.
+
+The 4 subsystems composer currently supports are the ones consumers actually wire today; widening the composer set is straightforward — see `COMPOSERS` map in `subsystem-barrel-generator.ts`.
+
+### Known interaction
+
+If your project uses `SyncModule.forRoot({ backend: 'drizzle', multiTenant: false })`, tsc will surface pre-existing `tenantId`-reference errors in `sync-cursor-store.drizzle-backend.ts` / `sync-run-recorder.drizzle-backend.ts` when the subsystem barrel transitively pulls those files into typecheck scope. This is an unrelated upstream issue (multi-tenancy-off + drizzle backend wasn't typecheck-clean before this PR either; consumers worked around it by excluding `src/shared/subsystems` from tsconfig). Either keep the exclude in place, or set `multi_tenant: true` in your sync config to add the `tenant_id` column the backends reference.
+
+## [0.7.2] — 2026-05-23
+
+Hotfix for the sync subsystem differ — `external_id_tracking` columns (added by the `external_id_tracking` behavior) were always emitting field diffs even when they hadn't changed in vendor input, producing churn. (Shipped on `main` between 0.7.1 and the junction-import dedupe; previously unreleased.)
+
+## [0.7.1] — 2026-05-23
+
+Hotfix for the junction emit pipeline (CGP-60, shipped in 0.7.0). When a parent entity participated in **multiple junctions** (e.g. `contact` appearing as the right side of both `account_contact` and `opportunity_contact`), each junction's `_inject-parent-{service,module}-import-clp-{left,right}.ejs.t` template emitted the same shared `import { forwardRef } from '@nestjs/common';` line independently — producing duplicate-import TS errors (TS2300 `Duplicate identifier 'forwardRef'`). The same loop also re-emitted the counterparty entity type import (`import type { Account } from '../accounts/account.entity'`), which collided with the parent's own `belongs_to` import emitted by `service.ejs.t`.
+
+### Fixed
+
+- **`fix(codegen)` — junction import dedupe across multi-junction parents.** Split each of the 4 existing junction inject templates (`_inject-parent-{service,module}-import-clp-{left,right}.ejs.t`) into 3 narrower inject templates with broader `skip_if` guards:
+  - `_inject-parent-{service,module}-forwardref-clp-{left,right}.ejs.t` — emits only `import { forwardRef }`, gated by `skip_if: "import { forwardRef"` (matches actual import line, not body usage)
+  - `_inject-parent-service-counterparty-clp-{left,right}.ejs.t` — emits the counterparty entity type import, gated by `skip_if: "from '<counterparty-path>'"` (matches any prior import from that path, including the parent's `belongs_to` import)
+  - Existing `_inject-parent-{service,module}-import-clp-{left,right}.ejs.t` — narrowed to just the junction-specific imports (already had a per-junction `skip_if`)
+- Updated junction snapshot tests (`test/junction/__snapshots__/opportunity-contact.test.ts.snap`, `opportunity-activity.test.ts.snap`) to reflect the new split-block layout.
+
+### Migration note
+
+No breaking change for the emitted code semantics — the output is functionally identical for single-junction projects, and now actually compiles for multi-junction projects. Greenfield re-emit is safe; existing emitted files re-emit cleanly via `--force`.
+
 ## [0.6.8] — 2026-04-28
 
 Hotfix for enum codegen in the `clean-lite-ps` template pipeline. Surfaced during integration-patterns Wave 0b: enum-typed YAML fields emitted a Drizzle `text()` column instead of a `pgEnum`, so `InferSelectModel` resolved to `string` instead of the literal-union type and forced hand-casts in consumer code (e.g. `as DecryptedIntegrationRow['status']`).

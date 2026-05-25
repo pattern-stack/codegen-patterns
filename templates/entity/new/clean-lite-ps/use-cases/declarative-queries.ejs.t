@@ -2,6 +2,7 @@
 to: "<%= (typeof clpOutputPaths !== 'undefined' && hasDeclarativeQueries) ? clpOutputPaths.declarativeQueries : null %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (hasDeclarativeQueries) { -%>
 /**
  * Declarative Query Use Cases for <%= classNames.entity %>

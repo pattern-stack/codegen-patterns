@@ -3,6 +3,7 @@ to: "<%= generate.queries ? outputPaths.queriesIndex : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.queriesIndex) { -%>
 /**
  * <%= className %> Queries Barrel Export
@@ -11,4 +12,7 @@ force: true
 
 export * from './<%= fileNames.getByIdQuery.replace('.ts', '') %>';
 export * from './<%= fileNames.listQuery.replace('.ts', '') %>';
+<% if (hasRelationships && !isGrouped) { -%>
+export * from './relationships.queries';
+<% } -%>
 <% } -%>

@@ -2,6 +2,7 @@
 to: "<%= outputPaths.controller %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Controller, Get, Param } from '@nestjs/common';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= name %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';

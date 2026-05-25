@@ -102,6 +102,27 @@ describe('junction schema defaults', () => {
 		const parsed = JunctionDefinitionSchema.parse({ ...minimal, sourced: false });
 		expect(parsed.sourced).toBe(false);
 	});
+
+	it('defaults expose_on_parent to { left: true, right: true } when omitted', () => {
+		const parsed = JunctionDefinitionSchema.parse(minimal);
+		expect(parsed.expose_on_parent).toEqual({ left: true, right: true });
+	});
+
+	it('accepts expose_on_parent: { left: false } and fills right default', () => {
+		const parsed = JunctionDefinitionSchema.parse({
+			...minimal,
+			expose_on_parent: { left: false },
+		});
+		expect(parsed.expose_on_parent).toEqual({ left: false, right: true });
+	});
+
+	it('accepts expose_on_parent: { left: false, right: false } (junction-only)', () => {
+		const parsed = JunctionDefinitionSchema.parse({
+			...minimal,
+			expose_on_parent: { left: false, right: false },
+		});
+		expect(parsed.expose_on_parent).toEqual({ left: false, right: false });
+	});
 });
 
 // ============================================================================

@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.entity : null %>
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import {
 <%_ clpDrizzleImports.filter(i => i !== 'relations').forEach(i => { _%>
   <%= i %>,
@@ -21,6 +22,12 @@ import { type InferSelectModel } from 'drizzle-orm';
 import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
 <%_ } _%>
 <%_ }) _%>
+<%_ /* CGP-358b: import has_many target tables for many() relation const */ _%>
+<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
+<%_ clpExistingHasMany.filter(rel => !rel.isSelfRef).forEach(rel => { _%>
+import { <%= rel.targetPlural %> } from '../<%= rel.targetPlural %>/<%= rel.target %>.entity';
+<%_ }) _%>
+<%_ } _%>
 <%_ if (typeof clpEnumFields !== 'undefined' && clpEnumFields.length > 0) { _%>
 
 <%_ clpEnumFields.forEach(ef => { _%>
@@ -58,16 +65,26 @@ export const <%= entityNamePlural %> = pgTable(
     deletedAt: timestamp('deleted_at'),
 <%_ } _%>
   },
+<%_ if (hasExternalIdTracking) { _%>
+  (t) => [
+    // external_id_tracking behavior — ON CONFLICT target for syncUpsert
+    uniqueIndex('uq_<%= entityNamePlural %>_provider_external_id').on(t.provider, t.externalId),
+  ],
+<%_ } _%>
 );
 <%_ if (clpHasRelationsBlock) { _%>
+<%_ const needsMany = typeof clpExistingHasMany !== 'undefined' && clpExistingHasMany.length > 0; _%>
 
-export const <%= entityNamePlural %>Relations = relations(<%= entityNamePlural %>, ({ one }) => ({
+export const <%= entityNamePlural %>Relations = relations(<%= entityNamePlural %>, ({ one<%= needsMany ? ', many' : '' %> }) => ({
 <%_ clpBelongsTo.forEach(rel => { _%>
   <%= rel.relationKey %>: one(<%= rel.relatedTable %>, {
     fields: [<%= entityNamePlural %>.<%= rel.camelField %>],
     references: [<%= rel.relatedTable %>.id],
   }),
 <%_ }) _%>
+<%_ if (typeof clpExistingHasMany !== 'undefined') { clpExistingHasMany.forEach(rel => { _%>
+  <%= rel.name %>: many(<%= rel.targetPlural %>),
+<%_ }) } _%>
 }));
 <%_ } _%>
 

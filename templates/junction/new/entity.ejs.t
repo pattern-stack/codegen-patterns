@@ -2,6 +2,7 @@
 to: "<%= outputPaths.entity %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import {
 <%_ drizzleImports.filter(i => i !== 'relations').forEach(i => { _%>
   <%= i %>,
@@ -45,8 +46,10 @@ export const <%= tableVarName %> = pgTable(
     <%= rightColumnCamel %>: uuid('<%= rightColumn %>').notNull().references(() => <%= rightTable %>.id, { onDelete: '<%= onDeleteRight %>' }),
 <%_ if (hasRole) { _%>
 
-    // Role enum (per-pairing; declared in junction YAML's fields.role.choices)
-    role: <%= roleEnumName %>('role'),
+    // Role enum (per-pairing; declared in junction YAML's fields.role.choices).
+    // NOT NULL because role is part of the junction's identity (composite PK
+    // below): the same pair with two different roles is two distinct rows.
+    role: <%= roleEnumName %>('role').notNull(),
 <%_ } _%>
 
     // BaseJunctionFields — is_primary is always emitted
@@ -83,8 +86,17 @@ export const <%= tableVarName %> = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => [
+<%_ if (hasRole) { _%>
+    // Composite primary key on the two FK columns PLUS role (Q4 resolution: no
+    // surrogate id). Role is part of the junction's identity — the same pair
+    // with two different roles is two distinct rows (e.g. a contact who is both
+    // `champion` and `decision_maker` on one opportunity). This is the
+    // ON CONFLICT target for syncUpsert on role-bearing junctions.
+    primaryKey({ columns: [table.<%= leftColumnCamel %>, table.<%= rightColumnCamel %>, table.role] }),
+<%_ } else { _%>
     // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
     primaryKey({ columns: [table.<%= leftColumnCamel %>, table.<%= rightColumnCamel %>] }),
+<%_ } _%>
   ],
 );
 

@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.updateDto : null
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { z } from 'zod';
 import { <%= classNames.createSchema %> } from './create-<%= entityName %>.dto';
 

@@ -53,15 +53,26 @@ test-smoke-junction-cross-domain:
 test-smoke-junction-cross-domain-clean:
     bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean
 
+# Junction snapshot tests — locks emitted output of junction codegen against drift.
+# Regenerate after intentional template changes: bun test --update-snapshots test/junction/
+test-junction:
+    bun test test/junction/
+
 # Run the relationship-scenario smoke (CGP-62): self-ref + cross-entity
 # belongs_to + has_many against the CRM fixture set. Verifies the
 # clean-lite-ps Drizzle relations() emission shape. ~60-120s.
 test-smoke-relationship:
     bun test/smoke/run-smoke.ts --scenario relationship
 
-# Run baseline test (generate + compare to baseline)
+# Run baseline test (generate + typecheck + compare to baseline)
 test-baseline:
     bun test/run-test.ts full
+
+# Typecheck the clean-pipeline generated output in packages/api/src
+# Uses test/tsconfig.baseline.json with runtime/ @shared/* aliases
+# (no regeneration — run after test-baseline or just gen-all)
+typecheck-baseline:
+    bun test/run-test.ts typecheck
 
 # Capture current output as new baseline
 baseline:
@@ -88,7 +99,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain
+test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction
 
 # Post-publish smoke — npm pack + install into tmp project + run consumer
 # flows. Catches tarball-vs-checkout mismatches the in-source `test-smoke`

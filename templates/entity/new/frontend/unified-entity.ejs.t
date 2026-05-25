@@ -3,6 +3,7 @@ to: <%= locations.frontendEntities.path %>/<%= name %>.ts
 skip_if: <%= !frontendEnabled %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 /**
  * <%= className %> - Unified Entity API
  *

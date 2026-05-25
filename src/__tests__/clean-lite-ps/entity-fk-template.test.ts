@@ -237,6 +237,114 @@ describe('soft-delete FK warning (issue #41)', () => {
   });
 });
 
+// ============================================================================
+// external_id_tracking unique index emission
+//
+// The external_id_tracking behavior declares external_id with
+// drizzleImports: ['varchar', 'index'] — it INTENDS an index. The entity
+// template now emits a unique index over (provider, external_id), the
+// ON CONFLICT target the sync sink's syncUpsert relies on.
+// ============================================================================
+
+// Synced entity declaring the behavior explicitly.
+const syncedExplicitDefinition = {
+  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Synced' },
+  fields: { email: { type: 'string', required: true } },
+  relationships: {},
+  behaviors: ['timestamps', 'external_id_tracking'],
+};
+
+// Synced entity that does NOT re-declare external_id_tracking — the pattern
+// implies it (impliedBehaviors fold).
+const syncedImpliedDefinition = {
+  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Synced' },
+  fields: { email: { type: 'string', required: true } },
+  relationships: {},
+  behaviors: ['timestamps'],
+};
+
+// Plain Base entity carrying the behavior directly (no pattern).
+const baseWithBehaviorDefinition = {
+  entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+  fields: { label: { type: 'string', required: true } },
+  relationships: {},
+  behaviors: ['external_id_tracking'],
+};
+
+// Plain Base entity WITHOUT the behavior — must emit no index.
+const baseNoBehaviorDefinition = {
+  entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
+  fields: { label: { type: 'string', required: true } },
+  relationships: {},
+  behaviors: [],
+};
+
+describe('external_id_tracking unique index emission', () => {
+  it('emits uniqueIndex over (provider, external_id) when behavior is declared explicitly', () => {
+    const locals = buildCleanLitePsLocals(syncedExplicitDefinition, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    expect(output).toContain(
+      "uniqueIndex('uq_contacts_provider_external_id').on(t.provider, t.externalId)",
+    );
+  });
+
+  it('imports uniqueIndex from drizzle-orm/pg-core', () => {
+    const locals = buildCleanLitePsLocals(syncedExplicitDefinition, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    expect(locals.clpDrizzleImports).toContain('uniqueIndex');
+    expect(output).toContain('uniqueIndex,');
+    expect(output).toContain("from 'drizzle-orm/pg-core';");
+  });
+
+  it('passes the index as the pgTable extra-config callback returning an array', () => {
+    const locals = buildCleanLitePsLocals(syncedExplicitDefinition, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    // (t) => [ ... ] form — the modern Drizzle extra-config signature.
+    expect(output).toMatch(/\},\s*\(t\) => \[\s*[\s\S]*uniqueIndex\(/);
+    // The index follows the column block (appears after providerMetadata).
+    const colPos = output.indexOf("providerMetadata: jsonb('provider_metadata')");
+    const idxPos = output.indexOf("uniqueIndex('uq_contacts_provider_external_id')");
+    expect(colPos).toBeGreaterThan(-1);
+    expect(idxPos).toBeGreaterThan(colPos);
+  });
+
+  it('emits the index for a pattern: Synced entity that does NOT re-declare the behavior', () => {
+    const locals = buildCleanLitePsLocals(syncedImpliedDefinition, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    // impliedBehaviors fold — pattern: Synced implies external_id_tracking.
+    expect(locals.hasExternalIdTracking).toBe(true);
+    expect(output).toContain("externalId: varchar('external_id')");
+    expect(output).toContain("provider: varchar('provider')");
+    expect(output).toContain("providerMetadata: jsonb('provider_metadata')");
+    expect(output).toContain(
+      "uniqueIndex('uq_contacts_provider_external_id').on(t.provider, t.externalId)",
+    );
+  });
+
+  it('emits the index for a non-Synced entity carrying the behavior directly', () => {
+    const locals = buildCleanLitePsLocals(baseWithBehaviorDefinition, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    expect(output).toContain(
+      "uniqueIndex('uq_widgets_provider_external_id').on(t.provider, t.externalId)",
+    );
+  });
+
+  it('does NOT emit an index or uniqueIndex import without the behavior', () => {
+    const locals = buildCleanLitePsLocals(baseNoBehaviorDefinition, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    expect(locals.clpDrizzleImports).not.toContain('uniqueIndex');
+    expect(output).not.toContain('uniqueIndex');
+    // pgTable closes with no extra-config callback.
+    expect(output).not.toMatch(/\},\s*\(t\) => \[/);
+  });
+});
+
 describe('prompt-extension processBelongsTo on_delete propagation', () => {
   it('includes onDelete in clpBelongsTo entries', () => {
     const locals = buildCleanLitePsLocals(messageDefinitionCascade, EMPTY_BASE_LOCALS);

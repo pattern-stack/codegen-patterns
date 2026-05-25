@@ -3,6 +3,7 @@ to: "<%= generate.queries ? outputPaths.getByIdQuery : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.getByIdQuery) { -%>
 /**
  * Get <%= className %> By ID Query
@@ -16,7 +17,7 @@ force: true
 
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { <%= repositoryToken %> } from '<%= imports.constants %>';
-import type { I<%= className %>Repository<%= hasRelationships ? `, ${className}With` : '' %> } from '<%= imports.domain %>';
+import type { I<%= className %>Repository } from '<%= imports.domain %>';
 import { <%= className %> } from '<%= imports.domain %>';
 
 @Injectable()
@@ -26,10 +27,10 @@ export class <%= getByIdQueryClass %> {
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
 	) {}
 
-	async execute(id: string<%= hasRelationships ? `, include?: ${className}With` : '' %>): Promise<<%= className %>> {
+	async execute(id: string): Promise<<%= className %>> {
 		// TODO: Add authorization check if needed (row-level security)
 
-		const entity = await this.<%= camelName %>Repository.findById(id<%= hasRelationships ? ', include' : '' %>);
+		const entity = await this.<%= camelName %>Repository.findById(id);
 		if (!entity) {
 			throw new NotFoundException(`<%= className %> with id ${id} not found`);
 		}

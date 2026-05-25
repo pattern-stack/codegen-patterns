@@ -17,6 +17,23 @@
  * dependency on `express` / `fastify` / NestJS request types. The concrete
  * adapter narrows it (e.g. via a `Request` import).
  */
+import type { RequesterContext } from '../../../base-classes/tenant-context';
+
 export interface IUserContext {
   getCurrentUserId(req: unknown): Promise<string>;
+  /**
+   * Optional richer resolution of the full ambient requester context — the
+   * org/superuser dimensions on top of `userId`. When implemented, the
+   * `RequesterContextMiddleware` (see `../middleware/requester-context`) uses
+   * it verbatim to scope reads/writes; when omitted, the middleware falls back
+   * to `{ userId: await getCurrentUserId(req), organizationId: null }` (plain
+   * `'user'` scope).
+   *
+   * Implement this when the app supports org-shared (`'org'`) or admin
+   * (`'superuser'`) data visibility — resolve `organizationId` + the
+   * `orgUserIds` member list here, at the trust boundary, so repositories stay
+   * single-table. AUTHORIZATION (which scope a requester may claim) is the
+   * implementation's responsibility; the repo trusts what this returns.
+   */
+  resolveRequester?(req: unknown): Promise<RequesterContext>;
 }

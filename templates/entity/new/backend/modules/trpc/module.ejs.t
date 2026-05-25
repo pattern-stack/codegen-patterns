@@ -3,6 +3,7 @@ to: "<%= exposeTrpc ? `${basePaths.backendSrc}/presentation/trpc/${plural}.route
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (exposeTrpc) { -%>
 /**
  * <%= classNamePlural %> tRPC Router

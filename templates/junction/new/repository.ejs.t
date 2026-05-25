@@ -2,15 +2,47 @@
 to: "<%= outputPaths.repository %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
-import { BaseRepository } from '@shared/base-classes/base-repository';
+import { JunctionSyncRepository } from '@shared/base-classes/junction-sync-repository';
+import type { JunctionSyncConfig } from '@shared/base-classes/junction-sync-repository';
+<%_ syncParentImports.forEach((imp) => { _%>
+import { <%= imp.table %> } from '<%= imp.importPath %>';
+<%_ }); _%>
 import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= name %>.entity';
 
+/**
+ * Canonical fields a synced <%= name %> junction write carries (#374). BOTH
+ * parent FKs are named by their vendor external ids and resolved STRICTLY in
+ * the tx (a missing parent throws → the orchestrator records a failed item and
+ * continues). `userId` is run context (no column on the junction).
+ */
+export interface <%= classNames.entity %>SyncWrite {
+<%_ syncWriteFields.forEach((f) => { _%>
+  readonly <%= f.name %>: <%- f.tsType %>;
+<%_ }); _%>
+}
+
+/**
+ * Canonical-projected view of a <%= name %> junction row, keyed for the sync
+ * differ (#374). `id` is the COMPOSITE externalId (the junction has no
+ * surrogate id); the FKs are the LOCAL resolved uuids.
+ */
+export interface <%= classNames.entity %>SyncProjection {
+<%_ syncProjectionFields.forEach((f) => { _%>
+  readonly <%= f.name %>: <%- f.tsType %>;
+<%_ }); _%>
+}
+
 @Injectable()
-export class <%= classNames.repository %> extends BaseRepository<<%= classNames.entity %>> {
+export class <%= classNames.repository %> extends JunctionSyncRepository<
+  <%= classNames.entity %>,
+  <%= classNames.entity %>SyncWrite,
+  <%= classNames.entity %>SyncProjection
+> {
   readonly table = <%= tableVarName %>;
 
   // Junctions track temporal validity via started_at / ended_at, NOT via
@@ -19,6 +51,14 @@ export class <%= classNames.repository %> extends BaseRepository<<%= classNames.
     timestamps: true,
     softDelete: false,
     userTracking: false,
+  };
+
+  // Inbound-sync write surface (#374). Both endpoints resolve strictly against
+  // the live parent tables; role-bearing junctions conflict on (left,right,role).
+  protected readonly syncConfig: JunctionSyncConfig = {
+    left: { column: '<%= junctionSyncConfig.leftColumn %>', refTable: <%= junctionSyncConfig.leftRefTable %> },
+    right: { column: '<%= junctionSyncConfig.rightColumn %>', refTable: <%= junctionSyncConfig.rightRefTable %> },
+    roleColumn: <%- junctionSyncConfig.roleColumn ? `'${junctionSyncConfig.roleColumn}'` : 'null' %>,
   };
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient) {
@@ -62,6 +102,7 @@ export class <%= classNames.repository %> extends BaseRepository<<%= classNames.
     return rows as <%= classNames.entity %>[];
   }
 
-  // Inherited from BaseRepository:
+  // Inherited from JunctionSyncRepository (+ BaseRepository):
   //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
+  //   syncUpsertOne, findByExternalIdProjected, softDeleteByExternalId
 }

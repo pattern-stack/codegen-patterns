@@ -22,6 +22,7 @@ import {
 	resolveGeneratedDir,
 } from '../shared/barrel-generator.js';
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
+import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
 import { generateBridgeRegistry } from '../shared/bridge-registry-generator.js';
 import {
 	OrchestrationEmissionError,
@@ -552,6 +553,20 @@ export class EntityNewCommand extends Command {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (!isJsonMode()) {
 				printWarning(`barrel regeneration failed — ${msg}`);
+			}
+		}
+
+		// Regenerate the subsystem composition barrel (<generated>/subsystems.ts).
+		// Total — re-reads `subsystems.install` + per-subsystem option blocks from
+		// codegen.config.yaml every time. Warn-but-don't-fail to match the entity
+		// barrel pattern; the subsystem barrel is opt-in (users who haven't wired
+		// it into AppModule see no behavioral change).
+		try {
+			await regenerateSubsystemBarrel({ ctx, generatedDir });
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`subsystem barrel regeneration failed — ${msg}`);
 			}
 		}
 

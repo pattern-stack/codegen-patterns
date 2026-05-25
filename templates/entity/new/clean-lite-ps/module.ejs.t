@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.module : null %>
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (hasEmits) { -%>
 /**
  * EVT-7: This entity emits typed domain events. Use-cases depend on
@@ -13,9 +14,21 @@ force: true
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
-<%_ clpBelongsTo.forEach(rel => { _%>
-// import { <%= rel.relatedEntityPascal %>sModule } from '../<%= rel.relatedPlural %>/<%= rel.relatedPlural %>.module';
+<%_ /* CGP-358b: Import cross-entity repos needed for has_many composition */ _%>
+<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
+<%_ const hasManyNeedingImport = clpExistingHasMany.filter(r => !r.isSelfRef); _%>
+<%_ const uniqueHasManyForModule = [...new Map(hasManyNeedingImport.map(r => [r.target, r])).values()]; _%>
+<%_ uniqueHasManyForModule.forEach(rel => { _%>
+import { <%= rel.targetClass %>Repository } from '../<%= rel.targetPlural %>/<%= rel.target %>.repository';
 <%_ }) _%>
+<%_ } _%>
+<%_ /* CGP-358b: Import cross-entity repos needed for belongs_to composition */ _%>
+<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
+<%_ const uniqueBelongsToForModule = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
+<%_ uniqueBelongsToForModule.forEach(rel => { _%>
+import { <%= rel.relatedEntityPascal %>Repository } from '../<%= rel.relatedPlural %>/<%= rel.relatedEntity %>.repository';
+<%_ }) _%>
+<%_ } _%>
 <% if (eavEnabled) { -%>
 import { FieldValuesModule } from '../field_values/field_values.module';
 <% } -%>
@@ -68,6 +81,19 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
   providers: [
     <%= classNames.repository %>,
     <%= classNames.service %>,
+<%_ /* CGP-358b: Register cross-entity repos as providers (needed for service DI) */ _%>
+<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
+<%_ const uniqueHasManyProviders = [...new Map(clpExistingHasMany.filter(r => !r.isSelfRef).map(r => [r.target, r])).values()]; _%>
+<%_ uniqueHasManyProviders.forEach(rel => { _%>
+    <%= rel.targetClass %>Repository,
+<%_ }) _%>
+<%_ } _%>
+<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
+<%_ const uniqueBelongsToProviders = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
+<%_ uniqueBelongsToProviders.forEach(rel => { _%>
+    <%= rel.relatedEntityPascal %>Repository,
+<%_ }) _%>
+<%_ } _%>
     <%= classNames.findByIdUseCase %>,
     <%= classNames.listUseCase %>,
 <% if (eavEnabled) { -%>
@@ -86,7 +112,13 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
     <%= searchQuery.useCaseClassName %>,
 <% } -%>
   ],
-  exports: [<%= classNames.service %>],  // Only service is exported (ADR-002)
+  // ADR-002 (revised): the service is the public API; the repository is ALSO
+  // exported so sibling modules that compose this entity cross-module (junction
+  // `.list()`, EAV value→definition resolution) inject the home-module instance
+  // — the only place the repo's own deps are wired (e.g. an EAV entity's repo
+  // injects FieldValueService for the #374 sync dual-write tx). Local-providing
+  // such a repo elsewhere can't satisfy those deps. Use-case internals stay unexported.
+  exports: [<%= classNames.service %>, <%= classNames.repository %>],
 })
 export class <%= classNames.module %> implements OnModuleInit {
   // OPENAPI-2: register this entity's Zod schemas with the shared

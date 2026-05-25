@@ -44,6 +44,14 @@ import type {
 /**
  * Default ignore list. Keep in sync with consumer canonical-record shapes —
  * adding a row-metadata field here means no sync will ever mark it changed.
+ *
+ * Includes the columns contributed by the `external_id_tracking` behavior
+ * (`external_id`/`externalId`, `provider`, `provider_metadata`/`providerMetadata`).
+ * These are sync-tracking metadata, not domain attributes: they ride on the
+ * canonical record but must never register as a field change (the external id
+ * is the record's identity, not a mutable value). Listed in both snake_case
+ * and camelCase so the differ ignores them regardless of the consumer's
+ * canonical projection casing.
  */
 const DEFAULT_IGNORE_FIELDS: ReadonlySet<string> = new Set([
   'id',
@@ -53,6 +61,10 @@ const DEFAULT_IGNORE_FIELDS: ReadonlySet<string> = new Set([
   'type',
   'lastModifiedAt',
   'fields',
+  'external_id',
+  'externalId',
+  'provider',
+  'provider_metadata',
   'providerMetadata',
 ]);
 

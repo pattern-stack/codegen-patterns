@@ -2,6 +2,7 @@
 to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.findByIdUseCase : null %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';

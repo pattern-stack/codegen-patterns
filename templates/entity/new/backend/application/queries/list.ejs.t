@@ -3,6 +3,7 @@ to: "<%= generate.queries ? outputPaths.listQuery : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.listQuery) { -%>
 /**
  * List <%= classNamePlural %> Query
@@ -18,7 +19,7 @@ force: true
 
 import { Inject, Injectable } from '@nestjs/common';
 import { <%= repositoryToken %> } from '<%= imports.constants %>';
-import type { I<%= className %>Repository<%= hasRelationships ? `, ${className}With` : '' %> } from '<%= imports.domain %>';
+import type { I<%= className %>Repository } from '<%= imports.domain %>';
 import { <%= className %> } from '<%= imports.domain %>';
 
 @Injectable()
@@ -28,9 +29,9 @@ export class <%= listQueryClass %> {
 		private readonly <%= camelName %>Repository: I<%= className %>Repository,
 	) {}
 
-	async execute(<%= hasRelationships ? `include?: ${className}With` : '' %>): Promise<<%= className %>[]> {
+	async execute(): Promise<<%= className %>[]> {
 		// TODO: Add filtering, pagination, sorting as needed
-		return this.<%= camelName %>Repository.findAll(<%= hasRelationships ? 'include' : '' %>);
+		return this.<%= camelName %>Repository.findAll();
 	}
 }
 <% } -%>

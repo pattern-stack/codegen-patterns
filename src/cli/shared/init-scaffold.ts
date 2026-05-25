@@ -120,9 +120,14 @@ function loadRuntimeFile(relPath: string): string {
 const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
 	// base-classes — consumer-facing inheritance targets
 	{ runtime: 'base-classes/base-repository.ts', target: 'src/shared/base-classes/base-repository.ts' },
+	// Ambient tenant scope — imported by base-repository.ts (scopePredicate)
+	{ runtime: 'base-classes/tenant-context.ts', target: 'src/shared/base-classes/tenant-context.ts' },
 	{ runtime: 'base-classes/base-service.ts', target: 'src/shared/base-classes/base-service.ts' },
 	{ runtime: 'base-classes/synced-entity-repository.ts', target: 'src/shared/base-classes/synced-entity-repository.ts' },
 	{ runtime: 'base-classes/synced-entity-service.ts', target: 'src/shared/base-classes/synced-entity-service.ts' },
+	// Inbound-sync write surface (#374) — deps of synced/junction repos
+	{ runtime: 'base-classes/sync-upsert-config.ts', target: 'src/shared/base-classes/sync-upsert-config.ts' },
+	{ runtime: 'base-classes/junction-sync-repository.ts', target: 'src/shared/base-classes/junction-sync-repository.ts' },
 	{ runtime: 'base-classes/activity-entity-repository.ts', target: 'src/shared/base-classes/activity-entity-repository.ts' },
 	{ runtime: 'base-classes/activity-entity-service.ts', target: 'src/shared/base-classes/activity-entity-service.ts' },
 	{ runtime: 'base-classes/metadata-entity-repository.ts', target: 'src/shared/base-classes/metadata-entity-repository.ts' },
@@ -352,8 +357,20 @@ async function bootstrap(): Promise<void> {
       } as NonNullable<typeof nestDocument.components>['schemas'],
     };
 
-    SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument);
+    // \`persistAuthorization\` keeps the "Authorize" bearer token across page
+    // reloads, so the token pasted in Swagger UI keeps flowing as the
+    // \`Authorization\` header — which the RequesterContext boundary (below)
+    // turns into ambient tenant scope on every request.
+    SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument, {
+      swaggerOptions: { persistAuthorization: true },
+    });
   }
+
+  // Ambient tenant scoping (auth subsystem). Uncomment once the auth subsystem
+  // is installed and an IUserContext is bound under AUTH_USER_CONTEXT — then
+  // every request is scoped to its requester with no threaded userId:
+  //   import { installRequesterContext } from './shared/subsystems/auth/middleware/requester-context';
+  //   installRequesterContext(app); // no-op + warn if AUTH_USER_CONTEXT is unbound
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);

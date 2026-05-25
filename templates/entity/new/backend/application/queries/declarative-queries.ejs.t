@@ -3,6 +3,7 @@ to: "<%= hasDeclarativeQueries ? `${basePaths.backendSrc}/${paths.queries}/decla
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (hasDeclarativeQueries) { -%>
 /**
  * Declarative Query Classes for <%= className %>

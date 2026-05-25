@@ -5,6 +5,8 @@
  * all variables required by the clean-lite-ps template set.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import pluralizePkg from 'pluralize';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Synced / Activity / Knowledge /
@@ -101,6 +103,38 @@ export function resolvePatternBaseClasses(entity) {
     repositoryInheritedMethods: def.repositoryInheritedMethods ?? [],
     serviceInheritedMethods: def.serviceInheritedMethods ?? [],
   };
+}
+
+/**
+ * Resolve the behaviors implied by an entity's declared pattern(s).
+ *
+ * A pattern (e.g. `Synced`) may declare `impliedBehaviors` — behaviors the
+ * entity gets for free without re-declaring them in its `behaviors:` array.
+ * Walks every declared pattern (both the `pattern: X` and `patterns: [...]`
+ * shapes), unions their `impliedBehaviors`, and returns a deduped list.
+ * Unknown patterns are skipped silently — composition validation surfaces
+ * those separately (src/patterns/validate-composition.ts).
+ *
+ * @param {object} entity - the entity block from the parsed YAML
+ * @returns {string[]} deduped implied behavior names
+ */
+export function resolveImpliedBehaviors(entity) {
+  const names = [];
+  if (typeof entity.pattern === 'string' && entity.pattern) {
+    names.push(entity.pattern);
+  }
+  if (Array.isArray(entity.patterns)) {
+    names.push(...entity.patterns);
+  }
+
+  const implied = new Set();
+  for (const name of names) {
+    const def = getPattern(name);
+    for (const b of def?.impliedBehaviors ?? []) {
+      implied.add(b);
+    }
+  }
+  return Array.from(implied);
 }
 
 // ============================================================================
@@ -307,6 +341,57 @@ function mapOnDelete(onDelete) {
 }
 
 /**
+ * Process has_many relationships into HasManyRelation[].
+ *
+ * Mirrors processBelongsTo. The `foreign_key` declared on a has_many
+ * relationship is the inverse FK living on the *target* entity's table —
+ * e.g. `account.relationships.contacts: { foreign_key: account_id }` means
+ * contacts.account_id. The method name on AccountRepository would be
+ * `findByAccountId`.
+ */
+function processHasMany(relationships, parentEntityNamePlural, fs, path, srcRoot) {
+  if (!relationships) return [];
+
+  const result = [];
+
+  for (const [relName, rel] of Object.entries(relationships)) {
+    if (rel.type !== 'has_many') continue;
+
+    const target = rel.target;
+    const inverseForeignKey = rel.foreign_key;
+    const targetPlural = pluralize(target);
+    const isSelfRef = targetPlural === parentEntityNamePlural;
+
+    // Check whether the target entity has already been generated.
+    // Only include targets that exist so the import block doesn't
+    // reference files that aren't on disk yet (two-pass generation).
+    let targetExists = false;
+    if (fs && path && srcRoot) {
+      const nestedPath = path.resolve(srcRoot, 'modules', targetPlural, `${target}.entity.ts`);
+      const flatPath = path.resolve(srcRoot, 'modules', `${target}.entity.ts`);
+      targetExists = fs.existsSync(nestedPath) || fs.existsSync(flatPath) || isSelfRef;
+    } else {
+      targetExists = isSelfRef;
+    }
+
+    result.push({
+      name: relName,
+      target,
+      targetClass: pascalCase(target),
+      targetPlural,
+      inverseForeignKey,
+      inverseForeignKeyCamel: camelCase(inverseForeignKey),
+      inverseForeignKeyPascal: pascalCase(inverseForeignKey),
+      isSelfRef,
+      targetExists,
+      importPath: `../${targetPlural}/${target}.repository`,
+    });
+  }
+
+  return result;
+}
+
+/**
  * Process belongs_to relationships into BelongsToRelation[]
  */
 function processBelongsTo(relationships, parentEntityNamePlural) {
@@ -364,7 +449,7 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
 /**
  * Collect drizzle imports needed for entity fields
  */
-function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking) {
+function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany = []) {
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
@@ -388,13 +473,16 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
     imports.add('timestamp');
   }
 
-  // external_id_tracking behavior injects varchar + jsonb columns
+  // external_id_tracking behavior injects varchar + jsonb columns plus a
+  // unique index over (provider, external_id) — the ON CONFLICT target the
+  // sync sink's syncUpsert relies on.
   if (hasExternalIdTracking) {
     imports.add('varchar');
     imports.add('jsonb');
+    imports.add('uniqueIndex');
   }
 
-  if (belongsTo.length > 0) {
+  if (belongsTo.length > 0 || hasMany.length > 0) {
     imports.add('relations');
   }
 
@@ -635,6 +723,132 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
 }
 
 // ============================================================================
+// Sync write-surface derivation (#374)
+// ============================================================================
+
+/**
+ * Pre-compute the inbound-sync write surface for a `pattern: Synced` entity.
+ * Keeps the EJS thin + unit-testable: the template hand-emits the syncConfig
+ * literal (so `refTable` can carry a LIVE Drizzle table handle, which
+ * renderPatternConfigLiteral cannot express) using these locals.
+ *
+ * Returns null when the entity is not Synced.
+ *
+ * @param {string} patternName     resolved pattern name
+ * @param {object[]} processedFields  nonFkFields (camel + tsType + nullable)
+ * @param {object[]} belongsTo      clpBelongsTo entries
+ * @param {boolean} hasTimestamps
+ * @param {boolean} eavEnabled
+ * @param {boolean} hasSoftDelete
+ */
+export function buildSyncSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields) {
+  if (patternName !== 'Synced') return null;
+
+  // Copy-through columns: every non-FK declared field. external_id_tracking
+  // columns (external_id/provider/provider_metadata) are injected by the
+  // behavior, NOT present in processedFields, so they're already excluded.
+  const writeColumns = processedFields.map((f) => f.camelName);
+
+  // FK resolvers — one per belongs_to. writeKey = `${relationKey}ExternalId`
+  // (Decision 4). refTable is the string 'self' for self-FKs, else the parent
+  // table var name (emitted as a live identifier by the template).
+  const fkResolvers = belongsTo.map((rel) => ({
+    column: rel.camelField,
+    writeKey: `${rel.relationKey}ExternalId`,
+    refTable: rel.isSelfFk ? 'self' : rel.relatedTable,
+    isSelfFk: rel.isSelfFk,
+    nullable: rel.nullable,
+    // Strict resolution (throw on unresolved parent → failed item) when the FK
+    // COLUMN is required/non-null; opportunistic null otherwise. Sourced from
+    // the FK field's `required` — the relationship-level `nullable` is
+    // unreliable (defaults true when undeclared, e.g. a `belongs_to` with no
+    // explicit `nullable:`). Nullable FKs (e.g. self-FK hierarchies) stay
+    // opportunistic. (#374)
+    strict: fields?.[rel.field]?.required === true,
+    relatedTable: rel.relatedTable,
+    relatedEntity: rel.relatedEntity,
+    importPath: rel.importPath,
+  }));
+
+  // Projection columns: id + externalId + copy-through + local FK columns +
+  // timestamps. Omits provider/provider_metadata.
+  const projectionColumns = [
+    'id',
+    'externalId',
+    ...writeColumns,
+    ...belongsTo.map((rel) => rel.camelField),
+    ...(hasTimestamps ? ['createdAt', 'updatedAt'] : []),
+  ];
+
+  // The syncConfig object literal the template hand-emits. fkResolvers carry a
+  // sentinel so the template can swap `refTable` to either 'self' or the live
+  // table identifier.
+  const syncConfig = {
+    conflictTarget: ['provider', 'externalId'],
+    writeColumns,
+    projectionColumns,
+    eav: !!eavEnabled,
+    softDelete: !!hasSoftDelete,
+  };
+
+  // TSyncWrite fields: externalId:string, copy-through (typed, nullable-aware),
+  // one `<writeKey>?: string | null` per FK, fields?: Record<string, unknown>.
+  const writeFields = processedFields.map((f) => ({
+    camelName: f.camelName,
+    tsType: f.nullable ? `${f.tsType} | null` : f.tsType,
+  }));
+  const writeFkFields = fkResolvers.map((fk) => ({
+    name: fk.writeKey,
+    tsType: 'string | null',
+  }));
+
+  // TSyncProjection fields: id + externalId + copy-through (typed) + each local
+  // FK column (typed string, nullable per rel) + createdAt/updatedAt.
+  const projectionFields = [
+    { camelName: 'id', tsType: 'string' },
+    { camelName: 'externalId', tsType: 'string' },
+    ...processedFields.map((f) => ({
+      camelName: f.camelName,
+      tsType: f.nullable ? `${f.tsType} | null` : f.tsType,
+    })),
+    ...belongsTo.map((rel) => ({
+      camelName: rel.camelField,
+      tsType: rel.nullable ? 'string | null' : 'string',
+    })),
+    ...(hasTimestamps
+      ? [
+          { camelName: 'createdAt', tsType: 'Date' },
+          { camelName: 'updatedAt', tsType: 'Date' },
+        ]
+      : []),
+  ];
+
+  // Parent-table imports for non-self FKs, deduped (#368). Each entry imports
+  // the parent table var from its entity file. The entity's OWN table import is
+  // emitted separately by the template; we exclude self-FKs here.
+  const parentImportMap = new Map();
+  for (const fk of fkResolvers) {
+    if (fk.isSelfFk) continue;
+    if (!parentImportMap.has(fk.relatedTable)) {
+      parentImportMap.set(fk.relatedTable, {
+        table: fk.relatedTable,
+        importPath: fk.importPath,
+      });
+    }
+  }
+  const parentTableImports = Array.from(parentImportMap.values());
+
+  return {
+    syncConfig,
+    fkResolvers,
+    writeFields,
+    writeFkFields,
+    projectionFields,
+    parentTableImports,
+  };
+}
+
+// ============================================================================
 // Main export
 // ============================================================================
 
@@ -734,8 +948,20 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Process entity fields
   const processedFields = processFields(fields);
 
-  // Behavior flags (re-read from behaviors array for clean-lite-ps use)
-  const behaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
+  // Behavior flags (re-read from behaviors array for clean-lite-ps use).
+  //
+  // Fold in the resolved pattern's `impliedBehaviors` (ADR-031): an entity
+  // declaring e.g. `pattern: Synced` need not re-declare the
+  // `external_id_tracking` behavior — the pattern contributes it. Deduped
+  // with any explicit `behaviors:` entries, explicit-first so order is
+  // stable for pre-existing fixtures. Mirrors the dedup in
+  // src/patterns/validate-composition.ts.
+  const explicitBehaviorNames = behaviors.map((b) => (typeof b === 'string' ? b : b.name));
+  const impliedBehaviorNames = resolveImpliedBehaviors(entity);
+  const behaviorNames = [
+    ...explicitBehaviorNames,
+    ...impliedBehaviorNames.filter((b) => !explicitBehaviorNames.includes(b)),
+  ];
   const hasTimestamps = behaviorNames.includes('timestamps');
   const hasSoftDelete = behaviorNames.includes('soft_delete');
   const hasUserTracking = behaviorNames.includes('user_tracking');
@@ -768,6 +994,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Process belongs_to relationships
   const belongsTo = processBelongsTo(relationships, entityNamePlural);
+
+  // Process has_many relationships (CGP-358b)
+  const hasMany = processHasMany(relationships, entityNamePlural, fs, path, srcRoot);
 
   // Issue #41 — warn when a soft-delete entity declares non-restrict on_delete on any
   // belongs_to relation. The FK constraint applies to hard-delete only;
@@ -815,9 +1044,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     }));
 
   // Drizzle imports needed
-  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking);
-  // Whether relations() import is needed
-  const hasRelationsBlock = belongsTo.length > 0;
+  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany);
+  // Whether relations() import is needed (CGP-358b: also trigger on has_many)
+  const hasRelationsBlock = belongsTo.length > 0 || hasMany.length > 0;
 
   // Output paths
   const outputPaths = {
@@ -925,6 +1154,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     zodChainOutput: zodChainForOutput(f),
   }));
 
+  // Sync write-surface derivation (#374) — null unless pattern: Synced.
+  const syncSurface = buildSyncSurface(
+    patternName,
+    nonFkFields,
+    belongsTo,
+    hasTimestamps,
+    eavEnabled,
+    hasSoftDelete,
+    fields,
+  );
+
   // EVT-7: emits locals flow through from baseLocals (prompt.js computed them
   // against the full events registry). When this helper is called in isolation
   // (e.g. from unit tests) baseLocals.hasEmits may be undefined — provide
@@ -968,6 +1208,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     patternConfig: patternConfigBlock,
     renderPatternConfigLiteral,
     ...patternConfigClasses,
+
+    // Sync write-surface (#374) — emitted only for pattern: Synced. The
+    // template hand-emits the syncConfig literal (live refTable handles) +
+    // TSyncWrite/TSyncProjection from these.
+    hasSyncSurface: syncSurface !== null,
+    clpSyncConfig: syncSurface?.syncConfig ?? null,
+    clpSyncFkResolvers: syncSurface?.fkResolvers ?? [],
+    clpSyncWriteFields: syncSurface?.writeFields ?? [],
+    clpSyncWriteFkFields: syncSurface?.writeFkFields ?? [],
+    clpSyncProjectionFields: syncSurface?.projectionFields ?? [],
+    clpSyncParentTableImports: syncSurface?.parentTableImports ?? [],
 
     // Behavior flags (also exposed at top level for template use)
     hasTimestamps,
@@ -1026,5 +1277,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     hasMultiFieldQuery,
     hasOrderedQuery,
     hasViaQuery,
+
+    // CGP-358b: has_many relationships for service-layer composition
+    clpHasMany: hasMany,
+    clpHasManyRelations: hasMany.length > 0,
+    clpExistingHasMany: hasMany.filter((r) => r.targetExists),
   };
 }

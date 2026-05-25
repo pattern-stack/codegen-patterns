@@ -278,11 +278,35 @@ export class ExecuteSyncUseCase<T extends Record<string, unknown>> {
     );
 
     if (diff === 'noop') {
+      // Sinks that declare `reprojectsOnNoop` reproject side data the differ
+      // can't see (e.g. EAV field_values) — so fall through to the idempotent
+      // upsert instead of short-circuiting. The canonical state is unchanged,
+      // so the audit `operation` stays `'noop'`, but we capture the local id
+      // returned by the upsert. Sinks without the flag keep today's behavior.
+      if (!this.sink.reprojectsOnNoop) {
+        await this.recorder.recordItem({
+          syncRunId: runId,
+          entityType: input.subscription.domain,
+          externalId: change.externalId,
+          localId: null,
+          operation: 'noop',
+          status: 'success',
+          changedFields: {},
+          tenantId: input.tenantId,
+        });
+        return;
+      }
+
+      const { id: noopLocalId } = await this.sink.upsertByExternalId(
+        input.userId,
+        change.record,
+        input.provider,
+      );
       await this.recorder.recordItem({
         syncRunId: runId,
         entityType: input.subscription.domain,
         externalId: change.externalId,
-        localId: null,
+        localId: noopLocalId,
         operation: 'noop',
         status: 'success',
         changedFields: {},

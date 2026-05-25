@@ -175,6 +175,26 @@ describe('buildInitPlan', () => {
 		expect(plan.summary.architecture).toBe('clean-lite-ps');
 	});
 
+	test('vendors the ambient-scope primitive (tenant-context) into base-classes', async () => {
+		const cwd = mkTempDir('tenantctx');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const paths = plan.entries.map((e) => e.relPath);
+		expect(paths).toContain('src/shared/base-classes/tenant-context.ts');
+	});
+
+	test('generated main.ts persists Swagger auth + carries the requester-context install hint', async () => {
+		const cwd = mkTempDir('maints');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const mainTs = plan.entries.find((e) => e.relPath === 'src/main.ts');
+		expect(mainTs?.content).toBeDefined();
+		// Swagger "Authorize" token survives reloads → keeps flowing as a header.
+		expect(mainTs!.content).toContain('persistAuthorization: true');
+		// One-liner that turns that header into ambient tenant scope.
+		expect(mainTs!.content).toContain('installRequesterContext(app)');
+	});
+
 	test('plans the ZodValidationPipe scaffold under src/shared/pipes (task #23)', async () => {
 		const cwd = mkTempDir('zodpipe');
 		const ctx = await loadContext({ cwd, skipDetection: true });

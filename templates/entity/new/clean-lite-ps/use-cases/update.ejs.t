@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.updateUseCase : 
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.updateUseCase %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (eavEnabled) { -%>
 import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';

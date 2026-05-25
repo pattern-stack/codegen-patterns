@@ -52,4 +52,11 @@ export interface ISyncSink<TCanonical> {
     userId: string,
     externalId: string,
   ): Promise<{ id: string } | null>;
+
+  /**
+   * When true, the orchestrator does NOT short-circuit on a `noop` diff — it
+   * still calls upsertByExternalId so the sink can reproject side data (e.g.
+   * EAV field_values) the differ doesn't see. Default false.
+   */
+  readonly reprojectsOnNoop?: boolean;
 }

@@ -14,6 +14,8 @@
  *     --appName <string>
  */
 
+import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+
 function coerceBool(raw) {
   if (raw === true) return true;
   if (raw === false) return false;
@@ -35,6 +37,12 @@ export default {
       workerPath: args.workerPath ?? "worker.ts",
       schemaPath:
         args.schemaPath ?? "shared/subsystems/jobs/job-orchestration.schema.ts",
+      // @generated DO-NOT-EDIT banner — the jobs subsystem schema is
+      // force-overwritten on every `subsystem install`.
+      generatedBanner: renderGeneratedBanner({
+        generator: "subsystem jobs",
+        seam: "the codegen.config.yaml jobs block, then re-run `codegen subsystem install`",
+      }),
     };
   },
 };

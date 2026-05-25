@@ -3,6 +3,7 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.outputDto : null
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { z } from 'zod';
 
 export const <%= classNames.outputSchema %> = z.object({

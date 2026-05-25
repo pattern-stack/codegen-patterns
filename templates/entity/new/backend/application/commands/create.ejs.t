@@ -3,6 +3,7 @@ to: "<%= generate.commands ? outputPaths.createCommand : '' %>"
 skip_if: <%= !isCleanArchitecture %>
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 <% if (outputPaths.createCommand) { -%>
 /**
  * Create <%= className %> Command

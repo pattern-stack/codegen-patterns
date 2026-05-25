@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
 import pluralizePkg from "pluralize";
+import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -315,6 +316,125 @@ export default {
     const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, architecture, srcRoot);
 
     // ======================================================================
+    // CGP-60 — parent-side paths + fan-out locals
+    // ======================================================================
+    // Parent service / module file paths — anchored on each endpoint.
+    // The parent's own `entity new` pipeline previously wrote these files
+    // with `force: true`; the junction inject templates target them.
+    const leftParentPaths = resolveOutputPaths(leftEntity, leftEntityPlural, architecture, srcRoot);
+    const rightParentPaths = resolveOutputPaths(rightEntity, rightEntityPlural, architecture, srcRoot);
+    const parentServicePathLeft = leftParentPaths.service;
+    const parentServicePathRight = rightParentPaths.service;
+    const parentModulePathLeft = leftParentPaths.module;
+    const parentModulePathRight = rightParentPaths.module;
+
+    // Opt-out — defaults to { left: true, right: true }. Schema fills the
+    // defaults when omitted, but tolerate raw YAML that bypasses Zod
+    // (e.g. tests / direct Hygen invocation).
+    const exposeRaw = config.expose_on_parent ?? {};
+    const exposeOnParent = {
+      left: exposeRaw.left !== false,   // default true
+      right: exposeRaw.right !== false, // default true
+    };
+
+    // Per-junction unique inject markers (Risk (a) in spec — generic
+    // markers silently skip second-junction emission on the same parent).
+    const injectionMarkerLeft = `// junction:${junctionName}:left-fan-out`;
+    const injectionMarkerRight = `// junction:${junctionName}:right-fan-out`;
+
+    // Import path for the junction service from each parent's perspective.
+    // clean-lite-ps layout: parent service lives at
+    // `src/modules/<parentPlural>/<parent>.service.ts`; junction service at
+    // `src/modules/<junctionPlural>/<junction>.service.ts`. Relative import
+    // is `../<junctionPlural>/<junction>.service`.
+    // 'clean' layout: parents live under application/<plural>, junction
+    // under application/<junctionPlural>. Same `../` relative form works.
+    const junctionServiceImportFromLeft = `../${entityNamePlural}/${junctionName}.service`;
+    const junctionServiceImportFromRight = `../${entityNamePlural}/${junctionName}.service`;
+    const junctionModuleImportFromLeft = `../${entityNamePlural}/${entityNamePlural}.module`;
+    const junctionModuleImportFromRight = `../${entityNamePlural}/${entityNamePlural}.module`;
+
+    // Left/right repo + module import paths from the junction service's
+    // perspective (used by service.ejs.t to import target repos and by
+    // module.ejs.t to import the parent modules).
+    const leftRepoImportFromJunction = `../${leftEntityPlural}/${leftEntity}.repository`;
+    const rightRepoImportFromJunction = `../${rightEntityPlural}/${rightEntity}.repository`;
+    const leftEntityImportFromJunction = `../${leftEntityPlural}/${leftEntity}.entity`;
+    const rightEntityImportFromJunction = `../${rightEntityPlural}/${rightEntity}.entity`;
+    const leftModuleImportFromJunction = `../${leftEntityPlural}/${leftEntityPlural}.module`;
+    const rightModuleImportFromJunction = `../${rightEntityPlural}/${rightEntityPlural}.module`;
+
+    // Parent module / service class names + repo class names.
+    const leftRepositoryClass = `${leftEntityPascal}Repository`;
+    const rightRepositoryClass = `${rightEntityPascal}Repository`;
+    const leftModuleClass = `${pascalCase(leftEntityPlural)}Module`;
+    const rightModuleClass = `${pascalCase(rightEntityPlural)}Module`;
+    const leftServiceClass = `${leftEntityPascal}Service`;
+    const rightServiceClass = `${rightEntityPascal}Service`;
+
+    // Camel forms of left/right entity names for use in method signatures
+    // (e.g. attachContact -> opportunityId, contactId).
+    const leftEntityCamel = camelCase(leftEntity);
+    const rightEntityCamel = camelCase(rightEntity);
+
+    // ======================================================================
+    // Inbound-sync write surface (#374)
+    // ======================================================================
+    // The junction sync identity is the tuple (leftId, rightId[, role]); its
+    // externalId is a COMPOSITE string. Both parent FKs resolve strictly. FK
+    // write-keys use `${camelCase(entity)}ExternalId` (matches the reference).
+
+    const leftSyncWriteKey = `${leftEntityCamel}ExternalId`;
+    const rightSyncWriteKey = `${rightEntityCamel}ExternalId`;
+    const roleColumnCamel = hasRole ? 'role' : null;
+    // Role TS type — literal union from the enum choices, else absent.
+    const roleTsType = hasRole
+      ? roleChoices.map((c) => `'${c}'`).join(' | ')
+      : null;
+
+    // JunctionSyncConfig literal fields. refTable is emitted as a live table
+    // identifier (leftTable/rightTable) by the template.
+    const syncConfig = {
+      leftColumn: leftColumnCamel,
+      leftRefTable: leftTable,
+      rightColumn: rightColumnCamel,
+      rightRefTable: rightTable,
+      roleColumn: roleColumnCamel,
+    };
+
+    // TSyncWrite fields: both parent external ids + optional role + userId.
+    const syncWriteFields = [
+      { name: leftSyncWriteKey, tsType: 'string' },
+      { name: rightSyncWriteKey, tsType: 'string' },
+      ...(hasRole ? [{ name: 'role', tsType: roleTsType }] : []),
+      { name: 'userId', tsType: 'string' },
+    ];
+
+    // TSyncProjection fields: composite id + local FK columns + optional role +
+    // timestamps. No surrogate id column on a junction.
+    const syncProjectionFields = [
+      { name: 'id', tsType: 'string' },
+      { name: leftColumnCamel, tsType: 'string' },
+      { name: rightColumnCamel, tsType: 'string' },
+      ...(hasRole ? [{ name: 'role', tsType: roleTsType }] : []),
+      { name: 'createdAt', tsType: 'Date' },
+      { name: 'updatedAt', tsType: 'Date' },
+    ];
+
+    // Parent-table imports for the FK resolvers, deduped (#368). Junction
+    // endpoints are distinct by schema, so two imports unless they collide.
+    const syncParentImports = [];
+    const seenSyncImports = new Set();
+    for (const imp of [
+      { table: leftTable, importPath: leftEntityImportFromJunction },
+      { table: rightTable, importPath: rightEntityImportFromJunction },
+    ]) {
+      if (seenSyncImports.has(imp.table)) continue;
+      seenSyncImports.add(imp.table);
+      syncParentImports.push(imp);
+    }
+
+    // ======================================================================
     // Class names
     // ======================================================================
 
@@ -329,7 +449,20 @@ export default {
     // Return all template locals
     // ======================================================================
 
+    // @generated DO-NOT-EDIT banner — stamped at the top of every
+    // force-overwritten junction output. `yamlPath` is the consumer-relative
+    // source definition.
+    const generatedBanner = renderGeneratedBanner({
+      // Relative to cwd so the banner is portable across machines.
+      source: path.relative(cwd, fullPath),
+      generator: 'junction',
+      seam: 'the junction YAML',
+    });
+
     return {
+      // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
+      generatedBanner,
+
       // Identity
       name: junctionName,
       entityNamePascal,
@@ -388,6 +521,55 @@ export default {
       // Parent table Drizzle var names (for FK .references())
       leftTable,
       rightTable,
+
+      // ──────────────────────────────────────────────────────────────────
+      // Inbound-sync write surface (#374)
+      // ──────────────────────────────────────────────────────────────────
+      leftSyncWriteKey,
+      rightSyncWriteKey,
+      roleColumnCamel,
+      roleTsType,
+      junctionSyncConfig: syncConfig,
+      syncWriteFields,
+      syncProjectionFields,
+      syncParentImports,
+
+      // ──────────────────────────────────────────────────────────────────
+      // CGP-60 — fan-out locals
+      // ──────────────────────────────────────────────────────────────────
+      // Camel-case forms of endpoint names (used in method param names).
+      leftEntityCamel,
+      rightEntityCamel,
+      // Parent service / module target paths for inject templates.
+      parentServicePathLeft,
+      parentServicePathRight,
+      parentModulePathLeft,
+      parentModulePathRight,
+      // Opt-out toggles (default { left: true, right: true }).
+      exposeOnParent,
+      // Per-junction unique inject markers (skip_if idempotency).
+      injectionMarkerLeft,
+      injectionMarkerRight,
+      // Junction service import paths from each parent's perspective.
+      junctionServiceImportFromLeft,
+      junctionServiceImportFromRight,
+      junctionModuleImportFromLeft,
+      junctionModuleImportFromRight,
+      // Parent-side repo + entity + module import paths from the junction's
+      // perspective (used by junction service.ejs.t + module.ejs.t).
+      leftRepoImportFromJunction,
+      rightRepoImportFromJunction,
+      leftEntityImportFromJunction,
+      rightEntityImportFromJunction,
+      leftModuleImportFromJunction,
+      rightModuleImportFromJunction,
+      // Class names used by the inject + service + module templates.
+      leftRepositoryClass,
+      rightRepositoryClass,
+      leftModuleClass,
+      rightModuleClass,
+      leftServiceClass,
+      rightServiceClass,
     };
   },
 };

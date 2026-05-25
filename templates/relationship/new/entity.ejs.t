@@ -2,6 +2,7 @@
 to: "<%= outputPaths.entity %>"
 force: true
 ---
+<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import {
 <%_ drizzleImports.filter(i => i !== 'relations').forEach(i => { _%>
   <%= i %>,
