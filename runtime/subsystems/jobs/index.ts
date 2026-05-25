@@ -118,6 +118,7 @@ export {
 export {
   loadPoolConfig,
   allNonReservedPoolNames,
+  allPoolNames,
   FRAMEWORK_POOLS,
   RESERVED_POOL_NAMES,
   type PoolConfig,

@@ -47,6 +47,7 @@ import type { IJobRunService } from './job-run-service.protocol';
 import type { IJobStepService } from './job-step-service.protocol';
 import {
   allNonReservedPoolNames,
+  allPoolNames,
   loadPoolConfig,
   type PoolConfig,
 } from './pool-config.loader';
@@ -73,6 +74,18 @@ export interface JobWorkerModuleOptions {
    * horizontally.
    */
   pools?: string[];
+  /**
+   * BULLMQ-1 Phase 1 — when `true`, `onModuleInit` activates **every** pool
+   * in the resolved config, including the reserved `events_*` lanes. This is
+   * how the standalone worker (`worker.ts`) drains bridge wrappers without
+   * the consumer hand-listing `...BRIDGE_RESERVED_POOLS`. Mutually exclusive
+   * with an explicit `pools` list — when both are set, `pools` wins (explicit
+   * beats blanket) and `allPools` is ignored.
+   *
+   * `BridgeModule`'s reserved-pool guard short-circuits to "pass" when this
+   * is `true`, since every reserved pool is provably being polled.
+   */
+  allPools?: boolean;
   /** SIGTERM drain budget. Default 30_000 ms. */
   shutdownTimeoutMs?: number;
   /**
@@ -166,8 +179,14 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
     }
 
     // (6) Resolve active pool list and spawn one worker per pool.
-    const activePools =
-      this.options.pools ?? allNonReservedPoolNames(poolConfig);
+    //     Precedence: explicit `pools` > `allPools` (incl. reserved) >
+    //     non-reserved default. BULLMQ-1 Phase 1 adds the `allPools` rung so
+    //     the standalone worker drains the reserved `events_*` bridge lanes.
+    const activePools = this.options.pools
+      ? this.options.pools
+      : this.options.allPools
+        ? allPoolNames(poolConfig)
+        : allNonReservedPoolNames(poolConfig);
 
     for (const poolName of activePools) {
       const def = poolConfig.get(poolName);
@@ -314,7 +333,14 @@ export class JobWorkerModule {
         { provide: JOB_WORKER_MODULE_OPTIONS, useValue: opts },
         JobWorkerOrchestrator,
       ],
-      exports: [],
+      // BULLMQ-1 Phase 1 — export the options token so `BridgeModule`'s
+      // reserved-pool guard (`onModuleInit`) can actually inject it.
+      // Previously `exports: []` left the `@Optional()` inject resolving to
+      // `undefined` and the guard silently no-opped (a dead check). With the
+      // token exported the guard fires for real; consumers that omit the
+      // reserved pools (and don't set `allPools`) now fail fast with
+      // `BridgeReservedPoolsNotPolledError` — which is correct.
+      exports: [JOB_WORKER_MODULE_OPTIONS],
     };
   }
 }

@@ -149,6 +149,11 @@ export class BridgeModule implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     if (!this.workerOpts) return;
+    // BULLMQ-1 Phase 1 — `allPools: true` activates every pool (reserved
+    // `events_*` included), so the reserved-pool guarantee holds by
+    // construction. Short-circuit pass without inspecting the (typically
+    // omitted) explicit `pools` list.
+    if (this.workerOpts.allPools) return;
     const activePools = this.workerOpts.pools ?? [];
     const missing = BRIDGE_RESERVED_POOLS.filter(
       (p) => !activePools.includes(p),
