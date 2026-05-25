@@ -95,6 +95,46 @@ describe('buildSubsystemBarrel', () => {
 		expect(out.content).not.toContain('JobWorkerModule');
 	});
 
+	test('jobs `backend: bullmq` inlines the extensions block (BULLMQ-1)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{
+				jobs: {
+					backend: 'bullmq',
+					extensions: {
+						bullmq: {
+							redis_url: 'redis://localhost:16379',
+							bull_board: { enabled: true, mount_path: '/api/admin/queues' },
+						},
+					},
+				},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain("backend: 'bullmq'");
+		expect(out.content).toContain('extensions: { bullmq: {');
+		expect(out.content).toContain("redis_url: 'redis://localhost:16379'");
+		expect(out.content).toContain("mount_path: '/api/admin/queues'");
+		expect(out.content).toContain('enabled: true');
+	});
+
+	test("jobs `backend: bullmq` + embedded forwards to JobWorkerModule (BULLMQ-1)", () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{
+				jobs: {
+					backend: 'bullmq',
+					worker_mode: 'embedded',
+					extensions: { bullmq: { redis_url: 'redis://localhost:16379' } },
+				},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain("backend: 'bullmq'");
+		expect(out.content).toContain('JobWorkerModule.forRoot(');
+		expect(out.content).toContain('domainModuleExtensions: { bullmq:');
+	});
+
 	test('subsystem `multi_tenant: true` propagates to forRoot as `multiTenant: true`', () => {
 		const out = buildSubsystemBarrel(
 			[inst('sync')],

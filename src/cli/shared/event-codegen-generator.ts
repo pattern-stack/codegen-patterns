@@ -327,11 +327,11 @@ export function buildTypesContent(events: EventDefinition[]): string {
 			`export type AppDomainEvent = never;\n` +
 			'\n' +
 			`export type EventTypeName = string;\n` +
-			// No registered events: degrade to the base DomainEvent shape rather
-			// than `never`, so backend-agnostic consumers that type an event
-			// parameter generically (e.g. the bridge EventFlowService, which
-			// reads event.type / event.id) still typecheck. `never` here would
-			// make every property access an error for empty-registry installs.
+			// No events declared: fall back to the DomainEvent base rather than
+			// `never`. `never` makes every consumer of EventOfType (e.g. the
+			// bridge EventFlowService' `event.type`/`event.id`) fail to type-check
+			// in a no-events project. DomainEvent has the structural fields the
+			// subsystem code relies on; payloads are untyped (Record).
 			`export type EventOfType<T extends EventTypeName> = DomainEvent;\n` +
 			`export type PayloadOfType<T extends EventTypeName> = DomainEvent['payload'];\n`
 		);

@@ -19,14 +19,16 @@ force: true
  *       is owned by the sync subsystem's runtime protocol
  *       (`sync-field-diff.protocol.ts` from SYNC-2).
  *
- * ## `tenant_id` columns — scaffold-time conditional
+ * ## `tenant_id` columns — always emitted
  *
- * When `sync.multi_tenant: true` in `codegen.config.yaml`, this schema
- * emits `tenant_id` as a nullable text column on all three tables. The
- * `SYNC_MULTI_TENANT` DI flag (SYNC-6) enforces non-null at runtime
- * across the orchestrator + Drizzle backends. Enabling post-install
- * requires reinstalling this subsystem (`subsystem install sync --force
- * --force-config`) plus an Atlas migration.
+ * `tenant_id` is emitted as a nullable text column on all three tables
+ * REGARDLESS of `sync.multi_tenant` — the runtime sync code (cursor store +
+ * run recorder) references `tenant_id` unconditionally, so a `multi_tenant:
+ * false` consumer that omitted the column failed to type-check (the column
+ * was referenced but absent). The `SYNC_MULTI_TENANT` DI flag (SYNC-6) gates
+ * non-null *enforcement* at runtime; it does not gate the column's existence
+ * (mirrors the jobs subsystem). Under `multi_tenant: false` the column simply
+ * stays null.
  *
  * See SYNC-1 / SYNC-6 in epic #60 for the decision rationale.
  */
@@ -98,9 +100,7 @@ export const syncSubscriptions = pgTable(
     config: jsonb('config').notNull().default({}).$type<Record<string, unknown>>(),
     cursor: jsonb('cursor').$type<unknown>(),
     lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
-<% if (multiTenant) { -%>
-    tenantId: text('tenant_id'),                // scaffold-time conditional — see sync.multi_tenant
-<% } -%>
+    tenantId: text('tenant_id'),                // always emitted — the runtime sync code (cursor store + run recorder) references tenant_id unconditionally; SYNC_MULTI_TENANT gates enforcement, not the column's existence (mirrors jobs)
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -141,9 +141,7 @@ export const syncRuns = pgTable(
       .notNull()
       .defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
-<% if (multiTenant) { -%>
-    tenantId: text('tenant_id'),                // scaffold-time conditional — see sync.multi_tenant
-<% } -%>
+    tenantId: text('tenant_id'),                // always emitted — the runtime sync code (cursor store + run recorder) references tenant_id unconditionally; SYNC_MULTI_TENANT gates enforcement, not the column's existence (mirrors jobs)
   },
   (t) => ({
     idxSyncRunsSubscriptionStartedAt: index(
@@ -178,9 +176,7 @@ export const syncRunItems = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-<% if (multiTenant) { -%>
-    tenantId: text('tenant_id'),                // scaffold-time conditional — see sync.multi_tenant
-<% } -%>
+    tenantId: text('tenant_id'),                // always emitted — the runtime sync code (cursor store + run recorder) references tenant_id unconditionally; SYNC_MULTI_TENANT gates enforcement, not the column's existence (mirrors jobs)
   },
   (t) => ({
     idxSyncRunItemsRunCreatedAt: index('idx_sync_run_items_run_created_at').on(

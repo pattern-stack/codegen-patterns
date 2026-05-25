@@ -683,7 +683,7 @@ describe('subsystem — install sync (SYNC-7)', () => {
 		expect(fs.existsSync(path.join(root, 'src/shared/constants/tokens.ts'))).toBe(true);
 	});
 
-	test('schema is emitted via Hygen (not copyRuntime) — verified by multi_tenant gating', async () => {
+	test('schema is emitted via Hygen (not copyRuntime), with tenant_id always present', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -696,9 +696,14 @@ describe('subsystem — install sync (SYNC-7)', () => {
 			'src/shared/subsystems/sync/sync-audit.schema.ts',
 		);
 		expect(fs.existsSync(schemaPath)).toBe(true);
-		// Default install is multi_tenant: false → no tenant_id columns emitted.
 		const schema = fs.readFileSync(schemaPath, 'utf8');
-		expect(schema).not.toContain("text('tenant_id')");
+		// Hygen-templated (not copyRuntime): the generator banner is present.
+		expect(schema).toContain('subsystem sync generator');
+		// tenant_id is ALWAYS emitted now (even under multi_tenant: false): the
+		// runtime sync code references it unconditionally, so the previously-gated
+		// form broke multi_tenant:false consumers' typecheck. SYNC_MULTI_TENANT
+		// gates enforcement, not the column's existence.
+		expect(schema).toContain("text('tenant_id')");
 	});
 
 	test('config block appended to codegen.config.yaml', async () => {

@@ -260,6 +260,26 @@ describe('BridgeModule.onModuleInit — reserved-pool boot check', () => {
     await moduleRef.close();
   });
 
+  it('short-circuits to pass when worker module sets allPools (BULLMQ-1)', async () => {
+    const FakeWorker = workerOptionsModule({
+      mode: 'standalone',
+      backend: 'memory',
+      allPools: true,
+      // No explicit reserved pools listed — `allPools` proves they are polled.
+    });
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        FakeWorker,
+        ...siblingsMemory(),
+        BridgeModule.forRoot({ backend: 'memory' }),
+      ],
+    }).compile();
+
+    await expect(moduleRef.init()).resolves.toBeDefined();
+    await moduleRef.close();
+  });
+
   it('throws BridgeReservedPoolsNotPolledError when reserved pools are missing', async () => {
     const FakeWorker = workerOptionsModule({
       mode: 'embedded',

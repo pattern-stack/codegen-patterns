@@ -5,13 +5,30 @@ unless_exists: true
 /**
  * Standalone job worker entrypoint — emitted by `codegen subsystem install jobs`.
  *
- * Boots a Nest application context (NO HTTP listener) wiring the jobs domain
- * module plus JobWorkerModule in `standalone` mode. Run with:
+ * Boots a Nest application context (NO HTTP listener) wiring the full
+ * subsystem barrel (`SUBSYSTEM_MODULES` — events + jobs + bridge + sync, in
+ * dependency order) plus `JobWorkerModule.forRoot({ mode: 'standalone',
+ * allPools: true })`. Run with:
  *
  *   bun worker.ts
  *
+ * Why the barrel + `allPools`:
+ *   - The events subsystem's outbox drain and the bridge's fanout wrappers
+ *     run as `job_run` rows in the RESERVED `events_*` pools. A worker that
+ *     only polls the non-reserved pools (`interactive`, `batch`, …) leaves
+ *     those lanes stranded — `BridgeDeliveryHandler` never fires and durable
+ *     event→job fanout silently stops.
+ *   - `allPools: true` activates every pool in the resolved config, reserved
+ *     lanes included, so this single standalone process drains both user work
+ *     and the framework's reserved lanes.
+ *   - Importing `SUBSYSTEM_MODULES` (rather than `JobsDomainModule` alone)
+ *     registers `EVENT_BUS` / `JOB_ORCHESTRATOR` / `BRIDGE_*` so the
+ *     framework `@framework/bridge_delivery` handler resolves its DI deps.
+ *     `BridgeModule`'s reserved-pool guard short-circuits to pass because
+ *     `allPools` is set.
+ *
  * Embedded mode (single-process) is configured by importing
- * JobWorkerModule.forRoot({ mode: 'embedded' }) inside AppModule instead —
+ * `JobWorkerModule.forRoot({ mode: 'embedded' })` inside AppModule instead —
  * see the commented guidance injected into `src/main.ts`.
  *
  * SIGTERM triggers graceful shutdown bounded by SHUTDOWN_TIMEOUT_MS; after the
@@ -23,16 +40,22 @@ import { Logger, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
 import { DatabaseModule } from '@shared/database/database.module';
-import { JobsDomainModule } from '@shared/subsystems/jobs/jobs-domain.module';
 import { JobWorkerModule } from '@shared/subsystems/jobs/job-worker.module';
+import { SUBSYSTEM_MODULES } from '@generated/subsystems';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
 @Module({
   imports: [
     DatabaseModule,
-    JobsDomainModule.forRoot({ backend: 'drizzle' }),
-    JobWorkerModule.forRoot({ mode: 'standalone' }),
+    // Events + Jobs + Bridge + Sync (dependency-ordered) from the generated
+    // barrel. This is the same composition AppModule imports — keeping the
+    // worker's DI graph identical to the HTTP app's so handlers resolve the
+    // same way in both processes.
+    ...SUBSYSTEM_MODULES,
+    // `allPools: true` drains the reserved `events_*` lanes (events outbox +
+    // bridge wrappers) alongside the user pools.
+    JobWorkerModule.forRoot({ mode: 'standalone', allPools: true }),
   ],
 })
 class WorkerAppModule {}
@@ -72,7 +95,7 @@ async function bootstrap(): Promise<void> {
     void shutdown('SIGINT');
   });
 
-  logger.log('job worker started (standalone mode)');
+  logger.log('job worker started (standalone mode, all pools)');
 }
 
 bootstrap().catch((err) => {
