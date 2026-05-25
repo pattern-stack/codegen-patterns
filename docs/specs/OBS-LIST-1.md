@@ -58,7 +58,22 @@ These are pure `DRIZZLE` selects over `jobRuns` / `domainEvents` — they belong
 - `src/__tests__/runtime/subsystems/observability.list-reads.spec.ts` — combiner delegation + verbatim query passthrough, missing-port degradation (JOB_RUN_SERVICE absent; EVENT_READ_PORT absent AND null/redis), timeline stitch + multi-page cursor drain + tenant passthrough.
 - `events-module.spec.ts` gained a case asserting `EVENT_READ_PORT` binds to the same Memory backend instance.
 
-Drizzle backends are covered structurally (shared cursor codec + projection helpers) but the SQL paths are not exercised against a live Postgres here — `just test-unit` has no DB. They mirror the Memory backend semantics 1:1; integration coverage would land with the dbi consumer swap (RFC-0005).
+Drizzle backends are covered structurally (shared cursor codec + projection helpers) by the unit tests above, which run against the Memory backends only (`just test-unit` has no DB).
+
+### Drizzle SQL paths — integration coverage (CLOSED)
+
+The two Drizzle-only SQL paths that have **no Memory equivalent** — and so could ship a typo/Drizzle-API misuse that typechecks and passes the Memory unit tests but breaks at runtime — are now exercised against a **real Postgres**:
+
+1. `metadata->>'rootRunId'` JSON extraction (events `listEvents` rootRunId filter + the correlation-timeline event drain).
+2. The keyset-pagination WHERE expansion `(orderKey, id) < (cursorKey, cursorId)` rendered as `orderKey < x OR (orderKey = x AND id < y)` — for **both** `DrizzleJobRunService.listJobRuns` (`created_at`) and `DrizzleEventBus.listEvents` (`occurred_at`).
+
+**Test:** `test/integration/observability-list-reads.drizzle.integration.test.ts` (DDL in `test/integration/obs-list-schema.sql.ts`). It instantiates the **real** `DrizzleJobRunService`, the **real** events read port (`DrizzleEventBus` implementing `IEventReadPort`), and the **real** `ObservabilityService` composing them, all pointed at an ephemeral `postgres:16`. It seeds varied rows (created_at ties, varied pool/status/tenant, events with and without `metadata.rootRunId`, runs sharing a `root_run_id`) and asserts: every `listJobRuns`/`listEvents` filter; full keyset pagination (page through with `limit` < set size, every row exactly once, no gaps/dupes, correct DESC order across boundaries including a timestamp tie resolved by `id`); the `metadata->>'rootRunId'` filter returns exactly the correlated events; and `getCorrelationTimeline` stitches the real runs+events into ascending order with the run-before-event tie-break and correct summary counts/timestamps.
+
+**Approach — testcontainers (not `just db-up`).** The suite spins its **own** ephemeral `postgres:16` via `@testcontainers/postgresql` (devDeps: `@testcontainers/postgresql`, `testcontainers`, `pg`, `@types/pg`), so it is self-contained and CI-friendly rather than depending on the shared docker-compose Postgres. It is **not** part of `just test-unit` (which globs `src/__tests__/`; this lives under `test/integration/`) — run it via `just test-obs-integration`. It **skips gracefully** (`describe.skipIf`) when Docker is unavailable, so it never breaks a Docker-less `bun test`.
+
+> **Bun + testcontainers gotcha (discovered during implementation):** the default Postgres wait strategy (log-message / host-port-socket probe) **hangs under the Bun test runtime** — `.start()` never resolves even though the container reaches `healthy`. The test pins `Wait.forHealthCheck()` (Docker-API healthcheck, which `postgres:16` ships built-in) instead; `.start()` then resolves in ~1-2s. Anyone adding further testcontainers suites under Bun should do the same.
+
+This supersedes the earlier "integration coverage would land with the dbi consumer swap (RFC-0005)" deferral — the gap is closed here, upstream, where the SQL lives.
 
 ## Consumer follow-up (dbi)
 

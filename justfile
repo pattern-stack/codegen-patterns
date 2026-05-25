@@ -94,6 +94,14 @@ test-integration:
 test-integration-quick:
     bun test/scaffold/run-integration.ts --skip-codegen
 
+# OBS-LIST-1 Drizzle read paths against a real Postgres (testcontainers).
+# Spins its own ephemeral postgres:16 — no `just db-up` needed. Requires
+# Docker; skips gracefully when Docker is unavailable. NOT in test-unit/CI
+# unit run (it needs Docker). Closes the OBS-LIST-1 "Drizzle SQL not
+# exercised" gap (metadata->>'rootRunId' + keyset OR-expansion).
+test-obs-integration:
+    bun test test/integration/observability-list-reads.drizzle.integration.test.ts
+
 # Run the full scaffold validation (Docker + codegen + NestJS + CRUD)
 validate:
     bash test/scaffold/validate.sh
