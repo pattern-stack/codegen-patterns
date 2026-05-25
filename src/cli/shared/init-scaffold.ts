@@ -357,8 +357,20 @@ async function bootstrap(): Promise<void> {
       } as NonNullable<typeof nestDocument.components>['schemas'],
     };
 
-    SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument);
+    // \`persistAuthorization\` keeps the "Authorize" bearer token across page
+    // reloads, so the token pasted in Swagger UI keeps flowing as the
+    // \`Authorization\` header — which the RequesterContext boundary (below)
+    // turns into ambient tenant scope on every request.
+    SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument, {
+      swaggerOptions: { persistAuthorization: true },
+    });
   }
+
+  // Ambient tenant scoping (auth subsystem). Uncomment once the auth subsystem
+  // is installed and an IUserContext is bound under AUTH_USER_CONTEXT — then
+  // every request is scoped to its requester with no threaded userId:
+  //   import { installRequesterContext } from './shared/subsystems/auth/middleware/requester-context';
+  //   installRequesterContext(app); // no-op + warn if AUTH_USER_CONTEXT is unbound
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
