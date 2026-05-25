@@ -495,28 +495,30 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
 function zodChainForCreate(field) {
   const { type, nullable, required, hasDefault, hasChoices, choices } = field;
 
+  // Apply nullability and optionality INDEPENDENTLY. A nullable column accepts
+  // null (`.nullable()`); a field without `required: true` may be omitted from
+  // the create payload (`.optional()`). A field that is both gets
+  // `.nullable().optional()`. Previously the `nullable` branch returned early,
+  // so a nullable-and-optional field never got `.optional()` — forcing callers
+  // to send an explicit `null` for every optional column (e.g. POST /accounts
+  // rejecting a body that omits `domain`/`industry`).
   if (hasChoices) {
-    const base = `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`;
-    if (!required && !nullable) return base + '.optional()';
-    if (nullable) return base + '.nullable()';
+    let base = `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`;
+    if (nullable) base += '.nullable()';
+    if (!required) base += '.optional()';
     return base;
   }
 
   let base = ZOD_TYPE_MAP[type] || 'z.unknown()';
 
   if (type === 'boolean' && hasDefault) {
+    // `.default()` already makes the input optional in Zod.
     base += `.default(${field.default ?? false})`;
     return base;
   }
 
-  if (nullable) {
-    return base + '.nullable()';
-  }
-
-  if (!required) {
-    return base + '.optional()';
-  }
-
+  if (nullable) base += '.nullable()';
+  if (!required) base += '.optional()';
   return base;
 }
 
@@ -1132,7 +1134,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // FK fields from belongs_to for create/output DTOs
   const belongsToFkFields = belongsTo.map((rel) => ({
     camelName: rel.camelField,
-    zodChainCreate: rel.nullable ? 'z.string().uuid().nullable()' : 'z.string().uuid()',
+    zodChainCreate: rel.nullable ? 'z.string().uuid().nullable().optional()' : 'z.string().uuid()',
     zodChainOutput: rel.nullable ? 'z.string().uuid().nullable()' : 'z.string().uuid()',
     nullable: rel.nullable,
   }));
