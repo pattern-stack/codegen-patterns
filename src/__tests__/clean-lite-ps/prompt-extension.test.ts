@@ -187,11 +187,16 @@ describe('buildCleanLitePsLocals', () => {
     expect(titleField).toBeDefined();
     expect(titleField!.nullable).toBe(true);
     expect(titleField!.zodChainCreate).toContain('.nullable()');
+    // nullable AND not required → must also be optional, so the create payload
+    // can omit the key entirely (not forced to send an explicit null).
+    expect(titleField!.zodChainCreate).toContain('.optional()');
 
     const firstNameField = locals.clpCreateDtoFields.find((f: any) => f.name === 'first_name');
     expect(firstNameField).toBeDefined();
     expect(firstNameField!.nullable).toBe(false);
     expect(firstNameField!.zodChainCreate).not.toContain('.nullable()');
+    // required → neither nullable nor optional.
+    expect(firstNameField!.zodChainCreate).not.toContain('.optional()');
   });
 
   it('sets hasTimestamps and hasSoftDelete flags from behaviors', () => {

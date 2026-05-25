@@ -18,6 +18,7 @@ import { Module } from '@nestjs/common';
 import { EventsModule } from '../../../../runtime/subsystems/events/events.module';
 import {
   EVENT_BUS,
+  EVENT_READ_PORT,
   EVENTS_MULTI_TENANT,
   TYPED_EVENT_BUS,
 } from '../../../../runtime/subsystems/events/events.tokens';
@@ -48,6 +49,20 @@ describe('EventsModule.forRoot({ backend: "memory" })', () => {
 
     expect(bus).toBeInstanceOf(MemoryEventBus);
     expect(typed).toBeInstanceOf(TypedEventBus);
+
+    await moduleRef.close();
+  });
+
+  it('binds EVENT_READ_PORT to the same MemoryEventBus instance (OBS-LIST-1)', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [EventsModule.forRoot({ backend: 'memory' })],
+    }).compile();
+
+    const bus = moduleRef.get(EVENT_BUS);
+    const readPort = moduleRef.get(EVENT_READ_PORT);
+    // Read port is the same backend instance; it implements listEvents.
+    expect(readPort).toBe(bus);
+    expect(typeof (readPort as { listEvents: unknown }).listEvents).toBe('function');
 
     await moduleRef.close();
   });

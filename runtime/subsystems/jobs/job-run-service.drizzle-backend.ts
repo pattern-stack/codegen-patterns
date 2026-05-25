@@ -7,7 +7,7 @@
  * `idx_job_run_scope`, whereas orchestrator mutates individual runs by id.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
 import { jobRuns, type JobRunRow } from './job-orchestration.schema';
@@ -19,7 +19,16 @@ import type {
   RescheduleForScopeOptions,
   PoolStatusCount,
   JobRunFailure,
+  ListJobRunsQuery,
+  JobRunPage,
+  JobRunSummary,
 } from './job-run-service.protocol';
+import {
+  clampLimit,
+  decodeKeysetCursor,
+  encodeKeysetCursor,
+  toJobRunSummary,
+} from './job-run-keyset-cursor';
 import type { IJobOrchestrator } from './job-orchestrator.protocol';
 import { JOB_ORCHESTRATOR, JOBS_MULTI_TENANT } from './jobs-domain.tokens';
 import { MissingTenantIdError } from './jobs-errors';
@@ -206,6 +215,55 @@ export class DrizzleJobRunService implements IJobRunService {
       failedAt: r.finishedAt ?? r.updatedAt,
       createdAt: r.createdAt,
     }));
+  }
+
+  async listJobRuns(query: ListJobRunsQuery = {}): Promise<JobRunPage> {
+    const limit = clampLimit(query.limit);
+    const conditions = [];
+
+    const tenantCond = this.tenantCondition('listJobRuns', query.tenantId);
+    if (tenantCond) conditions.push(tenantCond);
+    if (query.poolId) conditions.push(eq(jobRuns.pool, query.poolId));
+    if (query.rootRunId) conditions.push(eq(jobRuns.rootRunId, query.rootRunId));
+    if (query.status) conditions.push(eq(jobRuns.status, query.status));
+    if (query.since) conditions.push(gte(jobRuns.createdAt, query.since));
+
+    // Keyset seek: WHERE (created_at, id) < (cursorCreatedAt, cursorId),
+    // expanded into a SARGable OR so the same `created_at` index is used.
+    if (query.cursor) {
+      const keyset = decodeKeysetCursor(query.cursor);
+      if (keyset) {
+        conditions.push(
+          or(
+            lt(jobRuns.createdAt, keyset.createdAt),
+            and(
+              eq(jobRuns.createdAt, keyset.createdAt),
+              lt(jobRuns.id, keyset.id),
+            ),
+          )!,
+        );
+      }
+    }
+
+    // Fetch one extra row to determine whether a next page exists without a
+    // separate COUNT.
+    const rows = await this.db
+      .select()
+      .from(jobRuns)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(jobRuns.createdAt), desc(jobRuns.id))
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const items = page.map(toJobRunSummary);
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeKeysetCursor({ createdAt: last.createdAt, id: last.id })
+        : null;
+
+    return { items, nextCursor };
   }
 
   /**

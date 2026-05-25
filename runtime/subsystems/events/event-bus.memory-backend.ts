@@ -21,11 +21,52 @@
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { DomainEvent, IEventBus } from './event-bus.protocol';
+import type {
+  EventPage,
+  EventSummary,
+  IEventReadPort,
+  ListEventsQuery,
+} from './event-read.protocol';
+import {
+  clampEventLimit,
+  decodeEventCursor,
+  encodeEventCursor,
+} from './event-keyset-cursor';
 import { EVENTS_MODULE_OPTIONS } from './events.tokens';
 import type { EventsModuleOptions } from './events.module';
 
+/**
+ * Project an in-memory `DomainEvent` into the narrow `EventSummary` shape.
+ * The memory backend has no first-class columns, so `pool` / `direction` /
+ * `tier` / `tenantId` / `rootRunId` are read from `metadata` (mirroring how
+ * the Drizzle backend stamps them onto columns at publish time). `status`
+ * is reported as `'processed'` — the memory bus dispatches synchronously,
+ * so once an event is in `publishedEvents` it has been handled.
+ */
+function toEventSummary(event: DomainEvent): EventSummary {
+  const metadata = event.metadata;
+  const str = (key: string): string | null => {
+    const v = metadata?.[key];
+    return typeof v === 'string' ? v : null;
+  };
+  return {
+    id: event.id,
+    type: event.type,
+    aggregateId: event.aggregateId,
+    aggregateType: event.aggregateType,
+    status: 'processed',
+    pool: str('pool'),
+    direction: str('direction'),
+    tier: str('tier') ?? 'domain',
+    rootRunId: str('rootRunId'),
+    tenantId: str('tenantId'),
+    occurredAt: event.occurredAt,
+    processedAt: event.occurredAt,
+  };
+}
+
 @Injectable()
-export class MemoryEventBus implements IEventBus {
+export class MemoryEventBus implements IEventBus, IEventReadPort {
   private readonly logger = new Logger(MemoryEventBus.name);
 
   /** All events published since construction (or last clear). */
@@ -84,6 +125,67 @@ export class MemoryEventBus implements IEventBus {
     return () => {
       set.delete(h);
     };
+  }
+
+  // ============================================================================
+  // IEventReadPort (OBS-LIST-1)
+  // ============================================================================
+
+  async listEvents(query: ListEventsQuery = {}): Promise<EventPage> {
+    const limit = clampEventLimit(query.limit);
+    const keyset = query.cursor ? decodeEventCursor(query.cursor) : null;
+
+    const str = (e: DomainEvent, key: string): string | null => {
+      const v = e.metadata?.[key];
+      return typeof v === 'string' ? v : null;
+    };
+
+    const matched = this.publishedEvents.filter((e) => {
+      if (query.poolId && str(e, 'pool') !== query.poolId) return false;
+      if (query.direction && str(e, 'direction') !== query.direction)
+        return false;
+      if (query.rootRunId && str(e, 'rootRunId') !== query.rootRunId)
+        return false;
+      if (query.since && e.occurredAt.getTime() < query.since.getTime())
+        return false;
+      if (query.tenantId !== undefined) {
+        const t = str(e, 'tenantId');
+        if (query.tenantId === null) {
+          if (t !== null) return false;
+        } else if (t !== query.tenantId) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Order occurred_at DESC, id DESC to match the Drizzle backend keyset.
+    matched.sort((a, b) => {
+      const dt = b.occurredAt.getTime() - a.occurredAt.getTime();
+      if (dt !== 0) return dt;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    });
+
+    const seeked = keyset
+      ? matched.filter((e) => {
+          const ct = e.occurredAt.getTime();
+          const kt = keyset.occurredAt.getTime();
+          if (ct < kt) return true;
+          if (ct > kt) return false;
+          return e.id < keyset.id;
+        })
+      : matched;
+
+    const hasMore = seeked.length > limit;
+    const page = hasMore ? seeked.slice(0, limit) : seeked;
+    const items = page.map(toEventSummary);
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeEventCursor({ occurredAt: last.occurredAt, id: last.id })
+        : null;
+
+    return { items, nextCursor };
   }
 
   /** Remove all published events and subscriptions. Useful in beforeEach. */

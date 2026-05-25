@@ -16,7 +16,15 @@ import type {
   RescheduleForScopeOptions,
   PoolStatusCount,
   JobRunFailure,
+  ListJobRunsQuery,
+  JobRunPage,
 } from './job-run-service.protocol';
+import {
+  clampLimit,
+  decodeKeysetCursor,
+  encodeKeysetCursor,
+  toJobRunSummary,
+} from './job-run-keyset-cursor';
 import type { IJobOrchestrator } from './job-orchestrator.protocol';
 import { JOB_ORCHESTRATOR, JOBS_MULTI_TENANT } from './jobs-domain.tokens';
 import { MissingTenantIdError } from './jobs-errors';
@@ -175,6 +183,51 @@ export class MemoryJobRunService implements IJobRunService {
       failedAt: r.finishedAt ?? r.updatedAt,
       createdAt: r.createdAt,
     }));
+  }
+
+  async listJobRuns(query: ListJobRunsQuery = {}): Promise<JobRunPage> {
+    const limit = clampLimit(query.limit);
+    const tenantCheck = this.tenantPredicate('listJobRuns', query.tenantId);
+    const keyset = query.cursor ? decodeKeysetCursor(query.cursor) : null;
+
+    const matched: JobRunRow[] = [];
+    for (const r of this.store.runs.values()) {
+      if (tenantCheck && !tenantCheck(r)) continue;
+      if (query.poolId && r.pool !== query.poolId) continue;
+      if (query.rootRunId && r.rootRunId !== query.rootRunId) continue;
+      if (query.status && r.status !== query.status) continue;
+      if (query.since && r.createdAt.getTime() < query.since.getTime()) continue;
+      matched.push(r);
+    }
+
+    // Order created_at DESC, id DESC to match the Drizzle backend's keyset.
+    matched.sort((a, b) => {
+      const dt = b.createdAt.getTime() - a.createdAt.getTime();
+      if (dt !== 0) return dt;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    });
+
+    // Keyset seek: drop everything at/after the cursor's (created_at, id).
+    const seeked = keyset
+      ? matched.filter((r) => {
+          const ct = r.createdAt.getTime();
+          const kt = keyset.createdAt.getTime();
+          if (ct < kt) return true;
+          if (ct > kt) return false;
+          return r.id < keyset.id;
+        })
+      : matched;
+
+    const hasMore = seeked.length > limit;
+    const page = hasMore ? seeked.slice(0, limit) : seeked;
+    const items = page.map(toJobRunSummary);
+    const last = page[page.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeKeysetCursor({ createdAt: last.createdAt, id: last.id })
+        : null;
+
+    return { items, nextCursor };
   }
 
   /**

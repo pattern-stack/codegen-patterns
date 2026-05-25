@@ -203,10 +203,13 @@ function processFields(fields) {
 function zodChainForCreate(field) {
   const { type, nullable, required, hasDefault, hasChoices, choices } = field;
 
+  // Nullability and optionality are independent — see the clean-lite-ps copy of
+  // this function for the rationale (nullable-and-optional fields must get both
+  // `.nullable()` and `.optional()`, not just `.nullable()`).
   if (hasChoices) {
-    const base = `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`;
-    if (!required && !nullable) return base + ".optional()";
-    if (nullable) return base + ".nullable()";
+    let base = `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`;
+    if (nullable) base += ".nullable()";
+    if (!required) base += ".optional()";
     return base;
   }
 
@@ -215,8 +218,8 @@ function zodChainForCreate(field) {
     base += `.default(${field.default ?? false})`;
     return base;
   }
-  if (nullable) return base + ".nullable()";
-  if (!required) return base + ".optional()";
+  if (nullable) base += ".nullable()";
+  if (!required) base += ".optional()";
   return base;
 }
 
