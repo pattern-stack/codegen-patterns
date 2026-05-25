@@ -1,7 +1,9 @@
 /**
  * Detect which subsystems (events/jobs/cache/storage) are already installed
  * in the user's project. A subsystem is "installed" when a `<name>.protocol.ts`
- * exists under a known install root.
+ * exists under a known install root — except where the protocol is a baseline
+ * file vendored by `project init` (events) or the protocol lives off-root
+ * (auth), in which case detection keys off the subsystem's `*.module.ts`.
  */
 
 import fs from 'node:fs';
@@ -193,6 +195,21 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 			let hasProtocol = files.some((f) => f.endsWith('.protocol.ts'));
 			if (name === 'auth') {
 				hasProtocol = files.includes('auth.module.ts');
+			}
+			// events / bridge: their `*.protocol.ts` files get vendored
+			// without a full install — `event-bus.protocol.ts` is baseline
+			// content emitted by `project init` (base-service.ts /
+			// lifecycle-events.ts import it transitively), and `subsystem
+			// install events` pulls in `bridge.protocol.ts` + tokens as a
+			// transitive dep of the events runtime. The protocol alone does
+			// NOT mean the subsystem is installed and composable. Key off the
+			// `*.module.ts` the barrel imports, which only a real
+			// `subsystem install <name>` emits. Mirrors the auth case above.
+			if (name === 'events') {
+				hasProtocol = files.includes('events.module.ts');
+			}
+			if (name === 'bridge') {
+				hasProtocol = files.includes('bridge.module.ts');
 			}
 			if (!hasProtocol) continue;
 			seen.add(name);

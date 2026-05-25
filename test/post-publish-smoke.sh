@@ -218,10 +218,18 @@ run_cli "entity new --all" entity new --all --force
 # architecture written by `cdp project init`) and the sync-source module
 # + providers (proves the detection-block templates rendered — the exact
 # code path that shipped broken in 0.6.0).
+#
+# We also assert `events.module.ts` landed: `project init` baseline-vendors
+# `event-bus.protocol.ts`, which used to trip subsystem detection into
+# reporting events as "already installed" — so `subsystem install events`
+# no-op'd and the events runtime (module + backends) never copied, leaving
+# the generated subsystems barrel importing a non-existent module. Asserting
+# the module file guards that the install actually ran.
 EXPECTED_FILES=(
     "$PROJ_DIR/src/modules/leads/lead.entity.ts"
-    "$PROJ_DIR/src/infrastructure/modules/lead-sync-source.module.ts"
-    "$PROJ_DIR/src/infrastructure/modules/lead-sync-source.providers.ts"
+    "$PROJ_DIR/src/modules/leads/lead-sync-source.module.ts"
+    "$PROJ_DIR/src/modules/leads/lead-sync-source.providers.ts"
+    "$PROJ_DIR/src/shared/subsystems/events/events.module.ts"
 )
 for f in "${EXPECTED_FILES[@]}"; do
     if [ ! -f "$f" ]; then
