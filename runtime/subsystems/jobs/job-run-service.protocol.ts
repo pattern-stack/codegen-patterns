@@ -55,6 +55,75 @@ export interface PoolStatusCount {
 }
 
 /**
+ * Filter + keyset-pagination input for `IJobRunService.listJobRuns`
+ * (OBS-LIST-1). The combiner's `listJobRuns` forwards this verbatim.
+ *
+ * Pagination is keyset (a.k.a. seek) on `created_at` descending: pass the
+ * previous page's `nextCursor` as `cursor` to fetch the following page.
+ * Keyset (not offset) so deep pages stay O(log n) and don't drift as new
+ * rows arrive at the head.
+ */
+export interface ListJobRunsQuery {
+  /** Filter to a single `pool`. */
+  poolId?: string;
+  /**
+   * Filter to a single run tree by `root_run_id`. Used by the correlation
+   * timeline to gather every run sharing a root.
+   */
+  rootRunId?: string;
+  /** Filter to a single status. Accepts any `JobRun['status']`. */
+  status?: JobRun['status'];
+  /** Lower bound on `created_at` (inclusive). */
+  since?: Date;
+  /**
+   * Opaque keyset cursor returned as `nextCursor` from a previous page.
+   * Encodes the `(createdAt, id)` of the last row seen.
+   */
+  cursor?: string;
+  /** Page size. Backend clamps to a sane default + max. */
+  limit?: number;
+  /**
+   * Multi-tenancy gate, same semantics as `countByPoolAndStatus`:
+   *   - `multiTenant` off → ignored.
+   *   - on + string → filters `tenant_id = :tenantId`.
+   *   - on + null   → filters `tenant_id IS NULL`.
+   *   - on + undefined → throws `MissingTenantIdError`.
+   */
+  tenantId?: string | null;
+}
+
+/**
+ * Summary row for the `job_run` list (OBS-LIST-1). A narrow projection over
+ * `JobRun` carrying the columns a runs viewer renders. `rootRunId` is
+ * included so the correlation timeline can stitch runs to events.
+ */
+export interface JobRunSummary {
+  runId: string;
+  rootRunId: string;
+  jobType: string;
+  pool: string;
+  status: JobRun['status'];
+  scopeEntityType: string | null;
+  scopeEntityId: string | null;
+  tenantId: string | null;
+  attempts: number;
+  errorMessage: string | null;
+  runAt: Date;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * One page of `listJobRuns` results. `nextCursor` is `null` when there are
+ * no more rows; otherwise pass it back as `query.cursor` for the next page.
+ */
+export interface JobRunPage {
+  items: JobRunSummary[];
+  nextCursor: string | null;
+}
+
+/**
  * Summary row for the "recent failed runs" observability widget (OBS-2). A
  * narrow projection over `JobRun` — just the fields a dashboard needs.
  */
@@ -122,4 +191,12 @@ export interface IJobRunService {
     limit: number,
     tenantId?: string | null,
   ): Promise<JobRunFailure[]>;
+
+  /**
+   * Paginated, filterable list of `job_run` rows for the observability runs
+   * viewer (OBS-LIST-1). Newest first (`created_at` desc, `id` desc as the
+   * keyset tie-break). Returns a `JobRunPage` with an opaque `nextCursor`
+   * for keyset pagination. Tenant gate follows `countByPoolAndStatus`.
+   */
+  listJobRuns(query?: ListJobRunsQuery): Promise<JobRunPage>;
 }

@@ -32,7 +32,15 @@ Not in Phase 1. Adds:
 
 Depends on the events subsystem's typed-event codegen work (see `../events/SKILL.md`). Until the bridge lands, trigger jobs from use cases, not directly from domain events.
 
-## Phase 3 — Coordination / signals (ADR-025)
+## Phase 3 — Coordination / signals (no ADR yet)
+
+> **Note (OBS-LIST-1, 2026-05-25):** ADR-025 is **Combiner Subsystems**
+> (observability + bridge), NOT signals. Earlier revisions of this roadmap
+> mislabelled Phase 3 as "ADR-025". The `ctx.waitFor` / `ctx.signal` /
+> `ctx.sleep` coordination design has **no ADR yet** — it must be drafted
+> before Phase 3 work begins. The schema placeholder columns (`wait_kind`,
+> `resume_token`, `wait_deadline`) reference "ADR-025" in comments for the
+> same historical reason; treat those as "future signals ADR (TBD)".
 
 Adds `ctx.waitFor(kind, token, opts)`, `ctx.signal(token, payload)`, `ctx.sleep(ms)`. Also:
 - Timer-based auto-resume via scheduler.
@@ -43,7 +51,7 @@ Adds `ctx.waitFor(kind, token, opts)`, `ctx.signal(token, payload)`, `ctx.sleep(
 - For a delay → `ctx.spawnChild(type, input, { runAt: future })` or `@JobHandler({ retry, concurrency, … })` to shape timing declaratively.
 - For external coordination → split the workflow into parent + child handlers so each external wait is a run boundary. Subsequent triggers from webhooks or timers enqueue a follow-up handler via `IJobOrchestrator.start`.
 
-Do NOT simulate signals by polling a table or using Redis keys directly — that's the exact hack ADR-022 rejected. Wait for Phase 3 or restructure the workflow.
+Do NOT simulate signals by polling a table or using Redis keys directly — that's the exact hack ADR-022 rejected. Wait for the Phase 3 signals work (ADR TBD) or restructure the workflow.
 
 ## Phase 4 — Observability (ADR-026)
 
@@ -79,7 +87,7 @@ Work items that look adjacent but are out of scope:
 | Thing | Reason it's out of scope | What to do instead |
 |---|---|---|
 | `IJobQueue` / `job_queue` table / executor port | Deleted in JOB-1 (architectural collapse). | Use `IJobOrchestrator`. Worker polls `job_run` directly. |
-| `ctx.waitFor` / `ctx.signal` / `ctx.sleep` | Phase 3 (ADR-025). | Split into parent+child or use `runAt` delays. |
+| `ctx.waitFor` / `ctx.signal` / `ctx.sleep` | Phase 3 (signals ADR TBD — NOT ADR-025, which is Combiner Subsystems). | Split into parent+child or use `runAt` delays. |
 | BullMQ backend | Phase 6+. Reserved slot only. | Use Drizzle backend. |
 | Event-to-Job bridge | Phase 2 (ADR-023). | Enqueue from use cases for now. |
 | Agent step kinds (`tool_call`, `llm_call`, …) | Phase 5 (ADR-027). | Use `kind='task'` + cost in `output`. |
@@ -96,6 +104,6 @@ When you add a new feature that touches the jobs subsystem, and you hit a bounda
 
 1. Don't invent a workaround in `runtime/subsystems/jobs/`. That's how the old `IJobQueue` tech debt happened.
 2. Write the Phase-1-compatible shape (e.g. parent+child runs, `runAt` delays).
-3. Leave a `// TODO(ADR-025)` (or `025`, `026`, `027`) comment at the call site so the future phase work can grep it.
+3. Leave a `// TODO(signals)` (Phase 3, ADR TBD) or `// TODO(ADR-026)` / `// TODO(ADR-027)` comment at the call site so the future phase work can grep it. (Do NOT tag signals work as `ADR-025` — that ADR is Combiner Subsystems, already shipped.)
 
 If the requirement genuinely can't wait, escalate — draft a new spec against the relevant future-phase ADR rather than sneaking the feature into Phase 1.

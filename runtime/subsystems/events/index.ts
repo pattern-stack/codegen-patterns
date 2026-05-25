@@ -4,8 +4,15 @@
  * Import the module in AppModule, inject the bus via EVENT_BUS token.
  */
 export type { DomainEvent, IEventBus, DrizzleTransaction } from './event-bus.protocol';
+export type {
+  IEventReadPort,
+  ListEventsQuery,
+  EventSummary,
+  EventPage,
+} from './event-read.protocol';
 export {
   EVENT_BUS,
+  EVENT_READ_PORT,
   EVENTS_MODULE_OPTIONS,
   EVENTS_MULTI_TENANT,
   TYPED_EVENT_BUS,

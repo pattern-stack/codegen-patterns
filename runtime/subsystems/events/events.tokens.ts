@@ -12,6 +12,22 @@
 export const EVENT_BUS = 'EVENT_BUS' as const;
 
 /**
+ * Injection token for the read-side `IEventReadPort` over `domain_events`
+ * (OBS-LIST-1).
+ *
+ * Bound by `EventsModule.forRoot` to the same backend instance as
+ * `EVENT_BUS` for the `drizzle` and `memory` backends (both implement
+ * `IEventReadPort`). The `redis` backend retains no history and therefore
+ * does NOT provide this token — consumers composing it (e.g. the
+ * observability combiner) inject it `@Optional()` and degrade to empty
+ * results.
+ *
+ * String constant (not Symbol) so it matches by value across import
+ * boundaries — same convention as `EVENT_BUS`.
+ */
+export const EVENT_READ_PORT = 'EVENT_READ_PORT' as const;
+
+/**
  * Injection token for the generated `TypedEventBus` facade.
  *
  * `TypedEventBus` lives in `runtime/subsystems/events/generated/bus.ts` and
