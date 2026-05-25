@@ -149,6 +149,13 @@ describe('JunctionSyncRepository.syncUpsertOne', () => {
     const conflict = m.capture.conflict[0] as { target: unknown[] };
     expect(conflict.target).toHaveLength(3); // role-inclusive
     expect(proj.id).toBe('o-ext::c-ext::champion');
+    // projection carries the full structural shape from the row, not just `id`
+    // (regression: toProjection previously returned `{ id }` only)
+    expect(proj.opportunityId).toBe('opp-1');
+    expect(proj.contactId).toBe('con-1');
+    expect(proj.role).toBe('champion');
+    expect(proj.createdAt).toEqual(new Date('2026-01-01'));
+    expect(proj.updatedAt).toEqual(new Date('2026-01-02'));
   });
 
   it('throws when the left parent is unresolved (strict)', async () => {
