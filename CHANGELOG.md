@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-25
+
+Bundles four merged PRs (none carried a version bump): the BullMQ backend and
+observability list-reads (features), plus two consumer-facing type-check fixes.
+
+### Added
+
+- **`feat(jobs)` — BullMQ `IJobOrchestrator` backend (BULLMQ-1, #385).** A second
+  orchestrator backend behind the existing core contract, plus the Phase-1 prep:
+  the bridge reserved-pool guard is revived (`JOB_WORKER_MODULE_OPTIONS` export),
+  a `JobWorkerModule.forRoot({ allPools })` option, and a bridge/events-aware
+  standalone `worker.ts` template.
+- **`feat(observability)` — row-level list reads in the combiner (OBS-LIST-1,
+  #384).** `listJobRuns` / `listEvents` / `getCorrelationTimeline` on the
+  observability combiner + composing ports (drizzle + memory).
+
+### Fixed
+
+- **`fix(subsystems)` — type-check under a `multi_tenant:false`, no-events
+  consumer (#383).** The sync schema template now always emits `tenant_id`
+  (the runtime sync code references it unconditionally; `SYNC_MULTI_TENANT`
+  gates enforcement, not the column), and the event-codegen generator falls back
+  to `EventOfType<T> = DomainEvent` (not `never`) when no events are declared, so
+  the bridge `EventFlowService` type-checks. Surfaced by a downstream consumer's
+  CI; codegen-patterns' own suite never hit it.
+- **`fix(clean-lite-ps)` — create-DTO nullable fields are also optional (#382).**
+  `zodChainForCreate` applied `.nullable()` / `.optional()` mutually
+  exclusively, so a nullable, non-required field stayed a required key.
+
 ## [0.8.1] — 2026-05-25
 
 Closes the loop on ambient tenant scoping (0.8.0): adds the **RequesterContext
