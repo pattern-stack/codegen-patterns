@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.8] — 2026-05-25
+
+Fixes a NestJS DI-resolution bug in cross-entity module wiring. A generated service that injects a sibling entity's **repository** — junction `.list()` composition (CGP-60), EAV value→definition resolution (`eav_value_table`) — failed at runtime because the sibling module exported only its **service**, never its repository (ADR-002). The code typechecked (`tsc` can't see DI wiring), so it shipped and only surfaced on a consumer's first `NestFactory` boot (dealbrain-integrations).
+
+### Fixed
+
+- **`fix(templates)` — entity modules export their repository.** `templates/entity/new/clean-lite-ps/module.ejs.t` now emits `exports: [<Service>, <Repository>]`. Cross-module consumers already imported the sibling *module*; the repository was just never exported, so DI couldn't resolve it. Exporting it means the consumer injects the **home-module instance** — the only place the repo's own dependencies are wired (e.g. an EAV entity's repository injects `FieldValueService` for the sync dual-write transaction, so it can only be constructed in its home module; local-providing it elsewhere can't satisfy that dep). ADR-002 revised: the repository is part of a module's public surface; use-case internals stay unexported.
+
+### Added
+
+- **DI-resolution smoke gate (`test/smoke/verify-boot.ts`).** Boots the generated `AppModule` via `NestFactory.create` + `app.init()` — instantiating every provider across every module — wired into the junction smoke (`run-smoke-junction.ts` step 10). Closes the gap that let the bug ship: the junction + EAV pipelines were gated only by `tsc` + grep, neither of which exercises runtime DI. Verified: reverting the repository export passes `tsc` but fails the boot gate with the exact `UnknownDependencies` error.
+
 ## [0.7.3] — 2026-05-23
 
 Auto-emits `<generated>/subsystems.ts` — a `SUBSYSTEM_MODULES` barrel of `forRoot()` calls for every installed subsystem. Removes the "did I forget to wire `SyncModule`?" class of silent-failure bug when a subsystem is declared in `subsystems.install` but never imported into AppModule.

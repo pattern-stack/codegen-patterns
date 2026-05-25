@@ -379,6 +379,27 @@ async function main(): Promise<number> {
       assertBarrelIncludes(result.projectDir, pluralName, architectureArg);
     }
 
+    // 10. DI-resolution gate — boot the generated AppModule. `tsc` + grep
+    // cannot catch a junction module that typechecks but fails to resolve its
+    // injected parent repos at runtime (the wiring regression fixed in 0.7.8).
+    // NestFactory.create + init instantiates the whole graph, so an unresolved
+    // cross-module dependency throws here, not on a consumer's first boot.
+    if (exitCode === 0) {
+      log('booting AppModule (NestFactory DI resolution gate)');
+      const boot = runSilent(
+        `bun ${path.join(import.meta.dir, 'verify-boot.ts')} ${result.projectDir}`,
+        result.projectDir,
+      );
+      if (boot.code !== 0) {
+        console.error(boot.out);
+        console.error(boot.err);
+        logError('AppModule boot failed — DI graph did not resolve');
+        exitCode = 1;
+      } else {
+        log('boot OK (AppModule DI graph resolves)');
+      }
+    }
+
   } catch (err: unknown) {
     logError(err instanceof Error ? err.message : String(err));
     if (err instanceof Error && err.stack) {
