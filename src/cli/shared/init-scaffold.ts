@@ -120,6 +120,8 @@ function loadRuntimeFile(relPath: string): string {
 const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
 	// base-classes — consumer-facing inheritance targets
 	{ runtime: 'base-classes/base-repository.ts', target: 'src/shared/base-classes/base-repository.ts' },
+	// Ambient tenant scope — imported by base-repository.ts (scopePredicate)
+	{ runtime: 'base-classes/tenant-context.ts', target: 'src/shared/base-classes/tenant-context.ts' },
 	{ runtime: 'base-classes/base-service.ts', target: 'src/shared/base-classes/base-service.ts' },
 	{ runtime: 'base-classes/synced-entity-repository.ts', target: 'src/shared/base-classes/synced-entity-repository.ts' },
 	{ runtime: 'base-classes/synced-entity-service.ts', target: 'src/shared/base-classes/synced-entity-service.ts' },

@@ -7,8 +7,20 @@
  */
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { BaseRepository, type BehaviorConfig, type ListOptions } from '../../../../runtime/base-classes/base-repository';
+import {
+  withRequester,
+  withOrgScope,
+  withSuperuserScope,
+} from '../../../../runtime/base-classes/tenant-context';
 import type { DrizzleClient } from '../../../../runtime/types/drizzle';
-import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  timestamp,
+  QueryBuilder,
+  type PgTableWithColumns,
+} from 'drizzle-orm/pg-core';
+import { eq, type SQL } from 'drizzle-orm';
 
 // ============================================================================
 // Test entity and table setup
@@ -386,4 +398,125 @@ describe('BaseRepository', () => {
     });
   });
 
+});
+
+// ============================================================================
+// Ambient tenant scoping (RequesterContext via AsyncLocalStorage)
+// ============================================================================
+
+/**
+ * These tests render real Drizzle SQL via a QueryBuilder-backed `db` so we can
+ * assert the actual WHERE clause `baseQuery` produces — the mock `db` above
+ * only records call shapes and cannot show predicate content.
+ */
+const widgets = pgTable('widget', {
+  id: text('id').primaryKey(),
+  userId: text('user_id'),
+  deletedAt: timestamp('deleted_at'),
+});
+
+class ScopingTestRepo extends BaseRepository<{ id: string; userId: string }> {
+  readonly table = widgets as unknown as PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  protected readonly behaviors: BehaviorConfig;
+  constructor(behaviors: Partial<BehaviorConfig> = {}) {
+    // A QueryBuilder is enough to render .toSQL() for SELECTs (no driver needed).
+    super(new QueryBuilder() as unknown as DrizzleClient);
+    this.behaviors = { timestamps: false, softDelete: false, userTracking: true, ...behaviors };
+  }
+  // Expose protected members for assertions.
+  pred(): SQL | undefined {
+    return this.scopePredicate();
+  }
+  renderFindById(id: string): string {
+    return this.baseQuery(eq(this.table['id'], id)).toSQL().sql;
+  }
+}
+
+class StrictScopingTestRepo extends ScopingTestRepo {
+  protected readonly scopeEnforcement = 'strict' as const;
+}
+
+describe('BaseRepository — ambient tenant scoping', () => {
+  describe('scopePredicate gating', () => {
+    it('returns undefined when userTracking is off (even inside a context)', async () => {
+      const repo = new ScopingTestRepo({ userTracking: false });
+      await withRequester({ userId: 'u1', organizationId: null }, async () => {
+        expect(repo.pred()).toBeUndefined();
+      });
+    });
+
+    it('returns undefined when userTracking is on but no context is active (lenient default)', () => {
+      const repo = new ScopingTestRepo();
+      expect(repo.pred()).toBeUndefined();
+    });
+
+    it('throws when userTracking is on, strict, and no context is active', () => {
+      const repo = new StrictScopingTestRepo();
+      expect(() => repo.pred()).toThrow(/No requester context active/);
+    });
+
+    it('does not scope superuser reads', async () => {
+      const repo = new ScopingTestRepo();
+      await withSuperuserScope('admin-1', async () => {
+        expect(repo.pred()).toBeUndefined();
+      });
+    });
+  });
+
+  describe('rendered WHERE clauses', () => {
+    it('user scope filters by user_id', async () => {
+      const repo = new ScopingTestRepo();
+      await withRequester({ userId: 'u1', organizationId: null }, async () => {
+        const sql = repo.renderFindById('w1');
+        expect(sql).toContain('"user_id"');
+        expect(sql).toMatch(/"widget"\."user_id"\s*=/);
+        expect(sql).toContain('"id"');
+      });
+    });
+
+    it('org scope filters by user_id IN (member list)', async () => {
+      const repo = new ScopingTestRepo();
+      await withOrgScope('u1', 'org-1', ['u1', 'u2', 'u3'], async () => {
+        const sql = repo.renderFindById('w1');
+        expect(sql).toMatch(/"user_id"\s+in\s*\(/i);
+      });
+    });
+
+    it('org scope with no members fails closed (matches nothing)', async () => {
+      const repo = new ScopingTestRepo();
+      await withOrgScope('u1', 'org-1', [], async () => {
+        const sql = repo.renderFindById('w1').toLowerCase();
+        expect(sql).toContain('false');
+        expect(sql).not.toMatch(/"user_id"\s+in/);
+      });
+    });
+
+    it('superuser scope renders no user_id filter', async () => {
+      const repo = new ScopingTestRepo();
+      await withSuperuserScope('admin-1', async () => {
+        // user_id appears in the SELECT projection; assert it is not a predicate.
+        const sql = repo.renderFindById('w1');
+        expect(sql).not.toMatch(/"user_id"\s*(=|in)/i);
+      });
+    });
+
+    it('unscoped repo renders no user_id filter even inside a context', async () => {
+      const repo = new ScopingTestRepo({ userTracking: false });
+      await withRequester({ userId: 'u1', organizationId: null }, async () => {
+        const sql = repo.renderFindById('w1');
+        expect(sql).not.toMatch(/"user_id"\s*(=|in)/i);
+      });
+    });
+
+    it('combines soft-delete + scope + leaf predicate in one WHERE', async () => {
+      const repo = new ScopingTestRepo({ softDelete: true });
+      await withRequester({ userId: 'u1', organizationId: null }, async () => {
+        const sql = repo.renderFindById('w1').toLowerCase();
+        expect(sql).toContain('deleted_at');
+        expect(sql).toContain('user_id');
+        // single combined WHERE, AND-joined (not a dropped guard)
+        expect(sql).toContain(' and ');
+      });
+    });
+  });
 });
