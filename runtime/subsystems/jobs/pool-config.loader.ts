@@ -194,6 +194,17 @@ export function allNonReservedPoolNames(config: PoolConfig): string[] {
   return out;
 }
 
+/**
+ * Names of **every** pool in the resolved config, reserved `events_*` lanes
+ * included. The activation set for a standalone worker booted with
+ * `JobWorkerModule.forRoot({ allPools: true })` (BULLMQ-1 Phase 1) — the
+ * single worker process drains both user pools and the bridge's reserved
+ * pools so wrapper `job_run` rows are never stranded.
+ */
+export function allPoolNames(config: PoolConfig): string[] {
+  return [...config.keys()];
+}
+
 // ─── internals ──────────────────────────────────────────────────────────────
 
 interface UserPoolShape {

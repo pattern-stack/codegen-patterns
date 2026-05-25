@@ -38,7 +38,7 @@ Per CLAUDE.md, backends are core-contract + opt-in extensions. The core contract
 
 - **Drizzle backend** — core contract implemented. Extensions reserved: `listen_notify`, `poll_interval_ms`.
 - **Memory backend** — core contract for tests. No extensions.
-- **BullMQ backend** — **does not exist yet.** Reserved for Phase 6+. Do not document or pretend otherwise.
+- **BullMQ backend** — **shipped (BULLMQ-1, opt-in via `jobs.backend: bullmq`).** `BullMQJobOrchestrator extends DrizzleJobOrchestrator`: Postgres `job_run` stays the domain source of truth (scoping/hierarchy/`listForScope` unchanged); BullMQ replaces only the claim/dispatch half (`start`→`queue.add`, `BullMQJobWorker` per pool). Extensions: `bull_board` (config carried; consumer mounts), `FlowProducer` exposure (`.flowProducer()`), `queue_prefix`. Cron/`upsertJobScheduler` is out of scope (ADR-025). `jobId = sha1(idempotencyKey)` (colon-safe + stable; the dedup primitive). Default backend stays `drizzle` until the broker-up port-promotion gate runs green in a consumer (see `docs/specs/BULLMQ-1.md §Verification`).
 
 When adding features, default to the core contract. Only push something into `extensions:` when it is genuinely backend-specific (e.g. Bull Board, `LISTEN/NOTIFY`).
 
@@ -170,13 +170,13 @@ DB column is plain `text` with no CHECK constraint — type safety is TS-only, o
 - **Do not enqueue on `IJobQueue`.** It doesn't exist. Use `IJobOrchestrator.start(type, input, opts)`.
 - **Do not add a `job_queue` table or an executor port.** The prior two-layer design was collapsed intentionally; the single-layer claim query is the architecture.
 - **Do not write `// deprecated` or emit an upgrade command.** No users exist. Replace cleanly. See CLAUDE.md operating principles.
-- **Do not build a "uniform BullMQ/Drizzle interface that hides everything."** Core contract is the portability floor; backend extensions live under `codegen.config.yaml: jobs.extensions.<backend>`.
+- **Do not build a "uniform BullMQ/Drizzle interface that hides everything."** Core contract is the portability floor; backend extensions live under `codegen.config.yaml: jobs.extensions.<backend>`. The shipped BullMQ backend (BULLMQ-1) follows this: core `IJobOrchestrator` is portable; `bull_board` / `FlowProducer` / `queue_prefix` are opt-in extensions.
 - **Do not target a reserved pool** from a `@JobHandler`. Module init will throw.
 - **Do not use `Date.now()` or randomness for `step_id`.** Memoization requires stable ids.
 - **Do not invent jobs-as-YAML codegen.** ADR-022 explicitly rejected it. Users write TypeScript `@JobHandler` classes; codegen only ships the system around them.
 - **Do not call `ctx.waitFor` / `ctx.signal` / `ctx.sleep`.** Phase 3 only. If you need to pause work in Phase 1, split into parent + child runs and let `ctx.spawnChild` drive sequencing.
 - **Do not add a CHECK constraint to `scope_entity_type`.** Type safety lives at the TS layer; the column stays free-text so a new scopeable entity is codegen-only.
-- **Do not document a BullMQ backend.** It is Phase 6+ and does not exist. Mention it only as a reserved extension slot, never as available today.
+- **The BullMQ backend is shipped (BULLMQ-1), opt-in.** Document it as available behind `jobs.backend: bullmq` — but note the port-promotion gate (broker-up contract suite) lands in a consumer repo, so the default stays `drizzle`. Do not pretend it's the default or that the broker round-trip has been validated in codegen-patterns CI.
 
 ## Quick-start pointer
 

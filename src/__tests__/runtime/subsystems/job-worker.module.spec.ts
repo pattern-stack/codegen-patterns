@@ -44,6 +44,7 @@ import {
   RESERVED_POOL_NAMES,
   _resetPoolConfigCacheForTests,
   allNonReservedPoolNames,
+  allPoolNames,
   loadPoolConfig,
 } from '../../../../runtime/subsystems/jobs/pool-config.loader';
 import type {
@@ -183,6 +184,23 @@ describe('loadPoolConfig', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it('allPoolNames includes the three reserved events_* pools (BULLMQ-1)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
+    try {
+      const config = loadPoolConfig(join(tmp, 'codegen.config.yaml'));
+      const names = allPoolNames(config);
+      expect(names.sort()).toEqual([
+        'batch',
+        'events_change',
+        'events_inbound',
+        'events_outbound',
+        'interactive',
+      ]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 // ─── JobWorkerModule — boot lifecycle ───────────────────────────────────────
@@ -292,6 +310,65 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
           mode: 'embedded',
           backend: 'memory',
           configPath,
+          pools: ['batch'],
+          workerFactory: () => {
+            const w = new StubWorker();
+            stubs.push(w);
+            return w;
+          },
+        }),
+      ],
+    }).compile();
+    await moduleRef.init();
+
+    expect(stubs.length).toBe(1);
+    await moduleRef.close();
+  });
+
+  it('allPools: true spawns a worker for every pool, reserved lanes included (BULLMQ-1)', async () => {
+    const TYPE = registerTestType('worker-mod-test.all-pools');
+
+    @JobHandler(TYPE, { pool: 'batch' })
+    class _H extends JobHandlerBase<unknown, unknown> {
+      async run(): Promise<unknown> {
+        return {};
+      }
+    }
+    void _H;
+
+    const stubs: StubWorker[] = [];
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        JobWorkerModule.forRoot({
+          mode: 'standalone',
+          backend: 'memory',
+          configPath,
+          allPools: true,
+          workerFactory: () => {
+            const w = new StubWorker();
+            stubs.push(w);
+            return w;
+          },
+        }),
+      ],
+    }).compile();
+    await moduleRef.init();
+
+    // Five framework pools in a fresh tmp dir: interactive, batch, and the
+    // three reserved events_* lanes.
+    expect(stubs.length).toBe(5);
+    await moduleRef.close();
+  });
+
+  it('explicit pools list wins over allPools (precedence)', async () => {
+    const stubs: StubWorker[] = [];
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        JobWorkerModule.forRoot({
+          mode: 'standalone',
+          backend: 'memory',
+          configPath,
+          allPools: true,
           pools: ['batch'],
           workerFactory: () => {
             const w = new StubWorker();

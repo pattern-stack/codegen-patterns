@@ -47,10 +47,19 @@ import type { IJobRunService } from './job-run-service.protocol';
 import type { IJobStepService } from './job-step-service.protocol';
 import {
   allNonReservedPoolNames,
+  allPoolNames,
   loadPoolConfig,
   type PoolConfig,
 } from './pool-config.loader';
 import { JobWorker, type JobWorkerOptions } from './job-worker';
+import { BullMQJobWorker } from './job-worker.bullmq-backend';
+import type { ConnectionOptions } from 'bullmq';
+import {
+  BULLMQ_CONNECTION,
+  BULLMQ_RESOLVED_CONFIG,
+  resolvePoolQueueName,
+  type BullMqResolvedConfig,
+} from './bullmq.config';
 import {
   BootValidationError,
   ReservedPoolViolationError,
@@ -62,10 +71,11 @@ export interface JobWorkerModuleOptions {
   mode: 'embedded' | 'standalone';
   /**
    * Threads into the internal `JobsDomainModule.forRoot({ backend })`
-   * import. Default `'drizzle'`. The boot-time validator runs only when
-   * this is `'drizzle'`.
+   * import. Default `'drizzle'`. The boot-time validator runs for both
+   * `'drizzle'` and `'bullmq'` (both persist `job` rows to Postgres);
+   * `'memory'` skips it.
    */
-  backend?: 'drizzle' | 'memory';
+  backend?: 'drizzle' | 'memory' | 'bullmq';
   /**
    * Active pool names. Defaults to every non-reserved pool in the resolved
    * config (i.e. `interactive`, `batch`, plus any user-defined pools).
@@ -73,6 +83,18 @@ export interface JobWorkerModuleOptions {
    * horizontally.
    */
   pools?: string[];
+  /**
+   * BULLMQ-1 Phase 1 — when `true`, `onModuleInit` activates **every** pool
+   * in the resolved config, including the reserved `events_*` lanes. This is
+   * how the standalone worker (`worker.ts`) drains bridge wrappers without
+   * the consumer hand-listing `...BRIDGE_RESERVED_POOLS`. Mutually exclusive
+   * with an explicit `pools` list — when both are set, `pools` wins (explicit
+   * beats blanket) and `allPools` is ignored.
+   *
+   * `BridgeModule`'s reserved-pool guard short-circuits to "pass" when this
+   * is `true`, since every reserved pool is provably being polled.
+   */
+  allPools?: boolean;
   /** SIGTERM drain budget. Default 30_000 ms. */
   shutdownTimeoutMs?: number;
   /**
@@ -128,6 +150,17 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
      */
     @Optional() @Inject(DRIZZLE) private readonly db: DrizzleClient | null = null,
     private readonly moduleRef?: ModuleRef,
+    /**
+     * BULLMQ-1 — resolved BullMQ connection + config, only bound when the
+     * inner `JobsDomainModule` was booted with `backend: 'bullmq'`. `@Optional()`
+     * so drizzle/memory boots see `null`.
+     */
+    @Optional()
+    @Inject(BULLMQ_CONNECTION)
+    private readonly bullConnection: ConnectionOptions | null = null,
+    @Optional()
+    @Inject(BULLMQ_RESOLVED_CONFIG)
+    private readonly bullConfig: BullMqResolvedConfig | null = null,
   ) {}
 
   // ============================================================================
@@ -166,8 +199,14 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
     }
 
     // (6) Resolve active pool list and spawn one worker per pool.
-    const activePools =
-      this.options.pools ?? allNonReservedPoolNames(poolConfig);
+    //     Precedence: explicit `pools` > `allPools` (incl. reserved) >
+    //     non-reserved default. BULLMQ-1 Phase 1 adds the `allPools` rung so
+    //     the standalone worker drains the reserved `events_*` bridge lanes.
+    const activePools = this.options.pools
+      ? this.options.pools
+      : this.options.allPools
+        ? allPoolNames(poolConfig)
+        : allNonReservedPoolNames(poolConfig);
 
     for (const poolName of activePools) {
       const def = poolConfig.get(poolName);
@@ -193,14 +232,20 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
       };
       const worker = this.options.workerFactory
         ? this.options.workerFactory(workerOptions)
-        : this.spawnWorker(workerOptions);
+        : backend === 'bullmq'
+          ? this.spawnBullMQWorker(poolName, def.queue, def.concurrency, poolConfig)
+          : this.spawnWorker(workerOptions);
       // `JobWorker` extends Nest's lifecycle hooks but the worker isn't
       // a Nest provider here (we manage the array ourselves). Call
-      // `onModuleInit` synchronously to start the polling loop.
-      worker.onModuleInit();
+      // `onModuleInit` to start the loop. The Drizzle/stub workers return
+      // void; `BullMQJobWorker.onModuleInit` is async (it lazily loads the
+      // optional `bullmq` package), so we `await` — awaiting a `void` is a
+      // harmless no-op for the synchronous workers.
+      await worker.onModuleInit();
       this.workers.push(worker);
       this.logger.log(
-        `JobWorker started: pool='${poolName}' (queue='${def.queue}') concurrency=${def.concurrency}`,
+        `JobWorker started: pool='${poolName}' (queue='${def.queue}') ` +
+          `concurrency=${def.concurrency} backend='${backend}'`,
       );
     }
   }
@@ -220,6 +265,20 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
       }
     }
     this.workers.length = 0;
+
+    // BULLMQ-1 — close the orchestrator's producer-side Queue/FlowProducer
+    // connections so the process can exit cleanly. The orchestrator is the
+    // BullMQ producer; workers are the consumers (closed above).
+    const orch = this.orchestrator as { closeConnections?: () => Promise<void> };
+    if (typeof orch.closeConnections === 'function') {
+      try {
+        await orch.closeConnections();
+      } catch (err) {
+        this.logger.error(
+          `BullMQ orchestrator connection close failed: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   // ============================================================================
@@ -296,6 +355,54 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
       this.moduleRef,
     );
   }
+
+  /**
+   * BULLMQ-1 — spawn a per-pool `BullMQJobWorker`. Requires the Drizzle
+   * client (the worker drives `job_run` as the source of truth) AND the
+   * resolved BullMQ connection (bound by `JobsDomainModule` when
+   * `backend: 'bullmq'`). The queue name is derived identically to the
+   * orchestrator's `dispatch` via `resolvePoolQueueName(pool, …)` so producer
+   * and consumer agree.
+   */
+  private spawnBullMQWorker(
+    pool: string,
+    _queueAlias: string,
+    concurrency: number,
+    poolConfig: PoolConfig,
+  ): BullMQJobWorker {
+    if (!this.db) {
+      throw new Error(
+        `JobWorkerModule: BullMQ worker spawning requires the Drizzle client ` +
+          `(no DRIZZLE provider available) — job_run remains the source of truth.`,
+      );
+    }
+    if (!this.bullConnection) {
+      throw new Error(
+        `JobWorkerModule: BullMQ worker spawning requires a resolved ` +
+          `BULLMQ_CONNECTION. Ensure JobsDomainModule was booted with ` +
+          `backend: 'bullmq'.`,
+      );
+    }
+    if (!this.moduleRef) {
+      throw new Error(
+        `JobWorkerModule: ModuleRef not available — cannot construct ` +
+          `BullMQJobWorker with handler DI support.`,
+      );
+    }
+    const queueName = resolvePoolQueueName(pool, this.bullConfig, poolConfig);
+    return new BullMQJobWorker(
+      this.db,
+      this.orchestrator,
+      this.stepService,
+      {
+        pool,
+        queueName,
+        concurrency,
+        connection: this.bullConnection,
+      },
+      this.moduleRef,
+    );
+  }
 }
 
 @Module({})
@@ -314,7 +421,14 @@ export class JobWorkerModule {
         { provide: JOB_WORKER_MODULE_OPTIONS, useValue: opts },
         JobWorkerOrchestrator,
       ],
-      exports: [],
+      // BULLMQ-1 Phase 1 — export the options token so `BridgeModule`'s
+      // reserved-pool guard (`onModuleInit`) can actually inject it.
+      // Previously `exports: []` left the `@Optional()` inject resolving to
+      // `undefined` and the guard silently no-opped (a dead check). With the
+      // token exported the guard fires for real; consumers that omit the
+      // reserved pools (and don't set `allPools`) now fail fast with
+      // `BridgeReservedPoolsNotPolledError` — which is correct.
+      exports: [JOB_WORKER_MODULE_OPTIONS],
     };
   }
 }
