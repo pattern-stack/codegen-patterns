@@ -10,6 +10,11 @@
     "noEmit": true,
     "ignoreDeprecations": "6.0",
     "baseUrl": "..",
+    // Generated/runtime code uses node globals (process.env, crypto.randomUUID).
+    // Declared explicitly so the typecheck does not depend on @types/node being
+    // pulled in transitively by an optional-peer import (e.g. ioredis). Real
+    // consumer projects always have @types/node.
+    "types": ["node"],
     "paths": {
       "@shared/subsystems/*": ["runtime/subsystems/*"],
       "@shared/constants/*": ["runtime/constants/*"],
