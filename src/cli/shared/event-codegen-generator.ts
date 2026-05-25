@@ -327,8 +327,13 @@ export function buildTypesContent(events: EventDefinition[]): string {
 			`export type AppDomainEvent = never;\n` +
 			'\n' +
 			`export type EventTypeName = string;\n` +
-			`export type EventOfType<T extends EventTypeName> = never;\n` +
-			`export type PayloadOfType<T extends EventTypeName> = never;\n`
+			// No registered events: degrade to the base DomainEvent shape rather
+			// than `never`, so backend-agnostic consumers that type an event
+			// parameter generically (e.g. the bridge EventFlowService, which
+			// reads event.type / event.id) still typecheck. `never` here would
+			// make every property access an error for empty-registry installs.
+			`export type EventOfType<T extends EventTypeName> = DomainEvent;\n` +
+			`export type PayloadOfType<T extends EventTypeName> = DomainEvent['payload'];\n`
 		);
 	}
 

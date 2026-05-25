@@ -28,6 +28,11 @@ describe('buildSubsystemBarrel', () => {
 		expect(out.content).toContain(
 			'export const SUBSYSTEM_MODULES: DynamicModule[] = [];',
 		);
+		// The empty array is typed `DynamicModule[]`, so the import must be
+		// present even when nothing is composed (else TS2304 in the consumer).
+		expect(out.content).toContain(
+			"import type { DynamicModule } from '@nestjs/common';",
+		);
 		expect(out.emitted).toEqual([]);
 		expect(out.skipped).toEqual([]);
 	});

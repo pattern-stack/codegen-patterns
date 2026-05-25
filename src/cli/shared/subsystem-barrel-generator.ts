@@ -206,8 +206,17 @@ export function buildSubsystemBarrel(
 	}
 
 	if (allCalls.length === 0) {
+		// No composable subsystems installed. Still emit the `DynamicModule`
+		// import — the empty array is typed `DynamicModule[]`, so omitting the
+		// import leaves a dangling type reference (TS2304). This branch is now
+		// reachable for real (a project with no events/jobs/bridge/sync
+		// installed), not just hypothetically — subsystem detection no longer
+		// treats a baseline-vendored `*.protocol.ts` as an install.
 		return {
-			content: HEADER + `export const SUBSYSTEM_MODULES: DynamicModule[] = [];\n`,
+			content:
+				HEADER +
+				`import type { DynamicModule } from '@nestjs/common';\n\n` +
+				`export const SUBSYSTEM_MODULES: DynamicModule[] = [];\n`,
 			emitted,
 			skipped,
 		};
