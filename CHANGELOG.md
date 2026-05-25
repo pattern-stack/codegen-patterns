@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-05-25
+
+Closes the loop on ambient tenant scoping (0.8.0): adds the **RequesterContext
+boundary** that turns an authenticated request into ambient scope, so scoping
+actually engages over HTTP — including Swagger's "Authorize" bearer flow. See
+ADR-0002 (`ai-docs/adrs/0002-requester-context-boundary.md`).
+
+### Added
+
+- **`feat(auth)` — `RequesterContextMiddleware` + `installRequesterContext`.** New
+  `runtime/subsystems/auth/middleware/requester-context.ts`. The Express-style
+  middleware resolves the requester via the consumer's `IUserContext` and runs the
+  rest of the request inside `withRequester(...)`, so every downstream repository
+  read/write is auto-scoped (ADR-0001) with no threaded `userId`. ALS-correct
+  (middleware, not interceptor). `installRequesterContext(app)` is the one-liner
+  for `main.ts`: resolves `AUTH_USER_CONTEXT` from the root container
+  (`app.get(token, { strict: false })`), no-ops with a warning when unbound.
+  Exported from the auth barrel. Verified over real HTTP — two concurrent requests
+  with different bearer tokens each observe their own scope; an unauthenticated
+  request observes none (`requester-context.http.spec.ts`).
+- **`feat(auth)` — optional `IUserContext.resolveRequester(req)`.** Supplies the
+  full `org`/`superuser` `RequesterContext` (org member list resolved at the
+  boundary). Backward compatible: when absent, the boundary derives plain `'user'`
+  scope from `getCurrentUserId`.
+
+### Changed
+
+- **`feat(scaffold)` — generated `main.ts` persists Swagger auth.**
+  `SwaggerModule.setup(...)` now passes `{ swaggerOptions: { persistAuthorization:
+  true } }`, so the "Authorize" bearer token survives reloads and keeps flowing as
+  the `Authorization` header the boundary reads. The generated `main.ts` also
+  carries a commented `installRequesterContext(app)` hint (not a static import — so
+  scaffolds without the auth subsystem still compile).
+
+### Notes
+
+- Wiring is opt-in: add `installRequesterContext(app)` to your bootstrap after
+  `NestFactory.create`. Auto-patching it in at `subsystem install auth` time (like
+  the Swagger block) is a deferred follow-up (ADR-0002). A tRPC-side boundary and
+  junction-repo scoping remain deferred.
+
 ## [0.8.0] — 2026-05-25
 
 Adds **ambient tenant scoping** to `BaseRepository`: user-owned repos filter every
