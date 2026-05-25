@@ -112,7 +112,13 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
     <%= searchQuery.useCaseClassName %>,
 <% } -%>
   ],
-  exports: [<%= classNames.service %>],  // Only service is exported (ADR-002)
+  // ADR-002 (revised): the service is the public API; the repository is ALSO
+  // exported so sibling modules that compose this entity cross-module (junction
+  // `.list()`, EAV value→definition resolution) inject the home-module instance
+  // — the only place the repo's own deps are wired (e.g. an EAV entity's repo
+  // injects FieldValueService for the #374 sync dual-write tx). Local-providing
+  // such a repo elsewhere can't satisfy those deps. Use-case internals stay unexported.
+  exports: [<%= classNames.service %>, <%= classNames.repository %>],
 })
 export class <%= classNames.module %> implements OnModuleInit {
   // OPENAPI-2: register this entity's Zod schemas with the shared
