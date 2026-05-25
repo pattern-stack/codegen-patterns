@@ -24,10 +24,17 @@ import {
 import { DrizzleJobOrchestrator } from './job-orchestrator.drizzle-backend';
 import { DrizzleJobRunService } from './job-run-service.drizzle-backend';
 import { DrizzleJobStepService } from './job-step-service.drizzle-backend';
+import { BullMQJobOrchestrator } from './job-orchestrator.bullmq-backend';
 import { MemoryJobOrchestrator } from './job-orchestrator.memory-backend';
 import { MemoryJobRunService } from './job-run-service.memory-backend';
 import { MemoryJobStepService } from './job-step-service.memory-backend';
 import { MemoryJobStore } from './memory-job-store';
+import {
+  BULLMQ_CONNECTION,
+  BULLMQ_RESOLVED_CONFIG,
+  resolveBullMqConfig,
+  type BullMqExtensionsConfig,
+} from './bullmq.config';
 
 /**
  * Drizzle backend extensions surface. None are wired into the Drizzle
@@ -44,19 +51,8 @@ export interface DrizzleBackendExtensions {
   pollIntervalMs?: number;
 }
 
-// Phase 6+ — typed-but-unimplemented BullMQ extension slot. Kept as a
-// commented-out interface to make the future shape discoverable without
-// shipping dead runtime code. Per CLAUDE.md "no feature-flag-guarded dead
-// code" we don't ship the option in `JobsDomainModuleOptions.extensions`
-// either; flip it on when JOB-Phase-6 lands the BullMQ orchestrator.
-//
-// export interface BullMqBackendExtensions {
-//   bullBoard?: { enabled: boolean; mountPath?: string };
-//   redisUrl?: string;
-// }
-
 export interface JobsDomainModuleOptions {
-  backend: 'drizzle' | 'memory';
+  backend: 'drizzle' | 'memory' | 'bullmq';
   /**
    * Backend-specific extensions. Only the matching backend's extensions
    * are read at boot; non-matching keys are ignored. This is the
@@ -64,7 +60,12 @@ export interface JobsDomainModuleOptions {
    */
   extensions?: {
     drizzle?: DrizzleBackendExtensions;
-    // bullmq?: BullMqBackendExtensions;   // Phase 6+
+    /**
+     * BullMQ backend extensions (BULLMQ-1). Snake_case mirrors the YAML
+     * under `jobs.extensions.bullmq`. `redis_url` falls back to
+     * `process.env.REDIS_URL` then `redis://localhost:6379`.
+     */
+    bullmq?: BullMqExtensionsConfig;
   };
   /** Multi-tenancy opt-in. Wired by JOB-8; module signature stays stable. */
   multiTenant?: boolean;
@@ -73,8 +74,6 @@ export interface JobsDomainModuleOptions {
 @Module({})
 export class JobsDomainModule {
   static forRoot(opts: JobsDomainModuleOptions): DynamicModule {
-    void opts.extensions; // typed reservation; consumed by Phase 6+ wiring
-
     const multiTenant = opts.multiTenant ?? false;
 
     const providers: Provider[] = [
@@ -98,22 +97,42 @@ export class JobsDomainModule {
       providers.push({ provide: JOB_ORCHESTRATOR, useExisting: MemoryJobOrchestrator });
       providers.push(MemoryJobRunService);
       providers.push({ provide: JOB_RUN_SERVICE, useExisting: MemoryJobRunService });
+    } else if (opts.backend === 'bullmq') {
+      // BULLMQ-1 — BullMQ orchestrator over a Postgres source of truth. The
+      // run/step services stay Drizzle (domain reads + `listForScope` are
+      // Postgres queries, unchanged per spec). Only the orchestrator's
+      // claim/dispatch half swaps to BullMQ.
+      const resolved = resolveBullMqConfig(opts.extensions?.bullmq);
+      providers.push({ provide: BULLMQ_CONNECTION, useValue: resolved.connection });
+      providers.push({ provide: BULLMQ_RESOLVED_CONFIG, useValue: resolved });
+      providers.push({ provide: JOB_ORCHESTRATOR, useClass: BullMQJobOrchestrator });
+      providers.push({ provide: JOB_RUN_SERVICE, useClass: DrizzleJobRunService });
+      providers.push({ provide: JOB_STEP_SERVICE, useClass: DrizzleJobStepService });
     } else {
       providers.push({ provide: JOB_ORCHESTRATOR, useClass: DrizzleJobOrchestrator });
       providers.push({ provide: JOB_RUN_SERVICE, useClass: DrizzleJobRunService });
       providers.push({ provide: JOB_STEP_SERVICE, useClass: DrizzleJobStepService });
     }
 
+    const exports = [
+      JOB_ORCHESTRATOR,
+      JOB_RUN_SERVICE,
+      JOB_STEP_SERVICE,
+      JOBS_MULTI_TENANT,
+    ];
+    // BULLMQ-1 — only export the BullMQ tokens when they were actually
+    // provided. Nest throws "exported but not provided" otherwise. Exported so
+    // JobWorkerModule (which imports this module) can read the resolved
+    // connection/config to spawn BullMQ workers.
+    if (opts.backend === 'bullmq') {
+      exports.push(BULLMQ_CONNECTION, BULLMQ_RESOLVED_CONFIG);
+    }
+
     return {
       module: JobsDomainModule,
       global: true,
       providers,
-      exports: [
-        JOB_ORCHESTRATOR,
-        JOB_RUN_SERVICE,
-        JOB_STEP_SERVICE,
-        JOBS_MULTI_TENANT,
-      ],
+      exports,
     };
   }
 }

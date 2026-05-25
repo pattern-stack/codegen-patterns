@@ -79,6 +79,24 @@ export type {
 export { DrizzleJobOrchestrator } from './job-orchestrator.drizzle-backend';
 export { DrizzleJobRunService } from './job-run-service.drizzle-backend';
 export { DrizzleJobStepService } from './job-step-service.drizzle-backend';
+
+// ─── BULLMQ-1: BullMQ backend (additive; opt-in via jobs.backend: bullmq) ──
+export {
+  BullMQJobOrchestrator,
+  sha1JobId,
+} from './job-orchestrator.bullmq-backend';
+export {
+  BullMQJobWorker,
+  type BullMQJobWorkerOptions,
+} from './job-worker.bullmq-backend';
+export {
+  BULLMQ_CONNECTION,
+  BULLMQ_RESOLVED_CONFIG,
+  resolveBullMqConfig,
+  resolvePoolQueueName,
+  type BullMqExtensionsConfig,
+  type BullMqResolvedConfig,
+} from './bullmq.config';
 export {
   JobWorker,
   JOB_WORKER_OPTIONS,

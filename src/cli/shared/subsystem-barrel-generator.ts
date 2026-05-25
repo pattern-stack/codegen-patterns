@@ -85,6 +85,47 @@ function quoteOpts(opts: Record<string, unknown>): string {
 	);
 }
 
+/**
+ * Serialise a plain config object to a TS object literal (single-quoted
+ * strings). Used to inline the BullMQ extension block into the generated
+ * barrel. Only handles the value shapes that appear under
+ * `jobs.extensions.bullmq` (strings, numbers, booleans, nested objects).
+ */
+function jsonToTs(value: unknown): string {
+	if (value === null || value === undefined) return 'undefined';
+	if (typeof value === 'string') return `'${value.replace(/'/g, "\\'")}'`;
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	if (Array.isArray(value)) return `[${value.map(jsonToTs).join(', ')}]`;
+	if (typeof value === 'object') {
+		const entries = Object.entries(value as Record<string, unknown>).filter(
+			([, v]) => v !== undefined
+		);
+		return `{ ${entries.map(([k, v]) => `${k}: ${jsonToTs(v)}`).join(', ')} }`;
+	}
+	return 'undefined';
+}
+
+/**
+ * BULLMQ-1 — build the `JobsDomainModule.forRoot(...)` options literal,
+ * inlining the typed `extensions.bullmq` block when the BullMQ backend is
+ * selected. Drizzle/memory fall back to the plain `{ backend, multiTenant }`
+ * shape via `quoteOpts`.
+ */
+function quoteBullmqDomainOpts(input: {
+	backend: string;
+	multiTenant: boolean;
+	bullExt: Record<string, unknown> | undefined;
+}): string {
+	const { backend, multiTenant, bullExt } = input;
+	if (backend !== 'bullmq' || !bullExt) {
+		return quoteOpts({ backend, multiTenant });
+	}
+	const parts = [`backend: 'bullmq'`];
+	if (multiTenant) parts.push(`multiTenant: true`);
+	parts.push(`extensions: { bullmq: ${jsonToTs(bullExt)} }`);
+	return `{ ${parts.join(', ')} }`;
+}
+
 const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 	events: ({ subsystemsRel, cfg }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
@@ -106,9 +147,16 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		const imports = [
 			`import { JobsDomainModule } from '${subsystemsRel}/jobs/jobs-domain.module';`,
 		];
-		const calls = [
-			`\tJobsDomainModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
-		];
+		// BULLMQ-1: when `backend: bullmq`, thread the typed extension block so
+		// the orchestrator resolves the Redis connection + Bull Board config.
+		// The barrel emits the extensions inline (snake_case keys, matching the
+		// runtime `BullMqExtensionsConfig` shape).
+		const bullExt =
+			backend === 'bullmq'
+				? (cfg?.extensions as { bullmq?: Record<string, unknown> } | undefined)?.bullmq
+				: undefined;
+		const domainOpts = quoteBullmqDomainOpts({ backend, multiTenant, bullExt });
+		const calls = [`\tJobsDomainModule.forRoot(${domainOpts}),`];
 		// JOB-7: `worker_mode: 'embedded'` runs the worker in-process alongside the
 		// HTTP app. `'standalone'` (default) means the user runs `bun worker.ts`
 		// separately and we don't include JobWorkerModule in AppModule.
@@ -116,7 +164,15 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			imports.push(
 				`import { JobWorkerModule } from '${subsystemsRel}/jobs/job-worker.module';`
 			);
-			calls.push(`\tJobWorkerModule.forRoot({ mode: 'embedded' }),`);
+			// BULLMQ-1: forward backend + bullmq extensions to the embedded worker
+			// so it spawns BullMQ (not Drizzle) workers when configured.
+			const workerOpts =
+				backend === 'bullmq'
+					? `{ mode: 'embedded', backend: 'bullmq'${
+							bullExt ? `, domainModuleExtensions: { bullmq: ${jsonToTs(bullExt)} }` : ''
+						} }`
+					: `{ mode: 'embedded' }`;
+			calls.push(`\tJobWorkerModule.forRoot(${workerOpts}),`);
 		}
 		return { imports, calls };
 	},
