@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-25
+
+Adds **ambient tenant scoping** to `BaseRepository`: user-owned repos filter every
+read/write by the requester automatically, instead of relying on hand-threaded
+`userId` parameters. Ports the proven `dealbrain` `RequesterContext` pattern into
+the codegen substrate. See ADR-0001 (`ai-docs/adrs/0001-ambient-tenant-scoping.md`).
+
+### Added
+
+- **`feat(runtime)` — `tenant-context.ts` ambient scope primitive.** New
+  `runtime/base-classes/tenant-context.ts`: an `AsyncLocalStorage`-backed
+  `RequesterContext { userId, organizationId, scope?, orgUserIds? }` with
+  `withRequester(ctx, fn)` (set at a boundary), `requireRequester()` /
+  `tryGetRequester()` (read inside repos), and `withUserScope` / `withOrgScope` /
+  `withSuperuserScope` helpers. Scope model (`'user' | 'org' | 'superuser'`)
+  copied verbatim from `dealbrain` `packages/integrations/src/framework`.
+  Vendored into consumers via `init-scaffold` and exported from the base-classes
+  barrel.
+- **`feat(runtime)` — `BaseRepository.scopePredicate()` + `scopeAnd()`.** When a
+  repo declares `behaviors.userTracking` (i.e. the entity has the `user_tracking`
+  behavior) and an ambient `RequesterContext` is active, `findById`, `findByIds`,
+  `list`, `count`, `update`, and `delete` automatically filter by `user_id`:
+  `= ctx.userId` (`user`), `IN ctx.orgUserIds` (`org`; empty ⇒ matches nothing),
+  or unfiltered (`superuser`). **No new per-entity config knob** — it rides the
+  existing (previously dormant) `userTracking` flag. No template changes.
+- **Unit coverage** — `base-repository.spec.ts` gains a scoping suite that renders
+  real Drizzle SQL (via `QueryBuilder`) to assert the emitted `WHERE` per scope,
+  gating (off when `userTracking` false / no context), strict-mode throw, and the
+  combined soft-delete + scope + leaf predicate.
+
+### Changed
+
+- **`scopeEnforcement` (lenient default).** With no ambient context active, a
+  `userTracking` repo is **not** scoped — adopting ambient scoping is additive,
+  and isolation engages only once a boundary installs `withRequester(...)`. Set
+  `protected readonly scopeEnforcement = 'strict'` on a repo or family base to
+  make a missing boundary throw (fail-loud). Validated against
+  `dealbrain-integrations` (no `userTracking` repos today): typecheck + 737 tests
+  green, behavior unchanged.
+
+### Fixed
+
+- **`fix(runtime)` — soft-delete guard no longer dropped on `findById` /
+  `list({where})` / bespoke query methods.** Drizzle's `.where()` *overrides* a
+  prior `.where()` on a `$dynamic()` query, so the soft-delete `isNull` filter
+  that `baseQuery()` added was being silently discarded whenever a leaf method
+  chained its own `.where()` — only no-arg `list()` and `count()` actually
+  excluded soft-deleted rows. `baseQuery(extra?)` now folds soft-delete + scope +
+  the leaf predicate into a single AND-joined `WHERE`.
+  - **Migration:** on `soft_delete` entities, `findById(id)` and `list({ where })`
+    now correctly **exclude** soft-deleted rows (previously returned them). Code
+    that relied on the old behavior to read a soft-deleted row must query
+    `deletedAt` explicitly.
+
 ## [0.7.8] — 2026-05-25
 
 Fixes a NestJS DI-resolution bug in cross-entity module wiring. A generated service that injects a sibling entity's **repository** — junction `.list()` composition (CGP-60), EAV value→definition resolution (`eav_value_table`) — failed at runtime because the sibling module exported only its **service**, never its repository (ADR-002). The code typechecked (`tsc` can't see DI wiring), so it shipped and only surfaced on a consumer's first `NestFactory` boot (dealbrain-integrations).

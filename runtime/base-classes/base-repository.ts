@@ -9,10 +9,15 @@
  *
  * NOT @Injectable — concrete repositories are @Injectable and inject DRIZZLE.
  */
-import { eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgTableWithColumns, PgColumn } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
+import {
+  requireRequester,
+  tryGetRequester,
+  type RequesterScope,
+} from './tenant-context';
 
 // ============================================================================
 // Interfaces
@@ -59,6 +64,21 @@ export abstract class BaseRepository<TEntity> {
     userTracking: false,
   };
 
+  /**
+   * Ambient tenant-scope enforcement for `userTracking` repos (see
+   * `scopePredicate`). Only has effect when `behaviors.userTracking === true`.
+   *
+   * - `'lenient'` (default): when no ambient requester context is active,
+   *   reads/writes are NOT scoped — preserves pre-scoping behavior, so adopting
+   *   ambient scoping is additive. Scoping kicks in automatically once a
+   *   boundary installs `withRequester(...)`.
+   * - `'strict'`: a missing ambient context throws (`requireRequester`),
+   *   making a forgotten boundary fail loud instead of silently returning
+   *   cross-tenant rows. Recommended for new multi-tenant consumers — override
+   *   in a concrete repo or a family base class.
+   */
+  protected readonly scopeEnforcement: 'lenient' | 'strict' = 'lenient';
+
   protected readonly db: DrizzleClient;
 
   constructor(db: DrizzleClient) {
@@ -85,9 +105,7 @@ export abstract class BaseRepository<TEntity> {
    * Returns null if not found (or soft-deleted when softDelete=true).
    */
   async findById(id: string): Promise<TEntity | null> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table['id'], id))
-      .limit(1);
+    const rows = await this.baseQuery(eq(this.table['id'], id)).limit(1);
     return (rows[0] as TEntity) ?? null;
   }
 
@@ -97,7 +115,7 @@ export abstract class BaseRepository<TEntity> {
    */
   async findByIds(ids: string[]): Promise<TEntity[]> {
     if (ids.length === 0) return [];
-    const rows = await this.baseQuery().where(inArray(this.table['id'], ids));
+    const rows = await this.baseQuery(inArray(this.table['id'], ids));
     return rows as TEntity[];
   }
 
@@ -105,11 +123,8 @@ export abstract class BaseRepository<TEntity> {
    * List entities with optional filtering, pagination, and ordering.
    */
   async list(options?: ListOptions): Promise<TEntity[]> {
-    let query = this.baseQuery();
+    let query = this.baseQuery(options?.where);
 
-    if (options?.where) {
-      query = query.where(options.where) as typeof query;
-    }
     if (options?.orderBy) {
       query = query.orderBy(options.orderBy as SQL) as typeof query;
     }
@@ -137,6 +152,10 @@ export abstract class BaseRepository<TEntity> {
     if (this.behaviors.softDelete) {
       conditions.push(isNull(this.table['deletedAt']));
     }
+    const scope = this.scopePredicate();
+    if (scope) {
+      conditions.push(scope);
+    }
     if (where) {
       conditions.push(where);
     }
@@ -144,8 +163,6 @@ export abstract class BaseRepository<TEntity> {
     if (conditions.length === 1) {
       query = query.where(conditions[0]) as typeof query;
     } else if (conditions.length > 1) {
-      // Combine with AND by building the condition inline
-      const { and } = await import('drizzle-orm');
       query = query.where(and(...conditions)) as typeof query;
     }
 
@@ -186,7 +203,7 @@ export abstract class BaseRepository<TEntity> {
     const rows = await this.runner(tx)
       .update(this.table)
       .set(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .where(eq(this.table['id'], id))
+      .where(this.scopeAnd(eq(this.table['id'], id)))
       .returning();
     return rows[0] as TEntity;
   }
@@ -202,11 +219,11 @@ export abstract class BaseRepository<TEntity> {
       await runner
         .update(this.table)
         .set({ deletedAt: new Date() } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-        .where(eq(this.table['id'], id));
+        .where(this.scopeAnd(eq(this.table['id'], id)));
     } else {
       await runner
         .delete(this.table)
-        .where(eq(this.table['id'], id));
+        .where(this.scopeAnd(eq(this.table['id'], id)));
     }
   }
 
@@ -224,15 +241,74 @@ export abstract class BaseRepository<TEntity> {
   // ============================================================================
 
   /**
-   * Base SELECT query that automatically excludes soft-deleted rows
-   * when softDelete behavior is enabled.
+   * Base SELECT query that automatically applies the ambient guards —
+   * soft-delete exclusion (when `softDelete`) and tenant scope (when
+   * `userTracking` + an active requester context) — combined with an optional
+   * caller `extra` predicate into a SINGLE `WHERE`.
+   *
+   * Pass the leaf predicate as `extra` rather than chaining a second
+   * `.where(...)`: Drizzle's `.where()` OVERRIDES (does not AND) a prior
+   * `.where()` on a `$dynamic()` query, so a chained call would silently drop
+   * the soft-delete and scope guards. `baseQuery(extra)` is the safe form.
    */
-  protected baseQuery() {
+  protected baseQuery(extra?: SQL) {
     const query = this.db.select().from(this.table).$dynamic();
-    if (this.behaviors.softDelete) {
-      return query.where(isNull(this.table['deletedAt']));
+    const where = this.scopeAnd(extra, { softDelete: this.behaviors.softDelete });
+    return where ? query.where(where) : query;
+  }
+
+  /**
+   * Build the ambient tenant-scope predicate for this repo's table.
+   *
+   * Returns `undefined` (no scoping) when:
+   *   - `behaviors.userTracking` is false (repo is not user-owned), or
+   *   - no ambient requester context is active AND `scopeEnforcement` is
+   *     `'lenient'` (the default — preserves pre-scoping behavior).
+   *
+   * When a requester context is active, scopes by `user_id` per the ambient
+   * scope: `'user'` → `user_id = ctx.userId`; `'org'` → `user_id IN
+   * ctx.orgUserIds` (empty list matches nothing — fail-closed); `'superuser'`
+   * → no filter. See `tenant-context.ts` for the boundary-install contract.
+   */
+  protected scopePredicate(): SQL | undefined {
+    if (!this.behaviors.userTracking) return undefined;
+    const ctx =
+      this.scopeEnforcement === 'strict'
+        ? requireRequester()
+        : tryGetRequester();
+    if (!ctx) return undefined;
+    const scope: RequesterScope = ctx.scope ?? 'user';
+    switch (scope) {
+      case 'superuser':
+        return undefined;
+      case 'org':
+        return ctx.orgUserIds && ctx.orgUserIds.length > 0
+          ? inArray(this.table['userId'], ctx.orgUserIds as string[])
+          : sql`false`;
+      case 'user':
+      default:
+        return eq(this.table['userId'], ctx.userId);
     }
-    return query;
+  }
+
+  /**
+   * Combine the ambient scope predicate (and, optionally, the soft-delete
+   * guard) with a caller `extra` predicate into one `SQL`. Returns `undefined`
+   * when nothing applies. Used by read + by-id write paths so a single
+   * `.where(...)` carries every guard.
+   */
+  protected scopeAnd(
+    extra?: SQL,
+    opts?: { softDelete?: boolean },
+  ): SQL | undefined {
+    const conditions: SQL[] = [];
+    if (opts?.softDelete) conditions.push(isNull(this.table['deletedAt']));
+    const scope = this.scopePredicate();
+    if (scope) conditions.push(scope);
+    if (extra) conditions.push(extra);
+    if (conditions.length === 0) return undefined;
+    if (conditions.length === 1) return conditions[0];
+    return and(...conditions);
   }
 
   /**

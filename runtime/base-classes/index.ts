@@ -4,6 +4,19 @@
 export { BaseRepository } from './base-repository';
 export type { BehaviorConfig, ListOptions } from './base-repository';
 
+// Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
+// set at request/worker boundaries via withRequester/withUserScope/etc.
+export {
+  withRequester,
+  requireRequester,
+  tryGetRequester,
+  requireRequesterScope,
+  withUserScope,
+  withOrgScope,
+  withSuperuserScope,
+} from './tenant-context';
+export type { RequesterContext, RequesterScope } from './tenant-context';
+
 export { BaseService } from './base-service';
 export type { IBaseRepository } from './base-service';
 
