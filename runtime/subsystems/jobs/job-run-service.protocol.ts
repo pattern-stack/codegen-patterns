@@ -95,11 +95,19 @@ export interface ListJobRunsQuery {
 /**
  * Summary row for the `job_run` list (OBS-LIST-1). A narrow projection over
  * `JobRun` carrying the columns a runs viewer renders. `rootRunId` is
- * included so the correlation timeline can stitch runs to events.
+ * included so the correlation timeline can stitch runs to events; the
+ * lineage fields (`parentRunId`, `triggerSource`, `triggerRef`) let a viewer
+ * render the run tree and explain why each run was started without a second
+ * fetch. `triggerSource` is non-null (the column is `NOT NULL`); the literal
+ * union mirrors `job_trigger_source` — `JobRun['triggerSource']` is optional
+ * and would admit `undefined`, which this projection never produces.
  */
 export interface JobRunSummary {
   runId: string;
   rootRunId: string;
+  parentRunId: string | null;
+  triggerSource: 'manual' | 'schedule' | 'event' | 'parent';
+  triggerRef: string | null;
   jobType: string;
   pool: string;
   status: JobRun['status'];

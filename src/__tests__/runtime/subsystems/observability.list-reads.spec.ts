@@ -49,6 +49,9 @@ function jobSummary(over: Partial<JobRunSummary> & Pick<JobRunSummary, 'runId' |
   return {
     runId: over.runId,
     rootRunId: over.rootRunId ?? 'root-1',
+    parentRunId: over.parentRunId ?? null,
+    triggerSource: over.triggerSource ?? 'manual',
+    triggerRef: over.triggerRef ?? null,
     jobType: over.jobType ?? 'test.job',
     pool: over.pool ?? 'p',
     status: over.status ?? 'completed',

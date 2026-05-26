@@ -67,7 +67,7 @@ function seedRun(
     input: {},
     output: null,
     error: null,
-    triggerSource: 'api',
+    triggerSource: 'manual',
     triggerRef: null,
     runAt: now,
     startedAt: null,
