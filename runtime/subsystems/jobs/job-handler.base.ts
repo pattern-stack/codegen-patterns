@@ -16,6 +16,7 @@
  */
 // TODO(logging-subsystem): swap to ILogger once ADR-028 lands
 import type { Logger } from '@nestjs/common';
+import type { EventOfType, EventTypeName } from '../events/generated/types';
 import type { JobRun } from './job-orchestrator.protocol';
 
 // ─── ParentClosePolicy ──────────────────────────────────────────────────────
@@ -60,6 +61,35 @@ export interface ScopeRef<TInput, TScope extends string = string> {
   from: (input: TInput) => string;
 }
 
+/**
+ * Bridge trigger authoring shape (BRIDGE-6 follow-up — BRIDGE-6 shipped the
+ * generator + runtime for `@JobHandler({ triggers })` but never added the
+ * authoring field to this type; the generator's tests scan source as strings,
+ * so a real decorator was never compiled and the gap went uncaught).
+ *
+ * Declared on `@JobHandler({ triggers })`; the codegen bridge-registry
+ * generator (`src/cli/shared/bridge-registry-generator.ts`) scans these from
+ * source and emits `bridge/generated/registry.ts`, validating each `event`
+ * against the generated `eventRegistry` at `gen-all`. The distributed union
+ * narrows `map`/`when` per `event`, so callbacks are typed against the event
+ * payload (ADR-023, "typed against PayloadOfType<T>").
+ *
+ * Typed against events' generated types — the same `import type` coupling the
+ * bridge already has (erased at runtime). `jobs` must NOT import `bridge`, so
+ * the post-gen `BridgeTriggerEntry` is deliberately not referenced here;
+ * `triggerId`/`jobType` are computed by the generator, not authored.
+ */
+export type JobTrigger<TInput> = {
+  [T in EventTypeName]: {
+    /** Event type that fires this trigger. Validated against `eventRegistry`. */
+    event: T;
+    /** Maps the event to the job input. Inlined verbatim into the registry. */
+    map: (event: EventOfType<T>) => TInput;
+    /** Optional guard; `false` → wrapper records `status='skipped'`. */
+    when?: (event: EventOfType<T>) => boolean;
+  };
+}[EventTypeName];
+
 export interface JobHandlerMeta<TInput> {
   pool?: string;
   scope?: ScopeRef<TInput>;
@@ -68,6 +98,12 @@ export interface JobHandlerMeta<TInput> {
   dedupe?: DedupePolicy<TInput>;
   timeoutMs?: number;
   replayFrom?: 'scratch' | 'last_step' | 'last_checkpoint';
+  /**
+   * Bridge triggers (ADR-023 Tier 3). Codegen scans these into `bridgeRegistry`;
+   * the framework `BridgeDeliveryHandler` starts this job per matched event.
+   * Absent for jobs started directly or via `IEventFlow.publishAndStart`.
+   */
+  triggers?: readonly JobTrigger<TInput>[];
 }
 
 // ─── Runtime option shapes ──────────────────────────────────────────────────
