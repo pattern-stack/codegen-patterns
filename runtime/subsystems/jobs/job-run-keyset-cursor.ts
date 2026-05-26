@@ -72,6 +72,9 @@ export function toJobRunSummary(r: JobRunRow): JobRunSummary {
   return {
     runId: r.id,
     rootRunId: r.rootRunId,
+    parentRunId: r.parentRunId,
+    triggerSource: r.triggerSource,
+    triggerRef: r.triggerRef,
     jobType: r.jobType,
     pool: r.pool,
     status: r.status,
