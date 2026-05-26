@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "license": "MIT",
   "type": "module",
