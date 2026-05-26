@@ -191,11 +191,16 @@ publish:
     git worktree add "${workdir}" origin/main
     cd "${workdir}"
 
-    mise trust >/dev/null 2>&1 || true
-    mise install >/dev/null 2>&1 || true
+    # Resolve toolchain through mise explicitly — the user may also have asdf
+    # whose `bun` shim shadows mise in this non-interactive shell and can't
+    # resolve a version in the ephemeral worktree (no .tool-versions). Trust the
+    # exact workdir and run bun/npm via `mise exec` so .mise.toml wins. Errors
+    # are NOT swallowed — a setup failure must abort, not fall through.
+    mise trust "${workdir}"
+    mise install
 
-    bun install
-    npm publish
+    mise exec -- bun install
+    mise exec -- npm publish
 
     echo "✓ Published @pattern-stack/codegen@${version}"
 
