@@ -13,6 +13,7 @@ import {
   JobHandler,
   JobHandlerBase,
   type JobContext,
+  type JobTrigger,
 } from '../../../../runtime/subsystems/jobs/job-handler.base';
 
 interface OnboardingInput {
@@ -55,5 +56,49 @@ describe('JobHandlerBase — type compilation', () => {
     // type-checks. If `ctx.input` widened to `unknown`, the cast-free
     // reads above would fail compilation.
     expect(OnboardingHandler).toBeDefined();
+  });
+});
+
+// ── BRIDGE-6 follow-up: `@JobHandler({ triggers })` authoring type ──────────
+// The contract: a real decorator carrying `triggers` must COMPILE, and `map` /
+// `when` must see the event NARROWED to its payload (not the full union). The
+// bridge-registry-generator's own tests scan source as strings and never
+// compile a decorator — so this is the coverage that the missing
+// `JobHandlerMeta.triggers` field would otherwise have failed silently.
+
+interface SyncContactInput {
+  contactId: string;
+}
+
+@JobHandler<SyncContactInput>('contact.writeback.types-test', {
+  pool: 'external_crm',
+  triggers: [
+    {
+      event: 'contact_created',
+      // `e` must narrow to ContactCreatedEvent — payload access is cast-free.
+      map: (e) => {
+        const _type: 'contact_created' = e.type;
+        const _contactId: string = e.payload.contactId;
+        const _accountId: string | null = e.payload.accountId;
+        void _type;
+        void _accountId;
+        return { contactId: _contactId };
+      },
+      when: (e) => e.payload.accountId !== null,
+    },
+  ],
+})
+class ContactWritebackHandler extends JobHandlerBase<SyncContactInput, void> {
+  async run(_ctx: JobContext<SyncContactInput>): Promise<void> {}
+}
+
+// Negative: only known `EventTypeName` literals are valid trigger events.
+// @ts-expect-error 'not_a_real_event' is not a known event type
+const _badEvent: JobTrigger<SyncContactInput>['event'] = 'not_a_real_event';
+void _badEvent;
+
+describe('JobHandlerMeta.triggers — authoring type (BRIDGE-6 follow-up)', () => {
+  it('@JobHandler({ triggers }) compiles and narrows map/when per event', () => {
+    expect(ContactWritebackHandler).toBeDefined();
   });
 });
