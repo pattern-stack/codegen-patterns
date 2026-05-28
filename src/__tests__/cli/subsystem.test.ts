@@ -228,7 +228,7 @@ describe('subsystem — install backend pruning (#6)', () => {
 		expect(fs.existsSync(path.join(installDir, 'event-bus.redis-backend.ts'))).toBe(false);
 	});
 
-	test('drizzle jobs install does NOT vendor bullmq backend files', async () => {
+	test('drizzle jobs install does NOT vendor bullmq backend implementation files', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -240,10 +240,15 @@ describe('subsystem — install backend pruning (#6)', () => {
 		// Drizzle + memory backends ship.
 		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.drizzle-backend.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.memory-backend.ts'))).toBe(true);
-		// BullMQ backend files + bullmq.config.ts are filtered out.
+		// BullMQ IMPLEMENTATION files are filtered out.
 		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
 		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
-		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(false);
+		// bullmq.config.ts intentionally ALWAYS ships — jobs-domain.module.ts
+		// + job-worker.module.ts static-import its tokens/helpers, and the
+		// file carries no `bullmq` peer-dep type surface (uses a local
+		// structural `BullMqConnectionOptions`). Pruning it would re-introduce
+		// `TS2307` on every drizzle install (validator catch).
+		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(true);
 	});
 
 	test('drizzle install leaves no `bullmq` / `ioredis` static-import lines in the vendored tree', async () => {
@@ -287,7 +292,7 @@ describe('subsystem — install backend pruning (#6)', () => {
 		expect(offenders).toEqual([]);
 	});
 
-	test('memory install also prunes bullmq/redis (broader than the original memory rule)', async () => {
+	test('memory install also prunes bullmq/redis implementation files (broader than the original memory rule)', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -307,7 +312,8 @@ describe('subsystem — install backend pruning (#6)', () => {
 		const installDir = path.join(root, 'src/shared/subsystems/jobs');
 		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
 		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
-		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(false);
+		// bullmq.config.ts always ships (see above).
+		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(true);
 	});
 });
 

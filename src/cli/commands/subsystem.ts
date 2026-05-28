@@ -241,31 +241,28 @@ export function backendFileFilter(
 		}
 
 		// #6: alternate-backend pruning. Each subsystem ships every backend
-		// variant in `runtime/subsystems/<name>/`, but vendoring all of them
-		// into a consumer that picked one drags peer deps (`ioredis`,
-		// `bullmq`) the consumer never installs, and (for bullmq) forces
-		// consumer-side strict-TS gymnastics. Skip files for backends that
-		// aren't the selected one, regardless of which subsystem we're in:
+		// variant in `runtime/subsystems/<name>/`, but vendoring the BACKEND
+		// IMPLEMENTATION files into a consumer that picked another backend
+		// drags peer deps (`ioredis`, `bullmq`) the consumer never installs.
+		// Skip backend implementation files for backends that aren't the
+		// selected one, regardless of which subsystem we're in:
 		//
 		//   - `*.redis-backend.ts`  — only vendor when backend === 'redis'
 		//   - `*.bullmq-backend.ts` — only vendor when backend === 'bullmq'
-		//   - `bullmq.config.ts`    — needed only by the bullmq path (drops
-		//     its `bullmq` peer-dep type import per the same patch, so it's
-		//     SAFE to keep when the consumer doesn't have bullmq, but the
-		//     module never reaches it without the backend)
+		//
+		// `bullmq.config.ts` (tokens + helpers) is intentionally NOT pruned
+		// — `jobs-domain.module.ts` and `job-worker.module.ts` static-import
+		// from it, and it carries no `bullmq` peer-dep type surface (its
+		// `BullMqConnectionOptions` is a local structural alias — see
+		// runtime/subsystems/jobs/bullmq.config.ts). Pruning it broke the
+		// module files' static imports → `TS2307` on every drizzle install.
 		//
 		// Memory backend gets the same pruning PLUS its existing skip of
 		// `.drizzle-backend.ts` + `.schema.ts`. Drizzle / local / unknown
-		// vendor everything EXCEPT the alternate-backend files.
+		// vendor everything EXCEPT the alternate-backend implementation
+		// files.
 		if (file.endsWith('.redis-backend.ts') && backend !== 'redis') return false;
 		if (file.endsWith('.bullmq-backend.ts') && backend !== 'bullmq') return false;
-		if (
-			subsystemName === 'jobs' &&
-			file === 'bullmq.config.ts' &&
-			backend !== 'bullmq'
-		) {
-			return false;
-		}
 
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;

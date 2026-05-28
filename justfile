@@ -64,6 +64,13 @@ test-junction:
 test-smoke-relationship:
     bun test/smoke/run-smoke.ts --scenario relationship
 
+# Subsystems smoke (#6 swe-brain-unblock criterion): events + jobs drizzle
+# install + full-tree tsc with NO subsystem excludes + no static
+# bullmq/ioredis imports in the vendored tree. Locks in the lazy-load +
+# filter contract from PRs ce88e17/99673d9/3a5134a. ~60-120s.
+test-smoke-subsystems:
+    bun test/smoke/run-smoke-subsystems.ts
+
 # Run baseline test (generate + typecheck + compare to baseline)
 test-baseline:
     bun test/run-test.ts full
@@ -107,7 +114,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline test-smoke test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction
+test-all: test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
