@@ -104,10 +104,22 @@ pools, and multi-tenancy are in `wiring-and-order.md`.
   vendor `job-orchestrator.bullmq-backend.ts`, `job-worker.bullmq-backend.ts`,
   or `bullmq.config.ts`. The module files (`events.module.ts`,
   `jobs-domain.module.ts`, `job-worker.module.ts`) lazy-load the chosen
-  backend via dynamic import, so the unused backends never drag their peer
-  deps (`ioredis`, `bullmq`) into your `tsc` graph. `bullmq` and `ioredis`
-  are declared as **optional peer dependencies** — install them ONLY if you
-  actually select that backend.
+  backend via dynamic `import()` with a non-literal specifier, so the unused
+  backends never drag their peer deps (`ioredis`, `bullmq`) into your `tsc`
+  graph. `bullmq` and `ioredis` are declared as **optional peer
+  dependencies** — install them ONLY if you actually select that backend.
+- **Bundler caveat.** The dynamic-import specifier is captured in a variable
+  (e.g. `const spec = './event-bus.redis-backend'; await import(spec)`) on
+  purpose — that's what makes `tsc` treat it as `any` and skip resolving the
+  pruned file. A bundler (webpack / esbuild / rollup) won't static-analyse a
+  non-literal specifier either, so it won't include the dynamically-imported
+  file in its output bundle. In practice this is fine: when the file isn't
+  vendored (drizzle install) there's nothing to bundle; when it IS vendored
+  (redis / bullmq install) consumers typically run Node/Bun directly against
+  the source tree. If you bundle a redis/bullmq build for deployment, ensure
+  your bundler is configured to include the vendored
+  `<subsystems-root>/<name>/` tree (e.g. mark it as external + ship alongside)
+  or pin the dynamic-import path to a literal in your own wrapper.
 
 ## Do not
 
