@@ -208,6 +208,109 @@ describe('subsystem — install (dry-run)', () => {
 	});
 });
 
+// #6: drizzle install must not vendor the alternate-backend source files —
+// they import peer deps the consumer never installed (ioredis, bullmq) and
+// would otherwise drag those into the consumer's tsc graph.
+describe('subsystem — install backend pruning (#6)', () => {
+	test('drizzle events install does NOT vendor event-bus.redis-backend.ts', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/events');
+		// Drizzle + memory backends ship.
+		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
+		// Redis backend is filtered out.
+		expect(fs.existsSync(path.join(installDir, 'event-bus.redis-backend.ts'))).toBe(false);
+	});
+
+	test('drizzle jobs install does NOT vendor bullmq backend files', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/jobs');
+		// Drizzle + memory backends ship.
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.memory-backend.ts'))).toBe(true);
+		// BullMQ backend files + bullmq.config.ts are filtered out.
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
+		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
+		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(false);
+	});
+
+	test('drizzle install leaves no `bullmq` / `ioredis` static-import lines in the vendored tree', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+
+		// Walk every vendored .ts file under the subsystems root and assert
+		// no static `from 'bullmq'` / `from 'ioredis'` import remains. (Dynamic
+		// `await import('bullmq')` strings are fine — they're behind a runtime
+		// branch the drizzle path never enters; the consumer's tsc treats them
+		// as `any`.)
+		const subsystemsRoot = path.join(root, 'src/shared/subsystems');
+		const offenders: string[] = [];
+		const walk = (dir: string): void => {
+			for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+				const full = path.join(dir, entry.name);
+				if (entry.isDirectory()) {
+					walk(full);
+					continue;
+				}
+				if (!entry.name.endsWith('.ts')) continue;
+				const src = fs.readFileSync(full, 'utf-8');
+				// Match `from 'bullmq'` / `from "bullmq"` (static import line),
+				// excluding `await import('bullmq')` runtime expressions.
+				if (/^\s*import[^;]*\sfrom\s+['"]bullmq['"]/m.test(src)) {
+					offenders.push(`${full}: static 'bullmq' import`);
+				}
+				if (/^\s*import[^;]*\sfrom\s+['"]ioredis['"]/m.test(src)) {
+					offenders.push(`${full}: static 'ioredis' import`);
+				}
+			}
+		};
+		walk(subsystemsRoot);
+		expect(offenders).toEqual([]);
+	});
+
+	test('memory install also prunes bullmq/redis (broader than the original memory rule)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'jobs',
+				'--backend',
+				'memory',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/jobs');
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
+		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
+		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(false);
+	});
+});
+
 describe('subsystem — install (real)', () => {
 	test('copies runtime/subsystems/events into target + follows deps', async () => {
 		const root = mkTempProject();

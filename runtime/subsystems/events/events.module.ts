@@ -57,8 +57,26 @@ import { DRIZZLE } from '../../constants/tokens';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DrizzleEventBus } from './event-bus.drizzle-backend';
 import { MemoryEventBus } from './event-bus.memory-backend';
-import { RedisEventBus } from './event-bus.redis-backend';
+// #6 — `RedisEventBus` is lazy-loaded only when `backend: 'redis'` is selected.
+// The file is filtered out of the vendor set for non-redis installs (see
+// `backendFileFilter` in src/cli/commands/subsystem.ts); the dynamic-string
+// import below makes TS treat the specifier as `any` so the consumer's tsc
+// never tries to resolve the absent file.
 import { TypedEventBus } from './generated/bus';
+
+/**
+ * Lazy-load the Redis backend. Routed through a non-literal specifier so
+ * the consumer's `tsc` doesn't resolve `./event-bus.redis-backend` at type
+ * check time — important because that file is filtered out of drizzle/
+ * memory installs (#6).
+ */
+async function loadRedisEventBus(): Promise<new (url: string) => object> {
+  // Non-literal specifier — TS gives this an `any` module type, sidestepping
+  // resolution of a file that may not be vendored.
+  const specifier = './event-bus.redis-backend';
+  const mod = (await import(specifier)) as { RedisEventBus: new (url: string) => object };
+  return mod.RedisEventBus;
+}
 
 export interface EventsModuleOptions {
   backend: 'drizzle' | 'memory' | 'redis';
@@ -124,11 +142,11 @@ function buildTypedBusProviders(multiTenant: boolean): Provider[] {
  * drizzle backend is selected but no DRIZZLE provider is registered, we
  * throw a clear error instead of silently constructing a broken bus.
  */
-function buildEventBusAsync(
+async function buildEventBusAsync(
   options: EventsModuleOptions,
   db: DrizzleClient | null,
   redisUrl: string,
-): unknown {
+): Promise<unknown> {
   if (options.backend === 'drizzle') {
     if (!db) {
       throw new Error(
@@ -139,6 +157,9 @@ function buildEventBusAsync(
     return new DrizzleEventBus(db, options);
   }
   if (options.backend === 'redis') {
+    // #6: lazy import — the redis backend ships only with `--backend redis`
+    // installs; drizzle/memory consumers never touch the file.
+    const RedisEventBus = await loadRedisEventBus();
     return new RedisEventBus(redisUrl);
   }
   return new MemoryEventBus(options);
@@ -214,9 +235,20 @@ export class EventsModule {
         providers: [
           { provide: EVENTS_MODULE_OPTIONS, useValue: options },
           { provide: REDIS_URL, useValue: resolvedUrl },
-          { provide: EVENT_BUS, useClass: RedisEventBus },
-          // Register concrete class so NestJS can resolve lifecycle hooks
-          RedisEventBus,
+          {
+            // #6: useFactory + dynamic import so the consumer's tsc never
+            // needs to resolve `event-bus.redis-backend.ts` for drizzle/
+            // memory installs (the file is filtered out by
+            // `backendFileFilter`). Nest awaits async factories + manages
+            // lifecycle on the returned instance, so we drop the old bare
+            // `RedisEventBus` provider entry.
+            provide: EVENT_BUS,
+            useFactory: async (url: string): Promise<object> => {
+              const RedisEventBus = await loadRedisEventBus();
+              return new RedisEventBus(url);
+            },
+            inject: [REDIS_URL],
+          },
           ...buildTypedBusProviders(multiTenant),
         ],
         exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],

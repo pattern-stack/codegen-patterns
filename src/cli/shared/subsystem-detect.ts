@@ -37,6 +37,8 @@ export type SubsystemBackend =
 	| 'drizzle'
 	| 'memory'
 	| 'local'
+	| 'redis'
+	| 'bullmq'
 	| 'config-only'
 	| 'combiner'
 	| 'unknown';

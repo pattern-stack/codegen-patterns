@@ -52,12 +52,17 @@ import {
   type PoolConfig,
 } from './pool-config.loader';
 import { JobWorker, type JobWorkerOptions } from './job-worker';
-import { BullMQJobWorker } from './job-worker.bullmq-backend';
-import type { ConnectionOptions } from 'bullmq';
+// #6 — `BullMQJobWorker` is lazy-loaded only when `backend: 'bullmq'` is
+// selected (`spawnBullMQWorker` below). The file is filtered out of drizzle/
+// memory installs (see `backendFileFilter`). The `ConnectionOptions` type
+// previously imported from `'bullmq'` is replaced by `BullMqConnectionOptions`
+// from `./bullmq.config` (a self-contained structural mirror that does NOT
+// require the `bullmq` peer dep to type-check).
 import {
   BULLMQ_CONNECTION,
   BULLMQ_RESOLVED_CONFIG,
   resolvePoolQueueName,
+  type BullMqConnectionOptions,
   type BullMqResolvedConfig,
 } from './bullmq.config';
 import {
@@ -157,7 +162,7 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
      */
     @Optional()
     @Inject(BULLMQ_CONNECTION)
-    private readonly bullConnection: ConnectionOptions | null = null,
+    private readonly bullConnection: BullMqConnectionOptions | null = null,
     @Optional()
     @Inject(BULLMQ_RESOLVED_CONFIG)
     private readonly bullConfig: BullMqResolvedConfig | null = null,
@@ -233,7 +238,7 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
       const worker = this.options.workerFactory
         ? this.options.workerFactory(workerOptions)
         : backend === 'bullmq'
-          ? this.spawnBullMQWorker(poolName, def.queue, def.concurrency, poolConfig)
+          ? await this.spawnBullMQWorker(poolName, def.queue, def.concurrency, poolConfig)
           : this.spawnWorker(workerOptions);
       // `JobWorker` extends Nest's lifecycle hooks but the worker isn't
       // a Nest provider here (we manage the array ourselves). Call
@@ -364,12 +369,20 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
    * orchestrator's `dispatch` via `resolvePoolQueueName(pool, …)` so producer
    * and consumer agree.
    */
-  private spawnBullMQWorker(
+  /**
+   * #6 — async + dynamic-import. The `job-worker.bullmq-backend.ts` file is
+   * filtered out of the vendor set for drizzle/memory installs (no `bullmq`
+   * peer dep needed). The non-literal import specifier makes TS treat the
+   * module as `any` so the consumer's tsc never tries to resolve an absent
+   * file. This method is only entered when `backend === 'bullmq'` — at which
+   * point the file IS vendored.
+   */
+  private async spawnBullMQWorker(
     pool: string,
     _queueAlias: string,
     concurrency: number,
     poolConfig: PoolConfig,
-  ): BullMQJobWorker {
+  ): Promise<Pick<JobWorker, 'onModuleInit' | 'onModuleDestroy'>> {
     if (!this.db) {
       throw new Error(
         `JobWorkerModule: BullMQ worker spawning requires the Drizzle client ` +
@@ -390,7 +403,14 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
       );
     }
     const queueName = resolvePoolQueueName(pool, this.bullConfig, poolConfig);
-    return new BullMQJobWorker(
+    const specifier = './job-worker.bullmq-backend';
+    const mod = (await import(specifier)) as {
+      BullMQJobWorker: new (...args: unknown[]) => Pick<
+        JobWorker,
+        'onModuleInit' | 'onModuleDestroy'
+      >;
+    };
+    return new mod.BullMQJobWorker(
       this.db,
       this.orchestrator,
       this.stepService,

@@ -98,6 +98,16 @@ pools, and multi-tenancy are in `wiring-and-order.md`.
   `installed` when you actually want the bridge.
 - **`--backend memory`** is for tests; the scaffolded default is `drizzle`
   (`local` for storage).
+- **Install vendors only the selected backend.** Alternate-backend source
+  files are pruned: a `--backend drizzle` events install does NOT vendor
+  `event-bus.redis-backend.ts`, and a drizzle/memory jobs install does NOT
+  vendor `job-orchestrator.bullmq-backend.ts`, `job-worker.bullmq-backend.ts`,
+  or `bullmq.config.ts`. The module files (`events.module.ts`,
+  `jobs-domain.module.ts`, `job-worker.module.ts`) lazy-load the chosen
+  backend via dynamic import, so the unused backends never drag their peer
+  deps (`ioredis`, `bullmq`) into your `tsc` graph. `bullmq` and `ioredis`
+  are declared as **optional peer dependencies** — install them ONLY if you
+  actually select that backend.
 
 ## Do not
 

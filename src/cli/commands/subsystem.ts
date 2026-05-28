@@ -240,6 +240,33 @@ export function backendFileFilter(
 			return false;
 		}
 
+		// #6: alternate-backend pruning. Each subsystem ships every backend
+		// variant in `runtime/subsystems/<name>/`, but vendoring all of them
+		// into a consumer that picked one drags peer deps (`ioredis`,
+		// `bullmq`) the consumer never installs, and (for bullmq) forces
+		// consumer-side strict-TS gymnastics. Skip files for backends that
+		// aren't the selected one, regardless of which subsystem we're in:
+		//
+		//   - `*.redis-backend.ts`  — only vendor when backend === 'redis'
+		//   - `*.bullmq-backend.ts` — only vendor when backend === 'bullmq'
+		//   - `bullmq.config.ts`    — needed only by the bullmq path (drops
+		//     its `bullmq` peer-dep type import per the same patch, so it's
+		//     SAFE to keep when the consumer doesn't have bullmq, but the
+		//     module never reaches it without the backend)
+		//
+		// Memory backend gets the same pruning PLUS its existing skip of
+		// `.drizzle-backend.ts` + `.schema.ts`. Drizzle / local / unknown
+		// vendor everything EXCEPT the alternate-backend files.
+		if (file.endsWith('.redis-backend.ts') && backend !== 'redis') return false;
+		if (file.endsWith('.bullmq-backend.ts') && backend !== 'bullmq') return false;
+		if (
+			subsystemName === 'jobs' &&
+			file === 'bullmq.config.ts' &&
+			backend !== 'bullmq'
+		) {
+			return false;
+		}
+
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;
 			if (file.endsWith('.schema.ts')) return false;

@@ -94,13 +94,16 @@ export class BullMQJobWorker {
     }
     this.worker = new WorkerCtor(
       this.options.queueName,
-      (job) => this.process(job as Job<BullJobPayload>),
+      // #6 / noImplicitAny — explicit annotations so the file stays
+      // strict-clean even when consumers compile under a stricter tsconfig
+      // than the one used to type-check the runtime tree.
+      (job: Job<BullJobPayload>) => this.process(job),
       {
         connection: this.options.connection,
         concurrency: this.options.concurrency,
       },
     );
-    this.worker.on('failed', (job, err) => {
+    this.worker.on('failed', (job: Job<BullJobPayload> | undefined, err: Error) => {
       // BullMQ fires `failed` after EACH attempt; only mirror to job_run when
       // attempts are exhausted (BullMQ will not retry further).
       if (!job) return;
