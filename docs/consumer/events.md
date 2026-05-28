@@ -141,11 +141,14 @@ When `multiTenant: true` and `opts.metadata.tenantId` is missing from a
 `publish` call, the facade throws `MissingTenantIdError` naming the event
 type. Explicit `null` is permitted for tenant-less background events.
 
-The columns that land on `domain_events` (reviewed in the Atlas diff) are
-`pool`, `direction`, and — when `multi_tenant: true` — `tenant_id`, plus the
-supporting indexes. No runtime toggle exists for enabling tenancy after
-initial install; always pair the config flip with a scaffold re-run and an
-Atlas migration.
+The first-class routing columns that land on `domain_events` (reviewed in the
+Atlas diff) are `pool`, `direction`, `tier` (always emitted; `'domain'` |
+`'audit'`, defaulting to `'domain'`), and — when `multi_tenant: true` —
+`tenant_id`, plus the supporting indexes and the
+`domain_events_tier_routing_check` constraint. `tier` is always present
+regardless of the tenancy flag; only `tenant_id` is conditional. No runtime
+toggle exists for enabling tenancy after initial install; always pair the
+config flip with a scaffold re-run and an Atlas migration.
 
 ### Entity `emits:` integration
 

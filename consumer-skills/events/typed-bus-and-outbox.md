@@ -65,7 +65,7 @@ New code should prefer `TypedEventBus`.
 
 ## The outbox table and drain loop
 
-`domain_events` is the outbox. Key columns: `id` (UUID, the idempotency key), `type`, `aggregate_id`, `aggregate_type`, `payload` (jsonb), `occurred_at`, `processed_at`, `status` (`pending | processed | failed`), `error`, `metadata`, and first-class `pool` / `direction` columns (populated from `metadata` at insert so the drain can filter by lane without unpacking JSON).
+`domain_events` is the outbox. Key columns: `id` (UUID, the idempotency key), `type`, `aggregate_id`, `aggregate_type`, `payload` (jsonb), `occurred_at`, `processed_at`, `status` (`pending | processed | failed`), `error`, `metadata`, and first-class `pool` / `direction` / `tier` columns (populated from `metadata` at insert so the drain can filter by lane without unpacking JSON). `tier` (`'domain'` | `'audit'`, default `'domain'`) is always emitted; the `domain_events_tier_routing_check` constraint enforces that `tier='audit'` rows have null `pool`/`direction`. `tenant_id` is the only conditional column — emitted only under `events.multi_tenant: true`.
 
 The drain loop (Drizzle backend):
 1. Claims a batch (default 50) of `pending` rows with `FOR UPDATE SKIP LOCKED`, optionally filtered by pool, ordered by `occurred_at ASC`. `SKIP LOCKED` lets multiple worker processes drain concurrently without double-dispatching.

@@ -502,9 +502,11 @@ describe('DrizzleEventBus', () => {
   // publish — pool/direction/tenantId column population (EVT-4)
   // --------------------------------------------------------------------------
   describe('publish — metadata → columns', () => {
-    it('writes pool/direction/tenantId from event.metadata into columns', async () => {
+    it('writes pool/direction/tier/tenantId from event.metadata into columns (multiTenant)', async () => {
       const { db, insertBuilder } = makeMockDb();
-      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle' });
+      // tenant_id is a scaffold-time conditional column (EVT-8); the backend
+      // only writes it when constructed with multiTenant: true.
+      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle', multiTenant: true });
 
       await bus.publish({
         id: 'id-1',
@@ -520,14 +522,39 @@ describe('DrizzleEventBus', () => {
       const values = (insertBuilder.values as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
       expect(values['pool']).toBe('events_change');
       expect(values['direction']).toBe('outbound');
+      expect(values['tier']).toBe('domain'); // AUDIT-1: defaults to 'domain' when absent
       expect(values['tenantId']).toBe('t1');
       // metadata JSON preserved unchanged
       expect(values['metadata']).toEqual({ pool: 'events_change', direction: 'outbound', tenantId: 't1' });
     });
 
-    it('fills missing direction/tenantId with null when only pool is set', async () => {
+    it('omits tenant_id from the insert under single-tenant scaffolds (multiTenant: false)', async () => {
       const { db, insertBuilder } = makeMockDb();
+      // Default (multiTenant: false) → the generated schema has NO tenant_id
+      // column, so the backend must not write the key at all (EVT-8). tier is
+      // always emitted regardless.
       const bus = new DrizzleEventBus(db as never, { backend: 'drizzle' });
+
+      await bus.publish({
+        id: 'id-1b',
+        type: 't',
+        aggregateId: 'a-1',
+        aggregateType: 'agg',
+        payload: {},
+        occurredAt: new Date('2026-01-01T00:00:00Z'),
+        metadata: { pool: 'events_change', direction: 'outbound', tenantId: 't1' },
+      });
+
+      const values = (insertBuilder.values as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+      expect(values['pool']).toBe('events_change');
+      expect(values['direction']).toBe('outbound');
+      expect(values['tier']).toBe('domain');
+      expect('tenantId' in values).toBe(false);
+    });
+
+    it('fills missing direction/tenantId with null when only pool is set (multiTenant)', async () => {
+      const { db, insertBuilder } = makeMockDb();
+      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle', multiTenant: true });
 
       await bus.publish({
         id: 'id-2',
@@ -542,12 +569,13 @@ describe('DrizzleEventBus', () => {
       const values = (insertBuilder.values as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
       expect(values['pool']).toBe('events_change');
       expect(values['direction']).toBeNull();
+      expect(values['tier']).toBe('domain');
       expect(values['tenantId']).toBeNull();
     });
 
-    it('passes all three routing columns as null when metadata is absent', async () => {
+    it('passes routing columns as null and tier as domain when metadata is absent (multiTenant)', async () => {
       const { db, insertBuilder } = makeMockDb();
-      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle' });
+      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle', multiTenant: true });
 
       await bus.publish({
         id: 'id-3',
@@ -561,6 +589,7 @@ describe('DrizzleEventBus', () => {
       const values = (insertBuilder.values as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
       expect(values['pool']).toBeNull();
       expect(values['direction']).toBeNull();
+      expect(values['tier']).toBe('domain');
       expect(values['tenantId']).toBeNull();
       expect(values['metadata']).toBeUndefined();
     });
@@ -572,7 +601,8 @@ describe('DrizzleEventBus', () => {
   describe('publishMany — per-event column mapping', () => {
     it('preserves each event\'s pool/direction/tenantId independently', async () => {
       const { db, insertBuilder } = makeMockDb();
-      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle' });
+      // multiTenant: true so the conditional tenant_id key is written (EVT-8).
+      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle', multiTenant: true });
 
       await bus.publishMany([
         {

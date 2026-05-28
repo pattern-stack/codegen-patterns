@@ -59,17 +59,16 @@ const POLL_BATCH_SIZE = 50;
  * the per-event extraction logic in one place so publish/publishMany stay
  * in sync.
  */
-function toInsertValues(event: DomainEvent) {
+function toInsertValues(event: DomainEvent, multiTenant: boolean) {
   const metadata = event.metadata ?? undefined;
   const pool = (metadata?.['pool'] as string | undefined) ?? null;
   const direction = (metadata?.['direction'] as string | undefined) ?? null;
-  const tenantId = (metadata?.['tenantId'] as string | undefined) ?? null;
   // AUDIT-1: tier defaults to 'domain' when absent. The DB CHECK
   // constraint (`domain_events_tier_routing_check`) enforces the
   // tier ⇔ routing-fields invariant at the storage boundary; no
   // JS-side assertion is needed here.
   const tier = (metadata?.['tier'] as string | undefined) ?? 'domain';
-  return {
+  const base = {
     id: event.id,
     type: event.type,
     aggregateId: event.aggregateId,
@@ -82,8 +81,14 @@ function toInsertValues(event: DomainEvent) {
     pool,
     direction,
     tier,
-    tenantId,
   };
+  // EVT-8: `tenant_id` is a scaffold-time conditional column, emitted only
+  // when `events.multi_tenant: true`. Only write it when multi-tenancy is
+  // on — under single-tenant scaffolds the column does not exist, so the
+  // key must be omitted from the insert.
+  if (!multiTenant) return base;
+  const tenantId = (metadata?.['tenantId'] as string | undefined) ?? null;
+  return { ...base, tenantId };
 }
 
 /**
@@ -107,7 +112,11 @@ function toEventSummary(r: DomainEventRecord) {
     direction: r.direction,
     tier: r.tier,
     rootRunId: typeof rootRunId === 'string' ? rootRunId : null,
-    tenantId: r.tenantId,
+    // EVT-8: `tenant_id` is a scaffold-time conditional column. Read it
+    // structurally so this projection typechecks against both the
+    // multi-tenant schema (column present) and the single-tenant schema
+    // (column absent → undefined → null).
+    tenantId: (r as { tenantId?: string | null }).tenantId ?? null,
     occurredAt:
       r.occurredAt instanceof Date
         ? r.occurredAt
@@ -175,13 +184,17 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
 
   async publish(event: DomainEvent, tx?: DrizzleTransaction): Promise<void> {
     const client = (tx ?? this.db) as DrizzleClient;
-    await client.insert(domainEvents).values(toInsertValues(event));
+    const multiTenant = this.opts.multiTenant ?? false;
+    await client.insert(domainEvents).values(toInsertValues(event, multiTenant));
   }
 
   async publishMany(events: DomainEvent[], tx?: DrizzleTransaction): Promise<void> {
     if (events.length === 0) return;
     const client = (tx ?? this.db) as DrizzleClient;
-    await client.insert(domainEvents).values(events.map(toInsertValues));
+    const multiTenant = this.opts.multiTenant ?? false;
+    await client
+      .insert(domainEvents)
+      .values(events.map((e) => toInsertValues(e, multiTenant)));
   }
 
   async findById(eventId: string): Promise<DomainEvent | null> {
@@ -241,11 +254,20 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
         sql`${domainEvents.metadata}->>'rootRunId' = ${query.rootRunId}`,
       );
     }
-    if (query.tenantId !== undefined) {
+    // EVT-8: `tenant_id` is a scaffold-time conditional column (emitted only
+    // under `events.multi_tenant: true`). Guard the filter behind the same
+    // `multiTenant` flag, and read the column structurally so this backend
+    // typechecks against both the multi-tenant schema (column present) and
+    // the single-tenant schema (column absent). When multi-tenancy is off
+    // there is no `tenant_id` column to filter on.
+    if (this.opts.multiTenant && query.tenantId !== undefined) {
+      const tenantIdColumn = (
+        domainEvents as unknown as { tenantId: typeof domainEvents.pool }
+      ).tenantId;
       conditions.push(
         query.tenantId === null
-          ? (sql`${domainEvents.tenantId} is null` as SQL<unknown>)
-          : eq(domainEvents.tenantId, query.tenantId),
+          ? (sql`${tenantIdColumn} is null` as SQL<unknown>)
+          : eq(tenantIdColumn, query.tenantId),
       );
     }
 
