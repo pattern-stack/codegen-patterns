@@ -12,6 +12,7 @@ import { Command, Option } from 'clipanion';
 import type { CommandClass } from 'clipanion';
 
 import { loadRelationshipFromYaml, detectYamlType } from '../../utils/yaml-loader.js';
+import { findYamlFiles } from '../../utils/find-yaml-files.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeRelationshipNew } from '../shared/hygen.js';
@@ -36,15 +37,10 @@ import type { NounModule } from '../noun-module.js';
 
 function listRelationshipYamls(dir: string): string[] {
 	if (!fs.existsSync(dir)) return [];
-	return fs
-		.readdirSync(dir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.filter((f) => {
-			// Only include files that are actual relationship definitions
-			const fullPath = path.join(dir, f);
-			return detectYamlType(fullPath) === 'relationship';
-		})
-		.map((f) => path.join(dir, f));
+	// Only include files that are actual relationship definitions.
+	return findYamlFiles(dir).filter(
+		(full) => detectYamlType(full) === 'relationship',
+	);
 }
 
 interface RelationshipSummaryRow {

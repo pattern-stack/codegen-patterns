@@ -81,19 +81,24 @@ export { DrizzleJobRunService } from './job-run-service.drizzle-backend';
 export { DrizzleJobStepService } from './job-step-service.drizzle-backend';
 
 // ─── BULLMQ-1: BullMQ backend (additive; opt-in via jobs.backend: bullmq) ──
-export {
-  BullMQJobOrchestrator,
-  sha1JobId,
-} from './job-orchestrator.bullmq-backend';
-export {
-  BullMQJobWorker,
-  type BullMQJobWorkerOptions,
-} from './job-worker.bullmq-backend';
+// #6 — backend-specific implementation classes are NOT re-exported from this
+// public barrel. `BullMQJobOrchestrator` + `BullMQJobWorker` are only vendored
+// when the consumer installs with `--backend bullmq`; surfacing them here
+// would force every consumer's tsc to resolve those files even on a drizzle
+// install (filtered out → TS2307). Consumers who select bullmq import them
+// directly from their backend file; `JobsDomainModule.forRoot({ backend:
+// 'bullmq' })` + `JobWorkerModule` lazy-load them internally.
+//
+// `bullmq.config.ts` (tokens + helpers) IS still re-exported — it always
+// ships (its only type surface is a local `BullMqConnectionOptions`, no
+// `bullmq` peer-dep resolution required). The module files static-import
+// from it.
 export {
   BULLMQ_CONNECTION,
   BULLMQ_RESOLVED_CONFIG,
   resolveBullMqConfig,
   resolvePoolQueueName,
+  type BullMqConnectionOptions,
   type BullMqExtensionsConfig,
   type BullMqResolvedConfig,
 } from './bullmq.config';

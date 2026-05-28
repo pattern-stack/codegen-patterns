@@ -22,6 +22,7 @@ import path from 'node:path';
 
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
+import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import {
 	desugarEntityEvents,
 	loadEvents,
@@ -183,11 +184,7 @@ export function collectEntityEvents(entitiesDir: string): {
 		return { events, issues };
 	}
 
-	const files = fs
-		.readdirSync(entitiesDir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.map((f) => path.join(entitiesDir, f))
-		.sort();
+	const files = findYamlFiles(entitiesDir);
 
 	for (const filePath of files) {
 		const result = loadEntityFromYaml(filePath);
@@ -280,11 +277,7 @@ export function collectMergedEvents(
 	// 1. Gather entity names (for loadEvents cross-validation).
 	const entityNames: string[] = [];
 	if (fs.existsSync(entitiesDir)) {
-		const entityFiles = fs
-			.readdirSync(entitiesDir)
-			.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-			.map((f) => path.join(entitiesDir, f))
-			.sort();
+		const entityFiles = findYamlFiles(entitiesDir);
 		for (const f of entityFiles) {
 			const result = loadEntityFromYaml(f);
 			if (result.success) entityNames.push(result.definition.entity.name);

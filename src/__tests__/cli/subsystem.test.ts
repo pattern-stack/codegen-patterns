@@ -15,6 +15,7 @@ import { buildNounSummaryCommand } from '../../cli/noun-module.js';
 import { setJsonMode } from '../../cli/ui/json.js';
 import {
 	detectInstalledSubsystems,
+	detectSubsystemStates,
 	SUBSYSTEMS,
 } from '../../cli/shared/subsystem-detect.js';
 import { copyRuntime } from '../../cli/shared/runtime-copier.js';
@@ -138,6 +139,26 @@ describe('subsystem — summary + list', () => {
 			expect(row.status).toBe('available');
 		}
 	});
+
+	// #2: after an events-only install, `subsystem list` must report bridge as
+	// `incomplete` (the dir holds protocol/token/schema stubs but no module),
+	// and events as `installed`.
+	test('list reports a stub-only subsystem as incomplete', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		const { out } = await capture(() =>
+			cli.run(['subsystem', 'list', '--format', 'json', '--cwd', root]),
+		);
+		const parsed = JSON.parse(out);
+		const rowFor = (name: string) =>
+			parsed.subsystems.find((r: { name: string }) => r.name === name);
+		expect(rowFor('events').status).toBe('installed');
+		expect(rowFor('bridge').status).toBe('incomplete');
+	});
 });
 
 describe('subsystem — install (dry-run)', () => {
@@ -184,6 +205,115 @@ describe('subsystem — install (dry-run)', () => {
 			cli.run(['subsystem', 'install', 'events', '--backend', 'local', '--cwd', root])
 		);
 		expect(result).toBe(2);
+	});
+});
+
+// #6: drizzle install must not vendor the alternate-backend source files —
+// they import peer deps the consumer never installed (ioredis, bullmq) and
+// would otherwise drag those into the consumer's tsc graph.
+describe('subsystem — install backend pruning (#6)', () => {
+	test('drizzle events install does NOT vendor event-bus.redis-backend.ts', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/events');
+		// Drizzle + memory backends ship.
+		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
+		// Redis backend is filtered out.
+		expect(fs.existsSync(path.join(installDir, 'event-bus.redis-backend.ts'))).toBe(false);
+	});
+
+	test('drizzle jobs install does NOT vendor bullmq backend implementation files', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/jobs');
+		// Drizzle + memory backends ship.
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.memory-backend.ts'))).toBe(true);
+		// BullMQ IMPLEMENTATION files are filtered out.
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
+		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
+		// bullmq.config.ts intentionally ALWAYS ships — jobs-domain.module.ts
+		// + job-worker.module.ts static-import its tokens/helpers, and the
+		// file carries no `bullmq` peer-dep type surface (uses a local
+		// structural `BullMqConnectionOptions`). Pruning it would re-introduce
+		// `TS2307` on every drizzle install (validator catch).
+		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(true);
+	});
+
+	test('drizzle install leaves no `bullmq` / `ioredis` static-import lines in the vendored tree', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+
+		// Walk every vendored .ts file under the subsystems root and assert
+		// no static `from 'bullmq'` / `from 'ioredis'` import remains. (Dynamic
+		// `await import('bullmq')` strings are fine — they're behind a runtime
+		// branch the drizzle path never enters; the consumer's tsc treats them
+		// as `any`.)
+		const subsystemsRoot = path.join(root, 'src/shared/subsystems');
+		const offenders: string[] = [];
+		const walk = (dir: string): void => {
+			for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+				const full = path.join(dir, entry.name);
+				if (entry.isDirectory()) {
+					walk(full);
+					continue;
+				}
+				if (!entry.name.endsWith('.ts')) continue;
+				const src = fs.readFileSync(full, 'utf-8');
+				// Match `from 'bullmq'` / `from "bullmq"` (static import line),
+				// excluding `await import('bullmq')` runtime expressions.
+				if (/^\s*import[^;]*\sfrom\s+['"]bullmq['"]/m.test(src)) {
+					offenders.push(`${full}: static 'bullmq' import`);
+				}
+				if (/^\s*import[^;]*\sfrom\s+['"]ioredis['"]/m.test(src)) {
+					offenders.push(`${full}: static 'ioredis' import`);
+				}
+			}
+		};
+		walk(subsystemsRoot);
+		expect(offenders).toEqual([]);
+	});
+
+	test('memory install also prunes bullmq/redis implementation files (broader than the original memory rule)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'jobs',
+				'--backend',
+				'memory',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/jobs');
+		expect(fs.existsSync(path.join(installDir, 'job-orchestrator.bullmq-backend.ts'))).toBe(false);
+		expect(fs.existsSync(path.join(installDir, 'job-worker.bullmq-backend.ts'))).toBe(false);
+		// bullmq.config.ts always ships (see above).
+		expect(fs.existsSync(path.join(installDir, 'bullmq.config.ts'))).toBe(true);
 	});
 });
 
@@ -497,18 +627,163 @@ describe('subsystem — detection', () => {
 		const installed = await detectInstalledSubsystems(ctx);
 		expect(installed.map((i) => i.name)).toContain('events');
 	});
+
+	// #4: an events install vendors `bridge/` protocol + token + schema stubs
+	// (the events drizzle backend imports them) but NOT `bridge.module.ts`.
+	// `detectInstalledSubsystems` (module-file keyed) must NOT report bridge as
+	// installed, so the barrel never emits a phantom `BridgeModule` import.
+	test('events-only install does not report bridge as installed', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		// The bridge stubs landed (proving the precondition of the bug)…
+		const bridgeDir = path.join(root, 'src/shared/subsystems/bridge');
+		expect(fs.existsSync(path.join(bridgeDir, 'bridge.protocol.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(bridgeDir, 'bridge.module.ts'))).toBe(false);
+
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+		const installed = await detectInstalledSubsystems(ctx);
+		expect(installed.map((i) => i.name)).toContain('events');
+		expect(installed.map((i) => i.name)).not.toContain('bridge');
+
+		// …and `detectSubsystemStates` surfaces bridge as `incomplete`.
+		const states = await detectSubsystemStates(ctx);
+		const bridge = states.find((s) => s.name === 'bridge');
+		expect(bridge?.status).toBe('incomplete');
+		const events = states.find((s) => s.name === 'events');
+		expect(events?.status).toBe('installed');
+	});
+
+	// #4: the regenerated barrel must NOT import BridgeModule from a module file
+	// that was never vendored (would break the consumer's `tsc`).
+	test('events-only install: generated barrel has no phantom BridgeModule import', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		const barrelPath = path.join(root, 'src/generated/subsystems.ts');
+		expect(fs.existsSync(barrelPath)).toBe(true);
+		const barrel = fs.readFileSync(barrelPath, 'utf-8');
+		expect(barrel).toContain('EventsModule');
+		expect(barrel).not.toContain('BridgeModule');
+		expect(barrel).not.toContain('bridge/bridge.module');
+	});
 });
 
-describe('subsystem — remove stub', () => {
-	test('exits 1 with a not-implemented message', async () => {
+describe('subsystem — remove (#5 + #7)', () => {
+	// #5: removing a not-installed subsystem must error loudly, not silently
+	// no-op (the previous stub's failure mode).
+	test('errors loudly when the subsystem is not installed', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
 		const { result, out } = await capture(() =>
-			cli.run(['subsystem', 'remove', 'events', '--cwd', root])
+			cli.run(['subsystem', 'remove', 'events', '--cwd', root]),
 		);
 		expect(result).toBe(1);
-		expect(out.toLowerCase()).toContain('not yet implemented');
+		expect(out.toLowerCase()).toContain('not installed');
+	});
+
+	test('install → remove deletes the vendored dir and regenerates the barrel', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		// Install two subsystems so the barrel has another entry the remove
+		// must preserve.
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+
+		const jobsDir = path.join(root, 'src/shared/subsystems/jobs');
+		const barrelPath = path.join(root, 'src/generated/subsystems.ts');
+		expect(fs.existsSync(jobsDir)).toBe(true);
+		expect(fs.readFileSync(barrelPath, 'utf-8')).toContain('JobsDomainModule');
+
+		// --force here only bypasses the git-safety check (the temp project
+		// isn't a repo so it would pass anyway, but pass it for explicitness).
+		const { result, out } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'remove',
+				'jobs',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.status).toBe('removed');
+		expect(parsed.subsystem).toBe('jobs');
+		expect(parsed.barrelRegenerated).toBe(true);
+
+		// Dir is gone.
+		expect(fs.existsSync(jobsDir)).toBe(false);
+		// Barrel no longer imports JobsDomainModule, but still imports EventsModule.
+		const barrel = fs.readFileSync(barrelPath, 'utf-8');
+		expect(barrel).not.toContain('JobsDomainModule');
+		expect(barrel).not.toContain('jobs/jobs-domain.module');
+		expect(barrel).toContain('EventsModule');
+	});
+
+	test('detection returns no jobs entry after remove', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+		await capture(() =>
+			cli.run(['subsystem', 'remove', 'jobs', '--force', '--cwd', root]),
+		);
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+		const installed = await detectInstalledSubsystems(ctx);
+		expect(installed.map((i) => i.name)).not.toContain('jobs');
+	});
+
+	// #7: install accepts --yes; remove must too (flag-parity across the noun).
+	test('accepts --yes/-y for flag parity with install', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'cache', '--force', '--cwd', root]),
+		);
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'remove', 'cache', '--yes', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		expect(fs.existsSync(path.join(root, 'src/shared/subsystems/cache'))).toBe(false);
+	});
+
+	test('rejects unknown subsystem name (exit 2)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'remove', 'unknown-thing', '--cwd', root]),
+		);
+		expect(result).toBe(2);
+	});
+
+	test('refuses removal of openapi-config (no runtime dir)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result, out } = await capture(() =>
+			cli.run(['subsystem', 'remove', 'openapi-config', '--cwd', root]),
+		);
+		expect(result).toBe(1);
+		expect(out).toContain('config-only');
 	});
 });
 
@@ -756,7 +1031,7 @@ describe('subsystem — install sync (SYNC-7)', () => {
 });
 
 describe('runtime-copier unit', () => {
-	test('dry-run populates planned[] without writing', async () => {
+	test('dry-run classifies (planned + status) without writing to disk', async () => {
 		const target = fs.mkdtempSync(path.join(os.tmpdir(), 'copier-'));
 		tempDirs.push(target);
 		const result = await copyRuntime({
@@ -766,7 +1041,10 @@ describe('runtime-copier unit', () => {
 			dryRun: true,
 		});
 		expect(result.planned.length).toBeGreaterThan(0);
-		expect(result.written).toHaveLength(0);
+		// Dry-run now classifies accurately: an empty target → every file is
+		// 'written' (created). The no-write invariant is that nothing lands on
+		// disk — the target directory is never created.
+		expect(result.written.length).toBe(result.planned.length);
 		expect(fs.existsSync(path.join(target, 'events'))).toBe(false);
 	});
 

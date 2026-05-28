@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 
+import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
 
@@ -67,8 +68,11 @@ export interface InitOptions {
 
 /**
  * Absolute path to the codegen runtime source tree (bundled with the CLI).
+ *
+ * Exported so `codegen update` can re-sync the vendored runtime closure
+ * (VENDORED_RUNTIME_FILES) from the freshly-installed package version.
  */
-function runtimeRoot(): string {
+export function runtimeRoot(): string {
 	// Dev: src/cli/shared/ → ../../../runtime. Published npm tarball ships
 	// runtime at dist/runtime/; dist/src/cli/index.js → ../../../runtime
 	// doesn't exist, so fall back to dist/runtime/.
@@ -92,8 +96,10 @@ export function resolveRuntimePath(cwd: string): string {
 /**
  * Load the contents of a runtime file (path relative to the runtime root).
  * Used to vendor runtime files into consumer projects — see ADR note below.
+ *
+ * Exported for reuse by `codegen update` (re-syncs the same files).
  */
-function loadRuntimeFile(relPath: string): string {
+export function loadRuntimeFile(relPath: string): string {
 	return fs.readFileSync(path.join(runtimeRoot(), relPath), 'utf-8');
 }
 
@@ -116,8 +122,19 @@ function loadRuntimeFile(relPath: string): string {
  * The list is intentionally exhaustive of the transitive closure reachable
  * from `@shared/*` imports in the generated templates — if a generated file
  * imports it (directly or transitively), it's here.
+ *
+ * Exported as the canonical package-owned vendored closure: `project init`
+ * writes it, `project update` re-syncs it. Any file added here is picked up
+ * by both flows automatically.
  */
-const VENDORED_RUNTIME_FILES: Array<{ runtime: string; target: string }> = [
+export interface VendoredRuntimeFile {
+	/** Path relative to the runtime root (source of truth). */
+	runtime: string;
+	/** Path relative to the consumer project root (vendored destination). */
+	target: string;
+}
+
+export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// base-classes — consumer-facing inheritance targets
 	{ runtime: 'base-classes/base-repository.ts', target: 'src/shared/base-classes/base-repository.ts' },
 	// Ambient tenant scope — imported by base-repository.ts (scopePredicate)
@@ -879,13 +896,9 @@ export async function buildInitPlan(
 		const examplePath = path.join(entitiesDir, 'example.yaml');
 		const hasOtherYamls =
 			fs.existsSync(entitiesDir) &&
-			fs
-				.readdirSync(entitiesDir)
-				.some(
-					(f) =>
-						(f.endsWith('.yaml') || f.endsWith('.yml')) &&
-						f !== 'example.yaml',
-				);
+			findYamlFiles(entitiesDir).some(
+				(f) => path.basename(f) !== 'example.yaml',
+			);
 		if (fs.existsSync(examplePath)) {
 			entries.push({
 				path: examplePath,

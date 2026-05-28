@@ -4,6 +4,79 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-05-28
+
+Dogfood fixes found wiring `@pattern-stack/codegen@0.10.0` into a second
+consumer (swe-brain): the type-check blockers that forced consumers to exclude
+the vendored subsystem tree from `tsc` are gone. A drizzle-only install now
+type-checks its full tree (`src/shared/subsystems/**` included) with no
+`ioredis`/`bullmq` peer deps.
+
+### Fixed
+
+- **`fix(subsystems)` — detection + barrel emission key on `<name>.module.ts`
+  (#4, #2).** Installing one subsystem can vendor *protocol stubs* of another
+  (e.g. events vendors `bridge/bridge.protocol.ts`); detection used to report
+  those stub-only dirs as `installed` and the barrel emitted a phantom
+  `BridgeModule` import for a module that was never installed (TS2307).
+  Detection now requires the module file; `subsystem list` reports `incomplete`
+  for stub-only dirs; the barrel skips them.
+- **`fix(events)` — drizzle backend type-checks against its paired schema
+  (#3).** `event-bus.drizzle-backend.ts` read a `tier` column the schema never
+  emitted and `tenant_id` columns only present under multi-tenancy. `tier` is
+  now always emitted; `tenant_id` access is gated behind `multiTenant`, so the
+  backend type-checks under any configuration.
+- **`fix(subsystems)` — installs no longer vendor unselected backends (#6).** A
+  `--backend drizzle` install previously vendored the Redis and BullMQ backend
+  sources too, dragging `ioredis`/`bullmq` (uninstalled optional peers) into the
+  consumer's type-check. The copy filter now prunes `*.redis-backend.ts` /
+  `*.bullmq-backend.ts` for non-matching installs; modules lazy-load the chosen
+  backend via a non-literal dynamic import; backend-specific classes are no
+  longer re-exported from the public barrels; `bullmq.config.ts` is kept on
+  every install (peer-dep-free) for its static token references; the BullMQ
+  backend is `noImplicitAny`-clean.
+- **`fix(barrel)` — empty-composer output emits the `DynamicModule` import.** A
+  generated `subsystems.ts` with no composer calls referenced `DynamicModule`
+  without importing it (latent since BULLMQ-1, surfaced by the stricter
+  detection above).
+
+### Added
+
+- **`feat(cli)` — `codegen subsystem remove` (#5, #7).** Real implementation:
+  deletes the vendored subsystem dir, regenerates the barrel, git-safety gated
+  with `--force`, and `--yes`/`-y` parity with `install`. Prints the manual
+  follow-ups it deliberately does *not* perform (config-block strip,
+  `forRoot` un-registration).
+- **`test(smoke)` — `run-smoke-subsystems.ts`.** Exercises an events + jobs +
+  bridge drizzle install with a full-tree `tsc` (no subsystem excludes) + a
+  programmatic NestJS boot that validates the bridge reserved-pool dependency
+  graph. Wired into `just test-all`.
+
+## [0.10.0] — 2026-05-27
+
+### Added
+
+- **`feat(cli)` — consumer skill distribution (ADR-035).** A curated
+  `consumer-skills/` set (a `codegen` router plus `entities`, `subsystems`,
+  `jobs`, `events`, `bridge`, `sync`) is vendored into a consumer's
+  `.claude/skills/` via a new `skills` noun (`codegen skills install` / `list`),
+  and by `codegen init` by default (`--no-skills` to opt out). Authored fresh
+  for a consumer audience; shipped in the npm `files` array.
+- **`feat(cli)` — `codegen update`.** Re-syncs the vendored runtime closure,
+  installed subsystems' runtime, and consumer skills to the installed package
+  version after a bump. Drift-aware, git-clean gated (`--force`), `--dry-run`;
+  never touches consumer-owned files (config, `app.module.ts`, barrels).
+- **`feat(parser)` — recursive YAML discovery.** Entity / relationship /
+  junction / event discovery routes through a single `findYamlFiles` helper;
+  domain-folder layouts (`entities/crm/account.yaml`) are first-class.
+
+### Changed
+
+- **Docs split.** `CONSUMER-SETUP.md` became a hub; the per-subsystem deep dives
+  moved to `docs/consumer/{events,bridge,sync,auth,openapi}.md` (progressive
+  disclosure), with jobs-API drift (`JobsModule` → `JobsDomainModule` +
+  `JobWorkerModule`, `JobHandlerBase`, `concurrency: { key }`) corrected.
+
 ## [0.9.0] — 2026-05-25
 
 Bundles four merged PRs (none carried a version bump): the BullMQ backend and

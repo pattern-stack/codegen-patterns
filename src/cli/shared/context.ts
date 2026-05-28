@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
+import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { scanProject } from '../../scanner/index.js';
 import type { ProjectProfile } from '../../scanner/types.js';
 
@@ -100,8 +101,7 @@ function resolveEntitiesDir(cwd: string, config: CodegenConfig | null): string |
 function countEntityYamls(entitiesDir: string | null): number {
 	if (!entitiesDir || !fs.existsSync(entitiesDir)) return 0;
 	try {
-		return fs.readdirSync(entitiesDir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-			.length;
+		return findYamlFiles(entitiesDir).length;
 	} catch {
 		return 0;
 	}

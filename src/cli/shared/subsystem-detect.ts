@@ -1,7 +1,21 @@
 /**
  * Detect which subsystems (events/jobs/cache/storage) are already installed
- * in the user's project. A subsystem is "installed" when a `<name>.protocol.ts`
- * exists under a known install root.
+ * in the user's project.
+ *
+ * Detection keys on the subsystem's **module file** (`<name>.module.ts`, e.g.
+ * `events.module.ts`; jobs uses `jobs-domain.module.ts`), NOT merely on the
+ * subsystem directory or a `*.protocol.ts` stub. This matters because
+ * installing one subsystem can vendor *protocol/token/schema stubs* of another
+ * (e.g. an events install drops `bridge/bridge.protocol.ts` +
+ * `bridge.tokens.ts` because the events drizzle backend imports them) WITHOUT
+ * vendoring that subsystem's module. Such a directory is "incomplete": the
+ * stubs exist but the `forRoot()`-bearing module does not.
+ *
+ * `detectInstalledSubsystems` returns only **fully-installed** subsystems
+ * (module file present) — this is what the barrel generator, install
+ * idempotency check, and `codegen update` act on. `detectSubsystemStates`
+ * returns every *present* subsystem (installed + incomplete) for the reporting
+ * surface (`subsystem list`).
  */
 
 import fs from 'node:fs';
@@ -23,14 +37,27 @@ export type SubsystemBackend =
 	| 'drizzle'
 	| 'memory'
 	| 'local'
+	| 'redis'
+	| 'bullmq'
 	| 'config-only'
 	| 'combiner'
 	| 'unknown';
+
+/**
+ * Install state of a subsystem directory:
+ * - `installed` — the `<name>.module.ts` module file is present (the subsystem
+ *   is wired and `forRoot()`-able).
+ * - `incomplete` — the directory carries subsystem source (a `*.protocol.ts`
+ *   or token/schema stub vendored as another subsystem's dependency) but the
+ *   module file is absent. The barrel must NOT emit a `forRoot()` for it.
+ */
+export type SubsystemStatus = 'installed' | 'incomplete';
 
 export interface InstalledSubsystem {
 	name: SubsystemName;
 	path: string;
 	backend: SubsystemBackend;
+	status: SubsystemStatus;
 }
 
 export interface SubsystemDescriptor {
@@ -130,6 +157,30 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 
 const KNOWN_NAMES = SUBSYSTEMS.map((s) => s.name);
 
+/**
+ * The module file that signals a subsystem is fully installed (carries the
+ * `forRoot()` dynamic module). Most subsystems use `<name>.module.ts`; `jobs`
+ * is the exception — its composition module is `jobs-domain.module.ts`
+ * (`job-worker.module.ts` is the optional embedded-worker module). Subsystems
+ * detected by other means (`openapi-config` via config key, `auth-integrations`
+ * via vendored module elsewhere) are absent from this map.
+ */
+const SUBSYSTEM_MODULE_FILE: Partial<Record<SubsystemName, string>> = {
+	events: 'events.module.ts',
+	jobs: 'jobs-domain.module.ts',
+	cache: 'cache.module.ts',
+	storage: 'storage.module.ts',
+	sync: 'sync.module.ts',
+	bridge: 'bridge.module.ts',
+	observability: 'observability.module.ts',
+	auth: 'auth.module.ts',
+};
+
+/** Module file whose presence marks `name` fully installed, or null. */
+export function subsystemModuleFile(name: SubsystemName): string | null {
+	return SUBSYSTEM_MODULE_FILE[name] ?? null;
+}
+
 function candidateRoots(cwd: string, configured?: string): string[] {
 	const roots = [
 		...(configured ? [path.resolve(cwd, configured)] : []),
@@ -164,7 +215,19 @@ function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 	return 'unknown';
 }
 
-export async function detectInstalledSubsystems(ctx: Context): Promise<InstalledSubsystem[]> {
+/**
+ * Core scan: returns every *present* subsystem under the candidate roots,
+ * tagged `installed` or `incomplete`. A directory is "present" when it carries
+ * subsystem source (any `*.protocol.ts`, or — for `auth`, whose protocols live
+ * under `protocols/` — its module file). It is `installed` when the module file
+ * (`subsystemModuleFile(name)`) exists, else `incomplete`.
+ *
+ * `openapi-config` (config-only) and `auth-integrations` (vendored elsewhere)
+ * are detected separately and always reported `installed` when found.
+ */
+async function detectSubsystemStatesImpl(
+	ctx: Context,
+): Promise<InstalledSubsystem[]> {
 	const configured = ctx.config?.paths?.subsystems as string | undefined;
 	const roots = candidateRoots(ctx.cwd, configured);
 
@@ -185,21 +248,26 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 			if (name === 'auth-integrations') continue;
 			const dir = path.join(root, name);
 			if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
-			// A subsystem is installed when the directory contains any *.protocol.ts
-			// #287: auth's protocols live under `<dir>/protocols/`, not at the
-			// subsystem root. Special-case it: presence of `auth.module.ts`
-			// means installed.
 			const files = fs.readdirSync(dir);
-			let hasProtocol = files.some((f) => f.endsWith('.protocol.ts'));
-			if (name === 'auth') {
-				hasProtocol = files.includes('auth.module.ts');
-			}
-			if (!hasProtocol) continue;
+			const moduleFile = subsystemModuleFile(name);
+			const hasModule = moduleFile ? files.includes(moduleFile) : false;
+			// "Present" gate. #287: auth's protocols live under
+			// `<dir>/protocols/`, not at the subsystem root — its module file
+			// is the only at-root marker, so presence == hasModule.
+			// #4/#2: every other subsystem is present if it has a *.protocol.ts
+			// (covers stub-only dirs vendored as another subsystem's dep) OR
+			// the module file.
+			const present =
+				name === 'auth'
+					? hasModule
+					: files.some((f) => f.endsWith('.protocol.ts')) || hasModule;
+			if (!present) continue;
 			seen.add(name);
 			found.push({
 				name,
 				path: dir,
 				backend: inferBackend(dir, name),
+				status: hasModule ? 'installed' : 'incomplete',
 			});
 		}
 	}
@@ -223,6 +291,7 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 						name: 'openapi-config',
 						path: configPath,
 						backend: 'config-only',
+						status: 'installed',
 					});
 				}
 			} catch {
@@ -265,6 +334,7 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 					name: 'auth-integrations',
 					path: path.dirname(moduleFile),
 					backend: 'drizzle',
+					status: 'installed',
 				});
 				break;
 			}
@@ -272,4 +342,29 @@ export async function detectInstalledSubsystems(ctx: Context): Promise<Installed
 	}
 
 	return found;
+}
+
+/**
+ * Every *present* subsystem (installed + incomplete) under the candidate
+ * roots. Use for the reporting surface (`subsystem list`), where incomplete
+ * stub directories must be surfaced distinctly from fully-installed ones.
+ */
+export async function detectSubsystemStates(
+	ctx: Context,
+): Promise<InstalledSubsystem[]> {
+	return detectSubsystemStatesImpl(ctx);
+}
+
+/**
+ * Fully-installed subsystems only (module file present). Use everywhere a
+ * subsystem must actually be *actable* — barrel composition, install
+ * idempotency, `codegen update` re-vendoring. An incomplete stub directory
+ * (e.g. the `bridge/` protocol stubs an events install drops) is excluded so
+ * the barrel never emits a `forRoot()` for a module that doesn't exist.
+ */
+export async function detectInstalledSubsystems(
+	ctx: Context,
+): Promise<InstalledSubsystem[]> {
+	const states = await detectSubsystemStatesImpl(ctx);
+	return states.filter((s) => s.status === 'installed');
 }

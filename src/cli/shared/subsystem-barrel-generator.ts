@@ -233,7 +233,15 @@ export function buildSubsystemBarrel(
 	config: Record<string, unknown> | null | undefined,
 	subsystemsRel: string
 ): { content: string; emitted: SubsystemName[]; skipped: SubsystemName[] } {
-	const installedNames = new Set(installed.map((i) => i.name));
+	// #4: only fully-installed subsystems (module file present) may emit a
+	// `forRoot()` import. An `incomplete` entry — e.g. the `bridge/` protocol
+	// stubs an events install vendors because the events drizzle backend imports
+	// them — has no `<name>.module.ts`, so importing `BridgeModule` from it would
+	// break the consumer's `tsc`. `detectInstalledSubsystems` already filters
+	// these out; this guard also protects direct (test) callers of the pure
+	// builder.
+	const actable = installed.filter((i) => i.status !== 'incomplete');
+	const installedNames = new Set(actable.map((i) => i.name));
 	const emitted: SubsystemName[] = [];
 	const skipped: SubsystemName[] = [];
 
@@ -255,24 +263,24 @@ export function buildSubsystemBarrel(
 	}
 
 	// Names in install order that have no composer yet — log for visibility.
-	for (const inst of installed) {
+	for (const inst of actable) {
 		if (!COMPOSABLE_ORDER.includes(inst.name) && !COMPOSERS[inst.name]) {
 			skipped.push(inst.name);
 		}
 	}
 
-	if (allCalls.length === 0) {
-		return {
-			content: HEADER + `export const SUBSYSTEM_MODULES: DynamicModule[] = [];\n`,
-			emitted,
-			skipped,
-		};
-	}
-
-	const body =
-		allImports.join('\n') +
-		'\n\n' +
-		`export const SUBSYSTEM_MODULES: DynamicModule[] = [\n${allCalls.join('\n')}\n];\n`;
+	// Single emit shape — imports always include the `DynamicModule` type
+	// (allImports is seeded with it on init), even when no composer fired.
+	// A previous two-branch shape elided the imports in the empty-`allCalls`
+	// case and produced `export const SUBSYSTEM_MODULES: DynamicModule[] = [];`
+	// with no preceding import → `TS2304: Cannot find name 'DynamicModule'`
+	// for projects whose installed set contains only non-composer subsystems
+	// (e.g. observability + auth + auth-integrations).
+	const exportLine =
+		allCalls.length === 0
+			? `export const SUBSYSTEM_MODULES: DynamicModule[] = [];\n`
+			: `export const SUBSYSTEM_MODULES: DynamicModule[] = [\n${allCalls.join('\n')}\n];\n`;
+	const body = allImports.join('\n') + '\n\n' + exportLine;
 	return { content: HEADER + body, emitted, skipped };
 }
 

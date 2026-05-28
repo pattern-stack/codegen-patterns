@@ -15,6 +15,7 @@
  * and the type system reserves the slot.
  */
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import { DRIZZLE } from '../../constants/tokens';
 import {
   JOB_ORCHESTRATOR,
   JOB_RUN_SERVICE,
@@ -24,7 +25,10 @@ import {
 import { DrizzleJobOrchestrator } from './job-orchestrator.drizzle-backend';
 import { DrizzleJobRunService } from './job-run-service.drizzle-backend';
 import { DrizzleJobStepService } from './job-step-service.drizzle-backend';
-import { BullMQJobOrchestrator } from './job-orchestrator.bullmq-backend';
+// #6 — `BullMQJobOrchestrator` is lazy-loaded only when `backend: 'bullmq'`
+// is selected. The backend file is filtered out of drizzle/memory installs
+// (see `backendFileFilter`); a non-literal dynamic import below sidesteps
+// consumer-side tsc resolution of an absent file.
 import { MemoryJobOrchestrator } from './job-orchestrator.memory-backend';
 import { MemoryJobRunService } from './job-run-service.memory-backend';
 import { MemoryJobStepService } from './job-step-service.memory-backend';
@@ -102,10 +106,31 @@ export class JobsDomainModule {
       // run/step services stay Drizzle (domain reads + `listForScope` are
       // Postgres queries, unchanged per spec). Only the orchestrator's
       // claim/dispatch half swaps to BullMQ.
+      //
+      // #6 — the bullmq backend module is filtered out of drizzle/memory
+      // installs (no `bullmq` peer dep, no consumer-side tsc compile of an
+      // unused file). The factory below dynamic-imports it via a non-literal
+      // specifier so TS treats the module type as `any` and never tries to
+      // resolve the absent file on a drizzle/memory consumer.
       const resolved = resolveBullMqConfig(opts.extensions?.bullmq);
       providers.push({ provide: BULLMQ_CONNECTION, useValue: resolved.connection });
       providers.push({ provide: BULLMQ_RESOLVED_CONFIG, useValue: resolved });
-      providers.push({ provide: JOB_ORCHESTRATOR, useClass: BullMQJobOrchestrator });
+      providers.push({
+        provide: JOB_ORCHESTRATOR,
+        useFactory: async (...args: unknown[]): Promise<object> => {
+          const specifier = './job-orchestrator.bullmq-backend';
+          const mod = (await import(specifier)) as {
+            BullMQJobOrchestrator: new (...args: unknown[]) => object;
+          };
+          return new mod.BullMQJobOrchestrator(...args);
+        },
+        // The bullmq orchestrator constructor mirrors DrizzleJobOrchestrator's
+        // injection list: DRIZZLE + JOBS_MULTI_TENANT + the resolved BullMQ
+        // tokens. Importing token references would force a static dep on the
+        // tokens file in this module's import graph; using the existing
+        // symbols already in scope is sufficient.
+        inject: [DRIZZLE, JOBS_MULTI_TENANT, BULLMQ_CONNECTION, BULLMQ_RESOLVED_CONFIG],
+      });
       providers.push({ provide: JOB_RUN_SERVICE, useClass: DrizzleJobRunService });
       providers.push({ provide: JOB_STEP_SERVICE, useClass: DrizzleJobStepService });
     } else {

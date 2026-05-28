@@ -12,6 +12,7 @@ import { Command, Option } from 'clipanion';
 import type { CommandClass } from 'clipanion';
 
 import { loadContext, type Context } from '../shared/context.js';
+import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
@@ -158,10 +159,9 @@ function checkApp(cwd: string, port: number): ServiceStatus {
 
 function listEntityNames(ctx: Context): string[] {
 	if (!ctx.entitiesDir || !fs.existsSync(ctx.entitiesDir)) return [];
-	return fs
-		.readdirSync(ctx.entitiesDir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.map((f) => f.replace(/\.ya?ml$/, ''));
+	return findYamlFiles(ctx.entitiesDir).map((f) =>
+		path.basename(f).replace(/\.ya?ml$/, ''),
+	);
 }
 
 function formatServiceLine(svc: ServiceStatus): string {

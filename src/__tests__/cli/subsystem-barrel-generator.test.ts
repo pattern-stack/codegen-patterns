@@ -16,20 +16,59 @@ import { describe, test, expect } from 'bun:test';
 import { buildSubsystemBarrel } from '../../cli/shared/subsystem-barrel-generator.js';
 import type { InstalledSubsystem } from '../../cli/shared/subsystem-detect.js';
 
-function inst(name: InstalledSubsystem['name']): InstalledSubsystem {
-	return { name, path: `/fake/${name}`, backend: 'drizzle' };
+function inst(
+	name: InstalledSubsystem['name'],
+	status: InstalledSubsystem['status'] = 'installed',
+): InstalledSubsystem {
+	return { name, path: `/fake/${name}`, backend: 'drizzle', status };
 }
 
 describe('buildSubsystemBarrel', () => {
 	const subsystemsRel = './shared/subsystems';
 
-	test('empty installed set produces empty array (with DynamicModule type)', () => {
+	test('empty installed set produces empty array (with DynamicModule type + import)', () => {
 		const out = buildSubsystemBarrel([], {}, subsystemsRel);
+		// Regression: a prior two-branch emitter dropped the import line when
+		// `allCalls` was empty, producing `export const SUBSYSTEM_MODULES:
+		// DynamicModule[] = [];` with no preceding import → consumer `tsc`
+		// failed with `TS2304: Cannot find name 'DynamicModule'`. The single
+		// emit shape always prepends the import.
+		expect(out.content).toContain(
+			"import type { DynamicModule } from '@nestjs/common';",
+		);
 		expect(out.content).toContain(
 			'export const SUBSYSTEM_MODULES: DynamicModule[] = [];',
 		);
+		// The import must precede the export.
+		expect(out.content.indexOf("import type { DynamicModule }")).toBeLessThan(
+			out.content.indexOf('export const SUBSYSTEM_MODULES'),
+		);
 		expect(out.emitted).toEqual([]);
 		expect(out.skipped).toEqual([]);
+	});
+
+	test('installed-but-no-composer-only set still emits DynamicModule import (#smoke-fix)', () => {
+		// Repro of the smoke regression: a project whose install set contains
+		// only non-composer subsystems (observability + auth + auth-integrations
+		// in the actual smoke; observability alone is sufficient to trigger the
+		// pre-fix bug). `allCalls` is empty, so the prior code returned
+		// `HEADER + 'export const SUBSYSTEM_MODULES: DynamicModule[] = [];'`
+		// with no `DynamicModule` import. tsc TS2304.
+		const out = buildSubsystemBarrel(
+			[inst('observability')],
+			{},
+			subsystemsRel,
+		);
+		expect(out.emitted).toEqual([]);
+		expect(out.skipped).toContain('observability');
+		// Imports MUST include the DynamicModule type alias …
+		expect(out.content).toContain(
+			"import type { DynamicModule } from '@nestjs/common';",
+		);
+		// … and the export must be the empty-array form (no composer fired).
+		expect(out.content).toContain(
+			'export const SUBSYSTEM_MODULES: DynamicModule[] = [];',
+		);
 	});
 
 	test('events alone → 1 import + 1 forRoot call', () => {
@@ -151,6 +190,25 @@ describe('buildSubsystemBarrel', () => {
 		);
 		expect(out.emitted).toEqual(['events']);
 		expect(out.skipped).toContain('observability');
+	});
+
+	test('#4: an `incomplete` subsystem is NOT emitted (no phantom forRoot import)', () => {
+		// An events-only install vendors `bridge/` protocol+token+schema stubs
+		// (the events drizzle backend imports them) but NOT `bridge.module.ts`.
+		// Detection tags that bridge dir `incomplete`; the barrel must skip it so
+		// the consumer's tsc never sees `import { BridgeModule } from
+		// '.../bridge/bridge.module'` against a file that doesn't exist.
+		const out = buildSubsystemBarrel(
+			[inst('events'), inst('bridge', 'incomplete')],
+			{ events: { backend: 'drizzle', multi_tenant: false } },
+			subsystemsRel,
+		);
+		expect(out.emitted).toEqual(['events']);
+		expect(out.content).not.toContain('BridgeModule');
+		expect(out.content).not.toContain('bridge/bridge.module');
+		// An incomplete entry is neither emitted nor reported as skipped (skipped
+		// means "installed but no composer yet").
+		expect(out.skipped).not.toContain('bridge');
 	});
 
 	test('missing config block defaults to drizzle backend + multi_tenant=false', () => {

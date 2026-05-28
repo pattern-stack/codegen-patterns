@@ -6,8 +6,28 @@
  * `jobs.extensions.bullmq.*` config namespace (CLAUDE.md core/extension
  * protocol). The Drizzle backend never reads any of it.
  */
-import type { ConnectionOptions } from 'bullmq';
 import { loadPoolConfig, type PoolConfig } from './pool-config.loader';
+
+/**
+ * #6 — Structural mirror of BullMQ's `ConnectionOptions`. Declared locally
+ * so this config file (which ships into EVERY jobs install, drizzle or
+ * bullmq) does NOT need the `bullmq` peer dep resolved by the consumer's
+ * tsc. The bullmq backend internally casts to the real `ConnectionOptions`
+ * — that file is only vendored when `--backend bullmq` is selected
+ * (see `backendFileFilter`).
+ *
+ * Accepts the `{ url }` shape this resolver emits, plus the host/port/
+ * password/db form BullMQ also accepts, with an open index for any extra
+ * ioredis options consumers may flow through.
+ */
+export type BullMqConnectionOptions = {
+  url?: string;
+  host?: string;
+  port?: number;
+  password?: string;
+  db?: number;
+  [key: string]: unknown;
+};
 
 /**
  * Typed shape of `codegen.config.yaml: jobs.extensions.bullmq`. Snake_case
@@ -53,7 +73,7 @@ export interface BullMqExtensionsConfig {
  * orchestrator + worker actually consume.
  */
 export interface BullMqResolvedConfig {
-  connection: ConnectionOptions;
+  connection: BullMqConnectionOptions;
   queuePrefix?: string;
   bullBoard?: { enabled: boolean; mountPath: string };
 }
@@ -85,7 +105,7 @@ export function resolveBullMqConfig(
     ext?.redis_url ?? process.env.REDIS_URL ?? DEFAULT_REDIS_URL;
 
   const resolved: BullMqResolvedConfig = {
-    connection: { url } as ConnectionOptions,
+    connection: { url },
     queuePrefix: ext?.queue_prefix,
   };
   if (ext?.bull_board?.enabled) {

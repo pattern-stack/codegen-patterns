@@ -39,6 +39,7 @@ import {
 } from '../shared/event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
 import { loadEntities } from '../../parser/load-entities.js';
+import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
 import { resolveEventsDir } from '../shared/events-path.js';
@@ -57,10 +58,7 @@ import type { NounModule } from '../noun-module.js';
 
 function listEntityYamls(dir: string): string[] {
 	if (!fs.existsSync(dir)) return [];
-	return fs
-		.readdirSync(dir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.map((f) => path.join(dir, f));
+	return findYamlFiles(dir);
 }
 
 interface EntitySummaryRow {

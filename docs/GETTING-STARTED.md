@@ -155,7 +155,8 @@ Each subsystem generates a protocol (interface), Drizzle backend, memory backend
   imports: [
     DatabaseModule,
     EventsModule.forRoot({ backend: 'drizzle' }),
-    JobsModule.forRoot({ backend: 'drizzle' }),
+    JobsDomainModule.forRoot({ backend: 'drizzle' }),
+    JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle' }),
     TasksModule,
   ],
 })

@@ -20,12 +20,14 @@ import { icons } from './ui/icons.js';
 import entityNoun from './commands/entity.js';
 import subsystemNoun from './commands/subsystem.js';
 import projectNoun from './commands/project.js';
+import skillsNoun from './commands/skills.js';
 import devNoun from './commands/dev.js';
 import relationshipNoun from './commands/relationship.js';
 import junctionNoun from './commands/junction.js';
 import eventsNoun from './commands/events.js';
 import orchestrationNoun from './commands/orchestration.js';
 import initShortcut from './shortcuts/init.js';
+import updateShortcut from './shortcuts/update.js';
 
 // ---------------------------------------------------------------------------
 // Package metadata
@@ -100,6 +102,7 @@ const nouns: NounModule[] = [
 	entityNoun,
 	subsystemNoun,
 	projectNoun,
+	skillsNoun,
 	devNoun,
 	relationshipNoun,
 	junctionNoun,
@@ -127,6 +130,7 @@ async function main(): Promise<void> {
 	cli.register(RootSummaryCommand);
 
 	cli.register(initShortcut);
+	cli.register(updateShortcut);
 
 	for (const noun of nouns) {
 		for (const CommandClass of noun.commandClasses) {

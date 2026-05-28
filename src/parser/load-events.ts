@@ -15,8 +15,8 @@
  * boundary (EVT-3), not inside either loader.
  */
 
-import { readdirSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
+import { findYamlFiles } from '../utils/find-yaml-files';
 import type { AnalysisIssue } from '../analyzer/types';
 import {
 	DIRECTION_TO_POOL,
@@ -96,10 +96,7 @@ export function loadEvents(
 
 	let files: string[];
 	try {
-		files = readdirSync(resolvedDir)
-			.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-			.sort()
-			.map((f) => join(resolvedDir, f));
+		files = findYamlFiles(resolvedDir);
 	} catch {
 		issues.push({
 			severity: 'warning',
