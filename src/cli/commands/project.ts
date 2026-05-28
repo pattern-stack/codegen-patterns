@@ -41,7 +41,10 @@ import { scanProject, generateConfig } from '../../scanner/index.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { buildInitPlan, writePlan, type InitPlan } from '../shared/init-scaffold.js';
+import { SUBSYSTEMS } from '../shared/subsystem-detect.js';
 import { ProjectUpgradeOpenapiCommand } from './project-upgrade-openapi.js';
+import { ProjectUpdateCommand } from './project-update.js';
+import { runSkillsInstall } from './skills.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -87,7 +90,7 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 	body.push(`  orm:          ${orm}`);
 	body.push(`  architecture: ${arch}`);
 	body.push(`  entities:     ${ctx.entityCount}`);
-	body.push(`  subsystems:   ${ctx.installedSubsystems.length}/4 installed`);
+	body.push(`  subsystems:   ${ctx.installedSubsystems.length}/${SUBSYSTEMS.length} installed`);
 	body.push(`  generated:    ${generated}`);
 
 	return {
@@ -115,10 +118,10 @@ async function hints(ctx: Context): Promise<Hint[]> {
 	} else {
 		out.push({ command: 'codegen entity', description: 'Entity summary + hints' });
 	}
-	if (ctx.installedSubsystems.length < 4) {
+	if (ctx.installedSubsystems.length < SUBSYSTEMS.length) {
 		out.push({
 			command: 'codegen subsystem',
-			description: 'Install events/jobs/cache/storage',
+			description: 'Install events/jobs/cache/storage/…',
 		});
 	}
 	return out;
@@ -144,6 +147,8 @@ export class ProjectInitCommand extends Command {
 	dryRun = Option.Boolean('--dry-run', false);
 	force = Option.Boolean('--force', false);
 	withTsconfig = Option.Boolean('--with-tsconfig', false);
+	// Vendor consumer skills into .claude/skills by default; opt out with --no-skills.
+	skills = Option.Boolean('--skills', true);
 	json = Option.Boolean('--json', false);
 	cwd = Option.String('--cwd', { required: false });
 
@@ -183,6 +188,10 @@ export class ProjectInitCommand extends Command {
 
 		const result = writePlan(plan);
 
+		// Vendor consumer skills into .claude/skills (opt out with --no-skills).
+		// Soft-fail — a skills hiccup must not fail the scaffold.
+		const skillsResult = this.skills ? runSkillsInstall({ cwd: ctx.cwd, dryRun: false }) : null;
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'project init',
@@ -192,6 +201,14 @@ export class ProjectInitCommand extends Command {
 				merged: result.merged.map((e) => e.relPath),
 				overwritten: result.overwritten.map((e) => e.relPath),
 				skipped: result.skipped.map((e) => ({ path: e.relPath, reason: e.reason })),
+				skills:
+					skillsResult && skillsResult.report
+						? {
+								created: skillsResult.report.created.length,
+								updated: skillsResult.report.updated.length,
+								unchanged: skillsResult.report.unchanged.length,
+							}
+						: null,
 			});
 			return 0;
 		}
@@ -224,6 +241,22 @@ export class ProjectInitCommand extends Command {
 				`  ${theme.muted(icons.dash)} ${theme.muted('skip    ')} ${e.relPath}${
 					e.reason ? theme.muted('  (' + e.reason + ')') : ''
 				}`
+			);
+		}
+		if (skillsResult?.report) {
+			const r = skillsResult.report;
+			console.log(
+				`  ${theme.success(icons.check)} ${theme.muted('skills  ')} .claude/skills/ ${theme.muted(
+					`(${r.created.length} new, ${r.updated.length} updated, ${r.unchanged.length} unchanged)`,
+				)}`,
+			);
+		} else if (!this.skills) {
+			console.log(
+				`  ${theme.muted(icons.dash)} ${theme.muted('skip    ')} .claude/skills/ ${theme.muted('(--no-skills)')}`,
+			);
+		} else if (skillsResult && !skillsResult.ok) {
+			console.log(
+				`  ${theme.warning(icons.warning)} ${theme.muted('skills  ')} ${theme.muted(skillsResult.error ?? 'skills install failed')}`,
 			);
 		}
 		console.log('');
@@ -836,6 +869,7 @@ const projectNoun: NounModule = {
 		ProjectInspectCommand,
 		ProjectGraphCommand,
 		ProjectUpgradeOpenapiCommand,
+		ProjectUpdateCommand,
 	] as CommandClass[],
 	summary,
 	hints,

@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
+import { findYamlFiles } from '../../utils/find-yaml-files.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,11 +64,7 @@ const HEADER =
 export function collectScopeableNames(entitiesDir: string): string[] {
 	if (!fs.existsSync(entitiesDir)) return [];
 
-	const files = fs
-		.readdirSync(entitiesDir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.map((f) => path.join(entitiesDir, f))
-		.sort();
+	const files = findYamlFiles(entitiesDir);
 
 	const names: string[] = [];
 	for (const file of files) {

@@ -48,14 +48,16 @@ codegen subsystem install events         # domain event bus (transactional outbo
 codegen subsystem install jobs           # background job queue
 codegen subsystem install cache          # key-value cache with TTL
 codegen subsystem install storage        # file storage
-codegen subsystem install events --backend redis    # Redis Pub/Sub backend
+codegen subsystem install sync           # external-system sync engine
+codegen subsystem install bridge         # event-to-job bridge (needs events + jobs)
+codegen subsystem install observability  # read-only facade over the others
 codegen subsystem install cache --backend memory    # memory-only (tests)
 codegen subsystem install events --dry-run          # preview install
 codegen subsystem list                   # show installed + available
-codegen subsystem remove <name>          # uninstall a subsystem
+# codegen subsystem remove <name>        # NOT YET IMPLEMENTED (stub) — delete the dir + unwire manually
 ```
 
-Each subsystem follows Protocol → Backend → Factory (ADR-008). Register via `forRoot({ backend })`.
+Each subsystem follows Protocol → Backend → Factory (ADR-008). Register via `forRoot({ backend })`. The scaffold offers `drizzle | memory` (`local` for storage); there is no scaffolded `redis` backend. See ADR-035 + the `consumer-skills/subsystems` skill for the dependency/registration order.
 
 ### Relationship Commands
 
@@ -110,11 +112,16 @@ codegen dev down                         # stop everything
 codegen dev down --volumes               # stop + wipe data volumes
 ```
 
-### Update
+### Update + skills (consumer-facing)
 
 ```bash
-codegen update                           # pull latest + reinstall from source
+codegen update                           # re-sync vendored runtime + installed subsystems + skills to the installed package version
+codegen update --dry-run                 # preview the re-sync
+codegen skills install                   # vendor the consumer-facing skills into .claude/skills
+codegen skills list                      # available vs installed
 ```
+
+`codegen update` runs after `bun add @pattern-stack/codegen@latest` in a consumer project: it overwrites divergent package-owned files (gated on git-cleanliness; `--force` to override) and never touches `codegen.config.yaml`, `app.module.ts`, or generated barrels. It does NOT refresh tenancy-gated subsystem schemas — re-run `subsystem install <name> --force --force-config` if a schema shape changed. See ADR-035.
 
 ## Entity YAML Schema
 

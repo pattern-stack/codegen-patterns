@@ -24,6 +24,15 @@ export interface RuntimeCopyOptions {
 	 * Defaults to the parent directory of targetDir. */
 	depsTargetRoot?: string;
 	dryRun?: boolean;
+	/**
+	 * Refresh-only mode: skip any file whose destination does not already
+	 * exist (and don't follow its imports). Used by `codegen update`, which
+	 * re-syncs files that are already installed but must NOT install new ones
+	 * — adding files is `subsystem install`'s job. Without this, a project that
+	 * only vendored a subsystem's protocol (e.g. the events protocol at
+	 * `project init`) would have its whole subsystem materialised by `update`.
+	 */
+	onlyExisting?: boolean;
 }
 
 export interface RuntimeCopyResult {
@@ -40,14 +49,6 @@ function readIfExists(p: string): string | null {
 	} catch {
 		return null;
 	}
-}
-
-function writeFile(target: string, content: string): 'written' | 'updated' | 'unchanged' {
-	const existing = readIfExists(target);
-	if (existing === content) return 'unchanged';
-	fs.mkdirSync(path.dirname(target), { recursive: true });
-	fs.writeFileSync(target, content);
-	return existing === null ? 'written' : 'updated';
 }
 
 /**
@@ -83,7 +84,7 @@ function resolveSourceImport(
  * directory structure of targetDir.
  */
 export async function copyRuntime(opts: RuntimeCopyOptions): Promise<RuntimeCopyResult> {
-	const { sourceDir, targetDir, filter, resolveDeps, dryRun } = opts;
+	const { sourceDir, targetDir, filter, resolveDeps, dryRun, onlyExisting } = opts;
 
 	if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
 		throw new Error(`runtime source directory not found: ${sourceDir}`);
@@ -141,15 +142,29 @@ export async function copyRuntime(opts: RuntimeCopyOptions): Promise<RuntimeCopy
 		if (visited.has(next.src)) continue;
 		visited.add(next.src);
 
+		// Refresh-only mode (codegen update): never materialise a file that
+		// isn't already installed, and don't follow its imports.
+		if (onlyExisting && !fs.existsSync(next.dest)) {
+			continue;
+		}
+
 		const content = fs.readFileSync(next.src, 'utf-8');
 		result.planned.push(next.dest);
 
-		if (!dryRun) {
-			const status = writeFile(next.dest, content);
-			if (status === 'written') result.written.push(next.dest);
-			else if (status === 'updated') result.updated.push(next.dest);
-			else result.unchanged.push(next.dest);
-			if (next.isDep) result.dependenciesCopied.push(next.dest);
+		// Classify against the current on-disk content. Done in both real and
+		// dry-run modes so previews report accurate created/updated/unchanged
+		// counts; the actual write is gated on `!dryRun`.
+		const existing = readIfExists(next.dest);
+		const status: 'written' | 'updated' | 'unchanged' =
+			existing === content ? 'unchanged' : existing === null ? 'written' : 'updated';
+		if (status === 'written') result.written.push(next.dest);
+		else if (status === 'updated') result.updated.push(next.dest);
+		else result.unchanged.push(next.dest);
+		if (next.isDep) result.dependenciesCopied.push(next.dest);
+
+		if (!dryRun && status !== 'unchanged') {
+			fs.mkdirSync(path.dirname(next.dest), { recursive: true });
+			fs.writeFileSync(next.dest, content);
 		}
 
 		if (resolveDeps) {

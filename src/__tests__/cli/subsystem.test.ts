@@ -756,7 +756,7 @@ describe('subsystem — install sync (SYNC-7)', () => {
 });
 
 describe('runtime-copier unit', () => {
-	test('dry-run populates planned[] without writing', async () => {
+	test('dry-run classifies (planned + status) without writing to disk', async () => {
 		const target = fs.mkdtempSync(path.join(os.tmpdir(), 'copier-'));
 		tempDirs.push(target);
 		const result = await copyRuntime({
@@ -766,7 +766,10 @@ describe('runtime-copier unit', () => {
 			dryRun: true,
 		});
 		expect(result.planned.length).toBeGreaterThan(0);
-		expect(result.written).toHaveLength(0);
+		// Dry-run now classifies accurately: an empty target → every file is
+		// 'written' (created). The no-write invariant is that nothing lands on
+		// disk — the target directory is never created.
+		expect(result.written.length).toBe(result.planned.length);
 		expect(fs.existsSync(path.join(target, 'events'))).toBe(false);
 	});
 

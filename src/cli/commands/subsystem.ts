@@ -89,7 +89,7 @@ function runtimeRoot(): string {
 	return path.join(pkgRoot, 'dist', 'runtime');
 }
 
-function subsystemSource(name: SubsystemName): string {
+export function subsystemSource(name: SubsystemName): string {
 	return path.join(runtimeRoot(), 'subsystems', name);
 }
 
@@ -186,7 +186,7 @@ function isValidBackend(
 	return (desc.backends as string[]).includes(backend);
 }
 
-function backendFileFilter(
+export function backendFileFilter(
 	backend: SubsystemBackend,
 	subsystemName: SubsystemName,
 ): (file: string) => boolean {

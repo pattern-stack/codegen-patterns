@@ -63,3 +63,7 @@ npm-debug.log*
 
 # Unit-test tmp dirs (emit-typecheck fixtures, etc.)
 test/tmp/
+
+# Claude Code local session/worktree state (not project artifacts)
+.claude/.session/
+.claude/worktrees/

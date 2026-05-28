@@ -5,8 +5,8 @@
  * Reuses existing yaml-loader and entity-definition schema from codegen.
  */
 
-import { readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import { findYamlFiles } from '../utils/find-yaml-files';
 import {
 	loadEntityFromYaml,
 	loadRelationshipFromYaml,
@@ -217,9 +217,7 @@ export function loadEntities(entitiesDir: string): LoadEntitiesResult {
 	// Get all YAML files
 	let files: string[];
 	try {
-		files = readdirSync(resolvedDir)
-			.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-			.map((f) => join(resolvedDir, f));
+		files = findYamlFiles(resolvedDir);
 	} catch (err) {
 		issues.push({
 			severity: 'error',
@@ -460,9 +458,7 @@ export function loadRelationships(
 
 	let files: string[];
 	try {
-		files = readdirSync(resolvedDir)
-			.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-			.map((f) => join(resolvedDir, f));
+		files = findYamlFiles(resolvedDir);
 	} catch {
 		// Directory doesn't exist — not an error, relationships are optional
 		return { relationships, issues };

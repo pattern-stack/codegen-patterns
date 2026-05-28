@@ -28,6 +28,8 @@ import path from 'node:path';
 
 import pluralize from 'pluralize';
 
+import { findYamlFiles } from '../../utils/find-yaml-files';
+
 import type { Context } from './context.js';
 import {
 	loadEntityFromYaml,
@@ -116,11 +118,7 @@ function toKebabCase(input: string): string {
 
 export function listEntityYamls(entitiesDir: string): string[] {
 	if (!fs.existsSync(entitiesDir)) return [];
-	return fs
-		.readdirSync(entitiesDir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.map((f) => path.join(entitiesDir, f))
-		.sort();
+	return findYamlFiles(entitiesDir);
 }
 
 function collectEntities(entitiesDir: string): EntityInfo[] {
@@ -152,12 +150,9 @@ function collectEntities(entitiesDir: string): EntityInfo[] {
  */
 function listRelationshipYamls(relationshipsDir: string): string[] {
 	if (!fs.existsSync(relationshipsDir)) return [];
-	return fs
-		.readdirSync(relationshipsDir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.map((f) => path.join(relationshipsDir, f))
-		.filter((full) => detectYamlType(full) === 'relationship')
-		.sort();
+	return findYamlFiles(relationshipsDir).filter(
+		(full) => detectYamlType(full) === 'relationship',
+	);
 }
 
 function collectRelationships(relationshipsDir: string): EntityInfo[] {
@@ -183,12 +178,9 @@ function collectRelationships(relationshipsDir: string): EntityInfo[] {
  */
 export function listJunctionYamls(junctionsDir: string): string[] {
 	if (!fs.existsSync(junctionsDir)) return [];
-	return fs
-		.readdirSync(junctionsDir)
-		.filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
-		.map((f) => path.join(junctionsDir, f))
-		.filter((full) => detectYamlType(full) === 'junction')
-		.sort();
+	return findYamlFiles(junctionsDir).filter(
+		(full) => detectYamlType(full) === 'junction',
+	);
 }
 
 /**
