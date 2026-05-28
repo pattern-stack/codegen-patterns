@@ -15,6 +15,7 @@ import { buildNounSummaryCommand } from '../../cli/noun-module.js';
 import { setJsonMode } from '../../cli/ui/json.js';
 import {
 	detectInstalledSubsystems,
+	detectSubsystemStates,
 	SUBSYSTEMS,
 } from '../../cli/shared/subsystem-detect.js';
 import { copyRuntime } from '../../cli/shared/runtime-copier.js';
@@ -137,6 +138,26 @@ describe('subsystem — summary + list', () => {
 		for (const row of parsed.subsystems) {
 			expect(row.status).toBe('available');
 		}
+	});
+
+	// #2: after an events-only install, `subsystem list` must report bridge as
+	// `incomplete` (the dir holds protocol/token/schema stubs but no module),
+	// and events as `installed`.
+	test('list reports a stub-only subsystem as incomplete', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		const { out } = await capture(() =>
+			cli.run(['subsystem', 'list', '--format', 'json', '--cwd', root]),
+		);
+		const parsed = JSON.parse(out);
+		const rowFor = (name: string) =>
+			parsed.subsystems.find((r: { name: string }) => r.name === name);
+		expect(rowFor('events').status).toBe('installed');
+		expect(rowFor('bridge').status).toBe('incomplete');
 	});
 });
 
@@ -496,6 +517,52 @@ describe('subsystem — detection', () => {
 		const ctx = await loadContext({ cwd: root, skipDetection: true });
 		const installed = await detectInstalledSubsystems(ctx);
 		expect(installed.map((i) => i.name)).toContain('events');
+	});
+
+	// #4: an events install vendors `bridge/` protocol + token + schema stubs
+	// (the events drizzle backend imports them) but NOT `bridge.module.ts`.
+	// `detectInstalledSubsystems` (module-file keyed) must NOT report bridge as
+	// installed, so the barrel never emits a phantom `BridgeModule` import.
+	test('events-only install does not report bridge as installed', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		// The bridge stubs landed (proving the precondition of the bug)…
+		const bridgeDir = path.join(root, 'src/shared/subsystems/bridge');
+		expect(fs.existsSync(path.join(bridgeDir, 'bridge.protocol.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(bridgeDir, 'bridge.module.ts'))).toBe(false);
+
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+		const installed = await detectInstalledSubsystems(ctx);
+		expect(installed.map((i) => i.name)).toContain('events');
+		expect(installed.map((i) => i.name)).not.toContain('bridge');
+
+		// …and `detectSubsystemStates` surfaces bridge as `incomplete`.
+		const states = await detectSubsystemStates(ctx);
+		const bridge = states.find((s) => s.name === 'bridge');
+		expect(bridge?.status).toBe('incomplete');
+		const events = states.find((s) => s.name === 'events');
+		expect(events?.status).toBe('installed');
+	});
+
+	// #4: the regenerated barrel must NOT import BridgeModule from a module file
+	// that was never vendored (would break the consumer's `tsc`).
+	test('events-only install: generated barrel has no phantom BridgeModule import', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		const barrelPath = path.join(root, 'src/generated/subsystems.ts');
+		expect(fs.existsSync(barrelPath)).toBe(true);
+		const barrel = fs.readFileSync(barrelPath, 'utf-8');
+		expect(barrel).toContain('EventsModule');
+		expect(barrel).not.toContain('BridgeModule');
+		expect(barrel).not.toContain('bridge/bridge.module');
 	});
 });
 

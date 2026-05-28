@@ -56,6 +56,7 @@ import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.
 import {
 	SUBSYSTEMS,
 	detectInstalledSubsystems,
+	detectSubsystemStates,
 	type SubsystemDescriptor,
 	type SubsystemName,
 	type SubsystemBackend,
@@ -1787,15 +1788,19 @@ export class SubsystemListCommand extends Command {
 			skipDetection: true,
 		});
 
-		const installed = await detectInstalledSubsystems(ctx);
+		// #2: report the full present set so half-installed subsystems (a
+		// directory carrying protocol/token stubs but no `<name>.module.ts`,
+		// e.g. an events install that vendored bridge stubs) surface as
+		// `incomplete`, not `installed`.
+		const states = await detectSubsystemStates(ctx);
 		const byName = new Map<string, InstalledSubsystem>();
-		for (const i of installed) byName.set(i.name, i);
+		for (const i of states) byName.set(i.name, i);
 
 		const rows = SUBSYSTEMS.map((s) => {
 			const inst = byName.get(s.name);
 			return {
 				name: s.name,
-				status: inst ? 'installed' : 'available',
+				status: inst ? inst.status : 'available',
 				backend: inst ? inst.backend : null,
 				path: inst ? path.relative(ctx.cwd, inst.path) || inst.path : null,
 			};

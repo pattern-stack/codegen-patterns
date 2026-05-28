@@ -16,8 +16,11 @@ import { describe, test, expect } from 'bun:test';
 import { buildSubsystemBarrel } from '../../cli/shared/subsystem-barrel-generator.js';
 import type { InstalledSubsystem } from '../../cli/shared/subsystem-detect.js';
 
-function inst(name: InstalledSubsystem['name']): InstalledSubsystem {
-	return { name, path: `/fake/${name}`, backend: 'drizzle' };
+function inst(
+	name: InstalledSubsystem['name'],
+	status: InstalledSubsystem['status'] = 'installed',
+): InstalledSubsystem {
+	return { name, path: `/fake/${name}`, backend: 'drizzle', status };
 }
 
 describe('buildSubsystemBarrel', () => {
@@ -151,6 +154,25 @@ describe('buildSubsystemBarrel', () => {
 		);
 		expect(out.emitted).toEqual(['events']);
 		expect(out.skipped).toContain('observability');
+	});
+
+	test('#4: an `incomplete` subsystem is NOT emitted (no phantom forRoot import)', () => {
+		// An events-only install vendors `bridge/` protocol+token+schema stubs
+		// (the events drizzle backend imports them) but NOT `bridge.module.ts`.
+		// Detection tags that bridge dir `incomplete`; the barrel must skip it so
+		// the consumer's tsc never sees `import { BridgeModule } from
+		// '.../bridge/bridge.module'` against a file that doesn't exist.
+		const out = buildSubsystemBarrel(
+			[inst('events'), inst('bridge', 'incomplete')],
+			{ events: { backend: 'drizzle', multi_tenant: false } },
+			subsystemsRel,
+		);
+		expect(out.emitted).toEqual(['events']);
+		expect(out.content).not.toContain('BridgeModule');
+		expect(out.content).not.toContain('bridge/bridge.module');
+		// An incomplete entry is neither emitted nor reported as skipped (skipped
+		// means "installed but no composer yet").
+		expect(out.skipped).not.toContain('bridge');
 	});
 
 	test('missing config block defaults to drizzle backend + multi_tenant=false', () => {

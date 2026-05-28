@@ -87,6 +87,15 @@ pools, and multi-tenancy are in `wiring-and-order.md`.
   must be registered after them.
 - **Multi-tenancy is a config flip + a `forRoot` flag + a migration** — never a
   runtime-only toggle. See `wiring-and-order.md`.
+- **`subsystem list` can report `incomplete`, and that's usually fine.**
+  Installing one subsystem may vendor *stub* files of another — e.g. installing
+  `events` drops `bridge/bridge.protocol.ts` + `bridge.tokens.ts` because the
+  events Drizzle backend imports them. That `bridge/` directory has the protocol
+  stubs but no `bridge.module.ts`, so `subsystem list` shows it `incomplete`. It
+  is **not** registered in the generated `subsystems.ts` barrel (the barrel only
+  emits a `forRoot()` for subsystems whose `<name>.module.ts` exists), so it
+  won't break your `tsc`. Run `subsystem install bridge` to promote it to
+  `installed` when you actually want the bridge.
 - **`--backend memory`** is for tests; the scaffolded default is `drizzle`
   (`local` for storage).
 
