@@ -23,14 +23,25 @@ import { join } from 'node:path';
 import { Global, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
+// #6: `BULLMQ_CONNECTION` / `BULLMQ_RESOLVED_CONFIG` / `resolveBullMqConfig`
+// / `resolvePoolQueueName` are bullmq.config symbols — still re-exported from
+// the public barrel (bullmq.config always ships, no `bullmq` peer-dep type
+// surface). `BullMQJobOrchestrator` + `sha1JobId` live in the
+// `job-orchestrator.bullmq-backend.ts` file, which is pruned from non-bullmq
+// installs — so it's NO LONGER re-exported from the barrel (re-exporting it
+// would force every consumer's tsc to resolve the pruned file → the TS2307
+// leak #6 closed). A backend-specific spec imports its backend's symbols
+// directly from the backend file.
 import {
   BULLMQ_CONNECTION,
   BULLMQ_RESOLVED_CONFIG,
-  BullMQJobOrchestrator,
   resolveBullMqConfig,
   resolvePoolQueueName,
-  sha1JobId,
 } from '../../../../runtime/subsystems/jobs';
+import {
+  BullMQJobOrchestrator,
+  sha1JobId,
+} from '../../../../runtime/subsystems/jobs/job-orchestrator.bullmq-backend';
 import { JobsDomainModule } from '../../../../runtime/subsystems/jobs/jobs-domain.module';
 import { JOB_ORCHESTRATOR } from '../../../../runtime/subsystems/jobs/jobs-domain.tokens';
 import { DrizzleJobRunService } from '../../../../runtime/subsystems/jobs/job-run-service.drizzle-backend';
