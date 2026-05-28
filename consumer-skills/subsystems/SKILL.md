@@ -112,3 +112,25 @@ pools, and multi-tenancy are in `wiring-and-order.md`.
   runtime source, not the tenancy-gated Drizzle schema files. If a schema shape
   changed across versions, re-run `subsystem install <name> --force
   --force-config`.
+
+## Removing a subsystem
+
+`codegen subsystem remove <name>` deletes the vendored
+`<subsystems-root>/<name>/` directory and regenerates
+`src/generated/subsystems.ts` so the removed subsystem drops out of the
+`SUBSYSTEM_MODULES` barrel. Git-safety gated like install (warns on
+uncommitted changes; `--force` overrides). `--yes`/`-y` is accepted for flag
+parity with `install`.
+
+What removal does NOT do (intentionally — explicit beats silent rewrites):
+
+- It does **not** strip the `<name>:` block from `codegen.config.yaml`.
+- It does **not** remove the `<Name>Module.forRoot(...)` line from
+  `app.module.ts`.
+- It does **not** strip shared runtime deps (`src/shared/types/drizzle.ts`,
+  `src/shared/constants/tokens.ts`) — other subsystems may still need them.
+
+The CLI prints the two follow-up edits on success. `openapi-config` (a
+config-only pseudo-subsystem) and `auth-integrations` (vendored outside the
+subsystems root, alongside the codegen-emitted entity layer) are not
+auto-removable — the command errors with the right manual next-step.

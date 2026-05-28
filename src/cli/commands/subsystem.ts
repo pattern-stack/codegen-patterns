@@ -1825,38 +1825,187 @@ export class SubsystemListCommand extends Command {
 }
 
 // ---------------------------------------------------------------------------
-// SubsystemRemoveCommand (stub)
+// SubsystemRemoveCommand
 // ---------------------------------------------------------------------------
 
+/**
+ * Subsystem removal.
+ *
+ * Scope (intentionally narrow): deletes the vendored
+ * `<subsystems-root>/<name>/` directory and regenerates
+ * `<generated>/subsystems.ts` so the removed subsystem drops out of the
+ * `SUBSYSTEM_MODULES` barrel.
+ *
+ * Out of scope (would require parsing/rewriting consumer source):
+ *   - The subsystem's `<name>:` block in `codegen.config.yaml`.
+ *   - The `forRoot()` import + registration line in `app.module.ts`.
+ *   - The shared runtime dependencies (types/drizzle.ts, constants/tokens.ts)
+ *     that other subsystems may still need.
+ *
+ * The CLI prints a next-step pointing the user at the manual removal of
+ * those — explicit + auditable beats a silent rewrite of YAML/TS.
+ *
+ * The `openapi-config` pseudo-subsystem has no runtime dir to delete (its
+ * "install" is purely a YAML block injection); we refuse removal there and
+ * point the user at the config file.
+ *
+ * The `auth-integrations` starter vendors into `<modules>/integrations/`
+ * outside the subsystems root and is intentionally NOT auto-removable here —
+ * removing it cleanly means also pulling the codegen-emitted `integration`
+ * entity module, which is the entity layer's lifecycle, not ours.
+ */
 export class SubsystemRemoveCommand extends Command {
 	static paths = [['subsystem', 'remove']];
 	static usage = Command.Usage({
-		description: 'Remove a subsystem (not yet implemented)',
+		description: 'Remove a vendored subsystem',
+		examples: [
+			['Remove the jobs subsystem', 'codegen subsystem remove jobs'],
+			[
+				'Skip the git-safety check (uncommitted edits will be lost)',
+				'codegen subsystem remove jobs --force',
+			],
+			['Non-interactive parity with install', 'codegen subsystem remove jobs --yes'],
+		],
 	});
 
 	name = Option.String({ required: true });
+	// #7: parity with `subsystem install` so a non-interactive caller can pass
+	// the same flag set across install/remove. Accepted but currently a no-op
+	// (remove has no interactive prompt yet); kept for forward-compatibility.
+	yes = Option.Boolean('--yes,-y', false);
+	force = Option.Boolean('--force', false);
 	json = Option.Boolean('--json', false);
 	cwd = Option.String('--cwd', { required: false });
 	configPath = Option.String('--config', { required: false });
 
 	async execute(): Promise<number> {
 		if (this.json) setJsonMode(true);
+		const ctx = await loadContext({
+			cwd: this.cwd,
+			configPath: this.configPath,
+			json: this.json,
+			skipDetection: true,
+		});
+
+		const desc = describeSubsystem(this.name);
+		if (!desc) {
+			printError(
+				`Unknown subsystem '${this.name}'. Known: ${SUBSYSTEMS.map((s) => s.name).join(', ')}`,
+			);
+			return 2;
+		}
+
+		// Pseudo-subsystems with no vendored runtime dir aren't removable by
+		// this command. Surface the right next-step instead of a silent no-op.
+		if (desc.name === 'openapi-config') {
+			printError(
+				"openapi-config has no vendored runtime to remove — it's a config-only pseudo-subsystem.",
+			);
+			printInfo(
+				'To uninstall: delete the `openapi:` block from codegen.config.yaml and uninstall the @nestjs/swagger / @anatine/zod-openapi peer deps.',
+			);
+			return 1;
+		}
+		if (desc.name === 'auth-integrations') {
+			printError(
+				'auth-integrations is vendored under <modules>/integrations/ alongside the codegen-emitted entity layer — not auto-removable here.',
+			);
+			printInfo(
+				'To uninstall: remove the integrations/ directory and the IntegrationsAuthModule registration from app.module.ts by hand.',
+			);
+			return 1;
+		}
+
+		// Use the module-file-keyed detection from #4/#2 — we only remove
+		// fully-installed subsystems. (An `incomplete` stub dir, e.g. the
+		// bridge/ shells an events install drops, is the events install's to
+		// clean up — removing the dir directly would break the events drizzle
+		// backend's imports.)
+		const installed = await detectInstalledSubsystems(ctx);
+		const target = installed.find((i) => i.name === desc.name);
+		if (!target) {
+			if (isJsonMode()) {
+				printJson({
+					command: 'subsystem remove',
+					subsystem: desc.name,
+					status: 'not-installed',
+				});
+			} else {
+				printError(`${desc.name} is not installed — nothing to remove.`);
+			}
+			return 1;
+		}
+
+		const subsystemDir = target.path;
+		if (!fs.existsSync(subsystemDir)) {
+			// Detection said yes, fs says no — inconsistency. Bail.
+			printError(
+				`Detected install at ${subsystemDir} but the directory is gone — refusing to act.`,
+			);
+			return 1;
+		}
+
+		// Git safety — mirrors `SubsystemInstallCommand`. Uncommitted edits
+		// inside the subsystem dir would be silently destroyed otherwise.
+		if (!this.force) {
+			const rel = path.relative(ctx.cwd, subsystemDir) || subsystemDir;
+			const gitCheck = checkGitSafety([rel], ctx.cwd);
+			if (gitCheck.inRepo && !gitCheck.clean) {
+				printWarning(
+					`Uncommitted changes under ${subsystemDir}. Pass --force to delete anyway.`,
+				);
+				if (!isJsonMode()) return 1;
+			}
+		}
+
+		// Delete the vendored directory.
+		try {
+			fs.rmSync(subsystemDir, { recursive: true, force: true });
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			printError(`Failed to remove ${subsystemDir}: ${message}`);
+			return 1;
+		}
+
+		// Regenerate the barrel — detection now no longer finds this subsystem,
+		// so `SUBSYSTEM_MODULES` won't reference it. Soft-fail (the regen is
+		// opt-in like in install) so a missing generated dir doesn't fail the
+		// removal itself.
+		let barrelRegenerated = false;
+		try {
+			const generatedDir = resolveGeneratedDir(ctx);
+			await regenerateSubsystemBarrel({ ctx, generatedDir });
+			barrelRegenerated = true;
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			printWarning(`subsystem barrel regeneration failed — ${msg}`);
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'subsystem remove',
-				status: 'not-implemented',
-				message:
-					'Manually delete the subsystem directory and remove the module registration from your app.module.ts.',
+				subsystem: desc.name,
+				status: 'removed',
+				path: subsystemDir,
+				barrelRegenerated,
 			});
-			return 1;
+			return 0;
 		}
-		printError('subsystem remove is not yet implemented.');
-		console.log(
-			theme.muted(
-				'  Manually delete the subsystem directory and remove the module\n  registration from your app.module.ts.'
-			)
+
+		printSuccess(
+			`${desc.name} subsystem removed (${path.relative(ctx.cwd, subsystemDir) || subsystemDir}).`,
 		);
-		return 1;
+		if (barrelRegenerated) {
+			printInfo('Regenerated <generated>/subsystems.ts barrel.');
+		}
+		printInfo('Next steps (manual):');
+		printInfo(
+			`  1. Remove the \`${capitalize(desc.name)}Module.forRoot(...)\` registration from app.module.ts.`,
+		);
+		printInfo(
+			`  2. Remove the \`${desc.name}:\` block from codegen.config.yaml (if you no longer want it).`,
+		);
+		return 0;
 	}
 }
 

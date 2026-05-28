@@ -566,16 +566,115 @@ describe('subsystem — detection', () => {
 	});
 });
 
-describe('subsystem — remove stub', () => {
-	test('exits 1 with a not-implemented message', async () => {
+describe('subsystem — remove (#5 + #7)', () => {
+	// #5: removing a not-installed subsystem must error loudly, not silently
+	// no-op (the previous stub's failure mode).
+	test('errors loudly when the subsystem is not installed', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
 		const { result, out } = await capture(() =>
-			cli.run(['subsystem', 'remove', 'events', '--cwd', root])
+			cli.run(['subsystem', 'remove', 'events', '--cwd', root]),
 		);
 		expect(result).toBe(1);
-		expect(out.toLowerCase()).toContain('not yet implemented');
+		expect(out.toLowerCase()).toContain('not installed');
+	});
+
+	test('install → remove deletes the vendored dir and regenerates the barrel', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		// Install two subsystems so the barrel has another entry the remove
+		// must preserve.
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
+		);
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+
+		const jobsDir = path.join(root, 'src/shared/subsystems/jobs');
+		const barrelPath = path.join(root, 'src/generated/subsystems.ts');
+		expect(fs.existsSync(jobsDir)).toBe(true);
+		expect(fs.readFileSync(barrelPath, 'utf-8')).toContain('JobsDomainModule');
+
+		// --force here only bypasses the git-safety check (the temp project
+		// isn't a repo so it would pass anyway, but pass it for explicitness).
+		const { result, out } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'remove',
+				'jobs',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(0);
+		const parsed = JSON.parse(out);
+		expect(parsed.status).toBe('removed');
+		expect(parsed.subsystem).toBe('jobs');
+		expect(parsed.barrelRegenerated).toBe(true);
+
+		// Dir is gone.
+		expect(fs.existsSync(jobsDir)).toBe(false);
+		// Barrel no longer imports JobsDomainModule, but still imports EventsModule.
+		const barrel = fs.readFileSync(barrelPath, 'utf-8');
+		expect(barrel).not.toContain('JobsDomainModule');
+		expect(barrel).not.toContain('jobs/jobs-domain.module');
+		expect(barrel).toContain('EventsModule');
+	});
+
+	test('detection returns no jobs entry after remove', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]),
+		);
+		await capture(() =>
+			cli.run(['subsystem', 'remove', 'jobs', '--force', '--cwd', root]),
+		);
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+		const installed = await detectInstalledSubsystems(ctx);
+		expect(installed.map((i) => i.name)).not.toContain('jobs');
+	});
+
+	// #7: install accepts --yes; remove must too (flag-parity across the noun).
+	test('accepts --yes/-y for flag parity with install', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		await capture(() =>
+			cli.run(['subsystem', 'install', 'cache', '--force', '--cwd', root]),
+		);
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'remove', 'cache', '--yes', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		expect(fs.existsSync(path.join(root, 'src/shared/subsystems/cache'))).toBe(false);
+	});
+
+	test('rejects unknown subsystem name (exit 2)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'remove', 'unknown-thing', '--cwd', root]),
+		);
+		expect(result).toBe(2);
+	});
+
+	test('refuses removal of openapi-config (no runtime dir)', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result, out } = await capture(() =>
+			cli.run(['subsystem', 'remove', 'openapi-config', '--cwd', root]),
+		);
+		expect(result).toBe(1);
+		expect(out).toContain('config-only');
 	});
 });
 
