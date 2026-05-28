@@ -26,13 +26,49 @@ function inst(
 describe('buildSubsystemBarrel', () => {
 	const subsystemsRel = './shared/subsystems';
 
-	test('empty installed set produces empty array (with DynamicModule type)', () => {
+	test('empty installed set produces empty array (with DynamicModule type + import)', () => {
 		const out = buildSubsystemBarrel([], {}, subsystemsRel);
+		// Regression: a prior two-branch emitter dropped the import line when
+		// `allCalls` was empty, producing `export const SUBSYSTEM_MODULES:
+		// DynamicModule[] = [];` with no preceding import → consumer `tsc`
+		// failed with `TS2304: Cannot find name 'DynamicModule'`. The single
+		// emit shape always prepends the import.
+		expect(out.content).toContain(
+			"import type { DynamicModule } from '@nestjs/common';",
+		);
 		expect(out.content).toContain(
 			'export const SUBSYSTEM_MODULES: DynamicModule[] = [];',
 		);
+		// The import must precede the export.
+		expect(out.content.indexOf("import type { DynamicModule }")).toBeLessThan(
+			out.content.indexOf('export const SUBSYSTEM_MODULES'),
+		);
 		expect(out.emitted).toEqual([]);
 		expect(out.skipped).toEqual([]);
+	});
+
+	test('installed-but-no-composer-only set still emits DynamicModule import (#smoke-fix)', () => {
+		// Repro of the smoke regression: a project whose install set contains
+		// only non-composer subsystems (observability + auth + auth-integrations
+		// in the actual smoke; observability alone is sufficient to trigger the
+		// pre-fix bug). `allCalls` is empty, so the prior code returned
+		// `HEADER + 'export const SUBSYSTEM_MODULES: DynamicModule[] = [];'`
+		// with no `DynamicModule` import. tsc TS2304.
+		const out = buildSubsystemBarrel(
+			[inst('observability')],
+			{},
+			subsystemsRel,
+		);
+		expect(out.emitted).toEqual([]);
+		expect(out.skipped).toContain('observability');
+		// Imports MUST include the DynamicModule type alias …
+		expect(out.content).toContain(
+			"import type { DynamicModule } from '@nestjs/common';",
+		);
+		// … and the export must be the empty-array form (no composer fired).
+		expect(out.content).toContain(
+			'export const SUBSYSTEM_MODULES: DynamicModule[] = [];',
+		);
 	});
 
 	test('events alone → 1 import + 1 forRoot call', () => {

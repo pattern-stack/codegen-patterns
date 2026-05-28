@@ -108,6 +108,9 @@ pools, and multi-tenancy are in `wiring-and-order.md`.
   backends never drag their peer deps (`ioredis`, `bullmq`) into your `tsc`
   graph. `bullmq` and `ioredis` are declared as **optional peer
   dependencies** — install them ONLY if you actually select that backend.
+  **Drizzle installs no longer drag `bullmq` / `ioredis` into your consumer
+  peer-deps**; if your `package.json` carries them only as workarounds for
+  earlier 0.10.x scaffolds, you can drop them.
 - **Bundler caveat.** The dynamic-import specifier is captured in a variable
   (e.g. `const spec = './event-bus.redis-backend'; await import(spec)`) on
   purpose — that's what makes `tsc` treat it as `any` and skip resolving the

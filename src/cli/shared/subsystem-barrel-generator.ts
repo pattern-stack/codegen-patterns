@@ -269,18 +269,18 @@ export function buildSubsystemBarrel(
 		}
 	}
 
-	if (allCalls.length === 0) {
-		return {
-			content: HEADER + `export const SUBSYSTEM_MODULES: DynamicModule[] = [];\n`,
-			emitted,
-			skipped,
-		};
-	}
-
-	const body =
-		allImports.join('\n') +
-		'\n\n' +
-		`export const SUBSYSTEM_MODULES: DynamicModule[] = [\n${allCalls.join('\n')}\n];\n`;
+	// Single emit shape — imports always include the `DynamicModule` type
+	// (allImports is seeded with it on init), even when no composer fired.
+	// A previous two-branch shape elided the imports in the empty-`allCalls`
+	// case and produced `export const SUBSYSTEM_MODULES: DynamicModule[] = [];`
+	// with no preceding import → `TS2304: Cannot find name 'DynamicModule'`
+	// for projects whose installed set contains only non-composer subsystems
+	// (e.g. observability + auth + auth-integrations).
+	const exportLine =
+		allCalls.length === 0
+			? `export const SUBSYSTEM_MODULES: DynamicModule[] = [];\n`
+			: `export const SUBSYSTEM_MODULES: DynamicModule[] = [\n${allCalls.join('\n')}\n];\n`;
+	const body = allImports.join('\n') + '\n\n' + exportLine;
 	return { content: HEADER + body, emitted, skipped };
 }
 
