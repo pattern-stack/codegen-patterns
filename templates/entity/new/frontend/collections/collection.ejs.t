@@ -12,7 +12,32 @@ const hasApiBaseUrl = !!frontend.sync.apiBaseUrlImport;
 const shapeUrlExpr = hasApiBaseUrl
   ? '`${API_BASE_URL}/' + plural + '`'
   : '`' + frontend.sync.shapeUrl + '/' + plural + '`';
+// REST list endpoint for 'api' sync mode
+const apiUrlExpr = hasApiBaseUrl
+  ? '`${API_BASE_URL}/' + plural + '`'
+  : '`' + frontend.sync.apiUrl + '/' + plural + '`';
+const schemaPrefix = frontend.collections?.schemaPrefix ?? 'schema.';
 -%>
+<% if (frontend.sync.mode === 'api') { -%>
+export const <%= camelName %>Collection = createCollection(
+	queryCollectionOptions({
+		id: '<%= plural %>',
+		queryKey: ['<%= plural %>'],
+		queryClient,
+		queryFn: async () => {
+			const res = await fetch(<%- apiUrlExpr %><% if (frontend.auth.function) { %>, {
+				headers: { Authorization: <%= frontend.auth.function %>() },
+			}<% } %>);
+			if (!res.ok) {
+				throw new Error(`GET <%= plural %> → ${res.status} ${res.statusText}`);
+			}
+			return res.json();
+		},
+		getKey: (item) => item.id,
+		schema: <%= schemaPrefix %><%= camelName %>Schema,
+	}),
+);
+<% } else { -%>
 export const <%= camelName %>Collection = createCollection(
 	electricCollectionOptions({
 		id: '<%= plural %>',
@@ -53,9 +78,9 @@ export const <%= camelName %>Collection = createCollection(
 <% } -%>
 <% } -%>
 		},
-<% const schemaPrefix = frontend.collections?.schemaPrefix ?? 'schema.'; -%>
 		schema: <%= schemaPrefix %><%= camelName %>Schema,
 		getKey: (item) => item.id,
 	}),
 );
+<% } -%>
 <% } -%>

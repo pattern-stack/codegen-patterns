@@ -31,14 +31,19 @@ const returnKeySingular = generate.hookReturnStyle === 'named' ? camelName : 'da
 <% if (generate.mutations && (exposeTrpc || exposeRepository)) { -%>
 import { useState, useCallback } from 'react';
 <% } -%>
-<% if (frontend.sync.columnMapper) { -%>
+<% if (frontend.sync.mode !== 'api' && frontend.sync.columnMapper) { -%>
 import { <%= frontend.sync.columnMapper %> } from '@electric-sql/client';
 <% } -%>
 import { <%= camelName %>Schema, type <%= importedTypeName %> } from '<%= locations.dbEntities.import %><% if (!locations.dbEntities.barrelExport) { %>/<%= name %><% } %>';
 <% if (exposeTrpc) { -%>
 import { trpc } from '<%= locations.trpcClient.import %>';
 <% } -%>
+<% if (frontend.sync.mode === 'api') { -%>
+import { queryCollectionOptions } from '@tanstack/query-db-collection';
+import { queryClient } from '<%= frontend.sync.queryClientImport ?? './query-client' %>';
+<% } else { -%>
 import { electricCollectionOptions } from '@tanstack/electric-db-collection';
+<% } -%>
 import { createCollection<% if (generate.hookStyle === 'useLiveQuery') { %>, useLiveQuery, eq<% } %> } from '@tanstack/react-db';
 <% if (generate.fieldMetadata) { -%>
 import type { FieldMeta, FieldType, FieldImportance } from '<%= locations.frontendFieldMetaTypes.import %>/field-meta';
@@ -118,7 +123,31 @@ export type <%= className %>Resolved = <%= className %>;
 // Without this filter, soft-deleted records will reappear after Electric sync.
 <% } -%>
 
+<%
+// REST list endpoint for 'api' sync mode
+const hasApiBaseUrl = !!frontend.sync.apiBaseUrlImport;
+const apiUrlExpr = hasApiBaseUrl
+  ? '`${API_BASE_URL}/' + plural + '`'
+  : '`' + frontend.sync.apiUrl + '/' + plural + '`';
+-%>
 export const <%= collectionVar %> = createCollection(
+<% if (frontend.sync.mode === 'api') { -%>
+	queryCollectionOptions({
+		id: '<%= plural %>',
+		queryKey: ['<%= plural %>'],
+		queryClient,
+		queryFn: async () => {
+			const res = await fetch(<%- apiUrlExpr %><% if (frontend.auth.function) { %>, {
+				headers: { Authorization: <%= frontend.auth.function %>() },
+			}<% } %>);
+			if (!res.ok) {
+				throw new Error(`GET <%= plural %> → ${res.status} ${res.statusText}`);
+			}
+			return res.json();
+		},
+		getKey: (item) => item.id,
+		schema: <%= camelName %>Schema,
+<% } else { -%>
 	electricCollectionOptions({
 		id: '<%= plural %>',
 		shapeOptions: {
@@ -168,6 +197,7 @@ export const <%= collectionVar %> = createCollection(
 		},
 		schema: <%= camelName %>Schema,
 		getKey: (item) => item.id,
+<% } -%>
 <% if (generate.mutations && (exposeTrpc || exposeRepository)) { -%>
 <% if (exposeTrpc) { -%>
 		onInsert: async ({ transaction }) => {
