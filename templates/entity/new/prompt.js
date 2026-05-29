@@ -1488,6 +1488,18 @@ export default {
             : 'getAuthorizationHeader',
         },
         sync: {
+          // Read transport for the generated collection:
+          //   'electric' (default) → electricCollectionOptions (real-time shape sync)
+          //   'api'                → queryCollectionOptions (REST via TanStack Query)
+          // Additive + default-off: existing consumers are unaffected. The rest of
+          // the store (hooks/useLiveQuery, resolve, mutations) is mode-agnostic.
+          mode: frontendSync.mode ?? 'electric',
+          // 'api' mode only: REST base path; the list endpoint is `${apiUrl}/${plural}`
+          // (or `${API_BASE_URL}/${plural}` when apiBaseUrlImport is set).
+          apiUrl: frontendSync.apiUrl ?? '/api',
+          // 'api' mode only: import path for the shared TanStack QueryClient.
+          // null → a sibling './query-client' is assumed (consumer-provided).
+          queryClientImport: frontendSync.queryClientImport ?? null,
           shapeUrl: frontendSync.shapeUrl ?? '/v1/shape',
           useTableParam: frontendSync.useTableParam ?? true,
           // Column mapper for snake_case to camelCase conversion (e.g., 'snakeCamelMapper')
