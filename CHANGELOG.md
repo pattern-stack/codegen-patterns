@@ -4,6 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-30
+
+Vocabulary rename per **ADR-0005 (swe-brain `.ai-docs/decisions/ADR-0005-rename-sync-to-integration.md`)**:
+the data-movement domain `sync` → `integration` (reserving "sync" for
+ElectricSQL-style replication), the `Synced` entity family → `Integrated`, and
+the authenticated vendor-link `IntegrationStore` → `ConnectionStore`. This is a
+clean break — there are no compat shims or deprecated aliases; consumers
+migrate by **regenerating** off the renamed substrate (codegen owns the
+physical/structural names).
+
+### ⚠ BREAKING CHANGES
+
+- **Integration engine (`sync` → `integration`).**
+  - `SyncModule` → `IntegrationModule` (`.forRoot({ backend, multiTenant? })`);
+    `ExecuteSyncUseCase` → `ExecuteIntegrationUseCase`.
+  - Tokens `SYNC_*` → `INTEGRATION_*` (cursor store, run recorder, field
+    differ, change source, sink, multi-tenant flag, module options).
+  - Protocols/ports/recorders/cursor-stores/errors `sync-*` → `integration-*`;
+    `runtime/subsystems/sync/**` → `runtime/subsystems/integration/**`.
+  - Tables `sync_runs` / `sync_run_items` / `sync_subscriptions` →
+    `integration_runs` / `integration_run_items` / `integration_subscriptions`;
+    cursor column `last_sync_at` → `last_integration_at`.
+  - Entity-YAML config block `sync:` → `integration:` (incl. `sync.inbound` →
+    `integration.inbound`); the per-entity `*-sync-source.module.ts` codegen
+    output → `*-integration-source.module.ts`.
+  - CLI: `codegen subsystem install sync` → `… install integration`; the
+    `/sync` skill → `/integration`.
+- **`Synced` entity family → `Integrated`.**
+  - `SyncedEntityRepository` / `SyncedEntityService` → `IntegratedEntityRepository`
+    / `IntegratedEntityService`; `SyncUpsertConfig` → `IntegrationUpsertConfig`;
+    `syncUpsertOne`/`syncUpsert`/`syncConfig`/`SyncFkResolver` →
+    `integrationUpsertOne`/`integrationUpsert`/`integrationConfig`/`IntegrationFkResolver`;
+    `junction-sync-repository.ts` → `junction-integration-repository.ts`.
+  - YAML `pattern: Synced` → `pattern: Integrated`.
+- **Auth vendor-link `integration` → `connection`.**
+  - `IntegrationStore` ports → `ConnectionStore`:
+    `IIntegrationReader`/`IIntegrationTokenWriter`/`IIntegrationGrantSink` →
+    `IConnection*`; `DecryptedIntegration` → `DecryptedConnection`;
+    `IntegrationGrantInput`/`IntegrationTokenUpdate` → `Connection*`;
+    `IntegrationBrokenError` → `ConnectionBrokenError`; DI tokens
+    `AUTH_INTEGRATION_*` → `AUTH_CONNECTION_*`.
+  - Engine FK `integration_subscriptions.integration_id` → `connection_id`
+    (the column references the connected account/instance — a *connection*;
+    the table name stays `integration_subscriptions`).
+  - The `examples/auth-integrations` starter is fully renamed to the connection
+    vocabulary: `connection.yaml` entity (table `connections`),
+    `ConnectionsService`, `ConnectionsAuthModule`, `Connection*Adapter`,
+    vendored under `<modules>/connections/`. The `auth-integrations` subsystem
+    **install command** keeps its name.
+
+### Preserved (NOT renamed)
+
+- The CLI imperative **verb** `sync` in app-level event names
+  (`crm_sync_started`, `webhook_outbound_contact_sync`).
+- ElectricSQL `frontend.sync` collection config (replication sense).
+
+### Migration
+
+No shims. Re-vendor the runtime (`codegen update`) and **regenerate** entities/
+subsystems off the renamed names; update app code that references the renamed
+symbols/tokens/tables/config keys. See ADR-0005 (swe-brain `.ai-docs/decisions/ADR-0005-rename-sync-to-integration.md`).
+
 ## [0.10.1] — 2026-05-28
 
 Dogfood fixes found wiring `@pattern-stack/codegen@0.10.0` into a second
