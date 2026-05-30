@@ -23,7 +23,7 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-  pattern: Synced                   # Synced | Activity | Metadata | Knowledge | Base (or app-defined)
+  pattern: Integrated               # Integrated | Activity | Metadata | Knowledge | Base (or app-defined)
 
 fields:
   email:
@@ -94,7 +94,7 @@ codegen subsystem install events     # domain event bus (transactional outbox)
 codegen subsystem install jobs       # background job queue (pg-boss pattern)
 codegen subsystem install cache      # key-value cache with TTL
 codegen subsystem install storage    # file storage (local filesystem)
-codegen subsystem install sync       # external-system sync engine (IChangeSource + orchestrator + audit log)
+codegen subsystem install integration # external-system integration engine (IChangeSource + orchestrator + audit log)
 codegen subsystem install bridge     # event-to-job bridge (durable async fanout via @JobHandler.triggers)
 codegen subsystem install openapi-config  # OpenAPI/Swagger — Zod DTOs as /docs-json + Swagger UI. See docs/CONSUMER-SETUP.md §OpenAPI
 codegen subsystem install auth       # OAuth integration auth (AuthModule + ports + state store + AuthController)
@@ -144,7 +144,7 @@ Families provide pre-built base classes with domain-specific query patterns:
 
 | Family | When to Use | Key Methods |
 |--------|-------------|-------------|
-| `synced` | CRM-synced entities (contacts, accounts) | `findByExternalId`, `syncUpsert`, `findAllByUserId` |
+| `integrated` | externally-integrated entities (contacts, accounts) | `findByExternalId`, `integrationUpsert`, `findAllByUserId` |
 | `activity` | Time-based events (emails, calls, meetings) | `findByDateRange`, `findRecentByOpportunityId` |
 | `metadata` | Key-value data (tags, custom fields) | `findByEntityIdAndType`, `upsertMany` |
 | `knowledge` | Vector-searchable content | Stub (needs pgvector) |
@@ -163,9 +163,9 @@ queries:
   - by: [user_id, status]    # → FindContactByUserIdAndStatusUseCase (compound)
 ```
 
-## Sync Detection (`detection:` block)
+## Integration Detection (`detection:` block)
 
-Entities that participate in the sync subsystem may declare a `detection:` block describing how upstream changes are detected. The block is parsed by the canonical `DetectionConfigSchema` shipped from `runtime/subsystems/sync` — primitives (`PollChangeSource<T>`, `WebhookChangeSource<T>`) and the per-entity factory module emitted by codegen consume the same parsed shape, so YAML and runtime stay in lockstep (ADR-033, epic #226).
+Entities that participate in the integration subsystem may declare a `detection:` block describing how upstream changes are detected. The block is parsed by the canonical `DetectionConfigSchema` shipped from `runtime/subsystems/integration` — primitives (`PollChangeSource<T>`, `WebhookChangeSource<T>`) and the per-entity factory module emitted by codegen consume the same parsed shape, so YAML and runtime stay in lockstep (ADR-033, epic #226).
 
 ```yaml
 detection:

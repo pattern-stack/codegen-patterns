@@ -80,30 +80,30 @@ import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
-import { JunctionSyncRepository } from '@shared/base-classes/junction-sync-repository';
-import type { JunctionSyncConfig } from '@shared/base-classes/junction-sync-repository';
+import { JunctionIntegrationRepository } from '@shared/base-classes/junction-integration-repository';
+import type { JunctionIntegrationConfig } from '@shared/base-classes/junction-integration-repository';
 import { opportunities } from '../opportunities/opportunity.entity';
 import { activities } from '../activities/activity.entity';
 import { opportunityActivities, type OpportunityActivity } from './opportunity_activity.entity';
 
 /**
- * Canonical fields a synced opportunity_activity junction write carries (#374). BOTH
+ * Canonical fields a integrated opportunity_activity junction write carries (#374). BOTH
  * parent FKs are named by their vendor external ids and resolved STRICTLY in
  * the tx (a missing parent throws → the orchestrator records a failed item and
  * continues). \`userId\` is run context (no column on the junction).
  */
-export interface OpportunityActivitySyncWrite {
+export interface OpportunityActivityIntegrationWrite {
   readonly opportunityExternalId: string;
   readonly activityExternalId: string;
   readonly userId: string;
 }
 
 /**
- * Canonical-projected view of a opportunity_activity junction row, keyed for the sync
+ * Canonical-projected view of a opportunity_activity junction row, keyed for the integration
  * differ (#374). \`id\` is the COMPOSITE externalId (the junction has no
  * surrogate id); the FKs are the LOCAL resolved uuids.
  */
-export interface OpportunityActivitySyncProjection {
+export interface OpportunityActivityIntegrationProjection {
   readonly id: string;
   readonly opportunityId: string;
   readonly activityId: string;
@@ -112,10 +112,10 @@ export interface OpportunityActivitySyncProjection {
 }
 
 @Injectable()
-export class OpportunityActivityRepository extends JunctionSyncRepository<
+export class OpportunityActivityRepository extends JunctionIntegrationRepository<
   OpportunityActivity,
-  OpportunityActivitySyncWrite,
-  OpportunityActivitySyncProjection
+  OpportunityActivityIntegrationWrite,
+  OpportunityActivityIntegrationProjection
 > {
   readonly table = opportunityActivities;
 
@@ -127,9 +127,9 @@ export class OpportunityActivityRepository extends JunctionSyncRepository<
     userTracking: false,
   };
 
-  // Inbound-sync write surface (#374). Both endpoints resolve strictly against
+  // Inbound-integration write surface (#374). Both endpoints resolve strictly against
   // the live parent tables; role-bearing junctions conflict on (left,right,role).
-  protected readonly syncConfig: JunctionSyncConfig = {
+  protected readonly integrationConfig: JunctionIntegrationConfig = {
     left: { column: 'opportunityId', refTable: opportunities },
     right: { column: 'activityId', refTable: activities },
     roleColumn: null,
@@ -176,9 +176,9 @@ export class OpportunityActivityRepository extends JunctionSyncRepository<
     return rows as OpportunityActivity[];
   }
 
-  // Inherited from JunctionSyncRepository (+ BaseRepository):
+  // Inherited from JunctionIntegrationRepository (+ BaseRepository):
   //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
-  //   syncUpsertOne, findByExternalIdProjected, softDeleteByExternalId
+  //   integrationUpsertOne, findByExternalIdProjected, softDeleteByExternalId
 }
 "
 `;
@@ -372,13 +372,13 @@ import type { Activity } from '../activities/activity.entity';
 
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
-import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
+import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-service';
 import { OpportunityRepository } from './opportunity.repository';
 import type { Opportunity } from './opportunity.entity';
 
 @Injectable()
 export class OpportunityService extends WithAnalytics(
-  SyncedEntityService<OpportunityRepository, Opportunity>,
+  IntegratedEntityService<OpportunityRepository, Opportunity>,
 ) {
   protected override readonly entityName = 'opportunity';
 
@@ -440,7 +440,7 @@ export class OpportunityService extends WithAnalytics(
   }
 
 
-  // Inherited from SyncedEntityService:
+  // Inherited from IntegratedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
   //   findByExternalId, findAllByUserId, findVisibleByUserId
 

@@ -67,7 +67,7 @@ export const <%= entityNamePlural %> = pgTable(
   },
 <%_ if (hasExternalIdTracking) { _%>
   (t) => [
-    // external_id_tracking behavior — ON CONFLICT target for syncUpsert
+    // external_id_tracking behavior — ON CONFLICT target for integrationUpsert
     uniqueIndex('uq_<%= entityNamePlural %>_provider_external_id').on(t.provider, t.externalId),
   ],
 <%_ } _%>

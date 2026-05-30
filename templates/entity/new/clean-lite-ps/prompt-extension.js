@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
 // The patterns barrel has the side effect of pre-registering the five
-// library-shipped patterns (Base / Synced / Activity / Knowledge /
+// library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here.
@@ -108,7 +108,7 @@ export function resolvePatternBaseClasses(entity) {
 /**
  * Resolve the behaviors implied by an entity's declared pattern(s).
  *
- * A pattern (e.g. `Synced`) may declare `impliedBehaviors` — behaviors the
+ * A pattern (e.g. `Integrated`) may declare `impliedBehaviors` — behaviors the
  * entity gets for free without re-declaring them in its `behaviors:` array.
  * Walks every declared pattern (both the `pattern: X` and `patterns: [...]`
  * shapes), unions their `impliedBehaviors`, and returns a deduped list.
@@ -475,7 +475,7 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
 
   // external_id_tracking behavior injects varchar + jsonb columns plus a
   // unique index over (provider, external_id) — the ON CONFLICT target the
-  // sync sink's syncUpsert relies on.
+  // integration sink's integrationUpsert relies on.
   if (hasExternalIdTracking) {
     imports.add('varchar');
     imports.add('jsonb');
@@ -725,16 +725,16 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
 }
 
 // ============================================================================
-// Sync write-surface derivation (#374)
+// Integration write-surface derivation (#374)
 // ============================================================================
 
 /**
- * Pre-compute the inbound-sync write surface for a `pattern: Synced` entity.
- * Keeps the EJS thin + unit-testable: the template hand-emits the syncConfig
+ * Pre-compute the inbound-integration write surface for a `pattern: Integrated` entity.
+ * Keeps the EJS thin + unit-testable: the template hand-emits the integrationConfig
  * literal (so `refTable` can carry a LIVE Drizzle table handle, which
  * renderPatternConfigLiteral cannot express) using these locals.
  *
- * Returns null when the entity is not Synced.
+ * Returns null when the entity is not Integrated.
  *
  * @param {string} patternName     resolved pattern name
  * @param {object[]} processedFields  nonFkFields (camel + tsType + nullable)
@@ -743,8 +743,8 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
  * @param {boolean} eavEnabled
  * @param {boolean} hasSoftDelete
  */
-export function buildSyncSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields) {
-  if (patternName !== 'Synced') return null;
+export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields) {
+  if (patternName !== 'Integrated') return null;
 
   // Copy-through columns: every non-FK declared field. external_id_tracking
   // columns (external_id/provider/provider_metadata) are injected by the
@@ -782,10 +782,10 @@ export function buildSyncSurface(patternName, processedFields, belongsTo, hasTim
     ...(hasTimestamps ? ['createdAt', 'updatedAt'] : []),
   ];
 
-  // The syncConfig object literal the template hand-emits. fkResolvers carry a
+  // The integrationConfig object literal the template hand-emits. fkResolvers carry a
   // sentinel so the template can swap `refTable` to either 'self' or the live
   // table identifier.
-  const syncConfig = {
+  const integrationConfig = {
     conflictTarget: ['provider', 'externalId'],
     writeColumns,
     projectionColumns,
@@ -793,7 +793,7 @@ export function buildSyncSurface(patternName, processedFields, belongsTo, hasTim
     softDelete: !!hasSoftDelete,
   };
 
-  // TSyncWrite fields: externalId:string, copy-through (typed, nullable-aware),
+  // TIntegrationWrite fields: externalId:string, copy-through (typed, nullable-aware),
   // one `<writeKey>?: string | null` per FK, fields?: Record<string, unknown>.
   const writeFields = processedFields.map((f) => ({
     camelName: f.camelName,
@@ -804,7 +804,7 @@ export function buildSyncSurface(patternName, processedFields, belongsTo, hasTim
     tsType: 'string | null',
   }));
 
-  // TSyncProjection fields: id + externalId + copy-through (typed) + each local
+  // TIntegrationProjection fields: id + externalId + copy-through (typed) + each local
   // FK column (typed string, nullable per rel) + createdAt/updatedAt.
   const projectionFields = [
     { camelName: 'id', tsType: 'string' },
@@ -841,7 +841,7 @@ export function buildSyncSurface(patternName, processedFields, belongsTo, hasTim
   const parentTableImports = Array.from(parentImportMap.values());
 
   return {
-    syncConfig,
+    integrationConfig,
     fkResolvers,
     writeFields,
     writeFkFields,
@@ -953,7 +953,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Behavior flags (re-read from behaviors array for clean-lite-ps use).
   //
   // Fold in the resolved pattern's `impliedBehaviors` (ADR-031): an entity
-  // declaring e.g. `pattern: Synced` need not re-declare the
+  // declaring e.g. `pattern: Integrated` need not re-declare the
   // `external_id_tracking` behavior — the pattern contributes it. Deduped
   // with any explicit `behaviors:` entries, explicit-first so order is
   // stable for pre-existing fixtures. Mirrors the dedup in
@@ -1087,17 +1087,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     declarativeQueries: hasDeclarativeQueries
       ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
       : null,
-    // ADR-033.1 §8 — sync-source module emission for clean-lite-ps. Co-located
+    // ADR-033.1 §8 — integration-source module emission for clean-lite-ps. Co-located
     // with the entity feature module under src/modules/<plural>/. Closes #267.
-    syncSourceModule: `${srcRoot}/modules/${entityNamePlural}/${entityName}-sync-source.module.ts`,
-    syncSourceProviders: `${srcRoot}/modules/${entityNamePlural}/${entityName}-sync-source.providers.ts`,
+    integrationSourceModule: `${srcRoot}/modules/${entityNamePlural}/${entityName}-integration-source.module.ts`,
+    integrationSourceProviders: `${srcRoot}/modules/${entityNamePlural}/${entityName}-integration-source.providers.ts`,
   };
 
-  // Architecture-specific imports for clean-lite-ps. The sync-source module
+  // Architecture-specific imports for clean-lite-ps. The integration-source module
   // imports the entity type sibling-style (`./<entity>.entity`) since the
   // module file lives next to the entity file in the same feature folder.
   const clpImports = {
-    syncSourceToEntity: `./${entityName}.entity`,
+    integrationSourceToEntity: `./${entityName}.entity`,
   };
 
   // Class names
@@ -1156,8 +1156,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     zodChainOutput: zodChainForOutput(f),
   }));
 
-  // Sync write-surface derivation (#374) — null unless pattern: Synced.
-  const syncSurface = buildSyncSurface(
+  // Integration write-surface derivation (#374) — null unless pattern: Integrated.
+  const integrationSurface = buildIntegrationSurface(
     patternName,
     nonFkFields,
     belongsTo,
@@ -1211,16 +1211,16 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     renderPatternConfigLiteral,
     ...patternConfigClasses,
 
-    // Sync write-surface (#374) — emitted only for pattern: Synced. The
-    // template hand-emits the syncConfig literal (live refTable handles) +
-    // TSyncWrite/TSyncProjection from these.
-    hasSyncSurface: syncSurface !== null,
-    clpSyncConfig: syncSurface?.syncConfig ?? null,
-    clpSyncFkResolvers: syncSurface?.fkResolvers ?? [],
-    clpSyncWriteFields: syncSurface?.writeFields ?? [],
-    clpSyncWriteFkFields: syncSurface?.writeFkFields ?? [],
-    clpSyncProjectionFields: syncSurface?.projectionFields ?? [],
-    clpSyncParentTableImports: syncSurface?.parentTableImports ?? [],
+    // Integration write-surface (#374) — emitted only for pattern: Integrated. The
+    // template hand-emits the integrationConfig literal (live refTable handles) +
+    // TIntegrationWrite/TIntegrationProjection from these.
+    hasIntegrationSurface: integrationSurface !== null,
+    clpIntegrationConfig: integrationSurface?.integrationConfig ?? null,
+    clpIntegrationFkResolvers: integrationSurface?.fkResolvers ?? [],
+    clpIntegrationWriteFields: integrationSurface?.writeFields ?? [],
+    clpIntegrationWriteFkFields: integrationSurface?.writeFkFields ?? [],
+    clpIntegrationProjectionFields: integrationSurface?.projectionFields ?? [],
+    clpIntegrationParentTableImports: integrationSurface?.parentTableImports ?? [],
 
     // Behavior flags (also exposed at top level for template use)
     hasTimestamps,
@@ -1248,7 +1248,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // Output paths
     clpOutputPaths: outputPaths,
 
-    // Architecture-specific imports (ADR-033.1 §8 — sync-source closes #267)
+    // Architecture-specific imports (ADR-033.1 §8 — integration-source closes #267)
     clpImports,
 
     // Class names

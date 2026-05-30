@@ -7,7 +7,7 @@ description: >-
   the `codegen` (aka `cdp`) CLI, install or wire an infrastructure subsystem, or
   refresh the project after a package upgrade. This is the entry-point router;
   it points at the focused `entities`, `subsystems`, `jobs`, `events`, `bridge`,
-  and `sync` skills for deep work.
+  and `integration` skills for deep work.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 user-invocable: false
 ---
@@ -53,7 +53,7 @@ generation run the two barrels are rewritten and you wire them into
 | Write a background `@JobHandler`, configure pools, set concurrency/ordering | the `jobs` skill |
 | Author a domain event, publish via the outbox, use the typed event bus | the `events` skill |
 | React to an event with a durable async job (the event-to-job bridge) | the `bridge` skill |
-| Pull/push data from an external system (`IChangeSource` / `ISyncSink`) | the `sync` skill |
+| Pull/push data from an external system (`IChangeSource` / `IIntegrationSink`) | the `integration` skill |
 
 ## CLI quick reference
 

@@ -2,7 +2,7 @@
  * Pure resolver for the Hygen locals consumed by `templates/subsystem/observability/`.
  *
  * OBS-7: `subsystem install observability` invokes a LEAN / combiner-shaped
- * scaffold (ADR-025). Unlike events / jobs / sync / bridge, observability:
+ * scaffold (ADR-025). Unlike events / jobs / integration / bridge, observability:
  *   - has NO schema (combiner is a read-path aggregator; no new tables)
  *   - has NO worker (no background execution)
  *   - has NO generated/ dir (no codegen artifacts — the module composes
@@ -15,7 +15,7 @@
  *     ignores the block).
  *   - `main-hook.ejs.t` — appends a COMMENT BLOCK to the consumer's
  *     `app.module.ts` directing the human to wire
- *     `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync.
+ *     `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration.
  *     Deliberately NOT a regex-injection: module order matters for a
  *     combiner, and a wrong-place inject is worse than a clear TODO.
  *

@@ -1,12 +1,12 @@
 /**
- * Fixture: orchestration pattern named `Synced` — collides with the
+ * Fixture: orchestration pattern named `Integrated` — collides with the
  * library-shipped domain pattern of the same name.
  */
 
 import { defineOrchestrationPattern } from '../../../../patterns/pattern-definition.ts';
 
-export const SyncedOrchestrationPattern = defineOrchestrationPattern({
-	name: 'Synced',
+export const IntegratedOrchestrationPattern = defineOrchestrationPattern({
+	name: 'Integrated',
 	kind: 'orchestration',
 	registry: {
 		keyType: 'SomeKey',

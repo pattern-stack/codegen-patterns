@@ -1,7 +1,7 @@
 /**
  * Unit tests for the #287 auth-scaffold locals resolver.
  *
- * Mirrors sync-scaffold-locals.test.ts. Covers:
+ * Mirrors integration-scaffold-locals.test.ts. Covers:
  *   - default locals on first install (no `auth:` block in config)
  *   - custom `auth.redirect_uri_base` flows through
  *   - non-string `auth.redirect_uri_base` does not leak through

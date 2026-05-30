@@ -6,7 +6,7 @@ unless_exists: true
  * Standalone job worker entrypoint — emitted by `codegen subsystem install jobs`.
  *
  * Boots a Nest application context (NO HTTP listener) wiring the full
- * subsystem barrel (`SUBSYSTEM_MODULES` — events + jobs + bridge + sync, in
+ * subsystem barrel (`SUBSYSTEM_MODULES` — events + jobs + bridge + integration, in
  * dependency order) plus `JobWorkerModule.forRoot({ mode: 'standalone',
  * allPools: true })`. Run with:
  *
@@ -48,7 +48,7 @@ const SHUTDOWN_TIMEOUT_MS = 30_000;
 @Module({
   imports: [
     DatabaseModule,
-    // Events + Jobs + Bridge + Sync (dependency-ordered) from the generated
+    // Events + Jobs + Bridge + Integration (dependency-ordered) from the generated
     // barrel. This is the same composition AppModule imports — keeping the
     // worker's DI graph identical to the HTTP app's so handlers resolve the
     // same way in both processes.

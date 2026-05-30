@@ -100,8 +100,8 @@ const REGISTRY_TWO_TRIGGERS: BridgeRegistry = {
       map: () => ({}),
     },
     {
-      triggerId: 'sync_contact_to_hubspot#0',
-      jobType: 'sync_contact_to_hubspot',
+      triggerId: 'integration_contact_to_hubspot#0',
+      jobType: 'integration_contact_to_hubspot',
       map: () => ({}),
     },
   ],
@@ -173,7 +173,7 @@ describe('BridgeOutboxDrainHook — happy path', () => {
 
     // bridge_delivery rows carry trigger_id from the registry entry.
     expect(calls[0]!.values['triggerId']).toBe('send_welcome_email#0');
-    expect(calls[2]!.values['triggerId']).toBe('sync_contact_to_hubspot#0');
+    expect(calls[2]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
   });
 
   it('routes wrapper pool by event direction (inbound/change/outbound)', async () => {
@@ -227,7 +227,7 @@ describe('BridgeOutboxDrainHook — Case B / replay dedup', () => {
     expect(calls[1]!.table).toBe('bridge_delivery'); // succeeded
     expect(calls[2]!.table).toBe('job_run');
     expect(calls[2]!.values['pool']).toBe('events_change');
-    expect(calls[1]!.values['triggerId']).toBe('sync_contact_to_hubspot#0');
+    expect(calls[1]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
   });
 
   it('all triggers ON CONFLICT → all wrappers skipped; no job_run inserts', async () => {

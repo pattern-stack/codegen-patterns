@@ -2,7 +2,7 @@
  * JunctionPattern — top-level discriminator for explicit many-to-many
  * junction YAML files.
  *
- * Unlike `Activity` / `Synced` / `Metadata` (which attach to an entity via
+ * Unlike `Activity` / `Integrated` / `Metadata` (which attach to an entity via
  * `pattern:` / `patterns:`), `Junction` IS the top-level YAML shape — a
  * junction file's discriminator is `pattern: Junction`, not `entity:`.
  * It therefore does not declare `repositoryClass` / `serviceClass`: the

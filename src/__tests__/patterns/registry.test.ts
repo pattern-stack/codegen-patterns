@@ -33,20 +33,20 @@ describe('library pattern pre-registration', () => {
 	test('the 5 library patterns are present after importing the barrel', () => {
 		const libNames = getLibraryPatternNames();
 		expect(libNames).toContain('Base');
-		expect(libNames).toContain('Synced');
+		expect(libNames).toContain('Integrated');
 		expect(libNames).toContain('Activity');
 		expect(libNames).toContain('Knowledge');
 		expect(libNames).toContain('Metadata');
 	});
 
 	test('library lookup returns the expected class/import metadata', () => {
-		const synced = getPattern('Synced');
-		expect(synced).toBeDefined();
-		expect(synced?.repositoryClass).toBe('SyncedEntityRepository');
-		expect(synced?.repositoryImport).toBe(
-			'@shared/base-classes/synced-entity-repository',
+		const integrated = getPattern('Integrated');
+		expect(integrated).toBeDefined();
+		expect(integrated?.repositoryClass).toBe('IntegratedEntityRepository');
+		expect(integrated?.repositoryImport).toBe(
+			'@shared/base-classes/integrated-entity-repository',
 		);
-		expect(synced?.impliedBehaviors).toEqual(['external_id_tracking']);
+		expect(integrated?.impliedBehaviors).toEqual(['external_id_tracking']);
 	});
 
 	test('consumers do not need to list library patterns in a manifest', async () => {
@@ -56,7 +56,7 @@ describe('library pattern pre-registration', () => {
 		const result = await loadAppPatterns([], process.cwd());
 		expect(result.loaded).toEqual([]);
 		expect(result.errors).toEqual([]);
-		expect(getPattern('Synced')).toBeDefined();
+		expect(getPattern('Integrated')).toBeDefined();
 	});
 });
 
@@ -92,7 +92,7 @@ describe('registry insert/lookup', () => {
 	});
 
 	test('getAllPatternNames dedupes + sorts library and app names', () => {
-		// library has Base/Synced/Activity/Knowledge/Metadata already;
+		// library has Base/Integrated/Activity/Knowledge/Metadata already;
 		// inject an app pattern and verify sort order.
 		_resetRegistryForTests();
 		const names = getAllPatternNames();

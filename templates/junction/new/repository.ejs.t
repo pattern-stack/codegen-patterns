@@ -7,41 +7,41 @@ import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
-import { JunctionSyncRepository } from '@shared/base-classes/junction-sync-repository';
-import type { JunctionSyncConfig } from '@shared/base-classes/junction-sync-repository';
-<%_ syncParentImports.forEach((imp) => { _%>
+import { JunctionIntegrationRepository } from '@shared/base-classes/junction-integration-repository';
+import type { JunctionIntegrationConfig } from '@shared/base-classes/junction-integration-repository';
+<%_ integrationParentImports.forEach((imp) => { _%>
 import { <%= imp.table %> } from '<%= imp.importPath %>';
 <%_ }); _%>
 import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= name %>.entity';
 
 /**
- * Canonical fields a synced <%= name %> junction write carries (#374). BOTH
+ * Canonical fields a integrated <%= name %> junction write carries (#374). BOTH
  * parent FKs are named by their vendor external ids and resolved STRICTLY in
  * the tx (a missing parent throws → the orchestrator records a failed item and
  * continues). `userId` is run context (no column on the junction).
  */
-export interface <%= classNames.entity %>SyncWrite {
-<%_ syncWriteFields.forEach((f) => { _%>
+export interface <%= classNames.entity %>IntegrationWrite {
+<%_ integrationWriteFields.forEach((f) => { _%>
   readonly <%= f.name %>: <%- f.tsType %>;
 <%_ }); _%>
 }
 
 /**
- * Canonical-projected view of a <%= name %> junction row, keyed for the sync
+ * Canonical-projected view of a <%= name %> junction row, keyed for the integration
  * differ (#374). `id` is the COMPOSITE externalId (the junction has no
  * surrogate id); the FKs are the LOCAL resolved uuids.
  */
-export interface <%= classNames.entity %>SyncProjection {
-<%_ syncProjectionFields.forEach((f) => { _%>
+export interface <%= classNames.entity %>IntegrationProjection {
+<%_ integrationProjectionFields.forEach((f) => { _%>
   readonly <%= f.name %>: <%- f.tsType %>;
 <%_ }); _%>
 }
 
 @Injectable()
-export class <%= classNames.repository %> extends JunctionSyncRepository<
+export class <%= classNames.repository %> extends JunctionIntegrationRepository<
   <%= classNames.entity %>,
-  <%= classNames.entity %>SyncWrite,
-  <%= classNames.entity %>SyncProjection
+  <%= classNames.entity %>IntegrationWrite,
+  <%= classNames.entity %>IntegrationProjection
 > {
   readonly table = <%= tableVarName %>;
 
@@ -53,12 +53,12 @@ export class <%= classNames.repository %> extends JunctionSyncRepository<
     userTracking: false,
   };
 
-  // Inbound-sync write surface (#374). Both endpoints resolve strictly against
+  // Inbound-integration write surface (#374). Both endpoints resolve strictly against
   // the live parent tables; role-bearing junctions conflict on (left,right,role).
-  protected readonly syncConfig: JunctionSyncConfig = {
-    left: { column: '<%= junctionSyncConfig.leftColumn %>', refTable: <%= junctionSyncConfig.leftRefTable %> },
-    right: { column: '<%= junctionSyncConfig.rightColumn %>', refTable: <%= junctionSyncConfig.rightRefTable %> },
-    roleColumn: <%- junctionSyncConfig.roleColumn ? `'${junctionSyncConfig.roleColumn}'` : 'null' %>,
+  protected readonly integrationConfig: JunctionIntegrationConfig = {
+    left: { column: '<%= junctionIntegrationConfig.leftColumn %>', refTable: <%= junctionIntegrationConfig.leftRefTable %> },
+    right: { column: '<%= junctionIntegrationConfig.rightColumn %>', refTable: <%= junctionIntegrationConfig.rightRefTable %> },
+    roleColumn: <%- junctionIntegrationConfig.roleColumn ? `'${junctionIntegrationConfig.roleColumn}'` : 'null' %>,
   };
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient) {
@@ -102,7 +102,7 @@ export class <%= classNames.repository %> extends JunctionSyncRepository<
     return rows as <%= classNames.entity %>[];
   }
 
-  // Inherited from JunctionSyncRepository (+ BaseRepository):
+  // Inherited from JunctionIntegrationRepository (+ BaseRepository):
   //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
-  //   syncUpsertOne, findByExternalIdProjected, softDeleteByExternalId
+  //   integrationUpsertOne, findByExternalIdProjected, softDeleteByExternalId
 }

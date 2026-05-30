@@ -66,11 +66,11 @@ describe('JobHandlerBase — type compilation', () => {
 // compile a decorator — so this is the coverage that the missing
 // `JobHandlerMeta.triggers` field would otherwise have failed silently.
 
-interface SyncContactInput {
+interface IntegrationContactInput {
   contactId: string;
 }
 
-@JobHandler<SyncContactInput>('contact.writeback.types-test', {
+@JobHandler<IntegrationContactInput>('contact.writeback.types-test', {
   pool: 'external_crm',
   triggers: [
     {
@@ -88,13 +88,13 @@ interface SyncContactInput {
     },
   ],
 })
-class ContactWritebackHandler extends JobHandlerBase<SyncContactInput, void> {
-  async run(_ctx: JobContext<SyncContactInput>): Promise<void> {}
+class ContactWritebackHandler extends JobHandlerBase<IntegrationContactInput, void> {
+  async run(_ctx: JobContext<IntegrationContactInput>): Promise<void> {}
 }
 
 // Negative: only known `EventTypeName` literals are valid trigger events.
 // @ts-expect-error 'not_a_real_event' is not a known event type
-const _badEvent: JobTrigger<SyncContactInput>['event'] = 'not_a_real_event';
+const _badEvent: JobTrigger<IntegrationContactInput>['event'] = 'not_a_real_event';
 void _badEvent;
 
 describe('JobHandlerMeta.triggers — authoring type (BRIDGE-6 follow-up)', () => {

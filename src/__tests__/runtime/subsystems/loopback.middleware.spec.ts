@@ -2,26 +2,26 @@
  * Unit tests for `createLoopbackMiddleware` (#226-5).
  *
  * Loopback shipped as a stock `ChangeMiddleware<T>` factory replaces the
- * orchestrator's `@Optional() SYNC_LOOPBACK_FINGERPRINT_STORE` branch.
+ * orchestrator's `@Optional() INTEGRATION_LOOPBACK_FINGERPRINT_STORE` branch.
  * Coverage: matching fingerprint suppresses the change, missing
  * fingerprint passes through, and the store is consulted exactly once
  * per yielded change with the documented arguments.
  */
 import { describe, it, expect } from 'bun:test';
-import { createLoopbackMiddleware } from '../../../../runtime/subsystems/sync/loopback.middleware';
+import { createLoopbackMiddleware } from '../../../../runtime/subsystems/integration/loopback.middleware';
 import type {
   Change,
-  SyncSubscriptionView,
-} from '../../../../runtime/subsystems/sync/sync-change-source.protocol';
-import type { ChangeIterator } from '../../../../runtime/subsystems/sync/sync-middleware.protocol';
-import type { ILoopbackFingerprintStore } from '../../../../runtime/subsystems/sync/sync-loopback.protocol';
+  IntegrationSubscriptionView,
+} from '../../../../runtime/subsystems/integration/integration-change-source.protocol';
+import type { ChangeIterator } from '../../../../runtime/subsystems/integration/integration-middleware.protocol';
+import type { ILoopbackFingerprintStore } from '../../../../runtime/subsystems/integration/integration-loopback.protocol';
 
 interface CanonicalOpp extends Record<string, unknown> {
   external_id: string;
   amount?: number;
 }
 
-const SUB: SyncSubscriptionView = {
+const SUB: IntegrationSubscriptionView = {
   id: 'sub-1',
   domain: 'opportunity',
   externalRef: null,
@@ -56,14 +56,14 @@ function makeChange(externalId: string): Change<CanonicalOpp> {
 
 function arrayInner(changes: Change<CanonicalOpp>[]): ChangeIterator<CanonicalOpp> {
   return async function* (
-    _sub: SyncSubscriptionView,
+    _sub: IntegrationSubscriptionView,
     _cursor: unknown | null,
-  ): AsyncIterable<Change<CanonicalOpp>> {
+  ): AintegrationIterable<Change<CanonicalOpp>> {
     for (const c of changes) yield c;
   };
 }
 
-async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
+async function collect<T>(it: AintegrationIterable<T>): Promise<T[]> {
   const out: T[] = [];
   for await (const x of it) out.push(x);
   return out;

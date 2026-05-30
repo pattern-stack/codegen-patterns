@@ -29,7 +29,7 @@ import {
   type JobRunFailure,
   type PoolStatusCount,
   type StatusHistogram,
-  type SyncRunSummary,
+  type IntegrationRunSummary,
 } from '../../../../runtime/subsystems/observability';
 import { ObservabilityService } from '../../../../runtime/subsystems/observability/observability.service';
 
@@ -45,11 +45,11 @@ import { BRIDGE_DELIVERY_REPO } from '../../../../runtime/subsystems/bridge/brid
 import type { IJobBridge } from '../../../../runtime/subsystems/bridge/bridge.protocol';
 
 import {
-  SYNC_CURSOR_STORE,
-  SYNC_RUN_RECORDER,
-} from '../../../../runtime/subsystems/sync/sync.tokens';
-import type { ISyncRunRecorder } from '../../../../runtime/subsystems/sync/sync-run-recorder.protocol';
-import type { ICursorStore } from '../../../../runtime/subsystems/sync/sync-cursor-store.protocol';
+  INTEGRATION_CURSOR_STORE,
+  INTEGRATION_RUN_RECORDER,
+} from '../../../../runtime/subsystems/integration/integration.tokens';
+import type { IIntegrationRunRecorder } from '../../../../runtime/subsystems/integration/integration-run-recorder.protocol';
+import type { ICursorStore } from '../../../../runtime/subsystems/integration/integration-cursor-store.protocol';
 
 // ─── Fake sibling ports ──────────────────────────────────────────────────
 // Minimal stubs: record the arguments they were called with, return seeded
@@ -132,9 +132,9 @@ class FakeBridge implements IJobBridge {
   }
 }
 
-class FakeRunRecorder implements ISyncRunRecorder {
+class FakeRunRecorder implements IIntegrationRunRecorder {
   calls: CallRecord[] = [];
-  summaries: SyncRunSummary[] = [];
+  summaries: IntegrationRunSummary[] = [];
 
   startRun(): Promise<{ id: string }> {
     throw new Error('not used');
@@ -150,7 +150,7 @@ class FakeRunRecorder implements ISyncRunRecorder {
     limit: number,
     subscriptionId?: string,
     tenantId?: string | null,
-  ): Promise<SyncRunSummary[]> {
+  ): Promise<IntegrationRunSummary[]> {
     this.calls.push({
       method: 'listRecent',
       args: [limit, subscriptionId, tenantId],
@@ -206,7 +206,7 @@ const HISTOGRAM: StatusHistogram = {
   failed: 0,
 };
 
-const SYNC_SUMMARIES: SyncRunSummary[] = [
+const INTEGRATION_SUMMARIES: IntegrationRunSummary[] = [
   {
     id: 'run-a',
     subscriptionId: 'sub-1',
@@ -227,7 +227,7 @@ const CURSOR_SNAPSHOTS: CursorSnapshot[] = [
     domain: 'opportunity',
     externalRef: null,
     cursor: { systemModstamp: '2026-04-22T09:59:00Z' },
-    lastSyncAt: new Date('2026-04-22T10:00:00Z'),
+    lastIntegrationAt: new Date('2026-04-22T10:00:00Z'),
     updatedAt: new Date('2026-04-22T10:00:00Z'),
     tenantId: 'tenant-x',
   },
@@ -238,7 +238,7 @@ const CURSOR_SNAPSHOTS: CursorSnapshot[] = [
 async function buildModule(opts: {
   jobRuns?: FakeJobRunService;
   bridge?: FakeBridge;
-  syncRuns?: FakeRunRecorder;
+  integrationRuns?: FakeRunRecorder;
   cursors?: FakeCursorStore;
 }) {
   const providers: import('@nestjs/common').Provider[] = [ObservabilityService];
@@ -246,10 +246,10 @@ async function buildModule(opts: {
     providers.push({ provide: JOB_RUN_SERVICE, useValue: opts.jobRuns });
   if (opts.bridge)
     providers.push({ provide: BRIDGE_DELIVERY_REPO, useValue: opts.bridge });
-  if (opts.syncRuns)
-    providers.push({ provide: SYNC_RUN_RECORDER, useValue: opts.syncRuns });
+  if (opts.integrationRuns)
+    providers.push({ provide: INTEGRATION_RUN_RECORDER, useValue: opts.integrationRuns });
   if (opts.cursors)
-    providers.push({ provide: SYNC_CURSOR_STORE, useValue: opts.cursors });
+    providers.push({ provide: INTEGRATION_CURSOR_STORE, useValue: opts.cursors });
 
   const moduleRef = await Test.createTestingModule({ providers }).compile();
   const obs = moduleRef.get(ObservabilityService) as IObservability;
@@ -261,7 +261,7 @@ async function buildModule(opts: {
 describe('ObservabilityService — delegation', () => {
   let jobRuns: FakeJobRunService;
   let bridge: FakeBridge;
-  let syncRuns: FakeRunRecorder;
+  let integrationRuns: FakeRunRecorder;
   let cursors: FakeCursorStore;
   let obs: IObservability;
 
@@ -273,13 +273,13 @@ describe('ObservabilityService — delegation', () => {
     bridge = new FakeBridge();
     bridge.histogram = HISTOGRAM;
 
-    syncRuns = new FakeRunRecorder();
-    syncRuns.summaries = SYNC_SUMMARIES;
+    integrationRuns = new FakeRunRecorder();
+    integrationRuns.summaries = INTEGRATION_SUMMARIES;
 
     cursors = new FakeCursorStore();
     cursors.snapshots = CURSOR_SNAPSHOTS;
 
-    ({ obs } = await buildModule({ jobRuns, bridge, syncRuns, cursors }));
+    ({ obs } = await buildModule({ jobRuns, bridge, integrationRuns, cursors }));
   });
 
   it('getPoolDepths() returns IJobRunService.countByPoolAndStatus result verbatim', async () => {
@@ -306,10 +306,10 @@ describe('ObservabilityService — delegation', () => {
     ]);
   });
 
-  it('getRecentSyncRuns(limit, subscriptionId) delegates all args', async () => {
-    const result = await obs.getRecentSyncRuns(10, 'sub-1');
-    expect(result).toEqual(SYNC_SUMMARIES);
-    expect(syncRuns.calls).toEqual([
+  it('getRecentIntegrationRuns(limit, subscriptionId) delegates all args', async () => {
+    const result = await obs.getRecentIntegrationRuns(10, 'sub-1');
+    expect(result).toEqual(INTEGRATION_SUMMARIES);
+    expect(integrationRuns.calls).toEqual([
       { method: 'listRecent', args: [10, 'sub-1', undefined] },
     ]);
   });
@@ -348,12 +348,12 @@ describe('ObservabilityService — missing-port degradation', () => {
     expect(result).toEqual({ pending: 0, delivered: 0, skipped: 0, failed: 0 });
   });
 
-  it('getRecentSyncRuns() returns [] when SYNC_RUN_RECORDER is absent', async () => {
+  it('getRecentIntegrationRuns() returns [] when INTEGRATION_RUN_RECORDER is absent', async () => {
     const { obs } = await buildModule({});
-    expect(await obs.getRecentSyncRuns(5)).toEqual([]);
+    expect(await obs.getRecentIntegrationRuns(5)).toEqual([]);
   });
 
-  it('getCursors() returns [] when SYNC_CURSOR_STORE is absent', async () => {
+  it('getCursors() returns [] when INTEGRATION_CURSOR_STORE is absent', async () => {
     const { obs } = await buildModule({});
     expect(await obs.getCursors()).toEqual([]);
   });
@@ -381,23 +381,23 @@ describe('ObservabilityService — tenant passthrough', () => {
 
   let jobRuns: FakeJobRunService;
   let bridge: FakeBridge;
-  let syncRuns: FakeRunRecorder;
+  let integrationRuns: FakeRunRecorder;
   let cursors: FakeCursorStore;
   let obs: IObservability;
 
   beforeEach(async () => {
     jobRuns = new FakeJobRunService();
     bridge = new FakeBridge();
-    syncRuns = new FakeRunRecorder();
+    integrationRuns = new FakeRunRecorder();
     cursors = new FakeCursorStore();
-    ({ obs } = await buildModule({ jobRuns, bridge, syncRuns, cursors }));
+    ({ obs } = await buildModule({ jobRuns, bridge, integrationRuns, cursors }));
   });
 
   it('forwards string tenantId verbatim on every method', async () => {
     await obs.getPoolDepths('tenant-a');
     await obs.getRecentFailedJobs(3, 'tenant-a');
     await obs.getBridgeDeliveryHistogram(12, 'tenant-a');
-    await obs.getRecentSyncRuns(5, 'sub-1', 'tenant-a');
+    await obs.getRecentIntegrationRuns(5, 'sub-1', 'tenant-a');
     await obs.getCursors('tenant-a');
 
     expect(jobRuns.calls).toEqual([
@@ -407,7 +407,7 @@ describe('ObservabilityService — tenant passthrough', () => {
     expect(bridge.calls).toEqual([
       { method: 'getStatusHistogram', args: [12, 'tenant-a'] },
     ]);
-    expect(syncRuns.calls).toEqual([
+    expect(integrationRuns.calls).toEqual([
       { method: 'listRecent', args: [5, 'sub-1', 'tenant-a'] },
     ]);
     expect(cursors.calls).toEqual([{ method: 'listAll', args: ['tenant-a'] }]);
@@ -431,13 +431,13 @@ describe('ObservabilityService — tenant passthrough', () => {
 
   it('forwards undefined tenantId as undefined (sibling default)', async () => {
     await obs.getPoolDepths();
-    await obs.getRecentSyncRuns(10);
+    await obs.getRecentIntegrationRuns(10);
 
     expect(jobRuns.calls[0]).toEqual({
       method: 'countByPoolAndStatus',
       args: [undefined],
     });
-    expect(syncRuns.calls[0]).toEqual({
+    expect(integrationRuns.calls[0]).toEqual({
       method: 'listRecent',
       args: [10, undefined, undefined],
     });

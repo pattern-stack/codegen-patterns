@@ -3,7 +3,7 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-  pattern: Synced
+  pattern: Integrated
 
 fields:
   account_id:

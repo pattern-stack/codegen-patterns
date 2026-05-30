@@ -37,7 +37,7 @@ describe('skills noun', () => {
 		expect(fs.existsSync(root)).toBe(true);
 		const names = availableSkills();
 		// The vendored router + the focused domain skills.
-		for (const expected of ['codegen', 'entities', 'subsystems', 'jobs', 'events', 'bridge', 'sync']) {
+		for (const expected of ['codegen', 'entities', 'subsystems', 'jobs', 'events', 'bridge', 'integration']) {
 			expect(names).toContain(expected);
 		}
 	});

@@ -94,7 +94,7 @@ const stripePaymentReceived: EventDefinition = {
 	pool: 'events_inbound',
 };
 
-const webhookOutboundContactSync: EventDefinition = {
+const webhookOutboundContactIntegration: EventDefinition = {
 	type: 'webhook_outbound_contact_sync',
 	direction: 'outbound',
 	destination: 'crm',
@@ -120,11 +120,11 @@ const webhookOutboundContactSync: EventDefinition = {
  * shape; the generator must emit `tier: 'audit'`, `direction: null`,
  * `pool: null`.
  */
-const crmSyncStarted = {
+const crmIntegrationStarted = {
 	type: 'crm_sync_started',
 	tier: 'audit',
 	version: 1,
-	description: 'A CRM sync run kicked off (audit/observational).',
+	description: 'A CRM integration run kicked off (audit/observational).',
 	payload: {
 		run_id: { type: 'uuid', nullable: false },
 	},
@@ -221,7 +221,7 @@ describe('buildTypesContent — single inbound event', () => {
 describe('buildTypesContent — single outbound event', () => {
 	test('aggregateType uses aggregate when both aggregate and destination exist', () => {
 		// aggregate wins per precedence (aggregate ?? source ?? destination ?? type).
-		const content = buildTypesContent([webhookOutboundContactSync]);
+		const content = buildTypesContent([webhookOutboundContactIntegration]);
 
 		expect(content).toContain('export interface WebhookOutboundContactSyncEvent extends DomainEvent {');
 		expect(content).toContain("readonly aggregateType: 'contact';");
@@ -229,7 +229,7 @@ describe('buildTypesContent — single outbound event', () => {
 
 	test('aggregateType falls back to destination when aggregate is absent', () => {
 		const ev: EventDefinition = {
-			...webhookOutboundContactSync,
+			...webhookOutboundContactIntegration,
 			aggregate: undefined,
 		};
 		const content = buildTypesContent([ev]);
@@ -240,7 +240,7 @@ describe('buildTypesContent — single outbound event', () => {
 describe('buildTypesContent — multi-event ordering', () => {
 	test('interfaces and union members are alphabetical by type', () => {
 		const content = buildTypesContent([
-			webhookOutboundContactSync,
+			webhookOutboundContactIntegration,
 			contactCreated,
 			stripePaymentReceived,
 		]);
@@ -438,7 +438,7 @@ describe('buildRegistryContent — non-empty', () => {
 		const content = buildRegistryContent([
 			contactCreated,
 			stripePaymentReceived,
-			webhookOutboundContactSync,
+			webhookOutboundContactIntegration,
 		]);
 
 		// change event: only aggregate (no source, no destination)
@@ -475,7 +475,7 @@ describe('buildRegistryContent — non-empty', () => {
 	});
 
 	test('audit events emit tier:audit with direction:null and pool:null', () => {
-		const content = buildRegistryContent([crmSyncStarted]);
+		const content = buildRegistryContent([crmIntegrationStarted]);
 		expect(content).toContain("'crm_sync_started': {");
 		expect(content).toContain("tier: 'audit',");
 		expect(content).toContain('direction: null,');
@@ -499,7 +499,7 @@ describe('buildRegistryContent — non-empty', () => {
 
 	test('registry entries are alphabetical by type', () => {
 		const content = buildRegistryContent([
-			webhookOutboundContactSync,
+			webhookOutboundContactIntegration,
 			contactCreated,
 			stripePaymentReceived,
 		]);

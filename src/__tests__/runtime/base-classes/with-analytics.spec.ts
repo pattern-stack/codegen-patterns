@@ -5,14 +5,14 @@
  */
 import { describe, it, expect, mock } from 'bun:test';
 import { WithAnalytics } from '../../../../runtime/base-classes/with-analytics';
-import { SyncedEntityService, type ISyncedEntityRepository } from '../../../../runtime/base-classes/synced-entity-service';
+import { IntegratedEntityService, type IIntegratedEntityRepository } from '../../../../runtime/base-classes/integrated-entity-service';
 
 interface TestEntity {
   id: string;
   name: string;
 }
 
-function makeMockRepo(): ISyncedEntityRepository<TestEntity> {
+function makeMockRepo(): IIntegratedEntityRepository<TestEntity> {
   return {
     findById: mock(async () => ({ id: '1', name: 'Test' })),
     findByIds: mock(async () => []),
@@ -28,18 +28,18 @@ function makeMockRepo(): ISyncedEntityRepository<TestEntity> {
   };
 }
 
-// This is the key test: WithAnalytics(SyncedEntityService) must compile
+// This is the key test: WithAnalytics(IntegratedEntityService) must compile
 // and preserve all inherited methods.
 class AnalyticsCrmService extends WithAnalytics(
-  SyncedEntityService<ISyncedEntityRepository<TestEntity>, TestEntity>,
+  IntegratedEntityService<IIntegratedEntityRepository<TestEntity>, TestEntity>,
 ) {
-  constructor(repo: ISyncedEntityRepository<TestEntity>) {
+  constructor(repo: IIntegratedEntityRepository<TestEntity>) {
     super(repo);
   }
 }
 
 describe('WithAnalytics', () => {
-  it('creates a class that compiles with SyncedEntityService', () => {
+  it('creates a class that compiles with IntegratedEntityService', () => {
     const repo = makeMockRepo();
     const service = new AnalyticsCrmService(repo);
     expect(service).toBeDefined();

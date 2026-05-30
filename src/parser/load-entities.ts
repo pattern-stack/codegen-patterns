@@ -19,11 +19,11 @@ import type {
 	ParsedEntity,
 	ParsedEvent,
 	ParsedField,
-	ParsedProviderSync,
+	ParsedProviderIntegration,
 	ParsedQuery,
 	ParsedRelationship,
 	ParsedRelationshipDefinition,
-	ParsedSync,
+	ParsedIntegration,
 	ParsedTypeDirection,
 	AnalysisIssue,
 } from '../analyzer/types';
@@ -123,17 +123,17 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		}
 	}
 
-	// Parse sync configuration
-	if (definition.sync) {
-		const syncDef = definition.sync;
-		const parsedSync: ParsedSync = {
-			electric: syncDef.electric ?? false,
+	// Parse integration configuration
+	if (definition.integration) {
+		const integrationDef = definition.integration;
+		const parsedIntegration: ParsedIntegration = {
+			electric: integrationDef.electric ?? false,
 		};
 
-		if (syncDef.providers) {
-			parsedSync.providers = {};
-			for (const [providerName, providerDef] of Object.entries(syncDef.providers)) {
-				const parsedProvider: ParsedProviderSync = {
+		if (integrationDef.providers) {
+			parsedIntegration.providers = {};
+			for (const [providerName, providerDef] of Object.entries(integrationDef.providers)) {
+				const parsedProvider: ParsedProviderIntegration = {
 					remoteEntity: providerDef.remote_entity,
 					direction: providerDef.direction,
 					cdc: providerDef.cdc ?? false,
@@ -144,11 +144,11 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 				if (providerDef.read_only_fields) {
 					parsedProvider.readOnlyFields = providerDef.read_only_fields;
 				}
-				parsedSync.providers[providerName] = parsedProvider;
+				parsedIntegration.providers[providerName] = parsedProvider;
 			}
 		}
 
-		entity.sync = parsedSync;
+		entity.integration = parsedIntegration;
 	}
 
 	// Parse events

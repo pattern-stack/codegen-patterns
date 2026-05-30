@@ -17,7 +17,7 @@ import {
 const EVENT_A = '00000000-0000-0000-0000-00000000000a';
 const EVENT_B = '00000000-0000-0000-0000-00000000000b';
 const TRIGGER_X = 'send_welcome_email#0';
-const TRIGGER_Y = 'sync_contact_to_hubspot#0';
+const TRIGGER_Y = 'integration_contact_to_hubspot#0';
 
 function row(
   eventId: string,

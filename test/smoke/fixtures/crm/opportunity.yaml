@@ -9,7 +9,7 @@ entity:
   name: opportunity
   plural: opportunities
   table: opportunities
-  pattern: Synced
+  pattern: Integrated
   folder_structure: nested
 
 fields:

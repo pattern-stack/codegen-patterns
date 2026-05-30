@@ -32,24 +32,24 @@ export type { EventCategory } from './lifecycle-events';
 export { BaseFindByIdUseCase, BaseListUseCase } from './base-read-use-cases';
 export type { IFindByIdService, IListService } from './base-read-use-cases';
 
-// Sync upsert config (consumed by SyncedEntityRepository + JunctionSyncRepository)
-export type { SyncUpsertConfig, SyncFkResolver } from './sync-upsert-config';
+// Integration upsert config (consumed by IntegratedEntityRepository + JunctionIntegrationRepository)
+export type { IntegrationUpsertConfig, IntegrationFkResolver } from './integration-upsert-config';
 
 // Family-specific repository base classes
-export { SyncedEntityRepository } from './synced-entity-repository';
+export { IntegratedEntityRepository } from './integrated-entity-repository';
 export {
-  JunctionSyncRepository,
+  JunctionIntegrationRepository,
   buildCompositeExternalId,
   parseCompositeExternalId,
-} from './junction-sync-repository';
-export type { JunctionSyncConfig } from './junction-sync-repository';
+} from './junction-integration-repository';
+export type { JunctionIntegrationConfig } from './junction-integration-repository';
 export { ActivityEntityRepository } from './activity-entity-repository';
 export { MetadataEntityRepository } from './metadata-entity-repository';
 export { KnowledgeEntityRepository } from './knowledge-entity-repository';
 
 // Family-specific service base classes
-export { SyncedEntityService } from './synced-entity-service';
-export type { ISyncedEntityRepository } from './synced-entity-service';
+export { IntegratedEntityService } from './integrated-entity-service';
+export type { IIntegratedEntityRepository } from './integrated-entity-service';
 export { ActivityEntityService } from './activity-entity-service';
 export type { IActivityEntityRepository } from './activity-entity-service';
 export { MetadataEntityService } from './metadata-entity-service';

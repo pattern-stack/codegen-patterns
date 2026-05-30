@@ -3,7 +3,7 @@ to: "<%= schemaPath %>"
 force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
-// Schema barrel append tracked in #284 — same gap as events/jobs/sync today.
+// Schema barrel append tracked in #284 — same gap as events/jobs/integration today.
 /**
  * Drizzle schema for the `auth_oauth_state` table — backs the
  * `DrizzleOAuthStateStore` (`state-store.drizzle-backend.ts`).
@@ -21,7 +21,7 @@ force: true
  *   - `expires_at`  — TTL boundary; entries past this are treated as absent.
  *
  * Convention: schema files live at the root of the subsystem dir
- * (mirrors `cache.schema.ts`, `sync-audit.schema.ts`, `domain-events.schema.ts`).
+ * (mirrors `cache.schema.ts`, `integration-audit.schema.ts`, `domain-events.schema.ts`).
  */
 import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';

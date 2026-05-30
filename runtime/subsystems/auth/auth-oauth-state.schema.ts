@@ -15,7 +15,7 @@
  *   - `expires_at`  — TTL boundary; entries past this are treated as absent.
  *
  * Convention: schema files live at the root of the subsystem dir
- * (mirrors `cache.schema.ts`, `sync-audit.schema.ts`, `domain-events.schema.ts`).
+ * (mirrors `cache.schema.ts`, `integration-audit.schema.ts`, `domain-events.schema.ts`).
  */
 import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';

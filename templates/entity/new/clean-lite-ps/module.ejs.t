@@ -116,7 +116,7 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
   // exported so sibling modules that compose this entity cross-module (junction
   // `.list()`, EAV value→definition resolution) inject the home-module instance
   // — the only place the repo's own deps are wired (e.g. an EAV entity's repo
-  // injects FieldValueService for the #374 sync dual-write tx). Local-providing
+  // injects FieldValueService for the #374 integration dual-write tx). Local-providing
   // such a repo elsewhere can't satisfy those deps. Use-case internals stay unexported.
   exports: [<%= classNames.service %>, <%= classNames.repository %>],
 })

@@ -16,7 +16,7 @@
  * generated/ dir. The sole template this folder contains is
  * `main-hook.ejs.t`, which appends a COMMENT BLOCK to the user's
  * app.module.ts directing them to register `ObservabilityModule.forRoot()`
- * AFTER Events/Jobs/Bridge/Sync. We deliberately don't attempt a regex
+ * AFTER Events/Jobs/Bridge/Integration. We deliberately don't attempt a regex
  * injection — the module order matters (combiner composes siblings), and
  * a wrong-place inject is worse than a clear TODO comment.
  */

@@ -39,7 +39,7 @@ export type {
   CorrelationTimeline,
   CorrelationTimelineEntry,
   StatusHistogram,
-  SyncRunSummary,
+  IntegrationRunSummary,
   CursorSnapshot,
 } from './observability.protocol';
 

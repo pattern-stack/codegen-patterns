@@ -31,9 +31,9 @@ import {
 	resolveJobsScaffoldLocals,
 } from '../shared/jobs-scaffold-locals.js';
 import {
-	localsToHygenArgs as syncLocalsToHygenArgs,
-	resolveSyncScaffoldLocals,
-} from '../shared/sync-scaffold-locals.js';
+	localsToHygenArgs as integrationLocalsToHygenArgs,
+	resolveIntegrationScaffoldLocals,
+} from '../shared/integration-scaffold-locals.js';
 import {
 	localsToHygenArgs as bridgeLocalsToHygenArgs,
 	resolveBridgeScaffoldLocals,
@@ -216,19 +216,19 @@ export function backendFileFilter(
 			return false;
 		}
 
-		// SYNC-7: same pattern for sync — the Hygen template
-		// `templates/subsystem/sync/sync-audit.schema.ejs.t` is the sole
-		// emitter for the sync audit schema, gating the `tenant_id`
-		// columns on `sync.multi_tenant`. Skip here so `copyRuntime`
+		// SYNC-7: same pattern for integration — the Hygen template
+		// `templates/subsystem/integration/integration-audit.schema.ejs.t` is the sole
+		// emitter for the integration audit schema, gating the `tenant_id`
+		// columns on `integration.multi_tenant`. Skip here so `copyRuntime`
 		// never writes the always-tenant runtime source file.
 		if (
-			subsystemName === 'sync' &&
-			file === 'sync-audit.schema.ts'
+			subsystemName === 'integration' &&
+			file === 'integration-audit.schema.ts'
 		) {
 			return false;
 		}
 
-		// #287: same pattern as events/jobs/sync — the auth Hygen template
+		// #287: same pattern as events/jobs/integration — the auth Hygen template
 		// `templates/subsystem/auth/auth-oauth-state.schema.ejs.t` is the
 		// sole emitter for the `auth_oauth_state` schema in consumer
 		// projects. Skipping here ensures `copyRuntime` never writes the
@@ -422,12 +422,12 @@ export class SubsystemInstallCommand extends Command {
 					})
 				: null;
 
-		// SYNC-7: sync subsystem — inject the `sync:` config block and emit
-		// the tenancy-aware audit schema. No generated/ dir (sync ships no
-		// codegen artifacts — see sync-scaffold-locals.ts docstring).
-		const syncScaffold =
-			desc.name === 'sync'
-				? runSyncScaffold(ctx.cwd, ctx.config, {
+		// SYNC-7: integration subsystem — inject the `integration:` config block and emit
+		// the tenancy-aware audit schema. No generated/ dir (integration ships no
+		// codegen artifacts — see integration-scaffold-locals.ts docstring).
+		const integrationScaffold =
+			desc.name === 'integration'
+				? runIntegrationScaffold(ctx.cwd, ctx.config, {
 						dryRun: this.dryRun,
 						json: isJsonMode(),
 						forceConfig: this.forceConfig,
@@ -452,7 +452,7 @@ export class SubsystemInstallCommand extends Command {
 		// OBS-7: observability combiner subsystem — injects the placeholder
 		// `observability:` config block and appends a TODO comment block to
 		// `app.module.ts` directing the human to wire
-		// `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync.
+		// `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration.
 		// No schema, no worker, no generated/ dir (ADR-025).
 		const observabilityScaffold =
 			desc.name === 'observability'
@@ -492,9 +492,9 @@ export class SubsystemInstallCommand extends Command {
 			);
 			return 1;
 		}
-		if (syncScaffold?.configBlockOutcome === 'parse-error') {
+		if (integrationScaffold?.configBlockOutcome === 'parse-error') {
 			printError(
-				'codegen.config.yaml is not valid YAML: refusing to inject sync config block. Fix the YAML and re-run.',
+				'codegen.config.yaml is not valid YAML: refusing to inject integration config block. Fix the YAML and re-run.',
 			);
 			return 1;
 		}
@@ -533,7 +533,7 @@ export class SubsystemInstallCommand extends Command {
 				},
 				...(jobsScaffold ? { scaffold: jobsScaffold } : {}),
 				...(eventsScaffold ? { scaffold: eventsScaffold } : {}),
-				...(syncScaffold ? { scaffold: syncScaffold } : {}),
+				...(integrationScaffold ? { scaffold: integrationScaffold } : {}),
 				...(bridgeScaffold ? { scaffold: bridgeScaffold } : {}),
 				...(observabilityScaffold ? { scaffold: observabilityScaffold } : {}),
 				...(authScaffold ? { scaffold: authScaffold } : {}),
@@ -562,11 +562,11 @@ export class SubsystemInstallCommand extends Command {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
-			if (syncScaffold?.planned?.length) {
+			if (integrationScaffold?.planned?.length) {
 				printInfo(
-					`Sync scaffold — ${syncScaffold.planned.length} template targets`,
+					`Integration scaffold — ${integrationScaffold.planned.length} template targets`,
 				);
-				for (const p of syncScaffold.planned) {
+				for (const p of integrationScaffold.planned) {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
@@ -626,14 +626,14 @@ export class SubsystemInstallCommand extends Command {
 				);
 			}
 		}
-		if (syncScaffold) {
-			if (syncScaffold.ok) {
+		if (integrationScaffold) {
+			if (integrationScaffold.ok) {
 				printSuccess(
-					`sync scaffold applied (config block, schema)`,
+					`integration scaffold applied (config block, schema)`,
 				);
 			} else {
 				printWarning(
-					`sync scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${syncScaffold.error ?? 'unknown error'}`,
+					`integration scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${integrationScaffold.error ?? 'unknown error'}`,
 				);
 			}
 		}
@@ -689,7 +689,7 @@ export class SubsystemInstallCommand extends Command {
 		// Emit a targeted hint instead of the default `forRoot({ backend })` one.
 		if (desc.name === 'observability') {
 			printInfo(
-				'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync in app.module.ts',
+				'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration in app.module.ts',
 			);
 		} else if (desc.name === 'auth') {
 			// #287: auth's forRoot shape is richer than `{ backend }` —
@@ -708,9 +708,9 @@ export class SubsystemInstallCommand extends Command {
 				`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
 			);
 		}
-		if (desc.name === 'sync') {
+		if (desc.name === 'integration') {
 			printInfo(
-				`Per-entity: register ExecuteSyncUseCase + your IChangeSource/ISyncSink bindings in a feature module (see SyncModule docstring).`
+				`Per-entity: register ExecuteIntegrationUseCase + your IChangeSource/IIntegrationSink bindings in a feature module (see IntegrationModule docstring).`
 			);
 		}
 		return 0;
@@ -724,7 +724,7 @@ export class SubsystemInstallCommand extends Command {
 	 * `codegen project init`. This method just invokes the
 	 * `subsystem/openapi-config` Hygen action to inject the `openapi:`
 	 * block into `codegen.config.yaml`, honoring the same `--force-config`
-	 * semantics as jobs/events/sync/bridge.
+	 * semantics as jobs/events/integration/bridge.
 	 */
 	private async executeOpenApiConfig(ctx: Context): Promise<number> {
 		const configPath = path.join(ctx.cwd, 'codegen.config.yaml');
@@ -930,7 +930,7 @@ interface ConfigBlockActionInput {
 	actionFolder:
 		| 'jobs-config'
 		| 'events-config'
-		| 'sync-config'
+		| 'integration-config'
 		| 'bridge-config'
 		| 'openapi-config'
 		| 'observability-config'
@@ -1202,10 +1202,10 @@ function runEventsScaffold(
 }
 
 // ---------------------------------------------------------------------------
-// SYNC-7 — sync subsystem Hygen scaffold wiring
+// SYNC-7 — integration subsystem Hygen scaffold wiring
 // ---------------------------------------------------------------------------
 
-interface SyncScaffoldOutcome {
+interface IntegrationScaffoldOutcome {
 	ok: boolean;
 	planned: string[];
 	error?: string;
@@ -1213,32 +1213,32 @@ interface SyncScaffoldOutcome {
 	configBlockOutcome?: ConfigBlockOutcome;
 }
 
-function runSyncScaffold(
+function runIntegrationScaffold(
 	cwd: string,
 	config: Context['config'],
 	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
-): SyncScaffoldOutcome {
-	const locals = resolveSyncScaffoldLocals({
+): IntegrationScaffoldOutcome {
+	const locals = resolveIntegrationScaffoldLocals({
 		cwd,
 		config,
 		fileExists: (p: string) => fs.existsSync(p),
 	});
 
-	// Files the sync templates will target (used by --dry-run output and
+	// Files the integration templates will target (used by --dry-run output and
 	// JSON reporting). Ordering matches the template set. No generated/
-	// entry — sync ships no codegen artifacts (see
-	// sync-scaffold-locals.ts docstring).
+	// entry — integration ships no codegen artifacts (see
+	// integration-scaffold-locals.ts docstring).
 	const planned: string[] = [
 		locals.configPath,
 		locals.schemaPath,
 	];
 
 	// #121 (F13): inspect config BEFORE invoking the main scaffold. Main
-	// scaffold no longer emits the config block — `subsystem/sync-config`
+	// scaffold no longer emits the config block — `subsystem/integration-config`
 	// handles that under CLI control.
 	const configBlockOutcome = planConfigBlockAction(
 		locals.configPath,
-		'sync',
+		'integration',
 		opts.forceConfig,
 	);
 
@@ -1252,9 +1252,9 @@ function runSyncScaffold(
 
 	const result = invokeHygen({
 		generator: 'subsystem',
-		action: 'sync',
+		action: 'integration',
 		cwd,
-		args: syncLocalsToHygenArgs(locals),
+		args: integrationLocalsToHygenArgs(locals),
 		// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
 		inherit: !opts.json,
 	});
@@ -1270,9 +1270,9 @@ function runSyncScaffold(
 
 	const configResult = runConfigBlockAction({
 		cwd,
-		actionFolder: 'sync-config',
+		actionFolder: 'integration-config',
 		configPath: locals.configPath,
-		subsystem: 'sync',
+		subsystem: 'integration',
 		outcome: configBlockOutcome,
 		json: opts.json,
 	});

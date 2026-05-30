@@ -7,7 +7,7 @@
  * then steers three artifacts that don't fit `copyRuntime`'s shape:
  *
  *   - `auth-oauth-state.schema.ejs.t` — emits the `auth_oauth_state`
- *     drizzle schema. Same pattern as events / jobs / sync: the schema
+ *     drizzle schema. Same pattern as events / jobs / integration: the schema
  *     comes from a template (not `copyRuntime`) so the install path is the
  *     sole emitter — keeps the file's provenance unambiguous and lets us
  *     gate columns on per-subsystem flags in the future without re-shaping

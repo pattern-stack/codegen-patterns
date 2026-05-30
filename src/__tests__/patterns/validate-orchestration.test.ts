@@ -35,7 +35,7 @@ import {
 	JunctionPattern,
 	KnowledgePattern,
 	MetadataPattern,
-	SyncedPattern,
+	IntegratedPattern,
 } from '../../patterns/library/index.ts';
 
 // Re-seed library patterns once this file finishes so subsequent test
@@ -43,7 +43,7 @@ import {
 afterAll(() => {
 	_resetRegistryForTests({ includeLibrary: true });
 	registerLibraryPattern(BasePattern);
-	registerLibraryPattern(SyncedPattern);
+	registerLibraryPattern(IntegratedPattern);
 	registerLibraryPattern(ActivityPattern);
 	registerLibraryPattern(KnowledgePattern);
 	registerLibraryPattern(MetadataPattern);
@@ -59,7 +59,7 @@ describe('validateOrchestrationProject — happy paths', () => {
 		expect(
 			validateOrchestrationProject({
 				orchestrationPatterns: [],
-				domainPatternNames: ['Synced', 'Activity'],
+				domainPatternNames: ['Integrated', 'Activity'],
 			}),
 		).toEqual([]);
 	});
@@ -80,7 +80,7 @@ describe('validateOrchestrationProject — happy paths', () => {
 		expect(
 			validateOrchestrationProject({
 				orchestrationPatterns: [orch],
-				domainPatternNames: ['Synced'],
+				domainPatternNames: ['Integrated'],
 			}),
 		).toEqual([]);
 	});
@@ -114,7 +114,7 @@ describe('validateOrchestrationProject — happy paths', () => {
 describe('validateOrchestrationProject — name collision (Rule 1)', () => {
 	test('orchestration name shared with a domain pattern → error', () => {
 		const orch = defineOrchestrationPattern({
-			name: 'Synced', // collides with the library domain pattern
+			name: 'Integrated', // collides with the library domain pattern
 			kind: 'orchestration',
 			registry: {
 				keyType: 'K',
@@ -124,12 +124,12 @@ describe('validateOrchestrationProject — name collision (Rule 1)', () => {
 		});
 		const issues = validateOrchestrationProject({
 			orchestrationPatterns: [orch],
-			domainPatternNames: ['Synced', 'Activity'],
+			domainPatternNames: ['Integrated', 'Activity'],
 		});
 		expect(issues.length).toBe(1);
 		expect(issues[0]!.severity).toBe('error');
 		expect(issues[0]!.type).toBe('pattern_name_collision');
-		expect(issues[0]!.message).toMatch(/'Synced'/);
+		expect(issues[0]!.message).toMatch(/'Integrated'/);
 		expect(issues[0]!.message).toMatch(/domain pattern/);
 	});
 });

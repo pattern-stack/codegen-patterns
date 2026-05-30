@@ -46,7 +46,7 @@ export type {
   PoolStatusCount,
   JobRunFailure,
   StatusHistogram,
-  SyncRunSummary,
+  IntegrationRunSummary,
   CursorSnapshot,
 } from './observability';
 

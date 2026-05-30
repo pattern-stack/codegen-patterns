@@ -27,7 +27,7 @@ export type SubsystemName =
 	| 'jobs'
 	| 'cache'
 	| 'storage'
-	| 'sync'
+	| 'integration'
 	| 'bridge'
 	| 'openapi-config'
 	| 'observability'
@@ -93,8 +93,8 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 		defaultBackend: 'local',
 	},
 	{
-		name: 'sync',
-		description: 'External-system sync engine (IChangeSource<T> + orchestrator + audit log)',
+		name: 'integration',
+		description: 'External-system integration engine (IChangeSource<T> + orchestrator + audit log)',
 		backends: ['drizzle', 'memory'],
 		defaultBackend: 'drizzle',
 	},
@@ -117,7 +117,7 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	{
 		// OBS-7 / ADR-025. Combiner subsystem — no schema, no worker, no
 		// generated/ dir. `ObservabilityModule` composes sibling read ports
-		// (events/jobs/bridge/sync) via @Optional() DI. The `combiner`
+		// (events/jobs/bridge/integration) via @Optional() DI. The `combiner`
 		// pseudo-backend is parallel to `openapi-config`'s `config-only`.
 		name: 'observability',
 		description:
@@ -170,7 +170,7 @@ const SUBSYSTEM_MODULE_FILE: Partial<Record<SubsystemName, string>> = {
 	jobs: 'jobs-domain.module.ts',
 	cache: 'cache.module.ts',
 	storage: 'storage.module.ts',
-	sync: 'sync.module.ts',
+	integration: 'integration.module.ts',
 	bridge: 'bridge.module.ts',
 	observability: 'observability.module.ts',
 	auth: 'auth.module.ts',

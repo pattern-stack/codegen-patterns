@@ -34,13 +34,13 @@ import {
 	JunctionPattern,
 	KnowledgePattern,
 	MetadataPattern,
-	SyncedPattern,
+	IntegratedPattern,
 } from '../../patterns/library/index.ts';
 
 afterAll(() => {
 	_resetRegistryForTests({ includeLibrary: true });
 	registerLibraryPattern(BasePattern);
-	registerLibraryPattern(SyncedPattern);
+	registerLibraryPattern(IntegratedPattern);
 	registerLibraryPattern(ActivityPattern);
 	registerLibraryPattern(KnowledgePattern);
 	registerLibraryPattern(MetadataPattern);
@@ -103,8 +103,8 @@ describe('validatePatternComposition — base cases', () => {
 		expect(validatePatternComposition(entity)).toEqual([]);
 	});
 
-	test('library pattern Synced with no config is valid', () => {
-		const entity = makeEntity({ name: 'contact', pattern: 'Synced' });
+	test('library pattern Integrated with no config is valid', () => {
+		const entity = makeEntity({ name: 'contact', pattern: 'Integrated' });
 		expect(validatePatternComposition(entity)).toEqual([]);
 	});
 });
@@ -127,7 +127,7 @@ describe('validatePatternComposition — unknown pattern', () => {
 	test('unknown pattern in patterns[] surfaces per-name', () => {
 		const entity = makeEntity({
 			name: 'ghost',
-			patterns: ['Synced', 'DoesNotExist', 'AlsoMissing'],
+			patterns: ['Integrated', 'DoesNotExist', 'AlsoMissing'],
 		});
 		const errs = errors(validatePatternComposition(entity));
 		const unknownTypes = errs.filter((e) => e.type === 'pattern_unknown');
@@ -191,7 +191,7 @@ describe('validatePatternComposition — column conflicts', () => {
 
 	test('pattern column conflicts with behavior field → error', () => {
 		// Register a pattern that collides with the `external_id_tracking`
-		// behavior's `external_id` field (which SyncedPattern implies).
+		// behavior's `external_id` field (which IntegratedPattern implies).
 		registerLibraryPattern({
 			name: 'ExternalIdSquatter',
 			columns: [{ name: 'external_id', type: 'varchar(255)' }],
@@ -224,13 +224,13 @@ describe('validatePatternComposition — implied behavior dedup', () => {
 	beforeEach(() => {
 		_resetRegistryForTests();
 		registerLibraryPattern({
-			name: 'SyncedA',
-			repositoryClass: 'SyncedARepo',
+			name: 'IntegratedA',
+			repositoryClass: 'IntegratedARepo',
 			impliedBehaviors: ['external_id_tracking'],
 		});
 		registerLibraryPattern({
-			name: 'SyncedB',
-			repositoryClass: 'SyncedBRepo',
+			name: 'IntegratedB',
+			repositoryClass: 'IntegratedBRepo',
 			impliedBehaviors: ['external_id_tracking'], // same implied behavior
 		});
 	});
@@ -238,7 +238,7 @@ describe('validatePatternComposition — implied behavior dedup', () => {
 	test('two patterns implying the same behavior produce no issue', () => {
 		const entity = makeEntity({
 			name: 'x',
-			patterns: ['SyncedA', 'SyncedB'],
+			patterns: ['IntegratedA', 'IntegratedB'],
 		});
 		expect(validatePatternComposition(entity)).toEqual([]);
 	});
@@ -379,7 +379,7 @@ describe('validatePatternComposition — configSchema validation', () => {
 describe('validatePatternProject — clean-pipeline no-op warning', () => {
 	test('architecture: clean + entities with patterns → warning per entity', () => {
 		const entities = [
-			makeEntity({ name: 'a', pattern: 'Synced' }),
+			makeEntity({ name: 'a', pattern: 'Integrated' }),
 			makeEntity({ name: 'b', patterns: ['Activity'] }),
 			makeEntity({ name: 'c' }), // no pattern — skipped
 		];
@@ -391,7 +391,7 @@ describe('validatePatternProject — clean-pipeline no-op warning', () => {
 	});
 
 	test('architecture: clean-lite-ps + entities with patterns → no warning', () => {
-		const entities = [makeEntity({ name: 'a', pattern: 'Synced' })];
+		const entities = [makeEntity({ name: 'a', pattern: 'Integrated' })];
 		const issues = validatePatternProject({
 			entities,
 			architecture: 'clean-lite-ps',
@@ -400,7 +400,7 @@ describe('validatePatternProject — clean-pipeline no-op warning', () => {
 	});
 
 	test('architecture omitted → no warning (analyzer-only mode)', () => {
-		const entities = [makeEntity({ name: 'a', pattern: 'Synced' })];
+		const entities = [makeEntity({ name: 'a', pattern: 'Integrated' })];
 		const issues = validatePatternProject({ entities });
 		expect(issues).toEqual([]);
 	});

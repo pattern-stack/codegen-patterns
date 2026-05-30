@@ -202,7 +202,7 @@ export interface PatternProjectContext {
  *
  * Today this only covers plan Risk 4: warn when patterns are declared
  * but the selected architecture is `clean`, which does not yet consume
- * them. A `clean` consumer with `pattern: Synced` is not broken — the
+ * them. A `clean` consumer with `pattern: Integrated` is not broken — the
  * `clean` pipeline ignores the key — but they see no effect, which is
  * confusing without the warning.
  */

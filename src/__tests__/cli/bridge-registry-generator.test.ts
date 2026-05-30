@@ -461,7 +461,7 @@ describe('generateBridgeRegistry — orchestration', () => {
     { event: 'contact_created', map: (e) => ({ contactId: e.aggregateId }) },
   ],
 `));
-    writeHandler(handlersDir, 'sync.ts', HANDLER_TEMPLATE('sync_contact_to_hubspot', `
+    writeHandler(handlersDir, 'integration.ts', HANDLER_TEMPLATE('integration_contact_to_hubspot', `
   triggers: [
     { event: 'contact_created', map: (e) => ({ contactId: e.aggregateId }) },
     { event: 'contact_merged', map: (e) => ({ contactId: e.aggregateId }), when: (e) => true },
@@ -482,8 +482,8 @@ describe('generateBridgeRegistry — orchestration', () => {
     expect(out).toContain("'contact_created'");
     expect(out).toContain("'contact_merged'");
     expect(out).toContain("'send_welcome_email#0'");
-    expect(out).toContain("'sync_contact_to_hubspot#0'");
-    expect(out).toContain("'sync_contact_to_hubspot#1'");
+    expect(out).toContain("'integration_contact_to_hubspot#0'");
+    expect(out).toContain("'integration_contact_to_hubspot#1'");
   });
 
   it('throws AuditEventTriggerError when a handler triggers on an audit-tier event', async () => {

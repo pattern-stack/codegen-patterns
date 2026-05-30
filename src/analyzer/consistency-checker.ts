@@ -31,8 +31,8 @@ export function checkConsistency(graph: DomainGraph): AnalysisIssue[] {
 		if (entity.queries !== undefined) {
 			issues.push(...checkQueryFieldReferences(entity));
 		}
-		if (entity.sync !== undefined) {
-			issues.push(...checkSyncFieldMappingReferences(entity));
+		if (entity.integration !== undefined) {
+			issues.push(...checkIntegrationFieldMappingReferences(entity));
 			issues.push(...checkExternalIdTrackingCollision(entity));
 		}
 	}
@@ -361,22 +361,22 @@ function checkQueryFieldReferences(entity: ParsedEntity): AnalysisIssue[] {
 }
 
 /**
- * Check that sync field_mapping keys and read_only_fields reference existing entity fields
+ * Check that integration field_mapping keys and read_only_fields reference existing entity fields
  */
-function checkSyncFieldMappingReferences(entity: ParsedEntity): AnalysisIssue[] {
+function checkIntegrationFieldMappingReferences(entity: ParsedEntity): AnalysisIssue[] {
 	const issues: AnalysisIssue[] = [];
 	const availableFields = getAvailableFieldNames(entity);
 	const availableSet = new Set(availableFields);
 
-	for (const [providerName, provider] of Object.entries(entity.sync?.providers ?? {})) {
+	for (const [providerName, provider] of Object.entries(entity.integration?.providers ?? {})) {
 		for (const fieldName of Object.keys(provider.fieldMapping ?? {})) {
 			if (!availableSet.has(fieldName)) {
 				issues.push({
 					severity: 'warning',
-					type: 'unknown_sync_field_mapping',
+					type: 'unknown_integration_field_mapping',
 					entity: entity.name,
 					field: fieldName,
-					message: `Sync field mapping references unknown field "${fieldName}" for provider "${providerName}" in entity "${entity.name}"`,
+					message: `Integration field mapping references unknown field "${fieldName}" for provider "${providerName}" in entity "${entity.name}"`,
 				});
 			}
 		}
@@ -385,10 +385,10 @@ function checkSyncFieldMappingReferences(entity: ParsedEntity): AnalysisIssue[] 
 			if (!availableSet.has(fieldName)) {
 				issues.push({
 					severity: 'warning',
-					type: 'unknown_sync_field_mapping',
+					type: 'unknown_integration_field_mapping',
 					entity: entity.name,
 					field: fieldName,
-					message: `Sync field mapping references unknown field "${fieldName}" for provider "${providerName}" in entity "${entity.name}"`,
+					message: `Integration field mapping references unknown field "${fieldName}" for provider "${providerName}" in entity "${entity.name}"`,
 				});
 			}
 		}
@@ -398,7 +398,7 @@ function checkSyncFieldMappingReferences(entity: ParsedEntity): AnalysisIssue[] 
 }
 
 /**
- * Check for potential collision between external_id_tracking behavior and sync field_mapping
+ * Check for potential collision between external_id_tracking behavior and integration field_mapping
  */
 function checkExternalIdTrackingCollision(entity: ParsedEntity): AnalysisIssue[] {
 	const issues: AnalysisIssue[] = [];
@@ -406,14 +406,14 @@ function checkExternalIdTrackingCollision(entity: ParsedEntity): AnalysisIssue[]
 	const hasExternalIdTracking = entity.behaviors.includes('external_id_tracking');
 	if (!hasExternalIdTracking) return issues;
 
-	for (const [providerName, provider] of Object.entries(entity.sync?.providers ?? {})) {
+	for (const [providerName, provider] of Object.entries(entity.integration?.providers ?? {})) {
 		if (provider.fieldMapping && 'external_id' in provider.fieldMapping) {
 			issues.push({
 				severity: 'warning',
 				type: 'external_id_tracking_collision',
 				entity: entity.name,
 				field: 'external_id',
-				message: `Entity "${entity.name}" has external_id_tracking behavior and also maps "external_id" in sync field_mapping for provider "${providerName}". The behavior-added field may collide with the mapped field.`,
+				message: `Entity "${entity.name}" has external_id_tracking behavior and also maps "external_id" in integration field_mapping for provider "${providerName}". The behavior-added field may collide with the mapped field.`,
 			});
 		}
 	}

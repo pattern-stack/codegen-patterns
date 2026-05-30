@@ -248,7 +248,7 @@ describe('clean-lite-ps eav_value_table — composition with eav on owning entit
     // opportunity is an eav-enabled owner.
     const valueLocals = buildCleanLitePsLocals(valueEntity, {});
     const opportunityEntity = {
-      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Synced' },
+      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' },
       eav: true,
       fields: { name: { type: 'string', required: true }, user_id: { type: 'uuid', required: true } },
       relationships: {},

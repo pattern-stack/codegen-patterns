@@ -22,13 +22,13 @@ import {
   PollChangeSource,
   type PollFetchCallback,
   type PollFetchContext,
-} from '../../../../runtime/subsystems/sync/poll-change-source';
+} from '../../../../runtime/subsystems/integration/poll-change-source';
 import type {
   Change,
-  SyncSubscriptionView,
-} from '../../../../runtime/subsystems/sync/sync-change-source.protocol';
-import type { ChangeMiddleware } from '../../../../runtime/subsystems/sync/sync-middleware.protocol';
-import type { DetectionConfig } from '../../../../runtime/subsystems/sync/detection-config.schema';
+  IntegrationSubscriptionView,
+} from '../../../../runtime/subsystems/integration/integration-change-source.protocol';
+import type { ChangeMiddleware } from '../../../../runtime/subsystems/integration/integration-middleware.protocol';
+import type { DetectionConfig } from '../../../../runtime/subsystems/integration/detection-config.schema';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -40,7 +40,7 @@ interface OppRecord {
   modstamp: string;
 }
 
-const subscription: SyncSubscriptionView = {
+const subscription: IntegrationSubscriptionView = {
   id: 'sub-1',
   domain: 'opportunity',
   externalRef: 'sf-org-A',
@@ -61,7 +61,7 @@ function makeConfig(extra?: Partial<DetectionConfig>): DetectionConfig {
   } as DetectionConfig;
 }
 
-async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
+async function collect<T>(it: AintegrationIterable<T>): Promise<T[]> {
   const out: T[] = [];
   for await (const x of it) out.push(x);
   return out;

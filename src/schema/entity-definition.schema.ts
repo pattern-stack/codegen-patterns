@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DetectionConfigSchema } from "../../runtime/subsystems/sync";
+import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
 
 /**
  * Entity Definition Schema
@@ -571,42 +571,42 @@ const AnyQueryDeclarationSchema = z.union([
 ]);
 
 // ============================================================================
-// Sync Configuration
+// Integration Configuration
 // ============================================================================
 
 /**
- * Direction of sync with an external provider
+ * Direction of integration with an external provider
  */
-export const SyncDirectionSchema = z.enum([
+export const IntegrationDirectionSchema = z.enum([
   'inbound',
   'outbound',
   'bidirectional',
 ]);
 
-export type SyncDirection = z.infer<typeof SyncDirectionSchema>;
+export type IntegrationDirection = z.infer<typeof IntegrationDirectionSchema>;
 
 /**
- * Per-provider sync configuration
+ * Per-provider integration configuration
  */
-export const ProviderSyncSchema = z.object({
+export const ProviderIntegrationSchema = z.object({
   remote_entity: z.string(),
-  direction: SyncDirectionSchema,
+  direction: IntegrationDirectionSchema,
   cdc: z.boolean().optional().default(false),
   field_mapping: z.record(z.string(), z.string()).optional(),
   read_only_fields: z.array(z.string()).optional(),
 });
 
-export type ProviderSync = z.infer<typeof ProviderSyncSchema>;
+export type ProviderIntegration = z.infer<typeof ProviderIntegrationSchema>;
 
 /**
- * Top-level sync block: Electric SQL + named provider configs
+ * Top-level integration block: Electric SQL + named provider configs
  */
-export const SyncConfigSchema = z.object({
+export const IntegrationConfigSchema = z.object({
   electric: z.boolean().optional().default(false),
-  providers: z.record(z.string(), ProviderSyncSchema).optional(),
+  providers: z.record(z.string(), ProviderIntegrationSchema).optional(),
 });
 
-export type SyncConfig = z.infer<typeof SyncConfigSchema>;
+export type IntegrationConfig = z.infer<typeof IntegrationConfigSchema>;
 
 // ============================================================================
 // Event Declaration
@@ -789,9 +789,9 @@ export const EntityDefinitionSchema = z
     // Generates repository + service + use case methods from declarations
     queries: z.array(AnyQueryDeclarationSchema).optional(),
 
-    // v2: Integration sync configuration (CODEGEN-EVOLUTION-PLAN Phase 2)
-    // Electric SQL + provider sync (Salesforce, HubSpot, etc.)
-    sync: SyncConfigSchema.optional(),
+    // v2: Integration integration configuration (CODEGEN-EVOLUTION-PLAN Phase 2)
+    // Electric SQL + provider integration (Salesforce, HubSpot, etc.)
+    integration: IntegrationConfigSchema.optional(),
 
     // ADR-033.1: Provider-keyed change-source detection.
     //
@@ -799,11 +799,11 @@ export const EntityDefinitionSchema = z
     // a one-key map; multi-provider entities list each provider as a
     // separate key. Each value is an independent `DetectionConfig` (its
     // own mode/cursor/mapping/filters) sourced from the canonical schema
-    // in `runtime/subsystems/sync` so this validator and the runtime
+    // in `runtime/subsystems/integration` so this validator and the runtime
     // parser stay in lockstep.
     //
     // Within-file cross-check (ADR-033.1 §6): every key here must also
-    // appear in `sync.providers` — see the superRefine on
+    // appear in `integration.providers` — see the superRefine on
     // `EntityDefinitionSchema` below.
     detection: z.record(z.string(), DetectionConfigSchema).optional(),
 
@@ -846,13 +846,13 @@ export const EntityDefinitionSchema = z
   )
   .superRefine((entity, ctx) => {
     if (!entity.detection) return;
-    const declared = new Set(Object.keys(entity.sync?.providers ?? {}));
+    const declared = new Set(Object.keys(entity.integration?.providers ?? {}));
     for (const provider of Object.keys(entity.detection)) {
       if (!declared.has(provider)) {
         ctx.addIssue({
           code: 'custom',
           path: ['detection', provider],
-          message: `Provider '${provider}' used in detection: but not declared in sync.providers. Known providers: ${[...declared].join(', ')}`,
+          message: `Provider '${provider}' used in detection: but not declared in integration.providers. Known providers: ${[...declared].join(', ')}`,
         });
       }
     }

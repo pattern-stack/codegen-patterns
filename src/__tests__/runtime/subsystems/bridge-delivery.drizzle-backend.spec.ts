@@ -3,7 +3,7 @@
  *
  * `drizzle-orm/pg-proxy` driver — captures the issued SQL + params and
  * returns canned responses. No Postgres, no Docker. Mirrors the shape of
- * `sync-run-recorder.drizzle-backend.spec.ts` (SYNC-4 precedent).
+ * `integration-run-recorder.drizzle-backend.spec.ts` (SYNC-4 precedent).
  */
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pg-proxy';
@@ -160,7 +160,7 @@ describe('DrizzleBridgeDeliveryRepo — getStatusHistogram (OBS-3)', () => {
     expect(sql).toContain('count(*)::int');
     // Cutoff predicate should be a now()-interval expression, not a
     // JS-computed timestamp — this guards against accidentally depending
-    // on client clock sync.
+    // on client clock integration.
     expect(sql).toContain('now()');
     expect(sql).toContain('make_interval');
     expect(captures[0]!.params).toContain(24);

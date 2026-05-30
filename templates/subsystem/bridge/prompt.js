@@ -3,7 +3,7 @@
  *
  * Locals resolved by the CLI (src/cli/shared/bridge-scaffold-locals.ts) and
  * forwarded as CLI args. This prompt.js coerces boolean-ish strings back into
- * JS booleans for parity with events / sync (Hygen args arrive as strings).
+ * JS booleans for parity with events / integration (Hygen args arrive as strings).
  *
  * Invoked via:
  *   bunx hygen subsystem bridge \

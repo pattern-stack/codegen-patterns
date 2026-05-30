@@ -9,7 +9,7 @@
  * template's sole job is to inject the `openapi:` block into
  * `codegen.config.yaml`.
  *
- * Mirrors the bridge-config / events-config / jobs-config / sync-config
+ * Mirrors the bridge-config / events-config / jobs-config / integration-config
  * prompt.js shape. Invoked via:
  *   bunx hygen subsystem openapi-config --configPath <abs>
  */

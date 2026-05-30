@@ -5,7 +5,7 @@
  * Every method:
  *   - Accepts an optional `tenantId`, passed VERBATIM to the owning sibling
  *     port. Observability never re-implements tenant filtering — that is
- *     the owning subsystem's job (jobs / bridge / sync). See
+ *     the owning subsystem's job (jobs / bridge / integration). See
  *     `.claude/skills/observability/SKILL.md` §3.
  *       - `undefined` — "not provided"; sibling default semantics apply.
  *       - `null`      — explicit cross-tenant match (sibling-specific).
@@ -32,8 +32,8 @@ import type {
   ListEventsQuery,
 } from '../events/event-read.protocol';
 import type { StatusHistogram } from '../bridge/bridge.protocol';
-import type { SyncRunSummary } from '../sync/sync-run-recorder.protocol';
-import type { CursorSnapshot } from '../sync/sync-cursor-store.protocol';
+import type { IntegrationRunSummary } from '../integration/integration-run-recorder.protocol';
+import type { CursorSnapshot } from '../integration/integration-cursor-store.protocol';
 
 /**
  * One chronological entry in a correlation timeline (OBS-LIST-1). Either a
@@ -98,22 +98,22 @@ export interface IObservability {
   ): Promise<StatusHistogram>;
 
   /**
-   * Recent `sync_runs` (optionally filtered by subscription). Delegates to
-   * `ISyncRunRecorder.listRecent`.
+   * Recent `integration_runs` (optionally filtered by subscription). Delegates to
+   * `IIntegrationRunRecorder.listRecent`.
    *
-   * Empty array when the sync subsystem is not installed.
+   * Empty array when the integration subsystem is not installed.
    */
-  getRecentSyncRuns(
+  getRecentIntegrationRuns(
     limit: number,
     subscriptionId?: string,
     tenantId?: string | null,
-  ): Promise<SyncRunSummary[]>;
+  ): Promise<IntegrationRunSummary[]>;
 
   /**
-   * Cursor state per enabled `sync_subscriptions` row. Delegates to
+   * Cursor state per enabled `integration_subscriptions` row. Delegates to
    * `ICursorStore.listAll`.
    *
-   * Empty array when the sync subsystem is not installed.
+   * Empty array when the integration subsystem is not installed.
    */
   getCursors(tenantId?: string | null): Promise<CursorSnapshot[]>;
 
@@ -163,6 +163,6 @@ export type {
   EventPage,
   ListEventsQuery,
   StatusHistogram,
-  SyncRunSummary,
+  IntegrationRunSummary,
   CursorSnapshot,
 };

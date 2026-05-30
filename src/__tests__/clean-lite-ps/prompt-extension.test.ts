@@ -21,7 +21,7 @@ const contactDefinition = {
     name: 'contact',
     plural: 'contacts',
     table: 'contacts',
-    pattern: 'Synced',
+    pattern: 'Integrated',
   },
   fields: {
     user_id: { type: 'uuid', required: true },
@@ -84,14 +84,14 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.classNames.outputSchema).toBe('ContactOutputSchema');
   });
 
-  it('maps Synced pattern to SyncedEntityRepository and SyncedEntityService', () => {
+  it('maps Integrated pattern to IntegratedEntityRepository and IntegratedEntityService', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
 
-    expect(locals.patternName).toBe('Synced');
-    expect(locals.repositoryBaseClass).toBe('SyncedEntityRepository');
-    expect(locals.serviceBaseClass).toBe('SyncedEntityService');
-    expect(locals.repositoryBaseImport).toBe('@shared/base-classes/synced-entity-repository');
-    expect(locals.serviceBaseImport).toBe('@shared/base-classes/synced-entity-service');
+    expect(locals.patternName).toBe('Integrated');
+    expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
+    expect(locals.serviceBaseClass).toBe('IntegratedEntityService');
+    expect(locals.repositoryBaseImport).toBe('@shared/base-classes/integrated-entity-repository');
+    expect(locals.serviceBaseImport).toBe('@shared/base-classes/integrated-entity-service');
   });
 
   it('maps Activity pattern to ActivityEntityRepository and ActivityEntityService', () => {
@@ -307,14 +307,14 @@ describe('buildCleanLitePsLocals', () => {
 
   it('produces collision-free class names for different entities sharing a query', () => {
     const accountDef = {
-      entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Synced' },
+      entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Integrated' },
       fields: { domain: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
       queries: [{ by: ['domain'], unique: true }],
     };
     const opportunityDef = {
-      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Synced' },
+      entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' },
       fields: { domain: { type: 'string', required: true } },
       relationships: {},
       behaviors: [],
@@ -395,13 +395,13 @@ import {
   JunctionPattern,
   KnowledgePattern,
   MetadataPattern,
-  SyncedPattern,
+  IntegratedPattern,
 } from '../../patterns/library/index.ts';
 
 describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
   it('exposes `patternName` verbatim from the pattern registry', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
-    expect(locals.patternName).toBe('Synced');
+    expect(locals.patternName).toBe('Integrated');
   });
 
   it('first entry of `patterns:` wins the base-class resolution', () => {
@@ -410,15 +410,15 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
         name: 'deal',
         plural: 'deals',
         table: 'deals',
-        patterns: ['Synced', 'Activity'],
+        patterns: ['Integrated', 'Activity'],
       },
       fields: {},
       relationships: {},
       behaviors: ['timestamps'],
     };
     const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
-    expect(locals.patternName).toBe('Synced');
-    expect(locals.repositoryBaseClass).toBe('SyncedEntityRepository');
+    expect(locals.patternName).toBe('Integrated');
+    expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
   });
 
   it('hasPatternConfig is false for patterns that declare no config', () => {
@@ -466,11 +466,11 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
     // produced. Any future library-pattern edit that drifts the strings
     // will fail here, which is the desired alarm.
     const want = {
-      synced: {
-        repositoryBaseClass: 'SyncedEntityRepository',
-        serviceBaseClass: 'SyncedEntityService',
-        repositoryBaseImport: '@shared/base-classes/synced-entity-repository',
-        serviceBaseImport: '@shared/base-classes/synced-entity-service',
+      integrated: {
+        repositoryBaseClass: 'IntegratedEntityRepository',
+        serviceBaseClass: 'IntegratedEntityService',
+        repositoryBaseImport: '@shared/base-classes/integrated-entity-repository',
+        serviceBaseImport: '@shared/base-classes/integrated-entity-service',
       },
       activity: {
         repositoryBaseClass: 'ActivityEntityRepository',
@@ -517,22 +517,22 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
 });
 
 describe('impliedBehaviors fold — pattern-implied behaviors merge into emit', () => {
-  // A pattern: Synced entity with NO explicit external_id_tracking behavior.
-  const syncedNoExplicitBehavior = {
-    entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Synced' },
+  // A pattern: Integrated entity with NO explicit external_id_tracking behavior.
+  const integratedNoExplicitBehavior = {
+    entity: { name: 'account', plural: 'accounts', table: 'accounts', pattern: 'Integrated' },
     fields: { name: { type: 'string', required: true } },
     relationships: {},
     behaviors: ['timestamps'],
   };
 
-  it('resolveImpliedBehaviors returns external_id_tracking for pattern: Synced', () => {
-    expect(resolveImpliedBehaviors(syncedNoExplicitBehavior.entity)).toContain(
+  it('resolveImpliedBehaviors returns external_id_tracking for pattern: Integrated', () => {
+    expect(resolveImpliedBehaviors(integratedNoExplicitBehavior.entity)).toContain(
       'external_id_tracking',
     );
   });
 
   it('resolveImpliedBehaviors walks the patterns: [...] array form', () => {
-    const multi = { name: 'deal', plural: 'deals', table: 'deals', patterns: ['Synced'] };
+    const multi = { name: 'deal', plural: 'deals', table: 'deals', patterns: ['Integrated'] };
     expect(resolveImpliedBehaviors(multi)).toContain('external_id_tracking');
   });
 
@@ -540,17 +540,17 @@ describe('impliedBehaviors fold — pattern-implied behaviors merge into emit', 
     expect(resolveImpliedBehaviors({ name: 'task', plural: 'tasks', pattern: 'Base' })).toEqual([]);
   });
 
-  it('a Synced entity gets hasExternalIdTracking even without re-declaring the behavior', () => {
-    const locals = buildCleanLitePsLocals(syncedNoExplicitBehavior, EMPTY_BASE_LOCALS);
+  it('a Integrated entity gets hasExternalIdTracking even without re-declaring the behavior', () => {
+    const locals = buildCleanLitePsLocals(integratedNoExplicitBehavior, EMPTY_BASE_LOCALS);
     expect(locals.hasExternalIdTracking).toBe(true);
   });
 
   it('explicit external_id_tracking declaration stays a no-op (silent dedup)', () => {
     const explicit = {
-      ...syncedNoExplicitBehavior,
+      ...integratedNoExplicitBehavior,
       behaviors: ['timestamps', 'external_id_tracking'],
     };
-    const implied = buildCleanLitePsLocals(syncedNoExplicitBehavior, EMPTY_BASE_LOCALS);
+    const implied = buildCleanLitePsLocals(integratedNoExplicitBehavior, EMPTY_BASE_LOCALS);
     const declared = buildCleanLitePsLocals(explicit, EMPTY_BASE_LOCALS);
 
     // Re-declaring the implied behavior must not change the resolved flag or
@@ -634,7 +634,7 @@ import { afterAll as _afterAllForCleanup } from 'bun:test';
 _afterAllForCleanup(() => {
   _resetRegistryForTests({ includeLibrary: true });
   registerLibraryPattern(BasePattern);
-  registerLibraryPattern(SyncedPattern);
+  registerLibraryPattern(IntegratedPattern);
   registerLibraryPattern(ActivityPattern);
   registerLibraryPattern(KnowledgePattern);
   registerLibraryPattern(MetadataPattern);

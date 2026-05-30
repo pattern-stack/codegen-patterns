@@ -12,7 +12,7 @@
  * nested object equality.
  */
 import { describe, it, expect } from 'bun:test';
-import { DeepEqualDiffer } from '../../../../runtime/subsystems/sync/deep-equal.differ';
+import { DeepEqualDiffer } from '../../../../runtime/subsystems/integration/deep-equal.differ';
 
 type Rec = Record<string, unknown>;
 
@@ -74,10 +74,10 @@ describe('DeepEqualDiffer', () => {
     });
 
     it('augments the ignore list via options.ignore', () => {
-      const d = new DeepEqualDiffer<Rec>({ ignore: ['sync_version'] });
+      const d = new DeepEqualDiffer<Rec>({ ignore: ['integration_version'] });
       const result = d.diff(
-        { amount: 100, sync_version: 1 },
-        { amount: 100, sync_version: 2 },
+        { amount: 100, integration_version: 1 },
+        { amount: 100, integration_version: 2 },
       );
       expect(result).toBe('noop');
     });

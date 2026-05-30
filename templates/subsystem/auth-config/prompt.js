@@ -5,7 +5,7 @@
  * config-block inject step independently — `subsystem install auth --force`
  * preserves an existing `auth:` block by skipping this action; pass
  * `--force-config` to opt into regeneration. Mirrors `events-config` /
- * `sync-config` / `observability-config` exactly.
+ * `integration-config` / `observability-config` exactly.
  *
  * Invoked via:
  *   bunx hygen subsystem auth-config --configPath <abs>

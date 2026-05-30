@@ -75,7 +75,7 @@ relationships:
     target: deal_state
     foreign_key: state_id
 
-sync:
+integration:
   providers:
     hubspot-crm:
       remote_entity: deal
@@ -86,7 +86,7 @@ sync:
 
 # Provider-keyed change-source detection (ADR-033.1).
 # Each provider is an independent DetectionConfig. Cross-checked against
-# sync.providers above by EntityDefinitionSchema.superRefine.
+# integration.providers above by EntityDefinitionSchema.superRefine.
 detection:
   hubspot-crm:
     mode: poll

@@ -1,12 +1,12 @@
 # Contact Entity Definition — v2 Architecture
-# Exercises all v2 schema blocks: family, queries, sync, events
+# Exercises all v2 schema blocks: family, queries, integration, events
 # Reference: docs/architecture/sketches/contact-module-sketch.md
 
 entity:
   name: contact
   plural: contacts
   table: contacts
-  pattern: Synced
+  pattern: Integrated
   folder_structure: nested
 
 fields:
@@ -81,7 +81,7 @@ queries:
     select: [email]
     via: opportunity_contact_link
 
-sync:
+integration:
   electric: true
   providers:
     salesforce:
