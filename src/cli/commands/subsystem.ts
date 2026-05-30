@@ -1698,7 +1698,7 @@ function runAuthIntegrationsScaffold(
 	const adaptersSrc = path.join(examplesRoot, 'runtime', 'connections');
 	// #303 fix #5: vendor next to the codegen-emitted entity module under
 	// `<vendorRoot>/connections/` (default `<backendSrc>/modules/connections/`),
-	// NOT under `<sharedRoot>/connections/`.
+	// NOT under a separate `shared/` tree.
 	const adaptersDest = path.join(locals.vendorRoot, 'connections');
 	const connectionYamlSrc = path.join(
 		examplesRoot,

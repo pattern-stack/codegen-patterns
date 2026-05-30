@@ -3,8 +3,7 @@
  *
  * Covers:
  *   - default locals on first install
- *   - custom paths.backend_src flows into appModulePath + sharedRoot
- *   - paths.shared overrides the derived sharedRoot
+ *   - custom paths.backend_src flows into appModulePath + vendorRoot
  *   - paths.modules_dir overrides the derived vendorRoot (#303 fix #5)
  *   - paths.entities (and legacy paths.entities_dir) overrides the
  *     default connection.yaml location
@@ -33,7 +32,6 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 
 		expect(locals.appName).toBe('auth-integrations-fixture');
 		expect(locals.appModulePath).toBe(path.resolve(CWD, 'src/app.module.ts'));
-		expect(locals.sharedRoot).toBe(path.resolve(CWD, 'src/shared'));
 		expect(locals.vendorRoot).toBe(path.resolve(CWD, 'src/modules'));
 		expect(locals.definitionsPath).toBe(
 			path.resolve(CWD, 'definitions/entities/connection.yaml'),
@@ -52,9 +50,6 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 		expect(locals.appModulePath).toBe(
 			path.resolve(CWD, 'packages/api/src/app.module.ts'),
 		);
-		expect(locals.sharedRoot).toBe(
-			path.resolve(CWD, 'packages/api/src/shared'),
-		);
 		expect(locals.vendorRoot).toBe(
 			path.resolve(CWD, 'packages/api/src/modules'),
 		);
@@ -71,19 +66,6 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 			readFile: () => null,
 		});
 		expect(locals.vendorRoot).toBe(path.resolve(CWD, 'apps/api/src/features'));
-	});
-
-	test('paths.shared overrides the derived sharedRoot', () => {
-		const locals = resolveAuthIntegrationsScaffoldLocals({
-			cwd: CWD,
-			config: {
-				paths: { backend_src: 'packages/api/src', shared: 'custom/shared' },
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			} as any,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(locals.sharedRoot).toBe(path.resolve(CWD, 'custom/shared'));
 	});
 
 	test('paths.entities overrides the default connection.yaml location', () => {
@@ -161,7 +143,6 @@ describe('localsToHygenArgs', () => {
 	const base: AuthIntegrationsScaffoldLocals = {
 		appName: 'demo',
 		appModulePath: '/abs/src/app.module.ts',
-		sharedRoot: '/abs/src/shared',
 		vendorRoot: '/abs/src/modules',
 		definitionsPath: '/abs/definitions/entities/connection.yaml',
 		authModuleRegistered: false,
@@ -171,10 +152,8 @@ describe('localsToHygenArgs', () => {
 		const args = localsToHygenArgs(base);
 		expect(args).toContain('--appName');
 		expect(args).toContain('--appModulePath');
-		// sharedRoot, vendorRoot, and definitionsPath are consumed by
-		// subsystem.ts directly (full-file copies), not by Hygen —
-		// must NOT be forwarded.
-		expect(args).not.toContain('--sharedRoot');
+		// vendorRoot and definitionsPath are consumed by subsystem.ts
+		// directly (full-file copies), not by Hygen — must NOT be forwarded.
 		expect(args).not.toContain('--vendorRoot');
 		expect(args).not.toContain('--definitionsPath');
 	});
