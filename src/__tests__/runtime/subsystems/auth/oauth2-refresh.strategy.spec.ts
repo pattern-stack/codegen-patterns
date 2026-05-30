@@ -11,29 +11,29 @@ import {
   type OAuth2RefreshStrategyOptions,
   type ParsedRefreshResponse,
 } from '../../../../../runtime/subsystems/auth/runtime/oauth2-refresh.strategy';
-import { IntegrationBrokenError } from '../../../../../runtime/subsystems/auth/runtime/integration-broken.error';
+import { ConnectionBrokenError } from '../../../../../runtime/subsystems/auth/runtime/connection-broken.error';
 import type {
-  DecryptedIntegration,
-  IIntegrationReader,
-  IIntegrationTokenWriter,
-  IntegrationTokenUpdate,
-} from '../../../../../runtime/subsystems/auth/protocols/integration-store';
+  DecryptedConnection,
+  IConnectionReader,
+  IConnectionTokenWriter,
+  ConnectionTokenUpdate,
+} from '../../../../../runtime/subsystems/auth/protocols/connection-store';
 import type { AuthCredentials } from '../../../../../runtime/subsystems/auth/protocols/auth-strategy';
 
 // ============================================================================
 // Fixtures
 // ============================================================================
 
-class FakeReader implements IIntegrationReader {
-  constructor(private readonly row: DecryptedIntegration | null) {}
-  async findByIdDecrypted(): Promise<DecryptedIntegration | null> {
+class FakeReader implements IConnectionReader {
+  constructor(private readonly row: DecryptedConnection | null) {}
+  async findByIdDecrypted(): Promise<DecryptedConnection | null> {
     return this.row;
   }
 }
 
-class RecordingWriter implements IIntegrationTokenWriter {
-  calls: IntegrationTokenUpdate[] = [];
-  async persistRefresh(update: IntegrationTokenUpdate): Promise<void> {
+class RecordingWriter implements IConnectionTokenWriter {
+  calls: ConnectionTokenUpdate[] = [];
+  async persistRefresh(update: ConnectionTokenUpdate): Promise<void> {
     this.calls.push(update);
   }
 }
@@ -76,7 +76,7 @@ class FakeStrategy extends OAuth2RefreshStrategy {
 
   protected buildCredentials(
     accessToken: string,
-    integration: DecryptedIntegration,
+    connection: DecryptedConnection,
     refreshRaw?: unknown,
   ): AuthCredentials {
     this.buildCredentialsCalls.push({
@@ -85,7 +85,7 @@ class FakeStrategy extends OAuth2RefreshStrategy {
     });
     return {
       accessToken,
-      orgId: (integration.providerMetadata?.['orgId'] as string) ?? 'org-default',
+      orgId: (connection.providerMetadata?.['orgId'] as string) ?? 'org-default',
     };
   }
 }
@@ -98,9 +98,9 @@ function mockFetch(
   });
 }
 
-function makeIntegration(
-  overrides: Partial<DecryptedIntegration> = {},
-): DecryptedIntegration {
+function makeConnection(
+  overrides: Partial<DecryptedConnection> = {},
+): DecryptedConnection {
   return {
     id: 'int-1',
     provider: 'fake',
@@ -128,11 +128,11 @@ describe('OAuth2RefreshStrategy', () => {
   });
 
   function build(
-    reader: IIntegrationReader,
+    reader: IConnectionReader,
     opts: Partial<OAuth2RefreshStrategyOptions> = {},
   ): FakeStrategy {
     return new FakeStrategy({
-      integrationReader: reader,
+      connectionReader: reader,
       tokenWriter: writer,
       fetch: fetchFn,
       now: () => now,
@@ -142,10 +142,10 @@ describe('OAuth2RefreshStrategy', () => {
 
   describe('cache hit', () => {
     it('returns stored token without calling fetch when not expiring', async () => {
-      const integration = makeIntegration({
+      const connection = makeConnection({
         expiresAt: new Date(now + 60 * 60 * 1000),
       });
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       const creds = await strategy.resolve('int-1');
 
@@ -160,7 +160,7 @@ describe('OAuth2RefreshStrategy', () => {
 
   describe('force refresh', () => {
     it('bypasses the cache and calls the token endpoint', async () => {
-      const integration = makeIntegration({
+      const connection = makeConnection({
         expiresAt: new Date(now + 60 * 60 * 1000),
       });
       fetchFn = mockFetch(
@@ -174,7 +174,7 @@ describe('OAuth2RefreshStrategy', () => {
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       const creds = await strategy.resolve('int-1', { forceRefresh: true });
 
@@ -184,7 +184,7 @@ describe('OAuth2RefreshStrategy', () => {
       expect(creds.accessToken).toBe('new-access');
       expect(writer.calls).toHaveLength(1);
       expect(writer.calls[0]).toMatchObject({
-        integrationId: 'int-1',
+        connectionId: 'int-1',
         accessToken: 'new-access',
         refreshToken: 'new-refresh',
       });
@@ -194,7 +194,7 @@ describe('OAuth2RefreshStrategy', () => {
   describe('expiring window', () => {
     it('refreshes when the token is inside the 5-minute safety window', async () => {
       // Expires in 1 minute — inside the 5-minute safety window.
-      const integration = makeIntegration({
+      const connection = makeConnection({
         expiresAt: new Date(now + 60 * 1000),
       });
       fetchFn = mockFetch(
@@ -207,7 +207,7 @@ describe('OAuth2RefreshStrategy', () => {
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       const creds = await strategy.resolve('int-1');
       expect(fetchFn).toHaveBeenCalled();
@@ -217,7 +217,7 @@ describe('OAuth2RefreshStrategy', () => {
 
   describe('refresh body + hook order', () => {
     it('POSTs form-urlencoded with grant_type + refresh_token + extras', async () => {
-      const integration = makeIntegration({
+      const connection = makeConnection({
         expiresAt: new Date(now - 1),
       });
       let capturedBody = '';
@@ -230,7 +230,7 @@ describe('OAuth2RefreshStrategy', () => {
           { status: 200 },
         );
       });
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       await strategy.resolve('int-1');
 
@@ -245,7 +245,7 @@ describe('OAuth2RefreshStrategy', () => {
     });
 
     it('passes the raw refresh response to buildCredentials after refresh', async () => {
-      const integration = makeIntegration({ expiresAt: null });
+      const connection = makeConnection({ expiresAt: null });
       fetchFn = mockFetch(
         () =>
           new Response(
@@ -253,7 +253,7 @@ describe('OAuth2RefreshStrategy', () => {
             { status: 200 },
           ),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       await strategy.resolve('int-1');
 
@@ -265,7 +265,7 @@ describe('OAuth2RefreshStrategy', () => {
 
   describe('refresh-token rotation', () => {
     it('persists the new refresh token when the provider rotates it', async () => {
-      const integration = makeIntegration({ expiresAt: new Date(now - 1) });
+      const connection = makeConnection({ expiresAt: new Date(now - 1) });
       fetchFn = mockFetch(
         () =>
           new Response(
@@ -277,7 +277,7 @@ describe('OAuth2RefreshStrategy', () => {
             { status: 200 },
           ),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       await strategy.resolve('int-1');
 
@@ -285,7 +285,7 @@ describe('OAuth2RefreshStrategy', () => {
     });
 
     it('persists refreshToken=undefined when the provider reuses the old one', async () => {
-      const integration = makeIntegration({ expiresAt: new Date(now - 1) });
+      const connection = makeConnection({ expiresAt: new Date(now - 1) });
       fetchFn = mockFetch(
         () =>
           new Response(
@@ -293,7 +293,7 @@ describe('OAuth2RefreshStrategy', () => {
             { status: 200 },
           ),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       await strategy.resolve('int-1');
 
@@ -302,34 +302,34 @@ describe('OAuth2RefreshStrategy', () => {
   });
 
   describe('errors', () => {
-    it('throws when the integration is missing', async () => {
+    it('throws when the connection is missing', async () => {
       const strategy = build(new FakeReader(null));
       await expect(strategy.resolve('missing')).rejects.toThrow(
-        /Integration missing not found/,
+        /Connection missing not found/,
       );
     });
 
-    it('throws when the integration provider slug does not match', async () => {
-      const integration = makeIntegration({ provider: 'other' });
-      const strategy = build(new FakeReader(integration));
+    it('throws when the connection provider slug does not match', async () => {
+      const connection = makeConnection({ provider: 'other' });
+      const strategy = build(new FakeReader(connection));
       await expect(strategy.resolve('int-1')).rejects.toThrow(
-        /called for non-fake integration/,
+        /called for non-fake connection/,
       );
     });
 
-    it('throws IntegrationBrokenError when no refresh token is present', async () => {
-      const integration = makeIntegration({
+    it('throws ConnectionBrokenError when no refresh token is present', async () => {
+      const connection = makeConnection({
         expiresAt: new Date(now - 1),
         refreshToken: null,
       });
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
       await expect(strategy.resolve('int-1')).rejects.toBeInstanceOf(
-        IntegrationBrokenError,
+        ConnectionBrokenError,
       );
     });
 
-    it('maps 400 invalid_grant → IntegrationBrokenError', async () => {
-      const integration = makeIntegration({ expiresAt: new Date(now - 1) });
+    it('maps 400 invalid_grant → ConnectionBrokenError', async () => {
+      const connection = makeConnection({ expiresAt: new Date(now - 1) });
       fetchFn = mockFetch(
         () =>
           new Response(
@@ -340,28 +340,28 @@ describe('OAuth2RefreshStrategy', () => {
             { status: 400 },
           ),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
       await expect(strategy.resolve('int-1')).rejects.toBeInstanceOf(
-        IntegrationBrokenError,
+        ConnectionBrokenError,
       );
     });
 
-    it('maps 400 invalid_token → IntegrationBrokenError (HubSpot-style)', async () => {
-      const integration = makeIntegration({ expiresAt: new Date(now - 1) });
+    it('maps 400 invalid_token → ConnectionBrokenError (HubSpot-style)', async () => {
+      const connection = makeConnection({ expiresAt: new Date(now - 1) });
       fetchFn = mockFetch(
         () =>
           new Response(JSON.stringify({ error: 'invalid_token' }), {
             status: 400,
           }),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
       await expect(strategy.resolve('int-1')).rejects.toBeInstanceOf(
-        IntegrationBrokenError,
+        ConnectionBrokenError,
       );
     });
 
     it('wraps non-400 failures with a provider-scoped message', async () => {
-      const integration = makeIntegration({ expiresAt: new Date(now - 1) });
+      const connection = makeConnection({ expiresAt: new Date(now - 1) });
       fetchFn = mockFetch(
         () =>
           new Response(
@@ -369,7 +369,7 @@ describe('OAuth2RefreshStrategy', () => {
             { status: 500 },
           ),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
       await expect(strategy.resolve('int-1')).rejects.toThrow(
         /fake token refresh failed/,
       );
@@ -378,12 +378,12 @@ describe('OAuth2RefreshStrategy', () => {
 
   describe('expiry accounting', () => {
     it('uses subclass defaultExpiresInSec when response omits expires_in', async () => {
-      const integration = makeIntegration({ expiresAt: new Date(now - 1) });
+      const connection = makeConnection({ expiresAt: new Date(now - 1) });
       fetchFn = mockFetch(
         () =>
           new Response(JSON.stringify({ access_token: 'a' }), { status: 200 }),
       );
-      const strategy = build(new FakeReader(integration));
+      const strategy = build(new FakeReader(connection));
 
       await strategy.resolve('int-1');
 

@@ -1,7 +1,7 @@
 /**
  * Auth subsystem — `IAuthStrategy` port.
  *
- * The credentials-resolution seam used by every integration adapter. Adapters
+ * The credentials-resolution seam used by every connection adapter. Adapters
  * depend on this interface; concrete strategies (SalesforceAuthStrategy,
  * HubSpotAuthStrategy, future Gmail/Calendar) typically extend the
  * `OAuth2RefreshStrategy` template-method base in `../runtime/`.
@@ -35,12 +35,12 @@ export interface AuthResolveOptions {
 }
 
 /**
- * Auth-strategy contract shared by every integration adapter. Implementations
+ * Auth-strategy contract shared by every connection adapter. Implementations
  * typically extend `OAuth2RefreshStrategy` and override four small hooks.
  */
 export interface IAuthStrategy {
   resolve(
-    integrationId: string,
+    connectionId: string,
     opts?: AuthResolveOptions,
   ): Promise<AuthCredentials>;
 }

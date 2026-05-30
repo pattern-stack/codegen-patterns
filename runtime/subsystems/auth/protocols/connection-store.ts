@@ -1,26 +1,26 @@
 /**
- * Auth subsystem — integration storage ports.
+ * Auth subsystem — connection storage ports.
  *
- * `OAuth2RefreshStrategy` reads decrypted integration rows and persists
+ * `OAuth2RefreshStrategy` reads decrypted connection rows and persists
  * refreshed tokens. The subsystem doesn't care what entity framework stores
  * those rows — consumers implement these narrow ports against whatever
- * `integrations` table their app uses.
+ * `connections` table their app uses.
  *
  * In the extraction-source app both ports are satisfied by a
- * pair of thin adapters over `IntegrationService` + `RefreshIntegrationUseCase`.
+ * pair of thin adapters over `ConnectionService` + `RefreshConnectionUseCase`.
  * The codegen-patterns `examples/auth-integrations/` starter (separate PR)
- * ships a canonical `integration.yaml` whose generated service + use case
+ * ships a canonical `connection.yaml` whose generated service + use case
  * satisfy the shape out of the box.
  */
 
 /**
- * An integration row with its secrets decrypted and ready to use.
+ * An connection row with its secrets decrypted and ready to use.
  *
  * Consumers produce this shape from their own storage by passing stored
  * ciphertexts through `IEncryptionKey.decrypt`. The subsystem never sees
  * the ciphertext form.
  */
-export interface DecryptedIntegration {
+export interface DecryptedConnection {
   id: string;
   /** Provider slug — must match the strategy's `provider`. */
   provider: string;
@@ -35,13 +35,13 @@ export interface DecryptedIntegration {
 }
 
 /**
- * Read port — fetches a decrypted integration by id.
+ * Read port — fetches a decrypted connection by id.
  *
  * Adapters typically wrap a service/repo call that does the decryption
  * internally. `OAuth2RefreshStrategy.resolve()` calls this on every invocation.
  */
-export interface IIntegrationReader {
-  findByIdDecrypted(integrationId: string): Promise<DecryptedIntegration | null>;
+export interface IConnectionReader {
+  findByIdDecrypted(connectionId: string): Promise<DecryptedConnection | null>;
 }
 
 /**
@@ -54,15 +54,15 @@ export interface IIntegrationReader {
  * `refreshToken` semantics: `undefined` means "provider did not rotate; keep
  * existing ciphertext". A rotated token comes through as a string.
  */
-export interface IntegrationTokenUpdate {
-  integrationId: string;
+export interface ConnectionTokenUpdate {
+  connectionId: string;
   accessToken: string;
   refreshToken?: string;
   expiresAt: Date;
 }
 
-export interface IIntegrationTokenWriter {
-  persistRefresh(update: IntegrationTokenUpdate): Promise<void>;
+export interface IConnectionTokenWriter {
+  persistRefresh(update: ConnectionTokenUpdate): Promise<void>;
 }
 
 /**
@@ -71,10 +71,10 @@ export interface IIntegrationTokenWriter {
  * re-connected an existing one).
  *
  * `AuthController.callback` invokes this after `IProviderStrategy.exchangeCodeForTokens`.
- * The subsystem itself never imports a concrete `IntegrationsService` — the
+ * The subsystem itself never imports a concrete `ConnectionsService` — the
  * consumer's `auth-integrations` starter (or any equivalent) adapts this
  * port. Keeps the auth subsystem standalone: a non-codegen consumer can
- * satisfy the port against its own integrations storage.
+ * satisfy the port against its own connections storage.
  *
  * Semantics:
  *   - Upserts on `(userId, provider)`. Repeated grants for the same pair
@@ -85,7 +85,7 @@ export interface IIntegrationTokenWriter {
  *     them (e.g. some providers omit `expires_in`; not every flow returns
  *     a refresh token on first grant).
  */
-export interface IntegrationGrantInput {
+export interface ConnectionGrantInput {
   userId: string;
   /** Provider slug — must match the strategy's `provider`. */
   provider: string;
@@ -98,6 +98,6 @@ export interface IntegrationGrantInput {
   providerMetadata?: Record<string, unknown>;
 }
 
-export interface IIntegrationGrantSink {
-  createOrUpdateFromOAuthGrant(input: IntegrationGrantInput): Promise<void>;
+export interface IConnectionGrantSink {
+  createOrUpdateFromOAuthGrant(input: ConnectionGrantInput): Promise<void>;
 }

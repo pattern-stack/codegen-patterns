@@ -9,17 +9,17 @@
  *   - `AUTH_OPTIONS`        → resolved options bag (used by AuthController
  *                             for `redirectUriBase`).
  *
- * The integration-store ports (`AUTH_INTEGRATION_READER`,
- * `AUTH_INTEGRATION_TOKEN_WRITER`, `AUTH_INTEGRATION_GRANT_SINK`),
+ * The connection-store ports (`AUTH_CONNECTION_READER`,
+ * `AUTH_CONNECTION_TOKEN_WRITER`, `AUTH_CONNECTION_GRANT_SINK`),
  * `AUTH_USER_CONTEXT`, and `STRATEGY_REGISTRY` are deliberately **not**
  * wired here — they are always consumer-specific:
- *   - integration-store ports adapt the consumer's `integrations` storage;
+ *   - connection-store ports adapt the consumer's `connections` storage;
  *   - `IUserContext` adapts the app's session/JWT scheme;
  *   - `STRATEGY_REGISTRY` is populated from the per-provider strategy
  *     classes the consumer maintains.
  *
  * Consumers provide them in their app module (or by importing the
- * `auth-integrations` starter, which binds the three integration-store
+ * `auth-integrations` starter, which binds the three connection-store
  * ports off a single canonical entity).
  *
  * Usage in AppModule:

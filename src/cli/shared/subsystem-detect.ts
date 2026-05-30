@@ -142,7 +142,7 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 		// #287. Auth-integrations starter (PR #290) — vendored from
 		// `examples/auth-integrations/`, NOT from `runtime/subsystems/`.
 		// Bundles a canonical `integration` entity yaml + the three
-		// integration-store-port adapters + the `IntegrationsService`
+		// connection-store-port adapters + the `IntegrationsService`
 		// facade. Single-backend (drizzle); the runtime adapters call
 		// directly into the codegen-emitted `IntegrationService` from the
 		// entity layer. Detection: presence of

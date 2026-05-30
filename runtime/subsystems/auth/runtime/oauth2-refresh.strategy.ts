@@ -8,18 +8,18 @@
  * later" evidence.
  *
  * Subclass contract:
- *   - `provider`                — slug matched against `integrations.provider`
+ *   - `provider`                — slug matched against `connections.provider`
  *   - `defaultExpiresInSec`     — fallback when refresh response omits `expires_in`
  *   - `tokenEndpoint()`         — URL to POST the refresh grant
  *   - `refreshBodyExtras()`     — provider-specific body params
  *   - `parseRefreshResponse()`  — raw JSON → ParsedRefreshResponse
  *   - `buildCredentials()`      — stored or freshly-refreshed access token +
- *                                 integration + optional raw refresh response
+ *                                 connection + optional raw refresh response
  *                                 → provider credentials
  *
  * Base handles: expiry check w/ 5-min safety window, `forceRefresh` escape
  * hatch, POST form-urlencoded body, OAuth2 error mapping to
- * `IntegrationBrokenError`, refresh-token rotation persistence, fetch +
+ * `ConnectionBrokenError`, refresh-token rotation persistence, fetch +
  * clock injection for tests.
  */
 import type {
@@ -28,11 +28,11 @@ import type {
   IAuthStrategy,
 } from '../protocols/auth-strategy';
 import type {
-  DecryptedIntegration,
-  IIntegrationReader,
-  IIntegrationTokenWriter,
-} from '../protocols/integration-store';
-import { IntegrationBrokenError } from './integration-broken.error';
+  DecryptedConnection,
+  IConnectionReader,
+  IConnectionTokenWriter,
+} from '../protocols/connection-store';
+import { ConnectionBrokenError } from './connection-broken.error';
 
 export type FetchLike = (
   input: string | URL | Request,
@@ -43,8 +43,8 @@ export type FetchLike = (
 const REFRESH_SAFETY_MS = 5 * 60 * 1000;
 
 export interface OAuth2RefreshStrategyOptions {
-  integrationReader: IIntegrationReader;
-  tokenWriter: IIntegrationTokenWriter;
+  connectionReader: IConnectionReader;
+  tokenWriter: IConnectionTokenWriter;
   /** Injectable fetch for tests. Defaults to the global `fetch`. */
   fetch?: FetchLike;
   /** Injectable clock for tests. Defaults to `Date.now`. */
@@ -66,65 +66,65 @@ export abstract class OAuth2RefreshStrategy implements IAuthStrategy {
   protected abstract readonly provider: string;
   protected abstract readonly defaultExpiresInSec: number;
 
-  protected readonly integrationReader: IIntegrationReader;
-  protected readonly tokenWriter: IIntegrationTokenWriter;
+  protected readonly connectionReader: IConnectionReader;
+  protected readonly tokenWriter: IConnectionTokenWriter;
   protected readonly fetchImpl: FetchLike;
   protected readonly now: () => number;
 
   constructor(opts: OAuth2RefreshStrategyOptions) {
-    this.integrationReader = opts.integrationReader;
+    this.connectionReader = opts.connectionReader;
     this.tokenWriter = opts.tokenWriter;
     this.fetchImpl = opts.fetch ?? fetch;
     this.now = opts.now ?? Date.now;
   }
 
   async resolve(
-    integrationId: string,
+    connectionId: string,
     opts: AuthResolveOptions = {},
   ): Promise<AuthCredentials> {
-    const integration =
-      await this.integrationReader.findByIdDecrypted(integrationId);
-    if (!integration) {
-      throw new Error(`Integration ${integrationId} not found`);
+    const connection =
+      await this.connectionReader.findByIdDecrypted(connectionId);
+    if (!connection) {
+      throw new Error(`Connection ${connectionId} not found`);
     }
-    if (integration.provider !== this.provider) {
+    if (connection.provider !== this.provider) {
       throw new Error(
-        `${this.constructor.name} called for non-${this.provider} integration ${integrationId} (provider=${integration.provider})`,
+        `${this.constructor.name} called for non-${this.provider} connection ${connectionId} (provider=${connection.provider})`,
       );
     }
 
     const needsRefresh =
       opts.forceRefresh ||
-      this.isExpiring(integration.expiresAt) ||
-      !integration.accessToken;
+      this.isExpiring(connection.expiresAt) ||
+      !connection.accessToken;
 
     if (!needsRefresh) {
-      return this.buildCredentials(integration.accessToken, integration);
+      return this.buildCredentials(connection.accessToken, connection);
     }
 
-    if (!integration.refreshToken) {
-      throw new IntegrationBrokenError(
-        integrationId,
+    if (!connection.refreshToken) {
+      throw new ConnectionBrokenError(
+        connectionId,
         'no_refresh_token',
-        'Integration has no refresh token; user must reconnect',
+        'Connection has no refresh token; user must reconnect',
       );
     }
 
     const { parsed, raw } = await this.executeRefresh(
-      integrationId,
-      integration.refreshToken,
+      connectionId,
+      connection.refreshToken,
     );
     const newExpiresAt = new Date(
       this.now() + (parsed.expiresInSec ?? this.defaultExpiresInSec) * 1000,
     );
     await this.tokenWriter.persistRefresh({
-      integrationId,
+      connectionId,
       accessToken: parsed.accessToken,
       refreshToken: parsed.refreshToken ?? undefined,
       expiresAt: newExpiresAt,
     });
 
-    return this.buildCredentials(parsed.accessToken, integration, raw);
+    return this.buildCredentials(parsed.accessToken, connection, raw);
   }
 
   protected abstract tokenEndpoint(): string;
@@ -132,12 +132,12 @@ export abstract class OAuth2RefreshStrategy implements IAuthStrategy {
   protected abstract parseRefreshResponse(raw: unknown): ParsedRefreshResponse;
   protected abstract buildCredentials(
     accessToken: string,
-    integration: DecryptedIntegration,
+    connection: DecryptedConnection,
     refreshRaw?: unknown,
   ): AuthCredentials;
 
   private async executeRefresh(
-    integrationId: string,
+    connectionId: string,
     refreshToken: string,
   ): Promise<{ parsed: ParsedRefreshResponse; raw: unknown }> {
     const body = new URLSearchParams({
@@ -160,8 +160,8 @@ export abstract class OAuth2RefreshStrategy implements IAuthStrategy {
         response.status === 400 &&
         (err.error === 'invalid_grant' || err.error === 'invalid_token')
       ) {
-        throw new IntegrationBrokenError(
-          integrationId,
+        throw new ConnectionBrokenError(
+          connectionId,
           err.error ?? 'invalid_grant',
           err.error_description ?? err.message ?? 'refresh token rejected',
         );

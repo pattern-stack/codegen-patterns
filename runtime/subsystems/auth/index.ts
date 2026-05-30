@@ -9,25 +9,25 @@
  *   AuthController,
  *   ENCRYPTION_KEY,
  *   OAUTH_STATE_STORE,
- *   AUTH_INTEGRATION_READER,
- *   AUTH_INTEGRATION_TOKEN_WRITER,
- *   AUTH_INTEGRATION_GRANT_SINK,
+ *   AUTH_CONNECTION_READER,
+ *   AUTH_CONNECTION_TOKEN_WRITER,
+ *   AUTH_CONNECTION_GRANT_SINK,
  *   AUTH_USER_CONTEXT,
  *   STRATEGY_REGISTRY,
  *   AUTH_OPTIONS,
  *   OAuth2RefreshStrategy,
  *   withAuthRetry,
- *   IntegrationBrokenError,
+ *   ConnectionBrokenError,
  *   SessionExpiredError,
  *   OAuthStateError,
  *   type IAuthStrategy,
  *   type IEncryptionKey,
  *   type IOAuthStateStore,
  *   type OAuthStateRecord,
- *   type IIntegrationReader,
- *   type IIntegrationTokenWriter,
- *   type IIntegrationGrantSink,
- *   type IntegrationGrantInput,
+ *   type IConnectionReader,
+ *   type IConnectionTokenWriter,
+ *   type IConnectionGrantSink,
+ *   type ConnectionGrantInput,
  *   type IUserContext,
  *   type IProviderStrategy,
  *   type ProviderStrategyRegistry,
@@ -49,13 +49,13 @@ export type {
 } from './protocols/oauth-state-store';
 export { OAuthStateError } from './protocols/oauth-state-store';
 export type {
-  DecryptedIntegration,
-  IIntegrationReader,
-  IIntegrationTokenWriter,
-  IntegrationTokenUpdate,
-  IIntegrationGrantSink,
-  IntegrationGrantInput,
-} from './protocols/integration-store';
+  DecryptedConnection,
+  IConnectionReader,
+  IConnectionTokenWriter,
+  ConnectionTokenUpdate,
+  IConnectionGrantSink,
+  ConnectionGrantInput,
+} from './protocols/connection-store';
 export type { IUserContext } from './protocols/user-context';
 export type {
   IProviderStrategy,
@@ -67,9 +67,9 @@ export type {
 export {
   ENCRYPTION_KEY,
   OAUTH_STATE_STORE,
-  AUTH_INTEGRATION_READER,
-  AUTH_INTEGRATION_TOKEN_WRITER,
-  AUTH_INTEGRATION_GRANT_SINK,
+  AUTH_CONNECTION_READER,
+  AUTH_CONNECTION_TOKEN_WRITER,
+  AUTH_CONNECTION_GRANT_SINK,
   AUTH_USER_CONTEXT,
   STRATEGY_REGISTRY,
   AUTH_OPTIONS,
@@ -83,7 +83,7 @@ export {
   type FetchLike,
 } from './runtime/oauth2-refresh.strategy';
 export { withAuthRetry, type WithAuthRetryOptions } from './runtime/with-auth-retry';
-export { IntegrationBrokenError } from './runtime/integration-broken.error';
+export { ConnectionBrokenError } from './runtime/connection-broken.error';
 export {
   SessionExpiredError,
   isSessionExpiredError,
