@@ -9,7 +9,7 @@
 import { describe, test, expect } from 'bun:test';
 
 // Importing the barrel pre-registers the 6 library patterns as a side effect
-// (Base / Synced / Activity / Knowledge / Metadata / Junction).
+// (Base / Integrated / Activity / Knowledge / Metadata / Junction).
 import '../../patterns/index.ts';
 
 import {

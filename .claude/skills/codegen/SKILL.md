@@ -48,7 +48,7 @@ codegen subsystem install events         # domain event bus (transactional outbo
 codegen subsystem install jobs           # background job queue
 codegen subsystem install cache          # key-value cache with TTL
 codegen subsystem install storage        # file storage
-codegen subsystem install sync           # external-system sync engine
+codegen subsystem install integration    # external-system integration engine
 codegen subsystem install bridge         # event-to-job bridge (needs events + jobs)
 codegen subsystem install observability  # read-only facade over the others
 codegen subsystem install cache --backend memory    # memory-only (tests)
@@ -90,7 +90,7 @@ codegen project graph --output graph.json   # export graph JSON
 ```
 
 `codegen init` scaffolds the consumer's shared layer (as of PR #55):
-- `src/shared/base-classes/*` — pattern bases (Base / Synced / Activity / Knowledge / Metadata) with optional `tx?: DrizzleTx` on writes
+- `src/shared/base-classes/*` — pattern bases (Base / Integrated / Activity / Knowledge / Metadata) with optional `tx?: DrizzleTx` on writes
 - `src/shared/constants/tokens.ts` — `DRIZZLE` DI symbol
 - `src/shared/types/drizzle.ts` — `DrizzleClient` + `DrizzleTx` type aliases
 - `src/shared/http/zod-validation.pipe.ts` — runtime Zod validation on `@Body()`
@@ -130,7 +130,7 @@ entity:
   name: contact                          # singular snake_case
   plural: contacts
   table: contacts
-  pattern: Synced                        # Synced | Activity | Metadata | Knowledge | Base (or app-defined)
+  pattern: Integrated                    # Integrated | Activity | Metadata | Knowledge | Base (or app-defined)
 
 fields:
   email:
@@ -220,14 +220,14 @@ All families inherit the standard CRUD set: `findById`, `findByIds`, `list`, `co
 
 | Family | Additional Methods |
 |--------|--------------------|
-| `synced` | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `syncUpsert` |
+| `integrated` | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `integrationUpsert` |
 | `activity` | `findByDateRange`, `findByUserId`, `findByOpportunityId`, `findRecentByOpportunityId` |
 | `metadata` | `findByEntityIdAndType`, `listByEntityId`, `listHistoryByEntityId` |
 | `knowledge` | `semanticSearch`, `findPendingByOpportunityId`, `updateStatus`, `updateStatusBatch` (pgvector at runtime) |
 | `base` | Standard CRUD only |
 
 **Dealbrain v2 usage:**
-- `synced` → `opportunity`, `account`, `contact` (CRM triad per `specs/2026-04-16-crm-sync-engine-overhaul.md`)
+- `integrated` → `opportunity`, `account`, `contact` (CRM triad per `specs/2026-04-16-crm-sync-engine-overhaul.md`)
 - `metadata` → `field_definition` (definition), `field_value` (value, marked `eav_value_table: true`)
 - `base` → `integration` (OAuth creds, encrypted), `pipeline`, `stage`, `record_type`
 

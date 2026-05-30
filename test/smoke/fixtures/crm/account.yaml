@@ -13,7 +13,7 @@ entity:
   name: account
   plural: accounts
   table: accounts
-  pattern: Synced
+  pattern: Integrated
   folder_structure: nested
 
 fields:

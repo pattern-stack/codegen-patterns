@@ -54,7 +54,7 @@ function makeFakeObservability(
     getPoolDepths: mock(async () => []),
     getRecentFailedJobs: mock(async () => []),
     getBridgeDeliveryHistogram: mock(async () => ZERO_HISTOGRAM),
-    getRecentSyncRuns: mock(async () => []),
+    getRecentIntegrationRuns: mock(async () => []),
     getCursors: mock(async () => []),
     ...overrides,
   } as IObservability;

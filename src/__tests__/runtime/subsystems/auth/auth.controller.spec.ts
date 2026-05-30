@@ -4,7 +4,7 @@
  * Uses a fake `IProviderStrategy` (only the two new connect-flow methods are
  * relevant — the refresh path is exercised by `oauth2-refresh.strategy.spec.ts`),
  * a fake `IUserContext`, the real `MemoryOAuthStateStore`, and a fake
- * `IIntegrationGrantSink` that just captures calls.
+ * `IConnectionGrantSink` that just captures calls.
  *
  * Asserts:
  *   - `/auth/:provider/connect` 302s to the strategy's authorize URL with a
@@ -22,7 +22,7 @@ import { HttpException } from '@nestjs/common';
 import { AuthController } from '../../../../../runtime/subsystems/auth/controllers/auth.controller';
 import { MemoryOAuthStateStore } from '../../../../../runtime/subsystems/auth/backends/state-store.memory-backend';
 import {
-  AUTH_INTEGRATION_GRANT_SINK,
+  AUTH_CONNECTION_GRANT_SINK,
   AUTH_OPTIONS,
   AUTH_USER_CONTEXT,
   OAUTH_STATE_STORE,
@@ -35,9 +35,9 @@ import type {
 } from '../../../../../runtime/subsystems/auth/protocols/provider-strategy';
 import type { IUserContext } from '../../../../../runtime/subsystems/auth/protocols/user-context';
 import type {
-  IIntegrationGrantSink,
-  IntegrationGrantInput,
-} from '../../../../../runtime/subsystems/auth/protocols/integration-store';
+  IConnectionGrantSink,
+  ConnectionGrantInput,
+} from '../../../../../runtime/subsystems/auth/protocols/connection-store';
 import { OAuthStateError } from '../../../../../runtime/subsystems/auth/protocols/oauth-state-store';
 
 interface CapturedRedirect {
@@ -85,8 +85,8 @@ async function makeController(opts?: {
   const userContext: IUserContext = {
     getCurrentUserId: async () => opts?.userId ?? 'user-1',
   };
-  const grants: IntegrationGrantInput[] = [];
-  const grantSink: IIntegrationGrantSink = {
+  const grants: ConnectionGrantInput[] = [];
+  const grantSink: IConnectionGrantSink = {
     createOrUpdateFromOAuthGrant: async (input) => {
       grants.push(input);
     },
@@ -102,7 +102,7 @@ async function makeController(opts?: {
       { provide: STRATEGY_REGISTRY, useValue: registry },
       { provide: AUTH_USER_CONTEXT, useValue: userContext },
       { provide: OAUTH_STATE_STORE, useValue: stateStore },
-      { provide: AUTH_INTEGRATION_GRANT_SINK, useValue: grantSink },
+      { provide: AUTH_CONNECTION_GRANT_SINK, useValue: grantSink },
       {
         provide: AUTH_OPTIONS,
         useValue: { redirectUriBase: 'https://api.example.test' },
@@ -178,7 +178,7 @@ describe('AuthController', () => {
     const cbRes = makeRes();
     await controller.callback('hubspot', 'code', state, cbRes.res);
     expect(cbRes.captured[0]!.url).toBe(
-      '/settings/integrations?connected=hubspot',
+      '/settings/connections?connected=hubspot',
     );
   });
 
@@ -201,7 +201,7 @@ describe('AuthController', () => {
         throw new Error('no session');
       },
     };
-    const grantSink: IIntegrationGrantSink = {
+    const grantSink: IConnectionGrantSink = {
       createOrUpdateFromOAuthGrant: async () => {},
     };
     const registry: ProviderStrategyRegistry = new Map<string, IProviderStrategy>([
@@ -213,7 +213,7 @@ describe('AuthController', () => {
         { provide: STRATEGY_REGISTRY, useValue: registry },
         { provide: AUTH_USER_CONTEXT, useValue: userContext },
         { provide: OAUTH_STATE_STORE, useValue: stateStore },
-        { provide: AUTH_INTEGRATION_GRANT_SINK, useValue: grantSink },
+        { provide: AUTH_CONNECTION_GRANT_SINK, useValue: grantSink },
         {
           provide: AUTH_OPTIONS,
           useValue: { redirectUriBase: 'https://api.example.test' },

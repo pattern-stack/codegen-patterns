@@ -7,7 +7,7 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-  pattern: Synced
+  pattern: Integrated
   folder_structure: nested
 
 fields:

@@ -184,5 +184,5 @@ export {
 
 // Re-export patterns surface (definePattern + library patterns + registry).
 // Importing this barrel has the side effect of pre-registering the five
-// library-shipped patterns (Base / Synced / Activity / Knowledge / Metadata).
+// library-shipped patterns (Base / Integrated / Activity / Knowledge / Metadata).
 export * from './patterns';

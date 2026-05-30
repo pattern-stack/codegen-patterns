@@ -91,7 +91,7 @@ export const <%= tableVarName %> = pgTable(
     // surrogate id). Role is part of the junction's identity — the same pair
     // with two different roles is two distinct rows (e.g. a contact who is both
     // `champion` and `decision_maker` on one opportunity). This is the
-    // ON CONFLICT target for syncUpsert on role-bearing junctions.
+    // ON CONFLICT target for integrationUpsert on role-bearing junctions.
     primaryKey({ columns: [table.<%= leftColumnCamel %>, table.<%= rightColumnCamel %>, table.role] }),
 <%_ } else { _%>
     // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)

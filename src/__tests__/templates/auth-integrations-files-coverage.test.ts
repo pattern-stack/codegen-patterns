@@ -3,8 +3,8 @@
  * starter is included in the published tarball.
  *
  * Background: 0.6.5 / 0.6.6 shipped `cdp subsystem install auth-integrations`,
- * which copies `examples/auth-integrations/runtime/integrations/**` and
- * `examples/auth-integrations/definitions/entities/integration.yaml`
+ * which copies `examples/auth-integrations/runtime/connections/**` and
+ * `examples/auth-integrations/definitions/entities/connection.yaml`
  * out of `node_modules/@pattern-stack/codegen/examples/auth-integrations/`
  * into the consumer's project. But `package.json:files` did not list
  * `examples/auth-integrations/**`, so npm consumers ran into a missing
@@ -87,12 +87,12 @@ describe('package.json:files covers examples/auth-integrations/ (#303)', () => {
     expect(existsSync(examplesRoot)).toBe(true);
     expect(
       existsSync(
-        join(examplesRoot, 'runtime', 'integrations', 'integrations-auth.module.ts'),
+        join(examplesRoot, 'runtime', 'connections', 'connections-auth.module.ts'),
       ),
     ).toBe(true);
     expect(
       existsSync(
-        join(examplesRoot, 'definitions', 'entities', 'integration.yaml'),
+        join(examplesRoot, 'definitions', 'entities', 'connection.yaml'),
       ),
     ).toBe(true);
   });

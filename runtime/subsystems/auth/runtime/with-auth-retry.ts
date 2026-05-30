@@ -33,18 +33,18 @@ export interface WithAuthRetryOptions {
 
 export async function withAuthRetry<T>(
   authStrategy: IAuthStrategy,
-  integrationId: string,
+  connectionId: string,
   op: (credentials: AuthCredentials) => Promise<T>,
   options: WithAuthRetryOptions = {},
 ): Promise<T> {
   const classify = options.isSessionExpired ?? isSessionExpiredError;
 
-  let creds = await authStrategy.resolve(integrationId);
+  let creds = await authStrategy.resolve(connectionId);
   try {
     return await op(creds);
   } catch (e) {
     if (!classify(e)) throw e;
-    creds = await authStrategy.resolve(integrationId, { forceRefresh: true });
+    creds = await authStrategy.resolve(connectionId, { forceRefresh: true });
     return op(creds);
   }
 }

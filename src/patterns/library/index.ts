@@ -1,7 +1,7 @@
 /**
  * Library pattern bootstrap — imports every shipped pattern and registers
  * it with the shared library registry. Side-effect-only module: importing
- * this barrel is what pre-registers `Base`, `Synced`, `Activity`,
+ * this barrel is what pre-registers `Base`, `Integrated`, `Activity`,
  * `Knowledge`, and `Metadata`.
  *
  * Adding a new library pattern is two edits: create the `*.pattern.ts`
@@ -14,10 +14,10 @@ import { BasePattern } from './base.pattern.js';
 import { JunctionPattern } from './junction.pattern.js';
 import { KnowledgePattern } from './knowledge.pattern.js';
 import { MetadataPattern } from './metadata.pattern.js';
-import { SyncedPattern } from './synced.pattern.js';
+import { IntegratedPattern } from './integrated.pattern.js';
 
 registerLibraryPattern(BasePattern);
-registerLibraryPattern(SyncedPattern);
+registerLibraryPattern(IntegratedPattern);
 registerLibraryPattern(ActivityPattern);
 registerLibraryPattern(KnowledgePattern);
 registerLibraryPattern(MetadataPattern);
@@ -29,7 +29,7 @@ export {
 	JunctionPattern,
 	KnowledgePattern,
 	MetadataPattern,
-	SyncedPattern,
+	IntegratedPattern,
 };
 export {
 	BaseJunctionFields,

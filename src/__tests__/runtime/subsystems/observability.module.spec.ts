@@ -75,7 +75,7 @@ describe('ObservabilityModule.forRoot() — DI resolution', () => {
     expect(typeof typed.getPoolDepths).toBe('function');
     expect(typeof typed.getRecentFailedJobs).toBe('function');
     expect(typeof typed.getBridgeDeliveryHistogram).toBe('function');
-    expect(typeof typed.getRecentSyncRuns).toBe('function');
+    expect(typeof typed.getRecentIntegrationRuns).toBe('function');
     expect(typeof typed.getCursors).toBe('function');
     await moduleRef.close();
   });
@@ -121,7 +121,7 @@ describe('ObservabilityModule.forRoot() — missing siblings', () => {
       skipped: 0,
       failed: 0,
     });
-    expect(await obs.getRecentSyncRuns(10)).toEqual([]);
+    expect(await obs.getRecentIntegrationRuns(10)).toEqual([]);
     expect(await obs.getCursors()).toEqual([]);
 
     await moduleRef.close();

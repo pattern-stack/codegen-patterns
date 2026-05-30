@@ -305,7 +305,7 @@ export default {
 
     // v2 blocks (optional — absent in v1 entities)
     const queriesBlock = definition.queries || null;
-    const syncBlock = definition.sync || null;
+    const integrationBlock = definition.integration || null;
     const eventsBlock = definition.events || null;
     // EVT-7: emits is semantically 3-valued — undefined (fallback path),
     // [] (explicit opt-out), or string[] (typed emission). Preserve the
@@ -579,7 +579,7 @@ export default {
       moduleToController: importHelpers.moduleToController(fileNames.controller.replace('.ts', '')),
       // OPENAPI-2: module imports DTO file to register Zod schemas at onModuleInit.
       moduleToDto: importHelpers.moduleToDto(fileNames.dto.replace('.ts', '')),
-      // ADR-033.1: sync-source module imports the entity type from the
+      // ADR-033.1: integration-source module imports the entity type from the
       // domain barrel for the IChangeSource<T> type parameter.
       moduleToDomain: importHelpers.moduleToDomain(),
       // From controller (presentation/rest/) to queries/commands
@@ -1136,7 +1136,7 @@ export default {
     const hasOrderedQuery = processedQueries.some((q) => q.hasOrder);
 
     // ============================================================================
-    // v2: Sync
+    // v2: Integration
     // ============================================================================
 
     // ADR-033.1 / ADR-033.2: provider-keyed detection block.
@@ -1150,18 +1150,18 @@ export default {
     // Render the per-entity DetectionConfigs map as a TS object literal.
     // JSON.stringify produces valid TS for the canonical DetectionConfig shape
     // (strings, numbers, booleans, arrays, plain objects). Provider keys keep
-    // YAML insertion order. Used by sync-source.ejs.t.
+    // YAML insertion order. Used by integration-source.ejs.t.
     const detectionConfigsLiteral = hasDetection
       ? JSON.stringify(detectionBlock, null, 2)
       : '{}';
 
-    const hasSyncBlock = syncBlock != null;
-    const syncElectric = hasSyncBlock ? (syncBlock.electric ?? false) : false;
-    const rawSyncProviders = hasSyncBlock ? (syncBlock.providers ?? {}) : {};
-    const hasSyncProviders = Object.keys(rawSyncProviders).length > 0;
+    const hasIntegrationBlock = integrationBlock != null;
+    const integrationElectric = hasIntegrationBlock ? (integrationBlock.electric ?? false) : false;
+    const rawIntegrationProviders = hasIntegrationBlock ? (integrationBlock.providers ?? {}) : {};
+    const hasIntegrationProviders = Object.keys(rawIntegrationProviders).length > 0;
 
-    const syncProviders = hasSyncProviders
-      ? Object.entries(rawSyncProviders).map(([providerName, cfg]) => {
+    const integrationProviders = hasIntegrationProviders
+      ? Object.entries(rawIntegrationProviders).map(([providerName, cfg]) => {
           // Normalize field_mapping: { local: key, remote: value }[]
           const rawMapping = cfg.field_mapping ?? {};
           const fieldMapping = Object.entries(rawMapping).map(([local, remote]) => ({
@@ -1621,11 +1621,11 @@ export default {
       hasMultiFieldQuery,
       hasOrderedQuery,
 
-      // Sync
-      hasSyncBlock,
-      syncElectric,
-      hasSyncProviders,
-      syncProviders,
+      // Integration
+      hasIntegrationBlock,
+      integrationElectric,
+      hasIntegrationProviders,
+      integrationProviders,
 
       // Detection (ADR-033.1 / ADR-033.2 typed provider artifacts)
       hasDetection,

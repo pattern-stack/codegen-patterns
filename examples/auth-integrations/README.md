@@ -1,12 +1,12 @@
 # auth-integrations starter
 
-Canonical OAuth2 integration storage for apps using the
+Canonical OAuth2 connection storage for apps using the
 `@pattern-stack/codegen` auth subsystem (ADR-031 / `runtime/subsystems/auth/`).
 
 The auth subsystem ships the abstract OAuth2 plumbing — `OAuth2RefreshStrategy`,
 `AuthController`, `withAuthRetry`, encryption, error types, and a set of narrow
-hexagonal ports for integration storage. It deliberately doesn't ship the
-concrete `integrations` table or the adapters that satisfy those ports, because
+hexagonal ports for connection storage. It deliberately doesn't ship the
+concrete `connections` table or the adapters that satisfy those ports, because
 every consumer would need to fork them. **This starter is what plugs that gap.**
 
 ## What ships here
@@ -15,26 +15,26 @@ every consumer would need to fork them. **This starter is what plugs that gap.**
 examples/auth-integrations/
   definitions/
     entities/
-      integration.yaml                      # canonical entity (run cdp entity new)
+      connection.yaml                      # canonical entity (run cdp entity new)
 
-  runtime/integrations/                     # vendored next to the codegen-emitted
-                                            #   integration entity module — i.e.
-                                            #   <backend_src>/modules/integrations/
+  runtime/connections/                     # vendored next to the codegen-emitted
+                                            #   connection entity module — i.e.
+                                            #   <backend_src>/modules/connections/
                                             #   (override via paths.modules_dir).
     adapters/
-      integration-reader.adapter.ts         # IIntegrationReader impl
-      integration-token-writer.adapter.ts   # IIntegrationTokenWriter impl
-      integration-grant-sink.adapter.ts     # IIntegrationGrantSink impl
+      connection-reader.adapter.ts         # IConnectionReader impl
+      connection-token-writer.adapter.ts   # IConnectionTokenWriter impl
+      connection-grant-sink.adapter.ts     # IConnectionGrantSink impl
     facade/
-      integrations.service.ts               # consumer-facing facade
+      connections.service.ts               # consumer-facing facade
     oauth/
       use-cases/
         create-or-update-from-oauth-grant.use-case.ts
-        mark-integration-requires-reauth.use-case.ts
-        disconnect-integration.use-case.ts
-        list-user-integrations.use-case.ts
-    integrations-auth.module.ts             # @Global() — binds the three
-                                            #   AUTH_INTEGRATION_* tokens.
+        mark-connection-requires-reauth.use-case.ts
+        disconnect-connection.use-case.ts
+        list-user-connections.use-case.ts
+    connections-auth.module.ts             # @Global() — binds the three
+                                            #   AUTH_CONNECTION_* tokens.
 ```
 
 ## How to install
@@ -42,22 +42,22 @@ examples/auth-integrations/
 ```bash
 cdp subsystem install auth          # one-time: vendor the auth subsystem
 cdp subsystem install auth-integrations
-cdp entity new integration          # emits the entity module next to the vendor
+cdp entity new connection          # emits the entity module next to the vendor
 ```
 
 The `auth-integrations` install:
-- copies `definitions/entities/integration.yaml` into your configured
+- copies `definitions/entities/connection.yaml` into your configured
   `paths.entities` (or legacy `paths.entities_dir`) directory.
-- vendors `runtime/integrations/**` under
-  `<backend_src>/modules/integrations/` (override via `paths.modules_dir`),
+- vendors `runtime/connections/**` under
+  `<backend_src>/modules/connections/` (override via `paths.modules_dir`),
   rewriting bare `@pattern-stack/codegen/runtime/subsystems/auth` imports to
   relative paths that resolve against the vendored auth subsystem at
   `<paths.subsystems>/auth`.
 - appends a TODO to `<backend_src>/app.module.ts` reminding you to register
-  `IntegrationsAuthModule` AFTER `AuthModule.forRoot(...)`.
+  `ConnectionsAuthModule` AFTER `AuthModule.forRoot(...)`.
 
-`IntegrationsAuthModule` is `@Global()` because `AuthController` (inside
-`AuthModule`'s injector) resolves the `AUTH_INTEGRATION_*` providers exposed
+`ConnectionsAuthModule` is `@Global()` because `AuthController` (inside
+`AuthModule`'s injector) resolves the `AUTH_CONNECTION_*` providers exposed
 by it.
 
 ## Two interfaces, two purposes
@@ -66,15 +66,15 @@ The auth subsystem requires three narrow ports:
 
 | Token                            | Port                       | Used by                        |
 | -------------------------------- | -------------------------- | ------------------------------ |
-| `AUTH_INTEGRATION_READER`        | `IIntegrationReader`       | `OAuth2RefreshStrategy.resolve` |
-| `AUTH_INTEGRATION_TOKEN_WRITER`  | `IIntegrationTokenWriter`  | `OAuth2RefreshStrategy.resolve` |
-| `AUTH_INTEGRATION_GRANT_SINK`    | `IIntegrationGrantSink`    | `AuthController.callback`       |
+| `AUTH_CONNECTION_READER`        | `IConnectionReader`       | `OAuth2RefreshStrategy.resolve` |
+| `AUTH_CONNECTION_TOKEN_WRITER`  | `IConnectionTokenWriter`  | `OAuth2RefreshStrategy.resolve` |
+| `AUTH_CONNECTION_GRANT_SINK`    | `IConnectionGrantSink`    | `AuthController.callback`       |
 
 These stay narrow on purpose — a non-codegen consumer with a hand-rolled
-integrations table can satisfy them without pulling in the rest of this
+connections table can satisfy them without pulling in the rest of this
 starter.
 
-The starter's `IntegrationsService` is **a separate, richer interface** that
+The starter's `ConnectionsService` is **a separate, richer interface** that
 your app code (controllers, handlers, frontend-facing routes) talks to
 directly. It composes the use cases, applies encryption, and exposes
 consumer-shaped methods like `findByUserAndProvider`, `listByUser`,
@@ -104,14 +104,14 @@ supports any provider slug your app cares about.
 
 After install:
 
-- [ ] `IntegrationsService.findByUserAndProvider(userId, 'hubspot-crm')`
+- [ ] `ConnectionsService.findByUserAndProvider(userId, 'hubspot-crm')`
       returns `null` for missing rows, decrypted-creds for present rows.
 - [ ] `createOrUpdateFromOAuthGrant({ userId, provider, accessToken, ... })`
       upserts on `(user_id, provider)`. Re-running with a different access
       token replaces the prior token; omitting `refreshToken` keeps the
       existing ciphertext.
-- [ ] `markRequiresReauth(integrationId)` flips status to `requires_reauth`.
-- [ ] `disconnect(integrationId)` flips status to `revoked` and clears the
+- [ ] `markRequiresReauth(connectionId)` flips status to `requires_reauth`.
+- [ ] `disconnect(connectionId)` flips status to `revoked` and clears the
       stored ciphertexts.
 - [ ] `OAuth2RefreshStrategy.resolve()` end-to-end refresh works against a
       provider-strategy you've registered (out of scope — provider strategies
@@ -121,5 +121,5 @@ After install:
 
 - ADR-031 — auth subsystem (Accepted)
 - #285 — this starter (tracking issue)
-- #286 — `AuthController` + integration-store ports (merged in PR #289)
+- #286 — `AuthController` + connection-store ports (merged in PR #289)
 - #287 — `cdp subsystem install auth-integrations` template (follow-up)

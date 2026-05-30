@@ -52,7 +52,7 @@ export type PatternKind = 'domain' | 'orchestration';
  * store these and look them up by `name`.
  */
 export interface PatternDefinition<TConfig = unknown> {
-	/** Unique name used in YAML — e.g. `pattern: Synced` */
+	/** Unique name used in YAML — e.g. `pattern: Integrated` */
 	name: string;
 
 	/**
@@ -65,7 +65,7 @@ export interface PatternDefinition<TConfig = unknown> {
 
 	/**
 	 * Built-in patterns this extends, by name. Phase 1 supports single-depth
-	 * chains only — a pattern may `extends: ['Synced']` but the transitive
+	 * chains only — a pattern may `extends: ['Integrated']` but the transitive
 	 * chain is not yet resolved. Multi-depth inheritance is deferred until
 	 * a real consumer asks.
 	 */
@@ -79,7 +79,7 @@ export interface PatternDefinition<TConfig = unknown> {
 	/**
 	 * Fully-qualified TypeScript path alias the consumer's tsconfig resolves.
 	 * Library patterns use the consumer-installed runtime base class path
-	 * (e.g. `@shared/base-classes/synced-entity-repository`); app patterns
+	 * (e.g. `@shared/base-classes/integrated-entity-repository`); app patterns
 	 * use whatever alias the consumer has configured (e.g. `@/patterns/...`).
 	 */
 	repositoryImport?: string;

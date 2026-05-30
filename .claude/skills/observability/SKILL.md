@@ -1,6 +1,6 @@
 ---
 name: observability
-description: Load when working on the Observability combiner subsystem. Triggers include anything under `runtime/subsystems/observability/`; the `IObservability` protocol or `OBSERVABILITY` token; `ObservabilityModule.forRoot()` wiring; `ObservabilityService` and its composed sibling ports (`IJobRunService`, `IJobBridge`, sync recorder/cursor ports); reporters living under `runtime/subsystems/observability/reporters/`; relocation of `BridgeMetricsReporter`; the `just gen-subsystem observability` scaffold; and any work referencing ADR-025, epic #195, or OBS-1..OBS-8 specs.
+description: Load when working on the Observability combiner subsystem. Triggers include anything under `runtime/subsystems/observability/`; the `IObservability` protocol or `OBSERVABILITY` token; `ObservabilityModule.forRoot()` wiring; `ObservabilityService` and its composed sibling ports (`IJobRunService`, `IJobBridge`, integration recorder/cursor ports); reporters living under `runtime/subsystems/observability/reporters/`; relocation of `BridgeMetricsReporter`; the `just gen-subsystem observability` scaffold; and any work referencing ADR-025, epic #195, or OBS-1..OBS-8 specs.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 user-invocable: false
 ---
@@ -9,7 +9,7 @@ user-invocable: false
 
 **Phase status:** In-flight via epic #195 (OBS-1..OBS-8). ADR-025 is `Draft`. Phase 1 ships the composer, per-sibling read additions, `BridgeMetricsReporter` relocation, and the CLI scaffold. Phase 2 (Drizzle extensions, Prometheus/OTel exporters, Cube.js cross-table analytics) is deferred.
 
-Observability is the **combiner subsystem** that composes read-side reporting across jobs, bridge, sync, and the cursor store. Its job is to turn "how is the system doing?" into a single typed port — multi-tenant-safe, backend-inherited, dashboard-grade.
+Observability is the **combiner subsystem** that composes read-side reporting across jobs, bridge, integration, and the cursor store. Its job is to turn "how is the system doing?" into a single typed port — multi-tenant-safe, backend-inherited, dashboard-grade.
 
 ## Mental model
 
@@ -22,8 +22,8 @@ Observability is the **combiner subsystem** that composes read-side reporting ac
 | `getPoolDepths(tenantId?)` | `IJobRunService.countByPoolAndStatus` | jobs |
 | `getRecentFailedJobs(limit, tenantId?)` | `IJobRunService.listRecentFailed` | jobs |
 | `getBridgeDeliveryHistogram(windowHours, tenantId?)` | `IJobBridge.getStatusHistogram` | bridge |
-| `getRecentSyncRuns(limit, subscriptionId?, tenantId?)` | `ISyncRunRecorder.listRecent` | sync |
-| `getCursors(tenantId?)` | `ICursorStore.listAll` | sync (cursor store lives in sync) |
+| `getRecentIntegrationRuns(limit, subscriptionId?, tenantId?)` | `IIntegrationRunRecorder.listRecent` | integration |
+| `getCursors(tenantId?)` | `ICursorStore.listAll` | integration (cursor store lives in integration) |
 
 **Reporters are internal consumers, not protocol extensions.** `BridgeMetricsReporter` lives under `runtime/subsystems/observability/reporters/`, injects `OBSERVABILITY`, runs on `OnModuleInit` + `setInterval`. It consumes `IObservability` — does not extend the protocol.
 

@@ -18,9 +18,9 @@
  * and dispatches by slug.
  *
  * **Naming convention:** interfaces that describe behavioral ports use the
- * `I` prefix (`IProviderStrategy`, `IIntegrationReader`, `IUserContext`,
+ * `I` prefix (`IProviderStrategy`, `IConnectionReader`, `IUserContext`,
  * `IOAuthStateStore`, `IEncryptionKey`). Plain data types / DTOs (e.g.
- * `ExchangedTokens`, `DecryptedIntegration`, `IntegrationGrantInput`) do
+ * `ExchangedTokens`, `DecryptedConnection`, `ConnectionGrantInput`) do
  * not. Abstract template-method classes (e.g. `OAuth2RefreshStrategy`) also
  * do not — the `I` is for interfaces only.
  */

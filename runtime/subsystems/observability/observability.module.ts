@@ -1,7 +1,7 @@
 /**
  * ObservabilityModule — combiner subsystem (ADR-025, OBS-5, OBS-6).
  *
- * Composes the jobs, bridge, and sync read ports into a single
+ * Composes the jobs, bridge, and integration read ports into a single
  * `IObservability` facade. Owned by no sibling subsystem; it consumes
  * their tokens via DI, which the consumer app wires by registering the
  * sibling modules in the right order (like BridgeModule — the named
@@ -14,7 +14,7 @@
  *     EventsModule.forRoot({ backend: 'drizzle' }),
  *     JobsDomainModule.forRoot({ backend: 'drizzle' }),
  *     BridgeModule.forRoot({ backend: 'drizzle' }),
- *     SyncModule.forRoot({ backend: 'drizzle' }),
+ *     IntegrationModule.forRoot({ backend: 'drizzle' }),
  *     ObservabilityModule.forRoot({
  *       reporters: {
  *         bridgeMetrics: {

@@ -56,7 +56,7 @@ export {
 	JunctionPattern,
 	KnowledgePattern,
 	MetadataPattern,
-	SyncedPattern,
+	IntegratedPattern,
 } from './library/index.js';
 
 // BaseJunctionFields — re-exported for downstream template / codegen leaves

@@ -1,7 +1,7 @@
 /**
  * Observability combiner subsystem — DI tokens (ADR-025, OBS-5).
  *
- * String constants (not Symbols), matching the events / bridge / sync
+ * String constants (not Symbols), matching the events / bridge / integration
  * convention. The jobs subsystem uses Symbols for its analogous tokens;
  * observability stays internally consistent with its sibling combiner
  * (bridge) because the two are structurally paired (ADR-025).

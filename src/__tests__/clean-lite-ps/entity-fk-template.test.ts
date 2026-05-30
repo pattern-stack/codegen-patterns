@@ -243,21 +243,21 @@ describe('soft-delete FK warning (issue #41)', () => {
 // The external_id_tracking behavior declares external_id with
 // drizzleImports: ['varchar', 'index'] — it INTENDS an index. The entity
 // template now emits a unique index over (provider, external_id), the
-// ON CONFLICT target the sync sink's syncUpsert relies on.
+// ON CONFLICT target the integration sink's integrationUpsert relies on.
 // ============================================================================
 
-// Synced entity declaring the behavior explicitly.
-const syncedExplicitDefinition = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Synced' },
+// Integrated entity declaring the behavior explicitly.
+const integratedExplicitDefinition = {
+  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
   fields: { email: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['timestamps', 'external_id_tracking'],
 };
 
-// Synced entity that does NOT re-declare external_id_tracking — the pattern
+// Integrated entity that does NOT re-declare external_id_tracking — the pattern
 // implies it (impliedBehaviors fold).
-const syncedImpliedDefinition = {
-  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Synced' },
+const integratedImpliedDefinition = {
+  entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
   fields: { email: { type: 'string', required: true } },
   relationships: {},
   behaviors: ['timestamps'],
@@ -281,7 +281,7 @@ const baseNoBehaviorDefinition = {
 
 describe('external_id_tracking unique index emission', () => {
   it('emits uniqueIndex over (provider, external_id) when behavior is declared explicitly', () => {
-    const locals = buildCleanLitePsLocals(syncedExplicitDefinition, EMPTY_BASE_LOCALS);
+    const locals = buildCleanLitePsLocals(integratedExplicitDefinition, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
     expect(output).toContain(
@@ -290,7 +290,7 @@ describe('external_id_tracking unique index emission', () => {
   });
 
   it('imports uniqueIndex from drizzle-orm/pg-core', () => {
-    const locals = buildCleanLitePsLocals(syncedExplicitDefinition, EMPTY_BASE_LOCALS);
+    const locals = buildCleanLitePsLocals(integratedExplicitDefinition, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
     expect(locals.clpDrizzleImports).toContain('uniqueIndex');
@@ -299,7 +299,7 @@ describe('external_id_tracking unique index emission', () => {
   });
 
   it('passes the index as the pgTable extra-config callback returning an array', () => {
-    const locals = buildCleanLitePsLocals(syncedExplicitDefinition, EMPTY_BASE_LOCALS);
+    const locals = buildCleanLitePsLocals(integratedExplicitDefinition, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
     // (t) => [ ... ] form — the modern Drizzle extra-config signature.
@@ -311,11 +311,11 @@ describe('external_id_tracking unique index emission', () => {
     expect(idxPos).toBeGreaterThan(colPos);
   });
 
-  it('emits the index for a pattern: Synced entity that does NOT re-declare the behavior', () => {
-    const locals = buildCleanLitePsLocals(syncedImpliedDefinition, EMPTY_BASE_LOCALS);
+  it('emits the index for a pattern: Integrated entity that does NOT re-declare the behavior', () => {
+    const locals = buildCleanLitePsLocals(integratedImpliedDefinition, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    // impliedBehaviors fold — pattern: Synced implies external_id_tracking.
+    // impliedBehaviors fold — pattern: Integrated implies external_id_tracking.
     expect(locals.hasExternalIdTracking).toBe(true);
     expect(output).toContain("externalId: varchar('external_id')");
     expect(output).toContain("provider: varchar('provider')");
@@ -325,7 +325,7 @@ describe('external_id_tracking unique index emission', () => {
     );
   });
 
-  it('emits the index for a non-Synced entity carrying the behavior directly', () => {
+  it('emits the index for a non-Integrated entity carrying the behavior directly', () => {
     const locals = buildCleanLitePsLocals(baseWithBehaviorDefinition, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 

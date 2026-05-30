@@ -13,7 +13,7 @@
  *       2. `codegen-config-bridge-block.ejs.t` (in `bridge-config/`) —
  *          injects the `bridge:` block into `codegen.config.yaml`.
  *
- * Unlike events / sync, there is NO schema template: per BRIDGE-1 the
+ * Unlike events / integration, there is NO schema template: per BRIDGE-1 the
  * `tenant_id` column on `bridge_delivery` is unconditionally emitted (the
  * column is always present in the schema; the multi-tenancy *runtime
  * enforcement* is what `multi_tenant: true` in config toggles). So the
@@ -34,7 +34,7 @@ export interface BridgeScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
 	appName: string;
 	/**
-	 * Reserved local for parity with events / sync. Bridge multi-tenancy is
+	 * Reserved local for parity with events / integration. Bridge multi-tenancy is
 	 * a runtime concern (BridgeModule.forRoot({ multiTenant })) — no
 	 * scaffold-time schema branching today. Kept so the locals shape stays
 	 * stable if a future template needs to gate something.
@@ -65,7 +65,7 @@ export interface BridgeScaffoldLocalsInput {
  *   `bridge/generated/.gitkeep` so the output dir for
  *   `bridge-registry-generator.ts` exists in source control.
  *
- * The `fileExists` probe is reserved (parity with events / sync) — today's
+ * The `fileExists` probe is reserved (parity with events / integration) — today's
  * templates use `unless_exists` / `inject` and don't need an existence
  * check from the resolver.
  */

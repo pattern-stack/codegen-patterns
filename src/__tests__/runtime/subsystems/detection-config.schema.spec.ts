@@ -15,7 +15,7 @@ import {
   FieldMappingSchema,
   ResolvedFilterSchema,
   CursorStrategySchema,
-} from '../../../../runtime/subsystems/sync/detection-config.schema';
+} from '../../../../runtime/subsystems/integration/detection-config.schema';
 
 describe('FieldMappingSchema', () => {
   it('accepts a minimal { source, target } pair', () => {

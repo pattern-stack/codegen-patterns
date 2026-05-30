@@ -2,7 +2,7 @@
  * ObservabilityService — `IObservability` combiner implementation
  * (ADR-025, OBS-5).
  *
- * Composes read methods across the jobs, bridge, and sync subsystems via
+ * Composes read methods across the jobs, bridge, and integration subsystems via
  * DI. Owns no state, no schema, no SQL. Every method is a one-line
  * delegation to the sibling port that already encodes the semantics.
  *
@@ -50,15 +50,15 @@ import type {
 import { BRIDGE_DELIVERY_REPO } from '../bridge/bridge.tokens';
 import type { IJobBridge, StatusHistogram } from '../bridge/bridge.protocol';
 
-import { SYNC_CURSOR_STORE, SYNC_RUN_RECORDER } from '../sync/sync.tokens';
+import { INTEGRATION_CURSOR_STORE, INTEGRATION_RUN_RECORDER } from '../integration/integration.tokens';
 import type {
-  ISyncRunRecorder,
-  SyncRunSummary,
-} from '../sync/sync-run-recorder.protocol';
+  IIntegrationRunRecorder,
+  IntegrationRunSummary,
+} from '../integration/integration-run-recorder.protocol';
 import type {
   CursorSnapshot,
   ICursorStore,
-} from '../sync/sync-cursor-store.protocol';
+} from '../integration/integration-cursor-store.protocol';
 
 import type {
   CorrelationTimeline,
@@ -106,10 +106,10 @@ export class ObservabilityService implements IObservability {
     @Inject(BRIDGE_DELIVERY_REPO)
     private readonly bridge?: IJobBridge,
     @Optional()
-    @Inject(SYNC_RUN_RECORDER)
-    private readonly syncRuns?: ISyncRunRecorder,
+    @Inject(INTEGRATION_RUN_RECORDER)
+    private readonly integrationRuns?: IIntegrationRunRecorder,
     @Optional()
-    @Inject(SYNC_CURSOR_STORE)
+    @Inject(INTEGRATION_CURSOR_STORE)
     private readonly cursors?: ICursorStore,
     @Optional()
     @Inject(EVENT_READ_PORT)
@@ -137,13 +137,13 @@ export class ObservabilityService implements IObservability {
     return this.bridge.getStatusHistogram(windowHours, tenantId);
   }
 
-  async getRecentSyncRuns(
+  async getRecentIntegrationRuns(
     limit: number,
     subscriptionId?: string,
     tenantId?: string | null,
-  ): Promise<SyncRunSummary[]> {
-    if (!this.syncRuns) return [];
-    return this.syncRuns.listRecent(limit, subscriptionId, tenantId);
+  ): Promise<IntegrationRunSummary[]> {
+    if (!this.integrationRuns) return [];
+    return this.integrationRuns.listRecent(limit, subscriptionId, tenantId);
   }
 
   async getCursors(tenantId?: string | null): Promise<CursorSnapshot[]> {

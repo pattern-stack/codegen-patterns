@@ -9,18 +9,18 @@
  *
  * The Hygen template this folder steers:
  *   - `app-module-hook.ejs.t` — appends a TODO comment block directing the
- *     human to register `IntegrationsAuthModule` AFTER `AuthModule.forRoot`.
+ *     human to register `ConnectionsAuthModule` AFTER `AuthModule.forRoot`.
  *
  * Files vendored *outside* of Hygen (handled by `runAuthIntegrationsScaffold`
  * in subsystem.ts):
- *   - `examples/auth-integrations/runtime/integrations/**` →
- *     `<sharedRoot>/integrations/**` (preserves `use-cases/` subdir).
- *   - `examples/auth-integrations/definitions/entities/integration.yaml` →
+ *   - `examples/auth-integrations/runtime/connections/**` →
+ *     `<vendorRoot>/connections/**` (preserves `use-cases/` subdir).
+ *   - `examples/auth-integrations/definitions/entities/connection.yaml` →
  *     `<definitionsPath>` (the consumer's entity-yaml dir).
  *
  * `authModuleRegistered` surfaces whether `AuthModule.forRoot` is already in
  * the consumer's `app.module.ts`. The CLI emits a warning when false —
- * `IntegrationsAuthModule` depends on `ENCRYPTION_KEY` from `AuthModule`.
+ * `ConnectionsAuthModule` depends on `ENCRYPTION_KEY` from `AuthModule`.
  *
  * This module is filesystem-unaware except via injected probes — callers
  * pass `fileExists(p)` and `readFile(p)` rather than us reaching for
@@ -35,21 +35,15 @@ import type { CodegenConfig } from './context.js';
 const FALLBACK_BACKEND_SRC = 'src';
 
 /**
- * Default vendor-into directory for the integrations adapters when
- * `paths.shared` is unset. Resolves under `<paths.backend_src>/shared`.
- */
-const SHARED_DIR_NAME = 'shared';
-
-/**
- * Default modules directory — where codegen emits the `integration`
+ * Default modules directory — where codegen emits the `connection`
  * entity module under clean-lite-ps. The auth-integrations install
- * vendors next to the codegen output to keep the integrations surface
+ * vendors next to the codegen output to keep the connections surface
  * unified (#303 fix #5). Override via `paths.modules_dir`.
  */
 const DEFAULT_MODULES_DIR = 'modules';
 
 /**
- * Default entity-yaml directory for the vendored `integration.yaml`.
+ * Default entity-yaml directory for the vendored `connection.yaml`.
  * Spec'd as `definitions/entities/` in #287 (the convention the
  * `examples/auth-integrations` starter ships with). Overridable via
  * `paths.entities` (or legacy `paths.entities_dir`) in
@@ -60,34 +54,27 @@ const DEFAULT_DEFINITIONS_DIR = 'definitions/entities';
 export interface AuthIntegrationsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
 	appName: string;
-	/** Where `app-module-hook.ejs.t` appends the IntegrationsAuthModule TODO. */
+	/** Where `app-module-hook.ejs.t` appends the ConnectionsAuthModule TODO. */
 	appModulePath: string;
 	/**
-	 * Legacy field: where `<sharedRoot>/integrations/...` would have
-	 * landed before #303 fix #5. Kept for diagnostic logging only —
-	 * vendoring now goes under `vendorRoot/integrations/` (next to the
-	 * codegen-emitted entity module).
-	 */
-	sharedRoot: string;
-	/**
-	 * Where the integrations starter is vendored — `<vendorRoot>/integrations/`.
+	 * Where the connections starter is vendored — `<vendorRoot>/connections/`.
 	 * Resolves from `paths.modules_dir` if set, else
 	 * `<paths.backend_src>/modules`. Co-locates the vendored adapters,
-	 * facade, oauth use-cases, and `IntegrationsAuthModule` with the
-	 * codegen-emitted `integration` entity module so the whole
-	 * integrations surface lives under one folder (matches dealbrain-v2
+	 * facade, oauth use-cases, and `ConnectionsAuthModule` with the
+	 * codegen-emitted `connection` entity module so the whole
+	 * connections surface lives under one folder (matches dealbrain-v2
 	 * precedent; #303 fix #5).
 	 */
 	vendorRoot: string;
 	/**
-	 * Where the vendored `integration.yaml` lands. Resolves from
-	 * `paths.definitions` if set, else `<cwd>/definitions/entities/integration.yaml`.
+	 * Where the vendored `connection.yaml` lands. Resolves from
+	 * `paths.definitions` if set, else `<cwd>/definitions/entities/connection.yaml`.
 	 */
 	definitionsPath: string;
 	/**
 	 * True iff the consumer's `app.module.ts` already contains
 	 * `AuthModule.forRoot`. Drives a warning print in the CLI — the
-	 * `IntegrationsAuthModule` requires `ENCRYPTION_KEY` from `AuthModule`.
+	 * `ConnectionsAuthModule` requires `ENCRYPTION_KEY` from `AuthModule`.
 	 */
 	authModuleRegistered: boolean;
 }
@@ -109,17 +96,14 @@ export interface AuthIntegrationsScaffoldLocalsInput {
  *
  * - `appModulePath` resolves to `<cwd>/<paths.backend_src>/app.module.ts`,
  *   falling back to `<cwd>/src/app.module.ts`.
- * - `sharedRoot` resolves to `<cwd>/<paths.shared>` if set, else
- *   `<cwd>/<paths.backend_src>/shared`. Legacy: pre-#303-fix-#5
- *   vendor target. Retained for diagnostics only.
  * - `vendorRoot` resolves to `<cwd>/<paths.modules_dir>` if set, else
  *   `<cwd>/<paths.backend_src>/modules`. The auth-integrations starter
- *   is vendored under `<vendorRoot>/integrations/` next to the
- *   codegen-emitted `integration` entity module (#303 fix #5).
- * - `definitionsPath` resolves to `<cwd>/<paths.entities>/integration.yaml`
- *   (or legacy `<cwd>/<paths.entities_dir>/integration.yaml`) if set,
- *   else `<cwd>/definitions/entities/integration.yaml`. (The
- *   `examples/auth-integrations/definitions/entities/integration.yaml`
+ *   is vendored under `<vendorRoot>/connections/` next to the
+ *   codegen-emitted `connection` entity module (#303 fix #5).
+ * - `definitionsPath` resolves to `<cwd>/<paths.entities>/connection.yaml`
+ *   (or legacy `<cwd>/<paths.entities_dir>/connection.yaml`) if set,
+ *   else `<cwd>/definitions/entities/connection.yaml`. (The
+ *   `examples/auth-integrations/definitions/entities/connection.yaml`
  *   convention.)
  * - `authModuleRegistered` is detected by reading `app.module.ts` and
  *   substring-checking for `AuthModule.forRoot`. False positives (a
@@ -139,14 +123,8 @@ export function resolveAuthIntegrationsScaffoldLocals(
 
 	const pathsAny = config?.paths as Record<string, unknown> | undefined;
 
-	const sharedConfigured = pathsAny?.shared;
-	const sharedRoot =
-		typeof sharedConfigured === 'string' && sharedConfigured.length > 0
-			? path.resolve(cwd, sharedConfigured)
-			: path.resolve(cwd, backendSrc, SHARED_DIR_NAME);
-
 	// #303 fix #5: vendor target lives next to the codegen-emitted
-	// integration entity module, NOT under shared/. Default mirrors the
+	// connection entity module, NOT under shared/. Default mirrors the
 	// clean-lite-ps emit path (`<backendSrc>/modules/`).
 	const modulesConfigured = pathsAny?.modules_dir;
 	const vendorRoot =
@@ -167,8 +145,8 @@ export function resolveAuthIntegrationsScaffoldLocals(
 				: null;
 	const definitionsPath =
 		entitiesConfigured !== null
-			? path.resolve(cwd, entitiesConfigured, 'integration.yaml')
-			: path.resolve(cwd, DEFAULT_DEFINITIONS_DIR, 'integration.yaml');
+			? path.resolve(cwd, entitiesConfigured, 'connection.yaml')
+			: path.resolve(cwd, DEFAULT_DEFINITIONS_DIR, 'connection.yaml');
 
 	const appModulePath = path.resolve(cwd, backendSrc, 'app.module.ts');
 
@@ -181,7 +159,6 @@ export function resolveAuthIntegrationsScaffoldLocals(
 	return {
 		appName: path.basename(cwd),
 		appModulePath,
-		sharedRoot,
 		vendorRoot,
 		definitionsPath,
 		authModuleRegistered,
@@ -191,7 +168,7 @@ export function resolveAuthIntegrationsScaffoldLocals(
 /**
  * Serialise locals to the `--flag value` argv pairs Hygen consumes. Only
  * the locals consumed by the (single) Hygen template are forwarded; the
- * vendor-copy paths (`sharedRoot`, `definitionsPath`) are consumed directly
+ * vendor-copy paths (`vendorRoot`, `definitionsPath`) are consumed directly
  * by `runAuthIntegrationsScaffold` in subsystem.ts.
  */
 export function localsToHygenArgs(

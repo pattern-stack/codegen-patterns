@@ -22,10 +22,10 @@ import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc
 import { sql } from 'drizzle-orm';
 <% } -%>
 import { DRIZZLE } from '@shared/constants/tokens';
-import type { DrizzleClient<% if (eavValueTable || (typeof hasSyncSurface !== 'undefined' && hasSyncSurface)) { %>, DrizzleTx<% } %> } from '@shared/types/drizzle';
+import type { DrizzleClient<% if (eavValueTable || (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface)) { %>, DrizzleTx<% } %> } from '@shared/types/drizzle';
 import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
-<% if (typeof hasSyncSurface !== 'undefined' && hasSyncSurface) { -%>
-import type { SyncUpsertConfig } from '@shared/base-classes/sync-upsert-config';
+<% if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { -%>
+import type { IntegrationUpsertConfig } from '@shared/base-classes/integration-upsert-config';
 <% } -%>
 <% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
 import type { BehaviorConfig } from '@shared/base-classes/base-repository';
@@ -34,25 +34,25 @@ import type { BehaviorConfig } from '@shared/base-classes/base-repository';
 import { FieldValueService } from '../field_values/field_value.service';
 <% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
-<%_ if (typeof hasSyncSurface !== 'undefined' && hasSyncSurface) { _%>
-<%_ clpSyncParentTableImports.forEach((imp) => { _%>
+<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
+<%_ clpIntegrationParentTableImports.forEach((imp) => { _%>
 import { <%= imp.table %> } from '<%= imp.importPath %>';
 <%_ }); _%>
 <%_ } _%>
-<%_ if (typeof hasSyncSurface !== 'undefined' && hasSyncSurface) { _%>
+<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
 
 /**
- * Canonical fields a synced <%= entityName %> write carries (#374). Copy-through
+ * Canonical fields a integrated <%= entityName %> write carries (#374). Copy-through
  * columns are typed from the entity; each FK is named by its parent's external
- * id and resolved <%= clpSyncFkResolvers.length > 0 ? 'in syncUpsertOne' : 'as configured' %>. Provider/providerMetadata are persistence
+ * id and resolved <%= clpIntegrationFkResolvers.length > 0 ? 'in integrationUpsertOne' : 'as configured' %>. Provider/providerMetadata are persistence
  * seam, not carried here.
  */
-export interface <%= classNames.entity %>SyncWrite {
+export interface <%= classNames.entity %>IntegrationWrite {
   readonly externalId: string;
-<%_ clpSyncWriteFields.forEach((f) => { _%>
+<%_ clpIntegrationWriteFields.forEach((f) => { _%>
   readonly <%= f.camelName %>: <%- f.tsType %>;
 <%_ }); _%>
-<%_ clpSyncWriteFkFields.forEach((f) => { _%>
+<%_ clpIntegrationWriteFkFields.forEach((f) => { _%>
   readonly <%= f.name %>?: <%- f.tsType %>;
 <%_ }); _%>
   /** Flat custom-field bag (EAV). */
@@ -60,23 +60,23 @@ export interface <%= classNames.entity %>SyncWrite {
 }
 
 /**
- * Canonical-projected view of a <%= entityName %> row, keyed for the sync differ
+ * Canonical-projected view of a <%= entityName %> row, keyed for the integration differ
  * (#374). external_id_tracking columns (provider/providerMetadata) are OMITTED;
  * externalId is kept.
  */
-export interface <%= classNames.entity %>SyncProjection {
-<%_ clpSyncProjectionFields.forEach((f) => { _%>
+export interface <%= classNames.entity %>IntegrationProjection {
+<%_ clpIntegrationProjectionFields.forEach((f) => { _%>
   readonly <%= f.camelName %>: <%- f.tsType %>;
 <%_ }); _%>
 }
 <%_ } _%>
 
 @Injectable()
-<%_ if (typeof hasSyncSurface !== 'undefined' && hasSyncSurface) { _%>
+<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
 export class <%= classNames.repository %> extends <%= repositoryBaseClass %><
   <%= classNames.entity %>,
-  <%= classNames.entity %>SyncWrite,
-  <%= classNames.entity %>SyncProjection
+  <%= classNames.entity %>IntegrationWrite,
+  <%= classNames.entity %>IntegrationProjection
 > {
 <%_ } else { _%>
 export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%= classNames.entity %>> {
@@ -99,22 +99,22 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
   // runtime (identical shape to `behaviors: BehaviorConfig`).
   protected override readonly patternConfig = <%- renderPatternConfigLiteral(patternConfig, '  ', '  ') %> as const;
 <% } -%>
-<%_ if (typeof hasSyncSurface !== 'undefined' && hasSyncSurface) { _%>
+<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
 
-  // Inbound-sync write surface (#374). Drives the generic syncUpsertOne /
+  // Inbound-integration write surface (#374). Drives the generic integrationUpsertOne /
   // findByExternalIdProjected / softDeleteByExternalId on the base. FK
   // resolvers carry LIVE Drizzle table handles ('self' → this.table).
-  protected readonly syncConfig: SyncUpsertConfig = {
-    conflictTarget: [<%- clpSyncConfig.conflictTarget.map((c) => `'${c}'`).join(', ') %>],
-    writeColumns: [<%- clpSyncConfig.writeColumns.map((c) => `'${c}'`).join(', ') %>],
+  protected readonly integrationConfig: IntegrationUpsertConfig = {
+    conflictTarget: [<%- clpIntegrationConfig.conflictTarget.map((c) => `'${c}'`).join(', ') %>],
+    writeColumns: [<%- clpIntegrationConfig.writeColumns.map((c) => `'${c}'`).join(', ') %>],
     fkResolvers: [
-<%_ clpSyncFkResolvers.forEach((fk) => { _%>
+<%_ clpIntegrationFkResolvers.forEach((fk) => { _%>
       { column: '<%= fk.column %>', writeKey: '<%= fk.writeKey %>', refTable: <%- fk.isSelfFk ? "'self'" : fk.refTable %><%= fk.strict ? ', strict: true' : '' %> },
 <%_ }); _%>
     ],
-    projectionColumns: [<%- clpSyncConfig.projectionColumns.map((c) => `'${c}'`).join(', ') %>],
-    eav: <%= clpSyncConfig.eav %>,
-    softDelete: <%= clpSyncConfig.softDelete %>,
+    projectionColumns: [<%- clpIntegrationConfig.projectionColumns.map((c) => `'${c}'`).join(', ') %>],
+    eav: <%= clpIntegrationConfig.eav %>,
+    softDelete: <%= clpIntegrationConfig.softDelete %>,
   };
 <%_ } _%>
 
@@ -128,7 +128,7 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
 
   /**
    * EAV dual-write override (#374 seam → #124 live path). Delegates to the
-   * shared FieldValueService so the inbound-sync write joins the same tx.
+   * shared FieldValueService so the inbound-integration write joins the same tx.
    */
   protected override async writeCustomFields(
     db: DrizzleTx,

@@ -2,15 +2,15 @@
 to: "<%= appModulePath %>"
 inject: true
 append: true
-skip_if: "IntegrationsAuthModule"
+skip_if: "ConnectionsAuthModule"
 ---
 
-// TODO: Register IntegrationsAuthModule (vendored from auth-integrations starter)
+// TODO: Register ConnectionsAuthModule (vendored from auth-integrations starter)
 // Add to AppModule.imports AFTER AuthModule:
 //
-//   import { IntegrationsAuthModule } from '@shared/integrations/integrations-auth.module';
+//   import { ConnectionsAuthModule } from '@shared/connections/connections-auth.module';
 //   // ...
-//   IntegrationsAuthModule,
+//   ConnectionsAuthModule,
 //
 // Requires AuthModule.forRoot(...) registered first (provides ENCRYPTION_KEY).
-// Run `cdp entity new integration` to scaffold the codegen layer the adapters import.
+// Run `cdp entity new connection` to scaffold the codegen layer the adapters import.

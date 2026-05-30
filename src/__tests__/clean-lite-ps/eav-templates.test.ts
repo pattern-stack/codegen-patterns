@@ -58,7 +58,7 @@ const baseEntity = {
     name: 'opportunity',
     plural: 'opportunities',
     table: 'opportunities',
-    pattern: 'Synced',
+    pattern: 'Integrated',
   },
   fields: {
     name: { type: 'string', required: true },

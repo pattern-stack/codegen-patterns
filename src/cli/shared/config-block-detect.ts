@@ -21,7 +21,7 @@ export type SubsystemName =
 	| 'events'
 	| 'cache'
 	| 'storage'
-	| 'sync'
+	| 'integration'
 	| 'bridge'
 	| 'openapi'
 	| 'observability'

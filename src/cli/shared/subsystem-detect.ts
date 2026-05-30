@@ -27,7 +27,7 @@ export type SubsystemName =
 	| 'jobs'
 	| 'cache'
 	| 'storage'
-	| 'sync'
+	| 'integration'
 	| 'bridge'
 	| 'openapi-config'
 	| 'observability'
@@ -93,8 +93,8 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 		defaultBackend: 'local',
 	},
 	{
-		name: 'sync',
-		description: 'External-system sync engine (IChangeSource<T> + orchestrator + audit log)',
+		name: 'integration',
+		description: 'External-system integration engine (IChangeSource<T> + orchestrator + audit log)',
 		backends: ['drizzle', 'memory'],
 		defaultBackend: 'drizzle',
 	},
@@ -117,7 +117,7 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	{
 		// OBS-7 / ADR-025. Combiner subsystem — no schema, no worker, no
 		// generated/ dir. `ObservabilityModule` composes sibling read ports
-		// (events/jobs/bridge/sync) via @Optional() DI. The `combiner`
+		// (events/jobs/bridge/integration) via @Optional() DI. The `combiner`
 		// pseudo-backend is parallel to `openapi-config`'s `config-only`.
 		name: 'observability',
 		description:
@@ -141,15 +141,15 @@ export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	{
 		// #287. Auth-integrations starter (PR #290) — vendored from
 		// `examples/auth-integrations/`, NOT from `runtime/subsystems/`.
-		// Bundles a canonical `integration` entity yaml + the three
-		// integration-store-port adapters + the `IntegrationsService`
+		// Bundles a canonical `connection` entity yaml + the three
+		// connection-store-port adapters + the `ConnectionsService`
 		// facade. Single-backend (drizzle); the runtime adapters call
-		// directly into the codegen-emitted `IntegrationService` from the
+		// directly into the codegen-emitted `ConnectionService` from the
 		// entity layer. Detection: presence of
-		// `<sharedRoot>/integrations/integrations-auth.module.ts`.
+		// `<vendorRoot>/connections/connections-auth.module.ts`.
 		name: 'auth-integrations',
 		description:
-			'Vendored integrations entity + adapters (consumes auth subsystem)',
+			'Vendored connection entity + adapters (consumes auth subsystem)',
 		backends: ['drizzle'],
 		defaultBackend: 'drizzle',
 	},
@@ -170,7 +170,7 @@ const SUBSYSTEM_MODULE_FILE: Partial<Record<SubsystemName, string>> = {
 	jobs: 'jobs-domain.module.ts',
 	cache: 'cache.module.ts',
 	storage: 'storage.module.ts',
-	sync: 'sync.module.ts',
+	integration: 'integration.module.ts',
 	bridge: 'bridge.module.ts',
 	observability: 'observability.module.ts',
 	auth: 'auth.module.ts',
@@ -301,12 +301,10 @@ async function detectSubsystemStatesImpl(
 	}
 
 	// #287 / #303 fix #5: detect `auth-integrations` by presence of the
-	// vendored `integrations-auth.module.ts`. The vendor target moved
-	// from `<sharedRoot>/integrations/` to `<vendorRoot>/integrations/`
-	// (default `<paths.backend_src>/modules/integrations/`, override via
-	// `paths.modules_dir`). Resolution mirrors
-	// `auth-integrations-scaffold-locals.ts`. Falls back to the legacy
-	// shared/integrations location for any pre-0.6.7 installs.
+	// vendored `connections-auth.module.ts`. The vendor target is
+	// `<vendorRoot>/connections/` (default `<paths.backend_src>/modules/connections/`,
+	// override via `paths.modules_dir`). Resolution mirrors
+	// `auth-integrations-scaffold-locals.ts`.
 	if (!seen.has('auth-integrations')) {
 		const backendSrc =
 			(ctx.config?.paths?.backend_src as string | undefined) ?? 'src';
@@ -318,15 +316,9 @@ async function detectSubsystemStatesImpl(
 			typeof modulesConfigured === 'string' && modulesConfigured.length > 0
 				? path.resolve(ctx.cwd, modulesConfigured)
 				: path.resolve(ctx.cwd, backendSrc, 'modules');
-		const sharedConfigured = pathsAny?.shared;
-		const sharedRoot =
-			typeof sharedConfigured === 'string' && sharedConfigured.length > 0
-				? path.resolve(ctx.cwd, sharedConfigured)
-				: path.resolve(ctx.cwd, backendSrc, 'shared');
 
 		const candidates = [
-			path.join(vendorRoot, 'integrations', 'integrations-auth.module.ts'),
-			path.join(sharedRoot, 'integrations', 'integrations-auth.module.ts'),
+			path.join(vendorRoot, 'connections', 'connections-auth.module.ts'),
 		];
 		for (const moduleFile of candidates) {
 			if (fs.existsSync(moduleFile)) {

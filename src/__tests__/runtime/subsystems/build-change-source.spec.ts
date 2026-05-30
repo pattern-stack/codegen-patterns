@@ -6,7 +6,7 @@
  *   - webhook cfg → instanceof WebhookChangeSource
  *   - middlewares array threaded into the constructed primitive
  *   - default empty middlewares is fine
- *   - import resolves via the sync barrel (no deep path)
+ *   - import resolves via the integration barrel (no deep path)
  */
 import { describe, expect, it } from 'bun:test';
 import {
@@ -17,11 +17,11 @@ import {
   type DetectionConfig,
   type PollFetchCallback,
   type WebhookFetchCallback,
-} from '../../../../runtime/subsystems/sync';
+} from '../../../../runtime/subsystems/integration';
 import type {
   Change,
-  SyncSubscriptionView,
-} from '../../../../runtime/subsystems/sync/sync-change-source.protocol';
+  IntegrationSubscriptionView,
+} from '../../../../runtime/subsystems/integration/integration-change-source.protocol';
 
 interface PollRecord {
   external_id: string;
@@ -33,7 +33,7 @@ interface WebhookRecord {
   event_id: string;
 }
 
-const subscription: SyncSubscriptionView = {
+const subscription: IntegrationSubscriptionView = {
   id: 'sub-1',
   domain: 'opportunity',
   externalRef: 'sf-org-A',
@@ -57,7 +57,7 @@ function webhookConfig(): DetectionConfig {
   } as DetectionConfig;
 }
 
-async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
+async function collect<T>(it: AintegrationIterable<T>): Promise<T[]> {
   const out: T[] = [];
   for await (const x of it) out.push(x);
   return out;

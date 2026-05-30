@@ -132,7 +132,7 @@ describe('junction schema defaults', () => {
 describe('junction schema rejects malformed input', () => {
 	it('rejects pattern value other than "Junction"', () => {
 		const result = JunctionDefinitionSchema.safeParse({
-			pattern: 'Synced',
+			pattern: 'Integrated',
 			between: ['opportunity', 'contact'],
 		});
 		expect(result.success).toBe(false);

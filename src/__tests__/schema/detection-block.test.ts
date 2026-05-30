@@ -2,11 +2,11 @@
  * Tests for the entity-YAML `detection:` block (ADR-033.1).
  *
  * `detection:` is a Record<provider, DetectionConfig>. The inner config
- * shape is owned by `runtime/subsystems/sync/detection-config.schema.ts`
+ * shape is owned by `runtime/subsystems/integration/detection-config.schema.ts`
  * (covered by its own tests). This file covers:
  *   - the record wrapper accepts single- and multi-provider maps,
  *   - the within-file superRefine cross-checks `detection:` keys against
- *     `sync.providers` keys per ADR-033.1 §6.
+ *     `integration.providers` keys per ADR-033.1 §6.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -48,7 +48,7 @@ describe('detection block (ADR-033.1)', () => {
 	it('accepts a single-provider one-key map', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			sync: { providers: { 'hubspot-crm': providers['hubspot-crm'] } },
+			integration: { providers: { 'hubspot-crm': providers['hubspot-crm'] } },
 			detection: { 'hubspot-crm': hubspotDetection },
 		});
 		expect(result.success).toBe(true);
@@ -59,7 +59,7 @@ describe('detection block (ADR-033.1)', () => {
 	it('accepts a multi-provider map with independent configs', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			sync: { providers },
+			integration: { providers },
 			detection: {
 				'hubspot-crm': hubspotDetection,
 				'salesforce-crm': salesforceDetection,
@@ -74,10 +74,10 @@ describe('detection block (ADR-033.1)', () => {
 		if (sf.mode === 'poll') expect(sf.poll.cursor.kind).toBe('systemModstamp');
 	});
 
-	it('rejects a detection key that is not declared in sync.providers', () => {
+	it('rejects a detection key that is not declared in integration.providers', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			sync: { providers: { 'hubspot-crm': providers['hubspot-crm'] } },
+			integration: { providers: { 'hubspot-crm': providers['hubspot-crm'] } },
 			detection: { 'hubspot-cmr': hubspotDetection },
 		});
 		expect(result.success).toBe(false);
@@ -86,11 +86,11 @@ describe('detection block (ADR-033.1)', () => {
 		expect(issue).toBeDefined();
 		expect(issue!.path).toEqual(['detection', 'hubspot-cmr']);
 		expect(issue!.message).toBe(
-			"Provider 'hubspot-cmr' used in detection: but not declared in sync.providers. Known providers: hubspot-crm",
+			"Provider 'hubspot-cmr' used in detection: but not declared in integration.providers. Known providers: hubspot-crm",
 		);
 	});
 
-	it('rejects detection when sync.providers is missing entirely', () => {
+	it('rejects detection when integration.providers is missing entirely', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
 			detection: { 'hubspot-crm': hubspotDetection },
@@ -100,7 +100,7 @@ describe('detection block (ADR-033.1)', () => {
 		const issue = result.error.issues.find((i) => i.path.join('.') === 'detection.hubspot-crm');
 		expect(issue).toBeDefined();
 		expect(issue!.message).toBe(
-			"Provider 'hubspot-crm' used in detection: but not declared in sync.providers. Known providers: ",
+			"Provider 'hubspot-crm' used in detection: but not declared in integration.providers. Known providers: ",
 		);
 	});
 

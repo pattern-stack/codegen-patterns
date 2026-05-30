@@ -15,11 +15,11 @@
  *   - `AUTH_USER_CONTEXT` (IUserContext) — resolves "who is this request"
  *     from the consumer's session/JWT/etc.
  *   - `OAUTH_STATE_STORE` (IOAuthStateStore) — CSRF state minting/consume.
- *   - `AUTH_INTEGRATION_GRANT_SINK` (IIntegrationGrantSink) — persists the
+ *   - `AUTH_CONNECTION_GRANT_SINK` (IConnectionGrantSink) — persists the
  *     freshly-minted grant. Adapter lives consumer-side (e.g. the
  *     auth-integrations starter from #285).
  *
- * The controller never imports `IntegrationsService` or any other concrete
+ * The controller never imports `ConnectionsService` or any other concrete
  * consumer type — it goes through ports only.
  */
 import {
@@ -34,7 +34,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import {
-  AUTH_INTEGRATION_GRANT_SINK,
+  AUTH_CONNECTION_GRANT_SINK,
   AUTH_OPTIONS,
   AUTH_USER_CONTEXT,
   OAUTH_STATE_STORE,
@@ -47,7 +47,7 @@ import type {
   IProviderStrategy,
   ProviderStrategyRegistry,
 } from '../protocols/provider-strategy';
-import type { IIntegrationGrantSink } from '../protocols/integration-store';
+import type { IConnectionGrantSink } from '../protocols/connection-store';
 
 /**
  * Minimal response surface used by the controller — typed loosely so we
@@ -67,8 +67,8 @@ export class AuthController {
     private readonly userContext: IUserContext,
     @Inject(OAUTH_STATE_STORE)
     private readonly stateStore: IOAuthStateStore,
-    @Inject(AUTH_INTEGRATION_GRANT_SINK)
-    private readonly grantSink: IIntegrationGrantSink,
+    @Inject(AUTH_CONNECTION_GRANT_SINK)
+    private readonly grantSink: IConnectionGrantSink,
     @Inject(AUTH_OPTIONS)
     private readonly options: AuthModuleOptions,
   ) {}
@@ -127,7 +127,7 @@ export class AuthController {
     });
     return res.redirect(
       HttpStatus.FOUND,
-      redirect ?? `/settings/integrations?connected=${encodeURIComponent(slug)}`,
+      redirect ?? `/settings/connections?connected=${encodeURIComponent(slug)}`,
     );
   }
 

@@ -63,7 +63,7 @@ export const opportunityContacts = pgTable(
     // surrogate id). Role is part of the junction's identity — the same pair
     // with two different roles is two distinct rows (e.g. a contact who is both
     // \`champion\` and \`decision_maker\` on one opportunity). This is the
-    // ON CONFLICT target for syncUpsert on role-bearing junctions.
+    // ON CONFLICT target for integrationUpsert on role-bearing junctions.
     primaryKey({ columns: [table.opportunityId, table.contactId, table.role] }),
   ],
 );
@@ -96,19 +96,19 @@ import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
-import { JunctionSyncRepository } from '@shared/base-classes/junction-sync-repository';
-import type { JunctionSyncConfig } from '@shared/base-classes/junction-sync-repository';
+import { JunctionIntegrationRepository } from '@shared/base-classes/junction-integration-repository';
+import type { JunctionIntegrationConfig } from '@shared/base-classes/junction-integration-repository';
 import { opportunities } from '../opportunities/opportunity.entity';
 import { contacts } from '../contacts/contact.entity';
 import { opportunityContacts, type OpportunityContact } from './opportunity_contact.entity';
 
 /**
- * Canonical fields a synced opportunity_contact junction write carries (#374). BOTH
+ * Canonical fields a integrated opportunity_contact junction write carries (#374). BOTH
  * parent FKs are named by their vendor external ids and resolved STRICTLY in
  * the tx (a missing parent throws → the orchestrator records a failed item and
  * continues). \`userId\` is run context (no column on the junction).
  */
-export interface OpportunityContactSyncWrite {
+export interface OpportunityContactIntegrationWrite {
   readonly opportunityExternalId: string;
   readonly contactExternalId: string;
   readonly role: 'champion' | 'decision_maker' | 'influencer';
@@ -116,11 +116,11 @@ export interface OpportunityContactSyncWrite {
 }
 
 /**
- * Canonical-projected view of a opportunity_contact junction row, keyed for the sync
+ * Canonical-projected view of a opportunity_contact junction row, keyed for the integration
  * differ (#374). \`id\` is the COMPOSITE externalId (the junction has no
  * surrogate id); the FKs are the LOCAL resolved uuids.
  */
-export interface OpportunityContactSyncProjection {
+export interface OpportunityContactIntegrationProjection {
   readonly id: string;
   readonly opportunityId: string;
   readonly contactId: string;
@@ -130,10 +130,10 @@ export interface OpportunityContactSyncProjection {
 }
 
 @Injectable()
-export class OpportunityContactRepository extends JunctionSyncRepository<
+export class OpportunityContactRepository extends JunctionIntegrationRepository<
   OpportunityContact,
-  OpportunityContactSyncWrite,
-  OpportunityContactSyncProjection
+  OpportunityContactIntegrationWrite,
+  OpportunityContactIntegrationProjection
 > {
   readonly table = opportunityContacts;
 
@@ -145,9 +145,9 @@ export class OpportunityContactRepository extends JunctionSyncRepository<
     userTracking: false,
   };
 
-  // Inbound-sync write surface (#374). Both endpoints resolve strictly against
+  // Inbound-integration write surface (#374). Both endpoints resolve strictly against
   // the live parent tables; role-bearing junctions conflict on (left,right,role).
-  protected readonly syncConfig: JunctionSyncConfig = {
+  protected readonly integrationConfig: JunctionIntegrationConfig = {
     left: { column: 'opportunityId', refTable: opportunities },
     right: { column: 'contactId', refTable: contacts },
     roleColumn: 'role',
@@ -194,9 +194,9 @@ export class OpportunityContactRepository extends JunctionSyncRepository<
     return rows as OpportunityContact[];
   }
 
-  // Inherited from JunctionSyncRepository (+ BaseRepository):
+  // Inherited from JunctionIntegrationRepository (+ BaseRepository):
   //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
-  //   syncUpsertOne, findByExternalIdProjected, softDeleteByExternalId
+  //   integrationUpsertOne, findByExternalIdProjected, softDeleteByExternalId
 }
 "
 `;
@@ -390,13 +390,13 @@ import type { Contact } from '../contacts/contact.entity';
 
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
-import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
+import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-service';
 import { OpportunityRepository } from './opportunity.repository';
 import type { Opportunity } from './opportunity.entity';
 
 @Injectable()
 export class OpportunityService extends WithAnalytics(
-  SyncedEntityService<OpportunityRepository, Opportunity>,
+  IntegratedEntityService<OpportunityRepository, Opportunity>,
 ) {
   protected override readonly entityName = 'opportunity';
 
@@ -458,7 +458,7 @@ export class OpportunityService extends WithAnalytics(
   }
 
 
-  // Inherited from SyncedEntityService:
+  // Inherited from IntegratedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
   //   findByExternalId, findAllByUserId, findVisibleByUserId
 
@@ -482,7 +482,7 @@ import type { Opportunity } from '../opportunities/opportunity.entity';
 
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
-import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
+import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-service';
 import { ContactRepository } from './contact.repository';
 import type { Contact } from './contact.entity';
 import { AccountRepository } from '../accounts/account.repository';
@@ -490,7 +490,7 @@ import type { Account } from '../accounts/account.entity';
 
 @Injectable()
 export class ContactService extends WithAnalytics(
-  SyncedEntityService<ContactRepository, Contact>,
+  IntegratedEntityService<ContactRepository, Contact>,
 ) {
   protected override readonly entityName = 'contact';
 
@@ -550,7 +550,7 @@ export class ContactService extends WithAnalytics(
   }
 
 
-  // Inherited from SyncedEntityService:
+  // Inherited from IntegratedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
   //   findByExternalId, findAllByUserId, findVisibleByUserId
 

@@ -140,11 +140,11 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// Ambient tenant scope — imported by base-repository.ts (scopePredicate)
 	{ runtime: 'base-classes/tenant-context.ts', target: 'src/shared/base-classes/tenant-context.ts' },
 	{ runtime: 'base-classes/base-service.ts', target: 'src/shared/base-classes/base-service.ts' },
-	{ runtime: 'base-classes/synced-entity-repository.ts', target: 'src/shared/base-classes/synced-entity-repository.ts' },
-	{ runtime: 'base-classes/synced-entity-service.ts', target: 'src/shared/base-classes/synced-entity-service.ts' },
-	// Inbound-sync write surface (#374) — deps of synced/junction repos
-	{ runtime: 'base-classes/sync-upsert-config.ts', target: 'src/shared/base-classes/sync-upsert-config.ts' },
-	{ runtime: 'base-classes/junction-sync-repository.ts', target: 'src/shared/base-classes/junction-sync-repository.ts' },
+	{ runtime: 'base-classes/integrated-entity-repository.ts', target: 'src/shared/base-classes/integrated-entity-repository.ts' },
+	{ runtime: 'base-classes/integrated-entity-service.ts', target: 'src/shared/base-classes/integrated-entity-service.ts' },
+	// Inbound-integration write surface (#374) — deps of integrated/junction repos
+	{ runtime: 'base-classes/integration-upsert-config.ts', target: 'src/shared/base-classes/integration-upsert-config.ts' },
+	{ runtime: 'base-classes/junction-integration-repository.ts', target: 'src/shared/base-classes/junction-integration-repository.ts' },
 	{ runtime: 'base-classes/activity-entity-repository.ts', target: 'src/shared/base-classes/activity-entity-repository.ts' },
 	{ runtime: 'base-classes/activity-entity-service.ts', target: 'src/shared/base-classes/activity-entity-service.ts' },
 	{ runtime: 'base-classes/metadata-entity-repository.ts', target: 'src/shared/base-classes/metadata-entity-repository.ts' },
@@ -437,7 +437,7 @@ function exampleEntityYaml(): string {
 #
 # entity:
 #   name: account
-#   pattern: Synced       # Base | Synced | Activity | Metadata | Knowledge (or app-defined)
+#   pattern: Integrated   # Base | Integrated | Activity | Metadata | Knowledge (or app-defined)
 #
 # fields:
 #   name:

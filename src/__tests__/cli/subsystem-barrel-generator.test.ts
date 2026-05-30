@@ -4,7 +4,7 @@
  * Cover:
  *   - empty installed set → empty barrel + DynamicModule[] type
  *   - single subsystem (events) → 1 import + 1 forRoot call
- *   - full minimum set (events+jobs+bridge+sync) → 4 imports + 4 calls
+ *   - full minimum set (events+jobs+bridge+integration) → 4 imports + 4 calls
  *   - jobs `worker_mode: 'embedded'` adds JobWorkerModule
  *   - per-subsystem config plumbed through (multi_tenant → multiTenant)
  *   - subsystems in install list but with no composer are listed in `skipped`
@@ -86,22 +86,22 @@ describe('buildSubsystemBarrel', () => {
 		);
 	});
 
-	test('full minimum set composes events + jobs + bridge + sync (ordered)', () => {
+	test('full minimum set composes events + jobs + bridge + integration (ordered)', () => {
 		const out = buildSubsystemBarrel(
-			[inst('sync'), inst('bridge'), inst('jobs'), inst('events')], // unsorted input
+			[inst('integration'), inst('bridge'), inst('jobs'), inst('events')], // unsorted input
 			{
 				events: { backend: 'drizzle', multi_tenant: false },
 				jobs: { backend: 'drizzle', multi_tenant: false, worker_mode: 'standalone' },
 				bridge: { backend: 'drizzle', multi_tenant: false },
-				sync: { backend: 'drizzle', multi_tenant: false },
+				integration: { backend: 'drizzle', multi_tenant: false },
 			},
 			subsystemsRel,
 		);
-		expect(out.emitted).toEqual(['events', 'jobs', 'bridge', 'sync']);
+		expect(out.emitted).toEqual(['events', 'jobs', 'bridge', 'integration']);
 		// Module-call order matters at runtime (events provides IEventBus before
-		// bridge subscribes; jobs orchestrator before sync invokes ExecuteSyncUseCase
+		// bridge subscribes; jobs orchestrator before integration invokes ExecuteIntegrationUseCase
 		// via a job).
-		const callIndices = ['EventsModule', 'JobsDomainModule', 'BridgeModule', 'SyncModule'].map(
+		const callIndices = ['EventsModule', 'JobsDomainModule', 'BridgeModule', 'IntegrationModule'].map(
 			(m) => out.content.indexOf(`${m}.forRoot`),
 		);
 		expect(callIndices.every((i) => i >= 0)).toBe(true);
@@ -171,12 +171,12 @@ describe('buildSubsystemBarrel', () => {
 
 	test('subsystem `multi_tenant: true` propagates to forRoot as `multiTenant: true`', () => {
 		const out = buildSubsystemBarrel(
-			[inst('sync')],
-			{ sync: { backend: 'drizzle', multi_tenant: true } },
+			[inst('integration')],
+			{ integration: { backend: 'drizzle', multi_tenant: true } },
 			subsystemsRel,
 		);
 		expect(out.content).toContain(
-			"SyncModule.forRoot({ backend: 'drizzle', multiTenant: true }),",
+			"IntegrationModule.forRoot({ backend: 'drizzle', multiTenant: true }),",
 		);
 	});
 

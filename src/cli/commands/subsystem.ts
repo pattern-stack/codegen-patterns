@@ -31,9 +31,9 @@ import {
 	resolveJobsScaffoldLocals,
 } from '../shared/jobs-scaffold-locals.js';
 import {
-	localsToHygenArgs as syncLocalsToHygenArgs,
-	resolveSyncScaffoldLocals,
-} from '../shared/sync-scaffold-locals.js';
+	localsToHygenArgs as integrationLocalsToHygenArgs,
+	resolveIntegrationScaffoldLocals,
+} from '../shared/integration-scaffold-locals.js';
 import {
 	localsToHygenArgs as bridgeLocalsToHygenArgs,
 	resolveBridgeScaffoldLocals,
@@ -216,19 +216,19 @@ export function backendFileFilter(
 			return false;
 		}
 
-		// SYNC-7: same pattern for sync — the Hygen template
-		// `templates/subsystem/sync/sync-audit.schema.ejs.t` is the sole
-		// emitter for the sync audit schema, gating the `tenant_id`
-		// columns on `sync.multi_tenant`. Skip here so `copyRuntime`
+		// SYNC-7: same pattern for integration — the Hygen template
+		// `templates/subsystem/integration/integration-audit.schema.ejs.t` is the sole
+		// emitter for the integration audit schema, gating the `tenant_id`
+		// columns on `integration.multi_tenant`. Skip here so `copyRuntime`
 		// never writes the always-tenant runtime source file.
 		if (
-			subsystemName === 'sync' &&
-			file === 'sync-audit.schema.ts'
+			subsystemName === 'integration' &&
+			file === 'integration-audit.schema.ts'
 		) {
 			return false;
 		}
 
-		// #287: same pattern as events/jobs/sync — the auth Hygen template
+		// #287: same pattern as events/jobs/integration — the auth Hygen template
 		// `templates/subsystem/auth/auth-oauth-state.schema.ejs.t` is the
 		// sole emitter for the `auth_oauth_state` schema in consumer
 		// projects. Skipping here ensures `copyRuntime` never writes the
@@ -422,12 +422,12 @@ export class SubsystemInstallCommand extends Command {
 					})
 				: null;
 
-		// SYNC-7: sync subsystem — inject the `sync:` config block and emit
-		// the tenancy-aware audit schema. No generated/ dir (sync ships no
-		// codegen artifacts — see sync-scaffold-locals.ts docstring).
-		const syncScaffold =
-			desc.name === 'sync'
-				? runSyncScaffold(ctx.cwd, ctx.config, {
+		// SYNC-7: integration subsystem — inject the `integration:` config block and emit
+		// the tenancy-aware audit schema. No generated/ dir (integration ships no
+		// codegen artifacts — see integration-scaffold-locals.ts docstring).
+		const integrationScaffold =
+			desc.name === 'integration'
+				? runIntegrationScaffold(ctx.cwd, ctx.config, {
 						dryRun: this.dryRun,
 						json: isJsonMode(),
 						forceConfig: this.forceConfig,
@@ -452,7 +452,7 @@ export class SubsystemInstallCommand extends Command {
 		// OBS-7: observability combiner subsystem — injects the placeholder
 		// `observability:` config block and appends a TODO comment block to
 		// `app.module.ts` directing the human to wire
-		// `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync.
+		// `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration.
 		// No schema, no worker, no generated/ dir (ADR-025).
 		const observabilityScaffold =
 			desc.name === 'observability'
@@ -492,9 +492,9 @@ export class SubsystemInstallCommand extends Command {
 			);
 			return 1;
 		}
-		if (syncScaffold?.configBlockOutcome === 'parse-error') {
+		if (integrationScaffold?.configBlockOutcome === 'parse-error') {
 			printError(
-				'codegen.config.yaml is not valid YAML: refusing to inject sync config block. Fix the YAML and re-run.',
+				'codegen.config.yaml is not valid YAML: refusing to inject integration config block. Fix the YAML and re-run.',
 			);
 			return 1;
 		}
@@ -533,7 +533,7 @@ export class SubsystemInstallCommand extends Command {
 				},
 				...(jobsScaffold ? { scaffold: jobsScaffold } : {}),
 				...(eventsScaffold ? { scaffold: eventsScaffold } : {}),
-				...(syncScaffold ? { scaffold: syncScaffold } : {}),
+				...(integrationScaffold ? { scaffold: integrationScaffold } : {}),
 				...(bridgeScaffold ? { scaffold: bridgeScaffold } : {}),
 				...(observabilityScaffold ? { scaffold: observabilityScaffold } : {}),
 				...(authScaffold ? { scaffold: authScaffold } : {}),
@@ -562,11 +562,11 @@ export class SubsystemInstallCommand extends Command {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
-			if (syncScaffold?.planned?.length) {
+			if (integrationScaffold?.planned?.length) {
 				printInfo(
-					`Sync scaffold — ${syncScaffold.planned.length} template targets`,
+					`Integration scaffold — ${integrationScaffold.planned.length} template targets`,
 				);
-				for (const p of syncScaffold.planned) {
+				for (const p of integrationScaffold.planned) {
 					console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
 				}
 			}
@@ -626,14 +626,14 @@ export class SubsystemInstallCommand extends Command {
 				);
 			}
 		}
-		if (syncScaffold) {
-			if (syncScaffold.ok) {
+		if (integrationScaffold) {
+			if (integrationScaffold.ok) {
 				printSuccess(
-					`sync scaffold applied (config block, schema)`,
+					`integration scaffold applied (config block, schema)`,
 				);
 			} else {
 				printWarning(
-					`sync scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${syncScaffold.error ?? 'unknown error'}`,
+					`integration scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${integrationScaffold.error ?? 'unknown error'}`,
 				);
 			}
 		}
@@ -689,7 +689,7 @@ export class SubsystemInstallCommand extends Command {
 		// Emit a targeted hint instead of the default `forRoot({ backend })` one.
 		if (desc.name === 'observability') {
 			printInfo(
-				'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync in app.module.ts',
+				'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration in app.module.ts',
 			);
 		} else if (desc.name === 'auth') {
 			// #287: auth's forRoot shape is richer than `{ backend }` —
@@ -708,9 +708,9 @@ export class SubsystemInstallCommand extends Command {
 				`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
 			);
 		}
-		if (desc.name === 'sync') {
+		if (desc.name === 'integration') {
 			printInfo(
-				`Per-entity: register ExecuteSyncUseCase + your IChangeSource/ISyncSink bindings in a feature module (see SyncModule docstring).`
+				`Per-entity: register ExecuteIntegrationUseCase + your IChangeSource/IIntegrationSink bindings in a feature module (see IntegrationModule docstring).`
 			);
 		}
 		return 0;
@@ -724,7 +724,7 @@ export class SubsystemInstallCommand extends Command {
 	 * `codegen project init`. This method just invokes the
 	 * `subsystem/openapi-config` Hygen action to inject the `openapi:`
 	 * block into `codegen.config.yaml`, honoring the same `--force-config`
-	 * semantics as jobs/events/sync/bridge.
+	 * semantics as jobs/events/integration/bridge.
 	 */
 	private async executeOpenApiConfig(ctx: Context): Promise<number> {
 		const configPath = path.join(ctx.cwd, 'codegen.config.yaml');
@@ -794,9 +794,9 @@ export class SubsystemInstallCommand extends Command {
 	 *
 	 * Source is `examples/auth-integrations/`, NOT `runtime/subsystems/`,
 	 * so this method short-circuits the `copyRuntime` flow. It vendors the
-	 * adapters tree + the canonical `integration.yaml`, then invokes the
+	 * adapters tree + the canonical `connection.yaml`, then invokes the
 	 * `subsystem auth-integrations` Hygen action to append the
-	 * `IntegrationsAuthModule` TODO to `app.module.ts`.
+	 * `ConnectionsAuthModule` TODO to `app.module.ts`.
 	 *
 	 * Idempotent: pre-existing files are skipped unless `--force` is set.
 	 */
@@ -848,7 +848,7 @@ export class SubsystemInstallCommand extends Command {
 
 		if (this.dryRun) {
 			printInfo(
-				`Dry run — auth-integrations would vendor adapters + integration.yaml + append TODO`,
+				`Dry run — auth-integrations would vendor adapters + connection.yaml + append TODO`,
 			);
 			for (const p of scaffold.planned) {
 				console.log(
@@ -866,15 +866,15 @@ export class SubsystemInstallCommand extends Command {
 
 		if (scaffold.authModuleRegistered === false) {
 			printWarning(
-				'AuthModule.forRoot(...) not detected in app.module.ts. Run `cdp subsystem install auth` first — IntegrationsAuthModule requires ENCRYPTION_KEY from it.',
+				'AuthModule.forRoot(...) not detected in app.module.ts. Run `cdp subsystem install auth` first — ConnectionsAuthModule requires ENCRYPTION_KEY from it.',
 			);
 		}
 
 		printInfo('auth-integrations starter vendored.');
 		printInfo('Next steps:');
-		printInfo('  1. Run `cdp entity new integration` to scaffold the codegen layer (apps/api/src/modules/integrations/integration.service) the adapters import.');
+		printInfo('  1. Run `cdp entity new connection` to scaffold the codegen layer (apps/api/src/modules/connections/connection.service) the adapters import.');
 		printInfo('  2. Ensure AuthModule.forRoot(...) is registered in AppModule (run `cdp subsystem install auth` if not).');
-		printInfo('  3. Wire IntegrationsAuthModule into AppModule (see TODO appended to app.module.ts).');
+		printInfo('  3. Wire ConnectionsAuthModule into AppModule (see TODO appended to app.module.ts).');
 		return 0;
 	}
 }
@@ -930,7 +930,7 @@ interface ConfigBlockActionInput {
 	actionFolder:
 		| 'jobs-config'
 		| 'events-config'
-		| 'sync-config'
+		| 'integration-config'
 		| 'bridge-config'
 		| 'openapi-config'
 		| 'observability-config'
@@ -1202,10 +1202,10 @@ function runEventsScaffold(
 }
 
 // ---------------------------------------------------------------------------
-// SYNC-7 — sync subsystem Hygen scaffold wiring
+// SYNC-7 — integration subsystem Hygen scaffold wiring
 // ---------------------------------------------------------------------------
 
-interface SyncScaffoldOutcome {
+interface IntegrationScaffoldOutcome {
 	ok: boolean;
 	planned: string[];
 	error?: string;
@@ -1213,32 +1213,32 @@ interface SyncScaffoldOutcome {
 	configBlockOutcome?: ConfigBlockOutcome;
 }
 
-function runSyncScaffold(
+function runIntegrationScaffold(
 	cwd: string,
 	config: Context['config'],
 	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
-): SyncScaffoldOutcome {
-	const locals = resolveSyncScaffoldLocals({
+): IntegrationScaffoldOutcome {
+	const locals = resolveIntegrationScaffoldLocals({
 		cwd,
 		config,
 		fileExists: (p: string) => fs.existsSync(p),
 	});
 
-	// Files the sync templates will target (used by --dry-run output and
+	// Files the integration templates will target (used by --dry-run output and
 	// JSON reporting). Ordering matches the template set. No generated/
-	// entry — sync ships no codegen artifacts (see
-	// sync-scaffold-locals.ts docstring).
+	// entry — integration ships no codegen artifacts (see
+	// integration-scaffold-locals.ts docstring).
 	const planned: string[] = [
 		locals.configPath,
 		locals.schemaPath,
 	];
 
 	// #121 (F13): inspect config BEFORE invoking the main scaffold. Main
-	// scaffold no longer emits the config block — `subsystem/sync-config`
+	// scaffold no longer emits the config block — `subsystem/integration-config`
 	// handles that under CLI control.
 	const configBlockOutcome = planConfigBlockAction(
 		locals.configPath,
-		'sync',
+		'integration',
 		opts.forceConfig,
 	);
 
@@ -1252,9 +1252,9 @@ function runSyncScaffold(
 
 	const result = invokeHygen({
 		generator: 'subsystem',
-		action: 'sync',
+		action: 'integration',
 		cwd,
-		args: syncLocalsToHygenArgs(locals),
+		args: integrationLocalsToHygenArgs(locals),
 		// Suppress Hygen stdout in JSON mode so it doesn't corrupt the JSON output.
 		inherit: !opts.json,
 	});
@@ -1270,9 +1270,9 @@ function runSyncScaffold(
 
 	const configResult = runConfigBlockAction({
 		cwd,
-		actionFolder: 'sync-config',
+		actionFolder: 'integration-config',
 		configPath: locals.configPath,
-		subsystem: 'sync',
+		subsystem: 'integration',
 		outcome: configBlockOutcome,
 		json: opts.json,
 	});
@@ -1695,22 +1695,22 @@ function runAuthIntegrationsScaffold(
 		};
 	}
 
-	const adaptersSrc = path.join(examplesRoot, 'runtime', 'integrations');
+	const adaptersSrc = path.join(examplesRoot, 'runtime', 'connections');
 	// #303 fix #5: vendor next to the codegen-emitted entity module under
-	// `<vendorRoot>/integrations/` (default `<backendSrc>/modules/integrations/`),
-	// NOT under `<sharedRoot>/integrations/`.
-	const adaptersDest = path.join(locals.vendorRoot, 'integrations');
-	const integrationYamlSrc = path.join(
+	// `<vendorRoot>/connections/` (default `<backendSrc>/modules/connections/`),
+	// NOT under a separate `shared/` tree.
+	const adaptersDest = path.join(locals.vendorRoot, 'connections');
+	const connectionYamlSrc = path.join(
 		examplesRoot,
 		'definitions',
 		'entities',
-		'integration.yaml',
+		'connection.yaml',
 	);
-	const integrationYamlDest = locals.definitionsPath;
+	const connectionYamlDest = locals.definitionsPath;
 
 	const planned: string[] = [
 		adaptersDest,
-		integrationYamlDest,
+		connectionYamlDest,
 		locals.appModulePath,
 	];
 
@@ -1733,22 +1733,22 @@ function runAuthIntegrationsScaffold(
 		buildAuthImportRewriter(subsystemsRoot),
 	);
 
-	// Vendor the integration.yaml.
+	// Vendor the connection.yaml.
 	let yamlWritten = false;
 	let yamlSkipped = false;
 	try {
-		if (fs.existsSync(integrationYamlDest) && !opts.force) {
+		if (fs.existsSync(connectionYamlDest) && !opts.force) {
 			yamlSkipped = true;
-		} else if (fs.existsSync(integrationYamlSrc)) {
-			fs.mkdirSync(path.dirname(integrationYamlDest), { recursive: true });
-			fs.copyFileSync(integrationYamlSrc, integrationYamlDest);
+		} else if (fs.existsSync(connectionYamlSrc)) {
+			fs.mkdirSync(path.dirname(connectionYamlDest), { recursive: true });
+			fs.copyFileSync(connectionYamlSrc, connectionYamlDest);
 			yamlWritten = true;
 		}
 	} catch (err) {
 		return {
 			ok: false,
 			planned,
-			error: `failed to vendor integration.yaml: ${
+			error: `failed to vendor connection.yaml: ${
 				err instanceof Error ? err.message : String(err)
 			}`,
 			authModuleRegistered: locals.authModuleRegistered,
@@ -1769,8 +1769,8 @@ function runAuthIntegrationsScaffold(
 			ok: false,
 			planned,
 			error: result.stderr?.trim() || 'hygen exited non-zero',
-			written: adapterCopy.written.concat(yamlWritten ? [integrationYamlDest] : []),
-			skipped: adapterCopy.skipped.concat(yamlSkipped ? [integrationYamlDest] : []),
+			written: adapterCopy.written.concat(yamlWritten ? [connectionYamlDest] : []),
+			skipped: adapterCopy.skipped.concat(yamlSkipped ? [connectionYamlDest] : []),
 			authModuleRegistered: locals.authModuleRegistered,
 		};
 	}
@@ -1778,8 +1778,8 @@ function runAuthIntegrationsScaffold(
 	return {
 		ok: true,
 		planned,
-		written: adapterCopy.written.concat(yamlWritten ? [integrationYamlDest] : []),
-		skipped: adapterCopy.skipped.concat(yamlSkipped ? [integrationYamlDest] : []),
+		written: adapterCopy.written.concat(yamlWritten ? [connectionYamlDest] : []),
+		skipped: adapterCopy.skipped.concat(yamlSkipped ? [connectionYamlDest] : []),
 		authModuleRegistered: locals.authModuleRegistered,
 	};
 }
@@ -1935,7 +1935,7 @@ export class SubsystemRemoveCommand extends Command {
 				'auth-integrations is vendored under <modules>/integrations/ alongside the codegen-emitted entity layer — not auto-removable here.',
 			);
 			printInfo(
-				'To uninstall: remove the integrations/ directory and the IntegrationsAuthModule registration from app.module.ts by hand.',
+				'To uninstall: remove the integrations/ directory and the ConnectionsAuthModule registration from app.module.ts by hand.',
 			);
 			return 1;
 		}

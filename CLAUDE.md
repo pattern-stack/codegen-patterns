@@ -124,7 +124,7 @@ Base classes in `runtime/base-classes/`:
 
 | Family | Repository | Service |
 |--------|-----------|---------|
-| `synced` | SyncedEntityRepository | SyncedEntityService |
+| `integrated` | IntegratedEntityRepository | IntegratedEntityService |
 | `activity` | ActivityEntityRepository | ActivityEntityService |
 | `metadata` | MetadataEntityRepository | MetadataEntityService |
 | `knowledge` | KnowledgeEntityRepository (stub) | KnowledgeEntityService (stub) |

@@ -198,7 +198,7 @@ export type PipelinesConfig = z.infer<typeof PipelinesConfigSchema>;
 /**
  * Patterns manifest — array of globs, relative to project root, that
  * `loadAppPatterns()` expands and dynamic-imports to discover app-defined
- * patterns. Library-shipped patterns (Base / Synced / Activity / Knowledge
+ * patterns. Library-shipped patterns (Base / Integrated / Activity / Knowledge
  * / Metadata) are pre-registered by the codegen package; consumers never
  * list them.
  *

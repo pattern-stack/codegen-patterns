@@ -4,7 +4,7 @@ entity:
   name: account
   plural: accounts
   table: accounts
-  pattern: Synced
+  pattern: Integrated
 
 fields:
   name:

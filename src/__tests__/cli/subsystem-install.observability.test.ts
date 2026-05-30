@@ -158,7 +158,7 @@ describe('subsystem install observability — real', () => {
 		const app = fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf-8');
 		expect(app).toContain('TODO: Register ObservabilityModule');
 		expect(app).toContain('ObservabilityModule.forRoot()');
-		expect(app).toContain('AFTER Events/Jobs/Bridge/Sync');
+		expect(app).toContain('AFTER Events/Jobs/Bridge/Integration');
 
 		// Config block appended.
 		const cfg = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8');
@@ -171,7 +171,7 @@ describe('subsystem install observability — real', () => {
 
 		// Combiner hint (not the default forRoot({ backend }) hint).
 		expect(out).toContain(
-			'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Sync',
+			'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration',
 		);
 	});
 

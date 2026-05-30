@@ -2,7 +2,7 @@
 name: subsystems
 description: >-
   Load when installing or wiring an infrastructure subsystem in a project that
-  uses @pattern-stack/codegen — events, jobs, cache, storage, sync, bridge,
+  uses @pattern-stack/codegen — events, jobs, cache, storage, integration, bridge,
   observability, auth, or the OpenAPI config. Covers `codegen subsystem
   install`, the `forRoot` registration ORDER in app.module.ts, which subsystems
   depend on which, and multi-tenancy opt-in. Get the order wrong and the bridge
@@ -17,7 +17,7 @@ user-invocable: false
 # Infrastructure subsystems
 
 Subsystems are the generated infrastructure your use cases call: an event bus,
-a job queue, a cache, file storage, an external-sync engine, the event-to-job
+a job queue, a cache, file storage, an external-integration engine, the event-to-job
 bridge, a read-only observability facade, and OAuth auth. Each follows one
 pattern — **Protocol (port) → Backend (adapter) → Factory (`DynamicModule.
 forRoot`)** — and each is `global: true`, so you register it once in
@@ -33,7 +33,7 @@ forRoot`)** — and each is `global: true`, so you register it once in
   (Postgres) production backend and a memory backend for tests. Swap via the
   `forRoot({ backend })` arg — app code is unchanged.
 - **Order matters.** Some subsystems consume others. The bridge consumes events
-  + jobs; observability composes events/jobs/bridge/sync read ports via
+  + jobs; observability composes events/jobs/bridge/integration read ports via
   optional DI. Registering them in the wrong order means a silently idle bridge
   or an observability facade that reports nothing. See `wiring-and-order.md`.
 
@@ -45,11 +45,11 @@ forRoot`)** — and each is `global: true`, so you register it once in
 | jobs | `JobsDomainModule` + `JobWorkerModule` | `subsystem install jobs` | — |
 | cache | `CacheModule` | `subsystem install cache` | jobs (optional, for cleanup) |
 | storage | `StorageModule` | `subsystem install storage` | — |
-| sync | `SyncModule` | `subsystem install sync` | — |
+| integration | `IntegrationModule` | `subsystem install integration` | — |
 | bridge | `BridgeModule` | `subsystem install bridge` | **events + jobs** |
-| observability | `ObservabilityModule` | `subsystem install observability` | composes events/jobs/bridge/sync (optional) |
+| observability | `ObservabilityModule` | `subsystem install observability` | composes events/jobs/bridge/integration (optional) |
 | auth | `AuthModule` | `subsystem install auth` | — |
-| auth-integrations | `IntegrationsAuthModule` | `subsystem install auth-integrations` | **auth** |
+| auth-integrations | `ConnectionsAuthModule` | `subsystem install auth-integrations` | **auth** |
 | openapi | (config only) | `subsystem install openapi-config` | registry vendored at init |
 
 ## Registration order (authoritative)
@@ -60,13 +60,13 @@ In `app.module.ts`, import in this order (omit what you haven't installed):
 2. `OpenApiModule` — the registry singleton (vendored at init).
 3. `EventsModule.forRoot(...)`
 4. `JobsDomainModule.forRoot(...)` **and** `JobWorkerModule.forRoot(...)`
-5. `CacheModule` / `StorageModule` / `SyncModule.forRoot(...)`
+5. `CacheModule` / `StorageModule` / `IntegrationModule.forRoot(...)`
 6. `BridgeModule.forRoot(...)` — **after** events + jobs.
 7. `ObservabilityModule.forRoot(...)` — **last** of the subsystems (composes the
    ones above via optional DI).
 8. `...GENERATED_MODULES` — your entity modules.
 
-For auth: register `AuthModule.forRoot(...)` before the `IntegrationsAuthModule`
+For auth: register `AuthModule.forRoot(...)` before the `ConnectionsAuthModule`
 that depends on it. Full per-subsystem `forRoot` signatures, the bridge reserved
 pools, and multi-tenancy are in `wiring-and-order.md`.
 

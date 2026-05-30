@@ -108,7 +108,7 @@ describe('subsystem — descriptor', () => {
 				'observability',
 				'openapi-config',
 				'storage',
-				'sync',
+				'integration',
 			].sort()
 		);
 	});
@@ -471,14 +471,14 @@ describe('subsystem — install (real)', () => {
 		expect(parsed.status).toBe('already-installed');
 
 		// Vendored YAML + app.module.ts unchanged on second run; no duplicate
-		// IntegrationsAuthModule TODO appended.
+		// ConnectionsAuthModule TODO appended.
 		if (fs.existsSync(integrationYamlPath)) {
 			expect(fs.readFileSync(integrationYamlPath, 'utf-8')).toBe(yamlBefore);
 		}
 		if (fs.existsSync(appModulePath)) {
 			const after = fs.readFileSync(appModulePath, 'utf-8');
 			expect(after).toBe(appModuleBefore);
-			const matches = after.match(/IntegrationsAuthModule/g) ?? [];
+			const matches = after.match(/ConnectionsAuthModule/g) ?? [];
 			// At most one occurrence (the TODO from first install).
 			expect(matches.length).toBeLessThanOrEqual(1);
 		}
@@ -502,14 +502,14 @@ describe('subsystem — install (real)', () => {
 			]),
 		);
 
-		const integrationsDir = path.join(root, 'src/modules/integrations');
+		const connectionsDir = path.join(root, 'src/modules/connections');
 		const files = fs
-			.readdirSync(integrationsDir, { withFileTypes: true, recursive: true })
+			.readdirSync(connectionsDir, { withFileTypes: true, recursive: true })
 			.filter((d) => d.isFile() && d.name.endsWith('.ts'))
 			.map((d) =>
 				path.join(
 					(d as fs.Dirent & { parentPath?: string }).parentPath ??
-						integrationsDir,
+						connectionsDir,
 					d.name,
 				),
 			);
@@ -522,7 +522,7 @@ describe('subsystem — install (real)', () => {
 		// And at least one file should now import from a relative
 		// `…/subsystems/auth` path.
 		const moduleSrc = fs.readFileSync(
-			path.join(integrationsDir, 'integrations-auth.module.ts'),
+			path.join(connectionsDir, 'connections-auth.module.ts'),
 			'utf-8',
 		);
 		expect(moduleSrc).toMatch(/from\s+['"]\.\.[^'"]*subsystems\/auth['"]/);
@@ -546,23 +546,23 @@ describe('subsystem — install (real)', () => {
 			]),
 		);
 
-		const base = path.join(root, 'src/modules/integrations');
+		const base = path.join(root, 'src/modules/connections');
 		expect(
 			fs.existsSync(
-				path.join(base, 'adapters/integration-reader.adapter.ts'),
+				path.join(base, 'adapters/connection-reader.adapter.ts'),
 			),
 		).toBe(true);
 		expect(
 			fs.existsSync(
-				path.join(base, 'adapters/integration-token-writer.adapter.ts'),
+				path.join(base, 'adapters/connection-token-writer.adapter.ts'),
 			),
 		).toBe(true);
 		expect(
 			fs.existsSync(
-				path.join(base, 'adapters/integration-grant-sink.adapter.ts'),
+				path.join(base, 'adapters/connection-grant-sink.adapter.ts'),
 			),
 		).toBe(true);
-		expect(fs.existsSync(path.join(base, 'facade/integrations.service.ts'))).toBe(
+		expect(fs.existsSync(path.join(base, 'facade/connections.service.ts'))).toBe(
 			true,
 		);
 		expect(
@@ -573,7 +573,7 @@ describe('subsystem — install (real)', () => {
 				),
 			),
 		).toBe(true);
-		expect(fs.existsSync(path.join(base, 'integrations-auth.module.ts'))).toBe(
+		expect(fs.existsSync(path.join(base, 'connections-auth.module.ts'))).toBe(
 			true,
 		);
 
@@ -608,7 +608,7 @@ describe('subsystem — install (real)', () => {
 			fs.existsSync(
 				path.join(
 					root,
-					'src/features/integrations/integrations-auth.module.ts',
+					'src/features/connections/connections-auth.module.ts',
 				),
 			),
 		).toBe(true);
@@ -899,28 +899,28 @@ describe('subsystem — install F13 (config-block preservation)', () => {
 	});
 });
 
-describe('subsystem — install sync (SYNC-7)', () => {
-	test('copies runtime/subsystems/sync into target + follows deps', async () => {
+describe('subsystem — install integration (SYNC-7)', () => {
+	test('copies runtime/subsystems/integration into target + follows deps', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
 		const { result } = await capture(() =>
-			cli.run(['subsystem', 'install', 'sync', '--force', '--json', '--cwd', root])
+			cli.run(['subsystem', 'install', 'integration', '--force', '--json', '--cwd', root])
 		);
 		expect(result).toBe(0);
-		const installDir = path.join(root, 'src/shared/subsystems/sync');
+		const installDir = path.join(root, 'src/shared/subsystems/integration');
 		expect(fs.existsSync(installDir)).toBe(true);
 		// Core files present.
-		expect(fs.existsSync(path.join(installDir, 'sync.module.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(installDir, 'sync-change-source.protocol.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(installDir, 'execute-sync.use-case.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'integration.module.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'integration-change-source.protocol.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'execute-integration.use-case.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'deep-equal.differ.ts'))).toBe(true);
 		// Drizzle backends present (default backend).
-		expect(fs.existsSync(path.join(installDir, 'sync-cursor-store.drizzle-backend.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(installDir, 'sync-run-recorder.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'integration-cursor-store.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'integration-run-recorder.drizzle-backend.ts'))).toBe(true);
 		// Memory backends present too — always copied for tests.
-		expect(fs.existsSync(path.join(installDir, 'sync-cursor-store.memory-backend.ts'))).toBe(true);
-		expect(fs.existsSync(path.join(installDir, 'sync-run-recorder.memory-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'integration-cursor-store.memory-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'integration-run-recorder.memory-backend.ts'))).toBe(true);
 		// Shared deps copied to parallel tree.
 		expect(fs.existsSync(path.join(root, 'src/shared/types/drizzle.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(root, 'src/shared/constants/tokens.ts'))).toBe(true);
@@ -931,20 +931,20 @@ describe('subsystem — install sync (SYNC-7)', () => {
 		tempDirs.push(root);
 		const cli = buildCli();
 		const { result } = await capture(() =>
-			cli.run(['subsystem', 'install', 'sync', '--force', '--json', '--cwd', root])
+			cli.run(['subsystem', 'install', 'integration', '--force', '--json', '--cwd', root])
 		);
 		expect(result).toBe(0);
 		const schemaPath = path.join(
 			root,
-			'src/shared/subsystems/sync/sync-audit.schema.ts',
+			'src/shared/subsystems/integration/integration-audit.schema.ts',
 		);
 		expect(fs.existsSync(schemaPath)).toBe(true);
 		const schema = fs.readFileSync(schemaPath, 'utf8');
 		// Hygen-templated (not copyRuntime): the generator banner is present.
-		expect(schema).toContain('subsystem sync generator');
+		expect(schema).toContain('subsystem integration generator');
 		// tenant_id is ALWAYS emitted now (even under multi_tenant: false): the
-		// runtime sync code references it unconditionally, so the previously-gated
-		// form broke multi_tenant:false consumers' typecheck. SYNC_MULTI_TENANT
+		// runtime integration code references it unconditionally, so the previously-gated
+		// form broke multi_tenant:false consumers' typecheck. INTEGRATION_MULTI_TENANT
 		// gates enforcement, not the column's existence.
 		expect(schema).toContain("text('tenant_id')");
 	});
@@ -954,10 +954,10 @@ describe('subsystem — install sync (SYNC-7)', () => {
 		tempDirs.push(root);
 		const cli = buildCli();
 		await capture(() =>
-			cli.run(['subsystem', 'install', 'sync', '--force', '--cwd', root]),
+			cli.run(['subsystem', 'install', 'integration', '--force', '--cwd', root]),
 		);
 		const after = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf8');
-		expect(after).toContain('sync:');
+		expect(after).toContain('integration:');
 		expect(after).toContain('backend: drizzle');
 		expect(after).toContain('multi_tenant: false');
 	});
@@ -970,7 +970,7 @@ describe('subsystem — install sync (SYNC-7)', () => {
 			cli.run([
 				'subsystem',
 				'install',
-				'sync',
+				'integration',
 				'--backend',
 				'memory',
 				'--force',
@@ -980,50 +980,50 @@ describe('subsystem — install sync (SYNC-7)', () => {
 			])
 		);
 		expect(result).toBe(0);
-		const installDir = path.join(root, 'src/shared/subsystems/sync');
+		const installDir = path.join(root, 'src/shared/subsystems/integration');
 		expect(
-			fs.existsSync(path.join(installDir, 'sync-cursor-store.drizzle-backend.ts')),
+			fs.existsSync(path.join(installDir, 'integration-cursor-store.drizzle-backend.ts')),
 		).toBe(false);
 		expect(
-			fs.existsSync(path.join(installDir, 'sync-run-recorder.drizzle-backend.ts')),
+			fs.existsSync(path.join(installDir, 'integration-run-recorder.drizzle-backend.ts')),
 		).toBe(false);
 		// Memory backends are always present.
 		expect(
-			fs.existsSync(path.join(installDir, 'sync-cursor-store.memory-backend.ts')),
+			fs.existsSync(path.join(installDir, 'integration-cursor-store.memory-backend.ts')),
 		).toBe(true);
 		// Schema still emitted (Hygen-driven, backend-independent).
 		expect(
-			fs.existsSync(path.join(installDir, 'sync-audit.schema.ts')),
+			fs.existsSync(path.join(installDir, 'integration-audit.schema.ts')),
 		).toBe(true);
 	});
 
-	test('detectInstalledSubsystems finds sync after install', async () => {
+	test('detectInstalledSubsystems finds integration after install', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
 		await capture(() =>
-			cli.run(['subsystem', 'install', 'sync', '--force', '--cwd', root]),
+			cli.run(['subsystem', 'install', 'integration', '--force', '--cwd', root]),
 		);
 		const ctx = await loadContext({ cwd: root, skipDetection: true });
 		const installed = await detectInstalledSubsystems(ctx);
-		expect(installed.map((i) => i.name)).toContain('sync');
+		expect(installed.map((i) => i.name)).toContain('integration');
 	});
 
 	test('multi_tenant: true in config emits tenant_id columns in schema', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
-		// Hand-write a config with sync.multi_tenant: true.
+		// Hand-write a config with integration.multi_tenant: true.
 		fs.writeFileSync(
 			path.join(root, 'codegen.config.yaml'),
-			'paths:\n  subsystems: src/shared/subsystems\nsync:\n  backend: drizzle\n  multi_tenant: true\n',
+			'paths:\n  subsystems: src/shared/subsystems\nintegration:\n  backend: drizzle\n  multi_tenant: true\n',
 		);
 		const cli = buildCli();
 		const { result } = await capture(() =>
-			cli.run(['subsystem', 'install', 'sync', '--force', '--cwd', root]),
+			cli.run(['subsystem', 'install', 'integration', '--force', '--cwd', root]),
 		);
 		expect(result).toBe(0);
 		const schema = fs.readFileSync(
-			path.join(root, 'src/shared/subsystems/sync/sync-audit.schema.ts'),
+			path.join(root, 'src/shared/subsystems/integration/integration-audit.schema.ts'),
 			'utf8',
 		);
 		expect(schema).toContain("text('tenant_id')");

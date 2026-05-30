@@ -1,7 +1,7 @@
 /**
  * Schema v2 validation tests
  *
- * Tests for ADR-031 pattern, queries, sync, events blocks
+ * Tests for ADR-031 pattern, queries, integration, events blocks
  * and pipelines config schema.
  */
 
@@ -31,7 +31,7 @@ describe('pattern / patterns / config', () => {
 	it('accepts a single `pattern:` string', () => {
 		// Names are validated against the registry at codegen time (PATTERN-4),
 		// not by the schema itself — so any string is shape-valid here.
-		for (const pattern of ['Synced', 'Activity', 'Knowledge', 'Metadata', 'CrmEntity']) {
+		for (const pattern of ['Integrated', 'Activity', 'Knowledge', 'Metadata', 'CrmEntity']) {
 			const result = EntityDefinitionSchema.safeParse({
 				...base,
 				entity: { ...base.entity, pattern },
@@ -51,7 +51,7 @@ describe('pattern / patterns / config', () => {
 	it('rejects declaring both `pattern:` and `patterns:`', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			entity: { ...base.entity, pattern: 'Synced', patterns: ['Event'] },
+			entity: { ...base.entity, pattern: 'Integrated', patterns: ['Event'] },
 		});
 		expect(result.success).toBe(false);
 	});
@@ -59,7 +59,7 @@ describe('pattern / patterns / config', () => {
 	it('rejects the legacy `family:` key (deleted in PATTERN-3 per ADR-031)', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			entity: { ...base.entity, family: 'synced' },
+			entity: { ...base.entity, family: 'integrated' },
 		});
 		expect(result.success).toBe(false);
 	});
@@ -132,19 +132,19 @@ describe('queries block', () => {
 });
 
 // ============================================================================
-// Sync Block
+// Integration Block
 // ============================================================================
 
-describe('sync block', () => {
+describe('integration block', () => {
 	const base = {
 		entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities' },
 		fields: { name: { type: 'string', required: true } },
 	};
 
-	it('accepts electric-only sync', () => {
+	it('accepts electric-only integration', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			sync: { electric: true },
+			integration: { electric: true },
 		});
 		expect(result.success).toBe(true);
 	});
@@ -152,7 +152,7 @@ describe('sync block', () => {
 	it('accepts full provider config', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			sync: {
+			integration: {
 				electric: true,
 				providers: {
 					salesforce: {
@@ -171,7 +171,7 @@ describe('sync block', () => {
 	it('rejects invalid direction', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
-			sync: {
+			integration: {
 				providers: {
 					salesforce: { remote_entity: 'X', direction: 'invalid' },
 				},
@@ -184,7 +184,7 @@ describe('sync block', () => {
 		for (const direction of ['inbound', 'outbound', 'bidirectional']) {
 			const result = EntityDefinitionSchema.safeParse({
 				...base,
-				sync: {
+				integration: {
 					providers: {
 						test: { remote_entity: 'X', direction },
 					},
@@ -494,9 +494,9 @@ describe('contact-v2.yaml integration', () => {
 		const result = loadEntityFromYaml(resolve('test/fixtures/contact-v2.yaml'));
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.definition.entity.pattern).toBe('Synced');
+			expect(result.definition.entity.pattern).toBe('Integrated');
 			expect(result.definition.queries).toHaveLength(6);
-			expect(result.definition.sync?.electric).toBe(true);
+			expect(result.definition.integration?.electric).toBe(true);
 			expect(result.definition.events).toHaveLength(3);
 		}
 	});
@@ -505,11 +505,11 @@ describe('contact-v2.yaml integration', () => {
 		const result = loadEntities(resolve('test/fixtures'));
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
-		expect(contact.pattern).toBe('Synced');
+		expect(contact.pattern).toBe('Integrated');
 		expect(contact.behaviors).toContain('external_id_tracking');
 		expect(contact.queries).toHaveLength(6);
-		expect(contact.sync?.electric).toBe(true);
-		expect(contact.sync?.providers?.salesforce?.remoteEntity).toBe('Contact');
+		expect(contact.integration?.electric).toBe(true);
+		expect(contact.integration?.providers?.salesforce?.remoteEntity).toBe('Contact');
 		expect(contact.events).toHaveLength(3);
 		expect(contact.events![0].generateHandler).toBe(true);
 	});

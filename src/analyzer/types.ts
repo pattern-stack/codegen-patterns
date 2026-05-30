@@ -62,7 +62,7 @@ export interface ParsedQuery {
 	via?: string;
 }
 
-export interface ParsedProviderSync {
+export interface ParsedProviderIntegration {
 	remoteEntity: string;
 	direction: 'inbound' | 'outbound' | 'bidirectional';
 	cdc: boolean;
@@ -70,9 +70,9 @@ export interface ParsedProviderSync {
 	readOnlyFields?: string[];
 }
 
-export interface ParsedSync {
+export interface ParsedIntegration {
 	electric: boolean;
-	providers?: Record<string, ParsedProviderSync>;
+	providers?: Record<string, ParsedProviderIntegration>;
 }
 
 export interface ParsedEvent {
@@ -108,7 +108,7 @@ export interface ParsedEntity {
 	relationships: Map<string, ParsedRelationship>;
 	behaviors: string[];
 	queries?: ParsedQuery[];
-	sync?: ParsedSync;
+	integration?: ParsedIntegration;
 	events?: ParsedEvent[];
 	/**
 	 * EVT-7: Opt-in list of event types this entity emits from its generated

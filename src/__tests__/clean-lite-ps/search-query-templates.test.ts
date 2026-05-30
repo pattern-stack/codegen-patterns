@@ -45,7 +45,7 @@ function render(relPath: string, locals: Record<string, unknown>): string {
 }
 
 const baseEntity = {
-  entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Synced' },
+  entity: { name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' },
   fields: {
     name: { type: 'string', required: true },
     canonical_state: {
