@@ -210,7 +210,7 @@ const INTEGRATION_SUMMARIES: IntegrationRunSummary[] = [
   {
     id: 'run-a',
     subscriptionId: 'sub-1',
-    integrationId: 'int-1',
+    connectionId: 'int-1',
     status: 'success',
     startedAt: new Date('2026-04-22T10:00:00Z'),
     completedAt: new Date('2026-04-22T10:00:05Z'),
@@ -222,7 +222,7 @@ const INTEGRATION_SUMMARIES: IntegrationRunSummary[] = [
 const CURSOR_SNAPSHOTS: CursorSnapshot[] = [
   {
     subscriptionId: 'sub-1',
-    integrationId: 'int-1',
+    connectionId: 'int-1',
     adapter: 'salesforce',
     domain: 'opportunity',
     externalRef: null,

@@ -17,13 +17,13 @@ repositories/services that shadow the subsystem).
 
 ### `integration_subscriptions`
 
-Cursor owner per `(integration_id, adapter, domain, external_ref)` tuple. The
+Cursor owner per `(connection_id, adapter, domain, external_ref)` tuple. The
 cursor store reads/writes it.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid PK | `defaultRandom()` |
-| `integration_id` | text | Opaque id of the connected account/instance (SFDC org id, GH installation id, …) |
+| `connection_id` | text | Opaque id of the connected account/instance (SFDC org id, GH installation id, …) |
 | `adapter` | text | Short adapter label: `'salesforce'`, `'hubspot'` |
 | `domain` | text | Canonical entity: `'opportunity'`, `'contact'` |
 | `external_ref` | text NULL | Upstream scope (filter id, webhook subscription id); NULL = full domain |
@@ -34,7 +34,7 @@ cursor store reads/writes it.
 | `tenant_id` | text NULL | Present only when `integration.multi_tenant: true` |
 | `created_at` / `updated_at` | ts | |
 
-Indexes: a unique `(integration_id, adapter, domain, external_ref)` tuple
+Indexes: a unique `(connection_id, adapter, domain, external_ref)` tuple
 (Postgres treats NULL `external_ref` as distinct — that's a consumer modeling
 concern), and an `(enabled, last_sync_at)` scheduling index.
 

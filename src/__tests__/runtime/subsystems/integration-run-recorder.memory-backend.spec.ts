@@ -120,16 +120,16 @@ describe('MemoryRunRecorder.listRecent', () => {
     });
   });
 
-  describe('integrationId resolution via subscriptions side-map', () => {
+  describe('connectionId resolution via subscriptions side-map', () => {
     it('returns empty string when no subscription metadata has been seeded', async () => {
       await seedRun(recorder, 'sub-a', 1_000);
       const [row] = await recorder.listRecent(10);
-      expect(row?.integrationId).toBe('');
+      expect(row?.connectionId).toBe('');
     });
 
-    it('returns the seeded integrationId when the subscription is populated', async () => {
+    it('returns the seeded connectionId when the subscription is populated', async () => {
       recorder.subscriptions.set('sub-a', {
-        integrationId: 'int-1',
+        connectionId: 'int-1',
         adapter: 'salesforce',
         domain: 'opportunity',
         externalRef: null,
@@ -138,14 +138,14 @@ describe('MemoryRunRecorder.listRecent', () => {
       await seedRun(recorder, 'sub-a', 1_000);
 
       const [row] = await recorder.listRecent(10);
-      expect(row?.integrationId).toBe('int-1');
+      expect(row?.connectionId).toBe('int-1');
     });
   });
 
   describe('IntegrationRunSummary shape', () => {
     it('projects run into the documented summary shape', async () => {
       recorder.subscriptions.set('sub-a', {
-        integrationId: 'int-1',
+        connectionId: 'int-1',
         adapter: 'salesforce',
         domain: 'opportunity',
         externalRef: 'ref-x',
@@ -161,7 +161,7 @@ describe('MemoryRunRecorder.listRecent', () => {
       expect(row).toEqual({
         id,
         subscriptionId: 'sub-a',
-        integrationId: 'int-1',
+        connectionId: 'int-1',
         status: 'success',
         startedAt: new Date(1_000),
         completedAt: new Date(2_000),
@@ -174,7 +174,7 @@ describe('MemoryRunRecorder.listRecent', () => {
   describe('clear', () => {
     it('resets runs, items, and subscriptions together', async () => {
       recorder.subscriptions.set('sub-a', {
-        integrationId: 'int-1',
+        connectionId: 'int-1',
         adapter: 'salesforce',
         domain: 'opportunity',
         externalRef: null,

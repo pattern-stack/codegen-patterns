@@ -36,15 +36,15 @@ import { FieldDiffSchema } from './integration-field-diff.protocol';
 
 /**
  * Optional per-subscription metadata a test can seed on the memory backend
- * so `listRecent` can surface `integrationId`. The memory recorder's write
+ * so `listRecent` can surface `connectionId`. The memory recorder's write
  * path never persists subscription rows (it only stores runs + items), so
- * `listRecent` has no way to derive `integrationId` on its own. Tests that
+ * `listRecent` has no way to derive `connectionId` on its own. Tests that
  * care about the field should populate `subscriptions` before calling
  * `listRecent`; calls that don't seed get an empty string and a stable
  * shape (see `listRecent` below).
  */
 export interface MemoryIntegrationSubscription {
-  integrationId: string;
+  connectionId: string;
   adapter: string;
   domain: string;
   externalRef: string | null;
@@ -90,7 +90,7 @@ export class MemoryRunRecorder implements IIntegrationRunRecorder {
 
   /**
    * Seedable subscription metadata — tests populate this to make
-   * `listRecent` return meaningful `integrationId` values. The memory
+   * `listRecent` return meaningful `connectionId` values. The memory
    * backend doesn't track subscriptions on its own (only runs + items), so
    * this map is the intentional extension point: tests write entries for
    * the subscription ids they use, production code never touches it.
@@ -168,11 +168,11 @@ export class MemoryRunRecorder implements IIntegrationRunRecorder {
       .map((r) => ({
         id: r.id,
         subscriptionId: r.subscriptionId,
-        // integrationId is only knowable if the test seeded subscriptions
+        // connectionId is only knowable if the test seeded subscriptions
         // metadata; empty string otherwise. The Drizzle backend resolves
         // it via JOIN, which is the production path.
-        integrationId:
-          this.subscriptions.get(r.subscriptionId)?.integrationId ?? '',
+        connectionId:
+          this.subscriptions.get(r.subscriptionId)?.connectionId ?? '',
         status: r.status,
         startedAt: r.startedAt,
         completedAt: r.completedAt,

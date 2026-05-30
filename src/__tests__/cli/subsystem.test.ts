@@ -471,14 +471,14 @@ describe('subsystem — install (real)', () => {
 		expect(parsed.status).toBe('already-installed');
 
 		// Vendored YAML + app.module.ts unchanged on second run; no duplicate
-		// IntegrationsAuthModule TODO appended.
+		// ConnectionsAuthModule TODO appended.
 		if (fs.existsSync(integrationYamlPath)) {
 			expect(fs.readFileSync(integrationYamlPath, 'utf-8')).toBe(yamlBefore);
 		}
 		if (fs.existsSync(appModulePath)) {
 			const after = fs.readFileSync(appModulePath, 'utf-8');
 			expect(after).toBe(appModuleBefore);
-			const matches = after.match(/IntegrationsAuthModule/g) ?? [];
+			const matches = after.match(/ConnectionsAuthModule/g) ?? [];
 			// At most one occurrence (the TODO from first install).
 			expect(matches.length).toBeLessThanOrEqual(1);
 		}
@@ -502,14 +502,14 @@ describe('subsystem — install (real)', () => {
 			]),
 		);
 
-		const integrationsDir = path.join(root, 'src/modules/integrations');
+		const connectionsDir = path.join(root, 'src/modules/connections');
 		const files = fs
-			.readdirSync(integrationsDir, { withFileTypes: true, recursive: true })
+			.readdirSync(connectionsDir, { withFileTypes: true, recursive: true })
 			.filter((d) => d.isFile() && d.name.endsWith('.ts'))
 			.map((d) =>
 				path.join(
 					(d as fs.Dirent & { parentPath?: string }).parentPath ??
-						integrationsDir,
+						connectionsDir,
 					d.name,
 				),
 			);
@@ -522,7 +522,7 @@ describe('subsystem — install (real)', () => {
 		// And at least one file should now import from a relative
 		// `…/subsystems/auth` path.
 		const moduleSrc = fs.readFileSync(
-			path.join(integrationsDir, 'integrations-auth.module.ts'),
+			path.join(connectionsDir, 'connections-auth.module.ts'),
 			'utf-8',
 		);
 		expect(moduleSrc).toMatch(/from\s+['"]\.\.[^'"]*subsystems\/auth['"]/);
@@ -546,23 +546,23 @@ describe('subsystem — install (real)', () => {
 			]),
 		);
 
-		const base = path.join(root, 'src/modules/integrations');
+		const base = path.join(root, 'src/modules/connections');
 		expect(
 			fs.existsSync(
-				path.join(base, 'adapters/integration-reader.adapter.ts'),
+				path.join(base, 'adapters/connection-reader.adapter.ts'),
 			),
 		).toBe(true);
 		expect(
 			fs.existsSync(
-				path.join(base, 'adapters/integration-token-writer.adapter.ts'),
+				path.join(base, 'adapters/connection-token-writer.adapter.ts'),
 			),
 		).toBe(true);
 		expect(
 			fs.existsSync(
-				path.join(base, 'adapters/integration-grant-sink.adapter.ts'),
+				path.join(base, 'adapters/connection-grant-sink.adapter.ts'),
 			),
 		).toBe(true);
-		expect(fs.existsSync(path.join(base, 'facade/integrations.service.ts'))).toBe(
+		expect(fs.existsSync(path.join(base, 'facade/connections.service.ts'))).toBe(
 			true,
 		);
 		expect(
@@ -573,7 +573,7 @@ describe('subsystem — install (real)', () => {
 				),
 			),
 		).toBe(true);
-		expect(fs.existsSync(path.join(base, 'integrations-auth.module.ts'))).toBe(
+		expect(fs.existsSync(path.join(base, 'connections-auth.module.ts'))).toBe(
 			true,
 		);
 
@@ -608,7 +608,7 @@ describe('subsystem — install (real)', () => {
 			fs.existsSync(
 				path.join(
 					root,
-					'src/features/integrations/integrations-auth.module.ts',
+					'src/features/connections/connections-auth.module.ts',
 				),
 			),
 		).toBe(true);

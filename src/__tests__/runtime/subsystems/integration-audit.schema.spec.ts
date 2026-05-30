@@ -50,7 +50,7 @@ describe('integration_subscriptions — column presence', () => {
 
   it.each([
     'id',
-    'integrationId',
+    'connectionId',
     'adapter',
     'domain',
     'externalRef',
@@ -145,7 +145,7 @@ describe('row types — type-level compile checks', () => {
   it('IntegrationSubscriptionRow resolves to a concrete row type', () => {
     const row: IntegrationSubscriptionRow = {
       id: '00000000-0000-0000-0000-000000000000',
-      integrationId: 'sfdc-org-abc',
+      connectionId: 'sfdc-org-abc',
       adapter: 'salesforce',
       domain: 'opportunity',
       externalRef: null,

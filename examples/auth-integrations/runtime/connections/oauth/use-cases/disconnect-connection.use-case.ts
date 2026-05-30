@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { IntegrationService } from '../../integration.service';
-import type { Integration } from '../../integration.entity';
+import { ConnectionService } from '../../connection.service';
+import type { Connection } from '../../connection.entity';
 
 /**
  * User-initiated disconnect. Flips status to `revoked` and clears the
@@ -15,11 +15,11 @@ import type { Integration } from '../../integration.entity';
  * starter).
  */
 @Injectable()
-export class DisconnectIntegrationUseCase {
-  constructor(private readonly integrations: IntegrationService) {}
+export class DisconnectConnectionUseCase {
+  constructor(private readonly connections: ConnectionService) {}
 
-  async execute(integrationId: string): Promise<Integration> {
-    return this.integrations.update(integrationId, {
+  async execute(connectionId: string): Promise<Connection> {
+    return this.connections.update(connectionId, {
       status: 'revoked',
       accessTokenEncrypted: null,
       refreshTokenEncrypted: null,

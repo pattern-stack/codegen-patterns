@@ -135,21 +135,21 @@ describe('MemoryCursorStore', () => {
       await store.put('sub-c', { v: 3 });
 
       store.subscriptions.set('sub-a', {
-        integrationId: 'int-a',
+        connectionId: 'int-a',
         adapter: 'salesforce',
         domain: 'opportunity',
         externalRef: null,
         updatedAt: new Date(1_000),
       });
       store.subscriptions.set('sub-b', {
-        integrationId: 'int-b',
+        connectionId: 'int-b',
         adapter: 'hubspot',
         domain: 'contact',
         externalRef: 'filter-x',
         updatedAt: new Date(3_000),
       });
       store.subscriptions.set('sub-c', {
-        integrationId: 'int-c',
+        connectionId: 'int-c',
         adapter: 'github',
         domain: 'issue',
         externalRef: null,
@@ -169,7 +169,7 @@ describe('MemoryCursorStore', () => {
       const [snapshot] = await store.listAll();
       expect(snapshot).toEqual({
         subscriptionId: 'sub-a',
-        integrationId: '',
+        connectionId: '',
         adapter: '',
         domain: '',
         externalRef: null,
@@ -183,7 +183,7 @@ describe('MemoryCursorStore', () => {
     it('preserves seeded metadata end-to-end', async () => {
       await store.put('sub-a', { systemModstamp: '2026-04-21' });
       store.subscriptions.set('sub-a', {
-        integrationId: 'int-a',
+        connectionId: 'int-a',
         adapter: 'salesforce',
         domain: 'opportunity',
         externalRef: 'filter-1',
@@ -194,7 +194,7 @@ describe('MemoryCursorStore', () => {
       const [snapshot] = await store.listAll();
       expect(snapshot).toEqual({
         subscriptionId: 'sub-a',
-        integrationId: 'int-a',
+        connectionId: 'int-a',
         adapter: 'salesforce',
         domain: 'opportunity',
         externalRef: 'filter-1',
@@ -216,7 +216,7 @@ describe('MemoryCursorStore', () => {
     it('clear() wipes subscriptions metadata too', async () => {
       await store.put('sub-a', { v: 1 });
       store.subscriptions.set('sub-a', {
-        integrationId: 'int-a',
+        connectionId: 'int-a',
         adapter: 'salesforce',
         domain: 'opportunity',
         externalRef: null,

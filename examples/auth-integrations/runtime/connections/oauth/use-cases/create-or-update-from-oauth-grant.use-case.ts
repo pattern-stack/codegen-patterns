@@ -2,10 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   ENCRYPTION_KEY,
   type IEncryptionKey,
-  type IntegrationGrantInput,
+  type ConnectionGrantInput,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { IntegrationService } from '../../integration.service';
-import type { Integration } from '../../integration.entity';
+import { ConnectionService } from '../../connection.service';
+import type { Connection } from '../../connection.entity';
 
 /**
  * Persists an OAuth2 grant from the authorize-code callback (initial
@@ -14,8 +14,8 @@ import type { Integration } from '../../integration.entity';
  *   - existing row → re-encrypt + persist tokens, status → 'active'
  *   - missing row  → insert a new row in 'active' status
  *
- * The input shape is exactly `IntegrationGrantInput` from the auth
- * subsystem so `IntegrationGrantSinkAdapter` can be a pass-through —
+ * The input shape is exactly `ConnectionGrantInput` from the auth
+ * subsystem so `ConnectionGrantSinkAdapter` can be a pass-through —
  * the port and use case share the same boundary type. Encryption is
  * applied here (inside the use case) before ciphertexts hit the row.
  *
@@ -27,18 +27,18 @@ import type { Integration } from '../../integration.entity';
 @Injectable()
 export class CreateOrUpdateFromOAuthGrantUseCase {
   constructor(
-    private readonly integrations: IntegrationService,
+    private readonly connections: ConnectionService,
     @Inject(ENCRYPTION_KEY) private readonly encryption: IEncryptionKey,
   ) {}
 
-  async execute(input: IntegrationGrantInput): Promise<Integration> {
+  async execute(input: ConnectionGrantInput): Promise<Connection> {
     const accessTokenEncrypted = await this.encryption.encrypt(input.accessToken);
     const refreshTokenEncrypted =
       input.refreshToken !== undefined
         ? await this.encryption.encrypt(input.refreshToken)
         : undefined;
 
-    const existing = await this.integrations.findByUserIdAndProvider(
+    const existing = await this.connections.findByUserIdAndProvider(
       input.userId,
       input.provider,
     );
@@ -57,17 +57,17 @@ export class CreateOrUpdateFromOAuthGrantUseCase {
     if (existing) {
       // Preserve the existing refresh-token ciphertext when the grant
       // didn't include a new refresh token (common on re-grants).
-      const patch: Partial<Integration> = {
+      const patch: Partial<Connection> = {
         ...baseRow,
         refreshTokenEncrypted:
           refreshTokenEncrypted !== undefined
             ? refreshTokenEncrypted
             : existing.refreshTokenEncrypted,
       };
-      return this.integrations.update(existing.id, patch);
+      return this.connections.update(existing.id, patch);
     }
 
-    return this.integrations.create({
+    return this.connections.create({
       ...baseRow,
       refreshTokenEncrypted: refreshTokenEncrypted ?? null,
     });

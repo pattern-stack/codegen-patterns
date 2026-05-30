@@ -10,7 +10,7 @@ force: true
  * port every integration adapter implements (`IChangeSource<T>` from SYNC-2):
  *
  *   - `integration_subscriptions` — owns the cursor per
- *       `(integration_id, adapter, domain, external_ref)` tuple. Addressed
+ *       `(connection_id, adapter, domain, external_ref)` tuple. Addressed
  *       by id by `ICursorStore` (SYNC-3/SYNC-4).
  *   - `integration_runs`          — per-run audit log: start/complete, status,
  *       cursor before/after, counts, direction + action.
@@ -92,7 +92,7 @@ export const integrationSubscriptions = pgTable(
   'integration_subscriptions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    integrationId: text('integration_id').notNull(),
+    connectionId: text('connection_id').notNull(),
     adapter: text('adapter').notNull(),
     domain: text('domain').notNull(),
     externalRef: text('external_ref'),
@@ -106,7 +106,7 @@ export const integrationSubscriptions = pgTable(
   },
   (t) => ({
     uqIntegrationSubscriptionTuple: uniqueIndex('uq_integration_subscriptions_tuple').on(
-      t.integrationId,
+      t.connectionId,
       t.adapter,
       t.domain,
       t.externalRef,

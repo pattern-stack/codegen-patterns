@@ -49,7 +49,7 @@ forRoot`)** — and each is `global: true`, so you register it once in
 | bridge | `BridgeModule` | `subsystem install bridge` | **events + jobs** |
 | observability | `ObservabilityModule` | `subsystem install observability` | composes events/jobs/bridge/integration (optional) |
 | auth | `AuthModule` | `subsystem install auth` | — |
-| auth-integrations | `IntegrationsAuthModule` | `subsystem install auth-integrations` | **auth** |
+| auth-integrations | `ConnectionsAuthModule` | `subsystem install auth-integrations` | **auth** |
 | openapi | (config only) | `subsystem install openapi-config` | registry vendored at init |
 
 ## Registration order (authoritative)
@@ -66,7 +66,7 @@ In `app.module.ts`, import in this order (omit what you haven't installed):
    ones above via optional DI).
 8. `...GENERATED_MODULES` — your entity modules.
 
-For auth: register `AuthModule.forRoot(...)` before the `IntegrationsAuthModule`
+For auth: register `AuthModule.forRoot(...)` before the `ConnectionsAuthModule`
 that depends on it. Full per-subsystem `forRoot` signatures, the bridge reserved
 pools, and multi-tenancy are in `wiring-and-order.md`.
 

@@ -5,7 +5,7 @@
  * every integration adapter implements (`IChangeSource<T>` from SYNC-2):
  *
  *   - `integration_subscriptions` — owns the cursor per
- *       `(integration_id, adapter, domain, external_ref)` tuple. Addressed
+ *       `(connection_id, adapter, domain, external_ref)` tuple. Addressed
  *       by id by `ICursorStore` (SYNC-3/SYNC-4).
  *   - `integration_runs`          — per-run audit log: start/complete, status,
  *       cursor before/after, counts, direction (inbound|outbound),
@@ -124,7 +124,7 @@ export const integrationRunItemStatusEnum = pgEnum('integration_run_item_status'
 /**
  * One cursor owner per (integration, adapter, domain, external_ref).
  *
- *   - `integration_id` — opaque id of the connected account/instance. E.g.
+ *   - `connection_id` — opaque id of the connected account/instance. E.g.
  *     the SFDC org id for polling strategies, the GitHub installation id
  *     for webhook strategies.
  *   - `adapter`        — short adapter label, e.g. `'salesforce'`, `'hubspot'`.
@@ -142,7 +142,7 @@ export const integrationSubscriptions = pgTable(
   'integration_subscriptions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    integrationId: text('integration_id').notNull(),
+    connectionId: text('connection_id').notNull(),
     adapter: text('adapter').notNull(),
     domain: text('domain').notNull(),
     externalRef: text('external_ref'),
@@ -167,13 +167,13 @@ export const integrationSubscriptions = pgTable(
     /**
      * Composite uniqueness per the epic shape. `external_ref` is nullable;
      * Postgres treats NULLs as distinct in a UNIQUE constraint, which means
-     * two rows with the same `(integration_id, adapter, domain)` and NULL
+     * two rows with the same `(connection_id, adapter, domain)` and NULL
      * external_ref are allowed. That's intentional — a subscription with
      * NULL external_ref covers the full domain, and duplicates there would
      * be a consumer-layer modeling issue, not a schema concern.
      */
     uqIntegrationSubscriptionTuple: uniqueIndex('uq_integration_subscriptions_tuple').on(
-      t.integrationId,
+      t.connectionId,
       t.adapter,
       t.domain,
       t.externalRef,

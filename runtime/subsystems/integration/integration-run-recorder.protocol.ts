@@ -72,14 +72,14 @@ export interface CompleteRunInput {
 
 /**
  * Denormalized view of one `integration_runs` row, JOINed against
- * `integration_subscriptions` to surface `integrationId` in a single read. Consumed
+ * `integration_subscriptions` to surface `connectionId` in a single read. Consumed
  * by the OBS-5 observability composer (epic #195).
  *
  * `recordsProcessed` is the denormalized column on `integration_runs` — it does NOT
  * count `integration_run_items` rows. A correlated subquery per run would be
  * required for a true item count; deferred as a follow-up if needed.
  *
- * Memory backends can't know `integrationId` without subscription metadata
+ * Memory backends can't know `connectionId` without subscription metadata
  * — see each memory backend for the seedable `subscriptions` side-map that
  * tests populate. When metadata is missing, memory backends emit an empty
  * string so the shape stays stable (documented in the memory backend).
@@ -88,7 +88,7 @@ export interface IntegrationRunSummary {
   readonly id: string;
   readonly subscriptionId: string;
   /** Resolved by Drizzle via JOIN; empty string from memory if not seeded. */
-  readonly integrationId: string;
+  readonly connectionId: string;
   readonly status: 'running' | 'success' | 'no_changes' | 'failed';
   readonly startedAt: Date;
   readonly completedAt: Date | null;
@@ -118,7 +118,7 @@ export interface IIntegrationRunRecorder {
    * Recent `integration_runs` rows ordered by `started_at DESC`, capped at `limit`.
    *
    * Filter is `subscriptionId` — the natural FK on `integration_runs`. An
-   * integration-wide view requires filtering on `integration_subscriptions.integration_id`
+   * integration-wide view requires filtering on `integration_subscriptions.connection_id`
    * through the JOIN and is deferred as a follow-up (epic #195 OBS-4 spec).
    *
    * @param limit           hard cap on rows returned (no implicit default)

@@ -44,7 +44,7 @@ export class MemoryCursorStore implements ICursorStore {
   /**
    * Seedable subscription metadata for `listAll` — the memory backend
    * stores only `subscriptionId → cursor` in its write path, so the
-   * snapshot shape (`integrationId`, `adapter`, `domain`, `externalRef`,
+   * snapshot shape (`connectionId`, `adapter`, `domain`, `externalRef`,
    * timestamps) has no natural source without test seeding. Tests populate
    * this map; unseeded entries get empty-string metadata and `new Date(0)`
    * timestamps so the shape stays stable. Production paths go through the
@@ -80,7 +80,7 @@ export class MemoryCursorStore implements ICursorStore {
       const meta = this.subscriptions.get(subscriptionId);
       snapshots.push({
         subscriptionId,
-        integrationId: meta?.integrationId ?? '',
+        connectionId: meta?.connectionId ?? '',
         adapter: meta?.adapter ?? '',
         domain: meta?.domain ?? '',
         externalRef: meta?.externalRef ?? null,

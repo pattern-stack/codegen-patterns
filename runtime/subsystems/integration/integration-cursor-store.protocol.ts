@@ -37,7 +37,7 @@
  */
 export interface CursorSnapshot {
   readonly subscriptionId: string;
-  readonly integrationId: string;
+  readonly connectionId: string;
   readonly adapter: string;
   readonly domain: string;
   readonly externalRef: string | null;

@@ -217,7 +217,7 @@ describe('PostgresCursorStore.listAll (OBS-4) — single-tenant', () => {
     expect(captures).toHaveLength(1);
     const [{ sql }] = captures;
     expect(sql).toContain('"integration_subscriptions"');
-    expect(sql).toContain('"integration_id"');
+    expect(sql).toContain('"connection_id"');
     expect(sql).toContain('"adapter"');
     expect(sql).toContain('"domain"');
     expect(sql).toContain('"external_ref"');

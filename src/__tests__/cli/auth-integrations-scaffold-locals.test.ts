@@ -7,7 +7,7 @@
  *   - paths.shared overrides the derived sharedRoot
  *   - paths.modules_dir overrides the derived vendorRoot (#303 fix #5)
  *   - paths.entities (and legacy paths.entities_dir) overrides the
- *     default integration.yaml location
+ *     default connection.yaml location
  *   - authModuleRegistered detection (presence + absence)
  *   - localsToHygenArgs forwards only the keys Hygen needs
  */
@@ -36,7 +36,7 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 		expect(locals.sharedRoot).toBe(path.resolve(CWD, 'src/shared'));
 		expect(locals.vendorRoot).toBe(path.resolve(CWD, 'src/modules'));
 		expect(locals.definitionsPath).toBe(
-			path.resolve(CWD, 'definitions/entities/integration.yaml'),
+			path.resolve(CWD, 'definitions/entities/connection.yaml'),
 		);
 		expect(locals.authModuleRegistered).toBe(false);
 	});
@@ -86,7 +86,7 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 		expect(locals.sharedRoot).toBe(path.resolve(CWD, 'custom/shared'));
 	});
 
-	test('paths.entities overrides the default integration.yaml location', () => {
+	test('paths.entities overrides the default connection.yaml location', () => {
 		const locals = resolveAuthIntegrationsScaffoldLocals({
 			cwd: CWD,
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,7 +95,7 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 			readFile: () => null,
 		});
 		expect(locals.definitionsPath).toBe(
-			path.resolve(CWD, 'definitions/entities/integration.yaml'),
+			path.resolve(CWD, 'definitions/entities/connection.yaml'),
 		);
 	});
 
@@ -108,7 +108,7 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 			readFile: () => null,
 		});
 		expect(locals.definitionsPath).toBe(
-			path.resolve(CWD, 'entities/integration.yaml'),
+			path.resolve(CWD, 'entities/connection.yaml'),
 		);
 	});
 
@@ -123,7 +123,7 @@ describe('resolveAuthIntegrationsScaffoldLocals', () => {
 			readFile: () => null,
 		});
 		expect(locals.definitionsPath).toBe(
-			path.resolve(CWD, 'a/integration.yaml'),
+			path.resolve(CWD, 'a/connection.yaml'),
 		);
 	});
 
@@ -163,7 +163,7 @@ describe('localsToHygenArgs', () => {
 		appModulePath: '/abs/src/app.module.ts',
 		sharedRoot: '/abs/src/shared',
 		vendorRoot: '/abs/src/modules',
-		definitionsPath: '/abs/definitions/entities/integration.yaml',
+		definitionsPath: '/abs/definitions/entities/connection.yaml',
 		authModuleRegistered: false,
 	};
 

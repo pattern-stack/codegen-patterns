@@ -1,7 +1,7 @@
-# auth-integrations: Integration
-# Canonical OAuth2 integration row — one per (user_id, provider) pair.
-# Vendored alongside the auth subsystem to satisfy IIntegrationReader /
-# IIntegrationTokenWriter / IIntegrationGrantSink ports out of the box.
+# auth-integrations: Connection
+# Canonical OAuth2 connection row — one per (user_id, provider) pair.
+# Vendored alongside the auth subsystem to satisfy IConnectionReader /
+# IConnectionTokenWriter / IConnectionGrantSink ports out of the box.
 #
 # `provider` stays a string (not enum) intentionally so consumers can add
 # provider keys ('hubspot-crm', 'salesforce-crm', 'google', …) without
@@ -9,9 +9,9 @@
 # STRATEGY_REGISTRY.
 
 entity:
-  name: integration
-  plural: integrations
-  table: integrations
+  name: connection
+  plural: connections
+  table: connections
   pattern: Base
   folder_structure: nested
 
@@ -35,7 +35,7 @@ fields:
     nullable: true
     max_length: 255
 
-  # Ciphertexts — encryption is applied inside the IntegrationsService
+  # Ciphertexts — encryption is applied inside the ConnectionsService
   # facade + adapter layer (via IEncryptionKey). The DB row only ever
   # holds the encrypted form; decryption happens on read in the reader
   # adapter.
@@ -88,11 +88,11 @@ queries:
   - by: [user_id, provider]
     unique: true
 
-  # Settings page: list a user's connected integrations, newest first.
+  # Settings page: list a user's connected connections, newest first.
   - by: [user_id]
     order: created_at desc
 
-  # Operational query: find broken integrations needing reauth across
+  # Operational query: find broken connections needing reauth across
   # all users (admin / monitoring).
   - by: [provider, status]
     order: updated_at desc

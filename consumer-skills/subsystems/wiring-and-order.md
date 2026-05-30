@@ -71,7 +71,7 @@ export class AppModule {}
 | `IntegrationModule` | `forRoot({ backend, multiTenant? })` | wires the cursor store / run recorder / differ ports — NOT the orchestrator (that's per-entity; see the `integration` skill). |
 | `BridgeModule` | `forRoot({ backend, multiTenant? })` | must come after events + jobs; fails fast at boot if reserved pools aren't polled. |
 | `ObservabilityModule` | `forRoot({ reporters? })` | read-only facade; `reporters.bridgeMetrics: true` opts into the 60s bridge sampler. Register last. |
-| `AuthModule` | `forRoot({ encryptionKey, oauthStateStore })` | `global: true`; provides `ENCRYPTION_KEY` + `OAUTH_STATE_STORE`. Register before `IntegrationsAuthModule`. |
+| `AuthModule` | `forRoot({ encryptionKey, oauthStateStore })` | `global: true`; provides `ENCRYPTION_KEY` + `OAUTH_STATE_STORE`. Register before `ConnectionsAuthModule`. |
 
 ## Pool configuration (jobs)
 

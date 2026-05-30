@@ -180,20 +180,20 @@ function filterConsumerErrors(output: string, tmpDir: string): string[] {
 		}
 
 		// #287 / #303 fix #5: the vendored `auth-integrations` starter
-		// (under `<modules>/integrations/{adapters,facade,oauth,
-		// integrations-auth.module.ts}`) imports from the codegen-emitted
-		// integration entity module — `<modules>/integrations/integration.service`,
-		// `<modules>/integrations/integration.entity`, `<modules>/integrations/integrations.module`.
-		// We don't run `cdp entity new integration` in this smoke (it
-		// would require also scaffolding a Drizzle schema for `integrations`
+		// (under `<modules>/connections/{adapters,facade,oauth,
+		// connections-auth.module.ts}`) imports from the codegen-emitted
+		// connection entity module — `<modules>/connections/connection.service`,
+		// `<modules>/connections/connection.entity`, `<modules>/connections/connections.module`.
+		// We don't run `cdp entity new connection` in this smoke (it
+		// would require also scaffolding a Drizzle schema for `connections`
 		// and bundling a fixture, AND it surfaces a separate codegen enum
 		// literal-type bug — filed as follow-up). Filter errors emitted
 		// from inside the vendored subfolders only — narrow filter so a
-		// real codegen bug in `<modules>/integrations/integration.{entity,
+		// real codegen bug in `<modules>/connections/connection.{entity,
 		// service,...}.ts` would still surface.
-		const vendoredIntegrationsPattern =
-			/modules[/\\]integrations[/\\](?:adapters|facade|oauth|integrations-auth\.module\.ts)/;
-		if (vendoredIntegrationsPattern.test(line)) {
+		const vendoredConnectionsPattern =
+			/modules[/\\]connections[/\\](?:adapters|facade|oauth|connections-auth\.module\.ts)/;
+		if (vendoredConnectionsPattern.test(line)) {
 			continue;
 		}
 		// Also tolerate the `@pattern-stack/codegen/runtime/subsystems/auth`
@@ -468,33 +468,33 @@ async function main(): Promise<number> {
 		}
 
 		// 5.7. #287 / #303 fix #5 — install the auth-integrations starter. Vendors:
-		//   - examples/auth-integrations/runtime/integrations/** →
-		//       <vendorRoot>/integrations/** (full-file copies, not via Hygen).
+		//   - examples/auth-integrations/runtime/connections/** →
+		//       <vendorRoot>/connections/** (full-file copies, not via Hygen).
 		//       `vendorRoot` defaults to `<paths.backend_src>/modules` per fix #5;
 		//       starter sits next to the codegen-emitted integration entity module.
-		//   - examples/auth-integrations/definitions/entities/integration.yaml →
+		//   - examples/auth-integrations/definitions/entities/connection.yaml →
 		//       <paths.entities>/integration.yaml (defaults to definitions/entities/);
-		//   - IntegrationsAuthModule TODO into app.module.ts.
+		//   - ConnectionsAuthModule TODO into app.module.ts.
 		run(`bun ${CLI_PATH} subsystem install auth-integrations`, tmpDir);
 
-		// #303 fix #5: vendor target is `<modules>/integrations/` with
+		// #303 fix #5: vendor target is `<modules>/connections/` with
 		// subfolders (`adapters/`, `facade/`, `oauth/use-cases/`). Assert
 		// one file from every layer plus the root module so the smoke
 		// catches any future regression in the install template's layout.
-		const integrationsRoot = path.join(tmpDir, 'src/modules/integrations');
+		const connectionsRoot = path.join(tmpDir, 'src/modules/connections');
 		const expectedVendoredFiles = [
-			'integrations-auth.module.ts',
-			'adapters/integration-reader.adapter.ts',
-			'adapters/integration-token-writer.adapter.ts',
-			'adapters/integration-grant-sink.adapter.ts',
-			'facade/integrations.service.ts',
+			'connections-auth.module.ts',
+			'adapters/connection-reader.adapter.ts',
+			'adapters/connection-token-writer.adapter.ts',
+			'adapters/connection-grant-sink.adapter.ts',
+			'facade/connections.service.ts',
 			'oauth/use-cases/create-or-update-from-oauth-grant.use-case.ts',
-			'oauth/use-cases/disconnect-integration.use-case.ts',
-			'oauth/use-cases/list-user-integrations.use-case.ts',
-			'oauth/use-cases/mark-integration-requires-reauth.use-case.ts',
+			'oauth/use-cases/disconnect-connection.use-case.ts',
+			'oauth/use-cases/list-user-connections.use-case.ts',
+			'oauth/use-cases/mark-connection-requires-reauth.use-case.ts',
 		];
 		for (const rel of expectedVendoredFiles) {
-			const abs = path.join(integrationsRoot, rel);
+			const abs = path.join(connectionsRoot, rel);
 			if (!fs.existsSync(abs)) {
 				throw new Error(
 					`expected vendored file missing after auth-integrations install: ${rel}`,
@@ -509,7 +509,7 @@ async function main(): Promise<number> {
 		// The install rewrites them to relative paths into the consumer's
 		// vendored auth subsystem at copy time.
 		for (const rel of expectedVendoredFiles) {
-			const abs = path.join(integrationsRoot, rel);
+			const abs = path.join(connectionsRoot, rel);
 			const src = fs.readFileSync(abs, 'utf-8');
 			if (src.includes('@pattern-stack/codegen/runtime/subsystems/auth')) {
 				throw new Error(
@@ -532,19 +532,19 @@ async function main(): Promise<number> {
 		// Honor the entities_dir set by `project init` (defaults to
 		// `entities/`). Fix #2 reads `paths.entities` → `paths.entities_dir`,
 		// matching `Context.entitiesDir`.
-		const integrationYamlPath = path.join(
+		const connectionYamlPath = path.join(
 			tmpDir,
-			'entities/integration.yaml',
+			'entities/connection.yaml',
 		);
-		if (!fs.existsSync(integrationYamlPath)) {
+		if (!fs.existsSync(connectionYamlPath)) {
 			throw new Error(
-				'integration.yaml not vendored by auth-integrations install',
+				'connection.yaml not vendored by auth-integrations install',
 			);
 		}
 		appModule = fs.readFileSync(appModulePath, 'utf8');
-		if (!appModule.includes('IntegrationsAuthModule')) {
+		if (!appModule.includes('ConnectionsAuthModule')) {
 			throw new Error(
-				'IntegrationsAuthModule TODO hint missing from app.module.ts after auth-integrations install',
+				'ConnectionsAuthModule TODO hint missing from app.module.ts after auth-integrations install',
 			);
 		}
 

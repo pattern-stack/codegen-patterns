@@ -341,7 +341,7 @@ describe('DrizzleIntegrationRunRecorder.listRecent (OBS-4) — single-tenant', (
     expect(captures).toHaveLength(1);
   });
 
-  it('JOINs integration_runs against integration_subscriptions and SELECTs integration_id', async () => {
+  it('JOINs integration_runs against integration_subscriptions and SELECTs connection_id', async () => {
     await recorder.listRecent(5);
     expect(captures).toHaveLength(1);
     const [{ sql }] = captures;
@@ -349,7 +349,7 @@ describe('DrizzleIntegrationRunRecorder.listRecent (OBS-4) — single-tenant', (
     expect(sql).toContain('"integration_runs"');
     expect(sql).toContain('"integration_subscriptions"');
     expect(sql.toLowerCase()).toContain('join');
-    expect(sql).toContain('"integration_id"');
+    expect(sql).toContain('"connection_id"');
     // ORDER BY started_at DESC LIMIT.
     expect(sql.toLowerCase()).toContain('order by');
     expect(sql.toLowerCase()).toContain('desc');

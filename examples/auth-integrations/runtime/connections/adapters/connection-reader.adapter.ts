@@ -1,21 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ENCRYPTION_KEY,
-  type DecryptedIntegration,
+  type DecryptedConnection,
   type IEncryptionKey,
-  type IIntegrationReader,
+  type IConnectionReader,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
-import { IntegrationService } from '../integration.service';
+import { ConnectionService } from '../connection.service';
 
 /**
- * `IIntegrationReader` adapter — fetches the integration row by id and
+ * `IConnectionReader` adapter — fetches the connection row by id and
  * decrypts its ciphertexts to satisfy the auth subsystem's read port.
  *
  * Stays narrow on purpose: this adapter exists purely to feed
  * `OAuth2RefreshStrategy.resolve()`. Anything wider belongs in
- * `IntegrationsService` (the consumer-facing facade).
+ * `ConnectionsService` (the consumer-facing facade).
  *
- * Note: this duplicates the decryption logic in `IntegrationsService`
+ * Note: this duplicates the decryption logic in `ConnectionsService`
  * by design — the adapter must not depend on the facade because the
  * facade depends on the use cases which depend on the adapter (well,
  * not directly, but via the same module). Keeping the read path
@@ -23,14 +23,14 @@ import { IntegrationService } from '../integration.service';
  * subsystem's "narrow port" contract.
  */
 @Injectable()
-export class IntegrationReaderAdapter implements IIntegrationReader {
+export class ConnectionReaderAdapter implements IConnectionReader {
   constructor(
-    private readonly integrations: IntegrationService,
+    private readonly connections: ConnectionService,
     @Inject(ENCRYPTION_KEY) private readonly encryption: IEncryptionKey,
   ) {}
 
-  async findByIdDecrypted(integrationId: string): Promise<DecryptedIntegration | null> {
-    const row = await this.integrations.findById(integrationId);
+  async findByIdDecrypted(connectionId: string): Promise<DecryptedConnection | null> {
+    const row = await this.connections.findById(connectionId);
     if (!row) return null;
 
     const accessToken = row.accessTokenEncrypted

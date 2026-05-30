@@ -95,7 +95,7 @@ export class PostgresCursorStore implements ICursorStore {
     const rows = await this.db
       .select({
         id: integrationSubscriptions.id,
-        integrationId: integrationSubscriptions.integrationId,
+        connectionId: integrationSubscriptions.connectionId,
         adapter: integrationSubscriptions.adapter,
         domain: integrationSubscriptions.domain,
         externalRef: integrationSubscriptions.externalRef,
@@ -110,7 +110,7 @@ export class PostgresCursorStore implements ICursorStore {
 
     return rows.map((row) => ({
       subscriptionId: row.id,
-      integrationId: row.integrationId,
+      connectionId: row.connectionId,
       adapter: row.adapter,
       domain: row.domain,
       externalRef: row.externalRef,

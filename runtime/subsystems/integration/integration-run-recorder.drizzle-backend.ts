@@ -117,7 +117,7 @@ export class DrizzleIntegrationRunRecorder implements IIntegrationRunRecorder {
       operation: 'listRecent',
     });
 
-    // JOIN against integration_subscriptions to resolve `integration_id` per run.
+    // JOIN against integration_subscriptions to resolve `connection_id` per run.
     // `integration_runs.subscription_id` is a non-null FK so INNER JOIN is correct;
     // there should be no orphaned runs.
     const conditions: SQL[] = [];
@@ -138,7 +138,7 @@ export class DrizzleIntegrationRunRecorder implements IIntegrationRunRecorder {
       .select({
         id: integrationRuns.id,
         subscriptionId: integrationRuns.subscriptionId,
-        integrationId: integrationSubscriptions.integrationId,
+        connectionId: integrationSubscriptions.connectionId,
         status: integrationRuns.status,
         startedAt: integrationRuns.startedAt,
         completedAt: integrationRuns.completedAt,
@@ -157,7 +157,7 @@ export class DrizzleIntegrationRunRecorder implements IIntegrationRunRecorder {
     return rows.map((row) => ({
       id: row.id,
       subscriptionId: row.subscriptionId,
-      integrationId: row.integrationId,
+      connectionId: row.connectionId,
       status: row.status,
       startedAt: row.startedAt,
       completedAt: row.completedAt,

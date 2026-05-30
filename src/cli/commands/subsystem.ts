@@ -794,9 +794,9 @@ export class SubsystemInstallCommand extends Command {
 	 *
 	 * Source is `examples/auth-integrations/`, NOT `runtime/subsystems/`,
 	 * so this method short-circuits the `copyRuntime` flow. It vendors the
-	 * adapters tree + the canonical `integration.yaml`, then invokes the
+	 * adapters tree + the canonical `connection.yaml`, then invokes the
 	 * `subsystem auth-integrations` Hygen action to append the
-	 * `IntegrationsAuthModule` TODO to `app.module.ts`.
+	 * `ConnectionsAuthModule` TODO to `app.module.ts`.
 	 *
 	 * Idempotent: pre-existing files are skipped unless `--force` is set.
 	 */
@@ -848,7 +848,7 @@ export class SubsystemInstallCommand extends Command {
 
 		if (this.dryRun) {
 			printInfo(
-				`Dry run — auth-integrations would vendor adapters + integration.yaml + append TODO`,
+				`Dry run — auth-integrations would vendor adapters + connection.yaml + append TODO`,
 			);
 			for (const p of scaffold.planned) {
 				console.log(
@@ -866,15 +866,15 @@ export class SubsystemInstallCommand extends Command {
 
 		if (scaffold.authModuleRegistered === false) {
 			printWarning(
-				'AuthModule.forRoot(...) not detected in app.module.ts. Run `cdp subsystem install auth` first — IntegrationsAuthModule requires ENCRYPTION_KEY from it.',
+				'AuthModule.forRoot(...) not detected in app.module.ts. Run `cdp subsystem install auth` first — ConnectionsAuthModule requires ENCRYPTION_KEY from it.',
 			);
 		}
 
 		printInfo('auth-integrations starter vendored.');
 		printInfo('Next steps:');
-		printInfo('  1. Run `cdp entity new integration` to scaffold the codegen layer (apps/api/src/modules/integrations/integration.service) the adapters import.');
+		printInfo('  1. Run `cdp entity new connection` to scaffold the codegen layer (apps/api/src/modules/connections/connection.service) the adapters import.');
 		printInfo('  2. Ensure AuthModule.forRoot(...) is registered in AppModule (run `cdp subsystem install auth` if not).');
-		printInfo('  3. Wire IntegrationsAuthModule into AppModule (see TODO appended to app.module.ts).');
+		printInfo('  3. Wire ConnectionsAuthModule into AppModule (see TODO appended to app.module.ts).');
 		return 0;
 	}
 }
@@ -1695,22 +1695,22 @@ function runAuthIntegrationsScaffold(
 		};
 	}
 
-	const adaptersSrc = path.join(examplesRoot, 'runtime', 'integrations');
+	const adaptersSrc = path.join(examplesRoot, 'runtime', 'connections');
 	// #303 fix #5: vendor next to the codegen-emitted entity module under
-	// `<vendorRoot>/integrations/` (default `<backendSrc>/modules/integrations/`),
-	// NOT under `<sharedRoot>/integrations/`.
-	const adaptersDest = path.join(locals.vendorRoot, 'integrations');
-	const integrationYamlSrc = path.join(
+	// `<vendorRoot>/connections/` (default `<backendSrc>/modules/connections/`),
+	// NOT under `<sharedRoot>/connections/`.
+	const adaptersDest = path.join(locals.vendorRoot, 'connections');
+	const connectionYamlSrc = path.join(
 		examplesRoot,
 		'definitions',
 		'entities',
-		'integration.yaml',
+		'connection.yaml',
 	);
-	const integrationYamlDest = locals.definitionsPath;
+	const connectionYamlDest = locals.definitionsPath;
 
 	const planned: string[] = [
 		adaptersDest,
-		integrationYamlDest,
+		connectionYamlDest,
 		locals.appModulePath,
 	];
 
@@ -1733,22 +1733,22 @@ function runAuthIntegrationsScaffold(
 		buildAuthImportRewriter(subsystemsRoot),
 	);
 
-	// Vendor the integration.yaml.
+	// Vendor the connection.yaml.
 	let yamlWritten = false;
 	let yamlSkipped = false;
 	try {
-		if (fs.existsSync(integrationYamlDest) && !opts.force) {
+		if (fs.existsSync(connectionYamlDest) && !opts.force) {
 			yamlSkipped = true;
-		} else if (fs.existsSync(integrationYamlSrc)) {
-			fs.mkdirSync(path.dirname(integrationYamlDest), { recursive: true });
-			fs.copyFileSync(integrationYamlSrc, integrationYamlDest);
+		} else if (fs.existsSync(connectionYamlSrc)) {
+			fs.mkdirSync(path.dirname(connectionYamlDest), { recursive: true });
+			fs.copyFileSync(connectionYamlSrc, connectionYamlDest);
 			yamlWritten = true;
 		}
 	} catch (err) {
 		return {
 			ok: false,
 			planned,
-			error: `failed to vendor integration.yaml: ${
+			error: `failed to vendor connection.yaml: ${
 				err instanceof Error ? err.message : String(err)
 			}`,
 			authModuleRegistered: locals.authModuleRegistered,
@@ -1769,8 +1769,8 @@ function runAuthIntegrationsScaffold(
 			ok: false,
 			planned,
 			error: result.stderr?.trim() || 'hygen exited non-zero',
-			written: adapterCopy.written.concat(yamlWritten ? [integrationYamlDest] : []),
-			skipped: adapterCopy.skipped.concat(yamlSkipped ? [integrationYamlDest] : []),
+			written: adapterCopy.written.concat(yamlWritten ? [connectionYamlDest] : []),
+			skipped: adapterCopy.skipped.concat(yamlSkipped ? [connectionYamlDest] : []),
 			authModuleRegistered: locals.authModuleRegistered,
 		};
 	}
@@ -1778,8 +1778,8 @@ function runAuthIntegrationsScaffold(
 	return {
 		ok: true,
 		planned,
-		written: adapterCopy.written.concat(yamlWritten ? [integrationYamlDest] : []),
-		skipped: adapterCopy.skipped.concat(yamlSkipped ? [integrationYamlDest] : []),
+		written: adapterCopy.written.concat(yamlWritten ? [connectionYamlDest] : []),
+		skipped: adapterCopy.skipped.concat(yamlSkipped ? [connectionYamlDest] : []),
 		authModuleRegistered: locals.authModuleRegistered,
 	};
 }
@@ -1935,7 +1935,7 @@ export class SubsystemRemoveCommand extends Command {
 				'auth-integrations is vendored under <modules>/integrations/ alongside the codegen-emitted entity layer — not auto-removable here.',
 			);
 			printInfo(
-				'To uninstall: remove the integrations/ directory and the IntegrationsAuthModule registration from app.module.ts by hand.',
+				'To uninstall: remove the integrations/ directory and the ConnectionsAuthModule registration from app.module.ts by hand.',
 			);
 			return 1;
 		}
