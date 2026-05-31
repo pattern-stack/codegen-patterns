@@ -29,10 +29,10 @@ export interface AssertCrmAdapterOptions {
  * first), so a test reports the complete conformance gap in one run.
  *
  * Checks:
- *   1. Required L1 slots (`auth`, `sources`) resolve to non-null objects.
+ *   1. Required L1 slots (`auth`, `changeSources`) resolve to non-null objects.
  *   2. Capability-driven L2 slots: `capabilities.<port>` ⇒ the slot is present;
  *      and (when `respectCapabilities`) a present slot ⇒ its flag is `true`.
- *   3. Every `capabilities.entities` entry resolves via `sources.has(name)`.
+ *   3. Every `capabilities.entities` entry has a registered `changeSources` entry.
  *
  * @throws AggregateError when any check fails.
  */
@@ -45,7 +45,8 @@ export function assertCrmAdapter(
 
   // 1. Required L1 slots.
   if (!adapter.auth) failures.push(new Error('CrmPort.auth missing'));
-  if (!adapter.sources) failures.push(new Error('CrmPort.sources missing'));
+  if (!adapter.changeSources)
+    failures.push(new Error('CrmPort.changeSources missing'));
 
   // 2. Capability-driven L2 slots.
   const caps = adapter.capabilities;
@@ -74,13 +75,13 @@ export function assertCrmAdapter(
       }
     }
 
-    // 3. Entity coverage matches the change-source registry.
-    if (adapter.sources) {
+    // 3. Entity coverage matches the change-source contributions.
+    if (adapter.changeSources) {
       for (const entity of caps.entities) {
-        if (!adapter.sources.has(entity)) {
+        if (!(entity in adapter.changeSources)) {
           failures.push(
             new Error(
-              `caps.entities lists '${entity}' but sources.has('${entity}') is false`,
+              `caps.entities lists '${entity}' but changeSources['${entity}'] is missing`,
             ),
           );
         }

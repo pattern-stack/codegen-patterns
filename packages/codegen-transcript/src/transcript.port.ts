@@ -9,9 +9,11 @@
  * registry, there is no field/picklist/association reader to compose.
  *
  * **Entity-agnostic by design** — no entity name appears in this type (the port
- * is named for the *context*, `transcript`; ADR-036 §11.3). Entity access goes
- * through `sources.get<CanonicalTranscript>('transcript')` at runtime;
- * per-consumer typed views are codegen-emitted (Track D), not encoded here.
+ * is named for the *context*, `transcript`; ADR-036 §11.3). The adapter
+ * contributes `changeSources['transcript']`; the surface aggregator folds every
+ * provider's `changeSources` into the `<SURFACE>_ENTITY_SOURCES` registry that
+ * consumers read at runtime (post-E0: the adapter holds the contributions, not
+ * the registry — RFC-0002). Per-consumer typed views are codegen-emitted.
  *
  * The Meet REST nested pull (list conference records → per-record transcripts →
  * per-transcript entries) is absorbed behind the adapter's `IChangeSource`
@@ -28,7 +30,7 @@
 
 import type {
   IAuthStrategy,
-  IEntityChangeSourceRegistry,
+  IChangeSource,
 } from '@pattern-stack/codegen/subsystems';
 import type { TranscriptCapabilities } from './capabilities';
 
@@ -36,8 +38,9 @@ export interface TranscriptPort {
   /** L1 — auth strategy resolving credentials for this provider. */
   readonly auth: IAuthStrategy;
 
-  /** L1 — entity-keyed registry of change sources for this provider's transcript entities. */
-  readonly sources: IEntityChangeSourceRegistry;
+  /** L1 — per-entity change sources this adapter contributes, keyed by entity
+   *  name; the surface aggregator folds these into the entity-keyed registry. */
+  readonly changeSources: Record<string, IChangeSource<unknown>>;
 
   /** L2 — runtime capability descriptor (entity coverage). */
   readonly capabilities: TranscriptCapabilities;

@@ -63,11 +63,14 @@ export {
 export type {
   IEntityChangeSourceRegistry,
   IChangeSource,
+  IntegrationSubscriptionView,
 } from './integration';
 
 // Integration — IncrementalRead read primitive (RFC-0003 R1). Re-exported here
 // so surface packages can author enumerate/hydrate adapters across the package
-// boundary via @pattern-stack/codegen/subsystems.
+// boundary via @pattern-stack/codegen/subsystems. ResolvedFilter rides along:
+// the R3 read-primitive scaffold imports it for its static `detection.filters`
+// const and the `F = ResolvedFilter[]` type parameter.
 export {
   CURSOR_DIVISIBILITY,
   IncrementalReadBase,
@@ -80,6 +83,7 @@ export type {
   ReadMode,
   ReadRequest,
   Ref,
+  ResolvedFilter,
   SourcedRecord,
 } from './integration';
 

@@ -16,16 +16,11 @@ import {
   type CalendarPort,
 } from '@pattern-stack/codegen-calendar';
 
-/** Minimal fake of IEntityChangeSourceRegistry over a name set. */
-function fakeSources(names: string[]) {
-  const set = new Set(names);
-  return {
-    has: (n: string) => set.has(n),
-    get: () => {
-      throw new Error('not needed for conformance');
-    },
-    entities: () => [...set],
-  };
+/** Minimal fake of the per-entity changeSources contributions map. */
+function fakeChangeSources(names: string[]): Record<string, unknown> {
+  return Object.fromEntries(
+    names.map((n) => [n, { label: `fake-source:${n}` }]),
+  );
 }
 
 /** Build a CalendarPort fake; override any slot per test. */
@@ -39,12 +34,21 @@ function makeAdapter(
   };
   const base: Record<string, unknown> = {
     auth: { label: 'fake-auth' },
-    sources: fakeSources(capabilities.entities as string[]),
+    changeSources: fakeChangeSources(capabilities.entities as string[]),
     capabilities,
     ...overrides,
   };
   return base as unknown as CalendarPort;
 }
+
+// Regression guard (RFC-0003 R3): the post-E0 emitted adapter shape must satisfy
+// CalendarPort — auth + capabilities + changeSources, NO `sources` registry.
+const _postE0Shape: CalendarPort = {
+  auth: { label: 'x' } as CalendarPort['auth'],
+  capabilities: NO_CALENDAR_CAPABILITIES,
+  changeSources: {},
+};
+void _postE0Shape;
 
 function failures(fn: () => void): string[] {
   try {
@@ -73,21 +77,21 @@ describe('assertCalendarAdapter', () => {
     expect(msgs).toContain('CalendarPort.auth missing');
   });
 
-  it('throws when sources is missing', () => {
+  it('throws when changeSources is missing', () => {
     const msgs = failures(() =>
-      assertCalendarAdapter(makeAdapter({ sources: undefined })),
+      assertCalendarAdapter(makeAdapter({ changeSources: undefined })),
     );
-    expect(msgs).toContain('CalendarPort.sources missing');
+    expect(msgs).toContain('CalendarPort.changeSources missing');
   });
 
-  it("throws when caps.entities lists an entity sources can't resolve", () => {
+  it("throws when caps.entities lists an entity changeSources can't resolve", () => {
     const adapter = makeAdapter(
-      { sources: fakeSources([]) },
+      { changeSources: {} },
       { entities: ['meeting'] },
     );
     const msgs = failures(() => assertCalendarAdapter(adapter));
     expect(msgs).toContain(
-      "caps.entities lists 'meeting' but sources.has('meeting') is false",
+      "caps.entities lists 'meeting' but changeSources['meeting'] is missing",
     );
   });
 });

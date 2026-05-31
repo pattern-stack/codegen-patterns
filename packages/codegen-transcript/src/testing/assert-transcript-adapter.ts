@@ -20,9 +20,9 @@ import type { TranscriptPort } from '../transcript.port';
  * the first), so a test reports the complete conformance gap in one run.
  *
  * Checks:
- *   1. Required L1 slots (`auth`, `sources`) resolve to non-null objects.
+ *   1. Required L1 slots (`auth`, `changeSources`) resolve to non-null objects.
  *   2. `capabilities` resolves.
- *   3. Every `capabilities.entities` entry resolves via `sources.has(name)`.
+ *   3. Every `capabilities.entities` entry has a registered `changeSources` entry.
  *
  * @throws AggregateError when any check fails.
  */
@@ -31,19 +31,19 @@ export function assertTranscriptAdapter(adapter: TranscriptPort): void {
 
   // 1. Required L1 slots.
   if (!adapter.auth) failures.push(new Error('TranscriptPort.auth missing'));
-  if (!adapter.sources)
-    failures.push(new Error('TranscriptPort.sources missing'));
+  if (!adapter.changeSources)
+    failures.push(new Error('TranscriptPort.changeSources missing'));
 
-  // 2. Capability descriptor + 3. entity coverage matches the registry.
+  // 2. Capability descriptor + 3. entity coverage matches the contributions.
   const caps = adapter.capabilities;
   if (!caps) {
     failures.push(new Error('TranscriptPort.capabilities missing'));
-  } else if (adapter.sources) {
+  } else if (adapter.changeSources) {
     for (const entity of caps.entities) {
-      if (!adapter.sources.has(entity)) {
+      if (!(entity in adapter.changeSources)) {
         failures.push(
           new Error(
-            `caps.entities lists '${entity}' but sources.has('${entity}') is false`,
+            `caps.entities lists '${entity}' but changeSources['${entity}'] is missing`,
           ),
         );
       }

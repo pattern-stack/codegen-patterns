@@ -1,6 +1,6 @@
 # RFC-0003 — `IncrementalRead`: enumerate/hydrate read primitive + the scaffold body it emits (Track D round-3)
 
-**Status:** Accepted — Gate 1.5 PASS_WITH_NOTES (rev 2); R1+R2 landed (R3+R4 deferred per E0 gate)
+**Status:** Accepted — Gate 1.5 PASS_WITH_NOTES (rev 2); **R1–R4 landed** (manifest dropped on architectural grounds; optional runtime-telemetry follow-up noted in §Sequencing R4)
 **Date:** 2026-05-31
 **Owner:** Doug
 **Related:** RFC-0001 (provider/adapter emission — *this RFC reshapes the read-side `changeSources` body it emits*), RFC-0002 (module assembly emission — **disjoint surface; composes, does not collide — see §6**), ADR-033/033.1 (`detection:` config + `PollChangeSource`), Track C #329 (surface packages), swe-brain ADR-0002/ADR-0003 (the capability-primitive model this promotes), `runtime/subsystems/integration/` (the `IChangeSource` / `PollChangeSource` / orchestrator this builds on).
@@ -89,7 +89,7 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
   implements IncrementalRead<T, F>, IChangeSource<T> {
 
   abstract readonly label: string;
-  protected readonly filterPushdown: boolean = false;   // declared; surfaced to manifest/falsifier (§4)
+  protected readonly filterPushdown: boolean = false;   // author-owned vendor capability (per provider+entity); see §4
 
   // ---- SUPPLIED by the adapter (the irreducible vendor seam) ----
   protected abstract enumerate(mode: ReadMode, filter?: F, pageSize?: number): AsyncIterable<Ref<M>[]>;  // LAZY (§3); pageSize bounds atomic blast-radius
@@ -154,30 +154,67 @@ Per-ref cursors fix the silent-tail-skip — a crash at page 80 of a backfill re
 
 ```ts
 // <CODEGEN-SCAFFOLD-V1>   ← still emit-once; regen skips if present
-export class GoogleEmailIncrementalRead
-  extends IncrementalReadBase<CanonicalEmail, EmailFilter, EmailRefMeta> {
-  readonly label = 'google-mail-email';
-  protected override filterPushdown = true;                 // Gmail q= takes the predicate
+// fork #2: the entity's `detection.filters` emitted verbatim as a static const.
+const EMAIL_DETECTION_FILTERS: ResolvedFilter[] = [ /* from entity `detection:` YAML */ ];
 
-  protected async *enumerate(mode, filter) { /* TODO: messages.list / history.list → Ref pages */ }
-  protected async hydrate(ids)  { /* TODO: messages.get (override: /batch) → Map<id, raw> */ }
-  protected toCanonical(raw)    { /* TODO: External(Zod) → CanonicalEmail */ }
+export class GoogleEmailIncrementalRead
+  extends IncrementalReadBase<CanonicalEmail, ResolvedFilter[]> {   // F = uniform runtime filter; M defaults (author narrows)
+  readonly label = 'google-mail-email';
+  // Codegen emits `false` (the safe post-hydrate floor); the AUTHOR flips it to
+  // `true` once their `enumerate` pushes the filter to the vendor (Gmail `q=`).
+  protected override readonly filterPushdown = false;
+  // When the entity's cursor strategy is atomic (Gmail historyId / Calendar
+  // syncToken), codegen ALSO emits `protected override readonly cursorDivisible = false;` (R2).
+
+  constructor(
+    private readonly auth: IAuthStrategy,
+    private readonly client: GoogleClient,
+  ) { super(); }
+
+  protected async *enumerate(mode: ReadMode, filter?: ResolvedFilter[], pageSize?: number): AsyncIterable<Ref[]> { /* TODO: messages.list / history.list → Ref pages */ }
+  protected async hydrate(ids: string[]): Promise<Map<string, unknown>> { /* TODO: messages.get (override: /batch) → Map<id, raw> */ }
+  protected toCanonical(raw: unknown): CanonicalEmail | null { /* TODO: External(Zod) → CanonicalEmail */ }
+
+  // fork #2: filterFor returns the static const — 2-arg `(auth, client)` construction preserved.
+  protected override filterFor(_sub: IntegrationSubscriptionView): ResolvedFilter[] {
+    return EMAIL_DETECTION_FILTERS;
+  }
 }
 ```
 
-and the adapter's container becomes:
+> **R3 typing + threading — RESOLVED (2026-05-31, Doug).** Two R3-build forks (separate from §7's Q1/Q3/Q4) are now locked:
+>
+> **Fork #1 — subclass typing (Option B).** Emit `IncrementalReadBase<CanonicalEmail, ResolvedFilter[]>`: **T** = the surface package's canonical type; **F** = the *existing uniform* `ResolvedFilter[]` (from `DetectionConfig.filters`) — not a bespoke per-entity `EmailFilter`; **M** = the base default (`Record<string, unknown>`), which the author narrows in the emit-once scaffold (it's the vendor list-stub shape — author knowledge). This gives free compile-time filter typing with zero new types and no surface-package coupling. The earlier `<…, EmailFilter, EmailRefMeta>` bespoke shape is **superseded** — codegen-owned bespoke F/M types roll up into RFC-0004 ("B", the canonical-model RFC), not R3.
+>
+> **Fork #2 — filter threading (static const).** `IntegrationSubscriptionView` is only `{ id, domain, externalRef }` — it does NOT carry filters. So codegen emits the entity's `detection.filters` as a static module-level `ResolvedFilter[]` const and `filterFor()` returns it. This preserves the post-E0 2-arg `(auth, client)` construction (no DI of a never-changing value). Dynamic stays open two ways: a direct `read(ReadRequest<F>)` caller passes runtime filters, and an author can override `filterFor(sub)` (emit-once) to derive per-subscription.
+>
+> **Named caveat:** this assumes filters are **entity-level config, not per-subscription**. If two subscriptions of one entity ever need different filters, revisit via the `filterFor(sub)` author override — keep the `subscription` param in the emitted signature so that escape hatch stays free.
+
+and the adapter's container becomes — assigned in the **constructor body**, not as a
+field initializer (under `useDefineForClassFields`, field initializers run *before*
+constructor parameter-property assignment, so `this.auth`/`this.client` would be
+`undefined` at field-init time):
 
 ```ts
-readonly changeSources: Record<string, IChangeSource<unknown>> = {
-  email: new GoogleEmailIncrementalRead(this.auth, this.client),   // construction site (composes RFC-0002 §3 Option A)
-};
+readonly changeSources: Record<string, IChangeSource<unknown>>;   // declared; assigned in ctor
+
+constructor(
+  @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
+  @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
+) {
+  this.changeSources = {
+    email: new GoogleEmailIncrementalRead(this.auth, this.client),   // single construction site (composes RFC-0002 §3 Option A)
+  };
+}
 ```
 
 Unchanged: the emit-once sentinel + skip-on-regen, the `@Injectable` adapter `implements <Port>`, the `capabilities` literal, and the constructor injection.
 
 > **E0 is a hard prerequisite for R3 — not yet landed on `main`.** The 2-arg `new GoogleEmailIncrementalRead(this.auth, this.client)` construction site above assumes the **post-E0** scaffold (no `IEntityChangeSourceRegistry` injection). As of this RFC's branch the scaffold *still* imports the registry (`adapter-emission-generator.ts:285`) and injects it (`:301` `@Inject(${entitySourcesToken}) readonly sources`); commit `6e77e49` ("E0 — drop registry back-edge") lives only on `feat/td-r2-e0/e1/e2`, **not** on `main`. **R3 must not start until E0 has merged to the R3 branch base** (either rebase onto the E-track, or fold the registry-drop into R3). R1/R2 are pure runtime additions and have no E0 dependency.
 
-The `filterPushdown` flag must flow into a **net-new adapter-emission manifest** (no such manifest pipeline exists today) so the falsifier suite (also net-new, §8) can assert *"emits only records matching the filter"* and record which adapters filter post-hydrate. Building the manifest field is R3 work; building the falsifier harness is R4 work.
+`filterPushdown` **stays author-owned** in the emit-once subclass — codegen emits `false` (the safe floor) and the author flips it to `true` next to the `enumerate` they wrote, where the vendor knowledge lives.
+
+> **No static manifest (decided 2026-05-31, Doug).** An earlier draft routed `filterPushdown` into a net-new codegen "emission manifest." Dropped on two grounds: **(a) wrong granularity** — `filterPushdown` is a *per-(provider, entity)* vendor capability ("does *this provider's* list endpoint take the predicate server-side"; Gmail `q=` does, a second mail provider / Gong may not). It cannot live in `detection:` (per-entity) or any per-entity manifest without the #414 multi-provider trap — fatal the moment a second provider serves the same entity. **(b) the manifest solves nothing real** — the §8 falsifier proves the *base* guarantee with synthetic `filterPushdown=true`/`false` adapters (no real-adapter values needed), and "which adapters actually fell to the post-hydrate floor" is *runtime-observable* on the base (it knows when `matchesRecord` dropped a hydrated record) — a per-adapter runtime signal, correctly per-provider, and where the real 21k-hydrate inefficiency surfaces. If that telemetry is wanted, it's a small observability follow-up on the base — not a static codegen artifact.
 
 **Filter source:** `DetectionConfig.filters` (already parsed → `ResolvedFilter[]`, already handed to the poll callback as `ctx.filters`) maps to `ReadRequest.filter`. The discipline this RFC adds is *where* it's applied (pre-hydrate) and *whether the vendor pushed it down* (the flag) — the hook already exists.
 
@@ -211,8 +248,19 @@ Extend the RFC-0001 §7 / RFC-0002 §8 integration-emission snapshot fixture (`t
 
 - **R1** — ✅ **DONE.** Landed `IncrementalRead`/`RandomRead`/`IncrementalReadBase` + `SourcedRecord`/`Ref`/`ReadMode`/`ReadRequest` + `mapConcurrent` in `runtime/subsystems/integration/incremental-read.ts`; exported from `@pattern-stack/codegen/subsystems`. Unit-tested the base (drain, pre-hydrate filter, keyed/miss-tolerant hydrate, free `get` over hydrate, per-ref cursor, `listChanges` adaptation, `mapConcurrent` bounds — 21 cases). Pure runtime addition, no emitter change. Parallel to RFC-0002 E1–E4.
 - **R2** — ✅ **DONE.** Cursor-strategy divisibility (§3): added atomic `historyId`/`syncToken` kinds + `CURSOR_DIVISIBILITY` map + `isDivisibleCursor`; `IncrementalReadBase.cursorDivisible` gates `listChanges` cursor emission (atomic ⇒ withhold per-ref, emit end-of-walk token only on the final record via one-record lookahead). Orchestrator unchanged — its skip-null-cursor + persist-last-yielded lifecycle does the rest. Atomic-backfill blast-radius (= enumerate walk) documented; `ReadRequest.pageSize` is the bound.
-- **R3** — *(gated on E0 landing — §4/§6)* reshape `generateAdapterScaffold` read-side body (§4): emit the per-entity `IncrementalReadBase` subclass + `changeSources` registration; thread `DetectionConfig.filters` → `ReadRequest.filter`; add the net-new `filterPushdown` manifest field. Update the **template-emission snapshot** (the emitted-output fixture per §8 — *not* `just test-baseline`).
-- **R4** — falsifier assertion (§8) + docs (integration skill `protocols-and-ports.md`: the enumerate/hydrate authoring recipe, HubSpot `listSince` as the north star).
+- **R3** — ✅ **DONE** (stacked on the E-track). Reshaped `generateAdapterScaffold` read-side body (`src/cli/shared/adapter-emission-generator.ts`): per-entity `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass + `changeSources` registration (constructor-body assignment — `useDefineForClassFields` safety). Implementation decisions:
+  - **Scope = interaction surfaces only.** Gated by a new `SurfaceSpec.readPrimitive` flag (mail/calendar/transcript). CRM keeps its empty author-filled `changeSources` seam — it has no single canonical `T` (field-reader model).
+  - **Canonical type by convention:** `Canonical${Pascal(entity)}`, imported from the surface package (verified: `email→CanonicalEmail`, `meeting→CanonicalMeeting`, `transcript→CanonicalTranscript`).
+  - **Detection threading:** `generateAdapterScaffold` gains a `entityDetection?: Map<string, DetectionConfig>` param (caller resolves `entity.detection[providerSlug]`). Drives the static `<ENTITY>_DETECTION_FILTERS` const (fork #2) and `cursorDivisible` (R2: emitted `false` only when the cursor kind is atomic).
+  - **`filterPushdown`:** emitted `false` + author-flip comment; **stays author-owned** (no manifest, no `detection:` field — it's a per-(provider, entity) vendor capability that per-entity config can't represent; see §4 callout).
+  - **Barrel fix:** `ResolvedFilter` + `IntegrationSubscriptionView` are now re-exported from the top `@pattern-stack/codegen/subsystems` barrel (the emitted scaffold imports them; caught by compiling a real emitted adapter against the live types).
+  - Snapshot rebaselined (template-emission, per §8 — *not* `just test-baseline`); unit tests cover the reshape + atomic/divisible cursor wiring + CRM-unchanged.
+
+  > **Fixed alongside R3 — port contracts realigned to the post-E0 adapter.** `MailPort`/`CalendarPort`/`TranscriptPort`/`CrmPort` declared `readonly sources: IEntityChangeSourceRegistry`, but **E0** dropped that injection from the adapter (it now exposes `changeSources`, folded into the registry by the aggregator), so generated adapters failed `TS2420: Property 'sources' is missing`. The four surface-package ports + their conformance helpers (`assert-<surface>-adapter`) now require `readonly changeSources: Record<string, IChangeSource<unknown>>` instead — what the adapter actually contributes; the folded `sources` registry stays a surface-module concern. **Regression guards added:** each conformance test carries a strict-typed `const _postE0Shape: <Port> = { auth, capabilities, changeSources }` (no cast) that stops compiling if a port drifts back to requiring `sources`; and the emitted adapter is compiled against the live ports (the string-based emission tests + smoke can't see import-resolution / port-conformance failures — the recurring smoke gap).
+- **R4** — ✅ **DONE** (falsifier + docs; the manifest was dropped, not deferred).
+  - **Falsifier (§8):** `incremental-read.spec.ts` asserts the core guarantee with two synthetic adapters — `PushdownRead` (`filterPushdown=true`, `matchesRef` pre-hydrate) and `FloorRead` (`filterPushdown=false`, `matchesRecord` post-hydrate) — both emit the *identical* matching set; only hydration cost differs (pushdown skips dropped refs; floor hydrates all then drops). No manifest / real-adapter values needed.
+  - **Docs:** integration skill `protocols-and-ports.md` gains an `IncrementalRead<T, F>` section — the enumerate/hydrate recipe (three vendor methods + `mapConcurrent`), filter-before-hydrate + `filterPushdown` floor, cursor divisibility, codegen-emits-the-subclass, and dealbrain HubSpot `listSince` as the north star.
+  - **❌ Manifest dropped (not built).** `filterPushdown` stays author-owned — it's a per-(provider, entity) vendor capability that no per-entity config/manifest can represent (the #414 multi-provider trap), and the falsifier needs no real-adapter values (see §4 callout). **Optional follow-up (separate, small):** a runtime post-hydrate-drop meter on the base — per-adapter, correctly per-provider — if "which adapters filter post-hydrate" telemetry is ever wanted.
 - **Release** — ship R1–R4 in **0.13 alongside RFC-0002 E1–E4** (one consumer-facing shape).
 
 ## Deliverable

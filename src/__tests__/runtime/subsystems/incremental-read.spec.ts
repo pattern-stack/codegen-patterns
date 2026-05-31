@@ -408,6 +408,70 @@ describe('IncrementalReadBase.listChanges — cursor divisibility', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Filter falsifier (RFC-0003 §8): a conforming adapter emits ONLY records
+// matching the request filter — whether the filter is pushed down (matchesRef,
+// pre-hydrate) or applied at the post-hydrate floor (matchesRecord). The
+// emitted SET is identical; only the hydration cost differs.
+// ---------------------------------------------------------------------------
+
+describe('IncrementalReadBase — filter falsifier (§8)', () => {
+  // Dataset rigged so "unread" (ref meta) ≡ "subject starts with A" (record),
+  // so the SAME logical filter applied pre- vs post-hydrate must yield the same set.
+  const pages = (): Ref<EmailMeta>[][] => [
+    [
+      ref('a', 'c-a', true), // Apple   — keep
+      ref('b', 'c-b', false), // Banana  — drop
+      ref('c', 'c-c', true), // Avocado — keep
+      ref('d', 'c-d', false), // Berry   — drop
+    ],
+  ];
+  const raws = {
+    a: { id: 'a', subject: 'Apple' },
+    b: { id: 'b', subject: 'Banana' },
+    c: { id: 'c', subject: 'Avocado' },
+    d: { id: 'd', subject: 'Berry' },
+  };
+  const MATCHING = ['a', 'c'];
+
+  // Synthetic adapter #1 — declares filterPushdown=true; honors the filter
+  // pre-hydrate via matchesRef (inherited: keeps unread refs).
+  class PushdownRead extends TestEmailRead {
+    protected override readonly filterPushdown = true;
+  }
+
+  // Synthetic adapter #2 — declares filterPushdown=false; the vendor can't push
+  // the predicate down, so it honors the filter at the post-hydrate floor.
+  class FloorRead extends TestEmailRead {
+    protected override readonly filterPushdown = false;
+    protected override matchesRecord(rec: Email): boolean {
+      return rec.subject.startsWith('A');
+    }
+  }
+
+  it('pushdown=true (matchesRef, pre-hydrate): emits ONLY the matching set, and never hydrates a dropped ref', async () => {
+    const hydrateCalls: string[][] = [];
+    const src = new PushdownRead({ pages: pages(), raws, hydrateCalls });
+    const out = await collect(
+      src.read({ mode: { kind: 'full' }, filter: { unreadOnly: true } }),
+    );
+    expect(out.map((r) => r.externalId)).toEqual(MATCHING);
+    // structural win: the dropped refs were filtered BEFORE hydrate.
+    expect(hydrateCalls).toEqual([MATCHING]);
+  });
+
+  it('filterPushdown=false (matchesRecord, post-hydrate floor): emits the IDENTICAL set — hydrates all, then drops', async () => {
+    const hydrateCalls: string[][] = [];
+    const src = new FloorRead({ pages: pages(), raws, hydrateCalls });
+    const out = await collect(src.read({ mode: { kind: 'full' }, filter: {} }));
+    // SAME emitted set as the pushdown case — the falsifier's core guarantee:
+    // a conforming adapter emits only matching records, regardless of pushdown.
+    expect(out.map((r) => r.externalId)).toEqual(MATCHING);
+    // the cost of no pushdown: every ref was hydrated before the floor dropped it.
+    expect(hydrateCalls).toEqual([['a', 'b', 'c', 'd']]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // mapConcurrent
 // ---------------------------------------------------------------------------
 
