@@ -131,7 +131,10 @@
   ],
   "devDependencies": {
     "@anatine/zod-openapi": "^2.2.8",
+    "@pattern-stack/codegen-calendar": "workspace:*",
     "@pattern-stack/codegen-crm": "workspace:*",
+    "@pattern-stack/codegen-mail": "workspace:*",
+    "@pattern-stack/codegen-transcript": "workspace:*",
     "@cubejs-client/core": "^1.0.0",
     "@nestjs/common": "10",
     "@nestjs/core": "10",
