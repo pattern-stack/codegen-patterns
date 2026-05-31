@@ -1,6 +1,6 @@
 # RFC-0003 — `IncrementalRead`: enumerate/hydrate read primitive + the scaffold body it emits (Track D round-3)
 
-**Status:** Draft — Gate 1.5 critique addressed (rev 2); pending re-critique
+**Status:** Accepted — Gate 1.5 PASS_WITH_NOTES (rev 2); R1+R2 landed (R3+R4 deferred per E0 gate)
 **Date:** 2026-05-31
 **Owner:** Doug
 **Related:** RFC-0001 (provider/adapter emission — *this RFC reshapes the read-side `changeSources` body it emits*), RFC-0002 (module assembly emission — **disjoint surface; composes, does not collide — see §6**), ADR-033/033.1 (`detection:` config + `PollChangeSource`), Track C #329 (surface packages), swe-brain ADR-0002/ADR-0003 (the capability-primitive model this promotes), `runtime/subsystems/integration/` (the `IChangeSource` / `PollChangeSource` / orchestrator this builds on).
@@ -57,12 +57,15 @@ export interface ReadRequest<F> {
   readonly pageSize?: number;
 }
 
-/** NET-NEW (R1). The read()-side envelope: canonical record + the raw vendor payload it
- *  came from + the per-ref cursor. Distinct from the runtime's existing transport envelope
- *  `Change<T>` (operation/externalId/cursor). One-directional: `listChanges()` adapts
- *  `read()` → `Change<T>` (§2), dropping `raw` and stamping `operation`. `read()` keeps `raw`
- *  so consumers (e.g. a query surface) can re-project without a second fetch. */
+/** NET-NEW (R1). The read()-side envelope: external id + canonical record + the raw vendor
+ *  payload it came from + the per-ref cursor. Distinct from the runtime's existing transport
+ *  envelope `Change<T>` (operation/externalId/cursor/source). One-directional: `listChanges()`
+ *  adapts `read()` → `Change<T>` (§2), dropping `raw` and stamping `operation`/`source`.
+ *  `read()` keeps `externalId` + `raw` so a query surface can re-project without a second fetch.
+ *  (R1 refinement: `externalId` is carried — `listChanges` needs it to stamp `Change.externalId`
+ *  without re-deriving it from the record via a mapping.) */
 export interface SourcedRecord<T> {
+  readonly externalId: string;
   readonly record: T;
   readonly raw: unknown;
   readonly cursor: unknown;
@@ -73,7 +76,7 @@ export interface IncrementalRead<T, F = unknown> {
 }
 
 export interface RandomRead<T> {
-  get(id: string): Promise<T | null>;                          // the atom hydrate is built from (§2)
+  get(id: string): Promise<T | null>;                          // provided by the base, §2
 }
 ```
 
@@ -89,7 +92,7 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
   protected readonly filterPushdown: boolean = false;   // declared; surfaced to manifest/falsifier (§4)
 
   // ---- SUPPLIED by the adapter (the irreducible vendor seam) ----
-  protected abstract enumerate(mode: ReadMode, filter?: F): AsyncIterable<Ref<M>[]>;  // LAZY (§3)
+  protected abstract enumerate(mode: ReadMode, filter?: F, pageSize?: number): AsyncIterable<Ref<M>[]>;  // LAZY (§3); pageSize bounds atomic blast-radius
   protected abstract hydrate(ids: string[]): Promise<Map<string, unknown>>;           // keyed, miss-tolerant
   protected abstract toCanonical(raw: unknown): T | null;
 
@@ -101,30 +104,35 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
   async *read(req: ReadRequest<F>): AsyncIterable<SourcedRecord<T>> {
     for await (const refPage of this.enumerate(req.mode, req.filter)) {     // pull-driven → backpressure
       const kept = refPage.filter((r) => this.matchesRef(r, req.filter));   // FILTER BEFORE HYDRATE
+      if (kept.length === 0) continue;
       const raws = await this.hydrate(kept.map((r) => r.externalId));       // bounded-parallel / vendor /batch
       for (const ref of kept) {
         const raw = raws.get(ref.externalId);
-        if (raw === undefined) continue;                                    // deleted mid-run → skip, never fabricate
+        if (raw === undefined || raw === null) continue;                    // deleted mid-run → skip, never fabricate
         const record = this.toCanonical(raw);
-        if (record && this.matchesRecord(record, req.filter)) {
-          yield { record, raw, cursor: ref.cursor };
+        if (record !== null && this.matchesRecord(record, req.filter)) {
+          yield { externalId: ref.externalId, record, raw, cursor: ref.cursor };
         }
       }
     }
   }
 
-  // Default hydrate when the adapter implements RandomRead: bounded-parallel map over get().
-  // Adapters override ONLY for a real batch endpoint (Gmail /batch) or a passthrough (Calendar).
-  // listChanges() adapts read() → Change<T> (operation: 'updated'; orchestrator classifies create/update;
-  // delete via tombstone refs), reusing PollChangeSource's externalId/cursor stamping.
+  // RandomRead provided FOR FREE as `toCanonical ∘ hydrate([id])` — every incremental adapter
+  // is a single-record reader (the "list cheaply, fill on click" need) with no extra code.
+  async get(id: string): Promise<T | null> { /* hydrate([id]) → toCanonical, null on miss */ }
+
+  // listChanges() adapts read() → Change<T> (operation: 'updated'; orchestrator classifies
+  // create/update; delete via tombstone refs); honors cursorDivisible (§3) when emitting cursors.
 }
 ```
+
+**R1 refinement — `get` is built from `hydrate`, not the reverse.** The RFC originally framed `hydrate` as a default provided over `RandomRead.get`. Implementation inverted this for coherence: `hydrate(ids) → Map<id, raw>` is the irreducible vendor seam (one of the three abstract methods — matches the Deliverable's "fill exactly three vendor methods"), and `get` (RandomRead) is *provided* by the base as `toCanonical ∘ hydrate([id])`. This resolves the raw-vs-canonical conflation (hydrate yields raw; `get`/`read` yield canonical) and gives every adapter a free single-record reader. A `mapConcurrent(ids, fetchOne, limit)` helper ships alongside so writing a batched `hydrate` over a single-id fetch is one line; batch vendors (Gmail `/batch`) or passthroughs (Calendar) write `hydrate` directly.
 
 Three concerns the base settles (each a pressure-test finding):
 
 - **Filter placement is structural, not disciplinary.** The base applies the filter *before* `hydrate`, so an adapter physically cannot hydrate-then-discard. When the vendor can neither push the predicate down nor expose filterable metadata in `enumerate` (Gmail without `q=`), the floor is `matchesRecord` (post-hydrate) — and that case is *declared* via `filterPushdown: false`, not silent. This answers the standing objection: "force the adapter to honor the filter" without the 21k-hydrate-to-keep-200 trap.
-- **`hydrate` is keyed and miss-tolerant** (`Map<id, raw>`, not a positional array) — a single mid-run 404 (deleted message) can't shift alignment.
-- **`hydrate` collapses into `RandomRead`** — the base provides a default `hydrate = bounded-parallel map over this.get` for adapters that implement `RandomRead`; only batch/passthrough vendors override. This is why `RandomRead` graduates to a real primitive: it's the atom, used in every incremental adapter, not a CRM nicety.
+- **`hydrate` is keyed and miss-tolerant** (`Map<id, raw>`, not a positional array) — a single mid-run 404 (deleted message, a `null`/absent entry) can't shift alignment.
+- **`RandomRead` is provided, not required.** The base satisfies `RandomRead<T>.get` for free from `hydrate` + `toCanonical`, so `RandomRead` graduates to a real primitive (the single-record atom every incremental adapter exposes) without the adapter writing it.
 
 ## 3. Cursor divisibility (the per-ref checkpoint, honestly scoped)
 
@@ -190,10 +198,10 @@ RFC-0002 declares the read-side body **out of its own scope** twice: §1 *"Uncha
 
 ## 7. Open questions — for Doug
 
-1. **Capability home.** `IncrementalRead`/`RandomRead`/base in `@pattern-stack/codegen/subsystems` (beside `IChangeSource` — *recommended*, matches "codegen owns it") vs the surface-package framework. Recommendation: subsystems — it's runtime, vendor-agnostic, and produces an `IChangeSource`.
+1. **Capability home.** ✅ **RESOLVED (R1) — subsystems.** `IncrementalRead`/`RandomRead`/`IncrementalReadBase` landed in `runtime/subsystems/integration/incremental-read.ts`, exported from `@pattern-stack/codegen/subsystems` (beside `IChangeSource`). It's runtime, vendor-agnostic, and produces an `IChangeSource` — the surface-package framework would have inverted the dependency.
 2. **`enumerate` ref granularity.** Minimal (`{externalId, cursor}` only) vs **rich** (`Ref<M>` with metadata) — *recommended rich*, since pre-hydrate filtering and a future "query-surface lists cheaply, fills on click" both need metadata. Cost: a domain `M` type per surface (lives in the consumer / surface package).
-3. **Cursor-divisibility surface (§3).** A `divisible: boolean` flag on the cursor strategy vs a richer `checkpoint(refs)` method. Recommendation: start with the flag; promote to a method only if a vendor needs custom checkpoint granularity.
-4. **`reconcile` mode scope.** Land the enum value + base support now, or defer the gap-repair driver until the silent-tail-skip fix is prioritized? Recommendation: land the enum + `enumerate(mode='reconcile')` contract now (cheap); a scheduled reconcile runner is a separate consumer concern.
+3. **Cursor-divisibility surface (§3).** ✅ **RESOLVED (R2) — flag, kind-keyed.** Shipped as `CURSOR_DIVISIBILITY` (a `Record<kind, boolean>`) + `isDivisibleCursor(kind)` beside `CursorStrategy`, plus a `cursorDivisible` boolean on `IncrementalReadBase`. Not a `checkpoint(refs)` method — `CursorStrategy` is a parsed Zod config object, so behavior cannot live on it. Promote to a method only if a vendor needs custom checkpoint granularity.
+4. **`reconcile` mode scope.** ✅ **RESOLVED (R1) — enum + contract landed; driver deferred.** `ReadMode = delta | full | reconcile` and `enumerate(mode='reconcile', …)` are in the base now (cheap). A scheduled reconcile runner remains a separate consumer concern.
 
 ## 8. Snapshot + tests
 
@@ -201,8 +209,8 @@ Extend the RFC-0001 §7 / RFC-0002 §8 integration-emission snapshot fixture (`t
 
 ## Sequencing (post-RFC, after Gate 1.5)
 
-- **R1** — land `IncrementalRead`/`RandomRead`/`IncrementalReadBase` in `runtime/subsystems/integration/` + export from `@pattern-stack/codegen/subsystems`; unit-test the base (drain, pre-hydrate filter, keyed/miss-tolerant hydrate, default-hydrate-over-get, per-ref cursor). No emitter change yet — pure runtime addition, parallel to RFC-0002 E1–E4.
-- **R2** — cursor-strategy divisibility (§3): add the flag; base/orchestrator honor it.
+- **R1** — ✅ **DONE.** Landed `IncrementalRead`/`RandomRead`/`IncrementalReadBase` + `SourcedRecord`/`Ref`/`ReadMode`/`ReadRequest` + `mapConcurrent` in `runtime/subsystems/integration/incremental-read.ts`; exported from `@pattern-stack/codegen/subsystems`. Unit-tested the base (drain, pre-hydrate filter, keyed/miss-tolerant hydrate, free `get` over hydrate, per-ref cursor, `listChanges` adaptation, `mapConcurrent` bounds — 21 cases). Pure runtime addition, no emitter change. Parallel to RFC-0002 E1–E4.
+- **R2** — ✅ **DONE.** Cursor-strategy divisibility (§3): added atomic `historyId`/`syncToken` kinds + `CURSOR_DIVISIBILITY` map + `isDivisibleCursor`; `IncrementalReadBase.cursorDivisible` gates `listChanges` cursor emission (atomic ⇒ withhold per-ref, emit end-of-walk token only on the final record via one-record lookahead). Orchestrator unchanged — its skip-null-cursor + persist-last-yielded lifecycle does the rest. Atomic-backfill blast-radius (= enumerate walk) documented; `ReadRequest.pageSize` is the bound.
 - **R3** — *(gated on E0 landing — §4/§6)* reshape `generateAdapterScaffold` read-side body (§4): emit the per-entity `IncrementalReadBase` subclass + `changeSources` registration; thread `DetectionConfig.filters` → `ReadRequest.filter`; add the net-new `filterPushdown` manifest field. Update the **template-emission snapshot** (the emitted-output fixture per §8 — *not* `just test-baseline`).
 - **R4** — falsifier assertion (§8) + docs (integration skill `protocols-and-ports.md`: the enumerate/hydrate authoring recipe, HubSpot `listSince` as the north star).
 - **Release** — ship R1–R4 in **0.13 alongside RFC-0002 E1–E4** (one consumer-facing shape).
