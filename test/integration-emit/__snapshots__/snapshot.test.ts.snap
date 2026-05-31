@@ -29,11 +29,9 @@ import { NO_CALENDAR_CAPABILITIES } from '@pattern-stack/codegen-calendar';
 import type {
   IAuthStrategy,
   IChangeSource,
-  IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
 import type { GoogleClient } from '@app/integrations/providers/google/google.client';
 import { GOOGLE_AUTH_STRATEGY, GOOGLE_CLIENT } from '../../../providers/google/google.provider.module';
-import { CALENDAR_ENTITY_SOURCES } from '../../calendar-adapters.tokens';
 
 @Injectable()
 export class GoogleCalendarAdapter implements CalendarPort {
@@ -46,7 +44,6 @@ export class GoogleCalendarAdapter implements CalendarPort {
   constructor(
     @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
     @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
-    @Inject(CALENDAR_ENTITY_SOURCES) readonly sources: IEntityChangeSourceRegistry,
   ) {}
 
   /**
@@ -206,11 +203,9 @@ import { NO_CRM_CAPABILITIES } from '@pattern-stack/codegen-crm';
 import type {
   IAuthStrategy,
   IChangeSource,
-  IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
 import type { SalesforceClient } from '@app/integrations/providers/salesforce/salesforce.client';
 import { SALESFORCE_AUTH_STRATEGY, SALESFORCE_CLIENT } from '../../../providers/salesforce/salesforce.provider.module';
-import { CRM_ENTITY_SOURCES } from '../../crm-adapters.tokens';
 
 @Injectable()
 export class SalesforceCrmAdapter implements CrmPort {
@@ -226,7 +221,6 @@ export class SalesforceCrmAdapter implements CrmPort {
   constructor(
     @Inject(SALESFORCE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
     @Inject(SALESFORCE_CLIENT) private readonly client: SalesforceClient,
-    @Inject(CRM_ENTITY_SOURCES) readonly sources: IEntityChangeSourceRegistry,
   ) {}
 
   /** L2 — fill in the provider-specific implementation. */
@@ -394,11 +388,9 @@ import { NO_MAIL_CAPABILITIES } from '@pattern-stack/codegen-mail';
 import type {
   IAuthStrategy,
   IChangeSource,
-  IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
 import type { GoogleClient } from '@app/integrations/providers/google/google.client';
 import { GOOGLE_AUTH_STRATEGY, GOOGLE_CLIENT } from '../../../providers/google/google.provider.module';
-import { MAIL_ENTITY_SOURCES } from '../../mail-adapters.tokens';
 
 @Injectable()
 export class GoogleMailAdapter implements MailPort {
@@ -411,7 +403,6 @@ export class GoogleMailAdapter implements MailPort {
   constructor(
     @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
     @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
-    @Inject(MAIL_ENTITY_SOURCES) readonly sources: IEntityChangeSourceRegistry,
   ) {}
 
   /**
@@ -641,11 +632,9 @@ import { NO_TRANSCRIPT_CAPABILITIES } from '@pattern-stack/codegen-transcript';
 import type {
   IAuthStrategy,
   IChangeSource,
-  IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
 import type { GoogleClient } from '@app/integrations/providers/google/google.client';
 import { GOOGLE_AUTH_STRATEGY, GOOGLE_CLIENT } from '../../../providers/google/google.provider.module';
-import { TRANSCRIPT_ENTITY_SOURCES } from '../../transcript-adapters.tokens';
 
 @Injectable()
 export class GoogleTranscriptAdapter implements TranscriptPort {
@@ -658,7 +647,6 @@ export class GoogleTranscriptAdapter implements TranscriptPort {
   constructor(
     @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
     @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
-    @Inject(TRANSCRIPT_ENTITY_SOURCES) readonly sources: IEntityChangeSourceRegistry,
   ) {}
 
   /**

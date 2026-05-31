@@ -221,8 +221,8 @@ function names(providerSlug: string, surface: string): Names {
 
 /**
  * The emit-once adapter scaffold. Implements the surface port, injects L1
- * (auth strategy + client) and the entity sources registry, declares
- * capabilities (entities from `surface:`), and stubs the L2 port methods.
+ * (auth strategy + client), declares capabilities (entities from `surface:`),
+ * and stubs the L2 port methods.
  */
 export function generateAdapterScaffold(
   def: ProviderDefinition,
@@ -282,11 +282,9 @@ import { ${spec.noCapsConst} } from '${spec.packageName}';
 import type {
   IAuthStrategy,
   IChangeSource,
-  IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
 import type { ${client.exportName} } from '${client.path}';
 import { ${n.strategyToken}, ${n.clientToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';
-import { ${n.entitySourcesToken} } from '../../${surface}-adapters.tokens';
 
 @Injectable()
 export class ${n.adapterClass} implements ${spec.portType} {
@@ -298,7 +296,6 @@ ${capabilityBody}
   constructor(
     @Inject(${n.strategyToken}) readonly auth: IAuthStrategy,
     @Inject(${n.clientToken}) private readonly client: ${client.exportName},
-    @Inject(${n.entitySourcesToken}) readonly sources: IEntityChangeSourceRegistry,
   ) {}
 ${l2Section}
   /**
