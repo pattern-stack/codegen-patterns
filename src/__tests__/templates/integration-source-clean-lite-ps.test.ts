@@ -23,11 +23,6 @@ const MODULE_TEMPLATE = resolve(
   import.meta.dir,
   '../../../templates/entity/new/backend/modules/core/integration-source.ejs.t',
 );
-const PROVIDERS_TEMPLATE = resolve(
-  import.meta.dir,
-  '../../../templates/entity/new/backend/modules/core/integration-source.providers.ejs.t',
-);
-
 function readFrontmatter(source: string): { frontmatter: string; body: string } {
   const lines = source.split('\n');
   if (lines[0] !== '---') return { frontmatter: '', body: source };
@@ -59,15 +54,15 @@ const opportunityDefinition = {
 };
 
 describe('integration-source emission (clean-lite-ps) — #267', () => {
-  it('clean-lite-ps locals expose integrationSourceModule + integrationSourceProviders + clpImports.integrationSourceToEntity', () => {
+  it('clean-lite-ps locals expose integrationSourceModule + clpImports.integrationSourceToEntity', () => {
     const locals = buildCleanLitePsLocals(opportunityDefinition, { backendSrc: 'src' });
 
     expect(locals.clpOutputPaths.integrationSourceModule).toBe(
       'src/modules/opportunities/opportunity-integration-source.module.ts',
     );
-    expect(locals.clpOutputPaths.integrationSourceProviders).toBe(
-      'src/modules/opportunities/opportunity-integration-source.providers.ts',
-    );
+    // ADR-033.2's per-entity provider tuples are removed (RFC-0001 §8, D4):
+    // no `integrationSourceProviders` output path is emitted anymore.
+    expect(locals.clpOutputPaths.integrationSourceProviders).toBeUndefined();
     expect(locals.clpImports.integrationSourceToEntity).toBe('./opportunity.entity');
   });
 
@@ -87,20 +82,9 @@ describe('integration-source emission (clean-lite-ps) — #267', () => {
     expect(rendered).not.toContain('unused');
   });
 
-  it('providers template `to:` resolves to the CLP path when isCleanLitePs is true', () => {
-    const locals = buildCleanLitePsLocals(opportunityDefinition, { backendSrc: 'src' });
-    const { frontmatter } = readFrontmatter(readFileSync(PROVIDERS_TEMPLATE, 'utf8'));
-    const rendered = ejs.render(frontmatter, {
-      hasDetection: true,
-      isCleanLitePs: true,
-      clpOutputPaths: locals.clpOutputPaths,
-      basePaths: { backendSrc: 'unused' },
-      paths: { modules: 'unused' },
-      name: 'opportunity',
-    });
-    expect(rendered).toContain('src/modules/opportunities/opportunity-integration-source.providers.ts');
-    expect(rendered).not.toContain('unused');
-  });
+  // ADR-033.2's per-entity provider-tuple template (integration-source.providers.ejs.t)
+  // is deleted by RFC-0001 §8 (D4); its emission test is removed with it. The
+  // surface-scoped typed view replaces it (adapter-emission-generator.test.ts).
 
   it('module body imports the entity sibling-style under clean-lite-ps', () => {
     const locals = buildCleanLitePsLocals(opportunityDefinition, { backendSrc: 'src' });

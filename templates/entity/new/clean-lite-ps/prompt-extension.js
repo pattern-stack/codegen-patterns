@@ -1245,7 +1245,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // ADR-033.1 §8 — integration-source module emission for clean-lite-ps. Co-located
     // with the entity feature module under src/modules/<plural>/. Closes #267.
     integrationSourceModule: `${srcRoot}/modules/${entityNamePlural}/${entityName}-integration-source.module.ts`,
-    integrationSourceProviders: `${srcRoot}/modules/${entityNamePlural}/${entityName}-integration-source.providers.ts`,
+    // ADR-033.2's per-entity provider tuples (`<entity>-integration-source.providers.ts`)
+    // are removed by RFC-0001 §8 (D4). The surface-scoped typed view
+    // (`src/integrations/<surface>/types.generated.ts`) is the single source of
+    // provider truth now — see src/cli/shared/adapter-emission-generator.ts.
   };
 
   // Architecture-specific imports for clean-lite-ps. The integration-source module
