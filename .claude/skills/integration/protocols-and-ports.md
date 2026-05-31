@@ -67,6 +67,38 @@ surface port stays entity-agnostic. Use `MemoryEntityChangeSourceRegistry`
 registry is Track D (RFC-0001 §3); full authoring coverage lives in the C5
 surface-authoring guide.
 
+### Driving Track D codegen — there is no `provider`/`integration`/`gen` command
+
+Provider + adapter emission is **a post-step of `codegen entity new`**, not a
+standalone command. The CLI exposes no `provider`, `integration`, `surface`, or
+`gen` verb — searching `--help` for one and finding nothing is expected, not a
+publish gap. The wiring lives in `EntityNewCommand.execute()`
+(`src/cli/commands/entity.ts`), after event/bridge/orchestration codegen.
+
+To regenerate:
+
+```bash
+codegen entity new --all      # cdp is the alias bin; `just gen-all` wraps this
+```
+
+The step:
+
+1. Looks for `definitions/providers/*.yaml` (override via `paths.providers` in
+   `codegen.config.yaml`; default `definitions/providers`). **No providers dir ⇒
+   the whole step is silently skipped** — the usual reason "nothing happened."
+2. Runs the D1 cross-validator (slug/surface always; import-path check only when
+   a consumer tsconfig resolves path aliases — this is the "`cdp gen` failing on
+   bad import paths" seen in release notes). Blocking issues ⇒ nothing written.
+3. Emits one provider module per YAML → `<backendSrc>/integrations/providers/`.
+4. **Only if provider emission succeeded with zero issues**, runs `emitAdapters`
+   → `<backendSrc>/integrations/` (emit-once author-owned scaffolds +
+   `@generated` files). A provider surface with no Track C surface package is
+   skipped with a warning, not an error.
+
+The generated scaffold is the ground truth for the adapter's port shape: the
+emitted `<Surface>Port` / `IChangeSource<T>` + registry wiring is what adapters
+must implement — read it rather than inferring the shape from `.d.ts`.
+
 ## `IIntegrationSink<T>` — the write surface
 
 One sink per canonical entity. Speaks canonical externally; internal

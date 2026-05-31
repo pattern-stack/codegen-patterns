@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-05-31
+
+Track D (provider/adapter integration codegen) discoverability fix. The 0.12.0
+generator wiring is correct and shipped — provider + adapter emission runs as a
+post-step of `codegen entity new` whenever `definitions/providers/*.yaml` exist
+— but nothing in the CLI surfaced that, so consumers searched `--help` for a
+`provider` / `integration` / `gen` command, found none, and mistook a working
+feature for a publish gap. Docs-and-help only; no generator behavior changed.
+
+### Changed
+
+- **`codegen entity new --help`** now documents every post-generation step it
+  runs (event / bridge / orchestration / **provider + adapter (Track D)**
+  codegen), including Track D's trigger (`definitions/providers/*.yaml`), output
+  paths (`<backendSrc>/integrations/{providers,}`), emit-once semantics, and an
+  explicit note that there is no standalone `provider` / `integration` / `gen`
+  command — Track D is driven entirely by re-running `entity new`.
+- **`codegen entity` summary hints** now surface a Track D regen hint when the
+  project has a providers directory — a discoverability path that does not
+  require reading `entity new --help`.
+- **Integration domain skill** (`protocols-and-ports.md`, `SKILL.md`) documents
+  the Track D invocation, the skip-when-no-providers-dir behavior, and that the
+  generated scaffold (not the `.d.ts`) is ground truth for adapter port shape.
+
 ## [0.12.0] — 2026-05-31
 
 Integration codegen retarget (RFC-0001): a **provider/adapter/surface** model
