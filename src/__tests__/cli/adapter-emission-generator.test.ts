@@ -78,12 +78,18 @@ describe('generateAdapterScaffold', () => {
     expect(out).toContain('...NO_CRM_CAPABILITIES');
   });
 
-  it('injects L1 strategy + client + entity sources registry', () => {
+  it('injects L1 strategy + client (no registry back-edge)', () => {
     expect(out).toContain('@Inject(HUBSPOT_AUTH_STRATEGY) readonly auth: IAuthStrategy');
     expect(out).toContain('@Inject(HUBSPOT_CLIENT) private readonly client: HubspotClient');
-    expect(out).toContain(
-      '@Inject(CRM_ENTITY_SOURCES) readonly sources: IEntityChangeSourceRegistry',
-    );
+    // E0: the vestigial registry back-edge is gone — the adapter no longer
+    // injects CRM_ENTITY_SOURCES / IEntityChangeSourceRegistry, nor imports
+    // the registry type or the *-adapters.tokens module. (The descriptive
+    // changeSources doc comment still names the registry it feeds — that prose
+    // is accurate and is not the back-edge.)
+    expect(out).not.toContain('@Inject(CRM_ENTITY_SOURCES)');
+    expect(out).not.toContain('readonly sources: IEntityChangeSourceRegistry');
+    expect(out).not.toContain("from '../../crm-adapters.tokens'");
+    expect(out).not.toMatch(/import[^;]*IEntityChangeSourceRegistry/);
   });
 
   it('stubs every L2 method with a not-implemented throw', () => {
@@ -158,8 +164,9 @@ describe('emitAdapters — orchestration', () => {
     expect(calendar).not.toContain('IFieldDefinitionReader');
     expect(calendar).not.toContain('not implemented');
     expect(calendar).not.toContain('fieldDefinitions: true');
-    // still injects L1 + sources + exposes changeSources
-    expect(calendar).toContain('readonly sources: IEntityChangeSourceRegistry');
+    // still injects L1 + exposes changeSources (no registry back-edge — E0)
+    expect(calendar).not.toContain('readonly sources: IEntityChangeSourceRegistry');
+    expect(calendar).not.toMatch(/import[^;]*IEntityChangeSourceRegistry/);
     expect(calendar).toContain('readonly changeSources: Record<string, IChangeSource<unknown>>');
   });
 
