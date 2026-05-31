@@ -43,6 +43,8 @@ import {
 	resolveTsconfigAliases,
 	collectEntitySurfaces,
 } from '../shared/provider-module-generator.js';
+import { emitAdapters } from '../shared/adapter-emission-generator.js';
+import { loadProvidersFromYaml } from '../../utils/yaml-loader.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
@@ -719,6 +721,57 @@ export class EntityNewCommand extends Command {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (!isJsonMode()) {
 				printWarning(`provider codegen failed — ${msg}`);
+			}
+		}
+
+		// Adapter / module / barrel / surface-aggregator emission (RFC-0001 §2/§4,
+		// Track D · D3). Runs only when provider emission produced modules (no
+		// providers dir ⇒ provider step skipped ⇒ nothing to adapt). Emit-once
+		// scaffolds are never overwritten; @generated files re-emit each run. A
+		// provider surface with no surface package (Track C) is skipped with a
+		// reason, not an error.
+		try {
+			if (providerResult && !providerResult.skipped && providerResult.issues.length === 0) {
+				const providersDir = providerResult.providersDir;
+				const adapterOutputRoot = path.resolve(
+					ctx.cwd,
+					backendSrcForHandlers,
+					'integrations',
+				);
+				const entityDefs = fs.existsSync(entitiesDir)
+					? loadEntitiesFromYaml(findYamlFiles(entitiesDir)).successes.map(
+							(s) => s.definition,
+						)
+					: [];
+				const loadedProviders = loadProvidersFromYaml(
+					findYamlFiles(providersDir),
+				).successes.map((s) => ({
+					definition: s.definition,
+					filePath: s.filePath,
+				}));
+				const adapterResult = emitAdapters({
+					providers: loadedProviders,
+					entities: entityDefs,
+					outputRoot: adapterOutputRoot,
+				});
+				if (!isJsonMode()) {
+					if (adapterResult.written.length || adapterResult.scaffoldsWritten.length) {
+						printInfo(
+							`adapter codegen: ${adapterResult.scaffoldsWritten.length} scaffold(s) + ${adapterResult.written.length} @generated → ${adapterOutputRoot}`,
+						);
+					}
+					for (const s of adapterResult.scaffoldsSkipped) {
+						printInfo(`skipped scaffold ${s} (author-owned)`);
+					}
+					for (const s of adapterResult.skippedSurfaces) {
+						printWarning(`adapter codegen: ${s.reason} (provider ${s.provider})`);
+					}
+				}
+			}
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`adapter codegen failed — ${msg}`);
 			}
 		}
 
