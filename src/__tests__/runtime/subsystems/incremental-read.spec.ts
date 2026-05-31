@@ -433,9 +433,24 @@ describe('IncrementalReadBase — filter falsifier (§8)', () => {
   };
   const MATCHING = ['a', 'c'];
 
-  it('pushdown (matchesRef, pre-hydrate): emits ONLY the matching set, and never hydrates a dropped ref', async () => {
+  // Synthetic adapter #1 — declares filterPushdown=true; honors the filter
+  // pre-hydrate via matchesRef (inherited: keeps unread refs).
+  class PushdownRead extends TestEmailRead {
+    protected override readonly filterPushdown = true;
+  }
+
+  // Synthetic adapter #2 — declares filterPushdown=false; the vendor can't push
+  // the predicate down, so it honors the filter at the post-hydrate floor.
+  class FloorRead extends TestEmailRead {
+    protected override readonly filterPushdown = false;
+    protected override matchesRecord(rec: Email): boolean {
+      return rec.subject.startsWith('A');
+    }
+  }
+
+  it('pushdown=true (matchesRef, pre-hydrate): emits ONLY the matching set, and never hydrates a dropped ref', async () => {
     const hydrateCalls: string[][] = [];
-    const src = new TestEmailRead({ pages: pages(), raws, hydrateCalls });
+    const src = new PushdownRead({ pages: pages(), raws, hydrateCalls });
     const out = await collect(
       src.read({ mode: { kind: 'full' }, filter: { unreadOnly: true } }),
     );
@@ -444,17 +459,12 @@ describe('IncrementalReadBase — filter falsifier (§8)', () => {
     expect(hydrateCalls).toEqual([MATCHING]);
   });
 
-  it('floor (matchesRecord, post-hydrate): emits the IDENTICAL set — hydrates all, then drops', async () => {
-    class FloorEmailRead extends TestEmailRead {
-      // no-pushdown floor: predicate can only be evaluated on the hydrated record
-      protected override matchesRecord(rec: Email): boolean {
-        return rec.subject.startsWith('A');
-      }
-    }
+  it('filterPushdown=false (matchesRecord, post-hydrate floor): emits the IDENTICAL set — hydrates all, then drops', async () => {
     const hydrateCalls: string[][] = [];
-    const src = new FloorEmailRead({ pages: pages(), raws, hydrateCalls });
+    const src = new FloorRead({ pages: pages(), raws, hydrateCalls });
     const out = await collect(src.read({ mode: { kind: 'full' }, filter: {} }));
-    // SAME emitted set as the pushdown case — the falsifier's core guarantee.
+    // SAME emitted set as the pushdown case — the falsifier's core guarantee:
+    // a conforming adapter emits only matching records, regardless of pushdown.
     expect(out.map((r) => r.externalId)).toEqual(MATCHING);
     // the cost of no pushdown: every ref was hydrated before the floor dropped it.
     expect(hydrateCalls).toEqual([['a', 'b', 'c', 'd']]);
