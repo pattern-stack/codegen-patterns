@@ -44,6 +44,13 @@ import { dirname, join } from "node:path";
 import { parseImportRef, type ProviderDefinition } from "../../schema/provider-definition.schema";
 import type { LoadedProvider } from "../../parser/validate-providers";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
+import { generateDefaultSink, type SinkEmitInput } from "./sink-emission-generator";
+import {
+  generateAssemblyModule,
+  generateIntegrationTokens,
+  resolveEntityModuleImports,
+  type IntegrationTokenEntry,
+} from "./assembly-emission-generator";
 
 // ============================================================================
 // Surface registry — which surfaces have an emittable <Surface>Port package
@@ -545,25 +552,68 @@ function jsKey(key: string): string {
 // Orchestration
 // ============================================================================
 
+/**
+ * The slice of a parsed entity definition the adapter + assembly + sink
+ * emission needs. The CLI passes the full loaded `entityDefs` (which structurally
+ * satisfy this) so no extra projection is required at the call site.
+ *
+ * - `entity.name` / `entity.surface` drive capabilities.entities (RFC-0001).
+ * - `entity.pattern` gates assembly+sink emission (`Integrated` only, RFC-0002 §4).
+ * - `entity.plural` / `entity.context` drive the entity repo/module import paths.
+ * - `fields` → sink copy-through scalars; `relationships` (belongs_to) → FK keys.
+ */
+export interface EmitAdaptersEntity {
+  entity: {
+    name: string;
+    surface?: string;
+    pattern?: string;
+    patterns?: string[];
+    plural?: string;
+    context?: string;
+  };
+  fields?: Record<string, { type?: string; nullable?: boolean }>;
+  relationships?: Record<
+    string,
+    { type?: string; target?: string; foreign_key?: string; nullable?: boolean }
+  >;
+}
+
 export interface EmitAdaptersOptions {
   providers: LoadedProvider[];
-  /** Entity definitions carrying `surface:` (for capabilities.entities). */
-  entities: Array<{ entity: { name: string }; surface?: string }>;
+  /** Entity definitions carrying `surface:` (for capabilities.entities + the
+   *  per-entity assembly/sink emission). */
+  entities: EmitAdaptersEntity[];
   /** Output root — `<backend_src>/integrations`. */
   outputRoot: string;
+  /** Absolute `<backend_src>` root on disk — needed to resolve the entity
+   *  repo/module import specifiers for the assembly. When omitted, the assembly
+   *  loop is skipped (back-compat for callers that only want the read side, e.g.
+   *  a dry plan with no consumer tree). */
+  backendSrcAbs?: string;
+  /** tsconfig path aliases (aliasKey → absolute target dir) for the entity
+   *  repo/module imports. Empty/absent ⇒ relative-path imports. */
+  aliases?: Record<string, string>;
   /** When true, compute the plan but write nothing. */
   dryRun?: boolean;
 }
 
 export interface EmitAdaptersResult {
-  /** @generated files written (modules, barrels, tokens, aggregators). */
+  /** @generated files written (modules, barrels, tokens, aggregators, assemblies). */
   written: string[];
-  /** New scaffolds written this run. */
+  /** New scaffolds written this run (adapter scaffolds + sink scaffolds). */
   scaffoldsWritten: string[];
   /** Existing scaffolds skipped (author-owned). */
   scaffoldsSkipped: string[];
   /** (provider, surface) pairs skipped because the surface has no port package. */
   skippedSurfaces: Array<{ provider: string; surface: string; reason: string }>;
+  /** Per-entity assembly modules written this run (RFC-0002 §2, @generated). */
+  assembliesWritten: string[];
+  /** Surface integration tokens files written this run (RFC-0002 §2, @generated). */
+  tokensWritten: string[];
+  /** `surface:` entities skipped for assembly/sink because they are not
+   *  `pattern: Integrated` (the only family with the projection/upsert path).
+   *  Recorded, not crashed — the read side still emits for them. */
+  skippedAssemblies: Array<{ surface: string; entity: string; reason: string }>;
 }
 
 /**
@@ -577,8 +627,13 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     scaffoldsWritten: [],
     scaffoldsSkipped: [],
     skippedSurfaces: [],
+    assembliesWritten: [],
+    tokensWritten: [],
+    skippedAssemblies: [],
   };
   const entitiesBySurface = collectEntitiesBySurface(opts.entities);
+  // Index full entity definitions by name for the assembly/sink emission.
+  const entityByName = new Map(opts.entities.map((e) => [e.entity.name, e]));
 
   // surface → provider slugs that serve it AND have an emittable port.
   const bySurface = new Map<string, string[]>();
@@ -644,9 +699,186 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
       if (!opts.dryRun) writeIfChanged(path, content);
       result.written.push(path);
     }
+
+    // ------------------------------------------------------------------
+    // RFC-0002 §2/§4 (E2) — per-entity assembly module + sink scaffold +
+    // surface integration tokens.
+    //
+    // Skipped entirely when no `<backend_src>` root is supplied (the read-side
+    // emitters are path-agnostic, but the assembly needs to resolve the entity
+    // repo/module import specifiers). Per (surface, provider, entity-on-surface
+    // with `pattern: Integrated`): emit the sink (emit-once) + assembly module
+    // (@generated), collect the (entity, provider) token, then write the surface
+    // tokens file once. A `surface:` entity that is NOT `pattern: Integrated` is
+    // recorded in `skippedAssemblies` (read side still emitted) — never crashes.
+    // ------------------------------------------------------------------
+    if (opts.backendSrcAbs) {
+      const aliases = opts.aliases ?? {};
+      const surfaceEntities = entitiesBySurface.get(surface) ?? [];
+      const tokenEntries: IntegrationTokenEntry[] = [];
+      const sinksDir = join(surfaceDir, "sinks");
+      const modulesDir = join(surfaceDir, "modules");
+
+      for (const entityName of surfaceEntities) {
+        const def = entityByName.get(entityName);
+        const pattern =
+          def?.entity.pattern ??
+          (Array.isArray(def?.entity.patterns) ? def?.entity.patterns?.[0] : undefined);
+        if (pattern !== "Integrated") {
+          // Record once per surface entity (not per provider — the reason is
+          // pattern-level, not provider-level).
+          result.skippedAssemblies.push({
+            surface,
+            entity: entityName,
+            reason: `entity '${entityName}' declares surface '${surface}' but is not 'pattern: Integrated'` +
+              `${pattern ? ` (got 'pattern: ${pattern}')` : " (no pattern declared)"} — ` +
+              `the integration assembly + default sink need the Integrated projection/upsert path. ` +
+              `Add 'pattern: Integrated' (or provide a hand-authored sink + assembly).`,
+          });
+          continue;
+        }
+
+        const plural = def?.entity.plural ?? `${entityName}s`;
+        const context = def?.entity.context ?? null;
+        const loc = resolveEntityModuleImports({
+          entityName,
+          entityPlural: plural,
+          context,
+          surface,
+          // The sink+repo import is provider-agnostic; pick any provider's
+          // module dir for the relative-path base (all share the same parent).
+          provider: slugs[0],
+          backendSrcAbs: opts.backendSrcAbs,
+          aliases,
+        });
+
+        // Sink (emit-once scaffold) — provider-agnostic; one per entity.
+        const sinkPath = join(sinksDir, `${entityName}.sink.ts`);
+        if (existsSync(sinkPath)) {
+          result.scaffoldsSkipped.push(sinkPath);
+        } else {
+          const sinkInput = buildSinkInput(def!, surface, slugs[0], loc.repoImportSpecifier);
+          const sinkContent = generateDefaultSink(sinkInput);
+          if (!opts.dryRun) writeFile(sinkPath, sinkContent);
+          result.scaffoldsWritten.push(sinkPath);
+        }
+
+        // Per-(entity, provider) assembly module (@generated) + token entry.
+        for (const slug of slugs) {
+          const assemblyPath = join(
+            modulesDir,
+            slug,
+            `${entityName}-integration.module.ts`,
+          );
+          const assemblyContent = generateAssemblyModule({
+            surface,
+            provider: slug,
+            entityName,
+            entityClass: loc.entityClass,
+            moduleImportSpecifier: loc.moduleImportSpecifier,
+            moduleClass: loc.moduleClass,
+            repoImportSpecifier: loc.repoImportSpecifier,
+            repoClass: loc.repoClass,
+            sourceDesc: `definitions/providers/${slug}.yaml`,
+          });
+          if (!opts.dryRun) writeIfChanged(assemblyPath, assemblyContent);
+          result.assembliesWritten.push(assemblyPath);
+          tokenEntries.push({ entityName, entityClass: loc.entityClass, provider: slug });
+        }
+      }
+
+      // Surface integration tokens (@generated) — one file per surface, all
+      // (entity, provider) tokens. Emitted even when empty so the surface tree
+      // is consistent (the assembly imports reference it).
+      const integrationTokensPath = join(
+        surfaceDir,
+        `${surface}-integration.tokens.ts`,
+      );
+      const tokensContent = generateIntegrationTokens(surface, tokenEntries);
+      if (!opts.dryRun) writeIfChanged(integrationTokensPath, tokensContent);
+      result.tokensWritten.push(integrationTokensPath);
+    }
   }
 
   return result;
+}
+
+/**
+ * Build the {@link SinkEmitInput} for a `pattern: Integrated` entity — mirrors
+ * `buildIntegrationSurface().writeFields`/`writeFkFields` (clean-lite-ps
+ * prompt-extension): copy-through scalars are the non-FK `fields:` (camelCased,
+ * nullable-aware tsType); FK external keys are one `<relationKey>ExternalId` per
+ * `belongs_to`. The `generateDefaultSink` emitter throws if `pattern` is not
+ * `Integrated` — the caller pre-filters, so this is only reached for Integrated.
+ */
+function buildSinkInput(
+  def: EmitAdaptersEntity,
+  surface: string,
+  provider: string,
+  repoImportSpecifier: string,
+): SinkEmitInput {
+  const fields = def.fields ?? {};
+  const relationships = def.relationships ?? {};
+
+  // FK column names (belongs_to foreign_key) — excluded from copy-through.
+  const fkColumns = new Set<string>();
+  for (const rel of Object.values(relationships)) {
+    if (rel.type === "belongs_to" && typeof rel.foreign_key === "string") {
+      fkColumns.add(rel.foreign_key);
+    }
+  }
+
+  const copyThroughFields = Object.entries(fields)
+    .filter(([name]) => name !== "id" && !fkColumns.has(name))
+    .map(([name, f]) => ({
+      camelName: snakeToCamel(name),
+      tsType: tsTypeFor(f.type, f.nullable),
+    }));
+
+  // FK external keys — `<relationKey>ExternalId`. For non-self FKs the relation
+  // key is the target entity name; matches clean-lite-ps `processBelongsTo`.
+  const fkExternalKeys = Object.entries(relationships)
+    .filter(([, rel]) => rel.type === "belongs_to")
+    .map(([relName, rel]) => {
+      const target = rel.target ?? relName;
+      return { writeKey: `${snakeToCamel(target)}ExternalId` };
+    });
+
+  return {
+    entityName: def.entity.name,
+    entityClass: pascalFromSnake(def.entity.name),
+    surface,
+    pattern: "Integrated",
+    provider,
+    copyThroughFields,
+    fkExternalKeys,
+    repoImportSpecifier,
+  };
+}
+
+const TS_TYPE_FOR_SINK: Record<string, string> = {
+  string: "string",
+  integer: "number",
+  decimal: "string",
+  boolean: "boolean",
+  uuid: "string",
+  date: "Date",
+  datetime: "Date",
+  json: "unknown",
+};
+
+function tsTypeFor(type: string | undefined, nullable: boolean | undefined): string {
+  const base = TS_TYPE_FOR_SINK[type ?? "string"] ?? "unknown";
+  return nullable ? `${base} | null` : base;
+}
+
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+function pascalFromSnake(s: string): string {
+  const camel = snakeToCamel(s);
+  return camel.charAt(0).toUpperCase() + camel.slice(1);
 }
 
 function writeFile(outPath: string, content: string): void {
