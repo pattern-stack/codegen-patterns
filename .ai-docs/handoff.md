@@ -1,40 +1,132 @@
-# Handoff — 2026-05-12
+# Handoff — 2026-05-31 — Track D round-2 (B) + swe-brain integration migration
 
-**Branch:** `doug/cgp-62-relationship-audit` (active in main checkout)
-**Last action:** Rebased PR #359 (cgp-59 junction templates) onto post-#360 main via cherry-pick — dropped the broken `ad0b27a` duplicate-#58 commit; force-pushed `be75e4d`. PR #361 (cgp-62 audit) rebased earlier in the same session to `4452e62`.
-**Next action:** Verify PR #359's CI on the rebased commit goes green (https://github.com/pattern-stack/codegen-patterns/actions/runs/25765549112). Then review + merge PRs in order: #361 (audit + smoke) → #359 (templates).
-**Obstacles:**
-- codegen-patterns#358 (entity-codegen service-method emission gap) blocks #60 + #61 of this wave. Interim workaround documented in `.ai-docs/plans/codegen-app-patterns.yaml` → `architectural_notes.cross_entity_access.interim_workaround` (hand-write service-layer composition in `dealbrain-integrations` for wave-1).
-- Clean-pipeline self-ref TS bug latent at `templates/entity/new/backend/database/schema.ejs.t:115,117` — open decision: fold parity fix into PR #361 (~4 lines) or file separate codegen-patterns issue.
-- Main checkout carries 37 dirty entries from an in-progress SDLC-skill migration (deleted `.claude/agents/**`, `.claude/primitives/**`, etc., plus modified `sdlc.yml` and `justfile`). Explicitly approved leaving in place this session.
+**Branch:** `main` (at `412bd2a` — 0.12.2 merged).
+**Pairs with:** swe-brain `.ai-docs/handoff.md` (thread #4) +
+`.ai-docs/handoff-swe-brain-integration-codegen-migration.md`. The next session
+**combines these two workstreams** (codegen-patterns = produce; swe-brain =
+consume) into one path forward.
 
-## Notes
+> Prior May-12 handoff (junction wave-1, PRs #359/#361/#58–#63) is fully
+> resolved and lives in git history — intentionally replaced, not lost.
 
-### Wave-1 codegen-patterns stack status
-- ✅ **#58** (junction-pattern-definition) — merged via PR #360 (`8e9cf22`).
-- 🟡 **#62** (relationship-verification) — PR #361 at `4452e62`. `test-all` ✅. MERGEABLE, BLOCKED on review approval. Review comment posted: https://github.com/pattern-stack/codegen-patterns/pull/361#issuecomment-4434634676
-- 🟡 **#59** (junction-hygen-templates) — PR #359 at `be75e4d` (post-rebase). CI running on rebased commit; was failing pre-rebase due to `ad0b27a`'s broken `JunctionPattern` (missing `columns` → `assertHasContribution` threw at registry load).
-- ⛔ **#60** (junction-association-codegen) — blocked on codegen-patterns#358.
-- ⛔ **#61** (junction-test-fixtures) — blocked transitively via #60.
-- 📌 **#63** (tracker-hygiene-close-stale) — closes wave when everything else lands. NOT yet started.
+## Where codegen-patterns is
 
-### Cross-cutting follow-ups filed this session
-- **codegen-patterns#357** — kill mechanism (A) (top-level `definitions/relationships/*.yaml`); replace with `expose_api: true` flag on Junction. Blocked on #58/#59/#60/#61 completing first. One external consumer in `sales-patterns-ts/` needs migration or EOL confirmation before deletion.
-- **codegen-patterns#358** — emit service-layer composition methods for per-entity `relationships:` block. Drives #60 unblock.
-- **dealbrain-integrations#64** — cross-repo tracking issue for #357.
+Released train (Track C/D integration codegen):
+- `0.12.0` (#421) — Track C/D: provider/adapter/surface integration codegen + surface packages. **Published.**
+- `0.12.1` (#423) — CLI **discoverability**: `entity new --help` documents the Track D post-step, `entity` summary surfaces a Track D hint when a providers dir exists, integration skill documents the invocation. **Published.**
+- `0.12.2` (#426) — consumer-CLI **fixes**: `surface:`/`context:` accepted **inside the `entity:` block**; entity discovery **excludes `definitions/providers/`** (was globbed + validated as entities); `entity new --dry-run` surfaces Zod detail. **MERGED to main (412bd2a), NOT yet published — only Doug can `just publish`.**
 
-### Architectural decisions landed this session (live in `architectural_notes.cross_entity_access` on the cgp-62 branch; merge to main with PR #361)
-- **Service-layer composition is the core API path** for cross-entity access; Drizzle `relations()` is opt-in extension metadata only — no `with: { ... }` joins in generated service code.
-- **Rationale**: ElectricSQL parity. Replication is table-shaped, so the client must compose locally; backend composes the same way for one composition pattern across both sides.
-- **Canonical shape**: `has_many` paginated `{cursor?, limit?}`; junction `.list()` returns `Array<{ entity, link }>`; junction associations mirror both parent services delegating to one junction service.
-- These cascade into #60 and into the future cleanup of mechanism (A) per codegen-patterns#357.
+⚠️ **Publish is pending.** swe-brain currently consumes 0.12.2 via a **local
+bun-link** to a codegen-patterns worktree, not npm. After `just publish`,
+swe-brain re-pins to `@pattern-stack/codegen@0.12.2` + `bun install` (un-links).
+Per memory `feedback_post_publish_smoke_gap`: repo-checkout smoke does NOT catch
+tarball/files-manifest bugs — verify the published 0.12.2 tarball functionally
+(`npm pack` + install + run), as was done for 0.12.1.
 
-### PR review summary on #361 (worth reading before merge)
-The implementer found a real TS7022/TS7024 bug in `clean-lite-ps/entity.ejs.t` while running the smoke (self-ref `belongs_to` emitted `() => accounts.id` which fails strict-mode TS) and fixed it in-scope. The fix is narrow and gated on `isSelfFk`. **The standard `clean` pipeline has the same latent bug** — `templates/entity/new/backend/database/schema.ejs.t:115,117` lacks the same `: AnyPgColumn` annotation. Verified during review. Open decision: fold the parity fix into #361 (recommended) or separate issue.
+## The decision: pursue B (Track D round-2 — emit the module assembly)
 
-### Worktrees on disk (cosmetic — leave or clean per preference)
-- `.claude/worktrees/cgp-59-junction-hygen-templates/` — on the rebased `doug/59-junction-hygen-templates`; can be used to continue #59 work or `git worktree remove` if working from main checkout.
-- 3 × `.claude/worktrees/bridge-cse_*` — remote-control teammate remnants. Safe to `git worktree remove --force` if cleaning up.
+Track D today emits the **read side only**: provider module + adapter scaffold
+(`changeSources` container) + per-surface aggregator/registry + `types.generated.ts`.
+It does **NOT** emit the **assembly**: the `INTEGRATION_SINK` binding, the
+`ExecuteIntegrationUseCase`/orchestrator wiring, and the per-entity/surface
+feature-module packaging. swe-brain's hand-authored `<x>_integration` module
+*had* that assembly — it was the inspiration; RFC-0001 captured the
+decomposition (ports/registry) but not the assembly. **That omission was a scope
+artifact, not a deliberate "no modules" call.**
 
-### Coordination lesson worth honoring next session
-When delegating `/sdlc:develop` via remote-control teammates outside this conversation, my agents have zero visibility into what those teammates are doing. This session produced a duplicate implementation of #58's surface (the broken `ad0b27a` on the #59 branch) because my #59 implementer didn't know the user's bridge-worktree #58 implementer was running in parallel. If you delegate that way, either tell the chat agent what's in flight or use `/sdlc:develop` from within the conversation. See `feedback_parallel-agent-coordination.md` in memory.
+**B = extend codegen so YAML generates the combinable per-adapter module incl.
+sink-binding + per-surface `ExecuteIntegrationUseCase` wiring.** "Module pattern"
+becomes the generated artifact, fully YAML-driven. The goal is BOTH the
+combinable per-adapter module AND maximal YAML-driving — they are not opposed.
+This is the faithful completion of "swe-brain inspires upstream."
+
+**Irreducible author-seam (unchanged by B):** the `IChangeSource` **fetch body**
+(vendor API logic) + any **non-generic write logic**. Everything around it
+(module, wiring, sink-binding over the generated repo's `integrationUpsert`,
+orchestrator, registry, typed views) is generatable.
+
+### B RFC — DRAFTED: `docs/rfcs/RFC-0002-integration-module-assembly-emission.md`
+
+Written this session, grounded in the real runtime + swe-brain's proven module.
+It extends RFC-0001 §2 to also emit, per (surface, provider, entity):
+- `<surface>/modules/<provider>/<entity>-integration.module.ts` (@generated assembly),
+- `<surface>/sinks/<entity>.sink.ts` (emit-once default sink over the generated repo),
+- `<surface>/<surface>-integration.module.ts` (@generated aggregator),
+- `<surface>/<surface>-integration.tokens.ts` (the `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` tokens).
+
+The reference shape is swe-brain's `transcript-integration.module.ts` (per-entity
+module binding `INTEGRATION_CHANGE_SOURCE` + `INTEGRATION_SINK`, local
+`ExecuteIntegrationUseCase` aliased under a unique token; substrate from the
+global `forRoot`). Author-seam stays: `IChangeSource.listChanges` fetch body +
+non-generic sink write logic.
+
+**Open questions in the RFC needing Doug's resolve before implementation (§3/§7):**
+1. **§3 — source-binding strategy.** Option A (bind from `adapter.changeSources['<entity>']`, faithful to swe-brain — *recommended*) vs Option B (registry + `sourceOverride` runner). The orchestrator (`execute-integration.use-case.ts`) is DI-bound to ONE source/sink per instance but accepts `sourceOverride` — that's the fork.
+2. Sink override mechanism (emit-once scaffold vs abstract base + subclass).
+3. Multi-provider #414 — proposed defer (Option A is one-provider-per-module).
+4. Token naming/casing.
+
+### Design items B MUST settle (don't let them drift again)
+
+1. **`surface:`/`context:` placement — RATIFY or revisit.** 0.12.2 moved both
+   *into* the `entity:` block (Doug's call: "ship #426 as-is, B ratifies"). This
+   created an **asymmetry**: `surface:`/`context:` now live in `entity:`, while
+   the *other* declarative blocks — `detection:`, `events:`, `emits:`,
+   `queries:` — all stay at **root**. B is the deliberate venue to either (a)
+   confirm `entity:`-block placement and document why surface/context differ from
+   the sibling blocks, or (b) define one consistent rule. Pick on purpose; do not
+   leave it as a hotfix default.
+2. **The `IChangeSource` contract is the authoring reference** for whatever B
+   emits. Verified on main
+   (`runtime/subsystems/integration/integration-change-source.protocol.ts`):
+   ```ts
+   interface IChangeSource<T> {
+     readonly label: string;
+     listChanges(subscription: IntegrationSubscriptionView, cursor: unknown | null): AsyncIterable<Change<T>>;
+   }
+   interface Change<T> { externalId; operation: 'created'|'updated'|'deleted'; record: T; cursor: unknown; source: ChangeSource; dedupKey?; providerChangedFields? }
+   ```
+   `listChanges` is **two args** (subscription first), returns an
+   **async-iterable of `Change<T>`** (not a `SourcedRecord[]` batch), and
+   requires a `label`. The swe-brain handoff §4a still describes it as
+   single-arg `listChanges(cursor)` — corrected there in a dated addendum; B's
+   generated bodies/stubs MUST match the real signature.
+3. **#414 — multi-provider registry.** The per-surface entity-source registry
+   can't represent the same entity from two providers (Google + Gong
+   transcripts) — entity-keyed, throws on collision. Single-provider is fine
+   today; B should decide whether assembly emission addresses or defers this.
+4. **Optional: typed `registry.get` accessor** (filed enhancement). L1
+   `registry.get(entityName: string)` is `string` by design; a generated typed
+   accessor off `<Surface>Entity` removes the call-site annotation burden.
+
+## Path: B-first — DECIDED (no A interim)
+
+Doug chose **B-first** ("do it right once") over the A interim. Rationale: the
+hand-rolled integration layer still runs in production (transcript fetch #24 is
+live on it), so nothing goes dark while B is built — there's no production gap to
+bridge, which was the only reason to do A. The migration branch
+`feat/integration-codegen-migration` stays a **proof-of-concept**; do NOT pour
+vendor-body porting into the current scaffold shape, because B reshapes what the
+adapter scaffold emits and you'd regenerate anyway. swe-brain migrates ONCE,
+against the final B shape.
+
+## Immediate next actions
+
+1. **Resolve RFC-0002's open questions** (§3 source-binding A/B, §7) with Doug,
+   then merge the RFC.
+2. **Publish 0.12.2** (`just publish`, Doug) → functionally verify the tarball →
+   swe-brain re-pins off the bun-link. (Independent of B; good hygiene.)
+3. **Implement B** per RFC-0002 sequencing E1–E4 (sink emitter → assembly module
+   → aggregator → snapshot tests), ship as 0.13.
+4. **swe-brain consumes (E5):** regen against 0.13, fill fetch bodies + sink
+   overrides, delete hand-rolled `src/modules/{email,meeting,transcript}_integration`
+   + `packages/ports/*` + `packages/surfaces/interaction`.
+
+## Pointers
+- This session's work: #423 (CLI help/skill), #426 (consumer-CLI fixes). The
+  `entity new` Track D post-step lives in `src/cli/commands/entity.ts`
+  (`EntityNewCommand.execute()`); adapter scaffold emitter in
+  `src/cli/shared/adapter-emission-generator.ts`.
+- Integration skill (auto-triggers under `runtime/subsystems/integration/`):
+  `.claude/skills/integration/` — `protocols-and-ports.md` has the "Driving
+  Track D codegen" section + the port contracts.

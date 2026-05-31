@@ -2,25 +2,25 @@
  * CRM L3 composing port (Track C · C6, #337).
  *
  * `CrmPort` is the single contract a CRM provider adapter implements. It
- * composes L1 strategies (auth + the entity-keyed change-source registry) and
+ * composes L1 strategies (auth + the per-entity change-source contributions) and
  * the L2 capability ports (fields / picklists / associations) plus the runtime
  * capability descriptor.
  *
  * **Entity-agnostic by design** — no specific entity name appears anywhere in
- * this type. Entity access goes through `sources.get<T>(entityName)` at runtime;
- * per-consumer typed views are codegen-emitted by Track D (D3/D4), not encoded
- * here (epic #328 locked decision #5 / ADR-036).
+ * this type. The adapter contributes `changeSources[entityName]`; the surface
+ * aggregator folds them into the registry consumers read at runtime (post-E0 —
+ * RFC-0002). Per-consumer typed views are codegen-emitted by Track D (D3/D4).
  *
- * The L1 types (`IAuthStrategy`, `IEntityChangeSourceRegistry`) are imported
- * across the package boundary from `@pattern-stack/codegen/subsystems` — the
- * first place L2-imports-L1 is exercised. This is a type-only import (erased at
- * runtime); see the package tsconfig for in-workspace resolution and the
- * codegen `exports` map for the published resolution.
+ * The L1 types (`IAuthStrategy`, `IChangeSource`) are imported across the
+ * package boundary from `@pattern-stack/codegen/subsystems` — the first place
+ * L2-imports-L1 is exercised. This is a type-only import (erased at runtime);
+ * see the package tsconfig for in-workspace resolution and the codegen
+ * `exports` map for the published resolution.
  */
 
 import type {
   IAuthStrategy,
-  IEntityChangeSourceRegistry,
+  IChangeSource,
 } from '@pattern-stack/codegen/subsystems';
 import type { IFieldDefinitionReader } from './field-definition-reader.port';
 import type { IPicklistReader } from './picklist-reader.port';
@@ -31,8 +31,9 @@ export interface CrmPort {
   /** L1 — auth strategy resolving credentials for this provider. */
   readonly auth: IAuthStrategy;
 
-  /** L1 — entity-keyed registry of change sources for this provider's CRM entities. */
-  readonly sources: IEntityChangeSourceRegistry;
+  /** L1 — per-entity change sources this adapter contributes, keyed by entity
+   *  name; the surface aggregator folds these into the entity-keyed registry. */
+  readonly changeSources: Record<string, IChangeSource<unknown>>;
 
   /** L2 — custom-field discovery. */
   readonly fields: IFieldDefinitionReader;

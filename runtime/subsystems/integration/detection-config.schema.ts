@@ -85,14 +85,69 @@ const EventIdCursorSchema = z.object({
   field: z.string().min(1),
 });
 
+/**
+ * Gmail `historyId` (RFC-0003 §3) — an opaque, atomic vendor token. The next
+ * watermark only exists at end-of-walk; there is no resumable mid-walk value.
+ * `field` is metadata for codegen/adapters (the response key the token lives on).
+ */
+const HistoryIdCursorSchema = z.object({
+  kind: z.literal('historyId'),
+  field: z.string().min(1),
+});
+
+/**
+ * Google Calendar `syncToken` (RFC-0003 §3) — an opaque, atomic sync token,
+ * same divisibility profile as `historyId`.
+ */
+const SyncTokenCursorSchema = z.object({
+  kind: z.literal('syncToken'),
+  field: z.string().min(1),
+});
+
 export const CursorStrategySchema = z.discriminatedUnion('kind', [
   SystemModstampCursorSchema,
   ReplayIdCursorSchema,
   TimestampCursorSchema,
   EventIdCursorSchema,
+  HistoryIdCursorSchema,
+  SyncTokenCursorSchema,
 ]);
 
 export type CursorStrategy = z.infer<typeof CursorStrategySchema>;
+
+// ============================================================================
+// Cursor divisibility (RFC-0003 §3)
+// ============================================================================
+
+/**
+ * Whether a cursor strategy is *divisible* — a property of the strategy, not
+ * the read primitive. Divisible cursors are sortable/monotonic watermarks whose
+ * value is meaningful AS OF any single record (HubSpot `systemModstamp`, a
+ * `timestamp` field, a Salesforce CDC `replayId`); the read primitive may
+ * checkpoint per-ref mid-walk, so a crash resumes from the last delivered ref.
+ *
+ * Atomic cursors are opaque vendor tokens (Gmail `historyId`, Calendar
+ * `syncToken`, a generic `eventId`) whose next value only exists at end-of-walk.
+ * The primitive must withhold per-ref cursors and emit the token only at a safe
+ * boundary, so an interrupted run never persists an unresumable mid-walk token
+ * (it resumes all-or-nothing from the prior token — see `IncrementalReadBase`).
+ *
+ * `eventId` is classified atomic conservatively: a generic opaque id is treated
+ * all-or-nothing unless a concrete strategy proves it monotonically resumable.
+ */
+export const CURSOR_DIVISIBILITY: Readonly<Record<CursorStrategy['kind'], boolean>> = {
+  systemModstamp: true,
+  timestamp: true,
+  replayId: true,
+  eventId: false,
+  historyId: false,
+  syncToken: false,
+};
+
+/** Predicate form of {@link CURSOR_DIVISIBILITY}. */
+export function isDivisibleCursor(kind: CursorStrategy['kind']): boolean {
+  return CURSOR_DIVISIBILITY[kind];
+}
 
 // ============================================================================
 // Mode-specific blocks

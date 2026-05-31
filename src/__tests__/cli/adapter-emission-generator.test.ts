@@ -78,12 +78,18 @@ describe('generateAdapterScaffold', () => {
     expect(out).toContain('...NO_CRM_CAPABILITIES');
   });
 
-  it('injects L1 strategy + client + entity sources registry', () => {
+  it('injects L1 strategy + client (no registry back-edge)', () => {
     expect(out).toContain('@Inject(HUBSPOT_AUTH_STRATEGY) readonly auth: IAuthStrategy');
     expect(out).toContain('@Inject(HUBSPOT_CLIENT) private readonly client: HubspotClient');
-    expect(out).toContain(
-      '@Inject(CRM_ENTITY_SOURCES) readonly sources: IEntityChangeSourceRegistry',
-    );
+    // E0: the vestigial registry back-edge is gone — the adapter no longer
+    // injects CRM_ENTITY_SOURCES / IEntityChangeSourceRegistry, nor imports
+    // the registry type or the *-adapters.tokens module. (The descriptive
+    // changeSources doc comment still names the registry it feeds — that prose
+    // is accurate and is not the back-edge.)
+    expect(out).not.toContain('@Inject(CRM_ENTITY_SOURCES)');
+    expect(out).not.toContain('readonly sources: IEntityChangeSourceRegistry');
+    expect(out).not.toContain("from '../../crm-adapters.tokens'");
+    expect(out).not.toMatch(/import[^;]*IEntityChangeSourceRegistry/);
   });
 
   it('stubs every L2 method with a not-implemented throw', () => {
@@ -149,18 +155,87 @@ describe('emitAdapters — orchestration', () => {
     expect(existsSync(join(outRoot, 'sms'))).toBe(false);
   });
 
-  it('an interaction-surface scaffold (no L2 ports) emits cleanly', () => {
+  it('an interaction-surface scaffold (no L2 ports) emits the read primitive (RFC-0003 R3)', () => {
     const calendar = generateAdapterScaffold(loadDef('google.yaml'), 'calendar', ['meeting']);
     expect(calendar).toContain('export class GoogleCalendarAdapter implements CalendarPort');
     expect(calendar).toContain("from '@pattern-stack/codegen-calendar'");
     expect(calendar).toContain("entities: ['meeting']");
-    // No L2 readers/stubs/flags on an incremental-read surface.
+    // No L2 readers/flags on an incremental-read surface.
     expect(calendar).not.toContain('IFieldDefinitionReader');
-    expect(calendar).not.toContain('not implemented');
     expect(calendar).not.toContain('fieldDefinitions: true');
-    // still injects L1 + sources + exposes changeSources
-    expect(calendar).toContain('readonly sources: IEntityChangeSourceRegistry');
-    expect(calendar).toContain('readonly changeSources: Record<string, IChangeSource<unknown>>');
+    // no registry back-edge (E0)
+    expect(calendar).not.toContain('readonly sources: IEntityChangeSourceRegistry');
+    expect(calendar).not.toMatch(/import[^;]*IEntityChangeSourceRegistry/);
+
+    // RFC-0003 R3: per-entity IncrementalReadBase subclass + changeSources registration.
+    expect(calendar).toContain(
+      'import { IncrementalReadBase } from \'@pattern-stack/codegen/subsystems\'',
+    );
+    expect(calendar).toContain('  CanonicalMeeting,'); // fork #1: T from the surface package
+    expect(calendar).toContain(
+      'export class GoogleMeetingIncrementalRead extends IncrementalReadBase<CanonicalMeeting, ResolvedFilter[]>',
+    );
+    expect(calendar).toContain("readonly label = 'google-calendar-meeting';");
+    expect(calendar).toContain('protected override readonly filterPushdown = false;');
+    // fork #2: static detection-filter const + filterFor returning it
+    expect(calendar).toContain('const MEETING_DETECTION_FILTERS: ResolvedFilter[] = [];');
+    expect(calendar).toContain('return MEETING_DETECTION_FILTERS;');
+    // 2-arg construction preserved; assigned in the constructor BODY (not a field init)
+    expect(calendar).toContain('this.changeSources = {');
+    expect(calendar).toContain('meeting: new GoogleMeetingIncrementalRead(this.auth, this.client),');
+    expect(calendar).toContain('readonly changeSources: Record<string, IChangeSource<unknown>>;');
+    // the three vendor methods are stubbed for the author to fill
+    expect(calendar).toContain('not implemented: GoogleMeetingIncrementalRead.enumerate');
+    expect(calendar).toContain('not implemented: GoogleMeetingIncrementalRead.hydrate');
+    expect(calendar).toContain('not implemented: GoogleMeetingIncrementalRead.toCanonical');
+    // no detection ⇒ no cursorDivisible override (defaults to divisible)
+    expect(calendar).not.toContain('cursorDivisible');
+  });
+
+  it('threads detection → static filter const + atomic cursorDivisible (RFC-0003 R3 / R2)', () => {
+    // Synthetic detection for google/email: Gmail historyId (atomic) + one filter.
+    const detection = new Map([
+      [
+        'email',
+        {
+          mode: 'poll' as const,
+          poll: { cursor: { kind: 'historyId' as const, field: 'historyId' } },
+          mapping: [{ source: 'id', target: 'external_id' }],
+          filters: [{ field: 'labelIds', op: 'in' as const, value: ['INBOX'] }],
+        },
+      ],
+    ]);
+    const mail = generateAdapterScaffold(loadDef('google.yaml'), 'mail', ['email'], detection);
+    // fork #2: filters emitted verbatim into the static const
+    expect(mail).toContain("{ field: \"labelIds\", op: \"in\", value: [\"INBOX\"] }");
+    expect(mail).toContain('const EMAIL_DETECTION_FILTERS: ResolvedFilter[] = [');
+    // R2 wiring: historyId is atomic ⇒ cursorDivisible override emitted
+    expect(mail).toContain('protected override readonly cursorDivisible = false;');
+    expect(mail).toContain('historyId');
+  });
+
+  it('a divisible cursor (timestamp) emits NO cursorDivisible override', () => {
+    const detection = new Map([
+      [
+        'transcript',
+        {
+          mode: 'poll' as const,
+          poll: { cursor: { kind: 'timestamp' as const, field: 'modifiedAt' } },
+          mapping: [{ source: 'id', target: 'external_id' }],
+          filters: [],
+        },
+      ],
+    ]);
+    const out = generateAdapterScaffold(loadDef('google.yaml'), 'transcript', ['transcript'], detection);
+    expect(out).toContain('export class GoogleTranscriptIncrementalRead');
+    expect(out).not.toContain('cursorDivisible'); // timestamp is divisible (the base default)
+  });
+
+  it('a non-read-primitive surface (crm) keeps the empty author-filled changeSources seam', () => {
+    const crm = generateAdapterScaffold(loadDef('hubspot.yaml'), 'crm', ['account', 'deal']);
+    expect(crm).toContain('readonly changeSources: Record<string, IChangeSource<unknown>> = {};');
+    expect(crm).not.toContain('IncrementalReadBase');
+    expect(crm).not.toContain('IncrementalRead<');
   });
 
   it('barrel + aggregator + tokens reference the adapter and registry tokens', () => {
@@ -289,5 +364,92 @@ describe('D4 — per-consumer typed view (§5)', () => {
   it('quotes kebab-slug keys in the validity map', () => {
     const view = generateTypedView('crm', ['hubspot-crm'], ['deal']);
     expect(view).toContain("'hubspot-crm': CrmEntity;");
+  });
+});
+
+describe('E2 — per-entity assembly + sink + integration tokens', () => {
+  // Mix Integrated + non-Integrated surface entities to cover both the emit
+  // path and the recorded-skip path. Provide backend_src + an `@modules` alias.
+  const ASSEMBLY_ENTITIES = [
+    {
+      entity: { name: 'meeting', surface: 'calendar', pattern: 'Integrated', plural: 'meetings' },
+      fields: { title: { type: 'string' }, starts_at: { type: 'datetime', nullable: true } },
+    },
+    // calendar entity WITHOUT pattern: Integrated → recorded skip, not a crash.
+    { entity: { name: 'reminder', surface: 'calendar', plural: 'reminders' } },
+  ];
+
+  function runAssembly(outRoot: string) {
+    return emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: ASSEMBLY_ENTITIES,
+      outputRoot: outRoot,
+      backendSrcAbs: '/proj/src',
+      aliases: { '@modules': '/proj/src/modules' },
+      dryRun: true,
+    });
+  }
+
+  it('emits an assembly module + sink + tokens for an Integrated entity', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'cgp-e2-'));
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [ASSEMBLY_ENTITIES[0]],
+      outputRoot: outRoot,
+      backendSrcAbs: '/proj/src',
+      aliases: { '@modules': '/proj/src/modules' },
+    });
+
+    const assemblyPath = join(outRoot, 'calendar/modules/google/meeting-integration.module.ts');
+    expect(existsSync(assemblyPath)).toBe(true);
+    expect(res.assembliesWritten).toContain(assemblyPath);
+    const mod = readFileSync(assemblyPath, 'utf-8');
+    expect(mod).toContain('export class MeetingIntegrationModule__Google {}');
+    expect(mod).toContain(
+      "useFactory: (adapter: GoogleCalendarAdapter) => adapter.changeSources['meeting'],",
+    );
+    expect(mod).toContain(
+      "import { MeetingRepository } from '@modules/meetings/meeting.repository';",
+    );
+    expect(mod).toContain(
+      "import { MeetingsModule } from '@modules/meetings/meetings.module';",
+    );
+
+    // Sink (emit-once) + tokens file.
+    const sinkPath = join(outRoot, 'calendar/sinks/meeting.sink.ts');
+    expect(existsSync(sinkPath)).toBe(true);
+    expect(res.scaffoldsWritten).toContain(sinkPath);
+    const sink = readFileSync(sinkPath, 'utf-8');
+    expect(sink).toContain('export class MeetingSink');
+    expect(sink).toContain('title: record.title,');
+
+    const tokensPath = join(outRoot, 'calendar/calendar-integration.tokens.ts');
+    expect(existsSync(tokensPath)).toBe(true);
+    expect(res.tokensWritten).toContain(tokensPath);
+    expect(readFileSync(tokensPath, 'utf-8')).toContain(
+      "export const MEETING_INTEGRATION_USE_CASE__GOOGLE = Symbol.for('@app/integrations/calendar.meeting-integration-use-case.google');",
+    );
+  });
+
+  it('records a non-Integrated surface entity as a skip (read side still emits)', () => {
+    const res = runAssembly('/unused');
+    expect(res.skippedAssemblies).toHaveLength(1);
+    expect(res.skippedAssemblies[0]).toMatchObject({ surface: 'calendar', entity: 'reminder' });
+    expect(res.skippedAssemblies[0].reason).toContain("not 'pattern: Integrated'");
+    // The Integrated entity still produced an assembly + token in the same run.
+    expect(res.assembliesWritten.some((p) => p.includes('meeting-integration.module.ts'))).toBe(true);
+  });
+
+  it('skips the assembly loop entirely when no backend_src root is supplied', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'cgp-e2-'));
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [ASSEMBLY_ENTITIES[0]],
+      outputRoot: outRoot,
+      // no backendSrcAbs
+    });
+    expect(res.assembliesWritten).toEqual([]);
+    expect(res.tokensWritten).toEqual([]);
+    expect(existsSync(join(outRoot, 'calendar/modules'))).toBe(false);
   });
 });

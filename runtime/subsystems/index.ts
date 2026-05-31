@@ -63,7 +63,41 @@ export {
 export type {
   IEntityChangeSourceRegistry,
   IChangeSource,
+  IntegrationSubscriptionView,
 } from './integration';
+
+// Integration — IncrementalRead read primitive (RFC-0003 R1). Re-exported here
+// so surface packages can author enumerate/hydrate adapters across the package
+// boundary via @pattern-stack/codegen/subsystems. ResolvedFilter rides along:
+// the R3 read-primitive scaffold imports it for its static `detection.filters`
+// const and the `F = ResolvedFilter[]` type parameter.
+export {
+  CURSOR_DIVISIBILITY,
+  IncrementalReadBase,
+  isDivisibleCursor,
+  mapConcurrent,
+} from './integration';
+export type {
+  IncrementalRead,
+  RandomRead,
+  ReadMode,
+  ReadRequest,
+  Ref,
+  ResolvedFilter,
+  SourcedRecord,
+} from './integration';
+
+// Integration — assembly emission (RFC-0002). The generated per-entity sink
+// imports `IIntegrationSink`; the generated per-entity assembly module imports
+// `ExecuteIntegrationUseCase` + `INTEGRATION_CHANGE_SOURCE` + `INTEGRATION_SINK`
+// — all from `@pattern-stack/codegen/subsystems`. Forwarded here so the emitted
+// `src/integrations/**` tree resolves them across the package boundary.
+export {
+  ExecuteIntegrationUseCase,
+  INTEGRATION_CHANGE_SOURCE,
+  INTEGRATION_SINK,
+} from './integration';
+export type { IIntegrationSink } from './integration';
 
 // Auth
 export {

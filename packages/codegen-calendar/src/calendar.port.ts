@@ -10,9 +10,10 @@
  *
  * **Entity-agnostic by design** — no entity name appears in this type (the port
  * is named for the *context*, `calendar`, not the entity `meeting`; ADR-036
- * §11.3). Entity access goes through `sources.get<CanonicalMeeting>('meeting')`
- * at runtime; per-consumer typed views are codegen-emitted (Track D), not
- * encoded here.
+ * §11.3). The adapter contributes `changeSources['meeting']`; the surface
+ * aggregator folds every provider's `changeSources` into the
+ * `<SURFACE>_ENTITY_SOURCES` registry that consumers read at runtime (post-E0:
+ * the adapter holds the contributions, not the registry — RFC-0002).
  *
  * The L1 types are imported across the package boundary from
  * `@pattern-stack/codegen/subsystems` (the C6/C7 seam) — type-only, erased at
@@ -21,7 +22,7 @@
 
 import type {
   IAuthStrategy,
-  IEntityChangeSourceRegistry,
+  IChangeSource,
 } from '@pattern-stack/codegen/subsystems';
 import type { CalendarCapabilities } from './capabilities';
 
@@ -29,8 +30,9 @@ export interface CalendarPort {
   /** L1 — auth strategy resolving credentials for this provider. */
   readonly auth: IAuthStrategy;
 
-  /** L1 — entity-keyed registry of change sources for this provider's calendar entities. */
-  readonly sources: IEntityChangeSourceRegistry;
+  /** L1 — per-entity change sources this adapter contributes, keyed by entity
+   *  name; the surface aggregator folds these into the entity-keyed registry. */
+  readonly changeSources: Record<string, IChangeSource<unknown>>;
 
   /** L2 — runtime capability descriptor (entity coverage). */
   readonly capabilities: CalendarCapabilities;

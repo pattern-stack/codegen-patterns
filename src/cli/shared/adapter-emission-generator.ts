@@ -43,7 +43,21 @@ import {
 import { dirname, join } from "node:path";
 import { parseImportRef, type ProviderDefinition } from "../../schema/provider-definition.schema";
 import type { LoadedProvider } from "../../parser/validate-providers";
+import { isDivisibleCursor } from "../../../runtime/subsystems/integration";
+import type {
+  DetectionConfig,
+  ResolvedFilter,
+} from "../../../runtime/subsystems/integration";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
+import { generateDefaultSink, type SinkEmitInput } from "./sink-emission-generator";
+import {
+  generateAssemblyModule,
+  generateIntegrationAggregator,
+  generateIntegrationTokens,
+  resolveEntityModuleImports,
+  type IntegrationAssemblyEntry,
+  type IntegrationTokenEntry,
+} from "./assembly-emission-generator";
 
 // ============================================================================
 // Surface registry — which surfaces have an emittable <Surface>Port package
@@ -73,6 +87,15 @@ interface SurfaceSpec {
   noCapsConst: string;
   /** L2 ports the adapter implements (stubbed). */
   l2Ports: L2PortSpec[];
+  /**
+   * Interaction surfaces (mail/calendar/transcript) whose reads go through the
+   * `IncrementalRead` enumerate/hydrate primitive (RFC-0003). When `true`, the
+   * scaffold emits a per-entity `IncrementalReadBase<Canonical<Entity>,
+   * ResolvedFilter[]>` subclass and registers it in `changeSources`. When falsy
+   * (e.g. `crm` — field-reader model, no single canonical `T`), the scaffold
+   * keeps the empty author-filled `changeSources` seam.
+   */
+  readPrimitive?: boolean;
 }
 
 /**
@@ -119,6 +142,7 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
     capabilitiesType: "CalendarCapabilities",
     noCapsConst: "NO_CALENDAR_CAPABILITIES",
     l2Ports: [],
+    readPrimitive: true,
   },
   mail: {
     packageName: "@pattern-stack/codegen-mail",
@@ -126,6 +150,7 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
     capabilitiesType: "MailCapabilities",
     noCapsConst: "NO_MAIL_CAPABILITIES",
     l2Ports: [],
+    readPrimitive: true,
   },
   transcript: {
     packageName: "@pattern-stack/codegen-transcript",
@@ -133,6 +158,7 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
     capabilitiesType: "TranscriptCapabilities",
     noCapsConst: "NO_TRANSCRIPT_CAPABILITIES",
     l2Ports: [],
+    readPrimitive: true,
   },
 };
 
@@ -219,15 +245,143 @@ function names(providerSlug: string, surface: string): Names {
 // Pure emitters
 // ============================================================================
 
+/** PascalCase an entity name, splitting on `-`/`_` (`calendar_event` → `CalendarEvent`). */
+function entityPascalCase(name: string): string {
+  return name
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join("");
+}
+
+/** CONSTANT_CASE an entity name (`calendar-event` → `CALENDAR_EVENT`). */
+function entityConstCase(name: string): string {
+  return name.replace(/-/g, "_").toUpperCase();
+}
+
+/** Emit a `ResolvedFilter[]` TS literal (one line per clause, or `[]`). */
+function serializeFilterArray(filters: ResolvedFilter[]): string {
+  if (filters.length === 0) return "[]";
+  const items = filters.map(
+    (f) =>
+      `  { field: ${JSON.stringify(f.field)}, op: ${JSON.stringify(f.op)}, value: ${JSON.stringify(f.value)} },`,
+  );
+  return `[\n${items.join("\n")}\n]`;
+}
+
+interface ReadPrimitiveEmission {
+  /** Canonical record types to import from the surface package. */
+  canonicalTypes: string[];
+  /** Module-level filter consts + `IncrementalReadBase` subclasses. */
+  preamble: string;
+  /** `changeSources` object-literal entries (one per entity). */
+  changeSourceEntries: string[];
+}
+
+/**
+ * Build the read-side emission for an interaction surface (RFC-0003 R3): one
+ * `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass per entity
+ * (fork #1 typing), a static `detection.filters` const returned by `filterFor`
+ * (fork #2 threading), and `cursorDivisible = false` when the entity's cursor
+ * strategy is atomic (R2 wiring). The author fills `enumerate`/`hydrate`/
+ * `toCanonical`; the 2-arg `(auth, client)` construction is preserved.
+ */
+function buildReadPrimitiveEmission(
+  providerSlug: string,
+  providerPascal: string,
+  surface: string,
+  entities: string[],
+  entityDetection: Map<string, DetectionConfig> | undefined,
+  clientExportName: string,
+): ReadPrimitiveEmission {
+  const canonicalTypes: string[] = [];
+  const blocks: string[] = [];
+  const entries: string[] = [];
+
+  for (const entity of entities) {
+    const pascal = entityPascalCase(entity);
+    const canonical = `Canonical${pascal}`;
+    const className = `${providerPascal}${pascal}IncrementalRead`;
+    const constName = `${entityConstCase(entity)}_DETECTION_FILTERS`;
+    canonicalTypes.push(canonical);
+
+    const det = entityDetection?.get(entity);
+    const filters = det?.filters ?? [];
+    const cursorKind = det && det.mode === "poll" ? det.poll.cursor.kind : undefined;
+    const atomic = cursorKind !== undefined && !isDivisibleCursor(cursorKind);
+    const cursorOverride = atomic
+      ? `
+  // \`${cursorKind}\` is an ATOMIC cursor (RFC-0003 §3): its next value only exists
+  // at end-of-walk, so per-ref cursors are withheld and only the final record
+  // carries the token — a mid-walk crash never persists an unresumable value.
+  protected override readonly cursorDivisible = false;`
+      : "";
+
+    blocks.push(`/**
+ * \`detection.filters\` for \`${entity}\`, emitted from YAML as a static
+ * \`ResolvedFilter[]\` (RFC-0003 §4 fork #2); \`filterFor()\` returns it.
+ */
+const ${constName}: ResolvedFilter[] = ${serializeFilterArray(filters)};
+
+// Emit-once read primitive (author-owned). Fill the three vendor methods below.
+export class ${className} extends IncrementalReadBase<${canonical}, ResolvedFilter[]> {
+  readonly label = '${providerSlug}-${surface}-${entity}';
+  // Flip to \`true\` if your \`enumerate\` pushes the request filter to the vendor
+  // (e.g. Gmail \`q=\`); leave \`false\` to filter post-hydrate via \`matchesRecord\`.
+  protected override readonly filterPushdown = false;${cursorOverride}
+
+  constructor(
+    private readonly auth: IAuthStrategy,
+    private readonly client: ${clientExportName},
+  ) {
+    super();
+  }
+
+  /** TODO: walk the vendor list endpoint → pages of \`Ref\` (id + cursor + meta). */
+  protected async *enumerate(
+    _mode: ReadMode,
+    _filter?: ResolvedFilter[],
+    _pageSize?: number,
+  ): AsyncIterable<Ref[]> {
+    throw new Error('not implemented: ${className}.enumerate');
+  }
+
+  /** TODO: batched fetch-by-id → \`Map<id, raw>\` (\`mapConcurrent\`, or a vendor /batch). */
+  protected async hydrate(_ids: string[]): Promise<Map<string, unknown>> {
+    throw new Error('not implemented: ${className}.hydrate');
+  }
+
+  /** TODO: vendor payload → \`${canonical}\` (return \`null\` to drop). */
+  protected toCanonical(_raw: unknown): ${canonical} | null {
+    throw new Error('not implemented: ${className}.toCanonical');
+  }
+
+  protected override filterFor(
+    _subscription: IntegrationSubscriptionView,
+  ): ResolvedFilter[] {
+    return ${constName};
+  }
+}`);
+    entries.push(`      ${entity}: new ${className}(this.auth, this.client),`);
+  }
+
+  return { canonicalTypes, preamble: blocks.join("\n\n"), changeSourceEntries: entries };
+}
+
 /**
  * The emit-once adapter scaffold. Implements the surface port, injects L1
- * (auth strategy + client) and the entity sources registry, declares
- * capabilities (entities from `surface:`), and stubs the L2 port methods.
+ * (auth strategy + client), declares capabilities (entities from `surface:`),
+ * and stubs the L2 port methods. For interaction surfaces (`readPrimitive`),
+ * emits per-entity `IncrementalReadBase` subclasses + `changeSources`
+ * registration (RFC-0003 R3); `entityDetection` supplies each entity's parsed
+ * `DetectionConfig` (resolved for this provider) for the filter const + cursor
+ * divisibility.
  */
 export function generateAdapterScaffold(
   def: ProviderDefinition,
   surface: string,
   entities: string[],
+  entityDetection?: Map<string, DetectionConfig>,
 ): string {
   const spec = SURFACE_REGISTRY[surface];
   if (!spec) throw new Error(`no surface package for '${surface}'`);
@@ -238,15 +392,72 @@ export function generateAdapterScaffold(
     ? `[${entities.map((e) => `'${e}'`).join(", ")}]`
     : "[]";
 
+  // RFC-0003 R3: interaction surfaces emit per-entity IncrementalReadBase
+  // subclasses + changeSources registration; other surfaces keep the empty seam.
+  const readPrimitive = !!spec.readPrimitive && entities.length > 0;
+  const rp = readPrimitive
+    ? buildReadPrimitiveEmission(
+        def.slug,
+        n.providerPascal,
+        surface,
+        entities,
+        entityDetection,
+        client.exportName,
+      )
+    : null;
+
   // Surface-package type imports: the port, each L2 reader type (none for
-  // incremental-read interaction surfaces), then the capabilities type.
+  // incremental-read interaction surfaces), the capabilities type, then (for
+  // read-primitive surfaces) each entity's canonical record type.
   const surfaceTypeImports = [
     spec.portType,
     ...spec.l2Ports.map((p) => p.type),
     spec.capabilitiesType,
+    ...(rp ? rp.canonicalTypes : []),
   ]
     .map((t) => `  ${t},`)
     .join("\n");
+
+  // Subsystems imports: IncrementalReadBase is a value import (read-primitive
+  // only); the rest are types. ReadMode/Ref/ResolvedFilter/
+  // IntegrationSubscriptionView are only needed when subclasses are emitted.
+  const subsystemValueImport = rp
+    ? `import { IncrementalReadBase } from '@pattern-stack/codegen/subsystems';\n`
+    : "";
+  const subsystemTypeImports = [
+    "IAuthStrategy",
+    "IChangeSource",
+    ...(rp
+      ? ["IntegrationSubscriptionView", "ReadMode", "Ref", "ResolvedFilter"]
+      : []),
+  ]
+    .map((t) => `  ${t},`)
+    .join("\n");
+
+  // Read-primitive: changeSources is assigned in the constructor BODY (not a
+  // field initializer) — under useDefineForClassFields, field initializers run
+  // before constructor parameter-property assignment, so `this.auth`/`this.client`
+  // would be undefined at field-init time.
+  const changeSourcesAssign = rp
+    ? `\n    this.changeSources = {\n${rp.changeSourceEntries.join("\n")}\n    };\n  `
+    : "";
+  const changeSourcesDecl = rp
+    ? `  /**
+   * Per-entity change sources contributed to the ${surface} registry, keyed by
+   * entity name. The surface aggregator folds these into the
+   * \`IEntityChangeSourceRegistry\` bound under \`${n.entitySourcesToken}\`.
+   * Emit-once: edit the \`IncrementalReadBase\` subclasses above, not this map.
+   */
+  readonly changeSources: Record<string, IChangeSource<unknown>>;`
+    : `  /**
+   * Per-entity change sources this adapter contributes to the ${surface}
+   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
+   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
+   * bound under \`${n.entitySourcesToken}\`. Author-owned — populate one entry
+   * per entity in \`capabilities.entities\`.
+   */
+  readonly changeSources: Record<string, IChangeSource<unknown>> = {};`;
+  const preambleSection = rp ? `\n${rp.preamble}\n` : "";
 
   // Capabilities literal body: the empty-caps spread, a `true` flag per L2 port
   // (none for interaction surfaces), then the surface-derived entities.
@@ -279,15 +490,12 @@ import type {
 ${surfaceTypeImports}
 } from '${spec.packageName}';
 import { ${spec.noCapsConst} } from '${spec.packageName}';
-import type {
-  IAuthStrategy,
-  IChangeSource,
-  IEntityChangeSourceRegistry,
+${subsystemValueImport}import type {
+${subsystemTypeImports}
 } from '@pattern-stack/codegen/subsystems';
 import type { ${client.exportName} } from '${client.path}';
 import { ${n.strategyToken}, ${n.clientToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';
-import { ${n.entitySourcesToken} } from '../../${surface}-adapters.tokens';
-
+${preambleSection}
 @Injectable()
 export class ${n.adapterClass} implements ${spec.portType} {
   /** Declared capabilities. \`entities\` derives from \`surface: ${surface}\` entity YAML. */
@@ -298,17 +506,9 @@ ${capabilityBody}
   constructor(
     @Inject(${n.strategyToken}) readonly auth: IAuthStrategy,
     @Inject(${n.clientToken}) private readonly client: ${client.exportName},
-    @Inject(${n.entitySourcesToken}) readonly sources: IEntityChangeSourceRegistry,
-  ) {}
+  ) {${changeSourcesAssign}}
 ${l2Section}
-  /**
-   * Per-entity change sources this adapter contributes to the ${surface}
-   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
-   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
-   * bound under \`${n.entitySourcesToken}\`. Author-owned — populate one entry
-   * per entity in \`capabilities.entities\`.
-   */
-  readonly changeSources: Record<string, IChangeSource<unknown>> = {};
+${changeSourcesDecl}
 
   // surface-only methods (optional on ${spec.portType}): add here
 }
@@ -548,25 +748,75 @@ function jsKey(key: string): string {
 // Orchestration
 // ============================================================================
 
+/**
+ * The slice of a parsed entity definition the adapter + assembly + sink
+ * emission needs. The CLI passes the full loaded `entityDefs` (which structurally
+ * satisfy this) so no extra projection is required at the call site.
+ *
+ * - `entity.name` / `entity.surface` drive capabilities.entities (RFC-0001).
+ * - `entity.pattern` gates assembly+sink emission (`Integrated` only, RFC-0002 §4).
+ * - `entity.plural` / `entity.context` drive the entity repo/module import paths.
+ * - `fields` → sink copy-through scalars; `relationships` (belongs_to) → FK keys.
+ */
+export interface EmitAdaptersEntity {
+  entity: {
+    name: string;
+    surface?: string;
+    pattern?: string;
+    patterns?: string[];
+    plural?: string;
+    context?: string;
+    /** Provider-keyed detection config (ADR-033). Drives the emitted read
+     *  primitive's static filter const + cursor divisibility (RFC-0003 R3). */
+    detection?: Record<string, DetectionConfig>;
+  };
+  fields?: Record<string, { type?: string; nullable?: boolean }>;
+  relationships?: Record<
+    string,
+    { type?: string; target?: string; foreign_key?: string; nullable?: boolean }
+  >;
+}
+
 export interface EmitAdaptersOptions {
   providers: LoadedProvider[];
-  /** Entity definitions carrying `surface:` (for capabilities.entities). */
-  entities: Array<{ entity: { name: string }; surface?: string }>;
+  /** Entity definitions carrying `surface:` (for capabilities.entities + the
+   *  per-entity assembly/sink emission). */
+  entities: EmitAdaptersEntity[];
   /** Output root — `<backend_src>/integrations`. */
   outputRoot: string;
+  /** Absolute `<backend_src>` root on disk — needed to resolve the entity
+   *  repo/module import specifiers for the assembly. When omitted, the assembly
+   *  loop is skipped (back-compat for callers that only want the read side, e.g.
+   *  a dry plan with no consumer tree). */
+  backendSrcAbs?: string;
+  /** tsconfig path aliases (aliasKey → absolute target dir) for the entity
+   *  repo/module imports. Empty/absent ⇒ relative-path imports. */
+  aliases?: Record<string, string>;
   /** When true, compute the plan but write nothing. */
   dryRun?: boolean;
 }
 
 export interface EmitAdaptersResult {
-  /** @generated files written (modules, barrels, tokens, aggregators). */
+  /** @generated files written (modules, barrels, tokens, aggregators, assemblies). */
   written: string[];
-  /** New scaffolds written this run. */
+  /** New scaffolds written this run (adapter scaffolds + sink scaffolds). */
   scaffoldsWritten: string[];
   /** Existing scaffolds skipped (author-owned). */
   scaffoldsSkipped: string[];
   /** (provider, surface) pairs skipped because the surface has no port package. */
   skippedSurfaces: Array<{ provider: string; surface: string; reason: string }>;
+  /** Per-entity assembly modules written this run (RFC-0002 §2, @generated). */
+  assembliesWritten: string[];
+  /** Surface integration tokens files written this run (RFC-0002 §2, @generated). */
+  tokensWritten: string[];
+  /** Surface integration aggregator modules written this run — one
+   *  `<surface>-integration.module.ts` per surface with ≥1 assembly (RFC-0002
+   *  §1, E3, @generated). The AppModule entry point for the surface. */
+  integrationAggregatorsWritten: string[];
+  /** `surface:` entities skipped for assembly/sink because they are not
+   *  `pattern: Integrated` (the only family with the projection/upsert path).
+   *  Recorded, not crashed — the read side still emits for them. */
+  skippedAssemblies: Array<{ surface: string; entity: string; reason: string }>;
 }
 
 /**
@@ -580,8 +830,14 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     scaffoldsWritten: [],
     scaffoldsSkipped: [],
     skippedSurfaces: [],
+    assembliesWritten: [],
+    tokensWritten: [],
+    integrationAggregatorsWritten: [],
+    skippedAssemblies: [],
   };
   const entitiesBySurface = collectEntitiesBySurface(opts.entities);
+  // Index full entity definitions by name for the assembly/sink emission.
+  const entityByName = new Map(opts.entities.map((e) => [e.entity.name, e]));
 
   // surface → provider slugs that serve it AND have an emittable port.
   const bySurface = new Map<string, string[]>();
@@ -618,10 +874,19 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
       if (existsSync(scaffoldPath)) {
         result.scaffoldsSkipped.push(scaffoldPath);
       } else {
+        // Resolve each entity's DetectionConfig for THIS provider (RFC-0003 R3):
+        // detection is provider-keyed on the entity, so index by the slug.
+        const surfaceEntityNames = entitiesBySurface.get(surface) ?? [];
+        const entityDetection = new Map<string, DetectionConfig>();
+        for (const name of surfaceEntityNames) {
+          const det = entityByName.get(name)?.entity.detection?.[slug];
+          if (det) entityDetection.set(name, det);
+        }
         const content = generateAdapterScaffold(
           def,
           surface,
-          entitiesBySurface.get(surface) ?? [],
+          surfaceEntityNames,
+          entityDetection,
         );
         if (!opts.dryRun) writeFile(scaffoldPath, content);
         result.scaffoldsWritten.push(scaffoldPath);
@@ -647,9 +912,206 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
       if (!opts.dryRun) writeIfChanged(path, content);
       result.written.push(path);
     }
+
+    // ------------------------------------------------------------------
+    // RFC-0002 §2/§4 (E2) — per-entity assembly module + sink scaffold +
+    // surface integration tokens.
+    //
+    // Skipped entirely when no `<backend_src>` root is supplied (the read-side
+    // emitters are path-agnostic, but the assembly needs to resolve the entity
+    // repo/module import specifiers). Per (surface, provider, entity-on-surface
+    // with `pattern: Integrated`): emit the sink (emit-once) + assembly module
+    // (@generated), collect the (entity, provider) token, then write the surface
+    // tokens file once. A `surface:` entity that is NOT `pattern: Integrated` is
+    // recorded in `skippedAssemblies` (read side still emitted) — never crashes.
+    // ------------------------------------------------------------------
+    if (opts.backendSrcAbs) {
+      const aliases = opts.aliases ?? {};
+      const surfaceEntities = entitiesBySurface.get(surface) ?? [];
+      const tokenEntries: IntegrationTokenEntry[] = [];
+      const assemblyEntries: IntegrationAssemblyEntry[] = [];
+      const sinksDir = join(surfaceDir, "sinks");
+      const modulesDir = join(surfaceDir, "modules");
+
+      for (const entityName of surfaceEntities) {
+        const def = entityByName.get(entityName);
+        const pattern =
+          def?.entity.pattern ??
+          (Array.isArray(def?.entity.patterns) ? def?.entity.patterns?.[0] : undefined);
+        if (pattern !== "Integrated") {
+          // Record once per surface entity (not per provider — the reason is
+          // pattern-level, not provider-level).
+          result.skippedAssemblies.push({
+            surface,
+            entity: entityName,
+            reason: `entity '${entityName}' declares surface '${surface}' but is not 'pattern: Integrated'` +
+              `${pattern ? ` (got 'pattern: ${pattern}')` : " (no pattern declared)"} — ` +
+              `the integration assembly + default sink need the Integrated projection/upsert path. ` +
+              `Add 'pattern: Integrated' (or provide a hand-authored sink + assembly).`,
+          });
+          continue;
+        }
+
+        const plural = def?.entity.plural ?? `${entityName}s`;
+        const context = def?.entity.context ?? null;
+        const loc = resolveEntityModuleImports({
+          entityName,
+          entityPlural: plural,
+          context,
+          surface,
+          // The sink+repo import is provider-agnostic; pick any provider's
+          // module dir for the relative-path base (all share the same parent).
+          provider: slugs[0],
+          backendSrcAbs: opts.backendSrcAbs,
+          aliases,
+        });
+
+        // Sink (emit-once scaffold) — provider-agnostic; one per entity.
+        const sinkPath = join(sinksDir, `${entityName}.sink.ts`);
+        if (existsSync(sinkPath)) {
+          result.scaffoldsSkipped.push(sinkPath);
+        } else {
+          const sinkInput = buildSinkInput(def!, surface, slugs[0], loc.repoImportSpecifier);
+          const sinkContent = generateDefaultSink(sinkInput);
+          if (!opts.dryRun) writeFile(sinkPath, sinkContent);
+          result.scaffoldsWritten.push(sinkPath);
+        }
+
+        // Per-(entity, provider) assembly module (@generated) + token entry.
+        for (const slug of slugs) {
+          const assemblyPath = join(
+            modulesDir,
+            slug,
+            `${entityName}-integration.module.ts`,
+          );
+          const assemblyContent = generateAssemblyModule({
+            surface,
+            provider: slug,
+            entityName,
+            entityClass: loc.entityClass,
+            moduleImportSpecifier: loc.moduleImportSpecifier,
+            moduleClass: loc.moduleClass,
+            repoImportSpecifier: loc.repoImportSpecifier,
+            repoClass: loc.repoClass,
+            sourceDesc: `definitions/providers/${slug}.yaml`,
+          });
+          if (!opts.dryRun) writeIfChanged(assemblyPath, assemblyContent);
+          result.assembliesWritten.push(assemblyPath);
+          tokenEntries.push({ entityName, entityClass: loc.entityClass, provider: slug });
+          assemblyEntries.push({ entityName, provider: slug });
+        }
+      }
+
+      // Surface integration tokens (@generated) — one file per surface, all
+      // (entity, provider) tokens. Emitted even when empty so the surface tree
+      // is consistent (the assembly imports reference it).
+      const integrationTokensPath = join(
+        surfaceDir,
+        `${surface}-integration.tokens.ts`,
+      );
+      const tokensContent = generateIntegrationTokens(surface, tokenEntries);
+      if (!opts.dryRun) writeIfChanged(integrationTokensPath, tokensContent);
+      result.tokensWritten.push(integrationTokensPath);
+
+      // Surface integration aggregator (@generated, E3) — the AppModule entry
+      // point. Imports + re-exports every per-entity assembly module so their
+      // use-case tokens propagate to the app (RFC-0002 §1, §7 q3). Emitted only
+      // when the surface has ≥1 assembly (skip surfaces whose entities were all
+      // non-Integrated/skipped) — no empty aggregator on the graph.
+      if (assemblyEntries.length > 0) {
+        const integrationAggregatorPath = join(
+          surfaceDir,
+          `${surface}-integration.module.ts`,
+        );
+        const aggregatorContent = generateIntegrationAggregator(
+          surface,
+          assemblyEntries,
+        );
+        if (!opts.dryRun) writeIfChanged(integrationAggregatorPath, aggregatorContent);
+        result.integrationAggregatorsWritten.push(integrationAggregatorPath);
+      }
+    }
   }
 
   return result;
+}
+
+/**
+ * Build the {@link SinkEmitInput} for a `pattern: Integrated` entity — mirrors
+ * `buildIntegrationSurface().writeFields`/`writeFkFields` (clean-lite-ps
+ * prompt-extension): copy-through scalars are the non-FK `fields:` (camelCased,
+ * nullable-aware tsType); FK external keys are one `<relationKey>ExternalId` per
+ * `belongs_to`. The `generateDefaultSink` emitter throws if `pattern` is not
+ * `Integrated` — the caller pre-filters, so this is only reached for Integrated.
+ */
+function buildSinkInput(
+  def: EmitAdaptersEntity,
+  surface: string,
+  provider: string,
+  repoImportSpecifier: string,
+): SinkEmitInput {
+  const fields = def.fields ?? {};
+  const relationships = def.relationships ?? {};
+
+  // FK column names (belongs_to foreign_key) — excluded from copy-through.
+  const fkColumns = new Set<string>();
+  for (const rel of Object.values(relationships)) {
+    if (rel.type === "belongs_to" && typeof rel.foreign_key === "string") {
+      fkColumns.add(rel.foreign_key);
+    }
+  }
+
+  const copyThroughFields = Object.entries(fields)
+    .filter(([name]) => name !== "id" && !fkColumns.has(name))
+    .map(([name, f]) => ({
+      camelName: snakeToCamel(name),
+      tsType: tsTypeFor(f.type, f.nullable),
+    }));
+
+  // FK external keys — `<relationKey>ExternalId`. For non-self FKs the relation
+  // key is the target entity name; matches clean-lite-ps `processBelongsTo`.
+  const fkExternalKeys = Object.entries(relationships)
+    .filter(([, rel]) => rel.type === "belongs_to")
+    .map(([relName, rel]) => {
+      const target = rel.target ?? relName;
+      return { writeKey: `${snakeToCamel(target)}ExternalId` };
+    });
+
+  return {
+    entityName: def.entity.name,
+    entityClass: pascalFromSnake(def.entity.name),
+    surface,
+    pattern: "Integrated",
+    provider,
+    copyThroughFields,
+    fkExternalKeys,
+    repoImportSpecifier,
+  };
+}
+
+const TS_TYPE_FOR_SINK: Record<string, string> = {
+  string: "string",
+  integer: "number",
+  decimal: "string",
+  boolean: "boolean",
+  uuid: "string",
+  date: "Date",
+  datetime: "Date",
+  json: "unknown",
+};
+
+function tsTypeFor(type: string | undefined, nullable: boolean | undefined): string {
+  const base = TS_TYPE_FOR_SINK[type ?? "string"] ?? "unknown";
+  return nullable ? `${base} | null` : base;
+}
+
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+function pascalFromSnake(s: string): string {
+  const camel = snakeToCamel(s);
+  return camel.charAt(0).toUpperCase() + camel.slice(1);
 }
 
 function writeFile(outPath: string, content: string): void {
