@@ -462,33 +462,74 @@ describe('scopeable flag', () => {
 	});
 });
 
-describe('context flag (#403)', () => {
+describe('context flag (#403) — inside entity: block (0.12.2)', () => {
 	const base = {
 		entity: { name: 'transcript', plural: 'transcripts', table: 'transcripts' },
 		fields: { id: { type: 'uuid', required: true } },
 	};
 
-	it('accepts a top-level context: <snake_case> — the key no longer trips .strict()', () => {
-		const result = EntityDefinitionSchema.safeParse({ ...base, context: 'integration' });
+	it('accepts entity.context: <snake_case>', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, context: 'integration' },
+		});
 		expect(result.success).toBe(true);
-		expect(result.data!.context).toBe('integration');
+		expect(result.data!.entity.context).toBe('integration');
 	});
 
 	it('context is optional — omitting it is valid (flat output preserved)', () => {
 		const result = EntityDefinitionSchema.safeParse(base);
 		expect(result.success).toBe(true);
-		expect(result.data!.context).toBeUndefined();
+		expect(result.data!.entity.context).toBeUndefined();
 	});
 
 	it('rejects non-snake_case context (uppercase / hyphen / leading digit)', () => {
 		for (const bad of ['Integration', 'my-context', '1context', '_x']) {
-			const result = EntityDefinitionSchema.safeParse({ ...base, context: bad });
+			const result = EntityDefinitionSchema.safeParse({
+				...base,
+				entity: { ...base.entity, context: bad },
+			});
 			expect(result.success).toBe(false);
 		}
 	});
 
 	it('rejects non-string context', () => {
-		const result = EntityDefinitionSchema.safeParse({ ...base, context: 123 });
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, context: 123 },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects root-level context: — clean break, no root placement', () => {
+		const result = EntityDefinitionSchema.safeParse({ ...base, context: 'integration' });
+		expect(result.success).toBe(false);
+	});
+});
+
+describe('surface flag (RFC-0001) — inside entity: block (0.12.2)', () => {
+	const base = {
+		entity: { name: 'transcript', plural: 'transcripts', table: 'transcripts' },
+		fields: { id: { type: 'uuid', required: true } },
+	};
+
+	it('accepts entity.surface: <string>', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, surface: 'transcript' },
+		});
+		expect(result.success).toBe(true);
+		expect(result.data!.entity.surface).toBe('transcript');
+	});
+
+	it('surface is optional — omitting it is valid', () => {
+		const result = EntityDefinitionSchema.safeParse(base);
+		expect(result.success).toBe(true);
+		expect(result.data!.entity.surface).toBeUndefined();
+	});
+
+	it('rejects root-level surface: — clean break, no root placement', () => {
+		const result = EntityDefinitionSchema.safeParse({ ...base, surface: 'transcript' });
 		expect(result.success).toBe(false);
 	});
 });

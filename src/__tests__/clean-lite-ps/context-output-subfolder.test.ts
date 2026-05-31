@@ -18,13 +18,18 @@ import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite
 
 const SRC = 'app/backend/src';
 
-function localsFor(extra: Record<string, unknown>) {
+function localsFor(entityExtra: Record<string, unknown>) {
 	const definition = {
-		entity: { name: 'transcript', plural: 'transcripts', table: 'transcripts' },
+		entity: {
+			name: 'transcript',
+			plural: 'transcripts',
+			table: 'transcripts',
+			// #403: `context:` lives inside the `entity:` block (0.12.2).
+			...entityExtra,
+		},
 		fields: { title: { type: 'string', required: true } },
 		relationships: {},
 		behaviors: ['timestamps'],
-		...extra,
 	};
 	return buildCleanLitePsLocals(definition, { backendSrc: SRC });
 }

@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.2] — 2026-05-31
+
+Track D consumer-CLI fix. The 0.12.0/0.12.1 generator was correct in the
+hermetic D7 path but broke for real consumers driving it through the CLI. Two
+schema/loader bugs plus a DX gap that masked the first. No swe-brain YAML change
+is required — consumer YAML already wrote the keys in the natural place; the
+schema is now corrected to match.
+
+### Fixed
+
+- **`entity.surface` / `entity.context` schema level.** `surface:` and
+  `context:` were defined at the ROOT of `EntityDefinitionSchema` (sibling of
+  `entity:`/`fields:`), but consumers naturally write them INSIDE the `entity:`
+  block (next to `pattern:`/`name:`/`table:`). Because the `entity:` block is
+  `.strict()`, those YAMLs were rejected with "Unrecognized key(s) in object:
+  'surface' at 'entity'". The fields now live in `EntityConfigSchema` and are
+  read as `entity.surface` / `entity.context`. Clean break — root-level
+  placement no longer validates. Read sites updated:
+  `collectEntitySurfaces` (`validate-providers.ts`), `collectEntitiesBySurface`
+  (`adapter-emission-generator.ts`), the provider surface cross-check
+  (`entity.ts`), and the clean-lite-ps output-subfolder consumer
+  (`prompt-extension.js` `buildCleanLitePsLocals`).
+- **Entity `--all` discovery no longer globs `definitions/providers/`.** With
+  `entities_dir: definitions`, the recursive YAML walk pulled provider files
+  into the entity loader, where they fail entity validation. Entity discovery
+  (`findYamlFiles`, `loadEntities`, `listEntityYamls`) now excludes the
+  configured providers dir (`paths.providers`, default `definitions/providers`).
+  Provider files route only through `ProviderDefinitionSchema`.
+
+### Changed
+
+- **`entity new --dry-run` surfaces the Zod detail.** The failure path printed
+  only "Validation failed for <file>"; it now emits the same per-issue Zod
+  diagnostics as `entity validate`, so a misplaced key reports which key/level
+  is wrong (the DX gap that hid the `entity.surface` rejection).
+
 ## [0.12.1] — 2026-05-31
 
 Track D (provider/adapter integration codegen) discoverability fix. The 0.12.0

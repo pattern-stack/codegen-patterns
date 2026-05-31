@@ -497,6 +497,41 @@ const EntityConfigSchema = z
     // Drives the generated ScopeEntityType union in
     // runtime/subsystems/jobs/generated/scope-entity-type.ts.
     scopeable: z.boolean().optional(),
+
+    // RFC-0001 §1/§8: the integration *surface* this entity belongs to
+    // (e.g. 'calendar', 'mail', 'crm'). Surfaces span provider contexts
+    // (ADR-0006) — one Google OAuth feeds calendar+mail+transcript. The union
+    // of `surface:` values across all entity YAML is the closed set that a
+    // provider's `surfaces:` must be a subset of (cross-checked in
+    // src/parser/validate-providers.ts). Optional: entities without an
+    // integration surface omit it. The surface-package *emission* convention
+    // is Track C (#329); this field is only the declarative input both tracks
+    // read. Lives inside the `entity:` block (next to `pattern:`/`name:`/`table:`).
+    surface: z.string().optional(),
+
+    // Bounded-context declaration (ADR-0004) — "which bounded context this
+    // entity belongs to". This is the DURABLE decision; it is a plain
+    // bounded-context slug, NOT a folder knob. Different features consume it:
+    //
+    //   - #403 (the FIRST consumer): drives the generated code's
+    //     module output folder. clean-lite-ps nests the entity's module under
+    //     `<modules>/<context>/<entity>/` so same-context entities group
+    //     together; untagged entities stay flat (`<modules>/<entity>/`).
+    //   - ADR-0004 (deferred): a later `naming: prefix | schema` knob reads
+    //     this SAME field to drive the Postgres physical layout —
+    //     `prefix` → `pgTable('<context>__<table>')`, then the flip to
+    //     `schema` → `pgSchema('<context>').table('<table>')`. NOT wired here.
+    //
+    // Sibling to `surface:` and orthogonal to it (ADR-0006): context = model
+    // cohesion (which domain), surface = vendor composition (which integration).
+    // Lives inside the `entity:` block (next to `pattern:`/`name:`/`table:`).
+    context: z
+      .string()
+      .regex(
+        /^[a-z][a-z0-9_]*$/,
+        "context must be lowercase snake_case (e.g. 'integration')",
+      )
+      .optional(),
   })
   .strict()
   .refine((d) => !(d.pattern && d.patterns), {
@@ -807,40 +842,11 @@ export const EntityDefinitionSchema = z
     // `EntityDefinitionSchema` below.
     detection: z.record(z.string(), DetectionConfigSchema).optional(),
 
-    // RFC-0001 §1/§8: the integration *surface* this entity belongs to
-    // (e.g. 'calendar', 'mail', 'crm'). Surfaces span provider contexts
-    // (ADR-0006) — one Google OAuth feeds calendar+mail+transcript. The union
-    // of `surface:` values across all entity YAML is the closed set that a
-    // provider's `surfaces:` must be a subset of (cross-checked in
-    // src/parser/validate-providers.ts). Optional: entities without an
-    // integration surface omit it. The surface-package *emission* convention
-    // is Track C (#329); this field is only the declarative input both tracks
-    // read.
-    surface: z.string().optional(),
-
-    // Bounded-context declaration (ADR-0004) — "which bounded context this
-    // entity belongs to". This is the DURABLE decision; it is a plain
-    // bounded-context slug, NOT a folder knob. Different features consume it:
-    //
-    //   - #403 (this PR, the FIRST consumer): drives the generated code's
-    //     module output folder. clean-lite-ps nests the entity's module under
-    //     `<modules>/<context>/<entity>/` so same-context entities group
-    //     together; untagged entities stay flat (`<modules>/<entity>/`).
-    //   - ADR-0004 (deferred): a later `naming: prefix | schema` knob reads
-    //     this SAME field to drive the Postgres physical layout —
-    //     `prefix` → `pgTable('<context>__<table>')`, then the flip to
-    //     `schema` → `pgSchema('<context>').table('<table>')`. NOT wired here;
-    //     #403 makes no table/column/schema changes.
-    //
-    // Sibling to `surface:` and orthogonal to it (ADR-0006): context = model
-    // cohesion (which domain), surface = vendor composition (which integration).
-    context: z
-      .string()
-      .regex(
-        /^[a-z][a-z0-9_]*$/,
-        "context must be lowercase snake_case (e.g. 'integration')",
-      )
-      .optional(),
+    // NOTE: `surface:` and `context:` moved INTO EntityConfigSchema (the
+    // `entity:` block) in 0.12.2 — consumers write them next to
+    // `pattern:`/`name:`/`table:`, which is the natural place. They are
+    // read via `entity.surface` / `entity.context`. Clean break: no
+    // root-level placement is accepted.
 
     // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Generates typed event classes, handlers, and queue registration

@@ -2,7 +2,7 @@ entity:
   name: deal
   plural: deals
   table: deals
-surface: crm
+  surface: crm
 fields:
   name:
     type: string

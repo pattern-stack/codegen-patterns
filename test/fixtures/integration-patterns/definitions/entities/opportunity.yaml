@@ -2,7 +2,7 @@ entity:
   name: opportunity
   plural: opportunities
   table: opportunities
-surface: crm
+  surface: crm
 fields:
   name:
     type: string

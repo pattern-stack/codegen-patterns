@@ -4,7 +4,7 @@ entity:
   name: account
   plural: accounts
   table: accounts
-surface: crm
+  surface: crm
 fields:
   name:
     type: string

@@ -1008,14 +1008,14 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const entityNamePlural = entity.plural || pluralize(entityName);
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
-  // #403: bounded-context folder grouping. A top-level `context:` nests this
+  // #403: bounded-context folder grouping. `entity.context:` nests this
   // entity's module folder under that segment so same-context entities group
   // together (`<modules>/<context>/<plural>/`); no context → flat
   // (`<modules>/<plural>/`, byte-identical to pre-#403). Emit-folder-only —
   // every intra-module import is folder-relative and therefore unaffected, and
   // the generated barrel recomputes its import paths from the full file paths
   // below. The module-folder base used by every clpOutputPaths entry:
-  const entityContext = definition.context || null;
+  const entityContext = entity.context || null;
   const moduleGroupDir = entityContext
     ? `${srcRoot}/modules/${entityContext}`
     : `${srcRoot}/modules`;

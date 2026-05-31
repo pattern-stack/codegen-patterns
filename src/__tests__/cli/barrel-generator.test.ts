@@ -43,8 +43,8 @@ function mkProject(opts: {
 				`  name: ${ent.name}`,
 				`  plural: ${ent.plural}`,
 				`  table: ${ent.plural}`,
-				// #403: top-level `context:` nests the module folder.
-				...(ent.context ? [`context: ${ent.context}`] : []),
+				// #403: `entity.context:` nests the module folder.
+				...(ent.context ? [`  context: ${ent.context}`] : []),
 				'fields:',
 				'  id:',
 				'    type: uuid',
