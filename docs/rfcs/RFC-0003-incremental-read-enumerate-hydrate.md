@@ -1,6 +1,6 @@
 # RFC-0003 — `IncrementalRead`: enumerate/hydrate read primitive + the scaffold body it emits (Track D round-3)
 
-**Status:** Accepted — Gate 1.5 PASS_WITH_NOTES (rev 2); R1+R2 landed (R3+R4 deferred per E0 gate)
+**Status:** Accepted — Gate 1.5 PASS_WITH_NOTES (rev 2); R1+R2+R3 landed (R4 pending; see Sequencing)
 **Date:** 2026-05-31
 **Owner:** Doug
 **Related:** RFC-0001 (provider/adapter emission — *this RFC reshapes the read-side `changeSources` body it emits*), RFC-0002 (module assembly emission — **disjoint surface; composes, does not collide — see §6**), ADR-033/033.1 (`detection:` config + `PollChangeSource`), Track C #329 (surface packages), swe-brain ADR-0002/ADR-0003 (the capability-primitive model this promotes), `runtime/subsystems/integration/` (the `IChangeSource` / `PollChangeSource` / orchestrator this builds on).
@@ -160,11 +160,20 @@ const EMAIL_DETECTION_FILTERS: ResolvedFilter[] = [ /* from entity `detection:` 
 export class GoogleEmailIncrementalRead
   extends IncrementalReadBase<CanonicalEmail, ResolvedFilter[]> {   // F = uniform runtime filter; M defaults (author narrows)
   readonly label = 'google-mail-email';
-  protected override filterPushdown = true;                 // Gmail q= takes the predicate
+  // Codegen emits `false` (the safe post-hydrate floor); the AUTHOR flips it to
+  // `true` once their `enumerate` pushes the filter to the vendor (Gmail `q=`).
+  protected override readonly filterPushdown = false;
+  // When the entity's cursor strategy is atomic (Gmail historyId / Calendar
+  // syncToken), codegen ALSO emits `protected override readonly cursorDivisible = false;` (R2).
 
-  protected async *enumerate(mode, filter: ResolvedFilter[]) { /* TODO: messages.list / history.list → Ref pages */ }
-  protected async hydrate(ids)  { /* TODO: messages.get (override: /batch) → Map<id, raw> */ }
-  protected toCanonical(raw)    { /* TODO: External(Zod) → CanonicalEmail */ }
+  constructor(
+    private readonly auth: IAuthStrategy,
+    private readonly client: GoogleClient,
+  ) { super(); }
+
+  protected async *enumerate(mode: ReadMode, filter?: ResolvedFilter[], pageSize?: number): AsyncIterable<Ref[]> { /* TODO: messages.list / history.list → Ref pages */ }
+  protected async hydrate(ids: string[]): Promise<Map<string, unknown>> { /* TODO: messages.get (override: /batch) → Map<id, raw> */ }
+  protected toCanonical(raw: unknown): CanonicalEmail | null { /* TODO: External(Zod) → CanonicalEmail */ }
 
   // fork #2: filterFor returns the static const — 2-arg `(auth, client)` construction preserved.
   protected override filterFor(_sub: IntegrationSubscriptionView): ResolvedFilter[] {
@@ -181,12 +190,22 @@ export class GoogleEmailIncrementalRead
 >
 > **Named caveat:** this assumes filters are **entity-level config, not per-subscription**. If two subscriptions of one entity ever need different filters, revisit via the `filterFor(sub)` author override — keep the `subscription` param in the emitted signature so that escape hatch stays free.
 
-and the adapter's container becomes:
+and the adapter's container becomes — assigned in the **constructor body**, not as a
+field initializer (under `useDefineForClassFields`, field initializers run *before*
+constructor parameter-property assignment, so `this.auth`/`this.client` would be
+`undefined` at field-init time):
 
 ```ts
-readonly changeSources: Record<string, IChangeSource<unknown>> = {
-  email: new GoogleEmailIncrementalRead(this.auth, this.client),   // construction site (composes RFC-0002 §3 Option A)
-};
+readonly changeSources: Record<string, IChangeSource<unknown>>;   // declared; assigned in ctor
+
+constructor(
+  @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
+  @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
+) {
+  this.changeSources = {
+    email: new GoogleEmailIncrementalRead(this.auth, this.client),   // single construction site (composes RFC-0002 §3 Option A)
+  };
+}
 ```
 
 Unchanged: the emit-once sentinel + skip-on-regen, the `@Injectable` adapter `implements <Port>`, the `capabilities` literal, and the constructor injection.
@@ -227,8 +246,16 @@ Extend the RFC-0001 §7 / RFC-0002 §8 integration-emission snapshot fixture (`t
 
 - **R1** — ✅ **DONE.** Landed `IncrementalRead`/`RandomRead`/`IncrementalReadBase` + `SourcedRecord`/`Ref`/`ReadMode`/`ReadRequest` + `mapConcurrent` in `runtime/subsystems/integration/incremental-read.ts`; exported from `@pattern-stack/codegen/subsystems`. Unit-tested the base (drain, pre-hydrate filter, keyed/miss-tolerant hydrate, free `get` over hydrate, per-ref cursor, `listChanges` adaptation, `mapConcurrent` bounds — 21 cases). Pure runtime addition, no emitter change. Parallel to RFC-0002 E1–E4.
 - **R2** — ✅ **DONE.** Cursor-strategy divisibility (§3): added atomic `historyId`/`syncToken` kinds + `CURSOR_DIVISIBILITY` map + `isDivisibleCursor`; `IncrementalReadBase.cursorDivisible` gates `listChanges` cursor emission (atomic ⇒ withhold per-ref, emit end-of-walk token only on the final record via one-record lookahead). Orchestrator unchanged — its skip-null-cursor + persist-last-yielded lifecycle does the rest. Atomic-backfill blast-radius (= enumerate walk) documented; `ReadRequest.pageSize` is the bound.
-- **R3** — *(gated on E0 landing — §4/§6)* reshape `generateAdapterScaffold` read-side body (§4): emit the per-entity `IncrementalReadBase` subclass + `changeSources` registration; thread `DetectionConfig.filters` → `ReadRequest.filter`; add the net-new `filterPushdown` manifest field. Update the **template-emission snapshot** (the emitted-output fixture per §8 — *not* `just test-baseline`).
-- **R4** — falsifier assertion (§8) + docs (integration skill `protocols-and-ports.md`: the enumerate/hydrate authoring recipe, HubSpot `listSince` as the north star).
+- **R3** — ✅ **DONE** (stacked on the E-track). Reshaped `generateAdapterScaffold` read-side body (`src/cli/shared/adapter-emission-generator.ts`): per-entity `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass + `changeSources` registration (constructor-body assignment — `useDefineForClassFields` safety). Implementation decisions:
+  - **Scope = interaction surfaces only.** Gated by a new `SurfaceSpec.readPrimitive` flag (mail/calendar/transcript). CRM keeps its empty author-filled `changeSources` seam — it has no single canonical `T` (field-reader model).
+  - **Canonical type by convention:** `Canonical${Pascal(entity)}`, imported from the surface package (verified: `email→CanonicalEmail`, `meeting→CanonicalMeeting`, `transcript→CanonicalTranscript`).
+  - **Detection threading:** `generateAdapterScaffold` gains a `entityDetection?: Map<string, DetectionConfig>` param (caller resolves `entity.detection[providerSlug]`). Drives the static `<ENTITY>_DETECTION_FILTERS` const (fork #2) and `cursorDivisible` (R2: emitted `false` only when the cursor kind is atomic).
+  - **`filterPushdown`:** emitted `false` + author-flip comment. **The net-new manifest field is deferred to R4** — `filterPushdown` is author-owned (emit-once code), so a YAML-derived manifest can't see the author's value; that tension is R4's to resolve (likely promote `filterPushdown` to a `detection:` YAML field).
+  - **Barrel fix:** `ResolvedFilter` + `IntegrationSubscriptionView` are now re-exported from the top `@pattern-stack/codegen/subsystems` barrel (the emitted scaffold imports them; caught by compiling a real emitted adapter against the live types).
+  - Snapshot rebaselined (template-emission, per §8 — *not* `just test-baseline`); unit tests cover the reshape + atomic/divisible cursor wiring + CRM-unchanged.
+
+  > **Discovered (out of R3 scope) — interaction ports require `sources` the post-E0 scaffold no longer provides.** `MailPort`/`CalendarPort`/`TranscriptPort` declare `readonly sources: IEntityChangeSourceRegistry`, but **E0** dropped that injection from the adapter (it now exposes `changeSources`, folded into the registry by the aggregator). So a generated interaction adapter does **not** satisfy its port (`TS2420: Property 'sources' is missing`). This predates RFC-0003 and is invisible to the string-based emission tests + the smoke suite (which doesn't compile interaction surfaces). **Fix belongs in Track C / the E-track:** drop `sources` from the interaction port contracts (the registry is the surface module's concern, not the adapter's), or re-introduce it. Tracked separately.
+- **R4** — *(pending)* falsifier assertion (§8, keyed off `filterPushdown`) + the `filterPushdown` manifest decision + docs (integration skill `protocols-and-ports.md`: the enumerate/hydrate authoring recipe, HubSpot `listSince` as the north star).
 - **Release** — ship R1–R4 in **0.13 alongside RFC-0002 E1–E4** (one consumer-facing shape).
 
 ## Deliverable

@@ -43,6 +43,11 @@ import {
 import { dirname, join } from "node:path";
 import { parseImportRef, type ProviderDefinition } from "../../schema/provider-definition.schema";
 import type { LoadedProvider } from "../../parser/validate-providers";
+import { isDivisibleCursor } from "../../../runtime/subsystems/integration";
+import type {
+  DetectionConfig,
+  ResolvedFilter,
+} from "../../../runtime/subsystems/integration";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
 import { generateDefaultSink, type SinkEmitInput } from "./sink-emission-generator";
 import {
@@ -82,6 +87,15 @@ interface SurfaceSpec {
   noCapsConst: string;
   /** L2 ports the adapter implements (stubbed). */
   l2Ports: L2PortSpec[];
+  /**
+   * Interaction surfaces (mail/calendar/transcript) whose reads go through the
+   * `IncrementalRead` enumerate/hydrate primitive (RFC-0003). When `true`, the
+   * scaffold emits a per-entity `IncrementalReadBase<Canonical<Entity>,
+   * ResolvedFilter[]>` subclass and registers it in `changeSources`. When falsy
+   * (e.g. `crm` — field-reader model, no single canonical `T`), the scaffold
+   * keeps the empty author-filled `changeSources` seam.
+   */
+  readPrimitive?: boolean;
 }
 
 /**
@@ -128,6 +142,7 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
     capabilitiesType: "CalendarCapabilities",
     noCapsConst: "NO_CALENDAR_CAPABILITIES",
     l2Ports: [],
+    readPrimitive: true,
   },
   mail: {
     packageName: "@pattern-stack/codegen-mail",
@@ -135,6 +150,7 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
     capabilitiesType: "MailCapabilities",
     noCapsConst: "NO_MAIL_CAPABILITIES",
     l2Ports: [],
+    readPrimitive: true,
   },
   transcript: {
     packageName: "@pattern-stack/codegen-transcript",
@@ -142,6 +158,7 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
     capabilitiesType: "TranscriptCapabilities",
     noCapsConst: "NO_TRANSCRIPT_CAPABILITIES",
     l2Ports: [],
+    readPrimitive: true,
   },
 };
 
@@ -228,15 +245,143 @@ function names(providerSlug: string, surface: string): Names {
 // Pure emitters
 // ============================================================================
 
+/** PascalCase an entity name, splitting on `-`/`_` (`calendar_event` → `CalendarEvent`). */
+function entityPascalCase(name: string): string {
+  return name
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join("");
+}
+
+/** CONSTANT_CASE an entity name (`calendar-event` → `CALENDAR_EVENT`). */
+function entityConstCase(name: string): string {
+  return name.replace(/-/g, "_").toUpperCase();
+}
+
+/** Emit a `ResolvedFilter[]` TS literal (one line per clause, or `[]`). */
+function serializeFilterArray(filters: ResolvedFilter[]): string {
+  if (filters.length === 0) return "[]";
+  const items = filters.map(
+    (f) =>
+      `  { field: ${JSON.stringify(f.field)}, op: ${JSON.stringify(f.op)}, value: ${JSON.stringify(f.value)} },`,
+  );
+  return `[\n${items.join("\n")}\n]`;
+}
+
+interface ReadPrimitiveEmission {
+  /** Canonical record types to import from the surface package. */
+  canonicalTypes: string[];
+  /** Module-level filter consts + `IncrementalReadBase` subclasses. */
+  preamble: string;
+  /** `changeSources` object-literal entries (one per entity). */
+  changeSourceEntries: string[];
+}
+
+/**
+ * Build the read-side emission for an interaction surface (RFC-0003 R3): one
+ * `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass per entity
+ * (fork #1 typing), a static `detection.filters` const returned by `filterFor`
+ * (fork #2 threading), and `cursorDivisible = false` when the entity's cursor
+ * strategy is atomic (R2 wiring). The author fills `enumerate`/`hydrate`/
+ * `toCanonical`; the 2-arg `(auth, client)` construction is preserved.
+ */
+function buildReadPrimitiveEmission(
+  providerSlug: string,
+  providerPascal: string,
+  surface: string,
+  entities: string[],
+  entityDetection: Map<string, DetectionConfig> | undefined,
+  clientExportName: string,
+): ReadPrimitiveEmission {
+  const canonicalTypes: string[] = [];
+  const blocks: string[] = [];
+  const entries: string[] = [];
+
+  for (const entity of entities) {
+    const pascal = entityPascalCase(entity);
+    const canonical = `Canonical${pascal}`;
+    const className = `${providerPascal}${pascal}IncrementalRead`;
+    const constName = `${entityConstCase(entity)}_DETECTION_FILTERS`;
+    canonicalTypes.push(canonical);
+
+    const det = entityDetection?.get(entity);
+    const filters = det?.filters ?? [];
+    const cursorKind = det && det.mode === "poll" ? det.poll.cursor.kind : undefined;
+    const atomic = cursorKind !== undefined && !isDivisibleCursor(cursorKind);
+    const cursorOverride = atomic
+      ? `
+  // \`${cursorKind}\` is an ATOMIC cursor (RFC-0003 §3): its next value only exists
+  // at end-of-walk, so per-ref cursors are withheld and only the final record
+  // carries the token — a mid-walk crash never persists an unresumable value.
+  protected override readonly cursorDivisible = false;`
+      : "";
+
+    blocks.push(`/**
+ * \`detection.filters\` for \`${entity}\`, emitted from YAML as a static
+ * \`ResolvedFilter[]\` (RFC-0003 §4 fork #2); \`filterFor()\` returns it.
+ */
+const ${constName}: ResolvedFilter[] = ${serializeFilterArray(filters)};
+
+// Emit-once read primitive (author-owned). Fill the three vendor methods below.
+export class ${className} extends IncrementalReadBase<${canonical}, ResolvedFilter[]> {
+  readonly label = '${providerSlug}-${surface}-${entity}';
+  // Flip to \`true\` if your \`enumerate\` pushes the request filter to the vendor
+  // (e.g. Gmail \`q=\`); leave \`false\` to filter post-hydrate via \`matchesRecord\`.
+  protected override readonly filterPushdown = false;${cursorOverride}
+
+  constructor(
+    private readonly auth: IAuthStrategy,
+    private readonly client: ${clientExportName},
+  ) {
+    super();
+  }
+
+  /** TODO: walk the vendor list endpoint → pages of \`Ref\` (id + cursor + meta). */
+  protected async *enumerate(
+    _mode: ReadMode,
+    _filter?: ResolvedFilter[],
+    _pageSize?: number,
+  ): AsyncIterable<Ref[]> {
+    throw new Error('not implemented: ${className}.enumerate');
+  }
+
+  /** TODO: batched fetch-by-id → \`Map<id, raw>\` (\`mapConcurrent\`, or a vendor /batch). */
+  protected async hydrate(_ids: string[]): Promise<Map<string, unknown>> {
+    throw new Error('not implemented: ${className}.hydrate');
+  }
+
+  /** TODO: vendor payload → \`${canonical}\` (return \`null\` to drop). */
+  protected toCanonical(_raw: unknown): ${canonical} | null {
+    throw new Error('not implemented: ${className}.toCanonical');
+  }
+
+  protected override filterFor(
+    _subscription: IntegrationSubscriptionView,
+  ): ResolvedFilter[] {
+    return ${constName};
+  }
+}`);
+    entries.push(`      ${entity}: new ${className}(this.auth, this.client),`);
+  }
+
+  return { canonicalTypes, preamble: blocks.join("\n\n"), changeSourceEntries: entries };
+}
+
 /**
  * The emit-once adapter scaffold. Implements the surface port, injects L1
  * (auth strategy + client), declares capabilities (entities from `surface:`),
- * and stubs the L2 port methods.
+ * and stubs the L2 port methods. For interaction surfaces (`readPrimitive`),
+ * emits per-entity `IncrementalReadBase` subclasses + `changeSources`
+ * registration (RFC-0003 R3); `entityDetection` supplies each entity's parsed
+ * `DetectionConfig` (resolved for this provider) for the filter const + cursor
+ * divisibility.
  */
 export function generateAdapterScaffold(
   def: ProviderDefinition,
   surface: string,
   entities: string[],
+  entityDetection?: Map<string, DetectionConfig>,
 ): string {
   const spec = SURFACE_REGISTRY[surface];
   if (!spec) throw new Error(`no surface package for '${surface}'`);
@@ -247,15 +392,72 @@ export function generateAdapterScaffold(
     ? `[${entities.map((e) => `'${e}'`).join(", ")}]`
     : "[]";
 
+  // RFC-0003 R3: interaction surfaces emit per-entity IncrementalReadBase
+  // subclasses + changeSources registration; other surfaces keep the empty seam.
+  const readPrimitive = !!spec.readPrimitive && entities.length > 0;
+  const rp = readPrimitive
+    ? buildReadPrimitiveEmission(
+        def.slug,
+        n.providerPascal,
+        surface,
+        entities,
+        entityDetection,
+        client.exportName,
+      )
+    : null;
+
   // Surface-package type imports: the port, each L2 reader type (none for
-  // incremental-read interaction surfaces), then the capabilities type.
+  // incremental-read interaction surfaces), the capabilities type, then (for
+  // read-primitive surfaces) each entity's canonical record type.
   const surfaceTypeImports = [
     spec.portType,
     ...spec.l2Ports.map((p) => p.type),
     spec.capabilitiesType,
+    ...(rp ? rp.canonicalTypes : []),
   ]
     .map((t) => `  ${t},`)
     .join("\n");
+
+  // Subsystems imports: IncrementalReadBase is a value import (read-primitive
+  // only); the rest are types. ReadMode/Ref/ResolvedFilter/
+  // IntegrationSubscriptionView are only needed when subclasses are emitted.
+  const subsystemValueImport = rp
+    ? `import { IncrementalReadBase } from '@pattern-stack/codegen/subsystems';\n`
+    : "";
+  const subsystemTypeImports = [
+    "IAuthStrategy",
+    "IChangeSource",
+    ...(rp
+      ? ["IntegrationSubscriptionView", "ReadMode", "Ref", "ResolvedFilter"]
+      : []),
+  ]
+    .map((t) => `  ${t},`)
+    .join("\n");
+
+  // Read-primitive: changeSources is assigned in the constructor BODY (not a
+  // field initializer) — under useDefineForClassFields, field initializers run
+  // before constructor parameter-property assignment, so `this.auth`/`this.client`
+  // would be undefined at field-init time.
+  const changeSourcesAssign = rp
+    ? `\n    this.changeSources = {\n${rp.changeSourceEntries.join("\n")}\n    };\n  `
+    : "";
+  const changeSourcesDecl = rp
+    ? `  /**
+   * Per-entity change sources contributed to the ${surface} registry, keyed by
+   * entity name. The surface aggregator folds these into the
+   * \`IEntityChangeSourceRegistry\` bound under \`${n.entitySourcesToken}\`.
+   * Emit-once: edit the \`IncrementalReadBase\` subclasses above, not this map.
+   */
+  readonly changeSources: Record<string, IChangeSource<unknown>>;`
+    : `  /**
+   * Per-entity change sources this adapter contributes to the ${surface}
+   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
+   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
+   * bound under \`${n.entitySourcesToken}\`. Author-owned — populate one entry
+   * per entity in \`capabilities.entities\`.
+   */
+  readonly changeSources: Record<string, IChangeSource<unknown>> = {};`;
+  const preambleSection = rp ? `\n${rp.preamble}\n` : "";
 
   // Capabilities literal body: the empty-caps spread, a `true` flag per L2 port
   // (none for interaction surfaces), then the surface-derived entities.
@@ -288,13 +490,12 @@ import type {
 ${surfaceTypeImports}
 } from '${spec.packageName}';
 import { ${spec.noCapsConst} } from '${spec.packageName}';
-import type {
-  IAuthStrategy,
-  IChangeSource,
+${subsystemValueImport}import type {
+${subsystemTypeImports}
 } from '@pattern-stack/codegen/subsystems';
 import type { ${client.exportName} } from '${client.path}';
 import { ${n.strategyToken}, ${n.clientToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';
-
+${preambleSection}
 @Injectable()
 export class ${n.adapterClass} implements ${spec.portType} {
   /** Declared capabilities. \`entities\` derives from \`surface: ${surface}\` entity YAML. */
@@ -305,16 +506,9 @@ ${capabilityBody}
   constructor(
     @Inject(${n.strategyToken}) readonly auth: IAuthStrategy,
     @Inject(${n.clientToken}) private readonly client: ${client.exportName},
-  ) {}
+  ) {${changeSourcesAssign}}
 ${l2Section}
-  /**
-   * Per-entity change sources this adapter contributes to the ${surface}
-   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
-   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
-   * bound under \`${n.entitySourcesToken}\`. Author-owned — populate one entry
-   * per entity in \`capabilities.entities\`.
-   */
-  readonly changeSources: Record<string, IChangeSource<unknown>> = {};
+${changeSourcesDecl}
 
   // surface-only methods (optional on ${spec.portType}): add here
 }
@@ -572,6 +766,9 @@ export interface EmitAdaptersEntity {
     patterns?: string[];
     plural?: string;
     context?: string;
+    /** Provider-keyed detection config (ADR-033). Drives the emitted read
+     *  primitive's static filter const + cursor divisibility (RFC-0003 R3). */
+    detection?: Record<string, DetectionConfig>;
   };
   fields?: Record<string, { type?: string; nullable?: boolean }>;
   relationships?: Record<
@@ -677,10 +874,19 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
       if (existsSync(scaffoldPath)) {
         result.scaffoldsSkipped.push(scaffoldPath);
       } else {
+        // Resolve each entity's DetectionConfig for THIS provider (RFC-0003 R3):
+        // detection is provider-keyed on the entity, so index by the slug.
+        const surfaceEntityNames = entitiesBySurface.get(surface) ?? [];
+        const entityDetection = new Map<string, DetectionConfig>();
+        for (const name of surfaceEntityNames) {
+          const det = entityByName.get(name)?.entity.detection?.[slug];
+          if (det) entityDetection.set(name, det);
+        }
         const content = generateAdapterScaffold(
           def,
           surface,
-          entitiesBySurface.get(surface) ?? [],
+          surfaceEntityNames,
+          entityDetection,
         );
         if (!opts.dryRun) writeFile(scaffoldPath, content);
         result.scaffoldsWritten.push(scaffoldPath);

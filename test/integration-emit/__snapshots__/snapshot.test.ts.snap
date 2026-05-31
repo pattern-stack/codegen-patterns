@@ -24,14 +24,66 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   CalendarPort,
   CalendarCapabilities,
+  CanonicalMeeting,
 } from '@pattern-stack/codegen-calendar';
 import { NO_CALENDAR_CAPABILITIES } from '@pattern-stack/codegen-calendar';
+import { IncrementalReadBase } from '@pattern-stack/codegen/subsystems';
 import type {
   IAuthStrategy,
   IChangeSource,
+  IntegrationSubscriptionView,
+  ReadMode,
+  Ref,
+  ResolvedFilter,
 } from '@pattern-stack/codegen/subsystems';
 import type { GoogleClient } from '@app/integrations/providers/google/google.client';
 import { GOOGLE_AUTH_STRATEGY, GOOGLE_CLIENT } from '../../../providers/google/google.provider.module';
+
+/**
+ * \`detection.filters\` for \`meeting\`, emitted from YAML as a static
+ * \`ResolvedFilter[]\` (RFC-0003 §4 fork #2); \`filterFor()\` returns it.
+ */
+const MEETING_DETECTION_FILTERS: ResolvedFilter[] = [];
+
+// Emit-once read primitive (author-owned). Fill the three vendor methods below.
+export class GoogleMeetingIncrementalRead extends IncrementalReadBase<CanonicalMeeting, ResolvedFilter[]> {
+  readonly label = 'google-calendar-meeting';
+  // Flip to \`true\` if your \`enumerate\` pushes the request filter to the vendor
+  // (e.g. Gmail \`q=\`); leave \`false\` to filter post-hydrate via \`matchesRecord\`.
+  protected override readonly filterPushdown = false;
+
+  constructor(
+    private readonly auth: IAuthStrategy,
+    private readonly client: GoogleClient,
+  ) {
+    super();
+  }
+
+  /** TODO: walk the vendor list endpoint → pages of \`Ref\` (id + cursor + meta). */
+  protected async *enumerate(
+    _mode: ReadMode,
+    _filter?: ResolvedFilter[],
+    _pageSize?: number,
+  ): AsyncIterable<Ref[]> {
+    throw new Error('not implemented: GoogleMeetingIncrementalRead.enumerate');
+  }
+
+  /** TODO: batched fetch-by-id → \`Map<id, raw>\` (\`mapConcurrent\`, or a vendor /batch). */
+  protected async hydrate(_ids: string[]): Promise<Map<string, unknown>> {
+    throw new Error('not implemented: GoogleMeetingIncrementalRead.hydrate');
+  }
+
+  /** TODO: vendor payload → \`CanonicalMeeting\` (return \`null\` to drop). */
+  protected toCanonical(_raw: unknown): CanonicalMeeting | null {
+    throw new Error('not implemented: GoogleMeetingIncrementalRead.toCanonical');
+  }
+
+  protected override filterFor(
+    _subscription: IntegrationSubscriptionView,
+  ): ResolvedFilter[] {
+    return MEETING_DETECTION_FILTERS;
+  }
+}
 
 @Injectable()
 export class GoogleCalendarAdapter implements CalendarPort {
@@ -44,16 +96,19 @@ export class GoogleCalendarAdapter implements CalendarPort {
   constructor(
     @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
     @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
-  ) {}
+  ) {
+    this.changeSources = {
+      meeting: new GoogleMeetingIncrementalRead(this.auth, this.client),
+    };
+  }
 
   /**
-   * Per-entity change sources this adapter contributes to the calendar
-   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
-   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
-   * bound under \`CALENDAR_ENTITY_SOURCES\`. Author-owned — populate one entry
-   * per entity in \`capabilities.entities\`.
+   * Per-entity change sources contributed to the calendar registry, keyed by
+   * entity name. The surface aggregator folds these into the
+   * \`IEntityChangeSourceRegistry\` bound under \`CALENDAR_ENTITY_SOURCES\`.
+   * Emit-once: edit the \`IncrementalReadBase\` subclasses above, not this map.
    */
-  readonly changeSources: Record<string, IChangeSource<unknown>> = {};
+  readonly changeSources: Record<string, IChangeSource<unknown>>;
 
   // surface-only methods (optional on CalendarPort): add here
 }
@@ -905,14 +960,66 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   MailPort,
   MailCapabilities,
+  CanonicalEmail,
 } from '@pattern-stack/codegen-mail';
 import { NO_MAIL_CAPABILITIES } from '@pattern-stack/codegen-mail';
+import { IncrementalReadBase } from '@pattern-stack/codegen/subsystems';
 import type {
   IAuthStrategy,
   IChangeSource,
+  IntegrationSubscriptionView,
+  ReadMode,
+  Ref,
+  ResolvedFilter,
 } from '@pattern-stack/codegen/subsystems';
 import type { GoogleClient } from '@app/integrations/providers/google/google.client';
 import { GOOGLE_AUTH_STRATEGY, GOOGLE_CLIENT } from '../../../providers/google/google.provider.module';
+
+/**
+ * \`detection.filters\` for \`email\`, emitted from YAML as a static
+ * \`ResolvedFilter[]\` (RFC-0003 §4 fork #2); \`filterFor()\` returns it.
+ */
+const EMAIL_DETECTION_FILTERS: ResolvedFilter[] = [];
+
+// Emit-once read primitive (author-owned). Fill the three vendor methods below.
+export class GoogleEmailIncrementalRead extends IncrementalReadBase<CanonicalEmail, ResolvedFilter[]> {
+  readonly label = 'google-mail-email';
+  // Flip to \`true\` if your \`enumerate\` pushes the request filter to the vendor
+  // (e.g. Gmail \`q=\`); leave \`false\` to filter post-hydrate via \`matchesRecord\`.
+  protected override readonly filterPushdown = false;
+
+  constructor(
+    private readonly auth: IAuthStrategy,
+    private readonly client: GoogleClient,
+  ) {
+    super();
+  }
+
+  /** TODO: walk the vendor list endpoint → pages of \`Ref\` (id + cursor + meta). */
+  protected async *enumerate(
+    _mode: ReadMode,
+    _filter?: ResolvedFilter[],
+    _pageSize?: number,
+  ): AsyncIterable<Ref[]> {
+    throw new Error('not implemented: GoogleEmailIncrementalRead.enumerate');
+  }
+
+  /** TODO: batched fetch-by-id → \`Map<id, raw>\` (\`mapConcurrent\`, or a vendor /batch). */
+  protected async hydrate(_ids: string[]): Promise<Map<string, unknown>> {
+    throw new Error('not implemented: GoogleEmailIncrementalRead.hydrate');
+  }
+
+  /** TODO: vendor payload → \`CanonicalEmail\` (return \`null\` to drop). */
+  protected toCanonical(_raw: unknown): CanonicalEmail | null {
+    throw new Error('not implemented: GoogleEmailIncrementalRead.toCanonical');
+  }
+
+  protected override filterFor(
+    _subscription: IntegrationSubscriptionView,
+  ): ResolvedFilter[] {
+    return EMAIL_DETECTION_FILTERS;
+  }
+}
 
 @Injectable()
 export class GoogleMailAdapter implements MailPort {
@@ -925,16 +1032,19 @@ export class GoogleMailAdapter implements MailPort {
   constructor(
     @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
     @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
-  ) {}
+  ) {
+    this.changeSources = {
+      email: new GoogleEmailIncrementalRead(this.auth, this.client),
+    };
+  }
 
   /**
-   * Per-entity change sources this adapter contributes to the mail
-   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
-   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
-   * bound under \`MAIL_ENTITY_SOURCES\`. Author-owned — populate one entry
-   * per entity in \`capabilities.entities\`.
+   * Per-entity change sources contributed to the mail registry, keyed by
+   * entity name. The surface aggregator folds these into the
+   * \`IEntityChangeSourceRegistry\` bound under \`MAIL_ENTITY_SOURCES\`.
+   * Emit-once: edit the \`IncrementalReadBase\` subclasses above, not this map.
    */
-  readonly changeSources: Record<string, IChangeSource<unknown>> = {};
+  readonly changeSources: Record<string, IChangeSource<unknown>>;
 
   // surface-only methods (optional on MailPort): add here
 }
@@ -1294,14 +1404,66 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   TranscriptPort,
   TranscriptCapabilities,
+  CanonicalTranscript,
 } from '@pattern-stack/codegen-transcript';
 import { NO_TRANSCRIPT_CAPABILITIES } from '@pattern-stack/codegen-transcript';
+import { IncrementalReadBase } from '@pattern-stack/codegen/subsystems';
 import type {
   IAuthStrategy,
   IChangeSource,
+  IntegrationSubscriptionView,
+  ReadMode,
+  Ref,
+  ResolvedFilter,
 } from '@pattern-stack/codegen/subsystems';
 import type { GoogleClient } from '@app/integrations/providers/google/google.client';
 import { GOOGLE_AUTH_STRATEGY, GOOGLE_CLIENT } from '../../../providers/google/google.provider.module';
+
+/**
+ * \`detection.filters\` for \`transcript\`, emitted from YAML as a static
+ * \`ResolvedFilter[]\` (RFC-0003 §4 fork #2); \`filterFor()\` returns it.
+ */
+const TRANSCRIPT_DETECTION_FILTERS: ResolvedFilter[] = [];
+
+// Emit-once read primitive (author-owned). Fill the three vendor methods below.
+export class GoogleTranscriptIncrementalRead extends IncrementalReadBase<CanonicalTranscript, ResolvedFilter[]> {
+  readonly label = 'google-transcript-transcript';
+  // Flip to \`true\` if your \`enumerate\` pushes the request filter to the vendor
+  // (e.g. Gmail \`q=\`); leave \`false\` to filter post-hydrate via \`matchesRecord\`.
+  protected override readonly filterPushdown = false;
+
+  constructor(
+    private readonly auth: IAuthStrategy,
+    private readonly client: GoogleClient,
+  ) {
+    super();
+  }
+
+  /** TODO: walk the vendor list endpoint → pages of \`Ref\` (id + cursor + meta). */
+  protected async *enumerate(
+    _mode: ReadMode,
+    _filter?: ResolvedFilter[],
+    _pageSize?: number,
+  ): AsyncIterable<Ref[]> {
+    throw new Error('not implemented: GoogleTranscriptIncrementalRead.enumerate');
+  }
+
+  /** TODO: batched fetch-by-id → \`Map<id, raw>\` (\`mapConcurrent\`, or a vendor /batch). */
+  protected async hydrate(_ids: string[]): Promise<Map<string, unknown>> {
+    throw new Error('not implemented: GoogleTranscriptIncrementalRead.hydrate');
+  }
+
+  /** TODO: vendor payload → \`CanonicalTranscript\` (return \`null\` to drop). */
+  protected toCanonical(_raw: unknown): CanonicalTranscript | null {
+    throw new Error('not implemented: GoogleTranscriptIncrementalRead.toCanonical');
+  }
+
+  protected override filterFor(
+    _subscription: IntegrationSubscriptionView,
+  ): ResolvedFilter[] {
+    return TRANSCRIPT_DETECTION_FILTERS;
+  }
+}
 
 @Injectable()
 export class GoogleTranscriptAdapter implements TranscriptPort {
@@ -1314,16 +1476,19 @@ export class GoogleTranscriptAdapter implements TranscriptPort {
   constructor(
     @Inject(GOOGLE_AUTH_STRATEGY) readonly auth: IAuthStrategy,
     @Inject(GOOGLE_CLIENT) private readonly client: GoogleClient,
-  ) {}
+  ) {
+    this.changeSources = {
+      transcript: new GoogleTranscriptIncrementalRead(this.auth, this.client),
+    };
+  }
 
   /**
-   * Per-entity change sources this adapter contributes to the transcript
-   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
-   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
-   * bound under \`TRANSCRIPT_ENTITY_SOURCES\`. Author-owned — populate one entry
-   * per entity in \`capabilities.entities\`.
+   * Per-entity change sources contributed to the transcript registry, keyed by
+   * entity name. The surface aggregator folds these into the
+   * \`IEntityChangeSourceRegistry\` bound under \`TRANSCRIPT_ENTITY_SOURCES\`.
+   * Emit-once: edit the \`IncrementalReadBase\` subclasses above, not this map.
    */
-  readonly changeSources: Record<string, IChangeSource<unknown>> = {};
+  readonly changeSources: Record<string, IChangeSource<unknown>>;
 
   // surface-only methods (optional on TranscriptPort): add here
 }

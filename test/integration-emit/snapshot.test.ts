@@ -63,4 +63,25 @@ describe('integration emission snapshot — integration-patterns fixture', () =>
       expect(tree).toContain(`entities: ['${entity}']`);
     }
   });
+
+  test('interaction adapters emit the RFC-0003 read primitive (IncrementalReadBase + changeSources)', () => {
+    const { integrationsRoot } = emitFixture();
+    const tree = serializeTree(integrationsRoot);
+    for (const [entity, Canonical, Class] of [
+      ['meeting', 'CanonicalMeeting', 'GoogleMeetingIncrementalRead'],
+      ['email', 'CanonicalEmail', 'GoogleEmailIncrementalRead'],
+      ['transcript', 'CanonicalTranscript', 'GoogleTranscriptIncrementalRead'],
+    ] as const) {
+      // fork #1: subclass typed on the surface package's canonical T + ResolvedFilter[]
+      expect(tree).toContain(
+        `export class ${Class} extends IncrementalReadBase<${Canonical}, ResolvedFilter[]>`,
+      );
+      // fork #2: static detection-filter const returned by filterFor (empty — fixtures carry no detection)
+      expect(tree).toContain(`const ${entity.toUpperCase()}_DETECTION_FILTERS: ResolvedFilter[] = [];`);
+      // registered in changeSources via the preserved 2-arg construction
+      expect(tree).toContain(`${entity}: new ${Class}(this.auth, this.client),`);
+    }
+    // CRM (non-read-primitive) keeps the empty author-filled seam — no read primitive.
+    expect(tree).not.toContain('SalesforceAccountIncrementalRead');
+  });
 });
