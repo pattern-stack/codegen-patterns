@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen-calendar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "L2 calendar surface package for @pattern-stack/codegen — the canonical Meeting type, the CalendarPort composing contract, and DI tokens. See ADR-036.",
   "type": "module",
   "license": "MIT",

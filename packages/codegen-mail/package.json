@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen-mail",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "L2 mail surface package for @pattern-stack/codegen — the canonical Email type, the MailPort composing contract, and DI tokens. See ADR-036.",
   "type": "module",
   "license": "MIT",
