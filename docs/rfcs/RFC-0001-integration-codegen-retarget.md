@@ -15,7 +15,7 @@ Lock the codegen-emission model for the provider/adapter split before D1 begins 
 From the `pattern-stack/integration-patterns` design (2026-04-30 → 05-01), reconciled with ADR-0006 (swe-brain) which made **surfaces span contexts** (one Google OAuth → `calendar`+`mail`+`transcript`; one `transcript` context fed by Google+Gong):
 
 ```
-L1 Strategies (codegen subsystems: IAuthStrategy, IChangeSource<T>, ISyncSink<T>)
+L1 Strategies (codegen subsystems: IAuthStrategy, IChangeSource<T>, IIntegrationSink<T>)
 L2 Capabilities (codegen-<surface> packages: type-shaped ports — Track C)
                           ↓
 L3 Composing Port (consumer / codegen-<surface>: <Surface>Port — Track C C6)
