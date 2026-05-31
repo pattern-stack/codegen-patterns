@@ -11,10 +11,20 @@
 import { describe, it, expect } from 'bun:test';
 import {
   CRM_FIELD_DEFINITION_READER,
+  CRM_PICKLIST_READER,
+  CRM_ASSOCIATION_READER,
+  CRM_CAPABILITIES,
+  NO_CRM_CAPABILITIES,
   type IFieldDefinitionReader,
+  type IPicklistReader,
+  type IAssociationReader,
   type CrmFieldDescriptor,
   type CrmFieldType,
   type CrmEntity,
+  type CrmEntityType,
+  type CrmPicklistValue,
+  type CrmAssociation,
+  type CrmCapabilities,
 } from '@pattern-stack/codegen-crm';
 
 describe('@pattern-stack/codegen-crm public barrel', () => {
@@ -45,5 +55,68 @@ describe('@pattern-stack/codegen-crm public barrel', () => {
     };
     await expect(reader.list('conn-1', 'opportunity')).resolves.toEqual([descriptor]);
     await expect(reader.list('conn-1', 'account')).resolves.toEqual([]);
+  });
+
+  it('C2 — exports IPicklistReader + CRM_PICKLIST_READER', async () => {
+    expect(CRM_PICKLIST_READER).toBe(
+      Symbol.for('@pattern-stack/codegen-crm.picklist-reader'),
+    );
+    const value: CrmPicklistValue = { value: 'new', label: 'New', active: true };
+    const reader: IPicklistReader = {
+      async values(_id, _entity, _fieldId) {
+        return [value];
+      },
+    };
+    await expect(reader.values('conn-1', 'opportunity', 'StageName')).resolves.toEqual([
+      value,
+    ]);
+  });
+
+  it('C3 — exports IAssociationReader + CRM_ASSOCIATION_READER (CrmEntityType aliases CrmEntity)', async () => {
+    expect(CRM_ASSOCIATION_READER).toBe(
+      Symbol.for('@pattern-stack/codegen-crm.association-reader'),
+    );
+    // CrmEntityType is the same union as CrmEntity — a value typed as one is
+    // assignable to the other (alias, single source of truth).
+    const entity: CrmEntityType = 'contact';
+    const asEntity: CrmEntity = entity;
+    expect(asEntity).toBe('contact');
+
+    const assoc: CrmAssociation = {
+      fromEntity: 'contact',
+      fromId: 'c1',
+      toEntity: 'account',
+      toId: 'a1',
+      primary: true,
+    };
+    const reader: IAssociationReader = {
+      async list(_id, from, _fromId, to) {
+        return from === 'contact' && to === 'account' ? [assoc] : [];
+      },
+    };
+    await expect(reader.list('conn-1', 'contact', 'c1', 'account')).resolves.toEqual([
+      assoc,
+    ]);
+  });
+
+  it('C4 — CrmCapabilities + NO_CRM_CAPABILITIES + CRM_CAPABILITIES token', () => {
+    expect(CRM_CAPABILITIES).toBe(Symbol.for('@pattern-stack/codegen-crm.capabilities'));
+    expect(NO_CRM_CAPABILITIES).toEqual({
+      fieldDefinitions: false,
+      picklists: false,
+      associations: false,
+      entities: [],
+    });
+    const caps: CrmCapabilities = {
+      ...NO_CRM_CAPABILITIES,
+      fieldDefinitions: true,
+      picklists: true,
+      entities: ['account', 'contact', 'opportunity'],
+    };
+    expect(caps.fieldDefinitions).toBe(true);
+    expect(caps.associations).toBe(false); // inherited from NO_CRM_CAPABILITIES
+    expect(caps.entities).toEqual(['account', 'contact', 'opportunity']);
+    // NO_CRM_CAPABILITIES is not mutated by the spread.
+    expect(NO_CRM_CAPABILITIES.entities).toEqual([]);
   });
 });
