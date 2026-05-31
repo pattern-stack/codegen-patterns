@@ -1,0 +1,11 @@
+entity:
+  name: meeting
+  plural: meetings
+  table: meetings
+surface: calendar
+fields:
+  title:
+    type: string
+    required: true
+  starts_at:
+    type: datetime
