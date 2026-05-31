@@ -10,7 +10,7 @@ import path from 'node:path';
 import { Command, Option } from 'clipanion';
 import type { CommandClass } from 'clipanion';
 
-import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
+import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
 import { analyzeDomain, validateEntities } from '../../index.js';
 
 import { loadContext, type Context } from '../shared/context.js';
@@ -38,6 +38,11 @@ import {
 	generateEventCodegen,
 } from '../shared/event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
+import {
+	generateProviderModules,
+	resolveTsconfigAliases,
+	collectEntitySurfaces,
+} from '../shared/provider-module-generator.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
@@ -652,6 +657,68 @@ export class EntityNewCommand extends Command {
 				} else {
 					printWarning(`orchestration codegen failed — ${msg}`);
 				}
+			}
+		}
+
+		// Provider module emission (RFC-0001 §2, Track D · D2). Emits one
+		// `<slug>.provider.module.ts` per `definitions/providers/*.yaml`. The D1
+		// cross-validator runs here as a pre-flight gate: the source root +
+		// path-alias map come from the consumer tsconfig (so the import-path
+		// check resolves `@app/…#Export` against real files); when no tsconfig
+		// is present the import check is skipped but slug/surface checks still
+		// run. Skips cleanly when no providers dir exists, so projects without
+		// integrations see no change. Blocking issues ⇒ nothing is written.
+		let providerResult: ReturnType<typeof generateProviderModules> | null = null;
+		try {
+			const providersDir =
+				(ctx.config as { paths?: { providers?: string } } | null | undefined)
+					?.paths?.providers != null
+					? path.resolve(
+							ctx.cwd,
+							(ctx.config as { paths: { providers: string } }).paths.providers,
+						)
+					: path.resolve(ctx.cwd, 'definitions/providers');
+			const providerOutputRoot = path.resolve(
+				ctx.cwd,
+				backendSrcForHandlers,
+				'integrations/providers',
+			);
+			const entitySurfaces = fs.existsSync(entitiesDir)
+				? collectEntitySurfaces(
+						loadEntitiesFromYaml(findYamlFiles(entitiesDir)).successes.map(
+							(s) => s.definition,
+						),
+					)
+				: new Set<string>();
+			const tsAliases = resolveTsconfigAliases(ctx.cwd);
+			providerResult = generateProviderModules({
+				providersDir,
+				outputRoot: providerOutputRoot,
+				entitySurfaces,
+				sourceRoot: tsAliases?.sourceRoot,
+				aliases: tsAliases?.aliases,
+				skipImportCheck: tsAliases === null,
+			});
+			if (!providerResult.skipped && !isJsonMode()) {
+				for (const issue of providerResult.issues) {
+					printError(`provider codegen: ${issue.message}`);
+				}
+				if (providerResult.issues.length === 0) {
+					printInfo(
+						`provider modules regenerated (${providerResult.written.length}) → ${providerOutputRoot}`,
+					);
+				}
+			}
+			if (
+				providerResult.issues.some((i) => i.severity === 'error') &&
+				!this.continueOnError
+			) {
+				return 1;
+			}
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`provider codegen failed — ${msg}`);
 			}
 		}
 
