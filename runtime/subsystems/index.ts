@@ -50,6 +50,21 @@ export type {
   CursorSnapshot,
 } from './observability';
 
+// Integration — entity change-source registry (C7) + change-source port.
+// Exposed here so L2 surface packages (e.g. @pattern-stack/codegen-crm) can
+// import them across the package boundary via @pattern-stack/codegen/subsystems
+// (Track C C6). Selective re-export (not `export *`) to avoid the
+// IntegrationRunSummary name clash with the observability barrel above.
+export {
+  ENTITY_CHANGE_SOURCE_REGISTRY,
+  MemoryEntityChangeSourceRegistry,
+  UnknownEntityError,
+} from './integration';
+export type {
+  IEntityChangeSourceRegistry,
+  IChangeSource,
+} from './integration';
+
 // Auth
 export {
   ENCRYPTION_KEY,
