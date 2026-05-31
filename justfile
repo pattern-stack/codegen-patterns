@@ -201,8 +201,19 @@ release:
     git push origin "v${version}"
     echo "Tagged and pushed v${version}"
 
-# Publish current origin/main to npm (clean worktree, no branch-state assumptions)
-publish:
+# Publish origin/main to npm: the root @pattern-stack/codegen + every opted-in
+# workspace package (clean worktree, no branch-state assumptions).
+#
+# Multi-package (ADR-036 §8 — independent versioning): the root publishes first
+# (its build emits dist/, which the surface packages' .d.ts builds resolve the
+# @pattern-stack/codegen/subsystems import against), then each publishable
+# packages/* publishes at its OWN version. A package opts in by declaring
+# `publishConfig.access: public` (the 4 surface packages do); private or
+# unmarked packages (graph-components, generated api/db) are skipped.
+#
+# Pass `--dry-run` to pack + validate every tarball WITHOUT uploading:
+#   just publish --dry-run
+publish *flags:
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -218,8 +229,9 @@ publish:
     fi
 
     workdir="/tmp/codegen-publish-${version}-$$"
-    echo "Publishing @pattern-stack/codegen@${version} from origin/main"
+    echo "Publishing @pattern-stack/codegen@${version} (+ surface packages) from origin/main"
     echo "Worktree: ${workdir}"
+    [ -n "{{flags}}" ] && echo "Flags: {{flags}}"
 
     trap 'cd /; git worktree remove --force "${workdir}" 2>/dev/null || true' EXIT
 
@@ -235,9 +247,46 @@ publish:
     mise install
 
     mise exec -- bun install
-    mise exec -- npm publish
 
-    echo "✓ Published @pattern-stack/codegen@${version}"
+    # Always build the root first — its dist/ is what the surface packages'
+    # declaration (.d.ts) builds resolve `@pattern-stack/codegen/subsystems`
+    # against, whether or not the root itself is (re)published this run.
+    mise exec -- bun run build
+
+    # Publish one package iff its version isn't already on npm — independent
+    # versioning (ADR-036 §8), so releasing one surface package doesn't force a
+    # root or sibling bump. Already-published versions are skipped, not errors.
+    publish_pkg() {
+        local dir="$1" name="$2" ver="$3" on_npm
+        on_npm=$( ( cd "${dir}" && mise exec -- npm view "${name}@${ver}" version 2>/dev/null ) || true )
+        if [ "${on_npm}" = "${ver}" ]; then
+            echo "↷ skip ${name}@${ver} (already on npm)"
+            return 0
+        fi
+        echo "Publishing ${name}@${ver} from ${dir}"
+        ( cd "${dir}" && mise exec -- npm publish {{flags}} )
+        echo "✓ ${name}@${ver}"
+    }
+
+    # 1. Root package.
+    publish_pkg "." "@pattern-stack/codegen" "${version}"
+
+    # 2. Each opted-in workspace package (publishConfig.access: public), at its
+    #    own version. Private / unmarked (graph-components, generated api/db) skip.
+    for pkgjson in packages/*/package.json; do
+        dir=$(dirname "${pkgjson}")
+        name=$(jq -r '.name' "${pkgjson}")
+        ver=$(jq -r '.version' "${pkgjson}")
+        priv=$(jq -r '.private // false' "${pkgjson}")
+        access=$(jq -r '.publishConfig.access // ""' "${pkgjson}")
+        if [ "${priv}" = "true" ] || [ "${access}" != "public" ]; then
+            echo "↷ skip ${name} (not opted in: private=${priv} access=${access:-none})"
+            continue
+        fi
+        publish_pkg "${dir}" "${name}" "${ver}"
+    done
+
+    echo "✓ Done."
 
 # ─── Install Skill ────────────────────────────────────────────────────────────
 
