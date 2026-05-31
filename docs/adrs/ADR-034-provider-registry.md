@@ -1,6 +1,15 @@
 # ADR-034 — Project-Level Provider Registry
 
-**Status:** Draft
+> **Superseded by [RFC-0001](../rfcs/RFC-0001-integration-codegen-retarget.md) (see §1, §8).**
+> The project-level provider registry is no longer a `codegen.config.yaml`
+> `providers:` block; provider truth moves to first-class
+> `definitions/providers/<provider>.yaml` artifacts (slug + auth + client +
+> surfaces), which carry strictly more than the config block did. The
+> cross-subsystem "what providers is this app connected to" question is
+> answered by scanning that directory. Do not implement the `providers:` config
+> block below. Schema + validator landed in Track D · D1 (#396).
+
+**Status:** Superseded by RFC-0001
 **Date:** 2026-04-26
 **Owner:** Doug
 **Related:** ADR-033 (config-driven change sources), ADR-033.1 (provider-keyed `detection:` — tightens validation), ADR-031-auth-subsystem, ADR-025 (combiner subsystems), epic #242 (audit-tier)

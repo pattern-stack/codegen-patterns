@@ -1,0 +1,11 @@
+# Valid single-surface provider (RFC-0001 §1).
+slug: hubspot
+display_name: HubSpot
+auth:
+  type: oauth2
+  strategy: '@app/integrations/providers/hubspot/hubspot-oauth.strategy#HubspotOAuthStrategy'
+  scopes: [crm.objects.contacts.read, crm.objects.deals.read]
+client:
+  class: '@app/integrations/providers/hubspot/hubspot.client#HubspotClient'
+  base_url: https://api.hubapi.com
+surfaces: [crm]
