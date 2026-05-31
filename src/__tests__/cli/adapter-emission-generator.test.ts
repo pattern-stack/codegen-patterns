@@ -109,24 +109,58 @@ describe('emitAdapters — orchestration', () => {
     });
   }
 
-  it('emits the crm surface and skips surfaces with no port package', () => {
+  it('emits every registered surface — crm (hubspot) + calendar/mail/transcript (google)', () => {
     const outRoot = mkdtempSync(join(tmpdir(), 'cgp-d3-'));
     const res = run(outRoot);
 
-    // hubspot serves crm (emittable); google serves calendar/mail/transcript (skipped).
-    expect(res.scaffoldsWritten).toHaveLength(1);
+    // All four surfaces are registered in SURFACE_REGISTRY, so both providers
+    // emit: hubspot→crm, google→calendar/mail/transcript. One scaffold each.
+    expect(res.scaffoldsWritten).toHaveLength(4);
     expect(existsSync(join(outRoot, 'crm/adapters/hubspot/hubspot-crm.adapter.ts'))).toBe(true);
-    expect(existsSync(join(outRoot, 'crm/adapters/hubspot/hubspot-crm.adapter.module.ts'))).toBe(
-      true,
-    );
-    expect(existsSync(join(outRoot, 'crm/adapters/index.ts'))).toBe(true);
-    expect(existsSync(join(outRoot, 'crm/crm-adapters.tokens.ts'))).toBe(true);
     expect(existsSync(join(outRoot, 'crm/crm-adapters.module.ts'))).toBe(true);
+    for (const surface of ['calendar', 'mail', 'transcript']) {
+      expect(
+        existsSync(join(outRoot, `${surface}/adapters/google/google-${surface}.adapter.ts`)),
+      ).toBe(true);
+      expect(existsSync(join(outRoot, `${surface}/${surface}-adapters.module.ts`))).toBe(true);
+      expect(existsSync(join(outRoot, `${surface}/types.generated.ts`))).toBe(true);
+    }
+    // Nothing skipped — every served surface has a registered port package.
+    expect(res.skippedSurfaces).toEqual([]);
+  });
 
-    const skippedSurfaces = res.skippedSurfaces.map((s) => `${s.provider}:${s.surface}`).sort();
-    expect(skippedSurfaces).toEqual(['google:calendar', 'google:mail', 'google:transcript']);
-    // No calendar/mail/transcript tree emitted.
-    expect(existsSync(join(outRoot, 'calendar'))).toBe(false);
+  it('skips a surface with no registered port package (with a clear reason)', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'cgp-d3-'));
+    // Synthesize a provider serving an unregistered surface.
+    const base = loadDef('hubspot.yaml');
+    const smsProvider = {
+      definition: { ...base, slug: 'twilio', surfaces: ['sms'] },
+      filePath: '/x/twilio.yaml',
+    };
+    const res = emitAdapters({
+      providers: [smsProvider],
+      entities: ENTITIES,
+      outputRoot: outRoot,
+    });
+    expect(res.scaffoldsWritten).toEqual([]);
+    expect(res.skippedSurfaces).toHaveLength(1);
+    expect(res.skippedSurfaces[0]).toMatchObject({ provider: 'twilio', surface: 'sms' });
+    expect(res.skippedSurfaces[0].reason).toContain("no surface package for 'sms'");
+    expect(existsSync(join(outRoot, 'sms'))).toBe(false);
+  });
+
+  it('an interaction-surface scaffold (no L2 ports) emits cleanly', () => {
+    const calendar = generateAdapterScaffold(loadDef('google.yaml'), 'calendar', ['meeting']);
+    expect(calendar).toContain('export class GoogleCalendarAdapter implements CalendarPort');
+    expect(calendar).toContain("from '@pattern-stack/codegen-calendar'");
+    expect(calendar).toContain("entities: ['meeting']");
+    // No L2 readers/stubs/flags on an incremental-read surface.
+    expect(calendar).not.toContain('IFieldDefinitionReader');
+    expect(calendar).not.toContain('not implemented');
+    expect(calendar).not.toContain('fieldDefinitions: true');
+    // still injects L1 + sources + exposes changeSources
+    expect(calendar).toContain('readonly sources: IEntityChangeSourceRegistry');
+    expect(calendar).toContain('readonly changeSources: Record<string, IChangeSource<unknown>>');
   });
 
   it('barrel + aggregator + tokens reference the adapter and registry tokens', () => {

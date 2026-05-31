@@ -44,8 +44,23 @@ describe('integration emission snapshot — integration-patterns fixture', () =>
     expect(tree).toContain("entities: ['account', 'contact', 'opportunity']");
   });
 
-  test('no non-crm surface is emitted (the fixture provider serves only crm)', () => {
-    const { skippedSurfaces } = emitFixture();
+  test('the interaction surfaces (google: calendar/mail/transcript) emit — nothing skipped', () => {
+    const { integrationsRoot, skippedSurfaces } = emitFixture();
+    const tree = serializeTree(integrationsRoot);
+    // google is a multi-surface interaction provider; all three surfaces are
+    // registered in SURFACE_REGISTRY (#418), so they emit rather than skip.
     expect(skippedSurfaces).toEqual([]);
+    expect(tree).toContain('providers/google/google.provider.module.ts');
+    for (const [surface, entity, Port] of [
+      ['calendar', 'meeting', 'CalendarPort'],
+      ['mail', 'email', 'MailPort'],
+      ['transcript', 'transcript', 'TranscriptPort'],
+    ] as const) {
+      expect(tree).toContain(`${surface}/adapters/google/google-${surface}.adapter.ts`);
+      expect(tree).toContain(`${surface}/${surface}-adapters.module.ts`);
+      expect(tree).toContain(`${surface}/types.generated.ts`);
+      expect(tree).toContain(`implements ${Port}`);
+      expect(tree).toContain(`entities: ['${entity}']`);
+    }
   });
 });

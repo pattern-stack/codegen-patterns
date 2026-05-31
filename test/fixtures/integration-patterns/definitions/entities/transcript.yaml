@@ -1,0 +1,9 @@
+entity:
+  name: transcript
+  plural: transcripts
+  table: transcripts
+surface: transcript
+fields:
+  body:
+    type: string
+    required: true

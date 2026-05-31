@@ -109,6 +109,31 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
       },
     ],
   },
+  // Interaction surfaces (#416) are incremental-read with no L2 sub-ports — the
+  // port composes L1 (auth + sources) + a capabilities descriptor whose only
+  // field is `entities`; reads go through the change-source registry. So
+  // `l2Ports: []` and the scaffold emits no L2 readers/stubs/capability flags.
+  calendar: {
+    packageName: "@pattern-stack/codegen-calendar",
+    portType: "CalendarPort",
+    capabilitiesType: "CalendarCapabilities",
+    noCapsConst: "NO_CALENDAR_CAPABILITIES",
+    l2Ports: [],
+  },
+  mail: {
+    packageName: "@pattern-stack/codegen-mail",
+    portType: "MailPort",
+    capabilitiesType: "MailCapabilities",
+    noCapsConst: "NO_MAIL_CAPABILITIES",
+    l2Ports: [],
+  },
+  transcript: {
+    packageName: "@pattern-stack/codegen-transcript",
+    portType: "TranscriptPort",
+    capabilitiesType: "TranscriptCapabilities",
+    noCapsConst: "NO_TRANSCRIPT_CAPABILITIES",
+    l2Ports: [],
+  },
 };
 
 // ============================================================================
@@ -208,14 +233,27 @@ export function generateAdapterScaffold(
   const n = names(def.slug, surface);
   const client = parseImportRef(def.client.class);
 
-  const l2TypeImports = spec.l2Ports.map((p) => p.type).join(",\n  ");
   const entitiesLiteral = entities.length
     ? `[${entities.map((e) => `'${e}'`).join(", ")}]`
     : "[]";
 
-  const capabilityLines = spec.l2Ports
-    .map((p) => `    ${p.capFlag}: true,`)
+  // Surface-package type imports: the port, each L2 reader type (none for
+  // incremental-read interaction surfaces), then the capabilities type.
+  const surfaceTypeImports = [
+    spec.portType,
+    ...spec.l2Ports.map((p) => p.type),
+    spec.capabilitiesType,
+  ]
+    .map((t) => `  ${t},`)
     .join("\n");
+
+  // Capabilities literal body: the empty-caps spread, a `true` flag per L2 port
+  // (none for interaction surfaces), then the surface-derived entities.
+  const capabilityBody = [
+    `    ...${spec.noCapsConst},`,
+    ...spec.l2Ports.map((p) => `    ${p.capFlag}: true,`),
+    `    entities: ${entitiesLiteral},`,
+  ].join("\n");
 
   const l2Members = spec.l2Ports
     .map(
@@ -227,6 +265,9 @@ export function generateAdapterScaffold(
   };`,
     )
     .join("\n\n");
+  // Only emit the L2 section (with surrounding blank lines) when there are L2
+  // ports — interaction surfaces omit it entirely.
+  const l2Section = l2Members ? `\n${l2Members}\n` : "";
 
   return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running
@@ -234,9 +275,7 @@ export function generateAdapterScaffold(
 // Source: definitions/providers/${def.slug}.yaml (surface: ${surface}).
 import { Inject, Injectable } from '@nestjs/common';
 import type {
-  ${spec.portType},
-  ${l2TypeImports},
-  ${spec.capabilitiesType},
+${surfaceTypeImports}
 } from '${spec.packageName}';
 import { ${spec.noCapsConst} } from '${spec.packageName}';
 import type {
@@ -252,9 +291,7 @@ import { ${n.entitySourcesToken} } from '../../${surface}-adapters.tokens';
 export class ${n.adapterClass} implements ${spec.portType} {
   /** Declared capabilities. \`entities\` derives from \`surface: ${surface}\` entity YAML. */
   readonly capabilities: ${spec.capabilitiesType} = {
-    ...${spec.noCapsConst},
-${capabilityLines}
-    entities: ${entitiesLiteral},
+${capabilityBody}
   };
 
   constructor(
@@ -262,9 +299,7 @@ ${capabilityLines}
     @Inject(${n.clientToken}) private readonly client: ${client.exportName},
     @Inject(${n.entitySourcesToken}) readonly sources: IEntityChangeSourceRegistry,
   ) {}
-
-${l2Members}
-
+${l2Section}
   /**
    * Per-entity change sources this adapter contributes to the ${surface}
    * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
