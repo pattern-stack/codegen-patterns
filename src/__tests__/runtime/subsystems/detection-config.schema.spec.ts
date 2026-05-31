@@ -11,8 +11,10 @@
  */
 import { describe, expect, it } from 'bun:test';
 import {
+  CURSOR_DIVISIBILITY,
   DetectionConfigSchema,
   FieldMappingSchema,
+  isDivisibleCursor,
   ResolvedFilterSchema,
   CursorStrategySchema,
 } from '../../../../runtime/subsystems/integration/detection-config.schema';
@@ -113,10 +115,47 @@ describe('CursorStrategySchema', () => {
     ).toEqual({ kind: 'eventId', field: 'event_id' });
   });
 
+  it('accepts the historyId variant (Gmail — atomic, RFC-0003 §3)', () => {
+    expect(
+      CursorStrategySchema.parse({ kind: 'historyId', field: 'historyId' }),
+    ).toEqual({ kind: 'historyId', field: 'historyId' });
+  });
+
+  it('accepts the syncToken variant (Calendar — atomic, RFC-0003 §3)', () => {
+    expect(
+      CursorStrategySchema.parse({ kind: 'syncToken', field: 'nextSyncToken' }),
+    ).toEqual({ kind: 'syncToken', field: 'nextSyncToken' });
+  });
+
   it('rejects an unknown kind', () => {
     expect(
       CursorStrategySchema.safeParse({ kind: 'offset', field: 'n' }).success,
     ).toBe(false);
+  });
+});
+
+describe('cursor divisibility (RFC-0003 §3)', () => {
+  it('classifies sortable/monotonic watermarks as divisible', () => {
+    expect(isDivisibleCursor('systemModstamp')).toBe(true);
+    expect(isDivisibleCursor('timestamp')).toBe(true);
+    expect(isDivisibleCursor('replayId')).toBe(true);
+  });
+
+  it('classifies opaque vendor tokens as atomic', () => {
+    expect(isDivisibleCursor('historyId')).toBe(false);
+    expect(isDivisibleCursor('syncToken')).toBe(false);
+    expect(isDivisibleCursor('eventId')).toBe(false);
+  });
+
+  it('CURSOR_DIVISIBILITY covers every cursor kind exactly', () => {
+    const kinds = ['systemModstamp', 'replayId', 'timestamp', 'eventId', 'historyId', 'syncToken'];
+    expect(Object.keys(CURSOR_DIVISIBILITY).sort()).toEqual([...kinds].sort());
+    // predicate agrees with the map for every kind
+    for (const k of kinds) {
+      expect(isDivisibleCursor(k as keyof typeof CURSOR_DIVISIBILITY)).toBe(
+        CURSOR_DIVISIBILITY[k as keyof typeof CURSOR_DIVISIBILITY],
+      );
+    }
   });
 });
 

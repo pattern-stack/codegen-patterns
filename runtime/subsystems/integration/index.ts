@@ -55,9 +55,11 @@ export { MemoryEntityChangeSourceRegistry } from './entity-change-source-registr
 // DetectionConfig (#226-1) — Zod schema + inferred types; canonical source
 // of filter/mapping shape consumed by primitives + codegen YAML validator
 export {
+  CURSOR_DIVISIBILITY,
   CursorStrategySchema,
   DetectionConfigSchema,
   FieldMappingSchema,
+  isDivisibleCursor,
   PollDetectionSchema,
   ResolvedFilterSchema,
   WebhookDetectionSchema,
@@ -91,6 +93,19 @@ export {
   type PollFetchCallback,
   type PollFetchContext,
 } from './poll-change-source';
+
+// IncrementalRead primitive (RFC-0003 R1) — enumerate/hydrate read capability;
+// the providing base emits a streaming, filter-before-hydrate IChangeSource<T>.
+export {
+  IncrementalReadBase,
+  mapConcurrent,
+  type IncrementalRead,
+  type RandomRead,
+  type ReadMode,
+  type ReadRequest,
+  type Ref,
+  type SourcedRecord,
+} from './incremental-read';
 
 // Webhook primitive (#226-4) — generic webhook-mode IChangeSource<T>
 // driven by a consumer-owned inbound staging queue iterator

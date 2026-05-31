@@ -65,6 +65,24 @@ export type {
   IChangeSource,
 } from './integration';
 
+// Integration — IncrementalRead read primitive (RFC-0003 R1). Re-exported here
+// so surface packages can author enumerate/hydrate adapters across the package
+// boundary via @pattern-stack/codegen/subsystems.
+export {
+  CURSOR_DIVISIBILITY,
+  IncrementalReadBase,
+  isDivisibleCursor,
+  mapConcurrent,
+} from './integration';
+export type {
+  IncrementalRead,
+  RandomRead,
+  ReadMode,
+  ReadRequest,
+  Ref,
+  SourcedRecord,
+} from './integration';
+
 // Auth
 export {
   ENCRYPTION_KEY,
