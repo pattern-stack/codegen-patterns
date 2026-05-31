@@ -1,13 +1,13 @@
 # RFC-0003 — `IncrementalRead`: enumerate/hydrate read primitive + the scaffold body it emits (Track D round-3)
 
-**Status:** Draft — pending Gate 1.5 critique
+**Status:** Draft — Gate 1.5 critique addressed (rev 2); pending re-critique
 **Date:** 2026-05-31
 **Owner:** Doug
 **Related:** RFC-0001 (provider/adapter emission — *this RFC reshapes the read-side `changeSources` body it emits*), RFC-0002 (module assembly emission — **disjoint surface; composes, does not collide — see §6**), ADR-033/033.1 (`detection:` config + `PollChangeSource`), Track C #329 (surface packages), swe-brain ADR-0002/ADR-0003 (the capability-primitive model this promotes), `runtime/subsystems/integration/` (the `IChangeSource` / `PollChangeSource` / orchestrator this builds on).
 
 ## Goal
 
-Today the read-side author-seam is a bare `changeSources: Record<string, IChangeSource<unknown>> = {}` (RFC-0001 §4, `adapter-emission-generator.ts:308`) — the author hand-writes a `listChanges` async generator per entity, with no structure imposed. Every swe-brain adapter that filled it did the same wrong thing: **fetch everything into an array, then return** — buffer-all, serial, one run-final cursor. The result is the email-sync regression (21k messages / 40.5 min / serial `messages.get`) and a latent data-loss bug (a mid-backfill failure persists the run-final cursor and silently skips the un-hydrated tail).
+Today the read-side author-seam is a bare `changeSources: Record<string, IChangeSource<unknown>> = {}` (RFC-0001 §4, `src/cli/shared/adapter-emission-generator.ts:311`) — the author hand-writes a `listChanges` async generator per entity, with no structure imposed. Every swe-brain adapter that filled it did the same wrong thing: **fetch everything into an array, then return** — buffer-all, serial, one run-final cursor. The result is the email-sync regression (21k messages / 40.5 min / serial `messages.get`) and a latent data-loss bug (a mid-backfill failure persists the run-final cursor and silently skips the un-hydrated tail).
 
 This RFC introduces **`IncrementalRead<T, F>`** — a universal read capability whose providing base decomposes the read into two composable verbs:
 
@@ -21,6 +21,8 @@ The base owns the orchestration (drain, pre-hydrate filter placement, bounded-co
 `IChangeSource.listChanges` is the right *transport* contract (streaming `AsyncIterable<Change<T>>`, two-arg, orchestrator owns cursor lifecycle). The gap is one level down: **nothing guides how the body that produces those changes is written.** An empty `changeSources` container invites the author to materialize a batch and yield it — which defeats the streaming the orchestrator and `PollChangeSource` already provide.
 
 ### The motivating evidence — three read shapes, one wrong abstraction
+
+> _External evidence — not in this repo._ The swe-brain adapters and the dealbrain HubSpot reference below live in their own repos; they are not greppable from this branch. They motivate the design but are not citation targets for implementation.
 
 swe-brain's three Google adapters have three *different* read shapes, and the current single-verb seam fits none of them well:
 
@@ -55,6 +57,17 @@ export interface ReadRequest<F> {
   readonly pageSize?: number;
 }
 
+/** NET-NEW (R1). The read()-side envelope: canonical record + the raw vendor payload it
+ *  came from + the per-ref cursor. Distinct from the runtime's existing transport envelope
+ *  `Change<T>` (operation/externalId/cursor). One-directional: `listChanges()` adapts
+ *  `read()` → `Change<T>` (§2), dropping `raw` and stamping `operation`. `read()` keeps `raw`
+ *  so consumers (e.g. a query surface) can re-project without a second fetch. */
+export interface SourcedRecord<T> {
+  readonly record: T;
+  readonly raw: unknown;
+  readonly cursor: unknown;
+}
+
 export interface IncrementalRead<T, F = unknown> {
   read(req: ReadRequest<F>): AsyncIterable<SourcedRecord<T>>;   // the one public verb — streams
 }
@@ -63,6 +76,8 @@ export interface RandomRead<T> {
   get(id: string): Promise<T | null>;                          // the atom hydrate is built from (§2)
 }
 ```
+
+All four types above are **net-new in R1**; only `Change<T>` / `IChangeSource<T>` / `PollChangeSource` exist in `runtime/subsystems/integration/` today.
 
 ## 2. The providing base — what's PROVIDED vs SUPPLIED
 
@@ -115,14 +130,19 @@ Three concerns the base settles (each a pressure-test finding):
 
 Per-ref cursors fix the silent-tail-skip — a crash at page 80 of a backfill resumes at page 80 — **but only when the cursor is divisible.** Divisibility is a property of the cursor strategy, not the primitive:
 
-- **Divisible** — sortable-field watermarks (HubSpot `systemModstamp`, any `timestamp`/`system-modstamp` strategy). `enumerate` stamps a real per-ref cursor; the base/orchestrator may checkpoint mid-run.
+- **Divisible** — sortable-field watermarks (HubSpot `systemModstamp`, the existing `timestamp` / `systemModstamp` `kind`s). `enumerate` stamps a real per-ref cursor; the base/orchestrator may checkpoint mid-run.
 - **Atomic** — opaque vendor tokens (Gmail `historyId`, Calendar `syncToken`). The next watermark only exists at end-of-walk; an interrupted *delta* run stays all-or-nothing (acceptable — deltas are small). Full/reconcile backfills over these vendors checkpoint by **window/page**, not by token.
 
-**Scope:** add a `divisible: boolean` (or a `checkpoint(refs)` capability) to the cursor-strategy interface so the base knows when per-ref checkpointing is safe versus when to fall back to per-window. The orchestrator's existing advance-on-yield / persist-on-success lifecycle is unchanged; it simply honors the strategy's divisibility.
+**Today's reality:** `CursorStrategy` (`src/.../detection-config.schema.ts`, the `detection:` config) is a **Zod discriminated union of inert config shapes** (`kind: 'systemModstamp' | 'replayId' | 'timestamp' | 'eventId'`), not a behavioral interface — so a `checkpoint(refs)` *method* cannot live on it. Two of the §3 examples are **net-new kinds**: Gmail `historyId` and Calendar `syncToken` have no schema entry today; the opaque-token (atomic) side of the split must be added, not merely "honored."
+
+**Scope (R2), revised per critique:**
+1. Add the missing atomic `kind`s (`historyId`, `syncToken`) to the `CursorStrategy` union.
+2. Add divisibility as a **predicate keyed by `kind`** (a const map / derived boolean), *not* a method on the parsed config and *not* a free `checkpoint(refs)` — promote to a richer capability only if a vendor later needs custom granularity (§7 Q3).
+3. **Atomic-cursor mapping is real work, not "unchanged."** The orchestrator (`execute-integration.use-case.ts:148-219`) advances `latestCursor = change.cursor` per yield and persists last-yielded on iterator failure (`:192-208`) — which makes per-ref checkpointing *free for divisible cursors*. But for **atomic** cursors that same persist-last-yielded behavior is the silent-tail bug: a mid-walk opaque token would be persisted and is non-resumable. So R2 must make the base **withhold `change.cursor` until a safe boundary** for atomic strategies — emit the new token only at end-of-window/end-of-walk, so the orchestrator never persists an unresumable mid-walk token. The orchestrator's persist-on-success lifecycle is reused unchanged; the *base* owns the `Ref.cursor → Change.cursor` gating.
 
 ## 4. What codegen emits (the scaffold reshape)
 
-`generateAdapterScaffold` (`adapter-emission-generator.ts:227`) changes its read-side body. Today it emits one class with an empty `changeSources = {}`. After this RFC, per entity in `capabilities.entities` it emits an **emit-once `IncrementalReadBase` subclass** and registers it:
+`generateAdapterScaffold` (`src/cli/shared/adapter-emission-generator.ts:227`) changes its read-side body. Today it emits one class with an empty `changeSources = {}` (`:311`). After this RFC, per entity in `capabilities.entities` it emits an **emit-once `IncrementalReadBase` subclass** and registers it:
 
 ```ts
 // <CODEGEN-SCAFFOLD-V1>   ← still emit-once; regen skips if present
@@ -145,7 +165,11 @@ readonly changeSources: Record<string, IChangeSource<unknown>> = {
 };
 ```
 
-Unchanged: the emit-once sentinel + skip-on-regen, the `@Injectable` adapter `implements <Port>`, the `capabilities` literal, the `auth`/`client` injection (post-E0 — no registry arg). The `filterPushdown` flag flows into the manifest so the falsifier suite can assert *"emits only records matching the filter"* and record which adapters filter post-hydrate.
+Unchanged: the emit-once sentinel + skip-on-regen, the `@Injectable` adapter `implements <Port>`, the `capabilities` literal, and the constructor injection.
+
+> **E0 is a hard prerequisite for R3 — not yet landed on `main`.** The 2-arg `new GoogleEmailIncrementalRead(this.auth, this.client)` construction site above assumes the **post-E0** scaffold (no `IEntityChangeSourceRegistry` injection). As of this RFC's branch the scaffold *still* imports the registry (`adapter-emission-generator.ts:285`) and injects it (`:301` `@Inject(${entitySourcesToken}) readonly sources`); commit `6e77e49` ("E0 — drop registry back-edge") lives only on `feat/td-r2-e0/e1/e2`, **not** on `main`. **R3 must not start until E0 has merged to the R3 branch base** (either rebase onto the E-track, or fold the registry-drop into R3). R1/R2 are pure runtime additions and have no E0 dependency.
+
+The `filterPushdown` flag must flow into a **net-new adapter-emission manifest** (no such manifest pipeline exists today) so the falsifier suite (also net-new, §8) can assert *"emits only records matching the filter"* and record which adapters filter post-hydrate. Building the manifest field is R3 work; building the falsifier harness is R4 work.
 
 **Filter source:** `DetectionConfig.filters` (already parsed → `ResolvedFilter[]`, already handed to the poll callback as `ctx.filters`) maps to `ReadRequest.filter`. The discipline this RFC adds is *where* it's applied (pre-hydrate) and *whether the vendor pushed it down* (the flag) — the hook already exists.
 
@@ -155,10 +179,12 @@ Unchanged: the emit-once sentinel + skip-on-regen, the `@Injectable` adapter `im
 
 ## 6. Relationship to RFC-0002 — disjoint, composes, no collision
 
+> _Cross-branch note:_ RFC-0002 is **not a file on this branch** (`docs/rfcs/` here holds only RFC-0001 and RFC-0003); the quoted passages below are reproduced from the E-track and are unverifiable from this branch. Confirm them against RFC-0002 once the branches converge.
+
 RFC-0002 declares the read-side body **out of its own scope** twice: §1 *"Unchanged author-seam: the `IChangeSource.listChanges` fetch body inside the adapter scaffold's `changeSources`"*; §6 *"adapter scaffold `changeSources` (author fills the `IChangeSource` bodies) — Kept."* RFC-0002 builds the **assembly** (sink, per-entity `ExecuteIntegrationUseCase`, module packaging, aggregator, tokens) *around* `adapter.changeSources['<entity>']`, consuming it as an opaque `IChangeSource`. This RFC reshapes **what's inside** that seam.
 
 - **Different altitudes of the same emitter.** RFC-0002 wires the box; RFC-0003 shapes the box's contents. The assembly binds `INTEGRATION_CHANGE_SOURCE = adapter.changeSources['<entity>']` regardless of how the body is authored.
-- **Shared file already de-conflicted.** Both touch `generateAdapterScaffold`. RFC-0002's only change there is **E0** (drop the `IEntityChangeSourceRegistry` injection) — **already landed** (`6e77e49`). RFC-0003 builds on the post-E0 scaffold; E1–E4 add new files and don't re-touch the body.
+- **Shared file de-conflicted via E0 — which must land first.** Both touch `generateAdapterScaffold`. RFC-0002's only change there is **E0** (drop the `IEntityChangeSourceRegistry` injection), committed on the E-track as `6e77e49` but **not yet merged to `main`** (see §4 prerequisite callout). RFC-0003's R3 builds on the post-E0 scaffold; E1–E4 add new files and don't re-touch the body. **Sequencing constraint:** R3 is gated on E0 reaching R3's branch base. R1/R2 are independent.
 - **RFC-0003 reinforces RFC-0002 §3.** §3 resolved to Option A ("source built once, single construction site"). With the body an `IncrementalReadBase` subclass, the `changeSources['<entity>']` entry *is* the single construction — Option A becomes true at the type level.
 - **"Migrate once" binds the release.** Both reshape the shape swe-brain migrates against. Ship **both in the 0.13 train** (RFC-0002 assembly + RFC-0003 read body) so swe-brain regenerates and fills bodies exactly once. swe-brain may prototype the three hook bodies now (they move verbatim), but consumption waits for the combined 0.13 shape.
 
@@ -177,7 +203,7 @@ Extend the RFC-0001 §7 / RFC-0002 §8 integration-emission snapshot fixture (`t
 
 - **R1** — land `IncrementalRead`/`RandomRead`/`IncrementalReadBase` in `runtime/subsystems/integration/` + export from `@pattern-stack/codegen/subsystems`; unit-test the base (drain, pre-hydrate filter, keyed/miss-tolerant hydrate, default-hydrate-over-get, per-ref cursor). No emitter change yet — pure runtime addition, parallel to RFC-0002 E1–E4.
 - **R2** — cursor-strategy divisibility (§3): add the flag; base/orchestrator honor it.
-- **R3** — reshape `generateAdapterScaffold` read-side body (§4): emit the per-entity `IncrementalReadBase` subclass + `changeSources` registration; thread `DetectionConfig.filters` → `ReadRequest.filter`; surface `filterPushdown` into the manifest. Rebaseline the emission snapshot.
+- **R3** — *(gated on E0 landing — §4/§6)* reshape `generateAdapterScaffold` read-side body (§4): emit the per-entity `IncrementalReadBase` subclass + `changeSources` registration; thread `DetectionConfig.filters` → `ReadRequest.filter`; add the net-new `filterPushdown` manifest field. Update the **template-emission snapshot** (the emitted-output fixture per §8 — *not* `just test-baseline`).
 - **R4** — falsifier assertion (§8) + docs (integration skill `protocols-and-ports.md`: the enumerate/hydrate authoring recipe, HubSpot `listSince` as the north star).
 - **Release** — ship R1–R4 in **0.13 alongside RFC-0002 E1–E4** (one consumer-facing shape).
 
@@ -186,25 +212,25 @@ Extend the RFC-0001 §7 / RFC-0002 §8 integration-emission snapshot fixture (`t
 After 0.13: codegen emits an integration that is correct-by-construction on the read path — streaming, bounded-parallel hydration, filter-before-hydrate, per-ref checkpointing where the cursor allows — and the author fills exactly three vendor methods (`enumerate` / `hydrate` / `toCanonical`) plus any non-generic sink write logic. The buffer-all/serial/run-final-cursor regression becomes structurally unwritable. swe-brain consumes it in one regen (RFC-0002 assembly + RFC-0003 read body together), deleting the hand-rolled `pullX` ports and `*_integration` modules.
 
 ## Spec Review (Gate 1.5 critique)
-<!-- written by: reviewer · gate 1.5 · /sdlc:critique · lens=mixed -->
+<!-- written by: reviewer · gate 1.5 · /sdlc:critique · lens=mixed · rerun (rev 2) -->
 
-**Target:** `docs/rfcs/RFC-0003-incremental-read-enumerate-hydrate.md`
+**Target:** `docs/rfcs/RFC-0003-incremental-read-enumerate-hydrate.md` (rev 2)
 **Against:** cited-code (`src/cli/shared/adapter-emission-generator.ts`, `runtime/subsystems/integration/*`; swe-brain/dealbrain reference adapters NOT readable on this branch)
-**Verdict:** REVISE
+**Verdict:** PASS_WITH_NOTES
 
-**Blockers (2):**
-- [§6, §4, §10 intro] **E0 has NOT landed on this branch.** RFC claims the read-side scaffold is "post-E0 (no `IEntityChangeSourceRegistry` injection)" and that E0 "already landed (`6e77e49`)". Commit `6e77e49` exists ("E0 — drop registry back-edge") but is **not an ancestor of HEAD** (`361a6e7`). The current scaffold STILL imports `IEntityChangeSourceRegistry` (`adapter-emission-generator.ts:285`) and STILL injects it (`:301` `@Inject(${entitySourcesToken}) readonly sources`). The RFC's §4 "Unchanged: ... the `auth`/`client` injection (post-E0 — no registry arg)" and §6's construction-site `new GoogleEmailIncrementalRead(this.auth, this.client)` both assume a constructor shape that does not exist here. · _Fix:_ Either gate R3 explicitly on E0 landing first (state the dependency as a hard prerequisite, not a past-tense fact), or fold the registry-drop into this RFC's R3. As written, an implementer starting R1–R4 against this branch will build the scaffold reshape against a 3-arg constructor and the `new X(this.auth, this.client)` example will mis-compile.
-- [Goal, §4, §6, §8] **Wrong file path and stale line number for the central seam.** RFC repeatedly cites `adapter-emission-generator.ts:308` for the bare `changeSources` seam. The file is at `src/cli/shared/adapter-emission-generator.ts` (NOT `src/integration/...` — RFC §6 / Related implies the integration dir), and the seam is at **line 311**, not 308. `generateAdapterScaffold` at `:227` is correct. · _Fix:_ Correct the path to `src/cli/shared/adapter-emission-generator.ts` and the seam line to `:311`. The implementer reshapes this exact function body; a wrong path/line is the highest-risk citation drift in the doc.
+_Re-critique of rev 2. Both rev-1 blockers cleared — verified, not merely reworded:_
+- **Blocker 1 (E0 framing) — CLEARED.** §4 now carries an explicit hard-prerequisite blockquote ("E0 ... not yet landed on `main`"), correctly citing the still-present registry import (`adapter-emission-generator.ts:285`, verified) and injection (`:301 @Inject(...entitySourcesToken) readonly sources`, verified present). §6's "Shared file de-conflicted via E0 — which must land first" bullet and the R3 "(gated on E0 landing)" prefix gate R3 correctly; R1/R2 framed E0-independent. The `6e77e49` claim is accurate: it is NOT on `main` and lives on `feat/td-r2-e0/e1/e2` (confirmed via `git branch --contains`).
+- **Blocker 2 (citation drift) — CLEARED.** All seam references now read `src/cli/shared/adapter-emission-generator.ts`; seam at `:311` (verified exact) and `generateAdapterScaffold` at `:227` (verified exact). No remaining `:308` or `src/integration/...` references.
 
-**Notes (4):**
-- [§3] **Cursor "strategy interface" is a Zod schema union, not a behavioral interface.** `CursorStrategy` (`detection-config.schema.ts:88-95`) is a discriminated union of inert config shapes (`systemModstamp` / `replayId` / `timestamp` / `eventId`). A `checkpoint(refs)` *method* cannot live on a parsed config object; only a `divisible: boolean` schema field is viable there. Also, the §3 examples name strategies that don't exist as `kind` values — Gmail `historyId` and Calendar `syncToken` have no schema entry today; the opaque-token side of the divisible/atomic split is net-new, not an extension of existing kinds. R2 should add the kinds AND a separate `divisible` predicate (likely a const map keyed by `kind`), not "extend the interface."
-- [§3] **"Orchestrator lifecycle unchanged" under-specifies the atomic-cursor path.** Verified: the orchestrator (`execute-integration.use-case.ts:148-219`) advances `latestCursor = change.cursor` per yield and persists it on iterator failure (`:192-208`) — which makes per-ref checkpointing free for *divisible* cursors. But for *atomic* cursors the RFC's "checkpoint by window/page" requires the base to map page boundaries onto `change.cursor`; the existing lifecycle persists whatever was last yielded, so an atomic mid-walk token would be persisted and non-resumable — the exact silent-tail bug. The lifecycle is reusable, but R2 must define the `Ref.cursor → Change.cursor` mapping for atomic strategies; "unchanged, simply honors divisibility" hides that work.
-- [§1, §2] **`SourcedRecord<T>` is net-new but never defined and prose implies it exists.** `SourcedRecord` appears only in the RFC (grep across `runtime/` + `src/` finds zero); the integration runtime uses `Change<T>` as its record envelope. §1/§2 prose ("the base owns ... `SourcedRecord` pairing") reads as if it's an existing type. The code blocks yield `{record, raw, cursor}` literals but never declare `export interface SourcedRecord<T>`. · Add the interface definition to §1 and either reconcile it with `Change<T>` or state why `read()` returns `SourcedRecord<T>` while `listChanges()` returns `Change<T>` (the §2 comment says `listChanges` adapts `read()` → `Change<T>`, so the relationship is one-directional — make that explicit, including where `raw` is dropped).
-- [§4, §8] **"flows into the manifest / falsifier suite" describes net-new infra in present tense.** There is no adapter-emission manifest pipeline today (the `manifest` hits in `src/patterns/registry.ts` and the CLI are unrelated). R3/R4 must *build* the manifest field + falsifier harness; the RFC's phrasing implies threading a flag into an existing pipeline. Re-scope as new work in the R3/R4 line items (R4 already lists the falsifier, but R3's "surface `filterPushdown` into the manifest" assumes a manifest that doesn't exist).
+_All rev-1 notes also addressed substantively:_ `SourcedRecord<T>` is now formally defined (§1, lines 60-69) with a doc-comment reconciling it one-directionally against `Change<T>` (raw dropped on the `listChanges` adaptation) and a "net-new in R1" line; §3 rewritten to name `CursorStrategy` a Zod union, flag `historyId`/`syncToken` as net-new kinds, scope divisibility as a kind-keyed predicate (not a method), and specify the atomic-cursor token-withholding gating against the verified `execute-integration.use-case.ts:148-219` / `:192-208` persist-last-yielded behavior; the manifest is re-scoped net-new in §4 (R3 field, R4 harness). Both rev-1 nits got their external/cross-branch markers and the R3 snapshot vocabulary is aligned to "template-emission snapshot, not `just test-baseline`."
 
-**Nits (3):**
-- [Related, §6] swe-brain/dealbrain reference adapters are NOT present on this branch (only canonical type packages `packages/codegen-{mail,transcript,calendar}` and a `codegen.config.dealbrain.yaml` fixture exist). The three-shape motivating table (§"motivating evidence") is unverifiable here — correctly framed as external evidence, so not a finding, but worth a one-line "external; not in this repo" marker so future readers don't grep for them.
-- [§6] **RFC-0002 does not exist as a file on this branch** (`docs/rfcs/` contains only RFC-0001 and RFC-0003). The two quoted RFC-0002 passages in §6 (§1 "Unchanged author-seam..." and §6 "adapter scaffold `changeSources` ... Kept") are therefore unverifiable here. The §6 scope-disjointness argument is sound in the abstract, but the quoted claims rest on a doc not on this branch — flag the dependency.
-- [§8 / Sequencing] Memory rule `project_baseline_clean_arch_only` is correctly invoked (template-emission tests, not baseline) — good. Minor: R3 says "rebaseline the emission snapshot" while §8 says "template-emission tests, not baseline" — align the vocabulary (snapshot of emitted template output, not `just test-baseline`).
+**Blockers (0):** none. Gate 1.5 cleared — R1 (E0-independent) may proceed.
 
-**Reviewed by:** reviewer agent · 2026-05-31T00:00:00Z
+**Notes (2):**
+- [§3.3] The atomic-cursor gating ("base withholds `change.cursor` until a safe boundary") is the right shape, but note for R2: with no per-ref token emitted mid-walk, an interrupted atomic *backfill* (full/reconcile) resumes from the **last completed window**, not the last record — so the window size is now the data-reprocessing blast radius on resume. R2 should make the enumerate window/page size explicit (and idempotent re-delivery via the existing dedup/fingerprint path covers the re-processed overlap). Not blocking — the design is correct; this is a parameter to surface, not a defect.
+- [§1 / §7 Q1] §7 Q1 (capability home: subsystems vs surface-package) is still genuinely open, but §1 already asserts placement in `runtime/subsystems/integration/` as fact and R1 lands it there. The recommendation and the body have effectively pre-decided Q1. Fine to proceed on the recommendation, but either close Q1 or soften §1's "Lives in ..." to "Lands in ... (pending Q1)" so the open-question list stays honest.
+
+**Nits (1):**
+- [Status line] Header still reads "Draft — Gate 1.5 critique addressed (rev 2); pending re-critique." On merge, flip to "Accepted (Gate 1.5: PASS_WITH_NOTES)" so the doc state matches the verdict.
+
+**Reviewed by:** reviewer agent · 2026-05-31T00:00:00Z (rev 2)
