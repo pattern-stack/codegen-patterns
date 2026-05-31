@@ -241,6 +241,7 @@ import type {
 import { ${spec.noCapsConst} } from '${spec.packageName}';
 import type {
   IAuthStrategy,
+  IChangeSource,
   IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
 import type { ${client.exportName} } from '${client.path}';
@@ -264,36 +265,35 @@ ${capabilityLines}
 
 ${l2Members}
 
+  /**
+   * Per-entity change sources this adapter contributes to the ${surface}
+   * registry (ADR-033 \`buildChangeSource\`), keyed by entity name. The
+   * surface aggregator folds these into the \`IEntityChangeSourceRegistry\`
+   * bound under \`${n.entitySourcesToken}\`. Author-owned — populate one entry
+   * per entity in \`capabilities.entities\`.
+   */
+  readonly changeSources: Record<string, IChangeSource<unknown>> = {};
+
   // surface-only methods (optional on ${spec.portType}): add here
 }
 `;
 }
 
-/** Fully codegen-owned adapter module — wires the adapter + its provider module. */
+/**
+ * Fully codegen-owned adapter module — provides the adapter and imports its
+ * provider module. The adapter is exported so the surface aggregator can inject
+ * it and read its `changeSources` for the registry fold (RFC-0001 §3).
+ */
 export function generateAdapterModule(def: ProviderDefinition, surface: string): string {
   const n = names(def.slug, surface);
   return `${generatedBanner(`definitions/providers/${def.slug}.yaml (surface: ${surface})`)}
 import { Module } from '@nestjs/common';
 import { ${n.providerModuleClass} } from '../../../providers/${def.slug}/${def.slug}.provider.module';
-import { ${n.contributionsToken} } from '../../${surface}-adapters.tokens';
 import { ${n.adapterClass} } from './${def.slug}-${surface}.adapter';
 
 @Module({
   imports: [${n.providerModuleClass}],
-  providers: [
-    ${n.adapterClass},
-    // Contributes this provider's adapter to the surface registry. The
-    // multi-injection + (provider, entity) source fold is finalized by D4;
-    // D3 emits the contribution shape.
-    {
-      provide: ${n.contributionsToken},
-      useFactory: (adapter: ${n.adapterClass}) => ({
-        provider: '${def.slug}',
-        sources: {}, // D4: populated from the adapter's per-entity change sources.
-      }),
-      inject: [${n.adapterClass}],
-    },
-  ],
+  providers: [${n.adapterClass}],
   exports: [${n.adapterClass}],
 })
 export class ${n.adapterModuleClass} {}
@@ -318,23 +318,26 @@ ${lines}
 }
 
 /**
- * Minimal per-surface registry tokens (D3). The full contract — multi-injection
- * semantics, the AdapterContribution → IEntityChangeSourceRegistry fold keyed by
- * (provider, entity), collision-is-a-boot-error — is owned by Track D · D4
- * (RFC-0001 §3). Emitted here only so the adapter modules + aggregator compile.
+ * Per-surface registry tokens + contribution shape (RFC-0001 §3).
+ *
+ * `<SURFACE>_ADAPTER_CONTRIBUTIONS` is the assembled list of every adapter's
+ * contribution (NestJS has no `multi:true`; the surface aggregator — which
+ * codegen emits with full knowledge of the surface's adapters — assembles it
+ * from the adapters by direct injection). `<SURFACE>_ENTITY_SOURCES` resolves to
+ * the folded C7 `IEntityChangeSourceRegistry`.
  */
 export function generateSurfaceTokens(surface: string): string {
   const n = names("__placeholder__", surface);
-  return `${generatedBanner(`surface: ${surface} (minimal — Track D D4 owns the full registry contract)`)}
+  return `${generatedBanner(`surface: ${surface}`)}
 import type { IChangeSource } from '@pattern-stack/codegen/subsystems';
 
-/** Multi-injection token: each adapter module contributes one AdapterContribution. */
+/** The assembled list of every ${surface} adapter's contribution. */
 export const ${n.contributionsToken} = Symbol.for('@app/integrations/${surface}.adapter-contributions');
 
 /** Resolved registry token — resolves to a C7 IEntityChangeSourceRegistry. */
 export const ${n.entitySourcesToken} = Symbol.for('@app/integrations/${surface}.entity-sources');
 
-/** One provider-adapter's contribution to the surface registry. D4 finalizes. */
+/** One provider-adapter's contribution to the surface registry. */
 export interface AdapterContribution {
   /** Provider slug. */
   provider: string;
@@ -345,22 +348,45 @@ export interface AdapterContribution {
 }
 
 /**
- * The thin factory aggregator — folds all adapter contributions into one
- * `IEntityChangeSourceRegistry` bound under `<SURFACE>_ENTITY_SOURCES`
- * (RFC-0001 §3). The multi-injection wiring is finalized by D4; D3 emits the
- * fold + the module shape.
+ * The thin factory aggregator (RFC-0001 §3). Assembles every adapter's
+ * contribution into `<SURFACE>_ADAPTER_CONTRIBUTIONS` and folds them into one
+ * `IEntityChangeSourceRegistry` bound under `<SURFACE>_ENTITY_SOURCES`.
+ *
+ * NestJS has no `multi:true`, so — knowing the full adapter set at emit time —
+ * codegen injects each adapter directly and assembles the contributions array
+ * here. Two providers serving the same entity is an ambiguous-source boot error
+ * (the registry is entity-keyed; one entity resolves to one source).
  */
 export function generateSurfaceAggregator(
   surface: string,
   providerSlugs: string[],
 ): string {
   const n = names("__placeholder__", surface);
-  const moduleClasses = [...providerSlugs]
-    .sort()
-    .map((slug) => names(slug, surface).adapterModuleClass);
-  const importLines = moduleClasses
-    .map((cls) => `import { ${cls} } from './adapters';`)
+  const slugs = [...providerSlugs].sort();
+  const per = slugs.map((slug) => names(slug, surface));
+  const moduleClasses = per.map((p) => p.adapterModuleClass);
+
+  const moduleImport = `import {\n  ${moduleClasses.join(",\n  ")},\n} from './adapters';`;
+  const adapterImports = slugs
+    .map((slug) => {
+      const p = names(slug, surface);
+      return `import { ${p.adapterClass} } from './adapters/${slug}/${slug}-${surface}.adapter';`;
+    })
     .join("\n");
+
+  const contributionEntries = slugs
+    .map((slug) => {
+      const p = names(slug, surface);
+      return `        { provider: '${slug}', sources: ${lowerFirst(p.adapterClass)}.changeSources },`;
+    })
+    .join("\n");
+  const injectParams = slugs
+    .map((slug) => {
+      const p = names(slug, surface);
+      return `${lowerFirst(p.adapterClass)}: ${p.adapterClass}`;
+    })
+    .join(", ");
+  const injectTokens = per.map((p) => p.adapterClass).join(", ");
 
   return `${generatedBanner(`surface: ${surface}`)}
 import { Module } from '@nestjs/common';
@@ -369,7 +395,8 @@ import {
   type IChangeSource,
   type IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
-${importLines}
+${moduleImport}
+${adapterImports}
 import {
   ${n.contributionsToken},
   ${n.entitySourcesToken},
@@ -377,22 +404,24 @@ import {
 } from './${surface}-adapters.tokens';
 
 /**
- * Fold every adapter contribution into one entity-keyed registry, keyed by
- * (provider, entity). A collision on (provider, entity) is a boot error. The
- * multi-injection that supplies the full \`contribs\` array is finalized by D4.
+ * Fold every adapter contribution into one entity-keyed registry. Each entity
+ * resolves to exactly one change source; two providers serving the same entity
+ * is an ambiguous-source boot error.
  */
 function provide${n.surfacePascal}EntitySources(
   contribs: AdapterContribution[],
 ): IEntityChangeSourceRegistry {
   const merged = new Map<string, IChangeSource<unknown>>();
-  const seen = new Set<string>();
+  const owner = new Map<string, string>();
   for (const contrib of contribs ?? []) {
     for (const [entity, source] of Object.entries(contrib.sources)) {
-      const key = \`\${contrib.provider}:\${entity}\`;
-      if (seen.has(key)) {
-        throw new Error(\`duplicate change source for (\${contrib.provider}, \${entity})\`);
+      const prior = owner.get(entity);
+      if (prior !== undefined) {
+        throw new Error(
+          \`entity '\${entity}' is served by both '\${prior}' and '\${contrib.provider}' — ambiguous change source\`,
+        );
       }
-      seen.add(key);
+      owner.set(entity, contrib.provider);
       merged.set(entity, source);
     }
   }
@@ -403,17 +432,80 @@ function provide${n.surfacePascal}EntitySources(
   imports: [${moduleClasses.join(", ")}],
   providers: [
     {
+      provide: ${n.contributionsToken},
+      useFactory: (${injectParams}): AdapterContribution[] => [
+${contributionEntries}
+      ],
+      inject: [${injectTokens}],
+    },
+    {
       provide: ${n.entitySourcesToken},
-      // D4: inject the multi-bound ${n.contributionsToken} array here.
-      useFactory: (...contribs: AdapterContribution[]) =>
-        provide${n.surfacePascal}EntitySources(contribs),
+      useFactory: (contributions: AdapterContribution[]) =>
+        provide${n.surfacePascal}EntitySources(contributions),
       inject: [${n.contributionsToken}],
     },
   ],
-  exports: [${n.entitySourcesToken}],
+  exports: [${n.entitySourcesToken}, ${n.contributionsToken}],
 })
 export class ${n.aggregatorClass} {}
 `;
+}
+
+/** `HubspotCrmAdapter` → `hubspotCrmAdapter` (DI factory param name). */
+function lowerFirst(s: string): string {
+  return s.length ? s[0].toLowerCase() + s.slice(1) : s;
+}
+
+/**
+ * Per-consumer typed view (RFC-0001 §5) — `types.generated.ts`. Surface-scoped
+ * provider/entity unions + a (provider, entity) validity map so consumer
+ * use-cases get compile-time errors on bad pairings. The typed replacement for
+ * ADR-033.2's per-entity tuples. Fully codegen-owned, re-emitted every run.
+ */
+export function generateTypedView(
+  surface: string,
+  providerSlugs: string[],
+  entities: string[],
+): string {
+  const surfacePascal = providerPascalCase(surface);
+  const slugs = [...providerSlugs].sort();
+  const ents = [...entities].sort();
+  const providerUnion = slugs.length
+    ? slugs.map((s) => `'${s}'`).join(" | ")
+    : "never";
+  const entityUnion = ents.length ? ents.map((e) => `'${e}'`).join(" | ") : "never";
+
+  // (provider, entity) validity map: each provider serves this surface, so it
+  // may source any of the surface's entities. Per-provider entity granularity
+  // (which provider actually serves which entity) is detection-config data and
+  // can refine this later.
+  const mapEntries = slugs
+    .map((s) => `  ${jsKey(s)}: ${surfacePascal}Entity;`)
+    .join("\n");
+
+  return `${generatedBanner(`surface: ${surface}`)}
+/**
+ * Per-consumer typed view for the \`${surface}\` surface. Surface-scoped unions
+ * + a (provider, entity) validity map for compile-time-checked consumer
+ * use-cases. Replaces ADR-033.2's per-entity provider tuples (RFC-0001 §5/§8).
+ */
+
+/** Providers whose \`surfaces[]\` include \`${surface}\`. */
+export type ${surfacePascal}Provider = ${providerUnion};
+
+/** Entities declared with \`surface: ${surface}\`. */
+export type ${surfacePascal}Entity = ${entityUnion};
+
+/** Valid entities per provider on this surface. */
+export interface ${surfacePascal}ProviderEntities {
+${mapEntries || "  // no providers serve this surface yet"}
+}
+`;
+}
+
+/** Quote an object key only if it isn't a valid bare identifier (e.g. kebab slugs). */
+function jsKey(key: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? key : `'${key}'`;
 }
 
 // ============================================================================
@@ -504,14 +596,16 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
       result.written.push(modulePath);
     }
 
-    // Per-surface barrel + tokens + aggregator (@generated).
+    // Per-surface barrel + tokens + aggregator + typed view (@generated).
     const barrelPath = join(adaptersDir, "index.ts");
     const tokensPath = join(surfaceDir, `${surface}-adapters.tokens.ts`);
     const aggregatorPath = join(surfaceDir, `${surface}-adapters.module.ts`);
+    const typedViewPath = join(surfaceDir, "types.generated.ts");
     const files: Array<[string, string]> = [
       [barrelPath, generateAdaptersBarrel(surface, slugs)],
       [tokensPath, generateSurfaceTokens(surface)],
       [aggregatorPath, generateSurfaceAggregator(surface, slugs)],
+      [typedViewPath, generateTypedView(surface, slugs, entitiesBySurface.get(surface) ?? [])],
     ];
     for (const [path, content] of files) {
       if (!opts.dryRun) writeIfChanged(path, content);
