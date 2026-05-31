@@ -8,7 +8,7 @@
 
 export * from './canonical';
 export * from './capabilities';
-export * from './ports/mail.port';
+export * from './mail.port';
 export * from './tokens';
 
 // Note: the conformance helper `assertMailAdapter` is intentionally NOT exported

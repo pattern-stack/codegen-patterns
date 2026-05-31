@@ -10,7 +10,7 @@
  * helper, kept out of the package's main runtime barrel.
  */
 
-import type { MailPort } from '../ports/mail.port';
+import type { MailPort } from '../mail.port';
 
 /**
  * Structurally verify a `MailPort` implementation. Collects every failure and

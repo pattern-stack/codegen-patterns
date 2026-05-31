@@ -10,7 +10,7 @@
  * test-time helper, kept out of the package's main runtime barrel.
  */
 
-import type { CalendarPort } from '../ports/calendar.port';
+import type { CalendarPort } from '../calendar.port';
 
 /**
  * Structurally verify a `CalendarPort` implementation. Collects every failure

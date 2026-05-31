@@ -8,7 +8,7 @@
 
 export * from './canonical';
 export * from './capabilities';
-export * from './ports/calendar.port';
+export * from './calendar.port';
 export * from './tokens';
 
 // Note: the conformance helper `assertCalendarAdapter` is intentionally NOT

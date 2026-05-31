@@ -12,7 +12,7 @@
  * test-time helper, kept out of the package's main runtime barrel.
  */
 
-import type { TranscriptPort } from '../ports/transcript.port';
+import type { TranscriptPort } from '../transcript.port';
 
 /**
  * Structurally verify a `TranscriptPort` implementation. Collects every failure

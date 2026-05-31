@@ -9,7 +9,7 @@
 
 export * from './canonical';
 export * from './capabilities';
-export * from './ports/transcript.port';
+export * from './transcript.port';
 export * from './tokens';
 
 // Note: the conformance helper `assertTranscriptAdapter` is intentionally NOT
