@@ -5,6 +5,8 @@
 **Author:** Doug + Claude
 **Relates to:** `CODEGEN-EVOLUTION-PLAN.md`, `#59` (auth + integrations subsystem), `#60` (sync engine + `syncable:`), dealbrain-v2 CRM sync ADR-14
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This RFC predates the `sync`→`integration` rename (shipped in 0.11.0). Where it references the `Synced` family / `SyncedEntityRepository` / `SyncedPattern`, read `Integrated` / `IntegratedEntityRepository` / `IntegratedPattern`; the `#60` "sync engine" is now the **integration** subsystem. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ---
 
 ## Revision — 2026-04-19: Patterns are a parallel track, not a prerequisite

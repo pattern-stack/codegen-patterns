@@ -6,6 +6,8 @@
 **Relates to:** Issue #196, ADR-031 (App-Defined Patterns Phase 1), `docs/RFC-app-defined-patterns.md`, ADR-008 (Subsystem Architecture)
 **Research notes:** `docs/specs/RFC-orchestration-patterns-research.md`
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR predates the `sync`→`integration` rename (shipped in 0.11.0). Where the body references `pattern: Synced`, read `pattern: Integrated`. The orchestration-pattern design is unchanged. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ---
 
 ## Summary

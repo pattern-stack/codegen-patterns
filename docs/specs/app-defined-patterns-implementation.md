@@ -6,6 +6,8 @@
 **Date:** 2026-04-19 (revised from 2026-04-18 draft)
 **Scope:** codegen-patterns library changes — Phase 1 only. First consumer integration (dealbrain-v2 `CrmEntityPattern`) is Phase 2.
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This spec predates the `sync`→`integration` rename (shipped in 0.11.0). Where it references the `Synced` family / `SyncedEntityRepository` / `SyncedPattern` / `SyncUpsertConfig`, read `Integrated` / `IntegratedEntityRepository` / `IntegratedPattern` / `IntegrationUpsertConfig`. The pattern mechanism is unchanged. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 > **Living-document note (2026-04-19):** This spec was originally drafted before the understand phase examined the existing codebase. Three earlier proposals (a `family:` deprecation alias with `console.warn`, a `generate.patterns` opt-in feature flag, and a `static readonly patternConfig` runtime accessor) contradicted both CLAUDE.md ("no backwards compatibility until users") and the existing `behaviors: BehaviorConfig` instance-property convention in `templates/entity/new/clean-lite-ps/repository.ejs.t`. ADR-031 documents the resolution; this spec was rewritten in the same commit to reflect the final shape.
 >
 > **Post-implementation revision (2026-04-21, PATTERN-5):** every file listed in §7 shipped. Three details discovered during implementation and worth pinning here:
