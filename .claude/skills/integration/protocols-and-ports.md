@@ -56,6 +56,70 @@ port is deliberate; the compromise analysis behind it is in epic #60.
 If a new detection mode emerges, add a value to the `ChangeSource`
 union and a metadata field if needed — not a new port.
 
+## `IncrementalRead<T, F>` — the enumerate/hydrate read primitive (RFC-0003)
+
+`IChangeSource.listChanges` is the right *transport* contract, but it imposes
+no shape on the body that produces the changes — an empty `changeSources = {}`
+seam invites the buffer-all/serial/run-final-cursor anti-pattern. `IncrementalReadBase`
+(in `runtime/subsystems/integration/`, exported from `@pattern-stack/codegen/subsystems`)
+fixes that: it owns the orchestration and the author fills exactly **three vendor methods**.
+
+```ts
+abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unknown>>
+  implements IncrementalRead<T, F>, IChangeSource<T>, RandomRead<T> {
+
+  protected abstract enumerate(mode: ReadMode, filter?: F, pageSize?: number): AsyncIterable<Ref<M>[]>;
+  protected abstract hydrate(ids: string[]): Promise<Map<string, unknown>>;   // keyed, miss-tolerant
+  protected abstract toCanonical(raw: unknown): T | null;
+}
+```
+
+- **`enumerate`** — the cheap delta/backfill walk. Stream *pages of refs* (id + per-ref
+  `cursor` + filterable `meta`). LAZY: pull-driven, so `hydrate` backpressures it. Dispatch
+  on `ReadMode`: `delta` (resume from `mode.cursor`), `full` (cursorless), `reconcile`
+  (re-fetch `mode.knownIds` — the gap-repair pass).
+- **`hydrate`** — the expensive batched fetch-by-id → `Map<id, raw>`. Write it over
+  `mapConcurrent(ids, (id) => this.fetchOne(id), this.hydrateConcurrency)` (bounded parallel);
+  override only for a real vendor `/batch` endpoint or a full-object-list passthrough. MUST be
+  miss-tolerant (omit a mid-run 404 — never shift alignment).
+- **`toCanonical`** — provider payload → canonical `T` (`null` drops the record).
+
+The base PROVIDES `read()` (filter-before-hydrate, keyed pairing, per-ref cursor), `get()`
+(`RandomRead`, free as `toCanonical ∘ hydrate([id])` — the "list cheaply, fill on click" atom),
+and `listChanges()` (adapts `read()` → `Change<T>`).
+
+**North star — dealbrain's HubSpot `canonical-adapter.listSince`.** CRM search returns full
+objects, so it `async *`-streams, pushes the filter server-side (`filterGroups` + `GT`), and
+carries a per-record `systemModstamp` cursor. The enumerate/hydrate split generalizes that to
+vendors whose list returns id-stubs (Gmail `messages.list` → `messages.get`) or nested resources
+(Meet `conferenceRecords` → `transcripts` → `entries`), where `hydrate` does the N+1 (bounded)
+and full-object lists make `hydrate` a passthrough.
+
+**Filter placement is structural (RFC-0003 §8 falsifier).** `read()` applies the filter
+*before* `hydrate`, so an adapter physically cannot hydrate-then-discard. Two hooks, exactly
+one live per `filterPushdown`:
+- `matchesRef(ref, filter)` — **preferred**, pre-hydrate, when the vendor pushes the predicate
+  down or exposes it in ref `meta`. Set `protected override filterPushdown = true`.
+- `matchesRecord(record, filter)` — the **floor**, post-hydrate, when the vendor can do neither
+  (Gmail without `q=`). Declared via `filterPushdown = false` — honest, not silent.
+
+Either way the *emitted set is identical* (only hydration cost differs) — that's the falsifier
+guarantee. Codegen threads `detection.filters` in as a static `ResolvedFilter[]` and
+`filterFor()` returns it (`F = ResolvedFilter[]`).
+
+**Cursor divisibility (§3).** `cursorDivisible` (from the cursor strategy `kind` via
+`isDivisibleCursor`) controls cursor emission. *Divisible* (`systemModstamp`/`timestamp`/`replayId`):
+each record carries its own cursor; a crash resumes from the last delivered ref. *Atomic*
+(`historyId`/`syncToken` — the next token only exists at end-of-walk): per-ref cursors are
+withheld and only the final record carries the token, so the orchestrator's persist-last-yielded
+never persists an unresumable mid-walk value (resumes all-or-nothing; bound the backfill blast
+radius with `ReadRequest.pageSize`).
+
+**Codegen emits the subclass.** For interaction surfaces, `codegen entity new --all` emits a
+per-entity `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass (emit-once,
+author-owned) registered in the adapter's `changeSources` — you fill `enumerate`/`hydrate`/
+`toCanonical`, never a raw `listChanges` loop.
+
 ## `IEntityChangeSourceRegistry` — entity-keyed source resolution
 
 Resolves an `IChangeSource<T>` by entity name (`get<T>(name)`, `has`,
