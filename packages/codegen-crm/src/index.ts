@@ -6,4 +6,7 @@
  */
 
 export * from './ports/field-definition-reader.port';
+export * from './ports/picklist-reader.port';
+export * from './ports/association-reader.port';
+export * from './capabilities';
 export * from './tokens';
