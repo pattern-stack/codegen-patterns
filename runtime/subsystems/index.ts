@@ -87,6 +87,18 @@ export type {
   SourcedRecord,
 } from './integration';
 
+// Integration — assembly emission (RFC-0002). The generated per-entity sink
+// imports `IIntegrationSink`; the generated per-entity assembly module imports
+// `ExecuteIntegrationUseCase` + `INTEGRATION_CHANGE_SOURCE` + `INTEGRATION_SINK`
+// — all from `@pattern-stack/codegen/subsystems`. Forwarded here so the emitted
+// `src/integrations/**` tree resolves them across the package boundary.
+export {
+  ExecuteIntegrationUseCase,
+  INTEGRATION_CHANGE_SOURCE,
+  INTEGRATION_SINK,
+} from './integration';
+export type { IIntegrationSink } from './integration';
+
 // Auth
 export {
   ENCRYPTION_KEY,
