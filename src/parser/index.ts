@@ -15,3 +15,20 @@ export {
 	type LoadEntitiesResult,
 	type LoadRelationshipsResult,
 } from './load-entities';
+
+export {
+	validateProviders,
+	collectEntitySurfaces,
+	resolveImportRef,
+	type LoadedProvider,
+	type ValidateProvidersOptions,
+	type ImportRefResolution,
+} from './validate-providers';
+
+export {
+	loadProviderFromYaml,
+	loadProvidersFromYaml,
+	type LoadProviderResult,
+	type ProviderLoadResult,
+	type ProviderLoadError,
+} from '../utils/yaml-loader';

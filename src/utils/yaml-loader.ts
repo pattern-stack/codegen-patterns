@@ -17,6 +17,10 @@ import {
 	type JunctionDefinition,
 	JunctionDefinitionSchema,
 } from '../schema/junction-definition.schema';
+import {
+	type ProviderDefinition,
+	ProviderDefinitionSchema,
+} from '../schema/provider-definition.schema';
 
 export interface LoadResult {
 	success: true;
@@ -401,6 +405,106 @@ export function loadJunctionsFromYaml(filePaths: string[]): {
 
 	for (const filePath of filePaths) {
 		const result = loadJunctionFromYaml(filePath);
+		if (result.success) {
+			successes.push(result);
+		} else {
+			failures.push(result);
+		}
+	}
+
+	return { successes, failures };
+}
+
+// ============================================================================
+// Provider YAML Loading (RFC-0001 §1)
+// ============================================================================
+
+export interface ProviderLoadResult {
+	success: true;
+	definition: ProviderDefinition;
+	filePath: string;
+}
+
+export interface ProviderLoadError {
+	success: false;
+	error: string;
+	details?: string[];
+	filePath: string;
+}
+
+export type LoadProviderResult = ProviderLoadResult | ProviderLoadError;
+
+/**
+ * Load and validate a single provider definition from a YAML file.
+ *
+ * Mirrors {@link loadEntityFromYaml}: existence check → readFileSync →
+ * parseYaml → `ProviderDefinitionSchema.safeParse`. This covers only the
+ * *intra-file* contract; cross-file rules (slug uniqueness, surface subset,
+ * pre-flight import resolution) are applied by `validateProviders()` over the
+ * full set of successfully-loaded providers.
+ */
+export function loadProviderFromYaml(filePath: string): LoadProviderResult {
+	if (!existsSync(filePath)) {
+		return {
+			success: false,
+			error: `File not found: ${filePath}`,
+			filePath,
+		};
+	}
+
+	let content: string;
+	try {
+		content = readFileSync(filePath, 'utf-8');
+	} catch (err) {
+		return {
+			success: false,
+			error: `Failed to read file: ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = parseYaml(content);
+	} catch (err) {
+		return {
+			success: false,
+			error: `Invalid YAML syntax in ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	const result = ProviderDefinitionSchema.safeParse(parsed);
+	if (!result.success) {
+		return {
+			success: false,
+			error: `Validation failed for ${filePath}`,
+			details: formatZodErrors(result.error),
+			filePath,
+		};
+	}
+
+	return {
+		success: true,
+		definition: result.data,
+		filePath,
+	};
+}
+
+/**
+ * Load multiple provider files.
+ */
+export function loadProvidersFromYaml(filePaths: string[]): {
+	successes: ProviderLoadResult[];
+	failures: ProviderLoadError[];
+} {
+	const successes: ProviderLoadResult[] = [];
+	const failures: ProviderLoadError[] = [];
+
+	for (const filePath of filePaths) {
+		const result = loadProviderFromYaml(filePath);
 		if (result.success) {
 			successes.push(result);
 		} else {

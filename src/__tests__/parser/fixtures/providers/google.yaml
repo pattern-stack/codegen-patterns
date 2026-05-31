@@ -1,0 +1,16 @@
+# Valid multi-surface provider (RFC-0001 §1). Google's one OAuth feeds three
+# surfaces (ADR-0006: surfaces span contexts).
+slug: google
+display_name: Google
+auth:
+  type: oauth2
+  strategy: '@app/integrations/providers/google/google-oauth.strategy#GoogleOAuthStrategy'
+  scopes:
+    - https://www.googleapis.com/auth/calendar.readonly
+    - https://www.googleapis.com/auth/gmail.readonly
+client:
+  class: '@app/integrations/providers/google/google.client#GoogleClient'
+  base_url: https://www.googleapis.com
+surfaces: [calendar, mail, transcript]
+token_lifetime: 3600
+refresh_behavior: rotating

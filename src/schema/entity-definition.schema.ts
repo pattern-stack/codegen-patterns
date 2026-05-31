@@ -807,6 +807,17 @@ export const EntityDefinitionSchema = z
     // `EntityDefinitionSchema` below.
     detection: z.record(z.string(), DetectionConfigSchema).optional(),
 
+    // RFC-0001 §1/§8: the integration *surface* this entity belongs to
+    // (e.g. 'calendar', 'mail', 'crm'). Surfaces span provider contexts
+    // (ADR-0006) — one Google OAuth feeds calendar+mail+transcript. The union
+    // of `surface:` values across all entity YAML is the closed set that a
+    // provider's `surfaces:` must be a subset of (cross-checked in
+    // src/parser/validate-providers.ts). Optional: entities without an
+    // integration surface omit it. The surface-package *emission* convention
+    // is Track C (#329); this field is only the declarative input both tracks
+    // read.
+    surface: z.string().optional(),
+
     // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Generates typed event classes, handlers, and queue registration
     events: z.array(EventDeclarationSchema).optional(),
