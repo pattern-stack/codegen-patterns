@@ -1008,6 +1008,18 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const entityNamePlural = entity.plural || pluralize(entityName);
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
+  // #403: bounded-context folder grouping. A top-level `context:` nests this
+  // entity's module folder under that segment so same-context entities group
+  // together (`<modules>/<context>/<plural>/`); no context → flat
+  // (`<modules>/<plural>/`, byte-identical to pre-#403). Emit-folder-only —
+  // every intra-module import is folder-relative and therefore unaffected, and
+  // the generated barrel recomputes its import paths from the full file paths
+  // below. The module-folder base used by every clpOutputPaths entry:
+  const entityContext = definition.context || null;
+  const moduleGroupDir = entityContext
+    ? `${srcRoot}/modules/${entityContext}`
+    : `${srcRoot}/modules`;
+
   // Generation toggles — `generate.writes` defaults to true so consumers who
   // regenerate pick up create/update/delete use cases without YAML changes.
   // Set `generate.writes: false` in YAML to suppress write-side emission
@@ -1207,44 +1219,47 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Output paths
   const outputPaths = {
-    entity: `${srcRoot}/modules/${entityNamePlural}/${entityName}.entity.ts`,
-    repository: `${srcRoot}/modules/${entityNamePlural}/${entityName}.repository.ts`,
-    service: `${srcRoot}/modules/${entityNamePlural}/${entityName}.service.ts`,
-    controller: `${srcRoot}/modules/${entityNamePlural}/${entityName}.controller.ts`,
-    module: `${srcRoot}/modules/${entityNamePlural}/${entityNamePlural}.module.ts`,
-    index: `${srcRoot}/modules/${entityNamePlural}/index.ts`,
-    findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
-    listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+    entity: `${moduleGroupDir}/${entityNamePlural}/${entityName}.entity.ts`,
+    repository: `${moduleGroupDir}/${entityNamePlural}/${entityName}.repository.ts`,
+    service: `${moduleGroupDir}/${entityNamePlural}/${entityName}.service.ts`,
+    controller: `${moduleGroupDir}/${entityNamePlural}/${entityName}.controller.ts`,
+    module: `${moduleGroupDir}/${entityNamePlural}/${entityNamePlural}.module.ts`,
+    index: `${moduleGroupDir}/${entityNamePlural}/index.ts`,
+    findByIdUseCase: `${moduleGroupDir}/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
+    listUseCase: `${moduleGroupDir}/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
     findByIdWithFieldsUseCase: eavEnabled
-      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${entityName}-by-id-with-fields.use-case.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/find-${entityName}-by-id-with-fields.use-case.ts`
       : null,
     listWithFieldsUseCase: eavEnabled
-      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}-with-fields.use-case.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/list-${entityNamePlural}-with-fields.use-case.ts`
       : null,
     createUseCase: generateWrites
-      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/create-${entityName}.use-case.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/create-${entityName}.use-case.ts`
       : null,
     updateUseCase: generateWrites
-      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/update-${entityName}.use-case.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/update-${entityName}.use-case.ts`
       : null,
     deleteUseCase: generateWrites
-      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/delete-${entityName}.use-case.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/delete-${entityName}.use-case.ts`
       : null,
-    createDto: `${srcRoot}/modules/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
-    updateDto: `${srcRoot}/modules/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
-    outputDto: `${srcRoot}/modules/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
+    createDto: `${moduleGroupDir}/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
+    updateDto: `${moduleGroupDir}/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
+    outputDto: `${moduleGroupDir}/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
     searchUseCase: searchQueryResolved
-      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/search-${entityNamePlural}.use-case.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/search-${entityNamePlural}.use-case.ts`
       : null,
     searchController: searchQueryResolved
-      ? `${srcRoot}/modules/${entityNamePlural}/${entityName}-search.controller.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/${entityName}-search.controller.ts`
       : null,
     declarativeQueries: hasDeclarativeQueries
-      ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
+      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/declarative-queries.ts`
       : null,
     // ADR-033.1 §8 — integration-source module emission for clean-lite-ps. Co-located
     // with the entity feature module under src/modules/<plural>/. Closes #267.
-    integrationSourceModule: `${srcRoot}/modules/${entityNamePlural}/${entityName}-integration-source.module.ts`,
+    // #403: routed through moduleGroupDir so a `context:`-tagged entity nests the
+    // integration-source module under its context segment (untagged → flat, the
+    // same `${srcRoot}/modules/<plural>/…` path as before).
+    integrationSourceModule: `${moduleGroupDir}/${entityNamePlural}/${entityName}-integration-source.module.ts`,
     // ADR-033.2's per-entity provider tuples (`<entity>-integration-source.providers.ts`)
     // are removed by RFC-0001 §8 (D4). The surface-scoped typed view
     // (`src/integrations/<surface>/types.generated.ts`) is the single source of
@@ -1402,6 +1417,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     searchQuery: searchQueryResolved,
     hasSearchQuery: !!searchQueryResolved,
 
+
+    // #403: bounded-context segment (null when untagged). Drives the
+    // module-folder nesting reflected in clpOutputPaths above.
+    clpContext: entityContext,
 
     // Output paths
     clpOutputPaths: outputPaths,

@@ -462,6 +462,37 @@ describe('scopeable flag', () => {
 	});
 });
 
+describe('context flag (#403)', () => {
+	const base = {
+		entity: { name: 'transcript', plural: 'transcripts', table: 'transcripts' },
+		fields: { id: { type: 'uuid', required: true } },
+	};
+
+	it('accepts a top-level context: <snake_case> — the key no longer trips .strict()', () => {
+		const result = EntityDefinitionSchema.safeParse({ ...base, context: 'integration' });
+		expect(result.success).toBe(true);
+		expect(result.data!.context).toBe('integration');
+	});
+
+	it('context is optional — omitting it is valid (flat output preserved)', () => {
+		const result = EntityDefinitionSchema.safeParse(base);
+		expect(result.success).toBe(true);
+		expect(result.data!.context).toBeUndefined();
+	});
+
+	it('rejects non-snake_case context (uppercase / hyphen / leading digit)', () => {
+		for (const bad of ['Integration', 'my-context', '1context', '_x']) {
+			const result = EntityDefinitionSchema.safeParse({ ...base, context: bad });
+			expect(result.success).toBe(false);
+		}
+	});
+
+	it('rejects non-string context', () => {
+		const result = EntityDefinitionSchema.safeParse({ ...base, context: 123 });
+		expect(result.success).toBe(false);
+	});
+});
+
 // ============================================================================
 // Strict mode — unknown keys still rejected
 // ============================================================================
