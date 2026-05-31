@@ -1,0 +1,11 @@
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+surface: crm
+fields:
+  name:
+    type: string
+    required: true
+  amount:
+    type: decimal

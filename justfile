@@ -58,6 +58,34 @@ test-smoke-junction-cross-domain-clean:
 test-junction:
     bun test test/junction/
 
+# Integration-emit snapshot (RFC-0001 §7) — locks the emitted src/integrations/**
+# tree (provider modules + adapters + barrel + aggregator + types.generated.ts)
+# for the checked-in integration-patterns fixture. Regenerate after intentional
+# emission changes: bun test --update-snapshots test/integration-emit/
+test-integration-emit:
+    bun test test/integration-emit/
+
+# Refresh the integration-patterns snapshot fixture YAML from a local checkout.
+# Manual + reviewed — NEVER auto-synced (RFC-0001 §7). Point at your local
+# integration-patterns repo; pass its definitions root via `repo=`:
+#   just refresh-integration-fixture repo=../integration-patterns
+# Then re-snapshot + review: bun test --update-snapshots test/integration-emit/
+refresh-integration-fixture repo="../integration-patterns":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    src="{{repo}}/definitions"
+    dst="test/fixtures/integration-patterns/definitions"
+    if [ ! -d "$src/entities" ] || [ ! -d "$src/providers" ]; then
+        echo "ERROR: expected $src/{entities,providers} — is {{repo}} an integration-patterns checkout with definitions/?"
+        exit 1
+    fi
+    rm -rf "$dst/entities" "$dst/providers"
+    mkdir -p "$dst/entities" "$dst/providers"
+    cp "$src"/entities/*.y*ml "$dst/entities/" 2>/dev/null || true
+    cp "$src"/providers/*.y*ml "$dst/providers/" 2>/dev/null || true
+    echo "Refreshed fixture from {{repo}}. Review the diff, then:"
+    echo "  bun test --update-snapshots test/integration-emit/"
+
 # Run the relationship-scenario smoke (CGP-62): self-ref + cross-entity
 # belongs_to + has_many against the CRM fixture set. Verifies the
 # clean-lite-ps Drizzle relations() emission shape. ~60-120s.
@@ -114,7 +142,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction
+test-all: test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction test-integration-emit
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

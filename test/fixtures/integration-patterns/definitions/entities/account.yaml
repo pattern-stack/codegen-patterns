@@ -1,0 +1,11 @@
+# Snapshot fixture (RFC-0001 §7). Representative CRM entity. Refresh via
+# `just refresh-integration-fixture` from a local integration-patterns checkout.
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+surface: crm
+fields:
+  name:
+    type: string
+    required: true
