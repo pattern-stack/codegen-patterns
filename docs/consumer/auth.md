@@ -65,7 +65,7 @@ in the integration module, not the subsystem. Each extends
 import {
   OAuth2RefreshStrategy,
   type ParsedRefreshResponse,
-  type DecryptedIntegration,
+  type DecryptedConnection,
   type AuthCredentials,
 } from '@pattern-stack/codegen/runtime/subsystems/auth';
 
@@ -95,7 +95,7 @@ export class SalesforceAuthStrategy extends OAuth2RefreshStrategy {
 
   protected buildCredentials(
     accessToken: string,
-    integration: DecryptedIntegration,
+    connection: DecryptedConnection,
     refreshRaw?: unknown,
   ): AuthCredentials {
     const raw = refreshRaw as { instance_url?: string } | undefined;
@@ -103,7 +103,7 @@ export class SalesforceAuthStrategy extends OAuth2RefreshStrategy {
       accessToken,
       instanceUrl:
         raw?.instance_url ??
-        (integration.providerMetadata?.['instanceUrl'] as string),
+        (connection.providerMetadata?.['instanceUrl'] as string),
       apiVersion: this.config.apiVersion,
     };
   }
@@ -122,11 +122,11 @@ export const SALESFORCE_AUTH_STRATEGY = Symbol('SALESFORCE_AUTH_STRATEGY');
       provide: SALESFORCE_AUTH_STRATEGY,
       useFactory: (reader, writer) =>
         new SalesforceAuthStrategy({
-          integrationReader: reader,
+          connectionReader: reader,
           tokenWriter: writer,
           // ... provider config
         }),
-      inject: [AUTH_INTEGRATION_READER, AUTH_INTEGRATION_TOKEN_WRITER],
+      inject: [AUTH_CONNECTION_READER, AUTH_CONNECTION_TOKEN_WRITER],
     },
   ],
   exports: [SALESFORCE_AUTH_STRATEGY],
@@ -134,45 +134,45 @@ export const SALESFORCE_AUTH_STRATEGY = Symbol('SALESFORCE_AUTH_STRATEGY');
 export class SalesforceAuthModule {}
 ```
 
-### Integration-store ports — app-supplied
+### Connection-store ports — app-supplied
 
 `OAuth2RefreshStrategy` depends on two narrow ports that read/write
-integration rows. Consumers supply these as thin adapters over whatever
-service owns the `integrations` entity:
+connection rows. Consumers supply these as thin adapters over whatever
+service owns the `connection` entity:
 
 ```ts
 @Injectable()
-export class IntegrationStoreAdapter
-  implements IIntegrationReader, IIntegrationTokenWriter
+export class ConnectionStoreAdapter
+  implements IConnectionReader, IConnectionTokenWriter
 {
   constructor(
-    private readonly service: IntegrationService,
-    private readonly refreshUseCase: RefreshIntegrationUseCase,
+    private readonly service: ConnectionService,
+    private readonly refreshUseCase: RefreshConnectionUseCase,
   ) {}
 
   findByIdDecrypted(id: string) {
     return this.service.findByIdDecrypted(id);
   }
 
-  persistRefresh(update: IntegrationTokenUpdate) {
+  persistRefresh(update: ConnectionTokenUpdate) {
     return this.refreshUseCase.execute(update);
   }
 }
 
 @Module({
   providers: [
-    IntegrationStoreAdapter,
-    { provide: AUTH_INTEGRATION_READER, useExisting: IntegrationStoreAdapter },
-    { provide: AUTH_INTEGRATION_TOKEN_WRITER, useExisting: IntegrationStoreAdapter },
+    ConnectionStoreAdapter,
+    { provide: AUTH_CONNECTION_READER, useExisting: ConnectionStoreAdapter },
+    { provide: AUTH_CONNECTION_TOKEN_WRITER, useExisting: ConnectionStoreAdapter },
   ],
-  exports: [AUTH_INTEGRATION_READER, AUTH_INTEGRATION_TOKEN_WRITER],
+  exports: [AUTH_CONNECTION_READER, AUTH_CONNECTION_TOKEN_WRITER],
 })
-export class IntegrationStoreModule {}
+export class ConnectionStoreModule {}
 ```
 
-A future `examples/auth-integrations/integration.yaml` starter will ship a
-canonical `integration` entity whose generated service + use case satisfy
-these ports out of the box — tracked alongside the sync subsystem roadmap.
+The `examples/auth-integrations/definitions/entities/connection.yaml` starter
+ships a canonical `connection` entity whose generated service + use case satisfy
+these ports out of the box — tracked alongside the integration subsystem roadmap.
 
 ### Retry-once on session-expired
 
@@ -184,7 +184,7 @@ extending `SessionExpiredError` OR by setting
 ```ts
 import { withAuthRetry } from '@pattern-stack/codegen/runtime/subsystems/auth';
 
-const result = await withAuthRetry(salesforceAuth, integrationId, (creds) =>
+const result = await withAuthRetry(salesforceAuth, connectionId, (creds) =>
   salesforceClient.listOpportunities(creds),
 );
 ```

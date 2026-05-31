@@ -5,6 +5,8 @@
 **Owner:** Doug
 **Related:** ADR-001 (hexagonal), ADR-008 (subsystem architecture), issue [#59](https://github.com/pattern-stack/codegen-patterns/issues/59)
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR predates the vendor-link rename (shipped in 0.11.0). The narrow storage ports `IIntegrationReader` / `IIntegrationTokenWriter` (and `IIntegrationGrantSink`), the `DecryptedIntegration` type, and the `AUTH_INTEGRATION_*` DI tokens named below are now `IConnectionReader` / `IConnectionTokenWriter` / `IConnectionGrantSink`, `DecryptedConnection`, and `AUTH_CONNECTION_*` (the vendor-link entity is `connection`, FK `connection_id`). The OAuth2 refresh template-method design is unchanged. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ## Context
 
 Every external integration an app builds — Salesforce, HubSpot, Gmail, Slack,
