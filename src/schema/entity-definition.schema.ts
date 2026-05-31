@@ -818,6 +818,30 @@ export const EntityDefinitionSchema = z
     // read.
     surface: z.string().optional(),
 
+    // Bounded-context declaration (ADR-0004) — "which bounded context this
+    // entity belongs to". This is the DURABLE decision; it is a plain
+    // bounded-context slug, NOT a folder knob. Different features consume it:
+    //
+    //   - #403 (this PR, the FIRST consumer): drives the generated code's
+    //     module output folder. clean-lite-ps nests the entity's module under
+    //     `<modules>/<context>/<entity>/` so same-context entities group
+    //     together; untagged entities stay flat (`<modules>/<entity>/`).
+    //   - ADR-0004 (deferred): a later `naming: prefix | schema` knob reads
+    //     this SAME field to drive the Postgres physical layout —
+    //     `prefix` → `pgTable('<context>__<table>')`, then the flip to
+    //     `schema` → `pgSchema('<context>').table('<table>')`. NOT wired here;
+    //     #403 makes no table/column/schema changes.
+    //
+    // Sibling to `surface:` and orthogonal to it (ADR-0006): context = model
+    // cohesion (which domain), surface = vendor composition (which integration).
+    context: z
+      .string()
+      .regex(
+        /^[a-z][a-z0-9_]*$/,
+        "context must be lowercase snake_case (e.g. 'integration')",
+      )
+      .optional(),
+
     // v2: Domain event declarations (CODEGEN-EVOLUTION-PLAN Phase 2)
     // Generates typed event classes, handlers, and queue registration
     events: z.array(EventDeclarationSchema).optional(),

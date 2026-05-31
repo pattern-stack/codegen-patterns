@@ -154,6 +154,7 @@ relationships:
     foreign_key: account_id
 
 # Optional top-level flags (PR #52 / #53 / #55)
+context: integration                     # ADR-0004 bounded-context slug; #403 wires it to nest modules/<context>/<plural>/
 eav: true                                # emit paired reads + compound-write use cases for EAV
 eav_value_table: true                    # THIS entity IS the EAV value table
 eav_definition_table: field_definition   # where the value table resolves keys → ids
@@ -171,6 +172,42 @@ queries:
     search: name                         # ilike column
     paginate: true                       # returns { items, total, limit, offset }
 ```
+
+### `context:` — bounded-context declaration (ADR-0004)
+
+Optional top-level `context:` (lowercase snake_case) declares **which bounded
+context this entity belongs to** — e.g. `integration`, `crm`, `identity`. This
+is the *durable* decision (ADR-0004); it's a plain bounded-context slug, not a
+folder switch. Multiple features read the same field:
+
+- **Code-folder grouping (#403, wired today):** under `clean-lite-ps`, a
+  context-tagged entity's module folder nests under the context segment.
+
+  | YAML | clean-lite-ps emit dir |
+  |------|------------------------|
+  | _(no `context:`)_ | `modules/<plural>/` |
+  | `context: integration` | `modules/integration/<plural>/` |
+
+  So integration entities group together
+  (`modules/integration/{transcripts,connections,…}/`) while untagged entities
+  stay flat. The regenerated barrel (`<generated>/modules.ts`) recomputes its
+  import paths automatically, so import aliases resolve without further wiring.
+
+- **Physical DB layout (ADR-0004, deferred — NOT wired here):** a later
+  `naming: prefix | schema` knob will read this *same* `context:` to drive the
+  Postgres layout — `prefix` → `pgTable('<context>__<table>')`, then the flip
+  to `schema` → `pgSchema('<context>').table('<table>')`. **#403 makes no
+  table/column/schema changes**; table names are unchanged regardless of
+  `context:`.
+
+`context:` is orthogonal to `surface:` (ADR-0006): context = model cohesion
+(which domain), surface = vendor composition (which integration).
+
+> The code-folder nesting applies to the `clean-lite-ps` architecture
+> (self-contained `modules/<plural>/` folders). For the full `clean`
+> architecture — whose layers are split across shared `domain/`,
+> `application/`, `infrastructure/` dirs with cross-layer relative imports —
+> context-subfolder nesting is **not yet wired** (#403 scope).
 
 ### `eav: true` — auto-generated EAV routes on a consumer entity
 

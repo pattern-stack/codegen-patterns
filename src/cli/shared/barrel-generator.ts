@@ -89,6 +89,13 @@ export interface BarrelResult {
 interface EntityInfo {
 	name: string;
 	plural: string;
+	/**
+	 * #403: bounded-context segment. When set, the entity's clean-lite-ps
+	 * module folder is nested under `modules/<context>/<plural>/` so the barrel
+	 * import path must include it. Relationships and junctions never carry a
+	 * context, so they stay flat.
+	 */
+	context?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +138,8 @@ function collectEntities(entitiesDir: string): EntityInfo[] {
 		entities.push({
 			name: def.entity.name,
 			plural: def.entity.plural,
+			// #403: top-level `context:` nests the module folder; undefined → flat.
+			context: def.context,
 		});
 	}
 	// Deterministic: sort by singular name.
@@ -245,11 +254,15 @@ function entityFilePaths(
 		// templates/entity/new/clean-lite-ps/prompt-extension.js — `srcRoot`).
 		// The barrel must match that on-disk layout.
 		const prefix = backendSrc && backendSrc !== '.' ? `${backendSrc}/` : '';
+		// #403: a bounded-context entity nests under `modules/<context>/<plural>/`
+		// — must mirror `moduleGroupDir` in the clean-lite-ps prompt-extension.
+		// Untagged entities stay flat (`modules/<plural>/`).
+		const ctxSeg = info.context ? `${info.context}/` : '';
 		return {
-			moduleFile: `${prefix}modules/${plural}/${plural}.module.ts`,
+			moduleFile: `${prefix}modules/${ctxSeg}${plural}/${plural}.module.ts`,
 			moduleClass: `${toPascalCase(plural)}Module`,
 			// Drizzle entity schema lives alongside the entity file in clean-lite-ps.
-			schemaFile: `${prefix}modules/${plural}/${name}.entity.ts`,
+			schemaFile: `${prefix}modules/${ctxSeg}${plural}/${name}.entity.ts`,
 		};
 	}
 

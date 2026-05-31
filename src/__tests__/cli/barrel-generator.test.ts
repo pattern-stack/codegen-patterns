@@ -27,7 +27,7 @@ import { loadContext } from '../../cli/shared/context.js';
 const tempDirs: string[] = [];
 
 function mkProject(opts: {
-	entities: Array<{ name: string; plural: string; file?: string }>;
+	entities: Array<{ name: string; plural: string; file?: string; context?: string }>;
 	config?: string;
 }): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'barrel-'));
@@ -43,6 +43,8 @@ function mkProject(opts: {
 				`  name: ${ent.name}`,
 				`  plural: ${ent.plural}`,
 				`  table: ${ent.plural}`,
+				// #403: top-level `context:` nests the module folder.
+				...(ent.context ? [`context: ${ent.context}`] : []),
 				'fields:',
 				'  id:',
 				'    type: uuid',
@@ -112,6 +114,67 @@ describe('buildModulesBarrel — content shape', () => {
 		const out = buildModulesBarrel([], 'src/generated/modules.ts', 'clean-lite-ps');
 		expect(out).toContain('export const GENERATED_MODULES = [] as const;');
 		expect(out).not.toContain('import {');
+	});
+});
+
+describe('#403 — context: nests the module folder', () => {
+	test('clean-lite-ps: context entity imports from modules/<context>/<plural>/', () => {
+		const entities = [
+			{ name: 'transcript', plural: 'transcripts', context: 'integration' },
+			{ name: 'account', plural: 'accounts' }, // untagged → flat
+		];
+		const out = buildModulesBarrel(entities, 'src/generated/modules.ts', 'clean-lite-ps');
+
+		// Context-tagged entity nests under the context segment.
+		expect(out).toContain(
+			"import { TranscriptsModule } from '../../app/backend/src/modules/integration/transcripts/transcripts.module';"
+		);
+		// Untagged entity stays flat — byte-identical to pre-#403.
+		expect(out).toContain(
+			"import { AccountsModule } from '../../app/backend/src/modules/accounts/accounts.module';"
+		);
+	});
+
+	test('clean-lite-ps schema barrel nests the context entity too', () => {
+		const entities = [
+			{ name: 'transcript', plural: 'transcripts', context: 'integration' },
+			{ name: 'account', plural: 'accounts' },
+		];
+		const out = buildSchemaBarrel(entities, 'src/generated/schema.ts', 'clean-lite-ps');
+
+		expect(out).toContain(
+			"export * from '../../app/backend/src/modules/integration/transcripts/transcript.entity';"
+		);
+		expect(out).toContain(
+			"export * from '../../app/backend/src/modules/accounts/account.entity';"
+		);
+	});
+
+	test('end-to-end: context entity YAML validates and lands under the context subfolder', async () => {
+		const root = mkProject({
+			entities: [
+				{ name: 'transcript', plural: 'transcripts', context: 'integration' },
+				{ name: 'account', plural: 'accounts' },
+			],
+		});
+		const ctx = await loadContext({ cwd: root, skipDetection: true });
+
+		const result = await regenerateBarrels({
+			ctx,
+			entitiesDir: path.join(root, 'entities'),
+			generatedDir: path.join(root, 'src/generated'),
+			architecture: 'clean-lite-ps',
+		});
+
+		// Both entities discovered (YAML with context: validated — schema accepts it).
+		expect(result.entityCount).toBe(2);
+		const modulesContent = fs.readFileSync(result.modulesBarrel, 'utf-8');
+		expect(modulesContent).toContain(
+			"from '../../app/backend/src/modules/integration/transcripts/transcripts.module'"
+		);
+		expect(modulesContent).toContain(
+			"from '../../app/backend/src/modules/accounts/accounts.module'"
+		);
 	});
 });
 
