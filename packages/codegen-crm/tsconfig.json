@@ -1,9 +1,10 @@
 {
-  "//": "Standalone library config. There is no shared library base to extend (the repo-root tsconfig.json extends test/scaffold and carries scaffold-only paths/includes unsuited to a published lib); mirrors the compilerOptions used by tsconfig.build.json. See ADR-036.",
+  "//": "Standalone library config (no shared library base to extend; mirrors tsconfig.build.json compilerOptions). The `paths` entry resolves the L1 import in-workspace: published consumers resolve @pattern-stack/codegen/subsystems via codegen's package.json `exports` map, but here the root @pattern-stack/codegen is the workspace ROOT (not a packages/* member) so it isn't symlinked into node_modules. typecheck points at codegen's BUILT .d.ts — skipLibCheck applies, so codegen's NestJS/drizzle source isn't pulled in — i.e. `bun run build` at the repo root must run before this package's typecheck. The imports are type-only / erased at runtime, so tests need no build. See ADR-036.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "ignoreDeprecations": "6.0",
     "strict": true,
     "skipLibCheck": true,
     "declaration": true,
@@ -12,7 +13,12 @@
     "verbatimModuleSyntax": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@pattern-stack/codegen/subsystems": [
+        "../../dist/runtime/subsystems/index.d.ts"
+      ]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.spec.ts"]

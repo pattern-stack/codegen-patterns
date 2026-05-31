@@ -32,3 +32,6 @@ export const CRM_ASSOCIATION_READER = Symbol.for(
 export const CRM_CAPABILITIES = Symbol.for(
   '@pattern-stack/codegen-crm.capabilities',
 );
+
+/** DI token for the composed `CrmPort` adapter (C6). */
+export const CRM_PORT = Symbol.for('@pattern-stack/codegen-crm.port');

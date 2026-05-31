@@ -31,6 +31,9 @@ L3  generated CrmPort             — composes the L2 ports (Track C · C6)
 | `CRM_ASSOCIATION_READER` | DI token (`Symbol.for`) | C3 (#332) |
 | `CrmCapabilities`, `NO_CRM_CAPABILITIES` | per-adapter capability descriptor | C4 (#333) |
 | `CRM_CAPABILITIES` | DI token (`Symbol.for`) | C4 (#333) |
+| `CrmPort` | L3 composing port — the contract an adapter implements (entity-agnostic) | C6 (#337) |
+| `CRM_PORT` | DI token (`Symbol.for`) | C6 (#337) |
+| `assertCrmAdapter` (from `@pattern-stack/codegen-crm/testing`) | conformance helper | C6 (#337) |
 
 > `CrmEntityType` (C3) is an alias of the canonical `CrmEntity` (C1) — the
 > union `'account' | 'contact' | 'opportunity'` has one source of truth; both
@@ -84,9 +87,37 @@ if (caps.fieldDefinitions && caps.entities.includes('lead')) {
 port stays entity-agnostic (ADR-036 §6). C6's `assertCrmAdapter()` checks each
 declared entity resolves via the change-source registry.
 
+## The composing port — `CrmPort`
+
+`CrmPort` is the single L3 contract a provider adapter implements. It composes
+L1 strategies (`auth`, the entity-keyed `sources` registry) and the L2 ports
+(`fields`, `picklists`, `associations`) plus the runtime `capabilities`
+descriptor. It is **entity-agnostic** — no entity name appears in its type;
+entity access goes through `sources.get<T>(entityName)`. Per-consumer typed
+views are codegen-emitted (Track D), not encoded here.
+
+### Conformance testing
+
+`@pattern-stack/codegen-crm/testing` ships `assertCrmAdapter` — a structural
+check for adapter tests:
+
+```ts
+import { assertCrmAdapter } from '@pattern-stack/codegen-crm/testing';
+
+it('hubspot adapter conforms to CrmPort', () => {
+  assertCrmAdapter(hubspotCrmAdapter); // throws AggregateError listing every gap
+});
+```
+
+It verifies required L1 slots resolve, that `capabilities` flags match the
+present ports, and that every `capabilities.entities` entry resolves via
+`sources.has(name)` — so an adapter declaring an entity it can't source fails
+the test rather than failing at runtime.
+
 ## Roadmap
 
-- **C6** — generated `CrmPort` composing port + `assertCrmAdapter`
+- Surface-only `CrmPort` methods — added only when a consumer feature drives one.
+- Track D D3/D4 — codegen-emitted adapter scaffolds + per-consumer typed views.
 
 ## License
 
