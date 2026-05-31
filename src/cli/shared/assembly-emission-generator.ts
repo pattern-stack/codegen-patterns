@@ -120,6 +120,14 @@ export interface IntegrationTokenEntry {
   provider: string;
 }
 
+/** One assembly module on a surface, for {@link generateIntegrationAggregator}.
+ *  The aggregator imports + re-exports each so its exported use-case token
+ *  propagates to the app. */
+export interface IntegrationAssemblyEntry {
+  entityName: string;
+  provider: string;
+}
+
 // ============================================================================
 // Emitters
 // ============================================================================
@@ -243,6 +251,76 @@ export function generateIntegrationTokens(
  */
 
 ${tokenLines || "// no (entity, provider) integration assemblies on this surface yet"}
+`;
+}
+
+/**
+ * Emit the @generated **surface integration aggregator** —
+ * `<surface>/<surface>-integration.module.ts` (RFC-0002 §1, E3).
+ *
+ * This is the AppModule entry point for the surface: it imports AND re-exports
+ * every per-(entity, provider) assembly module on the surface so each module's
+ * exported `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` token propagates to the
+ * app (a Nest module that imports+exports a sub-module re-exposes that
+ * sub-module's exports). Per RFC-0002 §7 q3, AppModule imports THIS — not the
+ * collision-prone `<Surface>AdaptersModule` — so the per-entity run path goes
+ * through these standalone-importable assembly modules and the throw-on-collision
+ * surface-aggregator fold stays off the graph.
+ *
+ * Deterministic order: by provider, then entity (matching however E2 orders its
+ * loop — entity outer, provider inner, but sorted here independently so the file
+ * is stable regardless of input order).
+ */
+export function generateIntegrationAggregator(
+  surface: string,
+  entries: IntegrationAssemblyEntry[],
+): string {
+  const surfacePascal = providerPascalCase(surface);
+  const aggregatorClass = `${surfacePascal}IntegrationModule`;
+
+  // Deterministic: by provider, then entity.
+  const sorted = [...entries].sort((a, b) =>
+    a.provider === b.provider
+      ? a.entityName < b.entityName
+        ? -1
+        : 1
+      : a.provider < b.provider
+        ? -1
+        : 1,
+  );
+
+  const moduleClasses = sorted.map((e) =>
+    assemblyModuleClass(e.entityName, e.provider),
+  );
+  const importLines = sorted
+    .map((e) => {
+      const cls = assemblyModuleClass(e.entityName, e.provider);
+      // Each assembly lives at `./modules/<provider>/<entity>-integration.module`.
+      const path = `./modules/${e.provider}/${e.entityName}-integration.module`;
+      return `import { ${cls} } from '${path}';`;
+    })
+    .join("\n");
+
+  const membersInline = moduleClasses.join(", ");
+
+  return `${generatedBanner(`surface: ${surface}`)}
+import { Module } from '@nestjs/common';
+${importLines || "// no (entity, provider) integration assemblies on this surface yet"}
+
+/**
+ * ${aggregatorClass} — the \`${surface}\` integration aggregator. AppModule
+ * imports THIS (not ${surfacePascal}AdaptersModule) to wire every per-entity
+ * integration on the surface. Re-exports each assembly module so their
+ * <ENTITY>_INTEGRATION_USE_CASE__<PROVIDER> tokens are available to the app (the
+ * trigger/consumer grabs them). Per RFC-0002 §7 q3, the run path goes through
+ * these assembly modules, keeping the collision-prone ${surfacePascal}AdaptersModule
+ * fold off the graph.
+ */
+@Module({
+  imports: [${membersInline}],
+  exports: [${membersInline}],
+})
+export class ${aggregatorClass} {}
 `;
 }
 

@@ -47,8 +47,10 @@ import { providerConstantCase, providerPascalCase } from "./provider-module-gene
 import { generateDefaultSink, type SinkEmitInput } from "./sink-emission-generator";
 import {
   generateAssemblyModule,
+  generateIntegrationAggregator,
   generateIntegrationTokens,
   resolveEntityModuleImports,
+  type IntegrationAssemblyEntry,
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
 
@@ -610,6 +612,10 @@ export interface EmitAdaptersResult {
   assembliesWritten: string[];
   /** Surface integration tokens files written this run (RFC-0002 §2, @generated). */
   tokensWritten: string[];
+  /** Surface integration aggregator modules written this run — one
+   *  `<surface>-integration.module.ts` per surface with ≥1 assembly (RFC-0002
+   *  §1, E3, @generated). The AppModule entry point for the surface. */
+  integrationAggregatorsWritten: string[];
   /** `surface:` entities skipped for assembly/sink because they are not
    *  `pattern: Integrated` (the only family with the projection/upsert path).
    *  Recorded, not crashed — the read side still emits for them. */
@@ -629,6 +635,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     skippedSurfaces: [],
     assembliesWritten: [],
     tokensWritten: [],
+    integrationAggregatorsWritten: [],
     skippedAssemblies: [],
   };
   const entitiesBySurface = collectEntitiesBySurface(opts.entities);
@@ -716,6 +723,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
       const aliases = opts.aliases ?? {};
       const surfaceEntities = entitiesBySurface.get(surface) ?? [];
       const tokenEntries: IntegrationTokenEntry[] = [];
+      const assemblyEntries: IntegrationAssemblyEntry[] = [];
       const sinksDir = join(surfaceDir, "sinks");
       const modulesDir = join(surfaceDir, "modules");
 
@@ -784,6 +792,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           if (!opts.dryRun) writeIfChanged(assemblyPath, assemblyContent);
           result.assembliesWritten.push(assemblyPath);
           tokenEntries.push({ entityName, entityClass: loc.entityClass, provider: slug });
+          assemblyEntries.push({ entityName, provider: slug });
         }
       }
 
@@ -797,6 +806,24 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
       const tokensContent = generateIntegrationTokens(surface, tokenEntries);
       if (!opts.dryRun) writeIfChanged(integrationTokensPath, tokensContent);
       result.tokensWritten.push(integrationTokensPath);
+
+      // Surface integration aggregator (@generated, E3) — the AppModule entry
+      // point. Imports + re-exports every per-entity assembly module so their
+      // use-case tokens propagate to the app (RFC-0002 §1, §7 q3). Emitted only
+      // when the surface has ≥1 assembly (skip surfaces whose entities were all
+      // non-Integrated/skipped) — no empty aggregator on the graph.
+      if (assemblyEntries.length > 0) {
+        const integrationAggregatorPath = join(
+          surfaceDir,
+          `${surface}-integration.module.ts`,
+        );
+        const aggregatorContent = generateIntegrationAggregator(
+          surface,
+          assemblyEntries,
+        );
+        if (!opts.dryRun) writeIfChanged(integrationAggregatorPath, aggregatorContent);
+        result.integrationAggregatorsWritten.push(integrationAggregatorPath);
+      }
     }
   }
 
