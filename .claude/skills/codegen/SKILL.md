@@ -1,6 +1,6 @@
 # @pattern-stack/codegen
 
-Code generation CLI for NestJS + Drizzle applications. Generates entities, repositories, services, controllers, DTOs, use cases, OAuth-ready integrations, and infrastructure subsystems from YAML definitions.
+Code generation CLI for NestJS + Drizzle applications. Generates entities, repositories, services, controllers, DTOs, use cases, OAuth-ready integrations, the full vendor-integration layer (provider/adapter read side + module assembly write side + the `IncrementalRead` read primitive — Track D, RFC-0001/0002/0003), and infrastructure subsystems from YAML definitions.
 
 ## When to Use This Skill
 
@@ -39,6 +39,8 @@ After every generation run, barrel files are regenerated:
 - `src/generated/schema.ts` — re-exports all entity Drizzle schemas
 
 The user wires these into `app.module.ts` once; codegen never touches that file again.
+
+For entities tagged with `surface:` (when `definitions/providers/*.yaml` exist), `entity new` also runs the Track D integration post-step — emitting the provider/adapter read side, the per-entity module assembly (binds change source + sink + a tokened `ExecuteIntegrationUseCase`), the emit-once default sink, and the `IncrementalReadBase` read-body scaffold inside the adapter's `changeSources`. There is no standalone `provider`/`integration`/`gen` command. The surface ports declare `readonly changeSources: Record<string, IChangeSource<unknown>>` (not the old `sources` registry — the folded `<SURFACE>_ENTITY_SOURCES` registry is the surface aggregator's output). See the `integration` skill (`protocols-and-ports.md`, `SKILL.md`) for the port shapes, output paths, and skip conditions.
 
 ### Subsystem Commands
 

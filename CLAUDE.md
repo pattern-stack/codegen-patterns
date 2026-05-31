@@ -118,6 +118,16 @@ Five subsystems following Protocol → Backend → Factory pattern:
 
 All use `DynamicModule.forRoot({ backend })` with `global: true`.
 
+### Integration Codegen (RFC-0001/0002/0003)
+
+For entities tagged with `surface:` (when `definitions/providers/*.yaml` exist), the `entity new` post-step emits the **full** integration layer per `(surface, provider, entity)`, not just the read side:
+
+- **Read side** (RFC-0001) — provider module (auth + client), adapter scaffold whose `changeSources: Record<string, IChangeSource<unknown>>` the adapter *contributes* (keyed by entity), the surface aggregator that folds those into the `<SURFACE>_ENTITY_SOURCES` registry, and typed views. The adapter holds the contributions; the folded registry is the surface module's concern (post-E0 — the adapter no longer injects the registry).
+- **Read primitive** (RFC-0003) — for interaction surfaces (mail/calendar/transcript), each `changeSources` entry is emitted as an emit-once `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass (the enumerate/hydrate read-body scaffold). The base owns streaming, filter-before-hydrate, bounded-concurrency hydration, and per-ref cursor emission; the author fills only `enumerate` / `hydrate` / `toCanonical`. Lives in `runtime/subsystems/integration/`, exported from `@pattern-stack/codegen/subsystems`.
+- **Module assembly** (RFC-0002) — the write/run side: per-entity `<entity>-integration.module.ts` binding `INTEGRATION_CHANGE_SOURCE` (= `adapter.changeSources['<entity>']`) + `INTEGRATION_SINK` + a local `ExecuteIntegrationUseCase` exported under a unique `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` token; an emit-once default sink scaffold over the `Integrated` repo (`pattern: Integrated` only); a surface integration aggregator; and a tokens file.
+
+The author seam is just the vendor read methods plus any non-generic sink write logic.
+
 ### Entity Families
 
 Base classes in `runtime/base-classes/`:

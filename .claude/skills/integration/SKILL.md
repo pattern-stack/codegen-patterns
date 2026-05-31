@@ -31,6 +31,29 @@ new` whenever `definitions/providers/*.yaml` exist. See
 output paths, and skip conditions before telling anyone the CLI wiring is
 missing.
 
+0.13.0 extends Track D to emit the **full** integration layer, not just the
+read side:
+- **Module assembly (RFC-0002).** Per `(surface, provider, entity)` codegen now
+  emits the per-entity `<entity>-integration.module.ts` (binds
+  `INTEGRATION_CHANGE_SOURCE` = `adapter.changeSources['<entity>']` +
+  `INTEGRATION_SINK`, provides a local `ExecuteIntegrationUseCase`, exports it
+  under a unique `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` token), an
+  emit-once default sink scaffold over the `Integrated` repo (`pattern:
+  Integrated` only — hard-errors otherwise), a surface integration aggregator,
+  and a tokens file. This is the *generated* form of swe-brain's hand-rolled
+  `*_integration` feature modules.
+- **Read primitive (RFC-0003).** For interaction surfaces (mail/calendar/
+  transcript) the adapter's `changeSources` entries are emitted as emit-once
+  `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclasses — the
+  enumerate/hydrate read-body scaffold. The base owns streaming,
+  filter-before-hydrate, bounded-concurrency hydration, and per-ref cursor
+  emission; the author fills only `enumerate` / `hydrate` / `toCanonical`.
+- **Port shape (post-E0).** The surface ports declare `readonly changeSources:
+  Record<string, IChangeSource<unknown>>` (what the adapter *contributes*), NOT
+  the old `readonly sources: IEntityChangeSourceRegistry`. The folded,
+  entity-keyed `<SURFACE>_ENTITY_SOURCES` registry is the surface aggregator's
+  output (surface-module concern), no longer injected into the adapter.
+
 ## Mental model
 
 **Integration vs. jobs vs. events — three domains, one codebase:**
@@ -235,7 +258,18 @@ Files that ship to the consumer app (not templates):
   `mode: 'poll' | 'webhook'`; flat-AND `ResolvedFilter` triples
   (`eq | neq | in | nin | gt | gte | lt | lte`); `CursorStrategy`
   tagged union (`systemModstamp | replayId | timestamp | eventId`);
-  `poll.provenance: 'cdc'` knob (ADR-033)
+  `poll.provenance: 'cdc'` knob (ADR-033). The `CursorStrategy` union also
+  carries the atomic opaque-token kinds `historyId` / `syncToken` (RFC-0003 R2),
+  with divisibility exposed via `CURSOR_DIVISIBILITY` / `isDivisibleCursor`.
+- `runtime/subsystems/integration/incremental-read.ts` — `IncrementalRead<T, F>`
+  / `RandomRead<T>` / `IncrementalReadBase` + `SourcedRecord` / `Ref` /
+  `ReadMode` / `ReadRequest` / `mapConcurrent` (RFC-0003 R1). The universal
+  enumerate/hydrate read primitive: the base decomposes the read into
+  `enumerate(mode, filter) → AsyncIterable<Ref>` + `hydrate(ids) → Map<id, raw>`
+  and owns drain, filter-before-hydrate, bounded-concurrency hydrate, per-ref
+  cursor emission (gated by `cursorDivisible` for atomic strategies), and the
+  `listChanges` adaptation. `get` (RandomRead) is provided free as
+  `toCanonical ∘ hydrate([id])`. Exported from `@pattern-stack/codegen/subsystems`.
 - `runtime/subsystems/integration/integration-middleware.protocol.ts` —
   `ChangeIterator<T>` + `ChangeMiddleware<T>` types; the universal
   composition seam consumed by primitives (loopback ships here in

@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen-crm",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "L2 CRM surface package for @pattern-stack/codegen — type-shaped CRM ports (field/picklist/association readers) and DI tokens. See ADR-036.",
   "type": "module",
   "license": "MIT",
@@ -27,7 +27,7 @@
     "prepublishOnly": "bun run build"
   },
   "peerDependencies": {
-    "@pattern-stack/codegen": "^0.12.0"
+    "@pattern-stack/codegen": "^0.13.0"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

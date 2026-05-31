@@ -138,6 +138,50 @@ modules/{plural}/
   use-cases/                       FindById, List, declarative queries
 ```
 
+## Integration Codegen (provider/adapter + assembly + read primitive)
+
+When an entity carries a `surface:` tag and `definitions/providers/*.yaml` exist,
+re-running `codegen entity new` emits the **full** integration layer for each
+`(surface, provider, entity)` — not just the read side. The author fills only the
+irreducible vendor seam: the `enumerate` / `hydrate` / `toCanonical` read methods
+and any non-generic sink write logic.
+
+**Read side** (provider/adapter — RFC-0001):
+```
+integrations/providers/<provider>/      Auth strategy + client (provider module)
+integrations/<surface>/adapters/<provider>/  Adapter scaffold: changeSources container
+integrations/<surface>/<surface>-adapters.module.ts  Aggregator → <SURFACE>_ENTITY_SOURCES registry
+integrations/<surface>/types.generated.ts            Typed views
+```
+
+The adapter *contributes* `changeSources` (per-entity, keyed by entity name); the
+aggregator folds every provider's contributions into the entity-keyed
+`<SURFACE>_ENTITY_SOURCES` registry consumers read at runtime.
+
+**Read primitive** (RFC-0003): for interaction surfaces (mail / calendar /
+transcript) each `changeSources` entry is emitted as an emit-once
+`IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass — the
+enumerate/hydrate read capability (`@pattern-stack/codegen/subsystems`). The base
+owns streaming, **filter-before-hydrate**, bounded-concurrency hydration, and
+per-ref cursor emission, so the buffer-all/serial/run-final-cursor regression is
+structurally unwritable; the author fills only `enumerate` / `hydrate` /
+`toCanonical`.
+
+**Write/run side** (assembly — RFC-0002):
+```
+integrations/<surface>/modules/<provider>/<entity>-integration.module.ts  @generated per-entity assembly
+integrations/<surface>/sinks/<entity>.sink.ts            emit-once default sink scaffold
+integrations/<surface>/<surface>-integration.module.ts   @generated aggregator
+integrations/<surface>/<surface>-integration.tokens.ts   @generated use-case tokens
+```
+
+Each per-entity module binds `INTEGRATION_CHANGE_SOURCE`
+(= `adapter.changeSources['<entity>']`) + `INTEGRATION_SINK`, provides a local
+`ExecuteIntegrationUseCase`, and exports a uniquely-tokened handle
+(`<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>`) a trigger grabs to run a sync. The
+default sink scaffolds over the entity's generated `Integrated` repository
+(`pattern: Integrated` only); the author overrides any non-generic write logic.
+
 ## Entity Families
 
 Families provide pre-built base classes with domain-specific query patterns:
