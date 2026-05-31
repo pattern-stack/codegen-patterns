@@ -4,6 +4,66 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-31
+
+Integration codegen retarget (RFC-0001): a **provider/adapter/surface** model
+for integration codegen, plus a **surface-package framework**. Additive over
+0.11.0 — new declarative inputs and emitted artifacts; existing entity codegen
+is unchanged. The one breaking item (the ADR-033.2 per-entity provider tuples)
+has no consumers. Consumers adopt by adding `definitions/providers/*.yaml` and
+regenerating. Ships alongside four independently-versioned **surface packages**
+(`@pattern-stack/codegen-{crm,calendar,mail,transcript}`) publishing fresh at
+`0.1.0`.
+
+### ⚠ BREAKING CHANGES
+
+- **ADR-033.2 per-entity provider tuples removed.** The
+  `<entity>-integration-source.providers.ts` emission (`<ENTITY>_PROVIDERS`
+  const + `<Entity>Provider` type) is deleted. Its replacement is the
+  surface-scoped, codegen-owned typed view at
+  `src/integrations/<surface>/types.generated.ts` (`<Surface>Provider` /
+  `<Surface>Entity` unions + a `(provider, entity)` validity map) — a single
+  source of provider truth. ADR-033.2 is superseded by RFC-0001. No published
+  consumers depend on the tuples.
+
+### Added
+
+- **Track C — surface-package framework (ADR-036).** First-class L2 *surface
+  packages* shipping type-shaped ports + DI tokens + an L3 composing port per
+  integration surface:
+  - **L1** — `IEntityChangeSourceRegistry` (entity-keyed change-source
+    resolver) + `MemoryEntityChangeSourceRegistry` + the
+    `ENTITY_CHANGE_SOURCE_REGISTRY` token, in the integration subsystem;
+    exported across the package boundary via `@pattern-stack/codegen/subsystems`.
+  - **`@pattern-stack/codegen-crm`** — L2 CRM ports (`IFieldDefinitionReader`,
+    `IPicklistReader`, `IAssociationReader`), the `CrmCapabilities` descriptor,
+    and the L3 entity-agnostic **`CrmPort`** composing port + `assertCrmAdapter`
+    conformance helper (on the `/testing` subpath).
+  - **`@pattern-stack/codegen-{calendar,mail,transcript}`** — incremental-read
+    interaction surfaces (`CalendarPort` / `MailPort` / `TranscriptPort`,
+    canonical types, capability descriptors). Independently versioned (`0.1.0`).
+- **Track D — provider/adapter integration codegen (RFC-0001).**
+  - `definitions/providers/<provider>.yaml` — providers as first-class
+    declarative artifacts (slug, auth strategy, client, surfaces); Zod schema +
+    validator with a **pre-flight import-path check** (a missing
+    strategy/client export fails `cdp gen`, not NestJS boot), surface
+    cross-check, and slug-uniqueness.
+  - Emits, per provider × surface: a `<provider>.provider.module.ts`, an
+    **emit-once** `<provider>-<surface>.adapter.ts` scaffold (sentinel-guarded,
+    author-owned after first emit), fully codegen-owned adapter modules +
+    barrels, a per-surface registry (`<SURFACE>_ADAPTER_CONTRIBUTIONS` →
+    `<SURFACE>_ENTITY_SOURCES`, folding into the L1 registry), and the
+    `types.generated.ts` typed view.
+  - Optional entity-YAML **`surface:`** field — the declarative input the
+    provider/adapter emission groups entities by.
+- **`context:` output-folder grouping (#403).** An optional top-level entity
+  `context:` nests its generated module folder under that segment
+  (`<modules>/<context>/<plural>/`); no context → flat (byte-identical to
+  before).
+- **Multi-package release.** `just publish` publishes the root plus every
+  opted-in `packages/*` (those declaring `publishConfig.access: public`) at its
+  own independent version, skipping versions already on npm.
+
 ## [0.11.0] — 2026-05-30
 
 Vocabulary rename per **ADR-0005 (swe-brain `.ai-docs/decisions/ADR-0005-rename-sync-to-integration.md`)**:
