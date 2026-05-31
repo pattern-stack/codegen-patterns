@@ -44,6 +44,14 @@ export type {
 } from './integration-run-recorder.protocol';
 export type { ILoopbackFingerprintStore } from './integration-loopback.protocol';
 
+// Entity-keyed change-source registry (C7, #336) — L1 protocol + memory impl.
+// Generalizes per-entity `<ENTITY>_POLL_FETCH_REGISTRY` tokens into one
+// entity-keyed registry so the L3 surface port (C6) is entity-agnostic. Codegen
+// retarget to emit it is Track D D3/D4 (RFC-0001 §3).
+export type { IEntityChangeSourceRegistry } from './entity-change-source-registry.protocol';
+export { UnknownEntityError } from './entity-change-source-registry.protocol';
+export { MemoryEntityChangeSourceRegistry } from './entity-change-source-registry.memory';
+
 // DetectionConfig (#226-1) — Zod schema + inferred types; canonical source
 // of filter/mapping shape consumed by primitives + codegen YAML validator
 export {
@@ -100,6 +108,7 @@ export { buildChangeSource } from './build-change-source';
 
 // Tokens
 export {
+  ENTITY_CHANGE_SOURCE_REGISTRY,
   INTEGRATION_CHANGE_SOURCE,
   INTEGRATION_CURSOR_STORE,
   INTEGRATION_FIELD_DIFFER,

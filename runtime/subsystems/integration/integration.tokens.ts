@@ -47,3 +47,17 @@ export const INTEGRATION_MODULE_OPTIONS = 'INTEGRATION_MODULE_OPTIONS' as const;
  * Consumed by `ExecuteIntegrationUseCase` to enforce the tenantId-is-required rule.
  */
 export const INTEGRATION_MULTI_TENANT = 'INTEGRATION_MULTI_TENANT' as const;
+
+/**
+ * Injection token for the entity-keyed `IEntityChangeSourceRegistry` (C7,
+ * #336). Bound to the codegen-emitted aggregator that folds per-provider
+ * adapter contributions into one registry (RFC-0001 §3, emitted by Track D
+ * D3/D4).
+ *
+ * A string constant, not `Symbol.for(...)`, to match this subsystem's token
+ * convention (see file header). The originating issue's code block proposed a
+ * `Symbol.for('@pattern-stack/codegen.entity-change-source-registry')` key,
+ * predating the sync→integration consolidation onto string tokens; kept as a
+ * string here for internal consistency with the other INTEGRATION_* tokens.
+ */
+export const ENTITY_CHANGE_SOURCE_REGISTRY = 'ENTITY_CHANGE_SOURCE_REGISTRY' as const;
