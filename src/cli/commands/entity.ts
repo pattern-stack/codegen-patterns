@@ -830,7 +830,7 @@ export class EntityNewCommand extends Command {
 					}
 					if (adapterResult.assembliesWritten.length || adapterResult.tokensWritten.length) {
 						printInfo(
-							`integration assembly codegen: ${adapterResult.assembliesWritten.length} module(s) + ${adapterResult.tokensWritten.length} tokens file(s)`,
+							`integration assembly codegen: ${adapterResult.assembliesWritten.length} module(s) + ${adapterResult.tokensWritten.length} tokens file(s) + ${adapterResult.integrationAggregatorsWritten.length} aggregator(s)`,
 						);
 					}
 					for (const s of adapterResult.scaffoldsSkipped) {
