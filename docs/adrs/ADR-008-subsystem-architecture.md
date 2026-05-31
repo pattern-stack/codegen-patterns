@@ -6,6 +6,8 @@
 **Related:** ADR-001, ADR-003, ADR-005
 **Unblocks:** #15 (A11), #16 (A12)
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR predates the `sync`→`integration` rename (shipped in 0.11.0). The "sync subsystem" described below is now the **integration** subsystem (`SyncModule`→`IntegrationModule`, `subsystem install sync`→`… install integration`, `sync_*` tables→`integration_*`). The architecture is unchanged — only the names. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 > **Revision note (2026-04-25)** — ADR-033 refines the sync subsystem's
 > change-source seam under this Protocol → Backend → Factory pattern:
 > `IChangeSource<T>` remains the single port (no per-mode split), but

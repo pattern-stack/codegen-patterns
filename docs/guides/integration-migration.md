@@ -1,14 +1,14 @@
-# Migrating from a bespoke sync pipeline to the sync subsystem
+# Migrating a bespoke sync pipeline to the integration subsystem
 
 Who this is for: consumers already running custom `CrmSyncService` /
-`ExecuteSync` / hand-rolled cursor-store code that predates the sync
+`ExecuteSync` / hand-rolled cursor-store code that predates the integration
 subsystem. The obvious reference case is dealbrain-v2's CRM sync —
 ~800 LOC across three commits that this subsystem extracted and
 generalized. The steps below describe the exact migration path that
 validated the subsystem's shape.
 
 If you're starting a new project, you don't need this guide — read
-[Sync subsystem](../CONSUMER-SETUP.md#sync-subsystem) in CONSUMER-SETUP
+[Integration subsystem](../CONSUMER-SETUP.md#integration-subsystem) in CONSUMER-SETUP
 instead.
 
 ## The decision you're making
@@ -29,18 +29,18 @@ subsystem is not for you.
 ## Step 0 — Install the subsystem
 
 ```bash
-codegen subsystem install sync
+codegen subsystem install integration
 ```
 
-This lands the protocols (`IChangeSource<T>`, `ISyncSink<T>`,
-`ICursorStore`, `IFieldDiffer<T>`, `ISyncRunRecorder`), the Drizzle +
+This lands the protocols (`IChangeSource<T>`, `IIntegrationSink<T>`,
+`ICursorStore`, `IFieldDiffer<T>`, `IIntegrationRunRecorder`), the Drizzle +
 Memory backends, the orchestrator, the default differ, and injects the
-`sync:` block into your config. Atlas will now see the three audit
-tables (`sync_subscriptions`, `sync_runs`, `sync_run_items`) as pending
+`integration:` block into your config. Atlas will now see the three audit
+tables (`integration_subscriptions`, `integration_runs`, `integration_run_items`) as pending
 diffs; generate a migration:
 
 ```bash
-atlas migrate diff --env local --name add_sync_audit_tables
+atlas migrate diff --env local --name add_integration_audit_tables
 atlas migrate apply --env local
 ```
 
@@ -74,7 +74,7 @@ class SalesforceSyncService {
 
 ```ts
 // New: adapter implements IChangeSource<T>. The orchestrator owns the loop.
-import type { IChangeSource, Change, SyncSubscriptionView } from '@shared/subsystems/sync';
+import type { IChangeSource, Change, IntegrationSubscriptionView } from '@shared/subsystems/integration';
 
 @Injectable()
 export class SalesforceOpportunityChangeSource
@@ -85,7 +85,7 @@ export class SalesforceOpportunityChangeSource
   constructor(private readonly sfdc: SalesforceClient) {}
 
   async *listChanges(
-    _sub: SyncSubscriptionView,
+    _sub: IntegrationSubscriptionView,
     cursor: unknown | null,
   ): AsyncIterable<Change<CanonicalOpportunity>> {
     const typed = cursor as { systemModstamp?: string } | null;
@@ -115,7 +115,7 @@ per canonical entity (recommended — narrower scope, one label per
 run-log row) or one `IChangeSource` that yields a discriminated union.
 The first shape composes better with the orchestrator.
 
-## Step 2 — Introduce `ISyncSink<T>` for each canonical entity
+## Step 2 — Introduce `IIntegrationSink<T>` for each canonical entity
 
 Your existing services (`OpportunityService`, `AccountService`) know how
 to write local rows. The sink wraps them, speaking the canonical shape
@@ -123,7 +123,7 @@ externally:
 
 ```ts
 @Injectable()
-export class OpportunitySyncSink implements ISyncSink<CanonicalOpportunity> {
+export class OpportunityIntegrationSink implements IIntegrationSink<CanonicalOpportunity> {
   constructor(
     private readonly svc: OpportunityService,
     private readonly fields: FieldValueService,  // for EAV dual-write
@@ -159,7 +159,7 @@ The sink is where all your provider-specific write policy lives (EAV
 dual-write, FK resolution, provider field stamping). The subsystem does
 not prescribe any of that — sinks are intentionally consumer-owned.
 
-## Step 3 — Swap your orchestrator call for `ExecuteSyncUseCase`
+## Step 3 — Swap your orchestrator call for `ExecuteIntegrationUseCase`
 
 Replace the bespoke sync-loop invocation with the generic orchestrator.
 The feature module binds source + sink + orchestrator:
@@ -167,13 +167,13 @@ The feature module binds source + sink + orchestrator:
 ```ts
 @Module({
   providers: [
-    { provide: SYNC_CHANGE_SOURCE, useClass: SalesforceOpportunityChangeSource },
-    { provide: SYNC_SINK,          useClass: OpportunitySyncSink },
-    ExecuteSyncUseCase,
+    { provide: INTEGRATION_CHANGE_SOURCE, useClass: SalesforceOpportunityChangeSource },
+    { provide: INTEGRATION_SINK,          useClass: OpportunityIntegrationSink },
+    ExecuteIntegrationUseCase,
   ],
-  exports: [ExecuteSyncUseCase],
+  exports: [ExecuteIntegrationUseCase],
 })
-export class OpportunitySyncModule {}
+export class OpportunityIntegrationModule {}
 ```
 
 Then wherever your old scheduler / CLI / trigger ran the bespoke service:
@@ -183,7 +183,7 @@ Then wherever your old scheduler / CLI / trigger ran the bespoke service:
 // await this.salesforceSyncService.runOpportunitySync();
 
 // After:
-const result = await this.executeSync.execute({
+const result = await this.executeIntegration.execute({
   subscription: { id: subscriptionId, domain: 'opportunity' },
   userId: actorId,
   provider: 'salesforce-crm',
@@ -203,9 +203,9 @@ you've spot-checked the audit log against your expected changes):
 
 - Delete the bespoke orchestrator class.
 - Delete the bespoke cursor repository — the subsystem owns
-  `sync_subscriptions.cursor` now.
-- Delete the bespoke audit writes — `ExecuteSyncUseCase` writes
-  `sync_runs` + `sync_run_items` on every run.
+  `integration_subscriptions.cursor` now.
+- Delete the bespoke audit writes — `ExecuteIntegrationUseCase` writes
+  `integration_runs` + `integration_run_items` on every run.
 - Delete any one-off "re-run since timestamp" scripts — use the
   orchestrator's `action: 'manual'` mode with a temporary
   `sourceOverride` instead.
@@ -217,7 +217,7 @@ schema tables around. Cut cleanly.
 ## Step 5 — Backfill historical runs (optional)
 
 If your bespoke pipeline wrote its own audit log and you want a unified
-history in `sync_runs` / `sync_run_items`, that's a one-off ETL. The
+history in `integration_runs` / `integration_run_items`, that's a one-off ETL. The
 subsystem's recorder writes one row per run at the end of the loop, so
 backfilling is a matter of rewriting old audit rows into the new schema.
 Don't invest in this unless downstream consumers (dashboards,
@@ -245,12 +245,12 @@ drift-detection queries) actually read the old log.
   you want to trim additional fields from the audit log, pass an
   `options.ignore` when binding the differ:
   ```ts
-  { provide: SYNC_FIELD_DIFFER, useValue: new DeepEqualDiffer({ ignore: ['sync_version', 'internal_meta'] }) }
+  { provide: INTEGRATION_FIELD_DIFFER, useValue: new DeepEqualDiffer({ ignore: ['sync_version', 'internal_meta'] }) }
   ```
 
 - **Loopback-fingerprint suppression is opt-in.** If your pipeline has an
   outbound writeback path that echoes back on the next inbound poll,
-  bind an `ILoopbackFingerprintStore` to `SYNC_LOOPBACK_FINGERPRINT_STORE`
+  bind an `ILoopbackFingerprintStore` to `INTEGRATION_LOOPBACK_FINGERPRINT_STORE`
   in your feature module. The orchestrator's `@Optional()` inject means
   absence is fine — if you don't need it, don't provide it.
 
@@ -274,7 +274,7 @@ which hand-authored six tuples (3 entities × 2 providers).
   ],
   exports: [HUBSPOT_OPPORTUNITY_CHANGE_SOURCE, SALESFORCE_OPPORTUNITY_CHANGE_SOURCE],
 })
-export class HandAuthoredOpportunitySyncModule {}
+export class HandAuthoredOpportunityIntegrationModule {}
 ```
 
 Each adapter class boilerplated the cursor-management + diffing scaffold
@@ -292,7 +292,7 @@ detection:
 ```
 
 ```ts
-// src/modules/opportunity-sync-source.module.ts (generated)
+// src/modules/opportunity-integration-source.module.ts (generated)
 export const OPPORTUNITY_POLL_FETCH_REGISTRY = Symbol('OPPORTUNITY_POLL_FETCH_REGISTRY');
 export const OPPORTUNITY_CHANGE_SOURCES      = Symbol('OPPORTUNITY_CHANGE_SOURCES');
 
@@ -307,7 +307,7 @@ export const OPPORTUNITY_CHANGE_SOURCES      = Symbol('OPPORTUNITY_CHANGE_SOURCE
   }],
   exports: [OPPORTUNITY_CHANGE_SOURCES],
 })
-export class OpportunitySyncSourceModule {}
+export class OpportunityIntegrationSourceModule {}
 ```
 
 The consumer ships only the typed fetch callbacks plus the registry
@@ -323,9 +323,9 @@ sales-patterns-ts#60 become deletable.
 
 ## Further reading
 
-- [Sync subsystem](../CONSUMER-SETUP.md#sync-subsystem) — fresh-install
+- [Integration subsystem](../CONSUMER-SETUP.md#integration-subsystem) — fresh-install
   guide.
-- `.claude/skills/sync/SKILL.md` + L1 files — agent-facing decision
+- `.claude/skills/integration/SKILL.md` + L1 files — agent-facing decision
   map.
 - Epic #60 — design rationale, `IChangeSource<T>` compromise analysis,
   ADR-0003 audit model shape, dealbrain-v2 extraction verdict.

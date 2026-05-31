@@ -7,6 +7,8 @@
 
 > **Supersedure note (2026-04-19):** Entity families as a closed library-shipped enum (`family: synced | activity | knowledge | metadata`) are replaced by app-defined Patterns. The four family base classes themselves (`SyncedEntityRepository`, etc.) remain as runtime artifacts — they are now referenced by the library-shipped `SyncedPattern`, `ActivityPattern`, `KnowledgePattern`, `MetadataPattern` records rather than by a hard-coded enum. The `family:` YAML key is deleted; entities use `pattern:` instead. The historical context, motivation, and family taxonomy below remain accurate as the design rationale that informed Patterns. See ADR-031 for the current consumer-facing surface.
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR also predates the `sync`→`integration` rename (shipped in 0.11.0). Where the body says the `Synced` family / `SyncedEntityRepository` / `SyncedPattern` / `family: synced`, read `Integrated` / `IntegratedEntityRepository` / `IntegratedPattern` / `pattern: Integrated`; the "sync model" axis refers to the data-movement engine now called `integration`. The taxonomy and rationale below are preserved as written. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ## Context
 
 Dealbrain has roughly a dozen entity types that cluster into four distinct families based on their access patterns, sync model, and lifecycle:
