@@ -2,7 +2,7 @@ entity:
   name: meeting
   plural: meetings
   table: meetings
-surface: transcript
+  surface: transcript
 fields:
   title:
     type: string

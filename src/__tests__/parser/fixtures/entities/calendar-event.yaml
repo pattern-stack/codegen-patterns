@@ -2,7 +2,7 @@ entity:
   name: calendar_event
   plural: calendar_events
   table: calendar_events
-surface: calendar
+  surface: calendar
 fields:
   title:
     type: string

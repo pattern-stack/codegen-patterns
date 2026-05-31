@@ -2,7 +2,7 @@ entity:
   name: meeting
   plural: meetings
   table: meetings
-surface: calendar
+  surface: calendar
 fields:
   title:
     type: string

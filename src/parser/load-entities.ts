@@ -208,16 +208,21 @@ function loadErrorToIssue(error: LoadError): AnalysisIssue[] {
 /**
  * Load all entity YAML files from a directory
  */
-export function loadEntities(entitiesDir: string): LoadEntitiesResult {
+export function loadEntities(
+	entitiesDir: string,
+	opts?: { excludeDirs?: string[] },
+): LoadEntitiesResult {
 	const entities: ParsedEntity[] = [];
 	const issues: AnalysisIssue[] = [];
 
 	const resolvedDir = resolve(entitiesDir);
 
-	// Get all YAML files
+	// Get all YAML files. `excludeDirs` keeps the provider-definitions subtree
+	// (`definitions/providers/*.yaml`) out — those validate against
+	// ProviderDefinitionSchema, not the entity loader.
 	let files: string[];
 	try {
-		files = findYamlFiles(resolvedDir);
+		files = findYamlFiles(resolvedDir, { excludeDirs: opts?.excludeDirs });
 	} catch (err) {
 		issues.push({
 			severity: 'error',

@@ -2,7 +2,7 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-surface: crm
+  surface: crm
 fields:
   email:
     type: string

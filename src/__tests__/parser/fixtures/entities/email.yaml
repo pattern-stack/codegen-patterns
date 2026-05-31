@@ -2,7 +2,7 @@ entity:
   name: email
   plural: emails
   table: emails
-surface: mail
+  surface: mail
 fields:
   subject:
     type: string

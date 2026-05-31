@@ -32,10 +32,10 @@ function loadDef(name: string) {
 }
 
 const ENTITIES = [
-  { entity: { name: 'deal' }, surface: 'crm' },
-  { entity: { name: 'account' }, surface: 'crm' },
-  { entity: { name: 'calendar_event' }, surface: 'calendar' },
-  { entity: { name: 'email' }, surface: 'mail' },
+  { entity: { name: 'deal', surface: 'crm' } },
+  { entity: { name: 'account', surface: 'crm' } },
+  { entity: { name: 'calendar_event', surface: 'calendar' } },
+  { entity: { name: 'email', surface: 'mail' } },
   { entity: { name: 'no_surface' } },
 ];
 

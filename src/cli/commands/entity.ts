@@ -63,9 +63,33 @@ import type { NounModule } from '../noun-module.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function listEntityYamls(dir: string): string[] {
+/**
+ * Resolve the provider-definitions directory from config (`paths.providers`,
+ * default `definitions/providers`). Provider YAML validates against
+ * `ProviderDefinitionSchema` — it must be excluded from entity discovery so the
+ * recursive `definitions` walk never feeds `definitions/providers/*.yaml` to the
+ * entity loader (where it fails entity validation).
+ */
+function resolveProvidersDir(ctx: Context): string {
+	const fromConfig = (
+		ctx.config as { paths?: { providers?: string } } | null | undefined
+	)?.paths?.providers;
+	return fromConfig != null
+		? path.resolve(ctx.cwd, fromConfig)
+		: path.resolve(ctx.cwd, 'definitions/providers');
+}
+
+/**
+ * List entity YAML files under `dir`, excluding the provider-definitions
+ * subtree. When the entities dir IS the `definitions` root, the recursive walk
+ * would otherwise pull in `definitions/providers/*.yaml`; passing the providers
+ * dir as an exclusion keeps entity discovery to entity files only.
+ */
+function listEntityYamls(dir: string, providersDir?: string): string[] {
 	if (!fs.existsSync(dir)) return [];
-	return findYamlFiles(dir);
+	return findYamlFiles(dir, {
+		excludeDirs: providersDir ? [providersDir] : [],
+	});
 }
 
 interface EntitySummaryRow {
@@ -135,7 +159,7 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 		};
 	}
 
-	const files = listEntityYamls(ctx.entitiesDir);
+	const files = listEntityYamls(ctx.entitiesDir, resolveProvidersDir(ctx));
 	const rows = files.map(summarizeEntityFile).filter((r): r is EntitySummaryRow => r !== null);
 
 	const patterns = new Set(rows.map((r) => r.pattern));
@@ -256,7 +280,7 @@ export class EntityNewCommand extends Command {
 		let targets: string[] = [];
 		if (this.all) {
 			const dir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
-			targets = listEntityYamls(dir);
+			targets = listEntityYamls(dir, resolveProvidersDir(ctx));
 			if (targets.length === 0) {
 				printError(`No entity YAML files found in ${dir}`);
 				return 1;
@@ -268,21 +292,29 @@ export class EntityNewCommand extends Command {
 			return 2;
 		}
 
-		// Pre-flight: validate each YAML.
+		// Pre-flight: validate each YAML. Capture the Zod `details` alongside the
+		// short message so `entity new` surfaces the SAME per-issue diagnostics as
+		// `entity validate` — otherwise a failing YAML prints only "Validation
+		// failed for <file>" with no clue which key/level is wrong (the DX miss
+		// that masked Bug 1: `entity.surface` rejected with no actionable detail).
 		const validated: Array<{ file: string; name: string }> = [];
-		const invalid: Array<{ file: string; message: string }> = [];
+		const invalid: Array<{ file: string; message: string; details?: string[] }> =
+			[];
 		for (const file of targets) {
 			const result = loadEntityFromYaml(file);
 			if (result.success) {
 				validated.push({ file, name: result.definition.entity.name });
 			} else {
-				invalid.push({ file, message: result.error });
+				invalid.push({ file, message: result.error, details: result.details });
 			}
 		}
 
 		if (invalid.length > 0 && !this.continueOnError) {
 			for (const i of invalid) {
 				printError(`${path.basename(i.file)} — ${i.message}`);
+				for (const detail of i.details ?? []) {
+					printError(`   • ${detail}`);
+				}
 			}
 			if (!isJsonMode()) {
 				return 1;
@@ -297,7 +329,9 @@ export class EntityNewCommand extends Command {
 		const entitiesDirForEmits =
 			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
 		const eventsDirForEmits = resolveEventsDir(ctx);
-		const allEntitiesForEmits = loadEntities(entitiesDirForEmits).entities;
+		const allEntitiesForEmits = loadEntities(entitiesDirForEmits, {
+			excludeDirs: [resolveProvidersDir(ctx)],
+		}).entities;
 		const validatedNames = new Set(validated.map((v) => v.name));
 		const emitsTargetEntities = allEntitiesForEmits.filter((e) =>
 			validatedNames.has(e.name),
@@ -707,14 +741,7 @@ export class EntityNewCommand extends Command {
 		// integrations see no change. Blocking issues ⇒ nothing is written.
 		let providerResult: ReturnType<typeof generateProviderModules> | null = null;
 		try {
-			const providersDir =
-				(ctx.config as { paths?: { providers?: string } } | null | undefined)
-					?.paths?.providers != null
-					? path.resolve(
-							ctx.cwd,
-							(ctx.config as { paths: { providers: string } }).paths.providers,
-						)
-					: path.resolve(ctx.cwd, 'definitions/providers');
+			const providersDir = resolveProvidersDir(ctx);
 			const providerOutputRoot = path.resolve(
 				ctx.cwd,
 				backendSrcForHandlers,
@@ -722,9 +749,9 @@ export class EntityNewCommand extends Command {
 			);
 			const entitySurfaces = fs.existsSync(entitiesDir)
 				? collectEntitySurfaces(
-						loadEntitiesFromYaml(findYamlFiles(entitiesDir)).successes.map(
-							(s) => s.definition,
-						),
+						loadEntitiesFromYaml(
+							findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
+						).successes.map((s) => s.definition),
 					)
 				: new Set<string>();
 			const tsAliases = resolveTsconfigAliases(ctx.cwd);
@@ -774,9 +801,9 @@ export class EntityNewCommand extends Command {
 					'integrations',
 				);
 				const entityDefs = fs.existsSync(entitiesDir)
-					? loadEntitiesFromYaml(findYamlFiles(entitiesDir)).successes.map(
-							(s) => s.definition,
-						)
+					? loadEntitiesFromYaml(
+							findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
+						).successes.map((s) => s.definition)
 					: [];
 				const loadedProviders = loadProvidersFromYaml(
 					findYamlFiles(providersDir),
@@ -944,7 +971,7 @@ export class EntityListCommand extends Command {
 			return 1;
 		}
 
-		const files = listEntityYamls(ctx.entitiesDir);
+		const files = listEntityYamls(ctx.entitiesDir, resolveProvidersDir(ctx));
 		const rows = files
 			.map(summarizeEntityFile)
 			.filter((r): r is EntitySummaryRow => r !== null)

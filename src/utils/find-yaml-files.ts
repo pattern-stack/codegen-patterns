@@ -31,18 +31,29 @@ function isYaml(name: string): boolean {
  * Recursively collect every `.yaml`/`.yml` file under `dir`.
  *
  * @param dir Directory to walk (relative paths are resolved against cwd).
+ * @param opts.excludeDirs Absolute directory paths to skip entirely (and their
+ *   subtrees). Used by entity discovery to keep `definitions/providers/*.yaml`
+ *   out of the entity glob — provider files validate against
+ *   `ProviderDefinitionSchema`, not `EntityDefinitionSchema`, so they must never
+ *   reach the entity loader. Paths are compared after `resolve`.
  * @returns Absolute file paths, sorted lexicographically. Throws if `dir`
  *   does not exist.
  */
-export function findYamlFiles(dir: string): string[] {
+export function findYamlFiles(
+	dir: string,
+	opts?: { excludeDirs?: string[] },
+): string[] {
 	const root = resolve(dir);
 	const out: string[] = [];
+	const excluded = new Set((opts?.excludeDirs ?? []).map((d) => resolve(d)));
 
 	const walk = (current: string): void => {
 		for (const entry of readdirSync(current, { withFileTypes: true })) {
 			if (entry.isDirectory()) {
 				if (entry.name.startsWith('.')) continue;
-				walk(join(current, entry.name));
+				const child = join(current, entry.name);
+				if (excluded.has(resolve(child))) continue;
+				walk(child);
 			} else if (isYaml(entry.name)) {
 				out.push(join(current, entry.name));
 			}

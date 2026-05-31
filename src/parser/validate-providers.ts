@@ -77,11 +77,11 @@ export interface ValidateProvidersOptions {
  * contribute nothing.
  */
 export function collectEntitySurfaces(
-  entities: Iterable<{ surface?: string }>,
+  entities: Iterable<{ entity: { surface?: string } }>,
 ): Set<string> {
   const surfaces = new Set<string>();
   for (const e of entities) {
-    if (e.surface) surfaces.add(e.surface);
+    if (e.entity.surface) surfaces.add(e.entity.surface);
   }
   return surfaces;
 }

@@ -138,8 +138,8 @@ function collectEntities(entitiesDir: string): EntityInfo[] {
 		entities.push({
 			name: def.entity.name,
 			plural: def.entity.plural,
-			// #403: top-level `context:` nests the module folder; undefined → flat.
-			context: def.context,
+			// #403: `entity.context:` nests the module folder; undefined → flat.
+			context: def.entity.context,
 		});
 	}
 	// Deterministic: sort by singular name.

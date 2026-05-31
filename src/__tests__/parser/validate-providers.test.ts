@@ -62,9 +62,9 @@ describe('collectEntitySurfaces', () => {
 
 	it('ignores entities without a surface', () => {
 		const surfaces = collectEntitySurfaces([
-			{ surface: 'crm' },
-			{},
-			{ surface: undefined },
+			{ entity: { surface: 'crm' } },
+			{ entity: {} },
+			{ entity: { surface: undefined } },
 		]);
 		expect([...surfaces]).toEqual(['crm']);
 	});

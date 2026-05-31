@@ -2,7 +2,7 @@ entity:
   name: transcript
   plural: transcripts
   table: transcripts
-surface: transcript
+  surface: transcript
 fields:
   body:
     type: string

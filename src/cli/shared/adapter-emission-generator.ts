@@ -158,14 +158,15 @@ function generatedBanner(sourceDesc: string): string {
  * union per surface populates each adapter's `capabilities.entities`.
  */
 export function collectEntitiesBySurface(
-  entities: Iterable<{ entity: { name: string }; surface?: string }>,
+  entities: Iterable<{ entity: { name: string; surface?: string } }>,
 ): Map<string, string[]> {
   const bySurface = new Map<string, string[]>();
   for (const e of entities) {
-    if (!e.surface) continue;
-    const list = bySurface.get(e.surface) ?? [];
+    const surface = e.entity.surface;
+    if (!surface) continue;
+    const list = bySurface.get(surface) ?? [];
     list.push(e.entity.name);
-    bySurface.set(e.surface, list);
+    bySurface.set(surface, list);
   }
   // Deterministic order within each surface.
   for (const [surface, list] of bySurface) {
