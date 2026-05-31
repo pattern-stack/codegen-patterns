@@ -171,12 +171,33 @@ async function hints(ctx: Context): Promise<Hint[]> {
 			},
 		];
 	}
-	return [
+	const baseHints: Hint[] = [
 		{ command: 'codegen entity new <file>', description: 'Generate one entity' },
 		{ command: 'codegen entity new --all', description: 'Regenerate all entities' },
 		{ command: 'codegen entity validate', description: 'Validate YAML definitions' },
 		{ command: 'codegen entity list', description: 'List entities as a table' },
 	];
+
+	// Track D (RFC-0001): provider/adapter codegen has no command of its own —
+	// it is a post-step of `entity new`. Surface that here when the project has
+	// provider definitions, so the only discoverability path doesn't depend on
+	// reading `entity new --help`.
+	const providersDir =
+		(ctx.config as { paths?: { providers?: string } } | null | undefined)?.paths
+			?.providers != null
+			? path.resolve(
+					ctx.cwd,
+					(ctx.config as { paths: { providers: string } }).paths.providers,
+				)
+			: path.resolve(ctx.cwd, 'definitions/providers');
+	if (fs.existsSync(providersDir)) {
+		baseHints.push({
+			command: 'codegen entity new --all',
+			description: 'Regenerate provider modules + adapter scaffolds (Track D)',
+		});
+	}
+
+	return baseHints;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,9 +208,23 @@ export class EntityNewCommand extends Command {
 	static paths = [['entity', 'new']];
 	static usage = Command.Usage({
 		description: 'Generate code for one or more entities from YAML',
+		details: `
+			Generates Clean Architecture code for the named entity (or all entities with \`--all\`), then runs the post-generation codegen steps that share this entrypoint:
+
+			- **Event codegen** — \`AppDomainEvent\` union + typed bus from \`events/*.yaml\`.
+			- **Bridge registry** — when the bridge subsystem is installed.
+			- **Orchestration modules** — from orchestration patterns.
+			- **Provider + adapter codegen (Track D, RFC-0001)** — when \`definitions/providers/*.yaml\` exist, emits one provider module per file into \`<backendSrc>/integrations/providers/\` and the matching adapter scaffolds + \`@generated\` files into \`<backendSrc>/integrations/\`. Author-owned scaffolds are emit-once (never overwritten); \`@generated\` files re-emit each run. With no providers dir the step is silently skipped.
+
+			There is no separate \`provider\`, \`integration\`, or \`gen\` command — Track D codegen is driven entirely by re-running \`entity new\`. The \`just gen\` / \`just gen-all\` recipes are thin wrappers over it.
+		`,
 		examples: [
 			['Generate a single entity', 'codegen entity new entities/contact.yaml'],
 			['Regenerate all entities', 'codegen entity new --all'],
+			[
+				'Regenerate everything incl. provider/adapter codegen',
+				'codegen entity new --all',
+			],
 			['Preview without writing', 'codegen entity new entities/contact.yaml --dry-run'],
 		],
 	});

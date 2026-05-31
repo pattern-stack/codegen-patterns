@@ -24,6 +24,13 @@ and `<ENTITY>_CHANGE_SOURCES: ReadonlyMap<string, IChangeSource<T>>`
 (factory output via `buildChangeSource`). Webhook-side codegen + CDC
 streaming emission are deferred.
 
+Track D (provider modules + adapter scaffolds, RFC-0001) shipped in 0.12.0.
+**It has no command of its own** — it runs as a post-step of `codegen entity
+new` whenever `definitions/providers/*.yaml` exist. See
+`protocols-and-ports.md` → "Driving Track D codegen" for the invocation,
+output paths, and skip conditions before telling anyone the CLI wiring is
+missing.
+
 ## Mental model
 
 **Integration vs. jobs vs. events — three domains, one codebase:**
