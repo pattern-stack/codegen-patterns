@@ -7,6 +7,8 @@
 **Amends:** ADR-002 — `IChangeSource<T>.listChanges` signature (cursor at the seam)
 **Tracks:** Epic #226 (`pattern-stack/codegen-patterns`); plan at `ai-docs/specs/issue-226/plan.md`; decision memo locked at `/tmp/issue-226-decisions.md` (Q1–Q6)
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR predates the `sync`→`integration` rename (shipped in 0.11.0). The "sync subsystem" / `sync_*` tables / `SYNC_*` tokens / `*-sync-source.module.ts` named below are now `integration` / `integration_*` / `INTEGRATION_*` / `*-integration-source.module.ts`. `IChangeSource<T>` and the change-source design are unchanged. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ## Context
 
 The Phase 1 sync subsystem (epic #60) shipped a single port — `IChangeSource<T>` — for every detection mode (poll / CDC / webhook), with per-mode differences carried on the `Change<T>` record (`source`, `dedupKey`, `providerChangedFields`). The design was deliberate: one orchestrator, three modes, one seam.
@@ -158,7 +160,7 @@ Adapter-callback tokens (`OPPORTUNITY_POLL_ADAPTER` here) are consumer-registere
 
 **Negative / costs:**
 - `IChangeSource<T>.listChanges` is a breaking signature change. Every in-tree adapter + test fake updates in #226-2; downstream consumers re-write their adapter shells. Mitigation: per CLAUDE.md "no backwards compat," replace cleanly; coordinate via downstream channel before #226-5 merges.
-- Removing `SYNC_LOOPBACK_FINGERPRINT_STORE` from the orchestrator DI graph breaks any in-flight downstream experiment we don't see. Mitigation: ship `createLoopbackMiddleware` factory + migration note in `docs/guides/sync-migration.md` in the same PR (#226-5).
+- Removing `SYNC_LOOPBACK_FINGERPRINT_STORE` from the orchestrator DI graph breaks any in-flight downstream experiment we don't see. Mitigation: ship `createLoopbackMiddleware` factory + migration note in `docs/guides/integration-migration.md` (renamed from `sync-migration.md` per ADR-0005) in the same PR (#226-5).
 - The schema's flat-AND filter vocabulary is deliberately lean. Consumers that need richer expressions (OR / NOT / nested) will reopen Q3 once a concrete requirement surfaces; speculative richness is rejected here.
 - Long-lived streaming CDC (SFDC Pub-Sub, Debezium) is deferred. Consumers on those substrates today keep their hand-authored `IChangeSource<T>` until #226-8 lands. Acceptable: the streaming primitive's shape (gRPC lifecycle, ack contracts, backpressure) should be informed by a real consumer's requirements, not guessed.
 

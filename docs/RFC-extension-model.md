@@ -5,6 +5,8 @@
 **Author:** Doug + Claude
 **Relates to:** `docs/RFC-app-defined-patterns.md` (complementary — Patterns vs Extensions), PR [#57](https://github.com/pattern-stack/codegen-patterns/pull/57) (runtime vendoring precedent), issue [#60](https://github.com/pattern-stack/codegen-patterns/issues/60) + [#59](https://github.com/pattern-stack/codegen-patterns/issues/59) (subsystem proposals)
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This RFC predates the `sync`→`integration` rename (shipped in 0.11.0). The `#60` "sync engine subsystem" referenced below is now the **integration** subsystem. The extension-model design is unaffected. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ---
 
 ## Summary

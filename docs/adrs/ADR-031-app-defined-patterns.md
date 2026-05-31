@@ -7,6 +7,8 @@
 **RFC:** `docs/RFC-app-defined-patterns.md`
 **Implementation spec:** `docs/specs/app-defined-patterns-implementation.md`
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR predates the `sync`→`integration` rename (shipped in 0.11.0). Where the body references the `Synced` family / `SyncedEntityRepository` / `SyncedPattern` / `family: synced`, read `Integrated` / `IntegratedEntityRepository` / `IntegratedPattern` / `pattern: Integrated`. The pattern mechanism is unchanged — only the library-shipped family's name. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ## Context
 
 ADR-005 introduced **entity families** — a closed set of library-shipped base classes (`SyncedEntityRepository`, `ActivityEntityRepository`, `KnowledgeEntityRepository`, `MetadataEntityRepository`) that the codegen-emitted concrete repos extend via `family: synced` in entity YAML. Families work for the four library-defined cases but cannot be extended by consumers: when an app needs a domain abstraction that sits between the library's family bases and concrete entities (e.g. dealbrain-v2's `CrmEntityRepository<T>` bundling EAV dual-write + canonical field routing), they hand-write the base class and break out of the codegen contract.
