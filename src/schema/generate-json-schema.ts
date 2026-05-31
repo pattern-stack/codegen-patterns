@@ -89,6 +89,15 @@ const EntityDefinitionSchema = z.object({
   fields: z.record(z.string(), FieldDefinitionSchema).describe("Field definitions"),
   relationships: z.record(z.string(), RelationshipSchema).optional().describe("Entity relationships"),
   behaviors: z.array(BehaviorSchema).optional().describe("Cross-cutting behaviors"),
+  unique_indexes: z
+    .array(
+      z.object({
+        fields: z.array(z.string()).describe("Columns the composite unique constraint spans (2+)"),
+        name: z.string().optional().describe("Index name (default <table>_<col1>_<col2>_uniq)"),
+      }),
+    )
+    .optional()
+    .describe("Composite (multi-column) unique indexes"),
 });
 
 // Generate using Zod v4's native JSON schema support

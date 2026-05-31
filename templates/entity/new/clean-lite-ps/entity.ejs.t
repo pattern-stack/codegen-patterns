@@ -22,6 +22,10 @@ import { type InferSelectModel } from 'drizzle-orm';
 import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
 <%_ } _%>
 <%_ }) _%>
+<%_ /* #354: field-level foreign_key target table imports */ _%>
+<%_ if (typeof clpFieldFkImports !== 'undefined') { clpFieldFkImports.forEach(imp => { _%>
+import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
+<%_ }) } _%>
 <%_ /* CGP-358b: import has_many target tables for many() relation const */ _%>
 <%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
 <%_ clpExistingHasMany.filter(rel => !rel.isSelfRef).forEach(rel => { _%>
@@ -65,10 +69,15 @@ export const <%= entityNamePlural %> = pgTable(
     deletedAt: timestamp('deleted_at'),
 <%_ } _%>
   },
-<%_ if (hasExternalIdTracking) { _%>
+<%_ /* #355/#356: pgTable extra-config — indexes + composite unique indexes + external_id unique index */ _%>
+<%_ if (typeof clpTableConstraints !== 'undefined' && clpTableConstraints.length > 0) { _%>
   (t) => [
-    // external_id_tracking behavior — ON CONFLICT target for integrationUpsert
-    uniqueIndex('uq_<%= entityNamePlural %>_provider_external_id').on(t.provider, t.externalId),
+<%_ clpTableConstraints.forEach(c => { _%>
+<%_ if (c.comment) { _%>
+    // <%= c.comment %>
+<%_ } _%>
+    <%- c.expr %>,
+<%_ }) _%>
   ],
 <%_ } _%>
 );

@@ -145,6 +145,7 @@ const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
 const pluralize = (s) => pluralizePkg.plural(s);
+const singularize = (s) => pluralizePkg.singular(s);
 
 // ============================================================================
 // Drizzle type mapping
@@ -260,13 +261,43 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
     chain += '.notNull()';
   }
 
-  // Boolean defaults
-  if (drizzleType === 'boolean' && hasDefault) {
-    chain += `.default(${field.default})`;
+  // Column defaults (#345). The value is validated upstream (schema `default:`).
+  // Covers every scalar type, enum literals, and the `now` sentinel on
+  // timestamp/date columns — not just booleans.
+  if (hasDefault) {
+    chain += renderColumnDefault(field.default, drizzleType);
   }
 
-  // Timestamp defaults for datetime fields in behavior context handled separately
   return chain;
+}
+
+/**
+ * Render a Drizzle `.default(...)` (or `.defaultNow()`) suffix for a column.
+ *
+ * - timestamp/date + a `now`/`now()`/`current_timestamp` sentinel → `.defaultNow()`
+ * - numeric (Drizzle returns it as a string) → quoted, even for numeric YAML values
+ * - string / enum literal → single-quoted, escaped
+ * - number / boolean → bare literal
+ * - anything else (jsonb object/array default) → JSON literal
+ */
+function renderColumnDefault(value, drizzleType) {
+  if (
+    (drizzleType === 'timestamp' || drizzleType === 'date') &&
+    typeof value === 'string' &&
+    /^(now|now\(\)|current_timestamp)$/i.test(value)
+  ) {
+    return '.defaultNow()';
+  }
+  if (drizzleType === 'numeric') {
+    return `.default('${String(value)}')`;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return `.default(${value})`;
+  }
+  if (typeof value === 'string') {
+    return `.default('${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+  }
+  return `.default(${JSON.stringify(value)})`;
 }
 
 /**
@@ -447,9 +478,94 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
 }
 
 /**
+ * Field-level `foreign_key:` + `index:` emission (#354, #355).
+ *
+ * Distinct from `relationships:`-driven belongs_to FKs (processBelongsTo),
+ * which own their own column + import. This handles features declared
+ * directly on a column field:
+ *
+ *   - `foreign_key: <table>.<column>` → append `.references(() => <table>.<column>)`
+ *     to the column's Drizzle chain (self-FKs get the `: AnyPgColumn` annotation)
+ *     and record the cross-module import. The table segment is the Drizzle table
+ *     export name (plural, e.g. `conversations`); the import path singularizes it
+ *     to the entity file (`../conversations/conversation.entity`).
+ *   - `index: true` → emit a named single-column index in the pgTable
+ *     extra-config callback (`<table>_<column>_idx`).
+ *
+ * Mutates each processed field's `drizzleChain` in place (the same objects are
+ * later rendered via clpProcessedFields). Returns the imports + index
+ * expressions the template needs.
+ *
+ * @param {object[]} renderedFields  the fields actually emitted as columns
+ *                                   (nonFkFields — belongs_to FK columns excluded)
+ * @param {object}   fields          raw field map keyed by snake_case name
+ * @param {string}   entityNamePlural Drizzle table export name for self-FK detection
+ */
+function processFieldFeatures(renderedFields, fields, entityNamePlural) {
+  const fkImports = [];
+  const indexExpressions = [];
+  const seenImports = new Set();
+  let hasSelfFieldFk = false;
+
+  for (const pf of renderedFields) {
+    const field = fields[pf.name];
+    if (!field) continue;
+
+    // --- foreign_key (#354) ---
+    if (typeof field.foreign_key === 'string' && field.foreign_key.includes('.')) {
+      const [relatedTable, fkColumn] = field.foreign_key.split('.');
+      const isSelfFk = relatedTable === entityNamePlural;
+      pf.drizzleChain += isSelfFk
+        ? `.references((): AnyPgColumn => ${relatedTable}.${fkColumn})`
+        : `.references(() => ${relatedTable}.${fkColumn})`;
+
+      if (isSelfFk) {
+        hasSelfFieldFk = true;
+      } else if (!seenImports.has(relatedTable)) {
+        seenImports.add(relatedTable);
+        fkImports.push({
+          relatedTable,
+          importPath: `../${relatedTable}/${singularize(relatedTable)}.entity`,
+        });
+      }
+    }
+
+    // --- index: true (#355) ---
+    if (field.index === true) {
+      indexExpressions.push({
+        comment: null,
+        expr: `index('${entityNamePlural}_${pf.name}_idx').on(t.${pf.camelName})`,
+      });
+    }
+  }
+
+  return { fkImports, indexExpressions, hasSelfFieldFk };
+}
+
+/**
+ * Composite unique index emission (#356).
+ *
+ * Top-level `unique_indexes: [{ fields: [...], name? }]` → a `uniqueIndex(...)`
+ * entry in the pgTable extra-config callback. Column names are camelCased to
+ * match the emitted Drizzle column identifiers; they may reference FK columns
+ * (belongs_to) or ordinary fields. Index name defaults to
+ * `<table>_<col1>_<col2>_..._uniq`.
+ */
+function processUniqueIndexes(uniqueIndexes, entityNamePlural) {
+  if (!Array.isArray(uniqueIndexes)) return [];
+
+  return uniqueIndexes.map((ui) => {
+    const cols = ui.fields;
+    const name = ui.name || `${entityNamePlural}_${cols.join('_')}_uniq`;
+    const onCols = cols.map((c) => `t.${camelCase(c)}`).join(', ');
+    return { comment: null, expr: `uniqueIndex('${name}').on(${onCols})` };
+  });
+}
+
+/**
  * Collect drizzle imports needed for entity fields
  */
-function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany = []) {
+function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany = [], extraImports = []) {
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
@@ -484,6 +600,13 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
 
   if (belongsTo.length > 0 || hasMany.length > 0) {
     imports.add('relations');
+  }
+
+  // Caller-supplied extras: `index` (field-level index: true) and
+  // `uniqueIndex` (composite unique_indexes) — see processFieldFeatures /
+  // processUniqueIndexes.
+  for (const extra of extraImports) {
+    imports.add(extra);
   }
 
   return Array.from(imports).sort();
@@ -1033,6 +1156,33 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const fkFieldNames = new Set(belongsTo.map((r) => r.field));
   const nonFkFields = processedFields.filter((f) => !fkFieldNames.has(f.name));
 
+  // Field-level foreign_key + index emission (#354, #355). Mutates the
+  // drizzleChain of the rendered (non-belongs_to) columns in place. Skip FK
+  // imports for tables belongs_to already imports to avoid duplicate import
+  // lines.
+  const fieldFeatures = processFieldFeatures(nonFkFields, fields, entityNamePlural);
+  const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
+  const clpFieldFkImports = fieldFeatures.fkImports.filter(
+    (imp) => !belongsToTables.has(imp.relatedTable),
+  );
+
+  // Composite unique indexes (#356).
+  const uniqueIndexExpressions = processUniqueIndexes(definition.unique_indexes, entityNamePlural);
+
+  // pgTable extra-config callback entries, in emission order: single-column
+  // indexes, composite unique indexes, then the external_id_tracking unique
+  // index (the ON CONFLICT target integrationUpsert relies on).
+  const clpTableConstraints = [
+    ...fieldFeatures.indexExpressions,
+    ...uniqueIndexExpressions,
+  ];
+  if (hasExternalIdTracking) {
+    clpTableConstraints.push({
+      comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
+      expr: `uniqueIndex('uq_${entityNamePlural}_provider_external_id').on(t.provider, t.externalId)`,
+    });
+  }
+
   // Enum field declarations — surface a separate collection so the entity
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
   // the `pgTable(...)` block. Both FK-filtered and unfiltered processing
@@ -1045,8 +1195,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
       choices: f.choices,
     }));
 
-  // Drizzle imports needed
-  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany);
+  // Drizzle imports needed. `index` / `uniqueIndex` are pulled in only when a
+  // field declares `index: true` or the entity declares `unique_indexes:`
+  // (external_id_tracking adds `uniqueIndex` on its own flag below).
+  const extraDrizzleImports = [];
+  if (fieldFeatures.indexExpressions.length > 0) extraDrizzleImports.push('index');
+  if (uniqueIndexExpressions.length > 0) extraDrizzleImports.push('uniqueIndex');
+  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany, extraDrizzleImports);
   // Whether relations() import is needed (CGP-358b: also trigger on has_many)
   const hasRelationsBlock = belongsTo.length > 0 || hasMany.length > 0;
 
@@ -1269,8 +1424,14 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // strict mode flags the table const with TS7022/TS7024 (circular initializer).
     // Surfaced by the cgp-62 relationship-scenario smoke when generating a CRM
     // account with a `parent_account_id` self-FK.
-    clpHasSelfFk: belongsTo.some((rel) => rel.isSelfFk),
+    clpHasSelfFk: belongsTo.some((rel) => rel.isSelfFk) || fieldFeatures.hasSelfFieldFk,
     clpEnumFields,
+
+    // Field-level foreign_key imports (#354) and pgTable extra-config
+    // entries: single-column indexes (#355) + composite unique indexes (#356)
+    // + the external_id_tracking unique index.
+    clpFieldFkImports,
+    clpTableConstraints,
 
     // Declarative queries
     processedQueries,
