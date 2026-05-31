@@ -12,8 +12,11 @@ for integration codegen, plus a **surface-package framework**. Additive over
 is unchanged. The one breaking item (the ADR-033.2 per-entity provider tuples)
 has no consumers. Consumers adopt by adding `definitions/providers/*.yaml` and
 regenerating. Ships alongside four independently-versioned **surface packages**
-(`@pattern-stack/codegen-{crm,calendar,mail,transcript}`) publishing fresh at
-`0.1.0`.
+(`@pattern-stack/codegen-{crm,calendar,mail,transcript}`) at `0.1.1`. (Their
+initial `0.1.0` release peer-depended on `@pattern-stack/codegen` `^0.11.0`,
+which predates the `./subsystems` export they require; `0.1.1` corrects the peer
+to `^0.12.0`. The peer source fix merged with 0.12.0 but the version bump was
+missed — this completes it.)
 
 ### ⚠ BREAKING CHANGES
 
@@ -41,7 +44,7 @@ regenerating. Ships alongside four independently-versioned **surface packages**
     conformance helper (on the `/testing` subpath).
   - **`@pattern-stack/codegen-{calendar,mail,transcript}`** — incremental-read
     interaction surfaces (`CalendarPort` / `MailPort` / `TranscriptPort`,
-    canonical types, capability descriptors). Independently versioned (`0.1.0`).
+    canonical types, capability descriptors). Independently versioned (`0.1.1`).
 - **Track D — provider/adapter integration codegen (RFC-0001).**
   - `definitions/providers/<provider>.yaml` — providers as first-class
     declarative artifacts (slug, auth strategy, client, surfaces); Zod schema +
