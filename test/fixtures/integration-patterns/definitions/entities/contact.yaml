@@ -1,0 +1,9 @@
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+surface: crm
+fields:
+  email:
+    type: string
+    required: true
