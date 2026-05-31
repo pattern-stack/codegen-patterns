@@ -1,0 +1,14 @@
+# Snapshot fixture (RFC-0001 §7). A single CRM provider serving the crm surface
+# (account/contact/opportunity). Adding a second crm provider, or a new surface
+# once its codegen-<surface> package is registered in SURFACE_REGISTRY, is a
+# YAML + snapshot-refresh add — not a test rewrite.
+slug: salesforce
+display_name: Salesforce
+auth:
+  type: oauth2
+  strategy: '@app/integrations/providers/salesforce/salesforce-oauth.strategy#SalesforceOAuthStrategy'
+  scopes: [api, refresh_token]
+client:
+  class: '@app/integrations/providers/salesforce/salesforce.client#SalesforceClient'
+  base_url: https://login.salesforce.com
+surfaces: [crm]
