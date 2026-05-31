@@ -56,6 +56,17 @@ port is deliberate; the compromise analysis behind it is in epic #60.
 If a new detection mode emerges, add a value to the `ChangeSource`
 union and a metadata field if needed — not a new port.
 
+## `IEntityChangeSourceRegistry` — entity-keyed source resolution
+
+Resolves an `IChangeSource<T>` by entity name (`get<T>(name)`, `has`,
+`entities()`), throwing `UnknownEntityError` on a miss. It generalizes the
+per-entity `<ENTITY>_POLL_FETCH_REGISTRY` tokens into one registry so the L3
+surface port stays entity-agnostic. Use `MemoryEntityChangeSourceRegistry`
+(backed by a `Map`) for tests/simple wiring; bind under the
+`ENTITY_CHANGE_SOURCE_REGISTRY` token. Codegen emission of the populated
+registry is Track D (RFC-0001 §3); full authoring coverage lives in the C5
+surface-authoring guide.
+
 ## `IIntegrationSink<T>` — the write surface
 
 One sink per canonical entity. Speaks canonical externally; internal
