@@ -22,7 +22,7 @@ import type {
   IAuthStrategy,
   IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
-import type { MailCapabilities } from '../capabilities';
+import type { MailCapabilities } from './capabilities';
 
 export interface MailPort {
   /** L1 — auth strategy resolving credentials for this provider. */

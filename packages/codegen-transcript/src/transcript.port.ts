@@ -30,7 +30,7 @@ import type {
   IAuthStrategy,
   IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
-import type { TranscriptCapabilities } from '../capabilities';
+import type { TranscriptCapabilities } from './capabilities';
 
 export interface TranscriptPort {
   /** L1 — auth strategy resolving credentials for this provider. */

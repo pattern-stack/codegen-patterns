@@ -23,7 +23,7 @@ import type {
   IAuthStrategy,
   IEntityChangeSourceRegistry,
 } from '@pattern-stack/codegen/subsystems';
-import type { CalendarCapabilities } from '../capabilities';
+import type { CalendarCapabilities } from './capabilities';
 
 export interface CalendarPort {
   /** L1 — auth strategy resolving credentials for this provider. */
