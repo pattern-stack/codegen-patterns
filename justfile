@@ -99,6 +99,17 @@ test-smoke-relationship:
 test-smoke-subsystems:
     bun test/smoke/run-smoke-subsystems.ts
 
+# Integration-compile smoke — generate the integration tree against the
+# checked-in integration-patterns fixture (entities + providers) and run
+# `tsc --noEmit`, scoped to src/integrations/**. Closes the smoke-gap:
+# integration-emit only asserts string content (never compiles), and the
+# default smoke has no provider surface — so nothing in CI ever `tsc`'d the
+# emitted src/integrations/** tree. Compiles against the IN-REPO runtime +
+# surface sources (the contract under test). ~30-60s. Requires `just install`
+# (node_modules/@pattern-stack/ must be linked). Set KEEP_SMOKE_DIR=1 to keep.
+test-smoke-integration:
+    bun test/smoke-integration/run.ts
+
 # Run baseline test (generate + typecheck + compare to baseline)
 test-baseline:
     bun test/run-test.ts full
@@ -142,7 +153,7 @@ validate:
     bash test/scaffold/validate.sh
 
 # Run all tests
-test-all: test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction test-integration-emit
+test-all: test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction test-integration-emit test-smoke-integration
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
