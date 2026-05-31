@@ -154,16 +154,32 @@ Per-ref cursors fix the silent-tail-skip — a crash at page 80 of a backfill re
 
 ```ts
 // <CODEGEN-SCAFFOLD-V1>   ← still emit-once; regen skips if present
+// fork #2: the entity's `detection.filters` emitted verbatim as a static const.
+const EMAIL_DETECTION_FILTERS: ResolvedFilter[] = [ /* from entity `detection:` YAML */ ];
+
 export class GoogleEmailIncrementalRead
-  extends IncrementalReadBase<CanonicalEmail, EmailFilter, EmailRefMeta> {
+  extends IncrementalReadBase<CanonicalEmail, ResolvedFilter[]> {   // F = uniform runtime filter; M defaults (author narrows)
   readonly label = 'google-mail-email';
   protected override filterPushdown = true;                 // Gmail q= takes the predicate
 
-  protected async *enumerate(mode, filter) { /* TODO: messages.list / history.list → Ref pages */ }
+  protected async *enumerate(mode, filter: ResolvedFilter[]) { /* TODO: messages.list / history.list → Ref pages */ }
   protected async hydrate(ids)  { /* TODO: messages.get (override: /batch) → Map<id, raw> */ }
   protected toCanonical(raw)    { /* TODO: External(Zod) → CanonicalEmail */ }
+
+  // fork #2: filterFor returns the static const — 2-arg `(auth, client)` construction preserved.
+  protected override filterFor(_sub: IntegrationSubscriptionView): ResolvedFilter[] {
+    return EMAIL_DETECTION_FILTERS;
+  }
 }
 ```
+
+> **R3 typing + threading — RESOLVED (2026-05-31, Doug).** Two R3-build forks (separate from §7's Q1/Q3/Q4) are now locked:
+>
+> **Fork #1 — subclass typing (Option B).** Emit `IncrementalReadBase<CanonicalEmail, ResolvedFilter[]>`: **T** = the surface package's canonical type; **F** = the *existing uniform* `ResolvedFilter[]` (from `DetectionConfig.filters`) — not a bespoke per-entity `EmailFilter`; **M** = the base default (`Record<string, unknown>`), which the author narrows in the emit-once scaffold (it's the vendor list-stub shape — author knowledge). This gives free compile-time filter typing with zero new types and no surface-package coupling. The earlier `<…, EmailFilter, EmailRefMeta>` bespoke shape is **superseded** — codegen-owned bespoke F/M types roll up into RFC-0004 ("B", the canonical-model RFC), not R3.
+>
+> **Fork #2 — filter threading (static const).** `IntegrationSubscriptionView` is only `{ id, domain, externalRef }` — it does NOT carry filters. So codegen emits the entity's `detection.filters` as a static module-level `ResolvedFilter[]` const and `filterFor()` returns it. This preserves the post-E0 2-arg `(auth, client)` construction (no DI of a never-changing value). Dynamic stays open two ways: a direct `read(ReadRequest<F>)` caller passes runtime filters, and an author can override `filterFor(sub)` (emit-once) to derive per-subscription.
+>
+> **Named caveat:** this assumes filters are **entity-level config, not per-subscription**. If two subscriptions of one entity ever need different filters, revisit via the `filterFor(sub)` author override — keep the `subscription` param in the emitted signature so that escape hatch stays free.
 
 and the adapter's container becomes:
 
