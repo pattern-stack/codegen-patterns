@@ -5,6 +5,8 @@
 **Owner:** Doug
 **Supersedes:** informal Clean Architecture adoption
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR predates the `sync`→`integration` rename (shipped in 0.11.0). The `SyncRunRecorder` named in the Gong-stack infrastructure below is now `IIntegrationRunRecorder` / `DrizzleIntegrationRunRecorder`, and the illustrative `CRMSyncPort` would today be an integration-engine `IChangeSource<T>` (see ADR-033). The `Integrations` subsystem referenced here is the **integration** subsystem; the hexagonal design is unchanged. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ## Context
 
 The current Dealbrain backend nominally follows Clean Architecture with `domain/`, `applications/`, `infrastructure/`, and `presentation/` layers. In practice the pattern has drifted:

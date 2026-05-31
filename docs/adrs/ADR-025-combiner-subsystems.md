@@ -7,6 +7,8 @@
 **Unblocks:** Epic #195 (Observability Subsystem), future cross-subsystem read facades
 **Depends on:** ADR-008, ADR-023 (bridge is the named precedent)
 
+> **Vocabulary note (2026-05-30, ADR-0005):** This ADR predates the `sync`→`integration` rename (shipped in 0.11.0). The "sync ports" and the observability reader `getRecentSyncRuns` named below are now the **integration** ports and `getRecentIntegrationRuns`. The combiner-subsystem design is unchanged. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
+
 ## Context
 
 ADR-008 established the shape of an "infrastructure subsystem": a `runtime/subsystems/<name>/` directory owning a protocol (`IEventBus`, `IJobOrchestrator`, `ICacheService`, `IStorageService`), a schema file, one or more backend implementations (`drizzle`, `memory`, `redis`), a `<Name>Module.forRoot({ backend })` factory, `global: true`, and a tokens module. Events, jobs, cache, and storage all follow it. New contributors learn the pattern once and apply it four times.
