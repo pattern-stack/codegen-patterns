@@ -14,15 +14,10 @@ import {
   type MailPort,
 } from '@pattern-stack/codegen-mail';
 
-function fakeSources(names: string[]) {
-  const set = new Set(names);
-  return {
-    has: (n: string) => set.has(n),
-    get: () => {
-      throw new Error('not needed for conformance');
-    },
-    entities: () => [...set],
-  };
+function fakeChangeSources(names: string[]): Record<string, unknown> {
+  return Object.fromEntries(
+    names.map((n) => [n, { label: `fake-source:${n}` }]),
+  );
 }
 
 function makeAdapter(
@@ -32,12 +27,23 @@ function makeAdapter(
   const capabilities: MailCapabilities = { ...NO_MAIL_CAPABILITIES, ...caps };
   const base: Record<string, unknown> = {
     auth: { label: 'fake-auth' },
-    sources: fakeSources(capabilities.entities as string[]),
+    changeSources: fakeChangeSources(capabilities.entities as string[]),
     capabilities,
     ...overrides,
   };
   return base as unknown as MailPort;
 }
+
+// Regression guard (RFC-0003 R3): the post-E0 emitted adapter shape — auth +
+// capabilities + changeSources, and NO `sources` registry — must satisfy
+// MailPort. If the port ever drifts back to requiring a `sources` registry
+// back-edge (the E0-broken state), this stops compiling.
+const _postE0Shape: MailPort = {
+  auth: { label: 'x' } as MailPort['auth'],
+  capabilities: NO_MAIL_CAPABILITIES,
+  changeSources: {},
+};
+void _postE0Shape;
 
 function failures(fn: () => void): string[] {
   try {
@@ -66,21 +72,21 @@ describe('assertMailAdapter', () => {
     expect(msgs).toContain('MailPort.auth missing');
   });
 
-  it('throws when sources is missing', () => {
+  it('throws when changeSources is missing', () => {
     const msgs = failures(() =>
-      assertMailAdapter(makeAdapter({ sources: undefined })),
+      assertMailAdapter(makeAdapter({ changeSources: undefined })),
     );
-    expect(msgs).toContain('MailPort.sources missing');
+    expect(msgs).toContain('MailPort.changeSources missing');
   });
 
-  it("throws when caps.entities lists an entity sources can't resolve", () => {
+  it("throws when caps.entities lists an entity changeSources can't resolve", () => {
     const adapter = makeAdapter(
-      { sources: fakeSources([]) },
+      { changeSources: {} },
       { entities: ['email'] },
     );
     const msgs = failures(() => assertMailAdapter(adapter));
     expect(msgs).toContain(
-      "caps.entities lists 'email' but sources.has('email') is false",
+      "caps.entities lists 'email' but changeSources['email'] is missing",
     );
   });
 });

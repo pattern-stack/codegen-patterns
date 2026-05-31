@@ -15,15 +15,10 @@ import {
   type TranscriptPort,
 } from '@pattern-stack/codegen-transcript';
 
-function fakeSources(names: string[]) {
-  const set = new Set(names);
-  return {
-    has: (n: string) => set.has(n),
-    get: () => {
-      throw new Error('not needed for conformance');
-    },
-    entities: () => [...set],
-  };
+function fakeChangeSources(names: string[]): Record<string, unknown> {
+  return Object.fromEntries(
+    names.map((n) => [n, { label: `fake-source:${n}` }]),
+  );
 }
 
 function makeAdapter(
@@ -36,12 +31,21 @@ function makeAdapter(
   };
   const base: Record<string, unknown> = {
     auth: { label: 'fake-auth' },
-    sources: fakeSources(capabilities.entities as string[]),
+    changeSources: fakeChangeSources(capabilities.entities as string[]),
     capabilities,
     ...overrides,
   };
   return base as unknown as TranscriptPort;
 }
+
+// Regression guard (RFC-0003 R3): the post-E0 emitted adapter shape must satisfy
+// TranscriptPort — auth + capabilities + changeSources, NO `sources` registry.
+const _postE0Shape: TranscriptPort = {
+  auth: { label: 'x' } as TranscriptPort['auth'],
+  capabilities: NO_TRANSCRIPT_CAPABILITIES,
+  changeSources: {},
+};
+void _postE0Shape;
 
 function failures(fn: () => void): string[] {
   try {
@@ -70,21 +74,21 @@ describe('assertTranscriptAdapter', () => {
     expect(msgs).toContain('TranscriptPort.auth missing');
   });
 
-  it('throws when sources is missing', () => {
+  it('throws when changeSources is missing', () => {
     const msgs = failures(() =>
-      assertTranscriptAdapter(makeAdapter({ sources: undefined })),
+      assertTranscriptAdapter(makeAdapter({ changeSources: undefined })),
     );
-    expect(msgs).toContain('TranscriptPort.sources missing');
+    expect(msgs).toContain('TranscriptPort.changeSources missing');
   });
 
-  it("throws when caps.entities lists an entity sources can't resolve", () => {
+  it("throws when caps.entities lists an entity changeSources can't resolve", () => {
     const adapter = makeAdapter(
-      { sources: fakeSources([]) },
+      { changeSources: {} },
       { entities: ['transcript'] },
     );
     const msgs = failures(() => assertTranscriptAdapter(adapter));
     expect(msgs).toContain(
-      "caps.entities lists 'transcript' but sources.has('transcript') is false",
+      "caps.entities lists 'transcript' but changeSources['transcript'] is missing",
     );
   });
 });

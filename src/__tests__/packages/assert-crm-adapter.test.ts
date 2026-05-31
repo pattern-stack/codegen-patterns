@@ -16,16 +16,11 @@ import {
   type CrmCapabilities,
 } from '@pattern-stack/codegen-crm';
 
-/** Minimal fake of IEntityChangeSourceRegistry over a name set. */
-function fakeSources(names: string[]) {
-  const set = new Set(names);
-  return {
-    has: (n: string) => set.has(n),
-    get: () => {
-      throw new Error('not needed for conformance');
-    },
-    entities: () => [...set],
-  };
+/** Minimal fake of the per-entity changeSources contributions map. */
+function fakeChangeSources(names: string[]): Record<string, unknown> {
+  return Object.fromEntries(
+    names.map((n) => [n, { label: `fake-source:${n}` }]),
+  );
 }
 
 /** Build a CrmPort fake; override any slot/capability per test. */
@@ -36,7 +31,7 @@ function makeAdapter(
   const capabilities: CrmCapabilities = { ...NO_CRM_CAPABILITIES, ...caps };
   const base: Record<string, unknown> = {
     auth: { label: 'fake-auth' },
-    sources: fakeSources(capabilities.entities as string[]),
+    changeSources: fakeChangeSources(capabilities.entities as string[]),
     fields: { list: async () => [] },
     picklists: { values: async () => [] },
     associations: { list: async () => [] },
@@ -45,6 +40,19 @@ function makeAdapter(
   };
   return base as unknown as CrmPort;
 }
+
+// Regression guard (RFC-0003 R3): the post-E0 emitted adapter shape must satisfy
+// CrmPort — auth + capabilities + L2 readers + changeSources, NO `sources`
+// registry back-edge.
+const _postE0Shape: CrmPort = {
+  auth: { label: 'x' } as CrmPort['auth'],
+  capabilities: NO_CRM_CAPABILITIES,
+  changeSources: {},
+  fields: { list: async () => [] } as CrmPort['fields'],
+  picklists: { values: async () => [] } as CrmPort['picklists'],
+  associations: { list: async () => [] } as CrmPort['associations'],
+};
+void _postE0Shape;
 
 function failures(fn: () => void): string[] {
   try {
@@ -85,11 +93,11 @@ describe('assertCrmAdapter — failure modes', () => {
     expect(msgs).toContain('CrmPort.auth missing');
   });
 
-  it('throws when sources is missing', () => {
+  it('throws when changeSources is missing', () => {
     const msgs = failures(() =>
-      assertCrmAdapter(makeAdapter({ sources: undefined })),
+      assertCrmAdapter(makeAdapter({ changeSources: undefined })),
     );
-    expect(msgs).toContain('CrmPort.sources missing');
+    expect(msgs).toContain('CrmPort.changeSources missing');
   });
 
   it('throws when a declared capability has no matching port', () => {
@@ -98,15 +106,15 @@ describe('assertCrmAdapter — failure modes', () => {
     expect(msgs).toContain('caps.fieldDefinitions=true but CrmPort.fields missing');
   });
 
-  it("throws when caps.entities lists an entity sources can't resolve", () => {
-    // entities includes 'lead' but the registry only knows account/contact.
+  it("throws when caps.entities lists an entity changeSources can't resolve", () => {
+    // entities includes 'lead' but changeSources only has account/contact.
     const adapter = makeAdapter(
-      { sources: fakeSources(['account', 'contact']) },
+      { changeSources: fakeChangeSources(['account', 'contact']) },
       { entities: ['account', 'contact', 'lead'] },
     );
     const msgs = failures(() => assertCrmAdapter(adapter));
     expect(msgs).toContain(
-      "caps.entities lists 'lead' but sources.has('lead') is false",
+      "caps.entities lists 'lead' but changeSources['lead'] is missing",
     );
   });
 
@@ -129,14 +137,14 @@ describe('assertCrmAdapter — failure modes', () => {
 
   it('aggregates multiple failures into one AggregateError', () => {
     const adapter = makeAdapter(
-      { auth: undefined, fields: undefined, sources: fakeSources([]) },
+      { auth: undefined, fields: undefined, changeSources: {} },
       { fieldDefinitions: true, entities: ['lead'] },
     );
     const msgs = failures(() => assertCrmAdapter(adapter));
     expect(msgs).toContain('CrmPort.auth missing');
     expect(msgs).toContain('caps.fieldDefinitions=true but CrmPort.fields missing');
     expect(msgs).toContain(
-      "caps.entities lists 'lead' but sources.has('lead') is false",
+      "caps.entities lists 'lead' but changeSources['lead'] is missing",
     );
     expect(msgs.length).toBeGreaterThanOrEqual(3);
   });
