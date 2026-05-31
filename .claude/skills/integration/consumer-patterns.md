@@ -48,6 +48,21 @@ putting the orchestrator in `IntegrationModule` would require those tokens
 globally, which fails until the feature module is imported. The
 `IntegrationModule` header documents this with a worked example.
 
+> **This feature module is now codegen-generated for `surface:` entities (0.13.0,
+> RFC-0002).** When the entity carries a `surface:` tag and a provider YAML
+> exists, the `entity new` post-step emits the per-entity assembly module
+> (`<surface>/modules/<provider>/<entity>-integration.module.ts`) — `@generated`,
+> binding `INTEGRATION_CHANGE_SOURCE = adapter.changeSources['<entity>']` +
+> `INTEGRATION_SINK`, providing a local `ExecuteIntegrationUseCase`, and exporting
+> it under a unique `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` token. The default
+> sink is an emit-once scaffold over the entity's `Integrated` repo. You do NOT
+> hand-write this module for generated surfaces — you fill the adapter's
+> `changeSources` read body (RFC-0003: `enumerate` / `hydrate` / `toCanonical`)
+> and any non-generic sink write logic, then grab the exported token from your
+> trigger (cron/job/CLI/webhook). The hand-written shape below is the predecessor
+> the generated assembly replaces — keep it as the mental model for what the
+> generator emits and for non-surface entities you still wire by hand.
+
 ## Writing an `IChangeSource<T>`
 
 ```ts

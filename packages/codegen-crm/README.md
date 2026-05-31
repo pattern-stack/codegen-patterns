@@ -85,16 +85,18 @@ if (caps.fieldDefinitions && caps.entities.includes('lead')) {
 
 `entities` is runtime coverage data, not a type bound on the L3 `CrmPort` — the
 port stays entity-agnostic (ADR-036 §6). C6's `assertCrmAdapter()` checks each
-declared entity resolves via the change-source registry.
+declared entity has a registered `changeSources` entry.
 
 ## The composing port — `CrmPort`
 
 `CrmPort` is the single L3 contract a provider adapter implements. It composes
-L1 strategies (`auth`, the entity-keyed `sources` registry) and the L2 ports
-(`fields`, `picklists`, `associations`) plus the runtime `capabilities`
-descriptor. It is **entity-agnostic** — no entity name appears in its type;
-entity access goes through `sources.get<T>(entityName)`. Per-consumer typed
-views are codegen-emitted (Track D), not encoded here.
+L1 strategies (`auth`, the per-entity `changeSources` contributions) and the L2
+ports (`fields`, `picklists`, `associations`) plus the runtime `capabilities`
+descriptor. It is **entity-agnostic** — no entity name appears in its type. The
+adapter contributes `changeSources[entityName]`; the surface aggregator folds
+every provider's contributions into the entity-keyed `CRM_ENTITY_SOURCES`
+registry that consumers read at runtime. Per-consumer typed views are
+codegen-emitted (Track D), not encoded here.
 
 ### Conformance testing
 
@@ -110,8 +112,8 @@ it('hubspot adapter conforms to CrmPort', () => {
 ```
 
 It verifies required L1 slots resolve, that `capabilities` flags match the
-present ports, and that every `capabilities.entities` entry resolves via
-`sources.has(name)` — so an adapter declaring an entity it can't source fails
+present ports, and that every `capabilities.entities` entry has a registered
+`changeSources` entry — so an adapter declaring an entity it can't source fails
 the test rather than failing at runtime.
 
 ## Roadmap

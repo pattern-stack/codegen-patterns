@@ -86,6 +86,15 @@ network error, upstream rate-limit), the orchestrator catches,
 marks the run `status='failed'`, persists `latestCursor`, and runs
 `completeRun` in the finally clause.
 
+> **Atomic-cursor caveat (RFC-0003 R2).** The orchestrator persists
+> last-yielded unconditionally — which is correct *only* for divisible
+> cursors. For atomic opaque tokens (Gmail `historyId`, Calendar
+> `syncToken`) an `IncrementalReadBase` subclass with
+> `cursorDivisible = false` **withholds** the per-ref cursor until a safe
+> boundary (end-of-walk), so the orchestrator never persists an
+> unresumable mid-walk token. The gating lives in the base, not here —
+> the orchestrator lifecycle is unchanged.
+
 Consequence: partial runs don't lose progress. Re-running resumes
 from the last successful yield.
 

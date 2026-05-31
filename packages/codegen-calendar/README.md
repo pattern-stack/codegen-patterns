@@ -42,28 +42,40 @@ import {
 } from '@pattern-stack/codegen-calendar';
 ```
 
-## The read primitive — registry, not a bespoke `pull`
+## The read primitive — `changeSources`, not a bespoke `pull`
 
-`CalendarPort` composes the L1 `sources: IEntityChangeSourceRegistry` (the C6/C7
-seam). Incremental reads go through `sources.get<CanonicalMeeting>('meeting')`,
-which resolves an `IChangeSource<CanonicalMeeting>` — the generic L1 read with
-cursor-by-value. The port carries **no** entity-specific `pull*` method. (The
-swe-brain prototype used a transitional flat `pullEvents({ syncToken })` because
-L1 `IncrementalRead<T>` wasn't minted yet; the codegen package skips that and
-uses the registry pattern directly, consistent with `CrmPort`.)
+`CalendarPort` composes the L1 `changeSources: Record<string, IChangeSource<unknown>>`
+(the C6/C7 seam) — the per-entity change sources the adapter *contributes*, keyed
+by entity name. Each entry resolves an `IChangeSource<CanonicalMeeting>` — the
+generic L1 read with cursor-by-value. The surface aggregator (a surface-module
+concern, not the adapter's) folds every provider's `changeSources` into the
+`CALENDAR_ENTITY_SOURCES` registry (an `IEntityChangeSourceRegistry`) that
+entity-agnostic consumers read at runtime. The port carries **no** entity-specific
+`pull*` method. (The swe-brain prototype used a transitional flat
+`pullEvents({ syncToken })` because L1 `IncrementalRead<T>` wasn't minted yet; the
+codegen package skips that and uses the `changeSources` pattern directly,
+consistent with `CrmPort`.)
+
+Codegen reshapes the read body inside each `changeSources` entry to an
+`IncrementalReadBase<CanonicalMeeting, ResolvedFilter[]>` subclass (RFC-0003) —
+the enumerate/hydrate read primitive. The author fills only `enumerate` /
+`hydrate` / `toCanonical`; the base owns streaming, filter-before-hydrate,
+bounded-concurrency hydration, and per-ref cursor emission.
 
 ## The composing port — `CalendarPort`
 
 ```ts
 export interface CalendarPort {
-  readonly auth: IAuthStrategy;                    // L1
-  readonly sources: IEntityChangeSourceRegistry;   // L1
-  readonly capabilities: CalendarCapabilities;     // L2
+  readonly auth: IAuthStrategy;                                  // L1
+  readonly changeSources: Record<string, IChangeSource<unknown>>; // L1
+  readonly capabilities: CalendarCapabilities;                   // L2
 }
 ```
 
-Entity-agnostic — no entity name appears in its type; entity access goes through
-`sources.get<T>(entityName)`. Per-consumer typed views are codegen-emitted
+Entity-agnostic — no entity name appears in its type. The adapter contributes
+`changeSources['meeting']`; the surface aggregator folds every provider's
+contributions into the entity-keyed `CALENDAR_ENTITY_SOURCES` registry that
+consumers read at runtime. Per-consumer typed views are codegen-emitted
 (Track D), not encoded here.
 
 ## Declaring capabilities
@@ -91,8 +103,8 @@ it('google calendar adapter conforms to CalendarPort', () => {
 ```
 
 Verifies the required L1 slots resolve and every `capabilities.entities` entry
-resolves via `sources.has(name)` — so an adapter declaring an entity it can't
-source fails the test rather than failing at runtime.
+has a registered `changeSources` entry — so an adapter declaring an entity it
+can't source fails the test rather than failing at runtime.
 
 ## License
 

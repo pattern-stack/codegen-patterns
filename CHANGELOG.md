@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-31
+
+Track D round-2/3 — the integration codegen now emits the **full** integration
+layer. Where 0.12.x stopped at the read side (provider module, adapter scaffold,
+registry, typed views), 0.13.0 adds the **module assembly** (the write/run side —
+RFC-0002) and reshapes the read body into the **`IncrementalRead` primitive**
+(RFC-0003). After this release the author fills only the irreducible vendor seam:
+the `enumerate` / `hydrate` / `toCanonical` read methods and any non-generic sink
+write logic.
+
+Core and the four surface packages (`codegen-{mail,calendar,transcript,crm}`)
+**release together** — the surfaces carry the BREAKING port change below and
+require the matching core (peer dep `^0.13.0`).
+
+### BREAKING
+
+- **Surface ports declare `changeSources`, not `sources`.** The four surface
+  ports (`MailPort` / `CalendarPort` / `TranscriptPort` / `CrmPort`) now require
+  `readonly changeSources: Record<string, IChangeSource<unknown>>` — the
+  per-entity change sources the adapter *contributes*, keyed by entity name —
+  instead of the old `readonly sources: IEntityChangeSourceRegistry`. The folded,
+  entity-keyed registry (`<SURFACE>_ENTITY_SOURCES`) is now the **surface
+  module's** concern: the surface aggregator folds every provider's
+  `changeSources` into it, and entity-agnostic consumers read it at runtime. This
+  drops a vestigial registry injection from the adapter (it was read by nothing
+  and formed a latent DI cycle — RFC-0002 §3 E0), making the adapter
+  standalone-importable. The four surface packages bump to **0.2.0**; their peer
+  dep on `@pattern-stack/codegen` moves to **^0.13.0**. Conformance helpers
+  (`assert<Surface>Adapter`) check `changeSources` membership accordingly.
+
+### Added
+
+- **Integration module assembly emission (RFC-0002).** Per `(surface, provider,
+  entity-with-surface)`, codegen now emits the assembly that turns a registry of
+  change sources into a runnable integration per entity:
+  - `<surface>/modules/<provider>/<entity>-integration.module.ts` — `@generated`
+    per-entity feature module binding `INTEGRATION_CHANGE_SOURCE`
+    (= `adapter.changeSources['<entity>']`, Option A) + `INTEGRATION_SINK`, a
+    local `ExecuteIntegrationUseCase`, and a uniquely-tokened handle
+    (`<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>`) a trigger can grab.
+  - `<surface>/sinks/<entity>.sink.ts` — emit-once **default sink** scaffold
+    (`// <CODEGEN-SCAFFOLD-V1>`) over the entity's generated `Integrated`
+    repository (`pattern: Integrated` only — hard-errors otherwise); author fills
+    any non-generic `canonical ↔ local` mapping.
+  - `<surface>/<surface>-integration.module.ts` — `@generated` aggregator over
+    the per-entity modules.
+  - `<surface>/<surface>-integration.tokens.ts` — `@generated` use-case tokens.
+- **`IncrementalRead` read primitive (RFC-0003).** A universal read capability
+  (`IncrementalRead<T, F>` / `RandomRead<T>` / `IncrementalReadBase` +
+  `SourcedRecord` / `Ref` / `ReadMode` / `ReadRequest` / `mapConcurrent`) in
+  `runtime/subsystems/integration/`, exported from
+  `@pattern-stack/codegen/subsystems`. The base decomposes the read into
+  `enumerate(mode, filter) → AsyncIterable<Ref>` (cheap delta/backfill walk) and
+  `hydrate(ids) → Map<id, raw>` (batched fetch-by-id), and owns the orchestration
+  (drain, **filter-before-hydrate**, bounded-concurrency hydrate, per-ref cursor
+  emission, `listChanges` adaptation). Cursor divisibility is kind-keyed
+  (`CURSOR_DIVISIBILITY` / `isDivisibleCursor`); atomic strategies (`historyId` /
+  `syncToken`) withhold the per-ref cursor until a safe boundary so an
+  interrupted backfill never persists an unresumable token.
+- **Read-side scaffold reshape.** For interaction surfaces (mail / calendar /
+  transcript), `generateAdapterScaffold` now emits each `changeSources` entry as
+  an emit-once `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>`
+  subclass — the buffer-all/serial/run-final-cursor regression becomes
+  structurally unwritable. CRM keeps its author-filled `changeSources` seam
+  (field-reader model, no single canonical `T`).
+
 ## [0.12.2] — 2026-05-31
 
 Track D consumer-CLI fix. The 0.12.0/0.12.1 generator was correct in the
