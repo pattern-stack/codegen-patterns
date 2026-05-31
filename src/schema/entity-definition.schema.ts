@@ -832,6 +832,24 @@ export const EntityDefinitionSchema = z
     // v2: Analytics / semantic layer configuration
     // Cube.js measure packs, custom cube name, and metric definitions
     analytics: AnalyticsBlockSchema.optional(),
+
+    // Composite (multi-column) unique indexes (#356). Single-column uniqueness
+    // is `unique: true` on the field itself; this declares constraints that
+    // span 2+ columns, e.g. UNIQUE (conversation_id, sequence). Emitted as a
+    // `uniqueIndex(...).on(...)` entry in the generated entity's pgTable
+    // extra-config callback. `name` defaults to <table>_<col1>_<col2>_uniq.
+    unique_indexes: z
+      .array(
+        z
+          .object({
+            fields: z
+              .array(z.string())
+              .min(2, "unique_indexes entries span 2+ columns — use `unique: true` on the field for single-column uniqueness"),
+            name: z.string().optional(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict()
   .refine(
