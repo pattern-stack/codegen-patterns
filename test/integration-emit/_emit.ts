@@ -89,10 +89,17 @@ export function emitFixture(): EmitResult {
     );
   }
 
+  // Assembly emission (E2) needs the `<backend_src>` root + tsconfig aliases to
+  // resolve each entity's repo/module import. The fixture has no consumer tree,
+  // so we synthesize the swe-brain-style `@modules` alias (target `<src>/modules`)
+  // to lock the proven alias-import form; the backend src root is `<tmp>/src`.
+  const backendSrcAbs = join(tmp, 'src');
   const adapterResult = emitAdapters({
     providers,
     entities: entityDefs,
     outputRoot: integrationsRoot,
+    backendSrcAbs,
+    aliases: { '@modules': join(backendSrcAbs, 'modules') },
   });
 
   return {

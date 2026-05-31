@@ -811,10 +811,16 @@ export class EntityNewCommand extends Command {
 					definition: s.definition,
 					filePath: s.filePath,
 				}));
+				// Resolve the consumer's tsconfig aliases (already loaded above for
+				// the provider import pre-flight) so the assembly's entity repo/module
+				// imports prefer the project's `@modules/...`-style alias.
+				const assemblyTsAliases = resolveTsconfigAliases(ctx.cwd);
 				const adapterResult = emitAdapters({
 					providers: loadedProviders,
 					entities: entityDefs,
 					outputRoot: adapterOutputRoot,
+					backendSrcAbs: path.resolve(ctx.cwd, backendSrcForHandlers),
+					aliases: assemblyTsAliases?.aliases ?? {},
 				});
 				if (!isJsonMode()) {
 					if (adapterResult.written.length || adapterResult.scaffoldsWritten.length) {
@@ -822,11 +828,19 @@ export class EntityNewCommand extends Command {
 							`adapter codegen: ${adapterResult.scaffoldsWritten.length} scaffold(s) + ${adapterResult.written.length} @generated → ${adapterOutputRoot}`,
 						);
 					}
+					if (adapterResult.assembliesWritten.length || adapterResult.tokensWritten.length) {
+						printInfo(
+							`integration assembly codegen: ${adapterResult.assembliesWritten.length} module(s) + ${adapterResult.tokensWritten.length} tokens file(s)`,
+						);
+					}
 					for (const s of adapterResult.scaffoldsSkipped) {
 						printInfo(`skipped scaffold ${s} (author-owned)`);
 					}
 					for (const s of adapterResult.skippedSurfaces) {
 						printWarning(`adapter codegen: ${s.reason} (provider ${s.provider})`);
+					}
+					for (const s of adapterResult.skippedAssemblies) {
+						printWarning(`integration assembly: ${s.reason}`);
 					}
 				}
 			}

@@ -298,3 +298,90 @@ describe('D4 — per-consumer typed view (§5)', () => {
     expect(view).toContain("'hubspot-crm': CrmEntity;");
   });
 });
+
+describe('E2 — per-entity assembly + sink + integration tokens', () => {
+  // Mix Integrated + non-Integrated surface entities to cover both the emit
+  // path and the recorded-skip path. Provide backend_src + an `@modules` alias.
+  const ASSEMBLY_ENTITIES = [
+    {
+      entity: { name: 'meeting', surface: 'calendar', pattern: 'Integrated', plural: 'meetings' },
+      fields: { title: { type: 'string' }, starts_at: { type: 'datetime', nullable: true } },
+    },
+    // calendar entity WITHOUT pattern: Integrated → recorded skip, not a crash.
+    { entity: { name: 'reminder', surface: 'calendar', plural: 'reminders' } },
+  ];
+
+  function runAssembly(outRoot: string) {
+    return emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: ASSEMBLY_ENTITIES,
+      outputRoot: outRoot,
+      backendSrcAbs: '/proj/src',
+      aliases: { '@modules': '/proj/src/modules' },
+      dryRun: true,
+    });
+  }
+
+  it('emits an assembly module + sink + tokens for an Integrated entity', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'cgp-e2-'));
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [ASSEMBLY_ENTITIES[0]],
+      outputRoot: outRoot,
+      backendSrcAbs: '/proj/src',
+      aliases: { '@modules': '/proj/src/modules' },
+    });
+
+    const assemblyPath = join(outRoot, 'calendar/modules/google/meeting-integration.module.ts');
+    expect(existsSync(assemblyPath)).toBe(true);
+    expect(res.assembliesWritten).toContain(assemblyPath);
+    const mod = readFileSync(assemblyPath, 'utf-8');
+    expect(mod).toContain('export class MeetingIntegrationModule__Google {}');
+    expect(mod).toContain(
+      "useFactory: (adapter: GoogleCalendarAdapter) => adapter.changeSources['meeting'],",
+    );
+    expect(mod).toContain(
+      "import { MeetingRepository } from '@modules/meetings/meeting.repository';",
+    );
+    expect(mod).toContain(
+      "import { MeetingsModule } from '@modules/meetings/meetings.module';",
+    );
+
+    // Sink (emit-once) + tokens file.
+    const sinkPath = join(outRoot, 'calendar/sinks/meeting.sink.ts');
+    expect(existsSync(sinkPath)).toBe(true);
+    expect(res.scaffoldsWritten).toContain(sinkPath);
+    const sink = readFileSync(sinkPath, 'utf-8');
+    expect(sink).toContain('export class MeetingSink');
+    expect(sink).toContain('title: record.title,');
+
+    const tokensPath = join(outRoot, 'calendar/calendar-integration.tokens.ts');
+    expect(existsSync(tokensPath)).toBe(true);
+    expect(res.tokensWritten).toContain(tokensPath);
+    expect(readFileSync(tokensPath, 'utf-8')).toContain(
+      "export const MEETING_INTEGRATION_USE_CASE__GOOGLE = Symbol.for('@app/integrations/calendar.meeting-integration-use-case.google');",
+    );
+  });
+
+  it('records a non-Integrated surface entity as a skip (read side still emits)', () => {
+    const res = runAssembly('/unused');
+    expect(res.skippedAssemblies).toHaveLength(1);
+    expect(res.skippedAssemblies[0]).toMatchObject({ surface: 'calendar', entity: 'reminder' });
+    expect(res.skippedAssemblies[0].reason).toContain("not 'pattern: Integrated'");
+    // The Integrated entity still produced an assembly + token in the same run.
+    expect(res.assembliesWritten.some((p) => p.includes('meeting-integration.module.ts'))).toBe(true);
+  });
+
+  it('skips the assembly loop entirely when no backend_src root is supplied', () => {
+    const outRoot = mkdtempSync(join(tmpdir(), 'cgp-e2-'));
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [ASSEMBLY_ENTITIES[0]],
+      outputRoot: outRoot,
+      // no backendSrcAbs
+    });
+    expect(res.assembliesWritten).toEqual([]);
+    expect(res.tokensWritten).toEqual([]);
+    expect(existsSync(join(outRoot, 'calendar/modules'))).toBe(false);
+  });
+});
