@@ -65,6 +65,7 @@ const FIXTURE_ROOT = path.join(
 const STUBS_ROOT = path.join(REPO_ROOT, 'test/smoke-integration/stubs');
 const RUNTIME_BARREL = path.join(REPO_ROOT, 'runtime/subsystems/index.ts');
 const RUNTIME_SUBSYSTEMS = path.join(REPO_ROOT, 'runtime/subsystems');
+const RUNTIME_ROOT = path.join(REPO_ROOT, 'runtime');
 
 const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 
@@ -234,6 +235,12 @@ async function main(): Promise<number> {
 		// branch's emitter against the branch's runtime.
 		paths['@pattern-stack/codegen/subsystems'] = [RUNTIME_BARREL];
 		paths['@pattern-stack/codegen/subsystems/*'] = [`${RUNTIME_SUBSYSTEMS}/*`];
+		// ADR-037: `project init` now defaults to `runtime: package`, so the
+		// emitted ENTITY tree imports runtime base-classes/types/constants from
+		// `@pattern-stack/codegen/runtime/*` (not the vendored `@shared/*`). Alias
+		// it to the in-repo runtime SOURCES so the whole generated tree — entities
+		// included — compiles in package mode, the contract under test.
+		paths['@pattern-stack/codegen/runtime/*'] = [`${RUNTIME_ROOT}/*`];
 		// Surface packages are installed source-only (no built dist/).
 		for (const surface of SURFACE_PACKAGES) {
 			paths[`@pattern-stack/codegen-${surface}`] = [surfaceSrcEntry(surface)];

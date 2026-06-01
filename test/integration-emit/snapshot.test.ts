@@ -18,9 +18,36 @@ import { describe, expect, test } from 'bun:test';
 import { emitFixture, serializeTree } from './_emit';
 
 describe('integration emission snapshot — integration-patterns fixture', () => {
-  test('emitted src/integrations/** tree matches snapshot', () => {
-    const { integrationsRoot } = emitFixture();
+  test('emitted src/integrations/** tree matches snapshot (package mode)', () => {
+    const { integrationsRoot } = emitFixture('package');
     expect(serializeTree(integrationsRoot)).toMatchSnapshot();
+  });
+
+  // ADR-037: the emitter now depends on `runtime` mode. The default `package`
+  // mode (above) emits `@pattern-stack/codegen/...`; `vendored` mode emits
+  // `@shared/...`. Both are snapshotted so neither shape can regress silently.
+  test('emitted src/integrations/** tree matches snapshot (vendored mode)', () => {
+    const { integrationsRoot } = emitFixture('vendored');
+    expect(serializeTree(integrationsRoot)).toMatchSnapshot();
+  });
+
+  test('package mode emits @pattern-stack/codegen/subsystems; vendored emits @shared/subsystems (ADR-037)', () => {
+    const pkg = serializeTree(emitFixture('package').integrationsRoot);
+    const vend = serializeTree(emitFixture('vendored').integrationsRoot);
+
+    // Package mode: the single published barrel; never the vendored alias.
+    expect(pkg).toContain("from '@pattern-stack/codegen/subsystems'");
+    expect(pkg).not.toContain('@shared/subsystems');
+
+    // Vendored mode: the per-subsystem vendored barrels; never the package.
+    expect(vend).toContain("from '@shared/subsystems/auth'");
+    expect(vend).toContain("from '@shared/subsystems/integration'");
+    expect(vend).not.toContain('@pattern-stack/codegen/subsystems');
+
+    // The R5 load-bearing value import (STRATEGY_REGISTRY) honors the mode in
+    // the registry-backed google provider module.
+    expect(pkg).toContain("STRATEGY_REGISTRY,\n} from '@pattern-stack/codegen/subsystems'");
+    expect(vend).toContain("STRATEGY_REGISTRY,\n} from '@shared/subsystems/auth'");
   });
 
   test('the crm surface emits the full provider + adapter + registry + typed-view set', () => {

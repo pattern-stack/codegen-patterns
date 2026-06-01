@@ -151,10 +151,10 @@ describe('mergeTsconfig', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildInitPlan', () => {
-	test('plans codegen.config.yaml + shared shims + barrels for a fresh dir', async () => {
+	test('vendored mode: plans codegen.config.yaml + shared shims + barrels for a fresh dir', async () => {
 		const cwd = mkTempDir('plan');
 		const ctx = await loadContext({ cwd, skipDetection: true });
-		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored' });
 		const paths = plan.entries.map((e) => e.relPath);
 
 		expect(paths).toContain('codegen.config.yaml');
@@ -175,10 +175,40 @@ describe('buildInitPlan', () => {
 		expect(plan.summary.architecture).toBe('clean-lite-ps');
 	});
 
-	test('vendors the ambient-scope primitive (tenant-context) into base-classes', async () => {
+	test('package mode (default): vendors NOTHING and writes runtime: package (ADR-037)', async () => {
+		const cwd = mkTempDir('plan-package');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		// No runtimeMode → default `package`.
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const paths = plan.entries.map((e) => e.relPath);
+
+		// Config + app scaffold + the always-local database module still emit.
+		expect(paths).toContain('codegen.config.yaml');
+		expect(paths).toContain('src/shared/database/database.module.ts');
+		expect(paths).toContain('src/generated/modules.ts');
+		expect(paths).toContain('src/app.module.ts');
+		// But NO vendored runtime closure under src/shared/{base-classes,types,…}.
+		expect(paths).not.toContain('src/shared/base-classes/base-repository.ts');
+		expect(paths).not.toContain('src/shared/constants/tokens.ts');
+		expect(paths).not.toContain('src/shared/types/drizzle.ts');
+		expect(paths).not.toContain('src/shared/pipes/zod-validation.pipe.ts');
+
+		const config = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
+		expect(config?.content).toContain('runtime: package');
+	});
+
+	test('vendored mode: writes runtime: vendored into the config (ADR-037)', async () => {
+		const cwd = mkTempDir('plan-vendored-cfg');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored' });
+		const config = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
+		expect(config?.content).toContain('runtime: vendored');
+	});
+
+	test('vendored mode: vendors the ambient-scope primitive (tenant-context) into base-classes', async () => {
 		const cwd = mkTempDir('tenantctx');
 		const ctx = await loadContext({ cwd, skipDetection: true });
-		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored' });
 		const paths = plan.entries.map((e) => e.relPath);
 		expect(paths).toContain('src/shared/base-classes/tenant-context.ts');
 	});
@@ -195,18 +225,18 @@ describe('buildInitPlan', () => {
 		expect(mainTs!.content).toContain('installRequesterContext(app)');
 	});
 
-	test('plans the ZodValidationPipe scaffold under src/shared/pipes (task #23)', async () => {
+	test('vendored mode: plans the ZodValidationPipe scaffold under src/shared/pipes (task #23)', async () => {
 		const cwd = mkTempDir('zodpipe');
 		const ctx = await loadContext({ cwd, skipDetection: true });
-		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored' });
 		const paths = plan.entries.map((e) => e.relPath);
 		expect(paths).toContain('src/shared/pipes/zod-validation.pipe.ts');
 	});
 
-	test('plans @shared/eav-helpers scaffold (task #23)', async () => {
+	test('vendored mode: plans @shared/eav-helpers scaffold (task #23)', async () => {
 		const cwd = mkTempDir('eavhelpers');
 		const ctx = await loadContext({ cwd, skipDetection: true });
-		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true, runtimeMode: 'vendored' });
 		const paths = plan.entries.map((e) => e.relPath);
 		expect(paths).toContain('src/shared/eav-helpers.ts');
 	});
@@ -284,6 +314,7 @@ describe('writePlan', () => {
 			cwd,
 			withTsconfig: true,
 			skipScan: true,
+			runtimeMode: 'vendored',
 		});
 		const result = writePlan(plan);
 
@@ -308,6 +339,7 @@ describe('writePlan', () => {
 			cwd,
 			withTsconfig: true,
 			skipScan: true,
+			runtimeMode: 'vendored',
 		});
 		writePlan(plan1);
 
@@ -316,6 +348,7 @@ describe('writePlan', () => {
 			cwd,
 			withTsconfig: true,
 			skipScan: true,
+			runtimeMode: 'vendored',
 		});
 		const result2 = writePlan(plan2);
 

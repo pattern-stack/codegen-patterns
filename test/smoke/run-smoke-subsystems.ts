@@ -167,8 +167,10 @@ async function main(): Promise<number> {
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
 
-		// 2. codegen project init.
-		run(`bun ${CLI_PATH} project init --yes --with-tsconfig`, tmpDir);
+		// 2. codegen project init. `--runtime vendored` (ADR-037) — this smoke
+		//    vendors + compiles the runtime subsystems against `@shared/*`, so it
+		//    is the vendored flow; the new `package` default would skip vendoring.
+		run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime vendored`, tmpDir);
 
 		// 3. Copy the minimal fixture set (account + contact) — same shape
 		//    the main smoke uses for its non-relationship scenario.
