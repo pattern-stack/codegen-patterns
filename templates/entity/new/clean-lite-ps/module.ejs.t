@@ -12,7 +12,7 @@ force: true
  */
 <% } -%>
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
-import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
+import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= typeof openApiImport !== 'undefined' ? openApiImport : '@shared/openapi' %>';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ /* CGP-358b: Import cross-entity repos needed for has_many composition */ _%>
 <%_ if (typeof clpExistingHasMany !== 'undefined') { _%>

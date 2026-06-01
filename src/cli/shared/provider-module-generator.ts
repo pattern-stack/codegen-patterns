@@ -47,6 +47,7 @@ import {
   type LoadedProvider,
 } from "../../parser/validate-providers";
 import { isClientlessProvider } from "./adapter-emission-generator";
+import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 
 // ============================================================================
 // Naming
@@ -101,6 +102,7 @@ function providerModuleBanner(sourceYaml: string): string {
 export function generateProviderModule(
   def: ProviderDefinition,
   sourceYaml: string,
+  mode: RuntimeMode = "package",
 ): string {
   const { slug } = def;
   const Pascal = providerPascalCase(slug);
@@ -142,7 +144,7 @@ import { Module } from '@nestjs/common';
 import {
   type ProviderStrategyRegistry,
   STRATEGY_REGISTRY,
-} from '@pattern-stack/codegen/subsystems';
+} from '${subsystemsImport(mode, "auth")}';
 
 /** DI token for the \`${slug}\` provider's auth strategy (resolved from STRATEGY_REGISTRY). */
 export const ${strategyToken} = Symbol('${strategyToken}');
@@ -291,6 +293,9 @@ export interface GenerateProviderModulesOptions {
   skipImportCheck?: boolean;
   /** When true, validate + compute the plan but write nothing. */
   dryRun?: boolean;
+  /** Runtime mode (ADR-037) — selects the runtime import specifiers the emitted
+   *  provider modules carry. Defaults to `package` when omitted. */
+  mode?: RuntimeMode;
 }
 
 export interface GenerateProviderModulesResult {
@@ -357,10 +362,11 @@ export function generateProviderModules(
     return { ...base, loadFailures: failures, issues };
   }
 
+  const mode: RuntimeMode = opts.mode ?? "package";
   const written: string[] = [];
   for (const { definition, filePath } of loaded) {
     const sourceYaml = relativeSource(filePath);
-    const content = generateProviderModule(definition, sourceYaml);
+    const content = generateProviderModule(definition, sourceYaml, mode);
     const outPath = join(
       opts.outputRoot,
       definition.slug,

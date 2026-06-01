@@ -58,6 +58,7 @@ import {
   type IntegrationAssemblyEntry,
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
+import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 
 // ============================================================================
 // Surface registry — which surfaces have an emittable <Surface>Port package
@@ -424,11 +425,16 @@ export function generateAdapterScaffold(
   surface: string,
   entities: string[],
   entityDetection?: Map<string, DetectionConfig>,
+  mode: RuntimeMode = "package",
 ): string {
   const spec = SURFACE_REGISTRY[surface];
   if (!spec) throw new Error(`no surface package for '${surface}'`);
   const n = names(def.slug, surface);
   const client = parseImportRef(def.client.class);
+  // RFC-0001/0003 emitter imports the L1 strategies/read-primitive from the
+  // runtime; the specifier is mode-resolved (ADR-037). The adapter scaffold
+  // pulls from the `integration` subsystem barrel.
+  const subsystemsSpec = subsystemsImport(mode, "integration");
 
   const entitiesLiteral = entities.length
     ? `[${entities.map((e) => `'${e}'`).join(", ")}]`
@@ -466,7 +472,7 @@ export function generateAdapterScaffold(
   // IntegrationSubscriptionView are only needed when subclasses are emitted.
   // The list is kept alphabetical to match biome's organize-imports order.
   const subsystemValueImport = rp
-    ? `import { IncrementalReadBase } from '@pattern-stack/codegen/subsystems';\n`
+    ? `import { IncrementalReadBase } from '${subsystemsSpec}';\n`
     : "";
   const subsystemTypeImports = [
     "IAuthStrategy",
@@ -563,7 +569,7 @@ ${surfaceTypeImports}
 import { ${spec.noCapsConst} } from '${spec.packageName}';
 ${subsystemValueImport}import type {
 ${subsystemTypeImports}
-} from '@pattern-stack/codegen/subsystems';
+} from '${subsystemsSpec}';
 ${clientTypeImport}${providerTokenImport}
 ${preambleSection}
 @Injectable()
@@ -629,10 +635,13 @@ ${lines}
  * from the adapters by direct injection). `<SURFACE>_ENTITY_SOURCES` resolves to
  * the folded C7 `IEntityChangeSourceRegistry`.
  */
-export function generateSurfaceTokens(surface: string): string {
+export function generateSurfaceTokens(
+  surface: string,
+  mode: RuntimeMode = "package",
+): string {
   const n = names("__placeholder__", surface);
   return `${generatedBanner(`surface: ${surface}`)}
-import type { IChangeSource } from '@pattern-stack/codegen/subsystems';
+import type { IChangeSource } from '${subsystemsImport(mode, "integration")}';
 
 /** The assembled list of every ${surface} adapter's contribution. */
 export const ${n.contributionsToken} = Symbol.for('@app/integrations/${surface}.adapter-contributions');
@@ -663,6 +672,7 @@ export interface AdapterContribution {
 export function generateSurfaceAggregator(
   surface: string,
   providerSlugs: string[],
+  mode: RuntimeMode = "package",
 ): string {
   const n = names("__placeholder__", surface);
   const slugs = [...providerSlugs].sort();
@@ -697,7 +707,7 @@ import {
   MemoryEntityChangeSourceRegistry,
   type IChangeSource,
   type IEntityChangeSourceRegistry,
-} from '@pattern-stack/codegen/subsystems';
+} from '${subsystemsImport(mode, "integration")}';
 ${moduleImport}
 ${adapterImports}
 import {
@@ -861,6 +871,9 @@ export interface EmitAdaptersOptions {
   aliases?: Record<string, string>;
   /** When true, compute the plan but write nothing. */
   dryRun?: boolean;
+  /** Runtime mode (ADR-037) — selects the runtime import specifiers in every
+   *  emitted adapter/module/tokens/sink/assembly file. Defaults to `package`. */
+  mode?: RuntimeMode;
 }
 
 export interface EmitAdaptersResult {
@@ -892,6 +905,7 @@ export interface EmitAdaptersResult {
  * else is re-emitted byte-identically.
  */
 export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
+  const mode: RuntimeMode = opts.mode ?? "package";
   const result: EmitAdaptersResult = {
     written: [],
     scaffoldsWritten: [],
@@ -954,6 +968,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           surface,
           surfaceEntityNames,
           entityDetection,
+          mode,
         );
         if (!opts.dryRun) writeFile(scaffoldPath, content);
         result.scaffoldsWritten.push(scaffoldPath);
@@ -971,8 +986,8 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     const typedViewPath = join(surfaceDir, "types.generated.ts");
     const files: Array<[string, string]> = [
       [barrelPath, generateAdaptersBarrel(surface, slugs)],
-      [tokensPath, generateSurfaceTokens(surface)],
-      [aggregatorPath, generateSurfaceAggregator(surface, slugs)],
+      [tokensPath, generateSurfaceTokens(surface, mode)],
+      [aggregatorPath, generateSurfaceAggregator(surface, slugs, mode)],
       [typedViewPath, generateTypedView(surface, slugs, entitiesBySurface.get(surface) ?? [])],
     ];
     for (const [path, content] of files) {
@@ -1039,7 +1054,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           result.scaffoldsSkipped.push(sinkPath);
         } else {
           const sinkInput = buildSinkInput(def!, surface, slugs[0], loc.repoImportSpecifier);
-          const sinkContent = generateDefaultSink(sinkInput);
+          const sinkContent = generateDefaultSink({ ...sinkInput, mode });
           if (!opts.dryRun) writeFile(sinkPath, sinkContent);
           result.scaffoldsWritten.push(sinkPath);
         }
@@ -1061,6 +1076,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
             repoImportSpecifier: loc.repoImportSpecifier,
             repoClass: loc.repoClass,
             sourceDesc: `definitions/providers/${slug}.yaml`,
+            mode,
           });
           if (!opts.dryRun) writeIfChanged(assemblyPath, assemblyContent);
           result.assembliesWritten.push(assemblyPath);

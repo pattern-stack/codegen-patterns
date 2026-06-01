@@ -5,8 +5,8 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject, Optional } from '@nestjs/common';
-import { WithAnalytics } from '@shared/base-classes/with-analytics';
-import { EVENT_BUS } from '@shared/constants/tokens';
+import { WithAnalytics } from '<%= typeof withAnalyticsImport !== 'undefined' ? withAnalyticsImport : '@shared/base-classes/with-analytics' %>';
+import { EVENT_BUS } from '<%= typeof drizzleTokenImport !== 'undefined' ? drizzleTokenImport : '@shared/constants/tokens' %>';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
@@ -14,8 +14,8 @@ import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
 import { FieldValueService } from '../field_values/field_value.service';
 <% } -%>
 <% if (eavValueTable) { -%>
-import { toEavRows, mergeEavRows } from '@shared/eav-helpers';
-import type { DrizzleTx } from '@shared/types/drizzle';
+import { toEavRows, mergeEavRows } from '<%= typeof eavHelpersImport !== 'undefined' ? eavHelpersImport : '@shared/eav-helpers' %>';
+import type { DrizzleTx } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
 import { <%= eavDefinitionPascal %>Repository } from '../<%= eavDefinitionEntityPlural %>/<%= eavDefinitionEntity %>.repository';
 <% } -%>
 <%_ /* CGP-358b — service-layer composition: import target repos for belongs_to relationships */ _%>

@@ -15,6 +15,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
+import { runtimeImport, type RuntimeMode } from './runtime-import.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,6 +61,13 @@ export interface InitOptions {
 	runtimePath?: string;
 	/** Skip running the scanner (use when the caller already has a context). */
 	skipScan?: boolean;
+	/**
+	 * Runtime mode (ADR-037). `package` (default) ⇒ generated code imports
+	 * `@pattern-stack/codegen/*` and NOTHING is vendored. `vendored` ⇒ the
+	 * runtime closure is vendored into `src/shared/**` and generated code imports
+	 * via `@shared/*`. Written into the emitted `codegen.config.yaml`.
+	 */
+	runtimeMode?: 'package' | 'vendored';
 }
 
 // ---------------------------------------------------------------------------
@@ -182,12 +190,16 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'shared/openapi/index.ts', target: 'src/shared/openapi/index.ts' },
 ];
 
-function databaseModuleContent(): string {
+function databaseModuleContent(mode: RuntimeMode): string {
+	// In vendored mode DRIZZLE comes from the vendored shim (`../constants/tokens`);
+	// in package mode from the package runtime (ADR-037).
+	const drizzleTokenImport =
+		mode === 'vendored' ? '../constants/tokens' : runtimeImport(mode, 'constants/tokens');
 	return `import { Module, Global } from '@nestjs/common';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '../../schema';
-import { DRIZZLE } from '../constants/tokens';
+import { DRIZZLE } from '${drizzleTokenImport}';
 
 export { DRIZZLE };
 export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
@@ -223,11 +235,15 @@ export class DatabaseModule {}
 // (see VENDORED_RUNTIME_FILES comment). Vendored files are now the source
 // of truth; no runtime re-export shim is emitted.
 
-function appModuleContent(): string {
+function appModuleContent(mode: RuntimeMode): string {
+	// OpenAPI registry: vendored shim (`./shared/openapi`) in vendored mode; the
+	// package runtime barrel in package mode (ADR-037).
+	const openApiImport =
+		mode === 'vendored' ? './shared/openapi' : runtimeImport(mode, 'shared/openapi');
 	return `import { Global, Module } from '@nestjs/common';
 import { DatabaseModule } from './shared/database/database.module';
 import { GENERATED_MODULES } from './generated/modules';
-import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
+import { OPENAPI_REGISTRY, OpenApiRegistry } from '${openApiImport}';
 
 /**
  * OpenApiModule — @Global() wrapper around the OPENAPI_REGISTRY singleton.
@@ -283,7 +299,9 @@ export class AppModule {}
  * bootstrap file. Consumers with a pre-authored main.ts should copy the
  * Swagger block verbatim (see CONSUMER-SETUP §OpenAPI).
  */
-function mainTsContent(): string {
+function mainTsContent(mode: RuntimeMode): string {
+	const openApiImport =
+		mode === 'vendored' ? './shared/openapi' : runtimeImport(mode, 'shared/openapi');
 	return `import 'reflect-metadata';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -291,7 +309,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { parse as parseYaml } from 'yaml';
 import { AppModule } from './app.module';
-import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
+import { OPENAPI_REGISTRY, OpenApiRegistry } from '${openApiImport}';
 
 interface OpenApiConfig {
   enabled?: boolean;
@@ -665,6 +683,10 @@ export async function buildInitPlan(
 ): Promise<InitPlan> {
 	const cwd = options.cwd;
 	const force = Boolean(options.force);
+	// Runtime mode (ADR-037). Default `package` — generated code depends on the
+	// npm package; nothing is vendored. `vendored` keeps the legacy `@shared/**`
+	// model and vendors the runtime closure below.
+	const runtimeMode = options.runtimeMode === 'vendored' ? 'vendored' : 'package';
 
 	// Detection — drive config defaults.
 	//
@@ -711,6 +733,11 @@ export async function buildInitPlan(
 	{
 		const configPath = path.join(cwd, 'codegen.config.yaml');
 		const config = {
+			// Runtime mode (ADR-037). `package` (default) imports the runtime from
+			// `@pattern-stack/codegen/*`; `vendored` imports it via `@shared/*` and
+			// vendors `src/shared/**`. Existing vendored projects MUST set this to
+			// `vendored` explicitly — the default does not silently flip them.
+			runtime: runtimeMode,
 			paths: {
 				backend_src: 'src',
 				entities_dir: 'entities',
@@ -791,19 +818,23 @@ export async function buildInitPlan(
 		fileEntry(
 			cwd,
 			path.join(cwd, 'src', 'shared', 'database', 'database.module.ts'),
-			databaseModuleContent(),
+			databaseModuleContent(runtimeMode),
 			{ force }
 		)
 	);
 
-	// 4-6. Vendor runtime files into src/shared/.
-	// Vendoring (vs re-export) avoids the dual-drizzle type-identity clash
-	// the old shim form triggered when the consumer and runtime each resolved
-	// their own drizzle-orm. See VENDORED_RUNTIME_FILES comment.
-	for (const v of VENDORED_RUNTIME_FILES) {
-		entries.push(
-			fileEntry(cwd, path.join(cwd, v.target), loadRuntimeFile(v.runtime), { force })
-		);
+	// 4-6. Vendor runtime files into src/shared/ — ONLY in `vendored` mode
+	// (ADR-037). Vendoring (vs re-export) avoids the dual-drizzle type-identity
+	// clash the old shim form triggered when the consumer and runtime each
+	// resolved their own drizzle-orm. In `package` mode the consumer depends on
+	// `@pattern-stack/codegen` and the generated code imports from the package, so
+	// there is nothing to vendor. See VENDORED_RUNTIME_FILES comment.
+	if (runtimeMode === 'vendored') {
+		for (const v of VENDORED_RUNTIME_FILES) {
+			entries.push(
+				fileEntry(cwd, path.join(cwd, v.target), loadRuntimeFile(v.runtime), { force })
+			);
+		}
 	}
 
 	// 7. src/generated/{modules,schema}.ts — empty barrels
@@ -832,7 +863,7 @@ export async function buildInitPlan(
 				path: appModulePath,
 				relPath: relOf(cwd, appModulePath),
 				action: 'create',
-				content: appModuleContent(),
+				content: appModuleContent(runtimeMode),
 			});
 		} else {
 			entries.push({
@@ -856,7 +887,7 @@ export async function buildInitPlan(
 				path: mainPath,
 				relPath: relOf(cwd, mainPath),
 				action: 'create',
-				content: mainTsContent(),
+				content: mainTsContent(runtimeMode),
 			});
 		} else {
 			entries.push({

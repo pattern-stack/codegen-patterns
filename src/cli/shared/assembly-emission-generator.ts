@@ -33,6 +33,7 @@
 
 import { relative, resolve, sep } from "node:path";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
+import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 
 // ============================================================================
 // Banner
@@ -111,6 +112,10 @@ export interface AssemblyEmitInput {
   repoClass: string;
   /** Source descriptor for the @generated banner (the provider YAML path). */
   sourceDesc: string;
+  /** Runtime mode (ADR-037) — selects the integration subsystem import
+   *  specifier (`ExecuteIntegrationUseCase`, `INTEGRATION_*` tokens). Defaults
+   *  to `package` when omitted. */
+  mode?: RuntimeMode;
 }
 
 /** One (entity, provider) token entry on a surface, for {@link generateIntegrationTokens}. */
@@ -167,7 +172,7 @@ import {
   ExecuteIntegrationUseCase,
   INTEGRATION_CHANGE_SOURCE,
   INTEGRATION_SINK,
-} from '@pattern-stack/codegen/subsystems';
+} from '${subsystemsImport(input.mode ?? "package", "integration")}';
 import { ${adapterClass} } from '${adapterImport}';
 import { ${adapterModuleClass} } from '${adapterModuleImport}';
 import { ${sinkClass} } from '${sinkImport}';

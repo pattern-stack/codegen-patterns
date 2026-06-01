@@ -25,6 +25,12 @@ import {
 } from "../../../src/config/paths.mjs";
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import {
+  loadRuntimeMode,
+  subsystemsImport,
+  runtimeImport,
+  rewriteSharedImport,
+} from "../../../src/config/runtime-mode.mjs";
 
 // ============================================================================
 // Behavior Registry (inline to avoid import issues with Hygen)
@@ -292,6 +298,10 @@ export default {
 
     // Load global codegen config
     const codegenConfig = loadCodegenConfig(process.cwd());
+
+    // Resolve the runtime mode (ADR-037) once — drives every runtime import
+    // specifier the generated entity code carries.
+    const runtimeMode = loadRuntimeMode(process.cwd());
 
     // Load frontend config from project config (used for auth, sync, parsers)
     const frontendConfig = getProjectConfig()?.frontend ?? {};
@@ -1373,16 +1383,34 @@ export default {
       emitsEvents.find((e) => e.type === `${name}_deleted`) ?? null;
 
     // Import paths for the TypedEventBus token + DrizzleClient token/type.
-    // The consumer app wires `@shared/*` aliases to the vendored subsystem
-    // sources (under `<paths.backend_src>/shared/subsystems/…`), matching
-    // where `subsystem install` drops the runtime files and where
-    // `entity new` writes the generated `events/generated/` artifacts. The
-    // `@shared/subsystems/events` path is the barrel at
-    // `<subsystems_root>/events/index.ts`.
-    const eventsTokenImport = '@shared/subsystems/events';
-    const typedEventBusImport = '@shared/subsystems/events';
-    const drizzleTokenImport = '@shared/constants/tokens';
-    const drizzleTypeImport = '@shared/types/drizzle';
+    // Mode-resolved (ADR-037): in `vendored` mode the consumer app wires
+    // `@shared/*` aliases to the vendored runtime under `src/shared/…`
+    // (subsystem barrel at `<subsystems_root>/events/index.ts`); in `package`
+    // mode they resolve to `@pattern-stack/codegen/subsystems` +
+    // `@pattern-stack/codegen/runtime/…`.
+    const eventsTokenImport = subsystemsImport(runtimeMode, 'events');
+    const typedEventBusImport = subsystemsImport(runtimeMode, 'events');
+    const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
+    const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
+    // Integration subsystem barrel (ADR-033.1 inline-sync `integration-source`
+    // module — emitted only for entities with an inline `detection:` block).
+    const integrationSubsystemImport = subsystemsImport(runtimeMode, 'integration');
+
+    // Remaining runtime-owned import specifiers the clean-lite-ps templates emit
+    // (ADR-037 — mode-resolved). Consumer-app files the package never owns
+    // (`@shared/database/*`, `@shared/http/*`) stay `@shared/*` in both modes and
+    // are NOT in this set.
+    const withAnalyticsImport = runtimeImport(runtimeMode, 'base-classes/with-analytics');
+    const integrationUpsertConfigImport = runtimeImport(runtimeMode, 'base-classes/integration-upsert-config');
+    const baseRepositoryImport = runtimeImport(runtimeMode, 'base-classes/base-repository');
+    const eavHelpersImport = runtimeImport(runtimeMode, 'eav-helpers');
+    const zodValidationPipeImport = runtimeImport(runtimeMode, 'pipes/zod-validation.pipe');
+    // OpenAPI barrel: the runtime source lives at `runtime/shared/openapi`, but
+    // the VENDORED target drops the leading `shared/` (vendored alias is
+    // `@shared/openapi`, NOT `@shared/shared/openapi`). Package mode keeps the
+    // full runtime relpath. So this one is asymmetric — special-case it.
+    const openApiImport =
+      runtimeMode === 'vendored' ? '@shared/openapi' : runtimeImport(runtimeMode, 'shared/openapi');
 
     // @generated banner — single line stamped at the top of every
     // force-overwritten output. `yamlPath` is the consumer-relative source
@@ -1402,6 +1430,10 @@ export default {
     const locals = {
       // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
       generatedBanner,
+
+      // Runtime mode (ADR-037) — drives runtime import specifiers; read by the
+      // clean-lite-ps prompt-extension to rewrite base-class imports.
+      runtimeMode,
 
       // Database configuration
       databaseDialect,
@@ -1646,6 +1678,13 @@ export default {
       typedEventBusImport,
       drizzleTokenImport,
       drizzleTypeImport,
+      integrationSubsystemImport,
+      withAnalyticsImport,
+      integrationUpsertConfigImport,
+      baseRepositoryImport,
+      eavHelpersImport,
+      zodValidationPipeImport,
+      openApiImport,
     };
 
     // ========================================================================

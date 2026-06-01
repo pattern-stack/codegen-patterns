@@ -136,7 +136,8 @@ export class ProjectInitCommand extends Command {
 	static usage = Command.Usage({
 		description: 'Scaffold a consumer project (config, shims, barrels, app.module)',
 		examples: [
-			['Initialize with defaults', 'codegen project init --yes'],
+			['Initialize with defaults (package runtime)', 'codegen project init --yes'],
+			['Vendored runtime (legacy @shared/** model)', 'codegen project init --yes --runtime vendored'],
 			['Preview without writing', 'codegen project init --dry-run'],
 			['Create tsconfig if missing', 'codegen project init --yes --with-tsconfig'],
 			['Overwrite existing shims', 'codegen project init --force'],
@@ -147,6 +148,9 @@ export class ProjectInitCommand extends Command {
 	dryRun = Option.Boolean('--dry-run', false);
 	force = Option.Boolean('--force', false);
 	withTsconfig = Option.Boolean('--with-tsconfig', false);
+	// Runtime mode (ADR-037). `package` (default) ⇒ depend on the npm package,
+	// vendor nothing; `vendored` ⇒ vendor src/shared/** and import via @shared/*.
+	runtime = Option.String('--runtime', 'package');
 	// Vendor consumer skills into .claude/skills by default; opt out with --no-skills.
 	skills = Option.Boolean('--skills', true);
 	json = Option.Boolean('--json', false);
@@ -160,11 +164,19 @@ export class ProjectInitCommand extends Command {
 			skipDetection: false,
 		});
 
+		const runtimeMode = this.runtime === 'vendored' ? 'vendored' : 'package';
+		if (this.runtime !== 'package' && this.runtime !== 'vendored' && !isJsonMode()) {
+			printWarning(
+				`--runtime '${this.runtime}' is not recognized (expected 'package' or 'vendored'); using 'package'.`,
+			);
+		}
+
 		const plan = await buildInitPlan(ctx, {
 			cwd: ctx.cwd,
 			force: this.force,
 			withTsconfig: this.withTsconfig,
 			skipScan: false,
+			runtimeMode,
 		});
 
 		if (this.force && !isJsonMode()) {

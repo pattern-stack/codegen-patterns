@@ -15,6 +15,7 @@ import pluralizePkg from 'pluralize';
 // globs before this helper runs — we only read the registry here.
 import { getPattern } from '../../../../src/patterns/registry.js';
 import '../../../../src/patterns/library/index.js';
+import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
 
 // ============================================================================
 // Pattern registry resolution
@@ -1058,14 +1059,19 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // emitted output is byte-identical.
   const patternBase = resolvePatternBaseClasses(entity);
   const { patternName } = patternBase;
+  // Runtime mode (ADR-037) — rewrite library base-class imports authored as
+  // `@shared/base-classes/…` to the mode-correct form (package mode →
+  // `@pattern-stack/codegen/runtime/base-classes/…`). App-defined pattern
+  // aliases (non-`@shared/`) pass through untouched.
+  const runtimeMode = baseLocals?.runtimeMode === 'vendored' ? 'vendored' : 'package';
   // FAMILY_MAP is gone (PATTERN-5); `patternConfigClasses` is the structural
   // equivalent — repository + service class names + import paths + inherited
   // method comment lists, sourced directly from the pattern registry.
   const patternConfigClasses = {
     repositoryBaseClass: patternBase.repositoryBaseClass,
     serviceBaseClass: patternBase.serviceBaseClass,
-    repositoryBaseImport: patternBase.repositoryBaseImport,
-    serviceBaseImport: patternBase.serviceBaseImport,
+    repositoryBaseImport: rewriteSharedImport(runtimeMode, patternBase.repositoryBaseImport),
+    serviceBaseImport: rewriteSharedImport(runtimeMode, patternBase.serviceBaseImport),
     repositoryInheritedMethods: patternBase.repositoryInheritedMethods,
     serviceInheritedMethods: patternBase.serviceInheritedMethods,
   };

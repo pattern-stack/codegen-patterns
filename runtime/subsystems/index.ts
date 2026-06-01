@@ -6,7 +6,11 @@
 
 // Events
 export { EVENT_BUS } from './events';
-export type { DomainEvent, IEventBus } from './events';
+// `DrizzleTransaction` is re-exported here (not just from the `events` barrel)
+// so package-mode generated code — which imports from the single
+// `@pattern-stack/codegen/subsystems` barrel — resolves it (ADR-037). Vendored
+// mode reaches it via `@shared/subsystems/events`; both must export it.
+export type { DomainEvent, IEventBus, DrizzleTransaction } from './events';
 export { EventsModule, DrizzleEventBus, MemoryEventBus } from './events';
 
 // Jobs — orchestration schema only (JOB-1). Protocols / modules land in JOB-2 / JOB-5.

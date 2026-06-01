@@ -21,14 +21,14 @@ import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc
 <% if (eavValueTable) { -%>
 import { sql } from 'drizzle-orm';
 <% } -%>
-import { DRIZZLE } from '@shared/constants/tokens';
-import type { DrizzleClient<% if (eavValueTable || (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface)) { %>, DrizzleTx<% } %> } from '@shared/types/drizzle';
+import { DRIZZLE } from '<%= typeof drizzleTokenImport !== 'undefined' ? drizzleTokenImport : '@shared/constants/tokens' %>';
+import type { DrizzleClient<% if (eavValueTable || (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface)) { %>, DrizzleTx<% } %> } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
 import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
 <% if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { -%>
-import type { IntegrationUpsertConfig } from '@shared/base-classes/integration-upsert-config';
+import type { IntegrationUpsertConfig } from '<%= typeof integrationUpsertConfigImport !== 'undefined' ? integrationUpsertConfigImport : '@shared/base-classes/integration-upsert-config' %>';
 <% } -%>
 <% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
-import type { BehaviorConfig } from '@shared/base-classes/base-repository';
+import type { BehaviorConfig } from '<%= typeof baseRepositoryImport !== 'undefined' ? baseRepositoryImport : '@shared/base-classes/base-repository' %>';
 <% } -%>
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '../field_values/field_value.service';

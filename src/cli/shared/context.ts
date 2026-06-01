@@ -26,6 +26,12 @@ export interface CodegenConfig {
 	generate?: Record<string, unknown>;
 	framework?: string;
 	orm?: string;
+	/**
+	 * Which copy of the framework runtime generated code imports from (ADR-037).
+	 * `package` (default) ⇒ `@pattern-stack/codegen/*`; `vendored` ⇒ `@shared/*`.
+	 * Raw value as parsed from YAML; resolve via `resolveRuntimeMode()`.
+	 */
+	runtime?: 'package' | 'vendored';
 	[key: string]: unknown;
 }
 
