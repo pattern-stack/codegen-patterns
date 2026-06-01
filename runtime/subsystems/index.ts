@@ -80,6 +80,7 @@ export {
 export type {
   IncrementalRead,
   RandomRead,
+  ReadContext,
   ReadMode,
   ReadRequest,
   Ref,

@@ -101,6 +101,7 @@ export {
   mapConcurrent,
   type IncrementalRead,
   type RandomRead,
+  type ReadContext,
   type ReadMode,
   type ReadRequest,
   type Ref,

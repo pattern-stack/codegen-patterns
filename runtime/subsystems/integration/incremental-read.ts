@@ -80,6 +80,26 @@ export interface ReadRequest<F = unknown> {
 }
 
 /**
+ * Per-run context threaded from `listChanges` into the vendor read body (R5).
+ *
+ * Carries the `subscription` framing the run so `enumerate`/`hydrate` can resolve
+ * **per-connection credentials** (and raw-landing keys) from
+ * `subscription.externalRef` — the gap a multi-account consumer surfaced: a
+ * singleton change source cannot hold connection-scoped auth, and before R5 the
+ * base forwarded the subscription only into `filterFor`, never into the fetch.
+ *
+ * Optional throughout (the core contract): a direct `read()` / `get()` call — the
+ * query surface's "fill one record on click" — may omit it. An adapter that needs
+ * per-connection auth reads `ctx?.subscription?.externalRef` and asserts its
+ * presence; a provider-level-auth adapter ignores it.
+ */
+export interface ReadContext {
+  /** The subscription framing this run; `externalRef` is the upstream scope /
+   *  connection id the adapter resolves credentials + raw-landing keys from. */
+  readonly subscription?: IntegrationSubscriptionView;
+}
+
+/**
  * The `read()`-side envelope: canonical record + the raw vendor payload it came
  * from + the originating external id + the per-ref cursor.
  *
@@ -101,7 +121,7 @@ export interface SourcedRecord<T> {
  * hydration, and cursor emission are the providing base's concern.
  */
 export interface IncrementalRead<T, F = unknown> {
-  read(req: ReadRequest<F>): AsyncIterable<SourcedRecord<T>>;
+  read(req: ReadRequest<F>, ctx?: ReadContext): AsyncIterable<SourcedRecord<T>>;
 }
 
 /**
@@ -111,7 +131,7 @@ export interface IncrementalRead<T, F = unknown> {
  * surface.
  */
 export interface RandomRead<T> {
-  get(id: string): Promise<T | null>;
+  get(id: string, ctx?: ReadContext): Promise<T | null>;
 }
 
 // ============================================================================
@@ -208,11 +228,16 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
    * `pageSize` (from `ReadRequest`) is the adapter's requested vendor page size
    * — also the atomic-cursor backfill blast-radius bound (§ `cursorDivisible`).
    * Honor it as a hint; vendors that cap page size clamp it.
+   *
+   * `ctx?.subscription` (R5) carries the run's subscription, so a per-connection
+   * adapter resolves credentials / upstream scope from `externalRef` here; absent
+   * on a direct `read()` with no run subscription.
    */
   protected abstract enumerate(
     mode: ReadMode,
     filter?: F,
     pageSize?: number,
+    ctx?: ReadContext,
   ): AsyncIterable<Ref<M>[]>;
 
   /**
@@ -221,8 +246,12 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
    * alignment. Write it over `mapConcurrent(ids, (id) => this.fetchOne(id),
    * this.hydrateConcurrency)`; override with a real `/batch` call or a
    * passthrough (full-object list) where the vendor allows.
+   *
+   * `ctx?.subscription` (R5) carries the run's subscription for per-connection
+   * credential resolution (the fetch is where the vendor call happens) and is the
+   * natural place to land raw payloads keyed by `subscription.id`.
    */
-  protected abstract hydrate(ids: string[]): Promise<Map<string, unknown>>;
+  protected abstract hydrate(ids: string[], ctx?: ReadContext): Promise<Map<string, unknown>>;
 
   /** Provider payload → canonical record. Return `null` to drop a record. */
   protected abstract toCanonical(raw: unknown): T | null;
@@ -256,11 +285,14 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
    * adapter cannot hydrate-then-discard. A hydrate miss (deleted mid-run) is
    * skipped, never fabricated.
    */
-  async *read(req: ReadRequest<F>): AsyncIterable<SourcedRecord<T>> {
-    for await (const refPage of this.enumerate(req.mode, req.filter, req.pageSize)) {
+  async *read(req: ReadRequest<F>, ctx?: ReadContext): AsyncIterable<SourcedRecord<T>> {
+    for await (const refPage of this.enumerate(req.mode, req.filter, req.pageSize, ctx)) {
       const kept = refPage.filter((ref) => this.matchesRef(ref, req.filter));
       if (kept.length === 0) continue;
-      const raws = await this.hydrate(kept.map((ref) => ref.externalId));
+      const raws = await this.hydrate(
+        kept.map((ref) => ref.externalId),
+        ctx,
+      );
       for (const ref of kept) {
         const raw = raws.get(ref.externalId);
         if (raw === undefined || raw === null) continue; // deleted mid-run → skip
@@ -277,8 +309,8 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
    * `toCanonical ∘ hydrate([id])`. Reuses the adapter's batched fetch + miss
    * tolerance; returns `null` for a missing or undecodable record.
    */
-  async get(id: string): Promise<T | null> {
-    const raws = await this.hydrate([id]);
+  async get(id: string, ctx?: ReadContext): Promise<T | null> {
+    const raws = await this.hydrate([id], ctx);
     const raw = raws.get(id);
     if (raw === undefined || raw === null) return null;
     return this.toCanonical(raw);
@@ -308,7 +340,9 @@ export abstract class IncrementalReadBase<T, F = unknown, M = Record<string, unk
         ? { kind: 'full' }
         : { kind: 'delta', cursor };
     const filter = this.filterFor(subscription);
-    const stream = this.read({ mode, filter });
+    // R5: thread the run's subscription into the read body so `enumerate`/`hydrate`
+    // can resolve per-connection credentials (and raw-landing keys) from it.
+    const stream = this.read({ mode, filter }, { subscription });
 
     if (this.cursorDivisible) {
       for await (const sourced of stream) {
