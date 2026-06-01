@@ -5,12 +5,13 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Module } from '@nestjs/common';
-import { buildChangeSource } from '@shared/subsystems/integration';
+<% const _integSubsys = typeof integrationSubsystemImport !== 'undefined' ? integrationSubsystemImport : '@shared/subsystems/integration'; -%>
+import { buildChangeSource } from '<%= _integSubsys %>';
 import type {
   DetectionConfig,
   IChangeSource,
   PollFetchCallback,
-} from '@shared/subsystems/integration';
+} from '<%= _integSubsys %>';
 import type { <%= className %> } from '<%= isCleanLitePs ? clpImports.integrationSourceToEntity : imports.moduleToDomain %>';
 
 const <%= name.toUpperCase() %>_DETECTION_CONFIGS: Record<string, DetectionConfig> = <%- detectionConfigsLiteral %>;

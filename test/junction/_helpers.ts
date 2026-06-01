@@ -76,6 +76,9 @@ export interface BootstrapResult {
 function writeCodegenConfig(tmpDir: string, architecture: Architecture): void {
   const configPath = path.join(tmpDir, 'codegen.config.yaml');
   const content = [
+    // ADR-037: vendored flow — the snapshot + tsc compile against `@shared/*`.
+    // (init wrote this too, but this overwrite would otherwise drop it.)
+    'runtime: vendored',
     'generate:',
     `  architecture: ${architecture}`,
     'paths:',
@@ -110,8 +113,10 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   run(`bun add ${RUNTIME_DEPS.join(' ')}`);
   run(`bun add -D ${DEV_DEPS.join(' ')}`);
 
-  // 3. codegen project init
-  run(`bun ${CLI_PATH} project init --yes --with-tsconfig`);
+  // 3. codegen project init — `--runtime vendored` (ADR-037): the junction
+  //    snapshot asserts `@shared/*` runtime imports, so this is the vendored
+  //    flow; the new `package` default would flip the emitted specifiers.
+  run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime vendored`);
 
   // override architecture
   writeCodegenConfig(tmpDir, architecture);

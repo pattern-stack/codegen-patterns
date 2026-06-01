@@ -30,6 +30,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { tokenKey } from '../token-key';
 import { DRIZZLE } from '../../constants/tokens';
 import type { DrizzleClient } from '../../types/drizzle';
 import { HandlerRegistry, type HandlerRegistryEntry } from './job-handler.base';
@@ -128,8 +129,11 @@ export interface JobWorkerModuleOptions {
  * configuration — e.g. `BridgeModule.onModuleInit` checks
  * `options.pools` against `BRIDGE_RESERVED_POOLS` to fail fast when a
  * reserved pool isn't being polled (BRIDGE-8).
+ *
+ * ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) — matches by value
+ * across runtime copies.
  */
-export const JOB_WORKER_MODULE_OPTIONS = Symbol('JOB_WORKER_MODULE_OPTIONS');
+export const JOB_WORKER_MODULE_OPTIONS = Symbol.for(tokenKey('jobs', 'worker-module-options'));
 
 /**
  * The lifecycle holder. Named `JobWorkerOrchestrator` in the spec to avoid

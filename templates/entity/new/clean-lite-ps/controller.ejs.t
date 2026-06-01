@@ -13,7 +13,7 @@ import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%
 import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityNamePlural %>-with-fields.use-case';
 <% } -%>
 <% if (generateWrites) { -%>
-import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';
+import { ZodValidationPipe } from '<%= typeof zodValidationPipeImport !== 'undefined' ? zodValidationPipeImport : '@shared/pipes/zod-validation.pipe' %>';
 import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityName %>.use-case';
 import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityName %>.use-case';
 import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityName %>.use-case';

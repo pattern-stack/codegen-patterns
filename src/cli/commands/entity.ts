@@ -44,6 +44,7 @@ import {
 	collectEntitySurfaces,
 } from '../shared/provider-module-generator.js';
 import { emitAdapters } from '../shared/adapter-emission-generator.js';
+import { resolveRuntimeMode } from '../shared/runtime-import.js';
 import { loadProvidersFromYaml } from '../../utils/yaml-loader.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
@@ -410,6 +411,10 @@ export class EntityNewCommand extends Command {
 		const backendSrcForHandlers =
 			(ctx.config as { paths?: { backend_src?: string } } | null | undefined)
 				?.paths?.backend_src ?? 'src';
+
+		// Runtime mode (ADR-037) — drives every runtime import specifier the
+		// integration emitters write. Defaults to `package` (the new default).
+		const runtimeMode = resolveRuntimeMode(ctx.config);
 		const bridgeHandlersDir = path.resolve(
 			ctx.cwd,
 			backendSrcForHandlers,
@@ -762,6 +767,7 @@ export class EntityNewCommand extends Command {
 				sourceRoot: tsAliases?.sourceRoot,
 				aliases: tsAliases?.aliases,
 				skipImportCheck: tsAliases === null,
+				mode: runtimeMode,
 			});
 			if (!providerResult.skipped && !isJsonMode()) {
 				for (const issue of providerResult.issues) {
@@ -821,6 +827,7 @@ export class EntityNewCommand extends Command {
 					outputRoot: adapterOutputRoot,
 					backendSrcAbs: path.resolve(ctx.cwd, backendSrcForHandlers),
 					aliases: assemblyTsAliases?.aliases ?? {},
+					mode: runtimeMode,
 				});
 				if (!isJsonMode()) {
 					if (adapterResult.written.length || adapterResult.scaffoldsWritten.length) {

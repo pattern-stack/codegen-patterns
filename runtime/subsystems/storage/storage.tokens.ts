@@ -5,5 +5,10 @@
  * ```typescript
  * constructor(@Inject(STORAGE) private readonly storage: IStorageService) {}
  * ```
+ *
+ * ADR-037: namespaced `Symbol.for(...)` key (via `tokenKey()`) so the token matches
+ * by value across import boundaries (package vs vendored runtime copy).
  */
-export const STORAGE = Symbol('STORAGE');
+import { tokenKey } from '../token-key';
+
+export const STORAGE = Symbol.for(tokenKey('storage', 'storage'));

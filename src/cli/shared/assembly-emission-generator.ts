@@ -33,6 +33,7 @@
 
 import { relative, resolve, sep } from "node:path";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
+import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 
 // ============================================================================
 // Banner
@@ -111,6 +112,10 @@ export interface AssemblyEmitInput {
   repoClass: string;
   /** Source descriptor for the @generated banner (the provider YAML path). */
   sourceDesc: string;
+  /** Runtime mode (ADR-037) — selects the integration subsystem import
+   *  specifier (`ExecuteIntegrationUseCase`, `INTEGRATION_*` tokens). Defaults
+   *  to `package` when omitted. */
+  mode?: RuntimeMode;
 }
 
 /** One (entity, provider) token entry on a surface, for {@link generateIntegrationTokens}. */
@@ -167,7 +172,7 @@ import {
   ExecuteIntegrationUseCase,
   INTEGRATION_CHANGE_SOURCE,
   INTEGRATION_SINK,
-} from '@pattern-stack/codegen/subsystems';
+} from '${subsystemsImport(input.mode ?? "package", "integration")}';
 import { ${adapterClass} } from '${adapterImport}';
 import { ${adapterModuleClass} } from '${adapterModuleImport}';
 import { ${sinkClass} } from '${sinkImport}';
@@ -180,7 +185,7 @@ import { ${token} } from '${tokensImport}';
  * inbound-integration assembly (RFC-0002 §2, Option A).
  *
  * Binds this module's INTEGRATION_CHANGE_SOURCE from the adapter's
- * \`changeSources['${input.entityName}']\` and INTEGRATION_SINK from
+ * \`changeSources.${input.entityName}\` and INTEGRATION_SINK from
  * ${sinkClass}, provides a local ExecuteIntegrationUseCase, and aliases+exports
  * it under ${token} (the bare class token is ambiguous at app root — every
  * assembly provides it). The substrate (cursor store, run recorder, differ,
@@ -192,7 +197,7 @@ import { ${token} } from '${tokensImport}';
   providers: [
     {
       provide: INTEGRATION_CHANGE_SOURCE,
-      useFactory: (adapter: ${adapterClass}) => adapter.changeSources['${input.entityName}'],
+      useFactory: (adapter: ${adapterClass}) => adapter.changeSources.${input.entityName},
       inject: [${adapterClass}],
     },
     {

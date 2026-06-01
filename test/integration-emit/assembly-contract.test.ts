@@ -141,10 +141,11 @@ describe("E4 · assembly module contract — emitAdapters(crm/account ← salesf
     expect(mod).not.toContain("CrmAdaptersModule");
   });
 
-  test("binds INTEGRATION_CHANGE_SOURCE via adapter.changeSources['<entity>'] with inject:[<Adapter>] (Option A)", () => {
+  test("binds INTEGRATION_CHANGE_SOURCE via adapter.changeSources.<entity> with inject:[<Adapter>] (Option A)", () => {
     expect(mod).toContain("provide: INTEGRATION_CHANGE_SOURCE,");
+    // biome-clean literal member access (entity names are snake_case identifiers).
     expect(mod).toContain(
-      "useFactory: (adapter: SalesforceCrmAdapter) => adapter.changeSources['account'],",
+      "useFactory: (adapter: SalesforceCrmAdapter) => adapter.changeSources.account,",
     );
     expect(mod).toContain("inject: [SalesforceCrmAdapter],");
   });

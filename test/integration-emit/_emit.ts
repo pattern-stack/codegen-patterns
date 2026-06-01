@@ -47,8 +47,16 @@ export interface EmitResult {
   skippedSurfaces: Array<{ provider: string; surface: string }>;
 }
 
-/** Run provider + adapter emission against the fixture into a fresh tmp dir. */
-export function emitFixture(): EmitResult {
+/** Runtime mode (ADR-037) the emitters resolve runtime import specifiers off. */
+export type RuntimeMode = 'package' | 'vendored';
+
+/**
+ * Run provider + adapter emission against the fixture into a fresh tmp dir.
+ * `mode` (ADR-037) selects which runtime import specifier the emitters write —
+ * `package` (default) ⇒ `@pattern-stack/codegen/subsystems`; `vendored` ⇒
+ * `@shared/subsystems/<name>`. Both shapes are snapshotted (snapshot.test.ts).
+ */
+export function emitFixture(mode: RuntimeMode = 'package'): EmitResult {
   const providersDir = join(FIXTURE_ROOT, 'providers');
   const entitiesDir = join(FIXTURE_ROOT, 'entities');
 
@@ -82,6 +90,7 @@ export function emitFixture(): EmitResult {
     outputRoot: join(integrationsRoot, 'providers'),
     entitySurfaces: collectEntitySurfaces(entityDefs),
     skipImportCheck: true,
+    mode,
   });
   if (providerResult.issues.length) {
     throw new Error(
@@ -100,6 +109,7 @@ export function emitFixture(): EmitResult {
     outputRoot: integrationsRoot,
     backendSrcAbs,
     aliases: { '@modules': join(backendSrcAbs, 'modules') },
+    mode,
   });
 
   return {

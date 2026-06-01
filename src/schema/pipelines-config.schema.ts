@@ -219,6 +219,30 @@ export const PatternsConfigSchema = z
 export type PatternsConfig = z.infer<typeof PatternsConfigSchema>;
 
 // ============================================================================
+// Runtime Mode (ADR-037)
+// ============================================================================
+
+/**
+ * Which copy of the framework runtime the generated code imports from.
+ *
+ * - `package` (DEFAULT) — generated code imports the runtime from the npm
+ *   package: `@pattern-stack/codegen/subsystems` and
+ *   `@pattern-stack/codegen/runtime/*`. The consumer depends on the package;
+ *   `project init` vendors nothing.
+ * - `vendored` — generated code imports the runtime via the consumer's
+ *   `@shared/*` tsconfig alias; `project init` copies the runtime closure into
+ *   `src/shared/**` (ADR-035). Keeps a single drizzle-orm type identity in the
+ *   consumer's module graph.
+ *
+ * ADR-037: the default is `package`. **Existing vendored projects must set
+ * `runtime: vendored` explicitly** so the new default does not silently flip
+ * them to package specifiers they can't resolve.
+ */
+export const RuntimeModeSchema = z.enum(['package', 'vendored']).default('package');
+
+export type RuntimeMode = z.infer<typeof RuntimeModeSchema>;
+
+// ============================================================================
 // Validation Helpers
 // ============================================================================
 

@@ -13,9 +13,11 @@ import {
   GenerateConfigSchema,
   PatternsConfigSchema,
   PipelinesConfigSchema,
+  RuntimeModeSchema,
   type GenerateConfig,
   type PatternsConfig,
   type PipelinesConfig,
+  type RuntimeMode,
 } from '../schema/pipelines-config.schema.js';
 
 // ============================================================================
@@ -35,6 +37,12 @@ export interface ProjectConfig {
    * Absent ⇒ defaults to `['src/patterns/*.pattern.ts']`.
    */
   patterns?: PatternsConfig;
+  /**
+   * Which copy of the framework runtime generated code imports from (ADR-037).
+   * `package` (default) ⇒ `@pattern-stack/codegen/*`; `vendored` ⇒ `@shared/*`.
+   * Always populated after load (defaulted to `package` when the key is absent).
+   */
+  runtime?: RuntimeMode;
   [key: string]: unknown;
 }
 
@@ -105,6 +113,20 @@ function loadProjectConfig(cwd = process.cwd()): ProjectConfig | null {
             .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
             .join('\n')
       );
+    }
+
+    // Validate the runtime mode (always — default to `package` when absent; ADR-037).
+    const rawRuntime =
+      raw && typeof raw === 'object' && 'runtime' in raw ? raw.runtime : undefined;
+    const runtimeResult = RuntimeModeSchema.safeParse(rawRuntime);
+    if (runtimeResult.success) {
+      raw.runtime = runtimeResult.data;
+    } else {
+      console.warn(
+        `Warning: codegen.config.yaml has an invalid "runtime" value ` +
+          `(expected 'package' or 'vendored'); falling back to 'package'.`
+      );
+      raw.runtime = 'package';
     }
 
     return raw as ProjectConfig;

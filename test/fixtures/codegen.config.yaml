@@ -1,6 +1,13 @@
 # Test configuration for codegen baseline tests
 # This config specifies paths matching the test/baseline/ structure
 
+# ADR-037: the baseline compiles the generated clean-pipeline output against the
+# in-repo runtime via `@shared/*` tsconfig aliases (test/tsconfig.baseline.json),
+# so it is a VENDORED-mode test — pin the mode so the new `package` default does
+# not flip the emitted imports to `@pattern-stack/codegen/*` (which the baseline
+# tsconfig does not alias) and drift the checked-in baseline snapshot.
+runtime: vendored
+
 paths:
   backend_src: packages/api/src
   frontend_src: apps/frontend/src

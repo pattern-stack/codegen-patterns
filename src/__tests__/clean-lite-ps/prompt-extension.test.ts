@@ -9,8 +9,11 @@ import {
 } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
 
 // Minimal base locals (the real version has many more fields, but we only need
-// the shape to test the extension itself)
-const EMPTY_BASE_LOCALS = {};
+// the shape to test the extension itself). `runtimeMode: 'vendored'` keeps the
+// base-class import assertions on the `@shared/*` form the pattern library
+// authors — i.e. these tests verify the vendored emission stays byte-identical
+// (ADR-037). The package-mode rewrite has its own dedicated test below.
+const EMPTY_BASE_LOCALS = { runtimeMode: 'vendored' };
 
 // ============================================================================
 // Contact entity definition matching test/fixtures/contact-v2.yaml
@@ -513,6 +516,24 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
       expect(locals.serviceBaseImport).toBe(expected.serviceBaseImport);
       expect(locals.patternName).toBe(pascal);
     }
+  });
+
+  it('package mode rewrites library base-class imports to @pattern-stack/codegen/runtime (ADR-037)', () => {
+    const def = {
+      entity: { name: 'contact', plural: 'contacts', table: 'contacts', pattern: 'Integrated' },
+      fields: {},
+      relationships: {},
+      behaviors: [],
+    };
+    const locals = buildCleanLitePsLocals(def, { runtimeMode: 'package' });
+    // Class names are unchanged; only the import specifier flips.
+    expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
+    expect(locals.repositoryBaseImport).toBe(
+      '@pattern-stack/codegen/runtime/base-classes/integrated-entity-repository',
+    );
+    expect(locals.serviceBaseImport).toBe(
+      '@pattern-stack/codegen/runtime/base-classes/integrated-entity-service',
+    );
   });
 });
 

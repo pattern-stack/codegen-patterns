@@ -180,10 +180,18 @@ describe('emitAdapters — orchestration', () => {
     // fork #2: static detection-filter const + filterFor returning it
     expect(calendar).toContain('const MEETING_DETECTION_FILTERS: ResolvedFilter[] = [];');
     expect(calendar).toContain('return MEETING_DETECTION_FILTERS;');
-    // 2-arg construction preserved; assigned in the constructor BODY (not a field init)
+    // RFC-0003 R5: auth-only construction (no provider-level singleton client);
+    // assigned in the constructor BODY (not a field init).
     expect(calendar).toContain('this.changeSources = {');
-    expect(calendar).toContain('meeting: new GoogleMeetingIncrementalRead(this.auth, this.client),');
+    expect(calendar).toContain('meeting: new GoogleMeetingIncrementalRead(this.auth),');
     expect(calendar).toContain('readonly changeSources: Record<string, IChangeSource<unknown>>;');
+    // the subclass ctor injects auth only; no client import/injection.
+    expect(calendar).toContain('constructor(private readonly auth: IAuthStrategy) {');
+    expect(calendar).not.toContain('@Inject(GOOGLE_CLIENT)');
+    expect(calendar).not.toContain('GoogleClient');
+    // RFC-0003 R5: ctx?: ReadContext threaded through enumerate + hydrate.
+    expect(calendar).toContain('  ReadContext,');
+    expect(calendar).toContain('_ctx?: ReadContext,');
     // the three vendor methods are stubbed for the author to fill
     expect(calendar).toContain('not implemented: GoogleMeetingIncrementalRead.enumerate');
     expect(calendar).toContain('not implemented: GoogleMeetingIncrementalRead.hydrate');
@@ -406,7 +414,7 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
     const mod = readFileSync(assemblyPath, 'utf-8');
     expect(mod).toContain('export class MeetingIntegrationModule__Google {}');
     expect(mod).toContain(
-      "useFactory: (adapter: GoogleCalendarAdapter) => adapter.changeSources['meeting'],",
+      "useFactory: (adapter: GoogleCalendarAdapter) => adapter.changeSources.meeting,",
     );
     expect(mod).toContain(
       "import { MeetingRepository } from '@modules/meetings/meeting.repository';",

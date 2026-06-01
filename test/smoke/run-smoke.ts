@@ -371,7 +371,12 @@ async function main(): Promise<number> {
 
 		// 3. Run `codegen project init --yes --with-tsconfig`
 		//    tsconfig.json already exists (bun init), so init will merge aliases.
-		run(`bun ${CLI_PATH} project init --yes --with-tsconfig`, tmpDir);
+		//    `--runtime vendored` (ADR-037): this smoke is the VENDORED consumer
+		//    flow — it vendors the runtime into `src/shared/**`, installs auth /
+		//    connections (which vendor more), and compiles against `@shared/*`. The
+		//    new `package` default would skip vendoring and break the base-class
+		//    imports, so the mode is pinned to match what this flow exercises.
+		run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime vendored`, tmpDir);
 
 		// 4. Copy smoke fixtures into entities/.
 		const fixtureFiles = fs.readdirSync(FIXTURES_DIR).filter((f) => f.endsWith('.yaml'));

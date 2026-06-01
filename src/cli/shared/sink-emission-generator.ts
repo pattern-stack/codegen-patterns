@@ -43,6 +43,8 @@
  * by explicit field enumeration — never a spread/cast (CLAUDE.md: no casts).
  */
 
+import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+
 const SCAFFOLD_SENTINEL = "// <CODEGEN-SCAFFOLD-V1>";
 
 /** The camelCase name of the user-scoping field — sourced from the sink's
@@ -96,6 +98,9 @@ export interface SinkEmitInput {
   /** Module specifier the generated repo + projection + write types import
    *  from (e.g. `../../../crm/contacts/contact.repository`). Caller-computed. */
   repoImportSpecifier: string;
+  /** Runtime mode (ADR-037) — selects the `IIntegrationSink` import specifier.
+   *  Defaults to `package` when omitted. */
+  mode?: RuntimeMode;
 }
 
 // ============================================================================
@@ -196,7 +201,7 @@ export function generateDefaultSink(input: SinkEmitInput): string {
 // for entities with external FK join-keys, fill the marked TODO(s) below.
 // Source: definitions entity '${input.entityName}' (surface: ${input.surface}).
 import { Injectable } from '@nestjs/common';
-import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';
+import type { IIntegrationSink } from '${subsystemsImport(input.mode ?? "package", "integration")}';
 import {
   ${n.repoClass},
   type ${n.projectionType},

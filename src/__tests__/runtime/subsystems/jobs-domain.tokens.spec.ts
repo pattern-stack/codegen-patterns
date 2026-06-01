@@ -24,9 +24,17 @@ describe('jobs-domain.tokens', () => {
     expect(JOB_RUN_SERVICE).not.toBe(JOB_STEP_SERVICE);
   });
 
-  it('symbols carry their name as description (aids debugging)', () => {
-    expect(JOB_ORCHESTRATOR.description).toBe('JOB_ORCHESTRATOR');
-    expect(JOB_RUN_SERVICE.description).toBe('JOB_RUN_SERVICE');
-    expect(JOB_STEP_SERVICE.description).toBe('JOB_STEP_SERVICE');
+  it('symbols carry their namespaced key as description (ADR-037)', () => {
+    expect(JOB_ORCHESTRATOR.description).toBe('@pattern-stack/codegen.jobs.orchestrator');
+    expect(JOB_RUN_SERVICE.description).toBe('@pattern-stack/codegen.jobs.run-service');
+    expect(JOB_STEP_SERVICE.description).toBe('@pattern-stack/codegen.jobs.step-service');
+  });
+
+  it('are global-registry symbols that match by value across copies (ADR-037)', () => {
+    // The whole point of Symbol.for: re-deriving the key yields the SAME symbol,
+    // so a package copy and a vendored copy of the runtime resolve identically.
+    expect(JOB_ORCHESTRATOR).toBe(Symbol.for('@pattern-stack/codegen.jobs.orchestrator'));
+    expect(JOB_RUN_SERVICE).toBe(Symbol.for('@pattern-stack/codegen.jobs.run-service'));
+    expect(JOB_STEP_SERVICE).toBe(Symbol.for('@pattern-stack/codegen.jobs.step-service'));
   });
 });
