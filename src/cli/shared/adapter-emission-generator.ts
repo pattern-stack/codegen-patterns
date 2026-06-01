@@ -160,6 +160,19 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
     l2Ports: [],
     readPrimitive: true,
   },
+  // messaging (swe-brain ADR-0008) — interaction surface like transcript: the
+  // adapter contributes per-entity change sources for `channel` + `message`
+  // (`conversation` is domain-derived by segmentation, not vendor-read). The
+  // capability descriptor adds an optional `canWrite` flag for the bot-user write
+  // path, which ships dark in v1; the scaffold still only constructs `entities`.
+  messaging: {
+    packageName: "@pattern-stack/codegen-messaging",
+    portType: "MessagingPort",
+    capabilitiesType: "MessagingCapabilities",
+    noCapsConst: "NO_MESSAGING_CAPABILITIES",
+    l2Ports: [],
+    readPrimitive: true,
+  },
 };
 
 // ============================================================================
