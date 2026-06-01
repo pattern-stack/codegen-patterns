@@ -1,6 +1,6 @@
 # RFC-0003 — `IncrementalRead`: enumerate/hydrate read primitive + the scaffold body it emits (Track D round-3)
 
-**Status:** Accepted — Gate 1.5 PASS_WITH_NOTES (rev 2); **R1–R4 landed** (manifest dropped on architectural grounds; optional runtime-telemetry follow-up noted in §Sequencing R4)
+**Status:** Accepted — Gate 1.5 PASS_WITH_NOTES (rev 2); **R1–R4 landed** (manifest dropped on architectural grounds; optional runtime-telemetry follow-up noted in §Sequencing R4); **R5 (per-run `ReadContext`) in progress** — runtime threaded; emitter + snapshot pending (see §Amendment R5)
 **Date:** 2026-05-31
 **Owner:** Doug
 **Related:** RFC-0001 (provider/adapter emission — *this RFC reshapes the read-side `changeSources` body it emits*), RFC-0002 (module assembly emission — **disjoint surface; composes, does not collide — see §6**), ADR-033/033.1 (`detection:` config + `PollChangeSource`), Track C #329 (surface packages), swe-brain ADR-0002/ADR-0003 (the capability-primitive model this promotes), `runtime/subsystems/integration/` (the `IChangeSource` / `PollChangeSource` / orchestrator this builds on).
@@ -290,3 +290,24 @@ _All rev-1 notes also addressed substantively:_ `SourcedRecord<T>` is now formal
 - [Status line] Header still reads "Draft — Gate 1.5 critique addressed (rev 2); pending re-critique." On merge, flip to "Accepted (Gate 1.5: PASS_WITH_NOTES)" so the doc state matches the verdict.
 
 **Reviewed by:** reviewer agent · 2026-05-31T00:00:00Z (rev 2)
+
+---
+
+## Amendment — 2026-05-31 — R5: per-run `ReadContext` (the credential/raw-landing seam)
+
+**Surfaced by swe-brain (dogfood #2).** R1–R4 shipped the read primitive and swe-brain became the first app to drive the *generated* read path against a **multi-account** provider (Google Workspace: tokens are per-connection, not per-provider). Two things the pre-0.13 hand-rolled L7 fetch did have **no home** in the new model:
+
+1. **Per-connection auth.** The old fetch resolved credentials per run from `subscription.externalRef` (the connection id) — `surfaceFactory.forIntegration(connectionId)`. In the R1–R4 base the subscription reaches only `filterFor(subscription)`; it is **not** forwarded to `enumerate`/`hydrate`. A singleton change source therefore cannot hold connection-scoped credentials, and `hydrate(ids)` — where the vendor call happens — had no way to know *which* connection it was fetching for. (dealbrain, the first dogfood, never hit this: it builds its adapter stack **per connection in a harness**, sidestepping the generated singleton path. swe-brain is the first to exercise the generated path with per-connection auth.)
+2. **Raw landing (ADR-0001).** The same old fetch landed the raw vendor payload (`rawObjects.land(...)`). `listChanges` adapts `read()`→`Change<T>` and drops `raw`, so persisted raw landing also lost its seam.
+
+**The gap is narrow.** The context already arrives at `listChanges(subscription, cursor)`; the base simply failed to forward it past `filterFor`. So the fix is surgical, not a rewrite.
+
+**Fix (runtime — landed on this branch).** A `ReadContext` (carrying the run `subscription`), threaded **optional** through `read(req, ctx)` → `enumerate(…, ctx)` + `hydrate(ids, ctx)` and `get(id, ctx)`; `listChanges` builds `{ subscription }` and passes it down. Optional throughout = the core contract (a direct `read()`/`get()` "fill on click" may omit it; a per-connection adapter reads `ctx?.subscription?.externalRef` and asserts presence; a provider-level-auth adapter ignores it). Exported `ReadContext` from the integration + top subsystems barrels. **No back-compat shim** (per CLAUDE.md): existing 3-param `enumerate` / 1-arg `hydrate` overrides still satisfy the widened abstract signatures (TS allows fewer-param overrides), so this is additive, not breaking.
+
+**Raw landing becomes author-side, no `Change<T>` change.** With `ctx.subscription` available in `hydrate` (where the raw payloads are fetched, keyed by `subscription.id`), an adapter that injects a raw-objects repo lands raw there — better than before (only kept refs hydrate, so only kept records' raw lands). `Change<T>` stays clean.
+
+**Remaining build step (not yet done — tracked):**
+- **Emitter** — `generateAdapterScaffold` (`src/cli/shared/adapter-emission-generator.ts`) should emit the `ctx?: ReadContext` parameter on the scaffold's `enumerate`/`hydrate` so authors see the seam, plus the import. Then **rebaseline the template-emission snapshot** (§8 — not `just test-baseline`).
+- **Falsifier (optional)** — extend `incremental-read.spec.ts` with a `ReadContext`-passthrough assertion (a `ctx` handed to `read`/`listChanges` reaches `enumerate`/`hydrate` unchanged).
+
+**Open (Q5).** `ReadContext` currently carries only `subscription` (all that reaches `listChanges`). Threading `userId`/`provider`/`tenantId` would require widening `IChangeSource.listChanges` + the orchestrator's call — deferred until an adapter needs more than `subscription.externalRef`.

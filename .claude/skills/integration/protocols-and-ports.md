@@ -115,6 +115,16 @@ withheld and only the final record carries the token, so the orchestrator's pers
 never persists an unresumable mid-walk value (resumes all-or-nothing; bound the backfill blast
 radius with `ReadRequest.pageSize`).
 
+**Per-connection auth + raw landing — `ReadContext` (R5).** `enumerate`/`hydrate`/`get`/`read`
+take an optional `ctx?: ReadContext` carrying the run's `subscription`; `listChanges` builds
+`{ subscription }` and threads it down. A **multi-account** provider (per-connection tokens, not
+one provider-level token) resolves credentials in the fetch from `ctx?.subscription?.externalRef`
+— assert its presence (`if (!ctx?.subscription) throw …`); a singleton change source can't hold
+connection-scoped auth any other way. `ctx` is also the natural place to **land raw** (ADR-0001):
+`hydrate` has both the raw payloads and `ctx.subscription.id`, so inject a raw-objects repo and
+land there (only kept refs hydrate ⇒ only kept records' raw lands). Provider-level-auth adapters
+ignore `ctx`. (Optional everywhere = the core contract; a direct `get(id)` "fill on click" may omit it.)
+
 **Codegen emits the subclass.** For interaction surfaces, `codegen entity new --all` emits a
 per-entity `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclass (emit-once,
 author-owned) registered in the adapter's `changeSources` — you fill `enumerate`/`hydrate`/
