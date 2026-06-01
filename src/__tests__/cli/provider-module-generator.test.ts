@@ -53,26 +53,32 @@ describe('generateProviderModule — rendered shape', () => {
 		expect(out).toContain('DO NOT EDIT');
 	});
 
-	it('imports the declared strategy + client by their export names and paths', () => {
+	it('is client-less + registry-backed for an all-read-primitive provider (RFC-0003 R5)', () => {
+		// google serves only read-primitive surfaces (calendar/mail/transcript), so
+		// it uses per-connection auth: no singleton strategy/client class is
+		// instantiated — the strategy is resolved from STRATEGY_REGISTRY.
 		expect(out).toContain(
-			"import { GoogleOAuthStrategy } from '@app/integrations/providers/google/google-oauth.strategy';",
+			"import {\n  type ProviderStrategyRegistry,\n  STRATEGY_REGISTRY,\n} from '@pattern-stack/codegen/subsystems';",
 		);
-		expect(out).toContain(
-			"import { GoogleClient } from '@app/integrations/providers/google/google.client';",
-		);
+		// neither the strategy class nor the client class is imported/instantiated.
+		expect(out).not.toContain('GoogleOAuthStrategy');
+		expect(out).not.toContain('GoogleClient');
 	});
 
-	it('mints provider-specific DI tokens and a named module class', () => {
+	it('mints only the auth-strategy DI token + a named module class (no client token)', () => {
 		expect(out).toContain("export const GOOGLE_AUTH_STRATEGY = Symbol('GOOGLE_AUTH_STRATEGY');");
-		expect(out).toContain("export const GOOGLE_CLIENT = Symbol('GOOGLE_CLIENT');");
+		expect(out).toContain("const PROVIDER_SLUG = 'google';");
 		expect(out).toContain('export class GoogleProviderModule {}');
+		// the singleton client token is dropped entirely.
+		expect(out).not.toContain('GOOGLE_CLIENT');
 	});
 
-	it('provides + exports both the concrete classes and the tokens', () => {
-		expect(out).toContain('{ provide: GOOGLE_AUTH_STRATEGY, useExisting: GoogleOAuthStrategy }');
-		expect(out).toContain('{ provide: GOOGLE_CLIENT, useExisting: GoogleClient }');
-		// exports block lists the tokens
-		expect(out).toMatch(/exports:\s*\[[^\]]*GOOGLE_AUTH_STRATEGY[^\]]*GOOGLE_CLIENT[^\]]*\]/s);
+	it('resolves the strategy from STRATEGY_REGISTRY via useFactory + exports only the token', () => {
+		expect(out).toContain('provide: GOOGLE_AUTH_STRATEGY,');
+		expect(out).toContain('useFactory: (registry: ProviderStrategyRegistry) =>');
+		expect(out).toContain('registry.get(PROVIDER_SLUG)');
+		expect(out).toContain('inject: [STRATEGY_REGISTRY],');
+		expect(out).toContain('exports: [GOOGLE_AUTH_STRATEGY],');
 	});
 
 	it('documents the surfaces the provider serves', () => {
@@ -89,6 +95,17 @@ describe('generateProviderModule — rendered shape', () => {
 		const rendered = generateProviderModule({ ...hub, slug: 'hubspot-crm' }, 'x.yaml');
 		expect(rendered).toContain('HUBSPOT_CRM_AUTH_STRATEGY');
 		expect(rendered).toContain('export class HubspotCrmProviderModule {}');
+	});
+
+	it('keeps the client-ful, bare-class shape for a crm (non-read-primitive) provider', () => {
+		// hubspot serves `crm` (provider-level single-account auth) — it MUST retain
+		// the singleton client token + the direct strategy/client class providers.
+		const rendered = generateProviderModule(loadFixture('hubspot.yaml'), 'x.yaml');
+		expect(rendered).toContain("export const HUBSPOT_CLIENT = Symbol('HUBSPOT_CLIENT');");
+		expect(rendered).toContain('{ provide: HUBSPOT_AUTH_STRATEGY, useExisting:');
+		expect(rendered).toContain('{ provide: HUBSPOT_CLIENT, useExisting:');
+		// crm is NOT registry-backed.
+		expect(rendered).not.toContain('STRATEGY_REGISTRY');
 	});
 });
 

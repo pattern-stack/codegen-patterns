@@ -46,6 +46,7 @@ import {
   validateProviders,
   type LoadedProvider,
 } from "../../parser/validate-providers";
+import { isClientlessProvider } from "./adapter-emission-generator";
 
 // ============================================================================
 // Naming
@@ -112,6 +113,65 @@ export function generateProviderModule(
   const surfaces = def.surfaces.join(", ");
   const title = def.display_name ? `${def.display_name} (\`${slug}\`)` : `\`${slug}\``;
 
+  // RFC-0003 R5: a provider whose surfaces are ALL read-primitive (calendar/
+  // mail/transcript/messaging) uses per-connection auth — its adapters build a
+  // per-connection client inside enumerate/hydrate from
+  // `ctx.subscription.externalRef`, so there is no provider-level singleton
+  // client. For these, emit a CLIENT-LESS, registry-backed module: the strategy
+  // is constructed eagerly by the consumer's @Global STRATEGY_REGISTRY (with its
+  // real connectionReader/encryption deps) and merely LOOKED UP here. Providers
+  // with any non-read-primitive surface (e.g. crm, provider-level single-account
+  // auth) keep the legacy client-ful, bare-class shape.
+  if (isClientlessProvider(def.surfaces)) {
+    return `${providerModuleBanner(sourceYaml)}
+/**
+ * Provider module for ${title}.
+ *
+ * Surfaces: ${surfaces}.
+ *
+ * Per-connection (read-primitive) provider — exposes \`${strategyToken}\`, the
+ * per-connection credential resolver the interaction adapters use (RFC-0003 R5:
+ * \`auth.resolve(ctx.subscription.externalRef)\`). There is NO provider-level
+ * singleton client; adapters build a per-connection client inside their
+ * \`enumerate\`/\`hydrate\`. \`${strategyToken}\` resolves the already-built
+ * \`${slug}\` strategy from the @Global \`STRATEGY_REGISTRY\` (wired by the
+ * consumer's AuthBindings module) — the strategy may need DI deps a bare class
+ * can't satisfy, so it is registry-resolved, not provided directly.
+ */
+import { Module } from '@nestjs/common';
+import {
+  type ProviderStrategyRegistry,
+  STRATEGY_REGISTRY,
+} from '@pattern-stack/codegen/subsystems';
+
+/** DI token for the \`${slug}\` provider's auth strategy (resolved from STRATEGY_REGISTRY). */
+export const ${strategyToken} = Symbol('${strategyToken}');
+
+const PROVIDER_SLUG = '${slug}';
+
+@Module({
+  providers: [
+    {
+      provide: ${strategyToken},
+      useFactory: (registry: ProviderStrategyRegistry) => {
+        const strategy = registry.get(PROVIDER_SLUG);
+        if (!strategy) {
+          throw new Error(
+            \`${Pascal}ProviderModule: no '\${PROVIDER_SLUG}' strategy registered in STRATEGY_REGISTRY (wire it in your consumer AuthBindings module)\`,
+          );
+        }
+        return strategy;
+      },
+      inject: [STRATEGY_REGISTRY],
+    },
+  ],
+  exports: [${strategyToken}],
+})
+export class ${Pascal}ProviderModule {}
+`;
+  }
+
+  // Client-ful (legacy) shape — provider-level single-account auth (e.g. crm).
   // Strategy and client may be exported from the same module path; emit one
   // import statement per ref regardless — TypeScript collapses duplicates and
   // keeping them separate matches the 1:1 YAML→import reading.

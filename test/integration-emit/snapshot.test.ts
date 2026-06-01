@@ -78,10 +78,52 @@ describe('integration emission snapshot — integration-patterns fixture', () =>
       );
       // fork #2: static detection-filter const returned by filterFor (empty — fixtures carry no detection)
       expect(tree).toContain(`const ${entity.toUpperCase()}_DETECTION_FILTERS: ResolvedFilter[] = [];`);
-      // registered in changeSources via the preserved 2-arg construction
-      expect(tree).toContain(`${entity}: new ${Class}(this.auth, this.client),`);
+      // registered in changeSources via the auth-only construction (RFC-0003 R5:
+      // no provider-level singleton client — adapters build per-connection
+      // clients inside enumerate/hydrate from ctx.subscription.externalRef)
+      expect(tree).toContain(`${entity}: new ${Class}(this.auth),`);
     }
     // CRM (non-read-primitive) keeps the empty author-filled seam — no read primitive.
     expect(tree).not.toContain('SalesforceAccountIncrementalRead');
+  });
+
+  test('RFC-0003 R5: read scaffold threads ctx?: ReadContext through enumerate/hydrate', () => {
+    const { integrationsRoot } = emitFixture();
+    const tree = serializeTree(integrationsRoot);
+    // ReadContext is imported into the read-primitive scaffold's subsystem types.
+    expect(tree).toContain('ReadContext,');
+    // enumerate gains ctx as the 4th (last) optional param.
+    expect(tree).toContain('_ctx?: ReadContext,\n  ): AsyncIterable<Ref[]>');
+    // hydrate gains ctx as the 2nd (last) optional param (single-line, biome-clean
+    // under lineWidth: 100).
+    expect(tree).toContain('protected async hydrate(_ids: string[], _ctx?: ReadContext): Promise<Map<string, unknown>>');
+    // The auth-only subclass ctor (no client) is emitted.
+    expect(tree).toContain('constructor(private readonly auth: IAuthStrategy) {');
+  });
+
+  test('RFC-0003 R5: read-primitive provider module is registry-backed + client-less', () => {
+    const { integrationsRoot } = emitFixture();
+    const tree = serializeTree(integrationsRoot);
+    // google serves only read-primitive surfaces → client-less, registry-backed.
+    expect(tree).toContain('export const GOOGLE_AUTH_STRATEGY = Symbol(\'GOOGLE_AUTH_STRATEGY\');');
+    expect(tree).toContain("const PROVIDER_SLUG = 'google';");
+    expect(tree).toContain('useFactory: (registry: ProviderStrategyRegistry) =>');
+    expect(tree).toContain('inject: [STRATEGY_REGISTRY],');
+    // The singleton client token is dropped entirely from the google provider module.
+    expect(tree).not.toContain('GOOGLE_CLIENT');
+    // google adapters inject auth only — no client import/injection.
+    expect(tree).not.toContain('@Inject(GOOGLE_CLIENT)');
+  });
+
+  test('CRM (salesforce) keeps the client-ful, bare-class provider-module shape — UNCHANGED by R5', () => {
+    const { integrationsRoot } = emitFixture();
+    const tree = serializeTree(integrationsRoot);
+    // salesforce serves crm (not read-primitive) → singleton client retained.
+    expect(tree).toContain('export const SALESFORCE_CLIENT = Symbol(\'SALESFORCE_CLIENT\');');
+    expect(tree).toContain('{ provide: SALESFORCE_CLIENT, useExisting: SalesforceClient },');
+    // The crm adapter still injects the client.
+    expect(tree).toContain('@Inject(SALESFORCE_CLIENT) private readonly client: SalesforceClient,');
+    // The crm provider module is NOT registry-backed.
+    expect(tree).not.toContain('SALESFORCE_AUTH_STRATEGY = Symbol(\'SALESFORCE_AUTH_STRATEGY\');\n\nconst PROVIDER_SLUG');
   });
 });

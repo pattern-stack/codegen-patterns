@@ -180,7 +180,7 @@ import { ${token} } from '${tokensImport}';
  * inbound-integration assembly (RFC-0002 §2, Option A).
  *
  * Binds this module's INTEGRATION_CHANGE_SOURCE from the adapter's
- * \`changeSources['${input.entityName}']\` and INTEGRATION_SINK from
+ * \`changeSources.${input.entityName}\` and INTEGRATION_SINK from
  * ${sinkClass}, provides a local ExecuteIntegrationUseCase, and aliases+exports
  * it under ${token} (the bare class token is ambiguous at app root — every
  * assembly provides it). The substrate (cursor store, run recorder, differ,
@@ -192,7 +192,7 @@ import { ${token} } from '${tokensImport}';
   providers: [
     {
       provide: INTEGRATION_CHANGE_SOURCE,
-      useFactory: (adapter: ${adapterClass}) => adapter.changeSources['${input.entityName}'],
+      useFactory: (adapter: ${adapterClass}) => adapter.changeSources.${input.entityName},
       inject: [${adapterClass}],
     },
     {

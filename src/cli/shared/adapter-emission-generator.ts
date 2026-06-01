@@ -175,6 +175,25 @@ export const SURFACE_REGISTRY: Record<string, SurfaceSpec> = {
   },
 };
 
+/**
+ * A provider is "client-less" (per-connection auth, RFC-0003 R5) when EVERY
+ * surface it serves is a read-primitive interaction surface — calendar/mail/
+ * transcript/messaging. Such providers build a per-connection client inside
+ * `enumerate`/`hydrate` from `ctx.subscription.externalRef`, so the provider
+ * module drops the singleton `<SLUG>_CLIENT` and registry-backs the strategy.
+ *
+ * A provider with ANY non-read-primitive surface (e.g. `crm`, single-account
+ * provider-level auth) keeps the client-ful shape: only drop the client when no
+ * surface needs a singleton client. A surface unknown to `SURFACE_REGISTRY` is
+ * treated as needing a client (conservative — keeps the legacy shape).
+ */
+export function isClientlessProvider(surfaces: readonly string[]): boolean {
+  return (
+    surfaces.length > 0 &&
+    surfaces.every((s) => SURFACE_REGISTRY[s]?.readPrimitive === true)
+  );
+}
+
 // ============================================================================
 // Banner + sentinel
 // ============================================================================
@@ -297,7 +316,10 @@ interface ReadPrimitiveEmission {
  * (fork #1 typing), a static `detection.filters` const returned by `filterFor`
  * (fork #2 threading), and `cursorDivisible = false` when the entity's cursor
  * strategy is atomic (R2 wiring). The author fills `enumerate`/`hydrate`/
- * `toCanonical`; the 2-arg `(auth, client)` construction is preserved.
+ * `toCanonical`. The subclass ctor injects auth only (RFC-0003 R5): there is no
+ * provider-level singleton client — per-connection adapters build a client
+ * inside `enumerate`/`hydrate` from `ctx.subscription.externalRef` via
+ * `auth.resolve(...)`.
  */
 function buildReadPrimitiveEmission(
   providerSlug: string,
@@ -305,7 +327,6 @@ function buildReadPrimitiveEmission(
   surface: string,
   entities: string[],
   entityDetection: Map<string, DetectionConfig> | undefined,
-  clientExportName: string,
 ): ReadPrimitiveEmission {
   const canonicalTypes: string[] = [];
   const blocks: string[] = [];
@@ -343,24 +364,32 @@ export class ${className} extends IncrementalReadBase<${canonical}, ResolvedFilt
   // (e.g. Gmail \`q=\`); leave \`false\` to filter post-hydrate via \`matchesRecord\`.
   protected override readonly filterPushdown = false;${cursorOverride}
 
-  constructor(
-    private readonly auth: IAuthStrategy,
-    private readonly client: ${clientExportName},
-  ) {
+  constructor(private readonly auth: IAuthStrategy) {
     super();
   }
 
-  /** TODO: walk the vendor list endpoint → pages of \`Ref\` (id + cursor + meta). */
+  /**
+   * TODO: walk the vendor list endpoint → pages of \`Ref\` (id + cursor + meta).
+   * Per-connection (multi-account) adapters resolve credentials here from the
+   * threaded subscription, e.g.
+   * \`const client = <vendorClientFactory>({ accessToken: async () => (await this.auth.resolve(_ctx!.subscription!.externalRef)).accessToken });\`
+   * — there is no provider-level singleton client. Provider-level-auth adapters
+   * ignore \`_ctx\`.
+   */
   protected async *enumerate(
     _mode: ReadMode,
     _filter?: ResolvedFilter[],
     _pageSize?: number,
+    _ctx?: ReadContext,
   ): AsyncIterable<Ref[]> {
     throw new Error('not implemented: ${className}.enumerate');
   }
 
-  /** TODO: batched fetch-by-id → \`Map<id, raw>\` (\`mapConcurrent\`, or a vendor /batch). */
-  protected async hydrate(_ids: string[]): Promise<Map<string, unknown>> {
+  /**
+   * TODO: batched fetch-by-id → \`Map<id, raw>\` (\`mapConcurrent\`, or a vendor /batch).
+   * Use \`_ctx?.subscription?.id\` to key raw-landing rows per connection.
+   */
+  protected async hydrate(_ids: string[], _ctx?: ReadContext): Promise<Map<string, unknown>> {
     throw new Error('not implemented: ${className}.hydrate');
   }
 
@@ -375,7 +404,7 @@ export class ${className} extends IncrementalReadBase<${canonical}, ResolvedFilt
     return ${constName};
   }
 }`);
-    entries.push(`      ${entity}: new ${className}(this.auth, this.client),`);
+    entries.push(`      ${entity}: new ${className}(this.auth),`);
   }
 
   return { canonicalTypes, preamble: blocks.join("\n\n"), changeSourceEntries: entries };
@@ -415,25 +444,27 @@ export function generateAdapterScaffold(
         surface,
         entities,
         entityDetection,
-        client.exportName,
       )
     : null;
 
   // Surface-package type imports: the port, each L2 reader type (none for
   // incremental-read interaction surfaces), the capabilities type, then (for
-  // read-primitive surfaces) each entity's canonical record type.
+  // read-primitive surfaces) each entity's canonical record type. Sorted to
+  // match biome's organize-imports order so the emitted file is canonical.
   const surfaceTypeImports = [
     spec.portType,
     ...spec.l2Ports.map((p) => p.type),
     spec.capabilitiesType,
     ...(rp ? rp.canonicalTypes : []),
   ]
+    .sort()
     .map((t) => `  ${t},`)
     .join("\n");
 
   // Subsystems imports: IncrementalReadBase is a value import (read-primitive
-  // only); the rest are types. ReadMode/Ref/ResolvedFilter/
+  // only); the rest are types. ReadContext/ReadMode/Ref/ResolvedFilter/
   // IntegrationSubscriptionView are only needed when subclasses are emitted.
+  // The list is kept alphabetical to match biome's organize-imports order.
   const subsystemValueImport = rp
     ? `import { IncrementalReadBase } from '@pattern-stack/codegen/subsystems';\n`
     : "";
@@ -441,7 +472,13 @@ export function generateAdapterScaffold(
     "IAuthStrategy",
     "IChangeSource",
     ...(rp
-      ? ["IntegrationSubscriptionView", "ReadMode", "Ref", "ResolvedFilter"]
+      ? [
+          "IntegrationSubscriptionView",
+          "ReadContext",
+          "ReadMode",
+          "Ref",
+          "ResolvedFilter",
+        ]
       : []),
   ]
     .map((t) => `  ${t},`)
@@ -494,6 +531,27 @@ export function generateAdapterScaffold(
   // ports — interaction surfaces omit it entirely.
   const l2Section = l2Members ? `\n${l2Members}\n` : "";
 
+  // RFC-0003 R5: read-primitive (per-connection) adapters inject AUTH ONLY —
+  // there is no provider-level singleton client (the provider module no longer
+  // emits `<SLUG>_CLIENT`). The per-connection client is built INSIDE
+  // `enumerate`/`hydrate` from `ctx.subscription.externalRef`. CRM (and any
+  // non-read-primitive surface) keeps the client injection. Both the client type
+  // import and the `<SLUG>_CLIENT` token import are therefore dropped under `rp`.
+  const clientTypeImport = rp
+    ? ""
+    : `import type { ${client.exportName} } from '${client.path}';\n`;
+  const providerTokenImport = rp
+    ? `import { ${n.strategyToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';`
+    : `import { ${n.strategyToken}, ${n.clientToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';`;
+  const ctorClientParam = rp
+    ? ""
+    : `\n    @Inject(${n.clientToken}) private readonly client: ${client.exportName},`;
+  const ctorOpen = rp
+    ? `  constructor(@Inject(${n.strategyToken}) readonly auth: IAuthStrategy) {${changeSourcesAssign}}`
+    : `  constructor(
+    @Inject(${n.strategyToken}) readonly auth: IAuthStrategy,${ctorClientParam}
+  ) {${changeSourcesAssign}}`;
+
   return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running
 // codegen detects the sentinel above and SKIPS this file — your edits are safe.
@@ -506,8 +564,7 @@ import { ${spec.noCapsConst} } from '${spec.packageName}';
 ${subsystemValueImport}import type {
 ${subsystemTypeImports}
 } from '@pattern-stack/codegen/subsystems';
-import type { ${client.exportName} } from '${client.path}';
-import { ${n.strategyToken}, ${n.clientToken} } from '../../../providers/${def.slug}/${def.slug}.provider.module';
+${clientTypeImport}${providerTokenImport}
 ${preambleSection}
 @Injectable()
 export class ${n.adapterClass} implements ${spec.portType} {
@@ -516,10 +573,7 @@ export class ${n.adapterClass} implements ${spec.portType} {
 ${capabilityBody}
   };
 
-  constructor(
-    @Inject(${n.strategyToken}) readonly auth: IAuthStrategy,
-    @Inject(${n.clientToken}) private readonly client: ${client.exportName},
-  ) {${changeSourcesAssign}}
+${ctorOpen}
 ${l2Section}
 ${changeSourcesDecl}
 

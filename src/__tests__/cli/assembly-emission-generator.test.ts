@@ -74,9 +74,9 @@ describe("generateAssemblyModule — Option A assembly", () => {
     expect(out).not.toContain("InteractionModule");
   });
 
-  test("Option A change-source factory binds adapter.changeSources['<entity>']", () => {
+  test("Option A change-source factory binds adapter.changeSources.<entity> (biome-clean literal access)", () => {
     expect(out).toContain(
-      "useFactory: (adapter: GoogleCalendarAdapter) => adapter.changeSources['meeting'],",
+      "useFactory: (adapter: GoogleCalendarAdapter) => adapter.changeSources.meeting,",
     );
     expect(out).toContain("inject: [GoogleCalendarAdapter],");
   });
