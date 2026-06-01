@@ -24,28 +24,35 @@ describe('integration emission snapshot — integration-patterns fixture', () =>
   });
 
   // ADR-037: the emitter now depends on `runtime` mode. The default `package`
-  // mode (above) emits `@pattern-stack/codegen/...`; `vendored` mode emits
-  // `@shared/...`. Both are snapshotted so neither shape can regress silently.
-  test('emitted src/integrations/** tree matches snapshot (vendored mode)', () => {
-    const { integrationsRoot } = emitFixture('vendored');
-    expect(serializeTree(integrationsRoot)).toMatchSnapshot();
-  });
-
-  test('package mode emits @pattern-stack/codegen/subsystems; vendored emits @shared/subsystems (ADR-037)', () => {
+  // mode (above) keeps the full golden snapshot. `vendored` mode is NOT
+  // re-snapshotted: both modes run identical generator code, and the ONLY thing
+  // that varies between them is `runtimeImport()` — the subsystem/runtime import
+  // specifier. So package-golden (above) + this "the imports flipped to the
+  // vendored aliases, and no package runtime specifier leaked" assertion fully
+  // covers the vendored shape, without duplicating ~1700 near-identical lines.
+  // (The surface-package specifiers like `@pattern-stack/codegen-calendar` are
+  // mode-invariant canonical imports — they appear in BOTH trees and are NOT the
+  // runtime imports under test here.)
+  test('vendored mode flips subsystem/runtime imports to @shared aliases — no package runtime specifier leaks (ADR-037)', () => {
     const pkg = serializeTree(emitFixture('package').integrationsRoot);
     const vend = serializeTree(emitFixture('vendored').integrationsRoot);
 
-    // Package mode: the single published barrel; never the vendored alias.
+    // Sanity: package mode (the golden) carries the package barrel, never the alias.
     expect(pkg).toContain("from '@pattern-stack/codegen/subsystems'");
     expect(pkg).not.toContain('@shared/subsystems');
 
-    // Vendored mode: the per-subsystem vendored barrels; never the package.
+    // Vendored mode: the per-subsystem vendored barrels are present on the
+    // representative emitted files — the registry-backed google provider module
+    // (auth) and the adapter/assembly modules (integration)...
     expect(vend).toContain("from '@shared/subsystems/auth'");
     expect(vend).toContain("from '@shared/subsystems/integration'");
-    expect(vend).not.toContain('@pattern-stack/codegen/subsystems');
+    // ...and the package runtime barrel is ABSENT everywhere in the vendored tree.
+    expect(vend).not.toContain("from '@pattern-stack/codegen/subsystems'");
+    expect(vend).not.toContain('@pattern-stack/codegen/runtime/');
 
-    // The R5 load-bearing value import (STRATEGY_REGISTRY) honors the mode in
-    // the registry-backed google provider module.
+    // The R5 load-bearing VALUE import (STRATEGY_REGISTRY) honors the mode in the
+    // registry-backed google provider module — the one emitted file where a
+    // subsystem import is a runtime value, not just a type.
     expect(pkg).toContain("STRATEGY_REGISTRY,\n} from '@pattern-stack/codegen/subsystems'");
     expect(vend).toContain("STRATEGY_REGISTRY,\n} from '@shared/subsystems/auth'");
   });
