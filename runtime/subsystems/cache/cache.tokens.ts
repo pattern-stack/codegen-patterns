@@ -8,15 +8,15 @@
  *
  * Services may also inject CACHE for reads (get, has) per ADR-003.
  *
- * ADR-037: namespaced `Symbol.for(...)` key so the token matches by value across
- * import boundaries (package vs vendored runtime copy).
- * TODO(token-version): revisit embedding a contract version once codegen/surface
- * versioning is settled.
+ * ADR-037: namespaced `Symbol.for(...)` key (via `tokenKey()`) so the token matches
+ * by value across import boundaries (package vs vendored runtime copy).
  */
-export const CACHE = Symbol.for('@pattern-stack/codegen.cache.cache');
+import { tokenKey } from '../token-key';
+
+export const CACHE = Symbol.for(tokenKey('cache', 'cache'));
 
 /**
  * Injection token for the default TTL (in seconds) passed from CacheModule.forRoot().
  * Optional — omit for no-expiry behavior.
  */
-export const CACHE_DEFAULT_TTL = Symbol.for('@pattern-stack/codegen.cache.default-ttl');
+export const CACHE_DEFAULT_TTL = Symbol.for(tokenKey('cache', 'default-ttl'));

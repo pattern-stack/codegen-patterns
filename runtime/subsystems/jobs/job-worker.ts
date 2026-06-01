@@ -17,6 +17,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } f
 import { ModuleRef } from '@nestjs/core';
 import { and, asc, desc, eq, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
+import { tokenKey } from '../token-key';
 import { DRIZZLE } from '../../constants/tokens';
 import { jobRuns, type JobRunRow } from './job-orchestration.schema';
 import type { IJobOrchestrator, JobRun } from './job-orchestrator.protocol';
@@ -60,10 +61,9 @@ export interface JobWorkerOptions {
   shutdownTimeoutMs?: number;
 }
 
-// ADR-037: namespaced `Symbol.for(...)` — matches by value across runtime copies.
-// TODO(token-version): revisit embedding a contract version once codegen/surface
-// versioning is settled.
-export const JOB_WORKER_OPTIONS = Symbol.for('@pattern-stack/codegen.jobs.worker-options');
+// ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) — matches by value
+// across runtime copies.
+export const JOB_WORKER_OPTIONS = Symbol.for(tokenKey('jobs', 'worker-options'));
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_STALE_SWEEPER_INTERVAL_MS = 60_000;
