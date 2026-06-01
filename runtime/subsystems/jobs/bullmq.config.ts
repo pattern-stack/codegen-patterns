@@ -78,11 +78,14 @@ export interface BullMqResolvedConfig {
   bullBoard?: { enabled: boolean; mountPath: string };
 }
 
+// ADR-037: namespaced `Symbol.for(...)` — matches by value across runtime copies.
+// TODO(token-version): revisit embedding a contract version once codegen/surface
+// versioning is settled.
 /** DI token for the resolved BullMQ `ConnectionOptions` (ioredis-compatible). */
-export const BULLMQ_CONNECTION = Symbol('BULLMQ_CONNECTION');
+export const BULLMQ_CONNECTION = Symbol.for('@pattern-stack/codegen.jobs.bullmq-connection');
 
 /** DI token for the full resolved BullMQ config (prefix + bull board). */
-export const BULLMQ_RESOLVED_CONFIG = Symbol('BULLMQ_RESOLVED_CONFIG');
+export const BULLMQ_RESOLVED_CONFIG = Symbol.for('@pattern-stack/codegen.jobs.bullmq-resolved-config');
 
 const DEFAULT_REDIS_URL = 'redis://localhost:6379';
 const DEFAULT_BULL_BOARD_MOUNT = '/admin/queues';

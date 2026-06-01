@@ -61,8 +61,14 @@ export const EVENTS_MULTI_TENANT = 'EVENTS_MULTI_TENANT' as const;
 /**
  * Injection token for the Redis connection URL used by RedisEventBus.
  * Provided automatically by EventsModule.forRoot({ backend: 'redis' }).
+ *
+ * ADR-037: namespaced `Symbol.for(...)` so it matches by value across runtime
+ * copies (the sibling string tokens above are already value-stable). Note the
+ * jobs subsystem defines its own `REDIS_URL`-equivalent; this is the events one.
+ * TODO(token-version): revisit embedding a contract version once codegen/surface
+ * versioning is settled.
  */
-export const REDIS_URL = Symbol('REDIS_URL');
+export const REDIS_URL = Symbol.for('@pattern-stack/codegen.events.redis-url');
 
 /**
  * Injection token for the resolved `EventsModuleOptions` object.

@@ -160,7 +160,13 @@ export const JOB_HANDLER_REGISTRY = new Map<
   }
 >();
 
-export const JOB_HANDLER_METADATA_KEY = Symbol('JobHandlerMeta');
+// ADR-037: namespaced `Symbol.for(...)` so the reflection-metadata key matches
+// by value across import boundaries (the @JobHandler decorator and the reader
+// may resolve different runtime copies). Distinct from the DI tokens but subject
+// to the same dual-package identity hazard.
+// TODO(token-version): revisit embedding a contract version once codegen/surface
+// versioning is settled.
+export const JOB_HANDLER_METADATA_KEY = Symbol.for('@pattern-stack/codegen.jobs.handler-metadata');
 
 /**
  * Class decorator that registers a handler with the job type, the full

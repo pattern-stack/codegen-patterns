@@ -128,8 +128,12 @@ export interface JobWorkerModuleOptions {
  * configuration — e.g. `BridgeModule.onModuleInit` checks
  * `options.pools` against `BRIDGE_RESERVED_POOLS` to fail fast when a
  * reserved pool isn't being polled (BRIDGE-8).
+ *
+ * ADR-037: namespaced `Symbol.for(...)` — matches by value across runtime copies.
+ * TODO(token-version): revisit embedding a contract version once codegen/surface
+ * versioning is settled.
  */
-export const JOB_WORKER_MODULE_OPTIONS = Symbol('JOB_WORKER_MODULE_OPTIONS');
+export const JOB_WORKER_MODULE_OPTIONS = Symbol.for('@pattern-stack/codegen.jobs.worker-module-options');
 
 /**
  * The lifecycle holder. Named `JobWorkerOrchestrator` in the spec to avoid

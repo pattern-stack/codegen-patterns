@@ -5,13 +5,16 @@
  * concrete backends (JOB-3 Drizzle, JOB-4 Memory) provide the implementations
  * through `JobsDomainModule.forRoot({ backend })` in JOB-5.
  *
- * Each token is a unique `Symbol` — guaranteed distinct from every other
- * Symbol at runtime, which is exactly the uniqueness guarantee Nest's DI
- * container relies on for token-based lookup.
+ * Each token is a namespaced `Symbol.for(...)` (ADR-037) — distinct per key, so
+ * Nest's DI lookup is unambiguous, AND matching by VALUE across import
+ * boundaries so the package and a (legacy) vendored runtime copy resolve to the
+ * same symbol.
+ * TODO(token-version): revisit embedding a contract version once codegen/surface
+ * versioning is settled.
  */
-export const JOB_ORCHESTRATOR = Symbol('JOB_ORCHESTRATOR');
-export const JOB_RUN_SERVICE = Symbol('JOB_RUN_SERVICE');
-export const JOB_STEP_SERVICE = Symbol('JOB_STEP_SERVICE');
+export const JOB_ORCHESTRATOR = Symbol.for('@pattern-stack/codegen.jobs.orchestrator');
+export const JOB_RUN_SERVICE = Symbol.for('@pattern-stack/codegen.jobs.run-service');
+export const JOB_STEP_SERVICE = Symbol.for('@pattern-stack/codegen.jobs.step-service');
 
 /**
  * Multi-tenancy opt-in flag (JOB-8). Bound to the boolean passed in via
@@ -27,4 +30,4 @@ export const JOB_STEP_SERVICE = Symbol('JOB_STEP_SERVICE');
  * tenant context; `tenantId` is populated at write time and enforced on
  * targeted reads. See docs/specs/JOB-8.md.
  */
-export const JOBS_MULTI_TENANT = Symbol('JOBS_MULTI_TENANT');
+export const JOBS_MULTI_TENANT = Symbol.for('@pattern-stack/codegen.jobs.multi-tenant');

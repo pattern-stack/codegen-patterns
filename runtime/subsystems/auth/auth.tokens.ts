@@ -26,15 +26,22 @@
  * `STRATEGY_REGISTRY` (a `ReadonlyMap<slug, IProviderStrategy>`), populated
  * by per-provider modules via a `useFactory` provider.
  */
-export const ENCRYPTION_KEY = Symbol('ENCRYPTION_KEY');
-export const OAUTH_STATE_STORE = Symbol('OAUTH_STATE_STORE');
-export const AUTH_CONNECTION_READER = Symbol('AUTH_CONNECTION_READER');
-export const AUTH_CONNECTION_TOKEN_WRITER = Symbol('AUTH_CONNECTION_TOKEN_WRITER');
-export const AUTH_CONNECTION_GRANT_SINK = Symbol('AUTH_CONNECTION_GRANT_SINK');
-export const AUTH_USER_CONTEXT = Symbol('AUTH_USER_CONTEXT');
-export const STRATEGY_REGISTRY = Symbol('STRATEGY_REGISTRY');
+// ADR-037: namespaced `Symbol.for(...)` keys so a token matches by VALUE across
+// import boundaries — the package copy and a (legacy) vendored copy resolve to
+// the SAME symbol, eliminating the dual-package DI-token identity hazard that
+// crashed boot once the emitter began emitting `STRATEGY_REGISTRY` as a runtime
+// value (RFC-0003 R5). Matches the convention surface packages already use.
+// TODO(token-version): revisit embedding a contract version once codegen/surface
+// versioning is settled.
+export const ENCRYPTION_KEY = Symbol.for('@pattern-stack/codegen.auth.encryption-key');
+export const OAUTH_STATE_STORE = Symbol.for('@pattern-stack/codegen.auth.oauth-state-store');
+export const AUTH_CONNECTION_READER = Symbol.for('@pattern-stack/codegen.auth.connection-reader');
+export const AUTH_CONNECTION_TOKEN_WRITER = Symbol.for('@pattern-stack/codegen.auth.connection-token-writer');
+export const AUTH_CONNECTION_GRANT_SINK = Symbol.for('@pattern-stack/codegen.auth.connection-grant-sink');
+export const AUTH_USER_CONTEXT = Symbol.for('@pattern-stack/codegen.auth.user-context');
+export const STRATEGY_REGISTRY = Symbol.for('@pattern-stack/codegen.auth.strategy-registry');
 /**
  * Holds the resolved `AuthModuleOptions` (used by `AuthController` to read
  * `redirectUriBase` for building per-provider callback URIs).
  */
-export const AUTH_OPTIONS = Symbol('AUTH_OPTIONS');
+export const AUTH_OPTIONS = Symbol.for('@pattern-stack/codegen.auth.options');

@@ -60,7 +60,10 @@ export interface JobWorkerOptions {
   shutdownTimeoutMs?: number;
 }
 
-export const JOB_WORKER_OPTIONS = Symbol('JOB_WORKER_OPTIONS');
+// ADR-037: namespaced `Symbol.for(...)` — matches by value across runtime copies.
+// TODO(token-version): revisit embedding a contract version once codegen/surface
+// versioning is settled.
+export const JOB_WORKER_OPTIONS = Symbol.for('@pattern-stack/codegen.jobs.worker-options');
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_STALE_SWEEPER_INTERVAL_MS = 60_000;
