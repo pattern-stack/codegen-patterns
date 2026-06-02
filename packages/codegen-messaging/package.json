@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen-messaging",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "L2 messaging surface package for @pattern-stack/codegen — the canonical Channel/Message vocabulary, the MessagingPort composing contract, the bot-user write seam, and DI tokens. See ADR-036 + swe-brain ADR-0008.",
   "type": "module",
   "license": "MIT",
@@ -27,7 +27,7 @@
     "prepublishOnly": "bun run build"
   },
   "peerDependencies": {
-    "@pattern-stack/codegen": "^0.13.0"
+    "@pattern-stack/codegen": "^0.13.0 || ^0.14.0"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
