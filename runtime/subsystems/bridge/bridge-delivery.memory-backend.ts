@@ -116,12 +116,19 @@ export class MemoryBridgeDeliveryRepo implements IJobBridge {
   async getStatusHistogram(
     windowHours: number,
     tenantId?: string | null,
+    // Reference instant for the window cutoff. Defaults to the wall clock; exposed
+    // as a test-injection seam so a caller can pin the cutoff to the same `now` it
+    // positioned a boundary row from. Without it the cutoff is re-sampled here a few
+    // ms later, pushing an "exactly at the boundary" row just below the window
+    // (the OBS-3 boundary test flake). The drizzle backend has no analogue — it
+    // evaluates the cutoff once in SQL via `now()`.
+    nowMs: number = Date.now(),
   ): Promise<StatusHistogram> {
     if (!Number.isFinite(windowHours) || windowHours <= 0) {
       throw new RangeError('windowHours must be positive');
     }
 
-    const cutoffMs = Date.now() - windowHours * 3_600_000;
+    const cutoffMs = nowMs - windowHours * 3_600_000;
     const histogram: StatusHistogram = {
       pending: 0,
       delivered: 0,

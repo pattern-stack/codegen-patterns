@@ -233,16 +233,18 @@ describe('MemoryBridgeDeliveryRepo — getStatusHistogram (OBS-3)', () => {
   });
 
   it('includes deliveries exactly at the boundary (>= cutoff)', async () => {
-    // Freeze the comparison: put the delivery at exactly cutoff by using
-    // an attemptedAt that is `now - windowHours * 3_600_000` — this is
-    // the precise boundary. We rely on the implementation using `<`
-    // (strict) to exclude BELOW cutoff, so equal should be INCLUDED.
+    // Put the delivery at exactly cutoff and pin the histogram to the SAME `now`,
+    // so the row sits precisely on the boundary deterministically. (Previously the
+    // test sampled `now` here and the impl re-sampled its own a few ms later, sliding
+    // the cutoff past the row → intermittent exclusion under CI timing.) The impl
+    // includes `>= cutoff`, so a row exactly at cutoff must be counted.
     const windowHours = 1;
-    const boundary = new Date(Date.now() - windowHours * 3_600_000);
+    const now = Date.now();
+    const boundary = new Date(now - windowHours * 3_600_000);
     await repo.insertDelivery(
       row(EVENT_A, 'boundary#0', { attemptedAt: boundary }),
     );
-    const h = await repo.getStatusHistogram(windowHours);
+    const h = await repo.getStatusHistogram(windowHours, undefined, now);
     expect(h.pending).toBe(1);
   });
 
