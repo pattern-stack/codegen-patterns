@@ -46,6 +46,7 @@ import {
 } from '../shared/provider-module-generator.js';
 import { emitAdapters } from '../shared/adapter-emission-generator.js';
 import { resolveRuntimeMode } from '../shared/runtime-import.js';
+import { configuredSubsystemNames } from '../shared/subsystem-detect.js';
 import { loadProvidersFromYaml } from '../../utils/yaml-loader.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
@@ -401,10 +402,21 @@ export class EntityNewCommand extends Command {
 			subsystemsRoot,
 			'events/generated',
 		);
-		const bridgeRegistryOutputDir = path.resolve(
-			subsystemsRoot,
-			'bridge/generated',
-		);
+		// Bridge registry output is mode-aware (ADR-037). Vendored mode writes
+		// `registry.ts` into the vendored `bridge/generated/` tree (next to the
+		// runtime it types against). Package mode has no vendored tree, so the
+		// registry lands beside the other `src/generated/*` barrels as
+		// `bridge-registry.ts` and is threaded into `BridgeModule.forRoot` by the
+		// subsystem barrel. `mode`/`bridgeInstalled` are passed to the generator,
+		// which picks the filename + type-import accordingly.
+		const runtimeMode = resolveRuntimeMode(ctx.config);
+		const bridgeInstalledForRegistry = configuredSubsystemNames(
+			ctx.config as Record<string, unknown> | null | undefined,
+		).includes('bridge');
+		const bridgeRegistryOutputDir =
+			runtimeMode === 'package'
+				? generatedDir
+				: path.resolve(subsystemsRoot, 'bridge/generated');
 		// Handlers dir resolves under `paths.backend_src` (matching where the
 		// rest of the backend tree lives) with `src` as final fallback — the
 		// same default `subsystems-path.ts` uses for `subsystems` root.
@@ -413,9 +425,9 @@ export class EntityNewCommand extends Command {
 			(ctx.config as { paths?: { backend_src?: string } } | null | undefined)
 				?.paths?.backend_src ?? 'src';
 
-		// Runtime mode (ADR-037) — drives every runtime import specifier the
+		// `runtimeMode` (ADR-037) is resolved above — it drives the bridge
+		// registry output (mode-aware) plus every runtime import specifier the
 		// integration emitters write. Defaults to `package` (the new default).
-		const runtimeMode = resolveRuntimeMode(ctx.config);
 		const bridgeHandlersDir = path.resolve(
 			ctx.cwd,
 			backendSrcForHandlers,
@@ -484,6 +496,8 @@ export class EntityNewCommand extends Command {
 				handlersDir: bridgeHandlersDir,
 				eventsGeneratedDir: eventCodegenOutputDir,
 				outputDir: bridgeRegistryOutputDir,
+				mode: runtimeMode,
+				bridgeInstalled: bridgeInstalledForRegistry,
 				dryRun: true,
 			});
 
@@ -715,6 +729,8 @@ export class EntityNewCommand extends Command {
 				handlersDir: bridgeHandlersDir,
 				eventsGeneratedDir: eventCodegenOutputDir,
 				outputDir: bridgeRegistryOutputDir,
+				mode: runtimeMode,
+				bridgeInstalled: bridgeInstalledForRegistry,
 			});
 			if (bridgeRegistryResult.skipped && !isJsonMode()) {
 				printInfo(

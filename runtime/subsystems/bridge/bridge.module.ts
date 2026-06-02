@@ -70,6 +70,7 @@ import { BridgeOutboxDrainHook } from './bridge-outbox-drain-hook';
 import { EventFlowService } from './event-flow.service';
 import { BridgeDeliveryHandler } from './bridge-delivery-handler';
 import { bridgeRegistry } from './generated/registry';
+import type { BridgeRegistry } from './bridge.protocol';
 import { BRIDGE_RESERVED_POOLS } from './reserved-pools';
 
 export interface BridgeModuleOptions {
@@ -87,6 +88,26 @@ export interface BridgeModuleOptions {
    * `null` always passes (cross-tenant work). Defaults to `false`.
    */
   multiTenant?: boolean;
+  /**
+   * The codegen-emitted `Record<EventTypeName, BridgeTriggerEntry[]>` that
+   * drives outbox-drain trigger lookup (BRIDGE-4) and the facade's Case B
+   * dedup (BRIDGE-7).
+   *
+   * **Package mode (ADR-037).** When the runtime is imported from
+   * `@pattern-stack/codegen` (not vendored), the bundled
+   * `./generated/registry` is a frozen empty placeholder (`{}`) — a
+   * consumer's `@JobHandler.triggers` are scanned into a registry that lives
+   * in THEIR `src/generated/bridge-registry.ts`, which the package can't
+   * import. The generated subsystem barrel therefore threads that registry in
+   * here: `BridgeModule.forRoot({ ..., registry: bridgeRegistry })`. Omitted
+   * (vendored mode / tests) ⇒ falls back to the bundled `./generated/registry`,
+   * which in vendored mode IS the consumer's freshly-generated file.
+   *
+   * Without this, package-mode consumers' triggers never bind and the bridge
+   * routes nothing (the "wrappers sit pending" footgun's silent twin —
+   * nothing is ever enqueued in the first place).
+   */
+  registry?: BridgeRegistry;
 }
 
 @Module({})
@@ -108,7 +129,11 @@ export class BridgeModule implements OnModuleInit {
       providers: [
         { provide: BRIDGE_MODULE_OPTIONS, useValue: opts },
         { provide: BRIDGE_MULTI_TENANT, useValue: opts.multiTenant ?? false },
-        { provide: BRIDGE_REGISTRY, useValue: bridgeRegistry },
+        // Package mode threads the consumer's generated registry through
+        // `opts.registry`; vendored mode omits it and we fall back to the
+        // bundled `./generated/registry` (which IS the consumer's generated
+        // file in a vendored tree). See `BridgeModuleOptions.registry`.
+        { provide: BRIDGE_REGISTRY, useValue: opts.registry ?? bridgeRegistry },
         repoProvider,
         // Drain hook — always wired; `DrizzleEventBus` consumes it via
         // `@Optional()`, so non-bridge mounts simply see `undefined`.
