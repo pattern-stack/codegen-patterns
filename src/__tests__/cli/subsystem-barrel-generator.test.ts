@@ -221,6 +221,107 @@ describe('buildSubsystemBarrel', () => {
 			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false }),",
 		);
 	});
+
+	// ─── Gate 1: embedded worker pool clause (BRIDGE-8) ──────────────────────
+
+	test("embedded worker + bridge installed defaults to `allPools: true` (drains reserved events_* lanes)", () => {
+		const out = buildSubsystemBarrel(
+			[inst('events'), inst('jobs'), inst('bridge')],
+			{
+				events: {},
+				jobs: { backend: 'drizzle', worker_mode: 'embedded' },
+				bridge: {},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain(
+			"JobWorkerModule.forRoot({ mode: 'embedded', allPools: true }),",
+		);
+	});
+
+	test("embedded worker WITHOUT bridge stays `{ mode: 'embedded' }` (no pool clause)", () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded' }),");
+		expect(out.content).not.toContain('allPools');
+		expect(out.content).not.toContain('pools:');
+	});
+
+	test('explicit `jobs.worker_pools` wins over the bridge default → emits `pools: [...]`', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs'), inst('bridge')],
+			{
+				jobs: {
+					backend: 'drizzle',
+					worker_mode: 'embedded',
+					worker_pools: ['interactive', 'batch', 'events_inbound'],
+				},
+				bridge: {},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain(
+			"JobWorkerModule.forRoot({ mode: 'embedded', pools: ['interactive', 'batch', 'events_inbound'] }),",
+		);
+		expect(out.content).not.toContain('allPools');
+	});
+
+	test('explicit `jobs.all_pools: true` emits `allPools: true` (even without bridge)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{ jobs: { backend: 'drizzle', worker_mode: 'embedded', all_pools: true } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain(
+			"JobWorkerModule.forRoot({ mode: 'embedded', allPools: true }),",
+		);
+	});
+
+	test('bullmq embedded + bridge appends the pool clause after backend/extensions', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs'), inst('bridge')],
+			{
+				jobs: {
+					backend: 'bullmq',
+					worker_mode: 'embedded',
+					extensions: { bullmq: { redis_url: 'redis://localhost:16379' } },
+				},
+				bridge: {},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain("backend: 'bullmq'");
+		expect(out.content).toContain('domainModuleExtensions: { bullmq:');
+		expect(out.content).toContain('allPools: true }),');
+	});
+
+	test('standalone worker + bridge does NOT emit a worker (pool clause is embedded-only)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs'), inst('bridge')],
+			{ jobs: { backend: 'drizzle', worker_mode: 'standalone' }, bridge: {} },
+			subsystemsRel,
+		);
+		expect(out.content).not.toContain('JobWorkerModule');
+		expect(out.content).not.toContain('allPools');
+	});
+
+	// ─── Gate 2b: vendored mode passes NO registry (runtime uses its own) ────
+
+	test('vendored bridge composer emits no `registry` option (falls back to bundled)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('bridge')],
+			{ bridge: { backend: 'drizzle', multi_tenant: false } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain(
+			"BridgeModule.forRoot({ backend: 'drizzle', multiTenant: false }),",
+		);
+		expect(out.content).not.toContain('registry:');
+		expect(out.content).not.toContain('bridge-registry');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -300,6 +401,57 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			.filter((l) => l.startsWith('import '));
 		expect(importLines.some((l) => l.includes('@pattern-stack/codegen'))).toBe(
 			false,
+		);
+	});
+
+	// ─── Gate 2b: package mode threads the consumer's generated registry ─────
+
+	test('package-mode bridge composer imports ./bridge-registry and passes it to forRoot', () => {
+		const out = buildSubsystemBarrel(
+			[inst('bridge')],
+			{ bridge: { backend: 'drizzle', multi_tenant: false } },
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain(
+			"import { bridgeRegistry } from './bridge-registry';",
+		);
+		expect(out.content).toContain(
+			"BridgeModule.forRoot({ backend: 'drizzle', multiTenant: false, registry: bridgeRegistry }),",
+		);
+	});
+
+	test('package-mode embedded worker + bridge: allPools AND registry both emitted', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events'), inst('jobs'), inst('bridge')],
+			{
+				events: {},
+				jobs: { backend: 'drizzle', worker_mode: 'embedded' },
+				bridge: { backend: 'drizzle', multi_tenant: false },
+			},
+			subsystemsRel,
+			'package',
+		);
+		// Gate 1 — the embedded worker drains every lane (reserved included).
+		expect(out.content).toContain(
+			"JobWorkerModule.forRoot({ mode: 'embedded', allPools: true }),",
+		);
+		// Gate 2b — the consumer registry is threaded in.
+		expect(out.content).toContain(
+			"import { bridgeRegistry } from './bridge-registry';",
+		);
+		expect(out.content).toContain('registry: bridgeRegistry }),');
+	});
+
+	test('package-mode `multi_tenant: true` survives the manual registry literal', () => {
+		const out = buildSubsystemBarrel(
+			[inst('bridge')],
+			{ bridge: { backend: 'drizzle', multi_tenant: true } },
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain(
+			"BridgeModule.forRoot({ backend: 'drizzle', multiTenant: true, registry: bridgeRegistry }),",
 		);
 	});
 });

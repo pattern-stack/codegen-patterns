@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.2] — 2026-06-02
+
+Package-mode bridge fixes — the two gaps that left the event→job bridge wired but
+inert when the runtime is consumed from the package (`runtime: package`, ADR-037)
+rather than vendored. Both are follow-ons to 0.14.1's package-mode subsystem
+support. Vendored mode is unchanged; these are additive.
+
+### Fixed
+
+- **Embedded worker now drains the reserved `events_*` bridge pools.** The
+  subsystem barrel emitted `JobWorkerModule.forRoot({ mode: 'embedded' })` with no
+  pool list, so the in-process worker polled only `interactive` + `batch` and
+  bridge wrappers sat pending forever (the BRIDGE-8 footgun, just past the boot
+  guard). When `bridge` is in `subsystems.install`, the embedded worker now
+  defaults to `allPools: true` (every lane in-process — exactly the knob
+  `BridgeModule`'s reserved-pool guard short-circuits on).
+- **A package-mode consumer's `@JobHandler.triggers` now bind.** Previously
+  `BridgeModule` hardwired the bundled `./generated/registry` placeholder (frozen
+  `{}` inside the package), and the registry generator skipped entirely in package
+  mode (it gated on a vendored `bridge.protocol.ts` that doesn't exist), so no
+  event ever routed to a job. The registry is now generated into the consumer's
+  `src/generated/bridge-registry.ts` (type imported from
+  `@pattern-stack/codegen/runtime/subsystems/bridge/index`, install gated on
+  `subsystems.install`) and threaded into `BridgeModule.forRoot({ registry })` by
+  the barrel. `subsystem install bridge` drops an empty-registry stub so the
+  import never dangles before the next `entity new`.
+
+### Added
+
+- **`BridgeModuleOptions.registry?: BridgeRegistry`** — lets the generated barrel
+  supply the consumer's scanned registry. Omitted ⇒ falls back to the bundled
+  `./generated/registry` (which IS the consumer's generated file in vendored
+  mode), so existing consumers and tests are unaffected.
+- **`jobs.worker_pools: string[]` and `jobs.all_pools: true`** config knobs on the
+  embedded worker. Precedence: explicit `worker_pools` (→ `pools: [...]`) >
+  `all_pools` (→ `allPools: true`) > bridge-installed default (`allPools: true`) >
+  the non-reserved default (unchanged).
+
+### Known gaps
+
+- Package-mode trigger-event **validation** against the events registry is skipped
+  (the event codegen generator is not yet mode-aware, so its registry isn't found
+  under the package-mode generated path). Triggers still generate and bind; only
+  the build-time "unknown event" check is inert. Tracked for a follow-on.
+
 ## [0.13.0] — 2026-05-31
 
 Track D round-2/3 — the integration codegen now emits the **full** integration

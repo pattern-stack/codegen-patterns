@@ -35,6 +35,31 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 
+import type { RuntimeMode } from './runtime-import.js';
+
+// ---------------------------------------------------------------------------
+// Mode-aware emission constants (ADR-037)
+// ---------------------------------------------------------------------------
+
+/**
+ * The `BridgeRegistry` type-import specifier the package-mode registry uses.
+ * The file lands in the consumer's `src/generated/`, so it can't reach the
+ * package-internal `bridge.protocol`; it imports the type off the published
+ * per-subsystem runtime index (the same subpath the subsystem schema barrel
+ * uses).
+ */
+export const PACKAGE_BRIDGE_TYPE_IMPORT =
+  '@pattern-stack/codegen/runtime/subsystems/bridge/index';
+
+/** Output filename per mode. Package mode co-locates with the other
+ * `src/generated/*` barrels (and must NOT collide with a vendored
+ * `registry.ts`); vendored mode keeps the legacy name inside the vendored
+ * `bridge/generated/` dir. */
+const OUTPUT_FILE_BY_MODE: Record<RuntimeMode, string> = {
+  vendored: 'registry.ts',
+  package: 'bridge-registry.ts',
+};
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -48,8 +73,27 @@ export interface BridgeRegistryGeneratorOptions {
    * `undefined` ⇒ skip validation (fixtures, tests).
    */
   eventsGeneratedDir?: string;
-  /** Absolute path to the bridge generated/ output directory. */
+  /** Absolute path to the output directory. Vendored mode: the vendored
+   * `bridge/generated/`. Package mode: the consumer's `src/generated/`. */
   outputDir: string;
+  /**
+   * Runtime mode (ADR-037). Defaults to `'vendored'` so the existing
+   * (fixture/test) callers and the legacy vendored emission are byte-stable.
+   *   - vendored → writes `registry.ts` with a `'../bridge.protocol'` type
+   *     import; "is bridge installed" is decided by the `bridge.protocol.ts`
+   *     sibling check (a vendored tree means the runtime was vendored).
+   *   - package  → writes `bridge-registry.ts` with the package type import;
+   *     there is nothing vendored on disk, so installation is decided by the
+   *     caller via `bridgeInstalled` (read from `subsystems.install`).
+   */
+  mode?: RuntimeMode;
+  /**
+   * Package-mode installation gate. Ignored in vendored mode (which uses the
+   * `bridge.protocol.ts` sibling check). When `mode: 'package'` and this is
+   * falsy, generation is skipped and any stray output file is removed —
+   * mirroring the vendored "no bridge.protocol ⇒ skip" behavior.
+   */
+  bridgeInstalled?: boolean;
   /** If true, compute content but don't write to disk. */
   dryRun?: boolean;
 }
@@ -489,11 +533,23 @@ export function validateAgainstEventRegistry(
 // Content builder
 // ---------------------------------------------------------------------------
 
-export function buildBridgeRegistryContent(triggers: ScannedTrigger[]): string {
+export function buildBridgeRegistryContent(
+  triggers: ScannedTrigger[],
+  /**
+   * Where the `BridgeRegistry` type is imported FROM, mode-aware (ADR-037):
+   *   - vendored → `'../bridge.protocol'` (the file sits in the vendored
+   *     `bridge/generated/` dir, one level under the protocol). Default, so
+   *     existing callers/tests are byte-stable.
+   *   - package  → `'@pattern-stack/codegen/runtime/subsystems/bridge/index'`
+   *     (the file lands in the consumer's `src/generated/`, which has no
+   *     relative line of sight to the package-internal protocol).
+   */
+  typeImport = '../bridge.protocol',
+): string {
   const chunks: string[] = [];
   chunks.push(HEADER);
   chunks.push('');
-  chunks.push(`import type { BridgeRegistry } from '../bridge.protocol';`);
+  chunks.push(`import type { BridgeRegistry } from '${typeImport}';`);
   chunks.push('');
 
   if (triggers.length === 0) {
@@ -539,23 +595,35 @@ export function buildBridgeRegistryContent(triggers: ScannedTrigger[]): string {
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
-const OUTPUT_FILE_NAME = 'registry.ts';
-
 export async function generateBridgeRegistry(
   opts: BridgeRegistryGeneratorOptions,
 ): Promise<BridgeRegistryResult> {
-  const { handlersDir, eventsGeneratedDir, outputDir, dryRun = false } = opts;
+  const {
+    handlersDir,
+    eventsGeneratedDir,
+    outputDir,
+    mode = 'vendored',
+    bridgeInstalled = false,
+    dryRun = false,
+  } = opts;
 
-  // 0. Gate on bridge subsystem installation (issue #191). The emitted
-  //    `registry.ts` imports `../bridge.protocol`, which only exists
-  //    after `codegen subsystem install bridge` has vendored the runtime
-  //    files. Consumers with a `bridge:` block in `codegen.config.yaml`
-  //    but no installed subsystem would otherwise end up with a broken
-  //    file on every `entity new --all`. Skip entirely and clean up any
-  //    stray artifact from a previous run.
-  const bridgeProtocolPath = path.resolve(outputDir, '..', 'bridge.protocol.ts');
-  if (!fs.existsSync(bridgeProtocolPath)) {
-    const strayPath = path.join(outputDir, OUTPUT_FILE_NAME);
+  const outputFileName = OUTPUT_FILE_BY_MODE[mode];
+  const typeImport =
+    mode === 'package' ? PACKAGE_BRIDGE_TYPE_IMPORT : '../bridge.protocol';
+
+  // 0. Gate on bridge subsystem installation (issue #191). The emitted file
+  //    imports the `BridgeRegistry` type; in vendored mode that type comes
+  //    from `../bridge.protocol`, which only exists after `subsystem install
+  //    bridge` vendored the runtime — so the file's presence IS the gate. In
+  //    package mode nothing is vendored on disk, so the caller decides via
+  //    `bridgeInstalled` (from `subsystems.install`). Either way: not
+  //    installed ⇒ skip and clean up any stray artifact from a prior run.
+  const installed =
+    mode === 'package'
+      ? bridgeInstalled
+      : fs.existsSync(path.resolve(outputDir, '..', 'bridge.protocol.ts'));
+  if (!installed) {
+    const strayPath = path.join(outputDir, outputFileName);
     if (!dryRun && fs.existsSync(strayPath)) {
       fs.rmSync(strayPath);
     }
@@ -588,10 +656,10 @@ export async function generateBridgeRegistry(
   validateNoAuditTriggers(triggers, eventTiers);
 
   // 3. Build content.
-  const content = buildBridgeRegistryContent(triggers);
+  const content = buildBridgeRegistryContent(triggers, typeImport);
   const file: BridgeRegistryFileOutput = {
-    name: OUTPUT_FILE_NAME,
-    outputPath: path.join(outputDir, OUTPUT_FILE_NAME),
+    name: outputFileName,
+    outputPath: path.join(outputDir, outputFileName),
     content,
   };
 

@@ -32,6 +32,10 @@ import {
 } from './subsystem-detect.js';
 import { resolveSubsystemsRoot } from './subsystems-path.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
+import {
+	buildBridgeRegistryContent,
+	PACKAGE_BRIDGE_TYPE_IMPORT,
+} from './bridge-registry-generator.js';
 
 // ---------------------------------------------------------------------------
 // Options + result types
@@ -76,6 +80,14 @@ interface ComposerInput {
 	moduleImport: (subsystem: SubsystemName, moduleBasename: string) => string;
 	/** Per-subsystem config block from codegen.config.yaml (snake_case keys). */
 	cfg: Record<string, unknown> | undefined;
+	/** Resolved runtime mode (ADR-037). The `bridge` composer threads the
+	 * consumer's generated registry only in `package` mode. */
+	mode: RuntimeMode;
+	/** Whether `bridge` is in the (actable) install set. The `jobs` composer
+	 * uses this to default the embedded worker to `allPools: true` so the
+	 * reserved `events_*` bridge lanes are drained (otherwise wrappers sit
+	 * pending forever — the BRIDGE-8 footgun). */
+	bridgeInstalled: boolean;
 }
 
 interface ComposerOutput {
@@ -140,6 +152,38 @@ function quoteBullmqDomainOpts(input: {
 	return `{ ${parts.join(', ')} }`;
 }
 
+/**
+ * JOB-7 / BRIDGE-8 — resolve the embedded worker's pool clause as a TS object
+ * fragment (e.g. `pools: ['interactive', 'batch']` or `allPools: true`), or
+ * `''` when none applies. Precedence (mirrors `JobWorkerOrchestrator`'s own
+ * `pools > allPools > default`):
+ *
+ *   1. explicit `jobs.worker_pools: [...]` ⇒ `pools: [...]`
+ *   2. explicit `jobs.all_pools: true`     ⇒ `allPools: true`
+ *   3. `bridge` installed (no explicit knob) ⇒ `allPools: true` — the embedded
+ *      worker runs every lane in-process, so it MUST drain the reserved
+ *      `events_*` bridge pools or `BridgeModule`'s onModuleInit guard throws
+ *      `BridgeReservedPoolsNotPolledError` at boot. `allPools` is exactly the
+ *      knob that guard short-circuits on.
+ *   4. otherwise ⇒ `''` (worker drains the non-reserved default — unchanged).
+ */
+function workerPoolsClause(
+	cfg: Record<string, unknown> | undefined,
+	bridgeInstalled: boolean,
+): string {
+	const explicit = cfg?.worker_pools;
+	if (Array.isArray(explicit) && explicit.length > 0) {
+		const list = explicit
+			.filter((p): p is string => typeof p === 'string')
+			.map((p) => `'${p}'`)
+			.join(', ');
+		if (list.length > 0) return `pools: [${list}]`;
+	}
+	if (cfg?.all_pools === true) return 'allPools: true';
+	if (bridgeInstalled) return 'allPools: true';
+	return '';
+}
+
 const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 	events: ({ moduleImport, cfg }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
@@ -154,7 +198,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		};
 	},
 
-	jobs: ({ moduleImport, cfg }) => {
+	jobs: ({ moduleImport, cfg, bridgeInstalled }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
 		const workerMode = ((cfg?.worker_mode as string | undefined) ?? 'standalone').trim();
@@ -178,26 +222,47 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			imports.push(
 				`import { JobWorkerModule } from '${moduleImport('jobs', 'job-worker.module')}';`
 			);
-			// BULLMQ-1: forward backend + bullmq extensions to the embedded worker
-			// so it spawns BullMQ (not Drizzle) workers when configured.
-			const workerOpts =
-				backend === 'bullmq'
-					? `{ mode: 'embedded', backend: 'bullmq'${
-							bullExt ? `, domainModuleExtensions: { bullmq: ${jsonToTs(bullExt)} }` : ''
-						} }`
-					: `{ mode: 'embedded' }`;
-			calls.push(`\tJobWorkerModule.forRoot(${workerOpts}),`);
+			// Assemble the worker options literal piecewise. `mode` is always
+			// first; BULLMQ-1 forwards the backend + extensions; BRIDGE-8 appends
+			// the pool clause (`pools` / `allPools`) so the embedded worker drains
+			// the reserved `events_*` bridge lanes when bridge is installed.
+			const parts = [`mode: 'embedded'`];
+			if (backend === 'bullmq') {
+				parts.push(`backend: 'bullmq'`);
+				if (bullExt) {
+					parts.push(`domainModuleExtensions: { bullmq: ${jsonToTs(bullExt)} }`);
+				}
+			}
+			const poolsClause = workerPoolsClause(cfg, bridgeInstalled);
+			if (poolsClause) parts.push(poolsClause);
+			calls.push(`\tJobWorkerModule.forRoot({ ${parts.join(', ')} }),`);
 		}
 		return { imports, calls };
 	},
 
-	bridge: ({ moduleImport, cfg }) => {
+	bridge: ({ moduleImport, cfg, mode }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
+		const imports = [
+			`import { BridgeModule } from '${moduleImport('bridge', 'bridge.module')}';`,
+		];
+		// Package mode (ADR-037): the consumer's `@JobHandler.triggers` are
+		// scanned into `<generated>/bridge-registry.ts` (co-located with this
+		// barrel), since the bundled `./generated/registry` inside the package is
+		// a frozen empty placeholder. Thread it through `forRoot({ registry })`
+		// or the triggers never bind. Vendored mode omits it — the runtime's own
+		// `./generated/registry` IS the consumer's generated file there.
+		if (mode === 'package') {
+			imports.push(`import { bridgeRegistry } from './bridge-registry';`);
+			return {
+				imports,
+				calls: [
+					`\tBridgeModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, registry: bridgeRegistry }),`,
+				],
+			};
+		}
 		return {
-			imports: [
-				`import { BridgeModule } from '${moduleImport('bridge', 'bridge.module')}';`,
-			],
+			imports,
 			calls: [
 				`\tBridgeModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
 			],
@@ -295,6 +360,7 @@ export function buildSubsystemBarrel(
 	// builder.
 	const actable = installed.filter((i) => i.status !== 'incomplete');
 	const installedNames = new Set(actable.map((i) => i.name));
+	const bridgeInstalled = installedNames.has('bridge');
 	const emitted: SubsystemName[] = [];
 	const skipped: SubsystemName[] = [];
 
@@ -309,7 +375,7 @@ export function buildSubsystemBarrel(
 			continue;
 		}
 		const cfg = (config?.[name] as Record<string, unknown> | undefined) ?? undefined;
-		const out = composer({ moduleImport, cfg });
+		const out = composer({ moduleImport, cfg, mode, bridgeInstalled });
 		allImports.push(...out.imports);
 		allCalls.push(...out.calls);
 		emitted.push(name);
@@ -382,6 +448,23 @@ export async function regenerateSubsystemBarrel(
 		fs.mkdirSync(path.dirname(barrelAbs), { recursive: true });
 		fs.writeFileSync(barrelAbs, content);
 		written = true;
+
+		// Package mode: the bridge composer imports `./bridge-registry`. The real
+		// registry is emitted by `entity new --all` (which scans handlers); but
+		// `subsystem install bridge` regenerates this barrel WITHOUT running that
+		// scan, which would dangle the import until the next `entity new`. Drop an
+		// empty-registry stub iff the file is absent — never clobber a
+		// previously-generated registry (idempotent: byte-identical to the
+		// generator's own empty-case output, so no churn).
+		if (mode === 'package' && emitted.includes('bridge')) {
+			const registryPath = path.resolve(generatedDir, 'bridge-registry.ts');
+			if (!fs.existsSync(registryPath)) {
+				fs.writeFileSync(
+					registryPath,
+					buildBridgeRegistryContent([], PACKAGE_BRIDGE_TYPE_IMPORT),
+				);
+			}
+		}
 	}
 
 	return {

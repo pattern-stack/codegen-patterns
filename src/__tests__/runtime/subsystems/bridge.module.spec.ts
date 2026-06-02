@@ -41,6 +41,7 @@ import {
   MemoryBridgeDeliveryRepo,
   MissingTenantIdError,
   type BridgeDeliveryInsert,
+  type BridgeRegistry,
 } from '../../../../runtime/subsystems/bridge';
 import { EventsModule } from '../../../../runtime/subsystems/events/events.module';
 import { JobsDomainModule } from '../../../../runtime/subsystems/jobs/jobs-domain.module';
@@ -185,6 +186,53 @@ describe('BridgeModule.forRoot({ backend: "memory" })', () => {
     }).compile();
 
     expect(moduleRef.get(BRIDGE_MULTI_TENANT)).toBe(false);
+
+    await moduleRef.close();
+  });
+});
+
+// ─── Registry override (ADR-037 package mode) ────────────────────────────────
+//
+// Package-mode consumers can't reach the bundled `./generated/registry`
+// placeholder ({}), so the generated subsystem barrel threads their scanned
+// registry in via `forRoot({ registry })`. The provider must prefer that over
+// the bundle; omitting it must still resolve (vendored / tests fall back to the
+// bundled empty registry).
+describe('BridgeModule.forRoot — registry override', () => {
+  const customRegistry = {
+    contact_created: [
+      {
+        triggerId: 'send_welcome_email#0',
+        jobType: 'send_welcome_email',
+        map: (e: unknown) => e,
+      },
+    ],
+  } as unknown as BridgeRegistry;
+
+  it('binds the supplied registry to BRIDGE_REGISTRY (package mode path)', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        ...siblingsMemory(),
+        BridgeModule.forRoot({ backend: 'memory', registry: customRegistry }),
+      ],
+    }).compile();
+
+    expect(moduleRef.get(BRIDGE_REGISTRY)).toBe(customRegistry);
+
+    await moduleRef.close();
+  });
+
+  it('falls back to the bundled empty registry when `registry` is omitted', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        ...siblingsMemory(),
+        BridgeModule.forRoot({ backend: 'memory' }),
+      ],
+    }).compile();
+
+    // Bundled placeholder is `{}` — resolvable + empty (NOT the custom one).
+    expect(moduleRef.get(BRIDGE_REGISTRY)).toEqual({});
+    expect(moduleRef.get(BRIDGE_REGISTRY)).not.toBe(customRegistry);
 
     await moduleRef.close();
   });

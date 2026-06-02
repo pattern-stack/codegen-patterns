@@ -700,3 +700,127 @@ describe('validateNoDuplicateTriggers (BRIDGE-7 follow-up)', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
+
+// ─── Package mode (ADR-037) ──────────────────────────────────────────────────
+//
+// In package mode the bridge runtime lives in node_modules (read-only), so the
+// generated registry lands beside the consumer's other `src/generated/*`
+// barrels as `bridge-registry.ts`, imports the `BridgeRegistry` TYPE off the
+// published runtime subpath (not a vendored `../bridge.protocol` that doesn't
+// exist), and the "is bridge installed" gate is decided by the caller
+// (`bridgeInstalled`, read from `subsystems.install`) — there is no
+// `bridge.protocol.ts` file to probe.
+describe('generateBridgeRegistry — package mode (ADR-037)', () => {
+  let root: string;
+  let handlersDir: string;
+  let outputDir: string;
+  const PKG_TYPE_IMPORT =
+    '@pattern-stack/codegen/runtime/subsystems/bridge/index';
+
+  beforeEach(() => {
+    root = makeTmpDir('pkg');
+    handlersDir = path.join(root, 'src/jobs');
+    // Package mode writes into the consumer's `src/generated/` — NOT a vendored
+    // subsystems tree. No `bridge.protocol.ts` exists anywhere.
+    outputDir = path.join(root, 'src/generated');
+    fs.mkdirSync(handlersDir, { recursive: true });
+    fs.mkdirSync(outputDir, { recursive: true });
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('writes bridge-registry.ts (not registry.ts) with the package type import', async () => {
+    writeHandler(handlersDir, 'welcome.ts', HANDLER_TEMPLATE('send_welcome_email', `
+  triggers: [
+    { event: 'contact_created', map: (e) => ({ contactId: e.aggregateId }) },
+  ],
+`));
+    const eventsGeneratedDir = writeEventsRegistry(root, ['contact_created']);
+    const result = await generateBridgeRegistry({
+      handlersDir,
+      eventsGeneratedDir,
+      outputDir,
+      mode: 'package',
+      bridgeInstalled: true,
+    });
+    expect(result.skipped).toBe(false);
+    expect(result.written).toBe(true);
+    expect(result.triggerCount).toBe(1);
+    // The mode-specific filename.
+    expect(result.files[0]!.name).toBe('bridge-registry.ts');
+    expect(fs.existsSync(path.join(outputDir, 'bridge-registry.ts'))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, 'registry.ts'))).toBe(false);
+    const out = fs.readFileSync(path.join(outputDir, 'bridge-registry.ts'), 'utf8');
+    // Type import resolves off the published runtime subpath, NOT the vendored
+    // relative protocol path.
+    expect(out).toContain(
+      `import type { BridgeRegistry } from '${PKG_TYPE_IMPORT}';`,
+    );
+    expect(out).not.toContain("from '../bridge.protocol'");
+    expect(out).toContain("'send_welcome_email#0'");
+  });
+
+  it('emits an empty registry (still package-shaped) when there are no triggers', async () => {
+    const result = await generateBridgeRegistry({
+      handlersDir,
+      outputDir,
+      mode: 'package',
+      bridgeInstalled: true,
+    });
+    expect(result.skipped).toBe(false);
+    const out = fs.readFileSync(path.join(outputDir, 'bridge-registry.ts'), 'utf8');
+    expect(out).toContain('bridgeRegistry: BridgeRegistry = {};');
+    expect(out).toContain(
+      `import type { BridgeRegistry } from '${PKG_TYPE_IMPORT}';`,
+    );
+  });
+
+  it('skips + cleans up a stray bridge-registry.ts when bridge not in install set', async () => {
+    const stray = path.join(outputDir, 'bridge-registry.ts');
+    fs.writeFileSync(stray, '// stale');
+    writeHandler(handlersDir, 'a.ts', HANDLER_TEMPLATE('a_job', `
+  triggers: [{ event: 'evt_x', map: (e) => ({}) }],
+`));
+    const result = await generateBridgeRegistry({
+      handlersDir,
+      outputDir,
+      mode: 'package',
+      bridgeInstalled: false,
+    });
+    expect(result.skipped).toBe(true);
+    expect(result.written).toBe(false);
+    expect(fs.existsSync(stray)).toBe(false);
+  });
+
+  it('does NOT consult bridge.protocol.ts in package mode (gate is config-driven)', async () => {
+    // No bridge.protocol.ts anywhere, yet bridgeInstalled:true ⇒ it generates.
+    // (Vendored mode would skip here.)
+    const result = await generateBridgeRegistry({
+      handlersDir,
+      outputDir,
+      mode: 'package',
+      bridgeInstalled: true,
+    });
+    expect(result.skipped).toBe(false);
+    expect(fs.existsSync(path.join(outputDir, 'bridge-registry.ts'))).toBe(true);
+  });
+});
+
+describe('buildBridgeRegistryContent — type import is parameterized', () => {
+  it('defaults to the vendored ../bridge.protocol specifier', () => {
+    const out = buildBridgeRegistryContent([]);
+    expect(out).toContain("import type { BridgeRegistry } from '../bridge.protocol';");
+  });
+
+  it('honors a package type-import specifier', () => {
+    const out = buildBridgeRegistryContent(
+      [],
+      '@pattern-stack/codegen/runtime/subsystems/bridge/index',
+    );
+    expect(out).toContain(
+      "import type { BridgeRegistry } from '@pattern-stack/codegen/runtime/subsystems/bridge/index';",
+    );
+    expect(out).not.toContain("'../bridge.protocol'");
+  });
+});
