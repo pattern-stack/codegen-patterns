@@ -25,7 +25,10 @@ function mkTempProject(): string {
 	// Minimal config + a stub app.module.ts so the main-hook target exists.
 	fs.writeFileSync(
 		path.join(dir, 'codegen.config.yaml'),
-		'paths:\n  subsystems: src/shared/subsystems\n  backend_src: src\n',
+		// ADR-037: this suite exercises the vendored install path (app.module.ts
+		// TODO + comment-block injection). Opt into `vendored` — the default is
+		// now `package`, which skips the runtime-dependent scaffolds.
+		'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\n  backend_src: src\n',
 	);
 	fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
 	fs.writeFileSync(

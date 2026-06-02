@@ -8,7 +8,7 @@
  * the Drizzle backend (which deletes non-completed rows on replay).
  */
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { JobStepRow } from './job-orchestration.schema';
 import type {
   IJobStepService,
@@ -19,7 +19,12 @@ import { MemoryJobStore } from './memory-job-store';
 
 @Injectable()
 export class MemoryJobStepService implements IJobStepService {
-  constructor(private readonly store: MemoryJobStore) {}
+  // ADR-037 (package-mode DI): explicit `@Inject(MemoryJobStore)` — the
+  // published bundle carries no `design:paramtypes`, so a by-type inject
+  // would resolve to `undefined` in package mode.
+  constructor(
+    @Inject(MemoryJobStore) private readonly store: MemoryJobStore,
+  ) {}
 
   async findStep(runId: string, stepId: string): Promise<JobStep | null> {
     const rows = this.store.steps.get(runId);

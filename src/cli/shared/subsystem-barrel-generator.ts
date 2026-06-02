@@ -26,10 +26,12 @@ import type { Context } from './context.js';
 import { resolveGeneratedDir } from './barrel-generator.js';
 import {
 	detectInstalledSubsystems,
+	configuredInstalledSubsystems,
 	type InstalledSubsystem,
 	type SubsystemName,
 } from './subsystem-detect.js';
 import { resolveSubsystemsRoot } from './subsystems-path.js';
+import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 
 // ---------------------------------------------------------------------------
 // Options + result types
@@ -58,8 +60,20 @@ export interface SubsystemBarrelResult {
 // ---------------------------------------------------------------------------
 
 interface ComposerInput {
-	/** Relative path from project root to the subsystems root (e.g. `src/shared/subsystems`). */
-	subsystemsRel: string;
+	/**
+	 * Resolved import specifier for a subsystem's `forRoot`-bearing module(s).
+	 * Mode-aware (ADR-037):
+	 *   - `vendored` → `<subsystemsRel>/<name>/<moduleFile>` (relative path into
+	 *     the consumer's vendored tree).
+	 *   - `package`  → the published `@pattern-stack/codegen` subpath that
+	 *     re-exports the module (`/subsystems` for events; `/runtime/subsystems/
+	 *     <name>/index` for jobs/bridge/integration, which the single barrel
+	 *     doesn't re-export).
+	 *
+	 * `moduleBasename` is the vendored file's basename WITHOUT extension (e.g.
+	 * `events.module`, `jobs-domain.module`); only consulted in vendored mode.
+	 */
+	moduleImport: (subsystem: SubsystemName, moduleBasename: string) => string;
 	/** Per-subsystem config block from codegen.config.yaml (snake_case keys). */
 	cfg: Record<string, unknown> | undefined;
 }
@@ -127,12 +141,12 @@ function quoteBullmqDomainOpts(input: {
 }
 
 const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
-	events: ({ subsystemsRel, cfg }) => {
+	events: ({ moduleImport, cfg }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
 		return {
 			imports: [
-				`import { EventsModule } from '${subsystemsRel}/events/events.module';`,
+				`import { EventsModule } from '${moduleImport('events', 'events.module')}';`,
 			],
 			calls: [
 				`\tEventsModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
@@ -140,12 +154,12 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		};
 	},
 
-	jobs: ({ subsystemsRel, cfg }) => {
+	jobs: ({ moduleImport, cfg }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
 		const workerMode = ((cfg?.worker_mode as string | undefined) ?? 'standalone').trim();
 		const imports = [
-			`import { JobsDomainModule } from '${subsystemsRel}/jobs/jobs-domain.module';`,
+			`import { JobsDomainModule } from '${moduleImport('jobs', 'jobs-domain.module')}';`,
 		];
 		// BULLMQ-1: when `backend: bullmq`, thread the typed extension block so
 		// the orchestrator resolves the Redis connection + Bull Board config.
@@ -162,7 +176,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		// separately and we don't include JobWorkerModule in AppModule.
 		if (workerMode === 'embedded') {
 			imports.push(
-				`import { JobWorkerModule } from '${subsystemsRel}/jobs/job-worker.module';`
+				`import { JobWorkerModule } from '${moduleImport('jobs', 'job-worker.module')}';`
 			);
 			// BULLMQ-1: forward backend + bullmq extensions to the embedded worker
 			// so it spawns BullMQ (not Drizzle) workers when configured.
@@ -177,12 +191,12 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		return { imports, calls };
 	},
 
-	bridge: ({ subsystemsRel, cfg }) => {
+	bridge: ({ moduleImport, cfg }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
 		return {
 			imports: [
-				`import { BridgeModule } from '${subsystemsRel}/bridge/bridge.module';`,
+				`import { BridgeModule } from '${moduleImport('bridge', 'bridge.module')}';`,
 			],
 			calls: [
 				`\tBridgeModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
@@ -190,12 +204,12 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		};
 	},
 
-	integration: ({ subsystemsRel, cfg }) => {
+	integration: ({ moduleImport, cfg }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
 		return {
 			imports: [
-				`import { IntegrationModule } from '${subsystemsRel}/integration/integration.module';`,
+				`import { IntegrationModule } from '${moduleImport('integration', 'integration.module')}';`,
 			],
 			calls: [
 				`\tIntegrationModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
@@ -203,6 +217,37 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		};
 	},
 };
+
+const PACKAGE = '@pattern-stack/codegen';
+
+/**
+ * Build the `moduleImport` resolver for a runtime mode (ADR-037).
+ *
+ * Vendored mode reproduces the legacy relative-path emission exactly:
+ * `<subsystemsRel>/<name>/<moduleBasename>`.
+ *
+ * Package mode resolves each subsystem's `forRoot`-bearing module to a
+ * published `@pattern-stack/codegen` subpath. The single `/subsystems` barrel
+ * re-exports ONLY `EventsModule`; the others (`JobsDomainModule`,
+ * `JobWorkerModule`, `BridgeModule`, `IntegrationModule`) are reached via the
+ * per-subsystem `./runtime/subsystems/<name>/index` barrel, which the package's
+ * `exports['./runtime/*']` entry maps to `dist/runtime/subsystems/<name>/index`.
+ */
+function makeModuleImport(
+	mode: RuntimeMode,
+	subsystemsRel: string,
+): (subsystem: SubsystemName, moduleBasename: string) => string {
+	if (mode === 'vendored') {
+		return (subsystem, moduleBasename) =>
+			`${subsystemsRel}/${subsystem}/${moduleBasename}`;
+	}
+	// Package mode. `EventsModule` is on the single top-level barrel; everything
+	// else resolves through the per-subsystem runtime index.
+	return (subsystem) =>
+		subsystem === 'events'
+			? `${PACKAGE}/subsystems`
+			: `${PACKAGE}/runtime/subsystems/${subsystem}/index`;
+}
 
 const COMPOSABLE_ORDER: SubsystemName[] = ['events', 'jobs', 'bridge', 'integration'];
 
@@ -231,8 +276,16 @@ const HEADER = `// AUTO-GENERATED by @pattern-stack/codegen. DO NOT EDIT.
 export function buildSubsystemBarrel(
 	installed: InstalledSubsystem[],
 	config: Record<string, unknown> | null | undefined,
-	subsystemsRel: string
+	subsystemsRel: string,
+	/**
+	 * Runtime mode (ADR-037). `vendored` (default) keeps the legacy
+	 * relative-path imports off `subsystemsRel`; `package` emits imports off the
+	 * published `@pattern-stack/codegen` subpaths. Defaulted so the many
+	 * existing pure-builder test callers stay on the legacy shape.
+	 */
+	mode: RuntimeMode = 'vendored'
 ): { content: string; emitted: SubsystemName[]; skipped: SubsystemName[] } {
+	const moduleImport = makeModuleImport(mode, subsystemsRel);
 	// #4: only fully-installed subsystems (module file present) may emit a
 	// `forRoot()` import. An `incomplete` entry — e.g. the `bridge/` protocol
 	// stubs an events install vendors because the events drizzle backend imports
@@ -256,7 +309,7 @@ export function buildSubsystemBarrel(
 			continue;
 		}
 		const cfg = (config?.[name] as Record<string, unknown> | undefined) ?? undefined;
-		const out = composer({ subsystemsRel, cfg });
+		const out = composer({ moduleImport, cfg });
 		allImports.push(...out.imports);
 		allCalls.push(...out.calls);
 		emitted.push(name);
@@ -294,7 +347,16 @@ export async function regenerateSubsystemBarrel(
 	const { ctx, dryRun = false } = opts;
 	const generatedDir = opts.generatedDir ?? resolveGeneratedDir(ctx);
 
-	const installed = await detectInstalledSubsystems(ctx);
+	// ADR-037: "installed" is mode-dependent. Package mode reads
+	// `subsystems.install` from config (nothing is vendored on disk); vendored
+	// mode scans for the vendored `<name>.module.ts` files exactly as before.
+	const mode = resolveRuntimeMode(ctx.config);
+	const installed =
+		mode === 'package'
+			? configuredInstalledSubsystems(
+					ctx.config as Record<string, unknown> | null | undefined,
+				)
+			: await detectInstalledSubsystems(ctx);
 
 	// Subsystems root → barrel can import via a relative path that works
 	// wherever the generated barrel ends up. `resolveSubsystemsRoot` returns
@@ -311,7 +373,8 @@ export async function regenerateSubsystemBarrel(
 	const { content, emitted, skipped } = buildSubsystemBarrel(
 		installed,
 		ctx.config as Record<string, unknown> | null | undefined,
-		subsystemsRel
+		subsystemsRel,
+		mode
 	);
 
 	let written = false;

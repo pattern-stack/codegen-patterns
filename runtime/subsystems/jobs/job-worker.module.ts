@@ -158,7 +158,19 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
      * without supplying a `DRIZZLE` provider.
      */
     @Optional() @Inject(DRIZZLE) private readonly db: DrizzleClient | null = null,
-    private readonly moduleRef?: ModuleRef,
+    /**
+     * ADR-037 (package-mode DI): inject `ModuleRef` EXPLICITLY via `@Inject`
+     * rather than relying on `design:paramtypes` reflection. The published
+     * package bundle is built without `emitDecoratorMetadata` (tsup/esbuild
+     * default), so a by-type injection here would resolve to `undefined` at
+     * boot in package mode — breaking the worker entirely (the
+     * `ModuleRef not available` throw). Vendored mode happened to work only
+     * because the consumer's own `tsc` (emitDecoratorMetadata: true)
+     * recompiled the source and emitted the metadata. The explicit token is
+     * mode-agnostic. `ModuleRef` is always provided by `@nestjs/core`, so no
+     * `@Optional()` is needed (it's a hard dependency of the worker path).
+     */
+    @Inject(ModuleRef) private readonly moduleRef?: ModuleRef,
     /**
      * BULLMQ-1 — resolved BullMQ connection + config, only bound when the
      * inner `JobsDomainModule` was booted with `backend: 'bullmq'`. `@Optional()`
