@@ -222,3 +222,84 @@ describe('buildSubsystemBarrel', () => {
 		);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// ADR-037 — package-mode emission (imports off @pattern-stack/codegen, NOT the
+// consumer's vendored relative path). Symptom #1 from the package-mode brief:
+// the barrel must emit non-empty package-imported forRoots.
+// ---------------------------------------------------------------------------
+
+describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
+	const subsystemsRel = './shared/subsystems';
+
+	test('full set imports module classes from package subpaths, not the vendored tree', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events'), inst('jobs'), inst('bridge'), inst('integration')],
+			{
+				events: { backend: 'drizzle', multi_tenant: false },
+				jobs: { backend: 'drizzle', worker_mode: 'standalone' },
+				bridge: { backend: 'drizzle' },
+				integration: { backend: 'drizzle' },
+			},
+			subsystemsRel,
+			'package',
+		);
+		expect(out.emitted).toEqual(['events', 'jobs', 'bridge', 'integration']);
+
+		// EventsModule comes off the single top-level barrel.
+		expect(out.content).toContain(
+			"import { EventsModule } from '@pattern-stack/codegen/subsystems';",
+		);
+		// Jobs / bridge / integration are NOT on the single barrel — they resolve
+		// through the per-subsystem runtime index.
+		expect(out.content).toContain(
+			"import { JobsDomainModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
+		);
+		expect(out.content).toContain(
+			"import { BridgeModule } from '@pattern-stack/codegen/runtime/subsystems/bridge/index';",
+		);
+		expect(out.content).toContain(
+			"import { IntegrationModule } from '@pattern-stack/codegen/runtime/subsystems/integration/index';",
+		);
+		// The forRoot calls are still emitted.
+		expect(out.content).toContain('EventsModule.forRoot(');
+		expect(out.content).toContain('JobsDomainModule.forRoot(');
+		expect(out.content).toContain('BridgeModule.forRoot(');
+		expect(out.content).toContain('IntegrationModule.forRoot(');
+		// And it must NOT reference the vendored relative path in package mode.
+		expect(out.content).not.toContain('./shared/subsystems/');
+	});
+
+	test("jobs `worker_mode: 'embedded'` imports JobWorkerModule from the package", () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain(
+			"import { JobWorkerModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
+		);
+		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded' }),");
+	});
+
+	test('vendored mode (explicit) still emits the relative-path imports', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{ events: { backend: 'drizzle', multi_tenant: false } },
+			subsystemsRel,
+			'vendored',
+		);
+		expect(out.content).toContain(
+			"import { EventsModule } from './shared/subsystems/events/events.module';",
+		);
+		// The package specifier must not appear on any IMPORT line (the HEADER
+		// banner legitimately contains "@pattern-stack/codegen").
+		const importLines = out.content
+			.split('\n')
+			.filter((l) => l.startsWith('import '));
+		expect(importLines.some((l) => l.includes('@pattern-stack/codegen'))).toBe(
+			false,
+		);
+	});
+});

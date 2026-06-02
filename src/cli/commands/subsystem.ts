@@ -53,8 +53,10 @@ import {
 import { copyRuntime } from '../shared/runtime-copier.js';
 import { resolveGeneratedDir } from '../shared/barrel-generator.js';
 import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
+import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
 import {
 	SUBSYSTEMS,
+	configuredSubsystemNames,
 	detectInstalledSubsystems,
 	detectSubsystemStates,
 	type SubsystemDescriptor,
@@ -62,6 +64,8 @@ import {
 	type SubsystemBackend,
 	type InstalledSubsystem,
 } from '../shared/subsystem-detect.js';
+import { resolveRuntimeMode } from '../shared/runtime-import.js';
+import { ensureSubsystemInstalled } from '../shared/subsystems-install-config.js';
 import {
 	resolveSubsystemsRoot,
 	resolveSubsystemsRootFromConfig,
@@ -97,6 +101,28 @@ export function subsystemSource(name: SubsystemName): string {
 function describeSubsystem(name: string): SubsystemDescriptor | null {
 	return SUBSYSTEMS.find((s) => s.name === name) ?? null;
 }
+
+/**
+ * ADR-037 package-mode config-block map. For each subsystem that injects a
+ * per-subsystem `<name>:` block into codegen.config.yaml, the detector name +
+ * the Hygen action folder that injects it. cache / storage are absent — they
+ * ship no config block, so package-mode install only records them in
+ * `subsystems.install`. openapi-config / auth-integrations have their own
+ * dedicated install flows and never reach the package-mode branch.
+ */
+const PACKAGE_CONFIG_BLOCK: Partial<
+	Record<
+		SubsystemName,
+		{ detector: DetectorSubsystemName; actionFolder: ConfigBlockActionInput['actionFolder'] }
+	>
+> = {
+	events: { detector: 'events', actionFolder: 'events-config' },
+	jobs: { detector: 'jobs', actionFolder: 'jobs-config' },
+	integration: { detector: 'integration', actionFolder: 'integration-config' },
+	bridge: { detector: 'bridge', actionFolder: 'bridge-config' },
+	observability: { detector: 'observability', actionFolder: 'observability-config' },
+	auth: { detector: 'auth', actionFolder: 'auth-config' },
+};
 
 // ---------------------------------------------------------------------------
 // summary + hints
@@ -342,6 +368,19 @@ export class SubsystemInstallCommand extends Command {
 		// Same parallel structure as `executeOpenApiConfig`.
 		if (desc.name === 'auth-integrations') {
 			return this.executeAuthIntegrations(ctx);
+		}
+
+		// ADR-037: in `runtime: package` mode the subsystem runtime lives in the
+		// published package — there is NOTHING to vendor into
+		// `src/shared/subsystems/`. Installing a subsystem reduces to: record it
+		// under `subsystems.install`, inject the per-subsystem config block, and
+		// regenerate the composition + schema barrels. Short-circuit the entire
+		// `copyRuntime` + runtime-dependent scaffold flow (worker.ts, vendored
+		// schema templates, .gitkeep, app.module.ts TODOs — all of which assume
+		// a vendored tree). Vendored mode falls through to the legacy path below
+		// unchanged.
+		if (resolveRuntimeMode(ctx.config) === 'package') {
+			return this.executePackageMode(ctx, desc, backend);
 		}
 
 		const installed = await detectInstalledSubsystems(ctx);
@@ -713,6 +752,163 @@ export class SubsystemInstallCommand extends Command {
 				`Per-entity: register ExecuteIntegrationUseCase + your IChangeSource/IIntegrationSink bindings in a feature module (see IntegrationModule docstring).`
 			);
 		}
+		return 0;
+	}
+
+	/**
+	 * ADR-037: package-mode install. The subsystem runtime lives in the
+	 * published `@pattern-stack/codegen` package, so installing reduces to a
+	 * config + barrel operation with NO file vendoring:
+	 *
+	 *   1. record the name under `subsystems.install` (the package-mode
+	 *      source of truth for "installed");
+	 *   2. inject the per-subsystem `<name>:` config block via the same Hygen
+	 *      action vendored mode uses (the block is runtime-agnostic — it only
+	 *      writes YAML, never code); cache/storage have no config block, so this
+	 *      step is skipped for them;
+	 *   3. regenerate the composition barrel (`<generated>/subsystems.ts`) and
+	 *      the schema barrel (`<generated>/subsystems-schema.ts`) so AppModule's
+	 *      `...SUBSYSTEM_MODULES` and drizzle-kit's schema pick up the new
+	 *      install.
+	 *
+	 * Idempotent: a name already in `subsystems.install` is a no-op unless
+	 * `--force` is passed (which still re-runs config-block injection under
+	 * `--force-config` and always regenerates the barrels).
+	 */
+	private async executePackageMode(
+		ctx: Context,
+		desc: SubsystemDescriptor,
+		backend: SubsystemBackend,
+	): Promise<number> {
+		const configPath = path.join(ctx.cwd, 'codegen.config.yaml');
+		const installed = configuredSubsystemNames(
+			ctx.config as Record<string, unknown> | null | undefined,
+		);
+		const already = installed.includes(desc.name);
+
+		if (already && !this.force) {
+			if (isJsonMode()) {
+				printJson({
+					command: 'subsystem install',
+					subsystem: desc.name,
+					runtime: 'package',
+					status: 'already-installed',
+				});
+			} else {
+				printInfo(
+					`${desc.name} is already in subsystems.install (runtime: package — nothing to vendor). Pass --force to refresh the config block + barrels.`,
+				);
+			}
+			return 0;
+		}
+
+		// 1. config-block plan (skipped for cache/storage — no block).
+		const configSubsystem = PACKAGE_CONFIG_BLOCK[desc.name];
+		const configBlockOutcome = configSubsystem
+			? planConfigBlockAction(configPath, configSubsystem.detector, this.forceConfig)
+			: null;
+		if (configBlockOutcome === 'parse-error') {
+			printError(
+				`codegen.config.yaml is not valid YAML: refusing to inject ${desc.name} config block. Fix the YAML and re-run.`,
+			);
+			return 1;
+		}
+
+		if (this.dryRun) {
+			if (isJsonMode()) {
+				printJson({
+					command: 'subsystem install',
+					subsystem: desc.name,
+					runtime: 'package',
+					dryRun: true,
+					installList: already ? installed : [...installed, desc.name],
+					configBlockOutcome,
+				});
+			} else {
+				printInfo(`Dry run — runtime: package (no files vendored).`);
+				if (!already) printInfo(`  would add '${desc.name}' to subsystems.install`);
+				if (configBlockOutcome) {
+					printInfo(`  ${desc.name} config block would be ${configBlockOutcome}`);
+				}
+				printInfo('  would regenerate <generated>/subsystems.ts + subsystems-schema.ts');
+			}
+			return 0;
+		}
+
+		// 2a. Ensure the name is recorded in subsystems.install.
+		const installResult = ensureSubsystemInstalled(configPath, desc.name);
+		if (installResult.outcome === 'parse-error') {
+			printError(
+				'codegen.config.yaml is not valid YAML: refusing to update subsystems.install. Fix the YAML and re-run.',
+			);
+			return 1;
+		}
+
+		// 2b. Inject the per-subsystem config block (runtime-agnostic YAML).
+		if (configSubsystem && configBlockOutcome) {
+			const configResult = runConfigBlockAction({
+				cwd: ctx.cwd,
+				actionFolder: configSubsystem.actionFolder,
+				configPath,
+				subsystem: configSubsystem.detector,
+				outcome: configBlockOutcome,
+				json: isJsonMode(),
+			});
+			if (!configResult.ok) {
+				printError(
+					`${desc.name} config-block injection failed: ${configResult.error ?? 'unknown error'}`,
+				);
+				return 1;
+			}
+		}
+
+		// 3. Regenerate both barrels. Reload context so the barrel generators
+		// see the freshly-written subsystems.install + config block.
+		const refreshed = await loadContext({
+			cwd: ctx.cwd,
+			configPath: this.configPath,
+			json: this.json,
+			skipDetection: true,
+		});
+		let barrelEmitted: string[] = [];
+		let schemaEmitted: string[] = [];
+		try {
+			const generatedDir = resolveGeneratedDir(refreshed);
+			const barrel = await regenerateSubsystemBarrel({ ctx: refreshed, generatedDir });
+			barrelEmitted = barrel.emitted;
+			const schema = await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir });
+			schemaEmitted = schema.emitted;
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			printWarning(`barrel regeneration failed — ${msg}`);
+		}
+
+		if (isJsonMode()) {
+			printJson({
+				command: 'subsystem install',
+				subsystem: desc.name,
+				runtime: 'package',
+				backend,
+				vendored: false,
+				installList: installResult.install,
+				installOutcome: installResult.outcome,
+				configBlockOutcome,
+				barrelEmitted,
+				schemaEmitted,
+			});
+			return 0;
+		}
+
+		printSuccess(`${desc.name} installed (runtime: package — no files vendored).`);
+		if (installResult.outcome === 'added') {
+			printInfo(`Added '${desc.name}' to subsystems.install.`);
+		}
+		printInfo(
+			`Regenerated <generated>/subsystems.ts (${barrelEmitted.join(', ') || 'none'}) + subsystems-schema.ts (${schemaEmitted.join(', ') || 'none'}).`,
+		);
+		printInfo(
+			'Wire once (if not already): `import { SUBSYSTEM_MODULES } from \'./generated/subsystems\'` into AppModule, and `export * from \'./generated/subsystems-schema\'` into your drizzle-kit schema entrypoint.',
+		);
 		return 0;
 	}
 

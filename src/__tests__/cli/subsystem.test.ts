@@ -28,7 +28,11 @@ function mkTempProject(): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'subsystem-cli-'));
 	fs.writeFileSync(
 		path.join(dir, 'codegen.config.yaml'),
-		'paths:\n  subsystems: src/shared/subsystems\n'
+		// ADR-037: these tests exercise the legacy VENDORED install path (files
+		// copied into src/shared/subsystems). The default runtime mode is now
+		// `package`, which vendors nothing — so the fixture must opt into
+		// `vendored` explicitly. Package-mode install has its own test block.
+		'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\n'
 	);
 	return dir;
 }
@@ -591,7 +595,7 @@ describe('subsystem — install (real)', () => {
 		const configPath = path.join(root, 'codegen.config.yaml');
 		fs.writeFileSync(
 			configPath,
-			'paths:\n  subsystems: src/shared/subsystems\n  modules_dir: src/features\n',
+			'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\n  modules_dir: src/features\n',
 		);
 		const cli = buildCli();
 		await capture(() =>
@@ -1015,7 +1019,7 @@ describe('subsystem — install integration (SYNC-7)', () => {
 		// Hand-write a config with integration.multi_tenant: true.
 		fs.writeFileSync(
 			path.join(root, 'codegen.config.yaml'),
-			'paths:\n  subsystems: src/shared/subsystems\nintegration:\n  backend: drizzle\n  multi_tenant: true\n',
+			'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\nintegration:\n  backend: drizzle\n  multi_tenant: true\n',
 		);
 		const cli = buildCli();
 		const { result } = await capture(() =>
@@ -1064,5 +1068,117 @@ describe('runtime-copier unit', () => {
 		});
 		expect(r2.unchanged.length).toBe(r1.written.length);
 		expect(r2.written.length).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ADR-037 — package-mode install (no vendoring; config + barrels only)
+// ---------------------------------------------------------------------------
+
+describe('subsystem — install (runtime: package)', () => {
+	function mkPackageProject(): string {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'subsystem-pkg-'));
+		tempDirs.push(dir);
+		fs.writeFileSync(
+			path.join(dir, 'codegen.config.yaml'),
+			'runtime: package\npaths:\n  subsystems: src/shared/subsystems\n  backend_src: src\n',
+		);
+		return dir;
+	}
+
+	test('does NOT vendor runtime into src/shared/subsystems', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		// No vendored runtime tree.
+		expect(fs.existsSync(path.join(root, 'src/shared/subsystems/jobs'))).toBe(
+			false,
+		);
+	});
+
+	test('records the name in subsystems.install + injects the config block', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
+
+		const cfg = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8');
+		expect(cfg).toContain('subsystems:');
+		expect(cfg).toContain('- jobs');
+		// jobs config block injected (runtime-agnostic YAML).
+		expect(cfg).toMatch(/^jobs:/m);
+	});
+
+	test('regenerates subsystems.ts with PACKAGE imports (symptom #1 fixed)', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		await capture(() => cli.run(['subsystem', 'install', 'events', '--cwd', root]));
+		await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
+		await capture(() => cli.run(['subsystem', 'install', 'integration', '--cwd', root]));
+
+		const barrel = fs.readFileSync(
+			path.join(root, 'src/generated/subsystems.ts'),
+			'utf-8',
+		);
+		// Non-empty — the install set drives it (not vendored-file presence).
+		expect(barrel).not.toContain('SUBSYSTEM_MODULES: DynamicModule[] = [];');
+		expect(barrel).toContain('EventsModule.forRoot(');
+		expect(barrel).toContain('JobsDomainModule.forRoot(');
+		expect(barrel).toContain('IntegrationModule.forRoot(');
+		// Package imports, not the vendored relative path.
+		expect(barrel).toContain("from '@pattern-stack/codegen/subsystems'");
+		expect(barrel).toContain(
+			"from '@pattern-stack/codegen/runtime/subsystems/jobs/index'",
+		);
+		expect(barrel).not.toContain('./shared/subsystems/');
+	});
+
+	test('emits subsystems-schema.ts with tables + pgEnums (symptom #9 fixed)', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		await capture(() => cli.run(['subsystem', 'install', 'events', '--cwd', root]));
+		await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
+
+		const schema = fs.readFileSync(
+			path.join(root, 'src/generated/subsystems-schema.ts'),
+			'utf-8',
+		);
+		// events table (no enum), jobs tables + enums.
+		expect(schema).toContain('domainEvents');
+		expect(schema).toContain('jobs, jobRuns, jobSteps');
+		expect(schema).toContain('jobRunStatusEnum');
+		expect(schema).toContain(
+			"from '@pattern-stack/codegen/runtime/subsystems/jobs/index'",
+		);
+	});
+
+	test('idempotent — re-install of a listed subsystem is a no-op (no --force)', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		await capture(() => cli.run(['subsystem', 'install', 'events', '--cwd', root]));
+		const before = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8');
+
+		const { out } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--cwd', root]),
+		);
+		expect(out).toContain('already in subsystems.install');
+		// install list unchanged (no duplicate '- events').
+		const after = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8');
+		expect((after.match(/- events/g) ?? []).length).toBe(1);
+		expect(before).toBe(after);
+	});
+
+	test('--json reports vendored:false + the install list + emitted barrels', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		const { out } = await capture(() =>
+			cli.run(['subsystem', 'install', 'bridge', '--json', '--cwd', root]),
+		);
+		const parsed = JSON.parse(out);
+		expect(parsed.runtime).toBe('package');
+		expect(parsed.vendored).toBe(false);
+		expect(parsed.installList).toContain('bridge');
 	});
 });

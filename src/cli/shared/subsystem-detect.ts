@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Context } from './context.js';
+import { resolveRuntimeMode } from './runtime-import.js';
 
 export type SubsystemName =
 	| 'events'
@@ -359,4 +360,90 @@ export async function detectInstalledSubsystems(
 ): Promise<InstalledSubsystem[]> {
 	const states = await detectSubsystemStatesImpl(ctx);
 	return states.filter((s) => s.status === 'installed');
+}
+
+// ---------------------------------------------------------------------------
+// ADR-037 — package-mode "installed" set (config-driven)
+// ---------------------------------------------------------------------------
+
+/**
+ * The names listed under `subsystems.install` in `codegen.config.yaml`,
+ * filtered to the KNOWN subsystem set and de-duplicated in declaration order.
+ *
+ * In `runtime: package` mode nothing is vendored into `src/shared/subsystems/`,
+ * so the vendored-file scan (`detectInstalledSubsystems`) finds nothing. The
+ * authoritative "installed" signal in package mode is therefore the config
+ * list — exactly the contract the barrel docstring always advertised but the
+ * detector never honored.
+ */
+export function configuredSubsystemNames(
+	config: Record<string, unknown> | null | undefined,
+): SubsystemName[] {
+	const subsystems = (config as { subsystems?: { install?: unknown } } | null | undefined)
+		?.subsystems;
+	const raw = subsystems?.install;
+	if (!Array.isArray(raw)) return [];
+	const known = new Set<string>(KNOWN_NAMES);
+	const seen = new Set<SubsystemName>();
+	const out: SubsystemName[] = [];
+	for (const entry of raw) {
+		if (typeof entry !== 'string') continue;
+		if (!known.has(entry)) continue;
+		const name = entry as SubsystemName;
+		if (seen.has(name)) continue;
+		seen.add(name);
+		out.push(name);
+	}
+	return out;
+}
+
+/**
+ * Synthesize an `InstalledSubsystem[]` from `subsystems.install` for package
+ * mode. There's no on-disk directory to point at (the runtime lives in the
+ * package), so `path` is the logical `@pattern-stack/codegen` subpath and
+ * `backend` comes from the per-subsystem config block (defaulting to the
+ * descriptor's default backend). Always `installed` — a name in the install
+ * list is, by definition, installed in package mode.
+ */
+export function configuredInstalledSubsystems(
+	config: Record<string, unknown> | null | undefined,
+): InstalledSubsystem[] {
+	return configuredSubsystemNames(config).map((name) => {
+		const desc = SUBSYSTEMS.find((s) => s.name === name);
+		const cfg = (config as Record<string, unknown> | null | undefined)?.[name] as
+			| { backend?: unknown }
+			| undefined;
+		const backend =
+			typeof cfg?.backend === 'string'
+				? (cfg.backend as SubsystemBackend)
+				: (desc?.defaultBackend ?? 'drizzle');
+		return {
+			name,
+			path: `@pattern-stack/codegen/subsystems#${name}`,
+			backend,
+			status: 'installed' as const,
+		};
+	});
+}
+
+/**
+ * Mode-aware "installed" resolver — the single entry point callers should use
+ * when they need the actable install set in a way that's correct for BOTH
+ * runtime modes (ADR-037):
+ *
+ *   - `package`  → driven by `subsystems.install` (nothing is vendored).
+ *   - `vendored` → driven by the vendored module-file scan (legacy).
+ *
+ * Vendored mode is byte-for-byte the pre-ADR-037 behavior.
+ */
+export async function resolveInstalledSubsystems(
+	ctx: Context,
+): Promise<InstalledSubsystem[]> {
+	const mode = resolveRuntimeMode(ctx.config);
+	if (mode === 'package') {
+		return configuredInstalledSubsystems(
+			ctx.config as Record<string, unknown> | null | undefined,
+		);
+	}
+	return detectInstalledSubsystems(ctx);
 }

@@ -23,6 +23,7 @@ import {
 } from '../shared/barrel-generator.js';
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
 import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
+import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
 import { generateBridgeRegistry } from '../shared/bridge-registry-generator.js';
 import {
 	OrchestrationEmissionError,
@@ -646,6 +647,20 @@ export class EntityNewCommand extends Command {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (!isJsonMode()) {
 				printWarning(`subsystem barrel regeneration failed — ${msg}`);
+			}
+		}
+
+		// Regenerate the subsystem SCHEMA barrel (<generated>/subsystems-schema.ts)
+		// re-exporting each installed subsystem's Drizzle tables + pgEnums so
+		// drizzle-kit emits their CREATE TABLE / CREATE TYPE without the consumer
+		// hand-re-exporting them (the "#9 footgun"). Mode-aware like the
+		// composition barrel; same warn-but-don't-fail contract.
+		try {
+			await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`subsystem schema barrel regeneration failed — ${msg}`);
 			}
 		}
 

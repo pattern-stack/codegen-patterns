@@ -39,7 +39,10 @@ const NON_TERMINAL_STATUSES: JobRunRow['status'][] = [
 @Injectable()
 export class MemoryJobRunService implements IJobRunService {
   constructor(
-    private readonly store: MemoryJobStore,
+    // ADR-037 (package-mode DI): explicit `@Inject(MemoryJobStore)` — the
+    // published bundle carries no `design:paramtypes`, so a by-type inject
+    // would resolve to `undefined` in package mode.
+    @Inject(MemoryJobStore) private readonly store: MemoryJobStore,
     @Inject(JOB_ORCHESTRATOR) private readonly orchestrator: IJobOrchestrator,
     @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
   ) {}

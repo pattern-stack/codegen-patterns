@@ -137,10 +137,15 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
   private readonly queueBlockers = new Map<string, string[]>();
 
   constructor(
-    private readonly store: MemoryJobStore,
-    private readonly stepService: MemoryJobStepService,
+    // ADR-037 (package-mode DI): explicit `@Inject` tokens on every param —
+    // the published bundle has no `design:paramtypes` metadata (built without
+    // `emitDecoratorMetadata`), so by-type injection would resolve to
+    // `undefined` in package mode. Class tokens (`MemoryJobStore`,
+    // `MemoryJobStepService`, `ModuleRef`) are passed to `@Inject` explicitly.
+    @Inject(MemoryJobStore) private readonly store: MemoryJobStore,
+    @Inject(MemoryJobStepService) private readonly stepService: MemoryJobStepService,
     @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
-    @Optional() private readonly moduleRef?: ModuleRef,
+    @Optional() @Inject(ModuleRef) private readonly moduleRef?: ModuleRef,
   ) {}
 
   /**
