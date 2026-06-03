@@ -32,6 +32,50 @@ import type {
 	EventFieldType,
 	EventPayloadField,
 } from '../../schema/event-definition.schema.js';
+import type { RuntimeMode } from './runtime-import.js';
+
+// ---------------------------------------------------------------------------
+// Mode-aware runtime imports (ADR-037)
+// ---------------------------------------------------------------------------
+
+/**
+ * The generated event files import three things from the events RUNTIME:
+ * `DomainEvent` / `IEventBus` / `DrizzleTransaction` (the protocol), the
+ * `EVENT_BUS` / `EVENTS_MULTI_TENANT` tokens, and `MissingTenantIdError`.
+ *
+ * In vendored mode those sit as siblings of the generated dir
+ * (`../event-bus.protocol`, `../events.tokens`, `../events-errors`). In package
+ * mode the generated files land in the consumer's `src/generated/events/`,
+ * which has no relative line of sight to the package-internal runtime — so all
+ * three resolve through the published events index barrel (which re-exports
+ * every one of those symbols).
+ */
+const PACKAGE_EVENTS_RUNTIME_IMPORT =
+	'@pattern-stack/codegen/runtime/subsystems/events/index';
+
+interface EventsRuntimeImports {
+	/** `DomainEvent`, `IEventBus`, `DrizzleTransaction`. */
+	protocol: string;
+	/** `EVENT_BUS`, `EVENTS_MULTI_TENANT`. */
+	tokens: string;
+	/** `MissingTenantIdError`. */
+	errors: string;
+}
+
+function eventsRuntimeImports(mode: RuntimeMode): EventsRuntimeImports {
+	if (mode === 'package') {
+		return {
+			protocol: PACKAGE_EVENTS_RUNTIME_IMPORT,
+			tokens: PACKAGE_EVENTS_RUNTIME_IMPORT,
+			errors: PACKAGE_EVENTS_RUNTIME_IMPORT,
+		};
+	}
+	return {
+		protocol: '../event-bus.protocol',
+		tokens: '../events.tokens',
+		errors: '../events-errors',
+	};
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +88,14 @@ export interface EventCodegenGeneratorOptions {
 	eventsDir: string;
 	/** Absolute path to the generator's output directory. */
 	outputDir: string;
+	/**
+	 * Runtime mode (ADR-037). Defaults to `'vendored'` so existing callers/tests
+	 * and the vendored emission are byte-stable. In `'package'` mode the three
+	 * runtime imports (`protocol` / `tokens` / `errors`) resolve through the
+	 * published events index barrel instead of vendored `../` siblings — the
+	 * consumer's generated files then typecheck from `src/generated/events/`.
+	 */
+	mode?: RuntimeMode;
 	/** If true, compute content but don't write to disk. */
 	dryRun?: boolean;
 }
@@ -308,14 +360,18 @@ export function collectMergedEvents(
 // Content builder: types.ts
 // ---------------------------------------------------------------------------
 
-export function buildTypesContent(events: EventDefinition[]): string {
+export function buildTypesContent(
+	events: EventDefinition[],
+	mode: RuntimeMode = 'vendored',
+): string {
 	const sorted = [...events].sort((a, b) => a.type.localeCompare(b.type));
+	const protocolImport = eventsRuntimeImports(mode).protocol;
 
 	if (sorted.length === 0) {
 		return (
 			HEADER +
 			'\n' +
-			`import type { DomainEvent } from '../event-bus.protocol';\n` +
+			`import type { DomainEvent } from '${protocolImport}';\n` +
 			'\n' +
 			`export type AppDomainEvent = never;\n` +
 			'\n' +
@@ -333,7 +389,7 @@ export function buildTypesContent(events: EventDefinition[]): string {
 	const chunks: string[] = [];
 	chunks.push(HEADER);
 	chunks.push('');
-	chunks.push(`import type { DomainEvent } from '../event-bus.protocol';`);
+	chunks.push(`import type { DomainEvent } from '${protocolImport}';`);
 	chunks.push('');
 
 	for (const ev of sorted) {
@@ -669,10 +725,23 @@ export class TypedEventBus {
 }
 `;
 
-export function buildBusContent(_events: EventDefinition[]): string {
+export function buildBusContent(
+	_events: EventDefinition[],
+	mode: RuntimeMode = 'vendored',
+): string {
 	// Body is identical for empty and non-empty projects; the behaviour
-	// difference lives in registry.ts (empty throws on any lookup).
-	return HEADER + '\n' + BUS_BODY;
+	// difference lives in registry.ts (empty throws on any lookup). Only the
+	// three runtime imports are mode-dependent (ADR-037) — in package mode they
+	// resolve through the published events index barrel. Vendored mode returns
+	// BUS_BODY untouched (byte-stable).
+	let body = BUS_BODY;
+	if (mode === 'package') {
+		body = body
+			.replace(`from '../events.tokens'`, `from '${PACKAGE_EVENTS_RUNTIME_IMPORT}'`)
+			.replace(`from '../events-errors'`, `from '${PACKAGE_EVENTS_RUNTIME_IMPORT}'`)
+			.replace(`from '../event-bus.protocol'`, `from '${PACKAGE_EVENTS_RUNTIME_IMPORT}'`);
+	}
+	return HEADER + '\n' + body;
 }
 
 // ---------------------------------------------------------------------------
@@ -702,10 +771,30 @@ const OUTPUT_FILE_NAMES = [
 	'index.ts',
 ] as const;
 
+/**
+ * Build all five generated file contents for an event set, mode-aware (ADR-037).
+ * Pure — no fs. Shared by the entrypoint and the subsystem-barrel stub writer
+ * (package mode) so the empty-set output is identical in both. `types.ts` /
+ * `bus.ts` thread `mode` (their runtime imports differ); the other three have
+ * no runtime imports and ignore it.
+ */
+export function buildEventCodegenContents(
+	events: EventDefinition[],
+	mode: RuntimeMode = 'vendored',
+): Array<{ name: (typeof OUTPUT_FILE_NAMES)[number]; content: string }> {
+	return [
+		{ name: 'types.ts', content: buildTypesContent(events, mode) },
+		{ name: 'schemas.ts', content: buildSchemasContent(events) },
+		{ name: 'registry.ts', content: buildRegistryContent(events) },
+		{ name: 'bus.ts', content: buildBusContent(events, mode) },
+		{ name: 'index.ts', content: buildIndexContent(events) },
+	];
+}
+
 export async function generateEventCodegen(
 	opts: EventCodegenGeneratorOptions,
 ): Promise<EventCodegenResult> {
-	const { entitiesDir, eventsDir, outputDir, dryRun = false } = opts;
+	const { entitiesDir, eventsDir, outputDir, mode = 'vendored', dryRun = false } = opts;
 
 	// 1–3. Load + merge via the shared helper. `no_events_dir` / `no_files`
 	// warnings are retained — the generator still emits stub files, matching
@@ -715,23 +804,14 @@ export async function generateEventCodegen(
 		eventsDir,
 	});
 
-	// 4. Build all file contents.
-	const builders: Record<
-		(typeof OUTPUT_FILE_NAMES)[number],
-		(events: EventDefinition[]) => string
-	> = {
-		'types.ts': buildTypesContent,
-		'schemas.ts': buildSchemasContent,
-		'registry.ts': buildRegistryContent,
-		'bus.ts': buildBusContent,
-		'index.ts': buildIndexContent,
-	};
-
-	const files: EventCodegenFileOutput[] = OUTPUT_FILE_NAMES.map((name) => ({
-		name,
-		outputPath: path.join(outputDir, name),
-		content: builders[name](merged),
-	}));
+	// 4. Build all file contents (mode-aware import resolution).
+	const files: EventCodegenFileOutput[] = buildEventCodegenContents(merged, mode).map(
+		({ name, content }) => ({
+			name,
+			outputPath: path.join(outputDir, name),
+			content,
+		}),
+	);
 
 	// 5. Write (or not) — fail-loud on `severity: 'error'` issues.
 	const hasError = issues.some((i) => i.severity === 'error');

@@ -36,6 +36,7 @@ import {
 	buildBridgeRegistryContent,
 	PACKAGE_BRIDGE_TYPE_IMPORT,
 } from './bridge-registry-generator.js';
+import { buildEventCodegenContents } from './event-codegen-generator.js';
 
 // ---------------------------------------------------------------------------
 // Options + result types
@@ -185,13 +186,29 @@ function workerPoolsClause(
 }
 
 const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
-	events: ({ moduleImport, cfg }) => {
+	events: ({ moduleImport, cfg, mode }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
+		const imports = [
+			`import { EventsModule } from '${moduleImport('events', 'events.module')}';`,
+		];
+		// Package mode (ADR-037): the consumer's `events/*.yaml` are scanned into
+		// `src/generated/events/bus.ts` (a `TypedEventBus` typed to THEIR event
+		// union, reading THEIR registry). Thread it through `forRoot({ typedBus })`
+		// or the bundled empty-union bus wins and typed publishes resolve against
+		// `never`. Vendored mode omits it — the runtime's own `./generated/bus` IS
+		// the consumer's generated file there.
+		if (mode === 'package') {
+			imports.push(`import { TypedEventBus } from './events/bus';`);
+			return {
+				imports,
+				calls: [
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus }),`,
+				],
+			};
+		}
 		return {
-			imports: [
-				`import { EventsModule } from '${moduleImport('events', 'events.module')}';`,
-			],
+			imports,
 			calls: [
 				`\tEventsModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
 			],
@@ -463,6 +480,22 @@ export async function regenerateSubsystemBarrel(
 					registryPath,
 					buildBridgeRegistryContent([], PACKAGE_BRIDGE_TYPE_IMPORT),
 				);
+			}
+		}
+
+		// Same guard for the events composer: package mode imports
+		// `./events/bus`. The real 5-file set is emitted by `entity new --all`
+		// (which scans events/*.yaml); `subsystem install events` regenerates the
+		// barrel without that scan, so drop an empty-set stub iff the dir is
+		// absent — never clobber a previously-generated set (byte-identical to the
+		// generator's own empty-case output, so no churn).
+		if (mode === 'package' && emitted.includes('events')) {
+			const eventsDir = path.resolve(generatedDir, 'events');
+			if (!fs.existsSync(path.resolve(eventsDir, 'bus.ts'))) {
+				fs.mkdirSync(eventsDir, { recursive: true });
+				for (const { name, content } of buildEventCodegenContents([], 'package')) {
+					fs.writeFileSync(path.resolve(eventsDir, name), content);
+				}
 			}
 		}
 	}

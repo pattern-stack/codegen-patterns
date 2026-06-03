@@ -454,4 +454,35 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			"BridgeModule.forRoot({ backend: 'drizzle', multiTenant: true, registry: bridgeRegistry }),",
 		);
 	});
+
+	// ─── Events seam: package mode threads the consumer's TypedEventBus ──────
+
+	test('package-mode events composer imports ./events/bus and passes typedBus', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{ events: { backend: 'drizzle', multi_tenant: false } },
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain(
+			"import { TypedEventBus } from './events/bus';",
+		);
+		expect(out.content).toContain(
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, typedBus: TypedEventBus }),",
+		);
+	});
+
+	test('vendored events composer emits no typedBus (uses the runtime bundled bus)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{ events: { backend: 'drizzle', multi_tenant: false } },
+			subsystemsRel,
+			'vendored',
+		);
+		expect(out.content).toContain(
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false }),",
+		);
+		expect(out.content).not.toContain('typedBus');
+		expect(out.content).not.toContain('./events/bus');
+	});
 });

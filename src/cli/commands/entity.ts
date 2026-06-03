@@ -392,24 +392,35 @@ export class EntityNewCommand extends Command {
 		const architecture = resolveArchitecture(ctx);
 
 		const subsystemsRoot = resolveSubsystemsRoot(ctx);
-		const scopeEntityTypePath = path.resolve(
-			subsystemsRoot,
-			'jobs/generated/scope-entity-type.ts',
-		);
+		// Runtime mode (ADR-037) drives WHERE consumer-specific generated code
+		// lands. Vendored mode keeps the legacy `<subsystemsRoot>/<name>/generated`
+		// tree (next to the runtime it imports). Package mode has no vendored tree,
+		// so the generated event files + scope union + bridge registry land beside
+		// the other `src/generated/*` barrels, with runtime imports routed through
+		// the published `@pattern-stack/codegen` subpaths.
+		const runtimeMode = resolveRuntimeMode(ctx.config);
+
+		// Scope-entity-type union (jobs). Self-contained (zod-only), so package
+		// mode just relocates it to `src/generated/scope-entity-type.ts`.
+		const scopeEntityTypePath =
+			runtimeMode === 'package'
+				? path.resolve(generatedDir, 'scope-entity-type.ts')
+				: path.resolve(subsystemsRoot, 'jobs/generated/scope-entity-type.ts');
 
 		const eventsDir = resolveEventsDir(ctx);
-		const eventCodegenOutputDir = path.resolve(
-			subsystemsRoot,
-			'events/generated',
-		);
+		// Event codegen output. Package mode → `src/generated/events/` (the 5 files
+		// import the events runtime via the package subpath); also the dir the
+		// bridge registry validates trigger events against (so package-mode trigger
+		// validation now works).
+		const eventCodegenOutputDir =
+			runtimeMode === 'package'
+				? path.resolve(generatedDir, 'events')
+				: path.resolve(subsystemsRoot, 'events/generated');
 		// Bridge registry output is mode-aware (ADR-037). Vendored mode writes
 		// `registry.ts` into the vendored `bridge/generated/` tree (next to the
-		// runtime it types against). Package mode has no vendored tree, so the
-		// registry lands beside the other `src/generated/*` barrels as
-		// `bridge-registry.ts` and is threaded into `BridgeModule.forRoot` by the
-		// subsystem barrel. `mode`/`bridgeInstalled` are passed to the generator,
-		// which picks the filename + type-import accordingly.
-		const runtimeMode = resolveRuntimeMode(ctx.config);
+		// runtime it types against). Package mode lands `bridge-registry.ts` beside
+		// the other `src/generated/*` barrels, threaded into `BridgeModule.forRoot`
+		// by the subsystem barrel.
 		const bridgeInstalledForRegistry = configuredSubsystemNames(
 			ctx.config as Record<string, unknown> | null | undefined,
 		).includes('bridge');
@@ -489,6 +500,7 @@ export class EntityNewCommand extends Command {
 				entitiesDir,
 				eventsDir,
 				outputDir: eventCodegenOutputDir,
+				mode: runtimeMode,
 				dryRun: true,
 			});
 
@@ -703,6 +715,7 @@ export class EntityNewCommand extends Command {
 				entitiesDir,
 				eventsDir,
 				outputDir: eventCodegenOutputDir,
+				mode: runtimeMode,
 			});
 			if (!isJsonMode()) {
 				for (const issue of eventCodegenResult.issues) {
