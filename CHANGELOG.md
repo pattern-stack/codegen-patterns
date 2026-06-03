@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-06-02
+
+Package-mode consumer **events** — the seam that lets a project consuming the
+runtime from the package (`runtime: package`, ADR-037) declare its own
+`events/*.yaml`, get a typed `TypedEventBus`, and publish typed domain events.
+Completes the package-mode story alongside 0.14.2's bridge fixes. Vendored mode
+is byte-stable; everything here is additive.
+
+### Added
+
+- **`EventsModuleOptions.typedBus?: Type<unknown>`** — binds a consumer-supplied
+  `TypedEventBus` class to `TYPED_EVENT_BUS` (via `forRoot`). Omitted ⇒ falls
+  back to the bundled `./generated/bus` (which IS the consumer's generated file
+  in a vendored tree), so existing consumers and tests are unaffected. Nest
+  constructs the supplied class with this module's `EVENT_BUS` +
+  `EVENTS_MULTI_TENANT` providers (string-valued tokens match across the package
+  boundary).
+
+### Fixed
+
+- **Event codegen is package-mode-aware.** Previously `entity new --all` in
+  package mode wrote the five generated event files
+  (`types/schemas/registry/bus/index.ts`) into a stray
+  `src/shared/subsystems/events/generated/` tree whose `../event-bus.protocol` /
+  `../events.tokens` / `../events-errors` imports don't exist in package mode —
+  the tree didn't typecheck and was orphaned (the bundled empty `TypedEventBus`
+  won at runtime). Now in package mode the files land in the consumer's
+  `src/generated/events/`, those three runtime imports resolve through the
+  published `@pattern-stack/codegen/runtime/subsystems/events/index` barrel, and
+  the subsystem barrel threads the generated `TypedEventBus` into
+  `EventsModule.forRoot({ typedBus })`. A package-mode consumer's typed
+  `publish<'…'>()` now resolves against THEIR event union and stamps the right
+  `pool` / `direction`.
+- **Scope-entity-type is package-mode-aware** — relocated to
+  `src/generated/scope-entity-type.ts` (a self-contained zod-only union) instead
+  of the stray vendored `jobs/generated/` path.
+- **Package-mode bridge trigger validation now runs.** Because the consumer's
+  event registry now exists at a real path (`src/generated/events/registry.ts`),
+  the bridge registry generator validates `@JobHandler.triggers` event types
+  against it (the 0.14.2 "known gap"). `subsystem install events` drops an
+  empty-set `src/generated/events/` stub so the barrel's `./events/bus` import
+  never dangles before the next `entity new`.
+
 ## [0.14.2] — 2026-06-02
 
 Package-mode bridge fixes — the two gaps that left the event→job bridge wired but
