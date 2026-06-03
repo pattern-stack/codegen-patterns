@@ -53,6 +53,47 @@ import type { RuntimeMode } from './runtime-import.js';
 const PACKAGE_EVENTS_RUNTIME_IMPORT =
 	'@pattern-stack/codegen/runtime/subsystems/events/index';
 
+/**
+ * Build the package-mode `DomainEventRegistry` augmentation block (ADR-037,
+ * package-mode trigger typing). Emitted ONLY in package mode and ONLY when the
+ * project declares at least one event.
+ *
+ * The published runtime keys the bridge + job-trigger types off an EMPTY,
+ * augmentable `DomainEventRegistry` interface (events/event-registry.ts), so
+ * `EventTypeName` defaults to `string` until a consumer fills it in. This block
+ * declaration-merges the consumer's events into that interface via the events
+ * INDEX module specifier — the public, stable augmentation target the runtime
+ * re-exports the interface from. After this merges, the consumer's
+ * `bridge-registry.ts` and their `@JobHandler({ triggers })` see their own
+ * `EventTypeName` union with full `EventOfType<T>` payload typing.
+ *
+ * In vendored mode this is unnecessary (the bridge/job types import the
+ * consumer's vendored `./generated/types` directly) and not emitted, so
+ * vendored output stays byte-stable.
+ */
+function buildRegistryAugmentationBlock(events: EventDefinition[]): string {
+	const sorted = [...events].sort((a, b) => a.type.localeCompare(b.type));
+	const chunks: string[] = [];
+	chunks.push(
+		`// Package-mode trigger typing (ADR-037): merge these events into the runtime's`,
+	);
+	chunks.push(
+		`// augmentable \`DomainEventRegistry\` so the bridge + \`@JobHandler({ triggers })\``,
+	);
+	chunks.push(
+		`// types (which key off the published \`EventTypeName\`) see THIS project's events`,
+	);
+	chunks.push(`// with full \`EventOfType<T>\` payload typing.`);
+	chunks.push(`declare module '${PACKAGE_EVENTS_RUNTIME_IMPORT}' {`);
+	chunks.push(`\tinterface DomainEventRegistry {`);
+	for (const ev of sorted) {
+		chunks.push(`\t\t'${ev.type}': ${toPascalCase(ev.type)}Event;`);
+	}
+	chunks.push(`\t}`);
+	chunks.push(`}`);
+	return chunks.join('\n');
+}
+
 interface EventsRuntimeImports {
 	/** `DomainEvent`, `IEventBus`, `DrizzleTransaction`. */
 	protocol: string;
@@ -435,6 +476,16 @@ export function buildTypesContent(
 		`export type PayloadOfType<T extends EventTypeName> = EventOfType<T>['payload'];`,
 	);
 	chunks.push('');
+
+	// Package-mode augmentation (ADR-037): in package mode the bridge + trigger
+	// types key off the published runtime's augmentable `DomainEventRegistry`,
+	// not the consumer's local `EventTypeName` above. Emit a `declare module`
+	// block so they pick up this project's events. Vendored mode imports the
+	// local types directly and needs no augmentation (byte-stable).
+	if (mode === 'package') {
+		chunks.push(buildRegistryAugmentationBlock(sorted));
+		chunks.push('');
+	}
 
 	return chunks.join('\n');
 }

@@ -4,6 +4,18 @@
  * Import the module in AppModule, inject the bus via EVENT_BUS token.
  */
 export type { DomainEvent, IEventBus, DrizzleTransaction } from './event-bus.protocol';
+// Augmentable event registry (ADR-037, package-mode trigger typing). A
+// package-mode consumer's generated events code augments `DomainEventRegistry`
+// via `declare module '@pattern-stack/codegen/runtime/subsystems/events/index'`
+// so the bridge + job-trigger types pick up THEIR events with full payload
+// typing. `EventTypeName` / `EventOfType` are re-exported here (the public
+// barrel is the stable augmentation target); they derive from the registry, NOT
+// the bundled fixture union the generated `./generated/types` re-export carries.
+export type {
+  DomainEventRegistry,
+  EventTypeName,
+  EventOfType,
+} from './event-registry';
 export type {
   IEventReadPort,
   ListEventsQuery,

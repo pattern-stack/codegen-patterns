@@ -29,7 +29,7 @@ import type { DrizzleTransaction, DomainEvent } from '../events/event-bus.protoc
 import type {
   EventOfType,
   EventTypeName,
-} from '../events/generated/types';
+} from '../events/event-registry';
 
 import type {
   BridgeDeliveryRecord,

@@ -17,7 +17,7 @@
 // TODO(logging-subsystem): swap to ILogger once ADR-028 lands
 import type { Logger } from '@nestjs/common';
 import { tokenKey } from '../token-key';
-import type { EventOfType, EventTypeName } from '../events/generated/types';
+import type { EventOfType, EventTypeName } from '../events/event-registry';
 import type { JobRun } from './job-orchestrator.protocol';
 
 // ─── ParentClosePolicy ──────────────────────────────────────────────────────

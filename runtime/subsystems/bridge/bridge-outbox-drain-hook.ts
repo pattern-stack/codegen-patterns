@@ -45,7 +45,7 @@ import type {
   IBridgeOutboxDrainHook,
 } from './bridge.protocol';
 import { BRIDGE_DELIVERY_JOB_TYPE } from './bridge-delivery-handler';
-import type { EventTypeName } from '../events/generated/types';
+import type { EventTypeName } from '../events/event-registry';
 
 /** Reserved pools the wrapper rows route into; ADR-022 / ADR-024. */
 const POOL_BY_DIRECTION: Record<string, string> = {
