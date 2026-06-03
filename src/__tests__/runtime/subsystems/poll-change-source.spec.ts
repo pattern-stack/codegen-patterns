@@ -52,16 +52,21 @@ function makeConfig(extra?: Partial<DetectionConfig>): DetectionConfig {
     poll: {
       cursor: { kind: 'systemModstamp', field: 'modstamp' },
     },
+    // The adapter yields ALREADY-MAPPED canonical records keyed `external_id`/
+    // `name`; the primitive reads `record[mapping.source]`, so `source` must
+    // match those keys. (The original fixtures declared `source: 'Id'`/`'Name'`
+    // while emitting `external_id`/`name`; that only passed because the pre-fix
+    // primitive read `.target` — the gap #6 transposition this PR fixes.)
     mapping: [
-      { source: 'Id', target: 'external_id' },
-      { source: 'Name', target: 'name' },
+      { source: 'external_id', target: 'external_id' },
+      { source: 'name', target: 'name' },
     ],
     filters: [{ field: 'StageName', op: 'eq', value: 'Won' }],
     ...(extra as object),
   } as DetectionConfig;
 }
 
-async function collect<T>(it: AintegrationIterable<T>): Promise<T[]> {
+async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
   for await (const x of it) out.push(x);
   return out;
@@ -162,7 +167,7 @@ describe('PollChangeSource — filter passthrough', () => {
     const config: DetectionConfig = {
       mode: 'poll',
       poll: { cursor: { kind: 'systemModstamp', field: 'modstamp' } },
-      mapping: [{ source: 'Id', target: 'external_id' }],
+      mapping: [{ source: 'external_id', target: 'external_id' }],
       filters: [],
     };
     const src = new PollChangeSource<OppRecord>({ adapter, config });
@@ -176,7 +181,7 @@ describe('PollChangeSource — filter passthrough', () => {
 // ---------------------------------------------------------------------------
 
 describe('PollChangeSource — field mapping', () => {
-  it('uses the mapping target "external_id" to populate Change.externalId', async () => {
+  it('uses the mapping source for external_id to populate Change.externalId', async () => {
     const adapter: PollFetchCallback<OppRecord> = async function* () {
       yield {
         record: { external_id: 'OPP-42', name: 'Mapped', modstamp: 't' },
@@ -189,6 +194,38 @@ describe('PollChangeSource — field mapping', () => {
     });
     const [change] = await collect(src.listChanges(subscription, null));
     expect(change.externalId).toBe('OPP-42');
+  });
+
+  // Regression for the gap #6 transposition (shared with WebhookChangeSource):
+  // when the canonical record is vendor-neutral camelCase the mapping `source`
+  // (`externalId`) diverges from its `target` (`external_id`). The primitive
+  // MUST read `record[source]`. The buggy `.target` lookup looked up
+  // `record['external_id']` → undefined → spurious "record missing string".
+  it('reads externalId via mapping.source when source diverges from target (camelCase canonical)', async () => {
+    interface CamelRecord {
+      externalId: string;
+      name: string;
+      modstamp: string;
+    }
+    const adapter: PollFetchCallback<CamelRecord> = async function* () {
+      // keyed `externalId` only — deliberately NO `external_id` key.
+      yield {
+        record: { externalId: 'gh:42', name: 'Camel', modstamp: 't' },
+        cursor: { systemModstamp: 't' },
+      };
+    };
+    const config: DetectionConfig = {
+      mode: 'poll',
+      poll: { cursor: { kind: 'systemModstamp', field: 'modstamp' } },
+      mapping: [{ source: 'externalId', target: 'external_id' }],
+      filters: [],
+    };
+    const src = new PollChangeSource<CamelRecord>({ adapter, config });
+    const [change] = await collect(src.listChanges(subscription, null));
+    expect(change.externalId).toBe('gh:42');
+    expect(
+      (change.record as Record<string, unknown>).external_id,
+    ).toBeUndefined();
   });
 
   it('throws if the mapping declares no external_id target', () => {
@@ -336,7 +373,7 @@ describe('PollChangeSource — cdc-as-provenance', () => {
         cursor: { kind: 'eventId', field: 'event_id' },
         provenance: 'cdc',
       },
-      mapping: [{ source: 'id', target: 'external_id' }],
+      mapping: [{ source: 'external_id', target: 'external_id' }],
       filters: [],
     };
   }

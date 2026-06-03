@@ -39,11 +39,17 @@ const subscription: IntegrationSubscriptionView = {
   externalRef: 'sf-org-A',
 };
 
+// The fetch callbacks below emit ALREADY-MAPPED canonical records keyed
+// `external_id`. The primitive reads `record[mapping.source]`, so `source` must
+// match the emitted key (`external_id`), NOT `'Id'`/`'id'`. The original
+// fixtures declared `source: 'Id'`/`'id'` while emitting `external_id` keys;
+// that only passed because the pre-fix primitive read `.target` — the gap #6
+// transposition this PR fixes.
 function pollConfig(): DetectionConfig {
   return {
     mode: 'poll',
     poll: { cursor: { kind: 'systemModstamp', field: 'modstamp' } },
-    mapping: [{ source: 'Id', target: 'external_id' }],
+    mapping: [{ source: 'external_id', target: 'external_id' }],
     filters: [],
   } as DetectionConfig;
 }
@@ -52,12 +58,12 @@ function webhookConfig(): DetectionConfig {
   return {
     mode: 'webhook',
     webhook: { eventIdField: 'event_id' },
-    mapping: [{ source: 'id', target: 'external_id' }],
+    mapping: [{ source: 'external_id', target: 'external_id' }],
     filters: [],
   } as DetectionConfig;
 }
 
-async function collect<T>(it: AintegrationIterable<T>): Promise<T[]> {
+async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
   for await (const x of it) out.push(x);
   return out;

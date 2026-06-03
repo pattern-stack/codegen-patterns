@@ -92,6 +92,33 @@ export type {
   SourcedRecord,
 } from './integration';
 
+// Integration — change-source primitives + DetectionConfig (#226-3/4, ADR-033).
+// Re-exported here so consumers authoring a webhook/poll drain across the
+// package boundary import them from `@pattern-stack/codegen/subsystems` instead
+// of reaching into the deep `.../integration/index` path. Surfaced by the
+// swe-brain dogfood (gap #6 — the first real consumer of `WebhookChangeSource`,
+// whose Slack inbound drain otherwise had to deep-import the primitive +
+// `DetectionConfigSchema`). Selective re-export (mirrors the curated
+// `IncrementalReadBase` / `ExecuteIntegrationUseCase` forwards above) — not
+// `export *`, to keep the `IntegrationRunSummary` name clash contained.
+export {
+  WebhookChangeSource,
+  PollChangeSource,
+  buildChangeSource,
+  DetectionConfigSchema,
+} from './integration';
+export type {
+  WebhookChangeSourceOptions,
+  WebhookFetchCallback,
+  WebhookFetchContext,
+  WebhookCursor,
+  PollChangeSourceOptions,
+  PollFetchCallback,
+  PollFetchContext,
+  PollCursor,
+  DetectionConfig,
+} from './integration';
+
 // Integration — assembly emission (RFC-0002). The generated per-entity sink
 // imports `IIntegrationSink`; the generated per-entity assembly module imports
 // `ExecuteIntegrationUseCase` + `INTEGRATION_CHANGE_SOURCE` + `INTEGRATION_SINK`

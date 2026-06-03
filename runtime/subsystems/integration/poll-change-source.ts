@@ -133,11 +133,14 @@ export class PollChangeSource<T> implements IChangeSource<T> {
     }
     const config = opts.config;
 
-    // Field mapping: locate the canonical `external_id` target. Adapters
-    // emit T already-mapped, but the primitive needs to know which key on
-    // T carries the external id so it can stamp `Change.externalId`. Source
-    // of truth is the mapping table — codegen emits it from YAML, the
-    // primitive reads it here.
+    // Field mapping: locate the entry whose canonical `target` is `external_id`.
+    // Adapters emit T already-mapped, but the primitive needs to know which key
+    // on T carries the external id so it can stamp `Change.externalId`. That key
+    // is the mapping's `source` (the field on the emitted record), NOT its
+    // `target` (the canonical column) — they differ whenever the canonical
+    // record is vendor-neutral camelCase (e.g. `source: 'externalId'` →
+    // `target: 'external_id'`). Source of truth is the mapping table — codegen
+    // emits it from YAML, the primitive reads it here.
     const externalIdMapping = config.mapping.find(
       (m) => m.target === 'external_id',
     );
@@ -146,7 +149,7 @@ export class PollChangeSource<T> implements IChangeSource<T> {
         "PollChangeSource: DetectionConfig.mapping must include an entry with target 'external_id' so emitted Change<T>.externalId can be populated",
       );
     }
-    this.externalIdSourceField = externalIdMapping.target;
+    this.externalIdSourceField = externalIdMapping.source;
 
     this.adapter = opts.adapter;
     this.filters = config.filters;
@@ -196,7 +199,7 @@ export class PollChangeSource<T> implements IChangeSource<T> {
       ];
       if (typeof externalIdRaw !== 'string' || externalIdRaw.length === 0) {
         throw new Error(
-          `PollChangeSource: record missing string '${this.externalIdSourceField}' — emitted records MUST carry the canonical external id keyed by the mapping target`,
+          `PollChangeSource: record missing string '${this.externalIdSourceField}' — emitted records MUST carry the canonical external id keyed by the mapping source`,
         );
       }
       let dedupKey: string | undefined;

@@ -49,16 +49,23 @@ function makeWebhookConfig(extra?: Partial<DetectionConfig>): DetectionConfig {
     webhook: {
       eventIdField: 'event_id',
     },
+    // The queue yields ALREADY-MAPPED canonical records keyed by the mapping
+    // `source` (the field on the emitted record). These fixtures emit records
+    // keyed `external_id`/`name`, so `source` must match those keys — the
+    // primitive reads `record[source]`, NOT `record[target]`. (The original
+    // fixtures declared `source: 'id'`/`'Name'` while emitting `external_id`;
+    // that only passed because the pre-fix primitive read `.target` — the gap
+    // #6 transposition. Aligned here so the fixture exercises the real path.)
     mapping: [
-      { source: 'id', target: 'external_id' },
-      { source: 'Name', target: 'name' },
+      { source: 'external_id', target: 'external_id' },
+      { source: 'name', target: 'name' },
     ],
     filters: [],
     ...(extra as object),
   } as DetectionConfig;
 }
 
-async function collect<T>(it: AintegrationIterable<T>): Promise<T[]> {
+async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
   for await (const x of it) out.push(x);
   return out;
@@ -140,6 +147,80 @@ describe('WebhookChangeSource — event-id dedup', () => {
     expect(seen).toBeDefined();
     expect(seen!.subscription.id).toBe('sub-webhook-1');
     expect(seen!.cursor).toEqual({ lastTs: 'x' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// camelCase canonical record — externalId read via mapping.source, not target
+//
+// Regression for the externalId mapping transposition (gap #6, swe-brain
+// dogfood — the first real exercise of WebhookChangeSource). The constructor
+// must read the emitted record off the mapping's `source` (the field on the
+// emitted record), NOT its `target` (the canonical column). The two diverge
+// whenever the canonical record is vendor-neutral camelCase: a consumer that
+// emits records keyed `externalId` with `mapping: [{ source: 'externalId',
+// target: 'external_id' }]` and NO `external_id` key on the record. The bug
+// (`.target`) made the primitive look up `record['external_id']` → undefined →
+// "record missing string 'external_id'", rendering the primitive unusable for
+// any camelCase-canonical consumer. The original fixtures masked it because
+// they keyed records `external_id` (== the target), so source vs. target never
+// diverged.
+// ---------------------------------------------------------------------------
+
+interface CamelCaseRecord {
+  externalId: string;
+  name: string;
+}
+
+describe('WebhookChangeSource — camelCase canonical record (mapping.source)', () => {
+  function makeCamelConfig(): DetectionConfig {
+    return {
+      mode: 'webhook',
+      // The eventIdField IS the externalId field here — the swe-brain shape,
+      // where the canonical event id and external id are the same camelCase key.
+      webhook: { eventIdField: 'externalId' },
+      mapping: [{ source: 'externalId', target: 'external_id' }],
+      filters: [],
+    } as DetectionConfig;
+  }
+
+  it('reads externalId off the record via mapping.source (record has NO external_id key)', async () => {
+    const queue: WebhookFetchCallback<CamelCaseRecord> = async function* () {
+      // Note: keyed `externalId` only — there is deliberately NO `external_id`
+      // key on the record. The buggy `.target` lookup would throw here.
+      yield { record: { externalId: 'gh:123', name: 'Alpha' } };
+    };
+    const src = new WebhookChangeSource<CamelCaseRecord>({
+      queue,
+      config: makeCamelConfig(),
+    });
+    const out = await collect(src.listChanges(subscription, null));
+    expect(out).toHaveLength(1);
+    expect(out[0].source).toBe('webhook');
+    expect(out[0].externalId).toBe('gh:123');
+    expect(out[0].dedupKey).toBe('gh:123');
+    // Sanity: the emitted record carries no `external_id` key whatsoever, so a
+    // passing assertion proves the primitive resolved via `.source`.
+    expect(
+      (out[0].record as Record<string, unknown>).external_id,
+    ).toBeUndefined();
+  });
+
+  it('throws naming the mapping source field when the record is missing it', async () => {
+    const queue: WebhookFetchCallback<CamelCaseRecord> = async function* () {
+      yield { record: { name: 'Alpha' } as unknown as CamelCaseRecord };
+    };
+    const src = new WebhookChangeSource<CamelCaseRecord>({
+      queue,
+      config: makeCamelConfig(),
+    });
+    await expect(
+      (async () => {
+        for await (const _c of src.listChanges(subscription, null)) {
+          // drain
+        }
+      })(),
+    ).rejects.toThrow(/externalId/);
   });
 });
 

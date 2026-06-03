@@ -9,8 +9,9 @@
  *   - canonical `Change<T>.source = 'webhook'` stamping;
  *   - `dedupKey` derivation from the configured `webhook.eventIdField` on
  *     the emitted record;
- *   - `externalId` derivation from the mapping table's `external_id` target
- *     (mirrors `PollChangeSource`);
+ *   - `externalId` derivation: the mapping entry whose `target === 'external_id'`
+ *     names — via its `source` — the field on the emitted record that carries
+ *     the canonical external id (mirrors `PollChangeSource`);
  *   - middleware-chain composition via the locked `ChangeMiddleware<T>` shape
  *     (#226-1) — same composition seam as the poll primitive.
  *
@@ -132,10 +133,13 @@ export class WebhookChangeSource<T> implements IChangeSource<T> {
     }
     const config = opts.config;
 
-    // Field mapping: locate the canonical `external_id` target — mirrors the
-    // poll primitive's contract. Adapters emit records already-mapped; the
-    // primitive needs to know which key on T carries the external id so it
-    // can stamp `Change.externalId`.
+    // Field mapping: locate the entry whose canonical `target` is `external_id`
+    // — mirrors the poll primitive's contract. Adapters emit records
+    // already-mapped; the primitive needs to know which key on T carries the
+    // external id so it can stamp `Change.externalId`. That key is the
+    // mapping's `source` (the field on the emitted record), NOT its `target`
+    // (the canonical column) — they differ whenever the canonical record is
+    // vendor-neutral camelCase (e.g. `source: 'externalId'` → `target: 'external_id'`).
     const externalIdMapping = config.mapping.find(
       (m) => m.target === 'external_id',
     );
@@ -144,7 +148,7 @@ export class WebhookChangeSource<T> implements IChangeSource<T> {
         "WebhookChangeSource: DetectionConfig.mapping must include an entry with target 'external_id' so emitted Change<T>.externalId can be populated",
       );
     }
-    this.externalIdSourceField = externalIdMapping.target;
+    this.externalIdSourceField = externalIdMapping.source;
     this.eventIdSourceField = config.webhook.eventIdField;
 
     this.queue = opts.queue;
@@ -183,7 +187,7 @@ export class WebhookChangeSource<T> implements IChangeSource<T> {
       ];
       if (typeof externalIdRaw !== 'string' || externalIdRaw.length === 0) {
         throw new Error(
-          `WebhookChangeSource: record missing string '${this.externalIdSourceField}' — emitted records MUST carry the canonical external id keyed by the mapping target`,
+          `WebhookChangeSource: record missing string '${this.externalIdSourceField}' — emitted records MUST carry the canonical external id keyed by the mapping source`,
         );
       }
       const eventIdRaw = (record as Record<string, unknown>)[
