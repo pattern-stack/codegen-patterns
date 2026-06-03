@@ -64,7 +64,7 @@ import {
 
 import { EVENT_BUS } from '../events/events.tokens';
 import type { IEventBus, DomainEvent } from '../events/event-bus.protocol';
-import type { EventTypeName } from '../events/generated/types';
+import type { EventTypeName } from '../events/event-registry';
 
 import {
   BRIDGE_DELIVERY_REPO,

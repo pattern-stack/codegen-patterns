@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-06-02
+
+Package-mode **bridge/trigger event typing** — the fourth and final package-mode
+seam (after 0.14.1 subsystems, 0.14.2 bridge, 0.15.0 events). Lets a package-mode
+consumer (`runtime: package`, ADR-037) author a `@JobHandler({ triggers: [{ event:
+'<their_event>', map, when }] })` on their OWN event and have it typecheck with
+full per-event payload typing. Vendored mode is byte-stable; everything here is
+additive.
+
+### Fixed
+
+- **`@JobHandler.triggers` and the generated `bridge-registry.ts` now accept a
+  package-mode consumer's own events.** Previously the bridge + job-trigger types
+  (`BridgeRegistry`, `BridgeTriggerEntry<T>`, `JobTrigger<TInput>`) keyed off
+  `EventTypeName` imported from the bundled `events/generated/types.ts` — which
+  in the published package is codegen-patterns' OWN test-fixture union
+  (`contact_created`, `deal_created`, …). A consumer's
+  `'inbound_webhook_received'` trigger therefore failed to typecheck
+  (`'inbound_webhook_received' is not assignable to '"contact_created" | …'`) and
+  their generated `bridge-registry.ts` reported "does not exist in type
+  'BridgeRegistry'". The bridge/trigger types now key off an **augmentable
+  `DomainEventRegistry`** (see below) instead of the bundled fixture union, so in
+  the consumer's tsc program they resolve THEIR event union with full
+  `EventOfType<T>` payload typing (`e.payload.<field>` is typed, not `unknown`).
+  The bundled fixture-based runtime tests stay green: the bundled `TypedEventBus`
+  still keys off its local `events/generated/types.ts`, and the fixtures are
+  never registered into `DomainEventRegistry`, so they never leak into a
+  consumer's `EventTypeName`.
+
+### Added
+
+- **`DomainEventRegistry` — an augmentable, empty event registry interface**
+  (`runtime/subsystems/events/event-registry.ts`, re-exported from the events
+  index barrel). `EventTypeName` now derives from it
+  (`keyof DomainEventRegistry extends never ? string : keyof DomainEventRegistry &
+  string`) and `EventOfType<T>` resolves a registered event's concrete interface
+  (falling back to the structural `DomainEvent` base otherwise). Empty in the
+  package and in any no-events project ⇒ `EventTypeName` degrades to `string` and
+  the bridge/trigger types stay sound (`Record<string, …>` / `(e: DomainEvent) =>
+  …`) — exactly the loose shape the package's own fixture tests rely on. The five
+  bridge/jobs runtime files that consumed `EventTypeName` / `EventOfType` from the
+  bundled `events/generated/types` (`bridge.protocol`, `job-handler.base`,
+  `event-flow.service`, `bridge-outbox-drain-hook`, `bridge-delivery-handler`) now
+  import them from this augmentable seam.
+- **Event codegen emits a package-mode `declare module` augmentation.** In
+  package mode the generated `src/generated/events/types.ts` now appends a
+  `declare module '@pattern-stack/codegen/runtime/subsystems/events/index' {
+  interface DomainEventRegistry { '<type>': <Type>Event; … } }` block that
+  declaration-merges the consumer's events into the runtime's registry through
+  the events index module specifier (the stable, public augmentation target).
+  Gated on `mode === 'package'` and a non-empty event set; vendored mode emits
+  nothing (the bridge/job types import the consumer's vendored `./generated/types`
+  directly), so vendored output is byte-stable. Proven end-to-end with a real
+  cross-`node_modules` consumer typecheck (declaration merging across the package
+  boundary is finicky and is covered by a real-tsc unit test, not string
+  assertions alone): an unregistered event type is rejected, and a registered
+  one's trigger `map` reads `e.payload.<field>` fully typed.
+
 ## [0.15.0] — 2026-06-02
 
 Package-mode consumer **events** — the seam that lets a project consuming the

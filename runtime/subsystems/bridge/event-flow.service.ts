@@ -52,7 +52,7 @@ import type {
 import type {
   EventOfType,
   EventTypeName,
-} from '../events/generated/types';
+} from '../events/event-registry';
 
 import { JOB_ORCHESTRATOR } from '../jobs/jobs-domain.tokens';
 import type { IJobOrchestrator } from '../jobs/job-orchestrator.protocol';

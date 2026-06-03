@@ -263,6 +263,59 @@ describe('buildTypesContent — multi-event ordering', () => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// Package-mode `DomainEventRegistry` augmentation (ADR-037, trigger typing).
+//
+// In package mode the bridge + `@JobHandler({ triggers })` types key off the
+// published runtime's augmentable `DomainEventRegistry` (not the consumer's
+// local `EventTypeName`). The generated `types.ts` must emit a `declare module`
+// block that merges the project's events into that interface so triggers see
+// them with full payload typing. Vendored mode must NOT emit it (byte-stable).
+// ---------------------------------------------------------------------------
+
+describe('buildTypesContent — package-mode DomainEventRegistry augmentation', () => {
+	test('package mode emits a declare-module augmentation on the events index barrel', () => {
+		const content = buildTypesContent(
+			[contactCreated, stripePaymentReceived],
+			'package',
+		);
+		// Targets the EXACT module specifier the consumer imports the bridge/event
+		// types from — declaration merging only flows through the same specifier.
+		expect(content).toContain(
+			"declare module '@pattern-stack/codegen/runtime/subsystems/events/index' {",
+		);
+		expect(content).toContain('interface DomainEventRegistry {');
+		// Each event registered as `'<type>': <Pascal>Event;`, alphabetical.
+		expect(content).toContain("'contact_created': ContactCreatedEvent;");
+		expect(content).toContain(
+			"'stripe_payment_received': StripePaymentReceivedEvent;",
+		);
+		const contactIdx = content.indexOf("'contact_created': ContactCreatedEvent;");
+		const stripeIdx = content.indexOf(
+			"'stripe_payment_received': StripePaymentReceivedEvent;",
+		);
+		expect(stripeIdx).toBeGreaterThan(contactIdx);
+	});
+
+	test('vendored mode emits NO augmentation block (byte-stable)', () => {
+		const content = buildTypesContent([contactCreated], 'vendored');
+		expect(content).not.toContain('declare module');
+		expect(content).not.toContain('DomainEventRegistry');
+	});
+
+	test('default mode (no arg) is vendored — no augmentation', () => {
+		const content = buildTypesContent([contactCreated]);
+		expect(content).not.toContain('declare module');
+	});
+
+	test('empty event set in package mode emits no augmentation (string fallback stands)', () => {
+		const content = buildTypesContent([], 'package');
+		expect(content).not.toContain('declare module');
+		// Empty case still degrades EventTypeName to string (unchanged).
+		expect(content).toContain('export type EventTypeName = string;');
+	});
+});
+
 describe('buildTypesContent — empty payload', () => {
 	test('emits Record<string, never> for a payload-less event', () => {
 		const ev: EventDefinition = {
@@ -764,6 +817,236 @@ describe('emitted generated/* typechecks under strict + noUncheckedIndexedAccess
 			throw new Error(`tsc exited ${exitCode}:\n${output}`);
 		}
 		expect(exitCode).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Package-mode trigger typing — REAL cross-package declaration-merging proof
+// (ADR-037, 0.15.1). Mirrors how a package-mode consumer's `bridge-registry.ts`
+// and `@JobHandler({ triggers })` see THEIR events: the published runtime keys
+// the bridge/trigger types off an augmentable `DomainEventRegistry`, and the
+// consumer's generated `types.ts` augments it through the events INDEX module
+// specifier. This must be PROVEN with a real tsc against a faithful copy of the
+// runtime's augmentable types — cross-`node_modules` declaration merging is too
+// finicky to assert on string content alone.
+// ---------------------------------------------------------------------------
+
+describe('package-mode trigger typing — cross-package declaration merging (real tsc)', () => {
+	/**
+	 * Build a tiny fake `@pattern-stack/codegen` whose `event-registry` /
+	 * `bridge.protocol` types are byte-faithful to the shipped runtime, drop the
+	 * consumer's `buildTypesContent(events, 'package')` output beside it, plus a
+	 * `bridge-registry.ts` that keys off the package's `BridgeRegistry`. `extra`
+	 * is appended to the consumer's bridge-registry file to add inline
+	 * assertions (`@ts-expect-error`, typed reads) that fail the build if the
+	 * augmentation did NOT take effect.
+	 */
+	function runPackageAugmentationTsc(
+		events: EventDefinition[],
+		extra: string,
+	): { exitCode: number; output: string } {
+		const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
+		const tmpBase = path.join(repoRoot, 'test', 'tmp', 'evt-pkg-aug-tsc');
+		fs.mkdirSync(tmpBase, { recursive: true });
+		const dir = fs.mkdtempSync(path.join(tmpBase, 'case-'));
+		tempDirs.push(dir);
+
+		// --- Fake package: node_modules/@pattern-stack/codegen/runtime/... -----
+		const pkgEvents = path.join(
+			dir,
+			'node_modules',
+			'@pattern-stack',
+			'codegen',
+			'runtime',
+			'subsystems',
+			'events',
+		);
+		const pkgBridge = path.join(
+			dir,
+			'node_modules',
+			'@pattern-stack',
+			'codegen',
+			'runtime',
+			'subsystems',
+			'bridge',
+		);
+		fs.mkdirSync(pkgEvents, { recursive: true });
+		fs.mkdirSync(pkgBridge, { recursive: true });
+
+		fs.writeFileSync(
+			path.join(pkgEvents, 'event-bus.protocol.ts'),
+			[
+				'export interface DomainEvent {',
+				'  readonly id: string;',
+				'  readonly type: string;',
+				'  readonly payload: Record<string, unknown>;',
+				'}',
+			].join('\n') + '\n',
+		);
+		// Byte-faithful copy of the shipped runtime/.../events/event-registry.ts core.
+		fs.writeFileSync(
+			path.join(pkgEvents, 'event-registry.ts'),
+			[
+				"import type { DomainEvent } from './event-bus.protocol';",
+				// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+				'export interface DomainEventRegistry {}',
+				'export type EventTypeName = keyof DomainEventRegistry extends never',
+				'  ? string',
+				'  : keyof DomainEventRegistry & string;',
+				'export type EventOfType<T extends EventTypeName> =',
+				'  T extends keyof DomainEventRegistry ? DomainEventRegistry[T] : DomainEvent;',
+			].join('\n') + '\n',
+		);
+		// Index barrel re-exports the augmentable types (the augmentation target).
+		fs.writeFileSync(
+			path.join(pkgEvents, 'index.ts'),
+			[
+				"export type { DomainEvent } from './event-bus.protocol';",
+				"export type { DomainEventRegistry, EventTypeName, EventOfType } from './event-registry';",
+			].join('\n') + '\n',
+		);
+		// Bridge protocol keys off event-registry (faithful to the shipped file).
+		fs.writeFileSync(
+			path.join(pkgBridge, 'bridge.protocol.ts'),
+			[
+				"import type { EventOfType, EventTypeName } from '../events/event-registry';",
+				'export interface BridgeTriggerEntry<T extends EventTypeName = EventTypeName> {',
+				'  triggerId: string;',
+				'  jobType: string;',
+				'  map: (event: EventOfType<T>) => unknown;',
+				'  when?: (event: EventOfType<T>) => boolean;',
+				'}',
+				'export type BridgeRegistry = {',
+				'  [T in EventTypeName]?: BridgeTriggerEntry<T>[];',
+				'};',
+			].join('\n') + '\n',
+		);
+		fs.writeFileSync(
+			path.join(pkgBridge, 'index.ts'),
+			"export type { BridgeRegistry, BridgeTriggerEntry } from './bridge.protocol';\n",
+		);
+
+		// --- Consumer: generated events types (package mode) + bridge-registry --
+		const gen = path.join(dir, 'src', 'generated');
+		fs.mkdirSync(path.join(gen, 'events'), { recursive: true });
+		fs.writeFileSync(
+			path.join(gen, 'events', 'types.ts'),
+			buildTypesContent(events, 'package'),
+		);
+		// The augmentation lives in events/types.ts; import it for side effects so
+		// the declare-module merges into the consumer's program.
+		fs.writeFileSync(
+			path.join(gen, 'bridge-registry.ts'),
+			[
+				"import type { BridgeRegistry } from '@pattern-stack/codegen/runtime/subsystems/bridge/index';",
+				"import './events/types';",
+				'',
+				'export const bridgeRegistry: BridgeRegistry = {',
+				extra,
+				'};',
+			].join('\n') + '\n',
+		);
+
+		fs.writeFileSync(
+			path.join(dir, 'tsconfig.json'),
+			JSON.stringify(
+				{
+					compilerOptions: {
+						target: 'ESNext',
+						module: 'ESNext',
+						moduleResolution: 'bundler',
+						noEmit: true,
+						strict: true,
+						skipLibCheck: true,
+						types: [],
+					},
+					include: ['src/**/*'],
+				},
+				null,
+				2,
+			),
+		);
+		fs.writeFileSync(
+			path.join(dir, 'package.json'),
+			'{"name":"evt-pkg-aug-tsc"}\n',
+		);
+
+		const res = spawnSync('bunx', ['--bun', 'tsc', '--noEmit', '-p', dir], {
+			cwd: repoRoot,
+			encoding: 'utf-8',
+			timeout: 60_000,
+		});
+		return {
+			exitCode: res.status ?? -1,
+			output: (res.stdout ?? '') + (res.stderr ?? ''),
+		};
+	}
+
+	// A consumer event with a typed payload field we can read in the trigger map.
+	const inboundWebhookReceived: EventDefinition = {
+		type: 'inbound_webhook_received',
+		direction: 'inbound',
+		source: 'webhook',
+		version: 1,
+		description: 'A verified inbound webhook item was staged.',
+		payload: {
+			staging_id: { type: 'uuid', nullable: false },
+			provider: { type: 'string', nullable: false },
+		},
+		retry: { attempts: 5, backoff: 'exponential' },
+		pool: 'events_inbound',
+	};
+
+	test("consumer's own event type is accepted by BridgeRegistry with full payload typing", () => {
+		// A trigger keyed by the consumer's event, reading a typed payload field.
+		// If the augmentation did NOT merge, EventTypeName would be the package's
+		// `string` fallback (key accepted but `e.payload.stagingId` is `unknown`)
+		// OR the package's fixture union (key REJECTED). The `: string` binding on
+		// the typed read forces the strong-typing assertion.
+		const extra = [
+			"  'inbound_webhook_received': [",
+			'    {',
+			"      triggerId: 'inbound-sync#0',",
+			"      jobType: 'inbound-sync',",
+			'      map: (e) => {',
+			'        const sid: string = e.payload.stagingId;',
+			'        const prov: string = e.payload.provider;',
+			'        return { sid, prov };',
+			'      },',
+			'      when: () => true,',
+			'    },',
+			'  ],',
+		].join('\n');
+		const { exitCode, output } = runPackageAugmentationTsc(
+			[inboundWebhookReceived],
+			extra,
+		);
+		if (exitCode !== 0) {
+			throw new Error(`tsc exited ${exitCode}:\n${output}`);
+		}
+		expect(exitCode).toBe(0);
+	});
+
+	test('an unregistered event type is REJECTED (proves it is not the loose string fallback)', () => {
+		// `nope_event` is not in the augmented registry. With a real `EventTypeName`
+		// union this key is a type error; with the `string` fallback it would be
+		// accepted. We assert tsc FAILS — proving the union narrowed.
+		const extra = [
+			"  'nope_event': [",
+			'    {',
+			"      triggerId: 'x#0',",
+			"      jobType: 'x',",
+			'      map: () => ({}),',
+			'    },',
+			'  ],',
+		].join('\n');
+		const { exitCode, output } = runPackageAugmentationTsc(
+			[inboundWebhookReceived],
+			extra,
+		);
+		expect(exitCode).not.toBe(0);
+		// The error must be about the unknown key, not some unrelated breakage.
+		expect(output).toContain('nope_event');
 	});
 });
 
