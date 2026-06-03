@@ -20,6 +20,7 @@ import { spawnSync } from 'node:child_process';
 
 import {
 	buildBusContent,
+	buildEventCodegenContents,
 	buildIndexContent,
 	buildRegistryContent,
 	buildSchemasContent,
@@ -1169,5 +1170,99 @@ payload:
 		const result = collectMergedEvents({ entitiesDir, eventsDir });
 		expect(result.events).toEqual([]);
 		expect(result.issues.some((i) => i.type === 'no_events_dir')).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Package mode (ADR-037) — runtime imports route through the published events
+// index barrel instead of vendored `../` siblings, so the generated files
+// typecheck from the consumer's `src/generated/events/`.
+// ---------------------------------------------------------------------------
+
+const PKG_EVENTS_IMPORT = '@pattern-stack/codegen/runtime/subsystems/events/index';
+
+describe('buildTypesContent — package mode', () => {
+	test('DomainEvent imports from the package events index (non-empty)', () => {
+		const content = buildTypesContent([contactCreated], 'package');
+		expect(content).toContain(
+			`import type { DomainEvent } from '${PKG_EVENTS_IMPORT}';`,
+		);
+		expect(content).not.toContain("'../event-bus.protocol'");
+	});
+
+	test('empty case also routes DomainEvent through the package', () => {
+		const content = buildTypesContent([], 'package');
+		expect(content).toContain(
+			`import type { DomainEvent } from '${PKG_EVENTS_IMPORT}';`,
+		);
+		expect(content).not.toContain("'../event-bus.protocol'");
+	});
+
+	test('vendored (default) is unchanged', () => {
+		expect(buildTypesContent([contactCreated])).toContain(
+			"import type { DomainEvent } from '../event-bus.protocol';",
+		);
+	});
+});
+
+describe('buildBusContent — package mode', () => {
+	test('all three runtime imports route through the package events index', () => {
+		const content = buildBusContent([], 'package');
+		expect(content).toContain(
+			`import { EVENT_BUS, EVENTS_MULTI_TENANT } from '${PKG_EVENTS_IMPORT}';`,
+		);
+		expect(content).toContain(
+			`import { MissingTenantIdError } from '${PKG_EVENTS_IMPORT}';`,
+		);
+		expect(content).toContain(
+			`import type { IEventBus, DrizzleTransaction } from '${PKG_EVENTS_IMPORT}';`,
+		);
+		// No vendored `../` runtime imports survive.
+		expect(content).not.toContain("'../events.tokens'");
+		expect(content).not.toContain("'../events-errors'");
+		expect(content).not.toContain("'../event-bus.protocol'");
+		// Intra-generated sibling imports stay relative.
+		expect(content).toContain("import { eventPayloadSchemas } from './schemas';");
+		expect(content).toContain("import { getEventMetadata } from './registry';");
+	});
+
+	test('vendored (default) keeps the `../` runtime imports', () => {
+		const content = buildBusContent([]);
+		expect(content).toContain(
+			"import { EVENT_BUS, EVENTS_MULTI_TENANT } from '../events.tokens';",
+		);
+		expect(content).toContain(
+			"import { MissingTenantIdError } from '../events-errors';",
+		);
+		// (the HEADER banner legitimately names @pattern-stack/codegen — assert on
+		// the package IMPORT specifier instead)
+		expect(content).not.toContain(PKG_EVENTS_IMPORT);
+	});
+});
+
+describe('buildEventCodegenContents — package mode', () => {
+	test('emits all five files; types/bus carry package imports', () => {
+		const files = buildEventCodegenContents([], 'package');
+		expect(files.map((f) => f.name)).toEqual([
+			'types.ts',
+			'schemas.ts',
+			'registry.ts',
+			'bus.ts',
+			'index.ts',
+		]);
+		const byName = Object.fromEntries(files.map((f) => [f.name, f.content]));
+		expect(byName['types.ts']).toContain(PKG_EVENTS_IMPORT);
+		expect(byName['bus.ts']).toContain(PKG_EVENTS_IMPORT);
+		// schemas/registry/index have no runtime imports → no package import
+		// specifier (the HEADER banner names the package, so check the specifier).
+		expect(byName['schemas.ts']).not.toContain(PKG_EVENTS_IMPORT);
+		expect(byName['registry.ts']).not.toContain(PKG_EVENTS_IMPORT);
+	});
+
+	test('vendored default emits the same five files with `../` imports', () => {
+		const files = buildEventCodegenContents([]);
+		const byName = Object.fromEntries(files.map((f) => [f.name, f.content]));
+		expect(byName['bus.ts']).toContain("'../events.tokens'");
+		expect(byName['bus.ts']).not.toContain(PKG_EVENTS_IMPORT);
 	});
 });

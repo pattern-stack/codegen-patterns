@@ -44,7 +44,7 @@
  * `new Class()` which silently left `db` / `redisUrl` undefined
  * (issue #108).
  */
-import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import { Module, type DynamicModule, type Provider, type Type } from '@nestjs/common';
 import {
   EVENT_BUS,
   EVENT_READ_PORT,
@@ -112,6 +112,31 @@ export interface EventsModuleOptions {
    * Defaults to `false`.
    */
   multiTenant?: boolean;
+  /**
+   * The generated `TypedEventBus` class to bind to `TYPED_EVENT_BUS`.
+   *
+   * **Package mode (ADR-037).** When the runtime is imported from
+   * `@pattern-stack/codegen` (not vendored), the bundled `./generated/bus`
+   * `TypedEventBus` is typed to an EMPTY event union and reads the bundled
+   * empty `eventRegistry` — a consumer's `events/*.yaml` are scanned into
+   * `src/generated/events/bus.ts` (typed to THEIR union, reading THEIR
+   * registry), which the package can't import. The generated subsystem barrel
+   * therefore threads that class in here:
+   * `EventsModule.forRoot({ ..., typedBus: TypedEventBus })`. Nest constructs
+   * it with this module's `EVENT_BUS` + `EVENTS_MULTI_TENANT` providers (the
+   * generated class injects the same string-valued tokens, which match across
+   * the package boundary).
+   *
+   * Omitted (vendored mode / tests) ⇒ falls back to the bundled
+   * `./generated/bus`, which in a vendored tree IS the consumer's generated
+   * file. Without this, a package-mode consumer's typed `publish<'…'>()` calls
+   * resolve against the empty union and their events never get the right
+   * `pool` / `direction` stamped.
+   *
+   * Only consulted by `forRoot` (the path the barrel emits); `forRootAsync`
+   * keeps the bundled bus.
+   */
+  typedBus?: Type<unknown>;
 }
 
 export interface EventsModuleAsyncOptions {
@@ -125,10 +150,18 @@ export interface EventsModuleAsyncOptions {
  * binding, and the resolved `EVENTS_MULTI_TENANT` flag. Returned from one
  * place so every `forRoot` branch and `forRootAsync` agree.
  */
-function buildTypedBusProviders(multiTenant: boolean): Provider[] {
+function buildTypedBusProviders(
+  multiTenant: boolean,
+  typedBus?: Type<unknown>,
+): Provider[] {
+  // Package mode threads the consumer's generated `TypedEventBus` (typed to
+  // their event union, reading their registry) via `typedBus`; vendored mode
+  // omits it and we fall back to the bundled `./generated/bus` (which IS the
+  // consumer's generated file in a vendored tree). See `EventsModuleOptions.typedBus`.
+  const BusClass = typedBus ?? TypedEventBus;
   return [
-    TypedEventBus,
-    { provide: TYPED_EVENT_BUS, useExisting: TypedEventBus },
+    BusClass,
+    { provide: TYPED_EVENT_BUS, useExisting: BusClass },
     { provide: EVENTS_MULTI_TENANT, useValue: multiTenant },
   ];
 }
@@ -249,7 +282,7 @@ export class EventsModule {
             },
             inject: [REDIS_URL],
           },
-          ...buildTypedBusProviders(multiTenant),
+          ...buildTypedBusProviders(multiTenant, options.typedBus),
         ],
         exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
       };
@@ -270,7 +303,7 @@ export class EventsModule {
         // IEventReadPort on the same instance as EVENT_BUS. The redis
         // backend retains no history and does not provide this token.
         { provide: EVENT_READ_PORT, useExisting: EVENT_BUS },
-        ...buildTypedBusProviders(multiTenant),
+        ...buildTypedBusProviders(multiTenant, options.typedBus),
       ],
       exports: [EVENT_BUS, EVENT_READ_PORT, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
     };

@@ -14,7 +14,7 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'bun:test';
 import { Test } from '@nestjs/testing';
-import { Module } from '@nestjs/common';
+import { Inject, Injectable, Module } from '@nestjs/common';
 import { EventsModule } from '../../../../runtime/subsystems/events/events.module';
 import {
   EVENT_BUS,
@@ -22,6 +22,7 @@ import {
   EVENTS_MULTI_TENANT,
   TYPED_EVENT_BUS,
 } from '../../../../runtime/subsystems/events/events.tokens';
+import type { IEventBus } from '../../../../runtime/subsystems/events/event-bus.protocol';
 import { TypedEventBus } from '../../../../runtime/subsystems/events/generated/bus';
 import { MemoryEventBus } from '../../../../runtime/subsystems/events/event-bus.memory-backend';
 import { MissingTenantIdError } from '../../../../runtime/subsystems/events/events-errors';
@@ -37,6 +38,45 @@ const PAYLOAD = {
   accountId: '22222222-2222-2222-2222-222222222222',
   createdBy: '33333333-3333-3333-3333-333333333333',
 } as const;
+
+// A stand-in for a consumer's generated `TypedEventBus` (package mode, ADR-037):
+// a distinct class with the same DI shape (injects EVENT_BUS + EVENTS_MULTI_TENANT).
+@Injectable()
+class CustomTypedEventBus {
+  constructor(
+    @Inject(EVENT_BUS) readonly bus: IEventBus,
+    @Inject(EVENTS_MULTI_TENANT) readonly multiTenant: boolean,
+  ) {}
+}
+
+describe('EventsModule.forRoot — typedBus override (ADR-037 package mode)', () => {
+  it('binds the supplied typedBus class to TYPED_EVENT_BUS', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        EventsModule.forRoot({ backend: 'memory', typedBus: CustomTypedEventBus }),
+      ],
+    }).compile();
+
+    // The consumer's generated bus wins over the bundled one.
+    expect(moduleRef.get(TYPED_EVENT_BUS)).toBeInstanceOf(CustomTypedEventBus);
+    // And Nest constructed it with the module's EVENT_BUS + multiTenant providers.
+    expect(moduleRef.get(CustomTypedEventBus).bus).toBe(moduleRef.get(EVENT_BUS));
+    expect(moduleRef.get(CustomTypedEventBus).multiTenant).toBe(false);
+
+    await moduleRef.close();
+  });
+
+  it('falls back to the bundled TypedEventBus when typedBus is omitted', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [EventsModule.forRoot({ backend: 'memory' })],
+    }).compile();
+
+    expect(moduleRef.get(TYPED_EVENT_BUS)).toBeInstanceOf(TypedEventBus);
+    expect(moduleRef.get(TYPED_EVENT_BUS)).not.toBeInstanceOf(CustomTypedEventBus);
+
+    await moduleRef.close();
+  });
+});
 
 describe('EventsModule.forRoot({ backend: "memory" })', () => {
   it('resolves EVENT_BUS to MemoryEventBus and TYPED_EVENT_BUS to TypedEventBus', async () => {
