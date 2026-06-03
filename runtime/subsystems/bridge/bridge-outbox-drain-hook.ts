@@ -32,6 +32,7 @@
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 
 import type { DomainEvent, DrizzleTransaction } from '../events/event-bus.protocol';
 import { bridgeDelivery } from './bridge-delivery.schema';
@@ -143,7 +144,38 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
       const deliveryId = randomUUID();
       const wrapperRunId = randomUUID();
 
-      // 1. bridge_delivery insert with ON CONFLICT DO NOTHING + RETURNING.
+      // FK ORDER (BRIDGE / 0.15.2): `bridge_delivery.wrapper_run_id` REFERENCES
+      // `job_run(id)` is a plain (non-deferrable) FK, so the referenced
+      // wrapper `job_run` MUST exist before the delivery row that points at it
+      // is inserted — otherwise Postgres rejects the delivery insert
+      // immediately. (The codegen unit tests mock `tx`, so they never
+      // exercised this ordering against a real FK; package-mode bridge
+      // deliveries are the first to do so.) We therefore insert the wrapper
+      // run FIRST, then the delivery. Idempotency is unchanged: the delivery
+      // keeps its `ON CONFLICT (event_id, trigger_id) DO NOTHING RETURNING`,
+      // and when the delivery conflicts (outbox replay or facade-eager Case B)
+      // we DELETE the just-inserted orphan wrapper run in the same tx, so a
+      // skipped delivery leaves no stray `job_run` for a worker to claim.
+
+      // 1. Wrapper job_run insert. We carry the deliveryId into the wrapper
+      //    input so BridgeDeliveryHandler.run(ctx) can locate the row via
+      //    repo.findDeliveryById(ctx.input.deliveryId).
+      await (tx as unknown as { insert: typeof client.insert })
+        .insert(jobRuns)
+        .values({
+          id: wrapperRunId,
+          jobType: BRIDGE_DELIVERY_JOB_TYPE,
+          jobVersion: 1,
+          rootRunId: wrapperRunId,
+          pool: wrapperPool,
+          status: 'pending',
+          input: { deliveryId },
+          triggerSource: 'event',
+          triggerRef: event.id,
+          tenantId,
+        });
+
+      // 2. bridge_delivery insert with ON CONFLICT DO NOTHING + RETURNING.
       const inserted = await (tx as unknown as {
         insert: typeof client.insert;
       })
@@ -162,29 +194,20 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
         .returning({ id: bridgeDelivery.id });
 
       if (inserted.length === 0) {
-        // Case B (facade pre-wrote `delivered`) or drain replay — skip
-        // wrapper insert for this trigger. Sibling triggers still fire.
+        // Case B (facade pre-wrote `delivered`) or drain replay — the delivery
+        // already exists, so this trigger is a no-op. Remove the orphan wrapper
+        // run we speculatively inserted above so no worker claims it. Sibling
+        // triggers still fire.
+        await (tx as unknown as {
+          delete: (table: unknown) => {
+            where: (cond: unknown) => Promise<unknown>;
+          };
+        })
+          .delete(jobRuns)
+          .where(eq(jobRuns.id, wrapperRunId));
         dedupSkips++;
         continue;
       }
-
-      // 2. Wrapper job_run insert. We carry the deliveryId into the
-      //    wrapper input so BridgeDeliveryHandler.run(ctx) can locate
-      //    the row via repo.findDeliveryById(ctx.input.deliveryId).
-      await (tx as unknown as { insert: typeof client.insert })
-        .insert(jobRuns)
-        .values({
-          id: wrapperRunId,
-          jobType: BRIDGE_DELIVERY_JOB_TYPE,
-          jobVersion: 1,
-          rootRunId: wrapperRunId,
-          pool: wrapperPool,
-          status: 'pending',
-          input: { deliveryId },
-          triggerSource: 'event',
-          triggerRef: event.id,
-          tenantId,
-        });
 
       delivered++;
     }

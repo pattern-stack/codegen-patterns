@@ -609,19 +609,25 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
    * worker resumes via stale-claim sweep).
    */
   private async nextStepSeq(runId: string): Promise<number> {
-    const [row] = await this.db.execute(
+    const result = await this.db.execute(
       sql`SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM job_step WHERE job_run_id = ${runId}`,
-    ) as unknown as Array<{ next: number }>;
-    // pg driver returns { rows: [...] } for raw execute; tolerate both shapes.
+    );
+    // Driver shape varies and is NOT uniformly array-iterable, so we must
+    // never array-destructure the raw result (that throws `{} is not iterable`
+    // on the node-postgres `Result` object, which exposes `.rows` instead of
+    // being an array — first hit by package-mode bridge deliveries on
+    // `drizzle-orm/node-postgres`). Normalise to a row array first, then read.
+    //   - node-postgres `db.execute(sql)` → `{ rows: [{ next }], ... }`
+    //   - some drivers / future shapes → a plain `[{ next }]` array
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const maybeRows = (row as any)?.rows;
-    if (Array.isArray(maybeRows) && maybeRows.length > 0) {
-      return Number(maybeRows[0].next ?? 1);
-    }
-    if (row && typeof (row as { next?: unknown }).next !== 'undefined') {
-      return Number((row as { next: unknown }).next);
-    }
-    return 1;
+    const raw = result as any;
+    const rows: Array<{ next?: unknown }> = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.rows)
+        ? raw.rows
+        : [];
+    const next = rows[0]?.next;
+    return typeof next === 'undefined' ? 1 : Number(next);
   }
 
   // ============================================================================

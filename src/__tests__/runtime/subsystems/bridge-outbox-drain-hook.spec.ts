@@ -23,34 +23,44 @@ import type { DomainEvent } from '../../../../runtime/subsystems/events/event-bu
 // ─── Fluent insert mock ─────────────────────────────────────────────────────
 
 type InsertCall = { table: string; values: Record<string, unknown> };
+type DeleteCall = { table: string };
+
+function tableName(table: unknown): string {
+  // Drizzle's `pgTable` exposes the table name via the
+  // `Symbol(drizzle:Name)` Symbol-keyed property. Look it up
+  // generically rather than relying on the public surface.
+  const sym = Object.getOwnPropertySymbols(table as object).find(
+    (s) => String(s) === 'Symbol(drizzle:Name)',
+  );
+  return sym ? ((table as Record<symbol, unknown>)[sym] as string) : 'unknown';
+}
 
 function makeTx(insertedIdResults: Array<string[]>) {
   // `insertedIdResults[i]` controls what the i-th INSERT-with-RETURNING
   // returns (`[id]` for "row inserted", `[]` for "ON CONFLICT skipped").
   // INSERTs without `.returning` are wrapper job_run inserts; they
   // don't consume a slot from this list.
+  //
+  // FK-order note (0.15.2): the hook now inserts the wrapper `job_run`
+  // FIRST, then the `bridge_delivery` (so the non-deferrable
+  // `wrapper_run_id → job_run` FK is satisfied), and on an ON-CONFLICT
+  // delivery it DELETEs the speculative wrapper run. `calls` records inserts
+  // in fire order; `deletes` records orphan-wrapper cleanups.
   const calls: InsertCall[] = [];
+  const deletes: DeleteCall[] = [];
   let returningCallIdx = 0;
 
   const tx = {
     insert(table: unknown) {
-      // Drizzle's `pgTable` exposes the table name via the
-      // `Symbol(drizzle:Name)` Symbol-keyed property. Look it up
-      // generically rather than relying on the public surface.
-      const sym = Object.getOwnPropertySymbols(table as object).find(
-        (s) => String(s) === 'Symbol(drizzle:Name)',
-      );
-      const name = sym
-        ? ((table as Record<symbol, unknown>)[sym] as string)
-        : 'unknown';
+      const name = tableName(table);
       const builder = {
         values(v: Record<string, unknown>) {
           calls.push({ table: name, values: v });
           // Return both shapes: with onConflictDoNothing for the
           // delivery insert, and a plain promise for the wrapper insert.
           // The bridge hook consistently chains:
-          //   .insert(bridgeDelivery).values(...).onConflictDoNothing(...).returning(...)
           //   .insert(jobRuns).values(...)            ← awaited as Promise
+          //   .insert(bridgeDelivery).values(...).onConflictDoNothing(...).returning(...)
           const chain = {
             onConflictDoNothing(_opts: unknown) {
               return {
@@ -75,8 +85,17 @@ function makeTx(insertedIdResults: Array<string[]>) {
       };
       return builder;
     },
+    delete(table: unknown) {
+      const name = tableName(table);
+      return {
+        where(_cond: unknown) {
+          deletes.push({ table: name });
+          return Promise.resolve([]);
+        },
+      };
+    },
   };
-  return { tx, calls };
+  return { tx, calls, deletes };
 }
 
 function event(overrides: Partial<DomainEvent> = {}): DomainEvent {
@@ -157,23 +176,24 @@ describe('BridgeOutboxDrainHook — happy path', () => {
       auditBlocked: 0,
     });
 
-    // Expect 4 inserts: 2 delivery + 2 wrapper, interleaved.
+    // Expect 4 inserts: per trigger the wrapper job_run FIRST, then the
+    // bridge_delivery (FK order). No orphan deletes on the happy path.
     expect(calls).toHaveLength(4);
-    expect(calls[0]!.table).toBe('bridge_delivery');
-    expect(calls[1]!.table).toBe('job_run');
-    expect(calls[2]!.table).toBe('bridge_delivery');
-    expect(calls[3]!.table).toBe('job_run');
+    expect(calls[0]!.table).toBe('job_run');
+    expect(calls[1]!.table).toBe('bridge_delivery');
+    expect(calls[2]!.table).toBe('job_run');
+    expect(calls[3]!.table).toBe('bridge_delivery');
 
     // Wrappers route into events_change (matches event direction).
-    expect(calls[1]!.values['pool']).toBe('events_change');
-    expect(calls[3]!.values['pool']).toBe('events_change');
-    expect(calls[1]!.values['jobType']).toBe('@framework/bridge_delivery');
-    expect(calls[1]!.values['triggerSource']).toBe('event');
-    expect(calls[1]!.values['triggerRef']).toBe('evt-1');
+    expect(calls[0]!.values['pool']).toBe('events_change');
+    expect(calls[2]!.values['pool']).toBe('events_change');
+    expect(calls[0]!.values['jobType']).toBe('@framework/bridge_delivery');
+    expect(calls[0]!.values['triggerSource']).toBe('event');
+    expect(calls[0]!.values['triggerRef']).toBe('evt-1');
 
     // bridge_delivery rows carry trigger_id from the registry entry.
-    expect(calls[0]!.values['triggerId']).toBe('send_welcome_email#0');
-    expect(calls[2]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
+    expect(calls[1]!.values['triggerId']).toBe('send_welcome_email#0');
+    expect(calls[3]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
   });
 
   it('routes wrapper pool by event direction (inbound/change/outbound)', async () => {
@@ -204,11 +224,11 @@ describe('BridgeOutboxDrainHook — happy path', () => {
 });
 
 describe('BridgeOutboxDrainHook — Case B / replay dedup', () => {
-  it('skips wrapper insert for the trigger whose delivery insert hit ON CONFLICT', async () => {
+  it('rolls back the speculative wrapper for the trigger whose delivery hit ON CONFLICT', async () => {
     const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
     // First delivery insert returns empty (ON CONFLICT — facade pre-write
     // or replay); second succeeds.
-    const { tx, calls } = makeTx([[], ['del-2']]);
+    const { tx, calls, deletes } = makeTx([[], ['del-2']]);
 
     const result = await hook.processEvent(event(), tx as never);
 
@@ -219,20 +239,25 @@ describe('BridgeOutboxDrainHook — Case B / replay dedup', () => {
       auditBlocked: 0,
     });
 
-    // 1 dedup-skipped delivery insert + 1 successful delivery insert + 1
-    // wrapper insert = 3 calls total. The first trigger's wrapper is
-    // skipped; the second still fires.
-    expect(calls).toHaveLength(3);
-    expect(calls[0]!.table).toBe('bridge_delivery'); // skipped
-    expect(calls[1]!.table).toBe('bridge_delivery'); // succeeded
-    expect(calls[2]!.table).toBe('job_run');
+    // FK order: each trigger inserts wrapper job_run THEN delivery. The first
+    // trigger's delivery conflicts → its speculative wrapper is DELETEd; the
+    // second trigger delivers normally (no delete).
+    expect(calls).toHaveLength(4);
+    expect(calls[0]!.table).toBe('job_run'); // trigger 1 wrapper (rolled back)
+    expect(calls[1]!.table).toBe('bridge_delivery'); // trigger 1 delivery (skipped)
+    expect(calls[2]!.table).toBe('job_run'); // trigger 2 wrapper (kept)
+    expect(calls[3]!.table).toBe('bridge_delivery'); // trigger 2 delivery (succeeded)
     expect(calls[2]!.values['pool']).toBe('events_change');
-    expect(calls[1]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
+    expect(calls[3]!.values['triggerId']).toBe('integration_contact_to_hubspot#0');
+
+    // Exactly one orphan wrapper run cleaned up (the skipped trigger's).
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]!.table).toBe('job_run');
   });
 
-  it('all triggers ON CONFLICT → all wrappers skipped; no job_run inserts', async () => {
+  it('all triggers ON CONFLICT → every speculative wrapper rolled back; net zero job_run rows', async () => {
     const hook = new BridgeOutboxDrainHook(REGISTRY_TWO_TRIGGERS);
-    const { tx, calls } = makeTx([[], []]);
+    const { tx, calls, deletes } = makeTx([[], []]);
     const result = await hook.processEvent(event(), tx as never);
     expect(result).toEqual({
       delivered: 0,
@@ -240,7 +265,9 @@ describe('BridgeOutboxDrainHook — Case B / replay dedup', () => {
       triggerCount: 2,
       auditBlocked: 0,
     });
-    expect(calls.filter((c) => c.table === 'job_run')).toHaveLength(0);
+    // Both wrappers were speculatively inserted then deleted → net zero.
+    expect(calls.filter((c) => c.table === 'job_run')).toHaveLength(2);
+    expect(deletes.filter((d) => d.table === 'job_run')).toHaveLength(2);
   });
 });
 
