@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.3] — 2026-06-03
+
+Package-mode **inbound webhook drain** — the first real exercise of
+`WebhookChangeSource` by a `runtime: package` consumer (swe-brain's Slack
+inbound pipeline-parity drain, ADR-0009 §6). One latent transposition this path
+exercises; the fix is framework-only.
+
+### Fixed
+
+- **`WebhookChangeSource` (and the identically-shaped `PollChangeSource`) now
+  derive `Change<T>.externalId` from the mapping `source`, not `target`.** Both
+  primitives located the `DetectionConfig` mapping entry with `target ===
+  'external_id'` correctly, then read the emitted record off
+  `mapping.target` — a transposition. Mapping semantics are `{ source: <field on
+  the emitted record>, target: <canonical column> }`, and `fetch()` reads
+  `record[externalIdSourceField]` off the emitted record, so it must use
+  `.source`. The two diverge only when the canonical record is vendor-neutral
+  camelCase (`source: 'externalId'` → `target: 'external_id'`): such a consumer
+  hit `record missing string 'external_id'` and the primitive was unusable. The
+  original unit fixtures masked it by keying records `external_id` (== the
+  target). Regression tests now cover the camelCase consumer shape directly.
+
+### Added
+
+- **Webhook/poll/detection symbols re-exported from
+  `@pattern-stack/codegen/subsystems`.** `WebhookChangeSource`,
+  `WebhookChangeSourceOptions`, `WebhookFetchCallback`, `WebhookFetchContext`,
+  `WebhookCursor`, `buildChangeSource`, `DetectionConfigSchema`,
+  `DetectionConfig` (+ poll equivalents) were previously reachable only via the
+  deep `.../integration/index` path; they now ride the public barrel alongside
+  the curated `IncrementalReadBase` / `ExecuteIntegrationUseCase` forwards.
+
 ## [0.15.2] — 2026-06-03
 
 Package-mode **bridge *delivery*** — the first time a `runtime: package` consumer
