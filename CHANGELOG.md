@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-06-03
+
+Package-mode **bridge *delivery*** — the first time a `runtime: package` consumer
+(ADR-037) drives a real event→bridge→job round-trip end to end (webhook →
+`domain_events` outbox → `bridge_delivery` → wrapper `@framework/bridge_delivery`
+run → user `@JobHandler`). Three latent defects only this path exercises (codegen's
+own tests are vendored — a single `tsc` compilation, a single in-memory Map, and a
+mocked `tx` that never touches a real FK — so none of them ever surfaced). All three
+fixes are framework-only; vendored mode is unaffected.
+
+### Fixed
+
+- **Stateful module-singletons are no longer duplicated across dist entry
+  chunks** (`tsup.config.ts`: `splitting: false` → `splitting: true`). The
+  published bundle is ESM and multi-entry — `runtime/**/*.ts` each emit a physical
+  `dist/runtime/.../x.js` so the `./runtime/*` wildcard `exports` map resolves 1:1.
+  With splitting off, esbuild INLINED every shared module into each importing entry
+  chunk. Harmless for pure functions, but a correctness bug for a stateful
+  singleton: `runtime/subsystems/jobs/job-handler.base`'s `JOB_HANDLER_REGISTRY`
+  Map (and its `HandlerRegistry` read facade), which the `@JobHandler` decorator
+  mutates at import time, got a **second copy** inlined into the `bridge/*` chunk.
+  The framework's own `@JobHandler('@framework/bridge_delivery')`
+  (`BridgeDeliveryHandler`, bridge chunk) registered into the BRIDGE copy while the
+  jobs `JobWorker` read the JOBS copy → the worker never upserted the wrapper's
+  `job` row → the bridge's outbox-drain couldn't spawn the wrapper `job_run` (its
+  `job_type` FKs `job(type)`), so the `bridge_delivery` insert violated its
+  `wrapper_run_id → job_run` FK and looped forever. `splitting: true` hoists each
+  shared module into a SINGLE shared chunk that every entry imports, collapsing the
+  registry back to one Map. The named per-entry output files are preserved (each
+  entry stays a physical `dist/runtime/.../x.js`), so the wildcard `exports` map and
+  the deep consumer subpaths (`…/subsystems/jobs/index`, `…/bridge/index`,
+  `./subsystems`) still resolve. ESM-only build ⇒ no CJS output to regress. Guarded
+  by a new dist-grep regression test.
+- **`BridgeOutboxDrainHook` now inserts the wrapper `job_run` BEFORE the
+  `bridge_delivery` that references it** (`bridge-outbox-drain-hook.ts`).
+  `bridge_delivery.wrapper_run_id → job_run(id)` is a plain (non-deferrable) FK, so
+  the referenced wrapper run must exist before the delivery row is inserted —
+  otherwise Postgres rejects the delivery insert immediately. The drain previously
+  inserted the delivery (with `wrapper_run_id` set) first, then the wrapper run; the
+  unit tests mocked `tx`, so the ordering was never validated against a real FK.
+  Idempotency is preserved: the delivery keeps its `ON CONFLICT (event_id,
+  trigger_id) DO NOTHING RETURNING`, and when it conflicts (outbox replay or
+  facade-eager Case B) the speculatively-inserted wrapper run is DELETEd in the same
+  tx, so a skipped delivery leaves no orphan `job_run`.
+- **`JobWorker.nextStepSeq` no longer array-destructures the raw `db.execute()`
+  result** (`job-worker.ts`). `db.execute(sql\`…\`)` is driver-shape-dependent and
+  not uniformly array-iterable: `drizzle-orm/node-postgres` returns the pg `Result`
+  OBJECT (`{ rows, rowCount, … }`), so `const [row] = await this.db.execute(...)`
+  threw `TypeError: {} is not iterable`. Every wrapper `@framework/bridge_delivery`
+  run calls `ctx.step` → `nextStepSeq`, so the delivery failed on every attempt. The
+  result is now normalised to a row array before reading, tolerating both the
+  node-postgres `{ rows }` shape and a plain-array shape. Guarded by a new unit test.
+
 ## [0.15.1] — 2026-06-02
 
 Package-mode **bridge/trigger event typing** — the fourth and final package-mode
