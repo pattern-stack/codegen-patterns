@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-06-04
+
+**Postgres LISTEN/NOTIFY wakeups** for the jobs worker + events outbox drainer
+(LISTEN-NOTIFY-1, dogfood gap #7 — swe-brain's live-inbound latency). The
+scaffold has documented `jobs.extensions.drizzle.listen_notify` since JOB-6 and
+`JobsDomainModule` reserved the typed slot, but neither knob was wired (no
+runtime, and the barrel never threaded `jobs.extensions.drizzle.*` into
+`JobWorkerModule.forRoot`). This makes both real.
+
+NOTIFY wakes the polling loop the instant work becomes claimable; **interval
+polling remains the safety net** (alongside, never instead). Every `pg_notify`
+is emitted **inside the same transaction** as the row write it announces, so
+Postgres delivers it only on commit — durability is byte-for-byte unchanged. A
+lost notification (listener down, transaction-mode pooler) degrades to today's
+poll latency, never to lost work.
+
+Measured on swe-brain's inbound spine (webhook → outbox drain → bridge wrapper →
+user job): **~1.4–3.0 s → sub-500 ms** with `listen_notify: true`, zero
+durability change.
+
+### Added
+
+- **`runtime/subsystems/jobs/pg-notify.ts`** — `PgNotifyListener` (dedicated
+  listener connection off `DRIZZLE.$client`, debounced dispatch,
+  reconnect-with-capped-backoff, WARN-once degradation) + in-tx `pgNotify(tx,
+  channel, payload)` + channel constants. Shared by jobs + events.
+- **Jobs worker** — `JobWorkerOptions.listenNotify`; LISTEN on
+  `codegen_jobs_wake`, a notify for the worker's pool drives an immediate
+  debounced claim cycle. `DrizzleJobOrchestrator.start()` emits the in-tx wake
+  on enqueue, gated on the new `JOBS_LISTEN_NOTIFY` token (provided from
+  `jobs.extensions.drizzle.listen_notify`).
+- **Events drainer** — `EventsModuleOptions.listenNotify`; LISTEN on
+  `codegen_events_wake`, `publish`/`publishMany` emit the in-tx wake; a
+  pool-filtered drainer wakes only for its lanes.
+- **Bridge** — the `BridgeOutboxDrainHook` wrapper `job_run` insert emits the
+  jobs wake in the per-event drain tx, so reserved-pool wrappers wake too.
+- **Generator threading** — `jobs.extensions.drizzle.{listen_notify,
+  poll_interval_ms}` flow into the generated barrel's `JobsDomainModule.forRoot`
+  + embedded `JobWorkerModule.forRoot({ domainModuleExtensions: { drizzle: …
+  } })`; `events.extensions.drizzle.listen_notify` flows into
+  `EventsModule.forRoot({ listenNotify })`. Package and vendored emission both
+  covered. (The runtime already honored `JobWorkerOptions.pollIntervalMs`; it
+  just never received a config value — now it does.)
+- Scaffold config comments + jobs skill updated to implemented reality, with the
+  **PgBouncer caveat**: LISTEN/NOTIFY requires a direct (or session-mode)
+  connection — session-scoped `LISTEN` does not survive a transaction-mode
+  pooler; behind one the feature degrades to polling.
+
 ## [0.15.3] — 2026-06-03
 
 Package-mode **inbound webhook drain** — the first real exercise of
