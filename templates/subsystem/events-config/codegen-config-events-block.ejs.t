@@ -24,3 +24,17 @@ events:
   # all pending rows. Typical split is one process per lane so a slow
   # outbound handler cannot stall change-event propagation.
   # pools: []  # e.g. [events_inbound] | [events_change] | [events_outbound]
+
+  # ── Backend-specific extensions (typed per backend) ──
+  extensions:
+    drizzle:
+      # listen_notify: true        # Postgres LISTEN/NOTIFY wakes the outbox
+      #                            # drainer the instant an event is published
+      #                            # (in-tx pg_notify, delivered on commit),
+      #                            # ALONGSIDE interval polling — polling stays
+      #                            # the safety net. Sub-500ms drain vs ~1s poll.
+      #                            # Off by default. REQUIRES a direct (or
+      #                            # session-mode) connection — session-scoped
+      #                            # LISTEN does NOT survive a transaction-mode
+      #                            # pooler (PgBouncer pool_mode=transaction);
+      #                            # behind one, the drainer degrades to polling.

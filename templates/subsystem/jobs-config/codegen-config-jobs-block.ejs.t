@@ -17,10 +17,19 @@ jobs:
   # the active backend produce a config validation warning at boot.
   extensions:
     drizzle:
-      # listen_notify: true        # use Postgres LISTEN/NOTIFY to wake the
-      #                            # polling loop instead of (or alongside)
-      #                            # interval polling. Disabled by default.
-      poll_interval_ms: 1000
+      # listen_notify: true        # Postgres LISTEN/NOTIFY wakes the worker the
+      #                            # instant a job is enqueued (in-tx pg_notify,
+      #                            # delivered on commit), ALONGSIDE interval
+      #                            # polling — polling stays the safety net, so a
+      #                            # lost notify costs latency, never work.
+      #                            # Sub-500ms claim vs ~1s/poll-hop. Off by
+      #                            # default. REQUIRES a direct (or session-mode)
+      #                            # connection — session-scoped LISTEN does NOT
+      #                            # survive a transaction-mode pooler (PgBouncer
+      #                            # pool_mode=transaction); behind one, notifies
+      #                            # are simply never received and the worker
+      #                            # degrades to polling.
+      poll_interval_ms: 1000       # interval-poll heartbeat (the wake fallback)
     # bullmq:                      # Example shape for Phase 6+ BullMQ backend.
     #   bull_board:                # Mount Bull Board admin UI.
     #     enabled: true

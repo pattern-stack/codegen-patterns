@@ -48,6 +48,11 @@ import { EVENTS_MODULE_OPTIONS } from './events.tokens';
 import type { EventsModuleOptions } from './events.module';
 import { BRIDGE_OUTBOX_DRAIN_HOOK } from '../bridge/bridge.tokens';
 import type { IBridgeOutboxDrainHook } from '../bridge/bridge.protocol';
+import {
+  EVENTS_WAKE_CHANNEL,
+  PgNotifyListener,
+  pgNotify,
+} from '../jobs/pg-notify';
 
 /** How long to wait between polling cycles (ms). */
 const POLL_INTERVAL_MS = 1_000;
@@ -138,6 +143,14 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
   private readonly handlers = new Map<string, Set<(event: DomainEvent) => Promise<void>>>();
   private readonly opts: EventsModuleOptions;
 
+  // LISTEN-NOTIFY-1 — dedicated wake listener + debounce state. `null` when
+  // `listenNotify` is off (the common case); polling is the only driver then.
+  private notifyListener: PgNotifyListener | null = null;
+  /** True while a wake-driven drain is in flight (debounce gate). */
+  private wakeDraining = false;
+  /** A notify arrived mid-drain → re-drain once when the current drain ends. */
+  private wakeRecheckPending = false;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
     @Optional() @Inject(EVENTS_MODULE_OPTIONS) opts?: EventsModuleOptions,
@@ -168,6 +181,28 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
   async onModuleInit(): Promise<void> {
     this.polling = true;
     this.schedulePoll();
+
+    // LISTEN-NOTIFY-1 — start the wake listener ALONGSIDE the poll timer. A
+    // notify for one of this drainer's pools triggers an immediate drain; the
+    // interval timer above stays the durability heartbeat. Startup is
+    // fire-and-forget — a connect failure self-heals via the listener's backoff.
+    if (this.opts.listenNotify) {
+      const pool = (this.db as unknown as { $client?: unknown }).$client;
+      if (!pool || typeof (pool as { connect?: unknown }).connect !== 'function') {
+        this.logger.warn(
+          `listen_notify enabled but the Drizzle client exposes no pg Pool ` +
+            `($client.connect missing) — falling back to interval polling only.`,
+        );
+      } else {
+        this.notifyListener = new PgNotifyListener({
+          channel: EVENTS_WAKE_CHANNEL,
+          pool: pool as { connect(): Promise<never> },
+          label: 'events',
+          onNotify: (payload) => this.onWake(payload),
+        });
+        await this.notifyListener.start();
+      }
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -175,6 +210,45 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
+    }
+    if (this.notifyListener) {
+      try {
+        await this.notifyListener.stop();
+      } catch (err) {
+        this.logger.error(`notify listener stop failed: ${err}`);
+      }
+      this.notifyListener = null;
+    }
+  }
+
+  /**
+   * Wake handler — a `codegen_events_wake` notification arrived. A pool-filtered
+   * drainer (`opts.pools` set) ignores payloads naming a pool it doesn't own; an
+   * all-pools drainer wakes for any. Debounced: a notify mid-drain just flags a
+   * re-check so a burst collapses to at most one extra drain (D3).
+   */
+  private onWake(payload: string): void {
+    if (!this.polling) return;
+    const pools = this.opts.pools;
+    if (pools && pools.length > 0 && !pools.includes(payload)) return;
+    if (this.wakeDraining) {
+      this.wakeRecheckPending = true;
+      return;
+    }
+    void this.drainOnWake();
+  }
+
+  private async drainOnWake(): Promise<void> {
+    this.wakeDraining = true;
+    try {
+      do {
+        this.wakeRecheckPending = false;
+        await this.processBatch();
+      } while (this.wakeRecheckPending && this.polling);
+    } catch (err) {
+      this.logger.error(`wake drain error: ${err}`);
+    } finally {
+      this.wakeDraining = false;
     }
   }
 
@@ -185,16 +259,46 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
   async publish(event: DomainEvent, tx?: DrizzleTransaction): Promise<void> {
     const client = (tx ?? this.db) as DrizzleClient;
     const multiTenant = this.opts.multiTenant ?? false;
-    await client.insert(domainEvents).values(toInsertValues(event, multiTenant));
+    const values = toInsertValues(event, multiTenant);
+    await client.insert(domainEvents).values(values);
+    // LISTEN-NOTIFY-1 — wake the drainer on commit (D2: emitted through the same
+    // `client`, so a rolled-back publish emits no phantom wake). The pool is the
+    // payload; the drainer re-runs its own pool-filtered claim on wake.
+    await this.emitWakeNotify(client, [values.pool]);
   }
 
   async publishMany(events: DomainEvent[], tx?: DrizzleTransaction): Promise<void> {
     if (events.length === 0) return;
     const client = (tx ?? this.db) as DrizzleClient;
     const multiTenant = this.opts.multiTenant ?? false;
-    await client
-      .insert(domainEvents)
-      .values(events.map((e) => toInsertValues(e, multiTenant)));
+    const valuesList = events.map((e) => toInsertValues(e, multiTenant));
+    await client.insert(domainEvents).values(valuesList);
+    // De-dup pools so a batch into one lane emits a single wake.
+    await this.emitWakeNotify(client, valuesList.map((v) => v.pool));
+  }
+
+  /**
+   * Emit one in-tx `pg_notify(codegen_events_wake, <pool>)` per distinct pool in
+   * the just-inserted batch. No-op unless `listenNotify` is on. Best-effort: a
+   * notify failure is non-fatal (interval polling still drains the rows), so we
+   * log + swallow rather than failing the publish.
+   */
+  private async emitWakeNotify(
+    client: DrizzleClient,
+    pools: Array<string | null>,
+  ): Promise<void> {
+    if (!this.opts.listenNotify) return;
+    const distinct = new Set(pools.map((p) => p ?? ''));
+    for (const pool of distinct) {
+      try {
+        await pgNotify(client, EVENTS_WAKE_CHANNEL, pool);
+      } catch (err) {
+        this.logger.warn(
+          `pg_notify(${EVENTS_WAKE_CHANNEL}, '${pool}') failed: ${err} ` +
+            `(non-fatal — interval polling still drains the outbox).`,
+        );
+      }
+    }
   }
 
   async findById(eventId: string): Promise<DomainEvent | null> {

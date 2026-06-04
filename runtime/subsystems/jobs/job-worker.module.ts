@@ -245,11 +245,22 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
       // naming; it MUST NOT be passed as the claim-filter pool, or the
       // worker will never match any row and the pool silently never
       // drains. See v0.4.4 fix notes.
+      // LISTEN-NOTIFY-1 — thread the drizzle extension knobs into each spawned
+      // worker. `pollIntervalMs` was always honored by JobWorker but never
+      // received a config value; `listenNotify` is the new wake opt-in. Only
+      // the drizzle backend reads these (bullmq has native wakeups + its own
+      // queue topology), so we ignore them under `backend: 'bullmq'`.
+      const drizzleExt =
+        backend === 'drizzle'
+          ? this.options.domainModuleExtensions?.drizzle
+          : undefined;
       const workerOptions: JobWorkerOptions = {
         pool: poolName,
         concurrency: def.concurrency,
         shutdownTimeoutMs:
           this.options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
+        pollIntervalMs: drizzleExt?.pollIntervalMs,
+        listenNotify: drizzleExt?.listenNotify,
       };
       const worker = this.options.workerFactory
         ? this.options.workerFactory(workerOptions)

@@ -37,6 +37,7 @@ import {
   type SpawnChildOptions,
   type StepOptions,
 } from './job-handler.base';
+import { JOBS_WAKE_CHANNEL, PgNotifyListener } from './pg-notify';
 
 /**
  * Options accepted by `JobWorker`. JOB-5 threads these through module
@@ -59,6 +60,14 @@ export interface JobWorkerOptions {
   staleThresholdMs?: number;
   /** Max ms to wait for in-flight drain on SIGTERM. Default 30_000. */
   shutdownTimeoutMs?: number;
+  /**
+   * LISTEN-NOTIFY-1 — when true, hold a dedicated listener connection and
+   * LISTEN on `codegen_jobs_wake`. A notification naming this worker's `pool`
+   * triggers an immediate (debounced) claim cycle, so an enqueue is claimed in
+   * milliseconds instead of waiting for the next `pollIntervalMs` tick. Polling
+   * continues unchanged as the fallback heartbeat. Default false.
+   */
+  listenNotify?: boolean;
 }
 
 // ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) — matches by value
@@ -192,6 +201,15 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
   private readonly staleThresholdMs: number;
   private readonly shutdownTimeoutMs: number;
 
+  // LISTEN-NOTIFY-1 — dedicated listener + debounce state. `null` when
+  // `listenNotify` is off (the common case); polling is the only driver then.
+  private readonly listenNotifyEnabled: boolean;
+  private notifyListener: PgNotifyListener | null = null;
+  /** True while a wake-driven claim cycle is in flight (debounce gate). */
+  private wakeDraining = false;
+  /** A notify arrived mid-cycle → re-check once when the cycle ends. */
+  private wakeRecheckPending = false;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
     @Inject(JOB_ORCHESTRATOR) private readonly orchestrator: IJobOrchestrator,
@@ -206,6 +224,7 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     this.staleThresholdMs = options.staleThresholdMs ?? DEFAULT_STALE_THRESHOLD_MS;
     this.shutdownTimeoutMs =
       options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
+    this.listenNotifyEnabled = options.listenNotify ?? false;
 
     this.sigtermHandler = () => {
       if (this.sigtermHandled) return;
@@ -227,6 +246,74 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
       void this.sweepStaleClaims();
     }, this.staleSweeperIntervalMs);
     process.on('SIGTERM', this.sigtermHandler);
+
+    // LISTEN-NOTIFY-1 — start the wake listener ALONGSIDE the poll timer (never
+    // instead). A notify for this worker's pool drives an immediate claim cycle;
+    // the interval timer above stays the durability heartbeat. Listener startup
+    // is fire-and-forget: a connect failure self-heals via the listener's own
+    // backoff, and until it's up the poll loop is the sole driver.
+    if (this.listenNotifyEnabled) {
+      // The DRIZZLE provider wraps a `pg.Pool`, exposed by drizzle as `$client`.
+      const pool = (this.db as unknown as { $client?: unknown }).$client;
+      if (!pool || typeof (pool as { connect?: unknown }).connect !== 'function') {
+        this.logger.warn(
+          `listen_notify enabled but the Drizzle client exposes no pg Pool ` +
+            `($client.connect missing) — falling back to interval polling only.`,
+        );
+      } else {
+        this.notifyListener = new PgNotifyListener({
+          channel: JOBS_WAKE_CHANNEL,
+          pool: pool as { connect(): Promise<never> },
+          label: `jobs:${this.options.pool}`,
+          onNotify: (payload) => this.onWake(payload),
+        });
+        void this.notifyListener.start();
+      }
+    }
+  }
+
+  /**
+   * Wake handler — a `codegen_jobs_wake` notification arrived. Only payloads
+   * naming THIS worker's pool are relevant (other pools have their own workers).
+   * Debounced: if a claim cycle is already running we just flag a re-check so a
+   * burst of N enqueues collapses to at most one extra cycle (D3).
+   */
+  private onWake(payload: string): void {
+    if (this.shuttingDown) return;
+    if (payload !== this.options.pool) return;
+    if (this.wakeDraining) {
+      this.wakeRecheckPending = true;
+      return;
+    }
+    void this.drainOnWake();
+  }
+
+  /**
+   * Claim-until-empty on a wake. Unlike the interval `pollAndProcess` (one
+   * claim per tick), a wake drains greedily up to the concurrency ceiling so a
+   * burst that arrived together is dispatched without waiting for N ticks. The
+   * `wakeRecheckPending` flag coalesces notifies that land mid-drain.
+   */
+  private async drainOnWake(): Promise<void> {
+    this.wakeDraining = true;
+    try {
+      do {
+        this.wakeRecheckPending = false;
+        // Claim while there's capacity; pollAndProcess no-ops at the ceiling.
+        let progressed = true;
+        while (
+          progressed &&
+          !this.shuttingDown &&
+          this.inFlight.size < this.options.concurrency
+        ) {
+          const before = this.inFlight.size;
+          await this.pollAndProcess();
+          progressed = this.inFlight.size > before;
+        }
+      } while (this.wakeRecheckPending && !this.shuttingDown);
+    } finally {
+      this.wakeDraining = false;
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -245,6 +332,17 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
       this.sweeperTimer = null;
     }
     process.removeListener('SIGTERM', this.sigtermHandler);
+
+    // LISTEN-NOTIFY-1 — release the listener connection so the process can exit
+    // cleanly. Best-effort; a failure here doesn't block the drain.
+    if (this.notifyListener) {
+      try {
+        await this.notifyListener.stop();
+      } catch (err) {
+        this.logger.error(`notify listener stop failed: ${(err as Error).message}`);
+      }
+      this.notifyListener = null;
+    }
 
     await this.drainInFlight();
 

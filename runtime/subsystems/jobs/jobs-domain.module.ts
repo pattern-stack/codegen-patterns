@@ -21,6 +21,7 @@ import {
   JOB_RUN_SERVICE,
   JOB_STEP_SERVICE,
   JOBS_MULTI_TENANT,
+  JOBS_LISTEN_NOTIFY,
 } from './jobs-domain.tokens';
 import { DrizzleJobOrchestrator } from './job-orchestrator.drizzle-backend';
 import { DrizzleJobRunService } from './job-run-service.drizzle-backend';
@@ -41,17 +42,22 @@ import {
 } from './bullmq.config';
 
 /**
- * Drizzle backend extensions surface. None are wired into the Drizzle
- * orchestrator yet — this is the **typed reservation** for the LISTEN/NOTIFY
- * + tunable poll-interval extensions called out in ADR-022. App code
- * passing these today is parsed but not yet dispatched; when the
- * Drizzle orchestrator grows the consumer hooks, opt-in code paths will
- * read directly from these fields.
+ * Drizzle backend extensions surface (LISTEN-NOTIFY-1 wires both fields).
+ *
+ * - `listenNotify` → provided as `JOBS_LISTEN_NOTIFY` so the orchestrator emits
+ *   in-tx `pg_notify` on enqueue, and threaded into each spawned `JobWorker`
+ *   (which holds the listener connection). Off by default.
+ * - `pollIntervalMs` → threaded into the spawned `JobWorker`'s
+ *   `JobWorkerOptions.pollIntervalMs` (the worker already honored this; it just
+ *   never received a config value). Default 1000.
+ *
+ * Both run ALONGSIDE interval polling — `listenNotify` only adds an early wake;
+ * polling remains the durability heartbeat.
  */
 export interface DrizzleBackendExtensions {
   /** Use Postgres LISTEN/NOTIFY to wake the polling loop. Default false. */
   listenNotify?: boolean;
-  /** Polling interval when LISTEN/NOTIFY is off (ms). Default 1000. */
+  /** Polling interval (ms). Default 1000. */
   pollIntervalMs?: number;
 }
 
@@ -79,6 +85,11 @@ export interface JobsDomainModuleOptions {
 export class JobsDomainModule {
   static forRoot(opts: JobsDomainModuleOptions): DynamicModule {
     const multiTenant = opts.multiTenant ?? false;
+    // LISTEN-NOTIFY-1 — drizzle-only extension. `listen_notify` is meaningless
+    // for memory (no DB) and redundant for bullmq (native wakeups); only the
+    // drizzle backend's orchestrator reads it.
+    const listenNotify =
+      opts.backend === 'drizzle' && Boolean(opts.extensions?.drizzle?.listenNotify);
 
     const providers: Provider[] = [
       // JOB-8 — boolean provider consumed by the four service-layer backends.
@@ -87,6 +98,9 @@ export class JobsDomainModule {
       // the value is `false`. See `jobs-domain.tokens.ts` for the claim-loop
       // cross-tenant-by-design decision.
       { provide: JOBS_MULTI_TENANT, useValue: multiTenant },
+      // LISTEN-NOTIFY-1 — always provided so the orchestrator's `@Inject`
+      // resolves; the orchestrator skips the `pg_notify` emit when `false`.
+      { provide: JOBS_LISTEN_NOTIFY, useValue: listenNotify },
     ];
 
     if (opts.backend === 'memory') {
@@ -144,6 +158,7 @@ export class JobsDomainModule {
       JOB_RUN_SERVICE,
       JOB_STEP_SERVICE,
       JOBS_MULTI_TENANT,
+      JOBS_LISTEN_NOTIFY,
     ];
     // BULLMQ-1 — only export the BullMQ tokens when they were actually
     // provided. Nest throws "exported but not provided" otherwise. Exported so

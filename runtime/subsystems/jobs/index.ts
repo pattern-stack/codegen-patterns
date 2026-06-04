@@ -22,6 +22,7 @@ export {
   JOB_RUN_SERVICE,
   JOB_STEP_SERVICE,
   JOBS_MULTI_TENANT,
+  JOBS_LISTEN_NOTIFY,
 } from './jobs-domain.tokens';
 
 // ─── JOB-2: orchestrator protocol ──────────────────────────────────────────
@@ -111,6 +112,15 @@ export {
   buildStaleSweepQuery,
 } from './job-worker';
 export type { JobWorkerOptions } from './job-worker';
+
+// ─── LISTEN-NOTIFY-1: Postgres LISTEN/NOTIFY wakeups ───────────────────────
+export {
+  PgNotifyListener,
+  pgNotify,
+  JOBS_WAKE_CHANNEL,
+  EVENTS_WAKE_CHANNEL,
+} from './pg-notify';
+export type { PgNotifyListenerOptions } from './pg-notify';
 export {
   JobCollisionError,
   JobNotReplayableError,

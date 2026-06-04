@@ -31,3 +31,16 @@ export const JOB_STEP_SERVICE = Symbol.for(tokenKey('jobs', 'step-service'));
  * targeted reads. See docs/specs/JOB-8.md.
  */
 export const JOBS_MULTI_TENANT = Symbol.for(tokenKey('jobs', 'multi-tenant'));
+
+/**
+ * LISTEN/NOTIFY wakeup opt-in flag (LISTEN-NOTIFY-1). Bound to
+ * `JobsDomainModule.forRoot({ extensions: { drizzle: { listenNotify } } })`,
+ * defaulting to `false`.
+ *
+ * When `true`, the Drizzle orchestrator emits an in-transaction
+ * `pg_notify(codegen_jobs_wake, <pool>)` on every `start()` INSERT so a worker
+ * with `listen_notify` enabled wakes the moment the enqueue commits. Off by
+ * default; polling is unchanged. The flag is read by `DrizzleJobOrchestrator`
+ * and by the bridge outbox drain hook (its wrapper `job_run` inserts notify too).
+ */
+export const JOBS_LISTEN_NOTIFY = Symbol.for(tokenKey('jobs', 'listen-notify'));
