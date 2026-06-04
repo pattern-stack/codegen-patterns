@@ -47,6 +47,8 @@ import type {
 } from './bridge.protocol';
 import { BRIDGE_DELIVERY_JOB_TYPE } from './bridge-delivery-handler';
 import type { EventTypeName } from '../events/event-registry';
+import { JOBS_LISTEN_NOTIFY } from '../jobs/jobs-domain.tokens';
+import { JOBS_WAKE_CHANNEL, pgNotify } from '../jobs/pg-notify';
 
 /** Reserved pools the wrapper rows route into; ADR-022 / ADR-024. */
 const POOL_BY_DIRECTION: Record<string, string> = {
@@ -65,6 +67,15 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
     @Optional()
     @Inject(BRIDGE_REGISTRY)
     private readonly registry: BridgeRegistry = {},
+    // LISTEN-NOTIFY-1 — when true, the wrapper `job_run` insert below emits an
+    // in-tx `pg_notify(codegen_jobs_wake, <wrapperPool>)` so the reserved-pool
+    // worker wakes the instant the per-event drain tx commits — otherwise the
+    // bridge hop alone would still cost a full poll interval. `@Optional()`
+    // defaulting false so the hook keeps working when jobs isn't installed
+    // (bridge can drive non-jobs consumers) or in vendored/test wiring.
+    @Optional()
+    @Inject(JOBS_LISTEN_NOTIFY)
+    private readonly listenNotify: boolean = false,
   ) {}
 
   async processEvent(
@@ -207,6 +218,22 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
           .where(eq(jobRuns.id, wrapperRunId));
         dedupSkips++;
         continue;
+      }
+
+      // LISTEN-NOTIFY-1 — the wrapper run is real and claimable; wake its
+      // reserved-pool worker on commit (D7). Same `tx` as the inserts above, so
+      // delivery is gated on the per-event drain tx committing. Best-effort: a
+      // notify failure is non-fatal (the reserved-pool worker still polls).
+      if (this.listenNotify) {
+        try {
+          await pgNotify(tx, JOBS_WAKE_CHANNEL, wrapperPool);
+        } catch (err) {
+          this.logger.warn(
+            `pg_notify(${JOBS_WAKE_CHANNEL}, ${wrapperPool}) failed for ` +
+              `wrapper run ${wrapperRunId}: ${(err as Error).message} ` +
+              `(non-fatal — the reserved-pool worker still polls).`,
+          );
+        }
       }
 
       delivered++;

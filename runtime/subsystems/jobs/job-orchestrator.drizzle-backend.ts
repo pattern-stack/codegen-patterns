@@ -7,7 +7,7 @@
  * No `job_queue` table, no executor port. See `docs/specs/JOB-3.md`.
  */
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, desc, eq, gt, inArray, isNotNull, ne, notInArray, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import type { DrizzleTransaction } from '../events/event-bus.protocol';
@@ -34,7 +34,8 @@ import {
   MissingTenantIdError,
 } from './jobs-errors';
 import { jobSteps } from './job-orchestration.schema';
-import { JOBS_MULTI_TENANT } from './jobs-domain.tokens';
+import { JOBS_MULTI_TENANT, JOBS_LISTEN_NOTIFY } from './jobs-domain.tokens';
+import { JOBS_WAKE_CHANNEL, pgNotify } from './pg-notify';
 
 /**
  * Terminal statuses — transitions into these are final. Used by `cancel`
@@ -83,6 +84,13 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
     @Inject(JOBS_MULTI_TENANT) private readonly multiTenant: boolean,
+    // LISTEN-NOTIFY-1 — when true, `start()` emits an in-tx
+    // `pg_notify(codegen_jobs_wake, <pool>)` so a `listen_notify` worker wakes
+    // on enqueue-commit. `@Optional()` defaulting to false so direct
+    // construction (integration tests not going through DI) keeps working.
+    @Optional()
+    @Inject(JOBS_LISTEN_NOTIFY)
+    private readonly listenNotify: boolean = false,
   ) {}
 
   /**
@@ -250,6 +258,25 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
         attempts: 0,
       })
       .returning();
+
+    // LISTEN-NOTIFY-1 — wake a listening worker the instant this enqueue
+    // commits. Emitted through the SAME `client` (the caller's tx when one was
+    // passed, else the pool) so delivery is gated on commit — a rolled-back
+    // enqueue emits no phantom wake (D2). The pool name is the payload; the
+    // worker re-runs its own pool-filtered claim query on wake. Polling is the
+    // fallback, so a failed notify is non-fatal: log + continue.
+    if (this.listenNotify) {
+      const wakePool = (inserted as JobRunRow).pool;
+      try {
+        await pgNotify(client, JOBS_WAKE_CHANNEL, wakePool);
+      } catch (err) {
+        this.logger.warn(
+          `pg_notify(${JOBS_WAKE_CHANNEL}, ${wakePool}) failed for run ` +
+            `${(inserted as JobRunRow).id}: ${(err as Error).message} ` +
+            `(non-fatal — interval polling still claims the run).`,
+        );
+      }
+    }
 
     return inserted as JobRun;
   }

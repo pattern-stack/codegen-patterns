@@ -36,7 +36,7 @@ There is **no** `IJobQueue`, **no** `job_queue` table, **no** executor port. The
 
 Per CLAUDE.md, backends are core-contract + opt-in extensions. The core contract is `IJobOrchestrator` + `IJobRunService` + `IJobStepService`; app code against these three is portable. Extensions are backend-specific capabilities exposed additively in `codegen.config.yaml: jobs.extensions.<backend>`. Phase 1 ships:
 
-- **Drizzle backend** — core contract implemented. Extensions reserved: `listen_notify`, `poll_interval_ms`.
+- **Drizzle backend** — core contract implemented. Extensions **implemented** (LISTEN-NOTIFY-1): `poll_interval_ms` (interval-poll heartbeat) + opt-in `listen_notify` (Postgres LISTEN/NOTIFY wakes the worker on enqueue-commit, ALONGSIDE polling; sub-500ms claim, off by default, requires a direct/non-transaction-pooler connection).
 - **Memory backend** — core contract for tests. No extensions.
 - **BullMQ backend** — **shipped (BULLMQ-1, opt-in via `jobs.backend: bullmq`).** `BullMQJobOrchestrator extends DrizzleJobOrchestrator`: Postgres `job_run` stays the domain source of truth (scoping/hierarchy/`listForScope` unchanged); BullMQ replaces only the claim/dispatch half (`start`→`queue.add`, `BullMQJobWorker` per pool). Extensions: `bull_board` (config carried; consumer mounts), `FlowProducer` exposure (`.flowProducer()`), `queue_prefix`. Cron/`upsertJobScheduler` is out of scope (ADR-025). `jobId = sha1(idempotencyKey)` (colon-safe + stable; the dedup primitive). Default backend stays `drizzle` until the broker-up port-promotion gate runs green in a consumer (see `docs/specs/BULLMQ-1.md §Verification`).
 

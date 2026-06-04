@@ -49,7 +49,7 @@ jobs:
   # ── Backend-specific extensions (typed per backend) ──
   extensions:
     drizzle:
-      # listen_notify: true          # Phase 6+: use Postgres LISTEN/NOTIFY to wake the loop
+      # listen_notify: true          # LISTEN-NOTIFY-1: Postgres LISTEN/NOTIFY wakes the worker on enqueue-commit, alongside polling. Off by default; needs a direct (non-transaction-pooler) connection.
       poll_interval_ms: 1000
     # bullmq:                        # Reserved slot — backend not yet implemented
     #   bull_board:

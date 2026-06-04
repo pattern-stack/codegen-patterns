@@ -322,6 +322,77 @@ describe('buildSubsystemBarrel', () => {
 		expect(out.content).not.toContain('registry:');
 		expect(out.content).not.toContain('bridge-registry');
 	});
+
+	// ─── LISTEN-NOTIFY-1: drizzle extension threading ────────────────────────
+
+	test('jobs `extensions.drizzle.listen_notify` threads into JobsDomainModule + embedded worker', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{
+				jobs: {
+					backend: 'drizzle',
+					worker_mode: 'embedded',
+					extensions: { drizzle: { listen_notify: true, poll_interval_ms: 250 } },
+				},
+			},
+			subsystemsRel,
+		);
+		// Domain module (orchestrator emits the enqueue notify):
+		expect(out.content).toContain(
+			'JobsDomainModule.forRoot({ backend: \'drizzle\', extensions: { drizzle: { listenNotify: true, pollIntervalMs: 250 } } }),',
+		);
+		// Embedded worker (holds the listener + honors pollInterval):
+		expect(out.content).toContain(
+			'domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 250 } }',
+		);
+	});
+
+	test('jobs drizzle extensions thread `pollIntervalMs` alone (listen_notify omitted → off by default)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{
+				jobs: {
+					backend: 'drizzle',
+					worker_mode: 'embedded',
+					extensions: { drizzle: { poll_interval_ms: 500 } },
+				},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain('pollIntervalMs: 500');
+		expect(out.content).not.toContain('listenNotify');
+	});
+
+	test('jobs WITHOUT drizzle extensions stays byte-identical (no domainModuleExtensions clause)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain("JobsDomainModule.forRoot({ backend: 'drizzle', multiTenant: false }),");
+		expect(out.content).not.toContain('domainModuleExtensions');
+		expect(out.content).not.toContain('listenNotify');
+	});
+
+	test('events `extensions.drizzle.listen_notify` threads into EventsModule.forRoot (vendored)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{ events: { backend: 'drizzle', extensions: { drizzle: { listen_notify: true } } } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain(
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, listenNotify: true }),",
+		);
+	});
+
+	test('events WITHOUT listen_notify stays off-by-default (no listenNotify key)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{ events: { backend: 'drizzle' } },
+			subsystemsRel,
+		);
+		expect(out.content).not.toContain('listenNotify');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -382,6 +453,34 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			"import { JobWorkerModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
 		);
 		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded' }),");
+	});
+
+	test('package-mode events listen_notify threads listenNotify alongside typedBus (LISTEN-NOTIFY-1)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{ events: { backend: 'drizzle', extensions: { drizzle: { listen_notify: true } } } },
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain(
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, typedBus: TypedEventBus, listenNotify: true }),",
+		);
+	});
+
+	test('package-mode jobs drizzle extensions thread into the embedded worker (LISTEN-NOTIFY-1)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{
+				jobs: {
+					backend: 'drizzle',
+					worker_mode: 'embedded',
+					extensions: { drizzle: { listen_notify: true } },
+				},
+			},
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain('domainModuleExtensions: { drizzle: { listenNotify: true } }');
 	});
 
 	test('vendored mode (explicit) still emits the relative-path imports', () => {

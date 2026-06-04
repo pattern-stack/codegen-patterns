@@ -133,23 +133,71 @@ function jsonToTs(value: unknown): string {
 }
 
 /**
+ * LISTEN-NOTIFY-1 — extract the drizzle extension knobs (`listen_notify`,
+ * `poll_interval_ms`) from `jobs.extensions.drizzle` and map them to the
+ * camelCase runtime shape. Returns `undefined` when neither knob is set (so the
+ * generated call stays minimal and off-by-default). Only the drizzle/default
+ * backend reads these.
+ */
+function drizzleJobsExtensions(
+	backend: string,
+	cfg: Record<string, unknown> | undefined,
+): { listenNotify?: boolean; pollIntervalMs?: number } | undefined {
+	if (backend !== 'drizzle') return undefined;
+	const drizzle = (cfg?.extensions as { drizzle?: Record<string, unknown> } | undefined)
+		?.drizzle;
+	if (!drizzle) return undefined;
+	const out: { listenNotify?: boolean; pollIntervalMs?: number } = {};
+	if (typeof drizzle.listen_notify === 'boolean') out.listenNotify = drizzle.listen_notify;
+	if (typeof drizzle.poll_interval_ms === 'number')
+		out.pollIntervalMs = drizzle.poll_interval_ms;
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Serialise the drizzle extension knobs to a `domainModuleExtensions: { drizzle:
+ * {...} }` fragment (camelCase keys, matching the runtime shape), or `''` when
+ * none apply. Threaded into BOTH `JobsDomainModule.forRoot` (so the orchestrator
+ * emits the enqueue notify) and `JobWorkerModule.forRoot` (so the spawned worker
+ * holds the listener + honors `pollIntervalMs`).
+ */
+function drizzleExtensionsClause(
+	ext: { listenNotify?: boolean; pollIntervalMs?: number } | undefined,
+	key: 'extensions' | 'domainModuleExtensions',
+): string {
+	if (!ext) return '';
+	return `${key}: { drizzle: ${jsonToTs(ext)} }`;
+}
+
+/**
  * BULLMQ-1 — build the `JobsDomainModule.forRoot(...)` options literal,
  * inlining the typed `extensions.bullmq` block when the BullMQ backend is
  * selected. Drizzle/memory fall back to the plain `{ backend, multiTenant }`
- * shape via `quoteOpts`.
+ * shape via `quoteOpts`. LISTEN-NOTIFY-1 threads the drizzle extension knobs
+ * (`listen_notify`/`poll_interval_ms`) on the drizzle path.
  */
 function quoteBullmqDomainOpts(input: {
 	backend: string;
 	multiTenant: boolean;
 	bullExt: Record<string, unknown> | undefined;
+	drizzleExt?: { listenNotify?: boolean; pollIntervalMs?: number } | undefined;
 }): string {
-	const { backend, multiTenant, bullExt } = input;
-	if (backend !== 'bullmq' || !bullExt) {
+	const { backend, multiTenant, bullExt, drizzleExt } = input;
+	if (backend === 'bullmq' && bullExt) {
+		const parts = [`backend: 'bullmq'`];
+		if (multiTenant) parts.push(`multiTenant: true`);
+		parts.push(`extensions: { bullmq: ${jsonToTs(bullExt)} }`);
+		return `{ ${parts.join(', ')} }`;
+	}
+	const extClause = drizzleExtensionsClause(drizzleExt, 'extensions');
+	if (!extClause) {
 		return quoteOpts({ backend, multiTenant });
 	}
-	const parts = [`backend: 'bullmq'`];
+	// Drizzle backend with extension knobs → assemble piecewise so we can append
+	// the `extensions: { drizzle: {...} }` block alongside backend/multiTenant.
+	const parts = [`backend: '${backend}'`];
 	if (multiTenant) parts.push(`multiTenant: true`);
-	parts.push(`extensions: { bullmq: ${jsonToTs(bullExt)} }`);
+	parts.push(extClause);
 	return `{ ${parts.join(', ')} }`;
 }
 
@@ -189,6 +237,15 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 	events: ({ moduleImport, cfg, mode }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
+		// LISTEN-NOTIFY-1: opt-in `events.extensions.drizzle.listen_notify` →
+		// `EventsModule.forRoot({ listenNotify })`. Drizzle backend only; omitted
+		// (off-by-default) when the key is absent. Emit the fragment only when set
+		// so the no-extension barrel byte-shape is unchanged.
+		const listenNotify =
+			backend === 'drizzle' &&
+			(cfg?.extensions as { drizzle?: { listen_notify?: unknown } } | undefined)?.drizzle
+				?.listen_notify === true;
+		const listenNotifyClause = listenNotify ? `, listenNotify: true` : '';
 		const imports = [
 			`import { EventsModule } from '${moduleImport('events', 'events.module')}';`,
 		];
@@ -203,7 +260,15 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			return {
 				imports,
 				calls: [
-					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus }),`,
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus${listenNotifyClause} }),`,
+				],
+			};
+		}
+		if (listenNotify) {
+			return {
+				imports,
+				calls: [
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, listenNotify: true }),`,
 				],
 			};
 		}
@@ -230,7 +295,10 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			backend === 'bullmq'
 				? (cfg?.extensions as { bullmq?: Record<string, unknown> } | undefined)?.bullmq
 				: undefined;
-		const domainOpts = quoteBullmqDomainOpts({ backend, multiTenant, bullExt });
+		// LISTEN-NOTIFY-1: drizzle extension knobs (`listen_notify`,
+		// `poll_interval_ms`) → camelCase runtime shape; `undefined` when unset.
+		const drizzleExt = drizzleJobsExtensions(backend, cfg);
+		const domainOpts = quoteBullmqDomainOpts({ backend, multiTenant, bullExt, drizzleExt });
 		const calls = [`\tJobsDomainModule.forRoot(${domainOpts}),`];
 		// JOB-7: `worker_mode: 'embedded'` runs the worker in-process alongside the
 		// HTTP app. `'standalone'` (default) means the user runs `bun worker.ts`
@@ -249,6 +317,18 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 				if (bullExt) {
 					parts.push(`domainModuleExtensions: { bullmq: ${jsonToTs(bullExt)} }`);
 				}
+			} else {
+				// LISTEN-NOTIFY-1: the embedded worker needs the drizzle knobs too —
+				// `JobWorkerModule` reads `domainModuleExtensions.drizzle` to thread
+				// `listenNotify` (the listener) + `pollIntervalMs` into each spawned
+				// `JobWorker`. (It also forwards them to the inner `JobsDomainModule`,
+				// but that one already got them via the standalone domain call above;
+				// re-passing is harmless and keeps the embedded worker self-contained.)
+				const workerExtClause = drizzleExtensionsClause(
+					drizzleExt,
+					'domainModuleExtensions',
+				);
+				if (workerExtClause) parts.push(workerExtClause);
 			}
 			const poolsClause = workerPoolsClause(cfg, bridgeInstalled);
 			if (poolsClause) parts.push(poolsClause);

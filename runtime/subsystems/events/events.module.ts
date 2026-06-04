@@ -97,6 +97,20 @@ export interface EventsModuleOptions {
    */
   pools?: string[];
   /**
+   * LISTEN-NOTIFY-1 — when `true` (drizzle backend only), the drainer holds a
+   * dedicated listener connection and LISTENs on `codegen_events_wake`. Each
+   * `publish`/`publishMany` emits an in-tx `pg_notify(codegen_events_wake,
+   * <pool>)` so the drainer wakes the moment the publishing transaction commits,
+   * instead of waiting for the next poll tick. Polling continues unchanged as
+   * the fallback heartbeat; a lost notify degrades to poll latency, never to
+   * lost work. Defaults to `false`.
+   *
+   * Ignored by the memory + redis backends (memory dispatches inline; redis has
+   * its own fan-out). Requires a direct (non-transaction-pooler) connection —
+   * see the events/jobs config block re: PgBouncer.
+   */
+  listenNotify?: boolean;
+  /**
    * Multi-tenancy opt-in (EVT-6).
    *
    * When `true`, every `TypedEventBus.publish()` call must supply
