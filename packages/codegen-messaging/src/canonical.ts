@@ -1,12 +1,14 @@
 /**
- * Canonical `messaging`-surface vocabulary (ADR-036 §7; swe-brain ADR-0008 §1).
+ * Canonical `messaging`-surface vocabulary (ADR-036 §7; swe-brain ADR-0008 §1;
+ * swe-brain ADR-0009 Amendment B §B2).
  *
- * `CanonicalChannel` and `CanonicalMessage` are the vendor-agnostic `T`s a
- * messaging provider adapter reads into — the records that flow through the L1
- * change-source pipeline (`IChangeSource<Canonical…>` → differ → sink). Every
- * vendor adapter maps its vendor DTO → External (Zod-validated) → these canonical
- * shapes; vendor DTO/External shapes never cross the port boundary (hard rule #4).
- * IDs are vendor-prefixed at the boundary (`slack:C…`, `slack:C…:ts`, `slack:U…`).
+ * `CanonicalChannel`, `CanonicalMessage`, and `CanonicalReaction` are the
+ * vendor-agnostic `T`s a messaging provider adapter reads into — the records that
+ * flow through the L1 change-source pipeline (`IChangeSource<Canonical…>` → differ
+ * → sink). Every vendor adapter maps its vendor DTO → External (Zod-validated) →
+ * these canonical shapes; vendor DTO/External shapes never cross the port boundary
+ * (hard rule #4). IDs are vendor-prefixed at the boundary (`slack:C…`,
+ * `slack:C…:ts`, `slack:U…`, `slack:Ev…`).
  *
  * Modeled from swe-brain ADR-0008 (MessagingDomain, Slack first), trimmed to the
  * cross-vendor load-bearing core so Teams/Discord (planned vendor #2) map cleanly.
@@ -115,4 +117,32 @@ export type CanonicalMessage = {
    * self-authored messages (ADR-0008 §9).
    */
   isAppAuthored: boolean;
+};
+
+/**
+ * An append-only reaction delta (swe-brain ADR-0009 Amendment B §B2; reactions
+ * ARE interactions per swe-brain ADR-0006). One row per vendor add/remove
+ * event; aggregate counts are DERIVED at read (SUM(delta) per (message, emoji))
+ * — never stored on the delta. The poll-side aggregate snapshot remains
+ * `CanonicalMessage.reactions` (`MessageReaction[]`).
+ */
+export type CanonicalReaction = {
+  /** Vendor-prefixed DELTA identity — the vendor *event* id (e.g. `slack:Ev…`), not an object id: each add/remove is its own immutable fact. */
+  externalId: string;
+  /** The message the delta concerns (cross-entity join key, not a DB FK), e.g. `slack:C…:ts`. */
+  messageExternalId: string;
+  /** Parent container, vendor-prefixed, e.g. `slack:C…`. */
+  channelExternalId: string;
+  /** Emoji shortname as the vendor reports it (e.g. `thumbsup`); vendor vocabulary preserved. */
+  emoji: string;
+  /** The reacting actor's vendor user id, e.g. `slack:U…`. */
+  actorExternalId: string;
+  /** Actor email when resolvable (ExactEmailMatch — hard rule #5); null for bots/guests/unresolved. */
+  actorEmail: string | null;
+  /** +1 (added) or −1 (removed). */
+  delta: number;
+  /** When the reaction happened (vendor event timestamp). */
+  occurredAt: Date;
+  /** Observed visibility (`public` | `private`) — the consent lattice's runtime currency. */
+  visibility: string;
 };
