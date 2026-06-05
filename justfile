@@ -28,9 +28,12 @@ gen-subsystem name:
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
-# Run unit tests (base classes + subsystems + scanner + schema)
+# Run unit tests (base classes + subsystems + scanner + schema).
+# Paths are anchored via justfile_directory(): `bun test <path>` treats the
+# arg as a SUBSTRING filter, so a relative `src/__tests__/` also matches any
+# checkout under worktrees/<x>/src/__tests__/ and runs its stale tests.
 test-unit:
-    bun test src/__tests__/
+    bun test "{{justfile_directory()}}/src/__tests__/"
 
 # Run end-to-end smoke test: scaffold + generate + typecheck a fresh project.
 # Completes in ~60-120s. Set KEEP_SMOKE_DIR=1 to preserve the tmp project.
@@ -56,14 +59,14 @@ test-smoke-junction-cross-domain-clean:
 # Junction snapshot tests — locks emitted output of junction codegen against drift.
 # Regenerate after intentional template changes: bun test --update-snapshots test/junction/
 test-junction:
-    bun test test/junction/
+    bun test "{{justfile_directory()}}/test/junction/"
 
 # Integration-emit snapshot (RFC-0001 §7) — locks the emitted src/integrations/**
 # tree (provider modules + adapters + barrel + aggregator + types.generated.ts)
 # for the checked-in integration-patterns fixture. Regenerate after intentional
 # emission changes: bun test --update-snapshots test/integration-emit/
 test-integration-emit:
-    bun test test/integration-emit/
+    bun test "{{justfile_directory()}}/test/integration-emit/"
 
 # Refresh the integration-patterns snapshot fixture YAML from a local checkout.
 # Manual + reviewed — NEVER auto-synced (RFC-0001 §7). Point at your local
@@ -130,7 +133,7 @@ compare:
 
 # Run family repo integration tests (requires Docker + db-up + db-push)
 test-family:
-    bun test test/scaffold/tests/crm-entity-repository.test.ts test/scaffold/tests/activity-entity-repository.test.ts test/scaffold/tests/metadata-entity-repository.test.ts
+    bun test "{{justfile_directory()}}/test/scaffold/tests/crm-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
 
 # Run scaffold integration tests (requires Docker)
 test-integration:
@@ -146,7 +149,7 @@ test-integration-quick:
 # unit run (it needs Docker). Closes the OBS-LIST-1 "Drizzle SQL not
 # exercised" gap (metadata->>'rootRunId' + keyset OR-expansion).
 test-obs-integration:
-    bun test test/integration/observability-list-reads.drizzle.integration.test.ts
+    bun test "{{justfile_directory()}}/test/integration/observability-list-reads.drizzle.integration.test.ts"
 
 # Run the full scaffold validation (Docker + codegen + NestJS + CRUD)
 validate:

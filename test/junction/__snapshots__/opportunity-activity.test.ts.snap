@@ -531,7 +531,7 @@ export class ActivityService extends WithAnalytics(
 
   // Inherited from ActivityEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
-  //   findByDateRange, findByUserId, findByOpportunityId, findRecentByOpportunityId
+  //   findByDateRange, findByUser, findBySubject, findRecent
 
 
 

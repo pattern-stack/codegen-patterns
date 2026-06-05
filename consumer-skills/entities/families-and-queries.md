@@ -16,7 +16,7 @@ an optional `tx?: DrizzleTx` for transactional composition.
 |---|---|---|
 | `Base` | plain tables with no special access pattern | nothing — standard CRUD only |
 | `Synced` | records mirrored from an external system (have an external id + per-user visibility) | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `syncUpsert` |
-| `Activity` | time-ordered activity/event rows tied to a parent | `findByDateRange`, `findByUserId`, `findByOpportunityId`, `findRecentByOpportunityId` |
+| `Activity` | time-ordered activity/interaction rows scoped to a subject | `findByDateRange`, `findByUserId`, `findBySubjectId`, `findRecentBySubjectId` (subject FK + recency column resolved from `config: { Activity: { subject: <entity> } }`) |
 | `Metadata` | key/value or definition/value rows describing other entities | `findByEntityIdAndType`, `listByEntityId`, `listHistoryByEntityId` |
 | `Knowledge` | semantically-searchable knowledge rows (pgvector at runtime) | `semanticSearch`, `findPendingByOpportunityId`, `updateStatus`, `updateStatusBatch` |
 
@@ -77,6 +77,8 @@ and a `GET /<plural>/search` route. `paginate: true` makes the route accept
 - **`order:` is the default sort**, not a parameter — add a `queries:` search
   entry if you need caller-controlled ordering.
 - **Family methods assume their columns exist.** `Synced` expects an external-id
-  + user-visibility shape; `Activity` expects a parent FK like
-  `opportunity_id`. If your table doesn't fit, pick `Base` and add explicit
+  + user-visibility shape; `Activity`'s subject finders expect the subject FK
+  named by its `config:` (`subject: person` → `person_id`, or an explicit
+  `subjectColumn`) plus a recency column (`occurred_at` by default, or
+  `config.occurredAt`). If your table doesn't fit, pick `Base` and add explicit
   `queries:`.

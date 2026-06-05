@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-06-04
+
+**`ActivityPattern` subject scoping is config-driven** (ACTIVITY-SUBJECT-1) —
+the library's Activity base classes no longer bake the CRM term "opportunity"
+into their finders. An activity/interaction entity declares which subject it is
+scoped to via the pattern's new `config:` block, and the generated repo/service
+expose generic, config-resolved subject lookups. Surfaced by the swe-brain
+dogfood, whose interactions (meeting, email, transcript, message) reference
+`person`/`repo`/`team` subjects (ADR-0006), not CRM opportunities.
+
+Consumer census confirmed **no project used the Activity pattern** (dealbrain's
+sole `findByOpportunityId` is a `JunctionSyncRepository` method, not the pattern;
+swe-brain's interactions are all `pattern: Integrated`), so this is a clean cut
+with no aliases per the "no backwards compatibility until users" rule. The
+`patterns: [Integrated, Activity]` composition — the swe-brain target — is
+validated and tested.
+
+### Added
+
+- **`ActivityPattern.configSchema`** — `{ subject?, subjectColumn?, occurredAt? }`
+  (all optional, `.strict()`). `subject` derives the FK column `<subject>_id`;
+  `subjectColumn` overrides it explicitly; `occurredAt` names the recency column
+  (default `occurred_at`). Validated at parse time via the standard ADR-031
+  composition path; emitted onto the concrete repo as `patternConfig` (the same
+  hand-off `IntegratedEntityRepository` uses for `integrationConfig`).
+- **`ActivityPatternConfig`** interface exported from
+  `runtime/base-classes/activity-entity-repository.ts`.
+
+### Changed
+
+- **`ActivityEntityRepository` finders are config-driven.**
+  `findByOpportunityId` / `findRecentByOpportunityId` are replaced by
+  `findBySubjectId` / `findRecentBySubjectId`, which resolve the subject FK column
+  (and recency-ordering column) from `this.patternConfig` at runtime. Calling a
+  subject finder with no subject configured throws a clear error naming the
+  config key to set. `findByDateRange` and `findByUserId` are unchanged (actor
+  scoping is generally applicable, not CRM-shaped).
+- **`ActivityEntityService`** mirrors the rename: `findBySubject` /
+  `findRecent` (was `findByOpportunity` / `findRecent`); `IActivityEntityRepository`
+  drops the opportunity methods for the subject ones. `findByDateRange` /
+  `findByUser` unchanged.
+- **`ActivityPattern` inherited-method comment strings** now advertise the
+  subject finders; the header's byte-identical-to-FAMILY_MAP claim is removed (it
+  was a one-time PATTERN-5 migration guarantee, not a standing contract).
+
+### Migration
+
+No consumer action required — no project used the Activity pattern. A project
+adopting it now declares `pattern: Activity` (or `patterns: [Integrated,
+Activity]`) plus `config: { Activity: { subject: <entity> } }`. Named per-subject
+finders (`findByPersonId`) remain available the same way they always were — via
+the entity's declarative `queries:` block.
+
 ## [0.16.1] — 2026-06-04
 
 **`WebhookFetchCallback<T>` yields `{ record, eventId?, cursor? }`** —
