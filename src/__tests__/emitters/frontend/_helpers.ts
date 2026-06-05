@@ -54,6 +54,7 @@ export function config(over: Partial<FrontendEmitConfig> = {}): FrontendEmitConf
 		parsers: {},
 		architecture: 'clean',
 		dbEntitiesImport: '@repo/db/entities',
+		catalogCategories: [],
 		...over,
 	};
 }
@@ -122,10 +123,12 @@ export function ctx(
 	entities: EntityRegistryEntry[],
 	configOver: Partial<FrontendEmitConfig> = {},
 	parsed?: Map<string, ParsedEntity>,
+	providers?: FrontendEmitContext['providers'],
 ): FrontendEmitContext {
 	return {
 		entities,
 		parsed: parsed ?? new Map(entities.map((e) => [e.name, parsedEntity(e)])),
 		config: config(configOver),
+		providers,
 	};
 }

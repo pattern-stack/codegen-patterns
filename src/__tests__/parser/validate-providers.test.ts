@@ -206,3 +206,43 @@ describe('validateProviders — pre-flight import check', () => {
 		expect(issues).toEqual([]);
 	});
 });
+
+describe('validateProviders — planned providers (roadmap stubs)', () => {
+	it('skips the surface closed-set check and import pre-flight for planned providers', () => {
+		const planned: LoadedProvider = {
+			definition: {
+				slug: 'github',
+				display_name: 'GitHub',
+				status: 'planned',
+				// Neither surface exists in the fixture entity set, and there is no
+				// auth/client to pre-flight — both checks must be skipped.
+				surfaces: ['source_control'],
+				display: { category: 'source-control' },
+			},
+			filePath: '/definitions/providers/github.yaml',
+		};
+		const issues = validateProviders([...loadValidProviders(), planned], {
+			entitySurfaces: loadEntitySurfaces(),
+			sourceRoot: PROVIDER_SRC,
+			aliases: ALIASES,
+		});
+		expect(issues).toEqual([]);
+	});
+
+	it('still enforces slug uniqueness against planned providers', () => {
+		const valid = loadValidProviders();
+		const dupe: LoadedProvider = {
+			definition: {
+				slug: valid[0].definition.slug,
+				status: 'planned',
+				surfaces: ['whatever'],
+			},
+			filePath: '/definitions/providers/dupe.yaml',
+		};
+		const issues = validateProviders([...valid, dupe], {
+			entitySurfaces: loadEntitySurfaces(),
+			skipImportCheck: true,
+		});
+		expect(issues.some((i) => i.type === 'provider_duplicate_slug')).toBe(true);
+	});
+});

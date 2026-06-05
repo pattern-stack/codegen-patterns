@@ -33,6 +33,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { AnalysisIssue } from "../../analyzer/types";
 import {
+  type ActiveProviderDefinition,
+  isActiveProvider,
   parseImportRef,
   type ProviderDefinition,
 } from "../../schema/provider-definition.schema";
@@ -100,7 +102,7 @@ function providerModuleBanner(sourceYaml: string): string {
  *                   `definitions/providers/google.yaml`). Informational only.
  */
 export function generateProviderModule(
-  def: ProviderDefinition,
+  def: ActiveProviderDefinition,
   sourceYaml: string,
   mode: RuntimeMode = "package",
 ): string {
@@ -364,7 +366,9 @@ export function generateProviderModules(
 
   const mode: RuntimeMode = opts.mode ?? "package";
   const written: string[] = [];
+  // planned providers are catalog-only roadmap stubs — no module emission.
   for (const { definition, filePath } of loaded) {
+    if (!isActiveProvider(definition)) continue;
     const sourceYaml = relativeSource(filePath);
     const content = generateProviderModule(definition, sourceYaml, mode);
     const outPath = join(

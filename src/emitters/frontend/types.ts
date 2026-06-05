@@ -53,6 +53,28 @@ export interface FrontendEmitConfig {
 	architecture: 'clean' | 'clean-lite-ps';
 	/** `locations.dbEntities.import` — module the Zod schema + entity type are imported from. */
 	dbEntitiesImport: string;
+	/** `frontend.catalog.categories` — ordered display groups for the providers catalog. */
+	catalogCategories: CatalogCategoryConfig[];
+}
+
+/** One `frontend.catalog.categories[]` entry (blurb defaulted to '' by the schema). */
+export interface CatalogCategoryConfig {
+	id: string;
+	name: string;
+	blurb: string;
+}
+
+/**
+ * The slice of a provider definition the catalog emission consumes — slug +
+ * display metadata only, decoupled from the full `ProviderDefinitionSchema`
+ * shape so emitter tests construct it directly without YAML.
+ */
+export interface ProviderCatalogInput {
+	slug: string;
+	displayName?: string;
+	surfaces: string[];
+	status: 'active' | 'planned';
+	display?: { category?: string; blurb?: string; hint?: string };
 }
 
 /**
@@ -72,6 +94,12 @@ export interface FrontendEmitContext {
 	entities: EntityRegistryEntry[];
 	parsed: Map<string, ParsedEntity>;
 	config: FrontendEmitConfig;
+	/**
+	 * Loaded provider definitions (`definitions/providers/*.yaml`), when the
+	 * project has any — drives `providers.ts` emission. Absent/empty ⇒ no
+	 * catalog is emitted and the root barrel omits the export.
+	 */
+	providers?: ProviderCatalogInput[];
 }
 
 /**

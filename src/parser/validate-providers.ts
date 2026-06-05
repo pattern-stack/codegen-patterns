@@ -26,6 +26,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import ts from "typescript";
 import type { AnalysisIssue } from "../analyzer/types";
 import {
+  isActiveProvider,
   parseImportRef,
   type ProviderDefinition,
 } from "../schema/provider-definition.schema";
@@ -254,6 +255,11 @@ export function validateProviders(
   for (const { definition, filePath } of providers) {
     const { slug } = definition;
 
+    // 'planned' providers are roadmap stubs (frontend catalog only): no
+    // backend emission consumes them, so the surface closed-set check and the
+    // auth/client import pre-flight don't apply. Slug uniqueness (above) does.
+    if (definition.status === "planned") continue;
+
     // 2. surfaces[] ⊆ entity surface union.
     for (const surface of definition.surfaces) {
       if (!knownSurfaces.has(surface)) {
@@ -278,6 +284,7 @@ export function validateProviders(
         sourceRoot: opts.sourceRoot,
         aliases: opts.aliases,
       };
+      if (!isActiveProvider(definition)) continue; // type narrow; planned already skipped above
       const refs: Array<{ field: string; ref: string }> = [
         { field: "auth.strategy", ref: definition.auth.strategy },
         { field: "client.class", ref: definition.client.class },

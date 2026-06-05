@@ -169,3 +169,54 @@ describe('ProviderDefinitionSchema — field rules', () => {
 		expect(result.success).toBe(false);
 	});
 });
+
+describe('ProviderDefinitionSchema — status + display (frontend catalog)', () => {
+	it('defaults status to active', () => {
+		const parsed = ProviderDefinitionSchema.parse(googleValid);
+		expect(parsed.status).toBe('active');
+	});
+
+	it('accepts a planned stub without auth or client', () => {
+		const parsed = ProviderDefinitionSchema.parse({
+			slug: 'github',
+			display_name: 'GitHub',
+			status: 'planned',
+			surfaces: ['source_control'],
+			display: { category: 'source-control' },
+		});
+		expect(parsed.status).toBe('planned');
+		expect(parsed.auth).toBeUndefined();
+		expect(parsed.client).toBeUndefined();
+	});
+
+	it('rejects an active definition missing auth or client', () => {
+		const { auth: _a, ...noAuth } = googleValid;
+		const r1 = ProviderDefinitionSchema.safeParse(noAuth);
+		expect(r1.success).toBe(false);
+		const { client: _c, ...noClient } = googleValid;
+		const r2 = ProviderDefinitionSchema.safeParse(noClient);
+		expect(r2.success).toBe(false);
+	});
+
+	it('accepts the display block and rejects unknown display keys (strict)', () => {
+		const ok = ProviderDefinitionSchema.safeParse({
+			...googleValid,
+			display: { category: 'google-workspace', blurb: 'One OAuth', hint: 'connect' },
+		});
+		expect(ok.success).toBe(true);
+		const bad = ProviderDefinitionSchema.safeParse({
+			...googleValid,
+			display: { category: 'x', icon: 'nope' },
+		});
+		expect(bad.success).toBe(false);
+	});
+
+	it('still requires non-empty surfaces on planned stubs', () => {
+		const r = ProviderDefinitionSchema.safeParse({
+			slug: 'github',
+			status: 'planned',
+			surfaces: [],
+		});
+		expect(r.success).toBe(false);
+	});
+});

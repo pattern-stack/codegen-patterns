@@ -41,7 +41,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { parseImportRef, type ProviderDefinition } from "../../schema/provider-definition.schema";
+import { type ActiveProviderDefinition, isActiveProvider, parseImportRef, type ProviderDefinition } from "../../schema/provider-definition.schema";
 import type { LoadedProvider } from "../../parser/validate-providers";
 import { isDivisibleCursor } from "../../../runtime/subsystems/integration";
 import type {
@@ -421,7 +421,7 @@ export class ${className} extends IncrementalReadBase<${canonical}, ResolvedFilt
  * divisibility.
  */
 export function generateAdapterScaffold(
-  def: ProviderDefinition,
+  def: ActiveProviderDefinition,
   surface: string,
   entities: string[],
   entityDetection?: Map<string, DetectionConfig>,
@@ -920,9 +920,13 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
   // Index full entity definitions by name for the assembly/sink emission.
   const entityByName = new Map(opts.entities.map((e) => [e.entity.name, e]));
 
+  // 'planned' providers are catalog-only roadmap stubs — adapters/assemblies
+  // are emitted for active providers only.
+  const activeProviders = opts.providers.filter((p) => isActiveProvider(p.definition));
+
   // surface → provider slugs that serve it AND have an emittable port.
   const bySurface = new Map<string, string[]>();
-  for (const { definition } of opts.providers) {
+  for (const { definition } of activeProviders) {
     for (const surface of definition.surfaces) {
       if (!SURFACE_REGISTRY[surface]) {
         result.skippedSurfaces.push({
@@ -938,7 +942,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     }
   }
 
-  const defBySlug = new Map(opts.providers.map((p) => [p.definition.slug, p.definition]));
+  const defBySlug = new Map(activeProviders.map((p) => [p.definition.slug, p.definition as ActiveProviderDefinition]));
 
   for (const [surface, slugs] of bySurface) {
     const surfaceDir = join(opts.outputRoot, surface);

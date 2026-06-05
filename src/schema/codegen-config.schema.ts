@@ -193,6 +193,33 @@ export const FrontendSyncConfigSchema = z
 export type FrontendSyncConfig = z.infer<typeof FrontendSyncConfigSchema>;
 
 /**
+ * `frontend.catalog` — display grouping for the emitted providers catalog
+ * (`generated/providers.ts`, emitted when `definitions/providers/` exists).
+ *
+ * `categories` is the ordered list of catalog groups; each provider joins a
+ * group via its `display.category` (provider YAML). Providers whose category
+ * matches no entry — or who declare none — still appear in the flat
+ * `PROVIDERS` export, just not in `PROVIDER_CATALOG`.
+ */
+export const FrontendCatalogConfigSchema = z
+	.object({
+		categories: z
+			.array(
+				z
+					.object({
+						id: z.string(),
+						name: z.string(),
+						blurb: z.string().default(''),
+					})
+					.strict(),
+			)
+			.default([]),
+	})
+	.default({});
+
+export type FrontendCatalogConfig = z.infer<typeof FrontendCatalogConfigSchema>;
+
+/**
  * The `frontend:` block in `codegen.config.yaml`.
  *
  * Gated entirely by `generate.frontend` — when that boolean is false the
@@ -204,6 +231,7 @@ export type FrontendSyncConfig = z.infer<typeof FrontendSyncConfigSchema>;
  * - `parsers` — Electric column-type → parser-fn source map. Default maps
  *   `timestamptz` to a `Date` constructor; consumers extend it per column type.
  * - `sync` — see {@link FrontendSyncConfigSchema}.
+ * - `catalog` — see {@link FrontendCatalogConfigSchema}.
  *
  * `.strict()` — the FE-1 mimicry knobs (`collections.schemaPrefix`, etc.) are
  * deleted with their templates; an unknown key here is a stale-config error,
@@ -216,6 +244,7 @@ export const FrontendConfigSchema = z
       .record(z.string())
       .default({ timestamptz: '(date: string) => new Date(date)' }),
     sync: FrontendSyncConfigSchema,
+    catalog: FrontendCatalogConfigSchema,
   })
   .strict()
   .default({});

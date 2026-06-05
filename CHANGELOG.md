@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-06-05
+
+**Providers catalog emission + planned providers** (ADR-038 follow-on;
+swe-brain consumer-test finding — the Connections surface hand-duplicated
+provider knowledge that `definitions/providers/*.yaml` already owns).
+
+### Added
+
+- **Frontend providers catalog (`generated/providers.ts`)** — emitted by the
+  frontend whole-set emitter when `definitions/providers/` exists (entity-only
+  consumers see no new file; the root barrel gains the export conditionally).
+  `PROVIDERS` (flat, slug-sorted) + `PROVIDER_CATALOG` (grouped by
+  `display.category` into the ordered `frontend.catalog.categories`). Providers
+  are gen-time knowledge — the catalog is emitted, not queried.
+- **`display:` block on the provider schema** (`category`, `blurb`, `hint`) —
+  presentation metadata consumed only by the catalog emission; backend
+  provider/adapter codegen ignores it.
+- **`status: active | planned` on the provider schema** (default `active`).
+  `planned` providers are roadmap stubs: catalog tile only — `auth`/`client`
+  optional, surface closed-set + import pre-flight cross-checks skipped (slug
+  uniqueness still enforced), and ALL backend emission (provider modules,
+  adapters, assemblies) filters them out. Flip to `active` when the
+  integration lands.
+- **`frontend.catalog.categories`** in `codegen.config.yaml` — ordered display
+  groups (`id`, `name`, `blurb`) the catalog renders.
+
+### Changed
+
+- `generateProviderModule` / `generateAdapterScaffold` now take
+  `ActiveProviderDefinition` (auth/client guaranteed); use the exported
+  `isActiveProvider` guard to narrow.
+
 ## [0.17.2] — 2026-06-04
 
 **Shutdown leak fix** (LISTEN-NOTIFY-2; swe-brain dogfood). With
