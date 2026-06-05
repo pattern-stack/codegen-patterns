@@ -285,10 +285,14 @@ Files that ship to the consumer app (not templates):
   `WebhookChangeSource<T>` webhook-mode primitive: parameterized by a
   parsed `DetectionConfig` (`mode: 'webhook'`) + a consumer-supplied
   `WebhookFetchCallback<T>` that iterates the consumer-owned inbound
-  staging queue. Stamps `Change<T>.source = 'webhook'`, populates
-  `dedupKey` from `webhook.eventIdField`, derives `externalId` from
-  the mapping table's `external_id` target, composes middleware via
-  the locked `ChangeMiddleware<T>` shape. Passive iterator — does NOT
+  staging queue, yielding `{ record, eventId?, cursor? }`. Stamps
+  `Change<T>.source = 'webhook'`, derives `dedupKey` with the precedence
+  **yielded `eventId` > `webhook.eventIdField` record extraction >
+  undefined** (`eventIdField` is optional — the yield is the right channel
+  for vendor delivery metadata and keeps a record + its same-`external_id`
+  edit distinct in one drain batch), derives `externalId` from the mapping
+  table's `external_id` target (via its `source` field), composes middleware
+  via the locked `ChangeMiddleware<T>` shape. Passive iterator — does NOT
   drive the orchestrator. Inbound staging-table schema is
   consumer-owned and deferred per ADR-0002 §Phase 4. (#226-4)
 - `runtime/subsystems/integration/integration-run-recorder.protocol.ts` —

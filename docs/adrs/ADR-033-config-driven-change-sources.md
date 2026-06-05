@@ -35,9 +35,23 @@ Per-entity sync detection is a `DetectionConfig` value, not a hand-authored clas
 type DetectionConfig =
   | { mode: 'poll';    poll: { cursor: CursorStrategy; provenance?: 'poll' | 'cdc' };
                        mapping: FieldMapping[]; filters: ResolvedFilter[] }
-  | { mode: 'webhook'; webhook: { eventIdField: string };
+  | { mode: 'webhook'; webhook: { eventIdField?: string };
                        mapping: FieldMapping[]; filters: ResolvedFilter[] };
 ```
+
+> **Amendment (0.16.1, swe-brain ADR-0009 Amendment B §B5):** `webhook.eventIdField`
+> is now **optional**, and the `WebhookFetchCallback` may yield an `eventId`
+> alongside each record: `{ record: T; eventId?: string; cursor?: WebhookCursor }`.
+> `WebhookChangeSource` derives `Change<T>.dedupKey` with the precedence
+> **yielded `eventId` > `eventIdField` record extraction > undefined**. The yield
+> is the right channel for vendor delivery metadata — an event id should never
+> need a field on the vendor-neutral canonical record. It is also the safe channel
+> when one canonical record identity (the `external_id`) can recur across distinct
+> vendor events in a single drain batch: a message create and its later edit share
+> one `external_id`, so an `eventIdField`-on-the-record substitution collapses them
+> to one `dedupKey`; the yielded `eventId` keeps them distinct. Backward-compatible:
+> callbacks that yield `{ record, cursor? }` and configs that set `eventIdField`
+> are unchanged.
 
 `CursorStrategy` is itself a tagged union over `systemModstamp | replayId | timestamp | eventId` — each variant names the field on the upstream record (or staging row) the strategy reads to advance the cursor.
 
