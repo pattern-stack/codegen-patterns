@@ -1,6 +1,6 @@
 # Frontend Pipeline Rebuild — pts / frontend-patterns Architecture
 
-**Status:** draft
+**Status:** implemented (FE-1..FE-4 merged; the stack is complete)
 **Date:** 2026-06-04
 **ADR:** ADR-038
 **Reference design:** `pattern-stack/pattern-stack` → `tools/cli/src/pts/codegen/` (generator + `SPEC-unified-entity-store.md`, 1,871 lines incl. verified TanStack DB API reference) and `pattern-stack/frontend-patterns` → `src/sync/` (`createEntityHooks.ts`, `createStore.ts`, `EntityStoreProvider.tsx`)
@@ -186,6 +186,74 @@ Pinned as a constant in `src/emitters/frontend/deps.ts`; emitted into a comment 
 - README: full `frontend:`/`generate.frontend`/per-entity `sync:` reference section.
 - Baseline: add a frontend-enabled fixture + checked-in `test/baseline/` frontend snapshots (closes the zero-coverage gap).
 - Smoke (optional, follow-on): typecheck emitted frontend against installed deps in the tmp project.
+
+  *Implementation notes (FE-4, done):*
+  - **Schema renamed `pipelines-config.schema.ts` → `codegen-config.schema.ts`.**
+    The FE-1 filename was a misnomer — nothing pipelines-shaped survives.
+    Mechanical path update across the three importers (`config-loader.ts`,
+    `runtime-import.ts` comment, `schema-v2.test.ts`); grep for
+    `pipelines-config.schema` is clean. Added `FrontendConfigSchema`
+    (+ `FrontendAuthConfigSchema` / `FrontendSyncConfigSchema`) there, wired into
+    `config-loader` always-parse (defaults applied even when the block is
+    absent), and `ProjectConfig.frontend` typed. `.strict()` on the frontend
+    block — the deleted mimicry knobs are now config errors, not passthrough.
+  - **auth null-disables via Zod `.default()` semantics.** `auth.function`
+    absent → `'getAuthorizationHeader'`; explicit `null` → disabled. Zod
+    `.default()` only fires on `undefined`, so an explicit `null` survives
+    untouched — no separate sentinel needed (preserves the old `hasOwnProperty`
+    convention exactly).
+  - **`load-context.ts` is the single CLI seam.** `loadFrontendEmitContext(cwd,
+    config, opts)` loads the registry + parsed map, maps the validated config +
+    `generate.architecture` + `locations.*` into `FrontendEmitConfig`, and
+    returns `{ skip: undefined, ctx, outDir }` or `{ skip: reason }` (zero
+    entities). **Locations are read off the in-hand config** (with the
+    `locations.mjs` defaults inlined) rather than importing that module's
+    `LOCATIONS` singleton — the singleton binds `process.cwd()` at import time,
+    which is wrong under the CLI's `--cwd`. `mapFrontendEmitConfig` re-parses the
+    raw `frontend` value through the schema so defaults apply uniformly for both
+    the loaded-config (CLI) and partial-object (test) callers.
+  - **Post-step placement + contract.** The frontend emission block sits in
+    `entity.ts` after the orchestration post-step, gated on
+    `generate.frontend === true`, try-wrapped non-fatal but NOT silent (emitted
+    count + outDir print; skips + failures print). Runs ONCE after the `--all`
+    loop — it's whole-set, never per entity. Surfaced in both the JSON payload
+    (`frontend: { outDir, written, fileCount }`) and the human summary.
+  - **init merge = `mergeFrontendDeps`.** Mirrors the `mergeTsconfig`
+    idempotent-merge precedent: when `generate.frontend: true`, locate the
+    frontend `package.json` from `paths.frontend_src`'s parent (default
+    `apps/frontend/`); if present, ADD only missing `FRONTEND_EMITTED_DEPS` keys
+    (existing version ranges preserved verbatim, re-run never duplicates/
+    reorders); if absent, emit a `skip` plan-entry NOTICE listing the deps to
+    install verbatim. Never fails init. `@pattern-stack/codegen`'s own
+    package.json is untouched.
+  - **Coverage = golden-tree test, NOT baseline-runner integration (FALLBACK
+    path taken — reasoning recorded).** The baseline runner (`test/run-test.ts`)
+    drives `bunx hygen entity new` per entity and bolts post-step artifacts on
+    via one-off `bun -e` shims; the frontend emitter is a whole-set TS function
+    with no hygen surface, and the baseline `tsconfig.baseline.json` aliases
+    (`@shared/*`) don't resolve `@repo/db/entities` or
+    `@pattern-stack/frontend-patterns`, so it could never compile the emitted
+    frontend (the snapshot would be content-only anyway). Integrating it would
+    also subject the snapshot to the runner's `bun run lint` biome reformat pass
+    (a non-determinism vector). So coverage is a dedicated golden-tree test
+    (`src/__tests__/emitters/frontend/golden-tree.test.ts`) wired into
+    `just test-unit`: it runs the REAL CLI path (`loadFrontendEmitContext` →
+    `emitFrontendSet`) into a tmp dir and compares byte-for-byte against
+    `test/frontend-golden/snapshot/`. The fixture set
+    (`test/frontend-golden/entities/`: explicit-plural `person` + FK-consumer
+    `user`) LOCKS registry-resolved naming — `user belongs_to person` references
+    `persons` (person.plural) in the store/resolvers, and per-entity sync
+    (`user: api`, `person: electric`) is asserted. Snapshot regenerated twice;
+    byte-identical both times. `load-context.test.ts` covers the config mapping
+    (defaults, null-disables, overrides, architecture, locations) + the skip.
+  - **dbEntities plain-`<Class>` contract VERIFIED-as-documented (FE-2 open
+    item).** The emitter imports `import type { <Class> } from
+    '<dbEntities>/<name>'`. This repo emits no `packages/db/src/entities/*.ts`,
+    so the export name stays a consumer contract — documented in the README
+    "Frontend generation" section as the dbEntities requirement (export the
+    plain `<Class>`, not `<Class>Entity`). No emitter change needed; the single
+    knob (in `emit-api.ts` / `emit-collections.ts`) is flagged if a consumer's
+    db package only exports `<Class>Entity`.
 
 ## Open questions
 
