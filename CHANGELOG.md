@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-06-05
+
 **Providers catalog emission + planned providers** (ADR-038 follow-on;
 swe-brain consumer-test finding — the Connections surface hand-duplicated
 provider knowledge that `definitions/providers/*.yaml` already owns).
