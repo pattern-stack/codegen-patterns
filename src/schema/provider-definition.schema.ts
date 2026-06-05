@@ -190,11 +190,15 @@ export type ActiveProviderDefinition = ProviderDefinition & {
   client: NonNullable<ProviderDefinition["client"]>;
 };
 
-/** Narrow a parsed definition to the active (emittable) shape. */
+/**
+ * Narrow a parsed definition to the active (emittable) shape. An absent
+ * `status` counts as active — the schema defaults it, but definitions
+ * constructed directly (tests, programmatic callers) may omit it.
+ */
 export function isActiveProvider(
   def: ProviderDefinition,
 ): def is ActiveProviderDefinition {
-  return def.status === "active";
+  return def.status !== "planned";
 }
 
 // ============================================================================
