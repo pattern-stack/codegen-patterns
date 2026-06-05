@@ -20,7 +20,6 @@ import {
   getLayoutConfig,
   getDatabaseDialect,
   getProjectConfig,
-  getPipelinesConfig,
   getGenerateConfig,
 } from "../../../src/config/paths.mjs";
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";

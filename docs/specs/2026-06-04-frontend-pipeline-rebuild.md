@@ -64,7 +64,7 @@ Every file is a **complete-file write** with the `@generated` banner. No inject 
 
 ## New
 
-1. **Per-entity sync mode** — entity YAML gains top-level `sync: api | electric` (absent → global `frontend.sync.mode`, default `electric`). `offline` (Electric + Dexie) is **deferred** — schema rejects it with a pointer to this spec.
+1. **Per-entity sync mode** — entity YAML gains `sync: api | electric` *inside the `entity:` block* (sibling to `surface:`/`context:`, under the strict `EntityConfigSchema`), read as `entity.sync` — not a top-level key (refined during FE-1 implementation). Absent → global `frontend.sync.mode`, default `electric`. `offline` (Electric + Dexie) is **deferred** — schema rejects it with a pointer to this spec.
 2. **Cross-entity registry naming** — the emitter loads ALL `entities/*.yaml` (existing parser) and resolves FK target names (file name, plural, class, collection var) from the **target's own YAML**. Mirrors pts `_resolve_relationship_targets`. No plural is ever derived from a string at emit time.
 3. **REST api client** — `api/<entity>.ts` emits `list/get/create/update/delete` (+ declarative-queries finders, follow-on) against the generated NestJS controller routes, returning `{ txid }` passthrough where the backend provides it. `api/client.ts` carries baseURL resolution (`apiBaseUrlImport` | `apiUrl`) and the auth-header function.
 4. **Whole-set step** — `entity new` post-step and `gen-all` both end with `emitFrontendSet(allEntities)`; output is deterministic for a given entity set (safe under the baseline runner's wipe-and-regenerate).
@@ -86,7 +86,7 @@ Pinned as a constant in `src/emitters/frontend/deps.ts`; emitted into a comment 
 ## Implementation steps (stacked, PR-sized)
 
 **FE-1 — schema + naming groundwork** (src-only, no emission change)
-- `entity-definition.schema.ts`: add `sync: z.enum(['api','electric'])` optional.
+- `entity-definition.schema.ts`: add `sync: z.enum(['api','electric'])` optional *inside `EntityConfigSchema`* (the `entity:` block, sibling to `surface:`/`context:`), read as `entity.sync` — NOT a top-level key.
 - Expose a cross-entity registry from the parser: `{ name → { plural, className, fileBase } }` for all sibling YAMLs (extend the existing `targetExists` machinery in prompt.js/parser).
 - `GenerateConfigSchema`: enumerate surviving frontend knobs; drop `.passthrough()` for the frontend keys; delete `pipelines-config.schema.ts` pipelines block + `config-loader` validation + `getPipelinesConfig`.
 - Update `test/fixtures/codegen.config.yaml` (remove dead `pipelines:` block).

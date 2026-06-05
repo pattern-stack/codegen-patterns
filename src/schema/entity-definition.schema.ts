@@ -532,6 +532,14 @@ const EntityConfigSchema = z
         "context must be lowercase snake_case (e.g. 'integration')",
       )
       .optional(),
+
+    // ADR-038: per-entity frontend sync mode. Overrides global frontend.sync.mode.
+    //   'api'      → queryCollectionOptions (REST via TanStack Query)
+    //   'electric' → electricCollectionOptions (real-time shape sync)
+    // 'offline' (Electric + Dexie) is deferred — see
+    // docs/specs/2026-06-04-frontend-pipeline-rebuild.md OQ-6.
+    // Sibling to `surface:`/`context:`; lives inside the `entity:` block.
+    sync: z.enum(['api', 'electric']).optional(),
   })
   .strict()
   .refine((d) => !(d.pattern && d.patterns), {

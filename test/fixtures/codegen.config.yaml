@@ -50,16 +50,6 @@ locations:
     path: packages/api/src/constants
     import: "@api/constants"
 
-pipelines:
-  backend:
-    enabled: true
-    architecture: clean
-  frontend:
-    enabled: true
-    preset: dealbrain
-  shared:
-    enabled: true
-
 generate:
   architecture: clean
   frontend: false
