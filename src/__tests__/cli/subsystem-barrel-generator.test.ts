@@ -180,6 +180,52 @@ describe('buildSubsystemBarrel', () => {
 		);
 	});
 
+	test('integration `differ.unignore` threads into IntegrationModule.forRoot (DIFFER-UNIGNORE)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('integration')],
+			{ integration: { backend: 'drizzle', differ: { unignore: ['deletedAt'] } } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain(
+			"IntegrationModule.forRoot({ backend: 'drizzle', multiTenant: false, differ: { unignore: ['deletedAt'] } }),",
+		);
+	});
+
+	test('integration `differ.ignore` + `differ.unignore` both thread', () => {
+		const out = buildSubsystemBarrel(
+			[inst('integration')],
+			{
+				integration: {
+					backend: 'drizzle',
+					differ: { ignore: ['internalSeq'], unignore: ['deletedAt'] },
+				},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain(
+			"differ: { ignore: ['internalSeq'], unignore: ['deletedAt'] }",
+		);
+	});
+
+	test('integration WITHOUT a differ block stays byte-identical (no differ clause)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('integration')],
+			{ integration: { backend: 'drizzle' } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain("IntegrationModule.forRoot({ backend: 'drizzle', multiTenant: false }),");
+		expect(out.content).not.toContain('differ:');
+	});
+
+	test('integration empty `differ` block (no lists) emits no differ clause', () => {
+		const out = buildSubsystemBarrel(
+			[inst('integration')],
+			{ integration: { backend: 'drizzle', differ: {} } },
+			subsystemsRel,
+		);
+		expect(out.content).not.toContain('differ:');
+	});
+
 	test('installed subsystem without a composer is listed in `skipped`', () => {
 		// `observability` / `auth` aren't in COMPOSABLE_ORDER yet — they should
 		// register as skipped, not silently dropped.
@@ -481,6 +527,19 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			'package',
 		);
 		expect(out.content).toContain('domainModuleExtensions: { drizzle: { listenNotify: true } }');
+	});
+
+	test('package-mode integration differ.unignore threads into forRoot (DIFFER-UNIGNORE)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('integration')],
+			{ integration: { backend: 'drizzle', differ: { unignore: ['deletedAt'] } } },
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain(
+			"import { IntegrationModule } from '@pattern-stack/codegen/runtime/subsystems/integration/index';",
+		);
+		expect(out.content).toContain("differ: { unignore: ['deletedAt'] }");
 	});
 
 	test('vendored mode (explicit) still emits the relative-path imports', () => {

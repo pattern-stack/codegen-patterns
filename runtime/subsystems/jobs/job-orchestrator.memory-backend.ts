@@ -32,11 +32,17 @@ import type {
   JobContext,
   JobHandlerBase,
   JobHandlerMeta,
+  JobKeySelector,
   RetryPolicy,
   SpawnChildOptions,
   StepOptions,
 } from './job-handler.base';
-import { ParentClosePolicy } from './job-handler.base';
+import {
+  ParentClosePolicy,
+  keySelectorToTemplate,
+  FN_KEY_SENTINEL,
+  JobKeyFunctionUnavailableError,
+} from './job-handler.base';
 import {
   JobCollisionError,
   JobNotReplayableError,
@@ -176,10 +182,9 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
     meta: JobHandlerMeta<TInput>,
     handlerClass: new (...args: unknown[]) => JobHandlerBase<TInput>,
   ): void {
-    const concurrencyKeyTemplate =
-      (meta.concurrency as { key?: string } | undefined)?.key ?? null;
-    const dedupeKeyTemplate =
-      (meta.dedupe as { key?: string } | undefined)?.key ?? null;
+    // JOB-FN-KEY (0.16.2): mirror the Drizzle backend — collapse a function
+    // key to `FN_KEY_SENTINEL` so the def row stays non-null (collision/dedupe
+    // path engages); `start()` re-resolves the live fn from `handlerRegistry`.
     const dedupeWindowMs = meta.dedupe?.windowMs ?? null;
     const now = new Date();
 
@@ -194,13 +199,15 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
         baseMs: 0,
       },
       timeoutMs: meta.timeoutMs ?? null,
-      concurrencyKeyTemplate:
-        typeof concurrencyKeyTemplate === 'string' ? concurrencyKeyTemplate : null,
+      concurrencyKeyTemplate: keySelectorToTemplate(
+        meta.concurrency?.key as JobKeySelector<unknown> | undefined,
+      ),
       collisionMode:
         (meta.concurrency?.collisionMode as JobDefinitionRow['collisionMode']) ??
         'queue',
-      dedupeKeyTemplate:
-        typeof dedupeKeyTemplate === 'string' ? dedupeKeyTemplate : null,
+      dedupeKeyTemplate: keySelectorToTemplate(
+        meta.dedupe?.key as JobKeySelector<unknown> | undefined,
+      ),
       dedupeWindowMs,
       priorityDefault: 0,
       replayFrom: meta.replayFrom ?? 'last_checkpoint',
@@ -221,6 +228,34 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
   /** Test helper — look up a registered handler without exposing the map. */
   getHandlerRegistration(type: string): HandlerRegistration | undefined {
     return this.handlerRegistry.get(type);
+  }
+
+  /**
+   * JOB-FN-KEY (0.16.2): resolve a persisted key template against the payload.
+   * Delegates to the shared `resolveJobKey`, but binds the FUNCTION-sentinel
+   * lookup to THIS backend's local `handlerRegistry` (the memory backend keeps
+   * its own meta map seeded by `registerHandler`, distinct from the global
+   * `JOB_HANDLER_REGISTRY` that the Drizzle/worker path uses — memory tests
+   * register handlers directly, never via the `@JobHandler` decorator). The
+   * `evaluateTemplate` callback handles the ordinary `{{field}}` path.
+   */
+  private resolveKey(
+    kind: 'concurrency' | 'dedupe',
+    type: string,
+    template: string | null,
+    payload: Record<string, unknown>,
+  ): string | null {
+    if (template == null) return null;
+    if (template !== FN_KEY_SENTINEL) {
+      return evaluateKeyTemplate(template, payload);
+    }
+    const key = (this.handlerRegistry.get(type)?.meta?.[kind] as
+      | { key?: unknown }
+      | undefined)?.key;
+    if (typeof key !== 'function') {
+      throw new JobKeyFunctionUnavailableError(type, kind);
+    }
+    return (key as (input: unknown) => string)(payload);
   }
 
   /**
@@ -270,11 +305,10 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
       if (!definition) throw new JobTypeNotFoundError(type);
 
       // 1. Dedupe — return existing non-excluded run within the window.
+      // JOB-FN-KEY: `resolveKey` honors the `{{field}}` template AND a function
+      // key persisted as `FN_KEY_SENTINEL` (re-resolved from `handlerRegistry`).
       if (definition.dedupeKeyTemplate && definition.dedupeWindowMs) {
-        const dedupeKey = evaluateKeyTemplate(
-          definition.dedupeKeyTemplate,
-          payload,
-        );
+        const dedupeKey = this.resolveKey('dedupe', type, definition.dedupeKeyTemplate, payload) as string;
         const windowStart = Date.now() - definition.dedupeWindowMs;
         const existing = this.findDedupeCandidate(type, dedupeKey, windowStart);
         if (existing) return existing;
@@ -284,10 +318,13 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
       let concurrencyKey: string | null = null;
       let queueBlockedBy: string | null = null;
       if (definition.concurrencyKeyTemplate) {
-        concurrencyKey = evaluateKeyTemplate(
+        // Non-null cast: the branch guard proves the template is present.
+        concurrencyKey = this.resolveKey(
+          'concurrency',
+          type,
           definition.concurrencyKeyTemplate,
           payload,
-        );
+        ) as string;
         const incumbent = this.findInFlightByConcurrencyKey(concurrencyKey);
         if (incumbent) {
           switch (definition.collisionMode) {
@@ -331,9 +368,12 @@ export class MemoryJobOrchestrator implements IJobOrchestrator {
       // 4. Compute dedupe key for the persisted row (separate from dedupe
       //    short-circuit above — we store it even when no prior run matched
       //    so future dedupe checks see it).
-      const dedupeKey = definition.dedupeKeyTemplate
-        ? evaluateKeyTemplate(definition.dedupeKeyTemplate, payload)
-        : null;
+      const dedupeKey = this.resolveKey(
+        'dedupe',
+        type,
+        definition.dedupeKeyTemplate,
+        payload,
+      );
 
       const now = new Date();
       const runAt = queueBlockedBy

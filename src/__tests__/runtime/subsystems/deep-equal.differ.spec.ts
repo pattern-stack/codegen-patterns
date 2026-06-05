@@ -92,6 +92,80 @@ describe('DeepEqualDiffer', () => {
     });
   });
 
+  // DIFFER-UNIGNORE (0.17.1) — the inverse knob: REMOVE a default-ignored field
+  // so it registers as a domain change. Regression coverage for the swe-brain
+  // ADR-0009 Amendment B §B4 drain: a `message` entity with `softDelete: false`
+  // carries the retraction tombstone on `deletedAt`; without un-ignoring it the
+  // delete diffs to 'noop', the upsert is skipped, and `deleted_at` never lands.
+  describe('unignore knob', () => {
+    it('by DEFAULT, a deletedAt-only change diffs to noop (the bug)', () => {
+      const d = new DeepEqualDiffer<Rec>();
+      const result = d.diff(
+        { id: 'a', amount: 100, deletedAt: null },
+        { id: 'a', amount: 100, deletedAt: '2026-06-04T00:00:00.000Z' },
+      );
+      expect(result).toBe('noop');
+    });
+
+    it('un-ignored deletedAt produces a field diff (the tombstone lands)', () => {
+      const d = new DeepEqualDiffer<Rec>({ unignore: ['deletedAt'] });
+      const result = d.diff(
+        { id: 'a', amount: 100, deletedAt: null },
+        { id: 'a', amount: 100, deletedAt: '2026-06-04T00:00:00.000Z' },
+      );
+      expect(result).toEqual({
+        deletedAt: { from: null, to: '2026-06-04T00:00:00.000Z' },
+      });
+    });
+
+    it('un-ignored deletedAt is created-shape on null existing', () => {
+      // The orchestrator turns a non-noop diff into 'created'/'updated' — here
+      // the un-ignored tombstone field is part of the created shape.
+      const d = new DeepEqualDiffer<Rec>({ unignore: ['deletedAt'] });
+      const result = d.diff(null, {
+        id: 'a',
+        amount: 100,
+        deletedAt: '2026-06-04T00:00:00.000Z',
+      });
+      expect(result).toEqual({
+        amount: { from: null, to: 100 },
+        deletedAt: { from: null, to: '2026-06-04T00:00:00.000Z' },
+      });
+    });
+
+    it('un-ignoring a field NOT in the ignore set is a harmless no-op', () => {
+      const d = new DeepEqualDiffer<Rec>({ unignore: ['amount'] });
+      const result = d.diff({ amount: 100 }, { amount: 120 });
+      expect(result).toEqual({ amount: { from: 100, to: 120 } });
+    });
+
+    it('unignore wins over a field also listed in ignore', () => {
+      const d = new DeepEqualDiffer<Rec>({
+        ignore: ['deletedAt'],
+        unignore: ['deletedAt'],
+      });
+      const result = d.diff(
+        { deletedAt: null },
+        { deletedAt: '2026-06-04T00:00:00.000Z' },
+      );
+      expect(result).toEqual({
+        deletedAt: { from: null, to: '2026-06-04T00:00:00.000Z' },
+      });
+    });
+
+    it('un-ignoring deletedAt does NOT leak to a separate default differ', () => {
+      // Per-instance isolation — DEFAULT_IGNORE_FIELDS is never mutated.
+      const unignored = new DeepEqualDiffer<Rec>({ unignore: ['deletedAt'] });
+      const plain = new DeepEqualDiffer<Rec>();
+      const args: [Rec, Rec] = [
+        { deletedAt: null },
+        { deletedAt: '2026-06-04T00:00:00.000Z' },
+      ];
+      expect(unignored.diff(...args)).not.toBe('noop');
+      expect(plain.diff(...args)).toBe('noop');
+    });
+  });
+
   describe('providerChangedFields hint (CDC)', () => {
     it('restricts comparison to the hinted field set', () => {
       const d = new DeepEqualDiffer<Rec>();

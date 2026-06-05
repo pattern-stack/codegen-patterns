@@ -285,15 +285,40 @@ as changes), but the diff output preserves the *raw* values:
   Drizzle while adapters deliver numbers; a numeric and a finite-parseable
   string compare equal (with an empty-string guard against silent 0-equality).
 
-**Augment the ignore list per entity** (values merge with the defaults; you
-cannot remove defaults):
+**Augment the ignore list** (`ignore` values merge with the defaults):
 
 ```ts
 { provide: INTEGRATION_FIELD_DIFFER, useValue: new DeepEqualDiffer({ ignore: ['integration_version'] }) }
 ```
 
-Bind it as `useValue: new DeepEqualDiffer(...)`, not `useClass` — the
-constructor's optional options object confuses Nest's metadata reflection.
+**Un-ignore a default** (`unignore` — the inverse knob). A normally-metadata
+column can be *domain data* for a given entity. The canonical case: an entity
+with `softDelete: false` whose `deletedAt` carries a vendor-observed retraction
+tombstone *on the canonical record* (e.g. a Slack `message_deleted` maps to
+`deletedAt`). Because `deletedAt` is in the default ignore list, the tombstone
+overlay diffs to `'noop'`, the upsert is skipped, and `deleted_at` never lands.
+`unignore` removes it from the ignore set so it registers as a field change:
+
+```ts
+{ provide: INTEGRATION_FIELD_DIFFER, useValue: new DeepEqualDiffer({ unignore: ['deletedAt'] }) }
+```
+
+`unignore` is subtracted after `ignore` is merged, so it wins on a field listed
+in both. Un-ignoring a field that isn't in the (merged) set is a harmless no-op.
+
+**Set it once for the whole app via config** instead of binding per feature
+module — `integration.differ.{ignore,unignore}` in `codegen.config.yaml` threads
+into the default differ that `IntegrationModule.forRoot` provides:
+
+```yaml
+integration:
+  backend: drizzle
+  differ:
+    unignore: [deletedAt]   # this entity's deletedAt is domain data
+```
+
+Bind a per-module differ as `useValue: new DeepEqualDiffer(...)`, not `useClass`
+— the constructor's optional options object confuses Nest's metadata reflection.
 
 **`providerChangedFields` is advisory.** When a CDC provider tells you which
 columns changed, set it on the `Change<T>` and the differ skips deep-equal over

@@ -369,16 +369,56 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 	integration: ({ moduleImport, cfg }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
+		// DIFFER-UNIGNORE (0.17.1): opt-in `integration.differ.{ignore,unignore}`
+		// → `IntegrationModule.forRoot({ differ: { … } })`. Emitted only when the
+		// block carries a non-empty list, so the no-differ barrel byte-shape is
+		// unchanged (off-by-default, mirrors the listen_notify threading).
+		const differClause = integrationDifferClause(cfg);
+		if (!differClause) {
+			return {
+				imports: [
+					`import { IntegrationModule } from '${moduleImport('integration', 'integration.module')}';`,
+				],
+				calls: [
+					`\tIntegrationModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
+				],
+			};
+		}
+		// Assemble piecewise so the `differ: {...}` block sits alongside
+		// backend/multiTenant (quoteOpts can't serialise a nested object).
+		const parts = [`backend: '${backend}'`, `multiTenant: ${multiTenant}`, differClause];
 		return {
 			imports: [
 				`import { IntegrationModule } from '${moduleImport('integration', 'integration.module')}';`,
 			],
-			calls: [
-				`\tIntegrationModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
-			],
+			calls: [`\tIntegrationModule.forRoot({ ${parts.join(', ')} }),`],
 		};
 	},
 };
+
+/**
+ * DIFFER-UNIGNORE (0.17.1): extract `integration.differ.{ignore,unignore}` and
+ * serialise to a `differ: { ignore: [...], unignore: [...] }` fragment, or `''`
+ * when neither list is present/non-empty. Each is a string array (field names);
+ * only string entries survive, so a malformed config can't emit garbage. Mirrors
+ * `DeepEqualDifferOptions` — `unignore` removes a default-ignored field (e.g.
+ * `deletedAt`) so it registers as a domain field change.
+ */
+function integrationDifferClause(cfg: Record<string, unknown> | undefined): string {
+	const differ = cfg?.differ as
+		| { ignore?: unknown; unignore?: unknown }
+		| undefined;
+	if (!differ) return '';
+	const toStrings = (v: unknown): string[] =>
+		Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+	const ignore = toStrings(differ.ignore);
+	const unignore = toStrings(differ.unignore);
+	const inner: Record<string, string[]> = {};
+	if (ignore.length > 0) inner.ignore = ignore;
+	if (unignore.length > 0) inner.unignore = unignore;
+	if (Object.keys(inner).length === 0) return '';
+	return `differ: ${jsonToTs(inner)}`;
+}
 
 const PACKAGE = '@pattern-stack/codegen';
 

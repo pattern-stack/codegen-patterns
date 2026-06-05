@@ -4,6 +4,74 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-06-04
+
+**Two dogfood fixes that bit the same swe-brain mutation drain** (ADR-0009
+Amendment B): the jobs orchestrator silently dropped function-form
+concurrency/dedupe keys, and the integration differ unconditionally ignored
+`deletedAt`. Both are honored now; both are backward-compatible.
+
+### Fixed
+
+- **`@JobHandler` function-form `concurrency.key` / `dedupe.key` are honored
+  end-to-end** (JOB-FN-KEY; swe-brain ADR-0009 Amendment B §B3). The typed API
+  (`ConcurrencyPolicy.key`/`DedupePolicy.key`) had ALWAYS required a function,
+  but registration (`upsertJobRows`) stored only `typeof key === 'string' ? key
+  : null` — a function key persisted as a NULL `concurrency_key_template`, so
+  `start()` wrote a NULL `job_run.concurrency_key` and the worker's queue-release
+  gate (which keys off `claimed.concurrencyKey`) never engaged. Observed in
+  swe-brain: three `inbound-sync` runs the handler believed shared one
+  `collisionMode: 'queue'` lane ran fully concurrently, three `integration_runs`
+  racing one message row. Now both backends persist a function key as the
+  `FN_KEY_SENTINEL` marker (non-null, so the collision/dedupe path engages, and
+  hash-stable so the definition-hash gate doesn't churn) and re-resolve the live
+  function from `JOB_HANDLER_REGISTRY` at `start()`. A `FN_KEY_SENTINEL` with no
+  live function throws `JobKeyFunctionUnavailableError` (fail loud, never
+  silently degrade to no-key). Drizzle + memory + BullMQ (which delegates to the
+  Drizzle `start`) all agree.
+
+### Changed
+
+- **`ConcurrencyPolicy.key` / `DedupePolicy.key` widen to
+  `JobKeySelector<TInput> = string | ((input) => string)`.** The string form is
+  documented as a `{{field}}` template (evaluated by `evaluateKeyTemplate`); the
+  function form is the one that previously type-checked but was dropped. Existing
+  function keys now WORK (were silently no-key before); existing string-template
+  keys behave identically. New exports from `@pattern-stack/codegen/runtime/*`
+  jobs: `JobKeySelector`, `FN_KEY_SENTINEL`, `keySelectorToTemplate`,
+  `resolveJobKey`, `JobKeyFunctionUnavailableError`.
+
+### Added
+
+- **`DeepEqualDifferOptions.unignore`** — the inverse of `ignore`, subtracted
+  from the default ignore set after the merge (DIFFER-UNIGNORE; swe-brain
+  ADR-0009 Amendment B §B4). Lets a consumer declare that a normally-metadata
+  column is DOMAIN DATA for their entity. The canonical case: an entity with
+  `softDelete: false` whose `deletedAt` carries a vendor-observed retraction
+  tombstone ON the canonical record (a Slack `message_deleted` → `deletedAt`,
+  ADR-0008 §1). `deletedAt` is in `DEFAULT_IGNORE_FIELDS`, so the tombstone
+  overlay diffed to `'noop'` → the upsert was skipped → `deleted_at` never
+  landed (observed: `integration_run_items` `{operation: noop, changed_fields:
+  {}}` for every delete). `new DeepEqualDiffer({ unignore: ['deletedAt'] })` now
+  makes the field register as a change. `unignore` wins over a field also in
+  `ignore`; un-ignoring a field not in the set is a harmless no-op; per-instance
+  (never mutates `DEFAULT_IGNORE_FIELDS`).
+- **`IntegrationModuleOptions.differ` + `integration.differ.{ignore,unignore}`
+  config threading.** `IntegrationModule.forRoot({ differ: { unignore:
+  [...] } })` threads into the default `DeepEqualDiffer` bound to
+  `INTEGRATION_FIELD_DIFFER`, and the subsystem barrel generator emits that
+  `forRoot` option from `integration.differ.*` in `codegen.config.yaml` (same
+  off-by-default config-threading shape as 0.16.0's `listen_notify`; vendored +
+  package mode both covered). A feature module that binds its own
+  `IFieldDiffer<T>` still overrides entirely.
+
+### Docs
+
+- Differ header comment + `integration` consumer skill (`audit-and-detection.md`,
+  `protocols-and-ports.md`) document the `unignore` knob and the
+  `integration.differ.*` config path; the `integration-config` codegen.config
+  template gains a commented `differ:` block.
+
 ## [0.17.0] — 2026-06-04
 
 **`ActivityPattern` subject scoping is config-driven** (ACTIVITY-SUBJECT-1) —

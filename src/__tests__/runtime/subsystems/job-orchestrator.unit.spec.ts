@@ -17,6 +17,8 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import {
   JobHandlerBase,
   ParentClosePolicy,
+  FN_KEY_SENTINEL,
+  JobKeyFunctionUnavailableError,
   type JobContext,
   type JobHandlerMeta,
 } from '../../../../runtime/subsystems/jobs/job-handler.base';
@@ -221,6 +223,146 @@ describe('MemoryJobOrchestrator — collision modes (Group 2)', () => {
 
     const claimed = await orchestrator.claimNext('batch');
     expect(claimed?.id).toBe(second.id);
+  });
+});
+
+// ─── Group 2b — function-form keys (JOB-FN-KEY, 0.16.2) ──────────────────────
+//
+// Regression guard for the swe-brain ADR-0009 Amendment B drain: a `@JobHandler`
+// authored with `concurrency.key: (input) => …` (the typed function form) was
+// silently dropped to `null` at registration, so `collisionMode` never engaged
+// and three "shared-lane" runs ran fully concurrently. These assert the function
+// key is honored end-to-end on the memory backend.
+
+describe('MemoryJobOrchestrator — function-form keys (Group 2b)', () => {
+  it('registration persists a function key as the FN_KEY_SENTINEL (non-null)', () => {
+    const { orchestrator, store } = buildOrchestrator();
+    const meta: JobHandlerMeta<{ channel: string; ts: string }> = {
+      pool: 'batch',
+      concurrency: {
+        key: (input) => `lane:${input.channel}`,
+        collisionMode: 'queue',
+      },
+    };
+    orchestrator.registerHandler('t.fnkey.reg', meta, NoopHandler);
+
+    // The def row stores the sentinel, NOT null — the pre-0.16.2 bug stored
+    // null here, which is exactly why the collision path never fired.
+    const def = store.jobs.get('t.fnkey.reg');
+    expect(def?.concurrencyKeyTemplate).toBe(FN_KEY_SENTINEL);
+  });
+
+  it('queue: a function concurrency key serializes two same-lane starts', async () => {
+    const { orchestrator } = buildOrchestrator();
+    const meta: JobHandlerMeta<{ channel: string; ts: string }> = {
+      pool: 'batch',
+      // Function of input — the lane is the channel, NOT the per-message ts.
+      // Two different messages on the same channel share a lane.
+      concurrency: {
+        key: (input) => `chan:${input.channel}`,
+        collisionMode: 'queue',
+      },
+    };
+    orchestrator.registerHandler('t.fnkey.queue', meta, NoopHandler);
+
+    const first = await orchestrator.start('t.fnkey.queue', {
+      channel: 'C1',
+      ts: '100',
+    });
+    const claimed = await orchestrator.claimNext('batch');
+    expect(claimed?.id).toBe(first.id);
+    expect(claimed?.status).toBe('running');
+
+    // Second message, same channel, DIFFERENT ts — without the fn key being
+    // honored this would run concurrently (the bug). With it, same lane ⇒ queued.
+    const second = await orchestrator.start('t.fnkey.queue', {
+      channel: 'C1',
+      ts: '200',
+    });
+    expect(second.status).toBe('pending');
+    expect(second.concurrencyKey).toBe('chan:C1');
+    expect(first.concurrencyKey).toBe('chan:C1');
+    // Blocked: not claimable while the incumbent is in-flight.
+    expect(await orchestrator.claimNext('batch')).toBeNull();
+  });
+
+  it('reject: a function concurrency key throws JobCollisionError on the same lane', async () => {
+    const { orchestrator } = buildOrchestrator();
+    const meta: JobHandlerMeta<{ channel: string }> = {
+      pool: 'batch',
+      concurrency: {
+        key: (input) => `chan:${input.channel}`,
+        collisionMode: 'reject',
+      },
+    };
+    orchestrator.registerHandler('t.fnkey.reject', meta, NoopHandler);
+
+    await orchestrator.start('t.fnkey.reject', { channel: 'C1' });
+    await expect(
+      orchestrator.start('t.fnkey.reject', { channel: 'C1' }),
+    ).rejects.toBeInstanceOf(JobCollisionError);
+  });
+
+  it('different lanes from the same fn key do NOT collide', async () => {
+    const { orchestrator } = buildOrchestrator();
+    const meta: JobHandlerMeta<{ channel: string }> = {
+      pool: 'batch',
+      concurrency: {
+        key: (input) => `chan:${input.channel}`,
+        collisionMode: 'reject',
+      },
+    };
+    orchestrator.registerHandler('t.fnkey.lanes', meta, NoopHandler);
+
+    const a = await orchestrator.start('t.fnkey.lanes', { channel: 'C1' });
+    const b = await orchestrator.start('t.fnkey.lanes', { channel: 'C2' });
+    expect(a.concurrencyKey).toBe('chan:C1');
+    expect(b.concurrencyKey).toBe('chan:C2');
+    expect(b.status).toBe('pending');
+  });
+
+  it('dedupe: a function dedupe key collapses two same-key starts in-window', async () => {
+    const { orchestrator } = buildOrchestrator();
+    const meta: JobHandlerMeta<{ eventId: string }> = {
+      pool: 'batch',
+      dedupe: {
+        key: (input) => `evt:${input.eventId}`,
+        windowMs: 60_000,
+      },
+    };
+    orchestrator.registerHandler('t.fnkey.dedupe', meta, NoopHandler);
+
+    const first = await orchestrator.start('t.fnkey.dedupe', { eventId: 'E1' });
+    const second = await orchestrator.start('t.fnkey.dedupe', { eventId: 'E1' });
+    // Same dedupe key within the window ⇒ the second returns the first run.
+    expect(second.id).toBe(first.id);
+    expect(first.dedupeKey).toBe('evt:E1');
+
+    // A different event id is NOT deduped.
+    const third = await orchestrator.start('t.fnkey.dedupe', { eventId: 'E2' });
+    expect(third.id).not.toBe(first.id);
+  });
+
+  it('throws JobKeyFunctionUnavailableError if the live fn is missing for a sentinel', async () => {
+    const { orchestrator, store } = buildOrchestrator();
+    orchestrator.registerHandler(
+      't.fnkey.orphan',
+      {
+        pool: 'batch',
+        concurrency: { key: (i: { x: string }) => i.x, collisionMode: 'queue' },
+      } as JobHandlerMeta<{ x: string }>,
+      NoopHandler,
+    );
+    // Simulate the registry losing the live meta while the def row keeps the
+    // sentinel (e.g. an older build reading a newer-persisted definition).
+    const reg = orchestrator.getHandlerRegistration('t.fnkey.orphan')!;
+    reg.meta = { pool: 'batch' };
+    expect(store.jobs.get('t.fnkey.orphan')?.concurrencyKeyTemplate).toBe(
+      FN_KEY_SENTINEL,
+    );
+    await expect(
+      orchestrator.start('t.fnkey.orphan', { x: 'a' }),
+    ).rejects.toBeInstanceOf(JobKeyFunctionUnavailableError);
   });
 });
 

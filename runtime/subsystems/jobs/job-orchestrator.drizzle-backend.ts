@@ -36,6 +36,11 @@ import {
 import { jobSteps } from './job-orchestration.schema';
 import { JOBS_MULTI_TENANT, JOBS_LISTEN_NOTIFY } from './jobs-domain.tokens';
 import { JOBS_WAKE_CHANNEL, pgNotify } from './pg-notify';
+import {
+  keySelectorToTemplate,
+  resolveJobKey,
+  type JobKeySelector,
+} from './job-handler.base';
 
 /**
  * Terminal statuses — transitions into these are final. Used by `cancel`
@@ -140,9 +145,17 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
     if (!def) throw new JobTypeNotFoundError(type);
     const definition = def as JobDefinitionRow;
 
-    // 1b. Dedupe check.
+    // 1b. Dedupe check. JOB-FN-KEY: `resolveJobKey` honors both the `{{field}}`
+    // template AND a function key persisted as `FN_KEY_SENTINEL` (re-resolved
+    // live from JOB_HANDLER_REGISTRY).
     if (definition.dedupeKeyTemplate && definition.dedupeWindowMs) {
-      const dedupeKey = evaluateKeyTemplate(definition.dedupeKeyTemplate, payload);
+      const dedupeKey = resolveJobKey(
+        'dedupe',
+        type,
+        definition.dedupeKeyTemplate,
+        payload,
+        evaluateKeyTemplate,
+      ) as string;
       const windowStart = new Date(Date.now() - definition.dedupeWindowMs);
       const existing = await client
         .select()
@@ -166,10 +179,15 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
     // 1c. Concurrency collision check.
     let concurrencyKey: string | null = null;
     if (definition.concurrencyKeyTemplate) {
-      concurrencyKey = evaluateKeyTemplate(
+      // Non-null cast: the branch guard proves the template is present, so the
+      // resolver never returns null here (it only nulls on a null template).
+      concurrencyKey = resolveJobKey(
+        'concurrency',
+        type,
         definition.concurrencyKeyTemplate,
         payload,
-      );
+        evaluateKeyTemplate,
+      ) as string;
       const inFlight = await client
         .select()
         .from(jobRuns)
@@ -223,10 +241,13 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
       rootRunId = parent.rootRunId;
     }
 
-    const dedupeKey =
-      definition.dedupeKeyTemplate
-        ? evaluateKeyTemplate(definition.dedupeKeyTemplate, payload)
-        : null;
+    const dedupeKey = resolveJobKey(
+      'dedupe',
+      type,
+      definition.dedupeKeyTemplate,
+      payload,
+      evaluateKeyTemplate,
+    );
 
     const [inserted] = await client
       .insert(jobRuns)
@@ -460,17 +481,23 @@ export class DrizzleJobOrchestrator implements IJobOrchestrator {
         backoff: 'fixed' as const,
         baseMs: 0,
       };
-      const concurrencyKeyTemplate =
-        (meta.concurrency as { key?: unknown } | undefined)?.key;
-      const concurrencyKeyTemplateStr =
-        typeof concurrencyKeyTemplate === 'string' ? concurrencyKeyTemplate : null;
+      // JOB-FN-KEY (0.16.2): both authored key forms are honored. A `{{field}}`
+      // string is persisted verbatim; a function is persisted as
+      // `FN_KEY_SENTINEL` (non-null so the collision/dedupe path engages, and
+      // hash-stable so the definition-hash gate doesn't churn on every boot —
+      // the function identity can't be hashed). `start()` re-resolves the live
+      // function from `JOB_HANDLER_REGISTRY`. The pre-0.16.2 `typeof === string
+      // ? … : null` dropped function keys to null, so `collisionMode` silently
+      // never engaged.
+      const concurrencyKeyTemplateStr = keySelectorToTemplate(
+        meta.concurrency?.key as JobKeySelector<unknown> | undefined,
+      );
       const collisionMode =
         (meta.concurrency?.collisionMode as JobDefinitionRow['collisionMode']) ??
         'queue';
-      const dedupeKeyTemplate =
-        (meta.dedupe as { key?: unknown } | undefined)?.key;
-      const dedupeKeyTemplateStr =
-        typeof dedupeKeyTemplate === 'string' ? dedupeKeyTemplate : null;
+      const dedupeKeyTemplateStr = keySelectorToTemplate(
+        meta.dedupe?.key as JobKeySelector<unknown> | undefined,
+      );
       const dedupeWindowMs = meta.dedupe?.windowMs ?? null;
       const timeoutMs = meta.timeoutMs ?? null;
       const replayFrom = meta.replayFrom ?? 'last_checkpoint';

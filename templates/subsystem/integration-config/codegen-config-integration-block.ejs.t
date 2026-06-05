@@ -27,3 +27,20 @@ integration:
   # Enabling post-install requires a reinstall (`subsystem install integration
   # --force --force-config`) plus an Atlas migration.
   multi_tenant: false
+
+  # ── Default-differ tuning (DIFFER-UNIGNORE) ──
+  # Threaded into the `DeepEqualDiffer` bound to INTEGRATION_FIELD_DIFFER.
+  # Off-by-default — omit the whole `differ:` block for the historical
+  # behaviour (the built-in ignore list, unchanged). A feature module that
+  # binds its own `IFieldDiffer<T>` overrides this entirely.
+  #
+  # differ:
+  #   # Extra field names to ALSO ignore (merged with the defaults).
+  #   ignore: [internalSeq]
+  #   # Default-ignored field names to RE-INCLUDE as domain data. The canonical
+  #   # case: an entity with `softDelete: false` whose `deletedAt` carries a
+  #   # vendor-observed retraction tombstone ON the canonical record. Without
+  #   # this the tombstone overlay diffs to 'noop', the upsert is skipped, and
+  #   # `deleted_at` never lands. `unignore` is subtracted after `ignore`, so it
+  #   # wins on a field listed in both.
+  #   unignore: [deletedAt]

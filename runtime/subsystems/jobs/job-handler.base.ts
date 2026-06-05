@@ -42,13 +42,33 @@ export interface RetryPolicy {
   nonRetryableErrors?: string[];
 }
 
+/**
+ * Concurrency lane key (JOB-FN-KEY, 0.16.2).
+ *
+ * Two authoring forms, both honored end-to-end (the typed function form was
+ * previously dropped to `null` at registration — see `upsertJobRows` — so
+ * `collisionMode` silently never engaged):
+ *
+ *   - **`string`** — a `{{field}}` template evaluated against the start
+ *     payload by `evaluateKeyTemplate` (single-key substitution, no dotted
+ *     paths). Persisted verbatim to `job.concurrency_key_template`.
+ *   - **`(input) => string`** — an arbitrary function of the input. Persisted
+ *     as the `FN_KEY_SENTINEL` marker so the definition-hash gate stays stable
+ *     and the collision path engages; `start()` re-resolves the live function
+ *     from `JOB_HANDLER_REGISTRY` and evaluates it against the payload.
+ *
+ * Both forms produce a per-lane key; same key + in-flight incumbent ⇒
+ * `collisionMode` ('queue' | 'reject' | 'replace') decides.
+ */
+export type JobKeySelector<TInput> = string | ((input: TInput) => string);
+
 export interface ConcurrencyPolicy<TInput> {
-  key: (input: TInput) => string;
+  key: JobKeySelector<TInput>;
   collisionMode: 'queue' | 'reject' | 'replace';
 }
 
 export interface DedupePolicy<TInput> {
-  key: (input: TInput) => string;
+  key: JobKeySelector<TInput>;
   windowMs: number;
 }
 
@@ -243,5 +263,98 @@ export namespace HandlerRegistry {
   /** Lookup by job type, or `undefined` if no `@JobHandler` is registered. */
   export function get(type: string): HandlerRegistryEntry | undefined {
     return JOB_HANDLER_REGISTRY.get(type);
+  }
+}
+
+// ─── Key resolution (JOB-FN-KEY, 0.16.2) ────────────────────────────────────
+
+/**
+ * Sentinel persisted to `job.concurrency_key_template` / `dedupe_key_template`
+ * when the authored `key` is a function rather than a `{{field}}` template.
+ *
+ * Why a sentinel (not `null`): the collision/dedupe paths in both backends gate
+ * on `definition.concurrencyKeyTemplate != null`. A function key persisted as
+ * `null` (the pre-0.16.2 bug) left those columns empty, so `collisionMode` /
+ * the dedupe window never engaged — the job ran with NO key. A stable sentinel
+ * keeps the column non-null (path engages) AND keeps the definition-hash gate
+ * (`upsertJobRows`' `IS DISTINCT FROM` clause) stable across boots, since the
+ * function identity itself can't be hashed. `start()` detects the sentinel and
+ * re-resolves the live function from `JOB_HANDLER_REGISTRY`.
+ *
+ * Chosen as an angle-bracketed token so it can never collide with a real
+ * `{{field}}` template (which never contains a literal `<`).
+ */
+export const FN_KEY_SENTINEL = '<fn>';
+
+/**
+ * Registration-time projection: collapse an authored `JobKeySelector` to the
+ * string stored in the `job` definition row. A string template is stored
+ * verbatim; a function is stored as `FN_KEY_SENTINEL`; absence stays `null`.
+ */
+export function keySelectorToTemplate(
+  key: JobKeySelector<unknown> | undefined,
+): string | null {
+  if (typeof key === 'string') return key;
+  if (typeof key === 'function') return FN_KEY_SENTINEL;
+  return null;
+}
+
+/** Which meta policy a key belongs to — selects the live fn at `start()`. */
+export type KeyKind = 'concurrency' | 'dedupe';
+
+/**
+ * `start()`-time resolution shared by every backend. Turns the persisted
+ * template column into the concrete per-run key for the given payload.
+ *
+ *   - `template == null` → `null` (no key; caller skips the collision/dedupe path).
+ *   - `template === FN_KEY_SENTINEL` → look the live `@JobHandler` meta up in
+ *     `JOB_HANDLER_REGISTRY`, pull `meta[kind].key`, and invoke it against the
+ *     payload. The registry is the runtime source of truth (the worker already
+ *     resolves handler classes the same way), so the function survives the DB
+ *     round-trip even though it can't be persisted.
+ *   - otherwise → a `{{field}}` template, evaluated via the injected
+ *     `evaluateTemplate` (each backend passes its own copy to avoid a runtime
+ *     import cycle).
+ *
+ * Throws `JobKeyFunctionUnavailableError` if the sentinel is present but no
+ * live function can be found (e.g. the registry was reset, or a function key
+ * was persisted by a newer build and read by an older one). Failing loud beats
+ * silently degrading to no-key — the exact regression this fix exists to kill.
+ */
+export function resolveJobKey(
+  kind: KeyKind,
+  type: string,
+  template: string | null,
+  payload: Record<string, unknown>,
+  evaluateTemplate: (template: string, payload: Record<string, unknown>) => string,
+): string | null {
+  if (template == null) return null;
+  if (template !== FN_KEY_SENTINEL) return evaluateTemplate(template, payload);
+
+  const meta = JOB_HANDLER_REGISTRY.get(type)?.meta;
+  const key = (meta?.[kind] as { key?: unknown } | undefined)?.key;
+  if (typeof key !== 'function') {
+    throw new JobKeyFunctionUnavailableError(type, kind);
+  }
+  return (key as (input: unknown) => string)(payload);
+}
+
+/**
+ * Raised when a `${FN_KEY_SENTINEL}` template is read but the live function
+ * key is missing from `JOB_HANDLER_REGISTRY`. Kept here (not in `jobs-errors`)
+ * so `job-handler.base` stays import-cycle-free.
+ */
+export class JobKeyFunctionUnavailableError extends Error {
+  constructor(
+    readonly jobType: string,
+    readonly kind: KeyKind,
+  ) {
+    super(
+      `[jobs] ${kind} key for job '${jobType}' was persisted as a function ` +
+        `sentinel ('${FN_KEY_SENTINEL}') but no live function is registered ` +
+        `for it. The @JobHandler must be imported before start() so its meta ` +
+        `is in JOB_HANDLER_REGISTRY.`,
+    );
+    this.name = 'JobKeyFunctionUnavailableError';
   }
 }
