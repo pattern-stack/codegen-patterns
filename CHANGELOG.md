@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.2] — 2026-06-04
+
+**Shutdown leak fix** (LISTEN-NOTIFY-2; swe-brain dogfood). With
+`listen_notify: true` (the LISTEN/NOTIFY wake extension shipped in 0.16.0), a
+Nest app that booted and then `app.close()`d — e.g. a boot-check / CI smoke step —
+never exited: at least one `LISTEN codegen_jobs_wake` client survived
+`app.close()`, holding an ESTABLISHED Postgres socket open forever (two swe-brain
+CI runs hung for hours). Backward-compatible; affects only consumers that opted
+into `listen_notify`.
+
+### Fixed
+
+- **`PgNotifyListener.stop()` is race-safe against an in-flight `connect()`**
+  (LISTEN-NOTIFY-2 RC1 — the defect that actually fired). `connect()` checked
+  `this.stopped` only at entry, then `await pool.connect()`, wired handlers,
+  issued `LISTEN`, and assigned `this.client` last. A `stop()` arriving during
+  the checkout await ran `releaseClient()` against a still-null `this.client`
+  (released nothing); the resuming `connect()` then assigned the client and
+  issued `LISTEN` — leaking a checked-out connection with no owner left to
+  release it. With 5–6 listeners (one per jobs pool + the events drainer) all
+  starting at bootstrap and a tight `app.close()`, the race fired on ~1 of 6
+  listeners — exactly the observed signature (one survivor, the rest clean).
+  Now `connect()` re-checks `stopped` after the checkout AND after `LISTEN`,
+  destroying the just-acquired client and bailing before assignment; `stop()`
+  tracks and awaits the in-flight connect promise before its own release, so
+  `app.close()` can't return while a checkout is still mid-flight. Releases use
+  `release(true)` (destroy) so a half-listening socket is never reused.
+- **`JobWorker.onModuleDestroy` stops the wake listener on EVERY destroy path**
+  (LISTEN-NOTIFY-2 RC2 — latent). The listener `stop()` lived only on the first
+  (non-`shuttingDown`) branch, so a SIGTERM-then-Nest double-destroy hit the
+  `if (this.shuttingDown) { …; return; }` early return and skipped it, leaking
+  the listener under the normal SIGTERM shutdown path. Teardown is now an
+  idempotent `stopNotifyListener()` called unconditionally at the top of every
+  destroy. `DrizzleEventBus` already stopped its listener unconditionally; it
+  shared `PgNotifyListener` and so benefits from the RC1 fix directly.
+
 ## [0.17.1] — 2026-06-04
 
 **Two dogfood fixes that bit the same swe-brain mutation drain** (ADR-0009

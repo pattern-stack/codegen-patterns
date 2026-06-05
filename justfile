@@ -160,6 +160,15 @@ test-obs-integration:
 test-jobs-fnkey-integration:
     bun test "{{justfile_directory()}}/test/integration/jobs-fn-concurrency-key.drizzle.integration.test.ts"
 
+# LISTEN-NOTIFY-2 (0.17.2) — `app.close()` leaves ZERO surviving LISTEN %wake%
+# backends. Boots a real Nest context with listen_notify ON (jobs + events)
+# against a real Postgres (testcontainers), closes it, and asserts pg_stat_activity
+# shows no orphaned listener sockets. Spins its own ephemeral postgres:16; skips
+# gracefully when Docker is unavailable. NOT in test-unit/CI unit run. Proves the
+# swe-brain boot-check / CI hang (a stop() racing PgNotifyListener.connect()) is gone.
+test-listen-notify-leak-integration:
+    bun test "{{justfile_directory()}}/test/integration/listen-notify-shutdown-leak.drizzle.integration.test.ts"
+
 # Run the full scaffold validation (Docker + codegen + NestJS + CRUD)
 validate:
     bash test/scaffold/validate.sh
