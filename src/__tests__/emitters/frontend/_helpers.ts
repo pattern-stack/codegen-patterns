@@ -7,6 +7,11 @@
  */
 
 import type { EntityRegistryEntry } from '../../../parser/entity-registry';
+import type {
+	ParsedEntity,
+	ParsedField,
+	ParsedRelationship,
+} from '../../../analyzer/types';
 import type { FrontendEmitConfig, FrontendEmitContext } from '../../../emitters/frontend/types';
 
 const camelCase = (s: string): string =>
@@ -53,10 +58,74 @@ export function config(over: Partial<FrontendEmitConfig> = {}): FrontendEmitConf
 	};
 }
 
-/** Build a context from an entity list + config overrides. */
+/** Build a `ParsedField` from a name + overrides; sensible defaults. */
+export function field(
+	name: string,
+	over: Partial<ParsedField> = {},
+): ParsedField {
+	return {
+		name,
+		type: 'string',
+		required: false,
+		nullable: false,
+		unique: false,
+		index: false,
+		constraints: {},
+		ui: {},
+		...over,
+	};
+}
+
+/** Build a `ParsedRelationship` (belongs_to by default). */
+export function relationship(
+	name: string,
+	over: Partial<ParsedRelationship> & { target: string; foreignKey: string },
+): ParsedRelationship {
+	return {
+		name,
+		type: 'belongs_to',
+		resolved: true,
+		...over,
+	};
+}
+
+/** Build a `ParsedEntity` from a registry entry + fields/relationships. */
+export function parsedEntity(
+	e: EntityRegistryEntry,
+	over: Partial<ParsedEntity> = {},
+): ParsedEntity {
+	return {
+		name: e.name,
+		plural: e.plural,
+		table: e.table,
+		expose: ['repository', 'rest', 'trpc'],
+		folderStructure: 'nested',
+		fields: new Map(),
+		relationships: new Map(),
+		behaviors: [],
+		sourcePath: `entities/${e.name}.yaml`,
+		...over,
+	};
+}
+
+/** Build a `parsed` map keyed by entity name from a list of parsed entities. */
+export function parsedMap(...entities: ParsedEntity[]): Map<string, ParsedEntity> {
+	return new Map(entities.map((p) => [p.name, p]));
+}
+
+/**
+ * Build a context from an entity list + config overrides. `parsed` defaults to
+ * an empty registry-derived map (one entry per entity, no fields/relationships)
+ * unless an explicit map is supplied.
+ */
 export function ctx(
 	entities: EntityRegistryEntry[],
 	configOver: Partial<FrontendEmitConfig> = {},
+	parsed?: Map<string, ParsedEntity>,
 ): FrontendEmitContext {
-	return { entities, config: config(configOver) };
+	return {
+		entities,
+		parsed: parsed ?? new Map(entities.map((e) => [e.name, parsedEntity(e)])),
+		config: config(configOver),
+	};
 }

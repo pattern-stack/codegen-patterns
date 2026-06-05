@@ -69,6 +69,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		patterns: definition.entity.patterns,
 		patternConfig: definition.entity.config,
 		scopeable: definition.entity.scopeable ?? false,
+		expose: definition.entity.expose ?? ['repository', 'rest', 'trpc'],
 		folderStructure: definition.entity.folder_structure ?? 'nested',
 		fields: new Map(),
 		relationships: new Map(),
