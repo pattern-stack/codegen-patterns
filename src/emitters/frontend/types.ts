@@ -1,0 +1,83 @@
+/**
+ * Frontend emitter — shared types (ADR-038, FE-2).
+ *
+ * The frontend emitter renders the complete frontend tree from the full entity
+ * set in one pass (no per-entity hygen runs, no inject/anchor machinery). This
+ * module declares the context and per-emit config the string builders consume.
+ *
+ * Reference design: pattern-stack/pattern-stack `tools/cli/src/pts/codegen/` and
+ * pattern-stack/frontend-patterns `src/sync/`. See
+ * docs/specs/2026-06-04-frontend-pipeline-rebuild.md.
+ */
+
+import type { EntityRegistryEntry } from '../../parser/entity-registry';
+
+export type { EntityRegistryEntry } from '../../parser/entity-registry';
+
+/**
+ * Per-entity sync mode. `offline` (Electric + Dexie) is deferred — see
+ * docs/specs/2026-06-04-frontend-pipeline-rebuild.md OQ-6.
+ */
+export type SyncMode = 'api' | 'electric';
+
+/**
+ * Resolved frontend emit configuration. Derived from `codegen.config.yaml`
+ * (`frontend.*`, `generate.architecture`, `locations.*`) by the caller (FE-4
+ * wires the config loader). FE-2 consumes a plain object so tests can construct
+ * it directly without fs.
+ */
+export interface FrontendEmitConfig {
+	/** `frontend.sync.mode` — global default, overridden by per-entity `sync:`. Default 'electric'. */
+	globalSyncMode: SyncMode;
+	/** `frontend.auth.function` — null disables the auth header (no header lines emitted). */
+	authFunction: string | null;
+	/** `locations.frontendCollectionsAuth.import` — module the auth fn is imported from. */
+	authImport: string;
+	/** `frontend.sync.shapeUrl` — Electric shape base path. Default '/v1/shape'. */
+	shapeUrl: string;
+	/** `frontend.sync.useTableParam` — emit the `params: { table }` shape URL form. */
+	useTableParam: boolean;
+	/** `frontend.sync.columnMapper` — Electric column mapper fn name, or null. */
+	columnMapper: string | null;
+	/** `frontend.sync.columnMapperNeedsCall` — call the mapper (`fn()`) vs reference it (`fn`). */
+	columnMapperNeedsCall: boolean;
+	/** `frontend.sync.apiUrl` — REST base path used when no apiBaseUrlImport. Default '/api'. */
+	apiUrl: string;
+	/** `frontend.sync.apiBaseUrlImport` — when set, emit `import { API_BASE_URL } from '<x>'` and use it as baseURL. */
+	apiBaseUrlImport: string | null;
+	/** `frontend.parsers` — Electric parser block: column type → parser fn source. */
+	parsers: Record<string, string>;
+	/** `generate.architecture` — drives the REST update verb (clean → PUT, clean-lite-ps → PATCH). */
+	architecture: 'clean' | 'clean-lite-ps';
+	/** `locations.dbEntities.import` — module the Zod schema + entity type are imported from. */
+	dbEntitiesImport: string;
+}
+
+/**
+ * Whole-set emit context. `entities` is the full registry set in deterministic
+ * (name-sorted) order; the builders never re-sort, so the caller's order is the
+ * emitted order. {@link sortEntities} produces the canonical order.
+ */
+export interface FrontendEmitContext {
+	entities: EntityRegistryEntry[];
+	config: FrontendEmitConfig;
+}
+
+/**
+ * Canonical entity order for deterministic emission: ascending by `name`.
+ * Returns a new array (does not mutate the input).
+ */
+export function sortEntities(entities: EntityRegistryEntry[]): EntityRegistryEntry[] {
+	return [...entities].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Resolve an entity's effective sync mode: per-entity `sync:` wins, else the
+ * global default from config.
+ */
+export function resolveSyncMode(
+	entity: EntityRegistryEntry,
+	config: FrontendEmitConfig,
+): SyncMode {
+	return entity.sync ?? config.globalSyncMode;
+}
