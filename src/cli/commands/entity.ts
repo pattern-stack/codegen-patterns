@@ -46,6 +46,10 @@ import {
 } from '../shared/provider-module-generator.js';
 import { emitAdapters } from '../shared/adapter-emission-generator.js';
 import { resolveRuntimeMode } from '../shared/runtime-import.js';
+import {
+	loadFrontendEmitContext,
+	emitFrontendSet,
+} from '../../emitters/frontend/index.js';
 import { configuredSubsystemNames } from '../shared/subsystem-detect.js';
 import { loadProvidersFromYaml } from '../../utils/yaml-loader.js';
 import { loadEntities } from '../../parser/load-entities.js';
@@ -780,6 +784,47 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// Frontend emission (ADR-038 FE-4). Whole-set: renders the complete
+		// frontend tree (base files, REST api client, collections, entity hooks,
+		// store, fields, barrel) from the FULL entity set in one pass — so it runs
+		// ONCE here, after the per-entity Hygen loop, never per entity. Gated on
+		// `generate.frontend === true`; off by default (backend-only projects emit
+		// nothing). Same warn-but-don't-fail contract as the sibling post-steps,
+		// but NOT silent — failures and skips print. The output is deterministic
+		// for a given entity set (safe under re-run / baseline wipe-and-regenerate).
+		let frontendResult: { written: string[]; outDir: string } | null = null;
+		const frontendEnabled =
+			(ctx.config as { generate?: { frontend?: unknown } } | null | undefined)
+				?.generate?.frontend === true;
+		if (frontendEnabled) {
+			try {
+				const loaded = loadFrontendEmitContext(
+					ctx.cwd,
+					ctx.config as Parameters<typeof loadFrontendEmitContext>[1],
+					{ entitiesDir },
+				);
+				if (loaded.skip !== undefined) {
+					if (!isJsonMode()) {
+						printInfo(`frontend emission skipped — ${loaded.skip}`);
+					}
+				} else {
+					const { ctx: frontendCtx, outDir: frontendOutDir } = loaded;
+					const written = emitFrontendSet(frontendCtx, frontendOutDir);
+					frontendResult = { written, outDir: frontendOutDir };
+					if (!isJsonMode()) {
+						printInfo(
+							`frontend emitted (${written.length} files) → ${path.relative(ctx.cwd, frontendOutDir)}`,
+						);
+					}
+				}
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				if (!isJsonMode()) {
+					printWarning(`frontend emission failed — ${msg}`);
+				}
+			}
+		}
+
 		// Provider module emission (RFC-0001 §2, Track D · D2). Emits one
 		// `<slug>.provider.module.ts` per `definitions/providers/*.yaml`. The D1
 		// cross-validator runs here as a pre-flight gate: the source root +
@@ -957,6 +1002,13 @@ export class EntityNewCommand extends Command {
 							})),
 						}
 					: null,
+				frontend: frontendResult
+					? {
+							outDir: frontendResult.outDir,
+							written: frontendResult.written,
+							fileCount: frontendResult.written.length,
+						}
+					: null,
 				emits: {
 					warnings: emitsWarnings.map((w) => ({
 						entity: w.entity ?? null,
@@ -998,6 +1050,11 @@ export class EntityNewCommand extends Command {
 			if (orchestrationResult && orchestrationResult.patterns.length > 0) {
 				printInfo(
 					`orchestration regenerated (${orchestrationResult.patterns.length} patterns, ${orchestrationResult.files.length} files) → ${path.relative(ctx.cwd, orchestrationResult.outputRoot)}`,
+				);
+			}
+			if (frontendResult) {
+				printInfo(
+					`frontend regenerated (${frontendResult.written.length} files) → ${path.relative(ctx.cwd, frontendResult.outDir)}`,
 				);
 			}
 		}

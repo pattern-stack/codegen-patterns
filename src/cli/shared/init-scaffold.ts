@@ -16,6 +16,7 @@ import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
 import { runtimeImport, type RuntimeMode } from './runtime-import.js';
+import { FRONTEND_EMITTED_DEPS } from '../../emitters/frontend/deps.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -632,6 +633,63 @@ export function mergeTsconfig(raw: string): TsconfigMergeResult & { parseError?:
 }
 
 // ---------------------------------------------------------------------------
+// Frontend dependency merge (ADR-038 FE-4)
+// ---------------------------------------------------------------------------
+
+interface PackageJsonMergeResult {
+	content: string;
+	added: string[];
+	unchanged: boolean;
+	parseError?: string;
+}
+
+/**
+ * Idempotent merge of {@link FRONTEND_EMITTED_DEPS} into a consumer frontend
+ * `package.json`'s `dependencies`. Mirrors the {@link mergeTsconfig} precedent:
+ * only ADDS missing keys — an existing entry's version is preserved verbatim
+ * (the consumer's range choice wins; we never clobber or downgrade). The
+ * emitted frontend imports against these packages (ADR-038 version-pairing
+ * contract); the deps comment in `generated/index.ts` keeps drift visible.
+ *
+ * Re-running init never duplicates or reorders existing entries — when every
+ * required key is already present, `unchanged: true` and the raw content is
+ * returned untouched.
+ */
+export function mergeFrontendDeps(raw: string): PackageJsonMergeResult {
+	let parsed: Record<string, unknown>;
+	try {
+		parsed = JSON.parse(raw) as Record<string, unknown>;
+	} catch (err: unknown) {
+		return {
+			content: raw,
+			added: [],
+			unchanged: true,
+			parseError: err instanceof Error ? err.message : String(err),
+		};
+	}
+
+	const deps = (parsed.dependencies ?? {}) as Record<string, unknown>;
+	const added: string[] = [];
+	for (const [pkg, range] of Object.entries(FRONTEND_EMITTED_DEPS)) {
+		if (!(pkg in deps)) {
+			deps[pkg] = range;
+			added.push(pkg);
+		}
+	}
+
+	if (added.length === 0) {
+		return { content: raw, added: [], unchanged: true };
+	}
+
+	parsed.dependencies = deps;
+	return {
+		content: JSON.stringify(parsed, null, 2) + '\n',
+		added,
+		unchanged: false,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Planner
 // ---------------------------------------------------------------------------
 
@@ -950,6 +1008,61 @@ export async function buildInitPlan(
 				relPath: relOf(cwd, examplePath),
 				action: 'create',
 				content: exampleEntityYaml(),
+			});
+		}
+	}
+
+	// 11. Frontend consumer deps (ADR-038 FE-4). Only when the proposed config
+	// enables the frontend pipeline. The emitter emits imports against the
+	// version-pairing contract (FRONTEND_EMITTED_DEPS); the consumer must install
+	// them. We locate the frontend package.json from `paths.frontend_src`'s parent
+	// (default `apps/frontend/`).
+	//   - package.json present → idempotent MERGE (add only missing keys, never
+	//     clobber an existing version range);
+	//   - absent → a `skip` plan-entry NOTICE listing the required deps verbatim,
+	//     so the user knows what to install. Never fails init.
+	// `@pattern-stack/codegen` itself gains no runtime dep from this.
+	if (frontend) {
+		const frontendSrc =
+			(ctx.config as { paths?: { frontend_src?: string } } | null | undefined)
+				?.paths?.frontend_src ?? 'apps/frontend/src';
+		const frontendRoot = path.dirname(path.join(cwd, frontendSrc));
+		const pkgPath = path.join(frontendRoot, 'package.json');
+		const depsList = Object.entries(FRONTEND_EMITTED_DEPS)
+			.map(([p, r]) => `${p}@${r}`)
+			.join(', ');
+		if (fs.existsSync(pkgPath)) {
+			const raw = fs.readFileSync(pkgPath, 'utf-8');
+			const merged = mergeFrontendDeps(raw);
+			if (merged.parseError) {
+				entries.push({
+					path: pkgPath,
+					relPath: relOf(cwd, pkgPath),
+					action: 'skip',
+					reason: `unable to parse (${merged.parseError}); add frontend deps manually: ${depsList}`,
+				});
+			} else if (merged.unchanged) {
+				entries.push({
+					path: pkgPath,
+					relPath: relOf(cwd, pkgPath),
+					action: 'skip',
+					reason: 'frontend deps already present',
+				});
+			} else {
+				entries.push({
+					path: pkgPath,
+					relPath: relOf(cwd, pkgPath),
+					action: 'merge',
+					content: merged.content,
+					reason: `add frontend deps: ${merged.added.join(', ')}`,
+				});
+			}
+		} else {
+			entries.push({
+				path: pkgPath,
+				relPath: relOf(cwd, pkgPath),
+				action: 'skip',
+				reason: `frontend enabled but ${relOf(cwd, pkgPath)} not found — install: ${depsList}`,
 			});
 		}
 	}

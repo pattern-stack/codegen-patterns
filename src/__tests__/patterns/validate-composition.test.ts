@@ -59,6 +59,7 @@ function makeEntity(partial: Partial<ParsedEntity> & { name: string }): ParsedEn
 		pattern: partial.pattern,
 		patterns: partial.patterns,
 		patternConfig: partial.patternConfig,
+		expose: partial.expose ?? ['repository', 'rest', 'trpc'],
 		folderStructure: 'nested',
 		fields: partial.fields ?? new Map<string, ParsedField>(),
 		relationships: new Map(),

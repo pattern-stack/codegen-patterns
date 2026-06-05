@@ -1,16 +1,13 @@
 /**
  * Schema v2 validation tests
  *
- * Tests for ADR-031 pattern, queries, integration, events blocks
- * and pipelines config schema.
+ * Tests for ADR-031 pattern, queries, integration, events blocks,
+ * per-entity sync mode (ADR-038), and the generate config schema.
  */
 
 import { describe, it, expect } from 'bun:test';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
-import {
-	GenerateConfigSchema,
-	PipelinesConfigSchema,
-} from '../../schema/pipelines-config.schema';
+import { GenerateConfigSchema } from '../../schema/codegen-config.schema';
 import { loadEntityFromYaml } from '../../utils/yaml-loader';
 import { loadEntities } from '../../parser/load-entities';
 import { buildDomainGraph } from '../../analyzer/graph-builder';
@@ -258,38 +255,45 @@ describe('external_id_tracking behavior', () => {
 });
 
 // ============================================================================
-// Pipelines Config
+// Per-entity sync mode (ADR-038, FE-1)
 // ============================================================================
 
-describe('pipelines config', () => {
-	it('accepts full config', () => {
-		const result = PipelinesConfigSchema.safeParse({
-			backend: { enabled: true, architecture: 'clean-lite-ps' },
-			frontend: { enabled: true, preset: 'dealbrain' },
-			shared: { enabled: false },
+describe('entity.sync — per-entity frontend sync mode', () => {
+	const base = {
+		entity: { name: 'deal', plural: 'deals', table: 'deals' },
+		fields: { id: { type: 'uuid', required: true } },
+	};
+
+	it('accepts sync: api', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, sync: 'api' },
 		});
 		expect(result.success).toBe(true);
+		if (result.success) expect(result.data.entity.sync).toBe('api');
 	});
 
-	it('accepts empty config (all defaults)', () => {
-		const result = PipelinesConfigSchema.safeParse({});
+	it('accepts sync: electric', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, sync: 'electric' },
+		});
 		expect(result.success).toBe(true);
+		if (result.success) expect(result.data.entity.sync).toBe('electric');
 	});
 
-	it('rejects invalid architecture', () => {
-		const result = PipelinesConfigSchema.safeParse({
-			backend: { architecture: 'nonexistent' },
+	it('treats sync as optional (absent → undefined, inherits global default)', () => {
+		const result = EntityDefinitionSchema.safeParse(base);
+		expect(result.success).toBe(true);
+		if (result.success) expect(result.data.entity.sync).toBeUndefined();
+	});
+
+	it("rejects deferred 'offline' mode", () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, sync: 'offline' },
 		});
 		expect(result.success).toBe(false);
-	});
-
-	it('accepts all architecture targets', () => {
-		for (const arch of ['clean', 'clean-lite', 'clean-lite-ps', 'vertical-slice']) {
-			const result = PipelinesConfigSchema.safeParse({
-				backend: { architecture: arch },
-			});
-			expect(result.success).toBe(true);
-		}
 	});
 });
 

@@ -103,6 +103,13 @@ export interface ParsedEntity {
 	patternConfig?: Record<string, unknown>;
 	/** Whether this entity is a valid scope target for job scoping (JOB-7). */
 	scopeable?: boolean;
+	/**
+	 * Which layers to generate (entity `expose:`, default
+	 * `['repository', 'rest', 'trpc']`). The frontend field-metadata emitter
+	 * (FE-3) derives write `capabilities` from whether `repository` or `trpc`
+	 * is exposed.
+	 */
+	expose: ('repository' | 'rest' | 'trpc' | 'electric')[];
 	folderStructure: 'nested' | 'flat';
 	fields: Map<string, ParsedField>;
 	relationships: Map<string, ParsedRelationship>;

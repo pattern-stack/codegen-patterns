@@ -71,27 +71,48 @@ just release                         # Tag + push
 
 ### Core Pipeline
 ```
-YAML Entity Definition → Parser → Analyzer → Hygen Templates → Generated Code
+YAML Entity Definition → Parser → Analyzer → Hygen Templates / TS Emitters → Generated Code
 ```
 
-### Two Template Pipelines
+The backend uses **hygen templates**; the frontend and integration layers use
+**TypeScript emitters** (`src/emitters/`). Both consume the same parsed entity set.
 
-- **`templates/entity/new/backend/`** + **`frontend/`** — Full Clean Architecture: separate command/query classes, repository interfaces, NestJS modules.
+### Backend Template Pipelines (hygen)
+
+- **`templates/entity/new/backend/`** — Full Clean Architecture: separate command/query classes, repository interfaces, NestJS modules. Selected via `generate.architecture: clean` (default).
 - **`templates/entity/new/clean-lite-ps/`** — Clean-Lite-PS: lighter layout with entity, service, repository, controller, module, DTOs, use-cases. Selected via `generate.architecture: clean-lite-ps`. Has its own `prompt-extension.js`. The two backend template pipelines are mutually exclusive — `generate.architecture` picks exactly one.
+
+### Frontend Emitter (`src/emitters/frontend/`, ADR-038)
+
+The frontend pipeline is a **whole-set TypeScript emitter**, not hygen templates
+(`templates/entity/new/frontend/` was deleted). Gated by `generate.frontend`
+(default false), it runs as the `entity new` post-step and renders the complete
+frontend tree — per-entity AND cross-entity files (`store/`, barrels, `config.ts`,
+`query-client.ts`) — from the full entity set in one pass, idempotently
+(complete-file writes, `@generated` banner, no inject/anchor machinery). Hook /
+mutation / store logic is consumed from `@pattern-stack/frontend-patterns`
+(`createEntityHooks` / `createStore`); generated files are thin wiring. FK target
+names resolve against the cross-entity registry (the target's own YAML), never
+re-pluralized at emit time. Per-entity `sync: api | electric` overrides the global
+`frontend.sync.mode`. The `frontend:` Zod block lives in
+`src/schema/codegen-config.schema.ts`; the entry point is `emitFrontendSet`
+(`src/emitters/frontend/index.ts`), wired via `loadFrontendEmitContext`. See
+docs/specs/2026-06-04-frontend-pipeline-rebuild.md.
 
 ### Project Layout
 
 ```
 src/                    # Generator source code
   cli/                  # Clipanion CLI (noun-verb: entity, subsystem, project)
+  emitters/             # TS emitters: frontend (ADR-038), integration (RFC-0001/2/3)
   index.ts              # Package exports
   analyzer/             # Graph building, consistency checking, suggestions
   behaviors/            # Shared behaviors (timestamps, soft-delete, user-tracking)
   config/               # Config loader, paths, locations, naming
   formatters/           # Console, JSON, markdown output formatters
-  parser/               # YAML loading, cross-reference resolution
+  parser/               # YAML loading, cross-reference resolution (+ entity registry)
   scanner/              # Project pattern detection (framework, ORM, naming)
-  schema/               # Zod schemas for entity definitions
+  schema/               # Zod schemas for entity definitions + codegen config
   utils/                # YAML and config loaders
   __tests__/            # Unit tests (mirrors src/ structure)
 runtime/                # Code shipped into user's generated project
@@ -99,7 +120,7 @@ runtime/                # Code shipped into user's generated project
   subsystems/           # Infrastructure: events, jobs, cache, storage, auth
   constants/            # Injection tokens
   types/                # DrizzleClient type
-templates/              # Hygen EJS templates (the core product)
+templates/              # Hygen EJS templates (backend pipelines)
 test/                   # Cross-cutting: baseline snapshots, fixtures, scaffold integration
 docs/                   # ADRs
 ```

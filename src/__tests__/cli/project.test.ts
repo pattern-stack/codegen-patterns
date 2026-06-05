@@ -13,8 +13,10 @@ import {
 	buildInitPlan,
 	writePlan,
 	mergeTsconfig,
+	mergeFrontendDeps,
 } from '../../cli/shared/init-scaffold.js';
 import { loadContext } from '../../cli/shared/context.js';
+import { FRONTEND_EMITTED_DEPS } from '../../emitters/frontend/deps.js';
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -143,6 +145,50 @@ describe('mergeTsconfig', () => {
 		const parsed = JSON.parse(res.content);
 		expect(parsed.compilerOptions.experimentalDecorators).toBe(true);
 		expect(parsed.compilerOptions.emitDecoratorMetadata).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// mergeFrontendDeps (ADR-038 FE-4)
+// ---------------------------------------------------------------------------
+
+describe('mergeFrontendDeps', () => {
+	test('adds every version-pairing dep to a package.json with none', () => {
+		const raw = JSON.stringify({ name: 'fe', dependencies: { react: '^19.0.0' } });
+		const res = mergeFrontendDeps(raw);
+		expect(res.unchanged).toBe(false);
+		const deps = JSON.parse(res.content).dependencies;
+		for (const [pkg, range] of Object.entries(FRONTEND_EMITTED_DEPS)) {
+			expect(deps[pkg]).toBe(range);
+		}
+		// existing unrelated dep preserved
+		expect(deps.react).toBe('^19.0.0');
+	});
+
+	test('preserves an existing dep version — only adds missing keys', () => {
+		const raw = JSON.stringify({
+			dependencies: { '@tanstack/react-query': '^5.99.0' },
+		});
+		const res = mergeFrontendDeps(raw);
+		const deps = JSON.parse(res.content).dependencies;
+		// the consumer's chosen range wins — never clobbered/downgraded
+		expect(deps['@tanstack/react-query']).toBe('^5.99.0');
+		expect(res.added).not.toContain('@tanstack/react-query');
+		expect(res.added).toContain('@pattern-stack/frontend-patterns');
+	});
+
+	test('is idempotent — re-merging the merged output reports unchanged', () => {
+		const raw = JSON.stringify({ dependencies: {} });
+		const once = mergeFrontendDeps(raw);
+		const twice = mergeFrontendDeps(once.content);
+		expect(twice.unchanged).toBe(true);
+		expect(twice.added).toHaveLength(0);
+	});
+
+	test('returns parseError + unchanged on invalid JSON (never throws)', () => {
+		const res = mergeFrontendDeps('{ not json');
+		expect(res.parseError).toBeDefined();
+		expect(res.unchanged).toBe(true);
 	});
 });
 
@@ -299,6 +345,52 @@ describe('buildInitPlan', () => {
 		const ts = plan.entries.find((e) => e.relPath === 'tsconfig.json');
 		expect(ts?.action).toBe('merge');
 		expect(ts?.content).toContain('@shared/*');
+	});
+
+	// Frontend consumer deps (ADR-038 FE-4). The `frontend` gate is scanner-
+	// detected (apps/frontend/ present → generate.frontend true), so these run
+	// WITH scan enabled.
+	test('frontend enabled + frontend package.json present → merge entry', async () => {
+		const cwd = mkTempDir('fe-deps-merge');
+		fs.mkdirSync(path.join(cwd, 'apps', 'frontend'), { recursive: true });
+		fs.writeFileSync(
+			path.join(cwd, 'apps', 'frontend', 'package.json'),
+			JSON.stringify({ name: 'frontend', dependencies: {} }),
+		);
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd });
+		expect(plan.summary.frontend).toBe(true);
+		const pkg = plan.entries.find(
+			(e) => e.relPath === 'apps/frontend/package.json',
+		);
+		expect(pkg?.action).toBe('merge');
+		expect(pkg?.content).toContain('@pattern-stack/frontend-patterns');
+	});
+
+	test('frontend enabled + no frontend package.json → skip-notice listing deps', async () => {
+		const cwd = mkTempDir('fe-deps-notice');
+		// apps/frontend/ exists (so the scanner flips frontend on) but no
+		// package.json inside it.
+		fs.mkdirSync(path.join(cwd, 'apps', 'frontend'), { recursive: true });
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd });
+		expect(plan.summary.frontend).toBe(true);
+		const pkg = plan.entries.find(
+			(e) => e.relPath === 'apps/frontend/package.json',
+		);
+		expect(pkg?.action).toBe('skip');
+		expect(pkg?.reason).toContain('@pattern-stack/frontend-patterns');
+	});
+
+	test('frontend DISABLED (default) → no frontend package.json entry', async () => {
+		const cwd = mkTempDir('fe-deps-off');
+		const ctx = await loadContext({ cwd, skipDetection: true });
+		const plan = await buildInitPlan(ctx, { cwd, skipScan: true });
+		expect(plan.summary.frontend).toBe(false);
+		const pkg = plan.entries.find((e) =>
+			e.relPath.endsWith('apps/frontend/package.json'),
+		);
+		expect(pkg).toBeUndefined();
 	});
 });
 

@@ -138,6 +138,104 @@ modules/{plural}/
   use-cases/                       FindById, List, declarative queries
 ```
 
+**Frontend** (`generate.frontend: true`) — see [Frontend generation](#frontend-generation) below.
+
+## Frontend generation
+
+Gated entirely by `generate.frontend` (default `false`; the scanner sets it
+`true` when it finds an `apps/frontend/` directory). When on, the `entity new`
+post-step (and therefore `gen-all`) renders the **complete frontend tree from the
+full entity set in one pass** — a TypeScript emitter (`src/emitters/frontend/`),
+not hygen templates. Re-running is idempotent: every file is a complete-file
+write with a `@generated` banner, no inject/anchor machinery, no overwrite
+prompts (ADR-038).
+
+Output lands under `locations.frontendGenerated` (default
+`apps/frontend/src/generated/`):
+
+```
+generated/
+  index.ts                 whole-set barrel (+ version-pairing comment)
+  config.ts                per-entity sync modes + runtime overrides
+  query-client.ts          shared TanStack QueryClient
+  api/<entity>.ts          REST client → the generated NestJS controllers
+  collections/<entity>.ts  createCollection, branched on the entity's sync mode
+  entities/<entity>.ts     createEntityHooks({ collection, api }) wiring
+  store/index.ts           createStore over the full set (+ resolvers, lookups)
+  fields/<entity>.ts       field metadata (FieldMeta, <entity>Fields)
+```
+
+Entity types and Zod schemas are **imported** from `locations.dbEntities`
+(default `@repo/db/entities`), not re-emitted. The emitter imports the plain
+class name — `import type { <Class> } from '<dbEntities>/<name>'` — so
+`dbEntities` is the contract: it MUST export the entity type under its plain
+`<Class>` name (e.g. `Contact`, not `ContactEntity`). If your db package only
+exports `<Class>Entity`, that is the one knob to change in the emitter.
+
+The hook/mutation/store/provider logic is consumed from
+`@pattern-stack/frontend-patterns` (`createEntityHooks`, `createStore`) — the
+generated files are thin wiring. **The consumer's frontend installs that package
+plus the paired TanStack libraries.** `project init` adds the version-pairing
+deps to `apps/frontend/package.json` when `generate.frontend: true` (idempotent
+merge — only missing keys added, existing version ranges preserved); when no
+frontend package.json exists it prints the list to install. `@pattern-stack/codegen`
+itself gains no runtime dependency.
+
+| Package | Range |
+|---|---|
+| `@pattern-stack/frontend-patterns` | `^0.2.0-alpha.18` |
+| `@tanstack/react-db` | `^0.1.55` |
+| `@tanstack/electric-db-collection` | `^0.2.11` |
+| `@tanstack/query-db-collection` | `^1.0.6` |
+| `@tanstack/react-query` | `^5.0.0` |
+
+### `frontend:` config block
+
+All knobs are inert unless `generate.frontend: true`. Defaults shown; the block
+is optional (fully defaulted when absent):
+
+```yaml
+frontend:
+  auth:
+    function: getAuthorizationHeader   # auth-header fn; null DISABLES the header
+  parsers:                             # Electric column-type → parser fn source
+    timestamptz: '(date: string) => new Date(date)'
+  sync:
+    mode: electric          # global default sync mode (api | electric)
+    shapeUrl: /v1/shape      # Electric shape base path
+    useTableParam: true      # emit `params: { table }` shape-URL form
+    columnMapper: snakeCamelMapper   # Electric column mapper fn; null to omit
+    columnMapperNeedsCall: true      # call the mapper (fn()) vs reference (fn)
+    apiBaseUrlImport: null   # when set, import API_BASE_URL from it as baseURL
+    apiUrl: /api             # REST base path when no apiBaseUrlImport
+```
+
+`null`-disables convention: an **absent** `auth.function` defaults to
+`getAuthorizationHeader`; an **explicit `null`** disables it entirely (no header
+lines emitted). Likewise `sync.columnMapper: null` omits the Electric mapper.
+
+### Per-entity sync mode (`entity.sync`)
+
+Each entity may override the global `frontend.sync.mode` inside its `entity:`
+block (sibling to `surface:`/`context:`):
+
+```yaml
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  sync: api        # api | electric — overrides frontend.sync.mode for this entity
+```
+
+`api` wires `queryCollectionOptions` (REST via TanStack Query); `electric` wires
+`electricCollectionOptions` (real-time shape sync). Absent → the global default.
+`offline` (Electric + Dexie) is deferred — the schema rejects it.
+
+Cross-entity FK names (file, plural, class, collection var) are resolved against
+the **target entity's own YAML** via the registry — never re-pluralized from a
+string at emit time (so an explicit `plural:` like `person`→`persons` is honored
+by every consumer).
+
 ## Integration Codegen (provider/adapter + assembly + read primitive)
 
 When an entity carries a `surface:` tag and `definitions/providers/*.yaml` exist,
@@ -261,9 +359,14 @@ naming:
   terminology:
     command: use-case
     query: use-case
+
+# frontend:                      # inert unless generate.frontend: true
+#   ...                          # see "Frontend generation" above for the full block
 ```
 
-Auto-detect your project's conventions with `codegen project scan`.
+The `frontend:` block (auth, parsers, sync) is documented under
+[Frontend generation](#frontend-generation). Auto-detect your project's
+conventions with `codegen project scan`.
 
 ## Using in Your Project
 
@@ -276,6 +379,7 @@ See [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) for a walkthrough of enti
 ```
 src/                        Generator source code
   cli/                      Clipanion CLI (noun-verb architecture)
+  emitters/                 TypeScript emitters (integration, frontend — ADR-038)
   analyzer/                 Graph building, consistency checking
   parser/                   YAML loading, cross-reference resolution
   scanner/                  Project pattern detection
@@ -287,7 +391,7 @@ src/                        Generator source code
 runtime/                    Code shipped into consumer projects
   base-classes/             BaseRepository, BaseService, pattern bases
   subsystems/               Events, Jobs, Cache, Storage
-templates/                  Hygen EJS templates
+templates/                  Hygen EJS templates (backend pipelines)
 test/                       Baseline snapshots, scaffold integration, smoke test
 docs/                       ADRs, consumer setup, getting started
 ```

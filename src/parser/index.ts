@@ -17,6 +17,12 @@ export {
 } from './load-entities';
 
 export {
+	loadEntityRegistry,
+	type EntityRegistryEntry,
+	type LoadEntityRegistryResult,
+} from './entity-registry';
+
+export {
 	validateProviders,
 	collectEntitySurfaces,
 	resolveImportRef,

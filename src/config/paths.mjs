@@ -612,18 +612,6 @@ export function getProjectConfig() {
 }
 
 /**
- * Get pipelines configuration from project config.
- * Returns the pipelines block (or an empty object if not configured).
- *
- * Usage:
- *   const pipelines = getPipelinesConfig();
- *   const arch = pipelines?.backend?.architecture ?? 'clean';
- */
-export function getPipelinesConfig() {
-  return projectConfig?.pipelines ?? {};
-}
-
-/**
  * Resolve the directory codegen writes barrel files to (modules.ts, schema.ts).
  *
  * Honors `paths.generated` from codegen.config.yaml; defaults to 'src/generated'.
@@ -681,7 +669,6 @@ export default {
   getLayoutConfig,
   getDatabaseDialect,
   getProjectConfig,
-  getPipelinesConfig,
   getGenerateConfig,
   getGeneratedDir,
   // NEW: Config-driven naming functions
