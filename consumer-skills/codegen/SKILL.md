@@ -55,6 +55,38 @@ generation run the two barrels are rewritten and you wire them into
 | React to an event with a durable async job (the event-to-job bridge) | the `bridge` skill |
 | Pull/push data from an external system (`IChangeSource` / `IIntegrationSink`) | the `integration` skill |
 
+## Frontend generation (`generate.frontend: true`)
+
+When on, `entity new` (and `--all`) ends with a **whole-set frontend emitter**
+(ADR-038): the complete data layer is rendered into
+`locations.frontendGenerated` (default `apps/frontend/src/generated/`) from the
+full entity set — REST api client, TanStack DB collections (per-entity
+`sync: api | electric`), `createEntityHooks` wiring, field metadata, a
+plural-keyed `createStore`, `config.ts`, `query-client.ts`, root barrel. Every
+file is a complete write with a `@generated` banner; re-runs are byte-identical.
+
+Non-obvious bits:
+
+- **The dbEntities contract**: generated files import the plain `<Class>` type
+  AND a `<camel>Schema` Zod schema from `locations.dbEntities` per entity. If
+  the backend doesn't emit such a package (clean-lite-ps doesn't), the consumer
+  provides a shim barrel re-exporting each module's Output DTO.
+- **The consumer mounts two providers** in the app root, both from generated
+  code: `QueryClientProvider(queryClient)` ▸ `EntityStoreProvider(store)`
+  (`EntityStoreProvider` from `@pattern-stack/frontend-patterns`).
+- **Version pairing**: the emitted imports require
+  `@pattern-stack/frontend-patterns` + four TanStack packages — the exact
+  ranges are listed in the generated `index.ts` header comment.
+- **Path aliases are assumed**: default imports use `@/…` (and your
+  `locations.*.import` values) — wire tsconfig `paths` + the bundler alias.
+- **Providers catalog**: when `definitions/providers/` exists, the emitter also
+  renders `providers.ts` — `PROVIDERS` (flat) + `PROVIDER_CATALOG` (grouped by
+  each provider's `display.category` into `frontend.catalog.categories`).
+  Providers are gen-time knowledge: the catalog is emitted, never queried, and
+  never hand-duplicated in the frontend. `status: planned` provider YAMLs are
+  roadmap stubs — catalog tile only, no auth/client needed, skipped by all
+  backend emission.
+
 ## CLI quick reference
 
 ```bash

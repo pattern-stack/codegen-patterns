@@ -22,16 +22,20 @@
  * keeps the emitter cwd-correct and free of the `.mjs` layer.
  */
 
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { loadEntityRegistry } from '../../parser/entity-registry';
 import { loadEntities } from '../../parser/load-entities';
 import type { ParsedEntity } from '../../analyzer/types';
 import { FrontendConfigSchema } from '../../schema/codegen-config.schema';
+import { findYamlFiles } from '../../utils/find-yaml-files';
+import { loadProvidersFromYaml } from '../../utils/yaml-loader';
 import type {
 	EntityRegistryEntry,
 	FrontendEmitConfig,
 	FrontendEmitContext,
+	ProviderCatalogInput,
 } from './types';
 import { sortEntities } from './types';
 
@@ -70,7 +74,7 @@ export interface FrontendConfigInput {
 	generate?: { architecture?: 'clean' | 'clean-lite-ps' } & Record<string, unknown>;
 	frontend?: unknown;
 	locations?: Record<string, { path?: string; import?: string } | undefined>;
-	paths?: { entities_dir?: string } & Record<string, unknown>;
+	paths?: { entities_dir?: string; providers?: string } & Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -137,7 +141,39 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 		parsers: fe.parsers,
 		architecture,
 		dbEntitiesImport: dbEntities.import,
+		catalogCategories: fe.catalog.categories,
 	};
+}
+
+/**
+ * Load provider definitions for the catalog emission. Resolves the providers
+ * dir the same way the Track D CLI step does (`paths.providers`, default
+ * `definitions/providers`); a missing dir or zero loadable files ⇒ `[]` (no
+ * catalog emitted). Load FAILURES are ignored here by design — the provider
+ * codegen step owns reporting them; the catalog just emits from whatever
+ * parses.
+ */
+export function loadProviderCatalogInputs(
+	cwd: string,
+	config: FrontendConfigInput,
+): ProviderCatalogInput[] {
+	const providersDir = path.resolve(
+		cwd,
+		config.paths?.providers ?? 'definitions/providers',
+	);
+	if (!existsSync(providersDir) || !statSync(providersDir).isDirectory()) {
+		return [];
+	}
+	const files = findYamlFiles(providersDir);
+	if (files.length === 0) return [];
+
+	return loadProvidersFromYaml(files).successes.map((s) => ({
+		slug: s.definition.slug,
+		displayName: s.definition.display_name,
+		surfaces: s.definition.surfaces,
+		status: s.definition.status,
+		display: s.definition.display,
+	}));
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +215,7 @@ export function loadFrontendEmitContext(
 	);
 
 	const emitConfig = mapFrontendEmitConfig(config);
+	const providers = loadProviderCatalogInputs(cwd, config);
 	const generated = resolveLocation(
 		config,
 		'frontendGenerated',
@@ -188,7 +225,7 @@ export function loadFrontendEmitContext(
 
 	return {
 		skip: undefined,
-		ctx: { entities, parsed, config: emitConfig },
+		ctx: { entities, parsed, config: emitConfig, providers },
 		outDir,
 	};
 }

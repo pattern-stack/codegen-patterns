@@ -48,6 +48,8 @@ module — plus an entry in the `GENERATED_MODULES` and schema barrels.
 entity:
   name: account            # singular snake_case
   pattern: Synced          # Base | Synced | Activity | Metadata | Knowledge (or app-defined)
+  # sync: api              # frontend collection mode (api | electric) — overrides
+  #                        # frontend.sync.mode; only meaningful with generate.frontend: true
 
 fields:
   name:

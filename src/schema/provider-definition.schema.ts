@@ -97,6 +97,26 @@ const ClientSchema = z
   .strict();
 
 // ============================================================================
+// Display (frontend catalog metadata)
+// ============================================================================
+
+/**
+ * Presentation metadata consumed ONLY by the frontend providers-catalog
+ * emission (`emit-providers.ts`) — never by backend provider/adapter codegen.
+ * `category` joins to `frontend.catalog.categories[].id` in
+ * `codegen.config.yaml`; providers without a category are exported in the
+ * flat `PROVIDERS` list but appear in no catalog group.
+ */
+const DisplaySchema = z
+  .object({
+    category: z.string().optional(),
+    blurb: z.string().optional(),
+    // Sub-line shown on an unconnected ("available") tile.
+    hint: z.string().optional(),
+  })
+  .strict();
+
+// ============================================================================
 // Full Provider Definition
 // ============================================================================
 
@@ -112,12 +132,22 @@ export const ProviderDefinitionSchema = z
         "slug must be kebab-case lower (e.g. 'google', 'hubspot')",
       ),
     display_name: z.string().optional(),
-    auth: AuthSchema,
-    client: ClientSchema,
+    // Lifecycle: 'active' providers drive backend provider/adapter emission
+    // and require auth + client. 'planned' providers are roadmap stubs — they
+    // appear in the frontend catalog (as unconnectable tiles) but are skipped
+    // by all backend emission and by the surface/import cross-checks, so a
+    // stub can exist before its surface has entities or its strategy/client
+    // are written.
+    status: z.enum(["active", "planned"]).default("active"),
+    // Frontend catalog presentation (see DisplaySchema).
+    display: DisplaySchema.optional(),
+    // Required iff status === 'active'; see superRefine below.
+    auth: AuthSchema.optional(),
+    client: ClientSchema.optional(),
     // Surfaces this provider serves (ADR-0006: surfaces span contexts — one
     // Google OAuth feeds calendar+mail+transcript). Each must reference a real
     // `surface:` declared on some entity; that cross-check is in
-    // validate-providers.ts. Non-empty enforced here.
+    // validate-providers.ts (skipped for 'planned'). Non-empty enforced here.
     surfaces: z
       .array(z.string())
       .min(1, "surfaces must list at least one surface"),
@@ -127,9 +157,45 @@ export const ProviderDefinitionSchema = z
     token_lifetime: z.number().int().positive().optional(),
     refresh_behavior: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((def, ctx) => {
+    if (def.status === "active") {
+      if (!def.auth) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "auth is required when status is 'active'",
+          path: ["auth"],
+        });
+      }
+      if (!def.client) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "client is required when status is 'active'",
+          path: ["client"],
+        });
+      }
+    }
+  });
 
 export type ProviderDefinition = z.infer<typeof ProviderDefinitionSchema>;
+
+/**
+ * An 'active' provider with auth + client guaranteed present (enforced by the
+ * schema's superRefine). Backend emission paths filter to this shape via
+ * {@link isActiveProvider}.
+ */
+export type ActiveProviderDefinition = ProviderDefinition & {
+  status: "active";
+  auth: NonNullable<ProviderDefinition["auth"]>;
+  client: NonNullable<ProviderDefinition["client"]>;
+};
+
+/** Narrow a parsed definition to the active (emittable) shape. */
+export function isActiveProvider(
+  def: ProviderDefinition,
+): def is ActiveProviderDefinition {
+  return def.status === "active";
+}
 
 // ============================================================================
 // Validation Helpers

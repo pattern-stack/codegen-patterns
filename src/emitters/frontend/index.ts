@@ -18,17 +18,21 @@ import { emitCollections } from './emit-collections';
 import { emitEntities } from './emit-entities';
 import { emitStore } from './emit-store';
 import { emitFields } from './emit-fields';
+import { emitProviders } from './emit-providers';
 import { emitIndex } from './emit-index';
 
 export type {
+	CatalogCategoryConfig,
 	FrontendEmitConfig,
 	FrontendEmitContext,
 	ParsedEntity,
+	ProviderCatalogInput,
 	SyncMode,
 } from './types';
 export { resolveSyncMode, sortEntities } from './types';
 export {
 	loadFrontendEmitContext,
+	loadProviderCatalogInputs,
 	mapFrontendEmitConfig,
 } from './load-context';
 export type {
@@ -74,6 +78,10 @@ export {
 	emitFields,
 } from './emit-fields';
 export {
+	buildProvidersFile,
+	emitProviders,
+} from './emit-providers';
+export {
 	buildRootIndexFile,
 	buildVersionPairingComment,
 	emitIndex,
@@ -104,6 +112,7 @@ export function emitFrontendSet(ctx: FrontendEmitContext, outDir: string): strin
 		...emitEntities(ctx, outDir),
 		...emitStore(ctx, outDir),
 		...emitFields(ctx, outDir),
+		...emitProviders(ctx, outDir),
 		...emitIndex(ctx, outDir),
 	];
 }

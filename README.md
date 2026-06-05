@@ -163,6 +163,7 @@ generated/
   entities/<entity>.ts     createEntityHooks({ collection, api }) wiring
   store/index.ts           createStore over the full set (+ resolvers, lookups)
   fields/<entity>.ts       field metadata (FieldMeta, <entity>Fields)
+  providers.ts             providers catalog — only when definitions/providers/ exists
 ```
 
 Entity types and Zod schemas are **imported** from `locations.dbEntities`
@@ -235,6 +236,56 @@ Cross-entity FK names (file, plural, class, collection var) are resolved against
 the **target entity's own YAML** via the registry — never re-pluralized from a
 string at emit time (so an explicit `plural:` like `person`→`persons` is honored
 by every consumer).
+
+### Providers catalog (`providers.ts`)
+
+Providers are gen-time knowledge (`definitions/providers/<slug>.yaml`,
+RFC-0001) — the provider set changes only when code deploys — so the frontend
+catalog is **emitted, not queried**. When the project has provider definitions,
+the emitter renders `generated/providers.ts`:
+
+- `PROVIDERS` — every provider, flat (active + planned), slug-sorted:
+  `{ provider, name, planned, surfaces, blurb?, hint? }`. Join live rows on
+  `provider` (the canonical slug, e.g. `Connection.provider`).
+- `PROVIDER_CATALOG` — grouped into `frontend.catalog.categories` (config
+  order) via each provider's `display.category`. Uncategorized providers
+  appear only in `PROVIDERS`.
+
+Two provider-YAML additions feed it:
+
+```yaml
+# definitions/providers/google.yaml (active — full definition)
+slug: google
+display_name: Google Workspace
+display:
+  category: google-workspace     # joins frontend.catalog.categories[].id
+  hint: connect                  # optional sub-line on an unconnected tile
+surfaces: [calendar, mail, transcript]
+auth: { ... }                    # required for active providers
+client: { ... }
+
+# definitions/providers/github.yaml (planned — roadmap stub)
+slug: github
+display_name: GitHub
+status: planned                  # catalog tile only; NO backend emission,
+display:                         # no auth/client required, surface + import
+  category: source-control       # cross-checks skipped
+surfaces: [source_control]
+```
+
+```yaml
+# codegen.config.yaml — the ordered display groups
+frontend:
+  catalog:
+    categories:
+      - id: source-control
+        name: Source Control & Issues
+        blurb: Repositories, pull requests, issues, and project planning
+```
+
+When the integration for a `planned` provider lands, flip it to `status:
+active` (or drop the key) and add `auth`/`client` — the definitions tree is
+the integration roadmap.
 
 ## Integration Codegen (provider/adapter + assembly + read primitive)
 

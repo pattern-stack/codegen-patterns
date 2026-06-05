@@ -74,7 +74,14 @@ export * from './entities/index';
 
 // Field metadata (DataGrid / forms / admin)
 export * from './fields/index';
-
+${
+	ctx.providers && ctx.providers.length > 0
+		? `
+// Providers catalog (definitions/providers + frontend.catalog.categories)
+export * from './providers';
+`
+		: ''
+}
 // Unified store (entities + collections + resolvers + lookups)
 export * from './store/module-index';
 `;
