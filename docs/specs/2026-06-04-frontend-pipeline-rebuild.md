@@ -97,6 +97,26 @@ Pinned as a constant in `src/emitters/frontend/deps.ts`; emitted into a comment 
 - Delete `templates/entity/new/frontend/collections/**`.
 - Emission unit tests (string-level, like `frontend-sync-mode.test.ts` but against the emitter).
 
+  *Implementation notes (FE-2, done):*
+  - **Entity type import is plain `<Class>`.** The dead `typeNaming` knob's two
+    branches imported `<Class>` (`'plain'`) vs `<Class>Entity` (default). No
+    template in *this* repo emits `packages/db/src/entities/<name>.ts` — the
+    `dbEntities` location (`@repo/db/entities`) is an external assumption — so the
+    actual export name is unobservable from here. Per the spec's "prefer plain if
+    both" instruction, the emitter imports `import type { <Class> } from
+    '<dbEntities>/<name>'`. **FE-4 must verify** the consumer's `@repo/db/entities`
+    actually exports plain class names; if it only exports `<Class>Entity`, this is
+    the single knob to flip in `emit-api.ts` / `emit-collections.ts`.
+  - **api-mode collections delegate transport to the api client** (`<camel>Api.list()`
+    from `../api/<name>`), not an inline fetch — the deleted template inlined a
+    fetch; the new split keeps transport in one place.
+  - **SSR guard** is uniform: `typeof window !== 'undefined' ? window.location.origin : ''`
+    feeds every `new URL(...)` in the electric branch (the templates applied it
+    inconsistently).
+  - **`config.ts` deferral comment** says "the offline mode" (no quoted `'offline'`
+    literal) so a strict "no 'offline' as a mode value" test can coexist with the
+    OQ-6 pointer.
+
 **FE-3 — emitter: entities + store + fields + barrels**
 - `emit-entities.ts` (createEntityHooks wiring incl. per-entity hook re-exports), `emit-store.ts` (createStore + resolvers from relationships), `emit-fields.ts` (port fields.ejs.t), `emit-index.ts`.
 - Delete the rest of `templates/entity/new/frontend/**`; remove frontend branches from `prompt.js` context that no longer have readers (`frontend.*` knobs move to emitter config loading).
