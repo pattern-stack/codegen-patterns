@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-06-04
+
+**`WebhookFetchCallback<T>` yields `{ record, eventId?, cursor? }`** —
+`WebhookChangeSource` now prefers a queue-yielded `eventId` for
+`Change<T>.dedupKey` (gap #6 follow-through, swe-brain ADR-0009 Amendment B
+§B5). swe-brain's Slack inbound drain documented an `eventIdField: 'externalId'`
+substitution — delivery dedup happens at the receiver, so record identity stood
+in for event identity. That substitution becomes genuinely unsafe once a message
+and its edit (same `externalId`, different vendor event) can share one drain
+batch — they'd collapse to a single `dedupKey`. Vendor delivery metadata (the
+event id) should never need a field on the vendor-neutral canonical record; the
+queue-yield is the right channel for it. Backward-compatible: callbacks that
+yield `{ record, cursor? }` and configs that set `webhook.eventIdField` are
+unchanged; opting into `eventId` is the only migration, and it's optional.
+
+### Changed
+
+- **`WebhookFetchCallback<T>` yield shape** is now `{ record: T; eventId?:
+  string; cursor?: WebhookCursor }` (was `{ record: T; cursor?: WebhookCursor }`)
+  — the new `eventId` is opt-in and additive; existing callbacks compile and run
+  unchanged.
+- **`WebhookChangeSource.dedupKey` precedence** is now **yielded `eventId` >
+  `webhook.eventIdField` record extraction > undefined**. A non-empty yielded
+  `eventId` always wins; otherwise the configured `eventIdField` is read off the
+  emitted record (and still throws if the field is configured but absent on the
+  record); with neither, `dedupKey` is `undefined` (the orchestrator simply has
+  no delivery-level dedup signal for that change).
+- **`detection-config.schema.ts`: `webhook.eventIdField` is now optional**
+  (`z.string().min(1).optional()`). A callback that always yields `eventId` need
+  not declare a record field for it. The `webhook` block itself stays
+  structurally required in webhook mode (an empty `{}` is valid; a missing block
+  is not), so the existing "webhook-mode missing webhook block" validation is
+  unaffected.
+
+### Docs
+
+- ADR-033 §1 amended (the `webhook: { eventIdField? }` shape + the yield channel
+  + dedupKey precedence), integration `SKILL.md` + consumer
+  `change-sources-and-sinks.md` updated to the yield-preferred precedence.
+
 ## [0.16.0] — 2026-06-04
 
 **Postgres LISTEN/NOTIFY wakeups** for the jobs worker + events outbox drainer

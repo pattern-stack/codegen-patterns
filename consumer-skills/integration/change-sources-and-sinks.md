@@ -75,7 +75,7 @@ interface Change<T> {
   record: T;                           // canonical shape — provider mapping happens in the adapter
   cursor: unknown;                     // typed internally; opaque at the seam
   source: 'poll' | 'cdc' | 'webhook';  // provenance for the run-log audit
-  dedupKey?: string;                   // CDC replay_id / webhook event_id when available
+  dedupKey?: string;                   // CDC replay_id / webhook event id when available (webhook: prefers the eventId yielded by WebhookFetchCallback, else webhook.eventIdField)
   providerChangedFields?: string[];    // CDC-only hint; lets the differ skip untouched fields
 }
 ```

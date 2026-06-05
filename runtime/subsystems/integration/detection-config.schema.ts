@@ -22,10 +22,12 @@
  *     primitive while emitting `Change<T>.source = 'cdc'`. Long-lived
  *     streaming CDC (SFDC Pub-Sub, Debezium) is a separate primitive
  *     deferred to #226-8.
- *   - `webhook` mode requires `eventIdField` so `WebhookChangeSource<T>`
- *     can populate `Change<T>.dedupKey` from the inbound staging row.
+ *   - `webhook` mode's `eventIdField` is optional: `WebhookChangeSource<T>`
+ *     prefers an `eventId` yielded by the queue iterator and falls back to the
+ *     `eventIdField` record extraction (precedence: yielded eventId >
+ *     eventIdField extraction > undefined dedupKey).
  */
-import { z } from 'zod';
+import { z } from "zod";
 
 // ============================================================================
 // Field mapping — provider field → canonical target
@@ -37,9 +39,9 @@ import { z } from 'zod';
  * etc.); the schema does not enumerate transforms — adapters interpret them.
  */
 export const FieldMappingSchema = z.object({
-  source: z.string().min(1),
-  target: z.string().min(1),
-  transform: z.string().min(1).optional(),
+	source: z.string().min(1),
+	target: z.string().min(1),
+	transform: z.string().min(1).optional(),
 });
 
 export type FieldMapping = z.infer<typeof FieldMappingSchema>;
@@ -54,9 +56,9 @@ export type FieldMapping = z.infer<typeof FieldMappingSchema>;
  * adapters interpret per provider.
  */
 export const ResolvedFilterSchema = z.object({
-  field: z.string().min(1),
-  op: z.enum(['eq', 'neq', 'in', 'nin', 'gt', 'gte', 'lt', 'lte']),
-  value: z.unknown(),
+	field: z.string().min(1),
+	op: z.enum(["eq", "neq", "in", "nin", "gt", "gte", "lt", "lte"]),
+	value: z.unknown(),
 });
 
 export type ResolvedFilter = z.infer<typeof ResolvedFilterSchema>;
@@ -66,23 +68,23 @@ export type ResolvedFilter = z.infer<typeof ResolvedFilterSchema>;
 // ============================================================================
 
 const SystemModstampCursorSchema = z.object({
-  kind: z.literal('systemModstamp'),
-  field: z.string().min(1),
+	kind: z.literal("systemModstamp"),
+	field: z.string().min(1),
 });
 
 const ReplayIdCursorSchema = z.object({
-  kind: z.literal('replayId'),
-  field: z.string().min(1),
+	kind: z.literal("replayId"),
+	field: z.string().min(1),
 });
 
 const TimestampCursorSchema = z.object({
-  kind: z.literal('timestamp'),
-  field: z.string().min(1),
+	kind: z.literal("timestamp"),
+	field: z.string().min(1),
 });
 
 const EventIdCursorSchema = z.object({
-  kind: z.literal('eventId'),
-  field: z.string().min(1),
+	kind: z.literal("eventId"),
+	field: z.string().min(1),
 });
 
 /**
@@ -91,8 +93,8 @@ const EventIdCursorSchema = z.object({
  * `field` is metadata for codegen/adapters (the response key the token lives on).
  */
 const HistoryIdCursorSchema = z.object({
-  kind: z.literal('historyId'),
-  field: z.string().min(1),
+	kind: z.literal("historyId"),
+	field: z.string().min(1),
 });
 
 /**
@@ -100,17 +102,17 @@ const HistoryIdCursorSchema = z.object({
  * same divisibility profile as `historyId`.
  */
 const SyncTokenCursorSchema = z.object({
-  kind: z.literal('syncToken'),
-  field: z.string().min(1),
+	kind: z.literal("syncToken"),
+	field: z.string().min(1),
 });
 
-export const CursorStrategySchema = z.discriminatedUnion('kind', [
-  SystemModstampCursorSchema,
-  ReplayIdCursorSchema,
-  TimestampCursorSchema,
-  EventIdCursorSchema,
-  HistoryIdCursorSchema,
-  SyncTokenCursorSchema,
+export const CursorStrategySchema = z.discriminatedUnion("kind", [
+	SystemModstampCursorSchema,
+	ReplayIdCursorSchema,
+	TimestampCursorSchema,
+	EventIdCursorSchema,
+	HistoryIdCursorSchema,
+	SyncTokenCursorSchema,
 ]);
 
 export type CursorStrategy = z.infer<typeof CursorStrategySchema>;
@@ -135,18 +137,20 @@ export type CursorStrategy = z.infer<typeof CursorStrategySchema>;
  * `eventId` is classified atomic conservatively: a generic opaque id is treated
  * all-or-nothing unless a concrete strategy proves it monotonically resumable.
  */
-export const CURSOR_DIVISIBILITY: Readonly<Record<CursorStrategy['kind'], boolean>> = {
-  systemModstamp: true,
-  timestamp: true,
-  replayId: true,
-  eventId: false,
-  historyId: false,
-  syncToken: false,
+export const CURSOR_DIVISIBILITY: Readonly<
+	Record<CursorStrategy["kind"], boolean>
+> = {
+	systemModstamp: true,
+	timestamp: true,
+	replayId: true,
+	eventId: false,
+	historyId: false,
+	syncToken: false,
 };
 
 /** Predicate form of {@link CURSOR_DIVISIBILITY}. */
-export function isDivisibleCursor(kind: CursorStrategy['kind']): boolean {
-  return CURSOR_DIVISIBILITY[kind];
+export function isDivisibleCursor(kind: CursorStrategy["kind"]): boolean {
+	return CURSOR_DIVISIBILITY[kind];
 }
 
 // ============================================================================
@@ -159,19 +163,25 @@ export function isDivisibleCursor(kind: CursorStrategy['kind']): boolean {
  * `field` — used for Stripe-style event endpoints. Defaults to `'poll'`.
  */
 export const PollDetectionSchema = z.object({
-  cursor: CursorStrategySchema,
-  provenance: z.enum(['poll', 'cdc']).optional(),
+	cursor: CursorStrategySchema,
+	provenance: z.enum(["poll", "cdc"]).optional(),
 });
 
 export type PollDetection = z.infer<typeof PollDetectionSchema>;
 
 /**
- * Webhook-mode block. `eventIdField` names the column in the consumer-owned
- * inbound staging row that `WebhookChangeSource<T>` reads to set
- * `Change<T>.dedupKey`.
+ * Webhook-mode block. `eventIdField`, when present, names the field on the
+ * emitted canonical record that `WebhookChangeSource<T>` reads to set
+ * `Change<T>.dedupKey` — used only as the fallback when the queue iterator
+ * does NOT yield an `eventId` alongside the record.
+ *
+ * `eventIdField` is **optional**: a queue iterator that always yields an
+ * `eventId` (vendor delivery metadata, the preferred channel) need not declare
+ * a record field for it. dedupKey precedence is: yielded `eventId` >
+ * `eventIdField` record extraction > undefined.
  */
 export const WebhookDetectionSchema = z.object({
-  eventIdField: z.string().min(1),
+	eventIdField: z.string().min(1).optional(),
 });
 
 export type WebhookDetection = z.infer<typeof WebhookDetectionSchema>;
@@ -181,17 +191,17 @@ export type WebhookDetection = z.infer<typeof WebhookDetectionSchema>;
 // ============================================================================
 
 const PollModeSchema = z.object({
-  mode: z.literal('poll'),
-  poll: PollDetectionSchema,
-  mapping: z.array(FieldMappingSchema).min(1),
-  filters: z.array(ResolvedFilterSchema).default([]),
+	mode: z.literal("poll"),
+	poll: PollDetectionSchema,
+	mapping: z.array(FieldMappingSchema).min(1),
+	filters: z.array(ResolvedFilterSchema).default([]),
 });
 
 const WebhookModeSchema = z.object({
-  mode: z.literal('webhook'),
-  webhook: WebhookDetectionSchema,
-  mapping: z.array(FieldMappingSchema).min(1),
-  filters: z.array(ResolvedFilterSchema).default([]),
+	mode: z.literal("webhook"),
+	webhook: WebhookDetectionSchema,
+	mapping: z.array(FieldMappingSchema).min(1),
+	filters: z.array(ResolvedFilterSchema).default([]),
 });
 
 /**
@@ -201,9 +211,9 @@ const WebhookModeSchema = z.object({
  * (Stripe-style event endpoints) is expressed via `mode: 'poll'` with
  * `poll.provenance: 'cdc'`.
  */
-export const DetectionConfigSchema = z.discriminatedUnion('mode', [
-  PollModeSchema,
-  WebhookModeSchema,
+export const DetectionConfigSchema = z.discriminatedUnion("mode", [
+	PollModeSchema,
+	WebhookModeSchema,
 ]);
 
 export type DetectionConfig = z.infer<typeof DetectionConfigSchema>;

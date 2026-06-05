@@ -4,12 +4,19 @@
  * Validates the webhook-mode primitive: a `DetectionConfig`-parameterized
  * `IChangeSource<T>` that iterates a consumer-owned inbound staging queue
  * and emits canonical `Change<T>` records with `source: 'webhook'` and a
- * `dedupKey` populated from the configured `webhook.eventIdField`.
+ * `dedupKey` derived with the precedence: yielded `eventId` >
+ * `webhook.eventIdField` record extraction > undefined.
  *
  * Key invariants under test:
  *   - constructor accepts `{ queue, config, middlewares? }`
  *   - `listChanges(subscription, cursor)` yields `Change<T>` with
- *     `source: 'webhook'`, `dedupKey` from the configured event-id field
+ *     `source: 'webhook'`, `dedupKey` per the precedence above
+ *   - a yielded `eventId` wins over the `eventIdField` record extraction
+ *   - with no yielded `eventId`, falls back to the `eventIdField` record field
+ *   - with neither a yielded `eventId` nor a configured `eventIdField`,
+ *     `dedupKey` is `undefined`
+ *   - a mixed batch where a create and a same-`external_id` mutation carry
+ *     distinct yielded `eventId`s gets distinct `dedupKey`s
  *   - empty-queue iteration yields nothing
  *   - errors thrown by the queue iterator surface to the consumer
  *   - the primitive does NOT synchronously drive the orchestrator —
@@ -17,137 +24,311 @@
  *   - middleware composition works the same shape as PollChangeSource
  *   - constructor rejects a non-webhook config
  */
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from "bun:test";
+import type { DetectionConfig } from "../../../../runtime/subsystems/integration/detection-config.schema";
+import type { IntegrationSubscriptionView } from "../../../../runtime/subsystems/integration/integration-change-source.protocol";
+import type { ChangeMiddleware } from "../../../../runtime/subsystems/integration/integration-middleware.protocol";
 import {
-  WebhookChangeSource,
-  type WebhookFetchCallback,
-  type WebhookFetchContext,
-} from '../../../../runtime/subsystems/integration/webhook-change-source';
-import type { IntegrationSubscriptionView } from '../../../../runtime/subsystems/integration/integration-change-source.protocol';
-import type { ChangeMiddleware } from '../../../../runtime/subsystems/integration/integration-middleware.protocol';
-import type { DetectionConfig } from '../../../../runtime/subsystems/integration/detection-config.schema';
+	WebhookChangeSource,
+	type WebhookFetchCallback,
+	type WebhookFetchContext,
+} from "../../../../runtime/subsystems/integration/webhook-change-source";
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
 interface WebhookRecord {
-  external_id: string;
-  name: string;
-  event_id: string;
+	external_id: string;
+	name: string;
+	event_id: string;
 }
 
 const subscription: IntegrationSubscriptionView = {
-  id: 'sub-webhook-1',
-  domain: 'opportunity',
-  externalRef: 'sf-org-A',
+	id: "sub-webhook-1",
+	domain: "opportunity",
+	externalRef: "sf-org-A",
 };
 
 function makeWebhookConfig(extra?: Partial<DetectionConfig>): DetectionConfig {
-  return {
-    mode: 'webhook',
-    webhook: {
-      eventIdField: 'event_id',
-    },
-    // The queue yields ALREADY-MAPPED canonical records keyed by the mapping
-    // `source` (the field on the emitted record). These fixtures emit records
-    // keyed `external_id`/`name`, so `source` must match those keys — the
-    // primitive reads `record[source]`, NOT `record[target]`. (The original
-    // fixtures declared `source: 'id'`/`'Name'` while emitting `external_id`;
-    // that only passed because the pre-fix primitive read `.target` — the gap
-    // #6 transposition. Aligned here so the fixture exercises the real path.)
-    mapping: [
-      { source: 'external_id', target: 'external_id' },
-      { source: 'name', target: 'name' },
-    ],
-    filters: [],
-    ...(extra as object),
-  } as DetectionConfig;
+	return {
+		mode: "webhook",
+		webhook: {
+			eventIdField: "event_id",
+		},
+		// The queue yields ALREADY-MAPPED canonical records keyed by the mapping
+		// `source` (the field on the emitted record). These fixtures emit records
+		// keyed `external_id`/`name`, so `source` must match those keys — the
+		// primitive reads `record[source]`, NOT `record[target]`. (The original
+		// fixtures declared `source: 'id'`/`'Name'` while emitting `external_id`;
+		// that only passed because the pre-fix primitive read `.target` — the gap
+		// #6 transposition. Aligned here so the fixture exercises the real path.)
+		mapping: [
+			{ source: "external_id", target: "external_id" },
+			{ source: "name", target: "name" },
+		],
+		filters: [],
+		...(extra as object),
+	} as DetectionConfig;
 }
 
 async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
-  const out: T[] = [];
-  for await (const x of it) out.push(x);
-  return out;
+	const out: T[] = [];
+	for await (const x of it) out.push(x);
+	return out;
 }
 
 // ---------------------------------------------------------------------------
 // Empty queue
 // ---------------------------------------------------------------------------
 
-describe('WebhookChangeSource — empty queue', () => {
-  it('yields no changes when the queue is empty', async () => {
-    const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
-      // empty
-    };
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue,
-      config: makeWebhookConfig(),
-    });
-    const out = await collect(src.listChanges(subscription, null));
-    expect(out).toEqual([]);
-  });
+describe("WebhookChangeSource — empty queue", () => {
+	it("yields no changes when the queue is empty", async () => {
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			// empty
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toEqual([]);
+	});
 });
 
 // ---------------------------------------------------------------------------
 // Event-id dedup
 // ---------------------------------------------------------------------------
 
-describe('WebhookChangeSource — event-id dedup', () => {
-  it('populates Change.dedupKey from the configured eventIdField on the record', async () => {
-    const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
-      yield {
-        record: { external_id: 'A1', name: 'Alpha', event_id: 'evt_001' },
-      };
-      yield {
-        record: { external_id: 'A2', name: 'Beta', event_id: 'evt_002' },
-      };
-    };
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue,
-      config: makeWebhookConfig(),
-    });
-    const out = await collect(src.listChanges(subscription, null));
-    expect(out).toHaveLength(2);
-    expect(out[0].source).toBe('webhook');
-    expect(out[0].dedupKey).toBe('evt_001');
-    expect(out[0].externalId).toBe('A1');
-    expect(out[1].dedupKey).toBe('evt_002');
-  });
+describe("WebhookChangeSource — event-id dedup (eventIdField fallback)", () => {
+	it("falls back to the configured eventIdField on the record when no eventId is yielded", async () => {
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield {
+				record: { external_id: "A1", name: "Alpha", event_id: "evt_001" },
+			};
+			yield {
+				record: { external_id: "A2", name: "Beta", event_id: "evt_002" },
+			};
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(2);
+		expect(out[0].source).toBe("webhook");
+		expect(out[0].dedupKey).toBe("evt_001");
+		expect(out[0].externalId).toBe("A1");
+		expect(out[1].dedupKey).toBe("evt_002");
+	});
 
-  it('throws if a record is missing the configured eventIdField', async () => {
-    const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
-      yield {
-        record: { external_id: 'A1', name: 'Alpha' } as WebhookRecord,
-      };
-    };
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue,
-      config: makeWebhookConfig(),
-    });
-    await expect(
-      (async () => {
-        for await (const _c of src.listChanges(subscription, null)) {
-          // drain
-        }
-      })(),
-    ).rejects.toThrow(/event_id/);
-  });
+	it("throws if a record is missing the configured eventIdField AND no eventId is yielded", async () => {
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield {
+				record: { external_id: "A1", name: "Alpha" } as WebhookRecord,
+			};
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+		});
+		await expect(
+			(async () => {
+				for await (const _c of src.listChanges(subscription, null)) {
+					// drain
+				}
+			})(),
+		).rejects.toThrow(/event_id/);
+	});
 
-  it('forwards subscription + cursor to the queue iterator context', async () => {
-    let seen: WebhookFetchContext | undefined;
-    const queue: WebhookFetchCallback<WebhookRecord> = async function* (ctx) {
-      seen = ctx;
-    };
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue,
-      config: makeWebhookConfig(),
-    });
-    await collect(src.listChanges(subscription, { lastTs: 'x' }));
-    expect(seen).toBeDefined();
-    expect(seen!.subscription.id).toBe('sub-webhook-1');
-    expect(seen!.cursor).toEqual({ lastTs: 'x' });
-  });
+	it("forwards subscription + cursor to the queue iterator context", async () => {
+		let seen: WebhookFetchContext | undefined;
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* (ctx) {
+			seen = ctx;
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+		});
+		await collect(src.listChanges(subscription, { lastTs: "x" }));
+		expect(seen).toBeDefined();
+		expect(seen!.subscription.id).toBe("sub-webhook-1");
+		expect(seen!.cursor).toEqual({ lastTs: "x" });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Yielded eventId — the preferred dedupKey channel (gap #6 follow-through,
+// swe-brain ADR-0009 Amendment B §B5). Vendor delivery metadata (the event id)
+// should never need a field on the vendor-neutral canonical record; the
+// queue-yield is the right channel for it. The dedupKey precedence the
+// primitive implements is: yielded `eventId` > `eventIdField` record
+// extraction > undefined.
+// ---------------------------------------------------------------------------
+
+describe("WebhookChangeSource — yielded eventId precedence", () => {
+	it("prefers the yielded eventId over the eventIdField record extraction", async () => {
+		// The record ALSO carries event_id: 'evt_record', but the yielded eventId
+		// must win — proving the queue-yield is consulted first.
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield {
+				record: { external_id: "A1", name: "Alpha", event_id: "evt_record" },
+				eventId: "evt_yielded",
+			};
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(1);
+		expect(out[0].source).toBe("webhook");
+		expect(out[0].externalId).toBe("A1");
+		expect(out[0].dedupKey).toBe("evt_yielded");
+	});
+
+	it("uses the yielded eventId even when no eventIdField is configured", async () => {
+		// No `webhook.eventIdField` at all — the callback always yields eventId, so
+		// the record need not declare a field for it.
+		const noFieldConfig = {
+			mode: "webhook",
+			webhook: {},
+			mapping: [{ source: "external_id", target: "external_id" }],
+			filters: [],
+		} as DetectionConfig;
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield {
+				record: { external_id: "A1", name: "Alpha" } as WebhookRecord,
+				eventId: "evt_only_yielded",
+			};
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: noFieldConfig,
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(1);
+		expect(out[0].dedupKey).toBe("evt_only_yielded");
+	});
+
+	it("falls back to eventIdField when the yielded eventId is undefined", async () => {
+		// Mixed yield: one record yields no eventId (falls back to the field), one
+		// yields an eventId (wins). Proves precedence resolves per-record.
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield {
+				record: { external_id: "A1", name: "Alpha", event_id: "evt_field" },
+				// no eventId yielded → fall back to event_id field
+			};
+			yield {
+				record: { external_id: "A2", name: "Beta", event_id: "evt_field2" },
+				eventId: "evt_yielded2",
+			};
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(2);
+		expect(out[0].dedupKey).toBe("evt_field");
+		expect(out[1].dedupKey).toBe("evt_yielded2");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// No dedup signal — neither yielded eventId nor configured eventIdField →
+// dedupKey is undefined (the orchestrator simply has no delivery-level dedup
+// signal for that change; it does not throw).
+// ---------------------------------------------------------------------------
+
+describe("WebhookChangeSource — no dedup signal", () => {
+	it("leaves dedupKey undefined when neither eventId is yielded nor eventIdField configured", async () => {
+		const noFieldConfig = {
+			mode: "webhook",
+			webhook: {},
+			mapping: [{ source: "external_id", target: "external_id" }],
+			filters: [],
+		} as DetectionConfig;
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield { record: { external_id: "A1", name: "Alpha" } as WebhookRecord };
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: noFieldConfig,
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(1);
+		expect(out[0].source).toBe("webhook");
+		expect(out[0].externalId).toBe("A1");
+		expect(out[0].dedupKey).toBeUndefined();
+	});
+
+	it('treats an empty-string yielded eventId as "not yielded" and falls back', async () => {
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield {
+				record: { external_id: "A1", name: "Alpha", event_id: "evt_field" },
+				eventId: "",
+			};
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(1);
+		expect(out[0].dedupKey).toBe("evt_field");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Mixed batch — a create and a same-external_id mutation in one drain batch.
+// This is the motivating case: a message create and its later edit share one
+// `external_id` but are distinct vendor events. Reading dedup identity off the
+// record (the old `eventIdField === 'externalId'` substitution swe-brain's
+// Slack drain documented) would collapse them to ONE dedupKey; the yielded
+// eventId keeps them distinct.
+// ---------------------------------------------------------------------------
+
+describe("WebhookChangeSource — mixed batch (create + same-id mutation)", () => {
+	it("gives a create and a same-external_id edit distinct dedupKeys via yielded eventIds", async () => {
+		// Both records carry the SAME external_id (the canonical record identity);
+		// the eventIdField substitution would set dedupKey = external_id for both,
+		// collapsing them. Yielded eventIds keep them apart.
+		const camelConfig = {
+			mode: "webhook",
+			// eventIdField === the externalId field — the exact swe-brain substitution
+			// that becomes unsafe once a record + its edit share one drain batch.
+			webhook: { eventIdField: "externalId" },
+			mapping: [{ source: "externalId", target: "external_id" }],
+			filters: [],
+		} as DetectionConfig;
+		const queue: WebhookFetchCallback<CamelCaseRecord> = async function* () {
+			// message create
+			yield {
+				record: { externalId: "slack:msg_1", name: "hello" },
+				eventId: "slack:evt_create",
+			};
+			// its later edit — SAME externalId, DIFFERENT vendor event
+			yield {
+				record: { externalId: "slack:msg_1", name: "hello (edited)" },
+				eventId: "slack:evt_edit",
+			};
+		};
+		const src = new WebhookChangeSource<CamelCaseRecord>({
+			queue,
+			config: camelConfig,
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(2);
+		// Same canonical record identity...
+		expect(out[0].externalId).toBe("slack:msg_1");
+		expect(out[1].externalId).toBe("slack:msg_1");
+		// ...but distinct delivery-level dedupKeys (would have collapsed under the
+		// eventIdField substitution: both would be 'slack:msg_1').
+		expect(out[0].dedupKey).toBe("slack:evt_create");
+		expect(out[1].dedupKey).toBe("slack:evt_edit");
+		expect(out[0].dedupKey).not.toBe(out[1].dedupKey);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -168,169 +349,169 @@ describe('WebhookChangeSource — event-id dedup', () => {
 // ---------------------------------------------------------------------------
 
 interface CamelCaseRecord {
-  externalId: string;
-  name: string;
+	externalId: string;
+	name: string;
 }
 
-describe('WebhookChangeSource — camelCase canonical record (mapping.source)', () => {
-  function makeCamelConfig(): DetectionConfig {
-    return {
-      mode: 'webhook',
-      // The eventIdField IS the externalId field here — the swe-brain shape,
-      // where the canonical event id and external id are the same camelCase key.
-      webhook: { eventIdField: 'externalId' },
-      mapping: [{ source: 'externalId', target: 'external_id' }],
-      filters: [],
-    } as DetectionConfig;
-  }
+describe("WebhookChangeSource — camelCase canonical record (mapping.source)", () => {
+	function makeCamelConfig(): DetectionConfig {
+		return {
+			mode: "webhook",
+			// The eventIdField IS the externalId field here — the swe-brain shape,
+			// where the canonical event id and external id are the same camelCase key.
+			webhook: { eventIdField: "externalId" },
+			mapping: [{ source: "externalId", target: "external_id" }],
+			filters: [],
+		} as DetectionConfig;
+	}
 
-  it('reads externalId off the record via mapping.source (record has NO external_id key)', async () => {
-    const queue: WebhookFetchCallback<CamelCaseRecord> = async function* () {
-      // Note: keyed `externalId` only — there is deliberately NO `external_id`
-      // key on the record. The buggy `.target` lookup would throw here.
-      yield { record: { externalId: 'gh:123', name: 'Alpha' } };
-    };
-    const src = new WebhookChangeSource<CamelCaseRecord>({
-      queue,
-      config: makeCamelConfig(),
-    });
-    const out = await collect(src.listChanges(subscription, null));
-    expect(out).toHaveLength(1);
-    expect(out[0].source).toBe('webhook');
-    expect(out[0].externalId).toBe('gh:123');
-    expect(out[0].dedupKey).toBe('gh:123');
-    // Sanity: the emitted record carries no `external_id` key whatsoever, so a
-    // passing assertion proves the primitive resolved via `.source`.
-    expect(
-      (out[0].record as Record<string, unknown>).external_id,
-    ).toBeUndefined();
-  });
+	it("reads externalId off the record via mapping.source (record has NO external_id key)", async () => {
+		const queue: WebhookFetchCallback<CamelCaseRecord> = async function* () {
+			// Note: keyed `externalId` only — there is deliberately NO `external_id`
+			// key on the record. The buggy `.target` lookup would throw here.
+			yield { record: { externalId: "gh:123", name: "Alpha" } };
+		};
+		const src = new WebhookChangeSource<CamelCaseRecord>({
+			queue,
+			config: makeCamelConfig(),
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(1);
+		expect(out[0].source).toBe("webhook");
+		expect(out[0].externalId).toBe("gh:123");
+		expect(out[0].dedupKey).toBe("gh:123");
+		// Sanity: the emitted record carries no `external_id` key whatsoever, so a
+		// passing assertion proves the primitive resolved via `.source`.
+		expect(
+			(out[0].record as Record<string, unknown>).external_id,
+		).toBeUndefined();
+	});
 
-  it('throws naming the mapping source field when the record is missing it', async () => {
-    const queue: WebhookFetchCallback<CamelCaseRecord> = async function* () {
-      yield { record: { name: 'Alpha' } as unknown as CamelCaseRecord };
-    };
-    const src = new WebhookChangeSource<CamelCaseRecord>({
-      queue,
-      config: makeCamelConfig(),
-    });
-    await expect(
-      (async () => {
-        for await (const _c of src.listChanges(subscription, null)) {
-          // drain
-        }
-      })(),
-    ).rejects.toThrow(/externalId/);
-  });
+	it("throws naming the mapping source field when the record is missing it", async () => {
+		const queue: WebhookFetchCallback<CamelCaseRecord> = async function* () {
+			yield { record: { name: "Alpha" } as unknown as CamelCaseRecord };
+		};
+		const src = new WebhookChangeSource<CamelCaseRecord>({
+			queue,
+			config: makeCamelConfig(),
+		});
+		await expect(
+			(async () => {
+				for await (const _c of src.listChanges(subscription, null)) {
+					// drain
+				}
+			})(),
+		).rejects.toThrow(/externalId/);
+	});
 });
 
 // ---------------------------------------------------------------------------
 // Queue errors
 // ---------------------------------------------------------------------------
 
-describe('WebhookChangeSource — queue errors', () => {
-  it('propagates errors thrown by the queue iterator', async () => {
-    const boom: WebhookFetchCallback<WebhookRecord> = async function* () {
-      throw new Error('queue offline');
-    };
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue: boom,
-      config: makeWebhookConfig(),
-    });
-    await expect(
-      (async () => {
-        for await (const _c of src.listChanges(subscription, null)) {
-          // drain
-        }
-      })(),
-    ).rejects.toThrow(/queue offline/);
-  });
+describe("WebhookChangeSource — queue errors", () => {
+	it("propagates errors thrown by the queue iterator", async () => {
+		const boom: WebhookFetchCallback<WebhookRecord> = async function* () {
+			throw new Error("queue offline");
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue: boom,
+			config: makeWebhookConfig(),
+		});
+		await expect(
+			(async () => {
+				for await (const _c of src.listChanges(subscription, null)) {
+					// drain
+				}
+			})(),
+		).rejects.toThrow(/queue offline/);
+	});
 });
 
 // ---------------------------------------------------------------------------
 // Middleware composition
 // ---------------------------------------------------------------------------
 
-describe('WebhookChangeSource — middleware composition', () => {
-  it('composes middlewares the same shape as PollChangeSource (first = outermost)', async () => {
-    const order: string[] = [];
-    const tag =
-      (label: string): ChangeMiddleware<WebhookRecord> =>
-      (next) =>
-      async function* (sub, cur) {
-        order.push(`${label}:enter`);
-        for await (const c of next(sub, cur)) {
-          order.push(`${label}:yield`);
-          yield c;
-        }
-        order.push(`${label}:exit`);
-      };
-    const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
-      yield {
-        record: { external_id: 'A', name: 'a', event_id: 'evt_1' },
-      };
-    };
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue,
-      config: makeWebhookConfig(),
-      middlewares: [tag('outer'), tag('inner')],
-    });
-    const out = await collect(src.listChanges(subscription, null));
-    expect(out).toHaveLength(1);
-    expect(order).toEqual([
-      'outer:enter',
-      'inner:enter',
-      'inner:yield',
-      'outer:yield',
-      'inner:exit',
-      'outer:exit',
-    ]);
-  });
+describe("WebhookChangeSource — middleware composition", () => {
+	it("composes middlewares the same shape as PollChangeSource (first = outermost)", async () => {
+		const order: string[] = [];
+		const tag =
+			(label: string): ChangeMiddleware<WebhookRecord> =>
+			(next) =>
+				async function* (sub, cur) {
+					order.push(`${label}:enter`);
+					for await (const c of next(sub, cur)) {
+						order.push(`${label}:yield`);
+						yield c;
+					}
+					order.push(`${label}:exit`);
+				};
+		const queue: WebhookFetchCallback<WebhookRecord> = async function* () {
+			yield {
+				record: { external_id: "A", name: "a", event_id: "evt_1" },
+			};
+		};
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue,
+			config: makeWebhookConfig(),
+			middlewares: [tag("outer"), tag("inner")],
+		});
+		const out = await collect(src.listChanges(subscription, null));
+		expect(out).toHaveLength(1);
+		expect(order).toEqual([
+			"outer:enter",
+			"inner:enter",
+			"inner:yield",
+			"outer:yield",
+			"inner:exit",
+			"outer:exit",
+		]);
+	});
 });
 
 // ---------------------------------------------------------------------------
 // Construction guard
 // ---------------------------------------------------------------------------
 
-describe('WebhookChangeSource — construction', () => {
-  it('rejects a non-webhook config', () => {
-    const pollConfig: DetectionConfig = {
-      mode: 'poll',
-      poll: { cursor: { kind: 'systemModstamp', field: 'm' } },
-      mapping: [{ source: 'Id', target: 'external_id' }],
-      filters: [],
-    };
-    expect(
-      () =>
-        new WebhookChangeSource<WebhookRecord>({
-          queue: async function* () {},
-          config: pollConfig,
-        }),
-    ).toThrow(/webhook/);
-  });
+describe("WebhookChangeSource — construction", () => {
+	it("rejects a non-webhook config", () => {
+		const pollConfig: DetectionConfig = {
+			mode: "poll",
+			poll: { cursor: { kind: "systemModstamp", field: "m" } },
+			mapping: [{ source: "Id", target: "external_id" }],
+			filters: [],
+		};
+		expect(
+			() =>
+				new WebhookChangeSource<WebhookRecord>({
+					queue: async function* () {},
+					config: pollConfig,
+				}),
+		).toThrow(/webhook/);
+	});
 
-  it('exposes a label for run logs', () => {
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue: async function* () {},
-      config: makeWebhookConfig(),
-      label: 'stripe-webhook-charge',
-    });
-    expect(src.label).toBe('stripe-webhook-charge');
-  });
+	it("exposes a label for run logs", () => {
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue: async function* () {},
+			config: makeWebhookConfig(),
+			label: "stripe-webhook-charge",
+		});
+		expect(src.label).toBe("stripe-webhook-charge");
+	});
 
-  it('falls back to a default label when not provided', () => {
-    const src = new WebhookChangeSource<WebhookRecord>({
-      queue: async function* () {},
-      config: makeWebhookConfig(),
-    });
-    expect(typeof src.label).toBe('string');
-    expect(src.label.length).toBeGreaterThan(0);
-  });
+	it("falls back to a default label when not provided", () => {
+		const src = new WebhookChangeSource<WebhookRecord>({
+			queue: async function* () {},
+			config: makeWebhookConfig(),
+		});
+		expect(typeof src.label).toBe("string");
+		expect(src.label.length).toBeGreaterThan(0);
+	});
 });
 
 // Compile-time guard: WebhookFetchContext must NOT include userId/tenantId.
 const _shapeGuard: WebhookFetchContext = {
-  subscription,
-  cursor: null,
+	subscription,
+	cursor: null,
 };
 void _shapeGuard;
