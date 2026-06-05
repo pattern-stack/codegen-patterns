@@ -317,6 +317,17 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    // LISTEN-NOTIFY-2 — release the listener connection on EVERY destroy path,
+    // including the `shuttingDown` early-return below (reached when SIGTERM and
+    // Nest's onModuleDestroy both fire) and a destroy with no prior SIGTERM.
+    // Previously this lived only on the first (non-shuttingDown) branch, so a
+    // double-fire — or a stop() that raced the listener's own in-flight
+    // connect() — left a `LISTEN codegen_jobs_wake` socket open past
+    // `app.close()`, hanging the process. `PgNotifyListener.stop()` is itself
+    // idempotent + connect-race-safe (LISTEN-NOTIFY-2). Best-effort; a failure
+    // here doesn't block the drain.
+    await this.stopNotifyListener();
+
     if (this.shuttingDown) {
       // Still drain, but don't tear intervals down twice.
       await this.drainInFlight();
@@ -332,17 +343,6 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
       this.sweeperTimer = null;
     }
     process.removeListener('SIGTERM', this.sigtermHandler);
-
-    // LISTEN-NOTIFY-1 — release the listener connection so the process can exit
-    // cleanly. Best-effort; a failure here doesn't block the drain.
-    if (this.notifyListener) {
-      try {
-        await this.notifyListener.stop();
-      } catch (err) {
-        this.logger.error(`notify listener stop failed: ${(err as Error).message}`);
-      }
-      this.notifyListener = null;
-    }
 
     await this.drainInFlight();
 
@@ -368,6 +368,24 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
       Promise.allSettled([...this.inFlight]).then(() => undefined),
       timeout,
     ]);
+  }
+
+  /**
+   * LISTEN-NOTIFY-2 — stop + drop the wake listener. Idempotent: a second call
+   * (SIGTERM + Nest destroy) finds `notifyListener` already null and no-ops.
+   * `PgNotifyListener.stop()` is itself race-safe against an in-flight
+   * `connect()`, so even a destroy that arrives microseconds after `start()`
+   * releases the listener socket rather than leaking it.
+   */
+  private async stopNotifyListener(): Promise<void> {
+    const listener = this.notifyListener;
+    if (!listener) return;
+    this.notifyListener = null;
+    try {
+      await listener.stop();
+    } catch (err) {
+      this.logger.error(`notify listener stop failed: ${(err as Error).message}`);
+    }
   }
 
   // ============================================================================

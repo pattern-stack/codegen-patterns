@@ -111,6 +111,17 @@ export class PgNotifyListener {
   private readonly backoffMaxMs: number;
   /** WARN-once gate so a flapping listener doesn't spam the log. */
   private warnedDown = false;
+  /**
+   * LISTEN-NOTIFY-2 — the in-flight `connect()` promise, set while a checkout is
+   * mid-`await`. `stop()` awaits it so a `stop()` that races a still-resolving
+   * `connect()` can't return before the connect either assigns `this.client`
+   * (then released by `releaseClient`) or self-releases the checked-out client.
+   * Without this, a `stop()` arriving during `pool.connect()`'s await saw
+   * `this.client === null` (nothing to release), then `connect()` resumed,
+   * assigned the client, and issued `LISTEN` — leaking an ESTABLISHED socket
+   * holding `LISTEN <channel>` forever past `app.close()`.
+   */
+  private connecting: Promise<void> | null = null;
 
   constructor(private readonly opts: PgNotifyListenerOptions) {
     this.logger = new Logger(`PgNotifyListener(${opts.label})`);
@@ -125,20 +136,56 @@ export class PgNotifyListener {
     await this.connect();
   }
 
-  /** Stop listening + release the connection. Safe to call repeatedly. */
+  /**
+   * Stop listening + release the connection. Safe to call repeatedly and
+   * race-safe against an in-flight `connect()` (LISTEN-NOTIFY-2): it sets
+   * `stopped` first (so a resuming `connect()` self-releases its checkout),
+   * then awaits any in-flight connect, then releases whatever client landed.
+   */
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    // Await an in-flight checkout so we don't return while a client is still
+    // mid-`pool.connect()`. The resuming `connect()` sees `stopped` and either
+    // self-releases its checkout or assigns `this.client`; either way the
+    // `releaseClient()` below mops up.
+    const inflight = this.connecting;
+    if (inflight) {
+      try {
+        await inflight;
+      } catch {
+        // connect failures are handled inside connect(); ignore here.
+      }
+    }
     await this.releaseClient();
   }
 
   private async connect(): Promise<void> {
     if (this.stopped) return;
+    // Track this checkout so a racing stop() can await it (LISTEN-NOTIFY-2).
+    const attempt = this.doConnect();
+    this.connecting = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (this.connecting === attempt) this.connecting = null;
+    }
+  }
+
+  private async doConnect(): Promise<void> {
     try {
       const client = await this.opts.pool.connect();
+      // Re-check AFTER the await resolves: a stop() may have fired while this
+      // checkout was in flight. If so, release the just-checked-out client
+      // right here and bail BEFORE wiring handlers / issuing LISTEN — otherwise
+      // we'd leak an ESTABLISHED listener socket past shutdown (LISTEN-NOTIFY-2).
+      if (this.stopped) {
+        await this.releaseRawClient(client);
+        return;
+      }
       client.on('notification', (msg) => {
         if (msg.channel !== this.opts.channel) return;
         try {
@@ -154,6 +201,11 @@ export class PgNotifyListener {
         this.handleDrop();
       });
       await client.query(`LISTEN ${this.opts.channel}`);
+      // A stop() could have fired during the LISTEN round-trip too — same guard.
+      if (this.stopped) {
+        await this.releaseRawClient(client);
+        return;
+      }
       this.client = client;
       // Recovery: only announce if we had previously warned about being down.
       if (this.warnedDown) {
@@ -202,11 +254,19 @@ export class PgNotifyListener {
     const client = this.client;
     this.client = null;
     if (!client) return;
+    await this.releaseRawClient(client);
+  }
+
+  /**
+   * Tear down a raw checked-out client (LISTEN-NOTIFY-2). Used both by the
+   * normal `releaseClient()` path and by the connect-vs-stop race bail-outs,
+   * where the client was checked out but never assigned to `this.client`.
+   * Destroys (`release(true)`) so a half-listening socket is never reused.
+   */
+  private async releaseRawClient(client: PgListenClient): Promise<void> {
     try {
       client.removeAllListeners?.('notification');
       client.removeAllListeners?.('error');
-      // A listener client is a checked-out pool connection; release it back
-      // with `release(true)` (destroy) so a half-broken socket isn't reused.
       if (client.release) client.release(true);
       else if (client.end) await client.end();
     } catch {
