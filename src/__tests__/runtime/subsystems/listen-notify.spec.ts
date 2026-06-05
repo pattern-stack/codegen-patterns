@@ -386,3 +386,148 @@ describe('PgNotifyListener — degradation + recovery', () => {
     await listener.stop();
   });
 });
+
+// ─── 6. PgNotifyListener — stop()/connect() race (LISTEN-NOTIFY-2) ─────────────
+//
+// The shutdown leak: a stop() that fires while connect() is mid-`pool.connect()`
+// used to see `this.client === null` (nothing to release), then connect()
+// resumed, assigned the client, and issued `LISTEN` — leaking an ESTABLISHED
+// listener socket past `app.close()`. These tests force the race deterministically
+// with a controllable `pool.connect()` / `LISTEN` (manual promises) and assert the
+// checked-out client is RELEASED and `LISTEN` is never wired into a surviving
+// client. Pre-fix all three fail; post-fix all pass.
+
+describe('PgNotifyListener — stop() racing an in-flight connect() (LISTEN-NOTIFY-2)', () => {
+  /** A controllable client whose checkout + LISTEN we can gate by hand. */
+  function makeControllableClient() {
+    const listenCalls: string[] = [];
+    let released = false;
+    const client = {
+      query: mock(async (text: string) => {
+        if (text.startsWith('LISTEN')) listenCalls.push(text);
+        return {};
+      }),
+      on: mock(() => {}),
+      removeAllListeners: mock(() => {}),
+      release: mock(() => {
+        released = true;
+      }),
+    };
+    return {
+      client,
+      listenCalls,
+      get released() {
+        return released;
+      },
+    };
+  }
+
+  it('releases the checked-out client when stop() fires during pool.connect()', async () => {
+    const ctl = makeControllableClient();
+    // Gate the checkout: connect() awaits this until we resolve it.
+    let resolveConnect!: (c: unknown) => void;
+    const connectGate = new Promise((res) => {
+      resolveConnect = res;
+    });
+    const pool = {
+      connect: mock(() => connectGate),
+    };
+
+    const listener = new PgNotifyListener({
+      channel: JOBS_WAKE_CHANNEL,
+      pool: pool as never,
+      label: 'race',
+      onNotify: () => {},
+    });
+
+    // start() kicks off connect(); it parks on the gated pool.connect().
+    const starting = listener.start();
+    // stop() arrives WHILE the checkout is in flight (the race window).
+    const stopping = listener.stop();
+    // Now let the checkout resolve — connect() resumes and MUST notice stopped.
+    resolveConnect(ctl.client);
+
+    await Promise.all([starting, stopping]);
+
+    // Pre-fix: connect() assigned the client and issued LISTEN → leak.
+    // Post-fix: the resumed connect() sees `stopped`, releases the client,
+    // and never wires LISTEN.
+    expect(ctl.released).toBe(true);
+    expect(ctl.listenCalls).toEqual([]);
+  });
+
+  it('releases the client when stop() fires during the LISTEN round-trip', async () => {
+    const listenCalls: string[] = [];
+    let released = false;
+    let resolveListen!: () => void;
+    const listenGate = new Promise<void>((res) => {
+      resolveListen = res;
+    });
+    const client = {
+      query: mock(async (text: string) => {
+        if (text.startsWith('LISTEN')) {
+          listenCalls.push(text);
+          await listenGate; // park inside LISTEN
+        }
+        return {};
+      }),
+      on: mock(() => {}),
+      removeAllListeners: mock(() => {}),
+      release: mock(() => {
+        released = true;
+      }),
+    };
+    const pool = { connect: mock(async () => client) };
+
+    const listener = new PgNotifyListener({
+      channel: JOBS_WAKE_CHANNEL,
+      pool: pool as never,
+      label: 'race-listen',
+      onNotify: () => {},
+    });
+
+    const starting = listener.start();
+    // Let the checkout resolve + LISTEN begin, then fire stop() mid-LISTEN.
+    await new Promise((r) => setTimeout(r, 0));
+    const stopping = listener.stop();
+    resolveListen();
+
+    await Promise.all([starting, stopping]);
+
+    // The client must be released even though LISTEN was issued — the post-LISTEN
+    // stopped-recheck destroys the socket so nothing survives shutdown.
+    expect(released).toBe(true);
+  });
+
+  it('stop() awaits an in-flight connect() (no early return that leaves a checkout dangling)', async () => {
+    const ctl = makeControllableClient();
+    let resolveConnect!: (c: unknown) => void;
+    const connectGate = new Promise((res) => {
+      resolveConnect = res;
+    });
+    const pool = { connect: mock(() => connectGate) };
+
+    const listener = new PgNotifyListener({
+      channel: JOBS_WAKE_CHANNEL,
+      pool: pool as never,
+      label: 'race-await',
+      onNotify: () => {},
+    });
+
+    void listener.start();
+    let stopResolved = false;
+    const stopping = listener.stop().then(() => {
+      stopResolved = true;
+    });
+
+    // stop() must NOT resolve while the checkout is still pending — otherwise
+    // app.close() returns before the listener is actually torn down.
+    await new Promise((r) => setTimeout(r, 5));
+    expect(stopResolved).toBe(false);
+
+    resolveConnect(ctl.client);
+    await stopping;
+    expect(stopResolved).toBe(true);
+    expect(ctl.released).toBe(true);
+  });
+});
