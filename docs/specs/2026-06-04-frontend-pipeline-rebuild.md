@@ -122,6 +122,65 @@ Pinned as a constant in `src/emitters/frontend/deps.ts`; emitted into a comment 
 - Delete the rest of `templates/entity/new/frontend/**`; remove frontend branches from `prompt.js` context that no longer have readers (`frontend.*` knobs move to emitter config loading).
 - Emission unit tests incl. a two-entity FK fixture asserting registry-resolved names (irregular plural case: `person`/`people`).
 
+  *Implementation notes (FE-3, done):*
+  - **Context gained `parsed: Map<string, ParsedEntity>`.** The registry stays the
+    only NAMING source; `parsed` (keyed by entity name) supplies fields,
+    relationships, behaviors, and `expose`. Resolver/lookup/field-row emission
+    considers only `belongs_to` relationships whose target is in the registry
+    (old `existingBelongsTo`).
+  - **`expose` added to the parser.** `ParsedEntity` did not carry `expose`; the
+    schema defaults it to `['repository','rest','trpc']`. Added `expose` to
+    `ParsedEntity` + `transformToEntity` so the fields emitter can gate write
+    capabilities. **Capabilities rule:** `create/update/delete =
+    expose.includes('repository') || expose.includes('trpc')` (the
+    `exposeRepository || exposeTrpc` of the old template); `list`/`get` always
+    true (read is never gated).
+  - **Adaptation 1 — single type param.** `createEntityHooks<<Class>>(…)`. The
+    published factory (`frontend-patterns@0.2.0-alpha.18`) defaults
+    `TCreate`/`TUpdate` to `Partial<TEntity>`; the pts `<Class>Create`/`Update`
+    schema types are unverifiable in our `dbEntities` consumers, so we don't
+    import them.
+  - **Adaptation 2 — `name:`/`getSyncMode` keyed by SINGULAR entity name** (not
+    table). pts keyed `name:` by table; our FE-2 `config.ts` table is keyed by
+    `entity.name`, so the runtime `getSyncMode` lookup must use the same key.
+  - **Adaptation 3 — store keyed by PLURAL, not table.** `entity.table` is
+    independent of `entity.plural`; the registry's plural is the stable
+    cross-entity name family, so `entities:`/`collections:`/lookups are keyed by
+    plural (`store.<plural>.useList()`). Recorded as a divergence from pts
+    `store.ts.j2`'s `table_name` keying.
+  - **resolvers/lookups are self-contained (package-verification finding).** The
+    published `frontend-patterns` exports ONLY `createStore` (which builds
+    `store.resolve`/`store.lookups` internally) + `createEntityHooks` — it does
+    NOT export `createResolvers`/`buildLookups`/`createLookups`/`EntityLookup`,
+    which the pts `resolvers.ts.j2`/`lookups.ts.j2`/`store_index.ts.j2` imported.
+    Those templates predate the consolidation. The emitter therefore emits
+    `store/resolvers.ts` + `store/lookups.ts` as fully self-contained modules
+    with the same semantics (FK resolve = `collection.state.get(fkValue)`,
+    typed `<Class>Refs` hydration) and imports nothing from the package beyond
+    `createStore`. `store/module-index.ts` re-exports them and is what the root
+    `index.ts` imports (mirrors pts `index.ts.j2`'s `./store/module-index.js`).
+  - **Self-referential FK** (target === self) imports its collection + type
+    exactly once: every type import is per-entity from the registry set and FK
+    targets are always in that same set, so there's no second import. Tested.
+  - **`field-meta.ts` UI derivation** is ported from `prompt.js`
+    (`inferUiType`/`inferUiImportance`/`formatLabel`, the entity_ref skip, the
+    choices/FK handling). The per-field `format` (old `ui_format`) is DROPPED —
+    the parser does not carry `ui_format` onto `ParsedField`, so it's
+    unobservable; only the hardcoded timestamp `format: { dateFormat: 'relative' }`
+    survives.
+  - **Orphan locations removed.** `emit-fields.ts` emits a self-contained
+    `fields/field-meta.ts` TYPE file, so `locations.frontendFieldMetaTypes` was
+    deleted (zero readers after template deletion).
+  - **prompt.js pruning (grep-before-delete, all had zero readers outside
+    prompt.js):** removed `frontendEnabled`, the four frontend-store naming
+    consts (`singularCamelName`/`pluralCamelName`/`collectionVarName`/
+    `collectionVarNamePlural`), the `frontend:` locals block +
+    `frontendConfig`/`frontendSync` consts, and the 12 frontend `generate.*`
+    members (`fieldMetadata`/`collections`/`collectionsIndex`/`hooks`/`mutations`/
+    `hookStyle`/`structure`/`typeNaming`/`fkResolution`/`collectionNaming`/
+    `fileNaming`/`hookReturnStyle`). KEPT: `electricWhere*` (read by
+    `backend/presentation/controller.ejs.t`), all backend `generate.*` members.
+
 **FE-4 — CLI wiring + docs + coverage**
 - `entity new` post-step + `gen-all` call `emitFrontendSet`; `project init` adds the version-pairing deps to the consumer frontend package.json when `generate.frontend: true`.
 - README: full `frontend:`/`generate.frontend`/per-entity `sync:` reference section.

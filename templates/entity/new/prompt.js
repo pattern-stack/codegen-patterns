@@ -302,10 +302,6 @@ export default {
     // specifier the generated entity code carries.
     const runtimeMode = loadRuntimeMode(process.cwd());
 
-    // Load frontend config from project config (used for auth, sync, parsers)
-    const frontendConfig = getProjectConfig()?.frontend ?? {};
-    const frontendSync = frontendConfig.sync ?? {};
-
     // Prepare locals for templates
     const entity = definition.entity;
     const fields = definition.fields || {};
@@ -461,12 +457,6 @@ export default {
     const classNamePlural = pascalCase(plural); // Opportunities
     const camelName = camelCase(name); // opportunity
     const repositoryToken = `${pascalCase(name).toUpperCase()}_REPOSITORY`; // OPPORTUNITY_REPOSITORY
-
-    // Frontend store naming
-    const singularCamelName = camelCase(name); // "dealState" from "deal_state"
-    const pluralCamelName = camelCase(plural); // "dealStates" from "deal_states"
-    const collectionVarName = singularCamelName + "Collection"; // "dealStateCollection"
-    const collectionVarNamePlural = pluralCamelName + "Collection"; // "dealStatesCollection"
 
     // Layout configuration (folder structure + file grouping)
     // See tools/codegen/config/paths.js for options
@@ -1025,7 +1015,6 @@ export default {
     const architectureTarget = generateConfig.architecture;
     const isCleanArchitecture = architectureTarget === 'clean';
     const isCleanLitePs = architectureTarget === 'clean-lite-ps';
-    const frontendEnabled = generateConfig.frontend === true;
 
     // ============================================================================
     // v2: Queries
@@ -1451,12 +1440,6 @@ export default {
       camelName,
       repositoryToken,
 
-      // Frontend store naming
-      singularCamelName,
-      pluralCamelName,
-      collectionVarName,
-      collectionVarNamePlural,
-
       // Fields
       fields: processedFields,
       requiredFields,
@@ -1509,50 +1492,11 @@ export default {
       // Usage: locations.dbEntities.path, locations.dbEntities.import
       locations: LOCATIONS,
 
-      // Frontend configuration
-      // Note: Use hasOwnProperty checks for values where null is meaningful (disables the feature)
-      frontend: {
-        auth: {
-          // null means "no auth function" - don't fall back to default
-          function: frontendConfig.auth?.hasOwnProperty?.('function')
-            ? frontendConfig.auth.function
-            : 'getAuthorizationHeader',
-        },
-        sync: {
-          // Read transport for the generated collection:
-          //   'electric' (default) → electricCollectionOptions (real-time shape sync)
-          //   'api'                → queryCollectionOptions (REST via TanStack Query)
-          // Additive + default-off: existing consumers are unaffected. The rest of
-          // the store (hooks/useLiveQuery, resolve, mutations) is mode-agnostic.
-          mode: frontendSync.mode ?? 'electric',
-          // 'api' mode only: REST base path; the list endpoint is `${apiUrl}/${plural}`
-          // (or `${API_BASE_URL}/${plural}` when apiBaseUrlImport is set).
-          apiUrl: frontendSync.apiUrl ?? '/api',
-          // 'api' mode only: import path for the shared TanStack QueryClient.
-          // null → a sibling './query-client' is assumed (consumer-provided).
-          queryClientImport: frontendSync.queryClientImport ?? null,
-          shapeUrl: frontendSync.shapeUrl ?? '/v1/shape',
-          useTableParam: frontendSync.useTableParam ?? true,
-          // Column mapper for snake_case to camelCase conversion (e.g., 'snakeCamelMapper')
-          // Set to null/undefined if DB columns already match JS property names
-          columnMapper: frontendSync.hasOwnProperty?.('columnMapper')
-            ? frontendSync.columnMapper
-            : 'snakeCamelMapper',
-          // Whether to wrap shapeUrl in new URL() constructor
-          wrapInUrlConstructor: frontendSync.wrapInUrlConstructor ?? true,
-          // Whether columnMapper needs () to call (true for functions, false for objects)
-          columnMapperNeedsCall: frontendSync.columnMapperNeedsCall ?? true,
-          // Import path for API_BASE_URL (if needed)
-          apiBaseUrlImport: frontendSync.apiBaseUrlImport ?? null,
-        },
-        parsers: frontendConfig.parsers ?? {
-          timestamptz: '(date: string) => new Date(date)',
-        },
-        collections: {
-          // Schema prefix: 'schema.' for namespace import, '' for direct import
-          schemaPrefix: frontendConfig.collections?.schemaPrefix ?? 'schema.',
-        },
-      },
+      // NOTE: the `frontend:` locals block (auth/sync/parsers/collections) was
+      // deleted with the hygen frontend templates (FE-3). The frontend emitter
+      // (src/emitters/frontend/) now reads `frontend.*` from codegen.config.yaml
+      // directly into its own FrontendEmitConfig — no template ever consumed
+      // these locals after the templates were removed.
 
       // Naming configuration (for templates that need it)
       namingConfig,
@@ -1566,15 +1510,14 @@ export default {
       getByIdQueryClass,
       listQueryClass,
 
-      // Generation toggles (what to generate)
+      // Generation toggles (backend only — what to generate).
+      //
+      // The frontend toggles (fieldMetadata/collections/collectionsIndex/hooks/
+      // mutations/hookStyle/structure/typeNaming/fkResolution/collectionNaming/
+      // fileNaming/hookReturnStyle) were deleted with the hygen frontend
+      // templates (FE-3). The frontend tree is now emitted by
+      // src/emitters/frontend/ and gated solely by `generate.frontend`.
       generate: {
-        fieldMetadata: getProjectConfig()?.generate?.fieldMetadata ?? true,
-        collections: getProjectConfig()?.generate?.collections ?? true,
-        // Whether to generate index.ts in collections folder (for multi-file collection structure)
-        collectionsIndex: getProjectConfig()?.generate?.collectionsIndex ?? false,
-        hooks: getProjectConfig()?.generate?.hooks ?? true,
-        mutations: getProjectConfig()?.generate?.mutations ?? true,
-        // Backend toggles
         drizzleSchema: getProjectConfig()?.generate?.drizzleSchema ?? true,
         commands: getProjectConfig()?.generate?.commands ?? true,
         queries: getProjectConfig()?.generate?.queries ?? true,
@@ -1582,23 +1525,6 @@ export default {
         schemaServer: getProjectConfig()?.generate?.schemaServer ?? false,
         schemaClient: getProjectConfig()?.generate?.schemaClient ?? false,
         electricMigrations: getProjectConfig()?.generate?.electricMigrations ?? false,
-        // Hook style: 'collection' uses collection.useMany(), 'useLiveQuery' uses TanStack DB pattern
-        hookStyle: getProjectConfig()?.generate?.hookStyle ?? 'collection',
-        // Output structure mode: 'entity-first' | 'concern-first' | 'monolithic'
-        // entity-first: generated/{entity}/types.ts, collection.ts, hooks.ts...
-        // concern-first: generated/types/{entity}.ts, collections/{entity}.ts...
-        // monolithic: generated/{entity}.ts (single file per entity)
-        structure: getProjectConfig()?.generate?.structure ?? 'monolithic',
-        // Type naming: 'plain' = Opportunity, 'entity' = OpportunityEntity
-        typeNaming: getProjectConfig()?.generate?.typeNaming ?? 'plain',
-        // FK resolution: true = import related collections, false = skip (useful when collections don't exist)
-        fkResolution: getProjectConfig()?.generate?.fkResolution ?? true,
-        // Collection variable naming: 'singular' = opportunityCollection, 'plural' = opportunitiesCollection
-        collectionNaming: getProjectConfig()?.generate?.collectionNaming ?? 'singular',
-        // File naming: 'singular' = opportunity.ts, 'plural' = opportunities.ts
-        fileNaming: getProjectConfig()?.generate?.fileNaming ?? 'singular',
-        // Hook return style: 'generic' = { data }, 'named' = { opportunities }
-        hookReturnStyle: getProjectConfig()?.generate?.hookReturnStyle ?? 'generic',
       },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
@@ -1642,7 +1568,6 @@ export default {
       architectureTarget,
       isCleanArchitecture,
       isCleanLitePs,
-      frontendEnabled,
 
       // Queries
       hasQueries,

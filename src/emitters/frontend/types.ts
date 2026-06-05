@@ -11,8 +11,10 @@
  */
 
 import type { EntityRegistryEntry } from '../../parser/entity-registry';
+import type { ParsedEntity } from '../../analyzer/types';
 
 export type { EntityRegistryEntry } from '../../parser/entity-registry';
+export type { ParsedEntity } from '../../analyzer/types';
 
 /**
  * Per-entity sync mode. `offline` (Electric + Dexie) is deferred — see
@@ -57,9 +59,18 @@ export interface FrontendEmitConfig {
  * Whole-set emit context. `entities` is the full registry set in deterministic
  * (name-sorted) order; the builders never re-sort, so the caller's order is the
  * emitted order. {@link sortEntities} produces the canonical order.
+ *
+ * The registry (`entities`) stays the only naming source. `parsed` — keyed by
+ * entity name — supplies the data the registry doesn't carry: fields (FE-3
+ * field metadata), relationships (FE-3 FK resolvers), behaviors (timestamps),
+ * and `expose` (write capabilities). FK target names are still resolved against
+ * the registry, never re-derived from a parsed string. Entities present in
+ * `entities` but absent from `parsed` (e.g. a registry-only test fixture) emit
+ * empty field/relationship sets.
  */
 export interface FrontendEmitContext {
 	entities: EntityRegistryEntry[];
+	parsed: Map<string, ParsedEntity>;
 	config: FrontendEmitConfig;
 }
 

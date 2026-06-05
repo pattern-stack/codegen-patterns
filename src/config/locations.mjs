@@ -113,12 +113,6 @@ const DEFAULT_LOCATIONS = {
     import: '@/generated/entity-metadata',
   },
 
-  /** Field meta type definitions */
-  frontendFieldMetaTypes: {
-    path: 'apps/frontend/src/lib/types',
-    import: '@/lib/types',
-  },
-
   /** Auth helpers (for collections) */
   frontendCollectionsAuth: {
     path: 'apps/frontend/src/lib/collections/auth',
