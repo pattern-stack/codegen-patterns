@@ -373,6 +373,65 @@ describe('validatePatternComposition — configSchema validation', () => {
 });
 
 // ============================================================================
+// ACTIVITY-SUBJECT-1 — Activity ⨉ Integrated composition (the swe-brain target)
+// ============================================================================
+
+describe('validatePatternComposition — Activity + Integrated composition', () => {
+	// Use the real library patterns (barrel pre-registered at top of file). The
+	// afterAll() above re-seeds the canonical library set for later files.
+	beforeEach(() => {
+		_resetRegistryForTests({ includeLibrary: true });
+		registerLibraryPattern(BasePattern);
+		registerLibraryPattern(IntegratedPattern);
+		registerLibraryPattern(ActivityPattern);
+		registerLibraryPattern(KnowledgePattern);
+		registerLibraryPattern(MetadataPattern);
+		registerLibraryPattern(JunctionPattern);
+	});
+
+	test('patterns: [Integrated, Activity] with a valid Activity config → no issues', () => {
+		const entity = makeEntity({
+			name: 'message',
+			patterns: ['Integrated', 'Activity'],
+			fields: fieldMap(['person_id']),
+			patternConfig: { Activity: { subject: 'person' } },
+		});
+		expect(validatePatternComposition(entity)).toEqual([]);
+	});
+
+	test('patterns: [Integrated, Activity] with no config → no issues (all-optional schema)', () => {
+		const entity = makeEntity({
+			name: 'message',
+			patterns: ['Integrated', 'Activity'],
+		});
+		expect(validatePatternComposition(entity)).toEqual([]);
+	});
+
+	test('invalid Activity config (non-string subject) → pattern_config_invalid', () => {
+		const entity = makeEntity({
+			name: 'message',
+			patterns: ['Integrated', 'Activity'],
+			patternConfig: { Activity: { subject: 42 as unknown as string } },
+		});
+		const errs = errors(validatePatternComposition(entity));
+		expect(errs.length).toBe(1);
+		expect(errs[0]!.type).toBe('pattern_config_invalid');
+		expect(errs[0]!.message).toMatch(/Activity/);
+	});
+
+	test('unknown Activity config key → pattern_config_invalid (.strict schema)', () => {
+		const entity = makeEntity({
+			name: 'message',
+			pattern: 'Activity',
+			patternConfig: { Activity: { subjet: 'person' } },
+		});
+		const errs = errors(validatePatternComposition(entity));
+		expect(errs.length).toBe(1);
+		expect(errs[0]!.type).toBe('pattern_config_invalid');
+	});
+});
+
+// ============================================================================
 // Project-level — plan Risk 4
 // ============================================================================
 

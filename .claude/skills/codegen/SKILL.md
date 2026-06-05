@@ -260,7 +260,7 @@ All families inherit the standard CRUD set: `findById`, `findByIds`, `list`, `co
 | Family | Additional Methods |
 |--------|--------------------|
 | `integrated` | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `integrationUpsert` |
-| `activity` | `findByDateRange`, `findByUserId`, `findByOpportunityId`, `findRecentByOpportunityId` |
+| `activity` | `findByDateRange`, `findByUserId`, `findBySubjectId`, `findRecentBySubjectId` (subject FK + recency column from `config: { Activity: { subject: <entity> } }`) |
 | `metadata` | `findByEntityIdAndType`, `listByEntityId`, `listHistoryByEntityId` |
 | `knowledge` | `semanticSearch`, `findPendingByOpportunityId`, `updateStatus`, `updateStatusBatch` (pgvector at runtime) |
 | `base` | Standard CRUD only |

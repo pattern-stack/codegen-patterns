@@ -1,8 +1,11 @@
 /**
  * ActivityEntityRepository integration tests against real Postgres.
  *
- * Tests family-specific methods: findByDateRange, findByUserId,
- * findByOpportunityId, findRecentByOpportunityId.
+ * Tests family-specific methods: findByDateRange, findByUserId, and the
+ * config-driven subject finders findBySubjectId / findRecentBySubjectId
+ * (ACTIVITY-SUBJECT-1). The test scaffold's activityEntities table keeps its
+ * `opportunity_id` column, so the test repo configures `subject: 'opportunity'`
+ * (→ opportunityId) — proving the SAME column reached via config, not a hardcode.
  *
  * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
@@ -30,6 +33,8 @@ beforeAll(async () => {
   class TestActivityRepository extends ActivityEntityRepository<ActivityEntity> {
     readonly table = activityEntities;
     protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+    // Config-driven subject scoping: subject 'opportunity' → opportunityId column.
+    protected readonly patternConfig = { subject: 'opportunity' };
   }
 
   repo = new TestActivityRepository(getTestDb() as any);
@@ -95,18 +100,40 @@ d('findByUserId', () => {
   });
 });
 
-d('findByOpportunityId', () => {
-  test('returns activities for the given opportunity', async () => {
+d('findBySubjectId (config-driven → opportunityId)', () => {
+  test('returns activities for the given subject', async () => {
     await repo.create(activityEntityFactory({ opportunityId: 'opp-1', name: 'A' }));
     await repo.create(activityEntityFactory({ opportunityId: 'opp-1', name: 'B' }));
     await repo.create(activityEntityFactory({ opportunityId: 'opp-2', name: 'C' }));
 
-    const found = await repo.findByOpportunityId('opp-1');
+    const found = await repo.findBySubjectId('opp-1');
     expect(found).toHaveLength(2);
+  });
+
+  test('resolves the same column via an explicit subjectColumn override', async () => {
+    class OverrideRepo extends ActivityEntityRepository<ActivityEntity> {
+      readonly table = activityEntities;
+      protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+      protected readonly patternConfig = { subjectColumn: 'opportunity_id' };
+    }
+    const overrideRepo = new OverrideRepo(getTestDb() as any);
+    await overrideRepo.create(activityEntityFactory({ opportunityId: 'opp-9', name: 'X' }));
+    const found = await overrideRepo.findBySubjectId('opp-9');
+    expect(found).toHaveLength(1);
+  });
+
+  test('throws when no subject is configured', async () => {
+    class NoSubjectRepo extends ActivityEntityRepository<ActivityEntity> {
+      readonly table = activityEntities;
+      protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+      // no patternConfig — subject finders are unusable
+    }
+    const noSubjectRepo = new NoSubjectRepo(getTestDb() as any);
+    expect(noSubjectRepo.findBySubjectId('opp-1')).rejects.toThrow(/subject/i);
   });
 });
 
-d('findRecentByOpportunityId', () => {
+d('findRecentBySubjectId', () => {
   test('returns activities ordered by occurredAt desc with limit', async () => {
     const t1 = new Date('2025-01-01T10:00:00Z');
     const t2 = new Date('2025-01-02T10:00:00Z');
@@ -116,7 +143,7 @@ d('findRecentByOpportunityId', () => {
     await repo.create(activityEntityFactory({ opportunityId: 'opp-1', occurredAt: t3, name: 'Newest' }));
     await repo.create(activityEntityFactory({ opportunityId: 'opp-1', occurredAt: t2, name: 'Middle' }));
 
-    const found = await repo.findRecentByOpportunityId('opp-1', 2);
+    const found = await repo.findRecentBySubjectId('opp-1', 2);
     expect(found).toHaveLength(2);
     expect(found[0].name).toBe('Newest');
     expect(found[1].name).toBe('Middle');
@@ -127,7 +154,7 @@ d('findRecentByOpportunityId', () => {
       await repo.create(activityEntityFactory({ opportunityId: 'opp-x' }));
     }
 
-    const found = await repo.findRecentByOpportunityId('opp-x');
+    const found = await repo.findRecentBySubjectId('opp-x');
     expect(found).toHaveLength(10);
   });
 });

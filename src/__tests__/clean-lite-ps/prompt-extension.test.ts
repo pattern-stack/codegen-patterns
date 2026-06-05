@@ -535,6 +535,46 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
       '@pattern-stack/codegen/runtime/base-classes/integrated-entity-service',
     );
   });
+
+  // ACTIVITY-SUBJECT-1 — Activity inherited-method strings are config-driven now.
+  it('Activity advertises the config-driven subject finders (not the CRM names)', () => {
+    const def = {
+      entity: { name: 'meeting', plural: 'meetings', table: 'meetings', pattern: 'Activity' },
+      fields: {},
+      relationships: {},
+      behaviors: [],
+    };
+    const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
+    const repoLines = (locals.repositoryInheritedMethods ?? []).join(' | ');
+    const serviceLines = (locals.serviceInheritedMethods ?? []).join(' | ');
+    expect(repoLines).toContain('findBySubjectId');
+    expect(repoLines).toContain('findRecentBySubjectId');
+    expect(repoLines).not.toContain('Opportunity');
+    expect(serviceLines).not.toContain('Opportunity');
+  });
+
+  // ACTIVITY-SUBJECT-1 D4 — the swe-brain composition target. `Integrated`
+  // wins the base; `Activity` rides along as the subject marker + config.
+  it('patterns: [Integrated, Activity] resolves base to IntegratedEntityRepository', () => {
+    const def = {
+      entity: {
+        name: 'message',
+        plural: 'messages',
+        table: 'messages',
+        patterns: ['Integrated', 'Activity'],
+      },
+      fields: {},
+      relationships: {},
+      behaviors: ['timestamps'],
+      config: { Activity: { subject: 'person' } },
+    };
+    const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
+    // First pattern wins the base class (documented single-base Phase-1 rule).
+    expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
+    expect(locals.patternName).toBe('Integrated');
+    // Integrated's implied behavior still folds in under composition.
+    expect(locals.hasExternalIdTracking).toBe(true);
+  });
 });
 
 describe('impliedBehaviors fold — pattern-implied behaviors merge into emit', () => {

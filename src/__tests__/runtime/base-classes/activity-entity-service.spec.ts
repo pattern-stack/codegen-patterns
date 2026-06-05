@@ -30,8 +30,8 @@ function makeMockRepo(
     delete: mock(async () => undefined),
     findByDateRange: mock(async () => []),
     findByUserId: mock(async () => []),
-    findByOpportunityId: mock(async () => []),
-    findRecentByOpportunityId: mock(async () => []),
+    findBySubjectId: mock(async () => []),
+    findRecentBySubjectId: mock(async () => []),
     ...overrides,
   };
 }
@@ -63,27 +63,27 @@ describe('ActivityEntityService', () => {
     });
   });
 
-  describe('findByOpportunity', () => {
-    it('delegates to repository.findByOpportunityId', async () => {
+  describe('findBySubject', () => {
+    it('delegates to repository.findBySubjectId', async () => {
       const entities: TestEntity[] = [{ id: '1', name: 'Note' }];
-      const repo = makeMockRepo({ findByOpportunityId: mock(async () => entities) });
+      const repo = makeMockRepo({ findBySubjectId: mock(async () => entities) });
       const service = new TestActivityService(repo);
 
-      const result = await service.findByOpportunity('opp-1');
+      const result = await service.findBySubject('subj-1');
       expect(result).toEqual(entities);
-      expect(repo.findByOpportunityId).toHaveBeenCalledWith('opp-1');
+      expect(repo.findBySubjectId).toHaveBeenCalledWith('subj-1');
     });
   });
 
   describe('findRecent', () => {
-    it('delegates to repository.findRecentByOpportunityId with limit', async () => {
+    it('delegates to repository.findRecentBySubjectId with limit', async () => {
       const entities: TestEntity[] = [{ id: '1', name: 'Email' }];
-      const repo = makeMockRepo({ findRecentByOpportunityId: mock(async () => entities) });
+      const repo = makeMockRepo({ findRecentBySubjectId: mock(async () => entities) });
       const service = new TestActivityService(repo);
 
-      const result = await service.findRecent('opp-1', 5);
+      const result = await service.findRecent('subj-1', 5);
       expect(result).toEqual(entities);
-      expect(repo.findRecentByOpportunityId).toHaveBeenCalledWith('opp-1', 5);
+      expect(repo.findRecentBySubjectId).toHaveBeenCalledWith('subj-1', 5);
     });
   });
 });
