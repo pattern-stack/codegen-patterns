@@ -1,65 +1,50 @@
 ---
 name: project-documentation
-description: Create and manage project documentation — ADRs, specs, and architecture docs. Use when the user wants to write an ADR, create a spec, archive a completed spec, or discuss documentation structure.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+description: codegen-patterns documentation conventions — where ADRs, RFCs, specs, and guides live, how they're named, and the status taxonomy. Use when writing an ADR or RFC, creating a spec (JOB-N style), marking a spec shipped or superseded, or deciding where a doc belongs.
+allowed-tools: Read, Write, Edit, Glob, Grep
+user-invocable: true
 ---
 
-# Project Documentation
+# Project Documentation (codegen-patterns overlay)
 
-## Purpose
+Project-specific facts for THIS repo. The generic discipline — detect conventions before creating, append-only ADRs, status-in-place, post-implementation truth — lives in the sdlc plugin's `sdlc:project-documentation` skill. This overlay records the conventions that can't be detected reliably.
 
-Standardize creation and management of project documentation: Architecture Decision Records (ADRs), implementation specs, and the architecture overview.
+## The documentation estate
 
-## Structure
+| Where | What | Naming |
+|---|---|---|
+| `docs/adrs/` | Architecture Decision Records | `ADR-NNN-kebab-title.md` (3-digit; dotted sub-ADRs like `ADR-033.1-…` amend a parent decision) |
+| `docs/rfcs/` | RFCs — design arcs spanning multiple ADRs/specs | `RFC-NNNN-kebab-title.md` (4-digit) |
+| `docs/specs/` | Implementation specs | `<SPEC-KEY>.md` — uppercase family key + ordinal: `JOB-1.md`, `BRIDGE-2.md`, `EVT-5.md`, `ACTIVITY-SUBJECT-1.md` |
+| `docs/guides/`, `docs/consumer/`, `docs/handoffs/` | Guides, consumer-facing docs, session handoffs | freeform |
+| `.ai-docs/` | SDLC working artifacts (plans, stacks, handoff.md) | governed by the sdlc plugin's `artifact_paths` — not this skill |
+| `ai-docs/` | **Legacy** agent docs (pre-`.ai-docs` migration) | do not add new files here |
 
+## Header style
+
+Bold-field header block, NOT YAML frontmatter:
+
+```markdown
+# ADR-037 — Runtime Mode (`package` | `vendored`) + Namespaced `Symbol.for` Tokens
+
+**Status:** Accepted
+**Date:** 2026-06-01
+**Owner:** Doug
+**Related:** ADR-008, ADR-036, RFC-0001
 ```
-docs/
-├── adrs/                    # Architecture Decision Records (append-only)
-│   ├── _template.md
-│   └── NNN-title.md
-└── specs/                   # Implementation specs
-    ├── _template.md
-    ├── archive/             # Completed or abandoned specs
-    └── {date}-{name}.md    # Active specs
 
-ai-docs/specs/               # Agent-generated specs (from /develop workflow)
-```
+Specs add `**Issue:**` / `**Depends on:**` / `**Phase:**` fields where they apply.
 
-## Instructions
+## Status taxonomy (as practiced)
 
-### Creating an ADR
+- **ADRs:** `Draft → Accepted → Superseded by ADR-NNN | RFC-NNNN` — append-only; ADRs can be superseded by RFCs.
+- **Specs:** `Stub → Draft → Implemented | Shipped → Superseded by …`. `Shipped` lines cite the evidence: `**Status:** Shipped 2026-04-22 via PRs #183 (OPENAPI-1), #185 (OPENAPI-2)`.
 
-1. Read `docs/adrs/_template.md` for the format (if it exists)
-2. Find the next number by listing existing ADRs: `ls docs/adrs/[0-9]*.md`
-3. Create `docs/adrs/{NNN}-{kebab-title}.md` with:
-   - Today's date
-   - Status: `Draft` (or `Accepted` if decision is final)
-   - Filled-in Context, Decision, Options Considered, Consequences
-4. Keep it concise — ADRs capture *why*, not *how*
+## Rules
 
-### Creating a Spec
-
-1. Read existing specs for format examples
-2. Create `docs/specs/{YYYY-MM-DD}-{kebab-title}.md` or `ai-docs/specs/{issue-slug}.md` with:
-   - `status: draft` initially
-   - Goal, Architecture, Files, Implementation Steps, Open Questions
-3. Fill in enough detail that an implementer can code without guessing
-
-### Archiving a Spec
-
-1. Add a blockquote at the top: `> **Archived:** {what was built, where, key stats}`
-2. Update status to `implemented` or `abandoned`
-3. Move to `docs/specs/archive/` or `ai-docs/specs/archive/`
-
-### Status Conventions
-
-**ADRs:** `Draft` -> `Accepted` -> `Superseded by ADR-NNN` (never deleted)
-
-**Specs:** `draft` -> `in-progress` -> `implemented` | `abandoned` (archived when terminal)
-
-## Key Rules
-
-- Status lives in frontmatter/header, not folder structure. Only `archive/` is a folder-based signal.
-- ADRs are numbered and append-only. Superseded ADRs stay in place with updated status.
-- Specs are dated. Multiple active specs are fine.
-- Don't over-document. If it's in the code or git history, don't repeat it in docs.
+1. **Never archive or move.** Terminal specs stay in `docs/specs/` with status updated in place — the domain skills (`jobs`, `events`, `bridge`, …) route to specs by path ("ADR-022 or JOB-1..JOB-8 specs"); moving files breaks their routing tables.
+2. **Specs are post-implementation truth** (CLAUDE.md › Operating Principles): when an implementation lands, update the spec in the same PR — close resolved open questions, correct details that turned out wrong, record constraints discovered while building.
+3. **Spec keys come from the parent decision:** ADR-022 → `JOB-N`, ADR-023 → `BRIDGE-N`, ADR-024 → `EVT-N`. Starting a new family? Mint a short uppercase key in the parent ADR/RFC.
+4. **Check ADR number collisions before minting.** Two ADR-031s already exist — `Glob docs/adrs/*` and verify the number is free; don't add a third.
+5. **Altitude:** ADRs capture *why*; RFCs capture multi-spec *design arcs*; specs capture *how*, one PR-sized unit each.
+6. **Don't over-document.** If it's in the code or git history, don't repeat it in docs.
