@@ -27,6 +27,14 @@ export type {
 	SyncMode,
 } from './types';
 export { resolveSyncMode, sortEntities } from './types';
+export {
+	loadFrontendEmitContext,
+	mapFrontendEmitConfig,
+} from './load-context';
+export type {
+	FrontendConfigInput,
+	LoadFrontendEmitContextResult,
+} from './load-context';
 export { generatedBanner, withBanner } from './emit-utils';
 export { FRONTEND_EMITTED_DEPS } from './deps';
 export type { FrontendEmittedDeps } from './deps';

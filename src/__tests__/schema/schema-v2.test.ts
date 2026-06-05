@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'bun:test';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
-import { GenerateConfigSchema } from '../../schema/pipelines-config.schema';
+import { GenerateConfigSchema } from '../../schema/codegen-config.schema';
 import { loadEntityFromYaml } from '../../utils/yaml-loader';
 import { loadEntities } from '../../parser/load-entities';
 import { buildDomainGraph } from '../../analyzer/graph-builder';

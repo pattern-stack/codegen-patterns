@@ -1,0 +1,32 @@
+# Golden frontend fixture — explicit-plural entity (persons, not "persons" derived).
+# Exercises registry-resolved naming: FK consumers must use `persons` from THIS
+# YAML, never a re-pluralization of the string "person".
+entity:
+  name: person
+  plural: persons
+  table: persons
+  folder_structure: nested
+  sync: electric
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: tenants.id
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+    index: true
+
+  first_name:
+    type: string
+    required: true
+    max_length: 100
+
+  last_name:
+    type: string
+    required: true
+    max_length: 100

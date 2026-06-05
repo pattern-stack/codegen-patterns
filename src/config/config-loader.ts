@@ -13,10 +13,12 @@ import {
   GenerateConfigSchema,
   PatternsConfigSchema,
   RuntimeModeSchema,
+  FrontendConfigSchema,
   type GenerateConfig,
   type PatternsConfig,
   type RuntimeMode,
-} from '../schema/pipelines-config.schema.js';
+  type FrontendConfig,
+} from '../schema/codegen-config.schema.js';
 
 // ============================================================================
 // Types
@@ -24,7 +26,8 @@ import {
 
 /**
  * Typed representation of the Zod-validated config blocks (`generate`,
- * `patterns`, `runtime`). The rest of the config is untyped passthrough.
+ * `patterns`, `runtime`, `frontend`). The rest of the config is untyped
+ * passthrough.
  */
 export interface ProjectConfig {
   generate?: GenerateConfig;
@@ -40,6 +43,12 @@ export interface ProjectConfig {
    * Always populated after load (defaulted to `package` when the key is absent).
    */
   runtime?: RuntimeMode;
+  /**
+   * Frontend emitter knobs (ADR-038). Gated by `generate.frontend`. Always
+   * populated after load (full defaults applied even when the block is absent)
+   * so the emitter reads a complete config without per-key fallbacks.
+   */
+  frontend?: FrontendConfig;
   [key: string]: unknown;
 }
 
@@ -108,6 +117,22 @@ function loadProjectConfig(cwd = process.cwd()): ProjectConfig | null {
           `(expected 'package' or 'vendored'); falling back to 'package'.`
       );
       raw.runtime = 'package';
+    }
+
+    // Validate the frontend block (always — full defaults applied even when the
+    // block is absent, so the emitter reads a complete config; ADR-038).
+    const rawFrontend =
+      raw && typeof raw === 'object' && 'frontend' in raw ? raw.frontend : undefined;
+    const frontendResult = FrontendConfigSchema.safeParse(rawFrontend ?? {});
+    if (frontendResult.success) {
+      raw.frontend = frontendResult.data;
+    } else {
+      console.warn(
+        `Warning: codegen.config.yaml has an invalid "frontend" block:\n` +
+          frontendResult.error.issues
+            .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+            .join('\n')
+      );
     }
 
     return raw as ProjectConfig;

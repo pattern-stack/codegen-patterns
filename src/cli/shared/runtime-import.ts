@@ -31,7 +31,7 @@ const PACKAGE = '@pattern-stack/codegen';
 /**
  * Resolve the effective runtime mode from a (possibly partial) project config.
  * Defaults to `package` (ADR-037) when the key is absent or invalid — matching
- * the schema default in `pipelines-config.schema.ts`.
+ * the schema default in `codegen-config.schema.ts`.
  */
 export function resolveRuntimeMode(
   config: { runtime?: unknown } | null | undefined,
