@@ -12,6 +12,8 @@ import { describe, it, expect } from 'bun:test';
 import {
   JobHandler,
   JobHandlerBase,
+  FN_KEY_SENTINEL,
+  keySelectorToTemplate,
   type JobContext,
   type JobTrigger,
 } from '../../../../runtime/subsystems/jobs/job-handler.base';
@@ -100,5 +102,40 @@ void _badEvent;
 describe('JobHandlerMeta.triggers — authoring type (BRIDGE-6 follow-up)', () => {
   it('@JobHandler({ triggers }) compiles and narrows map/when per event', () => {
     expect(ContactWritebackHandler).toBeDefined();
+  });
+});
+
+// ── JOB-FN-KEY (0.16.2): both key forms compile + project correctly ─────────
+// The typed `key` accepts BOTH a `{{field}}` template string AND a function of
+// the input. The string form is unchanged; the function form is the one that
+// previously typed-checked (the type REQUIRED a function) but was dropped at
+// registration. Both must compile under one `@JobHandler`.
+
+interface SlackInboundInput {
+  channel: string;
+  ts: string;
+  eventId: string;
+}
+
+@JobHandler<SlackInboundInput>('slack.inbound.types-test', {
+  pool: 'batch',
+  // Function form — arbitrary projection of the input into a lane key.
+  concurrency: { key: (input) => `chan:${input.channel}`, collisionMode: 'queue' },
+  // String-template form on the dedupe policy in the same handler.
+  dedupe: { key: '{{eventId}}', windowMs: 30_000 },
+})
+class SlackInboundHandler extends JobHandlerBase<SlackInboundInput, void> {
+  async run(_ctx: JobContext<SlackInboundInput>): Promise<void> {}
+}
+
+describe('JobKeySelector — both key forms (JOB-FN-KEY)', () => {
+  it('@JobHandler accepts a function concurrency key + a template dedupe key', () => {
+    expect(SlackInboundHandler).toBeDefined();
+  });
+
+  it('keySelectorToTemplate projects each form for the definition row', () => {
+    expect(keySelectorToTemplate('{{eventId}}')).toBe('{{eventId}}');
+    expect(keySelectorToTemplate((i: { x: string }) => i.x)).toBe(FN_KEY_SENTINEL);
+    expect(keySelectorToTemplate(undefined)).toBeNull();
   });
 });

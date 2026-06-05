@@ -73,7 +73,7 @@ import { MemoryCursorStore } from './integration-cursor-store.memory-backend';
 import { MemoryRunRecorder } from './integration-run-recorder.memory-backend';
 import { PostgresCursorStore } from './integration-cursor-store.drizzle-backend';
 import { DrizzleIntegrationRunRecorder } from './integration-run-recorder.drizzle-backend';
-import { DeepEqualDiffer } from './deep-equal.differ';
+import { DeepEqualDiffer, type DeepEqualDifferOptions } from './deep-equal.differ';
 
 export interface IntegrationModuleOptions {
   /**
@@ -100,6 +100,24 @@ export interface IntegrationModuleOptions {
    * Defaults to `false`.
    */
   multiTenant?: boolean;
+
+  /**
+   * Default-differ configuration (DIFFER-UNIGNORE, 0.17.1). Threaded into the
+   * `DeepEqualDiffer` bound to `INTEGRATION_FIELD_DIFFER`. Omit for the
+   * historical behaviour (the default ignore list, unchanged).
+   *
+   * Mirrors `DeepEqualDifferOptions`:
+   *   - `ignore`   — extra field names to ignore (merged with the defaults).
+   *   - `unignore` — default-ignored field names to RE-include as domain data
+   *     (e.g. `['deletedAt']` for an entity whose `deletedAt` is a
+   *     vendor-observed retraction tombstone, not row metadata — swe-brain
+   *     ADR-0008 §1). Subtracted after the merge, so it wins.
+   *
+   * A feature module that binds its own `IFieldDiffer<T>` to
+   * `INTEGRATION_FIELD_DIFFER` overrides this entirely (per-entity escape hatch
+   * unchanged).
+   */
+  differ?: DeepEqualDifferOptions;
 }
 
 @Module({})
@@ -112,7 +130,13 @@ export class IntegrationModule {
       { provide: INTEGRATION_MULTI_TENANT, useValue: multiTenant },
       // Default differ — consumers can override by binding a different
       // `IFieldDiffer<T>` to `INTEGRATION_FIELD_DIFFER` in their feature module.
-      { provide: INTEGRATION_FIELD_DIFFER, useValue: new DeepEqualDiffer() },
+      // DIFFER-UNIGNORE: `options.differ` (ignore/unignore) is threaded here so
+      // a consumer can declare a default-ignored column (e.g. `deletedAt`) as
+      // domain data for their entities without binding a bespoke differ.
+      {
+        provide: INTEGRATION_FIELD_DIFFER,
+        useValue: new DeepEqualDiffer(options.differ ?? {}),
+      },
     ];
 
     const backendProviders: Provider[] =

@@ -144,6 +144,46 @@ describe('IntegrationModule.forRoot({ backend: "memory" })', () => {
     await moduleRef.close();
   });
 
+  // DIFFER-UNIGNORE (0.17.1): `options.differ` threads into the bound differ.
+  it('threads options.differ.unignore into the bound DeepEqualDiffer', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        IntegrationModule.forRoot({
+          backend: 'memory',
+          differ: { unignore: ['deletedAt'] },
+        }),
+      ],
+    }).compile();
+
+    const differ = moduleRef.get(INTEGRATION_FIELD_DIFFER) as DeepEqualDiffer<
+      Record<string, unknown>
+    >;
+    // Behavioural proof: the default differ would 'noop' a deletedAt-only
+    // change; the threaded unignore makes it register as a field diff.
+    const result = differ.diff(
+      { deletedAt: null },
+      { deletedAt: '2026-06-04T00:00:00.000Z' },
+    );
+    expect(result).toEqual({
+      deletedAt: { from: null, to: '2026-06-04T00:00:00.000Z' },
+    });
+    await moduleRef.close();
+  });
+
+  it('default differ (no options.differ) keeps deletedAt ignored', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [IntegrationModule.forRoot({ backend: 'memory' })],
+    }).compile();
+
+    const differ = moduleRef.get(INTEGRATION_FIELD_DIFFER) as DeepEqualDiffer<
+      Record<string, unknown>
+    >;
+    expect(
+      differ.diff({ deletedAt: null }, { deletedAt: '2026-06-04T00:00:00.000Z' }),
+    ).toBe('noop');
+    await moduleRef.close();
+  });
+
   it('binds INTEGRATION_MODULE_OPTIONS to the passed options', async () => {
     const options = { backend: 'memory' as const, multiTenant: true };
     const moduleRef = await Test.createTestingModule({

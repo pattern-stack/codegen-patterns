@@ -151,6 +151,15 @@ test-integration-quick:
 test-obs-integration:
     bun test "{{justfile_directory()}}/test/integration/observability-list-reads.drizzle.integration.test.ts"
 
+# JOB-FN-KEY (0.17.1) — function-form concurrency keys serialize at the DB
+# level against a real Postgres (testcontainers). Spins its own ephemeral
+# postgres:16; skips gracefully when Docker is unavailable. NOT in test-unit/CI
+# unit run. Proves two orchestrator instances over one DB persist matching,
+# non-null concurrency_keys + the queue-release gate holds the second behind
+# the first (the swe-brain ADR-0009 Amendment B §B3 regression).
+test-jobs-fnkey-integration:
+    bun test "{{justfile_directory()}}/test/integration/jobs-fn-concurrency-key.drizzle.integration.test.ts"
+
 # Run the full scaffold validation (Docker + codegen + NestJS + CRUD)
 validate:
     bash test/scaffold/validate.sh

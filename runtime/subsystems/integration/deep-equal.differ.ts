@@ -12,7 +12,11 @@
  *      `id`, `createdAt`, `updatedAt`, `deletedAt`, `type`,
  *      `lastModifiedAt`, `fields`, `providerMetadata`
  *    (`fields` is the EAV bag — it's diffed by the sink's EAV dual-write
- *    path, not at the canonical-record layer.)
+ *    path, not at the canonical-record layer.) Consumers augment the list via
+ *    `options.ignore` and — when a default is domain data for their entity —
+ *    REMOVE a default via `options.unignore` (e.g. an entity whose
+ *    `deletedAt` is a vendor-observed retraction tombstone, not row metadata;
+ *    see `DeepEqualDifferOptions.unignore`).
  *
  * 2. **`providerChangedFields` hint (CDC)** — when present, restricts the
  *    comparison to the hinted field set. The hint is advisory; fields in
@@ -75,6 +79,26 @@ export interface DeepEqualDifferOptions {
    * merged (not replaced) with `DEFAULT_IGNORE_FIELDS`.
    */
   readonly ignore?: readonly string[];
+
+  /**
+   * Field names to REMOVE from the default ignore list — the inverse of
+   * `ignore`. Use this to declare that a normally-metadata column is in fact
+   * DOMAIN DATA for this entity and must register as a field change.
+   *
+   * The canonical case (swe-brain ADR-0008 §1, the gap this knob closes):
+   * `deletedAt` is in `DEFAULT_IGNORE_FIELDS` because most sinks stamp it as
+   * row metadata sinks own unconditionally. But an entity with
+   * `softDelete: false` and a domain-owned `deleted_at` carries the
+   * vendor-observed retraction tombstone ON the canonical record (a Slack
+   * `message_deleted` → `deletedAt`). Without un-ignoring it, the tombstone
+   * overlay diffs to `'noop'`, the upsert is skipped, and `deleted_at` never
+   * lands. `unignore: ['deletedAt']` makes the differ treat it as domain data.
+   *
+   * Applied AFTER `ignore` is merged, so `unignore` wins on a field listed in
+   * both. Subtracting a field not in the (merged) ignore set is a harmless
+   * no-op. Does not touch `DEFAULT_IGNORE_FIELDS` for any other instance.
+   */
+  readonly unignore?: readonly string[];
 }
 
 @Injectable()
@@ -84,11 +108,16 @@ export class DeepEqualDiffer<T extends Record<string, unknown>>
   private readonly ignore: ReadonlySet<string>;
 
   constructor(opts: DeepEqualDifferOptions = {}) {
-    if (opts.ignore && opts.ignore.length > 0) {
-      this.ignore = new Set([...DEFAULT_IGNORE_FIELDS, ...opts.ignore]);
-    } else {
-      this.ignore = DEFAULT_IGNORE_FIELDS;
+    const merged = new Set<string>(DEFAULT_IGNORE_FIELDS);
+    if (opts.ignore) {
+      for (const field of opts.ignore) merged.add(field);
     }
+    // `unignore` is subtracted last so it wins over a field that also appears
+    // in `ignore` or the defaults — "this column is domain data here."
+    if (opts.unignore) {
+      for (const field of opts.unignore) merged.delete(field);
+    }
+    this.ignore = merged;
   }
 
   diff(

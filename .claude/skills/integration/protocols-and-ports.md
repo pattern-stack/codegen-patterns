@@ -274,7 +274,28 @@ persist; the audit stays faithful to the input.
 { provide: INTEGRATION_FIELD_DIFFER, useValue: new DeepEqualDiffer({ ignore: ['integration_version'] }) }
 ```
 
-Values are merged with the default set; you can't remove defaults.
+`ignore` values are merged with the default set.
+
+**Un-ignoring a default (`unignore`)** — the inverse knob. A normally-metadata
+column can be domain data for a given entity: e.g. an entity with
+`softDelete: false` whose `deletedAt` carries a vendor-observed retraction
+tombstone on the canonical record. Without un-ignoring it the tombstone diffs to
+`'noop'` and never lands. `unignore` removes the field from the ignore set
+(subtracted after `ignore`, so it wins):
+
+```ts
+{ provide: INTEGRATION_FIELD_DIFFER, useValue: new DeepEqualDiffer({ unignore: ['deletedAt'] }) }
+```
+
+Or set it app-wide via config — `integration.differ.{ignore,unignore}` in
+`codegen.config.yaml` threads into the default differ that
+`IntegrationModule.forRoot` provides:
+
+```yaml
+integration:
+  differ:
+    unignore: [deletedAt]
+```
 
 **Writing a custom `IFieldDiffer<T>`** (e.g. a type-aware differ that
 normalizes enums, or a CDC differ that only inspects hinted fields):
