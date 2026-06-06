@@ -935,13 +935,12 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
   // Projection columns: id + externalId + ALL copy-through columns + local FK
   // columns + timestamps. Omits provider/provider_metadata.
   // Projection keeps excluded fields (#490) — exclusion is write-surface only.
-  // (The #488 find VIEW is built from copyThroughFields which excludes them —
-  // that is intentional and is the spec §Find-side symmetric-absence mechanism.)
-  const allCopyThroughColumns = processedFields.map((f) => f.camelName);
+  // The find VIEW also keeps them (bare passthroughs); diff-soundness holds via
+  // the differ's `key in incoming` guard, not by omitting them from the view.
   const projectionColumns = [
     'id',
     'externalId',
-    ...allCopyThroughColumns,
+    ...processedFields.map((f) => f.camelName),
     ...belongsTo.map((rel) => rel.camelField),
     ...(hasTimestamps ? ['createdAt', 'updatedAt'] : []),
   ];

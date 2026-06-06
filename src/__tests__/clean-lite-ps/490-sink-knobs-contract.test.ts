@@ -6,20 +6,32 @@
  *   - buildIntegrationSurface()  (prompt-extension.js) → repo config
  *   - buildSinkInput()           (adapter-emission-generator.ts) → sink config
  *
- * This file locks that both derivations agree on ALL knobs from the spec:
+ * This file locks that both derivations agree on ALL knobs from the spec
+ * (Gate 2.5 corrected mechanism):
  *
- *   (a) exclude_fields: both derivations drop the SAME field from copy-through
- *       (writeColumns / copyThroughFields).
+ *   (a) exclude_fields: both derivations drop the SAME field from the WRITE
+ *       surface (writeColumns / copyThroughFields). NOT from the find view.
  *   (b) The excluded field remains in projectionColumns/projectionFields
- *       (exclusion is write-surface only).
- *   (c) #488's find VIEW omits the excluded field (built from the shared
- *       copyThroughFields — symmetric absence).
+ *       (exclusion is write-surface only — the projection type is untouched).
+ *   (c) #488's find VIEW KEEPS the excluded field as a bare passthrough
+ *       (viewCopyThroughFields is unfiltered). Diff-soundness holds via the
+ *       differ's `key in incoming` guard (deep-equal.differ.ts:159): the adapter
+ *       never sources the excluded field → `incoming` lacks it → the
+ *       existing-keys loop skips it → never compared, no spurious upsert.
  *   (d) resolveSoftDeleteBoolean and the sink deleteMode agree per the spec's
- *       mapping table (the delete-agreement lock).
+ *       mapping table (the delete-agreement lock) — validated against the REAL
+ *       buildSinkInput output, not an inline re-implementation.
  *
  * Uses a MULTI-WORD excluded field (`conversation_external_id`) so a
  * snake/camel normalization bug cannot silently pass (#487 lesson — single-word
  * fields mask it).
+ *
+ * Gate 2.5 correction (2026-06-06): the original §(c) asserted the find VIEW
+ * OMITS the excluded field (spec §Find-side drop-from-view). That was wrong:
+ * the projection type retains the field, so omitting it from the view is a
+ * compile error (`view: Canonical = {...}` missing a required member). The
+ * corrected mechanism is write-surface-only exclusion + differ guard soundness.
+ * §(c) is now inverted: view KEEPS the field.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -27,8 +39,10 @@ import {
   buildIntegrationSurface,
   resolveSoftDeleteBoolean,
 } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import {
+  buildSinkInput,
+} from '../../cli/shared/adapter-emission-generator';
 import { generateDefaultSink } from '../../cli/shared/sink-emission-generator';
-import type { SinkEmitInput } from '../../cli/shared/sink-emission-generator';
 
 // ============================================================================
 // Shared fixtures
@@ -38,7 +52,7 @@ import type { SinkEmitInput } from '../../cli/shared/sink-emission-generator';
  *  (pre-filter; buildIntegrationSurface applies the exclude filter internally). */
 const processedFields = [
   { name: 'body', camelName: 'body', tsType: 'string', nullable: false },
-  // multi-word — the critical field for catching snake/camel normalization bugs
+  // multi-word — critical for catching snake/camel normalization bugs
   {
     name: 'conversation_external_id',
     camelName: 'conversationExternalId',
@@ -51,11 +65,39 @@ const processedFields = [
 const belongsTo: object[] = [];
 const sinkPolicyExclude = { exclude_fields: ['conversation_external_id'] };
 
+/** Entity definition shape consumed by buildSinkInput. */
+const messageDef = {
+  entity: {
+    name: 'message',
+    surface: 'messaging',
+    pattern: 'Integrated',
+    plural: 'messages',
+  },
+  fields: {
+    body: { type: 'string' },
+    conversation_external_id: { type: 'string', nullable: true },
+    title: { type: 'string', nullable: true },
+  },
+  integration: {
+    sink: {
+      exclude_fields: ['conversation_external_id'],
+    },
+  },
+};
+
+/** Extract findByExternalId method body from an emitted sink string. */
+function findBody(out: string): string {
+  const start = out.indexOf('async findByExternalId(');
+  const end = out.indexOf('\n  }\n', start);
+  return out.slice(start, end + 4);
+}
+
 // ============================================================================
-// (a) Both derivations drop the excluded field from copy-through
+// (a) Both derivations drop the excluded field from the WRITE surface
 // ============================================================================
 
-describe('#490 contract (a): both derivations exclude conversation_external_id from copy-through', () => {
+describe('#490 contract (a): both derivations exclude conversationExternalId from write surface', () => {
+  // Repo derivation via buildIntegrationSurface
   const surface = buildIntegrationSurface(
     'Integrated',
     processedFields,
@@ -68,48 +110,45 @@ describe('#490 contract (a): both derivations exclude conversation_external_id f
   ) as {
     integrationConfig: { writeColumns: string[] };
     writeFields: { camelName: string }[];
-    projectionColumns: string[];
-    projectionFields: { camelName: string }[];
   };
 
-  it('buildIntegrationSurface().integrationConfig.writeColumns excludes conversation_external_id', () => {
-    expect(surface.integrationConfig.writeColumns).not.toContain(
-      'conversationExternalId',
-    );
+  it('buildIntegrationSurface().integrationConfig.writeColumns excludes conversationExternalId', () => {
+    expect(surface.integrationConfig.writeColumns).not.toContain('conversationExternalId');
   });
 
   it('buildIntegrationSurface().writeFields excludes conversationExternalId', () => {
-    const names = surface.writeFields.map((f) => f.camelName);
+    const names = surface.writeFields.map((f: { camelName: string }) => f.camelName);
     expect(names).not.toContain('conversationExternalId');
   });
 
-  it('buildIntegrationSurface().integrationConfig.writeColumns retains body and title', () => {
+  it('buildIntegrationSurface().writeColumns retains the non-excluded fields', () => {
     expect(surface.integrationConfig.writeColumns).toContain('body');
     expect(surface.integrationConfig.writeColumns).toContain('title');
   });
 
-  // Sink derivation: the post-exclusion copyThroughFields list (simulates what
-  // buildSinkInput produces after applying excludeSet to the fields map).
-  // We test the emitter receives the post-exclusion list and does not re-introduce
-  // the excluded field in the write object or find view.
-  const postExclusionInput: SinkEmitInput = {
-    entityName: 'message',
-    entityClass: 'Message',
-    surface: 'messaging',
-    pattern: 'Integrated',
-    provider: 'slack',
-    copyThroughFields: [
-      // conversation_external_id intentionally absent (excluded by buildSinkInput)
-      { camelName: 'body', tsType: 'string' },
-      { camelName: 'title', tsType: 'string | null' },
-    ],
-    fkExternalKeys: [],
-    repoImportSpecifier: '../../../messaging/messages/message.repository',
-    deleteMode: 'delegate',
-  };
-  const sinkOut = generateDefaultSink(postExclusionInput);
+  // Sink derivation via the real buildSinkInput
+  const sinkInput = buildSinkInput(
+    messageDef as Parameters<typeof buildSinkInput>[0],
+    'messaging',
+    'slack',
+    '../messaging/message.repository',
+  );
 
-  it('sink write object does not enumerate conversationExternalId', () => {
+  it('buildSinkInput().copyThroughFields excludes conversationExternalId (write surface)', () => {
+    const names = sinkInput.copyThroughFields.map((f) => f.camelName);
+    expect(names).not.toContain('conversationExternalId');
+  });
+
+  it('buildSinkInput().copyThroughFields retains the non-excluded fields', () => {
+    const names = sinkInput.copyThroughFields.map((f) => f.camelName);
+    expect(names).toContain('body');
+    expect(names).toContain('title');
+  });
+
+  // Emitted write object must not include the excluded field
+  const sinkOut = generateDefaultSink(sinkInput);
+
+  it('emitted write object does not enumerate conversationExternalId', () => {
     const writeBlock = sinkOut.slice(
       sinkOut.indexOf('const write: MessageIntegrationWrite = {'),
       sinkOut.indexOf('const proj ='),
@@ -117,7 +156,7 @@ describe('#490 contract (a): both derivations exclude conversation_external_id f
     expect(writeBlock).not.toContain('conversationExternalId');
   });
 
-  it('sink write object enumerates the non-excluded fields (body, title)', () => {
+  it('emitted write object enumerates the non-excluded fields (body, title)', () => {
     const writeBlock = sinkOut.slice(
       sinkOut.indexOf('const write: MessageIntegrationWrite = {'),
       sinkOut.indexOf('const proj ='),
@@ -146,14 +185,12 @@ describe('#490 contract (b): excluded field stays in projectionColumns/projectio
     projectionFields: { camelName: string }[];
   };
 
-  it('projectionColumns retains conversationExternalId', () => {
-    expect(surface.integrationConfig.projectionColumns).toContain(
-      'conversationExternalId',
-    );
+  it('projectionColumns retains conversationExternalId (write-surface-only exclusion)', () => {
+    expect(surface.integrationConfig.projectionColumns).toContain('conversationExternalId');
   });
 
-  it('projectionFields retains { camelName: conversationExternalId }', () => {
-    const names = surface.projectionFields.map((f) => f.camelName);
+  it('projectionFields retains conversationExternalId', () => {
+    const names = surface.projectionFields.map((f: { camelName: string }) => f.camelName);
     expect(names).toContain('conversationExternalId');
   });
 
@@ -164,49 +201,41 @@ describe('#490 contract (b): excluded field stays in projectionColumns/projectio
 });
 
 // ============================================================================
-// (c) #488 find VIEW omits the excluded field (symmetric absence)
+// (c) #488 find VIEW KEEPS the excluded field as a bare passthrough
 //
-// The find view is built from copyThroughFields (shared input); since exclusion
-// drops the field from copyThroughFields, the view also omits it.
-// This is the spec §Find-side assertion: "find() does NOT return the field."
+// Gate 2.5 correction (2026-06-06): the find view uses viewCopyThroughFields
+// (unfiltered). The excluded field stays in the view so the canonical type
+// (= projection type, which retains the column) is satisfied. Diff-soundness
+// holds via deep-equal.differ.ts:159 `key in incoming`: the adapter never
+// sources the excluded field → incoming lacks it → never compared.
 // ============================================================================
 
-describe('#490 contract (c): #488 find VIEW omits excluded conversationExternalId', () => {
-  // The sink emitter receives the post-exclusion copyThroughFields (no
-  // conversationExternalId). It builds the find view from that list.
-  const sinkOut = generateDefaultSink({
-    entityName: 'message',
-    entityClass: 'Message',
-    surface: 'messaging',
-    pattern: 'Integrated',
-    provider: 'slack',
-    copyThroughFields: [
-      { camelName: 'body', tsType: 'string' },
-      { camelName: 'title', tsType: 'string | null' },
-      // conversationExternalId intentionally absent (excluded)
-    ],
-    fkExternalKeys: [],
-    repoImportSpecifier: '../../../messaging/messages/message.repository',
-    deleteMode: 'delegate',
+describe('#490 contract (c): find VIEW KEEPS excluded conversationExternalId as bare passthrough', () => {
+  // Use the real buildSinkInput output — viewCopyThroughFields is unfiltered.
+  const sinkInput = buildSinkInput(
+    messageDef as Parameters<typeof buildSinkInput>[0],
+    'messaging',
+    'slack',
+    '../messaging/message.repository',
+  );
+
+  it('buildSinkInput().viewCopyThroughFields includes conversationExternalId (unfiltered)', () => {
+    const names = (sinkInput.viewCopyThroughFields ?? []).map((f) => f.camelName);
+    expect(names).toContain('conversationExternalId');
   });
 
-  /** Extract findByExternalId method body. */
-  function findBody(out: string): string {
-    const start = out.indexOf('async findByExternalId(');
-    const end = out.indexOf('\n  }\n', start);
-    return out.slice(start, end + 4);
-  }
+  const sinkOut = generateDefaultSink(sinkInput);
 
-  it('find view does not enumerate conversationExternalId', () => {
-    expect(findBody(sinkOut)).not.toContain('conversationExternalId');
+  it('find view ENUMERATES conversationExternalId: row.conversationExternalId (bare passthrough)', () => {
+    expect(findBody(sinkOut)).toContain('conversationExternalId: row.conversationExternalId,');
   });
 
-  it('find view does enumerate the non-excluded fields', () => {
+  it('find view also enumerates the non-excluded fields', () => {
     expect(findBody(sinkOut)).toContain('body: row.body,');
     expect(findBody(sinkOut)).toContain('title: row.title,');
   });
 
-  it('find view still has id and externalId (scope fence: those are separate inputs)', () => {
+  it('find view has id and externalId (always present)', () => {
     expect(findBody(sinkOut)).toContain('id: row.id,');
     expect(findBody(sinkOut)).toContain('externalId: row.externalId,');
   });
@@ -215,50 +244,53 @@ describe('#490 contract (c): #488 find VIEW omits excluded conversationExternalI
 // ============================================================================
 // (d) resolveSoftDeleteBoolean and sink deleteMode mapping table
 //
-// Spec Tests §3d: assert that for each of the three modes, the repo config
-// boolean and the sink body agree per the documented mapping table.
+// Validated against the REAL buildSinkInput output (not inline re-implementation).
 // ============================================================================
 
 describe('#490 contract (d): resolveSoftDeleteBoolean + deleteMode agree', () => {
-  // delete: soft → softDelete: true + sink 'delegate'
-  it("soft → resolveSoftDeleteBoolean true", () => {
+  // soft → softDelete: true + sink 'delegate'
+  it("soft → resolveSoftDeleteBoolean true (regardless of hasSoftDelete)", () => {
     expect(resolveSoftDeleteBoolean('soft', false)).toBe(true);
     expect(resolveSoftDeleteBoolean('soft', true)).toBe(true);
   });
 
-  it("soft → sink deleteMode is 'delegate' (caller maps soft → delegate)", () => {
-    // The caller (buildSinkInput) maps soft|tombstone → 'delegate', noop → 'noop'.
-    // Verify the mapping rule: soft is NOT 'noop'.
-    const deleteKnob = 'soft';
-    const deleteMode = deleteKnob === 'noop' ? 'noop' : 'delegate';
-    expect(deleteMode).toBe('delegate');
+  it("soft → buildSinkInput().deleteMode is 'delegate'", () => {
+    const input = buildSinkInput(
+      { ...messageDef, integration: { sink: { delete: 'soft' } } } as Parameters<typeof buildSinkInput>[0],
+      'messaging', 'slack', '../messaging/message.repository',
+    );
+    expect(input.deleteMode).toBe('delegate');
   });
 
-  // delete: tombstone → softDelete: false + sink 'delegate'
-  it("tombstone → resolveSoftDeleteBoolean false", () => {
+  // tombstone → softDelete: false + sink 'delegate'
+  it("tombstone → resolveSoftDeleteBoolean false (regardless of hasSoftDelete)", () => {
     expect(resolveSoftDeleteBoolean('tombstone', false)).toBe(false);
     expect(resolveSoftDeleteBoolean('tombstone', true)).toBe(false);
   });
 
-  it("tombstone → sink deleteMode is 'delegate'", () => {
-    const deleteKnob = 'tombstone';
-    const deleteMode = deleteKnob === 'noop' ? 'noop' : 'delegate';
-    expect(deleteMode).toBe('delegate');
+  it("tombstone → buildSinkInput().deleteMode is 'delegate'", () => {
+    const input = buildSinkInput(
+      { ...messageDef, integration: { sink: { delete: 'tombstone' } } } as Parameters<typeof buildSinkInput>[0],
+      'messaging', 'slack', '../messaging/message.repository',
+    );
+    expect(input.deleteMode).toBe('delegate');
   });
 
-  // delete: noop → softDelete: !!hasSoftDelete (unchanged default) + sink 'noop'
-  it("noop → resolveSoftDeleteBoolean returns !!hasSoftDelete (false when no soft_delete)", () => {
+  // noop → softDelete: !!hasSoftDelete (unchanged) + sink 'noop'
+  it("noop → resolveSoftDeleteBoolean returns !!hasSoftDelete (false)", () => {
     expect(resolveSoftDeleteBoolean('noop', false)).toBe(false);
   });
 
-  it("noop → resolveSoftDeleteBoolean returns !!hasSoftDelete (true when soft_delete present)", () => {
+  it("noop → resolveSoftDeleteBoolean returns !!hasSoftDelete (true)", () => {
     expect(resolveSoftDeleteBoolean('noop', true)).toBe(true);
   });
 
-  it("noop → sink deleteMode is 'noop'", () => {
-    const deleteKnob = 'noop';
-    const deleteMode = deleteKnob === 'noop' ? 'noop' : 'delegate';
-    expect(deleteMode).toBe('noop');
+  it("noop → buildSinkInput().deleteMode is 'noop'", () => {
+    const input = buildSinkInput(
+      { ...messageDef, integration: { sink: { delete: 'noop' } } } as Parameters<typeof buildSinkInput>[0],
+      'messaging', 'slack', '../messaging/message.repository',
+    );
+    expect(input.deleteMode).toBe('noop');
   });
 
   // absent → softDelete: !!hasSoftDelete + sink 'delegate'
@@ -270,25 +302,21 @@ describe('#490 contract (d): resolveSoftDeleteBoolean + deleteMode agree', () =>
     expect(resolveSoftDeleteBoolean(undefined, true)).toBe(true);
   });
 
-  it("absent → sink deleteMode is 'delegate'", () => {
-    const deleteKnob = undefined;
-    const deleteMode = deleteKnob === 'noop' ? 'noop' : 'delegate';
-    expect(deleteMode).toBe('delegate');
+  it("absent → buildSinkInput().deleteMode is 'delegate'", () => {
+    const input = buildSinkInput(
+      { ...messageDef, integration: {} } as Parameters<typeof buildSinkInput>[0],
+      'messaging', 'slack', '../messaging/message.repository',
+    );
+    expect(input.deleteMode).toBe('delegate');
   });
 
-  // Noop-emitted sink body actually returns null (not repo delegation)
-  it("noop deleteMode → emitted softDeleteByExternalId returns null (no repo call)", () => {
-    const sinkOut = generateDefaultSink({
-      entityName: 'message',
-      entityClass: 'Message',
-      surface: 'messaging',
-      pattern: 'Integrated',
-      provider: 'slack',
-      copyThroughFields: [{ camelName: 'body', tsType: 'string' }],
-      fkExternalKeys: [],
-      repoImportSpecifier: '../messaging/message.repository',
-      deleteMode: 'noop',
-    });
+  // Noop emitter output: return null (no repo call)
+  it("noop deleteMode → emitted softDeleteByExternalId returns null, no repo call", () => {
+    const sinkInput = buildSinkInput(
+      { ...messageDef, integration: { sink: { delete: 'noop' } } } as Parameters<typeof buildSinkInput>[0],
+      'messaging', 'slack', '../messaging/message.repository',
+    );
+    const sinkOut = generateDefaultSink(sinkInput);
     const deleteBody = sinkOut.slice(
       sinkOut.indexOf('async softDeleteByExternalId('),
       sinkOut.indexOf('\n  }\n', sinkOut.indexOf('async softDeleteByExternalId(')),
@@ -297,19 +325,13 @@ describe('#490 contract (d): resolveSoftDeleteBoolean + deleteMode agree', () =>
     expect(deleteBody).not.toContain('repo.softDeleteByExternalId');
   });
 
-  // Delegate-emitted sink body delegates to the repo
+  // Delegate emitter output: delegates to repo
   it("delegate deleteMode → emitted softDeleteByExternalId delegates to repo", () => {
-    const sinkOut = generateDefaultSink({
-      entityName: 'message',
-      entityClass: 'Message',
-      surface: 'messaging',
-      pattern: 'Integrated',
-      provider: 'slack',
-      copyThroughFields: [{ camelName: 'body', tsType: 'string' }],
-      fkExternalKeys: [],
-      repoImportSpecifier: '../messaging/message.repository',
-      deleteMode: 'delegate',
-    });
+    const sinkInput = buildSinkInput(
+      { ...messageDef, integration: { sink: { delete: 'soft' } } } as Parameters<typeof buildSinkInput>[0],
+      'messaging', 'slack', '../messaging/message.repository',
+    );
+    const sinkOut = generateDefaultSink(sinkInput);
     expect(sinkOut).toContain(
       'return this.repo.softDeleteByExternalId(externalId, this.provider);',
     );
@@ -317,18 +339,15 @@ describe('#490 contract (d): resolveSoftDeleteBoolean + deleteMode agree', () =>
 });
 
 // ============================================================================
-// buildIntegrationSurface: exclusion filter scope fence
-//
-// Spec Tests §4: drop excluded from writeColumns/writeFields but NOT from
-// projectionColumns/projectionFields; do NOT touch local-FK or timestamp inputs.
+// buildIntegrationSurface: exclusion scope fence
 // ============================================================================
 
-describe('#490 buildIntegrationSurface: exclusion scope fence', () => {
+describe('#490 buildIntegrationSurface: exclusion scope fence (write-only)', () => {
   const surface = buildIntegrationSurface(
     'Integrated',
     processedFields,
     belongsTo,
-    true,
+    true,   // hasTimestamps
     false,
     false,
     {},
@@ -339,7 +358,7 @@ describe('#490 buildIntegrationSurface: exclusion scope fence', () => {
     projectionFields: { camelName: string }[];
   };
 
-  it('writeColumns does not contain conversationExternalId (excluded)', () => {
+  it('writeColumns does not contain conversationExternalId (excluded from write)', () => {
     expect(surface.integrationConfig.writeColumns).not.toContain('conversationExternalId');
   });
 
@@ -347,18 +366,17 @@ describe('#490 buildIntegrationSurface: exclusion scope fence', () => {
     expect(surface.integrationConfig.projectionColumns).toContain('conversationExternalId');
   });
 
-  it('projectionColumns DOES contain timestamps (hasTimestamps: true, unaffected by exclusion)', () => {
+  it('projectionColumns DOES contain timestamps (hasTimestamps: true, unaffected)', () => {
     expect(surface.integrationConfig.projectionColumns).toContain('createdAt');
     expect(surface.integrationConfig.projectionColumns).toContain('updatedAt');
   });
 
   it('projectionFields DOES contain conversationExternalId', () => {
-    const names = surface.projectionFields.map((f) => f.camelName);
+    const names = surface.projectionFields.map((f: { camelName: string }) => f.camelName);
     expect(names).toContain('conversationExternalId');
   });
 
   it('softDelete reflects hasSoftDelete default when delete knob absent', () => {
-    // sinkPolicyExclude has no delete key — softDelete = !!hasSoftDelete = false.
     expect(surface.integrationConfig.softDelete).toBe(false);
   });
 });

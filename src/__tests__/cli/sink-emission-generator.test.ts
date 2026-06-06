@@ -817,23 +817,31 @@ describe("generateDefaultSink — #490 deleteMode: 'noop'", () => {
 // ============================================================================
 // #490 — per-field exclusion
 //
-// Spec §Exclusion: excluded fields are dropped from copyThroughFields (the shared
-// write + find-side input). The write object must NOT enumerate the excluded field.
-// The find view must NOT enumerate the excluded field (spec §Find-side).
+// Gate 2.5 correction (2026-06-06): exclusion is WRITE-SURFACE ONLY.
+// The find view uses viewCopyThroughFields (the FULL unfiltered list) so the
+// emitted view enumerates the excluded field as a bare passthrough — the
+// projection type keeps it, and the view must too (type-soundness). Diff-
+// soundness holds via the differ's `key in incoming` guard: the adapter never
+// sources the excluded field → incoming lacks it → never compared.
 // ============================================================================
 
-describe("generateDefaultSink — #490 excluded field absent from write object", () => {
+describe("generateDefaultSink — #490 excluded field absent from write object, present in find view", () => {
   // conversation_external_id excluded — multi-word to catch snake/camel bugs (#487 lesson).
+  // The emitter receives post-exclusion copyThroughFields AND the full
+  // viewCopyThroughFields (unfiltered); it uses viewCopyThroughFields for the find view.
   const out = generateDefaultSink(
     contactInput({
       entityName: "message",
       entityClass: "Message",
-      // copyThroughFields AFTER exclusion — buildSinkInput applies exclusion before here.
-      // The emitter receives the post-exclusion list; this test verifies the emitter
-      // honours the absence (does not re-introduce the field via any other path).
+      // copyThroughFields AFTER exclusion — write surface only.
       copyThroughFields: [
         { camelName: "body", tsType: "string" },
-        // conversationExternalId intentionally absent — excluded.
+        // conversationExternalId intentionally absent — excluded from write surface.
+      ],
+      // viewCopyThroughFields is the FULL unfiltered list — find view uses this.
+      viewCopyThroughFields: [
+        { camelName: "body", tsType: "string" },
+        { camelName: "conversationExternalId", tsType: "string | null" },
       ],
       fkExternalKeys: [],
     }),
@@ -855,11 +863,10 @@ describe("generateDefaultSink — #490 excluded field absent from write object",
     expect(writeBlock).not.toContain("conversationExternalId");
   });
 
-  it("the find view does NOT enumerate conversationExternalId (spec §Find-side assertion)", () => {
-    // #488 find view is built from the same copyThroughFields input — since
-    // conversationExternalId is absent from copyThroughFields (excluded), the find
-    // view also omits it. This is the symmetric-absence test (spec Tests §3c).
-    expect(findBody(out)).not.toContain("conversationExternalId");
+  it("the find view DOES enumerate conversationExternalId: row.conversationExternalId (Gate 2.5 §3c inverted)", () => {
+    // Gate 2.5 correction: the find view uses viewCopyThroughFields (unfiltered).
+    // The excluded field stays as a bare passthrough — write-surface-only exclusion.
+    expect(findBody(out)).toContain("conversationExternalId: row.conversationExternalId,");
   });
 
   it("contains NO ` as ` cast", () => {

@@ -1150,7 +1150,6 @@ export class MessageSink implements IIntegrationSink<MessageCanonical> {
       externalId: record.externalId,
       // copy-through fields (one line per \`fields:\` entry):
       body: record.body,
-      conversationExternalId: record.conversationExternalId,
     };
     const proj = await this.repo.integrationUpsertOne(write, this.provider);
     return { id: proj.id, saved: record };

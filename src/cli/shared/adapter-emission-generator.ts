@@ -1181,7 +1181,7 @@ export function fkWriteKey(
  * The `generateDefaultSink` emitter throws if `pattern` is not
  * `Integrated` — the caller pre-filters, so this is only reached for Integrated.
  */
-function buildSinkInput(
+export function buildSinkInput(
   def: EmitAdaptersEntity,
   surface: string,
   provider: string,
@@ -1198,20 +1198,33 @@ function buildSinkInput(
     }
   }
 
-  // Per-field exclusion (#490): drop excluded fields from copyThroughFields.
-  // Match on snake_case `name` (the YAML key) — same convention as
-  // buildIntegrationSurface in prompt-extension.js. Multi-word fields
-  // (e.g. `conversation_external_id`) must match here; the excludeSet is keyed
-  // by the raw YAML snake_case name that the user declares in exclude_fields.
-  // Scope fence: touches ONLY copyThroughFields — NOT fkExternalKeys, NOT
-  // localFkColumns, NOT timestamps. Those are NOT copy-through scalars and
-  // excluding them would corrupt the projection-ordered find view (#488).
+  // Per-field exclusion (#490): exclude_fields shrinks the WRITE surface only.
+  // The find view enumerates the full projection (viewCopyThroughFields) so the
+  // canonical type-checks and diff-soundness holds via `key in incoming`
+  // (`deep-equal.differ.ts:159`) — the adapter never sources excluded fields.
+  // Match on snake_case `name` (the YAML key). Multi-word fields (e.g.
+  // `conversation_external_id`) must match here exactly as declared in YAML.
   const excludeSet = new Set(def.integration?.sink?.exclude_fields ?? []);
 
+  // Base predicate: every copy-through scalar (not id, not a FK column).
+  const isCopyThrough = ([name]: [string, unknown]) =>
+    name !== "id" && !fkColumns.has(name);
+
+  // viewCopyThroughFields — FULL projection copy-through (no excludeSet filter).
+  // Used by the find-side view; keeps excluded fields as bare passthroughs so
+  // the canonical type (= projection type, which retains all columns) is satisfied.
+  const viewCopyThroughFields = Object.entries(fields)
+    .filter(isCopyThrough)
+    .map(([name, f]) => ({
+      camelName: snakeToCamel(name),
+      tsType: tsTypeFor(f.type, f.nullable),
+    }));
+
+  // copyThroughFields — WRITE-SURFACE copy-through (excludeSet applied).
+  // Used by the write object; excluded fields omitted → repo never writes them on
+  // upsert → no-clobber for segmentation-owned columns (e.g. conversationExternalId).
   const copyThroughFields = Object.entries(fields)
-    .filter(
-      ([name]) => name !== "id" && !fkColumns.has(name) && !excludeSet.has(name),
-    )
+    .filter((entry) => isCopyThrough(entry) && !excludeSet.has(entry[0]))
     .map(([name, f]) => ({
       camelName: snakeToCamel(name),
       tsType: tsTypeFor(f.type, f.nullable),
@@ -1270,6 +1283,7 @@ function buildSinkInput(
     pattern: "Integrated",
     provider,
     copyThroughFields,
+    viewCopyThroughFields,
     fkExternalKeys,
     localFkColumns,
     hasTimestamps,

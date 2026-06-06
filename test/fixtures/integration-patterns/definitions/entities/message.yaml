@@ -1,19 +1,16 @@
-# #490 fixture: exercises integration.sink.delete knob through the real
-# emitAdapters → buildSinkInput path (the #488-lesson: shape-keyed features
-# need fixture coverage in the same PR so the snapshot pins knob-driven output
-# end-to-end through the real buildSinkInput path).
+# #490 fixture: exercises integration.sink knobs (delete + exclude_fields) through
+# the real emitAdapters → buildSinkInput path (the #488-lesson: shape-keyed
+# features need fixture coverage in the same PR so the snapshot pins knob-driven
+# output end-to-end through the real buildSinkInput path).
 #
-# Knob exercised:
+# Knobs exercised:
 #   - integration.sink.delete: noop → softDeleteByExternalId emits 'return null;'
 #     with a doc comment; the repo is never called for the delete path.
-#
-# Note on exclude_fields: the exclusion knob is covered by unit + contract tests
-# (src/__tests__/clean-lite-ps/490-sink-knobs-contract.test.ts and the schema
-# tests). A fixture-level exclude_fields test would require the author to narrow
-# MessageCanonical away from MessageIntegrationProjection (the excluded field
-# remains in the projection type, so the find view would be missing a required
-# member — a SEAM that routes the author to narrow their canonical). That author
-# seam is tested via unit tests where we control the copyThroughFields directly.
+#   - integration.sink.exclude_fields: [conversation_external_id]
+#       → conversationExternalId ABSENT from write mapping (copyThroughFields)
+#       → conversationExternalId PRESENT in find view (viewCopyThroughFields — bare
+#         passthrough). Gate 2.5 correction: exclusion is write-surface-only.
+#         Diff-soundness via the differ's `key in incoming` guard (differ:159).
 #
 # Surface: crm — reuses the existing salesforce provider (stubs already present).
 entity:
@@ -38,3 +35,4 @@ integration:
       direction: inbound
   sink:
     delete: noop
+    exclude_fields: [conversation_external_id]

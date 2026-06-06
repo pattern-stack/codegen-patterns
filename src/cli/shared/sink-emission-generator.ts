@@ -40,13 +40,18 @@
  * cannot supply the external key either. See Find-side reshaping below.
  *
  * Policy methods — #490 wires the two common YAML knobs:
- * - `integration.sink.delete: soft|tombstone|noop` — `noop` emits the logged-no-op
- *   body (silent `return null;`); `soft`/`tombstone` delegate to the repo (the repo
- *   config boolean carries the distinction). Absent → `'delegate'` (unchanged behavior).
- * - `integration.sink.exclude_fields: [field, ...]` — excluded fields are absent from
- *   `copyThroughFields` (the shared input to write object AND find view). They stay
- *   on the projection type — the write surface shrinks, the projection does not.
- *   Drop-from-writeColumns is the no-clobber mechanism (spec §Exclusion).
+ * - `integration.sink.delete: soft|tombstone|noop` — `noop` emits the silent
+ *   `return null;` body; `soft`/`tombstone` delegate to the repo (the repo config
+ *   boolean carries the distinction). Absent → `'delegate'` (unchanged behavior).
+ * - `integration.sink.exclude_fields: [field, ...]` — excluded fields are absent
+ *   from the WRITE SURFACE ONLY (`copyThroughFields` / `writeColumns`). The find
+ *   view still enumerates them as bare passthroughs from `viewCopyThroughFields`
+ *   (the unfiltered projection list). Diff-soundness holds via the differ's
+ *   `key in incoming` guard (`deep-equal.differ.ts:159`): the adapter never
+ *   sources the field → `incoming` lacks it → even the existing-keys loop skips
+ *   it → never compared, no spurious upsert. Type-sound: the projection type
+ *   keeps the member; the find view enumerates it. Drop-from-writeColumns is the
+ *   no-clobber mechanism (excluded field is never written by the repo on upsert).
  * The arbitrary-code long tail stays the author-subclass seam (#491 sink-seam-split).
  *
  * ## Find-side reshaping (generated vs. author seam) — #488
@@ -144,12 +149,26 @@ export interface SinkEmitInput {
   pattern: string;
   /** Bare provider slug bound at construction (`google`, `hubspot`). */
   provider: string;
-  /** Copy-through scalar columns — the entity's `fields:` block (FK columns
-   *  AND any `integration.sink.exclude_fields` entries excluded), exactly as
-   *  the repo template's `writeFields` after #490 exclusion is applied.
-   *  Excluded fields are absent here AND from the #488 find view (shared input
-   *  — symmetric absence on both sides, spec §Find-side). */
+  /** Copy-through scalar columns for the WRITE OBJECT — the entity's `fields:`
+   *  block with FK columns AND any `integration.sink.exclude_fields` entries
+   *  removed, exactly as the repo template's `writeFields` after #490 exclusion.
+   *  Excluded fields are absent here (no-clobber: the repo never writes them on
+   *  upsert) but ARE still present in `viewCopyThroughFields` (the find view
+   *  enumerates the full projection so the canonical type-checks). */
   copyThroughFields: SinkCopyThroughField[];
+  /** Copy-through scalar columns for the FIND VIEW — the entity's `fields:` block
+   *  with FK columns excluded but `integration.sink.exclude_fields` entries kept.
+   *  Enumerated as bare passthroughs in `findByExternalId` so the view satisfies
+   *  the projection-default canonical (TS requires all members; excluded fields
+   *  stay in the projection type). Diff-soundness: the adapter never sources
+   *  excluded fields → `incoming` lacks them → the differ's `key in incoming`
+   *  guard (`deep-equal.differ.ts:159`) drops them from candidates before
+   *  comparison — never compared, no spurious upsert.
+   *
+   *  When omitted (callers that predate #490 or pass only `copyThroughFields`),
+   *  falls back to `copyThroughFields` for backward-compat (no regression for
+   *  entities without `exclude_fields`). */
+  viewCopyThroughFields?: SinkCopyThroughField[];
   /** External FK join-keys — one per belongs_to, exactly as the repo template's
    *  `writeFkFields`. */
   fkExternalKeys: SinkFkExternalKey[];
@@ -287,12 +306,24 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   // When the author widens a member to non-null, the bare line becomes a compile
   // error — they add `?? <default>` at that exact member. The generator never
   // chooses a default; the compile error routes the human to the decision.
-  // Projection order: id, externalId, copy-through, local FK columns, timestamps.
+  // Projection order: id, externalId, copy-through (ALL — incl. excluded), local FK columns, timestamps.
+  //
+  // Exclusion (#490): viewCopyThroughFields is the FULL projection copy-through
+  // list (no exclude_fields filter). Excluded fields stay in the view as bare
+  // passthroughs — the projection type requires them. Diff-soundness holds via
+  // deep-equal.differ.ts:159 `key in incoming`: the adapter never sources the
+  // excluded field → it is absent from incoming → the existing-keys loop guard
+  // drops it from candidates → never compared. The field is excluded from the
+  // WRITE object (copyThroughFields) and from writeColumns — no-clobber by
+  // construction: the repo never writes it on upsert. These are orthogonal
+  // mechanisms. Falls back to copyThroughFields when viewCopyThroughFields is
+  // absent (pre-#490 callers that pass no exclude_fields).
+  const viewFields = input.viewCopyThroughFields ?? input.copyThroughFields;
   const findViewLines: string[] = [
     `    id: row.id,`,
     `    externalId: row.externalId,`,
   ];
-  for (const f of input.copyThroughFields) {
+  for (const f of viewFields) {
     const isJson = f.tsType.startsWith("unknown");
     if (isJson) {
       // SEAM (typed json): `unknown` passes through; typed-narrowing is author-owned.
