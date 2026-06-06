@@ -62,9 +62,12 @@ just db-up                           # Start Postgres
 just db-push                         # Push schema
 just db-down                         # Stop Postgres
 
-# Release
+# Release — merging a version bump to main publishes automatically (CI `publish`
+# job: tarball smoke gate + publish-if-version-not-on-npm, per package).
 just bump patch                      # Bump version (patch | minor | major)
-just release                         # Tag + push
+just test-post-publish               # Tarball smoke: pack + install + verify consumer contract
+just publish-ci --dry-run            # Validate the full publish without uploading
+just publish                         # Manual fallback: publish origin/main from a pristine worktree
 ```
 
 ## Architecture
