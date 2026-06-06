@@ -12,7 +12,7 @@
  *     --jobWorkerModuleImport <specifier> --workerForRootOpts <ts-literal> \
  *     --mainTsPath <abs> --configPath <abs> --schemaPath <abs> \
  *     --multiTenant <'true'|'false'> --workerMode <embedded|standalone> \
- *     --appName <string>
+ *     --skipSchema <'true'|''> --appName <string>
  */
 
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
@@ -70,6 +70,11 @@ export default {
       workerForRootOpts: decodeWorkerForRootOpts(args.workerForRootOpts),
       schemaPath:
         args.schemaPath ?? "shared/subsystems/jobs/job-orchestration.schema.ts",
+      // #517: package mode skips the schema template (the schema ships in the
+      // package, re-exported via the schema barrel). Hygen's skip_if treats any
+      // non-empty string as truthy, so the CLI sends '' in vendored mode and
+      // 'true' in package mode. Default '' so a direct hygen invocation renders.
+      skipSchema: args.skipSchema ?? "",
       // @generated DO-NOT-EDIT banner — the jobs subsystem schema is
       // force-overwritten on every `subsystem install`.
       generatedBanner: renderGeneratedBanner({

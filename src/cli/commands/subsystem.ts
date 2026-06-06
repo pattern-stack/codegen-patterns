@@ -815,6 +815,19 @@ export class SubsystemInstallCommand extends Command {
 		}
 
 		if (this.dryRun) {
+			// #517: jobs additionally emits the consumer-owned scaffold (worker +
+			// main-hook). The schema template is skipped in package mode (it ships
+			// in the package). List the planned consumer files so dry-run is honest.
+			const jobsScaffoldDryRun =
+				desc.name === 'jobs'
+					? runJobsScaffold(ctx.cwd, ctx.config, {
+							dryRun: true,
+							json: isJsonMode(),
+							forceConfig: this.forceConfig,
+							skipConfigBlock: true,
+						})
+					: null;
+
 			if (isJsonMode()) {
 				printJson({
 					command: 'subsystem install',
@@ -823,6 +836,9 @@ export class SubsystemInstallCommand extends Command {
 					dryRun: true,
 					installList: already ? installed : [...installed, desc.name],
 					configBlockOutcome,
+					...(jobsScaffoldDryRun
+						? { scaffold: jobsScaffoldDryRun }
+						: {}),
 				});
 			} else {
 				printInfo(`Dry run — runtime: package (no files vendored).`);
@@ -831,6 +847,14 @@ export class SubsystemInstallCommand extends Command {
 					printInfo(`  ${desc.name} config block would be ${configBlockOutcome}`);
 				}
 				printInfo('  would regenerate <generated>/subsystems.ts + subsystems-schema.ts');
+				if (jobsScaffoldDryRun?.planned?.length) {
+					printInfo(
+						`  jobs scaffold — ${jobsScaffoldDryRun.planned.length} template targets (worker + main.ts hook; schema ships in the package)`,
+					);
+					for (const p of jobsScaffoldDryRun.planned) {
+						console.log(`  ${theme.muted(icons.arrow)} ${path.relative(ctx.cwd, p) || p}`);
+					}
+				}
 			}
 			return 0;
 		}
@@ -883,6 +907,25 @@ export class SubsystemInstallCommand extends Command {
 			printWarning(`barrel regeneration failed — ${msg}`);
 		}
 
+		// #517: jobs is the only subsystem with consumer-owned scaffold files in
+		// package mode — `src/worker.ts` (the #516 mode-aware standalone worker)
+		// and the embedded-mode guidance hook in `src/main.ts`. The config block
+		// was already injected above (step 2b) and the schema ships in the
+		// package, so this scaffold pass emits ONLY those two files
+		// (`skipConfigBlock: true` neutralises the scaffold's own config plan).
+		// It runs against `refreshed.config` so `workerForRootOpts` reflects the
+		// freshly-injected jobs block (backend + extensions). `unless_exists` on
+		// the worker + the main-hook sentinel keep it idempotent.
+		const jobsScaffold =
+			desc.name === 'jobs'
+				? runJobsScaffold(ctx.cwd, refreshed.config, {
+						dryRun: false,
+						json: isJsonMode(),
+						forceConfig: this.forceConfig,
+						skipConfigBlock: true,
+					})
+				: null;
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'subsystem install',
@@ -895,6 +938,7 @@ export class SubsystemInstallCommand extends Command {
 				configBlockOutcome,
 				barrelEmitted,
 				schemaEmitted,
+				...(jobsScaffold ? { scaffold: jobsScaffold } : {}),
 			});
 			return 0;
 		}
@@ -902,6 +946,18 @@ export class SubsystemInstallCommand extends Command {
 		printSuccess(`${desc.name} installed (runtime: package — no files vendored).`);
 		if (installResult.outcome === 'added') {
 			printInfo(`Added '${desc.name}' to subsystems.install.`);
+		}
+		if (jobsScaffold) {
+			if (jobsScaffold.ok) {
+				// Emitted the consumer-owned files even though no runtime was vendored.
+				printSuccess(
+					`jobs scaffold applied (emitted src/worker.ts + src/main.ts hook; schema ships in the package).`,
+				);
+			} else {
+				printWarning(
+					`jobs scaffold (Hygen) failed — config + barrels were written; re-run after fixing: ${jobsScaffold.error ?? 'unknown error'}`,
+				);
+			}
 		}
 		printInfo(
 			`Regenerated <generated>/subsystems.ts (${barrelEmitted.join(', ') || 'none'}) + subsystems-schema.ts (${schemaEmitted.join(', ') || 'none'}).`,
@@ -1231,7 +1287,21 @@ interface JobsScaffoldOutcome {
 function runJobsScaffold(
 	cwd: string,
 	config: Context['config'],
-	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
+	opts: {
+		dryRun: boolean;
+		json: boolean;
+		forceConfig: boolean;
+		/**
+		 * #517 — when true, this scaffold does NOT plan or execute the jobs
+		 * config-block action. Package mode (`executePackageMode`) owns the
+		 * config-block injection (step 2b) and reloads the context before calling
+		 * here, so re-running `planConfigBlockAction` + `runConfigBlockAction`
+		 * would inject the block a second time (or print a redundant "already
+		 * exists" message). The vendored path leaves this unset and keeps owning
+		 * the config block here.
+		 */
+		skipConfigBlock?: boolean;
+	},
 ): JobsScaffoldOutcome {
 	const locals = resolveJobsScaffoldLocals({
 		cwd,
@@ -1242,23 +1312,25 @@ function runJobsScaffold(
 	});
 
 	// Files the jobs templates will target (used by --dry-run output and
-	// JSON reporting). Ordering matches the template set.
+	// JSON reporting). Ordering matches the template set. #517: the schema
+	// template is skipped in package mode (the package ships the schema), so
+	// drop it from the planned list there to keep dry-run output honest.
 	const planned: string[] = [
 		...(!locals.workerExists ? [locals.workerPath] : []),
 		locals.mainTsPath,
-		locals.configPath,
-		locals.schemaPath,
+		...(opts.skipConfigBlock ? [] : [locals.configPath]),
+		...(locals.skipSchema ? [] : [locals.schemaPath]),
 	];
 
 	// #121 (F13): inspect the user's codegen.config.yaml BEFORE we invoke the
 	// main scaffold so a parse-error aborts early. The main scaffold
 	// (`subsystem/jobs`) no longer emits the config block — that lives in
-	// `subsystem/jobs-config` and is invoked conditionally below.
-	const configBlockOutcome = planConfigBlockAction(
-		locals.configPath,
-		'jobs',
-		opts.forceConfig,
-	);
+	// `subsystem/jobs-config` and is invoked conditionally below. #517: in
+	// package mode the caller already handled the config block, so skip the plan
+	// entirely (no parse-error re-check, no second injection).
+	const configBlockOutcome = opts.skipConfigBlock
+		? undefined
+		: planConfigBlockAction(locals.configPath, 'jobs', opts.forceConfig);
 
 	if (configBlockOutcome === 'parse-error') {
 		// Caller surfaces the user-facing error; bail before any writes.
@@ -1287,24 +1359,28 @@ function runJobsScaffold(
 		};
 	}
 
-	// Config-block action runs after the main action. It's a separate Hygen
-	// invocation targeting the dedicated `subsystem/jobs-config` folder.
-	const configResult = runConfigBlockAction({
-		cwd,
-		actionFolder: 'jobs-config',
-		configPath: locals.configPath,
-		subsystem: 'jobs',
-		outcome: configBlockOutcome,
-		json: opts.json,
-	});
+	// #517: package mode already injected the config block (executePackageMode
+	// step 2b) before reloading the context and calling here, so skip the
+	// duplicate injection. Vendored mode runs it as a separate Hygen invocation
+	// targeting the dedicated `subsystem/jobs-config` folder.
+	if (!opts.skipConfigBlock && configBlockOutcome) {
+		const configResult = runConfigBlockAction({
+			cwd,
+			actionFolder: 'jobs-config',
+			configPath: locals.configPath,
+			subsystem: 'jobs',
+			outcome: configBlockOutcome,
+			json: opts.json,
+		});
 
-	if (!configResult.ok) {
-		return {
-			ok: false,
-			planned,
-			error: configResult.error,
-			configBlockOutcome,
-		};
+		if (!configResult.ok) {
+			return {
+				ok: false,
+				planned,
+				error: configResult.error,
+				configBlockOutcome,
+			};
+		}
 	}
 
 	return { ok: true, planned, configBlockOutcome };

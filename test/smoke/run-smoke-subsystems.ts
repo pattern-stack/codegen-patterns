@@ -152,12 +152,12 @@ function findStaticPeerImports(dir: string, pkgs: string[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Vendored leg — installs the real implementation subsystems against `@shared/*`
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<number> {
+async function vendoredLeg(): Promise<number> {
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-smoke-subsystems-'));
-	log(`tmp dir: ${tmpDir}`);
+	log(`[vendored] tmp dir: ${tmpDir}`);
 
 	let exitCode = 0;
 
@@ -431,7 +431,204 @@ async function main(): Promise<number> {
 		cleanup(tmpDir);
 	}
 
-	log(exitCode === 0 ? 'subsystems smoke PASS' : 'subsystems smoke FAIL');
+	log(exitCode === 0 ? '[vendored] subsystems smoke PASS' : '[vendored] subsystems smoke FAIL');
+	return exitCode;
+}
+
+// ---------------------------------------------------------------------------
+// Package leg (#517) — package mode is the ADR-037 DEFAULT. Installing jobs
+// must now emit the consumer-owned scaffold (`src/worker.ts` + the `src/main.ts`
+// embedded-mode hook); the schema template is skipped (the schema ships in the
+// package, re-exported via the schema barrel). #516 made the worker's
+// JobWorkerModule import mode-aware; this leg locks in that the package-mode
+// INSTALL path actually emits it.
+//
+// Acceptance:
+//   1. `src/worker.ts` exists after a package-mode jobs install.
+//   2. The worker imports `@pattern-stack/codegen/runtime/subsystems/jobs/index`
+//      and carries NO `@shared/subsystems` reference (the vendored specifier).
+//   3. NO templated schema vendored into the consumer's subsystems tree.
+//   4. The consumer tree typechecks (`tsc --noEmit`). In checkout mode the
+//      package isn't `bun add`-ed, so the worker's `@pattern-stack/codegen/`
+//      import is unresolvable — that single line is filtered (same precedent as
+//      run-smoke.ts), but every OTHER line in the worker (relative `./app.module`
+//      import, the `forRoot` literal, the bootstrap body) must typecheck clean.
+// ---------------------------------------------------------------------------
+
+/**
+ * Typecheck the emitted `src/worker.ts` in ISOLATION against a minimal local
+ * `app.module.ts` stub.
+ *
+ * Why isolate: in package mode the consumer's ENTIRE generated tree (repos,
+ * services, app.module) imports from `@pattern-stack/codegen/runtime/...`, which
+ * is unresolvable in checkout mode (the package isn't `bun add`-ed) — so the
+ * full-tree tsc the vendored leg runs is impossible here, and its errors are all
+ * downstream of the unresolvable base-class imports, NOT worker bugs. #517 is
+ * about whether the worker is EMITTED and structurally correct, so we typecheck
+ * the worker alone. The worker's only package import (`JobWorkerModule`) is
+ * filtered (run-smoke.ts precedent); its relative `./app.module` import resolves
+ * against the stub, and every other line (the `forRoot` literal, the bootstrap
+ * body, the `WorkerAppModule` class) must typecheck clean — that's the surface
+ * #516 built and #517 wires.
+ */
+function typecheckWorkerInIsolation(tmpDir: string): string[] {
+	const checkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-worker-tc-'));
+	try {
+		const workerSrc = fs.readFileSync(path.join(tmpDir, 'src', 'worker.ts'), 'utf-8');
+		const srcDir = path.join(checkDir, 'src');
+		fs.mkdirSync(srcDir, { recursive: true });
+		fs.writeFileSync(path.join(srcDir, 'worker.ts'), workerSrc, 'utf-8');
+		// Minimal AppModule stub so the worker's relative `./app.module` import
+		// resolves without dragging the unresolvable generated tree.
+		fs.writeFileSync(
+			path.join(srcDir, 'app.module.ts'),
+			"import { Module } from '@nestjs/common';\n@Module({})\nexport class AppModule {}\n",
+			'utf-8',
+		);
+		// Reuse the consumer's deps (NestJS, reflect-metadata) by pointing
+		// node_modules resolution at the tmpDir install.
+		fs.writeFileSync(
+			path.join(checkDir, 'tsconfig.json'),
+			JSON.stringify(
+				{
+					compilerOptions: {
+						target: 'ESNext',
+						module: 'Preserve',
+						moduleResolution: 'bundler',
+						strict: true,
+						skipLibCheck: true,
+						noEmit: true,
+						experimentalDecorators: true,
+						emitDecoratorMetadata: true,
+						allowImportingTsExtensions: true,
+						types: [],
+						baseUrl: '.',
+						paths: { '*': [path.join(tmpDir, 'node_modules', '*')] },
+					},
+					include: ['src/**/*'],
+				},
+				null,
+				2,
+			),
+			'utf-8',
+		);
+		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', checkDir);
+		// Tolerate ONLY the unresolvable `@pattern-stack/codegen/` JobWorkerModule
+		// import (the package isn't installed in checkout mode) — same precedent as
+		// run-smoke.ts. Any OTHER error in the worker is a real bug.
+		return filterConsumerErrors(tsc.out + tsc.err).filter(
+			(line) => !line.includes("'@pattern-stack/codegen/"),
+		);
+	} finally {
+		try {
+			fs.rmSync(checkDir, { recursive: true, force: true });
+		} catch {}
+	}
+}
+
+async function packageLeg(): Promise<number> {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegen-smoke-subsystems-pkg-'));
+	log(`[package] tmp dir: ${tmpDir}`);
+
+	let exitCode = 0;
+
+	try {
+		// 1. bun init + install pinned deps (same set as the vendored leg).
+		run('bun init -y', tmpDir);
+		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
+		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
+
+		// 2. project init in PACKAGE mode (the ADR-037 default — pass it
+		//    explicitly for clarity). Package mode vendors no runtime tree;
+		//    subsystems resolve from the published package. main.ts lands here so
+		//    the embedded-mode hook has an injection target.
+		run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime package`, tmpDir);
+
+		// 3. Install jobs in package mode — THE #517 path. Emits src/worker.ts +
+		//    the src/main.ts embedded-mode hook; skips the schema template. NO
+		//    entity generation: the package-mode generated tree can't typecheck in
+		//    checkout mode (base classes live in the uninstalled package), and the
+		//    worker — what #517 wires — is independent of it.
+		run(`bun ${CLI_PATH} subsystem install jobs`, tmpDir);
+
+		// 4. Acceptance #1 — worker.ts emitted (consumer-owned, NOT vendored).
+		const workerPath = path.join(tmpDir, 'src', 'worker.ts');
+		if (!fs.existsSync(workerPath)) {
+			throw new Error(
+				`package-mode jobs install did not emit src/worker.ts — executePackageMode short-circuited the scaffold (the #517 regression):\n${workerPath}`,
+			);
+		}
+		const worker = fs.readFileSync(workerPath, 'utf-8');
+
+		// Acceptance #2 — mode-aware import resolves to the PACKAGE, never @shared.
+		if (!worker.includes("from '@pattern-stack/codegen/runtime/subsystems/jobs/index'")) {
+			throw new Error(
+				`src/worker.ts does not import JobWorkerModule from the package runtime subpath ` +
+					`(#516 mode-aware import regression):\n${worker}`,
+			);
+		}
+		if (worker.includes('@shared/subsystems')) {
+			throw new Error(
+				`src/worker.ts references '@shared/subsystems' in package mode — the vendored ` +
+					`specifier leaked into the package-mode worker:\n${worker}`,
+			);
+		}
+
+		// NOTE on the main.ts hook: the package-leg deliberately does NOT assert
+		// the embedded-mode hook landed in the init-emitted main.ts. That
+		// injection is pre-existingly broken (independent of #517 — same in
+		// vendored mode): Hygen's `inject: after: "NestFactory.create"` silently
+		// no-ops when the target file contains a `{ … : true }` boolean object
+		// literal AFTER the anchor — and `project init`'s main.ts carries
+		// `swaggerOptions: { persistAuthorization: true }`. The hook's injection
+		// against a clean main.ts is covered by the subsystem.test.ts unit case;
+		// see docs/specs/JOB-6.md Open Questions for the anchor-robustness item.
+
+		// Acceptance #3 — NO templated schema vendored under the subsystems tree
+		// (the schema ships in the package, re-exported via the schema barrel).
+		const vendoredSchema = path.join(
+			tmpDir,
+			'src/shared/subsystems/jobs/job-orchestration.schema.ts',
+		);
+		if (fs.existsSync(vendoredSchema)) {
+			throw new Error(
+				`package mode vendored a templated job-orchestration.schema.ts — the schema ` +
+					`should ship in the package (skipSchema skip_if regression):\n${vendoredSchema}`,
+			);
+		}
+
+		// Acceptance #4 — the emitted worker typechecks (in isolation against an
+		// AppModule stub; the package's JobWorkerModule import is the only line
+		// filtered — checkout mode can't resolve it).
+		log('[package] typechecking emitted src/worker.ts in isolation');
+		const errs = typecheckWorkerInIsolation(tmpDir);
+		if (errs.length > 0) {
+			for (const line of errs) console.error(line);
+			logError(`[package] ${errs.length} typecheck error(s) in emitted src/worker.ts`);
+			exitCode = 1;
+		} else {
+			log('[package] tsc OK — emitted src/worker.ts typechecks');
+		}
+	} catch (err: unknown) {
+		logError(err instanceof Error ? err.message : String(err));
+		exitCode = 1;
+	} finally {
+		cleanup(tmpDir);
+	}
+
+	log(exitCode === 0 ? '[package] subsystems smoke PASS' : '[package] subsystems smoke FAIL');
+	return exitCode;
+}
+
+// ---------------------------------------------------------------------------
+// Main — run both legs; fail if either fails.
+// ---------------------------------------------------------------------------
+
+async function main(): Promise<number> {
+	const vendored = await vendoredLeg();
+	const pkg = await packageLeg();
+	const exitCode = vendored === 0 && pkg === 0 ? 0 : 1;
+	log(exitCode === 0 ? 'subsystems smoke PASS (vendored + package)' : 'subsystems smoke FAIL');
 	return exitCode;
 }
 

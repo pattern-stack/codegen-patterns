@@ -1181,4 +1181,144 @@ describe('subsystem — install (runtime: package)', () => {
 		expect(parsed.vendored).toBe(false);
 		expect(parsed.installList).toContain('bridge');
 	});
+
+	// -------------------------------------------------------------------------
+	// #517 — package-mode jobs install emits the consumer-owned scaffold
+	// (worker + main.ts hook). The schema template is SKIPPED (the schema ships
+	// in the package, re-exported via the schema barrel).
+	// -------------------------------------------------------------------------
+
+	test('jobs: package-mode install emits src/worker.ts with the package import (#517)', async () => {
+		const root = mkPackageProject();
+		// main.ts must exist for the embedded-mode hook to inject after
+		// `NestFactory.create` (mirrors a `project init` consumer tree).
+		fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'src/main.ts'),
+			"import { NestFactory } from '@nestjs/core';\nasync function bootstrap() {\n  const app = await NestFactory.create(AppModule);\n  await app.listen(3000);\n}\n",
+		);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+
+		// worker.ts emitted, NOT vendored under src/shared/subsystems.
+		const workerPath = path.join(root, 'src/worker.ts');
+		expect(fs.existsSync(workerPath)).toBe(true);
+		const worker = fs.readFileSync(workerPath, 'utf-8');
+		// Mode-aware import resolves to the published package (NOT @shared).
+		expect(worker).toContain(
+			"from '@pattern-stack/codegen/runtime/subsystems/jobs/index'",
+		);
+		expect(worker).not.toContain('@shared/subsystems');
+		// Standalone forRoot literal survived the base64 arg boundary intact.
+		expect(worker).toContain("mode: 'standalone'");
+		expect(worker).toContain('allPools: true');
+	});
+
+	test('jobs: package-mode install injects the main.ts embedded-mode hook (#517)', async () => {
+		const root = mkPackageProject();
+		fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'src/main.ts'),
+			"import { NestFactory } from '@nestjs/core';\nasync function bootstrap() {\n  const app = await NestFactory.create(AppModule);\n  await app.listen(3000);\n}\n",
+		);
+		const cli = buildCli();
+		await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
+
+		const main = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf-8');
+		expect(main).toContain('JOBS — Embedded worker mode (optional)');
+	});
+
+	test('jobs: package-mode install does NOT vendor the schema template (#517)', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
+
+		// The schema ships in the package — no templated copy under the
+		// consumer's subsystems tree.
+		expect(
+			fs.existsSync(
+				path.join(
+					root,
+					'src/shared/subsystems/jobs/job-orchestration.schema.ts',
+				),
+			),
+		).toBe(false);
+	});
+
+	test('jobs: package-mode injects the jobs config block EXACTLY ONCE (no double-injection) (#517)', async () => {
+		// Guards the D3 double-handling hazard: executePackageMode step 2b owns
+		// the config-block injection, and the post-barrel runJobsScaffold pass
+		// must NOT inject it a second time (skipConfigBlock: true).
+		const root = mkPackageProject();
+		fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'src/main.ts'),
+			"import { NestFactory } from '@nestjs/core';\nasync function bootstrap() {\n  const app = await NestFactory.create(AppModule);\n  await app.listen(3000);\n}\n",
+		);
+		const cli = buildCli();
+		await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
+
+		const cfg = fs.readFileSync(
+			path.join(root, 'codegen.config.yaml'),
+			'utf-8',
+		);
+		// Exactly one top-level `jobs:` block key.
+		const jobsBlockCount = (cfg.match(/^jobs:/gm) ?? []).length;
+		expect(jobsBlockCount).toBe(1);
+		// Pool config (emitted only by the config-block template) appears once,
+		// not duplicated — a second injection would append a whole second block.
+		const poolHeaderCount = (cfg.match(/^\s+pools:/gm) ?? []).length;
+		expect(poolHeaderCount).toBe(1);
+	});
+
+	test('jobs: package-mode dry-run lists the worker + main-hook targets, not the schema (#517)', async () => {
+		const root = mkPackageProject();
+		const cli = buildCli();
+		const { out } = await capture(() =>
+			cli.run([
+				'subsystem',
+				'install',
+				'jobs',
+				'--json',
+				'--dry-run',
+				'--cwd',
+				root,
+			]),
+		);
+		const parsed = JSON.parse(out);
+		expect(parsed.runtime).toBe('package');
+		expect(parsed.dryRun).toBe(true);
+		expect(parsed.scaffold).toBeDefined();
+		const planned: string[] = parsed.scaffold.planned;
+		// worker + main.ts hook planned; schema (ships in the package) and config
+		// block (owned by step 2b) are NOT in the scaffold's planned list.
+		expect(planned.some((p) => p.endsWith('worker.ts'))).toBe(true);
+		expect(planned.some((p) => p.endsWith('main.ts'))).toBe(true);
+		expect(planned.some((p) => p.endsWith('job-orchestration.schema.ts'))).toBe(
+			false,
+		);
+		expect(planned.some((p) => p.endsWith('codegen.config.yaml'))).toBe(false);
+		// Dry-run must not actually write the worker.
+		expect(fs.existsSync(path.join(root, 'src/worker.ts'))).toBe(false);
+	});
+
+	test('jobs: package-mode --json scaffold reports ok + emitted worker (#517)', async () => {
+		const root = mkPackageProject();
+		fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'src/main.ts'),
+			"import { NestFactory } from '@nestjs/core';\nasync function bootstrap() {\n  const app = await NestFactory.create(AppModule);\n  await app.listen(3000);\n}\n",
+		);
+		const cli = buildCli();
+		const { out } = await capture(() =>
+			cli.run(['subsystem', 'install', 'jobs', '--json', '--cwd', root]),
+		);
+		const parsed = JSON.parse(out);
+		expect(parsed.scaffold).toBeDefined();
+		expect(parsed.scaffold.ok).toBe(true);
+		expect(fs.existsSync(path.join(root, 'src/worker.ts'))).toBe(true);
+	});
 });

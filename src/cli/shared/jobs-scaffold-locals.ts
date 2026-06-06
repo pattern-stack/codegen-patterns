@@ -53,6 +53,13 @@ export interface JobsScaffoldLocals {
 	schemaPath: string;
 	/** Sentinel-based idempotence flag for `main-hook.ejs.t`'s `skip_if`. */
 	mainHookInjected: boolean;
+	/** #517 — skips `job-orchestration.schema.ejs.t` in package mode. Package
+	 * mode's schema story is `regenerateSubsystemSchemaBarrel` (the schema ships
+	 * in the published package and is re-exported from `<generated>/
+	 * subsystems-schema.ts`), so vendoring a templated copy into the consumer
+	 * tree would be a duplicate. Vendored mode keeps the template as the sole
+	 * tenancy-aware emitter. Boolean-ish for `skip_if` — see `workerSkipValue`. */
+	skipSchema: boolean;
 }
 
 export interface JobsScaffoldLocalsInput {
@@ -131,6 +138,9 @@ export function resolveJobsScaffoldLocals(
 		workerForRootOpts: resolveWorkerForRootOpts(jobsBlock),
 		schemaPath,
 		mainHookInjected,
+		// #517 — in package mode the schema ships in the package (consumed via the
+		// schema barrel), so the template is skipped; vendored mode renders it.
+		skipSchema: resolveRuntimeMode(config) === 'package',
 	};
 }
 
@@ -227,5 +237,9 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 		'--workerForRootOpts', encodeWorkerForRootOpts(locals.workerForRootOpts),
 		'--schemaPath', locals.schemaPath,
 		'--mainHookInjected', workerSkipValue(locals.mainHookInjected),
+		// #517 — boolean-ish for `skip_if` (same '' / 'true' encoding as
+		// workerExists / mainHookInjected). 'true' in package mode → the schema
+		// template is skipped (the package ships the schema).
+		'--skipSchema', workerSkipValue(locals.skipSchema),
 	];
 }

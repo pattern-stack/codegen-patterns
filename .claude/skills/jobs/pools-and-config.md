@@ -180,7 +180,12 @@ Module is `global: true`, provides `JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_S
 
 ## Worker topology — embedded vs. standalone
 
-Both entrypoints are always scaffolded by JOB-6. The choice is operational.
+Both entrypoints are always scaffolded by JOB-6 — in BOTH runtime modes (vendored
+and package). Package mode is the ADR-037 default; until #517 its install path
+short-circuited the scaffold and never emitted `src/worker.ts`. As of #517,
+`subsystem install jobs --runtime package` emits the consumer-owned worker +
+main-hook (the schema ships in the package, re-exported via the schema barrel, so
+the schema template is skipped there). The choice below is operational.
 
 **Embedded** (`AppModule` imports `JobWorkerModule.forRoot({ mode: 'embedded' })`):
 - API process and workers share CPU.

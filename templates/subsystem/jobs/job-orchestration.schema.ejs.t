@@ -1,6 +1,7 @@
 ---
 to: "<%= schemaPath %>"
 force: true
+skip_if: "<%= skipSchema %>"
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 /**
