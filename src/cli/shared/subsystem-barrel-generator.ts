@@ -249,6 +249,27 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		const imports = [
 			`import { EventsModule } from '${moduleImport('events', 'events.module')}';`,
 		];
+		// ADR-039 — thread the consumer's generated `eventRegistry` into
+		// `forRoot({ eventRegistry })`. `EventSchedulerLifecycle` reads it (and
+		// ONLY it — there's no bundled fallback) to spawn the `EventScheduler`
+		// for events that declare a `schedule:` block. WITHOUT this, scheduled
+		// events silently never tick (the original 0.20.0 dogfood gap).
+		//
+		// The registry sits next to the typed bus:
+		//   - package mode → `./events/registry` (the consumer's generated set,
+		//     co-located with the barrel; the bundled package registry is empty/
+		//     fixtures, same reason `typedBus` is threaded — see below).
+		//   - vendored mode → `<subsystemsRel>/events/generated/registry` (the
+		//     vendored runtime's own generated file, which IS the consumer's).
+		// Both files are emitted by `entity new --all`; the stub guard in the
+		// writer below drops an empty set if a bare `subsystem install events`
+		// regenerated this barrel before codegen ran, so the import never dangles.
+		const registrySpecifier =
+			mode === 'package'
+				? './events/registry'
+				: moduleImport('events', 'generated/registry');
+		imports.push(`import { eventRegistry } from '${registrySpecifier}';`);
+		const registryClause = `, eventRegistry`;
 		// Package mode (ADR-037): the consumer's `events/*.yaml` are scanned into
 		// `src/generated/events/bus.ts` (a `TypedEventBus` typed to THEIR event
 		// union, reading THEIR registry). Thread it through `forRoot({ typedBus })`
@@ -260,7 +281,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			return {
 				imports,
 				calls: [
-					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus${listenNotifyClause} }),`,
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus${registryClause}${listenNotifyClause} }),`,
 				],
 			};
 		}
@@ -268,14 +289,14 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			return {
 				imports,
 				calls: [
-					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, listenNotify: true }),`,
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause}, listenNotify: true }),`,
 				],
 			};
 		}
 		return {
 			imports,
 			calls: [
-				`\tEventsModule.forRoot(${quoteOpts({ backend, multiTenant })}),`,
+				`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause} }),`,
 			],
 		};
 	},
@@ -615,6 +636,24 @@ export async function regenerateSubsystemBarrel(
 				fs.mkdirSync(eventsDir, { recursive: true });
 				for (const { name, content } of buildEventCodegenContents([], 'package')) {
 					fs.writeFileSync(path.resolve(eventsDir, name), content);
+				}
+			}
+		}
+
+		// ADR-039 — vendored counterpart. The events composer now imports
+		// `eventRegistry` from the vendored `<subsystemsRoot>/events/generated/
+		// registry`. `subsystem install events` (vendored) drops only a
+		// `generated/.gitkeep`; the real 5-file set lands on the next
+		// `entity new --all`. If that scan hasn't run yet, drop the empty-set
+		// stub so the barrel's registry import (and the vendored events module's
+		// own `./generated/bus` import) resolve — never clobbering a previously
+		// generated set (byte-identical to the generator's empty-case output).
+		if (mode === 'vendored' && emitted.includes('events')) {
+			const eventsGenDir = path.resolve(subsystemsAbs, 'events', 'generated');
+			if (!fs.existsSync(path.resolve(eventsGenDir, 'registry.ts'))) {
+				fs.mkdirSync(eventsGenDir, { recursive: true });
+				for (const { name, content } of buildEventCodegenContents([], 'vendored')) {
+					fs.writeFileSync(path.resolve(eventsGenDir, name), content);
 				}
 			}
 		}

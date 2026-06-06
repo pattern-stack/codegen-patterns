@@ -265,6 +265,22 @@ async function main(): Promise<number> {
 				`generated barrel does not include BridgeModule.forRoot(...) after install:\n${barrel}`,
 			);
 		}
+		// ADR-039 / 0.20.1 — the barrel MUST thread the consumer's generated
+		// `eventRegistry` into `EventsModule.forRoot`, or `EventSchedulerLifecycle`
+		// never spawns and scheduled events silently don't tick (the 0.20.0 gap
+		// that survived because nothing end-to-end checked the threading). Assert
+		// both the import and the forRoot option, on the real generated barrel.
+		if (!/import \{ eventRegistry \} from '[^']+'/.test(barrel)) {
+			throw new Error(
+				`generated barrel does not import eventRegistry (ADR-039 scheduler threading):\n${barrel}`,
+			);
+		}
+		if (!/EventsModule\.forRoot\(\{[^}]*eventRegistry[^}]*\}\)/.test(barrel)) {
+			throw new Error(
+				`generated barrel's EventsModule.forRoot does not thread eventRegistry ` +
+					`(ADR-039 scheduler would never spawn):\n${barrel}`,
+			);
+		}
 
 		// 5c. Wire SUBSYSTEM_MODULES into AppModule. The CLI's install flow
 		//     intentionally LEAVES the wiring as a manual step (prints a
