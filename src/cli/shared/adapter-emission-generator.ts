@@ -1194,7 +1194,7 @@ function buildSinkInput(
   // relationKey branches (prompt-extension.js:447-460) exactly. isSelfFk is
   // detected the same way the template does: pluralize(target) === entityNamePlural
   // (prompt-extension.js:440-441).
-  const entityNamePlural = def.entity.plural ?? `${def.entity.name}s`;
+  const entityNamePlural = def.entity.plural ?? pluralize.plural(def.entity.name);
   const fkExternalKeys = Object.entries(relationships)
     .filter(([, rel]) => rel.type === "belongs_to")
     .map(([relName, rel]) => {

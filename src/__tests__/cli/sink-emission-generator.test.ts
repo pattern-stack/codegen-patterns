@@ -386,4 +386,15 @@ describe("fkWriteKey — contract test (mirrors processBelongsTo:447-460)", () =
       "parentAccountExternalId",
     );
   });
+
+  it("self-FK irregular plural: target 'company', fk 'parent_company_id' → parentCompanyExternalId", () => {
+    // Exercises the pluralize.plural() fallback path: pluralize.plural("company") = "companies",
+    // NOT "companys" — this is the case the naive `${name}s` fallback would get wrong.
+    // isSelfFk = (pluralize.plural("company") === pluralize.plural("company")) = true (entity is company)
+    // base = "parent_company_id".slice(0,-3) = "parent_company"
+    // relationKey = camelCase("parent_company") = "parentCompany" → "parentCompanyExternalId"
+    expect(fkWriteKey("company", "parent_company_id", true)).toBe(
+      "parentCompanyExternalId",
+    );
+  });
 });
