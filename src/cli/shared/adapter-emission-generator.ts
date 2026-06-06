@@ -59,6 +59,7 @@ import {
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import pluralize from "pluralize";
 
 // ============================================================================
 // Surface registry — which surfaces have an emittable <Surface>Port package
@@ -1124,11 +1125,45 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
 }
 
 /**
+ * Derive the FK external-key write-surface name for a `belongs_to` relationship,
+ * mirroring `processBelongsTo`'s `relationKey` branches in
+ * `templates/entity/new/clean-lite-ps/prompt-extension.js:447-460`, then
+ * appending `ExternalId`.
+ *
+ * Three shapes (see spec #487 anti-drift table):
+ *   - self-FK  → `camelCase(foreign_key − _id) + 'ExternalId'`
+ *     (e.g. `parent_account_id` + target `account` → `parentAccountExternalId`)
+ *   - non-self → `target + 'ExternalId'` (target VERBATIM, snake retained)
+ *     (e.g. target `account` → `accountExternalId`;
+ *            target `sales_account` → `sales_accountExternalId`)
+ *
+ * The non-self snake-retention is a deliberate wart mirrored from the template:
+ * `relationKey` is overloaded (also the Drizzle relation name + service accessor)
+ * so normalising it here would corrupt generated consumer code. Normalization is
+ * tracked as a follow-up (#494). Source of truth: prompt-extension.js:447-460.
+ */
+export function fkWriteKey(
+  target: string,
+  foreignKey: string,
+  isSelfFk: boolean,
+): string {
+  if (isSelfFk) {
+    // parent_account_id → parent_account → parentAccount
+    const base = foreignKey.endsWith("_id") ? foreignKey.slice(0, -3) : foreignKey;
+    return snakeToCamel(base) + "ExternalId";
+  }
+  // Non-self: target verbatim (may be snake, e.g. sales_account → sales_accountExternalId)
+  return `${target}ExternalId`;
+}
+
+/**
  * Build the {@link SinkEmitInput} for a `pattern: Integrated` entity — mirrors
  * `buildIntegrationSurface().writeFields`/`writeFkFields` (clean-lite-ps
  * prompt-extension): copy-through scalars are the non-FK `fields:` (camelCased,
  * nullable-aware tsType); FK external keys are one `<relationKey>ExternalId` per
- * `belongs_to`. The `generateDefaultSink` emitter throws if `pattern` is not
+ * `belongs_to`. Uses {@link fkWriteKey} for the derivation so the write-key
+ * matches the template's write-type member name for all three FK shapes.
+ * The `generateDefaultSink` emitter throws if `pattern` is not
  * `Integrated` — the caller pre-filters, so this is only reached for Integrated.
  */
 function buildSinkInput(
@@ -1155,13 +1190,18 @@ function buildSinkInput(
       tsType: tsTypeFor(f.type, f.nullable),
     }));
 
-  // FK external keys — `<relationKey>ExternalId`. For non-self FKs the relation
-  // key is the target entity name; matches clean-lite-ps `processBelongsTo`.
+  // FK external keys — derived via fkWriteKey() which mirrors processBelongsTo's
+  // relationKey branches (prompt-extension.js:447-460) exactly. isSelfFk is
+  // detected the same way the template does: pluralize(target) === entityNamePlural
+  // (prompt-extension.js:440-441).
+  const entityNamePlural = def.entity.plural ?? `${def.entity.name}s`;
   const fkExternalKeys = Object.entries(relationships)
     .filter(([, rel]) => rel.type === "belongs_to")
     .map(([relName, rel]) => {
       const target = rel.target ?? relName;
-      return { writeKey: `${snakeToCamel(target)}ExternalId` };
+      const foreignKey = rel.foreign_key ?? `${target}_id`;
+      const isSelfFk = pluralize.plural(target) === entityNamePlural;
+      return { writeKey: fkWriteKey(target, foreignKey, isSelfFk) };
     });
 
   return {
