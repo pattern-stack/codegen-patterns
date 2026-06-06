@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import {
 	loadEvents,
 	desugarEntityEvents,
+	desugarEmitChangeEvents,
 } from '../../parser/load-events';
 import { EventDefinitionSchema } from '../../schema/event-definition.schema';
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
@@ -292,5 +293,105 @@ describe('desugarEntityEvents', () => {
 		const [synthesized] = desugarEntityEvents(entity);
 		const parsed = EventDefinitionSchema.safeParse(synthesized);
 		expect(parsed.success).toBe(true);
+	});
+});
+
+// ----------------------------------------------------------------------------
+// desugarEmitChangeEvents (EMIT-CHANGES seam)
+// ----------------------------------------------------------------------------
+
+function makeEmitEntity(
+	name: string,
+	emitChanges: boolean | undefined,
+): EntityDefinition {
+	return {
+		entity: {
+			name,
+			plural: `${name}s`,
+			table: `${name}s`,
+			expose: ['repository', 'rest'],
+		},
+		fields: { id: { type: 'uuid', required: true, nullable: false } },
+		behaviors: [],
+		eav: false,
+		eav_value_table: false,
+		integration:
+			emitChanges === undefined
+				? undefined
+				: { sink: { emit_changes: emitChanges } },
+	} as EntityDefinition;
+}
+
+describe('desugarEmitChangeEvents', () => {
+	it('returns [] when the entity does not opt in', () => {
+		expect(desugarEmitChangeEvents(makeEmitEntity('message', undefined))).toEqual(
+			[],
+		);
+		expect(desugarEmitChangeEvents(makeEmitEntity('message', false))).toEqual([]);
+	});
+
+	it('synthesizes the created/edited/deleted triad with the `_edited` verb', () => {
+		const events = desugarEmitChangeEvents(makeEmitEntity('message', true));
+		expect(events.map((e) => e.type)).toEqual([
+			'message_created',
+			'message_edited',
+			'message_deleted',
+		]);
+		// `_edited`, never `_updated` (swe-brain ADR-0009 B1).
+		expect(events.some((e) => e.type === 'message_updated')).toBe(false);
+	});
+
+	it('stamps change-event metadata (direction/aggregate/pool/retry/version)', () => {
+		const [created] = desugarEmitChangeEvents(makeEmitEntity('message', true));
+		expect(created?.direction).toBe('change');
+		expect(created?.aggregate).toBe('message');
+		expect(created?.pool).toBe('events_change');
+		expect(created?.retry).toEqual({ attempts: 3, backoff: 'exponential' });
+		expect(created?.version).toBe(1);
+	});
+
+	it('carries the provenance + identity payload; changed_fields only on created/edited', () => {
+		const [created, edited, deleted] = desugarEmitChangeEvents(
+			makeEmitEntity('message', true),
+		);
+		// Identity + provenance present on all three.
+		for (const ev of [created, edited, deleted]) {
+			expect(ev?.payload.entity_id?.type).toBe('uuid');
+			expect(ev?.payload.external_id?.type).toBe('string');
+			expect(ev?.payload.provider?.type).toBe('string');
+			expect(ev?.payload.source?.type).toBe('string');
+		}
+		// changed_fields (json, nullable) on created/edited only.
+		expect(created?.payload.changed_fields?.type).toBe('json');
+		expect(created?.payload.changed_fields?.nullable).toBe(true);
+		expect(edited?.payload.changed_fields?.type).toBe('json');
+		expect(deleted?.payload.changed_fields).toBeUndefined();
+	});
+
+	it('produces output that round-trips through EventDefinitionSchema', () => {
+		for (const ev of desugarEmitChangeEvents(makeEmitEntity('message', true))) {
+			expect(EventDefinitionSchema.safeParse(ev).success).toBe(true);
+		}
+	});
+
+	it('desugarEntityEvents appends the triad AFTER any explicit events: entries', () => {
+		const entity = {
+			...makeEmitEntity('message', true),
+			events: [
+				{
+					name: 'message_reacted',
+					queue: 'domain-events',
+					body: { message_id: 'uuid' },
+					generate_handler: false,
+				},
+			],
+		} as EntityDefinition;
+		const all = desugarEntityEvents(entity);
+		expect(all.map((e) => e.type)).toEqual([
+			'message_reacted',
+			'message_created',
+			'message_edited',
+			'message_deleted',
+		]);
 	});
 });

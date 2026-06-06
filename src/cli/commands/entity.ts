@@ -929,6 +929,11 @@ export class EntityNewCommand extends Command {
 							`integration assembly codegen: ${adapterResult.assembliesWritten.length} module(s) + ${adapterResult.tokensWritten.length} tokens file(s) + ${adapterResult.integrationAggregatorsWritten.length} aggregator(s)`,
 						);
 					}
+					if (adapterResult.changeEmittersWritten.length) {
+						printInfo(
+							`integration change-emitters (emit_changes): ${adapterResult.changeEmittersWritten.length} emitter(s)`,
+						);
+					}
 					for (const s of adapterResult.scaffoldsSkipped) {
 						printInfo(`skipped scaffold ${s} (author-owned)`);
 					}

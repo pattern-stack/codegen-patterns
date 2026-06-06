@@ -12,6 +12,17 @@ export { EVENT_BUS } from './events';
 // mode reaches it via `@shared/subsystems/events`; both must export it.
 export type { DomainEvent, IEventBus, DrizzleTransaction } from './events';
 export { EventsModule, DrizzleEventBus, MemoryEventBus } from './events';
+// The `TYPED_EVENT_BUS` token is re-exported here so package-mode generated code
+// that publishes events from the single `@pattern-stack/codegen/subsystems`
+// barrel resolves it — notably the EMIT-CHANGES integration change-emitter
+// (`<entity>.change-emitter.ts`), which injects `TYPED_EVENT_BUS`. The emitter
+// types the bus with a local structural `publish` shape (NOT the package's
+// `TypedEventBus`, whose `EventTypeName` union is the package's own events — the
+// consumer's `<entity>_*` events live in the CONSUMER registry), so only the
+// token needs forwarding. The CONSUMER binds their generated `TypedEventBus` to
+// the token via `EventsModule.forRoot()`. Vendored mode reaches it via
+// `@shared/subsystems/events`.
+export { TYPED_EVENT_BUS } from './events';
 
 // Jobs — orchestration schema only (JOB-1). Protocols / modules land in JOB-2 / JOB-5.
 export { jobs, jobRuns, jobSteps } from './jobs';
@@ -130,6 +141,18 @@ export {
   INTEGRATION_SINK,
 } from './integration';
 export type { IIntegrationSink } from './integration';
+
+// Integration — EMIT-CHANGES seam. The generated per-entity change-emitter
+// (`<entity>.change-emitter.ts`) imports the `INTEGRATION_CHANGE_EMITTER` token
+// + the `IIntegrationChangeEmitter` port + `IntegrationChangeNotification` from
+// `@pattern-stack/codegen/subsystems`. Forwarded here so the emitted opt-in
+// emitter resolves them across the package boundary (package mode).
+export { INTEGRATION_CHANGE_EMITTER } from './integration';
+export type {
+  IIntegrationChangeEmitter,
+  IntegrationChangeAction,
+  IntegrationChangeNotification,
+} from './integration';
 
 // Auth
 export {

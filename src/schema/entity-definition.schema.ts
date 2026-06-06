@@ -670,12 +670,22 @@ export type ProviderIntegration = z.infer<typeof ProviderIntegrationSchema>;
  *   surface entirely (no-clobber by construction) and from the #488 find view
  *   (shared copyThroughFields input — symmetrically absent on both sides so the
  *   differ never compares them; see spec §Find-side).
+ *
+ * - `emit_changes` — opt-in post-upsert change-event emission (EMIT-CHANGES seam).
+ *   When `true`, codegen (a) desugars the entity into three change events
+ *   `<entity>_created` / `<entity>_edited` / `<entity>_deleted` (merged into the
+ *   generated events registry exactly like a hand-authored `events/*.yaml`), and
+ *   (b) binds an `INTEGRATION_CHANGE_EMITTER` in the per-entity integration
+ *   assembly so `ExecuteIntegrationUseCase` publishes the typed event after every
+ *   sink write/soft-delete. Absent/false ⇒ no emission (back-compat default).
+ *   The verb is `_edited`, NOT `_updated` (swe-brain ADR-0009 B1 vocabulary).
  */
 const SinkPolicySchema = z.object({
   delete: z
     .enum(['soft', 'tombstone', 'noop'])
     .optional(), // NO .default() — see default fence in spec §Goal
   exclude_fields: z.array(z.string()).optional(),
+  emit_changes: z.boolean().optional(), // NO .default() — absent ⇒ no emission
 }).strict();
 
 export type SinkPolicy = z.infer<typeof SinkPolicySchema>;

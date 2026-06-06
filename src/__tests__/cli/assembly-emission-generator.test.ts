@@ -128,6 +128,42 @@ describe("generateAssemblyModule — Option A assembly", () => {
   });
 });
 
+describe("generateAssemblyModule — EMIT-CHANGES opt-in", () => {
+  test("default (no emitChanges) binds NO change-emitter — back-compat", () => {
+    const out = generateAssemblyModule(meetingGoogle);
+    expect(out).not.toContain("INTEGRATION_CHANGE_EMITTER");
+    expect(out).not.toContain("MeetingChangeEmitter");
+    expect(out).not.toContain("change-emitter");
+  });
+
+  test("emitChanges:true imports the token, the emitter, and binds it", () => {
+    const out = generateAssemblyModule({ ...meetingGoogle, emitChanges: true });
+    // Token added to the integration subsystem import (sorted first).
+    expect(out).toContain(
+      "import {\n  ExecuteIntegrationUseCase,\n  INTEGRATION_CHANGE_EMITTER,\n  INTEGRATION_CHANGE_SOURCE,\n  INTEGRATION_SINK,\n} from '@pattern-stack/codegen/subsystems';",
+    );
+    // Emitter imported from ../../sinks/<entity>.change-emitter.
+    expect(out).toContain(
+      "import { MeetingChangeEmitter } from '../../sinks/meeting.change-emitter';",
+    );
+    // Emitter is provided + aliased to the token.
+    expect(out).toContain("MeetingChangeEmitter,");
+    expect(out).toContain(
+      "{ provide: INTEGRATION_CHANGE_EMITTER, useExisting: MeetingChangeEmitter },",
+    );
+  });
+
+  test("emitChanges:true does not perturb the change-source/sink/use-case bindings", () => {
+    const out = generateAssemblyModule({ ...meetingGoogle, emitChanges: true });
+    expect(out).toContain("provide: INTEGRATION_CHANGE_SOURCE,");
+    expect(out).toContain("provide: INTEGRATION_SINK,");
+    expect(out).toContain(
+      "{ provide: MEETING_INTEGRATION_USE_CASE__GOOGLE, useExisting: ExecuteIntegrationUseCase },",
+    );
+    expect(out).toContain("exports: [MEETING_INTEGRATION_USE_CASE__GOOGLE],");
+  });
+});
+
 describe("generateIntegrationTokens — surface tokens file", () => {
   const entries: IntegrationTokenEntry[] = [
     { entityName: "meeting", entityClass: "Meeting", provider: "google" },

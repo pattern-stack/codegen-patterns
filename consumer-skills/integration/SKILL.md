@@ -114,9 +114,17 @@ export class AppModule {}
    those records. This is the most common "wait, what?" moment; document it in
    your runbooks. Retry semantics are caller-owned.
 
-7. **The orchestrator does not emit events, schedule itself, retry, or resolve
-   subscriptions.** Those are all consumer concerns. Wire event emission inside
-   your sink's transaction; wire scheduling via a job or webhook handler.
+7. **Event emission is an opt-in seam; scheduling/retry/subscription-resolution
+   stay consumer concerns.** Declare `integration.sink.emit_changes: true` on an
+   entity and codegen generates `<entity>_created` / `<entity>_edited` /
+   `<entity>_deleted` typed events plus a `<entity>.change-emitter.ts` the
+   assembly binds to `INTEGRATION_CHANGE_EMITTER`; the orchestrator then publishes
+   after every real sink write/soft-delete (payload carries
+   `source: 'integration'` for loop-breaking). Omit the flag (the default) and the
+   orchestrator emits nothing — hand-roll emission in your sink if you need a
+   bespoke payload, or override the generated event via a top-level
+   `events/<entity>_created.yaml`. Scheduling is still a job/webhook concern;
+   retry semantics are still caller-owned. See `docs/specs/EMIT-CHANGES-1.md`.
 
 ## Do not
 
