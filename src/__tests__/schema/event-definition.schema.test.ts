@@ -496,3 +496,80 @@ describe('EventDefinitionSchema — array payload fields', () => {
 		expect(resultJson.success).toBe(false);
 	});
 });
+
+// ----------------------------------------------------------------------------
+// schedule (ADR-039 — time as an event source)
+// ----------------------------------------------------------------------------
+
+describe('EventDefinitionSchema — schedule', () => {
+	it('parses a domain event with a schedule and applies defaults', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'reconcile_due',
+			direction: 'inbound',
+			schedule: { every: '1h' },
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.schedule).toEqual({
+				every: '1h',
+				align: true,
+				catchUp: false,
+				maxCatchUpSlots: 1000,
+			});
+		}
+	});
+
+	it('accepts an explicit align/catchUp/maxCatchUpSlots and a numeric every', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'rollup_due',
+			direction: 'change',
+			aggregate: 'metric',
+			schedule: { every: 900000, align: false, catchUp: true, maxCatchUpSlots: 24 },
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.schedule).toEqual({
+				every: 900000,
+				align: false,
+				catchUp: true,
+				maxCatchUpSlots: 24,
+			});
+		}
+	});
+
+	it('rejects a malformed every duration', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'reconcile_due',
+			direction: 'inbound',
+			schedule: { every: '1 fortnight' },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects a non-positive numeric every', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'reconcile_due',
+			direction: 'inbound',
+			schedule: { every: 0 },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects schedule on an audit-tier event (no pool to route through)', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'sync_heartbeat',
+			tier: 'audit',
+			schedule: { every: '5m' },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects unknown keys in schedule (strict)', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'reconcile_due',
+			direction: 'inbound',
+			schedule: { every: '1h', cron: '0 * * * *' },
+		});
+		expect(result.success).toBe(false);
+	});
+});

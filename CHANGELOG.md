@@ -4,6 +4,62 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-06-06
+
+**Declarative time-based scheduling: time as an event source** (ADR-039;
+swe-brain consumer-test finding — an hourly reconcile poll had to be hand-rolled
+as a self-perpetuating job chain because there was no time-based trigger, and
+its flat dedupe key collapsed the chain into the running parent).
+
+### Added
+
+- **`schedule:` on event YAML** (`definitions/events/<domain>/*.yaml`) —
+  `{ every, align?, catchUp?, maxCatchUpSlots? }`. Declares that the platform
+  emits this event on a cadence. `every` is a duration string (`'1h'`/`'30m'`/
+  `'15s'`/`'500ms'`/`'1d'`) or raw ms. Domain-tier only (audit rejected). Time
+  is a third event **source** (peer to use-case publishes + webhook receivers),
+  not a fourth activation tier — consumers react through ADR-023's existing
+  tiers (`subscribe` or `@JobHandler({ triggers })`); no new activation
+  mechanism. Carried into the generated `eventRegistry` + `EventMetadata`.
+- **`EventScheduler`** (`runtime/subsystems/events/event-scheduler.ts`) — a
+  strict producer that materialises **exactly one `domain_events` row per
+  (type, slot)** on a cadence; the existing outbox drain + bridge activate them.
+  Reconcile-on-boot (materialise the current slot, or bounded `catchUp`
+  backfill) + a tick pass for the next slot. Wired by `EventsModule.forRoot`
+  for the drizzle + memory backends (the Redis bus retains no outbox history, so
+  slot idempotency can't be enforced there). Pure helpers exported:
+  `parseEvery`, `slotStartFor`, `nextSlotStart`, `slotKeyFor`,
+  `scheduledEventsFromRegistry`.
+- **Partial UNIQUE expression index** `idx_domain_events_schedule_slot` on
+  `(type, metadata->>'scheduleSlot')` — the DB-level exactly-once-per-slot
+  invariant (no advisory lock, no leader election; multi-instance + boot/tick
+  races collapse on it). Partial on the slot key so ordinary events are
+  untouched. Additive Atlas migration.
+- **`ScheduleConfigError`** + `IEventBus.materializeScheduledEvent` /
+  `lastScheduledSlotMs` (both backends).
+
+### Misfire policy
+
+- Down across N slots → on recovery, materialise **one** tick for the current
+  slot (don't replay the misses). `catchUp: true` opts into bounded backfill.
+
+### Provenance
+
+- A scheduled tick carries `metadata.triggerSource = 'schedule'` +
+  `metadata.scheduleSlot`. A bridge run from it reads `job_run.trigger_source =
+  'event'`; the clock origin is joinable via `trigger_ref → domain_events.id`.
+  The dormant ADR-022 `triggerSource: 'schedule'` enum is the correct stamp for
+  the **direct-start** path (a Tier-1 subscriber calling `orchestrator.start(…,
+  { triggerSource: 'schedule' })`).
+
+### Retires
+
+- The self-perpetuating job-chain pattern (a handler enqueuing its own
+  successor) and its slot-keyed-dedupe workaround — replaced by a `schedule:`
+  YAML + a `triggers:` entry. Supersedes the dangling "ADR-025 scheduling
+  territory" pointer in `docs/specs/BULLMQ-1.md` (the future BullMQ backend maps
+  `schedule:` onto `upsertJobScheduler`; the YAML contract is identical).
+
 ## [0.19.0] — 2026-06-05
 
 **Providers catalog emission + planned providers** (ADR-038 follow-on;

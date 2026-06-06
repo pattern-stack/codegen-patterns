@@ -3,7 +3,12 @@
  *
  * Import the module in AppModule, inject the bus via EVENT_BUS token.
  */
-export type { DomainEvent, IEventBus, DrizzleTransaction } from './event-bus.protocol';
+export type {
+  DomainEvent,
+  IEventBus,
+  DrizzleTransaction,
+  ScheduledEventSpec,
+} from './event-bus.protocol';
 // Augmentable event registry (ADR-037, package-mode trigger typing). A
 // package-mode consumer's generated events code augments `DomainEventRegistry`
 // via `declare module '@pattern-stack/codegen/runtime/subsystems/events/index'`
@@ -30,9 +35,26 @@ export {
   TYPED_EVENT_BUS,
 } from './events.tokens';
 export { TypedEventBus } from './generated/bus';
-export { MissingTenantIdError } from './events-errors';
-export { EventsModule } from './events.module';
+export { MissingTenantIdError, ScheduleConfigError } from './events-errors';
+export { EventsModule, EventSchedulerLifecycle } from './events.module';
 export type { EventsModuleOptions } from './events.module';
+// ADR-039 — declarative time-based scheduling (time as an event source).
+export {
+  EventScheduler,
+  parseEvery,
+  slotStartFor,
+  nextSlotStart,
+  slotKeyFor,
+  resolveScheduledEvent,
+  scheduledEventsFromRegistry,
+  SCHEDULE_KEY_PREFIX,
+  SCHEDULE_FLOOR_MS,
+} from './event-scheduler';
+export type {
+  ScheduledEvent,
+  RegistrySchedule,
+  EventSchedulerOptions,
+} from './event-scheduler';
 export { MemoryEventBus } from './event-bus.memory-backend';
 export { DrizzleEventBus } from './event-bus.drizzle-backend';
 // #6 — backend-specific implementation classes are NOT re-exported here.

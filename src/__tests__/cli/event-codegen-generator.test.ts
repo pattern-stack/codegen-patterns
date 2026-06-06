@@ -33,6 +33,7 @@ import {
 	toPascalCase,
 } from '../../cli/shared/event-codegen-generator.js';
 import type { EventDefinition } from '../../schema/event-definition.schema.js';
+import { EventDefinitionSchema } from '../../schema/event-definition.schema.js';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -549,6 +550,33 @@ describe('buildRegistryContent — non-empty', () => {
 		expect(content).toContain(
 			"pool: 'events_inbound' | 'events_change' | 'events_outbound' | null;",
 		);
+	});
+
+	test('EventMetadata interface carries the optional schedule shape (ADR-039)', () => {
+		const content = buildRegistryContent([]);
+		expect(content).toContain(
+			'schedule?: { every: string | number; align: boolean; catchUp: boolean; maxCatchUpSlots: number };',
+		);
+	});
+
+	test('emits the schedule block inline for a scheduled event (ADR-039)', () => {
+		// Parse through the schema so defaults (align/catchUp/maxCatchUpSlots) apply,
+		// matching the generator's real input.
+		const scheduled = EventDefinitionSchema.parse({
+			type: 'reconcile_due',
+			direction: 'inbound',
+			schedule: { every: '1h' },
+		});
+		const content = buildRegistryContent([scheduled]);
+		expect(content).toContain("'reconcile_due': {");
+		expect(content).toContain(
+			"schedule: { every: '1h', align: true, catchUp: false, maxCatchUpSlots: 1000 },",
+		);
+	});
+
+	test('a non-scheduled event emits no schedule key', () => {
+		const content = buildRegistryContent([contactCreated]);
+		expect(content).not.toContain('schedule:');
 	});
 
 	test('registry entries are alphabetical by type', () => {

@@ -43,6 +43,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -96,6 +97,21 @@ export const domainEvents = pgTable(
     idxDomainEventsTierStatusOccurredAt: index(
       'idx_domain_events_tier_status_occurred_at',
     ).on(t.tier, t.status, t.occurredAt),
+    /**
+     * Scheduling idempotency — partial UNIQUE expression index (ADR-039). The
+     * `EventScheduler` materialises one tick per (event type, slot) by inserting
+     * with `metadata.scheduleSlot = @schedule/<type>/<slotStartMs>` and
+     * `ON CONFLICT DO NOTHING`; this constraint is what makes
+     * "exactly one event per slot" true across multi-instance deploys and
+     * boot/tick races — no advisory lock, no leader election. Partial on the
+     * extracted slot key so it only covers scheduler-materialised rows; ordinary
+     * (use-case / webhook) events carry no `scheduleSlot` and are untouched.
+     */
+    idxDomainEventsScheduleSlot: uniqueIndex(
+      'idx_domain_events_schedule_slot',
+    )
+      .on(t.type, sql`(${t.metadata} ->> 'scheduleSlot')`)
+      .where(sql`${t.metadata} ->> 'scheduleSlot' IS NOT NULL`),
     /**
      * Tier ↔ routing-fields invariant (AUDIT-1):
      *   - `tier` is one of `'domain' | 'audit'`.

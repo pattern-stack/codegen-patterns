@@ -28,3 +28,17 @@ export class MissingTenantIdError extends Error {
     );
   }
 }
+
+/**
+ * Thrown (ADR-039) when a scheduled event's `schedule` config is invalid at
+ * runtime — a malformed `schedule.every` duration, or a scheduled event with no
+ * direction/pool to route by. Codegen validates `schedule` at `gen-all` time;
+ * this is the boot backstop for a hand-edited registry or version skew. Raised
+ * by `EventScheduler` construction / `parseEvery`.
+ */
+export class ScheduleConfigError extends Error {
+  override readonly name = 'ScheduleConfigError';
+  constructor(message: string) {
+    super(`ScheduleConfigError: ${message}`);
+  }
+}

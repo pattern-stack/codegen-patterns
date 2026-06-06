@@ -65,6 +65,7 @@ After editing any `events/*.yaml`, re-run codegen (e.g. `codegen entity new --al
 | `payload` | yes | Map of snake_case keys → field specs. Keys become camelCase TS props. |
 | `pool` | no | Override the direction's default pool. Only valid within the same category (a `change` event can't opt into `events_inbound`). User pools are never valid. Rarely needed — if you reach for it, revisit the direction. **Must be omitted for `tier: audit`.** |
 | `retry` | no | `{ attempts, backoff }`; hints surfaced to the bus. |
+| `schedule` | no | `{ every, align?, catchUp?, maxCatchUpSlots? }` — the platform emits this event on a cadence (ADR-039). `every` is a duration (`'1h'`/`'30m'`/`'15s'`/`'500ms'`/`'1d'`) or raw ms. **Domain-tier only.** See §Scheduled events. |
 | `version` | no | Integer, defaults to 1. Stamped on every publish; multi-version coexistence is not exercised yet. |
 
 ### Payload field types
@@ -116,6 +117,36 @@ Codegen hard-errors on misuse:
 - `tier: audit` with a `pool` → error naming the event.
 - `tier: audit` with a `direction` → error naming the event.
 - A job whose `@JobHandler.triggers` points at an audit event → `AuditEventTriggerError`. Use a domain event or remove the trigger.
+
+## Scheduled events (time as an event source)
+
+Add a `schedule:` block and the platform emits this event on a cadence — you react with the **same** tiers you use for any event (a `subscribe(...)` or a `@JobHandler({ triggers })`). There is no separate "cron handler" or schedule decorator; time is just a third way an event gets produced.
+
+```yaml
+# definitions/events/messaging/reconcile_due.yaml
+type: reconcile_due
+direction: inbound            # scheduled events are domain-tier; route by direction
+schedule:
+  every: 1h                   # '1h' | '30m' | '15s' | '500ms' | '1d' | raw ms
+  align: true                 # epoch-anchored boundaries (fires at :00) — default
+  # catchUp: false            # down across N slots → run ONCE on recovery (default)
+  # maxCatchUpSlots: 1000     # bound when catchUp: true
+payload: {}                   # scheduled events are payload-free facts
+```
+
+```ts
+// React via Tier 3 (bridge) — the cadence is on the event, the reaction on the job.
+@JobHandler<ReconcileInput>('reconcile-poll', {
+  pool: 'batch',
+  concurrency: { key: 'reconcile:{{provider}}', collisionMode: 'queue' }, // serialises overruns
+  triggers: [{ event: 'reconcile_due', map: () => ({ provider: 'slack', windowHours: 24 }) }],
+})
+export class ReconcilePollHandler extends JobHandlerBase<ReconcileInput, ReconcileOutput> { /* … */ }
+```
+
+Behavior: the framework emits **exactly one** `domain_events` row per slot (idempotent across instances + restarts), runs **reconcile-on-boot** (one tick on startup — healing any downtime gap), and by default does **not** replay missed slots. **This replaces the old "self-perpetuating job chain"** (a handler enqueuing its own successor with a slot-keyed dedupe) — delete that pattern; declare `schedule:` instead.
+
+Rules: domain-tier only; a malformed `every` fails `gen-validate`; available on the drizzle/memory backends. See ADR-039.
 
 ## Entity `events:` block is sugar for change events
 
