@@ -54,14 +54,25 @@ globally, which fails until the feature module is imported. The
 > (`<surface>/modules/<provider>/<entity>-integration.module.ts`) — `@generated`,
 > binding `INTEGRATION_CHANGE_SOURCE = adapter.changeSources['<entity>']` +
 > `INTEGRATION_SINK`, providing a local `ExecuteIntegrationUseCase`, and exporting
-> it under a unique `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` token. The default
-> sink is an emit-once scaffold over the entity's `Integrated` repo. You do NOT
+> it under a unique `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` token.
+>
+> The default sink is emitted as a **two-file seam** (Shape C, #491, 2026-06-06):
+> - `<entity>.sink.generated.ts` — `@generated`, regenerated via `writeIfChanged` on every
+>   codegen run. Carries `default<E>BuildWrite`, `default<E>ToCanonicalView` (standalone
+>   functions at concrete projection/write types), and `abstract class <Entity>SinkBase<TCanonical>`.
+>   A YAML field change reflows the mapping here without touching the subclass.
+> - `<entity>.sink.ts` — emit-once subclass (`existsSync`-skipped). `class <Entity>Sink extends
+>   <Entity>SinkBase` with two one-line wirings. Override `toCanonicalView` to narrow typed-json
+>   columns or coerce nulls on canonical widen; override `buildWrite` to activate FK write keys.
+>   Author overrides survive regen.
+>
+> You do NOT
 > hand-write this module for generated surfaces — you fill the adapter's
 > `changeSources` read body (RFC-0003: `enumerate` / `hydrate` / `toCanonical`)
-> and any non-generic sink write logic, then grab the exported token from your
-> trigger (cron/job/CLI/webhook). The hand-written shape below is the predecessor
-> the generated assembly replaces — keep it as the mental model for what the
-> generator emits and for non-surface entities you still wire by hand.
+> and any non-generic sink write logic (in the emit-once subclass override), then grab
+> the exported token from your trigger (cron/job/CLI/webhook). The hand-written shape
+> below is the predecessor the generated assembly replaces — keep it as the mental model
+> for what the generator emits and for non-surface entities you still wire by hand.
 
 ## Writing an `IChangeSource<T>`
 

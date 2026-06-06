@@ -1,15 +1,24 @@
 /**
  * Integration assembly **emission contract** suite (RFC-0002 §8, Track D · E4).
  *
+ * #491 update: the sink is now a TWO-FILE SEAM (@generated base + emit-once subclass).
+ *   - `<entity>.sink.generated.ts` → base with standalone default functions + abstract
+ *     SinkBase<TCanonical>. Goes onto `result.written` (the @generated bucket).
+ *   - `<entity>.sink.ts` → emit-once subclass with two one-line seam wirings.
+ *     Goes onto `result.scaffoldsWritten` / `result.scaffoldsSkipped`.
+ *   - No CODEGEN-SCAFFOLD-V1 sentinel on any sink file (deleted for the sink;
+ *     ADAPTER sentinel is a separate concern and is untouched).
+ *   - Binding still valid: assembly module imports `<E>Sink` from `../../sinks/<entity>.sink`.
+ *
  * The sibling `snapshot.test.ts` locks the emitted bytes for the checked-in
  * single-provider / FK-free fixture. Bytes alone don't give signal (memory
  * `feedback_smoke_filter_signal` / the project's testing philosophy): a snapshot
  * tells you *something changed*, not *whether the contract still holds*. This
  * suite drives `emitAdapters` (the same entry point `cdp gen` invokes) over
  * **synthetic in-test inputs** and asserts the STRUCTURAL INVARIANTS of the
- * emission with explicit `expect`s — the assembly wiring shape, the sink
- * delegation/seam, the token + aggregator contract, the `pattern: Integrated`
- * gate, and the §7q3 two-provider-no-collision claim.
+ * emission with explicit `expect`s — the assembly wiring shape, the sink two-file
+ * seam, the token + aggregator contract, the `pattern: Integrated` gate, and the
+ * §7q3 two-provider-no-collision claim.
  *
  * ## Why synthetic inputs, not a shared-fixture extension (E4 decision)
  *
@@ -22,12 +31,12 @@
  * crm barrel/aggregator/typed-view) confusingly, while teaching the *contract*
  * nothing the explicit `expect`s here don't. The emitters are pure structured-
  * input string-builders, so synthetic inputs drive the exact orchestration path
- * (`emitAdapters` → `buildSinkInput` → `generateDefaultSink` /
+ * (`emitAdapters` → `buildSinkInput` → `generateSinkBase` / `generateSinkSubclass` /
  * `generateAssemblyModule` / `generateIntegrationAggregator`) end-to-end. The
  * shared snapshot is intentionally left unchanged (zero diff).
  */
 
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -35,7 +44,7 @@ import {
   emitAdapters,
   type EmitAdaptersEntity,
 } from "../../src/cli/shared/adapter-emission-generator";
-import { generateDefaultSink } from "../../src/cli/shared/sink-emission-generator";
+import { generateSinkBase } from "../../src/cli/shared/sink-emission-generator";
 import type { LoadedProvider } from "../../src/parser/validate-providers";
 import type { ProviderDefinition } from "../../src/schema/provider-definition.schema";
 
@@ -172,73 +181,232 @@ describe("E4 · assembly module contract — emitAdapters(crm/account ← salesf
 });
 
 // ============================================================================
-// 2. Sink scaffold contract — FK (belongs_to) + user_id, through emitAdapters
+// 2. Sink two-file seam contract (#491) — FK (belongs_to) + user_id, through emitAdapters
 // ============================================================================
 
-describe("E4 · sink scaffold contract — FK belongs_to + user_id (contact via emitAdapters)", () => {
+describe("E4 · sink two-file seam — both files emitted, correct buckets (contact via emitAdapters)", () => {
   const { read, result } = run({ providers: [SALESFORCE], entities: [CONTACT] });
-  const sink = read("crm/sinks/contact.sink.ts");
 
-  test("carries the <CODEGEN-SCAFFOLD-V1> sentinel as the first line (emit-once)", () => {
-    expect(sink.split("\n")[0]).toBe("// <CODEGEN-SCAFFOLD-V1>");
+  test("base file (*.sink.generated.ts) is on result.written (the @generated bucket)", () => {
+    expect(result.written.some((p) => p.endsWith("contact.sink.generated.ts"))).toBe(true);
+  });
+
+  test("subclass file (*.sink.ts) is on result.scaffoldsWritten (emit-once bucket)", () => {
     expect(result.scaffoldsWritten.some((p) => p.endsWith("contact.sink.ts"))).toBe(true);
   });
 
-  test("provider-match throw guards upsertByExternalId", () => {
-    expect(sink).toContain("if (provider !== this.provider) {");
-    expect(sink).toContain(
+  test("subclass is NOT on result.written (it is emit-once, not @generated)", () => {
+    expect(result.written.some((p) => p.endsWith("contact.sink.ts"))).toBe(false);
+  });
+});
+
+describe("E4 · sink base file (@generated) assertions — FK belongs_to + user_id (contact)", () => {
+  const { read } = run({ providers: [SALESFORCE], entities: [CONTACT] });
+  const base = read("crm/sinks/contact.sink.generated.ts");
+
+  test("carries @generated banner (NOT the CODEGEN-SCAFFOLD-V1 sentinel)", () => {
+    expect(base).toContain("@generated by @pattern-stack/codegen");
+    expect(base).not.toContain("<CODEGEN-SCAFFOLD-V1>");
+  });
+
+  test("emits defaultContactBuildWrite + defaultContactToCanonicalView standalone functions", () => {
+    expect(base).toContain(
+      "export function defaultContactBuildWrite(record: ContactIntegrationProjection): ContactIntegrationWrite {",
+    );
+    expect(base).toContain(
+      "export function defaultContactToCanonicalView(row: ContactIntegrationProjection): ContactIntegrationProjection {",
+    );
+  });
+
+  test("emits abstract class ContactSinkBase<TCanonical = ContactIntegrationProjection>", () => {
+    expect(base).toContain(
+      "export abstract class ContactSinkBase<TCanonical = ContactIntegrationProjection>",
+    );
+  });
+
+  test("NO @Injectable decorator in code on the base (OQ2 CLOSED — factory binding)", () => {
+    // The comment mentions @Injectable() to explain why it is absent — that is intentional.
+    // Assert no active @Injectable() decorator call in code lines.
+    expect(codeOnly(base)).not.toContain("@Injectable");
+  });
+
+  test("NO extends bound on TCanonical", () => {
+    expect(base).not.toMatch(/TCanonical extends/);
+  });
+
+  test("provider-match throw guards upsertByExternalId on the base", () => {
+    expect(base).toContain("if (provider !== this.provider) {");
+    expect(base).toContain(
       "throw new Error(`ContactSink: bound provider '${this.provider}' != run provider '${provider}'`);",
     );
   });
 
-  test("delegates to findByExternalIdProjected / integrationUpsertOne / softDeleteByExternalId", () => {
-    expect(sink).toContain("this.repo.findByExternalIdProjected(externalId, this.provider)");
-    expect(sink).toContain("this.repo.integrationUpsertOne(write, this.provider)");
-    expect(sink).toContain("this.repo.softDeleteByExternalId(externalId, this.provider)");
+  test("delegates to findByExternalIdProjected / integrationUpsertOne / softDeleteByExternalId in base concrete methods", () => {
+    expect(base).toContain("this.repo.findByExternalIdProjected(externalId, this.provider)");
+    expect(base).toContain("this.repo.integrationUpsertOne(this.buildWrite(record), this.provider)");
+    expect(base).toContain("this.repo.softDeleteByExternalId(externalId, this.provider)");
   });
 
-  test("emits the FK external-key as null + SEAM comment (projection-default canonical has no external-key member)", () => {
-    // buildSinkInput → fkWriteKey derives `accountExternalId` for the
-    // belongs_to(account, non-self). The projection-default canonical is
-    // <E>IntegrationProjection, which has no accountExternalId member —
-    // record.accountExternalId would be TS2339. null is write-safe (repo skips
-    // null FKs; integrated-entity-repository.ts:118-120). Author replaces null
-    // after widening ContactCanonical to carry accountExternalId.
-    expect(sink).toContain("accountExternalId: null,");
-    expect(sink).toContain("SEAM (FK external key");
-    // SEAM comment mentions record.accountExternalId for instruction — intentional.
-    // Assert the active code assignment is null, not a record access.
-    expect(codeOnly(sink)).not.toContain("accountExternalId: record.");
-    expect(sink).not.toContain("TODO(author)");
+  test("FK external-key is null + SEAM comment in defaultContactBuildWrite (projection-default canonical has no external-key member)", () => {
+    expect(base).toContain("accountExternalId: null,");
+    expect(base).toContain("SEAM (FK external key");
+    expect(codeOnly(base)).not.toContain("accountExternalId: record.");
+    expect(base).not.toContain("TODO(author)");
   });
 
-  test("emits a bare `userId,` ONLY because user_id is declared (sourced from the param)", () => {
-    expect(sink).toContain("      userId,");
-    // user_id must NOT also appear as a record copy-through line.
-    expect(sink).not.toContain("userId: record.userId");
+  test("bare `userId,` ONLY in defaultContactBuildWrite because user_id is declared", () => {
+    const buildWriteFn = base.slice(
+      base.indexOf("export function defaultContactBuildWrite("),
+      base.indexOf("export function defaultContactToCanonicalView("),
+    );
+    expect(buildWriteFn).toContain("userId,");
+    expect(buildWriteFn).not.toContain("userId: record.userId");
   });
 
-  test("copies the non-FK, non-userId scalar (email) through from the record", () => {
-    expect(sink).toContain("email: record.email,");
-    // the FK column itself (account_id) is NOT a copy-through field.
-    expect(sink).not.toContain("accountId: record.accountId");
+  test("copies the non-FK, non-userId scalar (email) through in defaultContactBuildWrite", () => {
+    expect(base).toContain("email: record.email,");
+    expect(base).not.toContain("accountId: record.accountId");
+  });
+
+  test("two abstract seams declared on the base (NO body)", () => {
+    expect(base).toContain(
+      "protected abstract toCanonicalView(row: ContactIntegrationProjection): TCanonical;",
+    );
+    expect(base).toContain(
+      "protected abstract buildWrite(record: TCanonical): ContactIntegrationWrite;",
+    );
   });
 
   test("contains NO ` as ` cast anywhere", () => {
-    expect(codeOnly(sink)).not.toMatch(/\bas\b\s+[A-Za-z{]/);
+    expect(codeOnly(base)).not.toMatch(/\bas\b\s+[A-Za-z{]/);
   });
 });
 
-describe("E4 · sink scaffold — FK-free, no user_id emits no seam and no userId", () => {
-  const { read } = run({ providers: [SALESFORCE], entities: [ACCOUNT] });
-  const sink = read("crm/sinks/account.sink.ts");
+describe("E4 · sink subclass file (emit-once) assertions — FK belongs_to + user_id (contact)", () => {
+  const { read } = run({ providers: [SALESFORCE], entities: [CONTACT] });
+  const sub = read("crm/sinks/contact.sink.ts");
 
-  test("no FK TODO seam", () => {
-    expect(sink).not.toContain("TODO(author)");
+  test("class ContactSink extends ContactSinkBase", () => {
+    expect(sub).toContain("export class ContactSink extends ContactSinkBase {");
   });
 
-  test("no bare userId in the write (account declares no user_id)", () => {
-    expect(sink).not.toContain("      userId,");
+  test("carries the two one-line seam wirings (NOT an empty body)", () => {
+    expect(sub).toContain("return defaultContactToCanonicalView(row);");
+    expect(sub).toContain("return defaultContactBuildWrite(record);");
+  });
+
+  test("imports ContactSinkBase + default functions from ./contact.sink.generated", () => {
+    expect(sub).toContain("from './contact.sink.generated'");
+    expect(sub).toContain("ContactSinkBase,");
+    expect(sub).toContain("defaultContactToCanonicalView,");
+    expect(sub).toContain("defaultContactBuildWrite,");
+  });
+
+  test("does NOT carry CODEGEN-SCAFFOLD-V1 sentinel", () => {
+    expect(sub).not.toContain("<CODEGEN-SCAFFOLD-V1>");
+  });
+
+  test("does NOT carry machinery (integrationUpsertOne / findByExternalIdProjected)", () => {
+    expect(sub).not.toContain("integrationUpsertOne");
+    expect(sub).not.toContain("findByExternalIdProjected");
+  });
+
+  test("contains NO ` as ` cast", () => {
+    expect(codeOnly(sub)).not.toMatch(/\bas\b\s+[A-Za-z{]/);
+  });
+});
+
+describe("E4 · sink FK-free, no user_id — account entity", () => {
+  const { read } = run({ providers: [SALESFORCE], entities: [ACCOUNT] });
+  const base = read("crm/sinks/account.sink.generated.ts");
+  const sub = read("crm/sinks/account.sink.ts");
+
+  test("base: no FK TODO seam, no userId", () => {
+    expect(base).not.toContain("TODO(author)");
+    const buildWriteFn = base.slice(
+      base.indexOf("export function defaultAccountBuildWrite("),
+      base.indexOf("export function defaultAccountToCanonicalView("),
+    );
+    expect(buildWriteFn).not.toContain("userId,");
+  });
+
+  test("subclass: class AccountSink extends AccountSinkBase", () => {
+    expect(sub).toContain("export class AccountSink extends AccountSinkBase {");
+  });
+});
+
+describe("E4 · sink sentinel scope — ADAPTER sentinel KEPT, SINK sentinel DELETED (#491)", () => {
+  const { read } = run({ providers: [SALESFORCE], entities: [ACCOUNT] });
+
+  test("the adapter scaffold STILL carries CODEGEN-SCAFFOLD-V1 (adapter sentinel is a separate concern, kept)", () => {
+    const adapter = read("crm/adapters/salesforce/salesforce-crm.adapter.ts");
+    expect(adapter).toContain("<CODEGEN-SCAFFOLD-V1>");
+  });
+
+  test("NO *.sink.* file carries CODEGEN-SCAFFOLD-V1 (sink sentinel deleted)", () => {
+    const base = read("crm/sinks/account.sink.generated.ts");
+    const sub = read("crm/sinks/account.sink.ts");
+    expect(base).not.toContain("<CODEGEN-SCAFFOLD-V1>");
+    expect(sub).not.toContain("<CODEGEN-SCAFFOLD-V1>");
+  });
+});
+
+describe("E4 · regen semantics — base regenerates, subclass is existsSync-skipped", () => {
+  // Emit once into a tmpdir, hand-edit the subclass, emit again — assert (a) base
+  // is regenerated (would reflect YAML changes) and (b) subclass is skipped.
+  test("second emit: base is regenerated, subclass is skipped (not overwritten)", () => {
+    const outRoot = mkdtempSync(join(tmpdir(), "cgp-e4-regen-"));
+    const MARKER = "// HAND_EDIT_MARKER_12345";
+
+    // First emit.
+    emitAdapters({
+      providers: [SALESFORCE],
+      entities: [ACCOUNT],
+      outputRoot: outRoot,
+      backendSrcAbs: BACKEND_SRC,
+      aliases: ALIASES,
+    });
+
+    const subclassPath = join(outRoot, "crm/sinks/account.sink.ts");
+    expect(existsSync(subclassPath)).toBe(true);
+    // Hand-edit the subclass.
+    const originalSubclass = readFileSync(subclassPath, "utf-8");
+    writeFileSync(subclassPath, `${MARKER}\n${originalSubclass}`);
+
+    // Second emit.
+    const result2 = emitAdapters({
+      providers: [SALESFORCE],
+      entities: [ACCOUNT],
+      outputRoot: outRoot,
+      backendSrcAbs: BACKEND_SRC,
+      aliases: ALIASES,
+    });
+
+    // (a) Base is regenerated — on result2.written.
+    expect(result2.written.some((p) => p.endsWith("account.sink.generated.ts"))).toBe(true);
+    // (b) Subclass is skipped — on result2.scaffoldsSkipped, NOT scaffoldsWritten.
+    expect(result2.scaffoldsSkipped.some((p) => p.endsWith("account.sink.ts"))).toBe(true);
+    expect(result2.scaffoldsWritten.some((p) => p.endsWith("account.sink.ts"))).toBe(false);
+    // (c) Hand edit survives.
+    const afterSubclass = readFileSync(subclassPath, "utf-8");
+    expect(afterSubclass).toContain(MARKER);
+  });
+});
+
+describe("E4 · generateSinkBase hard-errors if called directly on a non-Integrated input", () => {
+  test("throws naming pattern: Integrated", () => {
+    expect(() =>
+      generateSinkBase({
+        entityName: "reminder",
+        entityClass: "Reminder",
+        surface: "crm",
+        pattern: "Activity",
+        provider: "salesforce",
+        copyThroughFields: [],
+        fkExternalKeys: [],
+        repoImportSpecifier: "@modules/reminders/reminder.repository",
+      }),
+    ).toThrow(/pattern: Integrated/);
   });
 });
 
@@ -313,16 +481,19 @@ describe("E4 · pattern: Integrated gate", () => {
     expect(skip).toBeDefined();
     expect(skip?.surface).toBe("crm");
     expect(skip?.reason).toContain("not 'pattern: Integrated'");
-    // no sink + no assembly for reminder; account still emitted.
+    // no sink (neither base nor subclass) + no assembly for reminder; account still emitted.
+    expect(result.written.some((p) => p.endsWith("reminder.sink.generated.ts"))).toBe(false);
     expect(result.scaffoldsWritten.some((p) => p.endsWith("reminder.sink.ts"))).toBe(false);
     expect(result.assembliesWritten.some((p) => p.includes("reminder-integration"))).toBe(false);
     expect(result.assembliesWritten.some((p) => p.includes("account-integration"))).toBe(true);
     void outRoot;
   });
 
-  test("generateDefaultSink hard-errors if called directly on a non-Integrated input", () => {
+  test("generateSinkBase hard-errors if called directly on a non-Integrated input (see also the explicit test above)", () => {
+    // Covered by the explicit describe above — preserved here for the E4 suite
+    // pattern:Integrated gate story.
     expect(() =>
-      generateDefaultSink({
+      generateSinkBase({
         entityName: "reminder",
         entityClass: "Reminder",
         surface: "crm",

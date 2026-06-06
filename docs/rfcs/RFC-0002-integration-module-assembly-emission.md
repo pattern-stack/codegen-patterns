@@ -69,14 +69,15 @@ Per (surface, provider, entity-with-`surface:`), additionally emit:
 ```
 src/integrations/<surface>/
   modules/<provider>/<entity>-integration.module.ts     # @generated — the assembly (NEW)
-  sinks/<entity>.sink.ts                                 # SCAFFOLD (emit-once) — default sink, author-overridable (NEW)
+  sinks/<entity>.sink.generated.ts                       # @generated — SinkBase + default functions; reflows on every run (SEAM SPLIT #491)
+  sinks/<entity>.sink.ts                                 # SCAFFOLD (emit-once) — Sink subclass, two one-line wirings, author-overridable (SEAM SPLIT #491)
   <surface>-integration.module.ts                        # @generated — aggregates the per-entity modules (NEW)
   <surface>-integration.tokens.ts                        # @generated — the <ENTITY>_INTEGRATION_USE_CASE__<PROVIDER> tokens (NEW)
 ```
 
 **Hand-edit boundaries** (same discipline as RFC-0001 §2):
 - **`@generated` (re-emitted, never hand-edited):** the per-entity `*-integration.module.ts`, the surface aggregator module, the tokens file.
-- **Emit-once scaffold (author-owned after first emit):** `sinks/<entity>.sink.ts` — codegen emits a default `IIntegrationSink<T>` over the entity's generated repository; the author may override write logic. Carries the `// <CODEGEN-SCAFFOLD-V1>` sentinel.
+- **Two-file seam (Shape C, #491):** `sinks/<entity>.sink.generated.ts` (@generated — two standalone default functions at concrete types + `abstract class <Entity>SinkBase<TCanonical>`, regenerated on every run via `writeIfChanged`) and `sinks/<entity>.sink.ts` (emit-once subclass — `class <Entity>Sink extends <Entity>SinkBase` with two one-line seam wirings, `existsSync`-skipped after first emit). A YAML field change reflows the mapping in the base file; author overrides in the subclass survive regen. The `// <CODEGEN-SCAFFOLD-V1>` sentinel was removed from the sink in #491 (it applied to the old single-file emit-once scaffold; the subclass is now sentinel-free).
 - **Unchanged author-seam:** the `IChangeSource.listChanges` fetch body inside the adapter scaffold's `changeSources` (RFC-0001 §4).
 
 ## 2. The generated per-entity assembly module
@@ -120,7 +121,21 @@ This is the one genuinely open design fork; everything else is mechanical once i
 >
 > **Fix (ii), chosen — E0, before E1:** drop the `IEntityChangeSourceRegistry` injection from the RFC-0001 adapter scaffold (`generateAdapterScaffold`, remove the `:285` type import line for `IEntityChangeSourceRegistry`, the `:289` tokens import, and the `:301` constructor arg). The adapter becomes **standalone-importable**; the aggregator still emits `<SURFACE>_ENTITY_SOURCES` by injecting each adapter and reading `.changeSources` (one-directional now — cycle broken). This (a) makes "the per-entity run path never touches the registry" literally true, (b) removes a vestigial unused injection, (c) fixes the latent boot cycle. The automatic registry and its real consumers (C6 `CrmPort`; any future generic per-surface runner) are unaffected — they import `<Surface>AdaptersModule` exactly as before. An author who genuinely needs the folded registry inside an adapter method injects the token themselves (opt-in). E0 rebaselines the D7 snapshot fixture (#417). All E1–E4 emission below assumes Option A **after** E0.
 
-## 4. The generated default sink (emit-once scaffold)
+## 4. The generated default sink (two-file seam — Shape C, #491)
+
+> **Revision 2026-06-06 (#491 — sink seam split):** The original design emitted a single emit-once scaffold file (`<entity>.sink.ts`) carrying `// <CODEGEN-SCAFFOLD-V1>`. That sentinel was the regen guard: a file that already exists is skipped. The problem: a YAML field change (add/remove a scalar, change a type) never reflows into the sink because the guard skips it; the author has to manually update the mapping. #491 resolves this by splitting the sink into two files (Shape C — tsc-proven cast-free under TS 6.0.3 `--strict`):
+> - **`<entity>.sink.generated.ts`** (`@generated`, regenerated via `writeIfChanged`): two standalone default functions at concrete projection/write types (`default<E>BuildWrite` / `default<E>ToCanonicalView`) + `abstract class <Entity>SinkBase<TCanonical = <E>IntegrationProjection>` with three concrete protocol methods and two `protected abstract` seams. A YAML field change reflows here on every run. No `@Injectable()` (OQ2 closed — factory binding).
+> - **`<entity>.sink.ts`** (emit-once, `existsSync`-skipped): `class <Entity>Sink extends <Entity>SinkBase` with two one-line wirings (`toCanonicalView` → `default<E>ToCanonicalView(row)`, `buildWrite` → `default<E>BuildWrite(record)`). Author overrides survive regen. The `// <CODEGEN-SCAFFOLD-V1>` sentinel is deleted (the existsSync guard is sufficient and the sentinel was only needed on the old single-file design).
+>
+> **Why Shape C (the generic/cast trilemma):** Shape A (a generic base with a default-bodied `toCanonicalView` returning `TCanonical`) fails TS2322 — the literal `{…projection…}` is not assignable to `TCanonical` when the subclass widens it to an unrelated canonical type. Shape C compiles cast-free because abstract seams have no body (nothing to TS2322 against `TCanonical`), and the standalone functions are typed at the concrete projection type (the literal IS the return type). No `extends` bound on `TCanonical` — a bound would reject widened canonicals that drop projection columns.
+>
+> **Four author seams:**
+> | # | Seam | Survives regen because… |
+> |---|---|---|
+> | 1 | Canonical widening | type-arg in subclass (`extends <E>SinkBase<YourCanonical>`) |
+> | 2 | FK activation | override `buildWrite` in the subclass |
+> | 3 | Typed-json narrowing | override `toCanonicalView` in the subclass |
+> | 4 | Null-coercion on widen | same `toCanonicalView` override |
 
 `IIntegrationSink<T>` is three methods the orchestrator drives (`integration-sink.protocol.ts`, verified against `execute-integration.use-case.ts`):
 
@@ -168,7 +183,7 @@ swe-brain consumer impact: the hand-rolled `src/modules/{email,meeting,transcrip
 
 1. **§3 Option A vs B** — **RESOLVED: Option A.** See the resolution callout under §3.
 
-2. **Sink override mechanism** — **RESOLVED: emit-once scaffold** (author edits in place), consistent with RFC-0001 §4 and the read-side `changeSources` seam. The default sink carries the `// <CODEGEN-SCAFFOLD-V1>` sentinel; regen skips files that already exist (an override survives). No abstract-base/subclass indirection — it would add a layer purely for uniformity (CLAUDE.md: collapse such layers) and split the write logic across two files.
+2. **Sink override mechanism** — **REVISED 2026-06-06 (#491).** Originally resolved as "emit-once scaffold" (single file, `// <CODEGEN-SCAFFOLD-V1>` sentinel, author edits in place). The resolution note said "no abstract-base/subclass indirection — it would add a layer purely for uniformity and split the write logic across two files." That note was wrong on the underlying motivation: the split is not for uniformity — it is to make YAML field changes reflow into the mapping without clobbering author overrides (a problem the emit-once design cannot solve). The abstract-base/subclass split is architecturally correct (Shape C, #491). The original resolution is superseded; the current design is the two-file seam described in §4.
 
 3. **Multi-provider (#414)** — **RESOLVED: defer #414's L1 contract reshape; the boot-collision is genuinely avoided once E0 lands.** Under Option A the assembly is *already* per-(entity, provider) — class `<Entity>IntegrationModule__<Provider>`, token `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>`, provider passed as a sink constructor arg — so a second provider for the same entity (e.g. Gong transcripts alongside Google) is **purely incremental**: one more assembly module + one more token, sharing the sink class. Verified incremental, not a refactor:
    - The genuine #414 work — reshaping the L1 entity-keyed `IEntityChangeSourceRegistry.get(entityName)` into an (entity, provider) contract — is consumed **only** by the C6 `CrmPort` on the `crm` surface (`adapter-emission-generator.ts:20`). All surfaces carry a `portType` (calendar/mail/transcript have `CalendarPort`/`MailPort`/`TranscriptPort` with `l2Ports: []`, `:116-136`) — so the earlier draft's "port-less surface" framing was **wrong** and is struck; the distinguishing fact is not "has a port" but "**a consumer resolves the entity-keyed registry at runtime**," which today is only `crm`/`CrmPort`. The L1 refactor is forced only by a multi-provider *crm* surface, which is not on the immediate horizon. → **defer (#414).**
@@ -183,7 +198,7 @@ Extend the RFC-0001 §7 integration-emission snapshot fixture (`test/fixtures/in
 ## Sequencing (post-RFC)
 
 - **E0** — adapter-edge fix (§3 resolution): in `generateAdapterScaffold` (`adapter-emission-generator.ts:227`) drop the `IEntityChangeSourceRegistry` injection — the `:285` type import, the `:289` tokens import, and the `:301` constructor arg — and update the now-stale scaffold doc comment (`:224`, still says "injects … the entity sources registry"). Makes the adapter standalone-importable and breaks the latent DI cycle. Rebaseline the D7 integration-emission snapshot (#417). Gates E2 (the assembly imports the adapter). Smallest of the steps; do it first so the blocker can't resurface mid-E2.
-- **E1** — default `IIntegrationSink` emitter (emit-once scaffold over the generated repo, `pattern: Integrated` only — hard-error otherwise) + tests.
+- **E1** — ~~emit-once scaffold~~ **SHIPPED as two-file seam (#491, 2026-06-06).** `generateSinkBase` (emits `@generated` `<entity>.sink.generated.ts`) + `generateSinkSubclass` (emits emit-once `<entity>.sink.ts`). `SCAFFOLD_SENTINEL` const deleted. See §4 revision note for the Shape C design. `pattern: Integrated` hard-error preserved.
 - **E2** — per-entity assembly module emitter (§2) + tokens file; wire into the `entity new` post-step alongside the existing adapter emission.
 - **E3** — surface integration aggregator (`<surface>-integration.module.ts`).
 - **E4** — snapshot fixture extension (§8) + template-emission suite.

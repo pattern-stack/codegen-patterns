@@ -38,10 +38,15 @@ read side:
   `INTEGRATION_CHANGE_SOURCE` = `adapter.changeSources['<entity>']` +
   `INTEGRATION_SINK`, provides a local `ExecuteIntegrationUseCase`, exports it
   under a unique `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>` token), an
-  emit-once default sink scaffold over the `Integrated` repo (`pattern:
-  Integrated` only — hard-errors otherwise), a surface integration aggregator,
-  and a tokens file. This is the *generated* form of swe-brain's hand-rolled
-  `*_integration` feature modules.
+  default sink as a **two-file seam** (Shape C, #491, 2026-06-06):
+  `<entity>.sink.generated.ts` (`@generated`, regenerated via `writeIfChanged` —
+  two standalone default functions at concrete types +
+  `abstract class <Entity>SinkBase<TCanonical>`) and `<entity>.sink.ts`
+  (emit-once subclass — `class <Entity>Sink extends <Entity>SinkBase` with two
+  one-line wirings). `pattern: Integrated` only — hard-errors otherwise.
+  A surface integration aggregator and a tokens file are also emitted.
+  This is the *generated* form of swe-brain's hand-rolled `*_integration`
+  feature modules.
 - **Read primitive (RFC-0003).** For interaction surfaces (mail/calendar/
   transcript) the adapter's `changeSources` entries are emitted as emit-once
   `IncrementalReadBase<Canonical<Entity>, ResolvedFilter[]>` subclasses — the

@@ -1,110 +1,84 @@
 /**
- * Default `IIntegrationSink` emitter (RFC-0002 §4, Track D · E1).
+ * Default `IIntegrationSink` emitter — TWO-FILE SEAM (#491, RFC-0002 §4, Track D · E1).
  *
- * Per (surface, entity-with-`surface:` + `pattern: Integrated`), emits the TEXT
- * of `src/integrations/<surface>/sinks/<entity>.sink.ts` — an **emit-once
- * scaffold** (carries the `// <CODEGEN-SCAFFOLD-V1>` sentinel; regen skips an
- * existing file so an author override survives). Sibling to
- * `adapter-emission-generator.ts`; this file is the *pure emitter* only — the
- * caller (E2) builds {@link SinkEmitInput} from the entity definition +
- * locations config and owns all filesystem wiring.
+ * ## Two-file seam design (Shape C — tsc-verified, TS 6.0.3 --strict, probe_BConly.ts)
  *
- * ## What is generated vs. author-owned (RFC-0002 §4)
+ * Per (surface, entity-with-`surface:` + `pattern: Integrated`), emits:
+ *   1. **`<entity>.sink.generated.ts`** — `@generated` (regenerated via `writeIfChanged`).
+ *      Carries two STANDALONE DEFAULT FUNCTIONS at CONCRETE projection/write types
+ *      (`default<E>BuildWrite` / `default<E>ToCanonicalView`) and an abstract base class
+ *      (`<Entity>SinkBase<TCanonical = <E>IntegrationProjection>`) with three CONCRETE
+ *      protocol methods and two ABSTRACT seams. A YAML field change reflows the mapping
+ *      here on every run — the central acceptance gain over emit-once.
+ *   2. **`<entity>.sink.ts`** — emit-once (`existsSync`-skip), the author subclass
+ *      `class <Entity>Sink extends <Entity>SinkBase` with the two one-line seam wirings.
+ *      Regen never touches it; author overrides survive. Keeps the class name +
+ *      import path the assembly binding already uses.
  *
- * The sink's PLUMBING is generated: constructor `(repo, provider)` with the
- * provider bound at construction; the provider-match assert in
- * `upsertByExternalId` (a mismatch is a wiring bug → throw); delegation to the
- * `integrated` repo's `findByExternalIdProjected` / `integrationUpsertOne` /
- * `softDeleteByExternalId`; `userId` scoping; and the `{ id, saved }` return
- * shapes.
+ * ## Why Shape C (the generic/cast trilemma — RESOLVED)
  *
- * The `write` object is **generated** for scalars; FK join-keys are a SEAM:
- *   - Scalar copy-through fields (`fields:` entries, FK columns excluded) emit as
- *     `<camelName>: record.<camelName>`. `type: json` columns copy through the
- *     same way (the write-type member is `unknown`, matching the template's
- *     `TS_TYPE_MAP.json` mapping — a typed json shape is a find-side concern, #488).
- *   - FK external join-keys emit as `<rel>ExternalId: null,` with a SEAM comment.
- *     WHY NULL: the projection-default canonical (`<E>IntegrationProjection`) does
- *     NOT carry external-key members — only local FK columns (e.g. `accountId`).
- *     `record.<rel>ExternalId` would be a TS2339 error until the author widens the
- *     canonical. `null` is write-safe: the repo's FK resolver `!== null` guard
- *     (`integrated-entity-repository.ts:118-120`) skips null write keys and never
- *     clobbers an existing link. The SEAM comment names the key and instructs the
- *     author to replace `null` with `record.<writeKey>` after widening.
- *     The write-key NAME still mirrors `processBelongsTo`'s `relationKey` branches
- *     (`prompt-extension.js:447-460`) via `fkWriteKey()` — parity governs naming.
+ * The probe (`/tmp/sink-trilemma/probe_BConly.ts`, TS 6.0.3 --strict, exit 0) proved:
+ *   - Shape A FAILS — a generic base with a default-bodied seam typed `TCanonical` is
+ *     TS2322: the literal `{…projection…}` is not assignable to `TCanonical` when
+ *     the subclass widens it to an unrelated canonical type.
+ *   - Shape C COMPILES CAST-FREE — abstract seams on the base (no body → no TS2322),
+ *     the mechanical default bodies in STANDALONE FUNCTIONS at the CONCRETE types
+ *     (literal IS the return type, no cast), and the projection-default subclass
+ *     wires the defaults in one line each.
  *
- * The author seam for FK keys: widen `<Entity>Canonical` to carry the external
- * join-key, then replace the `null` line with `record.<rel>ExternalId`. RFC-0004
- * tracks reverse-resolution (local → external) at read; until then the find side
- * cannot supply the external key either. See Find-side reshaping below.
+ * ## The four author seams and how each survives regen
  *
- * Policy methods — #490 wires the two common YAML knobs:
- * - `integration.sink.delete: soft|tombstone|noop` — `noop` emits the silent
- *   `return null;` body; `soft`/`tombstone` delegate to the repo (the repo config
- *   boolean carries the distinction). Absent → `'delegate'` (unchanged behavior).
- * - `integration.sink.exclude_fields: [field, ...]` — excluded fields are absent
- *   from the WRITE SURFACE ONLY (`copyThroughFields` / `writeColumns`). The find
- *   view still enumerates them as bare passthroughs from `viewCopyThroughFields`
- *   (the unfiltered projection list). Diff-soundness holds via the differ's
- *   `key in incoming` guard (`deep-equal.differ.ts:159`): the adapter never
- *   sources the field → `incoming` lacks it → even the existing-keys loop skips
- *   it → never compared, no spurious upsert. Type-sound: the projection type
- *   keeps the member; the find view enumerates it. Drop-from-writeColumns is the
- *   no-clobber mechanism (excluded field is never written by the repo on upsert).
- * The arbitrary-code long tail stays the author-subclass seam (#491 sink-seam-split).
+ * | # | Seam | Survives regen because… |
+ * |---|---|---|
+ * | 1 | Canonical widening | type-arg lives in the emit-once subclass (`extends <E>SinkBase<YourCanonical>`) |
+ * | 2 | FK activation | override `buildWrite` in the subclass, replacing the default wiring |
+ * | 3 | Typed-json narrowing | override `toCanonicalView` in the subclass |
+ * | 4 | Null-coercion on widen | same `toCanonicalView` override; TS forces the choice |
  *
- * ## Find-side reshaping (generated vs. author seam) — #488
+ * ## `write` object (SEAM #2)
  *
- * `findByExternalId` returns a generated **explicit projection → canonical
- * reshaping view** rather than a bare `return row`. Every field is a BARE
- * passthrough (`<f>: row.<f>`) — no `??` coercion and no `as` cast:
+ * Built by explicit field enumeration so it type-checks against `<Entity>IntegrationWrite`
+ * with no spread/cast:
+ *   - `externalId` — always present.
+ *   - copy-through fields (`copyThroughFields` — post-exclusion), one `<f>: record.<f>` each,
+ *     EXCEPT `userId` (sourced from the method param — bare `userId,` shorthand).
+ *   - FK external join-keys — emitted as `<writeKey>: null` + SEAM comment. The
+ *     projection-default canonical has no external-key member; null is write-safe (the
+ *     repo's `!== null` guard skips it, `integrated-entity-repository.ts:118-120`). Replace
+ *     `null` with `record.<writeKey>` in a subclass `buildWrite` override after widening.
  *
- * GENERATED (resolver-correct, diff-sound):
- *   - Explicit `const view: <Entity>Canonical = { … }; return view;` — full
- *     projection field enumeration: id, externalId, copy-through fields, local
- *     FK columns, and (if declared) createdAt/updatedAt.
- *   - BARE passthrough for every field — **preserves `null` so the orchestrator's
- *     `DeepEqualDiffer` converges to noop** (`null ≠ ''`; a blanket `?? ''`
- *     coercion would make every legitimately-null column diff false, producing
- *     a spurious upsert that never converges; `deep-equal.differ.ts:187-208`).
- *   - `type: json` columns pass through at `unknown` (no `as` cast available;
- *     a typed cast is the author's seam, surfaced as a compile error on widen).
+ * ## Find-side reshaping (SEAM #3/#4) — #488
  *
- * AUTHOR SEAM (surfaced as compile errors when you widen `<Entity>Canonical`):
- *   - Typed-json narrowing (`unknown → MyType[]`) — no cast-free generator
- *     solution; the compile error on widen routes you here.
- *   - ALL null-coercion defaults (`?? ''`, `?? 0`, `?? false`, `?? 'unknown'`) —
- *     added only when a member is widened to non-null; TS forces the choice.
- *   - External-key reconstruction on the find side — `accountExternalId` from
- *     a local `accountId` requires a resolve; the projection does NOT carry it.
- *   - Dropping local-only projection columns when you widen the canonical —
- *     delete the corresponding `<f>: row.<f>` line.
+ * `default<E>ToCanonicalView` returns an EXPLICIT projection → canonical view. Every field
+ * is a BARE passthrough (`<f>: row.<f>`) — no `??` coercion and no `as` cast:
+ *   - Bare passthrough PRESERVES `null` so the orchestrator's `DeepEqualDiffer` converges
+ *     to noop (`null ≠ ''`; a `?? ''` coercion would make a legitimately-null column diff
+ *     false → spurious upsert; `deep-equal.differ.ts:187-208`).
+ *   - `type: json` columns pass through at `unknown` — a typed cast is the SEAM #3
+ *     author override (`toCanonicalView` in the subclass, surfaced as a compile error on widen).
+ *   - Find view uses `viewCopyThroughFields` (FULL projection incl. excluded fields) per
+ *     #490 Gate 2.5: exclusion is write-surface-only. The view is knob-independent.
  *
- * ## `userId` is NOT injected — it is a declared field (see §4 deviation note)
+ * AUTHOR SEAM (override `toCanonicalView` in the subclass):
+ *   - Typed-json narrowing (`unknown → MyType[]`) — no cast-free generator solution.
+ *   - ALL null-coercion defaults — added only when a member is widened to non-null.
+ *   - External-key reconstruction on the find side (a local `accountId` ≠ `accountExternalId`).
+ *   - Dropping local-only projection columns when you widen the canonical.
  *
- * The generated `<Entity>IntegrationWrite` interface has NO `userId` member
- * unless the entity declares a `user_id` field (then it is an ordinary
- * copy-through column — `templates/.../repository.ejs.t` lists it in
- * `writeColumns`/`writeFields`). The base repo's `integrationUpsertOne` reads
- * `w['userId']` only inside the EAV dual-write branch
- * (`integrated-entity-repository.ts:139`); the non-EAV insert builds `values`
- * purely from `externalId` + `writeColumns` + resolved FKs + timestamps. So:
- *   - if the entity declares `user_id`, `userId` is sourced from the **method
- *     parameter** (the authenticated swe-brain user — the vendor payload does
- *     not know it), emitted as a bare `userId,` shorthand — matching swe-brain's
- *     hand-authored sinks, which emit `userId,` and NOT `userId: record.userId`
- *     even though `userId` is a copy-through column;
- *   - if the entity does NOT declare `user_id` (e.g. the `contact` fixture),
- *     there is no `userId` member on `<Entity>IntegrationWrite` and the write
- *     object omits it entirely.
- * Either way the `write` object type-checks against `<Entity>IntegrationWrite`
- * by explicit field enumeration — never a spread/cast (CLAUDE.md: no casts).
+ * ## `userId` is NOT injected — it is a declared field
+ *
+ * If the entity declares a `user_id` field, `userId` is sourced from the method parameter
+ * (the authenticated user), emitted as a bare `userId,` shorthand — matching swe-brain's
+ * hand-authored sinks. If NOT declared, the write object omits `userId` entirely.
+ *
+ * ## @Injectable() — OMITTED (OQ2 CLOSED, #491)
+ *
+ * The assembly binds the sink via `useFactory: (repo) => new <E>Sink(repo, '<provider>')`
+ * (`assembly-emission-generator.ts:204-206`). NestJS never class-token-instantiates the sink;
+ * the decorator is dead under a `useFactory`. Omitted to keep the generated base lean.
  */
 
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
-
-const SCAFFOLD_SENTINEL = "// <CODEGEN-SCAFFOLD-V1>";
 
 /** The camelCase name of the user-scoping field — sourced from the sink's
  *  `userId` parameter rather than the canonical record. */
@@ -127,17 +101,17 @@ export interface SinkCopyThroughField {
 
 /** One external FK join-key on the integration write surface. Mirrors
  *  `buildIntegrationSurface().writeFkFields`: `<relationKey>ExternalId`,
- *  always `string | null`. Emitted as an active `<writeKey>: record.<writeKey>`
- *  copy-through; the author widens `<Entity>Canonical` when the adapter's
- *  canonical carries the external key (RFC-0004 / #489 track canonical ownership). */
+ *  always `string | null`. Emitted as `<writeKey>: null` in the base default
+ *  function; the author overrides `buildWrite` in the subclass to activate it
+ *  after widening `<Entity>Canonical` (RFC-0004 / #489 track canonical ownership). */
 export interface SinkFkExternalKey {
   /** Write-surface key name, e.g. `accountExternalId`. */
   writeKey: string;
 }
 
-/** Pure input for {@link generateDefaultSink}. The caller (E2) derives this from
- *  the entity definition + locations config; nothing here is path-computed
- *  inside the emitter (the repo import is passed as `repoImportSpecifier`). */
+/** Pure input for {@link generateSinkBase} / {@link generateSinkSubclass}.
+ *  The caller (E2) derives this from the entity definition + locations config;
+ *  nothing here is path-computed inside the emitter. */
 export interface SinkEmitInput {
   /** Entity name, snake_case singular (`contact`). For messages only. */
   entityName: string;
@@ -158,9 +132,9 @@ export interface SinkEmitInput {
   copyThroughFields: SinkCopyThroughField[];
   /** Copy-through scalar columns for the FIND VIEW — the entity's `fields:` block
    *  with FK columns excluded but `integration.sink.exclude_fields` entries kept.
-   *  Enumerated as bare passthroughs in `findByExternalId` so the view satisfies
-   *  the projection-default canonical (TS requires all members; excluded fields
-   *  stay in the projection type). Diff-soundness: the adapter never sources
+   *  Enumerated as bare passthroughs in `default<E>ToCanonicalView` so the view
+   *  satisfies the projection-default canonical (TS requires all members; excluded
+   *  fields stay in the projection type). Diff-soundness: the adapter never sources
    *  excluded fields → `incoming` lacks them → the differ's `key in incoming`
    *  guard (`deep-equal.differ.ts:159`) drops them from candidates before
    *  comparison — never compared, no spurious upsert.
@@ -201,10 +175,7 @@ export interface SinkEmitInput {
    * - `'noop'` — emit a silent `return null;` body with a doc comment. The
    *   sink short-circuits; the repo is never called for the delete path.
    *
-   * Absent knob defaults to `'delegate'` (preserves today's exact behavior —
-   * spec Nit 1: the absent→delegate sink default and the repo's !!hasSoftDelete
-   * default are independent and both default-safe; they compose to current
-   * behavior when the knob is omitted).
+   * Absent knob defaults to `'delegate'` (preserves today's exact behavior).
    *
    * Default: `'delegate'` when omitted.
    */
@@ -216,33 +187,32 @@ export interface SinkEmitInput {
 // ============================================================================
 
 interface SinkNames {
-  sinkClass: string; // ContactSink
-  canonicalType: string; // ContactCanonical
-  repoClass: string; // ContactRepository
-  projectionType: string; // ContactIntegrationProjection
-  writeType: string; // ContactIntegrationWrite
+  sinkClass: string;       // ContactSink
+  sinkBaseClass: string;   // ContactSinkBase
+  repoClass: string;       // ContactRepository
+  projectionType: string;  // ContactIntegrationProjection
+  writeType: string;       // ContactIntegrationWrite
+  defaultBuildWrite: string;      // defaultContactBuildWrite
+  defaultToCanonicalView: string; // defaultContactToCanonicalView
 }
 
 function sinkNames(entityClass: string): SinkNames {
   return {
     sinkClass: `${entityClass}Sink`,
-    canonicalType: `${entityClass}Canonical`,
+    sinkBaseClass: `${entityClass}SinkBase`,
     repoClass: `${entityClass}Repository`,
     projectionType: `${entityClass}IntegrationProjection`,
     writeType: `${entityClass}IntegrationWrite`,
+    defaultBuildWrite: `default${entityClass}BuildWrite`,
+    defaultToCanonicalView: `default${entityClass}ToCanonicalView`,
   };
 }
 
 // ============================================================================
-// Emitter
+// Shared validation
 // ============================================================================
 
-/**
- * Emit the default `IIntegrationSink` scaffold for a `pattern: Integrated`
- * entity. Throws when the entity is not `Integrated` (the only family with the
- * `integrationUpsertOne`/projection path) — never returns a non-compiling sink.
- */
-export function generateDefaultSink(input: SinkEmitInput): string {
+function assertIntegrated(input: SinkEmitInput): void {
   if (input.pattern !== "Integrated") {
     throw new Error(
       `cannot emit default integration sink for entity '${input.entityName}': ` +
@@ -252,18 +222,13 @@ export function generateDefaultSink(input: SinkEmitInput): string {
         `Add 'pattern: Integrated' to the entity or provide a hand-authored sink.`,
     );
   }
+}
 
-  const n = sinkNames(input.entityClass);
+// ============================================================================
+// Shared body builders (reused by both emitters)
+// ============================================================================
 
-  // The `write` object, built by explicit field enumeration so it type-checks
-  // against <Entity>IntegrationWrite with no spread/cast.
-  //   - externalId — always present.
-  //   - copy-through fields, one `<field>: record.<field>` line each, EXCEPT
-  //     `userId` which is sourced from the method param (a bare `userId,`).
-  //   - FK external join-keys — emitted as `<writeKey>: null` + a SEAM comment.
-  //     The projection-default canonical has no external-key member, so
-  //     `record.<writeKey>` is a TS2339 until the author widens the canonical.
-  //     null is write-safe: the repo's `!== null` guard skips it (see file header).
+function buildWriteBodyLines(input: SinkEmitInput, n: SinkNames): string[] {
   const hasUserIdField = input.copyThroughFields.some(
     (f) => f.camelName === USER_ID_FIELD,
   );
@@ -271,22 +236,22 @@ export function generateDefaultSink(input: SinkEmitInput): string {
     .filter((f) => f.camelName !== USER_ID_FIELD)
     .map((f) => `      ${f.camelName}: record.${f.camelName},`);
   const fkLines = input.fkExternalKeys.flatMap((fk) => [
-    `      // SEAM (FK external key — null until you widen ${n.canonicalType} to carry \`${fk.writeKey}\`):`,
+    `      // SEAM (FK external key — null until you widen ${n.projectionType} to carry \`${fk.writeKey}\`):`,
     `      // Replace null with record.${fk.writeKey} after widening. Write-safe: repo skips null FKs.`,
     `      ${fk.writeKey}: null,`,
   ]);
 
-  const writeBodyLines: string[] = [
+  const lines: string[] = [
     `      externalId: record.externalId,`,
   ];
   if (copyThroughLines.length > 0) {
-    writeBodyLines.push(
+    lines.push(
       `      // copy-through fields (one line per \`fields:\` entry):`,
       ...copyThroughLines,
     );
   }
   if (fkLines.length > 0) {
-    writeBodyLines.push(
+    lines.push(
       `      // FK external join-keys (null until canonical widens to carry them):`,
       ...fkLines,
     );
@@ -294,32 +259,19 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   if (hasUserIdField) {
     // `userId` is sourced from the authenticated-user param, not the vendor
     // record — matches swe-brain's hand-authored sinks.
-    writeBodyLines.push(`      userId,`);
+    lines.push(`      userId,`);
   }
-  const writeBody = writeBodyLines.join("\n");
+  return lines;
+}
 
-  // The find-side reshaping view — explicit projection → canonical enumeration.
-  // BARE passthrough for every field: `<f>: row.<f>` — no `??` coercion, no
-  // `as` cast. Preserves `null` so the orchestrator's DeepEqualDiffer converges
-  // to noop (null !== '' — deep-equal.differ.ts:187-208). The projection-default
-  // canonical is exactly the projection shape, so bare passthrough type-checks.
-  // When the author widens a member to non-null, the bare line becomes a compile
-  // error — they add `?? <default>` at that exact member. The generator never
-  // chooses a default; the compile error routes the human to the decision.
-  // Projection order: id, externalId, copy-through (ALL — incl. excluded), local FK columns, timestamps.
-  //
+function buildFindViewLines(input: SinkEmitInput): string[] {
   // Exclusion (#490): viewCopyThroughFields is the FULL projection copy-through
   // list (no exclude_fields filter). Excluded fields stay in the view as bare
   // passthroughs — the projection type requires them. Diff-soundness holds via
-  // deep-equal.differ.ts:159 `key in incoming`: the adapter never sources the
-  // excluded field → it is absent from incoming → the existing-keys loop guard
-  // drops it from candidates → never compared. The field is excluded from the
-  // WRITE object (copyThroughFields) and from writeColumns — no-clobber by
-  // construction: the repo never writes it on upsert. These are orthogonal
-  // mechanisms. Falls back to copyThroughFields when viewCopyThroughFields is
-  // absent (pre-#490 callers that pass no exclude_fields).
+  // deep-equal.differ.ts:159 `key in incoming`. Falls back to copyThroughFields
+  // when viewCopyThroughFields is absent (pre-#490 callers).
   const viewFields = input.viewCopyThroughFields ?? input.copyThroughFields;
-  const findViewLines: string[] = [
+  const lines: string[] = [
     `    id: row.id,`,
     `    externalId: row.externalId,`,
   ];
@@ -330,51 +282,91 @@ export function generateDefaultSink(input: SinkEmitInput): string {
       // When you widen the canonical to a concrete type (e.g. MyType[]), this line
       // becomes a compile error — that is intentional: no cast-free generator
       // solution exists; you supply the typed narrowing (or a safe runtime guard).
-      findViewLines.push(`    // SEAM (typed json — unknown; narrow on canonical widen): ${f.camelName}`);
+      lines.push(`    // SEAM (typed json — unknown; narrow on canonical widen): ${f.camelName}`);
     }
-    findViewLines.push(`    ${f.camelName}: row.${f.camelName},`);
+    lines.push(`    ${f.camelName}: row.${f.camelName},`);
   }
   for (const localFk of input.localFkColumns ?? []) {
-    findViewLines.push(`    ${localFk.camelName}: row.${localFk.camelName},`);
+    lines.push(`    ${localFk.camelName}: row.${localFk.camelName},`);
   }
   if (input.hasTimestamps) {
-    findViewLines.push(`    createdAt: row.createdAt,`);
-    findViewLines.push(`    updatedAt: row.updatedAt,`);
+    lines.push(`    createdAt: row.createdAt,`);
+    lines.push(`    updatedAt: row.updatedAt,`);
   }
-  const findViewBody = findViewLines.map((l) => `  ${l}`).join("\n");
+  return lines;
+}
 
+function buildDeleteBody(input: SinkEmitInput): string {
   // softDeleteByExternalId body (#490 delete knob):
   //   'delegate' (default) → repo delegation (unchanged behavior).
   //   'noop'              → silent return null; + comment explains intent.
-  // The sink constructor has no logger param (would widen the assembly binding).
-  // A log line is #491-adjacent; see spec OQ2. Silent noop is correct for #490.
-  const deleteBody =
-    (input.deleteMode ?? "delegate") === "noop"
-      ? // Noop: lines are at the method-body indent level (4 spaces).
-        // The template already prepends 4 spaces before ${deleteBody}; all
-        // continuation lines after the first need a newline + 4 spaces.
-        [
-          `// delete:noop (YAML integration.sink.delete: noop) — tombstone-preserving:`,
-          `// an upstream delete signal is a no-op here; the repo row is left intact.`,
-          `// Returns null → the orchestrator records an audit noop. Logger injection`,
-          `// is #491 scope (seam-split); this generated body is intentionally silent.`,
-          `return null;`,
-        ].join("\n    ")
-      : `return this.repo.softDeleteByExternalId(externalId, this.provider);`;
+  if ((input.deleteMode ?? "delegate") === "noop") {
+    return [
+      `// delete:noop (YAML integration.sink.delete: noop) — tombstone-preserving:`,
+      `// an upstream delete signal is a no-op here; the repo row is left intact.`,
+      `// Returns null → the orchestrator records an audit noop. Override this`,
+      `// method in the subclass if you need a log line.`,
+      `return null;`,
+    ].join("\n    ");
+  }
+  return `return this.repo.softDeleteByExternalId(externalId, this.provider);`;
+}
 
-  return `${SCAFFOLD_SENTINEL}
-// Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running codegen
-// detects the sentinel above and SKIPS this file — your edits are safe.
-//
-// Default IIntegrationSink over the generated ${n.repoClass}. The PLUMBING
-// (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. Scalar write fields copy through from the canonical
-// record; type:json columns do too (write member is \`unknown\`). FK external
-// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
-// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
-// record.<writeKey> after widening ${n.canonicalType}. See RFC-0004 / #489.
-// Source: definitions entity '${input.entityName}' (surface: ${input.surface}).
-import { Injectable } from '@nestjs/common';
+// ============================================================================
+// Emitters
+// ============================================================================
+
+/**
+ * Emit the `@generated` base file (`<entity>.sink.generated.ts`) — Shape C
+ * (probe-proven, cast-free under TS 6.0.3 `--strict`).
+ *
+ * Three parts:
+ *   1. Standalone `default<E>BuildWrite` / `default<E>ToCanonicalView` functions
+ *      at CONCRETE projection/write types — the regenerated home of the #487 write
+ *      body and #488 find view. A YAML field change reflows here on every run.
+ *   2. `abstract class <Entity>SinkBase<TCanonical = <Entity>IntegrationProjection>
+ *      implements IIntegrationSink<TCanonical>` — three CONCRETE methods (provider
+ *      assert, repo delegation, #490 knob-driven delete), two `protected abstract`
+ *      seams (`buildWrite` / `toCanonicalView`). No `@Injectable()` (OQ2 CLOSED).
+ *      No `extends` bound (an `extends <E>IntegrationProjection` bound rejects a
+ *      widened canonical that drops a projection column).
+ *
+ * Callers: `emitAdapters` in `adapter-emission-generator.ts` (always regenerates
+ * via `writeIfChanged` — no existsSync gate on the base file).
+ */
+export function generateSinkBase(input: SinkEmitInput): string {
+  assertIntegrated(input);
+
+  const n = sinkNames(input.entityClass);
+  const writeBodyLines = buildWriteBodyLines(input, n);
+  const writeBody = writeBodyLines.join("\n");
+
+  const findViewLines = buildFindViewLines(input);
+  const findViewBody = findViewLines.map((l) => `  ${l}`).join("\n");
+
+  const deleteBody = buildDeleteBody(input);
+
+  const banner =
+    `// @generated by @pattern-stack/codegen from definitions entity '${input.entityName}' ` +
+    `(surface: ${input.surface}) — DO NOT EDIT.\n` +
+    `// Hand edits are overwritten on re-emit. Regenerate with \`bun run codegen\`.\n` +
+    `//\n` +
+    `// Two-file seam (Shape C, #491, RFC-0002 §4):\n` +
+    `//   THIS FILE  — @generated base: two standalone default functions at concrete types\n` +
+    `//                + abstract class ${n.sinkBaseClass}<TCanonical>.\n` +
+    `//                A YAML field change reflows the mapping here on every run.\n` +
+    `//   ${input.entityName}.sink.ts — emit-once subclass: \`class ${n.sinkClass} extends ${n.sinkBaseClass}\`\n` +
+    `//                with the two one-line seam wirings. Author overrides survive regen.\n` +
+    `//\n` +
+    `// SEAM #1 (canonical widening): change \`extends ${n.sinkBaseClass}\` →\n` +
+    `//   \`extends ${n.sinkBaseClass}<YourCanonical>\` in the subclass.\n` +
+    `// SEAM #2 (FK activation): override \`buildWrite\` in the subclass.\n` +
+    `//   Replace \`${n.defaultBuildWrite}(record)\` with your body that sets\n` +
+    `//   \`<writeKey>: record.<writeKey>\` after widening the canonical to carry it.\n` +
+    `// SEAM #3/#4 (typed-json narrow / null-coerce on widen): override \`toCanonicalView\`.\n` +
+    `//   The bare passthrough preserves null (diff-soundness); coerce only on canonical widen.`;
+
+  return `${banner}
 import type { IIntegrationSink } from '${subsystemsImport(input.mode ?? "package", "integration")}';
 import {
   ${n.repoClass},
@@ -382,53 +374,144 @@ import {
   type ${n.writeType},
 } from '${input.repoImportSpecifier}';
 
-/** Canonical type the orchestrator diffs. Defaults to the generated projection;
- *  widen to your adapter's canonical shape if it carries fields the projection
- *  does not (e.g. external FK join-keys). */
-export type ${n.canonicalType} = ${n.projectionType};
+// Standalone default functions at CONCRETE projection/write types — the literal IS the
+// return type, so NO cast is needed (this is what dodges the TS2322 of a generic default
+// body). The regenerated home of the #487 write body and #488 find view.
+// Override these in the emit-once subclass via buildWrite / toCanonicalView.
+export function ${n.defaultBuildWrite}(record: ${n.projectionType}): ${n.writeType} {
+  return {
+${writeBody}
+  };
+}
 
-@Injectable()
-export class ${n.sinkClass} implements IIntegrationSink<${n.canonicalType}> {
+export function ${n.defaultToCanonicalView}(row: ${n.projectionType}): ${n.projectionType} {
+  // BARE passthrough — preserves null so the orchestrator's DeepEqualDiffer converges
+  // to noop (null ≠ ''; deep-equal.differ.ts:187-208). The projection-default canonical
+  // is exactly the projection shape, so bare passthrough type-checks without a cast.
+  const view: ${n.projectionType} = {
+${findViewBody}
+  };
+  return view;
+}
+
+// Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
+// assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
+// typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
+// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
+// live in the standalone functions above; the emit-once subclass wires them in one line each.
+// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+export abstract class ${n.sinkBaseClass}<TCanonical = ${n.projectionType}>
+  implements IIntegrationSink<TCanonical> {
   constructor(
-    private readonly repo: ${n.repoClass},
-    private readonly provider: string,
+    protected readonly repo: ${n.repoClass},
+    protected readonly provider: string,
   ) {}
 
-  async findByExternalId(userId: string, externalId: string): Promise<${n.canonicalType} | null> {
+  async findByExternalId(userId: string, externalId: string): Promise<TCanonical | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
     if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    // Reshape the local projection into the canonical the orchestrator diffs.
-    // Generated: BARE passthrough (preserves null so the differ converges) + json
-    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
-    // typed-json narrowing; null-coercion defaults (add on canonical widen);
-    // external-key reconstruction; dropping local-only columns.
-    // See file header (## Find-side reshaping) for the full seam description.
-    const view: ${n.canonicalType} = {
-${findViewBody}
-    };
-    return view;
+    return this.toCanonicalView(row);
   }
 
   async upsertByExternalId(
     userId: string,
-    record: ${n.canonicalType},
+    record: TCanonical,
     provider: string,
-  ): Promise<{ id: string; saved: ${n.canonicalType} }> {
+  ): Promise<{ id: string; saved: TCanonical }> {
     if (provider !== this.provider) {
       throw new Error(\`${n.sinkClass}: bound provider '\${this.provider}' != run provider '\${provider}'\`);
     }
-    const write: ${n.writeType} = {
-${writeBody}
-    };
-    const proj = await this.repo.integrationUpsertOne(write, this.provider);
+    const proj = await this.repo.integrationUpsertOne(this.buildWrite(record), this.provider);
     return { id: proj.id, saved: record };
   }
 
   async softDeleteByExternalId(_userId: string, externalId: string): Promise<{ id: string } | null> {
     ${deleteBody}
   }
+
+  // ABSTRACT seams (NO body — a default body returning TCanonical is TS2322).
+  // The projection-default subclass wires the default functions; a widened
+  // subclass reimplements them (FK activation / typed-json narrow / null-coerce).
+  protected abstract toCanonicalView(row: ${n.projectionType}): TCanonical;
+  protected abstract buildWrite(record: TCanonical): ${n.writeType};
 }
 `;
+}
+
+/**
+ * Emit the emit-once subclass file (`<entity>.sink.ts`) — `class <Entity>Sink
+ * extends <Entity>SinkBase` with the two one-line seam wirings.
+ *
+ * NOT an empty body — the seams are `abstract` on the base, so the subclass
+ * MUST implement them. The two wirings call the standalone default functions
+ * from the `@generated` base file — the mapping reflows there on every run.
+ *
+ * `existsSync`-skipped by the caller (`emitAdapters`): regen never overwrites
+ * this file after the first emit. Author overrides in this file survive regen.
+ *
+ * How to widen (all four seams):
+ *   1. `extends ${EntityName}SinkBase<YourCanonical>` — binds the type param.
+ *   2. Override `toCanonicalView` — reshape the projection, narrow json, coerce nulls.
+ *   3. Override `buildWrite` — activate FK write keys, pass from your canonical.
+ *   4. If needed, override `softDeleteByExternalId` for a log line (the base handles
+ *      the delegate/noop knob — override only for extra side effects).
+ *
+ * You MAY call `default<E>BuildWrite(record)` inside `buildWrite` and spread-then-
+ * override a single key — the standalone function is importable for exactly this use.
+ */
+export function generateSinkSubclass(input: SinkEmitInput): string {
+  assertIntegrated(input);
+
+  const n = sinkNames(input.entityClass);
+
+  return `// Emit-once — author-owned. Regen never overwrites this file.
+// The mechanical mapping lives in ${input.entityName}.sink.generated.ts and reflows on every
+// codegen run (a YAML field change reflows into the @generated base + default functions).
+//
+// To WIDEN (all four seams — see ${input.entityName}.sink.generated.ts banner for detail):
+//   1. Change \`extends ${n.sinkBaseClass}\` → \`extends ${n.sinkBaseClass}<YourCanonical>\`.
+//   2. Override \`toCanonicalView\`: reshape projection, narrow typed json, coerce nulls.
+//   3. Override \`buildWrite\`: activate FK write keys (\`<writeKey>: record.<writeKey>\`).
+//   4. Optionally override \`softDeleteByExternalId\` if you want a log line.
+//      (The base handles delegate/noop via the #490 YAML knob — no override needed otherwise.)
+// Source: definitions entity '${input.entityName}' (surface: ${input.surface}).
+import {
+  ${n.sinkBaseClass},
+  ${n.defaultToCanonicalView},
+  ${n.defaultBuildWrite},
+} from './${input.entityName}.sink.generated';
+import type {
+  ${n.projectionType},
+  ${n.writeType},
+} from '${input.repoImportSpecifier}';
+
+export class ${n.sinkClass} extends ${n.sinkBaseClass} {
+  protected toCanonicalView(row: ${n.projectionType}): ${n.projectionType} {
+    return ${n.defaultToCanonicalView}(row);
+  }
+
+  protected buildWrite(record: ${n.projectionType}): ${n.writeType} {
+    return ${n.defaultBuildWrite}(record);
+  }
+}
+`;
+}
+
+// ============================================================================
+// Legacy export — kept for any call-site that hasn't migrated to the two-file
+// split yet. Delegates to generateSinkBase (the plumbing is identical; the
+// subclass is a separate call). This is NOT the canonical path — use
+// generateSinkBase + generateSinkSubclass via emitAdapters.
+// ============================================================================
+
+/**
+ * @deprecated Use {@link generateSinkBase} + {@link generateSinkSubclass} instead.
+ *   This shim returns only the base file text for legacy call-sites in tests
+ *   that import `generateDefaultSink` by name. It will be removed once all
+ *   call-sites migrate to the two-function API.
+ */
+export function generateDefaultSink(input: SinkEmitInput): string {
+  return generateSinkBase(input);
 }
