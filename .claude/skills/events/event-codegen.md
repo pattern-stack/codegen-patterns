@@ -75,6 +75,7 @@ payload:
 - `payload` — snake_case keys → camelCase TS props; types `uuid | string | number | boolean | date | json | array`. For `array`, an `items:` scalar type is required (`items: uuid | string | number | boolean | date`) and emits `T[]` + `z.array(T)`. `json` means "arbitrary JSON object" (`Record<string, unknown>` / `z.record(z.unknown())`) — do NOT use `json` for array-shaped payloads, Zod will reject them at validation time.
 - `pool` — optional override; constrained to the reserved pools of the *same category* (a `change` event cannot opt into `events_inbound`). User pools (`batch`, `interactive`) are NEVER valid targets for events. **MUST be omitted when `tier: audit`.**
 - `retry` — `{ attempts, backoff }`, hints surfaced to the bus
+- `schedule` — optional (ADR-039); `{ every, align?, catchUp?, maxCatchUpSlots? }`. Declares the platform emits this event on a cadence — the `EventScheduler` materialises one `domain_events` row per slot; existing tiers react. `every` is a duration string (`'1h'`/`'30m'`/`'15s'`/`'500ms'`/`'1d'`) or raw ms. **Domain-tier only** (audit rejected). Carried into the generated `eventRegistry`. See the events SKILL §"Time is an event source" + ADR-039.
 - `version` — integer, defaults to 1 (schema evolution; not exercised yet)
 
 **Default pool from direction (domain tier only):**

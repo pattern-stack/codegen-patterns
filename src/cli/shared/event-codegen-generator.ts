@@ -560,6 +560,11 @@ const REGISTRY_INTERFACE = [
 	'\tdestination?: string;',
 	'\tversion: number;',
 	"\tretry: { attempts: number; backoff: 'linear' | 'exponential' };",
+	// ADR-039 — declarative time-based emission. Present only on scheduled
+	// events; the runtime EventScheduler reads it (+ direction/pool above) to
+	// materialise ticks. `every` is ms-or-duration-string; the rest carry the
+	// schema defaults.
+	'\tschedule?: { every: string | number; align: boolean; catchUp: boolean; maxCatchUpSlots: number };',
 	'}',
 ].join('\n');
 
@@ -626,6 +631,19 @@ export function buildRegistryContent(events: EventDefinition[]): string {
 		chunks.push(
 			`\t\tretry: { attempts: ${ev.retry.attempts}, backoff: '${ev.retry.backoff}' },`,
 		);
+		// ADR-039 — emit the schedule block when present (parsed defaults applied
+		// by the schema: align/catchUp/maxCatchUpSlots always set). `every` is
+		// number-or-string; quote strings, emit numbers bare.
+		if (ev.schedule !== undefined) {
+			const every =
+				typeof ev.schedule.every === 'number'
+					? String(ev.schedule.every)
+					: `'${ev.schedule.every}'`;
+			chunks.push(
+				`\t\tschedule: { every: ${every}, align: ${ev.schedule.align}, ` +
+					`catchUp: ${ev.schedule.catchUp}, maxCatchUpSlots: ${ev.schedule.maxCatchUpSlots} },`,
+			);
+		}
 		chunks.push(`\t},`);
 	}
 	chunks.push(

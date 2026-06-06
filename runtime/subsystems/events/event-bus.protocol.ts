@@ -83,4 +83,51 @@ export interface IEventBus {
    *     of Redis backend is unsupported.
    */
   findById(eventId: string): Promise<DomainEvent | null>;
+
+  /**
+   * Materialise exactly one scheduled tick event (ADR-039 — time as an event
+   * source). Called by the framework `EventScheduler` on its boot + tick passes.
+   *
+   * The `slotKey` (`@schedule/<type>/<slotStartMs>`) is a pure function of
+   * (type, slot) — every instance computes the same key — and is stamped onto
+   * `metadata.scheduleSlot` (+ `metadata.triggerSource='schedule'`). The insert
+   * is deterministic and idempotent:
+   *   - Drizzle: `INSERT … ON CONFLICT DO NOTHING` against the partial UNIQUE
+   *     expression index on `(type, metadata->>'scheduleSlot')`. The DB
+   *     constraint — not a read, not a lock — is the exactly-one-event-per-slot
+   *     invariant across multi-instance deploys and boot/tick races.
+   *   - Memory: a slot-key marker set mirrors the constraint.
+   *
+   * Returns `created: false` when the slot event already existed (the no-op
+   * case). Optional on the protocol — only the scheduler calls it, and the
+   * Redis backend (no outbox history) does not implement it (the scheduler is
+   * drizzle/memory only).
+   */
+  materializeScheduledEvent?(
+    spec: ScheduledEventSpec,
+  ): Promise<{ created: boolean }>;
+
+  /**
+   * Optional (ADR-039) — `occurred_at` (epoch ms) of the most recent scheduled
+   * tick for `type`, or `null`. Read by the scheduler's catch-up backfill as
+   * `MAX(occurred_at) WHERE type=? AND metadata->>'triggerSource'='schedule'`.
+   */
+  lastScheduledSlotMs?(type: string): Promise<number | null>;
+}
+
+/**
+ * The fully-resolved shape the scheduler hands a backend to materialise one
+ * tick. Carries the routing fields the outbox row needs (direction/pool from
+ * the event's registry metadata) plus the slot key + boundary.
+ */
+export interface ScheduledEventSpec {
+  type: string;
+  /** `@schedule/<type>/<slotStartMs>` — the idempotency key. */
+  slotKey: string;
+  /** Slot boundary → the event's `occurred_at`. */
+  slotStart: Date;
+  /** `inbound | change | outbound` from the event's registry metadata. */
+  direction: string;
+  /** `events_inbound | events_change | events_outbound` from the registry. */
+  pool: string;
 }

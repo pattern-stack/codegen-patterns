@@ -62,6 +62,28 @@ Audit-tier events do NOT have a direction — they are not about data movement b
 | IEventBus contract, Drizzle/Memory backends, adding a new backend                   | `protocol-and-backends.md`      |
 | Deciding what Phase 1 shipped vs. what's deferred (ADR-023 bridge, Phase B, versioning) | `phase-roadmap.md`           |
 
+## Time is an event source (ADR-039 — `schedule:` on event YAML)
+
+A domain event may declare a **`schedule:`** block, meaning *"the platform emits this event on this cadence."* Time is a third event **source** (peer to use-case publishes and webhook receivers) — **not** a fourth activation tier. Consumers react with the existing ADR-023 tiers (subscribe or `@JobHandler({ triggers })`); there is no new activation mechanism.
+
+```yaml
+# definitions/events/messaging/reconcile_due.yaml
+type: reconcile_due
+direction: inbound            # scheduled events are domain-tier; they route by direction
+schedule:
+  every: 1h                   # '1h' | '30m' | '15s' | '500ms' | '1d' | raw ms — the slot length
+  align: true                 # epoch-anchored slot boundaries (default true)
+  # catchUp: false            # run once on recovery, don't replay missed slots (default)
+  # maxCatchUpSlots: 1000     # catchUp bound (default)
+payload: {}                   # scheduled events are payload-free facts
+```
+
+The framework `EventScheduler` (`runtime/subsystems/events/event-scheduler.ts`, wired by `EventsModule.forRoot` for drizzle/memory) materialises **exactly one `domain_events` row per (type, slot)** — idempotent via the partial UNIQUE expression index `idx_domain_events_schedule_slot` on `(type, metadata->>'scheduleSlot')` (a slot key `@schedule/<type>/<slotStartMs>` that every instance computes identically, so multi-instance deploys and boot/tick races can't double-emit). It runs **reconcile-on-boot** (materialise the current slot, or bounded backfill under `catchUp`) plus a tick pass for the next slot.
+
+**Provenance:** a scheduled tick event carries `metadata.triggerSource = 'schedule'` + `metadata.scheduleSlot`. A run the bridge spawns from it reads `job_run.trigger_source = 'event'` (it came through an event); the clock origin lives on the event's metadata, joinable via `job_run.trigger_ref → domain_events.id`. A consumer that instead uses **Tier 1** (subscribe to the scheduled event, call `orchestrator.start(..., { triggerSource: 'schedule' })`) stamps the run `'schedule'` directly — that ADR-022 enum value is the correct stamp for the direct-start path.
+
+Rules: `schedule:` is **domain-tier only** (an audit event routes to no pool and can't drive the bridge — codegen rejects it); a malformed `every` fails `gen-validate`; the scheduler is drizzle/memory only (the Redis bus retains no outbox history to enforce slot idempotency). This **retires the self-perpetuating job-chain pattern** (a handler enqueuing its own successor) and its slot-keyed-dedupe workaround. See ADR-039.
+
 ## Non-obvious rules (read twice)
 
 1. **Direction is a routing concern, not a payload concern.** Two events with the same payload can have different directions because the drain lane matters. An `inbound` webhook that mirrors a `change` event is still `inbound` — the lane it drains through is what keeps external bursts from stalling internal projections.

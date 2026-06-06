@@ -44,7 +44,18 @@
  * `new Class()` which silently left `db` / `redisUrl` undefined
  * (issue #108).
  */
-import { Module, type DynamicModule, type Provider, type Type } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Module,
+  Optional,
+  type DynamicModule,
+  type OnModuleDestroy,
+  type OnModuleInit,
+  type Provider,
+  type Type,
+} from '@nestjs/common';
 import {
   EVENT_BUS,
   EVENT_READ_PORT,
@@ -57,6 +68,12 @@ import { DRIZZLE } from '../../constants/tokens';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DrizzleEventBus } from './event-bus.drizzle-backend';
 import { MemoryEventBus } from './event-bus.memory-backend';
+import type { IEventBus } from './event-bus.protocol';
+import {
+  EventScheduler,
+  scheduledEventsFromRegistry,
+  type RegistrySchedule,
+} from './event-scheduler';
 // #6 — `RedisEventBus` is lazy-loaded only when `backend: 'redis'` is selected.
 // The file is filtered out of the vendor set for non-redis installs (see
 // `backendFileFilter` in src/cli/commands/subsystem.ts); the dynamic-string
@@ -151,6 +168,62 @@ export interface EventsModuleOptions {
    * keeps the bundled bus.
    */
   typedBus?: Type<unknown>;
+  /**
+   * ADR-039 — the consumer's generated `eventRegistry`, threaded so the
+   * `EventScheduler` can read the `schedule:` block + routing metadata of every
+   * scheduled event. Package mode: the generated subsystem barrel passes the
+   * consumer's `eventRegistry` (the bundled one is the package's empty/fixture
+   * registry, which the package can't see the consumer's events through — same
+   * reason `typedBus` is threaded). Omitted ⇒ no scheduler is spawned (vendored
+   * tree reads its own bundled registry only if the barrel passes it; tests
+   * pass a registry directly).
+   *
+   * Structural shape: each value needs `schedule?` + `direction` + `pool`. The
+   * generated `EventMetadata` satisfies it; typing it loosely here avoids a
+   * runtime dependency on the generated types from the module file.
+   */
+  eventRegistry?: Record<
+    string,
+    { schedule?: RegistrySchedule; direction: string | null; pool: string | null }
+  >;
+}
+
+/**
+ * Lifecycle holder for the `EventScheduler` (ADR-039). Registered as a provider
+ * on the drizzle/memory `forRoot` branches; Nest drives `onModuleInit` (after
+ * the bus is constructed) and `onModuleDestroy`. Reads the scheduled-event set
+ * from the threaded `eventRegistry` and starts the materialiser. No-op when
+ * nothing declared `schedule:`, or under the redis backend (no outbox history).
+ */
+@Injectable()
+export class EventSchedulerLifecycle implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(EventSchedulerLifecycle.name);
+  private scheduler: EventScheduler | null = null;
+
+  constructor(
+    @Inject(EVENT_BUS) private readonly bus: IEventBus,
+    @Optional()
+    @Inject(EVENTS_MODULE_OPTIONS)
+    private readonly opts: EventsModuleOptions | null = null,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    const registry = this.opts?.eventRegistry;
+    if (!registry) return;
+    if (typeof this.bus.materializeScheduledEvent !== 'function') return; // redis
+    const schedules = scheduledEventsFromRegistry(registry);
+    if (schedules.length === 0) return;
+    this.scheduler = new EventScheduler(this.bus, schedules);
+    await this.scheduler.start();
+    this.logger.log(`EventScheduler wired for ${schedules.length} scheduled event(s).`);
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.scheduler) {
+      this.scheduler.stop();
+      this.scheduler = null;
+    }
+  }
 }
 
 export interface EventsModuleAsyncOptions {
@@ -317,6 +390,10 @@ export class EventsModule {
         // IEventReadPort on the same instance as EVENT_BUS. The redis
         // backend retains no history and does not provide this token.
         { provide: EVENT_READ_PORT, useExisting: EVENT_BUS },
+        // ADR-039 — the scheduler lifecycle. No-op unless `eventRegistry` was
+        // threaded AND some event declared `schedule:`. Drizzle/memory only
+        // (the redis branch above never reaches here).
+        EventSchedulerLifecycle,
         ...buildTypedBusProviders(multiTenant, options.typedBus),
       ],
       exports: [EVENT_BUS, EVENT_READ_PORT, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],

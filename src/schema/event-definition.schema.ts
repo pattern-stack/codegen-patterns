@@ -137,6 +137,42 @@ const RetrySchema = z
 
 export type EventRetry = z.infer<typeof RetrySchema>;
 
+/**
+ * Declarative time-based emission (ADR-039 — time as an event source). When an
+ * event declares `schedule:`, the framework `EventScheduler` materialises one
+ * `domain_events` row per (event type, slot) on this cadence; ADR-023's three
+ * activation tiers (subscribe / `@JobHandler({ triggers })` / `publishAndStart`)
+ * — unchanged — react. No new activation mechanism; time is just a third event
+ * source peer to use-case publishes and webhook receivers.
+ *
+ * `every` is a duration string (`'1h'`, `'30m'`, `'15s'`, `'500ms'`, `'1d'`)
+ * or a raw millisecond number — the slot length. Validated at codegen time;
+ * re-checked at boot.
+ */
+const DURATION_RE = /^\s*[0-9]*\.?[0-9]+\s*(ms|s|m|h|d)\s*$/;
+
+const ScheduleSchema = z
+	.object({
+		every: z.union([
+			z
+				.string()
+				.regex(
+					DURATION_RE,
+					"schedule.every must be a duration like '1h', '30m', '15s', '500ms', '1d'",
+				),
+			z.number().positive().finite(),
+		]),
+		/** Epoch-anchored slot boundaries (default true). */
+		align: z.boolean().optional().default(true),
+		/** Backfill missed slots on recovery (default false → run once). */
+		catchUp: z.boolean().optional().default(false),
+		/** Upper bound on `catchUp` backfill (default 1000). */
+		maxCatchUpSlots: z.number().int().positive().optional().default(1000),
+	})
+	.strict();
+
+export type EventSchedule = z.infer<typeof ScheduleSchema>;
+
 // ============================================================================
 // Top-level schema
 // ============================================================================
@@ -169,6 +205,9 @@ const EventDefinitionSchemaCore = z
 			attempts: 3,
 			backoff: "exponential",
 		}),
+		// ADR-039 — declarative time-based emission. Optional; when present the
+		// platform emits this event on the given cadence (see ScheduleSchema).
+		schedule: ScheduleSchema.optional(),
 		version: z.number().int().min(1).optional().default(1),
 		description: z.string().optional(),
 	})
@@ -210,6 +249,16 @@ const EventDefinitionSchemaRefined = EventDefinitionSchemaCore.superRefine(
 					code: z.ZodIssueCode.custom,
 					message: `Event '${data.type}' is tier:audit; direction MUST be omitted (got '${data.direction}'). Audit events have no direction. See ai-docs/specs/issue-242/plan.md §AUDIT-2.`,
 					path: ["direction"],
+				});
+			}
+			// ADR-039 — a scheduled event must DRIVE work, which means it needs a
+			// direction/pool to reach the bridge; audit events route nowhere.
+			// v1 keeps `schedule:` domain-tier only.
+			if (data.schedule !== undefined) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: `Event '${data.type}' is tier:audit; 'schedule' is not allowed on audit events (they route to no pool and cannot drive the bridge). Make it a domain event with a direction. See ADR-039.`,
+					path: ["schedule"],
 				});
 			}
 			// Skip the domain-tier refinements below — they reference

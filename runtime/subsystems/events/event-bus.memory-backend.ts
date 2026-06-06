@@ -19,8 +19,13 @@
  *   than introducing a memory-only options type — the surface is the same
  *   and keeping them unified avoids drift between backends.
  */
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { DomainEvent, IEventBus } from './event-bus.protocol';
+import type {
+  DomainEvent,
+  IEventBus,
+  ScheduledEventSpec,
+} from './event-bus.protocol';
 import type {
   EventPage,
   EventSummary,
@@ -108,6 +113,57 @@ export class MemoryEventBus implements IEventBus, IEventReadPort {
 
   async findById(eventId: string): Promise<DomainEvent | null> {
     return this.publishedEvents.find((e) => e.id === eventId) ?? null;
+  }
+
+  // ============================================================================
+  // ADR-039 — scheduled-event materialisation (memory parity)
+  // ============================================================================
+
+  /** Slot keys already materialised — the in-memory mirror of the partial
+   *  UNIQUE expression index `idx_domain_events_schedule_slot`. */
+  private readonly materialisedSlots = new Set<string>();
+
+  /**
+   * Mirror of the Drizzle `ON CONFLICT DO NOTHING` insert: emit one payload-free
+   * tick event per slot key, no-op if the slot was already materialised. The
+   * "constraint" is the `materialisedSlots` set. The tick is published through
+   * the normal `publish` path so subscribers fire synchronously (the memory bus
+   * has no future-slot/poll concept — a materialised slot dispatches now, which
+   * is the behaviour the unit suite pins).
+   */
+  async materializeScheduledEvent(
+    spec: ScheduledEventSpec,
+  ): Promise<{ created: boolean }> {
+    if (this.materialisedSlots.has(spec.slotKey)) return { created: false };
+    this.materialisedSlots.add(spec.slotKey);
+    const event: DomainEvent = {
+      id: randomUUID(),
+      type: spec.type,
+      aggregateId: spec.type,
+      aggregateType: spec.type,
+      payload: {},
+      occurredAt: spec.slotStart,
+      metadata: {
+        pool: spec.pool,
+        direction: spec.direction,
+        scheduleSlot: spec.slotKey,
+        triggerSource: 'schedule',
+      },
+    };
+    await this.publish(event);
+    return { created: true };
+  }
+
+  /** Most recent scheduled tick's `occurred_at` (epoch ms) for `type`, or null. */
+  async lastScheduledSlotMs(type: string): Promise<number | null> {
+    let best: number | null = null;
+    for (const e of this.publishedEvents) {
+      if (e.type !== type) continue;
+      if (e.metadata?.['triggerSource'] !== 'schedule') continue;
+      const ms = e.occurredAt.getTime();
+      if (best === null || ms > best) best = ms;
+    }
+    return best;
   }
 
   subscribe<T extends DomainEvent = DomainEvent>(

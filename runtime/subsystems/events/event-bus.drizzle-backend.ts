@@ -28,9 +28,15 @@
  * throughput. At that point, swap the backend for Redis Streams or similar
  * via EventsModule.forRoot({ backend: '...' }) without touching use cases.
  */
+import { randomUUID } from 'node:crypto';
 import { Injectable, OnModuleDestroy, OnModuleInit, Inject, Logger, Optional } from '@nestjs/common';
 import { eq, and, inArray, asc, desc, gte, lt, or, sql, type SQL } from 'drizzle-orm';
-import type { DomainEvent, DrizzleTransaction, IEventBus } from './event-bus.protocol';
+import type {
+  DomainEvent,
+  DrizzleTransaction,
+  IEventBus,
+  ScheduledEventSpec,
+} from './event-bus.protocol';
 import type {
   EventPage,
   IEventReadPort,
@@ -133,6 +139,17 @@ function toEventSummary(r: DomainEventRecord) {
           ? r.processedAt
           : new Date(r.processedAt as unknown as string),
   };
+}
+
+/**
+ * Postgres unique-violation (SQLSTATE 23505) test. Used by the scheduled-event
+ * materialiser (ADR-039) to treat a slot-key collision as the
+ * already-materialised no-op. Reads `.code` defensively across driver shapes
+ * (node-postgres surfaces it on the error, some wrappers nest it on `.cause`).
+ */
+function isUniqueViolation(err: unknown): boolean {
+  const code = (err as { code?: unknown; cause?: { code?: unknown } } | undefined);
+  return code?.code === '23505' || code?.cause?.code === '23505';
 }
 
 @Injectable()
@@ -338,6 +355,91 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
     return () => {
       set.delete(h);
     };
+  }
+
+  // ============================================================================
+  // ADR-039 — scheduled-event materialisation (time as an event source)
+  // ============================================================================
+
+  /**
+   * Insert one scheduled tick event idempotently. The slot key is stamped onto
+   * `metadata.scheduleSlot`; `ON CONFLICT DO NOTHING` against the partial UNIQUE
+   * expression index `idx_domain_events_schedule_slot` makes a duplicate insert
+   * a no-op — the DB constraint is the exactly-one-event-per-slot invariant.
+   *
+   * Reuses the standard outbox row shape (pool/direction/metadata) so the
+   * existing drain carries the tick like any other event. A LISTEN/NOTIFY wake
+   * fires for an immediately-due tick (boot/catch-up rows whose slot is already
+   * in the past); a future slot is claimed by polling once `occurred_at` passes.
+   */
+  async materializeScheduledEvent(
+    spec: ScheduledEventSpec,
+  ): Promise<{ created: boolean }> {
+    const multiTenant = this.opts.multiTenant ?? false;
+    const metadata: Record<string, unknown> = {
+      pool: spec.pool,
+      direction: spec.direction,
+      scheduleSlot: spec.slotKey,
+      triggerSource: 'schedule',
+    };
+    const base = {
+      id: randomUUID(),
+      type: spec.type,
+      // Payload-free scheduled fact (the dealbrain strict-producer pattern).
+      aggregateId: spec.type,
+      aggregateType: spec.type,
+      payload: {} as Record<string, unknown>,
+      occurredAt: spec.slotStart,
+      processedAt: null,
+      status: 'pending' as const,
+      metadata,
+      pool: spec.pool,
+      direction: spec.direction,
+      tier: 'domain' as const,
+    };
+    const values = multiTenant ? { ...base, tenantId: null } : base;
+
+    // The idempotency guard is the partial UNIQUE expression index
+    // `idx_domain_events_schedule_slot` on (type, metadata->>'scheduleSlot').
+    // Drizzle 0.45's typed `onConflictDoNothing({ target })` only accepts
+    // columns, so it can't name an expression index — we instead let the
+    // insert run and treat a unique-violation (SQLSTATE 23505) as the
+    // already-materialised no-op. This is the exactly-one-per-slot invariant:
+    // a concurrent or repeat materialise of the same slot loses the race at
+    // the DB and reports `created: false`.
+    try {
+      await this.db.insert(domainEvents).values(values);
+    } catch (err) {
+      if (isUniqueViolation(err)) return { created: false };
+      throw err;
+    }
+
+    // Wake the drainer for an already-due tick. A future slot waits for polling.
+    if (spec.slotStart.getTime() <= Date.now()) {
+      await this.emitWakeNotify(this.db, [spec.pool]);
+    }
+    return { created: true };
+  }
+
+  /** Most recent scheduled tick's `occurred_at` (epoch ms) for `type`, or null.
+   *  Read by the scheduler's catch-up backfill. */
+  async lastScheduledSlotMs(type: string): Promise<number | null> {
+    const rows = await this.db
+      .select({ occurredAt: domainEvents.occurredAt })
+      .from(domainEvents)
+      .where(
+        and(
+          eq(domainEvents.type, type),
+          sql`${domainEvents.metadata} ->> 'triggerSource' = 'schedule'`,
+        ),
+      )
+      .orderBy(desc(domainEvents.occurredAt))
+      .limit(1);
+    const row = rows[0];
+    if (!row?.occurredAt) return null;
+    return row.occurredAt instanceof Date
+      ? row.occurredAt.getTime()
+      : new Date(row.occurredAt as unknown as string).getTime();
   }
 
   // ============================================================================

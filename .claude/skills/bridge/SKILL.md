@@ -139,5 +139,6 @@ src/cli/commands/events/consumers.ts      # `codegen events consumers <type>` fa
 - `.claude/skills/jobs/SKILL.md` — jobs side; reserved-pool rules and wrapper handler registration.
 - `docs/adrs/ADR-022-job-orchestration-domain-model.md` — reserved `events_*` pools originate here; `trigger_source='event'` + `trigger_ref=<event_id>` columns on `job_run` already anticipated this ADR.
 - `docs/adrs/ADR-024-events-domain-formalization.md` — the typed event registry this ADR builds on.
+- `docs/adrs/ADR-039-declarative-time-based-scheduling.md` — **time as an event source.** A scheduled event (`schedule:` on its YAML) is materialised into the outbox by the `EventScheduler` and activates jobs through THIS bridge unchanged. Provenance: a bridge run from a scheduled tick reads `trigger_source='event'` (it came through an event); the clock origin lives on `domain_events.metadata.triggerSource='schedule'`, joinable via `trigger_ref → domain_events.id`. The bridge needs no scheduling awareness — a scheduled event is just an event.
 - `docs/adrs/ADR-026-job-observability.md` (not yet written) — selective job lifecycle events; flows back through this bridge.
 - `.claude/skills/openapi/SKILL.md` — OpenAPI/Swagger surface (shipped 2026-04-22 via OPENAPI-1..4). ADR-026's `/ops/*` controllers will consume the registry + decorators this skill documents.
