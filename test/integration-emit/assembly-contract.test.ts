@@ -511,6 +511,64 @@ describe("E4 · pattern: Integrated gate", () => {
 // 6. Multi-provider on one surface — §7q3 two-provider-no-collision, executable
 // ============================================================================
 
+// ============================================================================
+// 7. YAML knob coverage through emitAdapters (#490 — delete:noop + exclude_fields)
+// ============================================================================
+
+/** thread — carries both YAML knobs:
+ *   integration.sink.delete: noop         → softDeleteByExternalId body is a no-op return null
+ *   integration.sink.exclude_fields: [conversation_external_id]
+ *                                          → write surface omits the field; find view retains it */
+const THREAD: EmitAdaptersEntity = {
+  entity: { name: "thread", surface: "crm", pattern: "Integrated", plural: "threads" },
+  fields: {
+    subject: { type: "string" },
+    conversation_external_id: { type: "string", nullable: true },
+  },
+  integration: {
+    sink: {
+      delete: "noop",
+      exclude_fields: ["conversation_external_id"],
+    },
+  },
+};
+
+describe("E4 · sink knobs through emitAdapters — delete:noop + exclude_fields (#490 in the generated base)", () => {
+  const { read } = run({ providers: [SALESFORCE], entities: [THREAD] });
+  const base = read("crm/sinks/thread.sink.generated.ts");
+
+  test("delete:noop emits a logged no-op body in softDeleteByExternalId (no repo delete delegation)", () => {
+    // The body must contain the noop marker and return null; must NOT delegate to repo.
+    expect(base).toContain("delete:noop (YAML integration.sink.delete: noop)");
+    expect(base).toContain("return null;");
+    // The delegate path must be absent.
+    const deleteMethodStart = base.indexOf("async softDeleteByExternalId(");
+    const deleteMethodEnd = base.indexOf("\n  }", deleteMethodStart);
+    const deleteBody = base.slice(deleteMethodStart, deleteMethodEnd);
+    expect(deleteBody).not.toContain("this.repo.softDeleteByExternalId");
+  });
+
+  test("exclude_fields omits the excluded field from the write mapping (copy-through write surface)", () => {
+    // defaultThreadBuildWrite must NOT contain conversationExternalId: record.conversationExternalId.
+    const buildWriteStart = base.indexOf("export function defaultThreadBuildWrite(");
+    const buildWriteEnd = base.indexOf("\nexport function defaultThread", buildWriteStart + 1);
+    const buildWriteFn = base.slice(buildWriteStart, buildWriteEnd);
+    expect(buildWriteFn).not.toContain("conversationExternalId");
+  });
+
+  test("excluded field IS retained in the find-side view (write-surface-only exclusion per #490 Gate 2.5)", () => {
+    // defaultThreadToCanonicalView must enumerate conversationExternalId as a passthrough.
+    const viewStart = base.indexOf("export function defaultThreadToCanonicalView(");
+    const viewEnd = base.indexOf("\n// Abstract base", viewStart);
+    const viewFn = base.slice(viewStart, viewEnd);
+    expect(viewFn).toContain("conversationExternalId: row.conversationExternalId,");
+  });
+
+  test("contains NO ` as ` cast anywhere (standing no-type-loosening rule)", () => {
+    expect(codeOnly(base)).not.toMatch(/\bas\b\s+[A-Za-z{]/);
+  });
+});
+
 describe("E4 · multi-provider on one surface (salesforce + hubspot serve crm)", () => {
   const { read, result } = run({
     providers: [SALESFORCE, HUBSPOT],
