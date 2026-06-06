@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-06-06
+
+**Fix: the subsystems barrel never threaded `eventRegistry` into
+`EventsModule.forRoot`** — so `EventSchedulerLifecycle` never spawned and
+ADR-039 scheduled events silently didn't tick (dogfood gap found consuming
+0.20.0 in swe-brain, package mode). The 0.20.0 runtime expected the barrel to
+pass the consumer's generated `eventRegistry`, but the emitter (`subsystem-
+barrel-generator`) was never updated to do so.
+
+### Fixed
+
+- **`subsystem-barrel-generator` now threads `eventRegistry`** into
+  `EventsModule.forRoot` on every events branch (package + vendored, plain +
+  `listenNotify`). The registry is imported from `./events/registry`
+  (package mode) or `<subsystemsRoot>/events/generated/registry` (vendored) —
+  the same conditioning/relative-import mechanism the `TypedEventBus` import
+  already uses. `EventSchedulerLifecycle` reads `eventRegistry` (and only it —
+  no bundled fallback), so this is what makes the scheduler spawn.
+- **Stub guard extended to vendored mode.** A bare `subsystem install events`
+  regenerates the barrel before `entity new --all` has emitted the generated
+  events set; the writer drops the empty 5-file set (incl. `registry.ts`) into
+  the vendored `<subsystemsRoot>/events/generated/` if absent, so the barrel's
+  new `eventRegistry` import never dangles (package mode already had this guard
+  for `./events/bus`; the same path emits `registry.ts`).
+
+### Tests
+
+- `subsystem-barrel-generator` tests updated for the new `forRoot` shape +
+  a both-modes regression guard asserting `eventRegistry` is imported AND
+  threaded.
+- **Subsystems smoke now asserts the threading end-to-end** — the gap survived
+  because nothing checked that a consumer's barrel actually wires the scheduler.
+  `run-smoke-subsystems` now fails if the real generated barrel doesn't import
+  `eventRegistry` and pass it to `EventsModule.forRoot`.
+
 ## [0.20.0] — 2026-06-06
 
 **Declarative time-based scheduling: time as an event source** (ADR-039;

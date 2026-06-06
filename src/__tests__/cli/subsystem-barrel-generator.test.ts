@@ -81,8 +81,13 @@ describe('buildSubsystemBarrel', () => {
 		expect(out.content).toContain(
 			"import { EventsModule } from './shared/subsystems/events/events.module';",
 		);
+		// ADR-039 — vendored events composer threads the consumer's generated
+		// eventRegistry so EventSchedulerLifecycle can spawn the scheduler.
 		expect(out.content).toContain(
-			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false }),",
+			"import { eventRegistry } from './shared/subsystems/events/generated/registry';",
+		);
+		expect(out.content).toContain(
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, eventRegistry }),",
 		);
 	});
 
@@ -264,7 +269,7 @@ describe('buildSubsystemBarrel', () => {
 			subsystemsRel,
 		);
 		expect(out.content).toContain(
-			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false }),",
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, eventRegistry }),",
 		);
 	});
 
@@ -427,7 +432,7 @@ describe('buildSubsystemBarrel', () => {
 			subsystemsRel,
 		);
 		expect(out.content).toContain(
-			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, listenNotify: true }),",
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, eventRegistry, listenNotify: true }),",
 		);
 	});
 
@@ -509,7 +514,7 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			'package',
 		);
 		expect(out.content).toContain(
-			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, typedBus: TypedEventBus, listenNotify: true }),",
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, typedBus: TypedEventBus, eventRegistry, listenNotify: true }),",
 		);
 	});
 
@@ -625,12 +630,16 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		expect(out.content).toContain(
 			"import { TypedEventBus } from './events/bus';",
 		);
+		// ADR-039 — package mode threads eventRegistry from ./events/registry.
 		expect(out.content).toContain(
-			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, typedBus: TypedEventBus }),",
+			"import { eventRegistry } from './events/registry';",
+		);
+		expect(out.content).toContain(
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, typedBus: TypedEventBus, eventRegistry }),",
 		);
 	});
 
-	test('vendored events composer emits no typedBus (uses the runtime bundled bus)', () => {
+	test('vendored events composer emits no typedBus (uses the runtime bundled bus) but DOES thread eventRegistry', () => {
 		const out = buildSubsystemBarrel(
 			[inst('events')],
 			{ events: { backend: 'drizzle', multi_tenant: false } },
@@ -638,9 +647,32 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			'vendored',
 		);
 		expect(out.content).toContain(
-			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false }),",
+			"EventsModule.forRoot({ backend: 'drizzle', multiTenant: false, eventRegistry }),",
 		);
 		expect(out.content).not.toContain('typedBus');
 		expect(out.content).not.toContain('./events/bus');
+		// ADR-039 — vendored mode still threads eventRegistry (from the vendored
+		// generated dir), since EventSchedulerLifecycle has no bundled fallback.
+		expect(out.content).toContain(
+			"import { eventRegistry } from './shared/subsystems/events/generated/registry';",
+		);
+	});
+
+	// ADR-039 regression guard — the 0.20.0 dogfood gap was that NEITHER mode
+	// threaded eventRegistry, so EventSchedulerLifecycle never spawned and
+	// scheduled events silently didn't tick. Assert both modes thread it.
+	test('eventRegistry is threaded into forRoot in BOTH modes (scheduler-spawn regression guard)', () => {
+		for (const mode of ['package', 'vendored'] as const) {
+			const out = buildSubsystemBarrel(
+				[inst('events')],
+				{ events: { backend: 'drizzle', multi_tenant: false } },
+				subsystemsRel,
+				mode,
+			);
+			// The forRoot call must carry the eventRegistry option.
+			expect(out.content).toMatch(/EventsModule\.forRoot\(\{[^}]*eventRegistry[^}]*\}\)/);
+			// And the symbol must be imported (no dangling reference).
+			expect(out.content).toMatch(/import \{ eventRegistry \} from '[^']+'/);
+		}
 	});
 });
