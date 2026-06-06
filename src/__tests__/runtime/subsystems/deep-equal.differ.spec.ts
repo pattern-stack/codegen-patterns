@@ -10,6 +10,13 @@
  *
  * Plus cleared-field (key on existing, null on incoming) coverage and
  * nested object equality.
+ *
+ * #488 Test 2b — diff-soundness (behavioral, reviewer-required):
+ *   Asserts the contract the sink emitter's bare-passthrough null-preservation
+ *   rule protects. A null-yielding adapter record and a null-preserving find()
+ *   view (produced by bare passthrough) must diff to 'noop' — if the generator
+ *   emitted `?? ''` instead, `isEqual(null, '')` → false → spurious upsert that
+ *   never converges. Cites deep-equal.differ.ts:187-208 / :220.
  */
 import { describe, it, expect } from 'bun:test';
 import { DeepEqualDiffer } from '../../../../runtime/subsystems/integration/deep-equal.differ';
@@ -316,6 +323,56 @@ describe('DeepEqualDiffer', () => {
       const rec = { amount: 100, stageName: 'Prospecting' };
       const result = d.diff(rec, { ...rec });
       expect(result).toBe('noop');
+    });
+  });
+
+  // ============================================================================
+  // #488 Test 2b — diff-soundness: null-preserving find() output yields noop
+  //
+  // The sink emitter emits BARE passthrough (`text: row.text,` with no `?? ''`)
+  // so that null is preserved exactly. This test asserts the contract that bare
+  // passthrough protects — independent of the emitted string:
+  //   (a) null-preserving find() view diffs equal against a null-yielding adapter
+  //       record → 'noop' (the cycle converges; no spurious upsert).
+  //   (b) `'' !== null` under the differ — proving that a blanket `?? ''` coercion
+  //       WOULD have broken convergence (the exact bug the generator avoids).
+  // Citations: deep-equal.differ.ts:187-208, :34-35 ("preserves zero-vs-null
+  // distinction"), :220 (empty-string guard).
+  // ============================================================================
+
+  describe('#488 Test 2b — diff-soundness: null-preserving passthrough', () => {
+    it('(a) null adapter value + null find() output → noop (bare passthrough converges)', () => {
+      // Simulates: adapter yields { text: null }, find() returns { text: null }
+      // (bare passthrough preserves null). The differ must see equal → noop.
+      const d = new DeepEqualDiffer<Rec>();
+      const adapterRecord = { text: null, externalId: 'x' };
+      const findOutput = { text: null, externalId: 'x' };  // bare passthrough
+      const result = d.diff(findOutput, adapterRecord);
+      expect(result).toBe('noop');
+    });
+
+    it("(b) '' !== null under the differ — proving ?? '' coercion breaks convergence", () => {
+      // Simulates what a blanket `text: row.text ?? ''` coercion WOULD emit:
+      // find() returns { text: '' } but adapter yields { text: null }.
+      // The differ does NOT equate '' and null → false → spurious upsert.
+      // This is the exact diff-divergence bug the bare-passthrough rule prevents.
+      const d = new DeepEqualDiffer<Rec>();
+      const coercedFindOutput = { text: '' };
+      const adapterRecord = { text: null };
+      const result = d.diff(coercedFindOutput, adapterRecord);
+      // Must NOT be noop — isEqual(null, '') is false (deep-equal.differ.ts:187-208, :220)
+      expect(result).not.toBe('noop');
+    });
+
+    it('(c) 0 !== null and false !== null (same class — boolean/number coercions also break convergence)', () => {
+      const d = new DeepEqualDiffer<Rec>();
+      expect(d.diff({ count: 0 }, { count: null })).not.toBe('noop');
+      expect(d.diff({ active: false }, { active: null })).not.toBe('noop');
+    });
+
+    it('(d) non-null scalar passthrough: string value preserved exactly → noop', () => {
+      const d = new DeepEqualDiffer<Rec>();
+      expect(d.diff({ text: 'hello' }, { text: 'hello' })).toBe('noop');
     });
   });
 });

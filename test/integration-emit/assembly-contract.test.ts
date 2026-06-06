@@ -197,10 +197,18 @@ describe("E4 · sink scaffold contract — FK belongs_to + user_id (contact via 
     expect(sink).toContain("this.repo.softDeleteByExternalId(externalId, this.provider)");
   });
 
-  test("emits the FK external-key as an active copy-through (no TODO seam)", () => {
-    // The orchestration path (buildSinkInput → fkWriteKey) derives `accountExternalId`
-    // from the belongs_to(account, non-self); it emits as an active line.
-    expect(sink).toContain("accountExternalId: record.accountExternalId,");
+  test("emits the FK external-key as null + SEAM comment (projection-default canonical has no external-key member)", () => {
+    // buildSinkInput → fkWriteKey derives `accountExternalId` for the
+    // belongs_to(account, non-self). The projection-default canonical is
+    // <E>IntegrationProjection, which has no accountExternalId member —
+    // record.accountExternalId would be TS2339. null is write-safe (repo skips
+    // null FKs; integrated-entity-repository.ts:118-120). Author replaces null
+    // after widening ContactCanonical to carry accountExternalId.
+    expect(sink).toContain("accountExternalId: null,");
+    expect(sink).toContain("SEAM (FK external key");
+    // SEAM comment mentions record.accountExternalId for instruction — intentional.
+    // Assert the active code assignment is null, not a record access.
+    expect(codeOnly(sink)).not.toContain("accountExternalId: record.");
     expect(sink).not.toContain("TODO(author)");
   });
 

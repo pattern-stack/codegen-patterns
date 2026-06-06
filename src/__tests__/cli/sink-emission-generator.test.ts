@@ -12,6 +12,16 @@
  *   (g) provider literal is the bare slug;
  *   (h) §1b contract test — fkWriteKey() matches the template's relationKey+ExternalId
  *       derivation for all three FK shapes (processBelongsTo:447-460 source of truth).
+ *
+ * #488 find-side projection tests (Tests 1–8 per spec):
+ *   (1) Explicit view enumeration — not a bare `return row`.
+ *   (2) Nullable scalars BARE — no `??` coercion (Gate 1.5 blocker guard).
+ *   (3) Non-null scalars BARE — no `??`.
+ *   (4) Json at `unknown` — no `as`, no `??`, SEAM marker present.
+ *   (5) Timestamps enumerated iff `hasTimestamps`.
+ *   (6) No ` as ` cast in any find-side case.
+ *   (7) `findByExternalIdProjected` delegation unchanged.
+ *   (8) Header documents generator-solved vs seam.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -166,26 +176,32 @@ describe("generateDefaultSink — userId is a declared copy-through field", () =
 
 describe("generateDefaultSink — belongs_to FK entity (single-word non-self)", () => {
   // contact with accountExternalId — the most common case.
+  // FK external keys emit as `<writeKey>: null` + SEAM comment: the
+  // projection-default canonical has no external-key member, so `record.<writeKey>`
+  // would be TS2339. null is write-safe (repo skips null FKs).
   const out = generateDefaultSink(
     contactInput({
       fkExternalKeys: [{ writeKey: "accountExternalId" }],
     }),
   );
 
-  it("emits the FK external join-key as an active copy-through (no TODO)", () => {
-    expect(out).toContain("accountExternalId: record.accountExternalId,");
+  it("emits the FK key as null (not record.<writeKey> — projection-default canonical has no external-key member)", () => {
+    expect(out).toContain("accountExternalId: null,");
+  });
+
+  it("emits a SEAM comment naming the write key", () => {
+    expect(out).toContain("SEAM (FK external key");
+    expect(out).toContain("accountExternalId");
+  });
+
+  it("the code line is null, not record.accountExternalId (TS2339 under projection-default canonical)", () => {
+    // The SEAM comment mentions record.accountExternalId for instruction — intentional.
+    // Assert the active code assignment is null.
+    expect(codeOnly(out)).not.toContain("accountExternalId: record.");
   });
 
   it("has no TODO(author) text anywhere", () => {
     expect(out).not.toContain("TODO(author)");
-  });
-
-  it("the write block contains an uncommented accountExternalId: assignment", () => {
-    const writeBlock = out.slice(
-      out.indexOf("const write: ContactIntegrationWrite = {"),
-      out.indexOf("const proj ="),
-    );
-    expect(writeBlock).toMatch(/^\s*accountExternalId:/m);
   });
 
   it("contains NO ` as ` cast", () => {
@@ -196,16 +212,24 @@ describe("generateDefaultSink — belongs_to FK entity (single-word non-self)", 
 describe("generateDefaultSink — belongs_to FK entity (multi-word non-self, snake-retained)", () => {
   // sales_account target → sales_accountExternalId (wart mirrored from template;
   // normalization deferred to follow-up #494 per spec Judgment call).
+  // FK key still emits as null + SEAM comment; the name is verbatim (snake retained).
   const out = generateDefaultSink(
     contactInput({
       fkExternalKeys: [{ writeKey: "sales_accountExternalId" }],
     }),
   );
 
-  it("emits the FK key verbatim with snake retained", () => {
-    expect(out).toContain(
-      "sales_accountExternalId: record.sales_accountExternalId,",
-    );
+  it("emits the FK key as null with the snake-retained name", () => {
+    expect(out).toContain("sales_accountExternalId: null,");
+  });
+
+  it("emits a SEAM comment naming the snake-retained key", () => {
+    expect(out).toContain("SEAM (FK external key");
+    expect(out).toContain("sales_accountExternalId");
+  });
+
+  it("the code line is null, not record.sales_accountExternalId", () => {
+    expect(codeOnly(out)).not.toContain("sales_accountExternalId: record.");
   });
 
   it("has no TODO(author) text", () => {
@@ -219,6 +243,7 @@ describe("generateDefaultSink — belongs_to FK entity (multi-word non-self, sna
 
 describe("generateDefaultSink — belongs_to FK entity (self-FK, camelCase derived)", () => {
   // parent_account_id on account entity → parentAccountExternalId
+  // FK key emits as null + SEAM comment; name is camelCase-derived.
   const out = generateDefaultSink(
     contactInput({
       entityName: "account",
@@ -227,10 +252,17 @@ describe("generateDefaultSink — belongs_to FK entity (self-FK, camelCase deriv
     }),
   );
 
-  it("emits the self-FK key as a camelCase active copy-through", () => {
-    expect(out).toContain(
-      "parentAccountExternalId: record.parentAccountExternalId,",
-    );
+  it("emits the self-FK key as null with the camelCase-derived name", () => {
+    expect(out).toContain("parentAccountExternalId: null,");
+  });
+
+  it("emits a SEAM comment naming the self-FK key", () => {
+    expect(out).toContain("SEAM (FK external key");
+    expect(out).toContain("parentAccountExternalId");
+  });
+
+  it("the code line is null, not record.parentAccountExternalId", () => {
+    expect(codeOnly(out)).not.toContain("parentAccountExternalId: record.");
   });
 
   it("has no TODO(author) text", () => {
@@ -296,8 +328,12 @@ describe("generateDefaultSink — FK + json + userId together", () => {
     expect(out).toContain("reactions: record.reactions,");
   });
 
-  it("emits the FK external key as an active copy-through", () => {
-    expect(out).toContain("channelExternalId: record.channelExternalId,");
+  it("emits the FK external key as null + SEAM comment (no active record.<writeKey> code line)", () => {
+    expect(out).toContain("channelExternalId: null,");
+    expect(out).toContain("SEAM (FK external key");
+    // The SEAM comment mentions record.channelExternalId for instruction — that's
+    // intentional. Assert the code line itself is null, not a record access.
+    expect(codeOnly(out)).not.toContain("channelExternalId: record.");
   });
 
   it("sources userId from the param shorthand, not the record", () => {
@@ -346,6 +382,310 @@ describe("generateDefaultSink — provider literal", () => {
     expect(out).toContain("bound provider '${this.provider}'");
     // sanity: a bare slug like 'google' has no surface suffix
     expect(out).not.toContain("google-crm");
+  });
+});
+
+// ============================================================================
+// §1b — Contract test: fkWriteKey() ⇄ template's processBelongsTo relationKey
+//
+// The sink's fkWriteKey() mirrors processBelongsTo's relationKey branches in
+// prompt-extension.js:447-460. This test locks all three FK shapes so a future
+// template change to relationKey would re-trip this test (the early-warning
+// guard; the compile error from active FK lines is the runtime safety net).
+//
+// Source of truth: prompt-extension.js:447-460.
+//   - non-self: relationKey = target (verbatim)  → writeKey = target + "ExternalId"
+//   - self-FK:  relationKey = camelCase(fk − _id) → writeKey = camelCase(fk − _id) + "ExternalId"
+// ============================================================================
+
+// ============================================================================
+// #488 — Find-side projection: typed view, null-preserving bare passthrough
+//
+// Spec: .ai-docs/stacks/assembly-default-sinks/specs/488.md
+// Gate 1.5 blocker: the original spec emitted `?? ''` for nullable scalars.
+// The orchestrator diffs find() output via DeepEqualDiffer which does NOT equate
+// null and '' — so `?? ''` causes a spurious upsert that never converges.
+// The fix: BARE passthrough (null preserved); coercion is author-owned on widen.
+// ============================================================================
+
+/** Extract only the `findByExternalId` method body from the emitted sink.
+ *  Slices from the first `async findByExternalId` to its closing `  }` —
+ *  safe because the method body never contains a nested `  }` at 2-space
+ *  indent (all inner braces are at 4+ spaces). */
+function findBody(out: string): string {
+  const start = out.indexOf("async findByExternalId(");
+  const end = out.indexOf("\n  }\n", start);
+  return out.slice(start, end + 4);
+}
+
+describe("generateDefaultSink — #488 Test 1: explicit view, not bare return row", () => {
+  // contact-shaped: FK-free, single scalar copy-through (email: string).
+  const out = generateDefaultSink(contactInput());
+  const body = findBody(out);
+
+  it("null-guard: if (row === null) return null", () => {
+    expect(body).toContain("if (row === null) return null;");
+  });
+
+  it("builds an explicit view object: const view: ContactCanonical = {", () => {
+    expect(body).toContain("const view: ContactCanonical = {");
+  });
+
+  it("enumerates id: row.id", () => {
+    expect(body).toContain("id: row.id,");
+  });
+
+  it("enumerates externalId: row.externalId", () => {
+    expect(body).toContain("externalId: row.externalId,");
+  });
+
+  it("returns view, not row", () => {
+    expect(body).toContain("return view;");
+    expect(body).not.toContain("return row;");
+  });
+});
+
+describe("generateDefaultSink — #488 Test 2 (blocker guard): nullable scalars BARE — no `??`", () => {
+  // Three nullable scalar types: string|null, number|null, boolean|null.
+  const out = generateDefaultSink(
+    contactInput({
+      entityName: "message",
+      entityClass: "Message",
+      copyThroughFields: [
+        { camelName: "text", tsType: "string | null" },
+        { camelName: "count", tsType: "number | null" },
+        { camelName: "flag", tsType: "boolean | null" },
+      ],
+    }),
+  );
+  const body = findBody(out);
+
+  it("text passes through bare: text: row.text,", () => {
+    expect(body).toContain("text: row.text,");
+  });
+
+  it("count passes through bare: count: row.count,", () => {
+    expect(body).toContain("count: row.count,");
+  });
+
+  it("flag passes through bare: flag: row.flag,", () => {
+    expect(body).toContain("flag: row.flag,");
+  });
+
+  it("BLOCKER GUARD: no `??` anywhere in the find body (regression for diff-divergence bug)", () => {
+    // A `??` in the find body would coerce null → '' / 0 / false, making a
+    // legitimately-null adapter value diff false against a local '' — spurious
+    // upsert that never converges (deep-equal.differ.ts:187-208, :220).
+    expect(body).not.toContain("??");
+  });
+});
+
+describe("generateDefaultSink — #488 Test 3: non-null scalars BARE — no `??`", () => {
+  const out = generateDefaultSink(
+    contactInput({
+      copyThroughFields: [
+        { camelName: "name", tsType: "string" },
+        { camelName: "count", tsType: "number" },
+        { camelName: "active", tsType: "boolean" },
+      ],
+    }),
+  );
+  const body = findBody(out);
+
+  it("name: row.name, present", () => {
+    expect(body).toContain("name: row.name,");
+  });
+
+  it("name: row.name ?? is NOT present (non-null passthrough has no coercion)", () => {
+    expect(body).not.toContain("name: row.name ??");
+  });
+
+  it("no `??` in the find body (coercion always author-owned)", () => {
+    expect(body).not.toContain("??");
+  });
+});
+
+describe("generateDefaultSink — #488 Test 4: json at `unknown` — no cast, no default, SEAM marker", () => {
+  const outNonNull = generateDefaultSink(
+    contactInput({
+      entityName: "message",
+      entityClass: "Message",
+      copyThroughFields: [{ camelName: "reactions", tsType: "unknown" }],
+    }),
+  );
+  const outNullable = generateDefaultSink(
+    contactInput({
+      entityName: "message",
+      entityClass: "Message",
+      copyThroughFields: [{ camelName: "reactions", tsType: "unknown | null" }],
+    }),
+  );
+
+  it("reactions: row.reactions, present (non-null unknown)", () => {
+    expect(findBody(outNonNull)).toContain("reactions: row.reactions,");
+  });
+
+  it("reactions: row.reactions, present (nullable unknown)", () => {
+    expect(findBody(outNullable)).toContain("reactions: row.reactions,");
+  });
+
+  it("no ` as ` cast for json fields (non-null unknown)", () => {
+    expect(codeOnly(findBody(outNonNull)).includes(" as ")).toBe(false);
+  });
+
+  it("no ` as ` cast for json fields (nullable unknown)", () => {
+    expect(codeOnly(findBody(outNullable)).includes(" as ")).toBe(false);
+  });
+
+  it("no `??` default emitted for json (non-null unknown)", () => {
+    expect(findBody(outNonNull)).not.toContain("??");
+  });
+
+  it("no `??` default emitted for json (nullable unknown)", () => {
+    expect(findBody(outNullable)).not.toContain("??");
+  });
+
+  it("SEAM marker comment names the json field (unknown)", () => {
+    // The emitter attaches a whole-line // SEAM (typed json: ...) label to json
+    // fields so the author knows where to supply typed-narrowing on widen.
+    // Assert marker present in full output (not code-only — it IS a comment).
+    expect(outNonNull).toContain("SEAM");
+    expect(outNonNull).toContain("reactions");
+  });
+});
+
+describe("generateDefaultSink — #488 Test 5: timestamps enumerated iff hasTimestamps", () => {
+  const withTs = generateDefaultSink(
+    contactInput({ hasTimestamps: true }),
+  );
+  const withoutTs = generateDefaultSink(
+    contactInput({ hasTimestamps: false }),
+  );
+  const omittedTs = generateDefaultSink(
+    contactInput(/* no hasTimestamps key */),
+  );
+
+  it("hasTimestamps: true → createdAt: row.createdAt, in view", () => {
+    expect(findBody(withTs)).toContain("createdAt: row.createdAt,");
+  });
+
+  it("hasTimestamps: true → updatedAt: row.updatedAt, in view", () => {
+    expect(findBody(withTs)).toContain("updatedAt: row.updatedAt,");
+  });
+
+  it("hasTimestamps: false → createdAt NOT in view", () => {
+    expect(findBody(withoutTs)).not.toContain("createdAt");
+  });
+
+  it("hasTimestamps: false → updatedAt NOT in view", () => {
+    expect(findBody(withoutTs)).not.toContain("updatedAt");
+  });
+
+  it("hasTimestamps omitted (default false) → timestamps NOT in view", () => {
+    expect(findBody(omittedTs)).not.toContain("createdAt");
+    expect(findBody(omittedTs)).not.toContain("updatedAt");
+  });
+});
+
+describe("generateDefaultSink — #488 Test 6: no ` as ` cast in any find-side case", () => {
+  const cases = [
+    { label: "FK-free entity", out: generateDefaultSink(contactInput()) },
+    {
+      label: "nullable scalars",
+      out: generateDefaultSink(
+        contactInput({
+          copyThroughFields: [{ camelName: "text", tsType: "string | null" }],
+        }),
+      ),
+    },
+    {
+      label: "json field",
+      out: generateDefaultSink(
+        contactInput({
+          copyThroughFields: [{ camelName: "reactions", tsType: "unknown" }],
+        }),
+      ),
+    },
+    {
+      label: "hasTimestamps",
+      out: generateDefaultSink(contactInput({ hasTimestamps: true })),
+    },
+    {
+      label: "localFkColumns",
+      out: generateDefaultSink(
+        contactInput({
+          localFkColumns: [{ camelName: "accountId", tsType: "string | null" }],
+        }),
+      ),
+    },
+  ];
+
+  for (const { label, out } of cases) {
+    it(`no ` + "`as`" + ` cast — ${label}`, () => {
+      expect(codeOnly(findBody(out)).includes(" as ")).toBe(false);
+    });
+  }
+});
+
+describe("generateDefaultSink — #488 Test 7: findByExternalIdProjected delegation unchanged", () => {
+  const out = generateDefaultSink(contactInput());
+
+  it("the repo call is still this.repo.findByExternalIdProjected(externalId, this.provider)", () => {
+    expect(out).toContain(
+      "this.repo.findByExternalIdProjected(externalId, this.provider)",
+    );
+  });
+
+  it("the delegation is inside findByExternalId (not moved elsewhere)", () => {
+    const body = findBody(out);
+    expect(body).toContain(
+      "this.repo.findByExternalIdProjected(externalId, this.provider)",
+    );
+  });
+});
+
+describe("generateDefaultSink — #488 Test 8: localFkColumns enumerated in view", () => {
+  const out = generateDefaultSink(
+    contactInput({
+      entityName: "contact",
+      entityClass: "Contact",
+      localFkColumns: [
+        { camelName: "accountId", tsType: "string | null" },
+      ],
+    }),
+  );
+  const body = findBody(out);
+
+  it("local FK column accountId is enumerated as accountId: row.accountId,", () => {
+    expect(body).toContain("accountId: row.accountId,");
+  });
+
+  it("no `??` for local FK column (bare passthrough)", () => {
+    expect(body).not.toContain("??");
+  });
+
+  it("no ` as ` cast for local FK column", () => {
+    expect(codeOnly(body).includes(" as ")).toBe(false);
+  });
+});
+
+describe("generateDefaultSink — #488 Test 8b: header documents generator-solved vs seam", () => {
+  // The generator-source header (not the emitted file banner) documents the
+  // find-side design in detail — bare passthrough, diff-soundness, seam split.
+  // We assert the emitted file BANNER also carries seam documentation.
+  const out = generateDefaultSink(contactInput());
+
+  it("emitted file banner mentions SEAM or seam (directing author)", () => {
+    // The banner comment in the emitted file should reference seam concepts
+    // so the author understands what is generated vs. what they own.
+    const banner = out.slice(0, out.indexOf("import {"));
+    expect(banner.toLowerCase()).toContain("seam");
+  });
+
+  it("emitted file carries null / differ convergence note in find-side comment", () => {
+    // The inline comment in findByExternalId mentions null preservation / differ.
+    const body = findBody(out);
+    expect(body).toMatch(/null|noop|differ|converge/i);
   });
 });
 

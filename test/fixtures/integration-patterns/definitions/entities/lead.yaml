@@ -1,0 +1,27 @@
+# #488 fixture extension: exercises buildSinkInput's hasTimestamps + localFkColumns
+# derivations through the real emitAdapters → buildSinkInput path.
+#
+# Covers the two projection-shape inputs that the unit tests bypass (they feed
+# flags directly into generateDefaultSink rather than through buildSinkInput):
+#   - behaviors: [timestamps] → hasTimestamps:true → createdAt/updatedAt in find view
+#   - belongs_to: account     → localFkColumns:[{camelName:'accountId'}] in find view
+#
+# Surface: crm (salesforce serves crm; no new provider needed).
+entity:
+  name: lead
+  plural: leads
+  table: leads
+  surface: crm
+  pattern: Integrated
+behaviors:
+  - timestamps
+fields:
+  full_name:
+    type: string
+    required: true
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+    nullable: true
