@@ -55,6 +55,7 @@ export function config(over: Partial<FrontendEmitConfig> = {}): FrontendEmitConf
 		architecture: 'clean',
 		dbEntitiesImport: '@repo/db/entities',
 		catalogCategories: [],
+		textareaThreshold: 500,
 		...over,
 	};
 }

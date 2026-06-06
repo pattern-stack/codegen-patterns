@@ -14,6 +14,23 @@
 
 import type { ParsedField } from '../../analyzer/types';
 
+/** House default for the string→textarea max_length cutoff. */
+export const DEFAULT_TEXTAREA_THRESHOLD = 500;
+
+/**
+ * Knobs for the UI-type inference ladder (from `frontend.fields` config).
+ *
+ * `textareaThreshold`:
+ * - `undefined` (absent) → use {@link DEFAULT_TEXTAREA_THRESHOLD} (500).
+ * - explicit number → custom cutoff; `maxLength` must *strictly exceed* it.
+ * - explicit `null` → heuristic disabled; bounded strings stay `text` unless
+ *   the author sets `ui_type: textarea`.
+ */
+export interface InferenceOptions {
+	/** string→textarea cutoff; null disables the heuristic; undefined ⇒ DEFAULT_TEXTAREA_THRESHOLD. */
+	textareaThreshold?: number | null;
+}
+
 /** UI field type vocabulary (matches the old `FieldType` union). */
 export type FieldType =
 	| 'text'
@@ -90,8 +107,11 @@ export function formatLabel(fieldName: string): string {
  * FK → reference, name-pattern heuristics (email/url/password/money/percentage),
  * then the base-type map (string → text/textarea by max_length, etc).
  * Ported from prompt.js `inferUiType`.
+ *
+ * @param opts - Inference knobs; see {@link InferenceOptions}. Defaults to
+ *   {@link DEFAULT_TEXTAREA_THRESHOLD} (500) when `textareaThreshold` is absent.
  */
-export function inferUiType(field: ParsedField): FieldType {
+export function inferUiType(field: ParsedField, opts: InferenceOptions = {}): FieldType {
 	if (field.ui.type) return field.ui.type as FieldType;
 
 	if (Array.isArray(field.choices) && field.choices.length > 0) return 'enum';
@@ -114,9 +134,14 @@ export function inferUiType(field: ParsedField): FieldType {
 		return 'percentage';
 	}
 
+	const threshold =
+		opts.textareaThreshold === undefined ? DEFAULT_TEXTAREA_THRESHOLD : opts.textareaThreshold;
+
 	switch (field.type) {
 		case 'string':
-			return field.constraints.maxLength && field.constraints.maxLength > 500
+			return threshold !== null &&
+				field.constraints.maxLength &&
+				field.constraints.maxLength > threshold
 				? 'textarea'
 				: 'text';
 		case 'integer':
@@ -178,16 +203,20 @@ export function isEntityRefField(field: ParsedField): boolean {
  * defaults (currently `group`) only where the author left the hint unset.
  * `keyFieldOrder` is emitted only alongside `isKeyField: true` — an order
  * without curation is meaningless.
+ *
+ * `opts` is forwarded to {@link inferUiType} — pass `{ textareaThreshold }`
+ * from `frontend.fields.textareaThreshold` to honour the project config.
  */
 export function deriveFieldMeta(
 	field: ParsedField,
 	defaults: FieldMetaDefaults = {},
+	opts: InferenceOptions = {},
 ): DerivedFieldMeta {
 	const hasChoices = Array.isArray(field.choices) && field.choices.length > 0;
 	const meta: DerivedFieldMeta = {
 		field: CAMEL(field.name),
 		label: field.ui.label ?? formatLabel(field.name),
-		type: inferUiType(field),
+		type: inferUiType(field, opts),
 		importance: inferUiImportance(field),
 		sortable: field.ui.sortable ?? false,
 		filterable: field.ui.filterable ?? false,

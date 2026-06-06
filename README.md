@@ -209,11 +209,15 @@ frontend:
     columnMapperNeedsCall: true      # call the mapper (fn()) vs reference (fn)
     apiBaseUrlImport: null   # when set, import API_BASE_URL from it as baseURL
     apiUrl: /api             # REST base path when no apiBaseUrlImport
+  fields:
+    textareaThreshold: 500  # string→textarea cutoff (strict >); null DISABLES
 ```
 
 `null`-disables convention: an **absent** `auth.function` defaults to
 `getAuthorizationHeader`; an **explicit `null`** disables it entirely (no header
-lines emitted). Likewise `sync.columnMapper: null` omits the Electric mapper.
+lines emitted). Likewise `sync.columnMapper: null` omits the Electric mapper, and
+`fields.textareaThreshold: null` disables the string→textarea heuristic entirely
+(bounded strings always render as `text` unless the author sets `ui_type: textarea`).
 
 ### Per-entity sync mode (`entity.sync`)
 

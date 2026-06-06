@@ -255,6 +255,36 @@ Pinned as a constant in `src/emitters/frontend/deps.ts`; emitted into a comment 
     knob (in `emit-api.ts` / `emit-collections.ts`) is flagged if a consumer's
     db package only exports `<Class>Entity`.
 
+---
+
+### Revision — 2026-06-06: `frontend.fields.textareaThreshold` (configurable textarea cutoff)
+
+The `500` constant hardcoded in `inferUiType`'s `string` branch is now
+configurable as `frontend.fields.textareaThreshold` (default `500`; explicit
+`null` disables the heuristic entirely). This adds the `frontend.fields` config
+home the spec anticipated for future inference knobs.
+
+- **Schema:** `FrontendFieldsConfigSchema` (`.strict()`, `.default({})`) with
+  `textareaThreshold: z.number().int().positive().nullable().default(500)`,
+  registered in `FrontendConfigSchema` as `fields:`.
+- **Emit config:** `FrontendEmitConfig.textareaThreshold: number | null` (required
+  field; `mapFrontendEmitConfig` supplies it from `fe.fields.textareaThreshold`).
+- **Pure-function API:** `InferenceOptions { textareaThreshold?: number | null }`
+  + `DEFAULT_TEXTAREA_THRESHOLD = 500` exported from `field-meta.ts` (and
+  re-exported from `index.ts`). `inferUiType(field, opts)` and `deriveFieldMeta(field,
+  defaults, opts)` both accept it; the `string` branch uses strict `>`.
+- **Threading:** `displayFields(parsed, opts)` in `emit-fields.ts` passes
+  `{ textareaThreshold: ctx.config.textareaThreshold }` down from
+  `buildEntityFieldsFile`.
+- **Semantics:** absent/`undefined` → 500 (byte-identical baseline output);
+  explicit number → custom cutoff (strict `>`); explicit `null` → all bounded
+  strings stay `text` unless the author sets `ui_type: textarea`.
+- **Tests:** new suites in `emit-fields.test.ts` (pure `inferUiType` cases +
+  `deriveFieldMeta` threading + `buildEntityFieldsFile` ctx→displayFields proof)
+  and `load-context.test.ts` (absent/null/custom via `mapFrontendEmitConfig`).
+- **Docs:** README `frontend:` block updated with `fields.textareaThreshold`
+  example + null-disables paragraph. Baseline output unchanged (default 500).
+
 ## Open questions
 
 1. **Doctor check** — should the emitter (or `dev-check`) validate the consumer's installed versions against `deps.ts`? Lean yes, follow-on PR.

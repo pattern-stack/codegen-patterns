@@ -220,6 +220,37 @@ export const FrontendCatalogConfigSchema = z
 export type FrontendCatalogConfig = z.infer<typeof FrontendCatalogConfigSchema>;
 
 /**
+ * `frontend.fields` — field-meta inference knobs.
+ *
+ * `textareaThreshold`:
+ * - **absent** → `500` (today's behavior; byte-identical emitter output).
+ * - **explicit number** → custom cutoff; `maxLength` must *strictly exceed* it
+ *   to produce `textarea` (same strict `>` semantics as the hardcoded value).
+ * - **explicit `null`** → heuristic DISABLED; bounded strings always stay
+ *   `text` unless the author sets `ui_type: textarea` explicitly.
+ *
+ * Follows the house present-but-null disables convention (same as
+ * `auth.function`, `sync.columnMapper`): Zod `.default()` fires only on
+ * `undefined`, so explicit `null` flows through unchanged.
+ *
+ * `.strict()` — an unknown key here is a stale-config error, matching the
+ * rationale for `.strict()` on {@link FrontendConfigSchema}.
+ */
+export const FrontendFieldsConfigSchema = z
+  .object({
+    /**
+     * String → textarea cutoff (strictly greater than). Absent or `undefined`
+     * ⇒ 500. Explicit `null` ⇒ heuristic disabled (all bounded strings stay
+     * `text` unless the author sets `ui_type: textarea`).
+     */
+    textareaThreshold: z.number().int().positive().nullable().default(500),
+  })
+  .strict()
+  .default({});
+
+export type FrontendFieldsConfig = z.infer<typeof FrontendFieldsConfigSchema>;
+
+/**
  * The `frontend:` block in `codegen.config.yaml`.
  *
  * Gated entirely by `generate.frontend` — when that boolean is false the
@@ -232,6 +263,7 @@ export type FrontendCatalogConfig = z.infer<typeof FrontendCatalogConfigSchema>;
  *   `timestamptz` to a `Date` constructor; consumers extend it per column type.
  * - `sync` — see {@link FrontendSyncConfigSchema}.
  * - `catalog` — see {@link FrontendCatalogConfigSchema}.
+ * - `fields` — see {@link FrontendFieldsConfigSchema}.
  *
  * `.strict()` — the FE-1 mimicry knobs (`collections.schemaPrefix`, etc.) are
  * deleted with their templates; an unknown key here is a stale-config error,
@@ -245,6 +277,7 @@ export const FrontendConfigSchema = z
       .default({ timestamptz: '(date: string) => new Date(date)' }),
     sync: FrontendSyncConfigSchema,
     catalog: FrontendCatalogConfigSchema,
+    fields: FrontendFieldsConfigSchema,
   })
   .strict()
   .default({});
