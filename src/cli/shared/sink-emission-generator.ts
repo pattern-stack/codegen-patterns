@@ -16,11 +16,26 @@
  * `upsertByExternalId` (a mismatch is a wiring bug → throw); delegation to the
  * `integrated` repo's `findByExternalIdProjected` / `integrationUpsertOne` /
  * `softDeleteByExternalId`; `userId` scoping; and the `{ id, saved }` return
- * shapes. The `canonical ↔ local` FIELD MAPPING is the author seam — the
- * canonical type `T` is whatever the adapter's `IChangeSource.listChanges` body
- * yields. For FK-free entities the generated `<Entity>IntegrationProjection` IS
- * the canonical shape (passthrough, compiles with no edits); for entities with
- * external FK join-keys the scaffold leaves a marked author TODO.
+ * shapes.
+ *
+ * The `write` object is **fully generated** — no `TODO(author)` seams:
+ *   - Scalar copy-through fields (`fields:` entries, FK columns excluded) emit as
+ *     `<camelName>: record.<camelName>`. `type: json` columns copy through the
+ *     same way (the write-type member is `unknown`, matching the template's
+ *     `TS_TYPE_MAP.json` mapping — a typed json shape is a find-side concern, #488).
+ *   - FK external join-keys emit as active `<rel>ExternalId: record.<rel>ExternalId`
+ *     copy-throughs. The write-key derivation mirrors `processBelongsTo`'s
+ *     `relationKey` branches (`prompt-extension.js:447-460`); see `fkWriteKey()`
+ *     in `adapter-emission-generator.ts`.
+ *
+ * The remaining author seam is the `<Entity>Canonical` type alias at the top of
+ * the generated file: widen it from the default `<Entity>IntegrationProjection`
+ * to your adapter's canonical shape whenever the adapter carries fields the
+ * projection does not (e.g. FK external keys resolved by the vendor API). The
+ * generated `record.<rel>ExternalId` access assumes the canonical type carries
+ * that key — RFC-0004 / #489 track canonical ownership long-term.
+ *
+ * Policy methods (delete semantics, per-field exclusions) are #491/#490 scope.
  *
  * ## `userId` is NOT injected — it is a declared field (see §4 deviation note)
  *
@@ -68,8 +83,9 @@ export interface SinkCopyThroughField {
 
 /** One external FK join-key on the integration write surface. Mirrors
  *  `buildIntegrationSurface().writeFkFields`: `<relationKey>ExternalId`,
- *  always `string | null`. The projection cannot supply it (it is the author
- *  seam), so the scaffold emits it as a commented `// TODO(author):` line. */
+ *  always `string | null`. Emitted as an active `<writeKey>: record.<writeKey>`
+ *  copy-through; the author widens `<Entity>Canonical` when the adapter's
+ *  canonical carries the external key (RFC-0004 / #489 track canonical ownership). */
 export interface SinkFkExternalKey {
   /** Write-surface key name, e.g. `accountExternalId`. */
   writeKey: string;
@@ -152,18 +168,16 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   //   - externalId — always present.
   //   - copy-through fields, one `<field>: record.<field>` line each, EXCEPT
   //     `userId` which is sourced from the method param (a bare `userId,`).
-  //   - FK external join-keys — commented TODO(author) seam lines (the
-  //     projection has no external key), kept commented so the object compiles.
+  //   - FK external join-keys — active copy-through lines (the author widens
+  //     <Entity>Canonical when the canonical carries those keys).
   const hasUserIdField = input.copyThroughFields.some(
     (f) => f.camelName === USER_ID_FIELD,
   );
   const copyThroughLines = input.copyThroughFields
     .filter((f) => f.camelName !== USER_ID_FIELD)
     .map((f) => `      ${f.camelName}: record.${f.camelName},`);
-  const fkTodoLines = input.fkExternalKeys.map(
-    (fk) =>
-      `      // ${fk.writeKey}: /* TODO(author): external id of the related ` +
-      `${relationLabel(fk.writeKey)} */ null,`,
+  const fkLines = input.fkExternalKeys.map(
+    (fk) => `      ${fk.writeKey}: record.${fk.writeKey},`,
   );
 
   const writeBodyLines: string[] = [
@@ -175,10 +189,10 @@ export function generateDefaultSink(input: SinkEmitInput): string {
       ...copyThroughLines,
     );
   }
-  if (fkTodoLines.length > 0) {
+  if (fkLines.length > 0) {
     writeBodyLines.push(
-      `      // FK external join-keys — projection has no external key; supply from your canonical record:`,
-      ...fkTodoLines,
+      `      // FK external join-keys (copy-through from the canonical record):`,
+      ...fkLines,
     );
   }
   if (hasUserIdField) {
@@ -194,11 +208,11 @@ export function generateDefaultSink(input: SinkEmitInput): string {
 //
 // Default IIntegrationSink over the generated ${n.repoClass}. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The canonical<->local FIELD MAPPING is the author seam:
-// the canonical type is whatever your adapter's changeSource yields — the same
-// seam as the IChangeSource.listChanges fetch body. For FK-free entities the
-// generated ${n.projectionType} IS the canonical shape (passthrough);
-// for entities with external FK join-keys, fill the marked TODO(s) below.
+// shapes) is generated. The write object is fully generated: scalar fields and
+// type:json columns copy through as-is; FK external join-keys emit as active
+// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
+// Author seam: widen ${n.canonicalType} below when your canonical carries fields
+// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
 // Source: definitions entity '${input.entityName}' (surface: ${input.surface}).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '${subsystemsImport(input.mode ?? "package", "integration")}';
@@ -247,11 +261,4 @@ ${writeBody}
   }
 }
 `;
-}
-
-/** Derive a human label for a TODO comment from a write key. e.g.
- *  `accountExternalId` → `account`. Cosmetic only. */
-function relationLabel(writeKey: string): string {
-  const stripped = writeKey.replace(/ExternalId$/, "");
-  return stripped || "related entity";
 }

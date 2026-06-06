@@ -197,12 +197,11 @@ describe("E4 · sink scaffold contract — FK belongs_to + user_id (contact via 
     expect(sink).toContain("this.repo.softDeleteByExternalId(externalId, this.provider)");
   });
 
-  test("emits the FK external-key seam as a commented TODO(author) line for the belongs_to", () => {
-    // The orchestration path (buildSinkInput) derives `accountExternalId` from
-    // the belongs_to(account); the seam stays COMMENTED so the write compiles.
-    expect(sink).toContain(
-      "// accountExternalId: /* TODO(author): external id of the related account */ null,",
-    );
+  test("emits the FK external-key as an active copy-through (no TODO seam)", () => {
+    // The orchestration path (buildSinkInput → fkWriteKey) derives `accountExternalId`
+    // from the belongs_to(account, non-self); it emits as an active line.
+    expect(sink).toContain("accountExternalId: record.accountExternalId,");
+    expect(sink).not.toContain("TODO(author)");
   });
 
   test("emits a bare `userId,` ONLY because user_id is declared (sourced from the param)", () => {
