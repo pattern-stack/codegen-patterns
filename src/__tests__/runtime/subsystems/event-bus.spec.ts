@@ -923,3 +923,168 @@ describe('DrizzleEventBus — BRIDGE-4 drain modification', () => {
     expect(m.updateWhereWasCalled).toBe(true);
   });
 });
+
+// ============================================================================
+// DrizzleEventBus — ADR-039 scheduled-event materialisation idempotency
+// (mocked Drizzle client — no Docker)
+//
+// Regression guard for the "scary ERROR on every colliding boot tick" defect:
+// the slot insert must go through `ON CONFLICT DO NOTHING` (bare, no-target —
+// the idempotency guard is an EXPRESSION unique index, so Drizzle's typed
+// `target` form can't name it) and decide created/no-op from the RETURNING
+// rowcount, NOT from a caught SQLSTATE 23505. A repeat materialise must not
+// raise a unique violation on the happy path — otherwise Postgres logs a
+// `duplicate key value violates unique constraint` ERROR line per collision.
+// ============================================================================
+
+describe('DrizzleEventBus — materializeScheduledEvent ON CONFLICT', () => {
+  /**
+   * Mock insert chain that records the builder methods actually called and
+   * lets a test choose the terminal `.returning()` outcome:
+   *   - `returnedRows`: rows the DB returns (1 row = won the slot, 0 = DO NOTHING fired)
+   *   - `throwOnReturning`: an error to throw from `.returning()` (race-window fallback)
+   */
+  function makeMaterializeMockDb(opts: {
+    returnedRows?: Array<{ id: string }>;
+    throwOnReturning?: unknown;
+  }) {
+    const calls = { values: 0, onConflictDoNothing: 0, returning: 0 };
+    let valuesArg: Record<string, unknown> | undefined;
+
+    const insertBuilder = {
+      values: mock((arg: Record<string, unknown>) => {
+        calls.values++;
+        valuesArg = arg;
+        return insertBuilder;
+      }),
+      onConflictDoNothing: mock((arg?: unknown) => {
+        calls.onConflictDoNothing++;
+        // The fix uses the BARE no-target form: assert no target was named.
+        if (arg !== undefined) {
+          throw new Error(
+            `expected a bare onConflictDoNothing() for the expression index, ` +
+              `got a target: ${JSON.stringify(arg)}`,
+          );
+        }
+        return insertBuilder;
+      }),
+      returning: mock(async () => {
+        calls.returning++;
+        if (opts.throwOnReturning !== undefined) throw opts.throwOnReturning;
+        return opts.returnedRows ?? [];
+      }),
+    };
+
+    const db = {
+      insert: mock(() => insertBuilder),
+      // materialize never selects/updates; stub them so the bus constructs.
+      select: mock(() => ({})),
+      update: mock(() => ({})),
+      transaction: mock(async (cb: (tx: unknown) => Promise<unknown>) => cb(db)),
+    };
+
+    return {
+      db,
+      get calls() {
+        return calls;
+      },
+      get valuesArg() {
+        return valuesArg;
+      },
+    };
+  }
+
+  const spec = {
+    type: 'reconcile_due',
+    slotKey: '@schedule/reconcile_due/1750000000000',
+    slotStart: new Date('2026-06-05T15:00:00Z'),
+    direction: 'inbound',
+    pool: 'events_inbound',
+  };
+
+  it('inserts the slot row via bare onConflictDoNothing() + returning (no exception path)', async () => {
+    const m = makeMaterializeMockDb({ returnedRows: [{ id: 'evt-1' }] });
+    const bus = new DrizzleEventBus(m.db as never, { backend: 'drizzle' });
+
+    const r = await bus.materializeScheduledEvent!(spec);
+
+    expect(r.created).toBe(true);
+    // The happy path went through ON CONFLICT DO NOTHING + RETURNING, not a
+    // bare insert relying on a caught unique violation.
+    expect(m.calls.values).toBe(1);
+    expect(m.calls.onConflictDoNothing).toBe(1);
+    expect(m.calls.returning).toBe(1);
+    // Slot key stamped on metadata.scheduleSlot (the expression-index column).
+    expect((m.valuesArg?.metadata as Record<string, unknown>)?.['scheduleSlot']).toBe(
+      spec.slotKey,
+    );
+    expect((m.valuesArg?.metadata as Record<string, unknown>)?.['triggerSource']).toBe(
+      'schedule',
+    );
+  });
+
+  it('treats a conflicting slot (zero RETURNING rows) as created:false WITHOUT throwing', async () => {
+    // DO NOTHING fired → no rows back. The old insert-and-catch would have let
+    // Postgres raise 23505 (and log an ERROR); the fix never reaches that path.
+    const m = makeMaterializeMockDb({ returnedRows: [] });
+    const bus = new DrizzleEventBus(m.db as never, { backend: 'drizzle' });
+
+    const r = await bus.materializeScheduledEvent!(spec);
+
+    expect(r.created).toBe(false);
+    expect(m.calls.onConflictDoNothing).toBe(1);
+    expect(m.calls.returning).toBe(1);
+  });
+
+  it('a double materialise of the same slot yields exactly one created (the second is a no-op)', async () => {
+    // First call wins (1 row), second call conflicts (0 rows) — neither throws.
+    let first = true;
+    const m = makeMaterializeMockDb({});
+    // Swap the returning outcome per call: win then conflict.
+    (m.db.insert as ReturnType<typeof mock>).mockImplementation(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({
+          returning: async () => {
+            if (first) {
+              first = false;
+              return [{ id: 'evt-1' }];
+            }
+            return [];
+          },
+        }),
+      }),
+    }));
+    const bus = new DrizzleEventBus(m.db as never, { backend: 'drizzle' });
+
+    const a = await bus.materializeScheduledEvent!(spec);
+    const b = await bus.materializeScheduledEvent!(spec);
+
+    expect(a.created).toBe(true);
+    expect(b.created).toBe(false);
+  });
+
+  it('falls back to created:false on a genuine concurrent 23505 race (catch retained)', async () => {
+    // DO NOTHING covers the common collision, but two sessions can both clear
+    // the gate and one still loses with a real unique violation. The retained
+    // catch maps that to the same no-op rather than propagating.
+    const m = makeMaterializeMockDb({
+      throwOnReturning: { code: '23505', message: 'duplicate key' },
+    });
+    const bus = new DrizzleEventBus(m.db as never, { backend: 'drizzle' });
+
+    const r = await bus.materializeScheduledEvent!(spec);
+
+    expect(r.created).toBe(false);
+  });
+
+  it('re-throws a non-unique-violation insert error', async () => {
+    const m = makeMaterializeMockDb({
+      throwOnReturning: { code: '23502', message: 'not-null violation' },
+    });
+    const bus = new DrizzleEventBus(m.db as never, { backend: 'drizzle' });
+
+    await expect(bus.materializeScheduledEvent!(spec)).rejects.toMatchObject({
+      code: '23502',
+    });
+  });
+});
