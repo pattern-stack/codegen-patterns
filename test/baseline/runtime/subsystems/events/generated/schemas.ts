@@ -39,6 +39,29 @@ export const dealStageChangedPayloadSchema = z.object({
 	oldStage: z.string(),
 }).strict();
 
+export const messageCreatedPayloadSchema = z.object({
+	changedFields: z.record(z.unknown()).nullable(),
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
+export const messageDeletedPayloadSchema = z.object({
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
+export const messageEditedPayloadSchema = z.object({
+	changedFields: z.record(z.unknown()).nullable(),
+	entityId: z.string().uuid(),
+	externalId: z.string(),
+	provider: z.string(),
+	source: z.string(),
+}).strict();
+
 export const stripePaymentReceivedPayloadSchema = z.object({
 	amountCents: z.number(),
 	currency: z.string(),
@@ -60,6 +83,9 @@ export const eventPayloadSchemas = {
 	'crm_sync_started': crmSyncStartedPayloadSchema,
 	'deal_created': dealCreatedPayloadSchema,
 	'deal_stage_changed': dealStageChangedPayloadSchema,
+	'message_created': messageCreatedPayloadSchema,
+	'message_deleted': messageDeletedPayloadSchema,
+	'message_edited': messageEditedPayloadSchema,
 	'stripe_payment_received': stripePaymentReceivedPayloadSchema,
 	'webhook_outbound_contact_sync': webhookOutboundContactSyncPayloadSchema,
 } as const satisfies Record<EventTypeName, z.ZodType>;

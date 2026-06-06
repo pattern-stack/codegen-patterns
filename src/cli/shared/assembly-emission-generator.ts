@@ -32,6 +32,7 @@
  */
 
 import { relative, resolve, sep } from "node:path";
+import { changeEmitterClass } from "./change-emitter-emission-generator";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 
@@ -116,6 +117,12 @@ export interface AssemblyEmitInput {
    *  specifier (`ExecuteIntegrationUseCase`, `INTEGRATION_*` tokens). Defaults
    *  to `package` when omitted. */
   mode?: RuntimeMode;
+  /** EMIT-CHANGES seam — when true (entity declares
+   *  `integration.sink.emit_changes: true`), the assembly additionally binds
+   *  `INTEGRATION_CHANGE_EMITTER` to the generated `<Entity>ChangeEmitter`, so
+   *  `ExecuteIntegrationUseCase` publishes typed `<entity>_<verb>` events after
+   *  every sink write/soft-delete. Defaults to false (no emitter bound). */
+  emitChanges?: boolean;
 }
 
 /** One (entity, provider) token entry on a surface, for {@link generateIntegrationTokens}. */
@@ -166,19 +173,35 @@ export function generateAssemblyModule(input: AssemblyEmitInput): string {
   // up from `modules/<provider>/`.
   const tokensImport = `../../${input.surface}-integration.tokens`;
 
+  // EMIT-CHANGES seam — when the entity opts in, the assembly imports the
+  // generated change-emitter + the INTEGRATION_CHANGE_EMITTER token, and binds
+  // the emitter so the orchestrator publishes typed change events.
+  const emitChanges = input.emitChanges === true;
+  const emitterClass = changeEmitterClass(input.entityClass);
+  // The change-emitter lives next to the sink: `../../sinks/<entity>.change-emitter`.
+  const emitterImport = `../../sinks/${input.entityName}.change-emitter`;
+  const integrationTokenImports = emitChanges
+    ? `  INTEGRATION_CHANGE_EMITTER,\n  INTEGRATION_CHANGE_SOURCE,\n  INTEGRATION_SINK,`
+    : `  INTEGRATION_CHANGE_SOURCE,\n  INTEGRATION_SINK,`;
+  const emitterImportLine = emitChanges
+    ? `\nimport { ${emitterClass} } from '${emitterImport}';`
+    : "";
+  const emitterProviderBlock = emitChanges
+    ? `\n    ${emitterClass},\n    { provide: INTEGRATION_CHANGE_EMITTER, useExisting: ${emitterClass} },`
+    : "";
+
   return `${generatedBanner(input.sourceDesc)}
 import { Module } from '@nestjs/common';
 import {
   ExecuteIntegrationUseCase,
-  INTEGRATION_CHANGE_SOURCE,
-  INTEGRATION_SINK,
+${integrationTokenImports}
 } from '${subsystemsImport(input.mode ?? "package", "integration")}';
 import { ${adapterClass} } from '${adapterImport}';
 import { ${adapterModuleClass} } from '${adapterModuleImport}';
 import { ${sinkClass} } from '${sinkImport}';
 import { ${input.repoClass} } from '${input.repoImportSpecifier}';
 import { ${input.moduleClass} } from '${input.moduleImportSpecifier}';
-import { ${token} } from '${tokensImport}';
+import { ${token} } from '${tokensImport}';${emitterImportLine}
 
 /**
  * ${moduleClass} — the ${input.surface}/${input.entityName} ← ${input.provider}
@@ -188,7 +211,11 @@ import { ${token} } from '${tokensImport}';
  * \`changeSources.${input.entityName}\` and INTEGRATION_SINK from
  * ${sinkClass}, provides a local ExecuteIntegrationUseCase, and aliases+exports
  * it under ${token} (the bare class token is ambiguous at app root — every
- * assembly provides it). The substrate (cursor store, run recorder, differ,
+ * assembly provides it).${
+   emitChanges
+     ? `\n *\n * EMIT-CHANGES: binds INTEGRATION_CHANGE_EMITTER to ${emitterClass} so the\n * orchestrator publishes typed ${input.entityName}_created/_edited/_deleted events\n * after every sink write/soft-delete (integration.sink.emit_changes).\n *`
+     : ""
+ } The substrate (cursor store, run recorder, differ,
  * multi-tenant flag) comes from the global IntegrationModule.forRoot(...) in
  * AppModule, never re-bound here.
  */
@@ -204,7 +231,7 @@ import { ${token} } from '${tokensImport}';
       provide: INTEGRATION_SINK,
       useFactory: (repo: ${input.repoClass}) => new ${sinkClass}(repo, '${input.provider}'),
       inject: [${input.repoClass}],
-    },
+    },${emitterProviderBlock}
     ExecuteIntegrationUseCase,
     { provide: ${token}, useExisting: ExecuteIntegrationUseCase },
   ],

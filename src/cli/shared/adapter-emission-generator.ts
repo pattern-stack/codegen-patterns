@@ -49,6 +49,7 @@ import type {
   ResolvedFilter,
 } from "../../../runtime/subsystems/integration";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
+import { generateChangeEmitter } from "./change-emitter-emission-generator";
 import { generateSinkBase, generateSinkSubclass, type SinkEmitInput } from "./sink-emission-generator";
 import {
   generateAssemblyModule,
@@ -866,6 +867,12 @@ export interface EmitAdaptersEntity {
     sink?: {
       delete?: 'soft' | 'tombstone' | 'noop';
       exclude_fields?: string[];
+      /** EMIT-CHANGES seam (#emit-changes). When true, the per-entity assembly
+       *  binds INTEGRATION_CHANGE_EMITTER to the generated `<Entity>ChangeEmitter`
+       *  and a `<entity>.change-emitter.ts` file is emitted next to the sink. The
+       *  change-event triad itself is generated through the events pipeline
+       *  (desugarEmitChangeEvents). Absent/false ⇒ no emission (back-compat). */
+      emit_changes?: boolean;
     };
   };
 }
@@ -903,6 +910,9 @@ export interface EmitAdaptersResult {
   skippedSurfaces: Array<{ provider: string; surface: string; reason: string }>;
   /** Per-entity assembly modules written this run (RFC-0002 §2, @generated). */
   assembliesWritten: string[];
+  /** Per-entity change-emitters written this run for entities that opt into
+   *  `integration.sink.emit_changes` (EMIT-CHANGES seam, @generated). */
+  changeEmittersWritten: string[];
   /** Surface integration tokens files written this run (RFC-0002 §2, @generated). */
   tokensWritten: string[];
   /** Surface integration aggregator modules written this run — one
@@ -928,6 +938,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     scaffoldsSkipped: [],
     skippedSurfaces: [],
     assembliesWritten: [],
+    changeEmittersWritten: [],
     tokensWritten: [],
     integrationAggregatorsWritten: [],
     skippedAssemblies: [],
@@ -1095,6 +1106,26 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           result.scaffoldsWritten.push(subclassPath);
         }
 
+        // EMIT-CHANGES seam — when the entity opts into
+        // `integration.sink.emit_changes`, emit the fully-@generated
+        // change-emitter next to the sink (provider-agnostic; one per entity).
+        // The change-event triad itself is generated through the events pipeline
+        // (desugarEmitChangeEvents). NOT an emit-once scaffold — the action→event
+        // mapping is mechanical, so re-emit byte-identically with writeIfChanged.
+        const emitChanges = def?.integration?.sink?.emit_changes === true;
+        if (emitChanges) {
+          const emitterPath = join(sinksDir, `${entityName}.change-emitter.ts`);
+          const emitterContent = generateChangeEmitter({
+            entityName,
+            entityClass: loc.entityClass,
+            surface,
+            sourceDesc: `definitions entity '${entityName}' (integration.sink.emit_changes)`,
+            mode,
+          });
+          if (!opts.dryRun) writeIfChanged(emitterPath, emitterContent);
+          result.changeEmittersWritten.push(emitterPath);
+        }
+
         // Per-(entity, provider) assembly module (@generated) + token entry.
         for (const slug of slugs) {
           const assemblyPath = join(
@@ -1113,6 +1144,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
             repoClass: loc.repoClass,
             sourceDesc: `definitions/providers/${slug}.yaml`,
             mode,
+            emitChanges,
           });
           if (!opts.dryRun) writeIfChanged(assemblyPath, assemblyContent);
           result.assembliesWritten.push(assemblyPath);

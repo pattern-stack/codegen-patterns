@@ -26,6 +26,17 @@ export const INTEGRATION_FIELD_DIFFER = 'INTEGRATION_FIELD_DIFFER' as const;
 export const INTEGRATION_SINK = 'INTEGRATION_SINK' as const;
 
 /**
+ * Optional post-upsert change-event emitter token (EMIT-CHANGES seam).
+ *
+ * Backed by `IIntegrationChangeEmitter`. Bound ONLY by codegen-emitted assembly
+ * modules whose entity opts in via `integration.sink.emit_changes: true`. The
+ * orchestrator injects it `@Optional()` — an unbound token means no domain
+ * events are published (the back-compat default for non-opted-in entities).
+ * See `integration-change-emitter.protocol.ts`.
+ */
+export const INTEGRATION_CHANGE_EMITTER = 'INTEGRATION_CHANGE_EMITTER' as const;
+
+/**
  * Run-recorder token (SYNC-5). Backed by `IIntegrationRunRecorder`. Drizzle impl
  * lands in SYNC-4; tests provide inline fakes.
  */

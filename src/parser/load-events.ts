@@ -202,7 +202,7 @@ export function desugarEntityEvents(
 	const entityName = entity.entity.name;
 	const entityEvents = entity.events ?? [];
 
-	return entityEvents.map((ev) => {
+	const explicit: EventDefinition[] = entityEvents.map((ev) => {
 		const payload: Record<string, EventPayloadField> = {};
 		for (const [key, typeString] of Object.entries(ev.body)) {
 			if (!isEventFieldType(typeString)) {
@@ -215,6 +215,98 @@ export function desugarEntityEvents(
 
 		const def: EventDefinition = {
 			type: ev.name,
+			tier: 'domain',
+			direction: 'change',
+			aggregate: entityName,
+			payload,
+			retry: { attempts: 3, backoff: 'exponential' },
+			version: 1,
+			pool: DIRECTION_TO_POOL.change,
+		};
+		return def;
+	});
+
+	// EMIT-CHANGES seam — opt-in post-upsert change-event triad. When the entity
+	// declares `integration.sink.emit_changes: true`, synthesize the three
+	// data-level change events the integration orchestrator publishes after every
+	// sink write/soft-delete. These merge into the generated registry exactly like
+	// a hand-authored `events/*.yaml` (same `direction: change` shape as the
+	// explicit `events:` block above), so the consumer gets TypedEventBus
+	// augmentation, the `EventTypeName` union, schemas, and registry entries for
+	// free. A top-level `events/<entity>_created.yaml` still wins on type collision
+	// (mergeEvents is top-level-wins) for authors who want a richer payload.
+	const changeTriad = desugarEmitChangeEvents(entity);
+
+	return [...explicit, ...changeTriad];
+}
+
+/**
+ * The three change verbs the EMIT-CHANGES seam publishes, and the event suffix
+ * each maps to. `_edited` (NOT `_updated`) per swe-brain ADR-0009 Amendment B1 —
+ * the explicit, domain-gated event vocabulary that drove this seam.
+ */
+const EMIT_CHANGE_SUFFIXES = ['created', 'edited', 'deleted'] as const;
+
+/**
+ * Synthesize the `<entity>_created` / `<entity>_edited` / `<entity>_deleted`
+ * change events for an entity that opts into `integration.sink.emit_changes`.
+ * Returns `[]` when the entity does not opt in (the back-compat default).
+ *
+ * Payload shape mirrors `IntegrationChangeNotification` (the orchestrator's port
+ * input): `{ entity_id, external_id, provider, changed_fields?, source }`.
+ * `source` is the provenance marker (always `'integration'`) a write-back action
+ * reads to break the inbound→writeback→inbound loop. `changed_fields` is present
+ * only on `created`/`edited` (the differ has a before/after map there); `deleted`
+ * is a tombstone with no field diff. Payload keys are snake_case (the event-YAML
+ * convention); the event codegen camelCases them on emission
+ * (`changed_fields → changedFields`, `entity_id → entityId`).
+ */
+export function desugarEmitChangeEvents(
+	entity: EntityDefinition,
+): EventDefinition[] {
+	if (entity.integration?.sink?.emit_changes !== true) return [];
+
+	const entityName = entity.entity.name;
+
+	const basePayload: Record<string, EventPayloadField> = {
+		entity_id: {
+			type: 'uuid',
+			nullable: false,
+			description: 'Local aggregate id the sink wrote/soft-deleted.',
+		},
+		external_id: {
+			type: 'string',
+			nullable: false,
+			description: 'Vendor external id the change keyed on.',
+		},
+		provider: {
+			type: 'string',
+			nullable: false,
+			description: "Provider label (e.g. 'slack', 'google').",
+		},
+		source: {
+			type: 'string',
+			nullable: false,
+			description:
+				"Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor.",
+		},
+	};
+
+	return EMIT_CHANGE_SUFFIXES.map((suffix) => {
+		const payload: Record<string, EventPayloadField> = { ...basePayload };
+		// created/edited carry the differ's per-field before/after map; a delete is
+		// a tombstone with no diff.
+		if (suffix !== 'deleted') {
+			payload.changed_fields = {
+				type: 'json',
+				nullable: true,
+				description:
+					"Differ's per-field before/after map (same value as integration_run_items.changed_fields).",
+			};
+		}
+
+		const def: EventDefinition = {
+			type: `${entityName}_${suffix}`,
 			tier: 'domain',
 			direction: 'change',
 			aggregate: entityName,

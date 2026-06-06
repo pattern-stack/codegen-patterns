@@ -50,8 +50,13 @@ import type { ICursorStore } from './integration-cursor-store.protocol';
 import type { IFieldDiffer, FieldDiff } from './integration-field-diff.protocol';
 import type { IIntegrationSink } from './integration-sink.protocol';
 import type { IIntegrationRunRecorder } from './integration-run-recorder.protocol';
+import type {
+  IIntegrationChangeEmitter,
+  IntegrationChangeAction,
+} from './integration-change-emitter.protocol';
 import { assertTenantId } from './integration-errors';
 import {
+  INTEGRATION_CHANGE_EMITTER,
   INTEGRATION_CHANGE_SOURCE,
   INTEGRATION_CURSOR_STORE,
   INTEGRATION_FIELD_DIFFER,
@@ -118,6 +123,13 @@ export class ExecuteIntegrationUseCase<T extends Record<string, unknown>> {
     @Optional()
     @Inject(INTEGRATION_MULTI_TENANT)
     private readonly multiTenant: boolean = false,
+    // EMIT-CHANGES seam — optional post-upsert domain-event emitter. Bound only
+    // by codegen-emitted assemblies whose entity opts into
+    // `integration.sink.emit_changes: true`. Unbound (the default) ⇒ no events
+    // published, zero behavior change.
+    @Optional()
+    @Inject(INTEGRATION_CHANGE_EMITTER)
+    private readonly emitter: IIntegrationChangeEmitter | null = null,
   ) {}
 
   async execute(input: ExecuteIntegrationInput<T>): Promise<ExecuteIntegrationResult> {
@@ -263,6 +275,12 @@ export class ExecuteIntegrationUseCase<T extends Record<string, unknown>> {
         changedFields: {},
         tenantId: input.tenantId,
       });
+      // EMIT-CHANGES: a real tombstone (a local row existed and was soft-deleted)
+      // is a `<entity>_deleted` event. A delete that hit no local row is a noop —
+      // nothing changed, nothing to emit.
+      if (result) {
+        await this.emitChange(input, change.externalId, result.id, 'deleted');
+      }
       return;
     }
 
@@ -321,15 +339,65 @@ export class ExecuteIntegrationUseCase<T extends Record<string, unknown>> {
       input.provider,
     );
 
+    const action: IntegrationChangeAction =
+      existing === null ? 'created' : 'updated';
+
     await this.recorder.recordItem({
       integrationRunId: runId,
       entityType: input.subscription.domain,
       externalId: change.externalId,
       localId,
-      operation: existing === null ? 'created' : 'updated',
+      operation: action,
       status: 'success',
       changedFields: diff as FieldDiff,
       tenantId: input.tenantId,
     });
+
+    // EMIT-CHANGES: a real create/update (the diff was NOT noop) publishes a
+    // typed `<entity>_created` / `<entity>_edited` event. The noop-reproject path
+    // above intentionally does NOT emit — the canonical state is unchanged.
+    await this.emitChange(
+      input,
+      change.externalId,
+      localId,
+      action,
+      diff as FieldDiff,
+    );
+  }
+
+  /**
+   * Publish one typed data-level change event via the optional emitter
+   * (EMIT-CHANGES seam). No-op when no emitter is bound (the back-compat
+   * default). A failed publish is logged but never aborts the run — the row is
+   * already written; emission is best-effort (the outbox tx, when the generated
+   * adapter rides on one, gives the at-least-once guarantee, not this try/catch).
+   */
+  private async emitChange(
+    input: ExecuteIntegrationInput<T>,
+    externalId: string,
+    entityId: string,
+    action: IntegrationChangeAction,
+    changedFields?: FieldDiff,
+  ): Promise<void> {
+    if (this.emitter === null) return;
+    try {
+      await this.emitter.emitChange({
+        entityId,
+        externalId,
+        provider: input.provider,
+        action,
+        changedFields:
+          action === 'deleted'
+            ? undefined
+            : (changedFields as Record<string, unknown> | undefined),
+        tenantId: input.tenantId,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `integration change-emit failed: subscription=${input.subscription.id} ` +
+          `externalId=${externalId} action=${action}: ${message}`,
+      );
+    }
   }
 }

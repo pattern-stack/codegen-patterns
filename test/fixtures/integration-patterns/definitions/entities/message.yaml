@@ -11,6 +11,10 @@
 #       → conversationExternalId PRESENT in find view (viewCopyThroughFields — bare
 #         passthrough). Gate 2.5 correction: exclusion is write-surface-only.
 #         Diff-soundness via the differ's `key in incoming` guard (differ:159).
+#   - integration.sink.emit_changes: true (EMIT-CHANGES seam)
+#       → desugars message_created / message_edited / message_deleted events
+#       → emits sinks/message.change-emitter.ts (@generated IIntegrationChangeEmitter)
+#       → message-integration.module binds INTEGRATION_CHANGE_EMITTER to it.
 #
 # Surface: crm — reuses the existing salesforce provider (stubs already present).
 entity:
@@ -36,3 +40,4 @@ integration:
   sink:
     delete: noop
     exclude_fields: [conversation_external_id]
+    emit_changes: true

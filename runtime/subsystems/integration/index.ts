@@ -36,6 +36,11 @@ export {
 } from './integration-field-diff.protocol';
 export type { IIntegrationSink } from './integration-sink.protocol';
 export type {
+  IIntegrationChangeEmitter,
+  IntegrationChangeAction,
+  IntegrationChangeNotification,
+} from './integration-change-emitter.protocol';
+export type {
   CompleteRunInput,
   IIntegrationRunRecorder,
   RecordItemInput,
@@ -125,6 +130,7 @@ export { buildChangeSource } from './build-change-source';
 // Tokens
 export {
   ENTITY_CHANGE_SOURCE_REGISTRY,
+  INTEGRATION_CHANGE_EMITTER,
   INTEGRATION_CHANGE_SOURCE,
   INTEGRATION_CURSOR_STORE,
   INTEGRATION_FIELD_DIFFER,

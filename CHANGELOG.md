@@ -24,6 +24,24 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Integration: opt-in post-upsert change-event emission seam.** An entity that
+  declares `integration.sink.emit_changes: true` now gets typed per-entity domain
+  events published automatically when integration sync upserts/soft-deletes rows.
+  Codegen (a) desugars the entity into `<entity>_created` / `<entity>_edited` /
+  `<entity>_deleted` events (merged into the generated events registry exactly
+  like a hand-authored `events/*.yaml` — TypedEventBus augmentation, the
+  `EventTypeName` union, payload schemas), and (b) emits a fully-`@generated`
+  `<entity>.change-emitter.ts` that the per-entity assembly module binds to the
+  new optional `INTEGRATION_CHANGE_EMITTER` token. `ExecuteIntegrationUseCase`
+  injects the emitter `@Optional()` and publishes after every real sink
+  write/soft-delete (never on a `noop` diff or a delete that hit no row). Payload:
+  `{ entityId, externalId, provider, changedFields?, source: 'integration' }` —
+  the `source` provenance marker lets a write-back action detect
+  integration-originated changes and break the inbound→writeback loop. The verb
+  is `_edited`, NOT `_updated` (swe-brain ADR-0009 B1). Entities that don't opt in
+  are byte-for-byte unchanged (the emitter token stays unbound). Generalizes the
+  emission swe-brain hand-built in its sinks. See `docs/specs/EMIT-CHANGES-1.md`.
+
 - **Jobs: consumer-threadable lease tuning.** `jobs.extensions.drizzle` now
   accepts `stale_threshold_ms`, `stale_sweeper_interval_ms`, and
   `claim_heartbeat_interval_ms`, threaded through the subsystem barrel generator
