@@ -32,7 +32,50 @@ export interface FieldMeta<T = unknown> {
 	importance: FieldImportance;
 	sortable?: boolean;
 	filterable?: boolean;
+	/** Layout grouping (e.g. 'external_sync'). */
+	group?: string;
+	/** `false` ⇒ hidden by default. Absent means visible. */
+	visible?: boolean;
+	placeholder?: string;
+	/** Help/description text shown alongside the field. */
+	help?: string;
 	format?: Record<string, unknown>;
 	choices?: string[];
 	reference?: string;
+	/** Curated/displayed field — drives card & preview field selection. */
+	isKeyField?: boolean;
+	/** Sort position within the key-field set. */
+	keyFieldOrder?: number;
 }
+
+/** EAV `field_definitions.data_type` vocabulary. */
+export type EavDataType =
+	| 'string'
+	| 'integer'
+	| 'decimal'
+	| 'boolean'
+	| 'date'
+	| 'datetime'
+	| 'json'
+	| 'reference'
+	| 'picklist'
+	| 'multipicklist';
+
+/**
+ * EAV `field_definitions.data_type` → `FieldType` rendering contract: an EAV
+ * field renders through the same vocabulary as a native column. Note both
+ * `picklist` and `multipicklist` map to `enum` — multi-select rendering is a
+ * consumer-side concern (check the EAV row's cardinality, not the FieldType).
+ */
+export const EAV_DATA_TYPE_TO_FIELD_TYPE: Record<EavDataType, FieldType> = {
+	string: 'text',
+	integer: 'number',
+	decimal: 'number',
+	boolean: 'boolean',
+	date: 'date',
+	datetime: 'datetime',
+	json: 'json',
+	reference: 'reference',
+	picklist: 'enum',
+	multipicklist: 'enum',
+};

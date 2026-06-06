@@ -40,6 +40,13 @@ export interface ParsedField {
 		sortable?: boolean;
 		filterable?: boolean;
 		visible?: boolean;
+		placeholder?: string;
+		help?: string;
+		format?: Record<string, unknown>;
+		/** Curated/displayed field (qField `isKeyField` parity, ADR-040). */
+		keyField?: boolean;
+		/** Sort position within the key-field set (qField `keyFieldOrder`). */
+		keyFieldOrder?: number;
 	};
 }
 

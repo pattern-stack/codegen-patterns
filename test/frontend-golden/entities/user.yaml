@@ -2,6 +2,11 @@
 # `user belongs_to person` must resolve the target name from the registry:
 # the resolver/lookup/store wiring references `persons` (person.plural), proving
 # no plural is ever derived from the string "person" at emit time.
+#
+# Also exercises the ADR-040 external-sync bundle: explicit external_id +
+# provider fields ⇒ both (plus provider_metadata, if present) default to
+# group: 'external_sync' — and `keyFields: []` stays emitted (empty) when no
+# field is curated.
 entity:
   name: user
   plural: users
@@ -28,6 +33,17 @@ fields:
     required: true
     index: true
     foreign_key: persons.id
+
+  external_id:
+    type: string
+    nullable: true
+    max_length: 255
+    index: true
+
+  provider:
+    type: string
+    nullable: true
+    max_length: 64
 
 relationships:
   person:

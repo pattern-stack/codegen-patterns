@@ -25,6 +25,20 @@ export const userFields: Record<string, FieldMeta<User>> = {
 		importance: 'secondary' as FieldImportance,
 		reference: 'persons',
 	},
+	externalId: {
+		field: 'externalId',
+		label: 'External Id',
+		type: 'text' as FieldType,
+		importance: 'secondary' as FieldImportance,
+		group: 'external_sync',
+	},
+	provider: {
+		field: 'provider',
+		label: 'Provider',
+		type: 'text' as FieldType,
+		importance: 'secondary' as FieldImportance,
+		group: 'external_sync',
+	},
 	person: {
 		field: 'person',
 		label: 'Person',
@@ -44,6 +58,9 @@ export const userMetadata = {
 
 	primaryFields: [
 		'email',
+	],
+	keyFields: [
+
 	],
 	searchFields: [
 

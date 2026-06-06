@@ -35,6 +35,31 @@ import {
 	type RelationshipDefinition,
 	type RelationshipTypes,
 } from '../schema/relationship-definition.schema';
+import type { FieldDefinition } from '../schema/entity-definition.schema';
+
+/**
+ * Map the YAML `ui_*` keys onto `ParsedField.ui`. Shared by the entity and
+ * relationship-definition field parsers so the two cannot drift. Carries the
+ * full UI-hint surface (label/type/importance/group/sortable/filterable/
+ * visible/placeholder/help/format) plus key-field curation
+ * (`ui_key_field` / `ui_key_field_order`, ADR-040).
+ */
+function parseUiMetadata(fieldDef: FieldDefinition): ParsedField['ui'] {
+	return {
+		label: fieldDef.ui_label,
+		type: fieldDef.ui_type,
+		importance: fieldDef.ui_importance,
+		group: fieldDef.ui_group,
+		sortable: fieldDef.ui_sortable,
+		filterable: fieldDef.ui_filterable,
+		visible: fieldDef.ui_visible,
+		placeholder: fieldDef.ui_placeholder,
+		help: fieldDef.ui_help,
+		format: fieldDef.ui_format,
+		keyField: fieldDef.ui_key_field,
+		keyFieldOrder: fieldDef.ui_key_field_order,
+	};
+}
 
 export interface LoadEntitiesResult {
 	entities: ParsedEntity[];
@@ -95,15 +120,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 				min: fieldDef.min,
 				max: fieldDef.max,
 			},
-			ui: {
-				label: fieldDef.ui_label,
-				type: fieldDef.ui_type,
-				importance: fieldDef.ui_importance,
-				group: fieldDef.ui_group,
-				sortable: fieldDef.ui_sortable,
-				filterable: fieldDef.ui_filterable,
-				visible: fieldDef.ui_visible,
-			},
+			ui: parseUiMetadata(fieldDef),
 		};
 		entity.fields.set(name, field);
 	}
@@ -372,15 +389,7 @@ function transformToRelationshipDefinition(
 					min: fieldDef.min,
 					max: fieldDef.max,
 				},
-				ui: {
-					label: fieldDef.ui_label,
-					type: fieldDef.ui_type,
-					importance: fieldDef.ui_importance,
-					group: fieldDef.ui_group,
-					sortable: fieldDef.ui_sortable,
-					filterable: fieldDef.ui_filterable,
-					visible: fieldDef.ui_visible,
-				},
+				ui: parseUiMetadata(fieldDef),
 			};
 			fields.set(name, field);
 		}

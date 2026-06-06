@@ -10,6 +10,8 @@ export const personFields: Record<string, FieldMeta<Person>> = {
 		label: 'Tenant Id',
 		type: 'reference' as FieldType,
 		importance: 'secondary' as FieldImportance,
+		group: 'system',
+		visible: false,
 		reference: 'tenants',
 	},
 	email: {
@@ -17,18 +19,31 @@ export const personFields: Record<string, FieldMeta<Person>> = {
 		label: 'Email',
 		type: 'email' as FieldType,
 		importance: 'primary' as FieldImportance,
+		placeholder: 'name@example.com',
+		help: 'Primary contact address.',
+		isKeyField: true,
+		keyFieldOrder: 1,
 	},
 	firstName: {
 		field: 'firstName',
 		label: 'First Name',
 		type: 'text' as FieldType,
 		importance: 'primary' as FieldImportance,
+		isKeyField: true,
+		keyFieldOrder: 0,
 	},
 	lastName: {
 		field: 'lastName',
 		label: 'Last Name',
 		type: 'text' as FieldType,
 		importance: 'primary' as FieldImportance,
+	},
+	deletedAt: {
+		field: 'deletedAt',
+		label: 'Deleted',
+		type: 'datetime' as FieldType,
+		importance: 'tertiary' as FieldImportance,
+		format: { dateFormat: 'relative' },
 	},
 };
 
@@ -44,6 +59,10 @@ export const personMetadata = {
 		'email',
 		'firstName',
 		'lastName',
+	],
+	keyFields: [
+		'firstName',
+		'email',
 	],
 	searchFields: [
 

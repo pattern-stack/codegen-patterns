@@ -138,6 +138,11 @@ const UiMetadataSchema = z.object({
   ui_placeholder: z.string().optional(),
   ui_help: z.string().optional(),
   ui_format: z.record(z.unknown()).optional(),
+  // Key-field curation (ADR-040): curated/displayed fields that drive card &
+  // preview surfaces. Names mirror qField / EAV `field_definitions`
+  // (`isKeyField` / `keyFieldOrder`) — one metadata vocabulary, multiple homes.
+  ui_key_field: z.boolean().optional(),
+  ui_key_field_order: z.number().optional(),
 });
 
 // ============================================================================

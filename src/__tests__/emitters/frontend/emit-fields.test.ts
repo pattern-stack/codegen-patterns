@@ -1,19 +1,24 @@
 /**
- * Frontend emitter — field metadata tests (ADR-038, FE-3).
+ * Frontend emitter — field metadata tests (ADR-038, FE-3; enriched per ADR-040).
  *
  * Two layers: pure UI-derivation unit tests (label humanization, importance
- * heuristic, type inference, choices, FK reference) and the rendered metadata
- * shape (primaryFields / searchFields / defaultSort / capabilities / timestamps
- * rows / belongs_to relation rows).
+ * heuristic, type inference, choices, FK reference, ui-hint passthrough,
+ * key-field curation, external-sync defaults, the EAV contract) and the
+ * rendered metadata shape (primaryFields / keyFields / searchFields /
+ * defaultSort / capabilities / timestamps + soft_delete rows / belongs_to
+ * relation rows).
  */
 
 import { describe, expect, it } from 'bun:test';
 import {
 	deriveFieldMeta,
 	formatLabel,
+	hasExternalSyncShape,
 	inferUiImportance,
 	inferUiType,
 	isEntityRefField,
+	EAV_DATA_TYPE_TO_FIELD_TYPE,
+	type FieldType,
 } from '../../../emitters/frontend/field-meta';
 import {
 	buildFieldMetaTypeFile,
@@ -204,5 +209,249 @@ describe('emit-fields — entity metadata file', () => {
 		// read is never gated.
 		expect(offOut).toContain('list: true,');
 		expect(offOut).toContain('get: true,');
+	});
+});
+
+describe('field-meta — ui hint passthrough (ADR-040)', () => {
+	it('passes group / visible / placeholder / help / format through verbatim', () => {
+		const meta = deriveFieldMeta(
+			field('email', {
+				ui: {
+					group: 'contact',
+					visible: false,
+					placeholder: 'name@example.com',
+					help: 'Primary contact address.',
+					format: { mask: 'lowercase' },
+				},
+			}),
+		);
+		expect(meta.group).toBe('contact');
+		expect(meta.visible).toBe(false);
+		expect(meta.placeholder).toBe('name@example.com');
+		expect(meta.help).toBe('Primary contact address.');
+		expect(meta.format).toEqual({ mask: 'lowercase' });
+	});
+
+	it('omits the keys entirely when unset (no undefined noise)', () => {
+		const meta = deriveFieldMeta(field('email'));
+		expect('group' in meta).toBe(false);
+		expect('visible' in meta).toBe(false);
+		expect('placeholder' in meta).toBe(false);
+		expect('help' in meta).toBe(false);
+		expect('format' in meta).toBe(false);
+	});
+
+	it('defaults.group fills only where the author left ui_group unset', () => {
+		const defaulted = deriveFieldMeta(field('external_id'), { group: 'external_sync' });
+		expect(defaulted.group).toBe('external_sync');
+
+		const authored = deriveFieldMeta(
+			field('external_id', { ui: { group: 'integrations' } }),
+			{ group: 'external_sync' },
+		);
+		expect(authored.group).toBe('integrations');
+	});
+});
+
+describe('field-meta — key-field curation (ADR-040)', () => {
+	it('ui_key_field surfaces as isKeyField + keyFieldOrder', () => {
+		const meta = deriveFieldMeta(
+			field('email', { ui: { keyField: true, keyFieldOrder: 2 } }),
+		);
+		expect(meta.isKeyField).toBe(true);
+		expect(meta.keyFieldOrder).toBe(2);
+	});
+
+	it('keyFieldOrder without keyField is dropped; non-key fields stay bare', () => {
+		const orphanOrder = deriveFieldMeta(field('email', { ui: { keyFieldOrder: 3 } }));
+		expect('isKeyField' in orphanOrder).toBe(false);
+		expect('keyFieldOrder' in orphanOrder).toBe(false);
+
+		const plain = deriveFieldMeta(field('email'));
+		expect('isKeyField' in plain).toBe(false);
+	});
+});
+
+describe('field-meta — external-sync shape detection (ADR-040)', () => {
+	it('requires BOTH external_id and provider', () => {
+		expect(hasExternalSyncShape(['external_id', 'provider', 'name'])).toBe(true);
+		expect(hasExternalSyncShape(['external_id', 'name'])).toBe(false);
+		expect(hasExternalSyncShape(['provider', 'name'])).toBe(false);
+		expect(hasExternalSyncShape([])).toBe(false);
+	});
+});
+
+describe('field-meta — EAV data_type → FieldType contract (ADR-040)', () => {
+	it('covers the full EAV data_type vocabulary', () => {
+		expect(Object.keys(EAV_DATA_TYPE_TO_FIELD_TYPE).sort()).toEqual(
+			[
+				'boolean',
+				'date',
+				'datetime',
+				'decimal',
+				'integer',
+				'json',
+				'multipicklist',
+				'picklist',
+				'reference',
+				'string',
+			].sort(),
+		);
+	});
+
+	it('maps both picklist and multipicklist to enum (multi-select is consumer-side)', () => {
+		expect(EAV_DATA_TYPE_TO_FIELD_TYPE.picklist).toBe('enum');
+		expect(EAV_DATA_TYPE_TO_FIELD_TYPE.multipicklist).toBe('enum');
+	});
+
+	it('every value is a member of the FieldType union', () => {
+		const fieldTypes: FieldType[] = [
+			'text', 'textarea', 'number', 'boolean', 'date', 'datetime', 'email',
+			'url', 'password', 'money', 'percentage', 'json', 'enum', 'reference',
+			'entity',
+		];
+		for (const v of Object.values(EAV_DATA_TYPE_TO_FIELD_TYPE)) {
+			expect(fieldTypes).toContain(v);
+		}
+	});
+});
+
+describe('emit-fields — type file (ADR-040 additions)', () => {
+	it('declares the enriched optional surface on FieldMeta', () => {
+		const out = buildFieldMetaTypeFile();
+		expect(out).toContain('group?: string;');
+		expect(out).toContain('visible?: boolean;');
+		expect(out).toContain('placeholder?: string;');
+		expect(out).toContain('help?: string;');
+		expect(out).toContain('isKeyField?: boolean;');
+		expect(out).toContain('keyFieldOrder?: number;');
+	});
+
+	it('emits the EAV contract rendered from the source constant (no drift)', () => {
+		const out = buildFieldMetaTypeFile();
+		expect(out).toContain('export type EavDataType =');
+		expect(out).toContain(
+			'export const EAV_DATA_TYPE_TO_FIELD_TYPE: Record<EavDataType, FieldType> = {',
+		);
+		for (const [k, v] of Object.entries(EAV_DATA_TYPE_TO_FIELD_TYPE)) {
+			expect(out).toContain(`\t${k}: '${v}',`);
+			expect(out).toContain(`| '${k}'`);
+		}
+	});
+});
+
+describe('emit-fields — ui hints + key fields in the rendered file (ADR-040)', () => {
+	function curatedCtx() {
+		const contact = entry('contact', 'contacts');
+		const parsed = parsedMap(
+			parsedEntity(contact, {
+				fields: new Map([
+					// email declared FIRST but ordered second — locks the sort.
+					['email', field('email', { ui: { keyField: true, keyFieldOrder: 1, placeholder: "name@example.com", help: "The contact's address." } })],
+					['name', field('name', { required: true, ui: { keyField: true, keyFieldOrder: 0 } })],
+					['notes', field('notes', { ui: { group: 'detail', visible: false, format: { rows: 4 } } })],
+				]),
+			}),
+		);
+		return { contact, c: ctx([contact], {}, parsed) };
+	}
+
+	it('renders the hint keys and escapes quotes in strings', () => {
+		const { contact, c } = curatedCtx();
+		const out = buildEntityFieldsFile(contact, c);
+		expect(out).toContain("placeholder: 'name@example.com',");
+		expect(out).toContain("help: 'The contact\\'s address.',");
+		expect(out).toContain("group: 'detail',");
+		expect(out).toContain('visible: false,');
+		expect(out).toContain('format: {"rows":4},');
+	});
+
+	it('renders isKeyField/keyFieldOrder rows and the ordered keyFields list', () => {
+		const { contact, c } = curatedCtx();
+		const out = buildEntityFieldsFile(contact, c);
+		expect(out).toContain('isKeyField: true,');
+		expect(out).toContain('keyFieldOrder: 0,');
+		// keyFields sorted by keyFieldOrder: name (0) before email (1) despite
+		// email being declared first.
+		expect(out).toContain("keyFields: [\n\t\t'name',\n\t\t'email',\n\t],");
+	});
+
+	it('emits an empty keyFields list when nothing is curated', () => {
+		const plain = entry('tag', 'tags');
+		const c = ctx([plain], {}, parsedMap(parsedEntity(plain)));
+		const out = buildEntityFieldsFile(plain, c);
+		expect(out).toContain('keyFields: [\n\n\t],');
+	});
+});
+
+describe('emit-fields — behavior/family bundles (ADR-040)', () => {
+	it('soft_delete behavior contributes a deletedAt row (datetime/tertiary/relative)', () => {
+		const e = entry('doc', 'docs');
+		const c = ctx([e], {}, parsedMap(parsedEntity(e, { behaviors: ['soft_delete'] })));
+		const out = buildEntityFieldsFile(e, c);
+		expect(out).toContain('deletedAt: {');
+		expect(out).toContain("field: 'deletedAt',");
+		expect(out).toContain("label: 'Deleted',");
+		expect(out).toContain("format: { dateFormat: 'relative' },");
+	});
+
+	it('no deletedAt row without the behavior', () => {
+		const e = entry('doc', 'docs');
+		const c = ctx([e], {}, parsedMap(parsedEntity(e)));
+		expect(buildEntityFieldsFile(e, c)).not.toContain('deletedAt: {');
+	});
+
+	it('external_id+provider(+provider_metadata) default to group external_sync', () => {
+		const e = entry('deal', 'deals');
+		const c = ctx(
+			[e],
+			{},
+			parsedMap(
+				parsedEntity(e, {
+					fields: new Map([
+						['name', field('name', { required: true })],
+						['external_id', field('external_id', { nullable: true })],
+						['provider', field('provider', { nullable: true })],
+						['provider_metadata', field('provider_metadata', { type: 'json', nullable: true })],
+					]),
+				}),
+			),
+		);
+		const out = buildEntityFieldsFile(e, c);
+		const matches = out.match(/group: 'external_sync',/g) ?? [];
+		expect(matches.length).toBe(3);
+		// the non-bookkeeping field is untouched
+		expect(out).not.toMatch(/name: \{[^}]*group:/);
+	});
+
+	it('authored ui_group beats the external_sync default; no gate ⇒ no default', () => {
+		const e = entry('deal', 'deals');
+		const authored = ctx(
+			[e],
+			{},
+			parsedMap(
+				parsedEntity(e, {
+					fields: new Map([
+						['external_id', field('external_id', { ui: { group: 'integrations' } })],
+						['provider', field('provider')],
+					]),
+				}),
+			),
+		);
+		const authoredOut = buildEntityFieldsFile(e, authored);
+		expect(authoredOut).toContain("group: 'integrations',");
+		expect(authoredOut).toContain("group: 'external_sync',"); // provider still defaulted
+
+		// provider alone (no external_id) ⇒ shape gate fails ⇒ no default.
+		const ungated = ctx(
+			[e],
+			{},
+			parsedMap(
+				parsedEntity(e, {
+					fields: new Map([['provider', field('provider')]]),
+				}),
+			),
+		);
+		expect(buildEntityFieldsFile(e, ungated)).not.toContain('external_sync');
 	});
 });
