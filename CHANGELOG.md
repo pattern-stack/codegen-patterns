@@ -6,38 +6,50 @@ All notable changes to this project will be documented in this file.
 
 ## [0.20.1] — 2026-06-06
 
-**Fix: the subsystems barrel never threaded `eventRegistry` into
-`EventsModule.forRoot`** — so `EventSchedulerLifecycle` never spawned and
-ADR-039 scheduled events silently didn't tick (dogfood gap found consuming
-0.20.0 in swe-brain, package mode). The 0.20.0 runtime expected the barrel to
-pass the consumer's generated `eventRegistry`, but the emitter (`subsystem-
-barrel-generator`) was never updated to do so.
+**Two consumer-found subsystem-barrel gaps of the same class** (the install adds
+a `subsystems.install` config entry but the barrel emitter never wires the
+module / threads its options): (#472) the barrel never passed the consumer's
+generated `eventRegistry` to `EventsModule.forRoot`, so `EventSchedulerLifecycle`
+never spawned and ADR-039 scheduled events silently didn't tick; (#473)
+`subsystem install observability` registered the subsystem but the barrel never
+emitted `ObservabilityModule.forRoot`, forcing consumers to hand-wire it in
+`app.module.ts` (like Auth). Both surfaced dogfooding swe-brain.
 
 ### Fixed
 
-- **`subsystem-barrel-generator` now threads `eventRegistry`** into
-  `EventsModule.forRoot` on every events branch (package + vendored, plain +
-  `listenNotify`). The registry is imported from `./events/registry`
-  (package mode) or `<subsystemsRoot>/events/generated/registry` (vendored) —
-  the same conditioning/relative-import mechanism the `TypedEventBus` import
-  already uses. `EventSchedulerLifecycle` reads `eventRegistry` (and only it —
-  no bundled fallback), so this is what makes the scheduler spawn.
-- **Stub guard extended to vendored mode.** A bare `subsystem install events`
-  regenerates the barrel before `entity new --all` has emitted the generated
-  events set; the writer drops the empty 5-file set (incl. `registry.ts`) into
-  the vendored `<subsystemsRoot>/events/generated/` if absent, so the barrel's
-  new `eventRegistry` import never dangles (package mode already had this guard
-  for `./events/bus`; the same path emits `registry.ts`).
+- **#472 — `eventRegistry` threading.** The events composer now imports
+  `eventRegistry` and threads it into `EventsModule.forRoot` on every branch
+  (package + vendored, plain + `listenNotify`) — from `./events/registry`
+  (package) or `<subsystemsRoot>/events/generated/registry` (vendored), the same
+  mechanism the `TypedEventBus` import uses. `EventSchedulerLifecycle` reads
+  `eventRegistry` (and only it — no bundled fallback), so this is what spawns
+  the scheduler. The package stub guard (drops the empty event-codegen 5-file
+  set incl. `registry.ts` when absent) was extended to vendored mode so the new
+  import never dangles on a bare `subsystem install events`.
+- **#473 — `ObservabilityModule.forRoot`.** Added an `observability` composer.
+  It emits `ObservabilityModule.forRoot()` (no `backend`/`multiTenant` — a
+  combiner per ADR-025 owns no durable state), imported from
+  `@pattern-stack/codegen/runtime/subsystems/observability/index` (package) or
+  the vendored `observability.module` (vendored). `observability` is ordered
+  LAST in `COMPOSABLE_ORDER`, so its `forRoot` registers AFTER the
+  events/jobs/bridge/integration read ports it composes via `@Optional()` DI.
+  The `observability.reporters` config block (OBS-6) is threaded into `forRoot`
+  only when a reporter is `enabled: true` (off-by-default, mirroring the
+  `listen_notify` / `differ` clauses); the default install stays a bare
+  `ObservabilityModule.forRoot()`.
 
 ### Tests
 
-- `subsystem-barrel-generator` tests updated for the new `forRoot` shape +
-  a both-modes regression guard asserting `eventRegistry` is imported AND
-  threaded.
-- **Subsystems smoke now asserts the threading end-to-end** — the gap survived
-  because nothing checked that a consumer's barrel actually wires the scheduler.
-  `run-smoke-subsystems` now fails if the real generated barrel doesn't import
-  `eventRegistry` and pass it to `EventsModule.forRoot`.
+- `subsystem-barrel-generator` tests: new `forRoot` shape for events; a
+  both-modes `eventRegistry` regression guard; observability composer coverage
+  (both modes, combiner ordering after the composed siblings, reporters threaded
+  only when enabled).
+- **Subsystems smoke now asserts forRoot presence per installed subsystem** —
+  both gaps survived because nothing end-to-end checked that a consumer's barrel
+  actually wires each installed module. `run-smoke-subsystems` now installs
+  observability too and fails if the real generated barrel is missing any
+  installed subsystem's `forRoot`, if observability isn't ordered after the
+  read ports, or if `EventsModule.forRoot` doesn't thread `eventRegistry`.
 
 ## [0.20.0] — 2026-06-06
 
