@@ -187,6 +187,16 @@ short-circuited the scaffold and never emitted `src/worker.ts`. As of #517,
 main-hook (the schema ships in the package, re-exported via the schema barrel, so
 the schema template is skipped there). The choice below is operational.
 
+> **Caveat (issue #520):** the embedded-mode guidance comment that `subsystem
+> install jobs` injects into `src/main.ts` does NOT actually land in a
+> `project init`-emitted `main.ts` — `templates/subsystem/jobs/prompt.js` omits
+> `mainHookInjected` from its returned context, so `skip_if: "<%= mainHookInjected %>"`
+> renders the literal `true`, which hygen regex-matches against `main.ts`'s
+> `persistAuthorization: true` and false-positive-skips the inject. It's a
+> non-functional comment block, so this is cosmetic; the operationally meaningful
+> `src/worker.ts` is always emitted. Fix owned by #520. (The earlier
+> object-literal-after-anchor theory was wrong.)
+
 **Embedded** (`AppModule` imports `JobWorkerModule.forRoot({ mode: 'embedded' })`):
 - API process and workers share CPU.
 - Simplest deploy; good default for dev and small installs.
