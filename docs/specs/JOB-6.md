@@ -300,6 +300,37 @@ No Docker required. Hygen invocation tested via baseline fixture in CI.
 - **Does not** modify `src/main.ts` beyond commented block — uncommenting = consumer decision
 - ~~`worker.ts` uses hard-coded `@shared/subsystems/jobs` import path~~ **Resolved by #513.** The worker's `JobWorkerModule` import now routes through the ADR-037 mode-aware resolver (package → `@pattern-stack/codegen/runtime/subsystems/jobs/index`, vendored → `@shared/subsystems/jobs/index`); `AppModule` is imported relatively. (`workerPath`/`mainTsPath` still hard-code `src/`; threading `paths.backend_src` into this resolver remains out of scope — it would move both together.)
 
+## #513 implementation notes (discovered during build)
+
+Two things the #513 design missed, recorded here as post-implementation truth:
+
+1. **`workerForRootOpts` is base64-encoded across the hygen arg boundary.** The
+   forRoot options are a TS object literal (`{ mode: 'standalone', allPools: true }`).
+   Hygen's yargs CLI parser reads the `{ … : … }` syntax as nested object /
+   dot-notation and shreds it — the value reaches `prompt.js` as `{`, rendering
+   `JobWorkerModule.forRoot({)` (`TS1136: Property assignment expected`). The fix:
+   `encodeWorkerForRootOpts` (`src/cli/shared/jobs-scaffold-locals.ts`, applied in
+   `localsToHygenArgs` to the `--workerForRootOpts` value only) ↔
+   `decodeWorkerForRootOpts` (`templates/subsystem/jobs/prompt.js`, with a
+   round-trip guard so a hand-passed plain literal still works). The
+   `jobWorkerModuleImport` specifier has no brace/colon syntax, so it passes through
+   untouched. The resolver's `workerForRootOpts` field stays the plain string the
+   unit tests assert; only the argv crossing is encoded.
+
+2. **Package mode never reaches this scaffold (follow-up: #517).** In
+   `runtime: package` mode (the ADR-037 default), `SubsystemInstallCommand`
+   short-circuits via `executePackageMode` (`src/cli/commands/subsystem.ts:382`) and
+   returns BEFORE `runJobsScaffold` — package mode vendors no files, so the whole
+   hygen scaffold (worker, main-hook, schema template) is skipped. **The worker is
+   therefore never emitted in package mode today.** #513 made the worker
+   package-*correct* (the mode-aware `jobWorkerModuleImport` resolves to the package
+   runtime; the AppModule composition is mode-agnostic) and that branch is covered by
+   unit tests + a direct template render — but it is unit-test-only until the
+   package-mode install path is wired to emit it. Wiring requires extending
+   `executePackageMode` to run ONLY the worker template (NOT the vendored
+   `job-orchestration.schema.ejs.t`, whose target package mode deliberately doesn't
+   own). Tracked in **issue #517**.
+
 ## Open Questions (non-blocking)
 
 - `main-hook.ejs.t` uses `after: "NestFactory.create"` as injection anchor. If consumer uses `NestFactory.createMicroservice` instead, injection silently skips. CLI should print info message when `main.ts` exists but injection result can't be confirmed. Cosmetic; scaffold still functional.

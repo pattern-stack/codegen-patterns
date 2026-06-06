@@ -342,7 +342,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		const domainOpts = quoteBullmqDomainOpts({ backend, multiTenant, bullExt, drizzleExt });
 		const calls = [`\tJobsDomainModule.forRoot(${domainOpts}),`];
 		// JOB-7: `worker_mode: 'embedded'` runs the worker in-process alongside the
-		// HTTP app. `'standalone'` (default) means the user runs `bun worker.ts`
+		// HTTP app. `'standalone'` (default) means the user runs `bun src/worker.ts`
 		// separately and we don't include JobWorkerModule in AppModule.
 		if (workerMode === 'embedded') {
 			imports.push(
