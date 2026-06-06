@@ -1,10 +1,19 @@
-# JOB-6 — Hygen Scaffold Templates: `worker.ts`, `main.ts` Hook, Config Block
+# JOB-6 — Hygen Scaffold Templates: `src/worker.ts`, `main.ts` Hook, Config Block
 
 **Issue:** JOB-6
 **Status:** Implemented
-**Last Updated:** 2026-04-19
+**Last Updated:** 2026-06-06 (#513 — worker location + composition + mode-aware import)
 **Depends on:** JOB-1 (schema file templated here), JOB-5 (module names must be stable)
 **Blocks:** JOB-8 (multi-tenancy opt-in — tenant_id column conditional lives in this template)
+
+> **#513 revision (2026-06-06).** The standalone worker moved from repo-root
+> `worker.ts` to `src/worker.ts`, was rewritten to compose around the consumer's
+> `AppModule` (handler-DI parity with the API process), and its single remaining
+> runtime import (`JobWorkerModule`) now routes through the ADR-037 mode-aware
+> resolver (package vs vendored). The body below is updated to that post-#513
+> truth; the original 2026-04-19 design (root location, bare
+> `DatabaseModule`+`JobsDomainModule` composition, hard-coded `@shared` import)
+> is superseded. See `.ai-docs/specs/513.md`.
 
 ## Overview
 
@@ -22,7 +31,7 @@ ADR-022: "Codegen emits both `main.ts` and `worker.ts` on scaffold. A consumer w
 SubsystemInstallCommand.execute()
   ├── copyRuntime()                            ← existing
   └── invokeHygen({ generator: 'subsystem', action: 'jobs' })
-        ├── worker.ejs.t                       → <cwd>/worker.ts (create; skip if exists)
+        ├── worker.ejs.t                       → <cwd>/src/worker.ts (create; skip if exists)
         ├── main-hook.ejs.t                    → inject into <cwd>/src/main.ts (once)
         └── codegen-config-jobs-block.ejs.t    → append to <cwd>/codegen.config.yaml (once)
 ```
@@ -31,7 +40,7 @@ SubsystemInstallCommand.execute()
 
 | File | Action | Purpose |
 |---|---|---|
-| `templates/subsystem/jobs/worker.ejs.t` | create | Produces `worker.ts` at project root |
+| `templates/subsystem/jobs/worker.ejs.t` | create | Produces `src/worker.ts` (#513: was repo-root; now next to `app.module.ts`, inside the default tsconfig include) |
 | `templates/subsystem/jobs/main-hook.ejs.t` | create | Injects embedded-mode comment block |
 | `templates/subsystem/jobs/codegen-config-jobs-block.ejs.t` | create | Appends `jobs:` config block |
 | `templates/subsystem/jobs/job-orchestration.schema.ejs.t` | create | **Templated schema: conditional EJS block for `tenantId` column gated on `jobs.multi_tenant` (Q1 2026-04-19)** — overrides/replaces the always-emit runtime source file landed in JOB-1 when scaffolded into a consumer project |
@@ -52,6 +61,10 @@ interface JobsScaffoldLocals {
   mainTsPath: string;       // default 'src/main.ts'
   configPath: string;       // default 'codegen.config.yaml'
   workerExists: boolean;    // computed in CLI via fs.existsSync; used in worker template skip_if
+  // #513 additions:
+  workerPath: string;       // 'src/worker.ts' (was repo-root 'worker.ts')
+  jobWorkerModuleImport: string;  // mode-aware (ADR-037): package → '@pattern-stack/codegen/runtime/subsystems/jobs/index'; vendored → '@shared/subsystems/jobs/index'
+  workerForRootOpts: string;      // pre-serialised JobWorkerModule.forRoot(<opts>) literal; mirrors the embedded composer's backend/extension clauses, mode:'standalone' first, allPools:true last
 }
 ```
 
@@ -75,20 +88,30 @@ native primitive for "create once, never overwrite" and matches the
 intended semantics exactly. The CLI still computes `workerExists` for
 dry-run reporting and for the templates-locals unit tests.
 
-Content (template body): minimal NestJS `NestFactory.createApplicationContext` bootstrap — no `app.listen()`. Imports `JobWorkerModule`, `DatabaseModule`, `JobsDomainModule`. Inline `WorkerAppModule` with:
+Content (template body): minimal NestJS `NestFactory.createApplicationContext` bootstrap — no `app.listen()`. Imports `JobWorkerModule` (mode-aware specifier) and the consumer's `AppModule` (relative `./app.module`). **#513 composition** — `WorkerAppModule` imports `AppModule` whole (handler-DI parity with the API process) plus a single `JobWorkerModule.forRoot(<opts>)`:
 
 ```ts
+import { AppModule } from './app.module';
+import { JobWorkerModule } from '<%= jobWorkerModuleImport %>';
+
 @Module({
   imports: [
-    DatabaseModule,
-    JobsDomainModule.forRoot({ backend: 'drizzle' }),
-    JobWorkerModule.forRoot({ mode: 'standalone' }),
+    AppModule, // DatabaseModule + SUBSYSTEM_MODULES + handler modules
+    JobWorkerModule.forRoot(<%- workerForRootOpts %>), // e.g. { mode: 'standalone', allPools: true }
   ],
 })
-class WorkerAppModule {}
+export class WorkerAppModule {}
 ```
 
-SIGTERM handler: set flag, `await app.close()`, bounded by `SHUTDOWN_TIMEOUT_MS = 30000`. `bootstrap()` called at bottom; errors → `process.exit(1)`.
+- **AppModule composition** kills the original "empty handler DI surface" defect — a bare `DatabaseModule`+`JobsDomainModule` worker registered zero `@JobHandler` providers. Importing `AppModule` gives the worker the SAME DI graph as the HTTP process. The module is a NAMED export so boot-checks / e2e can import it without side effects.
+- **`workerForRootOpts`** is built in `jobs-scaffold-locals.ts` by mirroring the embedded composer's backend + extension clauses (`subsystem-barrel-generator.ts`), but with `mode: 'standalone'` first and `allPools: true` last — so a standalone worker keeps `listen_notify`/`poll_interval_ms` (drizzle) or `backend: 'bullmq'` + its extension block, and always drains the reserved `events_*` lanes.
+- **`jobWorkerModuleImport`** is the only mode-aware import (ADR-037, via `runtimeImport(mode, 'subsystems/jobs/index')`): package → `@pattern-stack/codegen/runtime/subsystems/jobs/index`, vendored → `@shared/subsystems/jobs/index`. `AppModule` is imported relatively, so it is mode-agnostic.
+
+`bootstrap()` is gated on `if (import.meta.main)` (bun-first) so importing the module doesn't spawn a worker; the documented run command is `bun src/worker.ts`.
+
+SIGTERM/SIGINT handler: set flag, `await app.close()`, bounded by `SHUTDOWN_TIMEOUT_MS = 30000`; errors → `process.exit(1)`.
+
+**Operational notes (#513).** This entrypoint is for `worker_mode: standalone` only — in embedded mode `AppModule` already runs the worker, so booting this file too would double-spawn against the same pools. Also: booting a consumer `AppModule` twice in one process throws `DuplicateSchemaError` (per-process `OpenApiRegistry` singleton), so multi-rung boot validation must spawn child processes, not import both modules into one.
 
 ### `main-hook.ejs.t`
 
@@ -107,7 +130,7 @@ Body (a commented guidance block injected after `NestFactory.create(...)`):
 // JOBS — Embedded worker mode (optional)
 // To run the job worker in-process (single-process deploy), add to AppModule imports:
 //   JobWorkerModule.forRoot({ mode: 'embedded' })
-// For standalone worker (separate process), use worker.ts at the project root.
+// For standalone worker (separate process), run src/worker.ts (bun src/worker.ts).
 // See codegen.config.yaml jobs.worker_mode to toggle the documented default.
 ```
 
@@ -217,7 +240,7 @@ jobs:
 ## Implementation Steps
 
 1. **Create `templates/subsystem/jobs/`** — no prompt.js needed; subsystem templates called directly by CLI.
-2. **Write `worker.ejs.t`** — front-matter `to`, `skip_if: workerExists`; body as above. Import path `@shared/subsystems/jobs` (consumer-side location after `copyRuntime`).
+2. **Write `worker.ejs.t`** — front-matter `to: <%= workerPath %>` (= `src/worker.ts`), `unless_exists: true`; body as above. The `JobWorkerModule` import is the mode-aware `<%= jobWorkerModuleImport %>` (#513 — was hard-coded `@shared/subsystems/jobs`); `AppModule` is imported relatively.
 3. **Write `main-hook.ejs.t`** — front-matter `to`, `inject: true`, `after: "NestFactory.create"`, `skip_if: "JobWorkerModule"`; body as above.
 4. **Write `codegen-config-jobs-block.ejs.t`** — front-matter `to`, `inject: true`, `append: true`, `skip_if: "jobs:"`; body as above.
 5. **Write `job-orchestration.schema.ejs.t`** — front-matter `to`, `force: true`; body as above (EJS port of runtime source with `<% if (multiTenant) { %>` gate around `tenantId` column).
@@ -225,7 +248,7 @@ jobs:
    - Modify `copyRuntime` (or its job-subsystem path) to **skip** `job-orchestration.schema.ts` — Hygen template owns emission
    - After `copyRuntime(...)`: `if (this.name === 'jobs' && !this.dryRun)`
    - Resolve template locals from config + cwd (read `jobs.multi_tenant` from `codegen.config.yaml`; default `false` if block absent — matches first-install case)
-   - Compute `workerExists` via `fs.existsSync(path.join(ctx.cwd, 'worker.ts'))`
+   - Compute `workerExists` via `fs.existsSync(path.join(ctx.cwd, 'src', 'worker.ts'))` (#513)
    - Call `invokeHygen({ generator: 'subsystem', action: 'jobs', args: [...], cwd: ctx.cwd })`
    - On Hygen failure: warn but exit 0 — runtime files already written; partial scaffold > hard failure
    - Dry-run: print files Hygen would emit; skip actual invocation
@@ -245,16 +268,16 @@ jobs:
 2. `just gen-subsystem jobs` → exits 0.
 3. Assert post-run state:
    - `shared/subsystems/jobs/` populated with executor-layer runtime files
-   - `worker.ts` at project root — imports `JobWorkerModule.forRoot({ mode: 'standalone' })`, no `app.listen()`
+   - `src/worker.ts` (#513) — imports `AppModule` (relative) + `JobWorkerModule.forRoot({ mode: 'standalone', allPools: true, … })`, no `app.listen()`, `bootstrap()` gated on `import.meta.main`
    - `codegen.config.yaml` — contains full `jobs:` block with all five pools
    - `src/main.ts` (if exists) — contains commented JOBS guidance block
 4. Second run of `just gen-subsystem jobs`:
-   - `worker.ts` not overwritten (skip_if)
+   - `src/worker.ts` not overwritten (`unless_exists`)
    - `codegen.config.yaml` has no duplicate `jobs:` block
    - `src/main.ts` has no duplicate comment block
 
 **Criteria from issue list:**
-- [x] `worker.ts` imports `JobWorkerModule`; boots NestJS app context without HTTP listener
+- [x] `src/worker.ts` imports `JobWorkerModule` + composes `AppModule`; boots NestJS app context without HTTP listener (#513)
 - [x] Config block has five default pools with `reserved: true` on `events_*` three
 - [x] `just test-baseline` passes
 - [x] `job-orchestration.schema.ejs.t` rendered with `multiTenant: false` emits a schema file with NO `tenantId` column and NO references to `tenant_id`; rendered with `multiTenant: true` emits the column with the `// scaffold-time conditional — see JOB-8` comment (Q1 resolved 2026-04-19)
@@ -275,7 +298,7 @@ No Docker required. Hygen invocation tested via baseline fixture in CI.
 - **No upgrade path needed** — no existing users; fresh-install is the only path
 - **Does not** generate user-job handler classes — ADR-022 explicitly rejects jobs-as-YAML
 - **Does not** modify `src/main.ts` beyond commented block — uncommenting = consumer decision
-- `worker.ts` uses hard-coded `@shared/subsystems/jobs` import path — non-standard `paths.subsystems` config would produce wrong path; flagged as known limitation, not blocking; follow-up can make path template-variable-driven
+- ~~`worker.ts` uses hard-coded `@shared/subsystems/jobs` import path~~ **Resolved by #513.** The worker's `JobWorkerModule` import now routes through the ADR-037 mode-aware resolver (package → `@pattern-stack/codegen/runtime/subsystems/jobs/index`, vendored → `@shared/subsystems/jobs/index`); `AppModule` is imported relatively. (`workerPath`/`mainTsPath` still hard-code `src/`; threading `paths.backend_src` into this resolver remains out of scope — it would move both together.)
 
 ## Open Questions (non-blocking)
 

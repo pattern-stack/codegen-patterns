@@ -119,7 +119,7 @@ function quoteOpts(opts: Record<string, unknown>): string {
  * barrel. Only handles the value shapes that appear under
  * `jobs.extensions.bullmq` (strings, numbers, booleans, nested objects).
  */
-function jsonToTs(value: unknown): string {
+export function jsonToTs(value: unknown): string {
 	if (value === null || value === undefined) return 'undefined';
 	if (typeof value === 'string') return `'${value.replace(/'/g, "\\'")}'`;
 	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -153,7 +153,7 @@ type DrizzleJobsExt = {
  * Returns `undefined` when no knob is set (so the generated call stays minimal
  * and off-by-default). Only the drizzle/default backend reads these.
  */
-function drizzleJobsExtensions(
+export function drizzleJobsExtensions(
 	backend: string,
 	cfg: Record<string, unknown> | undefined,
 ): DrizzleJobsExt | undefined {
@@ -181,7 +181,7 @@ function drizzleJobsExtensions(
  * emits the enqueue notify) and `JobWorkerModule.forRoot` (so the spawned worker
  * holds the listener + honors `pollIntervalMs`).
  */
-function drizzleExtensionsClause(
+export function drizzleExtensionsClause(
 	ext: DrizzleJobsExt | undefined,
 	key: 'extensions' | 'domainModuleExtensions',
 ): string {

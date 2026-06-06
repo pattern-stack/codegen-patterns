@@ -6,13 +6,17 @@
  *   - multi_tenant: true honored
  *   - worker_mode: 'standalone' honored
  *   - custom `paths.subsystems` flows into schemaPath
- *   - workerExists: '' when worker.ts absent, 'true' when present
+ *   - workerExists: '' when src/worker.ts absent, 'true' when present
+ *   - jobWorkerModuleImport is mode-aware (package vs vendored) — #513
+ *   - workerForRootOpts mirrors the embedded composer's backend/extension
+ *     clauses with mode:standalone first + allPools last — #513
  *   - localsToHygenArgs serialises booleans safely (skip_if contract)
  */
 import { describe, expect, test } from 'bun:test';
 import path from 'node:path';
 
 import {
+	encodeWorkerForRootOpts,
 	localsToHygenArgs,
 	resolveJobsScaffoldLocals,
 	type JobsScaffoldLocals,
@@ -39,7 +43,17 @@ describe('resolveJobsScaffoldLocals', () => {
 		expect(locals.appName).toBe('project-fixture');
 		expect(locals.mainTsPath).toBe(path.resolve(CWD, 'src/main.ts'));
 		expect(locals.configPath).toBe(path.resolve(CWD, 'codegen.config.yaml'));
-		expect(locals.workerPath).toBe(path.resolve(CWD, 'worker.ts'));
+		// #513: worker now lands at src/worker.ts (inside the default tsconfig
+		// include, next to app.module.ts).
+		expect(locals.workerPath).toBe(path.resolve(CWD, 'src', 'worker.ts'));
+		// #513: default (no `runtime` key) is package mode (ADR-037), and the
+		// standalone forRoot defaults to the bare drizzle shape.
+		expect(locals.jobWorkerModuleImport).toBe(
+			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
+		);
+		expect(locals.workerForRootOpts).toBe(
+			"{ mode: 'standalone', allPools: true }",
+		);
 		// Default derives from `backend_src` (fallback 'src') when
 		// `paths.subsystems` is unset — matches `project init` layout.
 		expect(locals.schemaPath).toBe(
@@ -121,6 +135,82 @@ describe('resolveJobsScaffoldLocals', () => {
 		expect(bogus.workerMode).toBe('embedded');
 	});
 
+	test('jobWorkerModuleImport: package mode (default) resolves the package runtime subpath', () => {
+		// No `runtime` key → package mode (ADR-037). The JobWorkerModule is NOT on
+		// the top-level `/subsystems` barrel; it resolves via the per-subsystem
+		// runtime index.
+		const pkg = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: null,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(pkg.jobWorkerModuleImport).toBe(
+			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
+		);
+	});
+
+	test('jobWorkerModuleImport: vendored mode resolves the @shared jobs barrel', () => {
+		const vendored = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: { runtime: 'vendored' } as any,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(vendored.jobWorkerModuleImport).toBe(
+			'@shared/subsystems/jobs/index',
+		);
+	});
+
+	test('workerForRootOpts: drizzle default → mode:standalone + allPools only', () => {
+		const drizzleDefault = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: null,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(drizzleDefault.workerForRootOpts).toBe(
+			"{ mode: 'standalone', allPools: true }",
+		);
+	});
+
+	test('workerForRootOpts: drizzle listen_notify/poll_interval knobs flow into domainModuleExtensions', () => {
+		const withKnobs = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: {
+				jobs: {
+					backend: 'drizzle',
+					extensions: {
+						drizzle: { listen_notify: true, poll_interval_ms: 500 },
+					},
+				},
+			} as any,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		// mode first, allPools last, knobs mirrored as camelCase between them.
+		expect(withKnobs.workerForRootOpts).toBe(
+			"{ mode: 'standalone', domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } }, allPools: true }",
+		);
+	});
+
+	test('workerForRootOpts: bullmq backend threads backend + its extension block', () => {
+		const bullmq = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: {
+				jobs: {
+					backend: 'bullmq',
+					extensions: { bullmq: { redis_url: 'redis://localhost:6379' } },
+				},
+			} as any,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(bullmq.workerForRootOpts).toBe(
+			"{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: { redis_url: 'redis://localhost:6379' } }, allPools: true }",
+		);
+	});
+
 	test('custom paths.subsystems flows into schemaPath', () => {
 		const locals = resolveJobsScaffoldLocals({
 			cwd: CWD,
@@ -136,7 +226,7 @@ describe('resolveJobsScaffoldLocals', () => {
 		);
 	});
 
-	test('workerExists only probes worker.ts at project root', () => {
+	test('workerExists only probes src/worker.ts', () => {
 		const probed: string[] = [];
 		const locals = resolveJobsScaffoldLocals({
 			cwd: CWD,
@@ -147,7 +237,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			},
 			readFile: () => null,
 		});
-		expect(probed).toEqual([path.resolve(CWD, 'worker.ts')]);
+		expect(probed).toEqual([path.resolve(CWD, 'src', 'worker.ts')]);
 		expect(locals.workerExists).toBe(true);
 	});
 
@@ -203,7 +293,10 @@ describe('localsToHygenArgs', () => {
 		mainTsPath: '/abs/src/main.ts',
 		configPath: '/abs/codegen.config.yaml',
 		workerExists: false,
-		workerPath: '/abs/worker.ts',
+		workerPath: '/abs/src/worker.ts',
+		jobWorkerModuleImport:
+			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
+		workerForRootOpts: "{ mode: 'standalone', allPools: true }",
 		schemaPath: '/abs/shared/subsystems/jobs/job-orchestration.schema.ts',
 		mainHookInjected: false,
 	};
@@ -238,11 +331,36 @@ describe('localsToHygenArgs', () => {
 			'--configPath',
 			'--workerExists',
 			'--workerPath',
+			'--jobWorkerModuleImport',
+			'--workerForRootOpts',
 			'--schemaPath',
 			'--mainHookInjected',
 		]) {
 			expect(args).toContain(flag);
 		}
+	});
+
+	test('jobWorkerModuleImport passes through verbatim; workerForRootOpts is base64-encoded', () => {
+		const args = localsToHygenArgs(base);
+		const importIdx = args.indexOf('--jobWorkerModuleImport');
+		expect(importIdx).toBeGreaterThanOrEqual(0);
+		expect(args[importIdx + 1]).toBe(
+			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
+		);
+		// #513: the TS-literal opts are base64-encoded across the hygen arg
+		// boundary (yargs would otherwise shred the `{ … }` syntax). The encoded
+		// value must round-trip back to the source string.
+		const optsIdx = args.indexOf('--workerForRootOpts');
+		expect(optsIdx).toBeGreaterThanOrEqual(0);
+		const encoded = args[optsIdx + 1];
+		expect(encoded).toBe(
+			encodeWorkerForRootOpts("{ mode: 'standalone', allPools: true }"),
+		);
+		expect(Buffer.from(encoded, 'base64').toString('utf-8')).toBe(
+			"{ mode: 'standalone', allPools: true }",
+		);
+		// The encoded form must NOT contain raw braces/colons that yargs mangles.
+		expect(encoded).not.toContain('{');
 	});
 
 	test('localsToHygenArgs serialises mainHookInjected empty-string when false', () => {
@@ -258,7 +376,7 @@ describe('localsToHygenArgs', () => {
 
 	test('paths pass through as absolute', () => {
 		const args = localsToHygenArgs(base);
-		expect(args).toContain('/abs/worker.ts');
+		expect(args).toContain('/abs/src/worker.ts');
 		expect(args).toContain('/abs/src/main.ts');
 		expect(args).toContain('/abs/codegen.config.yaml');
 		expect(args).toContain('/abs/shared/subsystems/jobs/job-orchestration.schema.ts');
