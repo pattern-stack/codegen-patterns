@@ -39,7 +39,15 @@
  * tracks reverse-resolution (local → external) at read; until then the find side
  * cannot supply the external key either. See Find-side reshaping below.
  *
- * Policy methods (delete semantics, per-field exclusions) are #491/#490 scope.
+ * Policy methods — #490 wires the two common YAML knobs:
+ * - `integration.sink.delete: soft|tombstone|noop` — `noop` emits the logged-no-op
+ *   body (silent `return null;`); `soft`/`tombstone` delegate to the repo (the repo
+ *   config boolean carries the distinction). Absent → `'delegate'` (unchanged behavior).
+ * - `integration.sink.exclude_fields: [field, ...]` — excluded fields are absent from
+ *   `copyThroughFields` (the shared input to write object AND find view). They stay
+ *   on the projection type — the write surface shrinks, the projection does not.
+ *   Drop-from-writeColumns is the no-clobber mechanism (spec §Exclusion).
+ * The arbitrary-code long tail stays the author-subclass seam (#491 sink-seam-split).
  *
  * ## Find-side reshaping (generated vs. author seam) — #488
  *
@@ -137,7 +145,10 @@ export interface SinkEmitInput {
   /** Bare provider slug bound at construction (`google`, `hubspot`). */
   provider: string;
   /** Copy-through scalar columns — the entity's `fields:` block (FK columns
-   *  excluded), exactly as the repo template's `writeFields`. */
+   *  AND any `integration.sink.exclude_fields` entries excluded), exactly as
+   *  the repo template's `writeFields` after #490 exclusion is applied.
+   *  Excluded fields are absent here AND from the #488 find view (shared input
+   *  — symmetric absence on both sides, spec §Find-side). */
   copyThroughFields: SinkCopyThroughField[];
   /** External FK join-keys — one per belongs_to, exactly as the repo template's
    *  `writeFkFields`. */
@@ -162,6 +173,23 @@ export interface SinkEmitInput {
    *  => rel.camelField)` from `projectionFields` in `buildIntegrationSurface`
    *  (`prompt-extension.js:940-943`). Defaults to empty when omitted. */
   localFkColumns?: SinkCopyThroughField[];
+  /**
+   * Resolved delete behavior for the sink BODY (#490).
+   *
+   * - `'delegate'` — default; emit `return this.repo.softDeleteByExternalId(...)`.
+   *   Both `soft` and `tombstone` YAML knob values map here (the distinction is
+   *   the REPO config boolean — `softDelete: true/false` — not the sink body).
+   * - `'noop'` — emit a silent `return null;` body with a doc comment. The
+   *   sink short-circuits; the repo is never called for the delete path.
+   *
+   * Absent knob defaults to `'delegate'` (preserves today's exact behavior —
+   * spec Nit 1: the absent→delegate sink default and the repo's !!hasSoftDelete
+   * default are independent and both default-safe; they compose to current
+   * behavior when the knob is omitted).
+   *
+   * Default: `'delegate'` when omitted.
+   */
+  deleteMode?: 'delegate' | 'noop';
 }
 
 // ============================================================================
@@ -284,6 +312,25 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   }
   const findViewBody = findViewLines.map((l) => `  ${l}`).join("\n");
 
+  // softDeleteByExternalId body (#490 delete knob):
+  //   'delegate' (default) → repo delegation (unchanged behavior).
+  //   'noop'              → silent return null; + comment explains intent.
+  // The sink constructor has no logger param (would widen the assembly binding).
+  // A log line is #491-adjacent; see spec OQ2. Silent noop is correct for #490.
+  const deleteBody =
+    (input.deleteMode ?? "delegate") === "noop"
+      ? // Noop: lines are at the method-body indent level (4 spaces).
+        // The template already prepends 4 spaces before ${deleteBody}; all
+        // continuation lines after the first need a newline + 4 spaces.
+        [
+          `// delete:noop (YAML integration.sink.delete: noop) — tombstone-preserving:`,
+          `// an upstream delete signal is a no-op here; the repo row is left intact.`,
+          `// Returns null → the orchestrator records an audit noop. Logger injection`,
+          `// is #491 scope (seam-split); this generated body is intentionally silent.`,
+          `return null;`,
+        ].join("\n    ")
+      : `return this.repo.softDeleteByExternalId(externalId, this.provider);`;
+
   return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running codegen
 // detects the sentinel above and SKIPS this file — your edits are safe.
@@ -349,7 +396,7 @@ ${writeBody}
   }
 
   async softDeleteByExternalId(_userId: string, externalId: string): Promise<{ id: string } | null> {
-    return this.repo.softDeleteByExternalId(externalId, this.provider);
+    ${deleteBody}
   }
 }
 `;

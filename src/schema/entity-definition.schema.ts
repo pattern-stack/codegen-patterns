@@ -646,12 +646,47 @@ export const ProviderIntegrationSchema = z.object({
 
 export type ProviderIntegration = z.infer<typeof ProviderIntegrationSchema>;
 
+// ============================================================================
+// Sink Policy (per-entity, lives under integration.sink)
+// ============================================================================
+
+/**
+ * Per-entity sink policy knobs (schema → parser → emitter, #490).
+ *
+ * Attached to the `integration:` block as `integration.sink` so the knobs live
+ * alongside the provider/surface config that drives the same integration layer.
+ *
+ * - `delete` — tri-state delete policy:
+ *   - `soft`      → repo `softDelete: true`  (set deletedAt)
+ *   - `tombstone` → repo `softDelete: false` (null externalId/provider)
+ *   - `noop`      → sink short-circuits, returns null; repo config left at !!hasSoftDelete default.
+ *   Absent (no `.default`) → preserves current behavior: `!!hasSoftDelete`.
+ *   DO NOT add a `.default()` here — it would silently flip every soft_delete-free entity.
+ *
+ * - `exclude_fields` — string array of field names to drop from the copy-through
+ *   write surface (writeColumns/writeFields AND copyThroughFields). Validated by
+ *   superRefine on EntityDefinitionSchema: must be declared copy-through scalars
+ *   (not FK columns, not user_id). Excluded fields are absent from the write
+ *   surface entirely (no-clobber by construction) and from the #488 find view
+ *   (shared copyThroughFields input — symmetrically absent on both sides so the
+ *   differ never compares them; see spec §Find-side).
+ */
+const SinkPolicySchema = z.object({
+  delete: z
+    .enum(['soft', 'tombstone', 'noop'])
+    .optional(), // NO .default() — see default fence in spec §Goal
+  exclude_fields: z.array(z.string()).optional(),
+}).strict();
+
+export type SinkPolicy = z.infer<typeof SinkPolicySchema>;
+
 /**
  * Top-level integration block: Electric SQL + named provider configs
  */
 export const IntegrationConfigSchema = z.object({
   electric: z.boolean().optional().default(false),
   providers: z.record(z.string(), ProviderIntegrationSchema).optional(),
+  sink: SinkPolicySchema.optional(),
 });
 
 export type IntegrationConfig = z.infer<typeof IntegrationConfigSchema>;
@@ -925,6 +960,53 @@ export const EntityDefinitionSchema = z
           code: 'custom',
           path: ['detection', provider],
           message: `Provider '${provider}' used in detection: but not declared in integration.providers. Known providers: ${[...declared].join(', ')}`,
+        });
+      }
+    }
+  })
+  .superRefine((entity, ctx) => {
+    // Validate integration.sink.exclude_fields: every name must be a declared
+    // copy-through scalar field — not a FK column and not user_id.
+    // Both are author errors that silently corrupt the write surface — reject loud.
+    const excludeFields = entity.integration?.sink?.exclude_fields;
+    if (!excludeFields || excludeFields.length === 0) return;
+
+    const declaredFields = new Set(Object.keys(entity.fields ?? {}));
+
+    // Collect FK column names (belongs_to foreign_key values).
+    const fkColumns = new Set<string>();
+    for (const rel of Object.values(entity.relationships ?? {})) {
+      if (rel.type === 'belongs_to' && typeof rel.foreign_key === 'string') {
+        fkColumns.add(rel.foreign_key);
+      }
+    }
+
+    for (let i = 0; i < excludeFields.length; i++) {
+      const name = excludeFields[i];
+
+      if (!declaredFields.has(name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['integration', 'sink', 'exclude_fields', i],
+          message: `exclude_fields: '${name}' is not a declared field. Declared fields: ${[...declaredFields].join(', ')}`,
+        });
+        continue;
+      }
+
+      if (fkColumns.has(name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['integration', 'sink', 'exclude_fields', i],
+          message: `exclude_fields: '${name}' is a FK column (belongs_to foreign_key). Excluding FK columns corrupts the FK-resolver path — exclude FK columns is not supported. Declare it in exclude_fields only for copy-through scalars.`,
+        });
+        continue;
+      }
+
+      if (name === 'user_id') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['integration', 'sink', 'exclude_fields', i],
+          message: `exclude_fields: 'user_id' cannot be excluded. It is used for user-scoping and EAV dual-write; excluding it would break those mechanisms.`,
         });
       }
     }

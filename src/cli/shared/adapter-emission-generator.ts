@@ -859,6 +859,15 @@ export interface EmitAdaptersEntity {
    *  the template's `hasTimestamps = behaviorNames.includes('timestamps')`
    *  (`prompt-extension.js:1108`). Optional; absent means no behaviors. */
   behaviors?: Array<string | { name: string; [key: string]: unknown }>;
+  /** Integration sink policy knobs (#490). The raw parsed entity definition
+   *  carries this after the schema change; `buildSinkInput` reads it to apply
+   *  the delete-mode and exclude_fields knobs at the sink derivation. */
+  integration?: {
+    sink?: {
+      delete?: 'soft' | 'tombstone' | 'noop';
+      exclude_fields?: string[];
+    };
+  };
 }
 
 export interface EmitAdaptersOptions {
@@ -1189,8 +1198,20 @@ function buildSinkInput(
     }
   }
 
+  // Per-field exclusion (#490): drop excluded fields from copyThroughFields.
+  // Match on snake_case `name` (the YAML key) — same convention as
+  // buildIntegrationSurface in prompt-extension.js. Multi-word fields
+  // (e.g. `conversation_external_id`) must match here; the excludeSet is keyed
+  // by the raw YAML snake_case name that the user declares in exclude_fields.
+  // Scope fence: touches ONLY copyThroughFields — NOT fkExternalKeys, NOT
+  // localFkColumns, NOT timestamps. Those are NOT copy-through scalars and
+  // excluding them would corrupt the projection-ordered find view (#488).
+  const excludeSet = new Set(def.integration?.sink?.exclude_fields ?? []);
+
   const copyThroughFields = Object.entries(fields)
-    .filter(([name]) => name !== "id" && !fkColumns.has(name))
+    .filter(
+      ([name]) => name !== "id" && !fkColumns.has(name) && !excludeSet.has(name),
+    )
     .map(([name, f]) => ({
       camelName: snakeToCamel(name),
       tsType: tsTypeFor(f.type, f.nullable),
@@ -1233,6 +1254,15 @@ function buildSinkInput(
     typeof b === "string" ? b === "timestamps" : b.name === "timestamps",
   );
 
+  // Delete-mode resolution (#490): map the YAML tri-state onto the sink's two-way
+  // body decision ('delegate' | 'noop'). The repo config boolean is a separate
+  // derivation in buildIntegrationSurface (prompt-extension.js); the sink only
+  // needs to know "delegate vs noop" — soft↔tombstone both delegate to the repo.
+  // Absent knob → 'delegate' (preserves today's exact behavior, spec Nit 1).
+  const deleteKnob = def.integration?.sink?.delete;
+  const deleteMode: SinkEmitInput["deleteMode"] =
+    deleteKnob === "noop" ? "noop" : "delegate";
+
   return {
     entityName: def.entity.name,
     entityClass: pascalFromSnake(def.entity.name),
@@ -1244,6 +1274,7 @@ function buildSinkInput(
     localFkColumns,
     hasTimestamps,
     repoImportSpecifier,
+    deleteMode,
   };
 }
 
