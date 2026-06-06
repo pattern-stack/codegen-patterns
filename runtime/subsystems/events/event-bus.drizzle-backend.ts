@@ -401,18 +401,34 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
 
     // The idempotency guard is the partial UNIQUE expression index
     // `idx_domain_events_schedule_slot` on (type, metadata->>'scheduleSlot').
-    // Drizzle 0.45's typed `onConflictDoNothing({ target })` only accepts
-    // columns, so it can't name an expression index — we instead let the
-    // insert run and treat a unique-violation (SQLSTATE 23505) as the
-    // already-materialised no-op. This is the exactly-one-per-slot invariant:
-    // a concurrent or repeat materialise of the same slot loses the race at
-    // the DB and reports `created: false`.
+    // Use a BARE (no-target) `ON CONFLICT DO NOTHING`: Drizzle 0.45's typed
+    // `onConflictDoNothing({ target })` only accepts columns so it can't NAME
+    // the expression index, but the no-arg form emits target-less
+    // `ON CONFLICT DO NOTHING`, which Postgres applies to ANY unique
+    // constraint/index — including this expression index. `.returning({ id })`
+    // then gives us the rowcount discriminator: zero rows back == the slot was
+    // already materialised (DO NOTHING fired), so `created: false`. This keeps
+    // the happy path off the exception channel — a repeat materialise no longer
+    // raises SQLSTATE 23505, so Postgres logs no scary `duplicate key value
+    // violates unique constraint` ERROR line on every colliding boot/tick.
+    //
+    // The unique-violation catch is retained as a fallback for the genuine
+    // concurrent-insert race window (two sessions clear the conflict check and
+    // both attempt the insert in the same instant) and for backends whose
+    // driver surfaces a 23505 rather than honouring DO NOTHING; in both cases
+    // it collapses to the same `created: false` no-op.
+    let inserted: Array<{ id: string }>;
     try {
-      await this.db.insert(domainEvents).values(values);
+      inserted = await this.db
+        .insert(domainEvents)
+        .values(values)
+        .onConflictDoNothing()
+        .returning({ id: domainEvents.id });
     } catch (err) {
       if (isUniqueViolation(err)) return { created: false };
       throw err;
     }
+    if (inserted.length === 0) return { created: false };
 
     // Wake the drainer for an already-due tick. A future slot waits for polling.
     if (spec.slotStart.getTime() <= Date.now()) {
