@@ -398,6 +398,31 @@ describe('buildSubsystemBarrel', () => {
 		);
 	});
 
+	test('jobs `extensions.drizzle` claim-heartbeat knobs (CLAIM-HB-1) thread into both forRoots', () => {
+		const out = buildSubsystemBarrel(
+			[inst('jobs')],
+			{
+				jobs: {
+					backend: 'drizzle',
+					worker_mode: 'embedded',
+					extensions: {
+						drizzle: {
+							stale_threshold_ms: 1_800_000,
+							stale_sweeper_interval_ms: 30_000,
+							claim_heartbeat_interval_ms: 120_000,
+						},
+					},
+				},
+			},
+			subsystemsRel,
+		);
+		// Snake_case YAML → camelCase runtime keys, on the embedded worker path.
+		expect(out.content).toContain('staleThresholdMs: 1800000');
+		expect(out.content).toContain('staleSweeperIntervalMs: 30000');
+		expect(out.content).toContain('claimHeartbeatIntervalMs: 120000');
+		expect(out.content).toContain('domainModuleExtensions: { drizzle:');
+	});
+
 	test('jobs drizzle extensions thread `pollIntervalMs` alone (listen_notify omitted → off by default)', () => {
 		const out = buildSubsystemBarrel(
 			[inst('jobs')],

@@ -59,6 +59,25 @@ export interface DrizzleBackendExtensions {
   listenNotify?: boolean;
   /** Polling interval (ms). Default 1000. */
   pollIntervalMs?: number;
+  /**
+   * CLAIM-HB-1 — stale-claim sweep interval (ms). How often each worker scans
+   * for `running` rows whose lease has expired. Default 60_000.
+   */
+  staleSweeperIntervalMs?: number;
+  /**
+   * CLAIM-HB-1 — stale-claim threshold (ms). A `running` row whose `claimed_at`
+   * has not been renewed within this window is presumed stranded by a dead
+   * worker and reset to `pending`. A LIVE worker renews the lease every
+   * `claimHeartbeatIntervalMs`, so this only catches genuine crashes. Default
+   * 300_000 (5 min).
+   */
+  staleThresholdMs?: number;
+  /**
+   * CLAIM-HB-1 — claim heartbeat interval (ms). How often a worker bumps
+   * `claimed_at` for its in-flight runs to keep them from being swept. Must be
+   * comfortably below `staleThresholdMs`. Default `staleThresholdMs / 3`.
+   */
+  claimHeartbeatIntervalMs?: number;
 }
 
 export interface JobsDomainModuleOptions {

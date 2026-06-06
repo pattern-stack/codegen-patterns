@@ -51,6 +51,10 @@ jobs:
     drizzle:
       # listen_notify: true          # LISTEN-NOTIFY-1: Postgres LISTEN/NOTIFY wakes the worker on enqueue-commit, alongside polling. Off by default; needs a direct (non-transaction-pooler) connection.
       poll_interval_ms: 1000
+      # ── Claim lease / heartbeat (CLAIM-HB-1) ──
+      # stale_threshold_ms: 300000          # dead-worker recovery window (5 min). NOT a max-handler bound — the heartbeat protects live runs.
+      # stale_sweeper_interval_ms: 60000    # how often the sweeper scans for stranded rows
+      # claim_heartbeat_interval_ms: 100000 # lease-renewal cadence (default = stale_threshold_ms / 3)
     # bullmq:                        # Reserved slot — backend not yet implemented
     #   bull_board:
     #     enabled: true
@@ -159,6 +163,10 @@ interface JobsDomainModuleOptions {
     drizzle?: {
       listenNotify?: boolean;
       pollIntervalMs?: number;
+      // CLAIM-HB-1 — lease tuning. All optional.
+      staleThresholdMs?: number;          // dead-worker recovery window. Default 300_000.
+      staleSweeperIntervalMs?: number;    // sweeper scan cadence. Default 60_000.
+      claimHeartbeatIntervalMs?: number;  // lease renewal cadence. Default staleThresholdMs / 3.
     };
     // bullmq?: ...  // Phase 6+
   };
@@ -201,7 +209,7 @@ Tenant-aware fair queuing is Phase 6 polish; Phase 1 is FIFO within pool.
 ## Horizontal scale notes
 
 - **Handler upsert** under concurrent boots uses `ON CONFLICT (type) DO UPDATE SET … , updated_at = now()` (JOB-3 OQ-3). Last-writer-wins is safe because all instances of the same binary produce identical metadata.
-- **Stale sweeper** is per-worker; each `UPDATE ... WHERE claimed_at < threshold` is self-protecting. No leader election. See `orchestrator-and-worker.md` §"Stale-claim sweeper".
+- **Stale sweeper** is per-worker; each `UPDATE ... WHERE claimed_at < threshold` is self-protecting. No leader election. A live worker renews `claimed_at` for its in-flight runs (the CLAIM-HB-1 heartbeat), so the sweeper only recovers genuinely dead-worker rows. See `orchestrator-and-worker.md` §"Claim heartbeat" + §"Stale-claim sweeper".
 - **BullMQ queue naming** (once BullMQ backend lands): if two apps share a Redis, default queue names collide. A `jobs.queue_prefix` knob is noted in ADR-022 §"Open implementation questions" as a future addition. Not in Phase 1.
 
 ## Events-lane cross-reference

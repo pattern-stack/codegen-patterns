@@ -134,24 +134,43 @@ function jsonToTs(value: unknown): string {
 }
 
 /**
- * LISTEN-NOTIFY-1 — extract the drizzle extension knobs (`listen_notify`,
- * `poll_interval_ms`) from `jobs.extensions.drizzle` and map them to the
- * camelCase runtime shape. Returns `undefined` when neither knob is set (so the
- * generated call stays minimal and off-by-default). Only the drizzle/default
- * backend reads these.
+ * Camel-cased shape of the drizzle jobs backend extension knobs that flow into
+ * the generated `forRoot` calls. Snake_case YAML keys map 1:1 to these.
+ */
+type DrizzleJobsExt = {
+	listenNotify?: boolean;
+	pollIntervalMs?: number;
+	staleSweeperIntervalMs?: number;
+	staleThresholdMs?: number;
+	claimHeartbeatIntervalMs?: number;
+};
+
+/**
+ * LISTEN-NOTIFY-1 / CLAIM-HB-1 — extract the drizzle extension knobs from
+ * `jobs.extensions.drizzle` (`listen_notify`, `poll_interval_ms`,
+ * `stale_sweeper_interval_ms`, `stale_threshold_ms`,
+ * `claim_heartbeat_interval_ms`) and map them to the camelCase runtime shape.
+ * Returns `undefined` when no knob is set (so the generated call stays minimal
+ * and off-by-default). Only the drizzle/default backend reads these.
  */
 function drizzleJobsExtensions(
 	backend: string,
 	cfg: Record<string, unknown> | undefined,
-): { listenNotify?: boolean; pollIntervalMs?: number } | undefined {
+): DrizzleJobsExt | undefined {
 	if (backend !== 'drizzle') return undefined;
 	const drizzle = (cfg?.extensions as { drizzle?: Record<string, unknown> } | undefined)
 		?.drizzle;
 	if (!drizzle) return undefined;
-	const out: { listenNotify?: boolean; pollIntervalMs?: number } = {};
+	const out: DrizzleJobsExt = {};
 	if (typeof drizzle.listen_notify === 'boolean') out.listenNotify = drizzle.listen_notify;
 	if (typeof drizzle.poll_interval_ms === 'number')
 		out.pollIntervalMs = drizzle.poll_interval_ms;
+	if (typeof drizzle.stale_sweeper_interval_ms === 'number')
+		out.staleSweeperIntervalMs = drizzle.stale_sweeper_interval_ms;
+	if (typeof drizzle.stale_threshold_ms === 'number')
+		out.staleThresholdMs = drizzle.stale_threshold_ms;
+	if (typeof drizzle.claim_heartbeat_interval_ms === 'number')
+		out.claimHeartbeatIntervalMs = drizzle.claim_heartbeat_interval_ms;
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -163,7 +182,7 @@ function drizzleJobsExtensions(
  * holds the listener + honors `pollIntervalMs`).
  */
 function drizzleExtensionsClause(
-	ext: { listenNotify?: boolean; pollIntervalMs?: number } | undefined,
+	ext: DrizzleJobsExt | undefined,
 	key: 'extensions' | 'domainModuleExtensions',
 ): string {
 	if (!ext) return '';
@@ -181,7 +200,7 @@ function quoteBullmqDomainOpts(input: {
 	backend: string;
 	multiTenant: boolean;
 	bullExt: Record<string, unknown> | undefined;
-	drizzleExt?: { listenNotify?: boolean; pollIntervalMs?: number } | undefined;
+	drizzleExt?: DrizzleJobsExt | undefined;
 }): string {
 	const { backend, multiTenant, bullExt, drizzleExt } = input;
 	if (backend === 'bullmq' && bullExt) {
