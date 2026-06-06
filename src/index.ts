@@ -186,3 +186,12 @@ export {
 // Importing this barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge / Metadata).
 export * from './patterns';
+
+// Re-export the field-metadata vocabulary contract (ADR-040): the EAV
+// `field_definitions.data_type` → frontend `FieldType` mapping. The same
+// constant is emitted into generated apps' `fields/field-meta.ts`; this export
+// serves tooling that consumes `@pattern-stack/codegen` directly.
+export {
+	EAV_DATA_TYPE_TO_FIELD_TYPE,
+	type EavDataType,
+} from './emitters/frontend/field-meta';

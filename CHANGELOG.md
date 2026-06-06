@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-06-06
+
+**FieldMeta enrichment (ADR-040, Phase A of type-aware rendering).** The
+frontend emitter's per-entity field metadata now carries enough vocabulary for
+consumers to build metadata-driven rendering (the swe-brain renderer kit
+consumes this in its Phase B). All additive.
+
+### Added
+
+- **Full `ui_*` hint passthrough.** `ui_group`, `ui_visible`, `ui_placeholder`,
+  `ui_help`, and `ui_format` were accepted by the schema but dropped before
+  emission. They now survive parser → derivation → emitted `FieldMeta`
+  (`group` / `visible` / `placeholder` / `help` / `format`). `format` was
+  previously only ever the hardcoded timestamp `{ dateFormat: 'relative' }`;
+  authored `ui_format` now passes through.
+- **Key-field curation (qField parity).** New YAML keys `ui_key_field` +
+  `ui_key_field_order` surface as `isKeyField` / `keyFieldOrder` on the row
+  (the qField / EAV `field_definitions` names — one vocabulary, multiple
+  homes), and `<camel>Metadata` gains `keyFields`: the ordered curated
+  field-name list (sorted by `keyFieldOrder`, declaration order for ties) that
+  drives card/preview field selection.
+- **Family/behavior common-field bundles** (timestamps precedent): the
+  `soft_delete` behavior now contributes a `deletedAt` row
+  (datetime / tertiary / relative); entities whose declared fields carry the
+  synced/integrated shape (both `external_id` AND `provider`) get
+  `group: 'external_sync'` defaulted onto those fields (plus
+  `provider_metadata` when present) — a derivation default only, authored
+  `ui_group` always wins. Behavior-contributed columns (not in the parsed
+  field map) still get no rows: the emitter never emits a row for a column it
+  cannot see.
+- **EAV `data_type` → `FieldType` contract.** `EAV_DATA_TYPE_TO_FIELD_TYPE`
+  (`string→text, integer/decimal→number, boolean→boolean, date→date,
+  datetime→datetime, json→json, reference→reference, picklist→enum,
+  multipicklist→enum`; multi-select rendering is consumer-side) is exported
+  from the package root AND emitted into every generated
+  `fields/field-meta.ts`, rendered from the same source object so the copies
+  cannot drift. See ADR-040 for the convergence story
+  (qField/CatalogField ↔ codegen FieldMeta ↔ EAV `field_definitions`).
+
+### Tests
+
+- emit-fields suite: hint passthrough (incl. author-override-beats-default and
+  string escaping), key-field curation + `keyFields` ordering, soft_delete /
+  external-sync bundles, EAV contract completeness vs the emitted copy.
+- Frontend golden fixtures now exercise the new surface; the snapshot locks
+  curation ordering (`first_name` before `email` despite declaration order),
+  the `deletedAt` bundle, and the `external_sync` group default.
+
 ## [0.20.2] — 2026-06-06
 
 Two consumer-found fixes (dogfooding swe-brain on 0.20.1).

@@ -1,6 +1,12 @@
 # Golden frontend fixture — explicit-plural entity (persons, not "persons" derived).
 # Exercises registry-resolved naming: FK consumers must use `persons` from THIS
 # YAML, never a re-pluralization of the string "person".
+#
+# Also exercises the ADR-040 FieldMeta enrichment surface:
+# - ui-hint passthrough (ui_group / ui_visible / ui_placeholder / ui_help)
+# - key-field curation (ui_key_field / ui_key_field_order — first_name is
+#   ordered BEFORE email despite declaration order, locking the sort)
+# - the soft_delete behavior bundle (deletedAt row).
 entity:
   name: person
   plural: persons
@@ -14,19 +20,30 @@ fields:
     required: true
     index: true
     foreign_key: tenants.id
+    ui_group: system
+    ui_visible: false
 
   email:
     type: string
     required: true
     max_length: 255
     index: true
+    ui_placeholder: name@example.com
+    ui_help: Primary contact address.
+    ui_key_field: true
+    ui_key_field_order: 1
 
   first_name:
     type: string
     required: true
     max_length: 100
+    ui_key_field: true
+    ui_key_field_order: 0
 
   last_name:
     type: string
     required: true
     max_length: 100
+
+behaviors:
+  - soft_delete
