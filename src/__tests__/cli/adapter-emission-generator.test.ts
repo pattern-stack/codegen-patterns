@@ -423,13 +423,21 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
       "import { MeetingsModule } from '@modules/meetings/meetings.module';",
     );
 
-    // Sink (emit-once) + tokens file.
+    // Sink (two-file seam, #491) — base (@generated) + subclass (emit-once).
+    const baseSinkPath = join(outRoot, 'calendar/sinks/meeting.sink.generated.ts');
     const sinkPath = join(outRoot, 'calendar/sinks/meeting.sink.ts');
+    expect(existsSync(baseSinkPath)).toBe(true);
     expect(existsSync(sinkPath)).toBe(true);
+    // Base is on result.written (@generated bucket), subclass on scaffoldsWritten.
+    expect(res.written).toContain(baseSinkPath);
     expect(res.scaffoldsWritten).toContain(sinkPath);
+    // Base carries the mapping (title: record.title lives in defaultMeetingBuildWrite).
+    const base = readFileSync(baseSinkPath, 'utf-8');
+    expect(base).toContain('abstract class MeetingSinkBase');
+    expect(base).toContain('title: record.title,');
+    // Subclass carries the two seam wirings (class + extends).
     const sink = readFileSync(sinkPath, 'utf-8');
-    expect(sink).toContain('export class MeetingSink');
-    expect(sink).toContain('title: record.title,');
+    expect(sink).toContain('export class MeetingSink extends MeetingSinkBase');
 
     const tokensPath = join(outRoot, 'calendar/calendar-integration.tokens.ts');
     expect(existsSync(tokensPath)).toBe(true);

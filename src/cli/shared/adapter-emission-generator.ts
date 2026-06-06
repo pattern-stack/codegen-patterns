@@ -49,7 +49,7 @@ import type {
   ResolvedFilter,
 } from "../../../runtime/subsystems/integration";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
-import { generateDefaultSink, type SinkEmitInput } from "./sink-emission-generator";
+import { generateSinkBase, generateSinkSubclass, type SinkEmitInput } from "./sink-emission-generator";
 import {
   generateAssemblyModule,
   generateIntegrationAggregator,
@@ -1068,15 +1068,31 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           aliases,
         });
 
-        // Sink (emit-once scaffold) — provider-agnostic; one per entity.
-        const sinkPath = join(sinksDir, `${entityName}.sink.ts`);
-        if (existsSync(sinkPath)) {
-          result.scaffoldsSkipped.push(sinkPath);
+        // Sink (two-file seam, #491) — provider-agnostic; one per entity.
+        //
+        // Base file (<entity>.sink.generated.ts) — @generated, always regenerated
+        // via writeIfChanged (no existsSync gate). A YAML field change reflows the
+        // mapping here on every run. Goes onto result.written (the @generated bucket,
+        // alongside assembly modules / tokens).
+        //
+        // Subclass file (<entity>.sink.ts) — emit-once (existsSync-skip). Author
+        // overrides survive. Goes onto scaffoldsWritten / scaffoldsSkipped.
+        //
+        // The adapter scaffold sentinel (adapter-emission-generator.ts:203/562/975-976)
+        // is a SEPARATE CONCERN — left untouched here.
+        const sinkInput = buildSinkInput(def!, surface, slugs[0], loc.repoImportSpecifier);
+        const basePath = join(sinksDir, `${entityName}.sink.generated.ts`);
+        const baseContent = generateSinkBase({ ...sinkInput, mode });
+        if (!opts.dryRun) writeIfChanged(basePath, baseContent);
+        result.written.push(basePath);
+
+        const subclassPath = join(sinksDir, `${entityName}.sink.ts`);
+        if (existsSync(subclassPath)) {
+          result.scaffoldsSkipped.push(subclassPath);
         } else {
-          const sinkInput = buildSinkInput(def!, surface, slugs[0], loc.repoImportSpecifier);
-          const sinkContent = generateDefaultSink({ ...sinkInput, mode });
-          if (!opts.dryRun) writeFile(sinkPath, sinkContent);
-          result.scaffoldsWritten.push(sinkPath);
+          const subclassContent = generateSinkSubclass({ ...sinkInput, mode });
+          if (!opts.dryRun) writeFile(subclassPath, subclassContent);
+          result.scaffoldsWritten.push(subclassPath);
         }
 
         // Per-(entity, provider) assembly module (@generated) + token entry.
