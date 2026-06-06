@@ -135,6 +135,13 @@ compare:
 test-family:
     bun test "{{justfile_directory()}}/test/scaffold/tests/crm-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
 
+# Tarball smoke (#190): build + pack every publishable package, install the
+# tarballs into a fresh tmp project via npm, verify the consumer contract
+# (files manifest, exports, bins, peer ranges). Catches the
+# works-from-checkout-broken-from-tarball class. Gates `just publish-ci`.
+test-post-publish:
+    bun test/post-publish/run-tarball-smoke.ts
+
 # Run scaffold integration tests (requires Docker)
 test-integration:
     bun test/scaffold/run-integration.ts
@@ -280,43 +287,81 @@ publish *flags:
 
     mise exec -- bun install
 
-    # Always build the root first — its dist/ is what the surface packages'
-    # declaration (.d.ts) builds resolve `@pattern-stack/codegen/subsystems`
-    # against, whether or not the root itself is (re)published this run.
-    mise exec -- bun run build
+    # The smoke gate + publish loop live in publish-ci — same path CI takes
+    # on merge to main; this recipe only adds the pristine-worktree wrapper.
+    mise exec -- just publish-ci {{flags}}
 
-    # Publish one package iff its version isn't already on npm — independent
-    # versioning (ADR-036 §8), so releasing one surface package doesn't force a
-    # root or sibling bump. Already-published versions are skipped, not errors.
-    publish_pkg() {
+# Publish the CURRENT CHECKOUT to npm — the CI entry point (runs on every
+# push to main; see .github/workflows/ci.yml `publish` job). Assumes deps are
+# installed and bun/npm are on PATH. Locally, prefer `just publish`, which
+# wraps this in a pristine origin/main worktree.
+#
+# Gate: the tarball smoke (#190) builds + packs everything and verifies the
+# consumer contract BEFORE anything uploads — a bad tarball aborts the run.
+#
+# Then publish one package iff its version isn't already on npm — independent
+# versioning (ADR-036 §8), so releasing one surface package doesn't force a
+# root or sibling bump. Already-published versions are skipped, not errors.
+# This registry check is also what makes "publish on every merge" safe: a
+# merge without a version bump is a fast no-op.
+#
+# Pass `--dry-run` to pack + validate every tarball WITHOUT uploading:
+#   just publish-ci --dry-run
+publish-ci *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Pass 1 — registry check. Emit "dir|name|ver" for every publishable
+    # package whose version isn't on npm yet; skip messages go to stderr so
+    # they reach the user without polluting the list. Root first — its dist/
+    # is what the surface packages' .d.ts builds resolve
+    # @pattern-stack/codegen/subsystems against, so publish order matters.
+    consider() {
         local dir="$1" name="$2" ver="$3" on_npm
-        on_npm=$( ( cd "${dir}" && mise exec -- npm view "${name}@${ver}" version 2>/dev/null ) || true )
+        on_npm=$(npm view "${name}@${ver}" version 2>/dev/null || true)
         if [ "${on_npm}" = "${ver}" ]; then
-            echo "↷ skip ${name}@${ver} (already on npm)"
-            return 0
+            echo "↷ skip ${name}@${ver} (already on npm)" >&2
+        else
+            echo "${dir}|${name}|${ver}"
         fi
-        echo "Publishing ${name}@${ver} from ${dir}"
-        ( cd "${dir}" && mise exec -- npm publish {{flags}} )
-        echo "✓ ${name}@${ver}"
     }
 
-    # 1. Root package.
-    publish_pkg "." "@pattern-stack/codegen" "${version}"
+    list_unpublished() {
+        consider "." "@pattern-stack/codegen" "$(jq -r .version package.json)"
+        # Each opted-in workspace package (publishConfig.access: public), at its
+        # own version. Private / unmarked (graph-components, generated api/db) skip.
+        local pkgjson dir name ver priv access
+        for pkgjson in packages/*/package.json; do
+            dir=$(dirname "${pkgjson}")
+            name=$(jq -r '.name' "${pkgjson}")
+            ver=$(jq -r '.version' "${pkgjson}")
+            priv=$(jq -r '.private // false' "${pkgjson}")
+            access=$(jq -r '.publishConfig.access // ""' "${pkgjson}")
+            if [ "${priv}" = "true" ] || [ "${access}" != "public" ]; then
+                echo "↷ skip ${name} (not opted in: private=${priv} access=${access:-none})" >&2
+                continue
+            fi
+            consider "${dir}" "${name}" "${ver}"
+        done
+    }
 
-    # 2. Each opted-in workspace package (publishConfig.access: public), at its
-    #    own version. Private / unmarked (graph-components, generated api/db) skip.
-    for pkgjson in packages/*/package.json; do
-        dir=$(dirname "${pkgjson}")
-        name=$(jq -r '.name' "${pkgjson}")
-        ver=$(jq -r '.version' "${pkgjson}")
-        priv=$(jq -r '.private // false' "${pkgjson}")
-        access=$(jq -r '.publishConfig.access // ""' "${pkgjson}")
-        if [ "${priv}" = "true" ] || [ "${access}" != "public" ]; then
-            echo "↷ skip ${name} (not opted in: private=${priv} access=${access:-none})"
-            continue
-        fi
-        publish_pkg "${dir}" "${name}" "${ver}"
-    done
+    to_publish=$(list_unpublished)
+    if [ -z "${to_publish}" ]; then
+        echo "✓ Nothing to publish — every package version is already on npm."
+        exit 0
+    fi
+
+    # Gate: tarball smoke (#190) — builds + packs everything, installs into a
+    # fresh tmp project, verifies the consumer contract. A bad tarball aborts
+    # here, before anything uploads.
+    bun test/post-publish/run-tarball-smoke.ts
+
+    # Pass 2 — publish, in list order (root before surface packages).
+    while IFS='|' read -r dir name ver; do
+        echo "Publishing ${name}@${ver} from ${dir}"
+        ( cd "${dir}" && npm publish {{flags}} )
+        echo "✓ ${name}@${ver}"
+    done <<< "${to_publish}"
 
     echo "✓ Done."
 
