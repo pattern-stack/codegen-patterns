@@ -20,6 +20,10 @@
  *      (dist/runtime, raw runtime/*.ts, templates/, consumer-skills/),
  *      every `exports` entry imports under node, both bins run `--help`.
  *   4. Verifies each surface package's `.` and `./testing` exports import.
+ *   5. Runs the full consumer workflow FROM the tarball (test/smoke/run-smoke.ts
+ *      in SMOKE_TARBALL mode): project init → entity new --all → subsystem
+ *      installs → tsc → /docs-json. Contents checks (1-4) prove the files
+ *      ship; this proves they work (0.3.0 / 0.4.1 / 0.6.0-#266 bug classes).
  *
  * Run via `just test-post-publish`; gates uploads inside `just publish-ci`.
  * Self-contained on a fresh checkout (builds everything it packs).
@@ -171,6 +175,25 @@ for (const pkg of surfacePkgs) {
     const res = tryRun(['node', '--input-type=module', '-e', `await import('${spec}')`], projectDir);
     check(`import('${spec}')`, res.ok, res.ok ? undefined : res.output);
   }
+}
+
+// ─── 6. Consumer-workflow smoke from the tarball (#190 full scope) ──────────
+
+// Re-run the end-to-end smoke harness in tarball mode: project init →
+// entity new --all → subsystem installs → tsc → /docs-json, with the CLI,
+// templates, vendored runtime, and examples/ all coming from the packed
+// tarball instead of the checkout. This is what actually exercises
+// runtimeRoot() resolution (0.3.0), vendoring from runtime/*.ts (0.4.1),
+// and template-time src/ imports (0.6.0 / #266) — the contents checks above
+// prove the files ship; this proves they work.
+console.log('\nConsumer-workflow smoke from tarball (test/smoke/run-smoke.ts, SMOKE_TARBALL):');
+{
+  const res = spawnSync('bun', [join(ROOT, 'test/smoke/run-smoke.ts')], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, SMOKE_TARBALL: tarballs[0] },
+  });
+  check('consumer workflow from tarball (init → entity new → subsystems → tsc → openapi)', res.status === 0);
 }
 
 // ─── Summary ─────────────────────────────────────────────────────────────────

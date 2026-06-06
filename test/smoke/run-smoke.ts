@@ -28,6 +28,27 @@ import path from 'node:path';
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
 
+// #190 tarball mode: when SMOKE_TARBALL points at a packed
+// @pattern-stack/codegen tarball, the smoke installs it into the tmp project
+// and runs the CLI from node_modules — so the CLI, hygen templates, vendored
+// runtime sources, and examples/ all come from what consumers actually
+// receive, not the repo checkout. This is the only mode that catches the
+// works-from-checkout-broken-from-tarball class (0.3.0 runtimeRoot, 0.4.1
+// missing runtime/*.ts, 0.6.0 prompt.js importing unshipped src/ — #266).
+// Run under bun, matching real consumers (`.js`→`.ts` extension resolution
+// inside templates only exists in bun).
+const TARBALL = process.env.SMOKE_TARBALL ?? '';
+if (TARBALL && !fs.existsSync(TARBALL)) {
+	console.error(`SMOKE_TARBALL does not exist: ${TARBALL}`);
+	process.exit(2);
+}
+const INSTALLED_CLI = 'node_modules/@pattern-stack/codegen/dist/src/cli/index.js';
+
+/** CLI invocation prefix — repo checkout by default, installed package in tarball mode. */
+function cli(tmpDir: string): string {
+	return TARBALL ? `bun ${path.join(tmpDir, INSTALLED_CLI)}` : `bun ${CLI_PATH}`;
+}
+
 // CGP-62: `--scenario` selects which fixture set the smoke generates against.
 // `default` (no flag) preserves the historical behavior. `relationship`
 // swaps in `test/smoke/fixtures/crm/` (account self-ref + cross-entity
@@ -196,9 +217,12 @@ function filterConsumerErrors(output: string, tmpDir: string): string[] {
 		if (vendoredConnectionsPattern.test(line)) {
 			continue;
 		}
-		// Also tolerate the `@pattern-stack/codegen/runtime/subsystems/auth`
-		// barrel import — the smoke project doesn't `bun add` the package.
-		if (line.includes("'@pattern-stack/codegen/")) {
+		// Tolerate the `@pattern-stack/codegen/runtime/subsystems/auth`
+		// barrel import — but ONLY in checkout mode, where the smoke project
+		// doesn't `bun add` the package. In tarball mode (#190) the package IS
+		// installed, so these imports must resolve; filtering them there would
+		// mask exactly the bug class the tarball smoke exists to catch.
+		if (!TARBALL && line.includes("'@pattern-stack/codegen/")) {
 			continue;
 		}
 
@@ -369,6 +393,14 @@ async function main(): Promise<number> {
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
 
+		// 2.5. Tarball mode (#190): install the packed @pattern-stack/codegen —
+		// every subsequent CLI call runs from node_modules, exercising the
+		// published files manifest instead of the checkout.
+		if (TARBALL) {
+			run(`bun add ${TARBALL}`, tmpDir);
+			log(`tarball mode: CLI runs from ${INSTALLED_CLI}`);
+		}
+
 		// 3. Run `codegen project init --yes --with-tsconfig`
 		//    tsconfig.json already exists (bun init), so init will merge aliases.
 		//    `--runtime vendored` (ADR-037): this smoke is the VENDORED consumer
@@ -376,7 +408,7 @@ async function main(): Promise<number> {
 		//    connections (which vendor more), and compiles against `@shared/*`. The
 		//    new `package` default would skip vendoring and break the base-class
 		//    imports, so the mode is pinned to match what this flow exercises.
-		run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime vendored`, tmpDir);
+		run(`${cli(tmpDir)} project init --yes --with-tsconfig --runtime vendored`, tmpDir);
 
 		// 4. Copy smoke fixtures into entities/.
 		const fixtureFiles = fs.readdirSync(FIXTURES_DIR).filter((f) => f.endsWith('.yaml'));
@@ -402,10 +434,10 @@ async function main(): Promise<number> {
 		// `clpExistingHasMany` check and ensures many() calls are emitted for
 		// all targets, not just those that happen to be generated first.
 		// (Mirrors the baseline test's two-pass strategy in test/run-test.ts.)
-		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+		run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
 		if (SCENARIO === 'relationship') {
 			log('second pass (relationship scenario — seeds clpExistingHasMany)');
-			run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the
@@ -427,7 +459,7 @@ async function main(): Promise<number> {
 		// No siblings installed in this smoke — observability must typecheck
 		// standalone because its @Optional() sibling injections degrade to
 		// empty results when ports are absent (per OBS-5 contract).
-		run(`bun ${CLI_PATH} subsystem install observability`, tmpDir);
+		run(`${cli(tmpDir)} subsystem install observability`, tmpDir);
 
 		// Verify install artifacts appeared.
 		const configYamlPath = path.join(tmpDir, 'codegen.config.yaml');
@@ -453,7 +485,7 @@ async function main(): Promise<number> {
 		//   - `auth:` block into codegen.config.yaml;
 		//   - AuthModule.forRoot TODO into app.module.ts;
 		//   - INTEGRATION_TOKEN_ENCRYPTION_KEY + AUTH_REDIRECT_URI_BASE into .env.config.
-		run(`bun ${CLI_PATH} subsystem install auth`, tmpDir);
+		run(`${cli(tmpDir)} subsystem install auth`, tmpDir);
 
 		const configYamlAfterAuth = fs.readFileSync(configYamlPath, 'utf8');
 		if (!configYamlAfterAuth.includes('auth:')) {
@@ -480,7 +512,7 @@ async function main(): Promise<number> {
 		//   - examples/auth-integrations/definitions/entities/connection.yaml →
 		//       <paths.entities>/integration.yaml (defaults to definitions/entities/);
 		//   - ConnectionsAuthModule TODO into app.module.ts.
-		run(`bun ${CLI_PATH} subsystem install auth-integrations`, tmpDir);
+		run(`${cli(tmpDir)} subsystem install auth-integrations`, tmpDir);
 
 		// #303 fix #5: vendor target is `<modules>/connections/` with
 		// subfolders (`adapters/`, `facade/`, `oauth/use-cases/`). Assert

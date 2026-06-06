@@ -137,7 +137,9 @@ test-family:
 
 # Tarball smoke (#190): build + pack every publishable package, install the
 # tarballs into a fresh tmp project via npm, verify the consumer contract
-# (files manifest, exports, bins, peer ranges). Catches the
+# (files manifest, exports, bins, peer ranges), then run the FULL consumer
+# workflow from the tarball (run-smoke.ts in SMOKE_TARBALL mode: project init
+# → entity new → subsystem installs → tsc → /docs-json). Catches the
 # works-from-checkout-broken-from-tarball class. Gates `just publish-ci`.
 test-post-publish:
     bun test/post-publish/run-tarball-smoke.ts
