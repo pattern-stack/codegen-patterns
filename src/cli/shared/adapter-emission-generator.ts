@@ -1194,7 +1194,7 @@ export function fkWriteKey(
  * nullable-aware tsType); FK external keys are one `<relationKey>ExternalId` per
  * `belongs_to`. Uses {@link fkWriteKey} for the derivation so the write-key
  * matches the template's write-type member name for all three FK shapes.
- * The `generateDefaultSink` emitter throws if `pattern` is not
+ * The `generateSinkBase`/`generateSinkSubclass` emitters throw if `pattern` is not
  * `Integrated` — the caller pre-filters, so this is only reached for Integrated.
  */
 export function buildSinkInput(

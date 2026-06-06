@@ -42,7 +42,6 @@ import { describe, it, expect } from "bun:test";
 import {
   generateSinkBase,
   generateSinkSubclass,
-  generateDefaultSink,
   type SinkEmitInput,
 } from "../../cli/shared/sink-emission-generator";
 import { fkWriteKey } from "../../cli/shared/adapter-emission-generator";
@@ -947,19 +946,3 @@ describe("generateSinkBase — #490 exclusion does not affect localFkColumns or 
   });
 });
 
-// ============================================================================
-// generateDefaultSink — legacy shim compatibility
-// ============================================================================
-
-describe("generateDefaultSink — legacy shim (delegates to generateSinkBase)", () => {
-  it("returns the same output as generateSinkBase", () => {
-    const input = contactInput();
-    expect(generateDefaultSink(input)).toBe(generateSinkBase(input));
-  });
-
-  it("still hard-errors for non-Integrated pattern", () => {
-    expect(() =>
-      generateDefaultSink(contactInput({ pattern: "Base" })),
-    ).toThrow(/pattern: Integrated/);
-  });
-});

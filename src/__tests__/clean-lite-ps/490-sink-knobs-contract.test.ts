@@ -42,7 +42,7 @@ import {
 import {
   buildSinkInput,
 } from '../../cli/shared/adapter-emission-generator';
-import { generateDefaultSink } from '../../cli/shared/sink-emission-generator';
+import { generateSinkBase } from '../../cli/shared/sink-emission-generator';
 
 // ============================================================================
 // Shared fixtures
@@ -86,34 +86,28 @@ const messageDef = {
 };
 
 /** Extract the defaultMessageToCanonicalView (or any entity's) view function body from
- *  the @generated base file. In the #491 two-file seam, the view lives in the standalone
- *  default function (not in findByExternalId — that method just calls this.toCanonicalView).
- *  Falls back to slicing from `async findByExternalId(` for backwards-compat with old callers.
+ *  the @generated base file. The view lives in the standalone default function
+ *  `default<E>ToCanonicalView` — not in `findByExternalId`, which just calls
+ *  `this.toCanonicalView(row)`.
  */
 function findBody(out: string): string {
   // #491 Shape C: the view is in the standalone function `function default<E>ToCanonicalView`.
   const viewFnMarker = 'ToCanonicalView(';
   const fnStart = out.indexOf(viewFnMarker);
-  if (fnStart !== -1) {
-    // Find the function's closing `}\n` at top-level indentation.
-    const bodyStart = out.indexOf('{', fnStart);
-    // Walk from bodyStart to find the matching closing brace.
-    let depth = 0;
-    let i = bodyStart;
-    while (i < out.length) {
-      if (out[i] === '{') depth++;
-      else if (out[i] === '}') {
-        depth--;
-        if (depth === 0) break;
-      }
-      i++;
+  // Find the function's closing `}` at top-level indentation.
+  const bodyStart = out.indexOf('{', fnStart);
+  // Walk from bodyStart to find the matching closing brace.
+  let depth = 0;
+  let i = bodyStart;
+  while (i < out.length) {
+    if (out[i] === '{') depth++;
+    else if (out[i] === '}') {
+      depth--;
+      if (depth === 0) break;
     }
-    return out.slice(bodyStart, i + 1);
+    i++;
   }
-  // Legacy fallback: old single-file format used findByExternalId as the anchor.
-  const start = out.indexOf('async findByExternalId(');
-  const end = out.indexOf('\n  }\n', start);
-  return out.slice(start, end + 4);
+  return out.slice(bodyStart, i + 1);
 }
 
 // ============================================================================
@@ -172,7 +166,7 @@ describe('#490 contract (a): both derivations exclude conversationExternalId fro
   // Emitted write object (now in defaultMessageBuildWrite standalone function) must not
   // include the excluded field. #491: no more `const write: ...` in a single-method body;
   // the write body is inside the `defaultMessageBuildWrite` function in the @generated base.
-  const sinkOut = generateDefaultSink(sinkInput); // shim → generateSinkBase
+  const sinkOut = generateSinkBase(sinkInput);
 
   it('emitted write function does not enumerate conversationExternalId', () => {
     // Extract defaultMessageBuildWrite function body (up to the next export function).
@@ -249,7 +243,7 @@ describe('#490 contract (c): find VIEW KEEPS excluded conversationExternalId as 
     expect(names).toContain('conversationExternalId');
   });
 
-  const sinkOut = generateDefaultSink(sinkInput);
+  const sinkOut = generateSinkBase(sinkInput);
 
   it('find view ENUMERATES conversationExternalId: row.conversationExternalId (bare passthrough)', () => {
     expect(findBody(sinkOut)).toContain('conversationExternalId: row.conversationExternalId,');
@@ -341,7 +335,7 @@ describe('#490 contract (d): resolveSoftDeleteBoolean + deleteMode agree', () =>
       { ...messageDef, integration: { sink: { delete: 'noop' } } } as Parameters<typeof buildSinkInput>[0],
       'messaging', 'slack', '../messaging/message.repository',
     );
-    const sinkOut = generateDefaultSink(sinkInput);
+    const sinkOut = generateSinkBase(sinkInput);
     const deleteBody = sinkOut.slice(
       sinkOut.indexOf('async softDeleteByExternalId('),
       sinkOut.indexOf('\n  }\n', sinkOut.indexOf('async softDeleteByExternalId(')),
@@ -356,7 +350,7 @@ describe('#490 contract (d): resolveSoftDeleteBoolean + deleteMode agree', () =>
       { ...messageDef, integration: { sink: { delete: 'soft' } } } as Parameters<typeof buildSinkInput>[0],
       'messaging', 'slack', '../messaging/message.repository',
     );
-    const sinkOut = generateDefaultSink(sinkInput);
+    const sinkOut = generateSinkBase(sinkInput);
     expect(sinkOut).toContain(
       'return this.repo.softDeleteByExternalId(externalId, this.provider);',
     );
