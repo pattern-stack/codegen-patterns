@@ -196,6 +196,7 @@ Auto-detect: `just scan` generates a config from project conventions.
 - **Unit tests**: `just test-unit` — base classes, subsystems, scanner, schema (~200ms)
 - **Integration tests**: `just test-family` / `just test-integration` — real Postgres via Docker
 - **Smoke test**: `just test-smoke` — end-to-end scaffold + generate + typecheck on a fresh tmp project (~60-120s)
+- **Tarball smoke**: `just test-post-publish` — pack all publishable packages, install into a fresh tmp project via npm, verify the consumer contract (files manifest, exports, bins, peer ranges), then re-run the smoke harness with the CLI/templates/runtime coming from the installed tarball (`SMOKE_TARBALL` mode). Gates every CI publish via `just publish-ci`. Catches the works-from-checkout-broken-from-tarball class (#190)
 - **Baseline tests**: `just test-baseline` — generate from `test/fixtures/` into repo-root `packages/api/` and compare to `test/baseline/` snapshots. Two-pass generation (first pass seeds `packages/api/src/domain/*.entity.ts` files so second-pass `targetExists` checks resolve cross-entity references). Start from pristine state — the runner wipes the generated directories on each run.
 - **CI**: `just test-all` (unit + baseline + smoke) runs on every PR to `main` and every push to `main` (`.github/workflows/ci.yml`)
 - **241+ total tests**, all passing
