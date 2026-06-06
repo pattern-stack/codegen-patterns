@@ -15,6 +15,12 @@ import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
 import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
+import { resolveRuntimeMode, runtimeImport } from './runtime-import.js';
+import {
+	drizzleJobsExtensions,
+	drizzleExtensionsClause,
+	jsonToTs,
+} from './subsystem-barrel-generator.js';
 
 export interface JobsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -29,8 +35,20 @@ export interface JobsScaffoldLocals {
 	configPath: string;
 	/** Existence check for the standalone worker entrypoint; used by `skip_if`. */
 	workerExists: boolean;
-	/** Where `worker.ejs.t` writes the worker bootstrap. */
+	/** Where `worker.ejs.t` writes the worker bootstrap. Sits at `src/worker.ts`
+	 * (next to `app.module.ts`) so it lands inside the default tsconfig include
+	 * and the relative `./app.module` import resolves (#513). */
 	workerPath: string;
+	/** Mode-aware import specifier for `JobWorkerModule` (ADR-037, #513). Package
+	 * mode → `@pattern-stack/codegen/runtime/subsystems/jobs/index`; vendored →
+	 * `@shared/subsystems/jobs/index`. The only mode-dependent import the worker
+	 * carries — `AppModule` is imported relatively. */
+	jobWorkerModuleImport: string;
+	/** Pre-serialised `JobWorkerModule.forRoot(<opts>)` options literal for the
+	 * standalone worker (#513). Mirrors the embedded composer's backend +
+	 * extension clauses, with `mode: 'standalone'` first and `allPools: true`
+	 * last (reserved-lane drain). */
+	workerForRootOpts: string;
 	/** Where `job-orchestration.schema.ejs.t` writes the scaffolded schema. */
 	schemaPath: string;
 	/** Sentinel-based idempotence flag for `main-hook.ejs.t`'s `skip_if`. */
@@ -83,7 +101,12 @@ export function resolveJobsScaffoldLocals(
 
 	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
 
-	const workerPath = path.resolve(cwd, 'worker.ts');
+	// #513: the worker sits at `src/worker.ts`, next to `app.module.ts`. The old
+	// repo-root location escaped the default `include: ["src/**/*"]` tsconfig so
+	// the file was never typechecked, and the relative `./app.module` import the
+	// AppModule-composition (D1) needs only resolves from `src/`. Sibling
+	// convention with `mainTsPath = src/main.ts`.
+	const workerPath = path.resolve(cwd, 'src', 'worker.ts');
 	const mainTsPath = path.resolve(cwd, 'src/main.ts');
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const schemaPath = path.resolve(
@@ -104,9 +127,62 @@ export function resolveJobsScaffoldLocals(
 		configPath,
 		workerExists: fileExists(workerPath),
 		workerPath,
+		jobWorkerModuleImport: resolveJobWorkerModuleImport(config),
+		workerForRootOpts: resolveWorkerForRootOpts(jobsBlock),
 		schemaPath,
 		mainHookInjected,
 	};
+}
+
+/**
+ * #513 — resolve the mode-aware `JobWorkerModule` import for the standalone
+ * worker (ADR-037). Routes through the shared `runtimeImport` resolver against
+ * `subsystems/jobs/index` (NOT the top-level `/subsystems` barrel, which
+ * re-exports only `EventsModule` in package mode — see `makeModuleImport`):
+ *   - package  → `@pattern-stack/codegen/runtime/subsystems/jobs/index`
+ *   - vendored → `@shared/subsystems/jobs/index`
+ */
+function resolveJobWorkerModuleImport(config: CodegenConfig | null): string {
+	return runtimeImport(resolveRuntimeMode(config), 'subsystems/jobs/index');
+}
+
+/**
+ * #513 — build the `JobWorkerModule.forRoot(<opts>)` options literal for the
+ * standalone worker. Mirrors the embedded composer's backend + extension
+ * clauses (`subsystem-barrel-generator.ts` jobs composer) so a standalone
+ * worker doesn't silently lose `listen_notify` / `poll_interval_ms` (drizzle)
+ * or `backend: 'bullmq'` + its extension block. Two invariants distinguish it
+ * from the embedded branch: `mode: 'standalone'` is always first, and
+ * `allPools: true` is always last — the standalone process is the sole worker,
+ * so it MUST drain the reserved `events_*` lanes (the bridge fanout footgun).
+ *
+ * Shapes:
+ *   - drizzle default → `{ mode: 'standalone', allPools: true }`
+ *   - drizzle + knobs → `{ mode: 'standalone', domainModuleExtensions: { drizzle: {...} }, allPools: true }`
+ *   - bullmq          → `{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: {...} }, allPools: true }`
+ */
+function resolveWorkerForRootOpts(
+	jobsBlock: Record<string, unknown>,
+): string {
+	const backend = (jobsBlock.backend as string | undefined) ?? 'drizzle';
+	const parts = [`mode: 'standalone'`];
+	if (backend === 'bullmq') {
+		parts.push(`backend: 'bullmq'`);
+		const bullExt = (
+			jobsBlock.extensions as { bullmq?: Record<string, unknown> } | undefined
+		)?.bullmq;
+		if (bullExt) {
+			parts.push(`domainModuleExtensions: { bullmq: ${jsonToTs(bullExt)} }`);
+		}
+	} else {
+		const workerExtClause = drizzleExtensionsClause(
+			drizzleJobsExtensions(backend, jobsBlock),
+			'domainModuleExtensions',
+		);
+		if (workerExtClause) parts.push(workerExtClause);
+	}
+	parts.push(`allPools: true`);
+	return `{ ${parts.join(', ')} }`;
 }
 
 function normaliseWorkerMode(raw: unknown): 'embedded' | 'standalone' {
@@ -119,10 +195,24 @@ function normaliseMultiTenant(raw: unknown): boolean {
 }
 
 /**
+ * #513 — `workerForRootOpts` is a TS object literal (`{ mode: 'standalone', … }`).
+ * Hygen's yargs-based CLI parser interprets the `{ … : … }` syntax as nested
+ * object/dot-notation and shreds it (the value reaches `prompt.js` as `{`).
+ * Base64 over the arg boundary keeps the literal opaque to yargs; `prompt.js`
+ * decodes it back to the source string before EJS interpolation. The resolver's
+ * `workerForRootOpts` field stays the plain, unit-tested string — only the argv
+ * crossing is encoded.
+ */
+export function encodeWorkerForRootOpts(opts: string): string {
+	return Buffer.from(opts, 'utf-8').toString('base64');
+}
+
+/**
  * Serialise locals to the `--flag value` argv pairs Hygen consumes. Booleans
  * become `'true'` / `'false'`; numeric / string values pass through. Paths
  * are forwarded as absolute so Hygen's `to:` front-matter resolves relative
- * to them, not to Hygen's `cwd`.
+ * to them, not to Hygen's `cwd`. `workerForRootOpts` is base64-encoded — see
+ * `encodeWorkerForRootOpts`.
  */
 export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 	return [
@@ -133,6 +223,8 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 		'--configPath', locals.configPath,
 		'--workerExists', workerSkipValue(locals.workerExists),
 		'--workerPath', locals.workerPath,
+		'--jobWorkerModuleImport', locals.jobWorkerModuleImport,
+		'--workerForRootOpts', encodeWorkerForRootOpts(locals.workerForRootOpts),
 		'--schemaPath', locals.schemaPath,
 		'--mainHookInjected', workerSkipValue(locals.mainHookInjected),
 	];

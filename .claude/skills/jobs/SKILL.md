@@ -58,7 +58,7 @@ runtime/subsystems/jobs/
   jobs-domain.module.ts              # JOB-5: DynamicModule wiring tokens
   job-worker.module.ts               # JOB-5: lifecycle, validator, registry scan
   pool-config.loader.ts              # JOB-5: reads codegen.config.yaml: jobs.pools
-templates/subsystem/jobs/            # JOB-6: main scaffold (worker.ts, main hook, schema)
+templates/subsystem/jobs/            # JOB-6: main scaffold (src/worker.ts, main hook, schema)
 templates/subsystem/jobs-config/     # #121 (F13): config-block inject, invoked independently
                                      #   - `subsystem install jobs --force` alone preserves an
                                      #     existing `jobs:` block

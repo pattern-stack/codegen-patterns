@@ -96,7 +96,7 @@ Field semantics:
 | `backend` | `JobsDomainModule.forRoot` | `'drizzle'` or `'memory'`. BullMQ is a reserved slot only. |
 | `extensions.<backend>.*` | Backend class during init | Each backend reads only its own key. Unknown keys for the active backend warn, don't error (core/extension principle — swap is non-destructive). |
 | `multi_tenant` | `JobsDomainModule.forRoot` | Threads `JOBS_MULTI_TENANT` token through. Default `false`. When `true`, service methods require `tenantId` (see JOB-8). |
-| `worker_mode` | Informational + scaffold hint | `embedded` means `JobWorkerModule` imported by `AppModule`; `standalone` means run `worker.ts` separately. Switching does not change generated code — both entrypoints are always emitted. |
+| `worker_mode` | Informational + scaffold hint | `embedded` means `JobWorkerModule` imported by `AppModule`; `standalone` means run `src/worker.ts` (`bun src/worker.ts`) separately. Switching does not change generated code — both entrypoints are always emitted. |
 | `pools.<name>.queue` | `JobWorker` | Identifier written into `job_run.pool`. Must be unique across pools. |
 | `pools.<name>.concurrency` | `JobWorker` | Per-process max in-flight. Horizontal scale multiplies. |
 | `pools.<name>.reserved` | `PoolConfigLoader` | Framework-only. User configs cannot enable. Framework pools cannot have it disabled. |
@@ -187,9 +187,9 @@ Both entrypoints are always scaffolded by JOB-6. The choice is operational.
 - Simplest deploy; good default for dev and small installs.
 - `jobs.worker_mode: embedded` in config is informational / hint.
 
-**Standalone** (run `worker.ts` as a separate process):
+**Standalone** (run `src/worker.ts` as a separate process — `bun src/worker.ts`):
 - `main.ts` does not import `JobWorkerModule`.
-- `worker.ts` boots a bare NestJS application context (no HTTP listener) with only `DatabaseModule` + `JobsDomainModule.forRoot(...)` + `JobWorkerModule.forRoot({ mode: 'standalone' })`.
+- `src/worker.ts` boots a NestJS application context (no HTTP listener) that imports the consumer's root `AppModule` (DI parity with the API process) + `JobWorkerModule.forRoot({ mode: 'standalone', allPools: true, … })`. It lands inside the default tsconfig `src/**` include so it is typechecked (#513).
 - Scale workers independently from the API; CPU spikes on one side don't stall the other.
 
 Switching is an operational change plus the config `worker_mode` toggle. **No regeneration needed — both files ship regardless.**

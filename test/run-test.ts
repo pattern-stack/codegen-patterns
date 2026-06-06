@@ -239,11 +239,11 @@ function runCodegen() {
   // under `runtime/subsystems/jobs/generated/` (already in OUTPUT_PATHS).
   //
   // The non-schema templates are muted by pointing their injection targets
-  // at a throwaway sandbox and pre-creating a `worker.ts` there so the
-  // `unless_exists: true` guard fires.
+  // at a throwaway sandbox and pre-creating `src/worker.ts` there so the
+  // `unless_exists: true` guard fires (#513: worker emits at src/worker.ts).
   const sandbox = join(ROOT, 'test/.jobs-baseline-sandbox');
   mkdirSync(join(sandbox, 'src'), { recursive: true });
-  writeFileSync(join(sandbox, 'worker.ts'), '// placeholder — keeps Hygen unless_exists satisfied\n');
+  writeFileSync(join(sandbox, 'src/worker.ts'), '// placeholder — keeps Hygen unless_exists satisfied\n');
   // main.ts and codegen.config.yaml are intentionally absent so the inject
   // templates print "Cannot inject" and exit non-zero? They don't: Hygen
   // logs the warning and continues. We verify this in the walkthrough.
@@ -269,7 +269,7 @@ function runCodegen() {
         `--mainTsPath "${join(sandbox, 'src/main.ts')}" ` +
         `--configPath "${join(sandbox, 'codegen.config.yaml')}" ` +
         `--workerExists true ` +
-        `--workerPath "${join(sandbox, 'worker.ts')}" ` +
+        `--workerPath "${join(sandbox, 'src/worker.ts')}" ` +
         `--schemaPath "${v.out}" ` +
         // Silence the `mainHookInjected is not defined` EJS error in
         // `templates/subsystem/jobs/main-hook.ejs.t`. The baseline's

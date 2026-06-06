@@ -13,7 +13,7 @@ Delivered by `JOB-1` through `JOB-8`:
 - Backends: Drizzle (production) + Memory (tests).
 - Base types: `JobHandlerBase`, `JobContext`, `@JobHandler`, `ParentClosePolicy`.
 - NestJS modules: `JobsDomainModule.forRoot()`, `JobWorkerModule.forRoot()`.
-- Worker entrypoints: embedded hook in `main.ts` + standalone `worker.ts`.
+- Worker entrypoints: embedded hook in `main.ts` + standalone `src/worker.ts`.
 - Pool config loader (five framework defaults + user pools).
 - Boot-time registry validator (Drizzle mode).
 - `scopeable: true` entity flag → generated `ScopeEntityType` TS union.
