@@ -30,6 +30,17 @@ jobs:
       #                            # are simply never received and the worker
       #                            # degrades to polling.
       poll_interval_ms: 1000       # interval-poll heartbeat (the wake fallback)
+      # ── Claim lease / heartbeat (CLAIM-HB-1) ──
+      # A live worker renews `claimed_at` for its in-flight runs every
+      # `claim_heartbeat_interval_ms`, so a legitimately long-running handler is
+      # NEVER swept; only a row whose worker died ages past
+      # `stale_threshold_ms` and is reset to `pending` by the sweeper. Raise the
+      # threshold only if you expect worker-crash recovery to wait longer; the
+      # heartbeat (not the threshold) is what protects long handlers.
+      # stale_threshold_ms: 300000          # dead-worker recovery window (5 min)
+      # stale_sweeper_interval_ms: 60000    # how often the sweeper scans
+      # claim_heartbeat_interval_ms: 100000 # lease renewal cadence
+      #                                     # (default = stale_threshold_ms / 3)
     # bullmq:                      # Example shape for Phase 6+ BullMQ backend.
     #   bull_board:                # Mount Bull Board admin UI.
     #     enabled: true

@@ -75,13 +75,14 @@ Note the per-row update is **self-protecting**: each `UPDATE ... WHERE status NO
 ### `onModuleInit`
 
 1. `setInterval(() => void this.pollAndProcess(), opts.pollIntervalMs ?? 1000)`.
-2. `setInterval(() => void this.sweepStaleClaims(), opts.staleSweeperIntervalMs ?? 60_000)`.
-3. Register SIGTERM handler → `this.gracefulStop(...)`.
+2. `setInterval(() => void this.renewClaims(), opts.claimHeartbeatIntervalMs ?? staleThresholdMs/3)` — the claim heartbeat (CLAIM-HB-1).
+3. `setInterval(() => void this.sweepStaleClaims(), opts.staleSweeperIntervalMs ?? 60_000)`.
+4. Register SIGTERM handler → `this.gracefulStop(...)`.
 
 `pollAndProcess()`:
 - If `shuttingDown` or `inFlight.size >= pool.concurrency`, return immediately.
 - `const claimed = await this.claimNext(pool.queue)`. If `null`, return.
-- Wrap `processRun(claimed)` in a promise, add to `inFlight`, remove in `.finally`.
+- Add `claimed.id` to `inFlightRunIds` (the heartbeat's renewal set), wrap `processRun(claimed)` in a promise, add to `inFlight`, and in `.finally` remove from BOTH sets. The id leaves the renewal set on every settle path (success/failure/release) so the heartbeat never bumps a run this worker no longer owns.
 
 ### The claim query
 
@@ -176,9 +177,21 @@ fn(stepId, fn, opts?) {
 
 **Step-clearing must be atomic with the run status reset.** See JOB-3 transaction-boundary table: replay memoization reset needs a transaction.
 
+## Claim heartbeat (CLAIM-HB-1)
+
+A live worker renews the lease on its in-flight runs so a long-running handler is not mistaken for a crash. `renewClaims()` fires every `claimHeartbeatIntervalMs` (default `staleThresholdMs / 3`) and, for the runs in `inFlightRunIds`, runs one UPDATE:
+
+```sql
+UPDATE job_run
+SET claimed_at = now(), updated_at = now()
+WHERE id IN (...) AND status = 'running';
+```
+
+The `status='running'` guard makes renewal a safe no-op for a run that was already swept-and-reclaimed elsewhere or has settled. No-ops cheaply (no query) when nothing is in flight. This is the fix for the dogfood incident where a 5-min stale threshold re-queued a multi-hour Gmail backfill every few minutes, spawning concurrent zombie walks. **Without the heartbeat the sweeper recovers LIVE work; with it, only dead-worker work.**
+
 ## Stale-claim sweeper
 
-Crashed workers strand their `claimed_at` rows. Each `JobWorker` runs an interval:
+Crashed workers strand their `claimed_at` rows — once the worker dies, `renewClaims` stops bumping its runs, so they age past the threshold. Each `JobWorker` runs an interval:
 
 ```sql
 UPDATE job_run
@@ -189,7 +202,9 @@ RETURNING id;
 
 Each `UPDATE` is atomic, and the `WHERE claimed_at < threshold` clause prevents double-recovery — once a row resets to `pending`, it no longer matches. Multiple workers running their own sweeper is safe (per JOB-3 OQ-2 resolution). No leader election needed.
 
-Invariant: **`staleThresholdMs >= 2 * max_handler_duration`.** Otherwise live work gets "recovered" mid-flight and runs twice. If your handler can legitimately run for hours, raise the threshold accordingly or split the work.
+Invariant (post CLAIM-HB-1): **`claimHeartbeatIntervalMs < staleThresholdMs`** (with margin for missed beats — the default `/3` leaves two). Handler duration is NO LONGER bounded by the threshold: a live worker renews the lease, so the threshold now bounds *dead-worker recovery latency*, not how long a handler may run. (The old `staleThresholdMs >= 2 × max_handler_duration` rule was the bug — it was unmet in practice and silently re-ran live work.) Tune via `jobs.extensions.drizzle.{stale_threshold_ms, stale_sweeper_interval_ms, claim_heartbeat_interval_ms}` — see `pools-and-config.md`.
+
+> **Residual gap (deferred):** there is no *fencing* yet. If a worker is paused long enough (GC, debugger, full event-loop stall) to miss every beat without dying, the sweeper can still reclaim its run, and the original attempt — when it un-pauses — will write its completion/steps with no token check. Fencing (a claim-token column guarding all writes) is the CLAIM-HB-1 follow-up — issue #501. The heartbeat eliminates the *common* case (long-but-healthy handlers); fencing closes the *pathological* stall case.
 
 `attempts` is **not** incremented by stale recovery — memoization is what protects already-completed steps. Treat sweep as "release the claim," not "count a failure."
 

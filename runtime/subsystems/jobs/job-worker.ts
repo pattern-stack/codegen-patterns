@@ -2,11 +2,12 @@
  * JobWorker — backend-agnostic tick loop for the job orchestration domain
  * (ADR-022, JOB-3).
  *
- * One worker instance per active pool. On `onModuleInit` it starts two
- * intervals: the poll loop (claim → process → repeat) and the stale-claim
- * sweeper. On `onModuleDestroy` / SIGTERM it drains in-flight work and
- * releases still-`running` rows back to `pending` so a replacement worker
- * can resume with step memoization intact.
+ * One worker instance per active pool. On `onModuleInit` it starts three
+ * intervals: the poll loop (claim → process → repeat), the claim heartbeat
+ * (CLAIM-HB-1 — renews `claimed_at` for in-flight runs so a long handler isn't
+ * swept), and the stale-claim sweeper. On `onModuleDestroy` / SIGTERM it drains
+ * in-flight work and releases still-`running` rows back to `pending` so a
+ * replacement worker can resume with step memoization intact.
  *
  * The claim query is the beating heart: `SELECT … FOR UPDATE SKIP LOCKED`
  * inside a single transaction. Multiple worker processes share the table
@@ -54,10 +55,29 @@ export interface JobWorkerOptions {
   /** Stale sweep interval in ms. Default 60_000. */
   staleSweeperIntervalMs?: number;
   /**
-   * Threshold beyond which a `running` row is presumed stranded by a
-   * crashed worker. Default 5 min. Must be >= 2× max handler duration.
+   * Threshold beyond which a `running` row whose `claimed_at` has NOT been
+   * renewed is presumed stranded by a crashed worker, and the sweeper resets
+   * it to `pending`. Default 5 min.
+   *
+   * With the claim heartbeat (CLAIM-HB-1) in place this is a *liveness*
+   * threshold — a live worker bumps `claimed_at` every
+   * `claimHeartbeatIntervalMs`, so a long-running-but-alive handler is NEVER
+   * swept; only a row whose worker died (process crash/SIGKILL, no clean
+   * shutdown reset) ages past the threshold. It therefore no longer needs to
+   * be `>= 2× max handler duration` — it just needs to exceed a few missed
+   * heartbeats (default leaves a 3× heartbeat margin).
    */
   staleThresholdMs?: number;
+  /**
+   * CLAIM-HB-1 — interval at which this worker bumps `claimed_at = now()` for
+   * every run it currently holds in flight (one batched UPDATE). This is the
+   * lease renewal that keeps a legitimately long-running handler from being
+   * swept by `sweepStaleClaims`. Default `staleThresholdMs / 3` so a row
+   * survives up to two missed renewals before the sweeper acts. MUST be
+   * comfortably less than `staleThresholdMs` or live runs will be re-queued
+   * mid-flight.
+   */
+  claimHeartbeatIntervalMs?: number;
   /** Max ms to wait for in-flight drain on SIGTERM. Default 30_000. */
   shutdownTimeoutMs?: number;
   /**
@@ -78,6 +98,12 @@ const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_STALE_SWEEPER_INTERVAL_MS = 60_000;
 const DEFAULT_STALE_THRESHOLD_MS = 5 * 60_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
+/**
+ * CLAIM-HB-1 — the heartbeat fires at `staleThresholdMs / DIVISOR`, leaving
+ * `DIVISOR - 1` missed-renewal margin before the sweeper presumes the worker
+ * dead. 3 gives two missed beats of slack while keeping the renewal cheap.
+ */
+const CLAIM_HEARTBEAT_DIVISOR = 3;
 
 const TERMINAL_STATUSES: JobRunRow['status'][] = [
   'completed',
@@ -172,6 +198,26 @@ export function buildStaleSweepQuery(
     .for('update', { skipLocked: true });
 }
 
+/**
+ * CLAIM-HB-1 — build the heartbeat renewal UPDATE. Bumps `claimed_at = now()`
+ * (and `updated_at`) for the given run IDs, but ONLY rows still `status =
+ * 'running'`: a row this worker thinks it owns may have been swept and
+ * reclaimed by another worker (now running elsewhere), or already moved to a
+ * terminal state — the status guard makes the renewal a safe no-op in both
+ * cases rather than resurrecting a lease the worker no longer holds. Exported so
+ * tests can inspect `.toSQL()` without a live DB.
+ */
+export function buildClaimRenewQuery(
+  db: DrizzleClient,
+  runIds: string[],
+  now: Date = new Date(),
+) {
+  return db
+    .update(jobRuns)
+    .set({ claimedAt: now, updatedAt: now })
+    .where(and(inArray(jobRuns.id, runIds), eq(jobRuns.status, 'running')));
+}
+
 // ─── Error serialisation ───────────────────────────────────────────────────
 
 function serialiseError(err: unknown, attempt: number, retryable: boolean) {
@@ -191,14 +237,25 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(JobWorker.name);
   private shuttingDown = false;
   private readonly inFlight = new Set<Promise<void>>();
+  /**
+   * CLAIM-HB-1 — the set of run IDs this worker currently has executing. The
+   * heartbeat renews `claimed_at` for exactly these; a run is added when its
+   * `processRun` is dispatched and removed when its execution settles (success,
+   * failure, retry-release, or concurrency-defer). Kept separate from
+   * `inFlight` (which tracks the wrapper Promises for drain) because the
+   * heartbeat needs the IDs, not the promises.
+   */
+  private readonly inFlightRunIds = new Set<string>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private sweeperTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sigtermHandled = false;
   private readonly sigtermHandler: () => void;
 
   private readonly pollIntervalMs: number;
   private readonly staleSweeperIntervalMs: number;
   private readonly staleThresholdMs: number;
+  private readonly claimHeartbeatIntervalMs: number;
   private readonly shutdownTimeoutMs: number;
 
   // LISTEN-NOTIFY-1 — dedicated listener + debounce state. `null` when
@@ -222,6 +279,12 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     this.staleSweeperIntervalMs =
       options.staleSweeperIntervalMs ?? DEFAULT_STALE_SWEEPER_INTERVAL_MS;
     this.staleThresholdMs = options.staleThresholdMs ?? DEFAULT_STALE_THRESHOLD_MS;
+    // CLAIM-HB-1 — default to a third of the stale threshold so a row tolerates
+    // two missed renewals before the sweeper acts. A consumer-supplied value is
+    // honored verbatim (it's their call if they want it tighter/looser).
+    this.claimHeartbeatIntervalMs =
+      options.claimHeartbeatIntervalMs ??
+      Math.max(1, Math.floor(this.staleThresholdMs / CLAIM_HEARTBEAT_DIVISOR));
     this.shutdownTimeoutMs =
       options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
     this.listenNotifyEnabled = options.listenNotify ?? false;
@@ -245,6 +308,12 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     this.sweeperTimer = setInterval(() => {
       void this.sweepStaleClaims();
     }, this.staleSweeperIntervalMs);
+    // CLAIM-HB-1 — renew the claim lease on in-flight runs so a legitimately
+    // long-running handler is not swept mid-flight. No-ops cheaply (no UPDATE)
+    // when nothing is in flight.
+    this.heartbeatTimer = setInterval(() => {
+      void this.renewClaims();
+    }, this.claimHeartbeatIntervalMs);
     process.on('SIGTERM', this.sigtermHandler);
 
     // LISTEN-NOTIFY-1 — start the wake listener ALONGSIDE the poll timer (never
@@ -342,6 +411,10 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.sweeperTimer);
       this.sweeperTimer = null;
     }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     process.removeListener('SIGTERM', this.sigtermHandler);
 
     await this.drainInFlight();
@@ -406,11 +479,21 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     if (!claimed) return;
 
     const run = claimed;
-    const promise = this.processRun(run).catch((err) => {
-      this.logger.error(
-        `processRun(${run.id}) unhandled: ${(err as Error).message}`,
-      );
-    });
+    // CLAIM-HB-1 — register the run as in-flight so the heartbeat renews its
+    // lease, and deregister the moment its execution settles (success, failure,
+    // retry-release, concurrency-defer — every path out of processRun). Held in
+    // a `finally` so an unhandled throw can't strand the id in the renew set and
+    // keep bumping `claimed_at` for a run this worker no longer owns.
+    this.inFlightRunIds.add(run.id);
+    const promise = this.processRun(run)
+      .catch((err) => {
+        this.logger.error(
+          `processRun(${run.id}) unhandled: ${(err as Error).message}`,
+        );
+      })
+      .finally(() => {
+        this.inFlightRunIds.delete(run.id);
+      });
     this.inFlight.add(promise);
     promise.finally(() => {
       this.inFlight.delete(promise);
@@ -487,6 +570,37 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
       });
     } catch (err) {
       this.logger.error(`sweepStaleClaims failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ============================================================================
+  // Claim heartbeat (CLAIM-HB-1)
+  // ============================================================================
+
+  /**
+   * Renew the claim lease on every run this worker currently has in flight by
+   * bumping `claimed_at = now()` in a single UPDATE. This is what keeps
+   * `sweepStaleClaims` from re-queueing a legitimately long-running handler:
+   * the sweeper only resets rows whose `claimed_at` has aged past the threshold,
+   * and a live worker keeps renewing. When the worker process dies, renewal
+   * stops, the row ages out, and the sweeper correctly recovers it — its
+   * documented "stranded by a crashed worker" intent.
+   *
+   * No-ops (no query) when nothing is in flight. The `status = 'running'` guard
+   * inside the UPDATE means a run that was swept-and-reclaimed elsewhere (or has
+   * already settled) is not touched.
+   */
+  async renewClaims(): Promise<void> {
+    if (this.shuttingDown) return;
+    const ids = [...this.inFlightRunIds];
+    if (ids.length === 0) return;
+    try {
+      await buildClaimRenewQuery(this.db, ids, new Date());
+    } catch (err) {
+      // Best-effort: a transient failure just means this beat was missed. The
+      // staleThreshold leaves several beats of slack before the sweeper acts,
+      // and the next beat retries.
+      this.logger.error(`renewClaims failed: ${(err as Error).message}`);
     }
   }
 

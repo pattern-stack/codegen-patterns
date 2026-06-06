@@ -261,6 +261,11 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
           this.options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS,
         pollIntervalMs: drizzleExt?.pollIntervalMs,
         listenNotify: drizzleExt?.listenNotify,
+        // CLAIM-HB-1 — lease tuning knobs. All optional; the worker defaults
+        // claimHeartbeatIntervalMs to staleThresholdMs/3 when omitted.
+        staleSweeperIntervalMs: drizzleExt?.staleSweeperIntervalMs,
+        staleThresholdMs: drizzleExt?.staleThresholdMs,
+        claimHeartbeatIntervalMs: drizzleExt?.claimHeartbeatIntervalMs,
       };
       const worker = this.options.workerFactory
         ? this.options.workerFactory(workerOptions)
