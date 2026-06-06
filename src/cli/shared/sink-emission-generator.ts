@@ -257,8 +257,7 @@ export function generateDefaultSink(input: SinkEmitInput): string {
     `    externalId: row.externalId,`,
   ];
   for (const f of input.copyThroughFields) {
-    const isJson =
-      f.tsType === "unknown" || f.tsType === "unknown | null";
+    const isJson = f.tsType.startsWith("unknown");
     if (isJson) {
       // SEAM (typed json): `unknown` passes through; typed-narrowing is author-owned.
       // When you widen the canonical to a concrete type (e.g. MyType[]), this line
