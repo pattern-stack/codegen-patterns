@@ -577,12 +577,13 @@ async function packageLeg(): Promise<number> {
 		// NOTE on the main.ts hook: the package-leg deliberately does NOT assert
 		// the embedded-mode hook landed in the init-emitted main.ts. That
 		// injection is pre-existingly broken (independent of #517 — same in
-		// vendored mode): Hygen's `inject: after: "NestFactory.create"` silently
-		// no-ops when the target file contains a `{ … : true }` boolean object
-		// literal AFTER the anchor — and `project init`'s main.ts carries
-		// `swaggerOptions: { persistAuthorization: true }`. The hook's injection
+		// vendored mode), and the root cause is a broken `skip_if`, NOT the
+		// `after:` anchor (issue #520): `prompt.js` omits `mainHookInjected` from
+		// its returned context, so `skip_if: "<%= mainHookInjected %>"` renders the
+		// literal `true`, which hygen regex-matches against `main.ts`'s
+		// `persistAuthorization: true` → false-positive skip. The hook's injection
 		// against a clean main.ts is covered by the subsystem.test.ts unit case;
-		// see docs/specs/JOB-6.md Open Questions for the anchor-robustness item.
+		// see docs/specs/JOB-6.md Open Questions + issue #520 for the diagnosis.
 
 		// Acceptance #3 — NO templated schema vendored under the subsystems tree
 		// (the schema ships in the package, re-exported via the schema barrel).
