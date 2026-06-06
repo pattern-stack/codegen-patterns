@@ -64,6 +64,55 @@ export interface DealStageChangedEvent extends DomainEvent {
 	};
 }
 
+export interface MessageCreatedEvent extends DomainEvent {
+	readonly type: 'message_created';
+	readonly aggregateType: 'message';
+	readonly payload: {
+		/** Differ's per-field before/after map (same value as integration_run_items.changed_fields). */
+		changedFields: Record<string, unknown> | null;
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
+export interface MessageDeletedEvent extends DomainEvent {
+	readonly type: 'message_deleted';
+	readonly aggregateType: 'message';
+	readonly payload: {
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
+export interface MessageEditedEvent extends DomainEvent {
+	readonly type: 'message_edited';
+	readonly aggregateType: 'message';
+	readonly payload: {
+		/** Differ's per-field before/after map (same value as integration_run_items.changed_fields). */
+		changedFields: Record<string, unknown> | null;
+		/** Local aggregate id the sink wrote/soft-deleted. */
+		entityId: string;
+		/** Vendor external id the change keyed on. */
+		externalId: string;
+		/** Provider label (e.g. 'slack', 'google'). */
+		provider: string;
+		/** Provenance marker — always 'integration'. A write-back action reads this to avoid echoing the change back to the vendor. */
+		source: string;
+	};
+}
+
 /** Stripe charge.succeeded webhook, post-signature-verification. */
 export interface StripePaymentReceivedEvent extends DomainEvent {
 	readonly type: 'stripe_payment_received';
@@ -97,6 +146,9 @@ export type AppDomainEvent =
 	| CrmSyncStartedEvent
 	| DealCreatedEvent
 	| DealStageChangedEvent
+	| MessageCreatedEvent
+	| MessageDeletedEvent
+	| MessageEditedEvent
 	| StripePaymentReceivedEvent
 	| WebhookOutboundContactSyncEvent;
 
