@@ -50,6 +50,7 @@ import {
 	EXTERNAL_SYNC_FIELDS,
 	EXTERNAL_SYNC_GROUP,
 	type DerivedFieldMeta,
+	type InferenceOptions,
 } from './field-meta';
 import { resolvableRels } from './emit-store';
 
@@ -150,8 +151,12 @@ function hasSoftDelete(parsed: ParsedEntity | undefined): boolean {
  * fields carry the external-sync shape (see `hasExternalSyncShape`), the
  * bookkeeping fields default to `group: 'external_sync'` — authored `ui_group`
  * wins.
+ *
+ * `opts` is forwarded to {@link deriveFieldMeta}/{@link inferUiType} so the
+ * caller's `frontend.fields` config (e.g. `textareaThreshold`) reaches the
+ * type-inference ladder.
  */
-function displayFields(parsed: ParsedEntity | undefined): DerivedFieldMeta[] {
+function displayFields(parsed: ParsedEntity | undefined, opts: InferenceOptions = {}): DerivedFieldMeta[] {
 	if (!parsed) return [];
 	const syncShape = hasExternalSyncShape(parsed.fields.keys());
 	const out: DerivedFieldMeta[] = [];
@@ -162,7 +167,7 @@ function displayFields(parsed: ParsedEntity | undefined): DerivedFieldMeta[] {
 			syncShape && EXTERNAL_SYNC_FIELDS.has(field.name)
 				? { group: EXTERNAL_SYNC_GROUP }
 				: undefined;
-		out.push(deriveFieldMeta(field, defaults));
+		out.push(deriveFieldMeta(field, defaults, opts));
 	}
 	return out;
 }
@@ -218,7 +223,7 @@ export function buildEntityFieldsFile(
 	const parsed = ctx.parsed.get(entity.name);
 	const { camelName, className, classNamePlural, name, plural } = entity;
 
-	const fields = displayFields(parsed);
+	const fields = displayFields(parsed, { textareaThreshold: ctx.config.textareaThreshold });
 	const rels = resolvableRels(entity, ctx);
 	const ts = hasTimestamps(parsed);
 	const sd = hasSoftDelete(parsed);

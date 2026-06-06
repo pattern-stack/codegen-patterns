@@ -87,6 +87,7 @@ export {
 	emitIndex,
 } from './emit-index';
 export {
+	DEFAULT_TEXTAREA_THRESHOLD,
 	deriveFieldMeta,
 	formatLabel,
 	inferUiType,
@@ -95,8 +96,9 @@ export {
 } from './field-meta';
 export type {
 	DerivedFieldMeta,
-	FieldType,
 	FieldImportance,
+	FieldType,
+	InferenceOptions,
 } from './field-meta';
 
 /**

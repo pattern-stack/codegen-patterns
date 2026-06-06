@@ -142,6 +142,7 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 		architecture,
 		dbEntitiesImport: dbEntities.import,
 		catalogCategories: fe.catalog.categories,
+		textareaThreshold: fe.fields.textareaThreshold,
 	};
 }
 

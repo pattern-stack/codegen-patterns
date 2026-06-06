@@ -7,10 +7,15 @@
  * rendered metadata shape (primaryFields / keyFields / searchFields /
  * defaultSort / capabilities / timestamps + soft_delete rows / belongs_to
  * relation rows).
+ *
+ * Also covers `frontend.fields.textareaThreshold` inference knob (§3–4 of
+ * the textarea-threshold spec) — default, custom, null-disables, ui_type wins,
+ * and the ctx→displayFields threading proof.
  */
 
 import { describe, expect, it } from 'bun:test';
 import {
+	DEFAULT_TEXTAREA_THRESHOLD,
 	deriveFieldMeta,
 	formatLabel,
 	hasExternalSyncShape,
@@ -453,5 +458,142 @@ describe('emit-fields — behavior/family bundles (ADR-040)', () => {
 			),
 		);
 		expect(buildEntityFieldsFile(e, ungated)).not.toContain('external_sync');
+	});
+});
+
+// ============================================================================
+// Spec: frontend.fields.textareaThreshold
+// ============================================================================
+
+describe('field-meta — DEFAULT_TEXTAREA_THRESHOLD constant', () => {
+	it('equals 500', () => {
+		expect(DEFAULT_TEXTAREA_THRESHOLD).toBe(500);
+	});
+});
+
+describe('field-meta — inferUiType textarea threshold (default 500)', () => {
+	it('default: maxLength 1000 → textarea (existing behavior preserved)', () => {
+		expect(inferUiType(field('bio', { type: 'string', constraints: { maxLength: 1000 } }))).toBe(
+			'textarea',
+		);
+	});
+
+	it('default: maxLength === 500 → text (strict > boundary)', () => {
+		expect(inferUiType(field('bio', { type: 'string', constraints: { maxLength: 500 } }))).toBe(
+			'text',
+		);
+	});
+
+	it('default: maxLength 501 → textarea', () => {
+		expect(inferUiType(field('bio', { type: 'string', constraints: { maxLength: 501 } }))).toBe(
+			'textarea',
+		);
+	});
+
+	it('default: no maxLength → text (unbounded short-circuit)', () => {
+		expect(inferUiType(field('bio', { type: 'string' }))).toBe('text');
+	});
+
+	it('custom threshold: maxLength 150 with threshold 100 → textarea', () => {
+		expect(
+			inferUiType(field('bio', { type: 'string', constraints: { maxLength: 150 } }), {
+				textareaThreshold: 100,
+			}),
+		).toBe('textarea');
+	});
+
+	it('custom threshold: maxLength === 100 → text (strict >)', () => {
+		expect(
+			inferUiType(field('bio', { type: 'string', constraints: { maxLength: 100 } }), {
+				textareaThreshold: 100,
+			}),
+		).toBe('text');
+	});
+
+	it('null threshold disables: maxLength 10000 → text', () => {
+		expect(
+			inferUiType(field('bio', { type: 'string', constraints: { maxLength: 10000 } }), {
+				textareaThreshold: null,
+			}),
+		).toBe('text');
+	});
+
+	it('explicit ui_type wins over custom threshold (rung 1 of the ladder)', () => {
+		expect(
+			inferUiType(
+				field('bio', { type: 'string', constraints: { maxLength: 10 }, ui: { type: 'textarea' } }),
+				{ textareaThreshold: 100 },
+			),
+		).toBe('textarea');
+		expect(
+			inferUiType(
+				field('bio', { type: 'string', constraints: { maxLength: 10000 }, ui: { type: 'text' } }),
+				{ textareaThreshold: null },
+			),
+		).toBe('text');
+	});
+});
+
+describe('field-meta — deriveFieldMeta threads opts through to inferUiType', () => {
+	it('null threshold: maxLength 10000 → type: text', () => {
+		const meta = deriveFieldMeta(
+			field('notes', { type: 'string', constraints: { maxLength: 10000 } }),
+			{},
+			{ textareaThreshold: null },
+		);
+		expect(meta.type).toBe('text');
+	});
+
+	it('custom threshold 100: maxLength 150 → type: textarea', () => {
+		const meta = deriveFieldMeta(
+			field('notes', { type: 'string', constraints: { maxLength: 150 } }),
+			{},
+			{ textareaThreshold: 100 },
+		);
+		expect(meta.type).toBe('textarea');
+	});
+});
+
+describe('emit-fields — textareaThreshold threading proof (ctx → displayFields)', () => {
+	function thresholdEntity(maxLength: number) {
+		const e = entry('note', 'notes');
+		const parsed = parsedMap(
+			parsedEntity(e, {
+				fields: new Map([
+					['body', field('body', { type: 'string', constraints: { maxLength } })],
+				]),
+			}),
+		);
+		return { e, parsed };
+	}
+
+	it('null threshold in ctx.config ⇒ type: text even for very long string', () => {
+		const { e, parsed } = thresholdEntity(10000);
+		const c = ctx([e], { textareaThreshold: null }, parsed);
+		const out = buildEntityFieldsFile(e, c);
+		expect(out).toContain("type: 'text' as FieldType,");
+		expect(out).not.toContain("type: 'textarea'");
+	});
+
+	it('custom threshold 100 in ctx.config ⇒ maxLength 150 renders as textarea', () => {
+		const { e, parsed } = thresholdEntity(150);
+		const c = ctx([e], { textareaThreshold: 100 }, parsed);
+		const out = buildEntityFieldsFile(e, c);
+		expect(out).toContain("type: 'textarea' as FieldType,");
+	});
+
+	it('default threshold 500 in ctx.config ⇒ maxLength 501 renders as textarea', () => {
+		const { e, parsed } = thresholdEntity(501);
+		const c = ctx([e], { textareaThreshold: 500 }, parsed);
+		const out = buildEntityFieldsFile(e, c);
+		expect(out).toContain("type: 'textarea' as FieldType,");
+	});
+
+	it('default threshold 500 in ctx.config ⇒ maxLength 500 renders as text (strict >)', () => {
+		const { e, parsed } = thresholdEntity(500);
+		const c = ctx([e], { textareaThreshold: 500 }, parsed);
+		const out = buildEntityFieldsFile(e, c);
+		expect(out).toContain("type: 'text' as FieldType,");
+		expect(out).not.toContain("type: 'textarea'");
 	});
 });

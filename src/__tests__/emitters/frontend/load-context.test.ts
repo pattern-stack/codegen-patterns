@@ -132,6 +132,32 @@ describe('mapFrontendEmitConfig — invalid frontend block falls back to default
 	});
 });
 
+describe('mapFrontendEmitConfig — frontend.fields.textareaThreshold', () => {
+	it('absent frontend.fields ⇒ textareaThreshold defaults to 500', () => {
+		const c = mapFrontendEmitConfig({});
+		expect(c.textareaThreshold).toBe(500);
+	});
+
+	it('absent frontend block ⇒ textareaThreshold defaults to 500', () => {
+		const c = mapFrontendEmitConfig({ frontend: {} });
+		expect(c.textareaThreshold).toBe(500);
+	});
+
+	it('explicit null survives (no default-stomping — present-but-null disables)', () => {
+		const c = mapFrontendEmitConfig({
+			frontend: { fields: { textareaThreshold: null } },
+		});
+		expect(c.textareaThreshold).toBeNull();
+	});
+
+	it('custom number passes through unchanged', () => {
+		const c = mapFrontendEmitConfig({
+			frontend: { fields: { textareaThreshold: 2000 } },
+		});
+		expect(c.textareaThreshold).toBe(2000);
+	});
+});
+
 describe('loadFrontendEmitContext — registry + parsed loading', () => {
 	it('loads the fixture entity set, sorted by name, with a parsed map', () => {
 		const r = loadFrontendEmitContext(FIXTURES, {}, { entitiesDir: FIXTURES });

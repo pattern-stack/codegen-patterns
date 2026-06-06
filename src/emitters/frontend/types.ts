@@ -55,6 +55,12 @@ export interface FrontendEmitConfig {
 	dbEntitiesImport: string;
 	/** `frontend.catalog.categories` — ordered display groups for the providers catalog. */
 	catalogCategories: CatalogCategoryConfig[];
+	/**
+	 * `frontend.fields.textareaThreshold` — string→textarea inference cutoff;
+	 * null disables the heuristic (bounded strings stay `text` unless the author
+	 * sets `ui_type: textarea`). Default 500.
+	 */
+	textareaThreshold: number | null;
 }
 
 /** One `frontend.catalog.categories[]` entry (blurb defaulted to '' by the schema). */
