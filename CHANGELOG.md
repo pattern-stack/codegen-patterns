@@ -2,25 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
-### Fixed
-
-- **Jobs: claim heartbeat (CLAIM-HB-1) — long-running handlers are no longer
-  swept mid-flight.** The drizzle `JobWorker` stamped `claimed_at` once at claim
-  and never renewed it, while `sweepStaleClaims` reset any `running` row whose
-  `claimed_at` aged past `staleThresholdMs` (default 5 min) back to `pending`.
-  Consequence: ANY handler that legitimately ran longer than the threshold was
-  silently re-queued and re-claimed by a second worker, running CONCURRENTLY
-  with the still-live (uncancellable) original. Discovered by the swe-brain
-  dogfood: a 365-day Gmail backfill could never finish inside 5 min, so it
-  re-spawned a fresh concurrent mailbox walk every ~6 min for 5 days (writes
-  were idempotent upserts, so no corruption — but a non-idempotent handler would
-  have corrupted). Fix: a live worker now tracks its in-flight run IDs and bumps
-  `claimed_at = now()` for them every `claimHeartbeatIntervalMs` (new
-  `JobWorkerOptions` knob, default `staleThresholdMs / 3`). The sweeper now
-  fires only for genuinely dead workers (renewal stopped) — its documented
-  "stranded by a crashed worker" intent.
+## [0.24.0] — 2026-06-06
 
 ### Added
 
@@ -41,6 +23,28 @@ All notable changes to this project will be documented in this file.
   is `_edited`, NOT `_updated` (swe-brain ADR-0009 B1). Entities that don't opt in
   are byte-for-byte unchanged (the emitter token stays unbound). Generalizes the
   emission swe-brain hand-built in its sinks. See `docs/specs/EMIT-CHANGES-1.md`.
+
+## [0.23.0] — 2026-06-06
+
+### Fixed
+
+- **Jobs: claim heartbeat (CLAIM-HB-1) — long-running handlers are no longer
+  swept mid-flight.** The drizzle `JobWorker` stamped `claimed_at` once at claim
+  and never renewed it, while `sweepStaleClaims` reset any `running` row whose
+  `claimed_at` aged past `staleThresholdMs` (default 5 min) back to `pending`.
+  Consequence: ANY handler that legitimately ran longer than the threshold was
+  silently re-queued and re-claimed by a second worker, running CONCURRENTLY
+  with the still-live (uncancellable) original. Discovered by the swe-brain
+  dogfood: a 365-day Gmail backfill could never finish inside 5 min, so it
+  re-spawned a fresh concurrent mailbox walk every ~6 min for 5 days (writes
+  were idempotent upserts, so no corruption — but a non-idempotent handler would
+  have corrupted). Fix: a live worker now tracks its in-flight run IDs and bumps
+  `claimed_at = now()` for them every `claimHeartbeatIntervalMs` (new
+  `JobWorkerOptions` knob, default `staleThresholdMs / 3`). The sweeper now
+  fires only for genuinely dead workers (renewal stopped) — its documented
+  "stranded by a crashed worker" intent.
+
+### Added
 
 - **Jobs: consumer-threadable lease tuning.** `jobs.extensions.drizzle` now
   accepts `stale_threshold_ms`, `stale_sweeper_interval_ms`, and
