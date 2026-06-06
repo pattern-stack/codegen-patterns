@@ -104,6 +104,7 @@ e. Return the updated `JobRun`.
 
 **`onModuleInit()`:**
 - Start the polling loop: `setInterval(() => void this.pollAndProcess(), opts.pollIntervalMs)` (default 1000ms)
+- Start the claim heartbeat (CLAIM-HB-1): `setInterval(() => void this.renewClaims(), opts.claimHeartbeatIntervalMs)` (default `staleThresholdMs / 3`)
 - Start stale-claim sweeper: `setInterval(() => void this.sweepStaleClaims(), opts.staleSweeperIntervalMs)` (default 60s)
 - Register SIGTERM handler
 
@@ -154,14 +155,20 @@ g. Remove promise from `inFlight` in finally.
 - If `status === 'completed'`, return `step.output` (memoized).
 - Otherwise: record `running` step. Call `await fn()`. On success, upsert `completed` with `output`. On error, upsert `failed`; rethrow.
 
+**`renewClaims()` (CLAIM-HB-1 — claim heartbeat):**
+- The worker keeps an `inFlightRunIds: Set<string>` of the runs it currently has executing (added when `pollAndProcess` dispatches `processRun`, removed in that promise's `finally` on every settle path — success, failure, retry-release, concurrency-defer).
+- Each beat: if non-empty, `UPDATE job_run SET claimed_at=now(), updated_at=now() WHERE id IN (...) AND status='running'`. The `status='running'` guard makes the renewal a safe no-op for a row that was already swept-and-reclaimed elsewhere or has settled. Best-effort: a missed beat just retries next interval (the threshold leaves several beats of slack).
+- This is what lets a legitimately long-running handler keep its claim. Without it, `sweepStaleClaims` re-queued ANY run that out-lived `staleThresholdMs` mid-flight and a second worker ran it concurrently with the still-live zombie (dogfood incident, swe-brain 2026-06-06: a 365-day Gmail backfill re-spawned a concurrent walk every ~6 min for 5 days).
+
 **`sweepStaleClaims()`:**
 - `UPDATE job_run SET status='pending', claimed_at=null WHERE status='running' AND claimed_at < now() - $staleThresholdMs RETURNING id`. Log each at `warn`. Safe concurrency: each update is atomic; `WHERE claimed_at < threshold` prevents double-recovery.
+- With the heartbeat in place this fires ONLY for runs whose worker died (renewal stopped). A live worker renews `claimed_at` faster than the threshold, so a long-but-alive run is never a candidate — this restores the sweeper to its documented "stranded by a crashed worker" intent.
 
 **`onModuleDestroy()` / SIGTERM:**
 - Set `shuttingDown = true`.
 - Await `Promise.allSettled([...this.inFlight])` with `shutdownTimeoutMs` (default 30000).
 - For runs still `running` past timeout: `UPDATE job_run SET status='pending', claimed_at=null`. Next worker reclaims.
-- Clear stale sweeper interval.
+- Clear the poll, heartbeat, and stale-sweeper intervals.
 
 ## Transaction Boundaries
 
@@ -203,7 +210,9 @@ g. Remove promise from `inFlight` in finally.
 ## Open Questions (with proposed resolutions)
 
 **OQ-2 — Stale-claim sweeper placement. Resolved 2026-04-19.**
-Resolution: sweeper runs on every `JobWorker` instance (per-pool), wired via `setInterval` in `onModuleInit`. The sweep query uses `FOR UPDATE SKIP LOCKED`, making concurrent sweepers across horizontally-scaled workers safe — a row is recovered at most once. Singleton rejected: adds coordination complexity (leader election) without meaningful advantage at Phase 1 scale. Document invariant: `staleThresholdMs >= 2 * max_handler_duration`.
+Resolution: sweeper runs on every `JobWorker` instance (per-pool), wired via `setInterval` in `onModuleInit`. The sweep query uses `FOR UPDATE SKIP LOCKED`, making concurrent sweepers across horizontally-scaled workers safe — a row is recovered at most once. Singleton rejected: adds coordination complexity (leader election) without meaningful advantage at Phase 1 scale.
+
+> **Revision 2026-06-06 (CLAIM-HB-1).** The original invariant `staleThresholdMs >= 2 × max_handler_duration` was wrong — `claimed_at` was stamped once at claim and never renewed, so ANY handler out-living the threshold was swept and re-claimed concurrently (no fencing → the zombie still wrote its result). The fix introduces a claim heartbeat (`renewClaims`): a live worker bumps `claimed_at` for in-flight runs every `claimHeartbeatIntervalMs` (default `staleThresholdMs / 3`), so the threshold is now a *worker-liveness* window, not a max-handler-duration bound. The invariant becomes `claimHeartbeatIntervalMs < staleThresholdMs` (with margin for missed beats); handler duration is no longer constrained by the threshold. Full fencing (claim-token so a swept run can't be double-completed) is deferred — see issue #501.
 
 **OQ-3 — `job` table upsert under horizontal scale.**
 Proposed: `ON CONFLICT (type) DO UPDATE SET pool = EXCLUDED.pool, retry_policy = EXCLUDED.retry_policy, version = EXCLUDED.version, updated_at = now()`. Last-writer-wins. All instances of the same app version produce identical metadata — concurrent upserts are harmless. `DO NOTHING` is rejected: under rolling deploy, old-version instance A could leave a stale row that new-version instance B cannot overwrite. Advisory locks rejected: add latency + leak risk.
@@ -226,7 +235,9 @@ These were resolved during implementation. Kept here so JOB-4 (memory parity) an
 
 - **Concurrency-queue release mechanism.** When a `queue`-mode run is claimed but another run with the same `concurrency_key` is already `running`, the worker releases the claim by transitioning the row back to `pending` with `claimed_at=null, started_at=null`. The next poll re-evaluates. No separate "queued" flag — the `status='pending'` + matching-key check is sufficient and keeps the state model flat.
 
-- **Stale-sweeper placement (OQ-2).** Per-worker. The candidate select uses `FOR UPDATE SKIP LOCKED`, so simultaneous sweepers across multiple workers never collide on the same row. Invariant: `staleThresholdMs >= 2 × max_handler_duration`.
+- **Stale-sweeper placement (OQ-2).** Per-worker. The candidate select uses `FOR UPDATE SKIP LOCKED`, so simultaneous sweepers across multiple workers never collide on the same row. Invariant (post CLAIM-HB-1): `claimHeartbeatIntervalMs < staleThresholdMs` — the heartbeat renews live claims, so the threshold bounds *dead-worker recovery latency*, not handler duration. (Superseded the original `staleThresholdMs >= 2 × max_handler_duration`; see the OQ-2 revision note.)
+
+- **Claim heartbeat (CLAIM-HB-1, 2026-06-06).** `JobWorker.renewClaims` bumps `claimed_at` for in-flight runs on a `claimHeartbeatIntervalMs` timer (default `staleThresholdMs / 3`) so a long-but-alive handler is never swept. The renewal UPDATE is `status='running'`-guarded (a swept-and-reclaimed run isn't touched). In-flight runs are tracked in `inFlightRunIds`, deregistered in `pollAndProcess`'s settle `finally`. Knobs `staleThresholdMs` / `staleSweeperIntervalMs` / `claimHeartbeatIntervalMs` thread from consumer YAML (`jobs.extensions.drizzle.{stale_threshold_ms, stale_sweeper_interval_ms, claim_heartbeat_interval_ms}`) through the barrel generator → `JobWorkerModule.forRoot`. **Fencing (claim-token so a zombie can't double-complete a reclaimed run) is deferred** to a follow-up — it needs a schema column + guards on every write site.
 
 - **`nextStepSeq` allocation.** SELECT-max-plus-one at step-record time. Per-run step counts are typically <100; the in-memory counter alternative drifts if the worker crashes mid-run and a replacement worker resumes via stale-claim sweep.
 
