@@ -853,6 +853,29 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
 // ============================================================================
 
 /**
+ * Shared delete-knob → softDelete boolean mapping rule (#490).
+ *
+ * Applied at BOTH derivations (repo config + sink body) so the two always agree:
+ *   soft      → true  (set deletedAt)
+ *   tombstone → false (null externalId/provider)
+ *   absent    → !!hasSoftDelete  (preserve today's default)
+ *   noop      → !!hasSoftDelete  (repo config irrelevant for noop — sink short-circuits)
+ *
+ * The sink only needs 'delegate' | 'noop' for its body decision; this helper
+ * is for the REPO config boolean. Mirrored verbatim in buildSinkInput caller
+ * (adapter-emission-generator.ts) for the contract test (spec Tests §3d).
+ *
+ * @param {'soft'|'tombstone'|'noop'|undefined} deleteKnob
+ * @param {boolean} hasSoftDelete
+ * @returns {boolean}
+ */
+export function resolveSoftDeleteBoolean(deleteKnob, hasSoftDelete) {
+  if (deleteKnob === 'soft') return true;
+  if (deleteKnob === 'tombstone') return false;
+  return !!hasSoftDelete; // absent OR noop → preserve current default
+}
+
+/**
  * Pre-compute the inbound-integration write surface for a `pattern: Integrated` entity.
  * Keeps the EJS thin + unit-testable: the template hand-emits the integrationConfig
  * literal (so `refTable` can carry a LIVE Drizzle table handle, which
@@ -866,14 +889,27 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
  * @param {boolean} hasTimestamps
  * @param {boolean} eavEnabled
  * @param {boolean} hasSoftDelete
+ * @param {object} [fields]           raw entity fields (for FK strict detection)
+ * @param {object} [sinkPolicy]       integration.sink knobs {delete?, exclude_fields?}
  */
-export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields) {
+export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields, sinkPolicy) {
   if (patternName !== 'Integrated') return null;
+
+  // Per-field exclusion (#490): drop declared-excluded fields from copy-through.
+  // Exclusion targets copy-through scalars only (FK columns and user_id are
+  // rejected at schema validation — the schema superRefine guards both).
+  // Match on snake_case `name` (how processedFields.name is keyed) so a
+  // multi-word field like `conversation_external_id` matches correctly.
+  const excludeSet = new Set(sinkPolicy?.exclude_fields ?? []);
 
   // Copy-through columns: every non-FK declared field. external_id_tracking
   // columns (external_id/provider/provider_metadata) are injected by the
   // behavior, NOT present in processedFields, so they're already excluded.
-  const writeColumns = processedFields.map((f) => f.camelName);
+  // Excluded fields (#490) are also dropped here — they are removed from the
+  // copy-through write surface so integrationUpsertOne never clobbers them.
+  const writeColumns = processedFields
+    .filter((f) => !excludeSet.has(f.name))
+    .map((f) => f.camelName);
 
   // FK resolvers — one per belongs_to. writeKey = `${relationKey}ExternalId`
   // (Decision 4). refTable is the string 'self' for self-FKs, else the parent
@@ -896,12 +932,15 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
     importPath: rel.importPath,
   }));
 
-  // Projection columns: id + externalId + copy-through + local FK columns +
-  // timestamps. Omits provider/provider_metadata.
+  // Projection columns: id + externalId + ALL copy-through columns + local FK
+  // columns + timestamps. Omits provider/provider_metadata.
+  // Projection keeps excluded fields (#490) — exclusion is write-surface only.
+  // The find VIEW also keeps them (bare passthroughs); diff-soundness holds via
+  // the differ's `key in incoming` guard, not by omitting them from the view.
   const projectionColumns = [
     'id',
     'externalId',
-    ...writeColumns,
+    ...processedFields.map((f) => f.camelName),
     ...belongsTo.map((rel) => rel.camelField),
     ...(hasTimestamps ? ['createdAt', 'updatedAt'] : []),
   ];
@@ -909,20 +948,26 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
   // The integrationConfig object literal the template hand-emits. fkResolvers carry a
   // sentinel so the template can swap `refTable` to either 'self' or the live
   // table identifier.
+  // softDelete: use resolveSoftDeleteBoolean (delete knob takes precedence over
+  // !!hasSoftDelete default; noop/absent both preserve !!hasSoftDelete, spec §Delete).
   const integrationConfig = {
     conflictTarget: ['provider', 'externalId'],
     writeColumns,
     projectionColumns,
     eav: !!eavEnabled,
-    softDelete: !!hasSoftDelete,
+    softDelete: resolveSoftDeleteBoolean(sinkPolicy?.delete, hasSoftDelete),
   };
 
   // TIntegrationWrite fields: externalId:string, copy-through (typed, nullable-aware),
   // one `<writeKey>?: string | null` per FK, fields?: Record<string, unknown>.
-  const writeFields = processedFields.map((f) => ({
-    camelName: f.camelName,
-    tsType: f.nullable ? `${f.tsType} | null` : f.tsType,
-  }));
+  // Excluded fields (#490) are dropped from writeFields too — same exclusion set
+  // as writeColumns. The projection keeps them (projectionFields below).
+  const writeFields = processedFields
+    .filter((f) => !excludeSet.has(f.name))
+    .map((f) => ({
+      camelName: f.camelName,
+      tsType: f.nullable ? `${f.tsType} | null` : f.tsType,
+    }));
   const writeFkFields = fkResolvers.map((fk) => ({
     name: fk.writeKey,
     tsType: 'string | null',
@@ -1336,6 +1381,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   }));
 
   // Integration write-surface derivation (#374) — null unless pattern: Integrated.
+  // Pass sinkPolicy (#490) so the delete knob and exclude_fields knob are applied
+  // at this derivation (repo config) as well as buildSinkInput (sink derivation).
+  const sinkPolicy = definition.integration?.sink ?? null;
   const integrationSurface = buildIntegrationSurface(
     patternName,
     nonFkFields,
@@ -1344,6 +1392,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     eavEnabled,
     hasSoftDelete,
     fields,
+    sinkPolicy,
   );
 
   // EVT-7: emits locals flow through from baseLocals (prompt.js computed them

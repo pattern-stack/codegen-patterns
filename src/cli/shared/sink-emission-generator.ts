@@ -39,7 +39,20 @@
  * tracks reverse-resolution (local → external) at read; until then the find side
  * cannot supply the external key either. See Find-side reshaping below.
  *
- * Policy methods (delete semantics, per-field exclusions) are #491/#490 scope.
+ * Policy methods — #490 wires the two common YAML knobs:
+ * - `integration.sink.delete: soft|tombstone|noop` — `noop` emits the silent
+ *   `return null;` body; `soft`/`tombstone` delegate to the repo (the repo config
+ *   boolean carries the distinction). Absent → `'delegate'` (unchanged behavior).
+ * - `integration.sink.exclude_fields: [field, ...]` — excluded fields are absent
+ *   from the WRITE SURFACE ONLY (`copyThroughFields` / `writeColumns`). The find
+ *   view still enumerates them as bare passthroughs from `viewCopyThroughFields`
+ *   (the unfiltered projection list). Diff-soundness holds via the differ's
+ *   `key in incoming` guard (`deep-equal.differ.ts:159`): the adapter never
+ *   sources the field → `incoming` lacks it → even the existing-keys loop skips
+ *   it → never compared, no spurious upsert. Type-sound: the projection type
+ *   keeps the member; the find view enumerates it. Drop-from-writeColumns is the
+ *   no-clobber mechanism (excluded field is never written by the repo on upsert).
+ * The arbitrary-code long tail stays the author-subclass seam (#491 sink-seam-split).
  *
  * ## Find-side reshaping (generated vs. author seam) — #488
  *
@@ -136,9 +149,26 @@ export interface SinkEmitInput {
   pattern: string;
   /** Bare provider slug bound at construction (`google`, `hubspot`). */
   provider: string;
-  /** Copy-through scalar columns — the entity's `fields:` block (FK columns
-   *  excluded), exactly as the repo template's `writeFields`. */
+  /** Copy-through scalar columns for the WRITE OBJECT — the entity's `fields:`
+   *  block with FK columns AND any `integration.sink.exclude_fields` entries
+   *  removed, exactly as the repo template's `writeFields` after #490 exclusion.
+   *  Excluded fields are absent here (no-clobber: the repo never writes them on
+   *  upsert) but ARE still present in `viewCopyThroughFields` (the find view
+   *  enumerates the full projection so the canonical type-checks). */
   copyThroughFields: SinkCopyThroughField[];
+  /** Copy-through scalar columns for the FIND VIEW — the entity's `fields:` block
+   *  with FK columns excluded but `integration.sink.exclude_fields` entries kept.
+   *  Enumerated as bare passthroughs in `findByExternalId` so the view satisfies
+   *  the projection-default canonical (TS requires all members; excluded fields
+   *  stay in the projection type). Diff-soundness: the adapter never sources
+   *  excluded fields → `incoming` lacks them → the differ's `key in incoming`
+   *  guard (`deep-equal.differ.ts:159`) drops them from candidates before
+   *  comparison — never compared, no spurious upsert.
+   *
+   *  When omitted (callers that predate #490 or pass only `copyThroughFields`),
+   *  falls back to `copyThroughFields` for backward-compat (no regression for
+   *  entities without `exclude_fields`). */
+  viewCopyThroughFields?: SinkCopyThroughField[];
   /** External FK join-keys — one per belongs_to, exactly as the repo template's
    *  `writeFkFields`. */
   fkExternalKeys: SinkFkExternalKey[];
@@ -162,6 +192,23 @@ export interface SinkEmitInput {
    *  => rel.camelField)` from `projectionFields` in `buildIntegrationSurface`
    *  (`prompt-extension.js:940-943`). Defaults to empty when omitted. */
   localFkColumns?: SinkCopyThroughField[];
+  /**
+   * Resolved delete behavior for the sink BODY (#490).
+   *
+   * - `'delegate'` — default; emit `return this.repo.softDeleteByExternalId(...)`.
+   *   Both `soft` and `tombstone` YAML knob values map here (the distinction is
+   *   the REPO config boolean — `softDelete: true/false` — not the sink body).
+   * - `'noop'` — emit a silent `return null;` body with a doc comment. The
+   *   sink short-circuits; the repo is never called for the delete path.
+   *
+   * Absent knob defaults to `'delegate'` (preserves today's exact behavior —
+   * spec Nit 1: the absent→delegate sink default and the repo's !!hasSoftDelete
+   * default are independent and both default-safe; they compose to current
+   * behavior when the knob is omitted).
+   *
+   * Default: `'delegate'` when omitted.
+   */
+  deleteMode?: 'delegate' | 'noop';
 }
 
 // ============================================================================
@@ -259,12 +306,24 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   // When the author widens a member to non-null, the bare line becomes a compile
   // error — they add `?? <default>` at that exact member. The generator never
   // chooses a default; the compile error routes the human to the decision.
-  // Projection order: id, externalId, copy-through, local FK columns, timestamps.
+  // Projection order: id, externalId, copy-through (ALL — incl. excluded), local FK columns, timestamps.
+  //
+  // Exclusion (#490): viewCopyThroughFields is the FULL projection copy-through
+  // list (no exclude_fields filter). Excluded fields stay in the view as bare
+  // passthroughs — the projection type requires them. Diff-soundness holds via
+  // deep-equal.differ.ts:159 `key in incoming`: the adapter never sources the
+  // excluded field → it is absent from incoming → the existing-keys loop guard
+  // drops it from candidates → never compared. The field is excluded from the
+  // WRITE object (copyThroughFields) and from writeColumns — no-clobber by
+  // construction: the repo never writes it on upsert. These are orthogonal
+  // mechanisms. Falls back to copyThroughFields when viewCopyThroughFields is
+  // absent (pre-#490 callers that pass no exclude_fields).
+  const viewFields = input.viewCopyThroughFields ?? input.copyThroughFields;
   const findViewLines: string[] = [
     `    id: row.id,`,
     `    externalId: row.externalId,`,
   ];
-  for (const f of input.copyThroughFields) {
+  for (const f of viewFields) {
     const isJson = f.tsType.startsWith("unknown");
     if (isJson) {
       // SEAM (typed json): `unknown` passes through; typed-narrowing is author-owned.
@@ -283,6 +342,25 @@ export function generateDefaultSink(input: SinkEmitInput): string {
     findViewLines.push(`    updatedAt: row.updatedAt,`);
   }
   const findViewBody = findViewLines.map((l) => `  ${l}`).join("\n");
+
+  // softDeleteByExternalId body (#490 delete knob):
+  //   'delegate' (default) → repo delegation (unchanged behavior).
+  //   'noop'              → silent return null; + comment explains intent.
+  // The sink constructor has no logger param (would widen the assembly binding).
+  // A log line is #491-adjacent; see spec OQ2. Silent noop is correct for #490.
+  const deleteBody =
+    (input.deleteMode ?? "delegate") === "noop"
+      ? // Noop: lines are at the method-body indent level (4 spaces).
+        // The template already prepends 4 spaces before ${deleteBody}; all
+        // continuation lines after the first need a newline + 4 spaces.
+        [
+          `// delete:noop (YAML integration.sink.delete: noop) — tombstone-preserving:`,
+          `// an upstream delete signal is a no-op here; the repo row is left intact.`,
+          `// Returns null → the orchestrator records an audit noop. Logger injection`,
+          `// is #491 scope (seam-split); this generated body is intentionally silent.`,
+          `return null;`,
+        ].join("\n    ")
+      : `return this.repo.softDeleteByExternalId(externalId, this.provider);`;
 
   return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running codegen
@@ -349,7 +427,7 @@ ${writeBody}
   }
 
   async softDeleteByExternalId(_userId: string, externalId: string): Promise<{ id: string } | null> {
-    return this.repo.softDeleteByExternalId(externalId, this.provider);
+    ${deleteBody}
   }
 }
 `;

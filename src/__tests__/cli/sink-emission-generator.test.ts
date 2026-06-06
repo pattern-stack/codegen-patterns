@@ -738,3 +738,164 @@ describe("fkWriteKey — contract test (mirrors processBelongsTo:447-460)", () =
     );
   });
 });
+
+// ============================================================================
+// #490 — delete:noop and deleteMode: 'delegate' | 'noop'
+//
+// Spec §Delete knob: the sink body branches on deleteMode.
+//   'delegate' (default) → repo delegation: return this.repo.softDeleteByExternalId(...)
+//   'noop'              → silent return null; + comment (no logger, no repo call)
+// ============================================================================
+
+describe("generateDefaultSink — #490 deleteMode: 'delegate' (default — unchanged behavior)", () => {
+  const out = generateDefaultSink(contactInput());
+
+  it("softDeleteByExternalId delegates to repo.softDeleteByExternalId (deleteMode absent → delegate)", () => {
+    expect(out).toContain(
+      "return this.repo.softDeleteByExternalId(externalId, this.provider);",
+    );
+  });
+
+  it("no 'return null' in softDeleteByExternalId body when delegating", () => {
+    const deleteBody = out.slice(
+      out.indexOf("async softDeleteByExternalId("),
+      out.indexOf("\n  }\n", out.indexOf("async softDeleteByExternalId(")),
+    );
+    // 'return null' could exist in findByExternalId (null guard); restrict to delete body
+    expect(deleteBody).not.toContain("// delete:noop");
+  });
+});
+
+describe("generateDefaultSink — #490 deleteMode: 'delegate' (explicit)", () => {
+  const out = generateDefaultSink(contactInput({ deleteMode: "delegate" }));
+
+  it("softDeleteByExternalId delegates to repo when deleteMode: 'delegate'", () => {
+    expect(out).toContain(
+      "return this.repo.softDeleteByExternalId(externalId, this.provider);",
+    );
+  });
+});
+
+describe("generateDefaultSink — #490 deleteMode: 'noop'", () => {
+  const out = generateDefaultSink(contactInput({ deleteMode: "noop" }));
+
+  it("softDeleteByExternalId body is 'return null;' (not repo delegation)", () => {
+    const deleteBody = out.slice(
+      out.indexOf("async softDeleteByExternalId("),
+      out.indexOf("\n  }\n", out.indexOf("async softDeleteByExternalId(")),
+    );
+    expect(deleteBody).toContain("return null;");
+  });
+
+  it("softDeleteByExternalId body does NOT call repo.softDeleteByExternalId", () => {
+    const deleteBody = out.slice(
+      out.indexOf("async softDeleteByExternalId("),
+      out.indexOf("\n  }\n", out.indexOf("async softDeleteByExternalId(")),
+    );
+    expect(deleteBody).not.toContain("repo.softDeleteByExternalId");
+  });
+
+  it("noop body has an explaining comment (delete:noop / tombstone-preserving)", () => {
+    const deleteBody = out.slice(
+      out.indexOf("async softDeleteByExternalId("),
+      out.indexOf("\n  }\n", out.indexOf("async softDeleteByExternalId(")),
+    );
+    expect(deleteBody).toContain("delete:noop");
+  });
+
+  it("contains NO ` as ` cast (noop path)", () => {
+    expect(codeOnly(out).includes(" as ")).toBe(false);
+  });
+
+  it("find-side and upsert-side are unchanged when deleteMode: 'noop'", () => {
+    // The noop knob only affects the delete method body.
+    expect(out).toContain("this.repo.findByExternalIdProjected(externalId, this.provider)");
+    expect(out).toContain("this.repo.integrationUpsertOne(write, this.provider)");
+  });
+});
+
+// ============================================================================
+// #490 — per-field exclusion
+//
+// Gate 2.5 correction (2026-06-06): exclusion is WRITE-SURFACE ONLY.
+// The find view uses viewCopyThroughFields (the FULL unfiltered list) so the
+// emitted view enumerates the excluded field as a bare passthrough — the
+// projection type keeps it, and the view must too (type-soundness). Diff-
+// soundness holds via the differ's `key in incoming` guard: the adapter never
+// sources the excluded field → incoming lacks it → never compared.
+// ============================================================================
+
+describe("generateDefaultSink — #490 excluded field absent from write object, present in find view", () => {
+  // conversation_external_id excluded — multi-word to catch snake/camel bugs (#487 lesson).
+  // The emitter receives post-exclusion copyThroughFields AND the full
+  // viewCopyThroughFields (unfiltered); it uses viewCopyThroughFields for the find view.
+  const out = generateDefaultSink(
+    contactInput({
+      entityName: "message",
+      entityClass: "Message",
+      // copyThroughFields AFTER exclusion — write surface only.
+      copyThroughFields: [
+        { camelName: "body", tsType: "string" },
+        // conversationExternalId intentionally absent — excluded from write surface.
+      ],
+      // viewCopyThroughFields is the FULL unfiltered list — find view uses this.
+      viewCopyThroughFields: [
+        { camelName: "body", tsType: "string" },
+        { camelName: "conversationExternalId", tsType: "string | null" },
+      ],
+      fkExternalKeys: [],
+    }),
+  );
+
+  it("the write object enumerates body: record.body", () => {
+    const writeBlock = out.slice(
+      out.indexOf("const write: MessageIntegrationWrite = {"),
+      out.indexOf("const proj ="),
+    );
+    expect(writeBlock).toContain("body: record.body,");
+  });
+
+  it("the write object does NOT enumerate conversationExternalId", () => {
+    const writeBlock = out.slice(
+      out.indexOf("const write: MessageIntegrationWrite = {"),
+      out.indexOf("const proj ="),
+    );
+    expect(writeBlock).not.toContain("conversationExternalId");
+  });
+
+  it("the find view DOES enumerate conversationExternalId: row.conversationExternalId (Gate 2.5 §3c inverted)", () => {
+    // Gate 2.5 correction: the find view uses viewCopyThroughFields (unfiltered).
+    // The excluded field stays as a bare passthrough — write-surface-only exclusion.
+    expect(findBody(out)).toContain("conversationExternalId: row.conversationExternalId,");
+  });
+
+  it("contains NO ` as ` cast", () => {
+    expect(codeOnly(out).includes(" as ")).toBe(false);
+  });
+});
+
+describe("generateDefaultSink — #490 exclusion does not affect localFkColumns or timestamps", () => {
+  // Confirm that the scope fence holds: exclusion touches ONLY copyThroughFields.
+  // localFkColumns and timestamps are separate inputs and must not be affected.
+  const out = generateDefaultSink(
+    contactInput({
+      entityName: "message",
+      entityClass: "Message",
+      copyThroughFields: [
+        // Only body remains; conversationExternalId is excluded (absent).
+        { camelName: "body", tsType: "string" },
+      ],
+      localFkColumns: [{ camelName: "channelId", tsType: "string | null" }],
+      hasTimestamps: true,
+    }),
+  );
+
+  it("localFkColumns still appear in the find view", () => {
+    expect(findBody(out)).toContain("channelId: row.channelId,");
+  });
+
+  it("timestamps still appear in the find view", () => {
+    expect(findBody(out)).toContain("createdAt: row.createdAt,");
+    expect(findBody(out)).toContain("updatedAt: row.updatedAt,");
+  });
+});

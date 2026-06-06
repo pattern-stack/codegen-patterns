@@ -1,0 +1,38 @@
+# #490 fixture: exercises integration.sink knobs (delete + exclude_fields) through
+# the real emitAdapters → buildSinkInput path (the #488-lesson: shape-keyed
+# features need fixture coverage in the same PR so the snapshot pins knob-driven
+# output end-to-end through the real buildSinkInput path).
+#
+# Knobs exercised:
+#   - integration.sink.delete: noop → softDeleteByExternalId emits 'return null;'
+#     with a doc comment; the repo is never called for the delete path.
+#   - integration.sink.exclude_fields: [conversation_external_id]
+#       → conversationExternalId ABSENT from write mapping (copyThroughFields)
+#       → conversationExternalId PRESENT in find view (viewCopyThroughFields — bare
+#         passthrough). Gate 2.5 correction: exclusion is write-surface-only.
+#         Diff-soundness via the differ's `key in incoming` guard (differ:159).
+#
+# Surface: crm — reuses the existing salesforce provider (stubs already present).
+entity:
+  name: message
+  plural: messages
+  table: messages
+  surface: crm
+  pattern: Integrated
+behaviors:
+  - timestamps
+fields:
+  body:
+    type: string
+    required: true
+  conversation_external_id:
+    type: string
+    nullable: true
+integration:
+  providers:
+    salesforce:
+      remote_entity: message
+      direction: inbound
+  sink:
+    delete: noop
+    exclude_fields: [conversation_external_id]

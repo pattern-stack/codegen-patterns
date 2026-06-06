@@ -246,3 +246,91 @@ describe('non-Integrated repository emission', () => {
     expect(out).toContain('extends BaseRepository<Widget> {');
   });
 });
+
+// ============================================================================
+// #490 — buildIntegrationSurface: delete knob + exclude_fields
+// ============================================================================
+
+describe('#490 buildIntegrationSurface — delete knob: resolveSoftDeleteBoolean', () => {
+  // Import resolveSoftDeleteBoolean and test the mapping rule directly.
+  // The contract test (490-sink-knobs-contract.test.ts §d) locks the full
+  // two-derivation agreement; this block tests the helper in isolation.
+
+  it('soft → true (regardless of hasSoftDelete)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, {}, { delete: 'soft' }) as any;
+    expect(surface.integrationConfig.softDelete).toBe(true);
+  });
+
+  it('tombstone → false (regardless of hasSoftDelete)', () => {
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, {}, { delete: 'tombstone' }) as any;
+    expect(surface.integrationConfig.softDelete).toBe(false);
+  });
+
+  it('noop → !!hasSoftDelete (false when no soft_delete behavior)', () => {
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, {}, { delete: 'noop' }) as any;
+    expect(surface.integrationConfig.softDelete).toBe(false);
+  });
+
+  it('noop → !!hasSoftDelete (true when soft_delete behavior present)', () => {
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, {}, { delete: 'noop' }) as any;
+    expect(surface.integrationConfig.softDelete).toBe(true);
+  });
+
+  it('absent delete knob → !!hasSoftDelete (false)', () => {
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, {}) as any;
+    expect(surface.integrationConfig.softDelete).toBe(false);
+  });
+
+  it('absent delete knob → !!hasSoftDelete (true)', () => {
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, {}) as any;
+    expect(surface.integrationConfig.softDelete).toBe(true);
+  });
+});
+
+describe('#490 buildIntegrationSurface — exclude_fields: writeColumns/writeFields vs projectionColumns/projectionFields', () => {
+  const fields = [
+    { name: 'body', camelName: 'body', tsType: 'string', nullable: false },
+    {
+      name: 'conversation_external_id',
+      camelName: 'conversationExternalId',
+      tsType: 'string',
+      nullable: true,
+    },
+  ];
+  const policy = { exclude_fields: ['conversation_external_id'] };
+
+  const surface = buildIntegrationSurface(
+    'Integrated',
+    fields,
+    [],
+    false,
+    false,
+    false,
+    {},
+    policy,
+  ) as any;
+
+  it('writeColumns excludes conversationExternalId', () => {
+    expect(surface.integrationConfig.writeColumns).not.toContain('conversationExternalId');
+  });
+
+  it('writeFields excludes conversationExternalId', () => {
+    const names = surface.writeFields.map((f: any) => f.camelName);
+    expect(names).not.toContain('conversationExternalId');
+  });
+
+  it('projectionColumns retains conversationExternalId', () => {
+    expect(surface.integrationConfig.projectionColumns).toContain('conversationExternalId');
+  });
+
+  it('projectionFields retains conversationExternalId', () => {
+    const names = surface.projectionFields.map((f: any) => f.camelName);
+    expect(names).toContain('conversationExternalId');
+  });
+
+  it('non-excluded field body remains in writeColumns and projectionColumns', () => {
+    expect(surface.integrationConfig.writeColumns).toContain('body');
+    expect(surface.integrationConfig.projectionColumns).toContain('body');
+  });
+});

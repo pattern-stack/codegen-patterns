@@ -74,9 +74,10 @@ describe('integration emission snapshot — integration-patterns fixture', () =>
     expect(tree).toContain('crm/types.generated.ts');
     expect(tree).toContain("export type CrmProvider = 'salesforce';");
     // #488 fixture extension: lead is now in the crm surface (exercises hasTimestamps + localFkColumns)
-    expect(tree).toContain("export type CrmEntity = 'account' | 'contact' | 'lead' | 'opportunity';");
+    // #490 fixture extension: message is now in the crm surface (exercises delete:noop + exclude_fields)
+    expect(tree).toContain("export type CrmEntity = 'account' | 'contact' | 'lead' | 'message' | 'opportunity';");
     // Capabilities entities derived from surface: crm
-    expect(tree).toContain("entities: ['account', 'contact', 'lead', 'opportunity']");
+    expect(tree).toContain("entities: ['account', 'contact', 'lead', 'message', 'opportunity']");
   });
 
   test('the interaction surfaces (google: calendar/mail/transcript) emit — nothing skipped', () => {
