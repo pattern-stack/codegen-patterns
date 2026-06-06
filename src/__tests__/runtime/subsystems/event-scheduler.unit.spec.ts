@@ -30,6 +30,7 @@ import {
 } from '../../../../runtime/subsystems/events/event-scheduler';
 import { MemoryEventBus } from '../../../../runtime/subsystems/events/event-bus.memory-backend';
 import { ScheduleConfigError } from '../../../../runtime/subsystems/events/events-errors';
+import { EventSchedulerLifecycle } from '../../../../runtime/subsystems/events/events.module';
 import type { DomainEvent } from '../../../../runtime/subsystems/events/event-bus.protocol';
 
 const HOUR = 3_600_000;
@@ -362,5 +363,74 @@ describe('scheduledEventsFromRegistry + resolveScheduledEvent (Group 7)', () => 
         contact_created: { direction: 'change', pool: 'events_change' },
       }),
     ).toEqual([]);
+  });
+});
+
+// ─── 8. boot-tick race fix (0.20.2) ─────────────────────────────────────────
+//
+// The 0.20.1 bug: `EventSchedulerLifecycle` ran `materializeBoot()` from
+// `onModuleInit`, which fires during the EVENTS module's own init — BEFORE
+// later modules (notably BridgeModule, whose outbox-drain hook is what turns a
+// scheduled event into bridge_delivery rows) finish wiring. With listenNotify
+// the boot row drained within ~3ms and was marked processed with ZERO
+// deliveries (silent boot-only loss). Fix: defer to `onApplicationBootstrap`,
+// which fires after ALL modules' onModuleInit + every hook is attached.
+
+describe('EventSchedulerLifecycle — boot-tick ordering (Group 8)', () => {
+  const registry = {
+    reconcile_due: {
+      schedule: { every: '1h' },
+      direction: 'inbound',
+      pool: 'events_inbound',
+    },
+  };
+
+  it('uses onApplicationBootstrap, NOT onModuleInit (the ordering contract)', () => {
+    const lifecycle = new EventSchedulerLifecycle(new MemoryEventBus(), {
+      backend: 'memory',
+      eventRegistry: registry,
+    });
+    // The fix's whole point: the boot pass must run on the bootstrap hook so it
+    // fires after every module's onModuleInit (bridge hook attached). Assert the
+    // hook surface directly so a regression that moves it back to onModuleInit
+    // (re-opening the race) fails here.
+    expect(typeof (lifecycle as unknown as { onApplicationBootstrap?: unknown }).onApplicationBootstrap).toBe('function');
+    expect((lifecycle as unknown as { onModuleInit?: unknown }).onModuleInit).toBeUndefined();
+  });
+
+  it('onApplicationBootstrap materialises the boot tick to a subscriber attached after init', async () => {
+    // Model the race: a "downstream hook" (stands in for the bridge outbox
+    // drain) subscribes AFTER the lifecycle is constructed — i.e. after the
+    // EVENTS module init would have run. Under the old onModuleInit timing the
+    // boot row would already have been emitted+drained before this subscribe;
+    // under onApplicationBootstrap the subscribe is in place first, so the boot
+    // tick reaches it.
+    const bus = new MemoryEventBus();
+    const lifecycle = new EventSchedulerLifecycle(bus, {
+      backend: 'memory',
+      eventRegistry: registry,
+    });
+
+    // (init phase complete) → later module attaches its hook:
+    const delivered: string[] = [];
+    bus.subscribe('reconcile_due', async (e) => {
+      delivered.push(e.metadata?.['scheduleSlot'] as string);
+    });
+
+    // (bootstrap phase) → boot tick fires against the fully-wired pipeline.
+    await lifecycle.onApplicationBootstrap();
+
+    expect(delivered.length).toBe(1);
+    expect(delivered[0]).toMatch(/^@schedule\/reconcile_due\//);
+
+    await lifecycle.onModuleDestroy(); // stop the interval timer
+  });
+
+  it('is a no-op when no eventRegistry is threaded (no scheduler spawned)', async () => {
+    const bus = new MemoryEventBus();
+    const lifecycle = new EventSchedulerLifecycle(bus, { backend: 'memory' });
+    await lifecycle.onApplicationBootstrap();
+    expect(bus.publishedEvents.length).toBe(0);
+    await lifecycle.onModuleDestroy();
   });
 });

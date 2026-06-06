@@ -51,8 +51,8 @@ import {
   Module,
   Optional,
   type DynamicModule,
+  type OnApplicationBootstrap,
   type OnModuleDestroy,
-  type OnModuleInit,
   type Provider,
   type Type,
 } from '@nestjs/common';
@@ -190,13 +190,30 @@ export interface EventsModuleOptions {
 
 /**
  * Lifecycle holder for the `EventScheduler` (ADR-039). Registered as a provider
- * on the drizzle/memory `forRoot` branches; Nest drives `onModuleInit` (after
- * the bus is constructed) and `onModuleDestroy`. Reads the scheduled-event set
- * from the threaded `eventRegistry` and starts the materialiser. No-op when
- * nothing declared `schedule:`, or under the redis backend (no outbox history).
+ * on the drizzle/memory `forRoot` branches. Reads the scheduled-event set from
+ * the threaded `eventRegistry` and starts the materialiser. No-op when nothing
+ * declared `schedule:`, or under the redis backend (no outbox history).
+ *
+ * **Why `onApplicationBootstrap`, not `onModuleInit` (boot-tick race fix).**
+ * `start()` runs `materializeBoot()`, which inserts the current slot's
+ * `domain_events` row. With `listenNotify` enabled the outbox drain consumes
+ * that row within milliseconds — so it MUST NOT run until every other module
+ * has attached its outbox hooks. `onModuleInit` fires during the EVENTS
+ * module's own init, BEFORE later modules (notably `BridgeModule`, which
+ * attaches the bridge outbox-drain hook) finish initialising. The result was a
+ * silent boot-only loss: the boot tick drained to `processed` with ZERO
+ * `bridge_delivery` rows and no error (verified live in swe-brain on 0.20.1 —
+ * slot `@schedule/reconcile_due/...` processed 3ms after materialisation, no
+ * deliveries; the in-loop tick at the next slot delivered correctly).
+ *
+ * `onApplicationBootstrap` fires AFTER all modules' `onModuleInit` complete and
+ * every hook is attached — the boot tick is then drained against the fully
+ * wired pipeline. The tick interval starts here too (it lives inside `start()`,
+ * and keeping both passes on the same hook keeps the boot/interval contract in
+ * one place).
  */
 @Injectable()
-export class EventSchedulerLifecycle implements OnModuleInit, OnModuleDestroy {
+export class EventSchedulerLifecycle implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(EventSchedulerLifecycle.name);
   private scheduler: EventScheduler | null = null;
 
@@ -207,7 +224,7 @@ export class EventSchedulerLifecycle implements OnModuleInit, OnModuleDestroy {
     private readonly opts: EventsModuleOptions | null = null,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  async onApplicationBootstrap(): Promise<void> {
     const registry = this.opts?.eventRegistry;
     if (!registry) return;
     if (typeof this.bus.materializeScheduledEvent !== 'function') return; // redis

@@ -49,18 +49,18 @@ describe('buildSubsystemBarrel', () => {
 
 	test('installed-but-no-composer-only set still emits DynamicModule import (#smoke-fix)', () => {
 		// Repro of the smoke regression: a project whose install set contains
-		// only non-composer subsystems (observability + auth + auth-integrations
-		// in the actual smoke; observability alone is sufficient to trigger the
-		// pre-fix bug). `allCalls` is empty, so the prior code returned
-		// `HEADER + 'export const SUBSYSTEM_MODULES: DynamicModule[] = [];'`
-		// with no `DynamicModule` import. tsc TS2304.
+		// only non-composer subsystems (auth / auth-integrations). `allCalls` is
+		// empty, so the prior code returned `HEADER + 'export const
+		// SUBSYSTEM_MODULES: DynamicModule[] = [];'` with no `DynamicModule`
+		// import. tsc TS2304. (#473: observability now HAS a composer, so `auth`
+		// is the composer-less example.)
 		const out = buildSubsystemBarrel(
-			[inst('observability')],
+			[inst('auth')],
 			{},
 			subsystemsRel,
 		);
 		expect(out.emitted).toEqual([]);
-		expect(out.skipped).toContain('observability');
+		expect(out.skipped).toContain('auth');
 		// Imports MUST include the DynamicModule type alias …
 		expect(out.content).toContain(
 			"import type { DynamicModule } from '@nestjs/common';",
@@ -232,15 +232,15 @@ describe('buildSubsystemBarrel', () => {
 	});
 
 	test('installed subsystem without a composer is listed in `skipped`', () => {
-		// `observability` / `auth` aren't in COMPOSABLE_ORDER yet — they should
-		// register as skipped, not silently dropped.
+		// `auth` has no composer — it should register as skipped, not silently
+		// dropped. (#473: observability now HAS a composer; `auth` is the example.)
 		const out = buildSubsystemBarrel(
-			[inst('events'), inst('observability')],
+			[inst('events'), inst('auth')],
 			{ events: {} },
 			subsystemsRel,
 		);
 		expect(out.emitted).toEqual(['events']);
-		expect(out.skipped).toContain('observability');
+		expect(out.skipped).toContain('auth');
 	});
 
 	test('#4: an `incomplete` subsystem is NOT emitted (no phantom forRoot import)', () => {
@@ -674,5 +674,85 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 			// And the symbol must be imported (no dangling reference).
 			expect(out.content).toMatch(/import \{ eventRegistry \} from '[^']+'/);
 		}
+	});
+
+	// ─── #473: observability composer ────────────────────────────────────────
+
+	test('observability composer emits ObservabilityModule.forRoot() (vendored)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('observability')],
+			{},
+			subsystemsRel,
+			'vendored',
+		);
+		expect(out.emitted).toEqual(['observability']);
+		expect(out.content).toContain(
+			"import { ObservabilityModule } from './shared/subsystems/observability/observability.module';",
+		);
+		// No reporter enabled → bare forRoot (matches the off-by-default scaffold).
+		expect(out.content).toContain('ObservabilityModule.forRoot(),');
+		// No backend/multiTenant — it's a combiner with no durable state.
+		expect(out.content).not.toMatch(/ObservabilityModule\.forRoot\(\{[^}]*backend/);
+	});
+
+	test('observability composer emits ObservabilityModule.forRoot() (package)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('observability')],
+			{},
+			subsystemsRel,
+			'package',
+		);
+		expect(out.content).toContain(
+			"import { ObservabilityModule } from '@pattern-stack/codegen/runtime/subsystems/observability/index';",
+		);
+		expect(out.content).toContain('ObservabilityModule.forRoot(),');
+	});
+
+	test('observability registers AFTER the read ports it composes (jobs/bridge/integration)', () => {
+		const out = buildSubsystemBarrel(
+			[
+				inst('observability'),
+				inst('integration'),
+				inst('bridge'),
+				inst('jobs'),
+				inst('events'),
+			], // deliberately unsorted input
+			{
+				events: {},
+				jobs: { worker_mode: 'standalone' },
+				bridge: {},
+				integration: {},
+			},
+			subsystemsRel,
+		);
+		expect(out.emitted).toEqual(['events', 'jobs', 'bridge', 'integration', 'observability']);
+		const idx = (frag: string) => out.content.indexOf(frag);
+		// ObservabilityModule.forRoot must appear after every composed sibling's forRoot.
+		const obs = idx('ObservabilityModule.forRoot');
+		expect(obs).toBeGreaterThan(idx('JobsDomainModule.forRoot'));
+		expect(obs).toBeGreaterThan(idx('BridgeModule.forRoot'));
+		expect(obs).toBeGreaterThan(idx('IntegrationModule.forRoot'));
+		expect(obs).toBeGreaterThan(idx('EventsModule.forRoot'));
+	});
+
+	test('observability threads reporters config only when a reporter is enabled', () => {
+		// Off-by-default scaffold (enabled: false) → bare forRoot.
+		const off = buildSubsystemBarrel(
+			[inst('observability')],
+			{ observability: { reporters: { bridgeMetrics: { enabled: false, intervalMs: 60000, windowHours: 24 } } } },
+			subsystemsRel,
+		);
+		expect(off.content).toContain('ObservabilityModule.forRoot(),');
+		expect(off.content).not.toContain('reporters');
+
+		// Operator opts in (enabled: true) → reporters block threaded.
+		const on = buildSubsystemBarrel(
+			[inst('observability')],
+			{ observability: { reporters: { bridgeMetrics: { enabled: true, intervalMs: 60000, windowHours: 1 } } } },
+			subsystemsRel,
+		);
+		expect(on.content).toContain(
+			'ObservabilityModule.forRoot({ reporters: { bridgeMetrics: { enabled: true, intervalMs: 60000, windowHours: 1 } } }),',
+		);
 	});
 });

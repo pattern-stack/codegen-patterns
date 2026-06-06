@@ -195,6 +195,11 @@ async function main(): Promise<number> {
 		run(`bun ${CLI_PATH} subsystem install events`, tmpDir);
 		run(`bun ${CLI_PATH} subsystem install jobs`, tmpDir);
 		run(`bun ${CLI_PATH} subsystem install bridge`, tmpDir);
+		// #473 — observability is a combiner (ADR-025) that composes the read
+		// ports above via @Optional() DI. Installing it here exercises the
+		// composer the issue added (it must emit ObservabilityModule.forRoot
+		// AFTER the four infra subsystems in SUBSYSTEM_MODULES).
+		run(`bun ${CLI_PATH} subsystem install observability`, tmpDir);
 
 		// 5a-prep. The jobs install scaffold defaults `worker_mode: embedded`
 		//   in codegen.config.yaml, which has the barrel emit
@@ -260,11 +265,43 @@ async function main(): Promise<number> {
 		}
 		const barrelPath = path.join(tmpDir, 'src/generated/subsystems.ts');
 		const barrel = fs.readFileSync(barrelPath, 'utf-8');
-		if (!barrel.includes('BridgeModule.forRoot')) {
-			throw new Error(
-				`generated barrel does not include BridgeModule.forRoot(...) after install:\n${barrel}`,
-			);
+
+		// 0.20.x (#472/#473) — EVERY installed subsystem with a composer must emit
+		// its `forRoot` into SUBSYSTEM_MODULES. This class of gap (install adds a
+		// config entry but the barrel never wires the module) has now bitten twice
+		// — events' scheduler (#471/#472) and observability (#473) — and survived
+		// because nothing end-to-end asserted forRoot presence per subsystem.
+		// Assert the module-name → forRoot mapping for everything this smoke
+		// installs (the four infra subsystems + the observability combiner).
+		const expectedForRoots: Record<string, string> = {
+			events: 'EventsModule.forRoot',
+			jobs: 'JobsDomainModule.forRoot',
+			bridge: 'BridgeModule.forRoot',
+			observability: 'ObservabilityModule.forRoot',
+		};
+		for (const [name, frag] of Object.entries(expectedForRoots)) {
+			if (!barrel.includes(frag)) {
+				throw new Error(
+					`generated barrel does not include ${frag}(...) after ` +
+						`installing '${name}' (install added the config entry but the ` +
+						`barrel never wired the module):\n${barrel}`,
+				);
+			}
 		}
+
+		// #473 — observability is a combiner: its forRoot MUST register AFTER the
+		// read ports it composes (it consumes their tokens via @Optional() DI).
+		// Assert it comes after jobs/bridge in the emitted SUBSYSTEM_MODULES.
+		const obsIdx = barrel.indexOf('ObservabilityModule.forRoot');
+		for (const before of ['JobsDomainModule.forRoot', 'BridgeModule.forRoot']) {
+			if (obsIdx < barrel.indexOf(before)) {
+				throw new Error(
+					`ObservabilityModule.forRoot must register AFTER ${before} ` +
+						`(combiner composes its read port via @Optional() DI):\n${barrel}`,
+				);
+			}
+		}
+
 		// ADR-039 / 0.20.1 — the barrel MUST thread the consumer's generated
 		// `eventRegistry` into `EventsModule.forRoot`, or `EventSchedulerLifecycle`
 		// never spawns and scheduled events silently don't tick (the 0.20.0 gap
