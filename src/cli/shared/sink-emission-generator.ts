@@ -18,22 +18,26 @@
  * `softDeleteByExternalId`; `userId` scoping; and the `{ id, saved }` return
  * shapes.
  *
- * The `write` object is **fully generated** — no `TODO(author)` seams:
+ * The `write` object is **generated** for scalars; FK join-keys are a SEAM:
  *   - Scalar copy-through fields (`fields:` entries, FK columns excluded) emit as
  *     `<camelName>: record.<camelName>`. `type: json` columns copy through the
  *     same way (the write-type member is `unknown`, matching the template's
  *     `TS_TYPE_MAP.json` mapping — a typed json shape is a find-side concern, #488).
- *   - FK external join-keys emit as active `<rel>ExternalId: record.<rel>ExternalId`
- *     copy-throughs. The write-key derivation mirrors `processBelongsTo`'s
- *     `relationKey` branches (`prompt-extension.js:447-460`); see `fkWriteKey()`
- *     in `adapter-emission-generator.ts`.
+ *   - FK external join-keys emit as `<rel>ExternalId: null,` with a SEAM comment.
+ *     WHY NULL: the projection-default canonical (`<E>IntegrationProjection`) does
+ *     NOT carry external-key members — only local FK columns (e.g. `accountId`).
+ *     `record.<rel>ExternalId` would be a TS2339 error until the author widens the
+ *     canonical. `null` is write-safe: the repo's FK resolver `!== null` guard
+ *     (`integrated-entity-repository.ts:118-120`) skips null write keys and never
+ *     clobbers an existing link. The SEAM comment names the key and instructs the
+ *     author to replace `null` with `record.<writeKey>` after widening.
+ *     The write-key NAME still mirrors `processBelongsTo`'s `relationKey` branches
+ *     (`prompt-extension.js:447-460`) via `fkWriteKey()` — parity governs naming.
  *
- * The remaining author seam is the `<Entity>Canonical` type alias at the top of
- * the generated file: widen it from the default `<Entity>IntegrationProjection`
- * to your adapter's canonical shape whenever the adapter carries fields the
- * projection does not (e.g. FK external keys resolved by the vendor API). The
- * generated `record.<rel>ExternalId` access assumes the canonical type carries
- * that key — RFC-0004 / #489 track canonical ownership long-term.
+ * The author seam for FK keys: widen `<Entity>Canonical` to carry the external
+ * join-key, then replace the `null` line with `record.<rel>ExternalId`. RFC-0004
+ * tracks reverse-resolution (local → external) at read; until then the find side
+ * cannot supply the external key either. See Find-side reshaping below.
  *
  * Policy methods (delete semantics, per-field exclusions) are #491/#490 scope.
  *
@@ -209,17 +213,21 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   //   - externalId — always present.
   //   - copy-through fields, one `<field>: record.<field>` line each, EXCEPT
   //     `userId` which is sourced from the method param (a bare `userId,`).
-  //   - FK external join-keys — active copy-through lines (the author widens
-  //     <Entity>Canonical when the canonical carries those keys).
+  //   - FK external join-keys — emitted as `<writeKey>: null` + a SEAM comment.
+  //     The projection-default canonical has no external-key member, so
+  //     `record.<writeKey>` is a TS2339 until the author widens the canonical.
+  //     null is write-safe: the repo's `!== null` guard skips it (see file header).
   const hasUserIdField = input.copyThroughFields.some(
     (f) => f.camelName === USER_ID_FIELD,
   );
   const copyThroughLines = input.copyThroughFields
     .filter((f) => f.camelName !== USER_ID_FIELD)
     .map((f) => `      ${f.camelName}: record.${f.camelName},`);
-  const fkLines = input.fkExternalKeys.map(
-    (fk) => `      ${fk.writeKey}: record.${fk.writeKey},`,
-  );
+  const fkLines = input.fkExternalKeys.flatMap((fk) => [
+    `      // SEAM (FK external key — null until you widen ${n.canonicalType} to carry \`${fk.writeKey}\`):`,
+    `      // Replace null with record.${fk.writeKey} after widening. Write-safe: repo skips null FKs.`,
+    `      ${fk.writeKey}: null,`,
+  ]);
 
   const writeBodyLines: string[] = [
     `      externalId: record.externalId,`,
@@ -232,7 +240,7 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   }
   if (fkLines.length > 0) {
     writeBodyLines.push(
-      `      // FK external join-keys (copy-through from the canonical record):`,
+      `      // FK external join-keys (null until canonical widens to carry them):`,
       ...fkLines,
     );
   }
@@ -282,11 +290,11 @@ export function generateDefaultSink(input: SinkEmitInput): string {
 //
 // Default IIntegrationSink over the generated ${n.repoClass}. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen ${n.canonicalType} below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening ${n.canonicalType}. See RFC-0004 / #489.
 // Source: definitions entity '${input.entityName}' (surface: ${input.surface}).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '${subsystemsImport(input.mode ?? "package", "integration")}';

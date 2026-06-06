@@ -297,11 +297,11 @@ export class MeetingIntegrationModule__Google {}
 //
 // Default IIntegrationSink over the generated MeetingRepository. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen MeetingCanonical below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening MeetingCanonical. See RFC-0004 / #489.
 // Source: definitions entity 'meeting' (surface: calendar).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';
@@ -808,11 +808,11 @@ export class OpportunityIntegrationModule__Salesforce {}
 //
 // Default IIntegrationSink over the generated AccountRepository. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen AccountCanonical below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening AccountCanonical. See RFC-0004 / #489.
 // Source: definitions entity 'account' (surface: crm).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';
@@ -882,11 +882,11 @@ export class AccountSink implements IIntegrationSink<AccountCanonical> {
 //
 // Default IIntegrationSink over the generated ContactRepository. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen ContactCanonical below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening ContactCanonical. See RFC-0004 / #489.
 // Source: definitions entity 'contact' (surface: crm).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';
@@ -956,11 +956,11 @@ export class ContactSink implements IIntegrationSink<ContactCanonical> {
 //
 // Default IIntegrationSink over the generated LeadRepository. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen LeadCanonical below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening LeadCanonical. See RFC-0004 / #489.
 // Source: definitions entity 'lead' (surface: crm).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';
@@ -1016,8 +1016,10 @@ export class LeadSink implements IIntegrationSink<LeadCanonical> {
       externalId: record.externalId,
       // copy-through fields (one line per \`fields:\` entry):
       fullName: record.fullName,
-      // FK external join-keys (copy-through from the canonical record):
-      accountExternalId: record.accountExternalId,
+      // FK external join-keys (null until canonical widens to carry them):
+      // SEAM (FK external key — null until you widen LeadCanonical to carry \`accountExternalId\`):
+      // Replace null with record.accountExternalId after widening. Write-safe: repo skips null FKs.
+      accountExternalId: null,
     };
     const proj = await this.repo.integrationUpsertOne(write, this.provider);
     return { id: proj.id, saved: record };
@@ -1035,11 +1037,11 @@ export class LeadSink implements IIntegrationSink<LeadCanonical> {
 //
 // Default IIntegrationSink over the generated OpportunityRepository. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen OpportunityCanonical below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening OpportunityCanonical. See RFC-0004 / #489.
 // Source: definitions entity 'opportunity' (surface: crm).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';
@@ -1420,11 +1422,11 @@ export class EmailIntegrationModule__Google {}
 //
 // Default IIntegrationSink over the generated EmailRepository. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen EmailCanonical below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening EmailCanonical. See RFC-0004 / #489.
 // Source: definitions entity 'email' (surface: mail).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';
@@ -1771,11 +1773,11 @@ export class TranscriptIntegrationModule__Google {}
 //
 // Default IIntegrationSink over the generated TranscriptRepository. The PLUMBING
 // (constructor, provider-match assert, repo delegation, userId scoping, return
-// shapes) is generated. The write object is fully generated: scalar fields and
-// type:json columns copy through as-is; FK external join-keys emit as active
-// <rel>ExternalId: record.<rel>ExternalId copy-throughs (write member is string|null).
-// Author seam: widen TranscriptCanonical below when your canonical carries fields
-// the projection does not (e.g. resolved FK external keys). See RFC-0004 / #489.
+// shapes) is generated. Scalar write fields copy through from the canonical
+// record; type:json columns do too (write member is \`unknown\`). FK external
+// join-keys emit as \`<writeKey>: null\` + SEAM comment — null is write-safe
+// (repo skips null FKs; integrated-entity-repository.ts:118-120); replace with
+// record.<writeKey> after widening TranscriptCanonical. See RFC-0004 / #489.
 // Source: definitions entity 'transcript' (surface: transcript).
 import { Injectable } from '@nestjs/common';
 import type { IIntegrationSink } from '@pattern-stack/codegen/subsystems';

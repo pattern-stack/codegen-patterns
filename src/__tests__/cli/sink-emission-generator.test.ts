@@ -176,26 +176,32 @@ describe("generateDefaultSink — userId is a declared copy-through field", () =
 
 describe("generateDefaultSink — belongs_to FK entity (single-word non-self)", () => {
   // contact with accountExternalId — the most common case.
+  // FK external keys emit as `<writeKey>: null` + SEAM comment: the
+  // projection-default canonical has no external-key member, so `record.<writeKey>`
+  // would be TS2339. null is write-safe (repo skips null FKs).
   const out = generateDefaultSink(
     contactInput({
       fkExternalKeys: [{ writeKey: "accountExternalId" }],
     }),
   );
 
-  it("emits the FK external join-key as an active copy-through (no TODO)", () => {
-    expect(out).toContain("accountExternalId: record.accountExternalId,");
+  it("emits the FK key as null (not record.<writeKey> — projection-default canonical has no external-key member)", () => {
+    expect(out).toContain("accountExternalId: null,");
+  });
+
+  it("emits a SEAM comment naming the write key", () => {
+    expect(out).toContain("SEAM (FK external key");
+    expect(out).toContain("accountExternalId");
+  });
+
+  it("the code line is null, not record.accountExternalId (TS2339 under projection-default canonical)", () => {
+    // The SEAM comment mentions record.accountExternalId for instruction — intentional.
+    // Assert the active code assignment is null.
+    expect(codeOnly(out)).not.toContain("accountExternalId: record.");
   });
 
   it("has no TODO(author) text anywhere", () => {
     expect(out).not.toContain("TODO(author)");
-  });
-
-  it("the write block contains an uncommented accountExternalId: assignment", () => {
-    const writeBlock = out.slice(
-      out.indexOf("const write: ContactIntegrationWrite = {"),
-      out.indexOf("const proj ="),
-    );
-    expect(writeBlock).toMatch(/^\s*accountExternalId:/m);
   });
 
   it("contains NO ` as ` cast", () => {
@@ -206,16 +212,24 @@ describe("generateDefaultSink — belongs_to FK entity (single-word non-self)", 
 describe("generateDefaultSink — belongs_to FK entity (multi-word non-self, snake-retained)", () => {
   // sales_account target → sales_accountExternalId (wart mirrored from template;
   // normalization deferred to follow-up #494 per spec Judgment call).
+  // FK key still emits as null + SEAM comment; the name is verbatim (snake retained).
   const out = generateDefaultSink(
     contactInput({
       fkExternalKeys: [{ writeKey: "sales_accountExternalId" }],
     }),
   );
 
-  it("emits the FK key verbatim with snake retained", () => {
-    expect(out).toContain(
-      "sales_accountExternalId: record.sales_accountExternalId,",
-    );
+  it("emits the FK key as null with the snake-retained name", () => {
+    expect(out).toContain("sales_accountExternalId: null,");
+  });
+
+  it("emits a SEAM comment naming the snake-retained key", () => {
+    expect(out).toContain("SEAM (FK external key");
+    expect(out).toContain("sales_accountExternalId");
+  });
+
+  it("the code line is null, not record.sales_accountExternalId", () => {
+    expect(codeOnly(out)).not.toContain("sales_accountExternalId: record.");
   });
 
   it("has no TODO(author) text", () => {
@@ -229,6 +243,7 @@ describe("generateDefaultSink — belongs_to FK entity (multi-word non-self, sna
 
 describe("generateDefaultSink — belongs_to FK entity (self-FK, camelCase derived)", () => {
   // parent_account_id on account entity → parentAccountExternalId
+  // FK key emits as null + SEAM comment; name is camelCase-derived.
   const out = generateDefaultSink(
     contactInput({
       entityName: "account",
@@ -237,10 +252,17 @@ describe("generateDefaultSink — belongs_to FK entity (self-FK, camelCase deriv
     }),
   );
 
-  it("emits the self-FK key as a camelCase active copy-through", () => {
-    expect(out).toContain(
-      "parentAccountExternalId: record.parentAccountExternalId,",
-    );
+  it("emits the self-FK key as null with the camelCase-derived name", () => {
+    expect(out).toContain("parentAccountExternalId: null,");
+  });
+
+  it("emits a SEAM comment naming the self-FK key", () => {
+    expect(out).toContain("SEAM (FK external key");
+    expect(out).toContain("parentAccountExternalId");
+  });
+
+  it("the code line is null, not record.parentAccountExternalId", () => {
+    expect(codeOnly(out)).not.toContain("parentAccountExternalId: record.");
   });
 
   it("has no TODO(author) text", () => {
@@ -306,8 +328,12 @@ describe("generateDefaultSink — FK + json + userId together", () => {
     expect(out).toContain("reactions: record.reactions,");
   });
 
-  it("emits the FK external key as an active copy-through", () => {
-    expect(out).toContain("channelExternalId: record.channelExternalId,");
+  it("emits the FK external key as null + SEAM comment (no active record.<writeKey> code line)", () => {
+    expect(out).toContain("channelExternalId: null,");
+    expect(out).toContain("SEAM (FK external key");
+    // The SEAM comment mentions record.channelExternalId for instruction — that's
+    // intentional. Assert the code line itself is null, not a record access.
+    expect(codeOnly(out)).not.toContain("channelExternalId: record.");
   });
 
   it("sources userId from the param shorthand, not the record", () => {
