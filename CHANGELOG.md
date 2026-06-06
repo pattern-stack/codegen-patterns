@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.20.2] — 2026-06-06
+
+Two consumer-found fixes (dogfooding swe-brain on 0.20.1).
+
+### Fixed
+
+- **ADR-039 boot tick was lost to a module-init race.** `EventSchedulerLifecycle`
+  ran `materializeBoot()` from `onModuleInit`, which fires during the EVENTS
+  module's own init — BEFORE later modules (notably `BridgeModule`, whose
+  outbox-drain hook turns a scheduled event into `bridge_delivery` rows) finish
+  wiring. With `listenNotify` the boot row drained within ~3ms and was marked
+  `processed` with ZERO deliveries and no error (verified live: slot
+  `@schedule/reconcile_due/1780707600000` processed 3ms after materialisation,
+  zero `bridge_delivery` rows for `reconcile-poll#0`; the in-loop tick at the
+  next slot boundary delivered correctly — boot-only loss). **Fix:** the
+  lifecycle now defers to `onApplicationBootstrap` (fires after all modules'
+  `onModuleInit` + every hook is attached), so the boot tick drains against the
+  fully-wired pipeline. The tick interval start moved with it (both passes live
+  in `EventScheduler.start()`). Regression tests assert the hook surface is
+  `onApplicationBootstrap` (not `onModuleInit`) and that a boot-materialised
+  scheduled event reaches a subscriber attached after init.
+- **#473 — `subsystem install observability` never wired `ObservabilityModule`.**
+  The install added `observability` to `subsystems.install` but the barrel
+  emitter had no composer, so `ObservabilityModule.forRoot` was never emitted
+  into `SUBSYSTEM_MODULES` — consumers hand-wired it in `app.module.ts` (like
+  Auth). **Fix:** added an `observability` composer. It emits
+  `ObservabilityModule.forRoot()` (no `backend`/`multiTenant` — a combiner per
+  ADR-025 owns no durable state), imported package- or vendored-aware, and is
+  ordered LAST in `COMPOSABLE_ORDER` so its `forRoot` registers AFTER the
+  events/jobs/bridge/integration read ports it composes via `@Optional()` DI.
+  The `observability.reporters` block (OBS-6) is threaded into `forRoot` only
+  when a reporter is `enabled: true` (off-by-default, mirroring the
+  `listen_notify` / `differ` clauses); the default install stays a bare
+  `ObservabilityModule.forRoot()`. Closes #473.
+
+### Tests
+
+- `subsystem-barrel-generator` tests: observability composer coverage (both
+  modes, combiner ordering after the composed siblings, reporters threaded only
+  when enabled).
+- **Subsystems smoke now asserts forRoot presence per installed subsystem** (not
+  just events' `eventRegistry`) — it installs observability too and fails if the
+  real generated barrel is missing any installed subsystem's `forRoot` or if
+  observability isn't ordered after the read ports. Both gap classes (the
+  scheduler threading and the missing observability wiring) survived because
+  nothing end-to-end checked per-subsystem wiring.
+
 ## [0.20.1] — 2026-06-06
 
 **Fix: the subsystems barrel never threaded `eventRegistry` into

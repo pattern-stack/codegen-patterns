@@ -12,11 +12,12 @@
  * Every `entity new` / `subsystem install` invocation fully regenerates the
  * file from `codegen.config.yaml` + the detected install set. Deterministic.
  *
- * Today's coverage: events, jobs (+ job-worker embedded mode), bridge, integration.
- * Auth / auth-integrations / observability are out of scope; their AppModule
- * wiring still goes by hand (each has init-time options the generator can't
- * synthesize from config alone). Add a composer entry below when ready to
- * include them.
+ * Today's coverage: events, jobs (+ job-worker embedded mode), bridge,
+ * integration, observability (#473 — the combiner, ordered last).
+ * Auth / auth-integrations are still out of scope; their AppModule wiring goes
+ * by hand (each has init-time options — e.g. Auth's env `redirectUriBase` — the
+ * generator can't synthesize from config alone). Add a composer entry below
+ * when ready to include them.
  */
 
 import fs from 'node:fs';
@@ -415,6 +416,24 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			calls: [`\tIntegrationModule.forRoot({ ${parts.join(', ')} }),`],
 		};
 	},
+
+	// #473 — observability combiner (ADR-025). NO `backend` / `multiTenant`:
+	// it owns no durable state — portability is inherited from whichever
+	// backends the composed siblings run (see `ObservabilityModule` docblock).
+	// The only `forRoot` option is `reporters` (OBS-6); thread the config
+	// block's `reporters:` when a reporter is enabled, else emit a bare
+	// `forRoot()`. Ordered LAST in `COMPOSABLE_ORDER` so it registers after the
+	// read ports it composes via `@Optional()` DI.
+	observability: ({ moduleImport, cfg }) => {
+		const reportersClause = observabilityReportersClause(cfg);
+		const opts = reportersClause ? `{ ${reportersClause} }` : '';
+		return {
+			imports: [
+				`import { ObservabilityModule } from '${moduleImport('observability', 'observability.module')}';`,
+			],
+			calls: [`\tObservabilityModule.forRoot(${opts}),`],
+		};
+	},
 };
 
 /**
@@ -439,6 +458,32 @@ function integrationDifferClause(cfg: Record<string, unknown> | undefined): stri
 	if (unignore.length > 0) inner.unignore = unignore;
 	if (Object.keys(inner).length === 0) return '';
 	return `differ: ${jsonToTs(inner)}`;
+}
+
+/**
+ * #473 / OBS-6 — resolve the `reporters: {...}` clause for
+ * `ObservabilityModule.forRoot(...)` from the `observability:` config block, or
+ * `''` when no reporter is meaningfully enabled. Off-by-default, mirroring the
+ * `listen_notify` / `differ` clauses: a fresh install scaffolds
+ * `reporters.bridgeMetrics.enabled: false`, so the default barrel stays a bare
+ * `ObservabilityModule.forRoot()` (the issue's expected shape) and the config is
+ * threaded only once an operator flips a reporter on. The config keys are
+ * already camelCase (`bridgeMetrics`, `intervalMs`, `windowHours`) and map 1:1
+ * to `ObservabilityModuleOptions.reporters`, so the block passes through verbatim.
+ */
+function observabilityReportersClause(
+	cfg: Record<string, unknown> | undefined,
+): string {
+	const reporters = cfg?.reporters as Record<string, unknown> | undefined;
+	if (!reporters || typeof reporters !== 'object') return '';
+	const enabled: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(reporters)) {
+		if (value && typeof value === 'object' && (value as { enabled?: unknown }).enabled === true) {
+			enabled[key] = value;
+		}
+	}
+	if (Object.keys(enabled).length === 0) return '';
+	return `reporters: ${jsonToTs(enabled)}`;
 }
 
 const PACKAGE = '@pattern-stack/codegen';
@@ -472,7 +517,18 @@ function makeModuleImport(
 			: `${PACKAGE}/runtime/subsystems/${subsystem}/index`;
 }
 
-const COMPOSABLE_ORDER: SubsystemName[] = ['events', 'jobs', 'bridge', 'integration'];
+// #473 — `observability` is LAST: it is a combiner (ADR-025) that composes the
+// jobs / bridge / integration read ports via `@Optional()` DI, so its module
+// must register AFTER them in `SUBSYSTEM_MODULES` (matches the consumer-wiring
+// order documented on `ObservabilityModule`). It owns no durable state / no
+// generated registry, so there is no schema-barrel or stub-guard concern.
+const COMPOSABLE_ORDER: SubsystemName[] = [
+	'events',
+	'jobs',
+	'bridge',
+	'integration',
+	'observability',
+];
 
 // ---------------------------------------------------------------------------
 // Public API
