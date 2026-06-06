@@ -2,7 +2,7 @@
 
 **Issue:** JOB-6
 **Status:** Implemented
-**Last Updated:** 2026-06-06 (#513 — worker location + composition + mode-aware import)
+**Last Updated:** 2026-06-06 (#517 — package-mode install emits the worker scaffold)
 **Depends on:** JOB-1 (schema file templated here), JOB-5 (module names must be stable)
 **Blocks:** JOB-8 (multi-tenancy opt-in — tenant_id column conditional lives in this template)
 
@@ -15,9 +15,18 @@
 > `DatabaseModule`+`JobsDomainModule` composition, hard-coded `@shared` import)
 > is superseded. See `.ai-docs/specs/513.md`.
 
+> **#517 revision (2026-06-06).** Package-mode installs now emit the
+> consumer-owned worker scaffold. `executePackageMode` previously returned before
+> `runJobsScaffold`, so the #516-fixed package-import worker was unreachable in
+> the ADR-037 DEFAULT mode. #517 wires the install path: the worker + main-hook
+> are emitted (config block via step 2b, `skipConfigBlock: true`), the schema
+> template is skipped (`skipSchema` — the schema ships in the package). See the
+> "#513 implementation notes" section below (item 2, now resolved) and
+> `.ai-docs/specs/517.md`.
+
 ## Overview
 
-Hygen templates that emit operational glue files when `bun codegen subsystem jobs` runs in a consumer project. Four templates: standalone `worker.ts` at project root, commented embedded-mode guidance injected into `src/main.ts`, a `jobs:` block appended to `codegen.config.yaml` with all five default pools populated, **and a templated `job-orchestration.schema.ts` that gates the `tenant_id` column on `jobs.multi_tenant` (Q1 2026-04-19 — added to JOB-6 scope because the runtime source file JOB-1 lands is always-emit; the scaffold-time conditional lives in this template layer)**. `SubsystemInstallCommand` is extended to invoke Hygen after `copyRuntime`. Scaffolded once per project, not per entity.
+Hygen templates that emit operational glue files when `bun codegen subsystem jobs` runs in a consumer project. Four templates: standalone `worker.ts` at `src/worker.ts`, commented embedded-mode guidance injected into `src/main.ts`, a `jobs:` block appended to `codegen.config.yaml` with all five default pools populated, **and a templated `job-orchestration.schema.ts` that gates the `tenant_id` column on `jobs.multi_tenant` (Q1 2026-04-19 — added to JOB-6 scope because the runtime source file JOB-1 lands is always-emit; the scaffold-time conditional lives in this template layer)**. `SubsystemInstallCommand` is extended to invoke Hygen — after `copyRuntime` in **vendored** mode, and after barrel regeneration in **package** mode (#517). In package mode the scaffold emits only the consumer-owned files (worker + main-hook): the config block is injected by `executePackageMode` step 2b (`skipConfigBlock: true`), and the schema template is skipped (`skipSchema`) because the schema ships in the package and is re-exported via the schema barrel. Scaffolded once per project, not per entity.
 
 ## Context
 
@@ -317,23 +326,33 @@ Two things the #513 design missed, recorded here as post-implementation truth:
    untouched. The resolver's `workerForRootOpts` field stays the plain string the
    unit tests assert; only the argv crossing is encoded.
 
-2. **Package mode never reaches this scaffold (follow-up: #517).** In
+2. **Package mode now emits this scaffold (resolved by #517).** ~~In
    `runtime: package` mode (the ADR-037 default), `SubsystemInstallCommand`
-   short-circuits via `executePackageMode` (`src/cli/commands/subsystem.ts:382`) and
-   returns BEFORE `runJobsScaffold` — package mode vendors no files, so the whole
-   hygen scaffold (worker, main-hook, schema template) is skipped. **The worker is
-   therefore never emitted in package mode today.** #513 made the worker
-   package-*correct* (the mode-aware `jobWorkerModuleImport` resolves to the package
-   runtime; the AppModule composition is mode-agnostic) and that branch is covered by
-   unit tests + a direct template render — but it is unit-test-only until the
-   package-mode install path is wired to emit it. Wiring requires extending
-   `executePackageMode` to run ONLY the worker template (NOT the vendored
-   `job-orchestration.schema.ejs.t`, whose target package mode deliberately doesn't
-   own). Tracked in **issue #517**.
+   short-circuited via `executePackageMode` and returned BEFORE `runJobsScaffold`,
+   so the worker was never emitted in package mode — unit-test-only.~~ **#517
+   wired the install path.** `executePackageMode` now invokes
+   `runJobsScaffold(ctx.cwd, refreshed.config, { …, skipConfigBlock: true })` AFTER
+   barrel regeneration (against the REFRESHED context, so `workerForRootOpts`
+   reflects the freshly-injected `jobs:` block — backend + extensions). It emits
+   ONLY the consumer-owned files:
+   - **worker + main-hook** — the #516-fixed mode-aware worker (`jobWorkerModuleImport`
+     → package runtime subpath) plus the embedded-mode guidance comment.
+   - **NOT the config block** — `executePackageMode` step 2b already injects it;
+     `skipConfigBlock: true` neutralises the scaffold's own config-block plan so
+     the block is written exactly once (unit test asserts the `jobs:` block + its
+     `pools:` key appear once).
+   - **NOT the schema template** — a new `skipSchema` local (boolean-ish `skip_if`,
+     same `'true'`/`''` encoding as `workerExists` / `mainHookInjected`, computed
+     from `resolveRuntimeMode(config) === 'package'`) skips
+     `job-orchestration.schema.ejs.t`. Package mode's schema ships in the package
+     and is re-exported via the schema barrel (`regenerateSubsystemSchemaBarrel`),
+     so a vendored templated copy would be a duplicate. Vendored mode keeps the
+     template as the sole tenancy-aware emitter (`skipSchema === false`).
 
 ## Open Questions (non-blocking)
 
 - `main-hook.ejs.t` uses `after: "NestFactory.create"` as injection anchor. If consumer uses `NestFactory.createMicroservice` instead, injection silently skips. CLI should print info message when `main.ts` exists but injection result can't be confirmed. Cosmetic; scaffold still functional.
+- **`main-hook` injection silently no-ops against `project init`'s `main.ts` (discovered #517, pre-existing).** Hygen's `inject: after:` silently skips when the target file contains a `{ … : <boolean> }` object literal anywhere after the anchor — and the init-emitted `main.ts` carries `SwaggerModule.setup(…, { swaggerOptions: { persistAuthorization: true } })`. So in BOTH vendored and package mode, the embedded-mode comment block does NOT actually land in a freshly-init'd consumer's `main.ts` (it injects fine into a clean/minimal `main.ts`, which is what the `subsystem.test.ts` unit case exercises). This is an anchor/inject-robustness limitation of `main-hook.ejs.t`, not a #517 regression — #517 wires the worker emission, which is unaffected. The `subsystems` package-mode smoke leg therefore asserts the worker + schema-skip, not the main-hook landing. Fix candidate: rewrite the hook as a complete-file-aware inject or a more specific anchor; deferred (the guidance is non-functional comment text, and standalone `src/worker.ts` — the operationally meaningful file — is always emitted).
 
 ## References
 

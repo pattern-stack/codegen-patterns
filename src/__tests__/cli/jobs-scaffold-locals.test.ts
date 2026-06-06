@@ -283,6 +283,27 @@ describe('resolveJobsScaffoldLocals', () => {
 		});
 		expect(present.mainHookInjected).toBe(false);
 	});
+
+	test('skipSchema: true in package mode (default), false in vendored — #517', () => {
+		// No `runtime` key → package mode (ADR-037). The schema ships in the
+		// package (consumed via the schema barrel), so the template is skipped.
+		const pkg = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: null,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(pkg.skipSchema).toBe(true);
+
+		// Vendored mode keeps the template as the sole tenancy-aware emitter.
+		const vendored = resolveJobsScaffoldLocals({
+			cwd: CWD,
+			config: { runtime: 'vendored' } as any,
+			fileExists: () => false,
+			readFile: () => null,
+		});
+		expect(vendored.skipSchema).toBe(false);
+	});
 });
 
 describe('localsToHygenArgs', () => {
@@ -299,6 +320,7 @@ describe('localsToHygenArgs', () => {
 		workerForRootOpts: "{ mode: 'standalone', allPools: true }",
 		schemaPath: '/abs/shared/subsystems/jobs/job-orchestration.schema.ts',
 		mainHookInjected: false,
+		skipSchema: false,
 	};
 
 	test('multiTenant booleans serialise to the literal strings Hygen expects', () => {
@@ -335,9 +357,24 @@ describe('localsToHygenArgs', () => {
 			'--workerForRootOpts',
 			'--schemaPath',
 			'--mainHookInjected',
+			'--skipSchema',
 		]) {
 			expect(args).toContain(flag);
 		}
+	});
+
+	test('skipSchema serialises empty-string when false, "true" when set — skip_if safe (#517)', () => {
+		// Same boolean-ish contract as workerExists / mainHookInjected: Hygen's
+		// skip_if treats any non-empty string as truthy, so a `false` must reach
+		// the template as '' (not the truthy literal 'false').
+		const args = localsToHygenArgs(base);
+		const idx = args.indexOf('--skipSchema');
+		expect(idx).toBeGreaterThanOrEqual(0);
+		expect(args[idx + 1]).toBe('');
+
+		const present = localsToHygenArgs({ ...base, skipSchema: true });
+		const idx2 = present.indexOf('--skipSchema');
+		expect(present[idx2 + 1]).toBe('true');
 	});
 
 	test('jobWorkerModuleImport passes through verbatim; workerForRootOpts is base64-encoded', () => {
