@@ -853,6 +853,12 @@ export interface EmitAdaptersEntity {
     string,
     { type?: string; target?: string; foreign_key?: string; nullable?: boolean }
   >;
+  /** Cross-cutting behavior names for this entity (from the YAML `behaviors:`
+   *  block, e.g. `["timestamps", "soft_delete"]`). Used by `buildSinkInput` to
+   *  determine whether the projection carries `createdAt`/`updatedAt` — mirrors
+   *  the template's `hasTimestamps = behaviorNames.includes('timestamps')`
+   *  (`prompt-extension.js:1108`). Optional; absent means no behaviors. */
+  behaviors?: Array<string | { name: string; [key: string]: unknown }>;
 }
 
 export interface EmitAdaptersOptions {
@@ -1204,6 +1210,29 @@ function buildSinkInput(
       return { writeKey: fkWriteKey(target, foreignKey, isSelfFk) };
     });
 
+  // Local FK columns — the projection carries the FK column itself (e.g.
+  // `accountId`), NOT the external key. Mirrors `projectionFields` in
+  // `buildIntegrationSurface` (`prompt-extension.js:940-943`): `rel.camelField`
+  // which is camelCase(foreign_key). Enumerated in the find-side view as bare
+  // scalar passthroughs after the copy-through fields, before timestamps.
+  const localFkColumns = Object.entries(relationships)
+    .filter(([, rel]) => rel.type === "belongs_to")
+    .map(([relName, rel]) => {
+      const foreignKey = rel.foreign_key ?? `${relName}_id`;
+      return {
+        camelName: snakeToCamel(foreignKey),
+        tsType: rel.nullable ? "string | null" : "string",
+      };
+    });
+
+  // Timestamps — mirrors `hasTimestamps = behaviorNames.includes('timestamps')`
+  // (prompt-extension.js:1108). Present in the projection when the behavior is
+  // declared; the find-side view must enumerate them to satisfy the
+  // projection-default canonical (TS requires all members, spread is banned).
+  const hasTimestamps = (def.behaviors ?? []).some((b) =>
+    typeof b === "string" ? b === "timestamps" : b.name === "timestamps",
+  );
+
   return {
     entityName: def.entity.name,
     entityClass: pascalFromSnake(def.entity.name),
@@ -1212,6 +1241,8 @@ function buildSinkInput(
     provider,
     copyThroughFields,
     fkExternalKeys,
+    localFkColumns,
+    hasTimestamps,
     repoImportSpecifier,
   };
 }

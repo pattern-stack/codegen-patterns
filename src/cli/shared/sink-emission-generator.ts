@@ -37,6 +37,33 @@
  *
  * Policy methods (delete semantics, per-field exclusions) are #491/#490 scope.
  *
+ * ## Find-side reshaping (generated vs. author seam) — #488
+ *
+ * `findByExternalId` returns a generated **explicit projection → canonical
+ * reshaping view** rather than a bare `return row`. Every field is a BARE
+ * passthrough (`<f>: row.<f>`) — no `??` coercion and no `as` cast:
+ *
+ * GENERATED (resolver-correct, diff-sound):
+ *   - Explicit `const view: <Entity>Canonical = { … }; return view;` — full
+ *     projection field enumeration: id, externalId, copy-through fields, local
+ *     FK columns, and (if declared) createdAt/updatedAt.
+ *   - BARE passthrough for every field — **preserves `null` so the orchestrator's
+ *     `DeepEqualDiffer` converges to noop** (`null ≠ ''`; a blanket `?? ''`
+ *     coercion would make every legitimately-null column diff false, producing
+ *     a spurious upsert that never converges; `deep-equal.differ.ts:187-208`).
+ *   - `type: json` columns pass through at `unknown` (no `as` cast available;
+ *     a typed cast is the author's seam, surfaced as a compile error on widen).
+ *
+ * AUTHOR SEAM (surfaced as compile errors when you widen `<Entity>Canonical`):
+ *   - Typed-json narrowing (`unknown → MyType[]`) — no cast-free generator
+ *     solution; the compile error on widen routes you here.
+ *   - ALL null-coercion defaults (`?? ''`, `?? 0`, `?? false`, `?? 'unknown'`) —
+ *     added only when a member is widened to non-null; TS forces the choice.
+ *   - External-key reconstruction on the find side — `accountExternalId` from
+ *     a local `accountId` requires a resolve; the projection does NOT carry it.
+ *   - Dropping local-only projection columns when you widen the canonical —
+ *     delete the corresponding `<f>: row.<f>` line.
+ *
  * ## `userId` is NOT injected — it is a declared field (see §4 deviation note)
  *
  * The generated `<Entity>IntegrationWrite` interface has NO `userId` member
@@ -117,6 +144,20 @@ export interface SinkEmitInput {
   /** Runtime mode (ADR-037) — selects the `IIntegrationSink` import specifier.
    *  Defaults to `package` when omitted. */
   mode?: RuntimeMode;
+  /** Whether the entity declares `timestamps` behavior (`created_at`/`updated_at`
+   *  columns). When true, the find-side view enumerates `createdAt`/`updatedAt`
+   *  as bare passthroughs — required because the projection-default canonical
+   *  (`<E>IntegrationProjection`) includes timestamps and TS requires all members.
+   *  Sourced from the same `hasTimestamps` flag the template uses
+   *  (`prompt-extension.js:1108`). Defaults to false when omitted. */
+  hasTimestamps?: boolean;
+  /** Local FK column camelNames carried on the projection (e.g. `accountId`
+   *  for a `belongs_to(account)` with `foreign_key: account_id`). Enumerated
+   *  as bare scalar passthroughs in the find-side view, in projection order
+   *  (after copy-through fields, before timestamps). Mirrors `belongsTo.map(rel
+   *  => rel.camelField)` from `projectionFields` in `buildIntegrationSurface`
+   *  (`prompt-extension.js:940-943`). Defaults to empty when omitted. */
+  localFkColumns?: SinkCopyThroughField[];
 }
 
 // ============================================================================
@@ -202,6 +243,40 @@ export function generateDefaultSink(input: SinkEmitInput): string {
   }
   const writeBody = writeBodyLines.join("\n");
 
+  // The find-side reshaping view — explicit projection → canonical enumeration.
+  // BARE passthrough for every field: `<f>: row.<f>` — no `??` coercion, no
+  // `as` cast. Preserves `null` so the orchestrator's DeepEqualDiffer converges
+  // to noop (null !== '' — deep-equal.differ.ts:187-208). The projection-default
+  // canonical is exactly the projection shape, so bare passthrough type-checks.
+  // When the author widens a member to non-null, the bare line becomes a compile
+  // error — they add `?? <default>` at that exact member. The generator never
+  // chooses a default; the compile error routes the human to the decision.
+  // Projection order: id, externalId, copy-through, local FK columns, timestamps.
+  const findViewLines: string[] = [
+    `    id: row.id,`,
+    `    externalId: row.externalId,`,
+  ];
+  for (const f of input.copyThroughFields) {
+    const isJson =
+      f.tsType === "unknown" || f.tsType === "unknown | null";
+    if (isJson) {
+      // SEAM (typed json): `unknown` passes through; typed-narrowing is author-owned.
+      // When you widen the canonical to a concrete type (e.g. MyType[]), this line
+      // becomes a compile error — that is intentional: no cast-free generator
+      // solution exists; you supply the typed narrowing (or a safe runtime guard).
+      findViewLines.push(`    // SEAM (typed json — unknown; narrow on canonical widen): ${f.camelName}`);
+    }
+    findViewLines.push(`    ${f.camelName}: row.${f.camelName},`);
+  }
+  for (const localFk of input.localFkColumns ?? []) {
+    findViewLines.push(`    ${localFk.camelName}: row.${localFk.camelName},`);
+  }
+  if (input.hasTimestamps) {
+    findViewLines.push(`    createdAt: row.createdAt,`);
+    findViewLines.push(`    updatedAt: row.updatedAt,`);
+  }
+  const findViewBody = findViewLines.map((l) => `  ${l}`).join("\n");
+
   return `${SCAFFOLD_SENTINEL}
 // Scaffolded once by @pattern-stack/codegen, then author-owned. Re-running codegen
 // detects the sentinel above and SKIPS this file — your edits are safe.
@@ -236,9 +311,19 @@ export class ${n.sinkClass} implements IIntegrationSink<${n.canonicalType}> {
 
   async findByExternalId(userId: string, externalId: string): Promise<${n.canonicalType} | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
+    if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    return row;
+    // Reshape the local projection into the canonical the orchestrator diffs.
+    // Generated: BARE passthrough (preserves null so the differ converges) + json
+    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
+    // typed-json narrowing; null-coercion defaults (add on canonical widen);
+    // external-key reconstruction; dropping local-only columns.
+    // See file header (## Find-side reshaping) for the full seam description.
+    const view: ${n.canonicalType} = {
+${findViewBody}
+    };
+    return view;
   }
 
   async upsertByExternalId(

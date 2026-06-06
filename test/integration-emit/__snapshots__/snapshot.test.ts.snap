@@ -325,9 +325,22 @@ export class MeetingSink implements IIntegrationSink<MeetingCanonical> {
 
   async findByExternalId(userId: string, externalId: string): Promise<MeetingCanonical | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
+    if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    return row;
+    // Reshape the local projection into the canonical the orchestrator diffs.
+    // Generated: BARE passthrough (preserves null so the differ converges) + json
+    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
+    // typed-json narrowing; null-coercion defaults (add on canonical widen);
+    // external-key reconstruction; dropping local-only columns.
+    // See file header (## Find-side reshaping) for the full seam description.
+    const view: MeetingCanonical = {
+      id: row.id,
+      externalId: row.externalId,
+      title: row.title,
+      startsAt: row.startsAt,
+    };
+    return view;
   }
 
   async upsertByExternalId(
@@ -770,9 +783,21 @@ export class AccountSink implements IIntegrationSink<AccountCanonical> {
 
   async findByExternalId(userId: string, externalId: string): Promise<AccountCanonical | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
+    if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    return row;
+    // Reshape the local projection into the canonical the orchestrator diffs.
+    // Generated: BARE passthrough (preserves null so the differ converges) + json
+    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
+    // typed-json narrowing; null-coercion defaults (add on canonical widen);
+    // external-key reconstruction; dropping local-only columns.
+    // See file header (## Find-side reshaping) for the full seam description.
+    const view: AccountCanonical = {
+      id: row.id,
+      externalId: row.externalId,
+      name: row.name,
+    };
+    return view;
   }
 
   async upsertByExternalId(
@@ -832,9 +857,21 @@ export class ContactSink implements IIntegrationSink<ContactCanonical> {
 
   async findByExternalId(userId: string, externalId: string): Promise<ContactCanonical | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
+    if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    return row;
+    // Reshape the local projection into the canonical the orchestrator diffs.
+    // Generated: BARE passthrough (preserves null so the differ converges) + json
+    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
+    // typed-json narrowing; null-coercion defaults (add on canonical widen);
+    // external-key reconstruction; dropping local-only columns.
+    // See file header (## Find-side reshaping) for the full seam description.
+    const view: ContactCanonical = {
+      id: row.id,
+      externalId: row.externalId,
+      email: row.email,
+    };
+    return view;
   }
 
   async upsertByExternalId(
@@ -894,9 +931,22 @@ export class OpportunitySink implements IIntegrationSink<OpportunityCanonical> {
 
   async findByExternalId(userId: string, externalId: string): Promise<OpportunityCanonical | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
+    if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    return row;
+    // Reshape the local projection into the canonical the orchestrator diffs.
+    // Generated: BARE passthrough (preserves null so the differ converges) + json
+    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
+    // typed-json narrowing; null-coercion defaults (add on canonical widen);
+    // external-key reconstruction; dropping local-only columns.
+    // See file header (## Find-side reshaping) for the full seam description.
+    const view: OpportunityCanonical = {
+      id: row.id,
+      externalId: row.externalId,
+      name: row.name,
+      amount: row.amount,
+    };
+    return view;
   }
 
   async upsertByExternalId(
@@ -1266,9 +1316,21 @@ export class EmailSink implements IIntegrationSink<EmailCanonical> {
 
   async findByExternalId(userId: string, externalId: string): Promise<EmailCanonical | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
+    if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    return row;
+    // Reshape the local projection into the canonical the orchestrator diffs.
+    // Generated: BARE passthrough (preserves null so the differ converges) + json
+    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
+    // typed-json narrowing; null-coercion defaults (add on canonical widen);
+    // external-key reconstruction; dropping local-only columns.
+    // See file header (## Find-side reshaping) for the full seam description.
+    const view: EmailCanonical = {
+      id: row.id,
+      externalId: row.externalId,
+      subject: row.subject,
+    };
+    return view;
   }
 
   async upsertByExternalId(
@@ -1605,9 +1667,21 @@ export class TranscriptSink implements IIntegrationSink<TranscriptCanonical> {
 
   async findByExternalId(userId: string, externalId: string): Promise<TranscriptCanonical | null> {
     const row = await this.repo.findByExternalIdProjected(externalId, this.provider);
+    if (row === null) return null;
     // The repo lookup is (provider, externalId)-scoped. If your external_id is not
     // globally unique, enforce ownership here (e.g. row.userId === userId).
-    return row;
+    // Reshape the local projection into the canonical the orchestrator diffs.
+    // Generated: BARE passthrough (preserves null so the differ converges) + json
+    // at \`unknown\`. SEAM (author-owned, surfaced as a compile error on widen):
+    // typed-json narrowing; null-coercion defaults (add on canonical widen);
+    // external-key reconstruction; dropping local-only columns.
+    // See file header (## Find-side reshaping) for the full seam description.
+    const view: TranscriptCanonical = {
+      id: row.id,
+      externalId: row.externalId,
+      body: row.body,
+    };
+    return view;
   }
 
   async upsertByExternalId(
