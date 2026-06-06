@@ -344,9 +344,9 @@ export function defaultMeetingToCanonicalView(row: MeetingIntegrationProjection)
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class MeetingSinkBase<TCanonical = MeetingIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -957,9 +957,9 @@ export function defaultAccountToCanonicalView(row: AccountIntegrationProjection)
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class AccountSinkBase<TCanonical = AccountIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -1082,9 +1082,9 @@ export function defaultContactToCanonicalView(row: ContactIntegrationProjection)
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class ContactSinkBase<TCanonical = ContactIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -1214,9 +1214,9 @@ export function defaultLeadToCanonicalView(row: LeadIntegrationProjection): Lead
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class LeadSinkBase<TCanonical = LeadIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -1342,9 +1342,9 @@ export function defaultMessageToCanonicalView(row: MessageIntegrationProjection)
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class MessageSinkBase<TCanonical = MessageIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -1473,9 +1473,9 @@ export function defaultOpportunityToCanonicalView(row: OpportunityIntegrationPro
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class OpportunitySinkBase<TCanonical = OpportunityIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -1907,9 +1907,9 @@ export function defaultEmailToCanonicalView(row: EmailIntegrationProjection): Em
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class EmailSinkBase<TCanonical = EmailIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -2309,9 +2309,9 @@ export function defaultTranscriptToCanonicalView(row: TranscriptIntegrationProje
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class TranscriptSinkBase<TCanonical = TranscriptIntegrationProjection>
   implements IIntegrationSink<TCanonical> {
   constructor(

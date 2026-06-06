@@ -17,7 +17,9 @@
  *
  * ## Why Shape C (the generic/cast trilemma — RESOLVED)
  *
- * The probe (`/tmp/sink-trilemma/probe_BConly.ts`, TS 6.0.3 --strict, exit 0) proved:
+ * RFC-0002 §4 describes the trilemma; `src/__tests__/cli/sink-widened-canonical.gate.test.ts`
+ * (§3b gate) runs `tsc --noEmit` on the emitted base + widened + projection-default subclasses
+ * to prove it compiles cast-free on every CI run. Shape A fails TS2322; Shape C compiles:
  *   - Shape A FAILS — a generic base with a default-bodied seam typed `TCanonical` is
  *     TS2322: the literal `{…projection…}` is not assignable to `TCanonical` when
  *     the subclass widens it to an unrelated canonical type.
@@ -397,9 +399,9 @@ ${findViewBody}
 // Abstract base — the three IIntegrationSink methods are CONCRETE (machinery: provider
 // assert, repo delegation, #490 knob-driven delete). The two protected abstract seams are
 // typed at TCanonical with NO body — a default body returning TCanonical would be TS2322
-// (the probe proved this: /tmp/sink-trilemma/probe_BConly.ts, Shape A failure). The bodies
-// live in the standalone functions above; the emit-once subclass wires them in one line each.
-// No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
+// (Shape A failure — see RFC-0002 §4 and the §3b gate: sink-widened-canonical.gate.test.ts).
+// The bodies live in the standalone functions above; the emit-once subclass wires them in one
+// line each. No @Injectable() — the assembly binds via useFactory (OQ2 CLOSED, #491).
 export abstract class ${n.sinkBaseClass}<TCanonical = ${n.projectionType}>
   implements IIntegrationSink<TCanonical> {
   constructor(
@@ -499,19 +501,3 @@ export class ${n.sinkClass} extends ${n.sinkBaseClass} {
 `;
 }
 
-// ============================================================================
-// Legacy export — kept for any call-site that hasn't migrated to the two-file
-// split yet. Delegates to generateSinkBase (the plumbing is identical; the
-// subclass is a separate call). This is NOT the canonical path — use
-// generateSinkBase + generateSinkSubclass via emitAdapters.
-// ============================================================================
-
-/**
- * @deprecated Use {@link generateSinkBase} + {@link generateSinkSubclass} instead.
- *   This shim returns only the base file text for legacy call-sites in tests
- *   that import `generateDefaultSink` by name. It will be removed once all
- *   call-sites migrate to the two-function API.
- */
-export function generateDefaultSink(input: SinkEmitInput): string {
-  return generateSinkBase(input);
-}
