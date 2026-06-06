@@ -56,13 +56,21 @@ export function parseEvery(every: string | number, eventType?: string): number {
     ms = every;
   } else if (typeof every === 'string') {
     const match = /^\s*([0-9]*\.?[0-9]+)\s*(ms|s|m|h|d)\s*$/.exec(every);
-    if (!match) {
+    // Destructure the capture groups; under the consumer's stricter tsc
+    // (`noUncheckedIndexedAccess`) regex groups are `string | undefined` and
+    // the UNIT_MS lookup is `number | undefined`, so guard both explicitly
+    // rather than asserting. A truthy `match` always has both groups for this
+    // pattern, but the guard makes that provable (no non-null assertion).
+    const value = match?.[1];
+    const unit = match?.[2];
+    const unitMs = unit ? UNIT_MS[unit] : undefined;
+    if (value === undefined || unitMs === undefined) {
       throw new ScheduleConfigError(
         `schedule.every '${every}'${where} is not a valid duration. Use a ` +
           `number of ms or '<n><unit>' with unit ms|s|m|h|d (e.g. '1h', '30m').`,
       );
     }
-    ms = Number(match[1]) * UNIT_MS[match[2] as keyof typeof UNIT_MS];
+    ms = Number(value) * unitMs;
   } else {
     throw new ScheduleConfigError(
       `schedule.every${where} must be a duration string or a number of ms; ` +
@@ -300,8 +308,13 @@ export class EventScheduler {
   }
 
   private async materializeOne(s: ScheduledEvent, slotStartMs: number): Promise<void> {
+    // `materialize*` only runs after `start()`/the boot path confirmed the bus
+    // supports materialisation; guard here too (no non-null assertion) so the
+    // optional-method call is provably defined.
+    const materialize = this.bus.materializeScheduledEvent;
+    if (!materialize) return;
     const slotKey = slotKeyFor(s.type, slotStartMs);
-    const { created } = await this.bus.materializeScheduledEvent!({
+    const { created } = await materialize.call(this.bus, {
       type: s.type,
       slotKey,
       slotStart: new Date(slotStartMs),
