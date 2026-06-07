@@ -56,6 +56,7 @@ import {
   generateIntegrationAggregator,
   generateIntegrationTokens,
   resolveEntityModuleImports,
+  toImportSpecifier,
   type IntegrationAssemblyEntry,
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
@@ -1091,7 +1092,18 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
         //
         // The adapter scaffold sentinel (adapter-emission-generator.ts:203/562/975-976)
         // is a SEPARATE CONCERN — left untouched here.
-        const sinkInput = buildSinkInput(def!, surface, slugs[0], loc.repoImportSpecifier);
+        // The sink base + subclass live in `integrations/<surface>/sinks/`, NOT
+        // the assembly dir (`…/modules/<provider>/`) — one level shallower. Reusing
+        // `loc.repoImportSpecifier` (assembly-relative) emitted a repo import one
+        // `../` too deep (`../../../../modules/…` → repo root instead of src/). #528.
+        // Recompute the specifier relative to the SINK dir from the resolved repo
+        // file path (alias-aware via the same helper the assembly uses).
+        const sinkRepoImportSpecifier = toImportSpecifier(
+          loc.repoFileAbs,
+          sinksDir,
+          aliases,
+        );
+        const sinkInput = buildSinkInput(def!, surface, slugs[0], sinkRepoImportSpecifier);
         const basePath = join(sinksDir, `${entityName}.sink.generated.ts`);
         const baseContent = generateSinkBase({ ...sinkInput, mode });
         if (!opts.dryRun) writeIfChanged(basePath, baseContent);

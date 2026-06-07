@@ -447,6 +447,68 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
     );
   });
 
+  it('relative-path layout: sink base import depth is one shallower than the assembly (#528)', () => {
+    // swe-brain geometry: NO alias → relative imports. outputRoot is
+    // <backendSrc>/integrations, exactly as the entity command wires it.
+    const backendSrcAbs = join(mkdtempSync(join(tmpdir(), 'cgp-528-')), 'src');
+    const outRoot = join(backendSrcAbs, 'integrations');
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [ASSEMBLY_ENTITIES[0]],
+      outputRoot: outRoot,
+      backendSrcAbs,
+      aliases: {}, // no alias → relative path
+    });
+
+    // Assembly lives at integrations/calendar/modules/google/ (4 deep under src)
+    // → ../../../../modules/... reaches src/modules. Unchanged by this fix.
+    const mod = readFileSync(
+      join(outRoot, 'calendar/modules/google/meeting-integration.module.ts'),
+      'utf-8',
+    );
+    expect(mod).toContain(
+      "import { MeetingRepository } from '../../../../modules/meetings/meeting.repository';",
+    );
+
+    // Sink base lives at integrations/calendar/sinks/ (3 deep under src)
+    // → MUST be ../../../modules/... (one fewer `../`). The bug emitted
+    // ../../../../modules/... here (assembly-relative), landing at the repo root.
+    const base = readFileSync(
+      join(outRoot, 'calendar/sinks/meeting.sink.generated.ts'),
+      'utf-8',
+    );
+    expect(base).toContain(
+      "from '../../../modules/meetings/meeting.repository'",
+    );
+    expect(base).not.toContain('../../../../modules/meetings/meeting.repository');
+
+    // The emit-once subclass shares the sinks/ dir → same depth.
+    const sink = readFileSync(
+      join(outRoot, 'calendar/sinks/meeting.sink.ts'),
+      'utf-8',
+    );
+    expect(sink).toContain("from '../../../modules/meetings/meeting.repository'");
+    expect(sink).not.toContain('../../../../modules/meetings/meeting.repository');
+  });
+
+  it('alias layout: sink base prefers the @modules alias (depth-independent)', () => {
+    const backendSrcAbs = join(mkdtempSync(join(tmpdir(), 'cgp-528-')), 'src');
+    const outRoot = join(backendSrcAbs, 'integrations');
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [ASSEMBLY_ENTITIES[0]],
+      outputRoot: outRoot,
+      backendSrcAbs,
+      aliases: { '@modules': join(backendSrcAbs, 'modules') },
+    });
+    void res;
+    const base = readFileSync(
+      join(outRoot, 'calendar/sinks/meeting.sink.generated.ts'),
+      'utf-8',
+    );
+    expect(base).toContain("from '@modules/meetings/meeting.repository'");
+  });
+
   it('records a non-Integrated surface entity as a skip (read side still emits)', () => {
     const res = runAssembly('/unused');
     expect(res.skippedAssemblies).toHaveLength(1);

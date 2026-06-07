@@ -254,13 +254,13 @@ describe("E4 · sink base file (@generated) assertions — FK belongs_to + user_
     expect(base).not.toContain("TODO(author)");
   });
 
-  test("bare `userId,` ONLY in defaultContactBuildWrite because user_id is declared", () => {
+  test("declared user_id is a plain copy-through — `userId: record.userId` (#528: bare shorthand was TS18004)", () => {
     const buildWriteFn = base.slice(
       base.indexOf("export function defaultContactBuildWrite("),
       base.indexOf("export function defaultContactToCanonicalView("),
     );
-    expect(buildWriteFn).toContain("userId,");
-    expect(buildWriteFn).not.toContain("userId: record.userId");
+    expect(buildWriteFn).toContain("userId: record.userId,");
+    expect(buildWriteFn).not.toMatch(/^\s*userId,\s*$/m);
   });
 
   test("copies the non-FK, non-userId scalar (email) through in defaultContactBuildWrite", () => {
