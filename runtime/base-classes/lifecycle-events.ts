@@ -23,7 +23,16 @@
  */
 
 import { randomUUID } from 'crypto';
+import { Logger } from '@nestjs/common';
 import type { IEventBus, DomainEvent } from '../subsystems/events/event-bus.protocol';
+
+/**
+ * Module-level logger for fire-and-forget emission failures. Routed through the
+ * Nest `Logger` (not bare `console`) so consumers configuring `app.useLogger`
+ * or the factory `logger:` option can format and filter it like any other
+ * framework log line.
+ */
+const logger = new Logger('LifecycleEvents');
 
 // ============================================================================
 // Event categories (subset of pattern-stack's EventCategory)
@@ -99,7 +108,17 @@ export function buildLifecycleEvent(
 		aggregateType: entityName,
 		payload: snapshot ? { snapshot } : {},
 		occurredAt: new Date(),
-		metadata: { category: 'lifecycle' as EventCategory },
+		// AUDIT tier: lifecycle/change events are untyped audit-trail records —
+		// never bridge-routed, no pool/direction. The `domain_events`
+		// `domain_events_tier_routing_check` CHECK requires `tier='audit' ⇔
+		// (pool IS NULL AND direction IS NULL)`; the DEFAULT `tier='domain'`
+		// (applied by toInsertValues when absent) requires non-null routing
+		// fields, so an un-tiered lifecycle row violates the constraint and the
+		// INSERT is rejected — silently, pre-fix, by emitSafely's catch. Stamp
+		// `tier:'audit'` so these rows land (and surface under the
+		// observability viewer's audit-tier toggle). The bridge guard keeps
+		// audit-tier events out of job routing.
+		metadata: { category: 'lifecycle' as EventCategory, tier: 'audit' },
 	};
 }
 
@@ -119,7 +138,9 @@ export function buildChangeEvents(
 			newValue: c.newValue,
 		},
 		occurredAt: new Date(),
-		metadata: { category: 'change' as EventCategory },
+		// AUDIT tier — see buildLifecycleEvent. Change events are audit-trail
+		// records; tier:'audit' satisfies the tier-routing CHECK constraint.
+		metadata: { category: 'change' as EventCategory, tier: 'audit' },
 	}));
 }
 
@@ -144,9 +165,21 @@ export async function emitSafely(
 		} else {
 			await eventBus.publishMany(events);
 		}
-	} catch {
-		// Log but never fail the CRUD operation.
-		// In production, this would use a structured logger.
-		console.warn(`[lifecycle-events] failed to emit ${events.length} event(s)`);
+	} catch (err) {
+		// Never fail the CRUD operation — but surface the cause. The bare
+		// `catch` that used to live here swallowed the error entirely, so a
+		// failing bus printed `failed to emit N event(s)` with zero
+		// diagnosability. Route through the Nest Logger (not bare console) at
+		// warn level, including the distinct event types and the error message;
+		// the stack follows at debug so it's available without noising the
+		// default-threshold output.
+		const message = err instanceof Error ? err.message : String(err);
+		const types = [...new Set(events.map((e) => e.type))].join(', ');
+		logger.warn(
+			`failed to emit ${events.length} event(s) [${types}]: ${message}`,
+		);
+		if (err instanceof Error && err.stack) {
+			logger.debug(err.stack);
+		}
 	}
 }

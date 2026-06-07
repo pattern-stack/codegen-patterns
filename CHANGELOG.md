@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.0] — 2026-06-07
+
+### Fixed
+
+- **Lifecycle events: revive the audit trail + diagnosable emit failures.** The
+  `BaseService` lifecycle/change event path (`runtime/base-classes/lifecycle-events.ts`)
+  predates the AUDIT tier + routing schema (ADR-039) and was never migrated:
+  `buildLifecycleEvent` / `buildChangeEvents` stamped no `tier`, so
+  `toInsertValues` defaulted the row to `tier='domain'` with NULL `pool` /
+  `direction` — which violates the `domain_events_tier_routing_check` CHECK
+  (`tier='audit' ⇔ pool IS NULL AND direction IS NULL`). Result: **every**
+  `BaseService` create/update/delete in every consumer paid a rejected INSERT and
+  silently lost its lifecycle audit trail. The builders now stamp `tier: 'audit'`
+  (lifecycle/change events are exactly audit-tier semantics — untyped audit
+  records, never bridge-routed); the rows land and surface under the
+  observability viewer's audit-tier toggle, and the bridge guard keeps them out
+  of job routing. Discovered by the swe-brain dogfood (2× `failed to emit 3
+  event(s)` per dispatcher fire — the 3 being the `[updated, field_changed,
+  field_changed]` `publishMany` batch from `BaseService.update`).
+- **Lifecycle events: `emitSafely` logs the cause via the Nest Logger.** The
+  fire-and-forget catch was a bare `catch {}` that swallowed the error and
+  printed `failed to emit N event(s)` via raw `console.warn` — bypassing the Nest
+  `Logger` (so consumers configuring `app.useLogger` / factory `logger:` could
+  neither format nor filter it) with zero diagnosability. Now logs via a
+  module-level `Logger('LifecycleEvents')` at `warn` level including the event
+  count, the distinct event types, and the error message; the stack follows at
+  `debug`. Never-throw semantics preserved.
+
 ## [0.24.0] — 2026-06-06
 
 ### Added
