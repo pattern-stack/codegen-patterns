@@ -2,7 +2,7 @@
 // Hand edits are overwritten on re-emit. Regenerate with `bun run codegen`.
 
 export { store, type AppStore } from './index';
-export { createResolvers, type Resolvers } from './resolvers';
-export { buildLookups, createLookups, type EntityLookups } from './lookups';
+export { createResolvers, hydrateResolverCache, type Resolvers } from './resolvers';
+export { buildLookups, buildLookupsAsync, createLookups, type EntityLookups } from './lookups';
 
 export { resolveUserRefs, type UserRefs } from './resolvers';

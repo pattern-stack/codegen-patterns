@@ -1380,6 +1380,13 @@ export default {
     const typedEventBusImport = subsystemsImport(runtimeMode, 'events');
     const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
     const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
+    // Pagination contract (pagination-by-default). Package mode → the runtime
+    // module `@pattern-stack/codegen/runtime/http/pagination` (Page<T>,
+    // ListQuerySchema, resolveListQuery, buildPage, cursor codec); vendored →
+    // the consumer-owned `@shared/http/pagination`. Unlike most @shared/http/*
+    // files (which the package never owns), THIS one IS package-published — the
+    // list endpoint is unconditional, so its contract must ship with codegen.
+    const paginationImport = runtimeImport(runtimeMode, 'http/pagination');
     // Integration subsystem barrel (ADR-033.1 inline-sync `integration-source`
     // module — emitted only for entities with an inline `detection:` block).
     const integrationSubsystemImport = subsystemsImport(runtimeMode, 'integration');
@@ -1602,6 +1609,7 @@ export default {
       typedEventBusImport,
       drizzleTokenImport,
       drizzleTypeImport,
+      paginationImport,
       integrationSubsystemImport,
       withAnalyticsImport,
       integrationUpsertConfigImport,

@@ -85,9 +85,12 @@ function fkField(rel: ParsedRelationship): string {
 }
 
 /**
- * `store/index.ts` — `createStore({ entities, collections })` over the full set,
- * keyed by plural. Imports each entity's hooks + collection. `export type
- * AppStore = typeof store`.
+ * `store/index.ts` — `createStore({ entities, collections, fields, lookups })`
+ * over the full set, keyed by plural. Imports each entity's hooks + collection +
+ * generated FieldMeta, and wires the lookups engine. The `fields` + `lookups`
+ * keys are what bind `store.<entity>.useData()` (frontend-patterns composes
+ * useList + meta=fields[plural] + the hydrated lookups). `export type AppStore =
+ * typeof store`.
  */
 export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
@@ -98,12 +101,21 @@ export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 	const collectionImports = entities
 		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
 		.join('\n');
+	// Generated FieldMeta per entity (`<camel>Fields` from fields/<entity>).
+	// Registered under the SAME plural key as entities/collections so
+	// `store.<entity>.useData()` resolves meta = fields[plural].
+	const fieldsImports = entities
+		.map((e) => `import { ${e.camelName}Fields } from '../fields/${e.name}';`)
+		.join('\n');
 
 	const entityEntries = entities
 		.map((e) => `\t\t${e.plural}: ${e.camelName}Hooks,`)
 		.join('\n');
 	const collectionEntries = entities
 		.map((e) => `\t\t${e.plural}: ${e.camelName}Collection,`)
+		.join('\n');
+	const fieldsEntries = entities
+		.map((e) => `\t\t${e.plural}: ${e.camelName}Fields,`)
 		.join('\n');
 
 	const body = `import { createStore } from '@pattern-stack/frontend-patterns';
@@ -112,13 +124,23 @@ ${hookImports}
 
 ${collectionImports}
 
+${fieldsImports}
+
+import { createLookups } from './lookups';
+
 /**
  * The application store — unified access to every entity.
  *
- * Entities and collections are keyed by their plural name:
+ * Entities, collections, and field metadata are keyed by their plural name:
+ *   store.${entities[0]?.plural ?? 'things'}.useData()   // useList + fields[plural] meta + hydrated lookups
  *   store.${entities[0]?.plural ?? 'things'}.useList()
  *   store.resolve.<entity>(id)
- *   store.lookups.build()
+ *   store.lookups.current
+ *
+ * \`fields\` carries the generated FieldMeta (\`fields/<entity>\` → \`<camel>Fields\`);
+ * \`lookups\` is the generated lookups engine (\`{ hydrate(): Promise<EntityLookups>;
+ * current }\`) — hydrated once so off-page FK resolution stays correct under
+ * pagination-by-default. Both bind \`store.<entity>.useData()\`.
  */
 export const store = createStore({
 \tentities: {
@@ -127,6 +149,10 @@ ${entityEntries}
 \tcollections: {
 ${collectionEntries}
 \t},
+\tfields: {
+${fieldsEntries}
+\t},
+\tlookups: createLookups(),
 });
 
 /** Store type for the \`useStore\` hook. */
@@ -145,10 +171,14 @@ export type AppStore = typeof store;
 export function buildResolversFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 
-	// One collection + one type import per entity. FK targets are always in the
-	// same registry set, so a self-referential FK never produces a second import.
+	// One collection + one api + one type import per entity. FK targets are always
+	// in the same registry set, so a self-referential FK never produces a second
+	// import. The api import backs the full-fetch escape hatch (LANDMINE 1).
 	const collectionImports = entities
 		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
+		.join('\n');
+	const apiImports = entities
+		.map((e) => `import { ${e.camelName}Api } from '../api/${e.name}';`)
 		.join('\n');
 	const typeImports = entities
 		.map((e) => `import type { ${e.className} } from '${ctx.config.dbEntitiesImport}/${e.name}';`)
@@ -161,12 +191,33 @@ export function buildResolversFile(ctx: FrontendEmitContext): string {
 		)
 		.join('\n');
 
+	// FK resolve = collection state (O(1), covers the current page + optimistic
+	// mutations) WITH a fallback to the full-fetch hydration cache. Under
+	// pagination-by-default the collection holds only the current page, so an FK
+	// pointing at a row on ANOTHER page would resolve to undefined without the
+	// cache (LANDMINE 1). Call `hydrateResolverCache()` once on mount to populate it.
 	const resolverImpls = entities
 		.map(
 			(e) => `\t\t${e.camelName}: (id) => {
 \t\t\tif (!id) return undefined;
-\t\t\treturn ${e.camelName}Collection.state.get(id) as ${e.className} | undefined;
+\t\t\treturn (${e.camelName}Collection.state.get(id) ??
+\t\t\t\thydrationCache.${e.camelName}.get(id)) as ${e.className} | undefined;
 \t\t},`,
+		)
+		.join('\n');
+
+	// Module-level full-fetch cache (LANDMINE 1 escape hatch): id → entity over
+	// the COMPLETE set, populated by `hydrateResolverCache()` via each entity's
+	// `api.listAll()`. Resolvers read it on a collection-state miss so off-page
+	// FK resolution returns the right entity.
+	const hydrationCacheFields = entities
+		.map((e) => `\t${e.camelName}: new Map<string, ${e.className}>(),`)
+		.join('\n');
+	const hydrationCalls = entities
+		.map(
+			(e) => `\t\t${e.camelName}Api.listAll().then((rows) => {
+\t\t\thydrationCache.${e.camelName} = new Map(rows.map((r) => [r.id as string, r]));
+\t\t}),`,
 		)
 		.join('\n');
 
@@ -212,11 +263,37 @@ ${hydrateFields}
 			: '';
 
 	const body = `${collectionImports}
+${apiImports}
 ${typeImports}
 
 /**
+ * Full-fetch hydration cache (LANDMINE 1 escape hatch for pagination-by-default).
+ *
+ * The backing collections hold only the CURRENT PAGE once lists paginate, so an
+ * FK pointing at a row on another page resolves to undefined against collection
+ * state alone. \`hydrateResolverCache()\` fetches the COMPLETE set per entity (via
+ * \`api.listAll()\`, which pages through the envelope) into these id→entity maps;
+ * resolvers fall back to them on a collection-state miss. Call it once on mount.
+ */
+const hydrationCache = {
+${hydrationCacheFields}
+};
+
+/**
+ * Populate the {@link hydrationCache} from the full set of every entity. Await
+ * (or fire-and-forget) once at app start so off-page FK resolution is correct.
+ * Idempotent — re-running refreshes every cache map.
+ */
+export async function hydrateResolverCache(): Promise<void> {
+\tawait Promise.all([
+${hydrationCalls}
+\t]);
+}
+
+/**
  * FK resolvers — resolve a foreign-key id to the full entity object via the
- * backing collection's local state (\`O(1)\` \`Map.get\`).
+ * backing collection's local state (\`O(1)\` \`Map.get\`), falling back to the
+ * full-fetch hydration cache for ids not on the current page.
  *
  * Usage:
  *   const ${entities[0]?.camelName ?? 'thing'} = resolvers.${entities[0]?.camelName ?? 'thing'}(other.${entities[0]?.camelName ?? 'thing'}Id);
@@ -225,7 +302,7 @@ export interface Resolvers {
 ${resolverIface}
 }
 
-/** Build the resolver table over the generated collections. */
+/** Build the resolver table over the generated collections + hydration cache. */
 export function createResolvers(): Resolvers {
 \treturn {
 ${resolverImpls}
@@ -244,6 +321,9 @@ export function buildLookupsFile(ctx: FrontendEmitContext): string {
 
 	const collectionImports = entities
 		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
+		.join('\n');
+	const apiImports = entities
+		.map((e) => `import { ${e.camelName}Api } from '../api/${e.name}';`)
 		.join('\n');
 	const typeImports = entities
 		.map((e) => `import type { ${e.className} } from '${ctx.config.dbEntitiesImport}/${e.name}';`)
@@ -264,7 +344,22 @@ export function buildLookupsFile(ctx: FrontendEmitContext): string {
 		)
 		.join('\n');
 
+	// Full-fetch variant (LANDMINE 1): build each lookup from the COMPLETE set via
+	// `api.listAll()` rather than current collection state. Used when a lookup must
+	// cover off-page rows (pagination-by-default leaves the collection holding only
+	// the current page). Fetches all entities in parallel.
+	const lookupBuildAsyncDecls = entities
+		.map((e) => `\t\t${e.camelName}Api.listAll(),`)
+		.join('\n');
+	const lookupBuildAsyncFields = entities
+		.map(
+			(e, i) =>
+				`\t\t${e.plural}: new Map(rows[${i}].map((r) => [r.id as string, r as ${e.className}])),`,
+		)
+		.join('\n');
+
 	const body = `${collectionImports}
+${apiImports}
 ${typeImports}
 
 /** All entity lookup maps, keyed by plural entity name (id → entity). */
@@ -272,19 +367,42 @@ export interface EntityLookups {
 ${lookupIface}
 }
 
-/** Build fresh lookup maps from current collection state. */
+/** Build fresh lookup maps from current collection state (current page only). */
 export function buildLookups(): EntityLookups {
 \treturn {
 ${lookupBuild}
 \t};
 }
 
-/** Caching lookup factory: \`build()\` (re)computes, \`current\` reads, \`clear()\` resets. */
+/**
+ * Build lookup maps over the COMPLETE set (LANDMINE 1 escape hatch). Pages
+ * through every entity's list via \`api.listAll()\` so off-page rows are present.
+ * Prefer this over {@link buildLookups} whenever a lookup must resolve ids that
+ * may not be on the current page.
+ */
+export async function buildLookupsAsync(): Promise<EntityLookups> {
+\tconst rows = await Promise.all([
+${lookupBuildAsyncDecls}
+\t]);
+\treturn {
+${lookupBuildAsyncFields}
+\t};
+}
+
+/**
+ * Caching lookup factory: \`build()\` (re)computes from collection state,
+ * \`hydrate()\` (re)computes from the full-fetch escape hatch, \`current\` reads,
+ * \`clear()\` resets.
+ */
 export function createLookups() {
 \tlet cache: EntityLookups | null = null;
 \treturn {
 \t\tbuild: (): EntityLookups => {
 \t\t\tcache = buildLookups();
+\t\t\treturn cache;
+\t\t},
+\t\thydrate: async (): Promise<EntityLookups> => {
+\t\t\tcache = await buildLookupsAsync();
 \t\t\treturn cache;
 \t\t},
 \t\tget current(): EntityLookups | null {
@@ -310,8 +428,8 @@ export function buildStoreModuleIndexFile(ctx: FrontendEmitContext): string {
 
 	const lines = [
 		"export { store, type AppStore } from './index';",
-		"export { createResolvers, type Resolvers } from './resolvers';",
-		"export { buildLookups, createLookups, type EntityLookups } from './lookups';",
+		"export { createResolvers, hydrateResolverCache, type Resolvers } from './resolvers';",
+		"export { buildLookups, buildLookupsAsync, createLookups, type EntityLookups } from './lookups';",
 	];
 
 	const refExports = entities

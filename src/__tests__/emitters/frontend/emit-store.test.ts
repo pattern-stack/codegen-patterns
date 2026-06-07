@@ -71,6 +71,30 @@ describe('emit-store — createStore (store/index.ts)', () => {
 		);
 		expect(out).toContain('export type AppStore = typeof store;');
 	});
+
+	it('imports generated FieldMeta + createLookups and wires fields + lookups into createStore (useData binding)', () => {
+		const { c } = personTaskCtx();
+		const out = buildStoreIndexFile(c);
+		// FieldMeta imports per entity from ../fields/<entity>.
+		expect(out).toContain("import { personFields } from '../fields/person';");
+		expect(out).toContain("import { taskFields } from '../fields/task';");
+		// The lookups engine import.
+		expect(out).toContain("import { createLookups } from './lookups';");
+		// fields map keyed by the SAME plural as entities/collections.
+		expect(out).toContain('\tfields: {');
+		expect(out).toContain('people: personFields,');
+		expect(out).toContain('tasks: taskFields,');
+		// lookups passed as createLookups() (no args — it closes over the apis).
+		expect(out).toContain('lookups: createLookups(),');
+	});
+
+	it('keys fields under the same plural as entities/collections (table-divergent)', () => {
+		const e = { ...entry('person', 'people'), table: 'tbl_persons' };
+		const out = buildStoreIndexFile(ctx([e]));
+		expect(out).toContain('people: personFields,');
+		expect(out).not.toContain('persons:');
+		expect(out).not.toContain('tbl_persons:');
+	});
 });
 
 describe('emit-store — resolvers (store/resolvers.ts)', () => {
@@ -79,13 +103,26 @@ describe('emit-store — resolvers (store/resolvers.ts)', () => {
 		const out = buildResolversFile(c);
 		// Resolver table is keyed by singular camelName.
 		expect(out).toContain('person: (id) => {');
-		expect(out).toContain('return personCollection.state.get(id)');
+		// pagination-by-default: collection state first, full-fetch cache fallback.
+		expect(out).toContain('return (personCollection.state.get(id) ??');
+		expect(out).toContain('hydrationCache.person.get(id)) as Person | undefined;');
 		expect(out).not.toContain('persons');
 
 		// Task gets a TaskRefs hydrator that calls resolvers.person on assigneeId.
 		expect(out).toContain('export interface TaskRefs {');
 		expect(out).toContain('assignee: Person | undefined;');
 		expect(out).toContain('resolvers.person(entity.assigneeId)');
+	});
+
+	it('emits the full-fetch hydration escape hatch (LANDMINE 1)', () => {
+		const { c } = personTaskCtx();
+		const out = buildResolversFile(c);
+		// A module-level cache + a hydrate fn that pages the full set per entity.
+		expect(out).toContain('const hydrationCache = {');
+		expect(out).toContain('person: new Map<string, Person>(),');
+		expect(out).toContain('export async function hydrateResolverCache(): Promise<void> {');
+		expect(out).toContain('personApi.listAll().then((rows) => {');
+		expect(out).toContain("import { personApi } from '../api/person';");
 	});
 
 	it('resolvableRels resolves target naming from the registry', () => {
@@ -154,6 +191,15 @@ describe('emit-store — lookups (store/lookups.ts)', () => {
 		expect(out).toContain('Array.from(personCollection.state.values())');
 		expect(out).toContain('export function createLookups()');
 	});
+
+	it('emits a full-fetch async lookup builder + hydrate (LANDMINE 1)', () => {
+		const { c } = personTaskCtx();
+		const out = buildLookupsFile(c);
+		expect(out).toContain('export async function buildLookupsAsync(): Promise<EntityLookups> {');
+		expect(out).toContain('personApi.listAll(),');
+		expect(out).toContain('hydrate: async (): Promise<EntityLookups> => {');
+		expect(out).toContain("import { personApi } from '../api/person';");
+	});
 });
 
 describe('emit-store — module-index (store/module-index.ts)', () => {
@@ -162,10 +208,10 @@ describe('emit-store — module-index (store/module-index.ts)', () => {
 		const out = buildStoreModuleIndexFile(c);
 		expect(out).toContain("export { store, type AppStore } from './index';");
 		expect(out).toContain(
-			"export { createResolvers, type Resolvers } from './resolvers';",
+			"export { createResolvers, hydrateResolverCache, type Resolvers } from './resolvers';",
 		);
 		expect(out).toContain(
-			"export { buildLookups, createLookups, type EntityLookups } from './lookups';",
+			"export { buildLookups, buildLookupsAsync, createLookups, type EntityLookups } from './lookups';",
 		);
 		// task has a ref hydrator; person does not.
 		expect(out).toContain(

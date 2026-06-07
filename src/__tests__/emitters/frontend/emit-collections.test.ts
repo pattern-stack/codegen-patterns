@@ -106,7 +106,13 @@ describe('emit-collections — api branch', () => {
 		const out = buildCollectionFile(entry('contact', 'contacts'), c);
 		expect(out).toContain("import { contactApi } from '../api/contact';");
 		expect(out).toContain("import { queryClient } from '../query-client';");
-		expect(out).toContain('queryFn: () => contactApi.list(),');
+		// pagination-by-default: the list endpoint returns a Page<T>; the collection
+		// queryFn unwraps `.items` to seed itself with the first page of rows. async/
+		// await (not `.then`) so queryCollectionOptions keeps getKey's item typed.
+		expect(out).toContain('queryFn: async () => {');
+		expect(out).toContain('const page = await contactApi.list();');
+		expect(out).toContain('return page.items;');
+		expect(out).not.toContain('.then((p) => p.items)');
 		expect(out).not.toContain('fetch(');
 	});
 

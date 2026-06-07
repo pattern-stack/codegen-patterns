@@ -1296,6 +1296,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     createDto: `${moduleGroupDir}/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
     updateDto: `${moduleGroupDir}/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
     outputDto: `${moduleGroupDir}/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
+    // Pagination-by-default: the universal list query DTO (page/cursor/pageSize
+    // + sort). Always emitted — the list endpoint is unconditional.
+    listQueryDto: `${moduleGroupDir}/${entityNamePlural}/dto/list-${entityNamePlural}.query.ts`,
     searchUseCase: searchQueryResolved
       ? `${moduleGroupDir}/${entityNamePlural}/use-cases/search-${entityNamePlural}.use-case.ts`
       : null,
@@ -1347,6 +1350,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     createSchema: `Create${entityNamePascal}Schema`,
     updateSchema: `Update${entityNamePascal}Schema`,
     outputSchema: `${entityNamePascal}OutputSchema`,
+    // Pagination-by-default: list query DTO + schema (re-export of the shared
+    // ListQuerySchema). Named per-entity so the controller import is unambiguous.
+    listQueryDto: `List${entityNamePluralPascal}QueryDto`,
+    listQuerySchema: `List${entityNamePluralPascal}QuerySchema`,
   };
 
   // Fields for create DTO: exclude id, behavior-managed fields, and FK fields
@@ -1413,6 +1420,12 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     baseLocals?.drizzleTokenImport ?? '@shared/constants/tokens';
   const drizzleTypeImport =
     baseLocals?.drizzleTypeImport ?? '@shared/types/drizzle';
+  // Pagination contract (pagination-by-default). Package mode → the runtime
+  // module `@pattern-stack/codegen/runtime/http/pagination`; vendored / default
+  // → the consumer-owned `@shared/http/pagination`. Threaded from prompt.js;
+  // unit tests that call buildCleanLitePsLocals directly get the @shared default.
+  const paginationImport =
+    baseLocals?.paginationImport ?? '@shared/http/pagination';
 
   return {
     // Clean-Lite-PS identity
@@ -1431,6 +1444,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     typedEventBusImport,
     drizzleTokenImport,
     drizzleTypeImport,
+    paginationImport,
 
     // Pattern — registry-driven (ADR-031)
     patternName,

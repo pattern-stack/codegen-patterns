@@ -144,14 +144,19 @@ describe('clean-lite-ps controller — ZodValidationPipe on @Body (D4/D5)', () =
     expect(output).not.toContain('@Body() dto:');
   });
 
-  it('does not emit ZodValidationPipe when writes are disabled', () => {
+  it('does not emit the write-side schemas when writes are disabled', () => {
     const def = { ...baseEntity, generate: { writes: false } };
     const locals = buildCleanLitePsLocals(def, {});
     const output = render('controller.ejs.t', locals);
 
-    expect(output).not.toContain('ZodValidationPipe');
+    // ZodValidationPipe is now UNCONDITIONAL — pagination-by-default validates the
+    // list query with it on @Get() even when writes are off. The write-side
+    // create/update schemas must still be absent.
     expect(output).not.toContain('CreateContactSchema');
     expect(output).not.toContain('UpdateContactSchema');
+    // The list query schema + pipe are present regardless of writes.
+    expect(output).toContain('ZodValidationPipe');
+    expect(output).toContain('ListContactsQuerySchema');
   });
 });
 

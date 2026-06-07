@@ -119,12 +119,15 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
     expect(output).not.toContain('Promise<(Contact & { fields: Record<string, unknown> }) | null>');
   });
 
-  it('list routes (no :id) keep their plain array / empty-list semantics', () => {
+  it('list route (no :id) returns a Page<T> envelope, not a bare array (no 404 logic)', () => {
     const locals = buildCleanLitePsLocals(baseEntity, {});
     const output = render('controller.ejs.t', locals);
 
-    // @Get() for list — no 404 logic, just return the array.
-    expect(output).toMatch(/@Get\(\)\s+async getAll\(\): Promise<Contact\[\]>/);
-    expect(output).toContain('return this.listUseCase.execute();');
+    // pagination-by-default: @Get() returns Page<Contact>, binds the ListQuery,
+    // and carries no 404 logic (an empty page is a valid result).
+    expect(output).toMatch(/@Get\(\)\s+async getAll\(/);
+    expect(output).toContain('): Promise<Page<Contact>> {');
+    expect(output).toContain('return this.listUseCase.execute(query);');
+    expect(output).not.toContain('Promise<Contact[]>');
   });
 });

@@ -54,6 +54,56 @@ export function buildClientFile(ctx: FrontendEmitContext): string {
 
 	const body = `${imports}${baseUrlConst}
 
+/** Hard upper bound on a single list fetch — mirrors the backend pageSize clamp. */
+export const MAX_PAGE_SIZE = 200;
+
+/**
+ * Pagination envelope returned by every \`GET /<entities>\` (pagination-by-default).
+ * Mirrors the backend \`Page<T>\` runtime contract
+ * (\`@pattern-stack/codegen/runtime/http/pagination\`); duplicated here so the
+ * generated frontend data layer carries no backend import. \`nextCursor\` is
+ * contract-stable (the backend emits it from day one) — the offset engine
+ * ignores it on request for now.
+ */
+export interface Page<T> {
+\titems: T[];
+\tpage: number;
+\tpageCount: number;
+\ttotal: number;
+\tpageSize: number;
+\tnextCursor: string | null;
+}
+
+/**
+ * Request query for a list endpoint: page-based pagination + default sort, plus
+ * arbitrary where-filters (passed through to the backend querystring). All keys
+ * optional — the unfiltered first page is the default.
+ */
+export interface ListQuery {
+\tpage?: number;
+\tcursor?: string;
+\tpageSize?: number;
+\tsort_by?: string;
+\tsort_order?: 'asc' | 'desc';
+\t[key: string]: string | number | boolean | null | undefined;
+}
+
+/**
+ * Serialize a {@link ListQuery} into a querystring (leading \`?\`), skipping
+ * undefined/null values. Returns \`''\` for an empty/absent query so an
+ * unfiltered \`list()\` hits the bare route.
+ */
+export function toListQueryString(query?: ListQuery): string {
+\tif (!query) return '';
+\tconst params = new URLSearchParams();
+\tfor (const [key, value] of Object.entries(query)) {
+\t\tif (value === undefined || value === null) continue;
+\t\tparams.set(key, String(value));
+\t}
+\tconst qs = params.toString();
+\treturn qs ? \`?\${qs}\` : '';
+}
+
 /**
  * Base REST transport for \`api\` sync-mode collections and entity api clients.
  * Throws on non-2xx; returns parsed JSON, or \`undefined\` for 204 No Content.
@@ -98,11 +148,41 @@ export function buildEntityApiFile(
 	const { camelName, plural, className, name } = entity;
 	const verb = updateVerb(config.architecture);
 
-	const body = `import { request } from './client';
+	const body = `import { MAX_PAGE_SIZE, type ListQuery, type Page, request, toListQueryString } from './client';
 import type { ${className} } from '${config.dbEntitiesImport}/${name}';
 
 export const ${camelName}Api = {
-\tlist: (): Promise<${className}[]> => request<${className}[]>('GET', '/${plural}'),
+\t/**
+\t * Fetch one page of ${plural} (pagination-by-default). Threads page/cursor/
+\t * pageSize/sort + arbitrary where-filters into the querystring; returns the
+\t * \`Page<${className}>\` envelope. Call with no args for the unfiltered first page.
+\t */
+\tlist: (query?: ListQuery): Promise<Page<${className}>> =>
+\t\trequest<Page<${className}>>('GET', \`/${plural}\${toListQueryString(query)}\`),
+
+\t/**
+\t * Full-fetch escape hatch (LANDMINE 1): every ${className} across all pages as a
+\t * flat array. Pages through the envelope until exhausted so off-page FK
+\t * resolution (resolvers/lookups) stays correct under pagination-by-default —
+\t * the backing collection only holds the current page, so FK targets that live
+\t * on another page would otherwise resolve to undefined. Used to hydrate the
+\t * store's resolvers/lookups; NOT for rendering a paged table.
+\t */
+\tlistAll: async (query?: Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<${className}[]> => {
+\t\tconst all: ${className}[] = [];
+\t\tlet page = 1;
+\t\tlet pageCount = 1;
+\t\tdo {
+\t\t\tconst result = await request<Page<${className}>>(
+\t\t\t\t'GET',
+\t\t\t\t\`/${plural}\${toListQueryString({ ...query, page, pageSize: MAX_PAGE_SIZE })}\`,
+\t\t\t);
+\t\t\tall.push(...result.items);
+\t\t\tpageCount = result.pageCount;
+\t\t\tpage += 1;
+\t\t} while (page <= pageCount);
+\t\treturn all;
+\t},
 
 \tget: (id: string): Promise<${className}> =>
 \t\trequest<${className}>('GET', \`/${plural}/\${id}\`),
