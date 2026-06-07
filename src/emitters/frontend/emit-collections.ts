@@ -133,7 +133,16 @@ export const ${camelName}Collection = createCollection(
 \t\tid: '${plural}',
 \t\tqueryKey: ['${plural}'],
 \t\tqueryClient,
-\t\tqueryFn: () => ${camelName}Api.list(),
+\t\t// pagination-by-default: the list endpoint returns a Page<T> envelope, so
+\t\t// unwrap \`.items\` to seed the collection with rows (the first page). The
+\t\t// paged table drives later fetches via the sync-layer useList; off-page FK
+\t\t// resolution hydrates from the full-fetch escape hatch (store/resolvers.ts).
+\t\t// async/await (not \`.then\`) so queryCollectionOptions' overload inference
+\t\t// keeps \`getKey\`'s \`item\` typed — the .then() form collapses it to unknown.
+\t\tqueryFn: async () => {
+\t\t\tconst page = await ${camelName}Api.list();
+\t\t\treturn page.items;
+\t\t},
 \t\tgetKey: (item) => item.id,
 \t\tschema: ${camelName}Schema,
 \t}),

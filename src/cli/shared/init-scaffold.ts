@@ -172,6 +172,13 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// Pipes — ZodValidationPipe is wired on every generated controller
 	// @Body() to give runtime Zod validation at the controller boundary.
 	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'src/shared/pipes/zod-validation.pipe.ts' },
+	// Pagination-by-default (Page<T> envelope, ListQuerySchema, resolveListQuery,
+	// buildPage, opaque cursor codec) — imported by EVERY generated list
+	// controller/dto/use-case. Vendored to `src/shared/http/page.ts` (alias
+	// `@shared/http/page`), DISTINCT from the consumer's optional `@shared/http/
+	// pagination` search contract so the two never collide. Package mode resolves
+	// the same source via `@pattern-stack/codegen/runtime/http/pagination`.
+	{ runtime: 'http/pagination.ts', target: 'src/shared/http/page.ts' },
 	// EAV helpers — referenced by generated services on `eav_value_table` entities
 	{ runtime: 'eav-helpers.ts', target: 'src/shared/eav-helpers.ts' },
 	// OpenAPI registry (OPENAPI-1/2) — generated modules register Zod DTOs

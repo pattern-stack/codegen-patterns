@@ -9,13 +9,24 @@ import { userHooks } from '../entities/user';
 import { personCollection } from '../collections/person';
 import { userCollection } from '../collections/user';
 
+import { personFields } from '../fields/person';
+import { userFields } from '../fields/user';
+
+import { createLookups } from './lookups';
+
 /**
  * The application store — unified access to every entity.
  *
- * Entities and collections are keyed by their plural name:
+ * Entities, collections, and field metadata are keyed by their plural name:
+ *   store.persons.useData()   // useList + fields[plural] meta + hydrated lookups
  *   store.persons.useList()
  *   store.resolve.<entity>(id)
- *   store.lookups.build()
+ *   store.lookups.current
+ *
+ * `fields` carries the generated FieldMeta (`fields/<entity>` → `<camel>Fields`);
+ * `lookups` is the generated lookups engine (`{ hydrate(): Promise<EntityLookups>;
+ * current }`) — hydrated once so off-page FK resolution stays correct under
+ * pagination-by-default. Both bind `store.<entity>.useData()`.
  */
 export const store = createStore({
 	entities: {
@@ -26,6 +37,11 @@ export const store = createStore({
 		persons: personCollection,
 		users: userCollection,
 	},
+	fields: {
+		persons: personFields,
+		users: userFields,
+	},
+	lookups: createLookups(),
 });
 
 /** Store type for the `useStore` hook. */

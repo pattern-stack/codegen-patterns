@@ -12,7 +12,16 @@ export const userCollection = createCollection(
 		id: 'users',
 		queryKey: ['users'],
 		queryClient,
-		queryFn: () => userApi.list(),
+		// pagination-by-default: the list endpoint returns a Page<T> envelope, so
+		// unwrap `.items` to seed the collection with rows (the first page). The
+		// paged table drives later fetches via the sync-layer useList; off-page FK
+		// resolution hydrates from the full-fetch escape hatch (store/resolvers.ts).
+		// async/await (not `.then`) so queryCollectionOptions' overload inference
+		// keeps `getKey`'s `item` typed — the .then() form collapses it to unknown.
+		queryFn: async () => {
+			const page = await userApi.list();
+			return page.items;
+		},
 		getKey: (item) => item.id,
 		schema: userSchema,
 	}),

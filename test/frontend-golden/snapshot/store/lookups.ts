@@ -3,6 +3,8 @@
 
 import { personCollection } from '../collections/person';
 import { userCollection } from '../collections/user';
+import { personApi } from '../api/person';
+import { userApi } from '../api/user';
 import type { Person } from '@repo/db/entities/person';
 import type { User } from '@repo/db/entities/user';
 
@@ -12,7 +14,7 @@ export interface EntityLookups {
 	users: Map<string, User>;
 }
 
-/** Build fresh lookup maps from current collection state. */
+/** Build fresh lookup maps from current collection state (current page only). */
 export function buildLookups(): EntityLookups {
 	return {
 		persons: new Map(
@@ -30,12 +32,37 @@ export function buildLookups(): EntityLookups {
 	};
 }
 
-/** Caching lookup factory: `build()` (re)computes, `current` reads, `clear()` resets. */
+/**
+ * Build lookup maps over the COMPLETE set (LANDMINE 1 escape hatch). Pages
+ * through every entity's list via `api.listAll()` so off-page rows are present.
+ * Prefer this over {@link buildLookups} whenever a lookup must resolve ids that
+ * may not be on the current page.
+ */
+export async function buildLookupsAsync(): Promise<EntityLookups> {
+	const rows = await Promise.all([
+		personApi.listAll(),
+		userApi.listAll(),
+	]);
+	return {
+		persons: new Map(rows[0].map((r) => [r.id as string, r as Person])),
+		users: new Map(rows[1].map((r) => [r.id as string, r as User])),
+	};
+}
+
+/**
+ * Caching lookup factory: `build()` (re)computes from collection state,
+ * `hydrate()` (re)computes from the full-fetch escape hatch, `current` reads,
+ * `clear()` resets.
+ */
 export function createLookups() {
 	let cache: EntityLookups | null = null;
 	return {
 		build: (): EntityLookups => {
 			cache = buildLookups();
+			return cache;
+		},
+		hydrate: async (): Promise<EntityLookups> => {
+			cache = await buildLookupsAsync();
 			return cache;
 		},
 		get current(): EntityLookups | null {

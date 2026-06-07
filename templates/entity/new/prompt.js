@@ -1380,6 +1380,22 @@ export default {
     const typedEventBusImport = subsystemsImport(runtimeMode, 'events');
     const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
     const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
+    // Pagination contract (pagination-by-default). ASYMMETRIC by mode:
+    //   - package  → `@pattern-stack/codegen/runtime/http/pagination` (Page<T>,
+    //     ListQuerySchema, resolveListQuery, buildPage, cursor codec) — the
+    //     package-published runtime; swe-brain consumes this green.
+    //   - vendored → `@shared/http/page` (vendored to `src/shared/http/page.ts`
+    //     by project init's VENDORED_RUNTIME_FILES). DISTINCT from the consumer's
+    //     OPTIONAL `@shared/http/pagination` search contract ({items,total,limit,
+    //     offset}) — vendoring the Page<T> envelope to `/pagination` would
+    //     clobber it, so the list envelope lives at `/page`.
+    // Unlike most @shared/http/* files (which the package never owns), THIS one
+    // IS package-published — the list endpoint is unconditional, so its contract
+    // must ship with codegen (package mode) and be vendored (vendored mode).
+    const paginationImport =
+      runtimeMode === 'vendored'
+        ? '@shared/http/page'
+        : runtimeImport(runtimeMode, 'http/pagination');
     // Integration subsystem barrel (ADR-033.1 inline-sync `integration-source`
     // module — emitted only for entities with an inline `detection:` block).
     const integrationSubsystemImport = subsystemsImport(runtimeMode, 'integration');
@@ -1602,6 +1618,7 @@ export default {
       typedEventBusImport,
       drizzleTokenImport,
       drizzleTypeImport,
+      paginationImport,
       integrationSubsystemImport,
       withAnalyticsImport,
       integrationUpsertConfigImport,

@@ -4,8 +4,12 @@ skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
-import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body, Headers<% } %>, NotFoundException, Param, ParseUUIDPipe } from '@nestjs/common';
-import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body, Headers<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { ZodValidationPipe } from '<%= typeof zodValidationPipeImport !== 'undefined' ? zodValidationPipeImport : '@shared/pipes/zod-validation.pipe' %>';
+import type { Page } from '<%= typeof paginationImport !== 'undefined' ? paginationImport : '@shared/http/pagination' %>';
+import { <%= classNames.listQuerySchema %> } from './dto/list-<%= entityNamePlural %>.query';
+import type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityNamePlural %>.query';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
 import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
 <% if (eavEnabled) { -%>
@@ -13,7 +17,6 @@ import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%
 import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityNamePlural %>-with-fields.use-case';
 <% } -%>
 <% if (generateWrites) { -%>
-import { ZodValidationPipe } from '<%= typeof zodValidationPipeImport !== 'undefined' ? zodValidationPipeImport : '@shared/pipes/zod-validation.pipe' %>';
 import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityName %>.use-case';
 import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityName %>.use-case';
 import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityName %>.use-case';
@@ -47,14 +50,32 @@ export class <%= classNames.controller %> {
   ) {}
 
   @ApiOperation({ summary: 'List <%= entityNamePlural %>', operationId: 'list<%= classNames.entity %>s' })
+  @ApiQuery({ name: 'page', required: false, type: 'integer', description: '1-based page number (default 1).' })
+  @ApiQuery({ name: 'pageSize', required: false, type: 'integer', description: 'Page size (default 50, max 200).' })
+  @ApiQuery({ name: 'cursor', required: false, type: 'string', description: 'Opaque keyset cursor (accepted; v1 paginates by offset).' })
+  @ApiQuery({ name: 'sort_by', required: false, type: 'string', description: "Sort column (default 'created_at')." })
+  @ApiQuery({ name: 'sort_order', required: false, enum: ['asc', 'desc'], description: "Sort direction (default 'desc')." })
   @ApiResponse({
     status: 200,
-    schema: { type: 'array', items: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } },
+    schema: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { $ref: '#/components/schemas/<%= classNames.outputDto %>' } },
+        page: { type: 'integer' },
+        pageCount: { type: 'integer' },
+        total: { type: 'integer' },
+        pageSize: { type: 'integer' },
+        nextCursor: { type: 'string', nullable: true },
+      },
+      required: ['items', 'page', 'pageCount', 'total', 'pageSize', 'nextCursor'],
+    },
   })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @Get()
-  async getAll(): Promise<<%= classNames.entity %>[]> {
-    return this.listUseCase.execute();
+  async getAll(
+    @Query(new ZodValidationPipe(<%= classNames.listQuerySchema %>)) query: <%= classNames.listQueryDto %>,
+  ): Promise<Page<<%= classNames.entity %>>> {
+    return this.listUseCase.execute(query);
   }
 <% if (eavEnabled) { %>
   @ApiOperation({

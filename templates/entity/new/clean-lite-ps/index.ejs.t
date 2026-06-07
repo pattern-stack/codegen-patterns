@@ -19,3 +19,4 @@ export type { <%= classNames.entity %> } from './<%= entityName %>.entity';
 export type { <%= classNames.createDto %> } from './dto/create-<%= entityName %>.dto';
 export type { <%= classNames.updateDto %> } from './dto/update-<%= entityName %>.dto';
 export type { <%= classNames.outputDto %> } from './dto/<%= entityName %>-output.dto';
+export type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityNamePlural %>.query';

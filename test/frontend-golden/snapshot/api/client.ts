@@ -3,6 +3,56 @@
 
 const BASE_URL = '/api';
 
+/** Hard upper bound on a single list fetch — mirrors the backend pageSize clamp. */
+export const MAX_PAGE_SIZE = 200;
+
+/**
+ * Pagination envelope returned by every `GET /<entities>` (pagination-by-default).
+ * Mirrors the backend `Page<T>` runtime contract
+ * (`@pattern-stack/codegen/runtime/http/pagination`); duplicated here so the
+ * generated frontend data layer carries no backend import. `nextCursor` is
+ * contract-stable (the backend emits it from day one) — the offset engine
+ * ignores it on request for now.
+ */
+export interface Page<T> {
+	items: T[];
+	page: number;
+	pageCount: number;
+	total: number;
+	pageSize: number;
+	nextCursor: string | null;
+}
+
+/**
+ * Request query for a list endpoint: page-based pagination + default sort, plus
+ * arbitrary where-filters (passed through to the backend querystring). All keys
+ * optional — the unfiltered first page is the default.
+ */
+export interface ListQuery {
+	page?: number;
+	cursor?: string;
+	pageSize?: number;
+	sort_by?: string;
+	sort_order?: 'asc' | 'desc';
+	[key: string]: string | number | boolean | null | undefined;
+}
+
+/**
+ * Serialize a {@link ListQuery} into a querystring (leading `?`), skipping
+ * undefined/null values. Returns `''` for an empty/absent query so an
+ * unfiltered `list()` hits the bare route.
+ */
+export function toListQueryString(query?: ListQuery): string {
+	if (!query) return '';
+	const params = new URLSearchParams();
+	for (const [key, value] of Object.entries(query)) {
+		if (value === undefined || value === null) continue;
+		params.set(key, String(value));
+	}
+	const qs = params.toString();
+	return qs ? `?${qs}` : '';
+}
+
 /**
  * Base REST transport for `api` sync-mode collections and entity api clients.
  * Throws on non-2xx; returns parsed JSON, or `undefined` for 204 No Content.

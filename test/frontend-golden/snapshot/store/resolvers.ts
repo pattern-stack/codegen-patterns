@@ -3,12 +3,45 @@
 
 import { personCollection } from '../collections/person';
 import { userCollection } from '../collections/user';
+import { personApi } from '../api/person';
+import { userApi } from '../api/user';
 import type { Person } from '@repo/db/entities/person';
 import type { User } from '@repo/db/entities/user';
 
 /**
+ * Full-fetch hydration cache (LANDMINE 1 escape hatch for pagination-by-default).
+ *
+ * The backing collections hold only the CURRENT PAGE once lists paginate, so an
+ * FK pointing at a row on another page resolves to undefined against collection
+ * state alone. `hydrateResolverCache()` fetches the COMPLETE set per entity (via
+ * `api.listAll()`, which pages through the envelope) into these id→entity maps;
+ * resolvers fall back to them on a collection-state miss. Call it once on mount.
+ */
+const hydrationCache = {
+	person: new Map<string, Person>(),
+	user: new Map<string, User>(),
+};
+
+/**
+ * Populate the {@link hydrationCache} from the full set of every entity. Await
+ * (or fire-and-forget) once at app start so off-page FK resolution is correct.
+ * Idempotent — re-running refreshes every cache map.
+ */
+export async function hydrateResolverCache(): Promise<void> {
+	await Promise.all([
+		personApi.listAll().then((rows) => {
+			hydrationCache.person = new Map(rows.map((r) => [r.id as string, r]));
+		}),
+		userApi.listAll().then((rows) => {
+			hydrationCache.user = new Map(rows.map((r) => [r.id as string, r]));
+		}),
+	]);
+}
+
+/**
  * FK resolvers — resolve a foreign-key id to the full entity object via the
- * backing collection's local state (`O(1)` `Map.get`).
+ * backing collection's local state (`O(1)` `Map.get`), falling back to the
+ * full-fetch hydration cache for ids not on the current page.
  *
  * Usage:
  *   const person = resolvers.person(other.personId);
@@ -18,16 +51,18 @@ export interface Resolvers {
 	user: (id: string | null | undefined) => User | undefined;
 }
 
-/** Build the resolver table over the generated collections. */
+/** Build the resolver table over the generated collections + hydration cache. */
 export function createResolvers(): Resolvers {
 	return {
 		person: (id) => {
 			if (!id) return undefined;
-			return personCollection.state.get(id) as Person | undefined;
+			return (personCollection.state.get(id) ??
+				hydrationCache.person.get(id)) as Person | undefined;
 		},
 		user: (id) => {
 			if (!id) return undefined;
-			return userCollection.state.get(id) as User | undefined;
+			return (userCollection.state.get(id) ??
+				hydrationCache.user.get(id)) as User | undefined;
 		},
 	};
 }

@@ -90,12 +90,16 @@ describe('clean-lite-ps zod validation pipe — controller', () => {
     expect(output).not.toMatch(/@Body\(\)\s+dto:/);
   });
 
-  it('does not import ZodValidationPipe when generate.writes is false', () => {
+  it('imports ZodValidationPipe even when generate.writes is false (list-query validation)', () => {
     const def = { ...baseEntity, generate: { writes: false } };
     const locals = buildCleanLitePsLocals(def, {});
     const output = render('controller.ejs.t', locals);
 
-    expect(output).not.toContain('ZodValidationPipe');
+    // pagination-by-default makes ZodValidationPipe unconditional: the @Get()
+    // list route validates the ListQuery with it. Only the write-side schemas
+    // drop out when writes are off.
+    expect(output).toContain('ZodValidationPipe');
+    expect(output).toContain('ListContactsQuerySchema');
     expect(output).not.toContain('CreateContactSchema');
     expect(output).not.toContain('UpdateContactSchema');
   });
