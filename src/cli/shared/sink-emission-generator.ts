@@ -42,8 +42,8 @@
  * Built by explicit field enumeration so it type-checks against `<Entity>IntegrationWrite`
  * with no spread/cast:
  *   - `externalId` — always present.
- *   - copy-through fields (`copyThroughFields` — post-exclusion), one `<f>: record.<f>` each,
- *     EXCEPT `userId` (sourced from the method param — bare `userId,` shorthand).
+ *   - copy-through fields (`copyThroughFields` — post-exclusion), one `<f>: record.<f>` each
+ *     (`userId`, if declared, is just another copy-through field — `record.userId`).
  *   - FK external join-keys — emitted as `<writeKey>: null` + SEAM comment. The
  *     projection-default canonical has no external-key member; null is write-safe (the
  *     repo's `!== null` guard skips it, `integrated-entity-repository.ts:118-120`). Replace
@@ -67,11 +67,13 @@
  *   - External-key reconstruction on the find side (a local `accountId` ≠ `accountExternalId`).
  *   - Dropping local-only projection columns when you widen the canonical.
  *
- * ## `userId` is NOT injected — it is a declared field
+ * ## `userId` is a plain declared field — read from `record`
  *
- * If the entity declares a `user_id` field, `userId` is sourced from the method parameter
- * (the authenticated user), emitted as a bare `userId,` shorthand — matching swe-brain's
- * hand-authored sinks. If NOT declared, the write object omits `userId` entirely.
+ * If the entity declares a `user_id` field, `userId` is on the projection and the write
+ * reads it via `record.userId`, exactly like any other copy-through field. If NOT declared,
+ * the write object omits `userId` entirely. (Pre-#528 emit special-cased it as a bare
+ * `userId,` shorthand — but the standalone `default<E>BuildWrite(record)` has only `record`
+ * in scope, so the shorthand was an undeclared binding → TS18004; the base never compiled.)
  *
  * ## @Injectable() — OMITTED (OQ2 CLOSED, #491)
  *
@@ -81,10 +83,6 @@
  */
 
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
-
-/** The camelCase name of the user-scoping field — sourced from the sink's
- *  `userId` parameter rather than the canonical record. */
-const USER_ID_FIELD = "userId";
 
 // ============================================================================
 // Input
@@ -230,15 +228,18 @@ function assertIntegrated(input: SinkEmitInput): void {
 // Shared body builders (reused by both emitters)
 // ============================================================================
 
-function buildWriteBodyLines(input: SinkEmitInput, n: SinkNames): string[] {
-  const hasUserIdField = input.copyThroughFields.some(
-    (f) => f.camelName === USER_ID_FIELD,
+function buildWriteBodyLines(input: SinkEmitInput, _n: SinkNames): string[] {
+  // `userId` is a DECLARED copy-through field carried on the projection — it is
+  // read from `record.userId` exactly like every other field. (Earlier emit
+  // special-cased it as a bare `userId,` shorthand "sourced from the method
+  // param" — but `default<E>BuildWrite(record)` is a standalone function with
+  // ONLY `record` in scope, so the shorthand referenced an undeclared binding →
+  // TS18004 and the generated base never compiled. Issue #528.)
+  const copyThroughLines = input.copyThroughFields.map(
+    (f) => `      ${f.camelName}: record.${f.camelName},`,
   );
-  const copyThroughLines = input.copyThroughFields
-    .filter((f) => f.camelName !== USER_ID_FIELD)
-    .map((f) => `      ${f.camelName}: record.${f.camelName},`);
   const fkLines = input.fkExternalKeys.flatMap((fk) => [
-    `      // SEAM (FK external key — null until you widen ${n.projectionType} to carry \`${fk.writeKey}\`):`,
+    `      // SEAM (FK external key — null until you widen ${_n.projectionType} to carry \`${fk.writeKey}\`):`,
     `      // Replace null with record.${fk.writeKey} after widening. Write-safe: repo skips null FKs.`,
     `      ${fk.writeKey}: null,`,
   ]);
@@ -257,11 +258,6 @@ function buildWriteBodyLines(input: SinkEmitInput, n: SinkNames): string[] {
       `      // FK external join-keys (null until canonical widens to carry them):`,
       ...fkLines,
     );
-  }
-  if (hasUserIdField) {
-    // `userId` is sourced from the authenticated-user param, not the vendor
-    // record — matches swe-brain's hand-authored sinks.
-    lines.push(`      userId,`);
   }
   return lines;
 }

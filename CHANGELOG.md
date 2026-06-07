@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.1] — 2026-06-07
+
+### Fixed
+
+- **Sink-seam emitter (#491 Shape C): generated `*.sink.generated.ts` bases now
+  compile for the relative-path (swe-brain) layout.** Two defects made every
+  emitted base non-compiling when no tsconfig alias covers the module dir
+  (#528):
+  - **Repo import one level too deep.** The sink base lives at
+    `integrations/<surface>/sinks/` (3 deep under `src/`) but reused the
+    *assembly*-relative `repoImportSpecifier` (computed for
+    `integrations/<surface>/modules/<provider>/`, 4 deep), emitting
+    `../../../../modules/…` — which lands at the repo root, not `src/` (TS2307).
+    The caller now recomputes the specifier relative to the SINK dir from the
+    resolved repo file path (alias-aware via the same `toImportSpecifier`
+    helper, now exported; `EntityModuleLocation` carries `repoFileAbs` /
+    `moduleFileAbs`). Correct prefix: `../../../modules/…`. The assembly import
+    depth is unchanged.
+  - **Bare `userId,` shorthand (TS18004).** `default<E>BuildWrite(record)` is a
+    standalone function with only `record` in scope, but a declared `user_id`
+    field was special-cased as a bare `userId,` shorthand referencing no
+    binding. `userId` is a plain projection field — now emitted as
+    `userId: record.userId`, like every other copy-through field.
+  - Validation: a new compile-level gate
+    (`sink-swe-brain-layout.compile.test.ts`) runs the real emitter into a
+    swe-brain-shaped tree (`integrations/<surface>/sinks/` +
+    `modules/<plural>/<entity>.repository.ts`, no alias) and `tsc --noEmit`s the
+    emitted base — the prior §3b gate missed both (it stubbed the repo import
+    same-dir and used no `user_id` field). Found consuming 0.26.0 in swe-brain
+    (6 bases, 12 errors).
+
 ## [0.26.0] — 2026-06-07
 
 ### Added

@@ -383,10 +383,21 @@ export interface EntityModuleLocation {
   repoClass: string;
   /** `<PluralPascal>Module` class name (`MeetingsModule`). */
   moduleClass: string;
-  /** Import specifier for the repo (alias or relative, no extension). */
+  /** Import specifier for the repo (alias or relative, no extension), computed
+   *  RELATIVE TO THE ASSEMBLY DIR (`integrations/<surface>/modules/<provider>`).
+   *  A consumer emitting into a DIFFERENT directory (e.g. the sink base in
+   *  `integrations/<surface>/sinks/`) must recompute from {@link repoFileAbs}
+   *  with {@link toImportSpecifier} — the relative depth differs (#528). */
   repoImportSpecifier: string;
-  /** Import specifier for the module (alias or relative, no extension). */
+  /** Import specifier for the module (alias or relative, no extension),
+   *  relative to the assembly dir. See {@link repoImportSpecifier}. */
   moduleImportSpecifier: string;
+  /** Absolute path of the repo source file (`…/<plural>/<entity>.repository.ts`).
+   *  Exposed so emitters whose output dir differs from the assembly dir can
+   *  recompute a correct relative specifier (#528). */
+  repoFileAbs: string;
+  /** Absolute path of the module source file (`…/<plural>/<plural>.module.ts`). */
+  moduleFileAbs: string;
 }
 
 export interface ResolveEntityModuleImportsInput {
@@ -417,8 +428,12 @@ function pluralPascalCase(plural: string): string {
 
 /** Express an absolute target file (no extension) as an alias import if any
  *  alias target dir is a prefix, else as a relative import from `fromDirAbs`.
- *  Always emits POSIX separators and strips the `.ts` extension. */
-function toImportSpecifier(
+ *  Always emits POSIX separators and strips the `.ts` extension.
+ *
+ *  Exported (#528) so emitters whose output directory differs from the assembly
+ *  dir — e.g. the sink base in `integrations/<surface>/sinks/` vs the assembly in
+ *  `…/modules/<provider>/` — can recompute the repo import at the correct depth. */
+export function toImportSpecifier(
   targetFileAbs: string,
   fromDirAbs: string,
   aliases: Record<string, string>,
@@ -488,5 +503,7 @@ export function resolveEntityModuleImports(
     moduleClass,
     repoImportSpecifier: toImportSpecifier(repoFileAbs, assemblyDirAbs, input.aliases),
     moduleImportSpecifier: toImportSpecifier(moduleFileAbs, assemblyDirAbs, input.aliases),
+    repoFileAbs,
+    moduleFileAbs,
   };
 }

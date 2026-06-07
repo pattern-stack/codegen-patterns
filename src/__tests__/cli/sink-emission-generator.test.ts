@@ -216,13 +216,15 @@ describe("generateSinkBase — userId is a declared copy-through field", () => {
     }),
   );
 
-  it("sources userId from the method param, not the record (bare `userId,`)", () => {
+  it("reads userId from the record like any copy-through field (#528 — bare `userId,` shorthand was TS18004)", () => {
     const buildWrite = out.slice(
       out.indexOf("export function defaultTranscriptBuildWrite("),
       out.indexOf("export function defaultTranscriptToCanonicalView("),
     );
-    expect(buildWrite).toContain("userId,");
-    expect(buildWrite).not.toContain("userId: record.userId");
+    expect(buildWrite).toContain("userId: record.userId,");
+    // The standalone default function has ONLY `record` in scope, so a bare
+    // `userId,` shorthand referenced an undeclared binding → must not be emitted.
+    expect(buildWrite).not.toMatch(/^\s*userId,\s*$/m);
   });
 
   it("still copies the non-userId fields from the record", () => {
@@ -380,13 +382,13 @@ describe("generateSinkBase — FK + json + userId together", () => {
     expect(codeOnly(out)).not.toContain("channelExternalId: record.");
   });
 
-  it("sources userId from the param shorthand", () => {
+  it("reads userId from the record like any copy-through field (#528)", () => {
     const buildWrite = out.slice(
       out.indexOf("export function defaultMessageBuildWrite("),
       out.indexOf("export function defaultMessageToCanonicalView("),
     );
-    expect(buildWrite).toContain("userId,");
-    expect(buildWrite).not.toContain("userId: record.userId");
+    expect(buildWrite).toContain("userId: record.userId,");
+    expect(buildWrite).not.toMatch(/^\s*userId,\s*$/m);
   });
 
   it("has no TODO(author) text", () => {
