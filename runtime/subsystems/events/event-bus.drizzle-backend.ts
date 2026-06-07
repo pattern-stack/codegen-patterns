@@ -30,7 +30,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { Injectable, OnModuleDestroy, OnModuleInit, Inject, Logger, Optional } from '@nestjs/common';
-import { eq, and, inArray, asc, desc, gte, lt, or, sql, type SQL } from 'drizzle-orm';
+import { eq, and, inArray, asc, desc, gte, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import type {
   DomainEvent,
   DrizzleTransaction,
@@ -584,10 +584,22 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
   private async processBatch(): Promise<void> {
     const pools = this.opts.pools;
 
-    // Build WHERE: status='pending' [AND pool IN (...)]
+    // Build WHERE: status='pending' AND occurred_at <= now [AND pool IN (...)].
+    //
+    // The readiness gate (`occurred_at <= now`) is what makes a scheduler-
+    // materialised *future* slot wait. The EventScheduler pre-inserts the next
+    // slot with `occurred_at = slotStart` in the future and deliberately does
+    // NOT NOTIFY-wake the drainer for it (see materializeScheduledEvent: a
+    // future slot is claimed by polling once its `occurred_at` passes). Without
+    // this predicate the claim is status-only, so the very next poll grabs the
+    // future-dated row and stamps `processed_at = now()` early — surfacing rows
+    // that read "N minutes from now" yet are already processed, and firing
+    // scheduled triggers up to one interval ahead of their slot. Normal events
+    // publish with `occurred_at = now()`, so the gate is transparent to them.
+    const ready = lte(domainEvents.occurredAt, new Date());
     const whereClause: SQL<unknown> = pools && pools.length > 0
-      ? (and(eq(domainEvents.status, 'pending'), inArray(domainEvents.pool, pools)) as SQL<unknown>)
-      : eq(domainEvents.status, 'pending');
+      ? (and(eq(domainEvents.status, 'pending'), ready, inArray(domainEvents.pool, pools)) as SQL<unknown>)
+      : (and(eq(domainEvents.status, 'pending'), ready) as SQL<unknown>);
 
     // Claim a batch with FOR UPDATE SKIP LOCKED so multiple pollers don't
     // double-dispatch. The lock is released when the outer transaction
