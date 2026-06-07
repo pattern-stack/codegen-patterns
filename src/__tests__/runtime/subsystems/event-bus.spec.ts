@@ -701,12 +701,14 @@ describe('DrizzleEventBus', () => {
 
       expect(selectBuilder.where).toHaveBeenCalledTimes(1);
       const tokens = flatten(selectState.whereArg);
-      // Both the status predicate and the inArray(pool, ...) fragment
-      // should be present in the composed WHERE.
+      // The status predicate, the inArray(pool, ...) fragment, and the
+      // occurred_at readiness gate should all be present in the composed WHERE.
       expect(tokens).toContain('col:pool');
       expect(tokens).toContain('events_change');
       expect(tokens).toContain('col:status');
       expect(tokens).toContain('pending');
+      // Readiness gate: occurred_at <= now keeps future scheduler slots unclaimed.
+      expect(tokens).toContain('col:occurred_at');
       // The FOR UPDATE SKIP LOCKED modifier was applied to the claim.
       expect(selectBuilder.for).toHaveBeenCalledWith('update', { skipLocked: true });
     });
@@ -719,9 +721,11 @@ describe('DrizzleEventBus', () => {
 
       expect(selectBuilder.where).toHaveBeenCalledTimes(1);
       const tokens = flatten(selectState.whereArg);
-      // Only the status='pending' predicate; no pool reference.
+      // The status='pending' predicate and the occurred_at readiness gate, but
+      // no pool reference.
       expect(tokens).toContain('col:status');
       expect(tokens).toContain('pending');
+      expect(tokens).toContain('col:occurred_at');
       expect(tokens).not.toContain('col:pool');
     });
 
@@ -734,6 +738,39 @@ describe('DrizzleEventBus', () => {
       expect(selectBuilder.where).toHaveBeenCalledTimes(1);
       const tokens = flatten(selectState.whereArg);
       expect(tokens).not.toContain('col:pool');
+    });
+
+    it('gates the claim on occurred_at <= now so future scheduler slots are not claimed early', async () => {
+      // Collect Date leaves from the SQL AST — the readiness bound is the only
+      // Date param in the claim WHERE (status/pool params are strings).
+      function findDates(node: unknown, out: Date[] = [], seen = new Set<unknown>()): Date[] {
+        if (node instanceof Date) {
+          out.push(node);
+          return out;
+        }
+        if (node === null || typeof node !== 'object' || seen.has(node)) return out;
+        seen.add(node);
+        const values = Array.isArray(node) ? node : Object.values(node as Record<string, unknown>);
+        for (const v of values) findDates(v, out, seen);
+        return out;
+      }
+
+      const { db, selectState } = makeMockDb();
+      const bus = new DrizzleEventBus(db as never, { backend: 'drizzle' });
+
+      const before = Date.now();
+      await bus.drainOnce();
+      const after = Date.now();
+
+      // The WHERE references occurred_at (the readiness gate) — distinct from
+      // the orderBy(occurred_at), which is captured separately as orderByArg.
+      expect(flatten(selectState.whereArg)).toContain('col:occurred_at');
+      // …and the bound is "now", stamped at claim time (not a fixed/past value),
+      // so the gate tracks wall-clock forward across poll cycles.
+      const dates = findDates(selectState.whereArg);
+      expect(dates.length).toBe(1);
+      expect(dates[0]!.getTime()).toBeGreaterThanOrEqual(before);
+      expect(dates[0]!.getTime()).toBeLessThanOrEqual(after);
     });
   });
 
