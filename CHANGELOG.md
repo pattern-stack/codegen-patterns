@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.1] — 2026-06-07
+
+### Fixed
+
+- **Scheduled-event drain no longer claims future slots early (#533).**
+  `DrizzleEventBus.processBatch()` composed a status-only claim
+  (`status='pending'` [+ pool IN …]) with no readiness predicate, so the 1s
+  fallback poll grabbed the `EventScheduler`'s pre-materialised *next* slot
+  (`occurred_at = slotStart`, in the future) on the very next cycle and stamped
+  `processed_at = now()` — contradicting `materializeScheduledEvent`'s own
+  contract ("a future slot is claimed by polling once `occurred_at` passes").
+  Symptoms: event-log rows reading "N minutes from now" yet already
+  `status:processed`, and schedule-driven triggers firing up to one interval
+  ahead of their slot. Fix: add `occurred_at <= now` to the claim WHERE (both
+  the pooled and pool-less branches). Normal events publish with
+  `occurred_at = now()`, so the gate is transparent to them.
+
+## [0.27.0] — 2026-06-07
+
+### Added
+
+- **Pagination by default (#532): `Page<T>` list emit + `store.<entity>.useData()`.**
+  See PR #532. (CHANGELOG entry backfilled in 0.27.1.)
+
 ## [0.26.1] — 2026-06-07
 
 ### Fixed
