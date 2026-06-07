@@ -1,6 +1,6 @@
 {
   "name": "@pattern-stack/codegen",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Entity-driven code generation for full-stack TypeScript applications",
   "license": "MIT",
   "type": "module",
@@ -34,6 +34,10 @@
     "./runtime/shared/openapi": {
       "types": "./dist/runtime/shared/openapi/index.d.ts",
       "default": "./dist/runtime/shared/openapi/index.js"
+    },
+    "./runtime/shared/logging": {
+      "types": "./dist/runtime/shared/logging/index.d.ts",
+      "default": "./dist/runtime/shared/logging/index.js"
     },
     "./runtime/*": {
       "types": "./dist/runtime/*.d.ts",
