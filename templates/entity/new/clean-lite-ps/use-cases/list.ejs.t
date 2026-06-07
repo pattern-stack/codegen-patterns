@@ -38,7 +38,7 @@ export class <%= classNames.listUseCase %> {
     // base repository's `orderBy` takes one expression.
     const dir = resolved.sortOrder === 'asc' ? asc : desc;
     const col = (<%= entityNamePlural %> as unknown as Record<string, unknown>)[
-      resolved.sortBy.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())
+      resolved.sortBy.replace(/_([a-z])/g, (_m: string, c: string) => c.toUpperCase())
     ];
     const orderBy: SQL =
       col === undefined
