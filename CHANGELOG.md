@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.0] — 2026-06-07
+
+### Added
+
+- **Runtime: compact console logger + `LOG_LEVEL` threshold
+  (`runtime/shared/logging`).** A proven swe-brain (second-dogfood) consumer
+  pattern lifted into the runtime, importable as
+  `@pattern-stack/codegen/runtime/shared/logging`. `CompactConsoleLogger` drops
+  Nest's ~55-char `[Nest] <pid>  - <full locale date>   LEVEL [Context]`
+  preamble (which wraps 2–3× in split-pane dev TUIs) — emitting
+  `12:48:42   LOG [Context] message` — and `createAppLogger(threshold?)` gives
+  consumers the log-level knob the generated entrypoints never wired: a single
+  `LOG_LEVEL` env threshold (`verbose < debug < log < warn < error < fatal`,
+  default `log`) that enables that level and above, with an explicit-override arg
+  that wins over the env (CLI tools pass `'warn'` to stay quiet). Hand it to
+  `NestFactory.create(AppModule, { logger: createAppLogger() })`. See
+  `docs/CONSUMER-SETUP.md` §Application logger. (The generated worker template
+  doesn't auto-wire it yet — follow-up.)
+
 ## [0.25.0] — 2026-06-07
 
 ### Fixed

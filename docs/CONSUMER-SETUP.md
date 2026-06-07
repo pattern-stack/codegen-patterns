@@ -443,6 +443,63 @@ if (config.openapi?.enabled) {
 }
 ```
 
+## Application logger
+
+`@pattern-stack/codegen/runtime/shared/logging` ships a compact console logger
+plus a `LOG_LEVEL` threshold knob. It replaces Nest's default
+`ConsoleLogger`, whose preamble — `[Nest] <pid>  - <full locale date>   LEVEL
+[Context]` (~55 chars) — wraps 2–3× in split-pane dev TUIs (process-compose,
+tmux), and gives consumers a log-level dial they otherwise lack (the generated
+entrypoints pass no `logger:`, so every subsystem `debug` line — e.g.
+EventScheduler's per-slot `materialised …` — always prints).
+
+`CompactConsoleLogger` drops the `[Nest] <pid>  - ` prefix (a supervisor pane
+header already names the process) and shortens the timestamp to `HH:mm:ss`:
+
+```
+12:48:42   LOG [EventScheduler] materialised 2 slot(s)
+```
+
+Hand it to `NestFactory` in your entrypoint:
+
+```ts
+// src/main.ts
+import { createAppLogger } from '@pattern-stack/codegen/runtime/shared/logging';
+
+const app = await NestFactory.create(AppModule, { logger: createAppLogger() });
+```
+
+```ts
+// src/worker.ts (standalone worker)
+const app = await NestFactory.createApplicationContext(WorkerAppModule, {
+  logger: createAppLogger(),
+});
+```
+
+### `LOG_LEVEL` threshold
+
+A single severity threshold enables that level and everything above it
+(`verbose < debug < log < warn < error < fatal`); the default is `log`.
+
+| `LOG_LEVEL` | Enabled levels |
+|---|---|
+| _(unset)_ / `log` | `log`, `warn`, `error`, `fatal` |
+| `debug` | `debug` and above |
+| `verbose` | everything |
+| `warn` | `warn`, `error`, `fatal` |
+
+Unknown values warn once and fall back to `log`. `createAppLogger(threshold?)`
+takes an explicit override that wins over the env var — CLI tools pass `'warn'`
+to stay quiet regardless of the ambient `LOG_LEVEL`:
+
+```ts
+const logger = createAppLogger('warn'); // ignores LOG_LEVEL
+```
+
+> The generated entrypoints don't yet wire this automatically — pass
+> `createAppLogger()` yourself in `main.ts` / `worker.ts` (a future codegen
+> release will scaffold it into the worker template).
+
 ## `codegen.config.yaml`
 
 Minimum viable config for a backend-only clean-lite-ps project:
