@@ -111,6 +111,29 @@ This plan takes #219 from "design merged" to "consumers can rely on it." The wor
 
 ### AUDIT-4: Runtime — Bridge dispatcher guard + WARN dedup + return-shape signal
 
+> **Revision (2026-06-07) — guard fires only on genuine drift.** The original
+> design below ("Position the guard at the **top** of `processEvent`, above the
+> `lookupTriggers` call") warned for **every** audit-tier event. That assumed
+> audit events reach the guard only via drift. In dogfood (swe-brain), audit-tier
+> *lifecycle* events (`connection.created`, `connection.field_changed`, …) flow
+> through the shared outbox routinely with **no** triggers — the benign case the
+> acceptance criteria never covered. The unconditional guard turned every such
+> event into a false-positive WARN claiming an out-of-band `bridge_trigger` row
+> it never checked for.
+>
+> **Revised behaviour:** run `lookupTriggers` **first**, then branch on tier.
+> `tier === 'audit'` *and* `triggers.length > 0` → genuine drift: WARN (now a
+> verified claim, naming the offending trigger id) + `auditBlocked: 1`.
+> `tier === 'audit'` *and* no triggers → benign: return zeros, **silent**.
+> The drift signal is preserved; the false positive is gone. The SELECT-level
+> `tier='audit'` filter was rejected — audit events still need the normal drain
+> (`processed_at` + subscriber dispatch); only *bridge fanout* skips them.
+>
+> **Added acceptance:** audit event with **no** registered trigger → all zeros,
+> `auditBlocked: 0`, no WARN, no inserts (the `connection.created` regression
+> guard). See `ai-docs/specs/2026-06-07-bridge-audit-guard-false-positive.md`.
+> The bullets below are the *original* (superseded) design, kept for provenance.
+
 **Scope:** Update bridge outbox drain hook at `runtime/subsystems/bridge/bridge-outbox-drain-hook.ts` (path confirmed; matches dealbrain-v2). The hook already uses a once-per-process WARN dedup pattern (`warnedNullDirection`, L60/L86-97) for null-direction events — extend the same pattern for audit-tier blocks:
 - **Position the guard at the top of `processEvent`** (above the existing `lookupTriggers` call at L72). If `event.metadata?.tier === 'audit'`, return `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 1 }` immediately. The existing trigger-lookup short-circuit at L73-75 (no triggers → return zeros) is the same shape; this just adds an earlier check.
 - **Extend `BridgeOutboxDrainResult` with `auditBlocked: number`** in `runtime/subsystems/bridge/bridge.protocol.ts`. Same idiom as existing `delivered` / `dedupSkips` / `triggerCount`: per-event observability data piggybacked on the return. `0` for non-audit paths, `1` when the guard fires. Update the doc comment on the type to document the field. No in-memory state on the hook; no test-only accessor.

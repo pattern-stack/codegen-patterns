@@ -340,6 +340,18 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
     });
   }
 
+  // Drift registry: triggers registered against audit event types. AUDIT-2
+  // codegen validation should make this impossible — these tests simulate the
+  // out-of-band / version-skew drift the runtime guard is defense-in-depth for.
+  const DRIFT_REGISTRY: BridgeRegistry = {
+    crm_sync_started: [
+      { triggerId: 'side_effect_job#0', jobType: 'side_effect_job', map: () => ({}) },
+    ],
+    crm_sync_completed: [
+      { triggerId: 'other_side_effect#0', jobType: 'other_side_effect', map: () => ({}) },
+    ],
+  } as unknown as BridgeRegistry;
+
   it('blocks fanout when an audit event reaches an out-of-band trigger', async () => {
     // Out-of-band: registry has a trigger registered for an audit event
     // type (codegen-side AUDIT-2 should have prevented this — simulating
@@ -370,11 +382,32 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
       "Bridge guard blocked audit-tier event 'crm_sync_started'",
     );
     expect(message).toContain('event.id=audit-evt-1');
+    // The (now verified) drift claim names the offending trigger id.
+    expect(message).toContain('side_effect_job#0');
     expect(message).toContain('Investigate registry/runtime drift.');
   });
 
-  it('dedups WARN per event type within a single process', async () => {
+  it('stays silent for an audit event with no registered trigger (benign shared-outbox case)', async () => {
+    // The common case: an audit-tier lifecycle event (e.g. connection.created)
+    // sharing the outbox with domain events. No trigger → no drift → no WARN.
+    // This is the regression guard for the false-positive class.
     const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+    const { tx, calls } = makeTx([]);
+
+    const result = await hook.processEvent(auditEvent(), tx as never);
+
+    expect(result).toEqual({
+      delivered: 0,
+      dedupSkips: 0,
+      triggerCount: 0,
+      auditBlocked: 0,
+    });
+    expect(calls).toHaveLength(0);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('dedups WARN per event type within a single process', async () => {
+    const hook = new BridgeOutboxDrainHook(DRIFT_REGISTRY);
 
     const a = await hook.processEvent(auditEvent(), makeTx([]).tx as never);
     const b = await hook.processEvent(
@@ -389,7 +422,7 @@ describe('BridgeOutboxDrainHook — audit-tier guard', () => {
   });
 
   it('emits a fresh WARN when a different audit event type is seen', async () => {
-    const hook = new BridgeOutboxDrainHook({} as BridgeRegistry);
+    const hook = new BridgeOutboxDrainHook(DRIFT_REGISTRY);
 
     await hook.processEvent(auditEvent(), makeTx([]).tx as never);
     await hook.processEvent(
