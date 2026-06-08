@@ -334,14 +334,16 @@ export type BridgeRegistry = {
  * `triggerCount`: total triggers matched in the registry for this event;
  * `triggerCount === delivered + dedupSkips`.
  *
- * `auditBlocked`: number of events the dispatcher refused to fan out
- * because their `metadata.tier === 'audit'`. Audit-tier events are not
- * bridge-eligible; codegen errors block the registry from listing them
- * as triggers, so a non-zero value here indicates registry/runtime drift
- * (an out-of-band `bridge_trigger` insert, version skew during deploy).
- * Per-event: `0` when the guard does not fire, `1` when it does. Add it
- * to per-batch logging if your drain caller aggregates results. See
- * ai-docs/specs/issue-242/plan.md §AUDIT-4.
+ * `auditBlocked`: number of audit-tier events the dispatcher refused to fan
+ * out *because they had a trigger registered against them*. Audit-tier events
+ * are not bridge-eligible; codegen errors block the registry from listing them
+ * as triggers, so a non-zero value here indicates genuine registry/runtime
+ * drift (an out-of-band `bridge_trigger` insert, version skew during deploy).
+ * A benign audit-tier event — one with no matched trigger, the common case for
+ * lifecycle events sharing the outbox — returns `0` and produces no log.
+ * Per-event: `0` when the guard does not fire (including benign audit events),
+ * `1` when it fires on drift. Add it to per-batch logging if your drain caller
+ * aggregates results. See ai-docs/specs/issue-242/plan.md §AUDIT-4.
  */
 export interface BridgeOutboxDrainResult {
   delivered: number;
@@ -376,13 +378,17 @@ export interface IBridgeOutboxDrainHook {
    * job_run` row pairs for every matched trigger via the supplied `tx`.
    *
    * Behaviour:
-   *   0. **Audit-tier guard (defense-in-depth).** If
-   *      `event.metadata.tier === 'audit'`, returns
+   *   0. **Audit-tier guard (defense-in-depth).** Runs *after* the registry
+   *      lookup (step 1). If `event.metadata.tier === 'audit'` AND a trigger
+   *      is registered against the type (genuine drift — AUDIT-2 should have
+   *      prevented it), returns
    *      `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 1 }`
-   *      immediately and logs a per-`(event_type, process)` WARN. The
-   *      codegen-side validator (AUDIT-2) is the primary enforcement;
-   *      this guard catches out-of-band `bridge_trigger` inserts and
-   *      version skew during deploy. See
+   *      and logs a per-`(event_type, process)` WARN naming the offending
+   *      trigger id(s). If the audit event has *no* matched trigger (the
+   *      common, benign case — lifecycle events sharing the outbox), returns
+   *      all zeros (`auditBlocked: 0`) silently. The codegen-side validator
+   *      (AUDIT-2) is the primary enforcement; this guard catches out-of-band
+   *      `bridge_trigger` inserts and version skew. See
    *      ai-docs/specs/issue-242/plan.md §AUDIT-4.
    *   1. Looks up `bridgeRegistry[event.type]`. No matches → returns
    *      `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 0 }`;

@@ -74,11 +74,14 @@ Default configuration gives parallelism, not ordering. For per-aggregate orderin
 
 ### Audit-tier guard (defense-in-depth)
 
-`tier:audit` events (lifecycle / observability — `crm_sync_started`, etc.) are **not bridge-eligible**. The codegen-side validator (AUDIT-2) blocks the registry from listing them as triggers, so the registry is the **primary** enforcement. `BridgeOutboxDrainHook.processEvent` adds a **defense-in-depth** runtime guard at the very top of the method:
+`tier:audit` events (lifecycle / observability — `crm_sync_started`, `connection.created`, etc.) are **not bridge-eligible**. The codegen-side validator (AUDIT-2) blocks the registry from listing them as triggers, so the registry is the **primary** enforcement. `BridgeOutboxDrainHook.processEvent` adds a **defense-in-depth** runtime guard — but the guard runs **after** the registry lookup, and the distinction matters:
 
-- If `event.metadata.tier === 'audit'`, the hook short-circuits, writes no `bridge_delivery` rows, and returns `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 1 }`.
-- A WARN log fires once per `(event_type, process)` via a `Set<string>` (`warnedAuditTypes`) — finer-grained than the once-per-process `warnedNullDirection` flag, so drift in a specific event type surfaces without flooding logs across many types.
-- Reaching the guard is a drift signal: an out-of-band `bridge_trigger` row exists, or there's version skew during deploy. The `auditBlocked` count on `BridgeOutboxDrainResult` rides on every per-event drain return so observability layers can aggregate without a new protocol method.
+- **Audit event WITH a registered trigger** (genuine drift — AUDIT-2 should have prevented it): the hook short-circuits, writes no `bridge_delivery` rows, returns `{ delivered: 0, dedupSkips: 0, triggerCount: 0, auditBlocked: 1 }`, and logs a WARN naming the offending trigger id(s). A WARN fires once per `(event_type, process)` via a `Set<string>` (`warnedAuditTypes`). `auditBlocked` rides on every per-event drain return so observability layers can aggregate without a new protocol method.
+- **Audit event with NO trigger** (the common, benign case — a lifecycle event sharing the outbox with domain events): returns all zeros (`auditBlocked: 0`), **silently**. No WARN.
+
+> **Non-obvious rule (do not get this wrong).** The guard's WARN is **not** "an audit event reached the drain." Audit events reach the drain constantly — they share the outbox. The drift signal is specifically *audit-tier event + a trigger registered against it*. Warning on every audit event is a false positive (the bug fixed 2026-06-07; see plan §AUDIT-4 revision note + `ai-docs/specs/2026-06-07-bridge-audit-guard-false-positive.md`). The guard MUST look up triggers before deciding to warn.
+
+> **To make a workflow/directive react to a lifecycle moment** (e.g. "when a connection is created, do X"), **emit a typed domain change-fact — never make the audit lifecycle event bridge-eligible.** Declare a domain-tier change event on the entity's `events:` block (the `message_created` path / EMIT-CHANGES seam, `docs/specs/EMIT-CHANGES-1.md`). That gives the engine a bridge-eligible domain event to bind a trigger to, while the audit tier stays inert. Promoting the audit event would defeat the AUDIT-2 invariant and re-introduce the false-positive class above.
 
 Spec reference: `ai-docs/specs/issue-242/plan.md` §AUDIT-4.
 

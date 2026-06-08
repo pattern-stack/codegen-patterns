@@ -82,22 +82,40 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
     event: DomainEvent,
     tx: DrizzleTransaction,
   ): Promise<BridgeOutboxDrainResult> {
-    // Audit-tier guard (defense-in-depth — AUDIT-4). Audit events are not
-    // bridge-eligible: the codegen-side validator (AUDIT-2) blocks the
-    // registry from listing them as triggers. Reaching this branch means
-    // registry/runtime drift — an out-of-band `bridge_trigger` insert, or
-    // version skew during deploy. Refuse fanout, surface drift via WARN.
+    const triggers = this.lookupTriggers(event.type);
+
+    // Audit-tier guard (defense-in-depth — AUDIT-4). Audit events are
+    // bridge-inert by design: the codegen-side validator (AUDIT-2) blocks the
+    // registry from listing them as triggers, so an audit event should never
+    // have a matched trigger. The guard runs AFTER the lookup so it can tell
+    // apart the two cases that share `tier === 'audit'`:
+    //   - triggers present → genuine registry/runtime drift (an out-of-band
+    //     `bridge_trigger` insert, or version skew during deploy). Refuse
+    //     fanout and surface the drift via WARN — now a verified claim, not a
+    //     guess. (Revises the original top-of-method guard, which warned for
+    //     every audit event: audit-tier lifecycle events like
+    //     `connection.created` routinely share the outbox with domain events,
+    //     so the unconditional warning was a false positive. See
+    //     ai-docs/specs/issue-242/plan.md §AUDIT-4 revision note.)
+    //   - no triggers → the common, benign case. Stay silent; auditBlocked: 0.
     if (event.metadata?.['tier'] === 'audit') {
-      this.warnAuditBlockedOnce(event);
+      if (triggers.length > 0) {
+        this.warnAuditBlockedOnce(event, triggers);
+        return {
+          delivered: 0,
+          dedupSkips: 0,
+          triggerCount: 0,
+          auditBlocked: 1,
+        };
+      }
       return {
         delivered: 0,
         dedupSkips: 0,
         triggerCount: 0,
-        auditBlocked: 1,
+        auditBlocked: 0,
       };
     }
 
-    const triggers = this.lookupTriggers(event.type);
     if (triggers.length === 0) {
       return {
         delivered: 0,
@@ -247,13 +265,18 @@ export class BridgeOutboxDrainHook implements IBridgeOutboxDrainHook {
     };
   }
 
-  private warnAuditBlockedOnce(event: DomainEvent): void {
+  private warnAuditBlockedOnce(
+    event: DomainEvent,
+    triggers: BridgeTriggerEntry[],
+  ): void {
     if (this.warnedAuditTypes.has(event.type)) return;
     this.warnedAuditTypes.add(event.type);
+    const triggerIds = triggers.map((t) => t.triggerId).join(', ');
     this.logger.warn(
       `Bridge guard blocked audit-tier event '${event.type}' (event.id=${event.id}). ` +
-        `Registry says this event is not bridge-eligible; a bridge_trigger row exists ` +
-        `out-of-band. Investigate registry/runtime drift.`,
+        `Audit events are not bridge-eligible, yet the registry has trigger(s) ` +
+        `registered against this type [${triggerIds}] — an out-of-band bridge_trigger ` +
+        `row or version skew. Investigate registry/runtime drift.`,
     );
   }
 
