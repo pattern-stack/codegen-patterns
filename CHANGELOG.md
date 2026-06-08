@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.2] — 2026-06-08
+
+### Fixed
+
+- **Bridge audit-tier guard no longer emits a false-positive WARN on every
+  audit event (#535).** `BridgeOutboxDrainHook.processEvent` ran its audit-tier
+  guard *before* the trigger lookup, so it fired — and logged a WARN — for every
+  `tier:audit` event, while asserting "a `bridge_trigger` row exists out-of-band"
+  (a registry/runtime-drift claim it never actually checked). Audit-tier
+  lifecycle events (`connection.created`, `connection.field_changed`, …) share
+  the outbox with domain events and carry no triggers, so the warning fired on
+  ordinary, correct operation. Dogfood discovery from swe-brain. Fix: look up
+  triggers first, then branch — `tier:audit` **with** a registered trigger is
+  genuine drift (WARN, now naming the offending trigger id, + `auditBlocked:1`,
+  no fanout); `tier:audit` with **no** trigger is the benign shared-outbox case
+  (returns zeros, silent). The SELECT-level `tier='audit'` filter was rejected:
+  audit events still need the normal drain (`processed_at` stamp + subscriber
+  dispatch); only bridge fanout skips them. Revises the original AUDIT-4
+  top-of-method guard (`ai-docs/specs/issue-242/plan.md` §AUDIT-4 revision note).
+  To make a workflow react to a lifecycle moment, emit a typed domain
+  change-fact — do not make the audit event bridge-eligible (new bridge skill
+  rule).
+
 ## [0.27.1] — 2026-06-07
 
 ### Fixed
