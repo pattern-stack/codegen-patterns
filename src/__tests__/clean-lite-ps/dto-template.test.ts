@@ -118,4 +118,53 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
       expect(output).not.toContain('z.record(');
     });
   });
+
+  describe('external_id on the output DTO (cross-entity join key)', () => {
+    // A Base entity that declares the external_id_tracking behavior directly —
+    // proves the output emission tracks the behavior flag, not the pattern name.
+    const baseSynced = {
+      entity: { name: 'thing', plural: 'things', table: 'things' },
+      fields: { label: { type: 'string', required: true } },
+      relationships: {},
+      behaviors: ['external_id_tracking'],
+    };
+
+    // A plain Base entity — no external-id tracking at all.
+    const plainBase = {
+      entity: { name: 'task', plural: 'tasks', table: 'tasks' },
+      fields: { title: { type: 'string', required: true } },
+      relationships: {},
+      behaviors: [],
+    };
+
+    it('Integrated entity exposes externalId read-only on the output DTO', () => {
+      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const output = render(OUTPUT_TEMPLATE, locals);
+
+      // external_id is the public cross-entity join key — it must ride the output.
+      expect(output).toMatch(/externalId:\s*z\.string\(\)\.nullable\(\)/);
+    });
+
+    it('external_id_tracking behavior alone (no pattern) still exposes externalId', () => {
+      const locals = buildCleanLitePsLocals(baseSynced, {});
+      const output = render(OUTPUT_TEMPLATE, locals);
+
+      expect(output).toMatch(/externalId:\s*z\.string\(\)\.nullable\(\)/);
+    });
+
+    it('provider / provider_metadata stay internal — never on the output DTO', () => {
+      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const output = render(OUTPUT_TEMPLATE, locals);
+
+      expect(output).not.toContain('provider:');
+      expect(output).not.toContain('providerMetadata:');
+    });
+
+    it('a plain Base entity emits no externalId on the output DTO', () => {
+      const locals = buildCleanLitePsLocals(plainBase, {});
+      const output = render(OUTPUT_TEMPLATE, locals);
+
+      expect(output).not.toContain('externalId');
+    });
+  });
 });
