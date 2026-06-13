@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.3] — 2026-06-13
+
+### Fixed
+
+- **Frontend lookups/resolver hydration no longer full-fetches every entity —
+  the LANDMINE-1 OOM guard.** `buildLookupsAsync` (store/lookups.ts) and
+  `hydrateResolverCache` (store/resolvers.ts) paged the COMPLETE table of *every*
+  entity via `api.listAll()` on the first `useData()` mount of *any* route, to
+  populate cross-entity FK-resolution maps. On a large content table this is
+  catastrophic: a swe-brain mailbox of 21,648 emails × ~33 KB `bodyHtml` pulled
+  ~700 MB into the renderer and the browser silently OOM-killed the tab — on
+  every route, including ones that never read email. Dogfood discovery from
+  swe-brain. Fix: full-fetch an entity only if it is a **lookup target** (some
+  `belongs_to` resolves it by id → it backs a FieldMeta `reference`) **or** it
+  has no unbounded text column; heavy, non-target entities (a `text` field, or a
+  `string` with no `max_length`) are seeded from current collection state
+  instead — nothing resolves them by id, so the current page is all any consumer
+  can use. `api` imports for skipped entities are dropped so none dangle. See
+  `lookupFullFetchNames` in `emit-store.ts`. Known edge: an entity consumed as a
+  lookup ONLY via hand-authored `lookups.<plural>` access (not a FieldMeta
+  reference) that *also* has an unbounded string column would be skipped — give
+  it a bounded `max_length` or declare the FK so it registers as a target.
+
 ## [0.27.2] — 2026-06-08
 
 ### Fixed

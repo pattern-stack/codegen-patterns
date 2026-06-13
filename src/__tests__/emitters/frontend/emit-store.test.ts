@@ -47,6 +47,29 @@ function personTaskCtx() {
 	return { person, task, c: ctx([person, task], {}, parsed) };
 }
 
+/**
+ * Heavy entity `note` (unbounded `body` text), NOT a reference target → it is
+ * seeded from collection state and never full-fetched (the LANDMINE-1 OOM guard).
+ * `person` (referenced by `note.author_id`) stays a full-fetch lookup target.
+ */
+function heavyNoteCtx() {
+	const person = entry('person', 'people');
+	const note = entry('note', 'notes');
+	const parsed = parsedMap(
+		parsedEntity(person),
+		parsedEntity(note, {
+			fields: new Map([
+				['body', field('body', { type: 'text' })],
+				['author_id', field('author_id', { foreignKey: { table: 'people', column: 'id' } })],
+			]),
+			relationships: new Map([
+				['author', relationship('author', { target: 'person', foreignKey: 'author_id' })],
+			]),
+		}),
+	);
+	return { person, note, c: ctx([person, note], {}, parsed) };
+}
+
 describe('emit-store — createStore (store/index.ts)', () => {
 	it('keys entities + collections by PLURAL, not table', () => {
 		// table diverges from plural on purpose.
@@ -125,6 +148,18 @@ describe('emit-store — resolvers (store/resolvers.ts)', () => {
 		expect(out).toContain("import { personApi } from '../api/person';");
 	});
 
+	it('skips the full-fetch for heavy non-target entities (LANDMINE-1 OOM guard)', () => {
+		const { c } = heavyNoteCtx();
+		const out = buildResolversFile(c);
+		// person is a lookup target → still paged into the resolver cache.
+		expect(out).toContain('personApi.listAll().then((rows) => {');
+		expect(out).toContain("import { personApi } from '../api/person';");
+		// note is heavy (unbounded body) and nothing resolves it by id → NOT paged;
+		// its resolver falls back to collection state, and no api import dangles.
+		expect(out).not.toContain('noteApi.listAll(');
+		expect(out).not.toContain('import { noteApi }');
+	});
+
 	it('resolvableRels resolves target naming from the registry', () => {
 		const { task, c } = personTaskCtx();
 		const rels = resolvableRels(task, c);
@@ -199,6 +234,19 @@ describe('emit-store — lookups (store/lookups.ts)', () => {
 		expect(out).toContain('personApi.listAll(),');
 		expect(out).toContain('hydrate: async (): Promise<EntityLookups> => {');
 		expect(out).toContain("import { personApi } from '../api/person';");
+	});
+
+	it('skips the full-fetch for heavy non-target entities (LANDMINE-1 OOM guard)', () => {
+		const { c } = heavyNoteCtx();
+		const out = buildLookupsFile(c);
+		// person stays a full-fetch lookup target.
+		expect(out).toContain('personApi.listAll(),');
+		expect(out).toContain("import { personApi } from '../api/person';");
+		// note is seeded from collection state in the async builder too — never
+		// listAll'd, and no api import dangles for it.
+		expect(out).not.toContain('noteApi.listAll(');
+		expect(out).not.toContain('import { noteApi }');
+		expect(out).toContain('Array.from(noteCollection.state.values())');
 	});
 });
 
