@@ -56,20 +56,40 @@ export async function buildLookupsAsync(): Promise<EntityLookups> {
  */
 export function createLookups() {
 	let cache: EntityLookups | null = null;
+	// Run-once guard for `hydrate()`. The store runtime calls hydrate from a
+	// per-mount useEffect with NO dedup, so without this every EntityList/useData
+	// mount (x2 under React StrictMode) kicks off another full buildLookupsAsync()
+	// — a listAll() of every entity. On a large table (tens of thousands of rows)
+	// that slurps the whole table N times concurrently and can OOM the renderer.
+	// The guard collapses all callers onto a single hydration: cache the resolved
+	// set, and dedupe concurrent callers onto one in-flight promise. `clear()`
+	// forces a refresh. NOTE: this caps the damage but does not make full-fetching
+	// a huge table cheap — lazy/on-demand FK resolution is the deeper fix.
+	let inFlight: Promise<EntityLookups> | null = null;
 	return {
 		build: (): EntityLookups => {
 			cache = buildLookups();
 			return cache;
 		},
 		hydrate: async (): Promise<EntityLookups> => {
-			cache = await buildLookupsAsync();
-			return cache;
+			if (cache) return cache;
+			if (inFlight) return inFlight;
+			inFlight = buildLookupsAsync()
+				.then((result) => {
+					cache = result;
+					return result;
+				})
+				.finally(() => {
+					inFlight = null;
+				});
+			return inFlight;
 		},
 		get current(): EntityLookups | null {
 			return cache;
 		},
 		clear: (): void => {
 			cache = null;
+			inFlight = null;
 		},
 	};
 }
