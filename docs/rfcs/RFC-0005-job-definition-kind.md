@@ -1,6 +1,6 @@
 # RFC-0005 — Jobs definition kind: `JobDefinitionSchema` + emitter (Part B)
 
-**Status:** Draft — schema (#5) landed; loader/emitter/validator (#6–#8) pending
+**Status:** Draft — schema (#5) + loader (#6) landed; emitter/validator (#7–#8) pending
 **Date:** 2026-06-14
 **Owner:** Doug
 **Related:** swe-brain **ADR-0018** (the A→B decision record + the three shapes — *this RFC is the codegen-side byte contract for it*); ADR-039 (time as an event source — cadence lives on the event YAML `schedule:`); ADR-033/033.1 (`detection:` config + `DetectionConfigSchema`, embedded here verbatim); ADR-023 (event→job bridge — the `event` trigger arm); RFC-0003 (`historyId`/`syncToken` cursors); `runtime/subsystems/jobs/job-handler.base.ts` (`JobHandlerMeta` — the 8 fields surfaced); codegen #458/#414/#457 (the soft-ordered registry follow-ups). Grounding: `.ai-docs/research/jobs-kind-design-brief.md` (the 10-agent grounding brief; §3 is the schema this RFC freezes).
@@ -85,7 +85,7 @@ The brief §3 was a paper sketch; authoring against the real runtime types surfa
 | # | Item | Status |
 |---|---|---|
 | 5 | `src/schema/job-definition.schema.ts` (fresh, imports DetectionConfig) + unit tests + living-docs fix to `detection-config.schema.ts` header | **landed (this RFC)** |
-| 6 | `definitions/jobs/` loader + `detectYamlType` 'jobs' branch + parser registry | pending |
+| 6 | `definitions/jobs/` loader (`loadJobs` + `loadJobFromYaml`) + `resolveJobsDir` (`paths.jobs_dir`, fallback `definitions/jobs`) + parser export. **Correction:** NO `detectYamlType` branch — that discriminator is for the entity-family files (entity/relationship/junction) in the entities dir; events and jobs both carry a top-level `type:` and load by **directory** (`loadEvents`/`loadJobs`), never through `detectYamlType`. Enforces filename↔`type` + duplicate-type, mirroring `loadEvents`. No cross-ref (triggers→events is #8). | **landed** |
 | 7 | Jobs emitter (`src/emitters/` or `src/cli/shared/`) + `entity new` post-step; define generated-skeleton vs AST-scanned-`@JobHandler` coexistence | pending |
 | 8 | D4 cross-ref validator: `triggers[].event` → generated `eventRegistry`; Option-D cadence drift check; update ADR-039 + events skill same PR | pending |
 | 9 | `just test-smoke-integration` green for the jobs emitter (must tsc-compile the emitted tree) | pending |

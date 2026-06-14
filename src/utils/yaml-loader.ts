@@ -21,6 +21,10 @@ import {
 	type ProviderDefinition,
 	ProviderDefinitionSchema,
 } from '../schema/provider-definition.schema';
+import {
+	type JobDefinition,
+	JobDefinitionSchema,
+} from '../schema/job-definition.schema';
 
 export interface LoadResult {
 	success: true;
@@ -300,6 +304,82 @@ export function loadEventFromYaml(filePath: string): LoadEventResult {
 	}
 
 	const result = EventDefinitionSchema.safeParse(parsed);
+	if (!result.success) {
+		return {
+			success: false,
+			error: `Validation failed for ${filePath}`,
+			details: formatZodErrors(result.error),
+			filePath,
+		};
+	}
+
+	return {
+		success: true,
+		definition: result.data,
+		filePath,
+	};
+}
+
+// ============================================================================
+// Job Definition YAML Loading (RFC-0005, breakdown #6)
+// ============================================================================
+
+export interface JobLoadResult {
+	success: true;
+	definition: JobDefinition;
+	filePath: string;
+}
+
+export interface JobLoadError {
+	success: false;
+	error: string;
+	details?: string[];
+	filePath: string;
+}
+
+export type LoadJobResult = JobLoadResult | JobLoadError;
+
+/**
+ * Load and validate a single job definition from a YAML file.
+ *
+ * Mirrors {@link loadEventFromYaml}: existence check → readFileSync →
+ * parseYaml → `JobDefinitionSchema.safeParse`. Returns a discriminated result;
+ * callers (`loadJobs`) aggregate into `AnalysisIssue`s rather than throw.
+ */
+export function loadJobFromYaml(filePath: string): LoadJobResult {
+	if (!existsSync(filePath)) {
+		return {
+			success: false,
+			error: `File not found: ${filePath}`,
+			filePath,
+		};
+	}
+
+	let content: string;
+	try {
+		content = readFileSync(filePath, 'utf-8');
+	} catch (err) {
+		return {
+			success: false,
+			error: `Failed to read file: ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = parseYaml(content);
+	} catch (err) {
+		return {
+			success: false,
+			error: `Invalid YAML syntax in ${filePath}`,
+			details: [err instanceof Error ? err.message : String(err)],
+			filePath,
+		};
+	}
+
+	const result = JobDefinitionSchema.safeParse(parsed);
 	if (!result.success) {
 		return {
 			success: false,
