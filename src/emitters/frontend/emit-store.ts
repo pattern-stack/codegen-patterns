@@ -85,6 +85,42 @@ function fkField(rel: ParsedRelationship): string {
 }
 
 /**
+ * Entities to FULL-FETCH (`api.listAll()` → the whole table) when hydrating the
+ * cross-entity lookup maps and the resolver cache.
+ *
+ * Full-fetching EVERY entity on the first `useData` mount is the LANDMINE-1 trap:
+ * a large table with an unbounded text/body column (e.g. tens of thousands of
+ * emails × `bodyHtml`) pulls hundreds of MB into the renderer and OOM-kills it,
+ * on every route — even ones that never read it.
+ *
+ * Rule: full-fetch an entity only if it is a LOOKUP TARGET (some belongs_to
+ * resolves it by id → it backs a FieldMeta `reference`) OR it has no unbounded
+ * text column (cheap to page). Heavy, non-target entities are seeded from current
+ * collection state instead — nothing resolves them by id, so the current page is
+ * all any consumer can use. "Heavy" = a `text` field, or a `string` field with no
+ * `max_length` (emitted as unbounded TEXT).
+ */
+export function lookupFullFetchNames(ctx: FrontendEmitContext): Set<string> {
+	const referenceTargets = new Set<string>();
+	for (const e of ctx.entities) {
+		for (const r of resolvableRels(e, ctx)) referenceTargets.add(r.target.name);
+	}
+	const out = new Set<string>();
+	for (const e of ctx.entities) {
+		const parsed = ctx.parsed.get(e.name);
+		const hasUnboundedText = parsed
+			? Array.from(parsed.fields.values()).some(
+					(f) =>
+						f.type === 'text' ||
+						(f.type === 'string' && f.constraints.maxLength === undefined),
+				)
+			: false;
+		if (referenceTargets.has(e.name) || !hasUnboundedText) out.add(e.name);
+	}
+	return out;
+}
+
+/**
  * `store/index.ts` — `createStore({ entities, collections, fields, lookups })`
  * over the full set, keyed by plural. Imports each entity's hooks + collection +
  * generated FieldMeta, and wires the lookups engine. The `fields` + `lookups`
@@ -170,14 +206,19 @@ export type AppStore = typeof store;
  */
 export function buildResolversFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
+	// Only lookup-target / light entities are full-fetched (LANDMINE-1 guard); the
+	// rest fall back to collection state, so they need no `api` import here.
+	const fullFetch = lookupFullFetchNames(ctx);
+	const fetched = entities.filter((e) => fullFetch.has(e.name));
 
-	// One collection + one api + one type import per entity. FK targets are always
-	// in the same registry set, so a self-referential FK never produces a second
-	// import. The api import backs the full-fetch escape hatch (LANDMINE 1).
+	// One collection + one type import per entity. FK targets are always in the
+	// same registry set, so a self-referential FK never produces a second import.
+	// The api import backs the full-fetch escape hatch (LANDMINE 1) — emitted only
+	// for the entities actually full-fetched below.
 	const collectionImports = entities
 		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
 		.join('\n');
-	const apiImports = entities
+	const apiImports = fetched
 		.map((e) => `import { ${e.camelName}Api } from '../api/${e.name}';`)
 		.join('\n');
 	const typeImports = entities
@@ -213,7 +254,11 @@ export function buildResolversFile(ctx: FrontendEmitContext): string {
 	const hydrationCacheFields = entities
 		.map((e) => `\t${e.camelName}: new Map<string, ${e.className}>(),`)
 		.join('\n');
-	const hydrationCalls = entities
+	// Full-fetch only lookup-target / light entities. Heavy non-targets (e.g. a
+	// 21k-row emails table with bodyHtml) keep their empty cache map and resolve
+	// from collection state — nothing resolves them by id, so off-page coverage is
+	// never needed. This is the LANDMINE-1 OOM guard (see lookupFullFetchNames).
+	const hydrationCalls = fetched
 		.map(
 			(e) => `\t\t${e.camelName}Api.listAll().then((rows) => {
 \t\t\thydrationCache.${e.camelName} = new Map(rows.map((r) => [r.id as string, r]));
@@ -319,10 +364,15 @@ ${refsSection}`;
 export function buildLookupsFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 
+	// Only lookup-target / light entities are full-fetched (LANDMINE-1 guard); the
+	// rest fall back to collection state, so they need no `api` import here.
+	const fullFetch = lookupFullFetchNames(ctx);
+	const fetched = entities.filter((e) => fullFetch.has(e.name));
+
 	const collectionImports = entities
 		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
 		.join('\n');
-	const apiImports = entities
+	const apiImports = fetched
 		.map((e) => `import { ${e.camelName}Api } from '../api/${e.name}';`)
 		.join('\n');
 	const typeImports = entities
@@ -333,30 +383,38 @@ export function buildLookupsFile(ctx: FrontendEmitContext): string {
 		.map((e) => `\t${e.plural}: Map<string, ${e.className}>;`)
 		.join('\n');
 
-	const lookupBuild = entities
-		.map(
-			(e) => `\t\t${e.plural}: new Map(
+	// One id→entity map for an entity, built from current collection state.
+	const collectionStateMap = (e: EntityRegistryEntry): string => `\t\t${e.plural}: new Map(
 \t\t\tArray.from(${e.camelName}Collection.state.values()).map((item) => [
 \t\t\t\t(item as ${e.className}).id as string,
 \t\t\t\titem as ${e.className},
 \t\t\t]),
-\t\t),`,
-		)
-		.join('\n');
+\t\t),`;
 
-	// Full-fetch variant (LANDMINE 1): build each lookup from the COMPLETE set via
-	// `api.listAll()` rather than current collection state. Used when a lookup must
-	// cover off-page rows (pagination-by-default leaves the collection holding only
-	// the current page). Fetches all entities in parallel.
-	const lookupBuildAsyncDecls = entities
+	const lookupBuild = entities.map(collectionStateMap).join('\n');
+
+	// Full-fetch variant (LANDMINE 1): build lookup-target / light entities from the
+	// COMPLETE set via `api.listAll()` (covers off-page rows under pagination-by-
+	// default); heavy non-target entities (e.g. a 21k-row emails table × bodyHtml)
+	// are seeded from current collection state instead — full-fetching them pulled
+	// hundreds of MB into the renderer and OOM-killed it. See lookupFullFetchNames.
+	const lookupBuildAsyncDecls = fetched
 		.map((e) => `\t\t${e.camelName}Api.listAll(),`)
 		.join('\n');
+	const fetchedIndex = new Map(fetched.map((e, i) => [e.name, i]));
 	const lookupBuildAsyncFields = entities
-		.map(
-			(e, i) =>
-				`\t\t${e.plural}: new Map(rows[${i}].map((r) => [r.id as string, r as ${e.className}])),`,
-		)
+		.map((e) => {
+			const i = fetchedIndex.get(e.name);
+			return i === undefined
+				? collectionStateMap(e)
+				: `\t\t${e.plural}: new Map(rows[${i}].map((r) => [r.id as string, r as ${e.className}])),`;
+		})
 		.join('\n');
+	// Degenerate set (no full-fetch target): keep the fn valid + await-clean.
+	const lookupBuildAsyncBody =
+		fetched.length > 0
+			? `\tconst rows = await Promise.all([\n${lookupBuildAsyncDecls}\n\t]);\n\treturn {\n${lookupBuildAsyncFields}\n\t};`
+			: `\tawait Promise.resolve();\n\treturn {\n${lookupBuildAsyncFields}\n\t};`;
 
 	const body = `${collectionImports}
 ${apiImports}
@@ -381,12 +439,7 @@ ${lookupBuild}
  * may not be on the current page.
  */
 export async function buildLookupsAsync(): Promise<EntityLookups> {
-\tconst rows = await Promise.all([
-${lookupBuildAsyncDecls}
-\t]);
-\treturn {
-${lookupBuildAsyncFields}
-\t};
+${lookupBuildAsyncBody}
 }
 
 /**
