@@ -96,6 +96,14 @@ export interface BridgeRegistryGeneratorOptions {
   bridgeInstalled?: boolean;
   /** If true, compute content but don't write to disk. */
   dryRun?: boolean;
+  /**
+   * Synthetic triggers contributed DECLARATIVELY by other generators (RFC-0005 #7:
+   * the jobs definition-kind emitter feeds job→event bridge mappings here rather
+   * than emitting `@JobHandler` source for the AST scan to re-parse). Concatenated
+   * with the scanned triggers BEFORE the validators run, so they get the same
+   * unknown-event / duplicate / audit checking and flow into the registry unchanged.
+   */
+  extraTriggers?: ScannedTrigger[];
 }
 
 /**
@@ -638,8 +646,14 @@ export async function generateBridgeRegistry(
     };
   }
 
-  // 1. Scan handler files.
-  const triggers = scanHandlerFiles(handlersDir);
+  // 1. Scan handler files, then fold in any declaratively-contributed triggers
+  //    (RFC-0005 #7 jobs emitter). They join BEFORE the validators so a job trigger
+  //    referencing an unknown/audit event or colliding with a hand-authored
+  //    (event, jobType) pair is caught the same way.
+  const triggers = [
+    ...scanHandlerFiles(handlersDir),
+    ...(opts.extraTriggers ?? []),
+  ];
 
   // 2a. Reject duplicate (event, jobType) pairs (BRIDGE-7 follow-up to
   //     BRIDGE-6: facade's same-tx invariant requires one trigger per
