@@ -1,0 +1,29 @@
+# Reconcile case — RFC-0005 §3. Composite: a poll arm (channel refresh, cursor
+# advances) + a reconcile arm (message, windowed, cursor withheld). The `differ`
+# knob (renamed from the brief's `dedupe.unignore`) un-ignores `deletedAt` so
+# tombstones register as changes.
+type: reconcile_poll
+pool: integration
+differ:
+  unignore: [deletedAt]
+triggers:
+  - schedule: { every: 1h, align: true }
+arms:
+  - kind: poll
+    domain: channel
+    read:
+      mode: poll
+      poll:
+        cursor: { kind: timestamp, field: updated_at }
+      mapping:
+        - { source: id, target: external_id }
+  - kind: reconcile
+    domain: message
+    window: { hours: 24 }
+    cursorWithheld: true
+    read:
+      mode: poll
+      poll:
+        cursor: { kind: timestamp, field: ts }
+      mapping:
+        - { source: ts, target: external_id }
