@@ -1,16 +1,35 @@
 # Handoff — Sync-Job Primitives (A) → codegen jobs-definition-kind (B)
 
 **Session:** 2026-06-13/14. **Author:** Claude (codegen-patterns session).
-**Status:** design grounded + locked; **no implementation started by me.**
+**Status:** design grounded + locked. **Part A merged; Part B unstarted = the next codegen body of work.**
 
-## TL;DR verified state (re-swept 2026-06-14, both repos, all refs + PRs + worktrees)
-- **Part B (codegen jobs-definition-kind): does not exist anywhere.** Pickaxe across all
-  branches + full history for `JobDefinitionSchema` / `definitions/jobs` / `loadJobs` /
-  `job-handler-emission` = **zero**. No branch, no PR. **Never started.**
-- **Part A (swe-brain primitives): ~60% done, UNCOMMITTED WIP, a day stale.** Lives only in
-  the `velvet-snuggling-yeti` worktree as untracked `apps/backend/src/jobs/sync/` +
-  3 modified handlers. Not on any ref. **At risk** — see the velvet handoff note.
-- **ADR-0018:** referenced in the Part-A code comments everywhere, but **the doc does not exist.**
+## ▶ START HERE next session
+**Part B (codegen jobs-definition-kind) is the next body of work.** It is fully specced and
+ready to start cold: read `jobs-kind-design-brief.md` §3 (schema) + §4 (work breakdown), then
+begin with the `JobDefinitionSchema`. Part A (swe-brain) is done/merging and waiting to dogfood
+B at the npm-publish gate.
+
+## TL;DR current state (UPDATED 2026-06-14 — supersedes the original sweep below)
+- **Part A (swe-brain primitives): COMMITTED + MERGED (#212 on swe-brain `main`).** No longer
+  at risk. `jobs/sync/arms.ts` + `SyncJobProfile`/`runArmsPerGate` profile layer landed.
+  `google-reconcile` fully profile-driven; `reconcile-poll`+`drive-poll` on the primitives
+  (not profile-driven yet); `inbound-sync` untouched (realtime deferred).
+- **ADR-0018: WRITTEN** (swe-brain, by the Part A agent). Records the 3 shapes, amends ADR-039
+  (code-default cadence now / stored override later). Open forks: gate-scope unification
+  (`gateScope:'job'|'arm'`), per-context-vs-vendor jobs, **trigger-list** (see below).
+- **Part B (codegen jobs-definition-kind): UNSTARTED.** No schema/loader/emitter anywhere — this
+  is what we build next.
+
+## Cadence-shape resolution — the recommended answer to ADR-0018's trigger-list fork
+Model `triggers` as a **LIST of arms**, not a single `cadence` string:
+- **`event` arm** = the existing ADR-023 **bridge** (`bridgeRegistry` event→job), unchanged.
+- **`schedule` arm** = time+cadence; **desugars onto the same bridge** — codegen emits a
+  scheduled event (ADR-039 `schedule:` block → `EventScheduler` tick) + a bridge trigger, so a
+  time-tick is just another event. One delivery mechanism, one mapping table.
+Handles 0/1/N triggers (inbound-sync=0 cadence, drive-poll=cadence+webhook) with no special
+case. Part A's single `cadence` + `realizedBy` event is the hand-rolled version B's emitter
+generates. **Emitting that schedule-arm→scheduled-event+bridge-trigger wiring is the meatiest
+part of the Part B emitter (the "L").**
 
 ## Artifacts produced this session (saved, untracked)
 - `.ai-docs/research/jobs-kind-design-brief.md` — the full design brief: anchor verification
