@@ -1,10 +1,10 @@
-# Poll case — RFC-0005 §3. Dual triggers: one scheduled (cadence mirror) + one
-# webhook doorbell (no cadence). Single poll arm; cursor advances.
+# Poll case — RFC-0005 §3. Dual triggers: one schedule arm (job-owned cadence,
+# emitter generates the scheduled event) + one event arm (a webhook doorbell).
+# Single poll arm; cursor advances.
 type: drive_poll
 pool: integration
 triggers:
-  - event: document_poll_due
-    cadence: { every: 15m, align: true }
+  - schedule: { every: 15m, align: true }
   - event: document_sync_due
 arms:
   - kind: poll

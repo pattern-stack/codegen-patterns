@@ -36,9 +36,13 @@ describe('JobDefinitionSchema — RFC-0005 §3 fixtures', () => {
 		expect(result.data.arms).toHaveLength(1);
 		expect(result.data.arms[0].kind).toBe('poll');
 		expect(result.data.triggers).toHaveLength(2);
-		// first trigger carries the read-only cadence mirror, second is a doorbell
-		expect(result.data.triggers[0].cadence?.every).toBe('15m');
-		expect(result.data.triggers[1].cadence).toBeUndefined();
+		// first trigger is a schedule arm (job-owned cadence), second an event arm
+		const [sched, evt] = result.data.triggers;
+		if (!('schedule' in sched)) throw new Error('expected a schedule arm');
+		expect(sched.schedule.every).toBe('15m');
+		expect(sched.schedule.align).toBe(true);
+		if (!('event' in evt)) throw new Error('expected an event arm');
+		expect(evt.event).toBe('document_sync_due');
 	});
 
 	it('parses the reconcile case (reconcile-poll): composite arms + differ knob', () => {
@@ -58,8 +62,8 @@ describe('JobDefinitionSchema — RFC-0005 §3 fixtures', () => {
 		expect(result.success).toBe(true);
 		if (!result.success) return;
 		expect(result.data.arms.map((a) => a.kind)).toEqual(['realtime', 'realtime', 'poll']);
-		// every trigger is a doorbell — no cadence on a realtime job
-		expect(result.data.triggers.every((t) => t.cadence === undefined)).toBe(true);
+		// every trigger is an event arm (doorbell) — no schedule on a realtime job
+		expect(result.data.triggers.every((t) => 'event' in t)).toBe(true);
 		const first = result.data.arms[0];
 		if (first.kind !== 'realtime') throw new Error('expected realtime arm');
 		expect(first.staging.table).toBe('slack_message_staging');
@@ -250,22 +254,36 @@ describe('JobDefinitionSchema — structural rejections', () => {
 		expect(result.success).toBe(true);
 	});
 
-	it('rejects a bad cadence duration string', () => {
+	it('rejects a bad schedule-arm duration string', () => {
 		const result = JobDefinitionSchema.safeParse({
 			type: 'bad_cadence',
-			triggers: [{ event: 'document_poll_due', cadence: { every: 'every 5 minutes' } }],
+			triggers: [{ schedule: { every: 'every 5 minutes' } }],
 			arms: [goodArm],
 		});
 		expect(result.success).toBe(false);
 	});
 
-	it('rejects a non-snake_case trigger event', () => {
+	it('rejects a non-snake_case event-arm event', () => {
 		const result = JobDefinitionSchema.safeParse({
 			type: 'bad_event',
 			triggers: [{ event: 'DocumentPollDue' }],
 			arms: [goodArm],
 		});
 		expect(result.success).toBe(false);
+	});
+
+	it('rejects a trigger that is neither a schedule nor an event arm', () => {
+		const empty = JobDefinitionSchema.safeParse({ type: 'empty_trigger', triggers: [{}], arms: [goodArm] });
+		expect(empty.success).toBe(false);
+	});
+
+	it('rejects a trigger carrying BOTH schedule and event (disjoint arms)', () => {
+		const both = JobDefinitionSchema.safeParse({
+			type: 'both_arms',
+			triggers: [{ schedule: { every: '1h' }, event: 'document_sync_due' }],
+			arms: [goodArm],
+		});
+		expect(both.success).toBe(false);
 	});
 });
 
@@ -371,7 +389,7 @@ describe('JobDefinitionSchema — JobHandlerMeta surface (8 fields)', () => {
 			dedupe: { key: '{{external_id}}', windowMs: 30000 },
 			timeoutMs: 60000,
 			replayFrom: 'last_checkpoint',
-			triggers: [{ event: 'account_sync_due', cadence: { every: '1h', align: true } }],
+			triggers: [{ schedule: { every: '1h', align: true } }],
 			arms: [
 				{
 					kind: 'poll',
@@ -393,7 +411,9 @@ describe('JobDefinitionSchema — JobHandlerMeta surface (8 fields)', () => {
 		expect(result.data.dedupe?.windowMs).toBe(30000);
 		expect(result.data.timeoutMs).toBe(60000);
 		expect(result.data.replayFrom).toBe('last_checkpoint');
-		expect(result.data.triggers[0].event).toBe('account_sync_due');
+		const trig = result.data.triggers[0];
+		if (!('schedule' in trig)) throw new Error('expected a schedule arm');
+		expect(trig.schedule.every).toBe('1h');
 	});
 
 	it('exports the enum constants the emitter/validator consume', () => {

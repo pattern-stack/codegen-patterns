@@ -7,8 +7,7 @@ pool: integration
 differ:
   unignore: [deletedAt]
 triggers:
-  - event: reconcile_due
-    cadence: { every: 1h, align: true }
+  - schedule: { every: 1h, align: true }
 arms:
   - kind: poll
     domain: channel

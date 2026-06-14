@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
+import { ScheduleSchema } from "./event-definition.schema";
 
 /**
  * Job Definition Schema — the codegen "jobs" definition kind (RFC-0005).
@@ -26,21 +27,26 @@ import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
  *   - Function-valued `JobHandlerMeta` fields (`scope.from`, `concurrency.key`,
  *     `dedupe.key`, `triggers[].map/when`) are NOT authorable in YAML. The schema
  *     models the DECLARATIVE surface only: `key`/`from` are `{{field}}` template
- *     strings; `triggers[]` declares the `event` (+ optional read-only cadence
- *     mirror) and the emitter generates `map`/`when`.
+ *     strings; a trigger declares its `schedule`/`event` and the emitter generates
+ *     `map`/`when`.
  *   - No provider/adapter identity field (RFC-0005 OQ-4, decided (b)). Arms carry
  *     only `domain`; provider→use-case resolution stays swe-brain-side (the D5
  *     throwaway `(provider,domain)` registry), revisited when codegen #458 lands.
  *     A single job spans providers, so this is deliberately NOT a top-level field.
  *
- * Cadence is NOT authoritative here (ADR-039 / ADR-0018 D4): it lives on the
- * event YAML `schedule:` block. A trigger may carry an OPTIONAL read-only
- * `cadence` mirror that the cross-ref validator (RFC-0005 / breakdown #8) drift-
- * checks against the referenced event. This schema only shape-checks the mirror;
- * the mirror leaves `align` undefined when omitted (it does NOT default to the
- * event's `true`), so the #8 drift check must compare only author-PROVIDED mirror
- * keys, never a defaulted value, or it will false-positive on every cadence that
- * omits `align`.
+ * Cadence is owned by the JOB (ADR-0018, overriding the brief's D4 event-owned
+ * recommendation — "the job declares its own cadence; I'm not setting up timers
+ * then attaching jobs"). `triggers[]` is a list of two arm shapes (0/1/N):
+ *   - `schedule` arm — `{ schedule: ScheduleSchema }`, the AUTHORITATIVE cadence.
+ *     The emitter desugars it into a generated, job-private scheduled event
+ *     (ADR-039 `schedule:` block → `EventScheduler` tick) PLUS a bridge trigger,
+ *     exactly as EMIT-CHANGES desugars `emit_changes` into generated change
+ *     events. Reuses the events `ScheduleSchema` verbatim (one cadence vocabulary).
+ *     Each schedule arm gets its OWN event — equal cadences do NOT coalesce; a
+ *     shared tick is opt-in via an authored event + an `event` arm.
+ *   - `event` arm — `{ event: <snake_case type> }`, references an EXISTING event
+ *     (webhook doorbell, etc.); the emitter emits a bridge trigger. #8 validates
+ *     the event exists. No cadence, no drift-check (nothing to drift against).
  *
  * Strictness boundary: the top level and every arm are `.strict()` (stray keys
  * rejected). The embedded `read:` leaf is the IMPORTED `DetectionConfigSchema`,
@@ -71,13 +77,6 @@ export const ARM_KINDS = ["poll", "reconcile", "realtime"] as const;
 export type ArmKind = (typeof ARM_KINDS)[number];
 
 const SNAKE_CASE_RE = /^[a-z][a-z0-9_]*$/;
-
-/**
- * Duration string for the read-only cadence mirror — identical vocabulary to
- * the event `ScheduleSchema.every` (ADR-039): `'1h'`, `'30m'`, `'15s'`,
- * `'500ms'`, `'1d'`, or a raw millisecond number.
- */
-const DURATION_RE = /^\s*[0-9]*\.?[0-9]+\s*(ms|s|m|h|d)\s*$/;
 
 // ============================================================================
 // Policy sub-schemas — the declarative (YAML-authorable) projection of the
@@ -160,45 +159,43 @@ const DifferOverrideSchema = z
 export type JobDifferOverride = z.infer<typeof DifferOverrideSchema>;
 
 // ============================================================================
-// Triggers — the cadence/event LINKAGE (ADR-0018 D4). 0/1/N per job.
+// Triggers — what fires the job (ADR-0018). A list of two arm shapes; 0/1/N.
+// Cadence is owned by the JOB (the schedule arm), not a separate event YAML.
 // ============================================================================
 
 /**
- * Read-only cadence mirror of the referenced event's `schedule:` block. NON-
- * authoritative: the event YAML wins. A subset of the event `ScheduleSchema`
- * (`every` + `align`); the cross-ref validator (breakdown #8) drift-errors if it
- * disagrees with the event. This schema only shape-checks it.
+ * Schedule arm — the AUTHORITATIVE cadence. The emitter desugars it into a
+ * generated, job-private scheduled event (ADR-039 `schedule:` block) + a bridge
+ * trigger; there is no separately-authored event and therefore no drift-check.
+ * Reuses the events `ScheduleSchema` verbatim (`every`/`align`/`catchUp`/
+ * `maxCatchUpSlots`) so jobs and events share one cadence vocabulary.
  */
-const CadenceAnnotationSchema = z
+const ScheduleTriggerSchema = z
 	.object({
-		every: z.union([
-			z
-				.string()
-				.regex(
-					DURATION_RE,
-					"trigger.cadence.every must be a duration like '1h', '30m', '15s', '500ms', '1d'",
-				),
-			z.number().positive().finite(),
-		]),
-		align: z.boolean().optional(),
+		schedule: ScheduleSchema,
 	})
 	.strict();
 
-export type CadenceAnnotation = z.infer<typeof CadenceAnnotationSchema>;
-
 /**
- * A single trigger arm. `event` cross-refs the generated `eventRegistry` at
- * gen time (breakdown #8). The runtime `JobTrigger.map`/`when` functions are
- * emitter-generated — not authored here.
+ * Event arm — references an EXISTING event (a webhook doorbell, a domain event).
+ * The emitter emits a bridge trigger; the cross-ref validator (breakdown #8)
+ * checks the event exists in the generated `eventRegistry`. The runtime
+ * `JobTrigger.map`/`when` functions are emitter-generated — not authored here.
  */
-const TriggerSchema = z
+const EventTriggerSchema = z
 	.object({
 		event: z
 			.string()
 			.regex(SNAKE_CASE_RE, "trigger.event must be a snake_case event type"),
-		cadence: CadenceAnnotationSchema.optional(),
 	})
 	.strict();
+
+/**
+ * A trigger is exactly one of the two arms. A `z.union` over two `.strict()`
+ * objects with disjoint keys: `{ schedule }` → schedule arm, `{ event }` →
+ * event arm, `{}` or `{ schedule, event }` → rejected (neither matches).
+ */
+const TriggerSchema = z.union([ScheduleTriggerSchema, EventTriggerSchema]);
 
 export type JobTriggerDef = z.infer<typeof TriggerSchema>;
 

@@ -3,7 +3,7 @@
 **Status:** Draft — schema (#5) + loader (#6) landed; emitter/validator (#7–#8) pending
 **Date:** 2026-06-14
 **Owner:** Doug
-**Related:** swe-brain **ADR-0018** (the A→B decision record + the three shapes — *this RFC is the codegen-side byte contract for it*); ADR-039 (time as an event source — cadence lives on the event YAML `schedule:`); ADR-033/033.1 (`detection:` config + `DetectionConfigSchema`, embedded here verbatim); ADR-023 (event→job bridge — the `event` trigger arm); RFC-0003 (`historyId`/`syncToken` cursors); `runtime/subsystems/jobs/job-handler.base.ts` (`JobHandlerMeta` — the 8 fields surfaced); codegen #458/#414/#457 (the soft-ordered registry follow-ups). Grounding: `.ai-docs/research/jobs-kind-design-brief.md` (the 10-agent grounding brief; §3 is the schema this RFC freezes).
+**Related:** swe-brain **ADR-0018** (the A→B decision record + the three shapes — *this RFC is the codegen-side byte contract for it*); ADR-039 (time as an event source — the `schedule` arm desugars to a generated scheduled event); ADR-033/033.1 (`detection:` config + `DetectionConfigSchema`, embedded here verbatim); ADR-023 (event→job bridge — the `event` trigger arm); RFC-0003 (`historyId`/`syncToken` cursors); `runtime/subsystems/jobs/job-handler.base.ts` (`JobHandlerMeta` — the 8 fields surfaced); codegen #458/#414/#457 (the soft-ordered registry follow-ups). Grounding: `.ai-docs/research/jobs-kind-design-brief.md` (the 10-agent grounding brief; §3 is the schema this RFC freezes).
 
 ## Goal
 
@@ -18,7 +18,7 @@ This RFC introduces the **jobs definition kind**: `definitions/jobs/*.yaml` → 
 - **D1 — Realtime is a webhook-DRAIN MODE, not a peer primitive.** `arm.kind: realtime` reuses the embedded `read.mode: webhook`; claim/ack lives in the handler. No third change-source mode. `DetectionConfigSchema` stays `discriminatedUnion('mode', [Poll, Webhook])`, untouched.
 - **D2 — Per-run `differOverride` DEFERRED.** The only differ touchpoint is the global `integration.differ.unignore`; a per-job override is surfaced declaratively (`differ.unignore`) but its runtime wiring is deferred.
 - **D3 — FRESH `JobDefinitionSchema`; `DetectionConfig` composed per-arm.** None of the 8 requested profile fields exist in `DetectionConfig` (it is a single-source detection leaf, ADR-033). The job schema is a multi-arm composite that **imports** `DetectionConfigSchema` as a read leaf — never adopts it as backbone, never widens it.
-- **D4 — Cadence is event-owned (ADR-039), referenced not declared.** No authoritative `schedule`/`every`/`cron` at job level. A trigger references an event by name and may carry an OPTIONAL read-only `cadence` mirror the cross-ref validator (#8) drift-checks against the event YAML.
+- **D4 — Cadence is owned by the JOB** (ADR-0018, **overriding** the brief's D4 event-owned recommendation — Doug: "the job declares its own cadence; I'm not setting up timers then attaching jobs"). `triggers[]` is a list of two arm shapes: a **`schedule` arm** carries the authoritative cadence (the emitter generates a job-private scheduled event + bridge trigger from it, à la EMIT-CHANGES); an **`event` arm** references an existing event. No cadence mirror, no drift-check — there is no separate event to drift against.
 - **D5 — `(provider,domain)→use-case` registry is a swe-brain-local throwaway now; codegen #458 is NOT a Part B blocker.** Zero schema surface.
 
 ## Two discriminated unions at two altitudes (D1 ↔ D3)
@@ -43,13 +43,16 @@ JobDefinition (top level, .strict())
 ├─ timeoutMs     number?
 ├─ replayFrom    scratch|last_step|last_checkpoint?
 ├─ differ        { unignore: string[] }?          # the differ knob (maps to integration.differ.unignore)
-├─ triggers      Trigger[]  (default [])          # D4: 0/1/N. The ONLY cadence linkage.
-│   └─ { event: snake, cadence?: { every: duration, align?: bool } }   # cadence = READ-ONLY mirror
+├─ triggers      Trigger[]  (default [])          # D4: 0/1/N. union of two arm shapes:
+│   ├─ { schedule: ScheduleSchema }               #   schedule arm — job-owned cadence; emitter GENERATES
+│   │                                             #     a job-private scheduled event + bridge trigger.
+│   │                                             #     ScheduleSchema reused verbatim from events.
+│   └─ { event: snake }                           #   event arm — references an EXISTING event; emitter emits a bridge trigger.
 ├─ arms          Arm[]  (min 1)                    # D1+D3: the multi-arm composite, discriminated on kind
+│   ├─ poll      { kind:'poll',      domain, read: DetectionConfig(mode:poll) }
+│   ├─ reconcile { kind:'reconcile', domain, window:{hours>0}, cursorWithheld:true, read: DetectionConfig(mode:poll) }
+│   └─ realtime  { kind:'realtime',  domain, staging:{table, pushAccelerate?}, read: DetectionConfig(mode:webhook) }
 └─ description   string?                           # optional free-text; ignored by the emitter
-    ├─ poll      { kind:'poll',      domain, read: DetectionConfig(mode:poll) }
-    ├─ reconcile { kind:'reconcile', domain, window:{hours>0}, cursorWithheld:true, read: DetectionConfig(mode:poll) }
-    └─ realtime  { kind:'realtime',  domain, staging:{table, pushAccelerate?}, read: DetectionConfig(mode:webhook) }
 
 read: DetectionConfigSchema   # IMPORTED from runtime/subsystems/integration — REUSED, never redefined (ADR-033)
 ```
@@ -70,7 +73,7 @@ The brief §3 was a paper sketch; authoring against the real runtime types surfa
 
 ### Negative space (proves the decisions)
 
-- No third change-source mode/arm for realtime (**D1**). No `differOverride` on the run input — `differ.unignore` is the only differ touchpoint, job-wide (**D2**). No widening of `DetectionConfigSchema` — imported verbatim (**D3**). No authoritative `schedule`/`every`/`cron` at job top level — cadence is a reference + optional drift-checked mirror (**D4**). No `(provider,domain)→use-case` registry surface (**D5**).
+- No third change-source mode/arm for realtime (**D1**). No `differOverride` on the run input — `differ.unignore` is the only differ touchpoint, job-wide (**D2**). No widening of `DetectionConfigSchema` — imported verbatim (**D3**). Cadence is job-owned via the `schedule` arm (the emitter generates the scheduled event) — no cadence mirror, no drift-check (**D4**). No `(provider,domain)→use-case` registry surface (**D5**).
 
 ## Per-arm emitter semantics (forward reference for #7)
 
@@ -87,7 +90,7 @@ The brief §3 was a paper sketch; authoring against the real runtime types surfa
 | 5 | `src/schema/job-definition.schema.ts` (fresh, imports DetectionConfig) + unit tests + living-docs fix to `detection-config.schema.ts` header | **landed (this RFC)** |
 | 6 | `definitions/jobs/` loader (`loadJobs` + `loadJobFromYaml`) + `resolveJobsDir` (`paths.jobs_dir`, fallback `definitions/jobs`) + parser export. **Correction:** NO `detectYamlType` branch — that discriminator is for the entity-family files (entity/relationship/junction) in the entities dir; events and jobs both carry a top-level `type:` and load by **directory** (`loadEvents`/`loadJobs`), never through `detectYamlType`. Enforces filename↔`type` + duplicate-type, mirroring `loadEvents`. No cross-ref (triggers→events is #8). | **landed** |
 | 7 | Jobs emitter (`src/emitters/` or `src/cli/shared/`) + `entity new` post-step; define generated-skeleton vs AST-scanned-`@JobHandler` coexistence | pending |
-| 8 | D4 cross-ref validator: `triggers[].event` → generated `eventRegistry`; Option-D cadence drift check; update ADR-039 + events skill same PR | pending |
+| 8 | Cross-ref validator: each **`event`-arm** `event` must exist in the generated `eventRegistry`; each **`schedule`-arm** generates a job-private scheduled event (merged into the registry like EMIT-CHANGES) — no drift-check (cadence is job-owned). Update ADR-039 + events skill same PR | pending |
 | 9 | `just test-smoke-integration` green for the jobs emitter (must tsc-compile the emitted tree) | pending |
 | 10 | 🚦 RELEASE GATE — `just bump` + main→npm auto-deploy; `just test-post-publish` first; swe-brain dogfoods the *published* tarball | pending |
 
@@ -97,7 +100,7 @@ The brief §3 was a paper sketch; authoring against the real runtime types surfa
 
 - **OQ-1 (#7):** generated handler skeleton vs the bridge-registry generator's AST scan of authored `@JobHandler` in `<backend_src>/jobs` — the flat `jobs/` layout is load-bearing (the generator scans only that dir). #7 must define coexistence so the event→job bridge harvest is not broken.
 - **OQ-2 (#7/D2):** does `differ.unignore` get a per-job runtime home (a generated per-job differ rebind), or stay a documented no-op until a per-job need is proven? D2 deferred the wiring; the schema froze the surface.
-- **OQ-3 (#8):** the cadence mirror is entity/job-level, not per-subscription — confirm the drift check compares against the single referenced event's `schedule:`. The drift comparison MUST compare only author-PROVIDED mirror keys against the event: the mirror leaves `align` undefined when omitted (no default), while the event `ScheduleSchema` defaults `align: true`, so a naive `mirror.align === event.align` false-positives on every cadence that omits `align`. The mirror also omits `catchUp`/`maxCatchUpSlots` by design — #8 ignores them.
+- **OQ-3 (#7/#8) — schedule-arm event generation:** the schedule arm desugars to a generated, job-private scheduled event. Open: the generated event's **naming** (e.g. `<job_type>__sched`) and **merge** into the event registry (mirror the EMIT-CHANGES `desugar*` path in `load-events.ts` that folds synthesized events into the registry). Each schedule arm gets its own event — equal cadences do NOT coalesce (a shared tick is opt-in: author an event + use an `event` arm). The cadence-mirror drift-check from the brief's D4 is **dropped** (cadence is job-owned; nothing to drift against).
 - **OQ-4 (PROVIDER IDENTITY) — DECIDED (b), 2026-06-14 (Doug).** The contract is a "per-ADAPTER sync-profile", yet the schema carries no provider/adapter identity — arms carry only `domain`. The integration assembly is keyed `(provider, entity)` (`assembly-emission-generator.ts` builds `<ENTITY>_INTEGRATION_USE_CASE__<PROVIDER>`), and a single job spans providers (`inbound-sync` = Slack message/reaction + Google email), so `provider` cannot be a single top-level field. **Resolution (b): provider stays OUT of the YAML** — resolved swe-brain-side by the D5 throwaway `(provider,domain)` registry for the dogfood, revisited when #458 lands. Rationale: minimal surface; D5 already keeps provider resolution A-side; adding a per-arm field before #7 proves its shape risks freezing the wrong shape. The rejected alternative (a) was an optional per-arm `provider: snake_case`. If #7/#458 prove a YAML provider is needed, (a) is the additive escape hatch.
 - **OQ-5 (#7):** duplicate arm `domain` within one job is currently accepted; the per-entity change-source contribution is keyed by entity (`adapter.changeSources['<entity>']`), so two arms sharing a domain collide at emit time. #7 must define whether same-entity multi-arm (e.g. poll + reconcile on one entity) is legal — and if so, key by `(kind, domain)` — or reject duplicate domains. Left un-enforced in #5 to avoid freezing a possibly-wrong constraint.
 - **OQ-6 (#6/#8/#9):** typos INSIDE the `read:` leaf are silently stripped (the imported `DetectionConfigSchema` is non-strict per ADR-033; the job schema must not widen it). The #6 loader / #8 validator / #9 smoke gate is the real backstop — see project memory `feedback_smoke_filter_signal` (a smoke filter that hides this would be the bug).

@@ -151,7 +151,7 @@ export type EventRetry = z.infer<typeof RetrySchema>;
  */
 const DURATION_RE = /^\s*[0-9]*\.?[0-9]+\s*(ms|s|m|h|d)\s*$/;
 
-const ScheduleSchema = z
+export const ScheduleSchema = z
 	.object({
 		every: z.union([
 			z
