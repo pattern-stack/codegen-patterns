@@ -13,10 +13,12 @@
  * Locked decisions (see ADR-033 + decision memo Q1–Q6):
  *   - Filter vocabulary is flat AND of `{ field, op, value }` triples; richer
  *     boolean expressions (OR / NOT / nested) are deferred per epic open Q3.
- *   - Cursor strategy is a tagged union over the four shapes the three modes
- *     need (`systemModstamp`, `replayId`, `timestamp`, `eventId`). Each
- *     strategy types its cursor internally; the orchestrator persists what
- *     the iterator last yielded (integration skill rule 2).
+ *   - Cursor strategy is a tagged union over the six shapes the modes need
+ *     (`systemModstamp`, `replayId`, `timestamp`, `eventId`, plus `historyId`
+ *     and `syncToken` added in RFC-0003). Each strategy types its cursor
+ *     internally; the orchestrator persists what the iterator last yielded
+ *     (integration skill rule 2). Divisibility per strategy is tabled in
+ *     `CURSOR_DIVISIBILITY` below.
  *   - `mode: 'poll'` may opt into `provenance: 'cdc'` so Stripe-style event
  *     endpoints (mechanically a poll, semantically CDC) reuse the poll
  *     primitive while emitting `Change<T>.source = 'cdc'`. Long-lived
@@ -64,7 +66,7 @@ export const ResolvedFilterSchema = z.object({
 export type ResolvedFilter = z.infer<typeof ResolvedFilterSchema>;
 
 // ============================================================================
-// Cursor strategy — tagged union over the four shapes the modes need
+// Cursor strategy — tagged union over the six shapes the modes need
 // ============================================================================
 
 const SystemModstampCursorSchema = z.object({

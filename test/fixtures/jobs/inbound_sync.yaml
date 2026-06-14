@@ -1,0 +1,38 @@
+# Realtime case — RFC-0005 §3. NO cadence: webhook-doorbell driven. Mixes
+# realtime arms (webhook drain) with a poll arm (Google historyId walk) — proof
+# that "realtime" is a usage shape, not one primitive (ADR-0018 D1).
+type: inbound_sync
+pool: integration
+triggers:
+  - event: message_received
+  - event: reaction_added
+  - event: mail_sync_due
+  - event: transcript_ready
+arms:
+  - kind: realtime
+    domain: message
+    staging:
+      table: slack_message_staging
+      pushAccelerate: true
+    read:
+      mode: webhook
+      webhook: { eventIdField: client_msg_id }
+      mapping:
+        - { source: externalId, target: external_id }
+  - kind: realtime
+    domain: reaction
+    staging:
+      table: slack_reaction_staging
+    read:
+      mode: webhook
+      webhook: { eventIdField: event_id }
+      mapping:
+        - { source: externalId, target: external_id }
+  - kind: poll
+    domain: email
+    read:
+      mode: poll
+      poll:
+        cursor: { kind: historyId, field: historyId }
+      mapping:
+        - { source: id, target: external_id }

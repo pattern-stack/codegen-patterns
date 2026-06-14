@@ -49,6 +49,8 @@ Overall confidence: **HIGH.** 28 of 31 anchors confirmed. The research is sound 
 
 ## 3. Proposed `JobDefinitionSchema` (B) / sync-profile shape (A)
 
+> **SUPERSEDED as the authoritative contract by `docs/rfcs/RFC-0005-job-definition-kind.md` + `test/fixtures/jobs/*.yaml` (2026-06-14).** The schema landed with three resolutions this sketch glossed: the differ knob is `differ.unignore` (not `dedupe.unignore` — `dedupe` is the runtime DedupePolicy); the `lane` field is dropped (not a `JobHandlerMeta` field; lane = `pool`); function-valued fields are `{{template}}` strings. The inline YAML below is illustrative — it uses hyphenated `type` and field-less cursors that the schema (correctly) rejects. Author against the fixtures.
+
 **The single most important artifact.** It reconciles all five decisions: two-altitude discriminated unions (D1+D3), embedded `DetectionConfig` leaf (D2+D3), trigger-list-not-cadence-field with optional drift-checked annotation (D4), zero registry surface (D5).
 
 ### Structural contract (annotated)
