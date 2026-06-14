@@ -139,6 +139,11 @@ export interface EventCodegenGeneratorOptions {
 	mode?: RuntimeMode;
 	/** If true, compute content but don't write to disk. */
 	dryRun?: boolean;
+	/**
+	 * Synthesized events to merge on the sugar arm (RFC-0005 #7: the jobs emitter's
+	 * job-private scheduled-event ticks). Threaded to `collectMergedEvents`.
+	 */
+	extraSugarEvents?: EventDefinition[];
 }
 
 export interface EventCodegenFileOutput {
@@ -344,6 +349,13 @@ export interface CollectMergedEventsOptions {
 	entitiesDir: string;
 	/** Absolute path to the events directory. */
 	eventsDir: string;
+	/**
+	 * Synthesized events contributed by other generators, merged on the SUGAR arm
+	 * (RFC-0005 #7: the jobs emitter's job-private scheduled-event ticks, one per
+	 * `schedule` arm). Treated exactly like entity `events:` sugar — a hand-authored
+	 * top-level `events/*.yaml` of the same `type` still wins (top-level-wins).
+	 */
+	extraSugarEvents?: EventDefinition[];
 }
 
 export interface CollectMergedEventsResult {
@@ -382,10 +394,11 @@ export function collectMergedEvents(
 	const { events: entitySugar, issues: sugarIssues } =
 		collectEntityEvents(entitiesDir);
 
-	// 3. Merge (top-level wins on collision).
+	// 3. Merge (top-level wins on collision). Extra synthesized events (RFC-0005 #7
+	//    job-private scheduled ticks) ride the sugar arm alongside entity sugar.
 	const { events: merged, issues: mergeIssues } = mergeEvents(
 		topLevelResult.events,
-		entitySugar,
+		[...entitySugar, ...(opts.extraSugarEvents ?? [])],
 	);
 
 	const issues: AnalysisIssue[] = [
@@ -863,7 +876,7 @@ export function buildEventCodegenContents(
 export async function generateEventCodegen(
 	opts: EventCodegenGeneratorOptions,
 ): Promise<EventCodegenResult> {
-	const { entitiesDir, eventsDir, outputDir, mode = 'vendored', dryRun = false } = opts;
+	const { entitiesDir, eventsDir, outputDir, mode = 'vendored', dryRun = false, extraSugarEvents } = opts;
 
 	// 1–3. Load + merge via the shared helper. `no_events_dir` / `no_files`
 	// warnings are retained — the generator still emits stub files, matching
@@ -871,6 +884,7 @@ export async function generateEventCodegen(
 	const { events: merged, issues } = collectMergedEvents({
 		entitiesDir,
 		eventsDir,
+		extraSugarEvents,
 	});
 
 	// 4. Build all file contents (mode-aware import resolution).
