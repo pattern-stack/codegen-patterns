@@ -166,10 +166,17 @@ export class JobsDomainModule {
       });
       providers.push({ provide: JOB_RUN_SERVICE, useClass: DrizzleJobRunService });
       providers.push({ provide: JOB_STEP_SERVICE, useClass: DrizzleJobStepService });
-    } else {
+    } else if (opts.backend === 'drizzle') {
       providers.push({ provide: JOB_ORCHESTRATOR, useClass: DrizzleJobOrchestrator });
       providers.push({ provide: JOB_RUN_SERVICE, useClass: DrizzleJobRunService });
       providers.push({ provide: JOB_STEP_SERVICE, useClass: DrizzleJobStepService });
+    } else {
+      // Explicit throwing default — a typo'd backend (the config isn't Zod-
+      // validated for jobs) is clearer as a boot error than a silent fallback.
+      throw new Error(
+        `JobsDomainModule.forRoot: unknown backend '${String(opts.backend)}'. ` +
+          `Expected 'drizzle' | 'memory' | 'bullmq'.`,
+      );
     }
 
     const exports = [

@@ -64,7 +64,7 @@ The YAML `schedule:` contract — `{ every, align, catchUp, maxCatchUpSlots }` (
 | Backend | Materializer |
 |---|---|
 | **Drizzle / Memory** | `EventScheduler` `setInterval` (`event-scheduler.ts:257`) + slot insert via `materializeScheduledEvent` → `INSERT … ON CONFLICT DO NOTHING` against the partial UNIQUE slot-key index (`event-bus.drizzle-backend.ts:375`) |
-| **BullMQ** | one `upsertJobScheduler` (BullMQ Job Scheduler) per scheduled-event type, registered from the `eventRegistry`'s `schedule` blocks; the repeatable body **publishes the same scheduled domain event into the outbox** (`eventBus.publish(scheduledTick)`) |
+| **BullMQ** | one `upsertJobScheduler` (BullMQ Job Scheduler) per scheduled-event type, registered from the `eventRegistry`'s `schedule` blocks; the repeatable tick worker computes the epoch-aligned slot and calls **`materializeScheduledEvent`** (the inherited slot-key `ON CONFLICT` insert — same scheduled domain event, with within-slot idempotency), NOT a raw `publish` |
 
 Routing the BullMQ Job Scheduler back through the outbox — rather than firing the user job directly — is the decision that keeps the whole stack on one path: **time → fact → bridge → job, with `job_run` as the source of truth.** A scheduled tick is an ordinary `domain_event`; the bridge (Tier 3) spawns wrapper + user runs exactly as it does for a use-case publish (ADR-039 Decision 2). This preserves cron, RFC-0005 cadence-on-job, and the bridge on one activation model. ADR-039 §159 already commits this shape ("a repeatable producer of the same event").
 
@@ -100,12 +100,12 @@ Until all three are broker-verified, flipping a consumer to `jobs.backend: bullm
 
 ### 7. Verification is the gating deliverable
 
-There is **no reusable cross-backend contract harness** today, and the broker round-trip has **never executed in-repo** for jobs (BULLMQ-1 §Verification is explicit and honest about this) — and would not for events either. The gate:
+The broker round-trip had **never executed in-repo** for jobs (BULLMQ-1 §Verification is explicit and honest about this) — and would not for events either. The gate, **as built**:
 
-- a **reusable cross-backend contract harness** running the same `IJobOrchestrator` / `IEventBus` suite against drizzle / memory / bullmq for both subsystems;
-- a **Docker-gated testcontainers recipe** (Redis + Postgres), parallel to the existing Postgres integration recipes, **out of `test-all`**, gracefully skipped when Docker is unavailable.
+- `test/integration/bullmq.integration.test.ts` — a **Docker-gated testcontainers recipe** (ephemeral `postgres:16` + `redis:7-alpine`), parallel to the existing Postgres integration recipes, **out of `test-all`**, gracefully skipped when Docker is unavailable (`just test-bullmq-integration`). It exercises the real BullMQ broker round-trip end-to-end: jobs `start → dispatch → worker → completed`, `runAt` delay, `collisionMode:'queue'` serialization, terminal failure → `status='failed'`, priority mapping; events `publish → wake → drain → findById`, slot-key idempotency, and the Job Scheduler firing a tick.
+- Scope note: this is a **BullMQ-focused round-trip** (it instantiates the bullmq classes directly), NOT a single parametrized `IJobOrchestrator`/`IEventBus` suite shared across drizzle/memory/bullmq — drizzle/memory keep their existing separate unit + drizzle-integration suites. The substantive gap BULLMQ-1 flagged (the broker path) is closed; a unified cross-backend harness remains possible future work.
 
-Both BullMQ backends stay **opt-in** (default `drizzle`) until that round-trip is green — exactly as ADR-022 §claim requires for port promotion and as BULLMQ-1 §Verification chose. The codegen-patterns repo ships `runtime/` into consumer projects and does **not** depend on a Postgres driver (`pg`), so the broker path may only run where Docker + Redis + Postgres are available; the green unit suite proves wiring and pure helpers, **not** the broker round-trip (do not mistake one for the other).
+Both BullMQ backends stay **opt-in** (default `drizzle`) until that round-trip is green in a consumer's CI — exactly as ADR-022 §claim requires for port promotion and as BULLMQ-1 §Verification chose. The codegen-patterns repo ships `runtime/` into consumer projects and does **not** depend on a Postgres driver (`pg`), so the broker path may only run where Docker + Redis + Postgres are available; the green unit suite proves wiring and pure helpers, **not** the broker round-trip (do not mistake one for the other).
 
 ## Consequences
 
@@ -113,7 +113,7 @@ Both BullMQ backends stay **opt-in** (default `drizzle`) until that round-trip i
 
 - **One mental model end-to-end.** Time, use-case publishes, and webhooks are all event *sources*; the bridge is the single activation seam; `job_run` is the single work source of truth. The all-BullMQ stack runs the exact same activation model the Drizzle stack does — only the dispatch/wake substrate changes.
 - **The bridge's correctness argument carries over for free.** Because events stay on the Postgres outbox, the entire ADR-023 same-tx exactly-once proof applies unchanged on BullMQ. No new idempotency machinery.
-- **One Redis, one config block.** Events reuse the jobs `bullmq.config.ts` connection + `queue_prefix` so jobs and events share a broker (config under `events.extensions.bullmq`, mirroring `jobs.extensions.bullmq`).
+- **One Redis by default.** Events resolve their connection from `events.extensions.bullmq.redis_url → REDIS_URL env → localhost` — the same `REDIS_URL` default the jobs subsystem uses — so jobs and events share a broker out of the box (config under `events.extensions.bullmq`, mirroring `jobs.extensions.bullmq`). As built, events use a **self-contained `EVENTS_BULLMQ_CONNECTION` token** (not the jobs `BULLMQ_CONNECTION`) to avoid forcing an events-only install to vendor `jobs/bullmq.config.ts`; see BULLMQ-2 §"Cross-subsystem token decision".
 - **The dead Redis Pub/Sub bus is gone.** One fewer un-installable, non-transactional backend to reason about or warn around.
 
 ### What is riskier

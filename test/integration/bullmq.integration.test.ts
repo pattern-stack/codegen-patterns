@@ -34,7 +34,11 @@ import { GenericContainer, Wait } from 'testcontainers';
 import type { DrizzleClient } from '../../runtime/types/drizzle';
 import { jobRuns, jobs } from '../../runtime/subsystems/jobs/job-orchestration.schema';
 import { domainEvents } from '../../runtime/subsystems/events/domain-events.schema';
-import { BullMQJobOrchestrator } from '../../runtime/subsystems/jobs/job-orchestrator.bullmq-backend';
+import { Queue } from 'bullmq';
+import {
+  BullMQJobOrchestrator,
+  bullmqPriorityFor,
+} from '../../runtime/subsystems/jobs/job-orchestrator.bullmq-backend';
 import { BullMQJobWorker } from '../../runtime/subsystems/jobs/job-worker.bullmq-backend';
 import {
   resolveBullMqConfig,
@@ -167,13 +171,25 @@ class SlowSerialHandler extends JobHandlerBase<Record<string, unknown>, { ok: tr
   }
 }
 
+class ThrowingHandler extends JobHandlerBase<Record<string, unknown>, void> {
+  async run(_ctx: JobContext<Record<string, unknown>>): Promise<void> {
+    throw new Error('handler boom');
+  }
+}
+
 const ECHO_TYPE = 'bullmq_echo_it';
 const SERIAL_TYPE = 'bullmq_serial_it';
+const THROW_TYPE = 'bullmq_throw_it';
 
 const ECHO_META: JobHandlerMeta<Record<string, unknown>> = { pool: POOL };
 const SERIAL_META: JobHandlerMeta<Record<string, unknown>> = {
   pool: POOL,
   concurrency: { key: '{{group}}', collisionMode: 'queue' },
+};
+// attempts:1 → fails terminally after the first throw (no retry storm).
+const THROW_META: JobHandlerMeta<Record<string, unknown>> = {
+  pool: POOL,
+  retry: { attempts: 1, backoff: 'fixed', baseMs: 10 },
 };
 
 // Minimal step-service stub — the test handlers never call ctx.step.
@@ -186,6 +202,7 @@ const stepStub: IJobStepService = {
 const handlerInstances = new Map<unknown, unknown>([
   [EchoHandler, new EchoHandler()],
   [SlowSerialHandler, new SlowSerialHandler()],
+  [ThrowingHandler, new ThrowingHandler()],
 ]);
 const fakeModuleRef = {
   get: (cls: unknown) => handlerInstances.get(cls),
@@ -237,12 +254,18 @@ beforeAll(async () => {
     meta: SERIAL_META as JobHandlerMeta<unknown>,
     handlerClass: SlowSerialHandler as unknown as new (...a: unknown[]) => JobHandlerBase<unknown>,
   });
+  JOB_HANDLER_REGISTRY.set(THROW_TYPE, {
+    type: THROW_TYPE,
+    meta: THROW_META as JobHandlerMeta<unknown>,
+    handlerClass: ThrowingHandler as unknown as new (...a: unknown[]) => JobHandlerBase<unknown>,
+  });
 
   orchestrator = new BullMQJobOrchestrator(db, false, resolvedConfig.connection, resolvedConfig);
 
   const entries: JobUpsertEntry[] = [
     { type: ECHO_TYPE, meta: ECHO_META as JobHandlerMeta<unknown>, handlerClass: EchoHandler as never },
     { type: SERIAL_TYPE, meta: SERIAL_META as JobHandlerMeta<unknown>, handlerClass: SlowSerialHandler as never },
+    { type: THROW_TYPE, meta: THROW_META as JobHandlerMeta<unknown>, handlerClass: ThrowingHandler as never },
   ];
   await orchestrator.upsertJobRows(entries, POOL_CONFIG);
 
@@ -264,6 +287,7 @@ beforeAll(async () => {
 afterAll(async () => {
   JOB_HANDLER_REGISTRY.delete(ECHO_TYPE);
   JOB_HANDLER_REGISTRY.delete(SERIAL_TYPE);
+  JOB_HANDLER_REGISTRY.delete(THROW_TYPE);
   await worker?.onModuleDestroy().catch(() => undefined);
   await orchestrator?.closeConnections().catch(() => undefined);
   await pool?.end().catch(() => undefined);
@@ -343,6 +367,41 @@ maybe('BullMQ jobs — broker round-trip (BULLMQ-1 gate)', () => {
     expect(b.concurrencyKey).toBe('g1');
     // The gate held: never two same-key handlers running at once.
     expect(maxConcurrent).toBe(1);
+  }, 20_000);
+
+  it('priority maps onto the BullMQ job opt (higher job_run.priority → lower BullMQ priority)', async () => {
+    // Start delayed so the job sits in the delayed set (not consumed) while we
+    // inspect its opts. priority=5 → bullmqPriorityFor(5); contract preserved.
+    const run = await orchestrator.start(ECHO_TYPE, { n: 9 }, {
+      priority: 5,
+      runAt: new Date(Date.now() + 30_000),
+    });
+    const inspectQueue = new Queue(resolvePoolQueueName(POOL, resolvedConfig), {
+      connection: resolvedConfig.connection,
+    });
+    try {
+      const job = await inspectQueue.getJob(run.id);
+      expect(job).toBeTruthy();
+      expect(job!.opts.priority).toBe(bullmqPriorityFor(5));
+      // A default-priority run maps to the midpoint — strictly larger (lower
+      // precedence) than the elevated one, matching Drizzle ORDER BY DESC.
+      expect(job!.opts.priority).toBeLessThan(bullmqPriorityFor(0));
+    } finally {
+      await inspectQueue.close();
+      await orchestrator.cancel(run.id);
+    }
+  }, 20_000);
+
+  it('handler failure with attempts exhausted → job_run.status=failed', async () => {
+    const run = await orchestrator.start(THROW_TYPE, { n: 1 });
+    const failed = await waitFor(async () => {
+      const [row] = await db.select({ s: jobRuns.status }).from(jobRuns).where(eq(jobRuns.id, run.id));
+      return row?.s === 'failed';
+    }, { timeoutMs: 10_000 });
+    expect(failed).toBe(true);
+    const [row] = await db.select().from(jobRuns).where(eq(jobRuns.id, run.id));
+    expect(row?.error).toBeTruthy();
+    expect((row?.error as { message?: string })?.message).toContain('boom');
   }, 20_000);
 });
 

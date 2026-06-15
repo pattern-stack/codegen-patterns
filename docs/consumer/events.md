@@ -5,7 +5,8 @@
 ## Events subsystem
 
 The events subsystem (ADR-024) ships a transactional outbox, the `IEventBus`
-protocol, Drizzle + Memory backends, and the generated `TypedEventBus` facade.
+protocol, Drizzle + Memory + BullMQ backends (ADR-041), and the generated
+`TypedEventBus` facade.
 It is scaffolded into your project by the `subsystem install` command.
 
 ### Install
@@ -31,10 +32,12 @@ This copies the runtime files into `<paths.subsystems>/events/` (defaulting to
 - Creates `<paths.subsystems>/events/generated/.gitkeep` so the directory
   exists in source control before `just gen-all` runs for the first time.
 
-Switch the backend with `--backend memory` (useful in tests); the default is
-`drizzle`. Only `drizzle | memory` are offered by the scaffold — the runtime
-still includes a `RedisEventBus`, but Redis is not a scaffolded default in
-Phase 1.
+Switch the backend with `--backend memory` (useful in tests) or
+`--backend bullmq` (durable dispatch over the Postgres outbox via a BullMQ wake
+queue — same Redis as the jobs subsystem; ADR-041). The default is `drizzle`.
+The fire-and-forget Redis Pub/Sub backend was removed (no history, bridge- and
+scheduler-incompatible — ADR-041 Decision 3); `bullmq` is the durable Redis
+option. See "BullMQ backend" below.
 
 ### Authoring events
 
@@ -84,13 +87,39 @@ export class AppModule {}
 `EventsModule` is `global: true`, so entity modules do not need to import it
 individually. Options:
 
-- `backend: 'drizzle' | 'memory' | 'redis'` — matches `events.backend` in your
+- `backend: 'drizzle' | 'memory' | 'bullmq'` — matches `events.backend` in your
   config for the default install; tests typically override to `'memory'`.
 - `multiTenant: true` — opt-in multi-tenancy (see below).
 - `pools: ['events_change']` — restrict this process's drain loop to specific
   lanes. Typical split is one process per `events_inbound` / `events_change`
   / `events_outbound` so a slow outbound handler cannot stall change-event
   propagation. Undefined drains all pools.
+- `redisUrl` / `queuePrefix` — only for `backend: 'bullmq'` (see below).
+
+### BullMQ backend (ADR-041)
+
+`backend: 'bullmq'` keeps the **Postgres `domain_events` outbox** as the source
+of truth (it extends the Drizzle backend — `findById`, the read port, and
+scheduled-slot idempotency are unchanged), but replaces the polling drain with a
+**Redis-coordinated BullMQ wake queue** (plus a slow safety heartbeat). The wake
+works through a connection pooler, unlike `LISTEN/NOTIFY`, and puts events and
+jobs on one Redis. Recurring `schedule:` events run via a **BullMQ Job
+Scheduler** (reconciled on boot, orphans pruned) instead of the in-process
+`setInterval` materializer.
+
+```yaml
+events:
+  backend: bullmq
+  extensions:
+    bullmq:
+      redis_url: redis://localhost:6379   # or env REDIS_URL (shared with jobs by default)
+      queue_prefix: myapp                  # namespaces the events-wake/events-scheduler queues on a shared Redis
+```
+
+Requires the `bullmq` peer dep (`npm install bullmq`). Requires Postgres (the
+outbox). Pairs naturally with `jobs.backend: bullmq` for an all-BullMQ stack on
+one Redis. `align: false` / `catchUp` schedules are not supported under bullmq
+(use the drizzle backend for those).
 
 ### `TypedEventBus` vs. raw `EVENT_BUS`
 

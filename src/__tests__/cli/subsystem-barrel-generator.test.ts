@@ -461,6 +461,35 @@ describe('buildSubsystemBarrel', () => {
 		);
 	});
 
+	test('events `backend: bullmq` threads redis_url + queue_prefix into EventsModule.forRoot (ADR-041)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{
+				events: {
+					backend: 'bullmq',
+					extensions: {
+						bullmq: { redis_url: 'redis://localhost:16379', queue_prefix: 'myapp' },
+					},
+				},
+			},
+			subsystemsRel,
+		);
+		expect(out.content).toContain("backend: 'bullmq'");
+		expect(out.content).toContain("redisUrl: 'redis://localhost:16379'");
+		expect(out.content).toContain("queuePrefix: 'myapp'");
+	});
+
+	test('events `backend: bullmq` without extensions emits no redisUrl/queuePrefix (env fallback)', () => {
+		const out = buildSubsystemBarrel(
+			[inst('events')],
+			{ events: { backend: 'bullmq' } },
+			subsystemsRel,
+		);
+		expect(out.content).toContain("backend: 'bullmq'");
+		expect(out.content).not.toContain('redisUrl:');
+		expect(out.content).not.toContain('queuePrefix:');
+	});
+
 	test('events WITHOUT listen_notify stays off-by-default (no listenNotify key)', () => {
 		const out = buildSubsystemBarrel(
 			[inst('events')],

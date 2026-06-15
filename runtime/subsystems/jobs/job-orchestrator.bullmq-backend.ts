@@ -70,11 +70,33 @@ export function sha1JobId(idempotencyKey: string): string {
   return createHash('sha1').update(idempotencyKey).digest('hex');
 }
 
-/**
- * BullMQ's lowest priority value (2^21). Used to invert the `job_run.priority`
- * scale (higher = first) onto BullMQ's (1 = highest) — see `scheduleOpts`.
- */
+/** BullMQ's lowest priority value (2^21). */
 const BULLMQ_MAX_PRIORITY = 2_097_152;
+/**
+ * Midpoint of BullMQ's [1, 2^21] priority range. `job_run.priority = 0` (the
+ * schema default) maps here so elevated runs sort ahead and any de-prioritised
+ * caller sorts behind — all within the valid range.
+ */
+const BULLMQ_PRIORITY_BASE = 1_048_576;
+
+/**
+ * Map a `job_run.priority` onto a BullMQ `priority` job opt.
+ *
+ * The `job_run` contract is "0 = default, HIGHER = claimed first" (Drizzle:
+ * `ORDER BY priority DESC`). BullMQ inverts the scale — 1 is the HIGHEST
+ * priority and larger numbers are lower — AND, critically, a job with
+ * `priority` 0/undefined is NOT "lowest": it goes on the plain FIFO `wait`
+ * list, which BullMQ drains AHEAD of the prioritised set. So leaving default
+ * jobs unprioritised (the original bug) demoted every *elevated* run behind
+ * every *default* run — the exact opposite of the contract. The fix: give
+ * EVERY run an explicit priority. Higher `job_run.priority` → numerically lower
+ * BullMQ priority; the default (0) lands at the midpoint. Relative ordering
+ * then matches Drizzle's `DESC` for the whole cohort.
+ */
+export function bullmqPriorityFor(runPriority: number): number {
+  const p = Number.isFinite(runPriority) ? runPriority : 0;
+  return Math.max(1, Math.min(BULLMQ_MAX_PRIORITY, BULLMQ_PRIORITY_BASE - p));
+}
 
 // Constructor types for the lazily-loaded `bullmq` value exports. Typed via
 // `typeof` the type-only imports so the cached ctors stay strongly typed
@@ -159,7 +181,15 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
     const name = resolvePoolQueueName(pool, this.bullConfig);
     let q = this.queues.get(name);
     if (!q) {
-      q = new this.QueueCtor(name, { connection: this.connection });
+      // Bounded retention so completed/failed job keys are reaped — otherwise
+      // Redis grows unbounded (the bridge relay re-adds ~1 wrapper job/s). Safe
+      // for relay idempotency: reconcilePending gates on Postgres
+      // `status='pending'`, not the retained Redis key (the
+      // dealbrain-bullmq-audit DEFAULT_JOB_OPTIONS pattern).
+      q = new this.QueueCtor(name, {
+        connection: this.connection,
+        defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 },
+      });
       this.queues.set(name, q);
     }
     return q;
@@ -306,22 +336,18 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
    *     until the boundary elapses. `run_at` is `NOT NULL DEFAULT now()`, so a
    *     past/now value (the default) produces a non-positive delta and sets no
    *     `delay` — the common path stays a plain enqueue.
-   *   - `priority` → BullMQ `priority`. The `job_run` contract is "0 = default,
-   *     higher claimed first" (`ORDER BY priority DESC`). BullMQ inverts the
-   *     scale (1 = highest, larger = lower, 0/undefined = unprioritised FIFO),
-   *     so we map `priority = MAX − run.priority` and only set it when elevated
-   *     (`run.priority > 0`). Default-priority jobs stay on the fast,
-   *     unprioritised FIFO path; relative ordering among elevated jobs matches
-   *     Drizzle's `DESC`.
+   *   - `priority` → BullMQ `priority`, for EVERY run (see `bullmqPriorityFor`
+   *     — leaving default-priority jobs unprioritised inverts the contract,
+   *     because BullMQ drains the unprioritised FIFO list ahead of the
+   *     prioritised set).
    */
-  private scheduleOpts(run: JobRun): { delay?: number; priority?: number } {
-    const out: { delay?: number; priority?: number } = {};
+  private scheduleOpts(run: JobRun): { delay?: number; priority: number } {
+    const out: { delay?: number; priority: number } = {
+      priority: bullmqPriorityFor(typeof run.priority === 'number' ? run.priority : 0),
+    };
     if (run.runAt) {
       const delay = run.runAt.getTime() - Date.now();
       if (delay > 0) out.delay = delay;
-    }
-    if (typeof run.priority === 'number' && run.priority > 0) {
-      out.priority = Math.max(1, BULLMQ_MAX_PRIORITY - run.priority);
     }
     return out;
   }

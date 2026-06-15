@@ -266,6 +266,24 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			(cfg?.extensions as { drizzle?: { listen_notify?: unknown } } | undefined)?.drizzle
 				?.listen_notify === true;
 		const listenNotifyClause = listenNotify ? `, listenNotify: true` : '';
+		// ADR-041 — thread the bullmq events extension knobs into forRoot so the
+		// wake/scheduler queues are namespaced (queue_prefix) and the connection
+		// is explicit (redis_url) on a shared Redis. Without this the queues are
+		// bare ('events-wake'/'events-scheduler') and collide across apps — and
+		// reconcileSchedulers' prune would clobber another app's @schedule/* ids.
+		// Mirrors the jobs composer's extensions.bullmq handling.
+		const bullmqExt =
+			backend === 'bullmq'
+				? (cfg?.extensions as
+						| { bullmq?: { redis_url?: unknown; queue_prefix?: unknown } }
+						| undefined)?.bullmq
+				: undefined;
+		const bullmqParts: string[] = [];
+		if (typeof bullmqExt?.redis_url === 'string')
+			bullmqParts.push(`redisUrl: ${jsonToTs(bullmqExt.redis_url)}`);
+		if (typeof bullmqExt?.queue_prefix === 'string')
+			bullmqParts.push(`queuePrefix: ${jsonToTs(bullmqExt.queue_prefix)}`);
+		const bullmqClause = bullmqParts.length ? `, ${bullmqParts.join(', ')}` : '';
 		const imports = [
 			`import { EventsModule } from '${moduleImport('events', 'events.module')}';`,
 		];
@@ -301,7 +319,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			return {
 				imports,
 				calls: [
-					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus${registryClause}${listenNotifyClause} }),`,
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus${registryClause}${listenNotifyClause}${bullmqClause} }),`,
 				],
 			};
 		}
@@ -309,14 +327,14 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			return {
 				imports,
 				calls: [
-					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause}, listenNotify: true }),`,
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause}, listenNotify: true${bullmqClause} }),`,
 				],
 			};
 		}
 		return {
 			imports,
 			calls: [
-				`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause} }),`,
+				`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause}${bullmqClause} }),`,
 			],
 		};
 	},

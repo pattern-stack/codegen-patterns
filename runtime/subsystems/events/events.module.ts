@@ -351,7 +351,11 @@ async function buildEventBusAsync(
     const BullMQEventBus = await loadBullMqEventBus();
     return new BullMQEventBus(db, connection, options, bridgeHook);
   }
-  return new MemoryEventBus(options);
+  if (options.backend === 'memory') return new MemoryEventBus(options);
+  throw new Error(
+    `EventsModule.forRootAsync: unknown backend '${String(options.backend)}'. ` +
+      `Expected 'drizzle' | 'memory' | 'bullmq'.`,
+  );
 }
 
 @Module({})
@@ -456,15 +460,24 @@ export class EventsModule {
           // redis pub/sub backend.
           { provide: EVENT_READ_PORT, useExisting: EVENT_BUS },
           // ADR-041: scheduling under backend:'bullmq' is owned by the BullMQ
-          // Job Scheduler (SCHED-1 — `BullMqEventSchedulerLifecycle`), NOT the
-          // polling `EventSchedulerLifecycle`. Exactly one scheduler source of
-          // truth per backend. (Wired in SCHED-1.)
+          // Job Scheduler inside the backend itself
+          // (`BullMQEventBus.onApplicationBootstrap` → `reconcileSchedulers`),
+          // NOT the polling `EventSchedulerLifecycle` (deliberately omitted
+          // here). Exactly one scheduler source of truth per backend.
           ...buildTypedBusProviders(multiTenant, options.typedBus),
         ],
         exports: [EVENT_BUS, EVENT_READ_PORT, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
       };
     }
 
+    if (options.backend !== 'drizzle' && options.backend !== 'memory') {
+      // bullmq returned above; anything else is a typo (events backend isn't
+      // Zod-validated) — throw rather than silently falling back to memory.
+      throw new Error(
+        `EventsModule.forRoot: unknown backend '${String(options.backend)}'. ` +
+          `Expected 'drizzle' | 'memory' | 'bullmq'.`,
+      );
+    }
     const provider =
       options.backend === 'drizzle'
         ? { provide: EVENT_BUS, useClass: DrizzleEventBus }

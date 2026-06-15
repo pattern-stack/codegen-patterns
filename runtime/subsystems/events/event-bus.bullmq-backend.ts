@@ -68,6 +68,7 @@ import {
   SCHEDULE_KEY_PREFIX,
   type ScheduledEvent,
 } from './event-scheduler';
+import { ScheduleConfigError } from './events-errors';
 
 /** Logical wake-queue name. Namespaced by `queue_prefix` when several codegen
  *  apps share one Redis (mirrors jobs' `resolvePoolQueueName`). */
@@ -278,6 +279,36 @@ export class BullMQEventBus extends DrizzleEventBus implements OnApplicationBoot
     const queue = await this.ensureSchedulerQueue();
     const desiredIds = new Set(schedules.map((s) => schedulerIdFor(s.type)));
 
+    // FAIL LOUD on schedule knobs the BullMQ materializer cannot honour, rather
+    // than silently diverging from the drizzle/memory semantics (ADR-039
+    // Decision 1: the schedule contract is identical across backends). The
+    // broker scheduler is interval-anchored from scheduler-creation and is
+    // stateless across restarts, so it can only produce EPOCH-aligned slots and
+    // cannot backfill missed slots:
+    //   - `align: false` (anchor-relative slots) — unsupported; the anchor
+    //     can't be reconstructed statelessly. Use `align: true` (the default).
+    //   - `catchUp: true` (bounded backfill of missed slots) — unsupported; the
+    //     broker resumes firing forward but does not replay the gap.
+    // Either knob → drizzle backend. This guard runs before any upsert so a
+    // misconfigured bullmq schedule fails at boot, not silently at runtime.
+    for (const s of schedules) {
+      if (!s.align) {
+        throw new ScheduleConfigError(
+          `event '${s.type}': schedule.align=false is not supported under the ` +
+            `BullMQ events backend (the broker scheduler is interval-anchored, ` +
+            `epoch-aligned slots only). Use align: true (the default) or the ` +
+            `drizzle backend.`,
+        );
+      }
+      if (s.catchUp) {
+        throw new ScheduleConfigError(
+          `event '${s.type}': schedule.catchUp is not supported under the BullMQ ` +
+            `events backend (the broker scheduler does not backfill missed ` +
+            `slots). Use the drizzle backend for catch-up.`,
+        );
+      }
+    }
+
     for (const s of schedules) {
       await queue.upsertJobScheduler(
         schedulerIdFor(s.type),
@@ -324,9 +355,10 @@ export class BullMQEventBus extends DrizzleEventBus implements OnApplicationBoot
       this.schedulerQueueName(),
       async (job: { data: { type: string; direction: string; pool: string; everyMs: number; align?: boolean } }) => {
         const { type, direction, pool, everyMs } = job.data;
-        // Epoch-aligned slot (ADR-039 align=true default). The BullMQ scheduler
-        // drives the cadence; the slot key is epoch-aligned for cross-instance
-        // idempotency. anchorMs is unused for the epoch-aligned path.
+        // Epoch-aligned slot. align is guaranteed true here — reconcileSchedulers
+        // rejects align:false under the BullMQ backend, so there is no silent
+        // coercion. The BullMQ scheduler drives the cadence; the epoch-aligned
+        // slot key is what gives cross-instance idempotency.
         const slotStart = slotStartFor(Date.now(), everyMs, true, 0);
         await this.materializeScheduledEvent({
           type,
@@ -355,6 +387,9 @@ export class BullMQEventBus extends DrizzleEventBus implements OnApplicationBoot
     if (!QueueCtor) throw new Error('BullMQEventBus: loadBullMq did not populate QueueCtor');
     this.schedulerQueue = new QueueCtor(this.schedulerQueueName(), {
       connection: this.conn,
+      // Bounded retention — the scheduler produces a tick job per interval;
+      // reap completed/failed so Redis doesn't grow unbounded.
+      defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 },
     });
     return this.schedulerQueue;
   }

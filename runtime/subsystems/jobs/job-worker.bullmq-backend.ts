@@ -127,7 +127,16 @@ export class BullMQJobWorker {
       const attemptsMade = job.attemptsMade;
       const maxAttempts = job.opts.attempts ?? 1;
       if (attemptsMade >= maxAttempts) {
-        void this.markFailed(job.data.runId, err, attemptsMade);
+        // Never let a DB hiccup here become an unhandled rejection (Node v15+
+        // terminates the process) — the run would also be stranded in 'running'
+        // (no stale-claim sweeper on the BullMQ worker; reconcilePending only
+        // touches 'pending'). markFailed is internally guarded; this is the
+        // final backstop.
+        void this.markFailed(job.data.runId, err, attemptsMade).catch((e) =>
+          this.logger.error(
+            `markFailed(${job.data.runId}) failed: ${(e as Error).message}`,
+          ),
+        );
       }
     });
     this.logger.log(
@@ -247,23 +256,34 @@ export class BullMQJobWorker {
     err: unknown,
     finalAttempts: number,
   ): Promise<void> {
-    const [row] = await this.db
-      .select()
-      .from(jobRuns)
-      .where(eq(jobRuns.id, runId))
-      .limit(1);
-    if (!row) return;
-    const run = row as JobRunRow;
-    await this.db
-      .update(jobRuns)
-      .set({
-        status: 'failed',
-        attempts: finalAttempts,
-        finishedAt: new Date(),
-        error: serialiseError(err, finalAttempts, false),
-        updatedAt: new Date(),
-      })
-      .where(eq(jobRuns.id, runId));
+    let run: JobRunRow;
+    try {
+      const [row] = await this.db
+        .select()
+        .from(jobRuns)
+        .where(eq(jobRuns.id, runId))
+        .limit(1);
+      if (!row) return;
+      run = row as JobRunRow;
+      await this.db
+        .update(jobRuns)
+        .set({
+          status: 'failed',
+          attempts: finalAttempts,
+          finishedAt: new Date(),
+          error: serialiseError(err, finalAttempts, false),
+          updatedAt: new Date(),
+        })
+        .where(eq(jobRuns.id, runId));
+    } catch (dbErr) {
+      // A DB failure stamping the terminal status would otherwise strand the
+      // run in 'running' (no stale-claim sweeper on this worker). Log loudly so
+      // it's visible; the caller's .catch is the unhandled-rejection backstop.
+      this.logger.error(
+        `markFailed: could not stamp 'failed' for run ${runId}: ${(dbErr as Error).message}`,
+      );
+      return;
+    }
 
     // Parent-close-policy cascade — identical semantics to the Drizzle worker.
     if (run.parentClosePolicy === 'terminate') {

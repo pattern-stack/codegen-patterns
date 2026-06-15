@@ -18,11 +18,10 @@ export const EVENT_BUS = 'EVENT_BUS' as const;
  * (OBS-LIST-1).
  *
  * Bound by `EventsModule.forRoot` to the same backend instance as
- * `EVENT_BUS` for the `drizzle` and `memory` backends (both implement
- * `IEventReadPort`). The `redis` backend retains no history and therefore
- * does NOT provide this token — consumers composing it (e.g. the
- * observability combiner) inject it `@Optional()` and degrade to empty
- * results.
+ * `EVENT_BUS` for ALL backends — `drizzle`, `memory`, and `bullmq` (the
+ * bullmq backend extends `DrizzleEventBus`, so it inherits `IEventReadPort`
+ * over the same `domain_events` outbox; ADR-041). Consumers composing it
+ * (e.g. the observability combiner) may still inject it `@Optional()`.
  *
  * String constant (not Symbol) so it matches by value across import
  * boundaries — same convention as `EVENT_BUS`.
