@@ -352,6 +352,89 @@ describe('EventDefinitionSchema — defaults and transform', () => {
 });
 
 // ----------------------------------------------------------------------------
+// Trigger-catalog metadata
+// ----------------------------------------------------------------------------
+
+describe('EventDefinitionSchema — trigger catalog metadata', () => {
+	it('parses a change event with a trigger block and preserves it', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'email_created',
+			direction: 'change',
+			aggregate: 'email',
+			payload: { subject: { type: 'string', nullable: true } },
+			trigger: {
+				surface: 'Mail',
+				label: 'Email received',
+				fields: ['subject', 'from_email'],
+			},
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.trigger).toEqual({
+				surface: 'Mail',
+				label: 'Email received',
+				fields: ['subject', 'from_email'],
+			});
+		}
+	});
+
+	it('defaults trigger.fields to [] when omitted', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'email_created',
+			direction: 'change',
+			aggregate: 'email',
+			trigger: { surface: 'Mail' },
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.trigger).toEqual({ surface: 'Mail', fields: [] });
+		}
+	});
+
+	it('leaves trigger undefined when not declared (opt-in, not inferred)', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'email_edited',
+			direction: 'change',
+			aggregate: 'email',
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.trigger).toBeUndefined();
+		}
+	});
+
+	it('rejects a trigger block with an unknown key (.strict())', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'email_created',
+			direction: 'change',
+			aggregate: 'email',
+			trigger: { surface: 'Mail', bogus: true },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects a trigger block missing the required surface', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'email_created',
+			direction: 'change',
+			aggregate: 'email',
+			trigger: { fields: ['subject'] },
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it('rejects trigger.fields entries that are not snake_case', () => {
+		const result = EventDefinitionSchema.safeParse({
+			type: 'email_created',
+			direction: 'change',
+			aggregate: 'email',
+			trigger: { surface: 'Mail', fields: ['fromEmail'] },
+		});
+		expect(result.success).toBe(false);
+	});
+});
+
+// ----------------------------------------------------------------------------
 // Tier (AUDIT-1)
 // ----------------------------------------------------------------------------
 

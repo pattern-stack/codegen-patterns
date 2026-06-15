@@ -578,6 +578,10 @@ const REGISTRY_INTERFACE = [
 	// materialise ticks. `every` is ms-or-duration-string; the rest carry the
 	// schema defaults.
 	'\tschedule?: { every: string | number; align: boolean; catchUp: boolean; maxCatchUpSlots: number };',
+	// Trigger-catalog projection — present only on events that opted in via the
+	// `trigger:` block (selectable workflow triggers). Consumers build their
+	// authoring catalog from this instead of a hand-maintained parallel list.
+	'\ttrigger?: { surface: string; label?: string; description?: string; fields: string[] };',
 	'}',
 ].join('\n');
 
@@ -656,6 +660,12 @@ export function buildRegistryContent(events: EventDefinition[]): string {
 				`\t\tschedule: { every: ${every}, align: ${ev.schedule.align}, ` +
 					`catchUp: ${ev.schedule.catchUp}, maxCatchUpSlots: ${ev.schedule.maxCatchUpSlots} },`,
 			);
+		}
+		// Trigger-catalog metadata — emit verbatim when the event opts in. The
+		// parsed `trigger` is a plain literal; JSON.stringify yields a valid TS
+		// object literal (double-quoted keys are valid TS) and escapes the copy.
+		if (ev.trigger !== undefined) {
+			chunks.push(`\t\ttrigger: ${JSON.stringify(ev.trigger)},`);
 		}
 		chunks.push(`\t},`);
 	}

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.0] — 2026-06-14
+
+### Added
+
+- **`trigger:` block on event definitions — a projectable workflow-trigger
+  catalog.** Event YAMLs may now declare an optional, strict
+  `trigger: { surface, label?, description?, fields[] }` block. Its presence
+  marks the event as a *selectable workflow trigger* — a domain change-fact an
+  automation can fire on — as opposed to inbound transport events whose only job
+  is to sync state. Selectability is an explicit opt-in, deliberately decoupled
+  from `direction`: a `direction: change` event can still be a non-trigger (e.g.
+  metadata-churn edits like read/label flips), so the block is simply omitted
+  there. The parsed `trigger` is emitted verbatim into
+  `eventRegistry[type].trigger` (and the `EventMetadata` interface), so consumers
+  **project** their authoring trigger catalog from the event registry instead of
+  hand-maintaining a parallel list that drifts from the event definitions.
+  Backward-compatible — events without a `trigger:` block emit no `trigger` key,
+  so existing generated registries are unchanged. Dogfood-driven from swe-brain's
+  directive authoring surface.
+
 ## [0.27.3] — 2026-06-13
 
 ### Fixed

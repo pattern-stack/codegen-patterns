@@ -579,6 +579,39 @@ describe('buildRegistryContent — non-empty', () => {
 		expect(content).not.toContain('schedule:');
 	});
 
+	test('EventMetadata interface carries the optional trigger shape (trigger catalog)', () => {
+		const content = buildRegistryContent([]);
+		expect(content).toContain(
+			'trigger?: { surface: string; label?: string; description?: string; fields: string[] };',
+		);
+	});
+
+	test('emits the trigger block inline for an event that opts in', () => {
+		// Parse through the schema so trigger.fields default ([]) applies, matching
+		// the generator's real input.
+		const triggerable = EventDefinitionSchema.parse({
+			type: 'email_created',
+			direction: 'change',
+			aggregate: 'email',
+			trigger: {
+				surface: 'Mail',
+				label: 'Email received',
+				fields: ['subject', 'from_email'],
+			},
+		});
+		const content = buildRegistryContent([triggerable]);
+		expect(content).toContain("'email_created': {");
+		expect(content).toContain('trigger: {');
+		expect(content).toContain('"surface":"Mail"');
+		expect(content).toContain('"fields":["subject","from_email"]');
+	});
+
+	test('an event without a trigger block emits no trigger key', () => {
+		const content = buildRegistryContent([contactCreated]);
+		// The interface line is `trigger?:` — the per-entry emission is `trigger:`.
+		expect(content).not.toContain('trigger:');
+	});
+
 	test('registry entries are alphabetical by type', () => {
 		const content = buildRegistryContent([
 			webhookOutboundContactIntegration,

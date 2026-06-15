@@ -15,6 +15,7 @@ export interface EventMetadata {
 	version: number;
 	retry: { attempts: number; backoff: 'linear' | 'exponential' };
 	schedule?: { every: string | number; align: boolean; catchUp: boolean; maxCatchUpSlots: number };
+	trigger?: { surface: string; label?: string; description?: string; fields: string[] };
 }
 
 export const eventRegistry = {
