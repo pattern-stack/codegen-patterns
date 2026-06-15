@@ -57,11 +57,11 @@ export type {
 } from './event-scheduler';
 export { MemoryEventBus } from './event-bus.memory-backend';
 export { DrizzleEventBus } from './event-bus.drizzle-backend';
-// #6 — backend-specific implementation classes are NOT re-exported here.
-// `BullMQEventBus` (ADR-041) is only vendored when the consumer installs with
-// `--backend bullmq`; surfacing it from this barrel would force the consumer's
-// tsc to resolve `./event-bus.bullmq-backend` (+ the optional `bullmq` peer dep)
-// even on a drizzle/memory install (the file is filtered out → TS2307).
-// `EventsModule.forRoot({ backend: 'bullmq' })` lazy-loads it internally.
+// #6 — the BullMQ scheduler driver (`event-scheduler.bullmq-backend.ts`,
+// ADR-041 option #2) is NOT re-exported here. It is only vendored when
+// `events.scheduler.driver: bullmq`; surfacing it from this barrel would force
+// a poll-driver consumer's tsc to resolve it (+ the optional `bullmq` peer dep)
+// even though the file is filtered out → TS2307. `EventsModule.forRoot` lazy-
+// loads it internally via `loadBullMqScheduler` (non-literal dynamic import).
 export { domainEvents } from './domain-events.schema';
 export type { DomainEventRecord } from './domain-events.schema';

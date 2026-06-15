@@ -1,5 +1,14 @@
 # BullMQ for Jobs + Events — Understanding & Plan
 
+> **Pivot note (2026-06-15):** this is the pre-implementation research. The
+> events half pivoted during the design conversation to **option #2** — events
+> stay on Drizzle + `pg_notify` (a Redis enqueue can't be atomic with a Postgres
+> commit), and BullMQ's events role is the **scheduler clock** (`events.scheduler.driver: bullmq`),
+> not the event transport. The bespoke `BullMQEventBus` described below was
+> abandoned. The authoritative design is **ADR-041 + BULLMQ-2**; the
+> codegen-declarative dispatch knob is a fast-follow (**DISPATCH-1**). Read those,
+> not this, for the shipped shape.
+
 **Date:** 2026-06-15  
 **Source:** 7-agent understanding workflow (wf_9dee4dfa-51f) + lead deep-read of both subsystems  
 **Goal:** Fully functional BullMQ backend for the jobs AND events subsystems — jobs + event streams on BullMQ for automation, scheduling, and jobs in general.

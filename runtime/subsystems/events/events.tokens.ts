@@ -61,13 +61,14 @@ export const EVENTS_MULTI_TENANT = 'EVENTS_MULTI_TENANT' as const;
 
 /**
  * Injection token for the resolved BullMQ/ioredis `ConnectionOptions` used by
- * `BullMQEventBus` (ADR-041). Provided automatically by
- * `EventsModule.forRoot({ backend: 'bullmq' })` as `{ url }`, resolved from
+ * the BullMQ SCHEDULER driver (`event-scheduler.bullmq-backend.ts`, ADR-041
+ * option #2) — NOT an events backend (the event log stays on Postgres). Bound
+ * by `EventsModule.forRoot/forRootAsync` as `{ url }`, resolved from
  * `options.redisUrl` → `process.env.REDIS_URL` → `redis://localhost:6379`.
+ * Only consumed when `events.scheduler.driver: 'bullmq'`; harmless otherwise.
  *
- * Shares the same `REDIS_URL` env default as the jobs subsystem's
- * `BULLMQ_CONNECTION`, so jobs + events compose on one Redis out of the box
- * (ADR-041 §"compose on one Redis").
+ * Shares the `REDIS_URL` env default with the jobs subsystem's
+ * `BULLMQ_CONNECTION`, so jobs + the events scheduler compose on one Redis.
  *
  * ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) so it matches by
  * value across runtime copies.

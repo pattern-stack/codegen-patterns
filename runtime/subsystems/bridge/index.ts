@@ -28,6 +28,7 @@ export type {
   BridgeOutboxDrainResult,
   BridgeRegistry,
   BridgeTriggerEntry,
+  DispatchMode,
   PublishAndStartOptions,
   PublishAndStartResult,
   StatusHistogram,

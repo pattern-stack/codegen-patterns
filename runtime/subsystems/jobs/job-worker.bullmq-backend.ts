@@ -25,7 +25,7 @@ import type { ModuleRef } from '@nestjs/core';
 // `Job`, `ConnectionOptions` are erased at compile time and never resolve
 // `'bullmq'` at runtime. The `Worker` VALUE constructor is loaded lazily via
 // `await import('bullmq')` in `onModuleInit` (mirrors
-// the events `event-bus.bullmq-backend.ts` loader). See BULLMQ-1 §Lazy import.
+// the events `event-scheduler.bullmq-backend.ts` loader). See BULLMQ-1 §Lazy import.
 import type { Worker, Job, ConnectionOptions } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';

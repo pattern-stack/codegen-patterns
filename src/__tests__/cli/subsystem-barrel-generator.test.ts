@@ -461,31 +461,33 @@ describe('buildSubsystemBarrel', () => {
 		);
 	});
 
-	test('events `backend: bullmq` threads redis_url + queue_prefix into EventsModule.forRoot (ADR-041)', () => {
+	test('events `scheduler.driver: bullmq` threads scheduler + redis_url + queue_prefix into EventsModule.forRoot (ADR-041)', () => {
+		// Option #2: the event bus stays drizzle; the bullmq SCHEDULER is selected
+		// by scheduler.driver and namespaced by redis_url/queue_prefix.
 		const out = buildSubsystemBarrel(
 			[inst('events')],
 			{
 				events: {
-					backend: 'bullmq',
-					extensions: {
-						bullmq: { redis_url: 'redis://localhost:16379', queue_prefix: 'myapp' },
-					},
+					backend: 'drizzle',
+					scheduler: { driver: 'bullmq', redis_url: 'redis://localhost:16379', queue_prefix: 'myapp' },
 				},
 			},
 			subsystemsRel,
 		);
-		expect(out.content).toContain("backend: 'bullmq'");
+		expect(out.content).toContain("backend: 'drizzle'");
+		expect(out.content).toContain("scheduler: { driver: 'bullmq' }");
 		expect(out.content).toContain("redisUrl: 'redis://localhost:16379'");
 		expect(out.content).toContain("queuePrefix: 'myapp'");
 	});
 
-	test('events `backend: bullmq` without extensions emits no redisUrl/queuePrefix (env fallback)', () => {
+	test('events with poll scheduler (default) emits no scheduler/redisUrl/queuePrefix', () => {
 		const out = buildSubsystemBarrel(
 			[inst('events')],
-			{ events: { backend: 'bullmq' } },
+			{ events: { backend: 'drizzle' } },
 			subsystemsRel,
 		);
-		expect(out.content).toContain("backend: 'bullmq'");
+		expect(out.content).toContain("backend: 'drizzle'");
+		expect(out.content).not.toContain('scheduler:');
 		expect(out.content).not.toContain('redisUrl:');
 		expect(out.content).not.toContain('queuePrefix:');
 	});

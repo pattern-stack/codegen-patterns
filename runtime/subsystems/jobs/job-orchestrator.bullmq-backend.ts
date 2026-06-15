@@ -32,7 +32,7 @@ import { and, eq, inArray, lte } from 'drizzle-orm';
 // (it is statically imported by `jobs-domain.module.ts`). The VALUE
 // constructors (`Queue`, `FlowProducer`) are loaded lazily via `await
 // import('bullmq')` in `loadBullMq()` — mirrors
-// the events `event-bus.bullmq-backend.ts` loader. See BULLMQ-1 §Lazy import.
+// the events `event-scheduler.bullmq-backend.ts` loader. See BULLMQ-1 §Lazy import.
 import type { ConnectionOptions, FlowProducer, Queue } from 'bullmq';
 import type { DrizzleClient } from '../../types/drizzle';
 import type { DrizzleTransaction } from '../events/event-bus.protocol';

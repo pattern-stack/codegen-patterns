@@ -216,7 +216,10 @@ describe('subsystem — install (dry-run)', () => {
 // they import peer deps the consumer never installed (ioredis, bullmq) and
 // would otherwise drag those into the consumer's tsc graph.
 describe('subsystem — install backend pruning (#6)', () => {
-	test('drizzle events install does NOT vendor event-bus.bullmq-backend.ts', async () => {
+	test('default events install (poll scheduler) does NOT vendor event-scheduler.bullmq-backend.ts', async () => {
+		// ADR-041 option #2: events = drizzle|memory; the bullmq SCHEDULER file is
+		// pruned unless `events.scheduler.driver: bullmq`. There is no bullmq event
+		// BACKEND file anymore.
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -225,25 +228,28 @@ describe('subsystem — install backend pruning (#6)', () => {
 		);
 		expect(result).toBe(0);
 		const installDir = path.join(root, 'src/shared/subsystems/events');
-		// Drizzle + memory backends ship.
 		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
-		// BullMQ backend (optional `bullmq` peer dep) is filtered out (ADR-041).
-		expect(fs.existsSync(path.join(installDir, 'event-bus.bullmq-backend.ts'))).toBe(false);
+		// The bullmq scheduler driver (optional `bullmq` peer dep) is filtered out.
+		expect(fs.existsSync(path.join(installDir, 'event-scheduler.bullmq-backend.ts'))).toBe(false);
 	});
 
-	test('bullmq events install vendors the bullmq backend + the drizzle outbox it extends', async () => {
+	test('events install with scheduler.driver: bullmq vendors event-scheduler.bullmq-backend.ts (drizzle backend kept)', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
+		// Opt into the bullmq scheduler clock — the event bus stays drizzle.
+		fs.writeFileSync(
+			path.join(root, 'codegen.config.yaml'),
+			'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\nevents:\n  scheduler:\n    driver: bullmq\n',
+		);
 		const cli = buildCli();
 		const { result } = await capture(() =>
-			cli.run(['subsystem', 'install', 'events', '--backend', 'bullmq', '--force', '--cwd', root]),
+			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
 		);
 		expect(result).toBe(0);
 		const installDir = path.join(root, 'src/shared/subsystems/events');
-		// The bullmq backend ships, AND the drizzle backend it extends (the
-		// Postgres outbox = source of truth, ADR-041).
-		expect(fs.existsSync(path.join(installDir, 'event-bus.bullmq-backend.ts'))).toBe(true);
+		// The bullmq scheduler ships, AND the drizzle outbox (the event bus).
+		expect(fs.existsSync(path.join(installDir, 'event-scheduler.bullmq-backend.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
 	});

@@ -45,7 +45,8 @@ import {
   resolvePoolQueueName,
   type BullMqResolvedConfig,
 } from '../../runtime/subsystems/jobs/bullmq.config';
-import { BullMQEventBus } from '../../runtime/subsystems/events/event-bus.bullmq-backend';
+import { DrizzleEventBus } from '../../runtime/subsystems/events/event-bus.drizzle-backend';
+import { BullMqEventSchedulerLifecycle } from '../../runtime/subsystems/events/event-scheduler.bullmq-backend';
 import {
   JOB_HANDLER_REGISTRY,
   JobHandlerBase,
@@ -405,79 +406,35 @@ maybe('BullMQ jobs — broker round-trip (BULLMQ-1 gate)', () => {
   }, 20_000);
 });
 
-maybe('BullMQ events — durable dispatch over the outbox', () => {
-  let bus: BullMQEventBus;
+// ADR-041 option #2: events stay on the Drizzle outbox (no bespoke BullMQ event
+// bus). BullMQ's events role is the SCHEDULER clock. These prove the
+// standalone BullMqEventSchedulerLifecycle drives ticks into the Drizzle bus.
+maybe('BullMQ scheduler driver — ticks into the Drizzle outbox (SCHED-1)', () => {
+  let drizzleBus: DrizzleEventBus;
+  let scheduler: BullMqEventSchedulerLifecycle;
 
   afterAll(async () => {
-    await bus?.onModuleDestroy().catch(() => undefined);
+    await scheduler?.onModuleDestroy().catch(() => undefined);
+    await drizzleBus?.onModuleDestroy().catch(() => undefined);
   });
 
-  it('publish → outbox insert → BullMQ wake → drain → findById + processed', async () => {
-    bus = new BullMQEventBus(db, resolvedConfig.connection, { backend: 'bullmq' });
-    await bus.onModuleInit();
-
-    const id = crypto.randomUUID();
-    await bus.publish({
-      id,
-      type: 'thing_happened',
-      aggregateId: 'agg-1',
-      aggregateType: 'thing',
-      payload: { x: 1 },
-      occurredAt: new Date(),
-      metadata: { pool: 'events_change', direction: 'change', tier: 'domain' },
-    });
-
-    // findById reads the committed outbox row immediately.
-    const found = await bus.findById(id);
-    expect(found?.id).toBe(id);
-
-    // The BullMQ wake drains it → processed.
-    const processed = await waitFor(async () => {
-      const [row] = await db.select({ s: domainEvents.status }).from(domainEvents).where(eq(domainEvents.id, id));
-      return row?.s === 'processed';
-    }, { timeoutMs: 8_000 });
-    expect(processed).toBe(true);
-  }, 20_000);
-
-  it('materializeScheduledEvent is slot-key idempotent (created once)', async () => {
-    const spec = {
-      type: 'tick_event',
-      slotKey: '@schedule/tick_event/0',
-      slotStart: new Date(0),
-      direction: 'change',
-      pool: 'events_change',
-    };
-    const first = await bus.materializeScheduledEvent(spec);
-    const second = await bus.materializeScheduledEvent(spec);
-    expect(first.created).toBe(true);
-    expect(second.created).toBe(false);
-    const rows = await db.select().from(domainEvents).where(eq(domainEvents.type, 'tick_event'));
-    expect(rows).toHaveLength(1);
-  }, 20_000);
-});
-
-maybe('BullMQ scheduler — Job Scheduler fires a tick (SCHED-1)', () => {
-  let bus: BullMQEventBus;
-
-  afterAll(async () => {
-    await bus?.onModuleDestroy().catch(() => undefined);
-  });
-
-  it('a registered schedule materializes a scheduled domain event', async () => {
-    // every=1s; the BullMQ Job Scheduler fires → worker calls
-    // materializeScheduledEvent → a scheduled `recurring_tick` row appears.
-    bus = new BullMQEventBus(db, resolvedConfig.connection, {
-      backend: 'bullmq',
-      eventRegistry: {
-        recurring_tick: {
-          schedule: { every: '1s' },
-          direction: 'change',
-          pool: 'events_change',
+  it('a registered schedule fires a BullMQ Job Scheduler tick → scheduled domain event in the Postgres outbox', async () => {
+    // The Drizzle event bus is the durable outbox (option #2). The bullmq
+    // scheduler is the clock: every=1s → upsertJobScheduler tick → worker calls
+    // bus.materializeScheduledEvent → a `recurring_tick` row lands in domain_events.
+    drizzleBus = new DrizzleEventBus(db, { backend: 'drizzle' });
+    scheduler = new BullMqEventSchedulerLifecycle(
+      drizzleBus,
+      resolvedConfig.connection,
+      {
+        backend: 'drizzle',
+        scheduler: { driver: 'bullmq' },
+        eventRegistry: {
+          recurring_tick: { schedule: { every: '1s' }, direction: 'change', pool: 'events_change' },
         },
       },
-    });
-    await bus.onModuleInit();
-    await bus.onApplicationBootstrap();
+    );
+    await scheduler.onApplicationBootstrap();
 
     const fired = await waitFor(async () => {
       const rows = await db
@@ -488,4 +445,20 @@ maybe('BullMQ scheduler — Job Scheduler fires a tick (SCHED-1)', () => {
     }, { timeoutMs: 12_000, intervalMs: 250 });
     expect(fired).toBe(true);
   }, 25_000);
+
+  it('materializeScheduledEvent (Drizzle outbox) is slot-key idempotent', async () => {
+    const spec = {
+      type: 'tick_idem',
+      slotKey: '@schedule/tick_idem/0',
+      slotStart: new Date(0),
+      direction: 'change',
+      pool: 'events_change',
+    };
+    const first = await drizzleBus.materializeScheduledEvent(spec);
+    const second = await drizzleBus.materializeScheduledEvent(spec);
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    const rows = await db.select().from(domainEvents).where(eq(domainEvents.type, 'tick_idem'));
+    expect(rows).toHaveLength(1);
+  }, 20_000);
 });

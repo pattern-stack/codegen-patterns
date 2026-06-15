@@ -5,9 +5,15 @@
 ## Events subsystem
 
 The events subsystem (ADR-024) ships a transactional outbox, the `IEventBus`
-protocol, Drizzle + Memory + BullMQ backends (ADR-041), and the generated
-`TypedEventBus` facade.
+protocol, Drizzle + Memory backends, and the generated `TypedEventBus` facade.
 It is scaffolded into your project by the `subsystem install` command.
+
+The event log always lives in Postgres (the Drizzle outbox) or in memory — it
+never runs on BullMQ (ADR-041, option #2). BullMQ's role in an all-BullMQ stack
+is the **jobs executor** (the jobs the events trigger run on BullMQ) and the
+**scheduler/clock** (recurring `schedule:` events fire via a BullMQ Job
+Scheduler) — selected by `events.scheduler.driver: bullmq`, *not* by an
+`events.backend: bullmq`. See "Scheduler driver" below.
 
 ### Install
 
@@ -32,12 +38,13 @@ This copies the runtime files into `<paths.subsystems>/events/` (defaulting to
 - Creates `<paths.subsystems>/events/generated/.gitkeep` so the directory
   exists in source control before `just gen-all` runs for the first time.
 
-Switch the backend with `--backend memory` (useful in tests) or
-`--backend bullmq` (durable dispatch over the Postgres outbox via a BullMQ wake
-queue — same Redis as the jobs subsystem; ADR-041). The default is `drizzle`.
-The fire-and-forget Redis Pub/Sub backend was removed (no history, bridge- and
-scheduler-incompatible — ADR-041 Decision 3); `bullmq` is the durable Redis
-option. See "BullMQ backend" below.
+Switch the backend with `--backend memory` (useful in tests). The default is
+`drizzle`. There is **no `bullmq` events backend** — the event log stays on the
+Postgres outbox (or memory). The fire-and-forget Redis Pub/Sub backend was
+removed (no history, bridge- and scheduler-incompatible — ADR-041), and is not
+replaced: events are not transported over Redis. To run recurring `schedule:`
+events on BullMQ's clock, set `events.scheduler.driver: bullmq` (the backend
+stays `drizzle`) — see "Scheduler driver" below.
 
 ### Authoring events
 
@@ -87,39 +94,81 @@ export class AppModule {}
 `EventsModule` is `global: true`, so entity modules do not need to import it
 individually. Options:
 
-- `backend: 'drizzle' | 'memory' | 'bullmq'` — matches `events.backend` in your
-  config for the default install; tests typically override to `'memory'`.
+- `backend: 'drizzle' | 'memory'` — matches `events.backend` in your config for
+  the default install; tests typically override to `'memory'`.
+- `scheduler: { driver: 'poll' | 'bullmq' }` — which clock fires recurring
+  `schedule:` events. Default `'poll'` (the in-process `setInterval`
+  materializer). `'bullmq'` runs them via a BullMQ Job Scheduler. Orthogonal to
+  `backend` — see "Scheduler driver" below.
 - `multiTenant: true` — opt-in multi-tenancy (see below).
 - `pools: ['events_change']` — restrict this process's drain loop to specific
   lanes. Typical split is one process per `events_inbound` / `events_change`
   / `events_outbound` so a slow outbound handler cannot stall change-event
   propagation. Undefined drains all pools.
-- `redisUrl` / `queuePrefix` — only for `backend: 'bullmq'` (see below).
+- `redisUrl` / `queuePrefix` — only for `scheduler: { driver: 'bullmq' }` (the
+  Redis connection the Job Scheduler uses; see below).
 
-### BullMQ backend (ADR-041)
+### Scheduler driver (ADR-041, option #2)
 
-`backend: 'bullmq'` keeps the **Postgres `domain_events` outbox** as the source
-of truth (it extends the Drizzle backend — `findById`, the read port, and
-scheduled-slot idempotency are unchanged), but replaces the polling drain with a
-**Redis-coordinated BullMQ wake queue** (plus a slow safety heartbeat). The wake
-works through a connection pooler, unlike `LISTEN/NOTIFY`, and puts events and
-jobs on one Redis. Recurring `schedule:` events run via a **BullMQ Job
-Scheduler** (reconciled on boot, orphans pruned) instead of the in-process
-`setInterval` materializer.
+The **event log always lives on the Postgres outbox** (or memory). What BullMQ
+can own is the **clock** for recurring `schedule:` events — not the event
+transport. This is selected by `events.scheduler.driver`, which is **orthogonal**
+to `events.backend` and `jobs.backend`: scheduling (when does a fact recur?) and
+event transport (how is a fact stored and signaled?) are independent concerns.
 
 ```yaml
 events:
-  backend: bullmq
+  backend: drizzle            # event TRANSPORT — drizzle | memory (never bullmq)
+  scheduler:
+    driver: bullmq            # scheduler CLOCK — poll | bullmq (default: poll)
   extensions:
     bullmq:
       redis_url: redis://localhost:6379   # or env REDIS_URL (shared with jobs by default)
-      queue_prefix: myapp                  # namespaces the events-wake/events-scheduler queues on a shared Redis
+      queue_prefix: myapp                  # namespaces the events-scheduler queue on a shared Redis
 ```
 
-Requires the `bullmq` peer dep (`npm install bullmq`). Requires Postgres (the
-outbox). Pairs naturally with `jobs.backend: bullmq` for an all-BullMQ stack on
-one Redis. `align: false` / `catchUp` schedules are not supported under bullmq
-(use the drizzle backend for those).
+- **`driver: poll`** (default) — the in-process `EventScheduler` `setInterval`
+  loop materializes due ticks into the outbox (ADR-039). No Redis required.
+- **`driver: bullmq`** — a BullMQ Job Scheduler fires the ticks (reconciled on
+  boot, orphans pruned). On each tick it emits the **same** scheduled domain
+  event into the **Drizzle outbox** (via `materializeScheduledEvent`), which then
+  drains the normal way: `pg_notify` → bridge → job. The clock moves to BullMQ;
+  the fact still lands in Postgres. Requires the `bullmq` peer dep
+  (`npm install bullmq`) and Postgres (the outbox). Pairs naturally with
+  `jobs.backend: bullmq` for an all-BullMQ stack — Drizzle owns the outbox,
+  BullMQ owns the clock and the job execution.
+
+`align: false` / `catchUp` schedules are **not supported** under
+`driver: bullmq` (it is an epoch-aligned interval clock with no missed-slot
+replay) — they fail loud at boot. Use `driver: poll` for those semantics.
+
+> There is no `events.backend: bullmq`. An earlier draft carried events over a
+> BullMQ wake queue; that was dropped (a Redis wake cannot be atomic with a
+> Postgres commit, so it was slower and weaker than `pg_notify`). The event bus
+> never runs on BullMQ.
+
+### The three dispatch speeds
+
+When you turn data into started work, there are exactly three sanctioned speeds
+(typed as `DispatchMode = 'direct' | 'eager' | 'deliberate'`). Pick by the
+**choice rule**: *if actionability is proven before the data reaches you →
+`direct` or `eager`; if you must inspect state to decide → `deliberate`.*
+
+| Speed | Call | What it does | Use when |
+|---|---|---|---|
+| **`direct`** | `IJobOrchestrator.start()` | enqueue a job, no event (1 `job_run` + enqueue, instant) | the source already proves the work is warranted (e.g. a Slack webhook payload) |
+| **`eager`** | `IEventFlow.publishAndStart()` | event + job + `bridge_delivery`, in ONE tx (recorded AND started, ~instant) | you want the fact recorded and the work started together, in the request path, durably |
+| **`deliberate`** | `IEventFlow.publish()` + bridge | event recorded; jobs spawned async by the bridge at a bounded pull rate | you must inspect state to decide; durable async fanout; the flood-resistant / storm path |
+
+A **raw `queue.add` / Postgres-free ephemeral path is not a public option** —
+every sanctioned speed writes to Postgres (a `job_run` and/or a `domain_events`
+row), which is the durable terminus that makes the system flood-resistant.
+Pushing work into a transport with no durable terminus is the failure mode the
+three-speed surface exists to prevent.
+
+(Declaring a per-trigger speed in YAML — `dispatch: eager | deliberate` on an
+event-arm trigger — is a proposed fast-follow; see `docs/specs/DISPATCH-1.md`.
+Today you pick the speed by choosing which call to make.)
 
 ### `TypedEventBus` vs. raw `EVENT_BUS`
 
