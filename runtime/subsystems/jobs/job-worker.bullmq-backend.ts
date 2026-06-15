@@ -27,7 +27,7 @@ import type { ModuleRef } from '@nestjs/core';
 // `await import('bullmq')` in `onModuleInit` (mirrors
 // the events `event-bus.bullmq-backend.ts` loader). See BULLMQ-1 §Lazy import.
 import type { Worker, Job, ConnectionOptions } from 'bullmq';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { jobRuns, type JobRunRow } from './job-orchestration.schema';
 import type { IJobOrchestrator, JobRun } from './job-orchestrator.protocol';
@@ -175,46 +175,41 @@ export class BullMQJobWorker {
       );
     }
 
-    // collisionMode:'queue' gate — serialize same-concurrency-key runs. Mirrors
-    // the Drizzle worker's release-to-pending (job-worker.ts:627-652): if
-    // another run with this key is already `running`, defer instead of running
-    // both. The orchestrator inserted the second pending row on collision
-    // (DrizzleJobOrchestrator.start `case 'queue'`); the gate is what actually
-    // serializes execution. BullMQ has no "unclaim" — `moveToDelayed` + a
-    // thrown `DelayedError` re-offers the job after a short delay WITHOUT
-    // marking it failed or consuming an attempt. The job_run row stays
-    // `pending` (we have not marked it running yet). `token` is always present
-    // for a live worker; the `&& token` guard keeps the call type-safe.
+    // collisionMode:'queue' gate + mark-running, ATOMIC. Serialize same-
+    // concurrency-key runs (the orchestrator inserted the second pending row on
+    // collision — DrizzleJobOrchestrator.start `case 'queue'`; the worker is
+    // what actually serializes execution). BullMQ claims up to `concurrency`
+    // jobs at once, so a plain "is another running?" check before marking
+    // running races: two same-key processors both read zero-running and both
+    // proceed. `claimConcurrencyLane` closes that race with a per-key Postgres
+    // advisory xact lock so the check + the `status='running'` mark happen
+    // atomically — at most one same-key run is ever `running`. When the lane is
+    // taken we DEFER: BullMQ has no "unclaim", so `moveToDelayed` + a thrown
+    // `DelayedError` re-offers the job after a short delay WITHOUT marking it
+    // failed or consuming an attempt. `token` is always present for a live
+    // worker; the `&& token` guard keeps the call type-safe.
     if (run.concurrencyKey && token) {
-      const inflight = await this.db
-        .select({ id: jobRuns.id })
-        .from(jobRuns)
-        .where(
-          and(
-            eq(jobRuns.concurrencyKey, run.concurrencyKey),
-            eq(jobRuns.status, 'running'),
-          ),
-        );
-      if (inflight.some((r) => r.id !== run.id)) {
+      const claimed = await this.claimConcurrencyLane(run, job.attemptsMade + 1);
+      if (!claimed) {
         await job.moveToDelayed(Date.now() + COLLISION_REQUEUE_DELAY_MS, token);
-        // Signal BullMQ the job was deliberately deferred (not failed).
         if (this.DelayedErrorCtor) throw new this.DelayedErrorCtor();
         // Defensive: ctor not loaded (should never happen post-onModuleInit).
         return {};
       }
+      // The run is now `running` (marked atomically inside the lane claim).
+    } else {
+      // No concurrency key → mark running directly.
+      await this.db
+        .update(jobRuns)
+        .set({
+          status: 'running',
+          claimedAt: new Date(),
+          startedAt: new Date(),
+          attempts: job.attemptsMade + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobRuns.id, run.id));
     }
-
-    // Mark running (mirrors the Drizzle worker's claim transition).
-    await this.db
-      .update(jobRuns)
-      .set({
-        status: 'running',
-        claimedAt: new Date(),
-        startedAt: new Date(),
-        attempts: job.attemptsMade + 1,
-        updatedAt: new Date(),
-      })
-      .where(eq(jobRuns.id, run.id));
 
     const HandlerClass = registryEntry.handlerClass;
     const handler = this.moduleRef.get(
@@ -284,6 +279,49 @@ export class BullMQJobWorker {
         );
       }
     }
+  }
+
+  /**
+   * Atomically claim the concurrency lane for a `collisionMode:'queue'` run.
+   * Returns `true` if this run took the lane (and was marked `running` in the
+   * same tx), `false` if another same-key run already holds it (caller defers).
+   *
+   * A per-key `pg_advisory_xact_lock` serialises concurrent same-key claims:
+   * without it, two BullMQ processors claimed at once both read "no same-key
+   * run is running" before either marks running, and both proceed (the
+   * check-then-act race that a plain SELECT-then-UPDATE cannot close). The lock
+   * is keyed by a 64-bit hash of the concurrency key (`hashtextextended`), so
+   * only same-key claims contend; it releases on commit/rollback. Hash
+   * collisions merely over-serialise two unrelated keys — never a correctness
+   * loss.
+   */
+  private async claimConcurrencyLane(
+    run: JobRunRow,
+    attempts: number,
+  ): Promise<boolean> {
+    const key = run.concurrencyKey;
+    if (!key) return true; // no key → no lane to claim (caller already guarded)
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
+      );
+      const inflight = await tx
+        .select({ id: jobRuns.id })
+        .from(jobRuns)
+        .where(and(eq(jobRuns.concurrencyKey, key), eq(jobRuns.status, 'running')));
+      if (inflight.some((r) => r.id !== run.id)) return false;
+      await tx
+        .update(jobRuns)
+        .set({
+          status: 'running',
+          claimedAt: new Date(),
+          startedAt: new Date(),
+          attempts,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobRuns.id, run.id));
+      return true;
+    });
   }
 
   // ── ctx.step / ctx.spawnChild (mirror JobWorker) ──────────────────────────

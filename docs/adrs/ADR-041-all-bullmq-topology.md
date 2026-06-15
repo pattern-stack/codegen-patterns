@@ -94,7 +94,7 @@ Three core `StartOptions` fields are currently dropped by the BullMQ jobs backen
 |---|---|---|
 | `runAt` | one-shot future timestamp on the `job_run` | `dispatch` (`job-orchestrator.bullmq-backend.ts:220`) builds `jobOpts` from retry + dedupe only (`:225`) and never reads `run.runAt`; map to BullMQ `delay = max(0, runAt − now)` |
 | `priority` | claim-ordering priority | silently dropped; set the BullMQ `priority` job opt from `StartOptions.priority` |
-| `collisionMode: 'queue'` | the Drizzle worker re-queues a claimed run when another run with the same `concurrencyKey` is active (`job-worker.ts:629-652`) | `BullMQJobWorker.process` has no equivalent gate; implement a Postgres-checked release/re-enqueue gate so the two runs do not execute concurrently |
+| `collisionMode: 'queue'` | the Drizzle worker re-queues a claimed run when another run with the same `concurrencyKey` is active (`job-worker.ts:629-652`) | `BullMQJobWorker.process` defers via `moveToDelayed` + `DelayedError` (re-offer without consuming an attempt). **Discovered (BULLMQ-VERIFY):** BullMQ claims up to `concurrency` jobs at once, so a plain SELECT-then-mark gate races — two same-key processors both read "none running" and both proceed. The check + the `status='running'` mark must therefore be ATOMIC: `claimConcurrencyLane` wraps them in a tx behind a per-key `pg_advisory_xact_lock(hashtextextended(key))`, so at most one same-key run is ever `running`. (Strictly more robust than the Drizzle gate, which marks-running-then-releases-on-conflict and is only exercised sequentially.) |
 
 Until all three are broker-verified, flipping a consumer to `jobs.backend: bullmq` silently mis-behaves for scheduled/delayed, prioritized, and serialized jobs.
 
