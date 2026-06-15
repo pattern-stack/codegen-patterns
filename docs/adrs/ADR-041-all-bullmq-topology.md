@@ -78,13 +78,13 @@ Routing the BullMQ Job Scheduler back through the outbox — rather than firing 
 
 ### 5. Bridge stays the seam — swap the wake, not the ledger
 
-The bridge remains the jobs worker draining the reserved `events_*` pools (ADR-023 Decision 2). The only change for an all-BullMQ stack: the wrapper `job_run` insert gains an **enqueue callback** (orchestrator dispatch) rather than relying on a poll to claim the wrapper. Everything else is untouched:
+The bridge remains the jobs worker draining the reserved `events_*` pools (ADR-023 Decision 2). The wrapper `job_run` insert stays exactly as it is — a raw, transactional insert (`BridgeOutboxDrainHook`, for FK-ordering + dedup correctness). What changes for an all-BullMQ stack is purely **how that committed wrapper row reaches a worker**: under Drizzle a polling worker claims it; under BullMQ there is no poll, so the BullMQ jobs side runs a **reserved-pool enqueue relay** (`BullMQJobOrchestrator.reconcilePending(pools)`, driven by a ~1s timer + a boot pass in `JobWorkerModule`). The relay re-`dispatch`es every pending run in the reserved pools it consumes; `dispatch` is idempotent (the wrapper's `jobId` is its `run.id`, so a re-add of an already-queued/in-flight job is a BullMQ no-op, and a claimed run is no longer `pending`). This is the **outbox-relay half of the transactional-outbox pattern** — the wrapper rows are an outbox BullMQ needs relayed, exactly as the events drain relays `domain_events` — which is why it is correct for it to poll the (narrow, framework-only) reserved pools and why it is self-healing (a wrapper whose enqueue was lost to a Redis hiccup is re-dispatched on the next tick). It is scoped to reserved `events_*` pools only: regular runs are dispatched promptly by `start()`, so there is no race with a freshly-started regular run. Everything else is untouched:
 
 - the `bridge_delivery` `UNIQUE(event_id, trigger_id)` ledger (ADR-023 §Schema);
 - the per-event transaction (ADR-023 §"Outbox drain atomicity");
 - Case-B pre-write dedup (the facade pre-writes `bridge_delivery(status=delivered)`, ADR-023 §"`publishAndStart` + existing `triggers:` collision").
 
-This honors ADR-023's exactly-once invariant and avoids re-deriving idempotency from BullMQ `jobId` (which covers job-side dedup only, not the event→delivery pair).
+This honors ADR-023's exactly-once invariant and avoids re-deriving idempotency from BullMQ `jobId` (which covers job-side dedup only, not the event→delivery pair). (An earlier draft proposed a synchronous "enqueue callback" on the wrapper insert; that was rejected because a Redis enqueue cannot be made atomic with the Postgres commit — a pre-commit enqueue races the wrapper's own visibility, and a post-commit enqueue still needs a backstop for a lost enqueue. The reserved-pool relay IS that backstop and the primary path in one mechanism.)
 
 ### 6. Jobs core-contract leaks are bugs, not extensions
 

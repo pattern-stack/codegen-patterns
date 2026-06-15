@@ -25,7 +25,7 @@
  */
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, lte } from 'drizzle-orm';
 // `bullmq` is an OPTIONAL peer dependency. Only TYPE imports here — types are
 // erased at compile time and never resolve `'bullmq'` at runtime, so a
 // `drizzle`-only consumer who didn't install bullmq can still load this file
@@ -404,6 +404,52 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
       .where(eq(jobRuns.id, id))
       .limit(1);
     return (row as JobRun) ?? null;
+  }
+
+  /**
+   * BRIDGE-1 — reserved-pool enqueue relay. The event→job bridge inserts
+   * wrapper `job_run` rows DIRECTLY (raw insert in `BridgeOutboxDrainHook`, for
+   * FK + dedup correctness) rather than via `start()`, so they are never
+   * dispatched to BullMQ by the normal start→dispatch path. Under the Drizzle
+   * backend a polling worker claims them; under BullMQ there is no poll. This
+   * relay closes the seam: re-dispatch every pending run in the given (reserved)
+   * pools. `dispatch` is idempotent — the wrapper's `jobId` is its `run.id`
+   * (colon-free UUID), so a re-add for an already-queued/in-flight job is a
+   * BullMQ no-op; a run that has been claimed is no longer `pending` and is
+   * skipped. Safe to run on a short interval as the bridge's wake, and
+   * self-healing: a wrapper whose enqueue was lost (Redis hiccup) is
+   * re-dispatched on the next tick. (This is the outbox-relay half of the
+   * transactional-outbox pattern — the wrapper rows are an outbox that BullMQ
+   * needs relayed, exactly like the events drain relays domain_events.)
+   *
+   * Scoped to RESERVED pools only: regular runs are dispatched promptly by
+   * `start()`, and reserved `events_*` pools carry only framework bridge
+   * wrappers, so there is no race with a freshly-started regular run.
+   */
+  async reconcilePending(pools: string[]): Promise<void> {
+    if (pools.length === 0) return;
+    await this.loadBullMq();
+    const rows = await this.bullDb
+      .select()
+      .from(jobRuns)
+      .where(
+        and(
+          eq(jobRuns.status, 'pending'),
+          inArray(jobRuns.pool, pools),
+          lte(jobRuns.runAt, new Date()),
+        ),
+      );
+    for (const row of rows) {
+      const run = row as JobRun;
+      try {
+        await this.dispatch(run, run.jobType);
+      } catch (err) {
+        this.bullLogger.warn(
+          `reconcilePending: dispatch of run ${run.id} (pool=${run.pool}) ` +
+            `failed: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   /** Close all open queue + flow connections. Called on module destroy. */
