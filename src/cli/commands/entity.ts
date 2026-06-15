@@ -57,6 +57,13 @@ import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
 import { resolveEventsDir } from '../shared/events-path.js';
+import { resolveJobsDir } from '../shared/jobs-path.js';
+import { loadJobs } from '../../parser/load-jobs.js';
+import {
+	buildJobBridgeTriggers,
+	buildJobScheduledEvents,
+} from '../shared/job-emission-generator.js';
+import { emitJobHandlers } from '../shared/emit-jobs.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -484,6 +491,32 @@ export class EntityNewCommand extends Command {
 			}
 		};
 
+		// Job definitions (RFC-0005 #7) — loaded ONCE, early, so their derived
+		// artifacts feed the event + bridge codegen in the SAME pass: each
+		// `schedule` arm desugars to a job-private scheduled event merged into the
+		// event registry, and every trigger becomes a declarative bridge mapping.
+		// The handler files themselves are emitted later (post-assembly). Because
+		// the bridge/schedule contributions come from the LOADED defs (not the
+		// emitted files), there is no two-pass ordering hazard. Opt-in: no
+		// `definitions/jobs/` ⇒ empty (warn-only), exactly like providers.
+		const jobsDir = resolveJobsDir(ctx);
+		const jobLoad = loadJobs(jobsDir);
+		if (!isJsonMode()) {
+			for (const issue of jobLoad.issues) {
+				if (issue.severity === 'error') {
+					printError(
+						`jobs: ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
+					);
+				}
+			}
+		}
+		const jobScheduledEvents = jobLoad.jobs.flatMap((j) =>
+			buildJobScheduledEvents(j),
+		);
+		const jobBridgeTriggers = jobLoad.jobs.flatMap((j) =>
+			buildJobBridgeTriggers(j, path.join(jobsDir, `${j.type}.yaml`)),
+		);
+
 		if (this.dryRun) {
 			const barrelPlan = await regenerateBarrels({
 				ctx,
@@ -505,6 +538,7 @@ export class EntityNewCommand extends Command {
 				eventsDir,
 				outputDir: eventCodegenOutputDir,
 				mode: runtimeMode,
+				extraSugarEvents: jobScheduledEvents,
 				dryRun: true,
 			});
 
@@ -514,6 +548,7 @@ export class EntityNewCommand extends Command {
 				outputDir: bridgeRegistryOutputDir,
 				mode: runtimeMode,
 				bridgeInstalled: bridgeInstalledForRegistry,
+				extraTriggers: jobBridgeTriggers,
 				dryRun: true,
 			});
 
@@ -720,6 +755,7 @@ export class EntityNewCommand extends Command {
 				eventsDir,
 				outputDir: eventCodegenOutputDir,
 				mode: runtimeMode,
+				extraSugarEvents: jobScheduledEvents,
 			});
 			if (!isJsonMode()) {
 				for (const issue of eventCodegenResult.issues) {
@@ -748,6 +784,7 @@ export class EntityNewCommand extends Command {
 				outputDir: bridgeRegistryOutputDir,
 				mode: runtimeMode,
 				bridgeInstalled: bridgeInstalledForRegistry,
+				extraTriggers: jobBridgeTriggers,
 			});
 			if (bridgeRegistryResult.skipped && !isJsonMode()) {
 				printInfo(
@@ -949,6 +986,35 @@ export class EntityNewCommand extends Command {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (!isJsonMode()) {
 				printWarning(`adapter codegen failed — ${msg}`);
+			}
+		}
+
+		// Jobs handler emission (RFC-0005 #7). Runs LAST among the integration
+		// steps: the per-arm `runArm*` seam wires the assembly's
+		// ExecuteIntegrationUseCase, so the assemblies must exist first. The
+		// scheduled-event + bridge-trigger contributions already rode the event /
+		// bridge codegen above (from the early `jobLoad`); this step only writes the
+		// `@generated` base (reflow) + emit-once subclass per job into
+		// `<backend_src>/jobs/`. Same warn-but-don't-fail contract as siblings.
+		try {
+			if (jobLoad.jobs.length > 0) {
+				const jobEmit = emitJobHandlers({
+					jobs: jobLoad.jobs,
+					jobsHandlersDir: bridgeHandlersDir,
+					mode: runtimeMode,
+				});
+				if (!isJsonMode()) {
+					printInfo(
+						`jobs: emitted ${jobEmit.basesWritten.length} handler base(s); ` +
+							`${jobEmit.scaffoldsWritten.length} scaffold(s) written, ` +
+							`${jobEmit.scaffoldsSkipped.length} kept`,
+					);
+				}
+			}
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!isJsonMode()) {
+				printWarning(`jobs codegen failed — ${msg}`);
 			}
 		}
 
