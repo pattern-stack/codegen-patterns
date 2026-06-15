@@ -179,6 +179,42 @@ export type EventSchedule = z.infer<typeof ScheduleSchema>;
 
 const SNAKE_CASE_RE = /^[a-z][a-z0-9_]*$/;
 
+/**
+ * Trigger-catalog metadata — the workflow-authoring projection.
+ *
+ * When an event declares `trigger:`, it is a SELECTABLE workflow trigger: a
+ * domain change-fact a directive can fire on (the object is now in our system),
+ * as opposed to an inbound transport event whose only job is to sync the DB.
+ * Presence is the opt-in — absence means "not a user-facing trigger" even for a
+ * `direction: change` event (e.g. metadata-churn edits). Consumers PROJECT their
+ * trigger catalog from `eventRegistry[type].trigger` instead of hand-maintaining
+ * a parallel list, so the catalog can never drift from the event definitions.
+ *
+ *   - `surface`     — UI grouping (the domain the trigger belongs to, e.g. 'Mail').
+ *   - `label`       — human label (defaults to a humanised `type` at the consumer).
+ *   - `description` — short UI copy for the picker.
+ *   - `fields`      — payload paths an author may filter on (snake_case).
+ */
+const EventTriggerSchema = z
+	.object({
+		surface: z.string().min(1),
+		label: z.string().optional(),
+		description: z.string().optional(),
+		fields: z
+			.array(
+				z
+					.string()
+					.regex(
+						SNAKE_CASE_RE,
+						"trigger.fields entries must be snake_case payload paths",
+					),
+			)
+			.default([]),
+	})
+	.strict();
+
+export type EventTrigger = z.infer<typeof EventTriggerSchema>;
+
 const EventDefinitionSchemaCore = z
 	.object({
 		type: z
@@ -210,6 +246,12 @@ const EventDefinitionSchemaCore = z
 		schedule: ScheduleSchema.optional(),
 		version: z.number().int().min(1).optional().default(1),
 		description: z.string().optional(),
+		// Trigger-catalog projection (workflow authoring). Present ⇒ this event is
+		// a selectable workflow trigger; consumers build the catalog from it. No
+		// refinement ties it to `direction` — selectability is an explicit opt-in,
+		// deliberately decoupled from transport (a change-fact may still be a
+		// non-trigger; an inbound event could opt in if a consumer hydrates it).
+		trigger: EventTriggerSchema.optional(),
 	})
 	.strict();
 
