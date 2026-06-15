@@ -78,9 +78,9 @@ export interface IEventBus {
    * Backends:
    *   - `MemoryEventBus` — searches its in-memory `publishedEvents` log.
    *   - `DrizzleEventBus` — `SELECT … FROM domain_events WHERE id = ? LIMIT 1`.
-   *   - `RedisEventBus` — Redis Pub/Sub does not retain history; returns
-   *     `null` (and logs a one-time warning at first call). Bridge usage
-   *     of Redis backend is unsupported.
+   *   - `BullMQEventBus` — inherits the Drizzle outbox read (it dispatches over
+   *     the same `domain_events` store; ADR-041), so the bridge is fully
+   *     supported on the bullmq backend.
    */
   findById(eventId: string): Promise<DomainEvent | null>;
 

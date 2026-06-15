@@ -58,11 +58,10 @@ export type {
 export { MemoryEventBus } from './event-bus.memory-backend';
 export { DrizzleEventBus } from './event-bus.drizzle-backend';
 // #6 — backend-specific implementation classes are NOT re-exported here.
-// `RedisEventBus` is only vendored when the consumer installs with
-// `--backend redis`; surfacing it from this barrel would force the consumer's
-// tsc to resolve `./event-bus.redis-backend` even on a drizzle/memory install
-// (the file is filtered out → TS2307). Consumers who select redis import the
-// class directly from `./event-bus.redis-backend` if they need it at all —
-// `EventsModule.forRoot({ backend: 'redis' })` lazy-loads it internally.
+// `BullMQEventBus` (ADR-041) is only vendored when the consumer installs with
+// `--backend bullmq`; surfacing it from this barrel would force the consumer's
+// tsc to resolve `./event-bus.bullmq-backend` (+ the optional `bullmq` peer dep)
+// even on a drizzle/memory install (the file is filtered out → TS2307).
+// `EventsModule.forRoot({ backend: 'bullmq' })` lazy-loads it internally.
 export { domainEvents } from './domain-events.schema';
 export type { DomainEventRecord } from './domain-events.schema';

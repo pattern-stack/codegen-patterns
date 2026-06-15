@@ -25,9 +25,9 @@ import type { ModuleRef } from '@nestjs/core';
 // `Job`, `ConnectionOptions` are erased at compile time and never resolve
 // `'bullmq'` at runtime. The `Worker` VALUE constructor is loaded lazily via
 // `await import('bullmq')` in `onModuleInit` (mirrors
-// `event-bus.redis-backend.ts:createRedisClient`). See BULLMQ-1 §Lazy import.
+// the events `event-bus.bullmq-backend.ts` loader). See BULLMQ-1 §Lazy import.
 import type { Worker, Job, ConnectionOptions } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { jobRuns, type JobRunRow } from './job-orchestration.schema';
 import type { IJobOrchestrator, JobRun } from './job-orchestrator.protocol';
@@ -45,6 +45,14 @@ interface BullJobPayload {
   type: string;
   input: unknown;
 }
+
+/**
+ * How long to delay a run that lost the `collisionMode:'queue'` gate before
+ * BullMQ re-offers it. Mirrors the Drizzle worker's release-to-pending +
+ * re-claim-on-next-poll cadence (job-worker.ts:627-652); the active same-key
+ * run has usually transitioned by the time the job comes back.
+ */
+const COLLISION_REQUEUE_DELAY_MS = 1_000;
 
 function serialiseError(err: unknown, attempt: number, retryable: boolean) {
   const e = err as { message?: string; stack?: string } | undefined;
@@ -73,6 +81,13 @@ export interface BullMQJobWorkerOptions {
 export class BullMQJobWorker {
   private readonly logger = new Logger(BullMQJobWorker.name);
   private worker: Worker | null = null;
+  /**
+   * Cached `bullmq` `DelayedError` constructor. Thrown (after `moveToDelayed`)
+   * to tell BullMQ a job was deliberately deferred by the `collisionMode:
+   * 'queue'` gate — NOT failed, and NOT counting against `attempts`. Loaded
+   * lazily in `onModuleInit` alongside `Worker` (optional peer dep).
+   */
+  private DelayedErrorCtor: (new () => Error) | null = null;
 
   constructor(
     private readonly db: DrizzleClient,
@@ -87,6 +102,7 @@ export class BullMQJobWorker {
     try {
       const mod = await import('bullmq');
       WorkerCtor = mod.Worker;
+      this.DelayedErrorCtor = mod.DelayedError as unknown as new () => Error;
     } catch {
       throw new Error(
         'BullMQ backend requires the "bullmq" package. Install it with: npm install bullmq',
@@ -96,8 +112,9 @@ export class BullMQJobWorker {
       this.options.queueName,
       // #6 / noImplicitAny — explicit annotations so the file stays
       // strict-clean even when consumers compile under a stricter tsconfig
-      // than the one used to type-check the runtime tree.
-      (job: Job<BullJobPayload>) => this.process(job),
+      // than the one used to type-check the runtime tree. `token` is the
+      // BullMQ lock token, needed by `moveToDelayed` in the collision gate.
+      (job: Job<BullJobPayload>, token?: string) => this.process(job, token),
       {
         connection: this.options.connection,
         concurrency: this.options.concurrency,
@@ -130,7 +147,7 @@ export class BullMQJobWorker {
    * the job return value AND written to `job_run.output`). Throws on handler
    * failure so BullMQ applies the retry policy.
    */
-  private async process(job: Job<BullJobPayload>): Promise<unknown> {
+  private async process(job: Job<BullJobPayload>, token?: string): Promise<unknown> {
     const { runId } = job.data;
     const [row] = await this.db
       .select()
@@ -156,6 +173,35 @@ export class BullMQJobWorker {
       throw new Error(
         `No handler registered for jobType='${run.jobType}' (run ${run.id})`,
       );
+    }
+
+    // collisionMode:'queue' gate — serialize same-concurrency-key runs. Mirrors
+    // the Drizzle worker's release-to-pending (job-worker.ts:627-652): if
+    // another run with this key is already `running`, defer instead of running
+    // both. The orchestrator inserted the second pending row on collision
+    // (DrizzleJobOrchestrator.start `case 'queue'`); the gate is what actually
+    // serializes execution. BullMQ has no "unclaim" — `moveToDelayed` + a
+    // thrown `DelayedError` re-offers the job after a short delay WITHOUT
+    // marking it failed or consuming an attempt. The job_run row stays
+    // `pending` (we have not marked it running yet). `token` is always present
+    // for a live worker; the `&& token` guard keeps the call type-safe.
+    if (run.concurrencyKey && token) {
+      const inflight = await this.db
+        .select({ id: jobRuns.id })
+        .from(jobRuns)
+        .where(
+          and(
+            eq(jobRuns.concurrencyKey, run.concurrencyKey),
+            eq(jobRuns.status, 'running'),
+          ),
+        );
+      if (inflight.some((r) => r.id !== run.id)) {
+        await job.moveToDelayed(Date.now() + COLLISION_REQUEUE_DELAY_MS, token);
+        // Signal BullMQ the job was deliberately deferred (not failed).
+        if (this.DelayedErrorCtor) throw new this.DelayedErrorCtor();
+        // Defensive: ctor not loaded (should never happen post-onModuleInit).
+        return {};
+      }
     }
 
     // Mark running (mirrors the Drizzle worker's claim transition).

@@ -353,15 +353,20 @@ describe('EventsModule.forRoot({ backend: "drizzle" })', () => {
   });
 });
 
-describe('EventsModule.forRoot({ backend: "redis" })', () => {
-  it('exposes TYPED_EVENT_BUS and EVENTS_MULTI_TENANT alongside EVENT_BUS', () => {
+describe('EventsModule.forRoot({ backend: "bullmq" })', () => {
+  it('exposes EVENT_READ_PORT, TYPED_EVENT_BUS, and EVENTS_MULTI_TENANT alongside EVENT_BUS', () => {
+    // ADR-041: the bullmq events backend dispatches over the Postgres outbox,
+    // so it DOES provide a read port (unlike the deleted redis pub/sub backend).
+    // forRoot only builds the DynamicModule (lazy useFactory) — no Redis
+    // connection is opened here.
     const dyn = EventsModule.forRoot({
-      backend: 'redis',
+      backend: 'bullmq',
       redisUrl: 'redis://localhost:6379',
       multiTenant: true,
     });
     expect(dyn.global).toBe(true);
     expect(dyn.exports).toContain(EVENT_BUS);
+    expect(dyn.exports).toContain(EVENT_READ_PORT);
     expect(dyn.exports).toContain(TYPED_EVENT_BUS);
     expect(dyn.exports).toContain(EVENTS_MULTI_TENANT);
   });
@@ -478,20 +483,30 @@ describe('EventsModule.forRootAsync — DI for backend constructor args (#108)',
     ).rejects.toThrow(/DRIZZLE provider is not available/);
   });
 
-  it('redis backend receives the resolved REDIS_URL via DI (no bare construction)', async () => {
-    // We don't want to actually connect to Redis; assert the instance was
-    // constructed with the expected injected URL. Constructor alone does
-    // not open a connection — that happens in onModuleInit, which
-    // compile() does not invoke.
-    const { RedisEventBus } = await import(
-      '../../../../runtime/subsystems/events/event-bus.redis-backend'
+  it('bullmq backend receives the resolved connection + DRIZZLE via DI (no bare construction)', async () => {
+    // ADR-041: the bullmq events backend extends DrizzleEventBus (Postgres
+    // outbox = source of truth), so it needs DRIZZLE just like drizzle. We
+    // don't connect to Redis; assert the instance was constructed with the
+    // resolved connection. The constructor alone opens no connection — that
+    // happens in onModuleInit, which compile() does not invoke.
+    const { BullMQEventBus } = await import(
+      '../../../../runtime/subsystems/events/event-bus.bullmq-backend'
     );
+    const { db } = makeMockDb();
+
+    @Global()
+    @Module({
+      providers: [{ provide: DRIZZLE, useValue: db }],
+      exports: [DRIZZLE],
+    })
+    class FakeDrizzleModule {}
 
     const moduleRef = await Test.createTestingModule({
       imports: [
+        FakeDrizzleModule,
         EventsModule.forRootAsync({
           useFactory: () => ({
-            backend: 'redis',
+            backend: 'bullmq',
             redisUrl: 'redis://test-host:6379/0',
           }),
         }),
@@ -499,14 +514,25 @@ describe('EventsModule.forRootAsync — DI for backend constructor args (#108)',
     }).compile();
 
     const bus = moduleRef.get(EVENT_BUS);
-    expect(bus).toBeInstanceOf(RedisEventBus);
-    // The constructor stores the URL on a private field; cast to access
-    // for the assertion. The important property is that the URL arrived —
-    // pre-fix it would have been `undefined`.
-    expect((bus as unknown as { redisUrl: string }).redisUrl).toBe(
+    expect(bus).toBeInstanceOf(BullMQEventBus);
+    // The resolved connection is stored on a private field; cast to assert the
+    // URL arrived (pre-fix the redis path would bare-construct with undefined).
+    expect((bus as unknown as { conn: { url: string } }).conn.url).toBe(
       'redis://test-host:6379/0',
     );
 
     await moduleRef.close();
+  });
+
+  it('throws a clear error when the bullmq backend is selected but DRIZZLE is not provided', async () => {
+    await expect(
+      Test.createTestingModule({
+        imports: [
+          EventsModule.forRootAsync({
+            useFactory: () => ({ backend: 'bullmq' }),
+          }),
+        ],
+      }).compile(),
+    ).rejects.toThrow(/DRIZZLE provider is not available/);
   });
 });

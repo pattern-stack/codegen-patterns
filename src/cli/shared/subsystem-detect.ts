@@ -71,14 +71,19 @@ export interface SubsystemDescriptor {
 export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	{
 		name: 'events',
+		// ADR-041: 'bullmq' = durable dispatch over the Postgres outbox (NOT
+		// Pub/Sub). The old fire-and-forget RedisEventBus was deleted (it was
+		// un-installable here, non-transactional, bridge/scheduler-incompatible).
 		description: 'Domain event bus (transactional outbox)',
-		backends: ['drizzle', 'memory'],
+		backends: ['drizzle', 'memory', 'bullmq'],
 		defaultBackend: 'drizzle',
 	},
 	{
 		name: 'jobs',
+		// BULLMQ-1/ADR-041: the BullMQ orchestrator + worker ship in runtime/;
+		// this gate is what makes `--backend bullmq` installable via the CLI.
 		description: 'Background job queue',
-		backends: ['drizzle', 'memory'],
+		backends: ['drizzle', 'memory', 'bullmq'],
 		defaultBackend: 'drizzle',
 	},
 	{

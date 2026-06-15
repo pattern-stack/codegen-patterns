@@ -268,13 +268,14 @@ export function backendFileFilter(
 
 		// #6: alternate-backend pruning. Each subsystem ships every backend
 		// variant in `runtime/subsystems/<name>/`, but vendoring the BACKEND
-		// IMPLEMENTATION files into a consumer that picked another backend
-		// drags peer deps (`ioredis`, `bullmq`) the consumer never installs.
-		// Skip backend implementation files for backends that aren't the
-		// selected one, regardless of which subsystem we're in:
+		// IMPLEMENTATION file into a consumer that picked another backend drags
+		// the optional `bullmq`/`ioredis` peer deps the consumer never installs.
+		// Skip the bullmq backend implementation files unless bullmq is the
+		// selected backend, regardless of which subsystem we're in:
 		//
-		//   - `*.redis-backend.ts`  — only vendor when backend === 'redis'
 		//   - `*.bullmq-backend.ts` — only vendor when backend === 'bullmq'
+		//     (both `runtime/subsystems/jobs/job-{orchestrator,worker}.bullmq-backend.ts`
+		//     and `runtime/subsystems/events/event-bus.bullmq-backend.ts`).
 		//
 		// `bullmq.config.ts` (tokens + helpers) is intentionally NOT pruned
 		// — `jobs-domain.module.ts` and `job-worker.module.ts` static-import
@@ -286,8 +287,9 @@ export function backendFileFilter(
 		// Memory backend gets the same pruning PLUS its existing skip of
 		// `.drizzle-backend.ts` + `.schema.ts`. Drizzle / local / unknown
 		// vendor everything EXCEPT the alternate-backend implementation
-		// files.
-		if (file.endsWith('.redis-backend.ts') && backend !== 'redis') return false;
+		// files. (The events `bullmq` backend extends DrizzleEventBus, so a
+		// bullmq install still vendors `.drizzle-backend.ts` + `.schema.ts`
+		// via the drizzle/unknown fall-through below — correct.)
 		if (file.endsWith('.bullmq-backend.ts') && backend !== 'bullmq') return false;
 
 		if (backend === 'memory') {

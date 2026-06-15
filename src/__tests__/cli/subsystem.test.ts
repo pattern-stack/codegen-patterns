@@ -216,7 +216,7 @@ describe('subsystem — install (dry-run)', () => {
 // they import peer deps the consumer never installed (ioredis, bullmq) and
 // would otherwise drag those into the consumer's tsc graph.
 describe('subsystem — install backend pruning (#6)', () => {
-	test('drizzle events install does NOT vendor event-bus.redis-backend.ts', async () => {
+	test('drizzle events install does NOT vendor event-bus.bullmq-backend.ts', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -228,8 +228,24 @@ describe('subsystem — install backend pruning (#6)', () => {
 		// Drizzle + memory backends ship.
 		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(true);
 		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
-		// Redis backend is filtered out.
-		expect(fs.existsSync(path.join(installDir, 'event-bus.redis-backend.ts'))).toBe(false);
+		// BullMQ backend (optional `bullmq` peer dep) is filtered out (ADR-041).
+		expect(fs.existsSync(path.join(installDir, 'event-bus.bullmq-backend.ts'))).toBe(false);
+	});
+
+	test('bullmq events install vendors the bullmq backend + the drizzle outbox it extends', async () => {
+		const root = mkTempProject();
+		tempDirs.push(root);
+		const cli = buildCli();
+		const { result } = await capture(() =>
+			cli.run(['subsystem', 'install', 'events', '--backend', 'bullmq', '--force', '--cwd', root]),
+		);
+		expect(result).toBe(0);
+		const installDir = path.join(root, 'src/shared/subsystems/events');
+		// The bullmq backend ships, AND the drizzle backend it extends (the
+		// Postgres outbox = source of truth, ADR-041).
+		expect(fs.existsSync(path.join(installDir, 'event-bus.bullmq-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'event-bus.drizzle-backend.ts'))).toBe(true);
+		expect(fs.existsSync(path.join(installDir, 'event-bus.memory-backend.ts'))).toBe(true);
 	});
 
 	test('drizzle jobs install does NOT vendor bullmq backend implementation files', async () => {

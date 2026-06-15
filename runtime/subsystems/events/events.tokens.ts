@@ -61,15 +61,21 @@ export const TYPED_EVENT_BUS = 'TYPED_EVENT_BUS' as const;
 export const EVENTS_MULTI_TENANT = 'EVENTS_MULTI_TENANT' as const;
 
 /**
- * Injection token for the Redis connection URL used by RedisEventBus.
- * Provided automatically by EventsModule.forRoot({ backend: 'redis' }).
+ * Injection token for the resolved BullMQ/ioredis `ConnectionOptions` used by
+ * `BullMQEventBus` (ADR-041). Provided automatically by
+ * `EventsModule.forRoot({ backend: 'bullmq' })` as `{ url }`, resolved from
+ * `options.redisUrl` → `process.env.REDIS_URL` → `redis://localhost:6379`.
  *
- * ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) so it matches by value
- * across runtime copies (the sibling string tokens above are already value-stable).
- * Note the jobs subsystem defines its own `REDIS_URL`-equivalent; this is the
- * events one.
+ * Shares the same `REDIS_URL` env default as the jobs subsystem's
+ * `BULLMQ_CONNECTION`, so jobs + events compose on one Redis out of the box
+ * (ADR-041 §"compose on one Redis").
+ *
+ * ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) so it matches by
+ * value across runtime copies.
  */
-export const REDIS_URL = Symbol.for(tokenKey('events', 'redis-url'));
+export const EVENTS_BULLMQ_CONNECTION = Symbol.for(
+  tokenKey('events', 'bullmq-connection'),
+);
 
 /**
  * Injection token for the resolved `EventsModuleOptions` object.

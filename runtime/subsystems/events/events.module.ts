@@ -37,11 +37,11 @@
  *
  * Async configuration (`forRootAsync`):
  * The async factory returns `EventsModuleOptions`; the EVENT_BUS provider
- * then receives its backend dependencies — DRIZZLE for the drizzle
- * backend, REDIS_URL for the redis backend, the resolved options for the
- * memory backend — through a proper `useFactory` so Nest DI wires them
- * correctly. Earlier revisions hand-constructed backends with
- * `new Class()` which silently left `db` / `redisUrl` undefined
+ * then receives its backend dependencies — DRIZZLE for the drizzle and
+ * bullmq backends, EVENTS_BULLMQ_CONNECTION for the bullmq backend, the
+ * resolved options for the memory backend — through a proper `useFactory`
+ * so Nest DI wires them correctly. Earlier revisions hand-constructed
+ * backends with `new Class()` which silently left `db` undefined
  * (issue #108).
  */
 import {
@@ -59,12 +59,13 @@ import {
 import {
   EVENT_BUS,
   EVENT_READ_PORT,
+  EVENTS_BULLMQ_CONNECTION,
   EVENTS_MODULE_OPTIONS,
   EVENTS_MULTI_TENANT,
-  REDIS_URL,
   TYPED_EVENT_BUS,
 } from './events.tokens';
 import { DRIZZLE } from '../../constants/tokens';
+import { BRIDGE_OUTBOX_DRAIN_HOOK } from '../bridge/bridge.tokens';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DrizzleEventBus } from './event-bus.drizzle-backend';
 import { MemoryEventBus } from './event-bus.memory-backend';
@@ -74,35 +75,73 @@ import {
   scheduledEventsFromRegistry,
   type RegistrySchedule,
 } from './event-scheduler';
-// #6 — `RedisEventBus` is lazy-loaded only when `backend: 'redis'` is selected.
-// The file is filtered out of the vendor set for non-redis installs (see
-// `backendFileFilter` in src/cli/commands/subsystem.ts); the dynamic-string
-// import below makes TS treat the specifier as `any` so the consumer's tsc
-// never tries to resolve the absent file.
 import { TypedEventBus } from './generated/bus';
 
 /**
- * Lazy-load the Redis backend. Routed through a non-literal specifier so
- * the consumer's `tsc` doesn't resolve `./event-bus.redis-backend` at type
- * check time — important because that file is filtered out of drizzle/
- * memory installs (#6).
+ * BullMQ/ioredis connection shape passed to `BullMQEventBus` (ADR-041). A
+ * local structural alias — this module ships into EVERY events install
+ * (drizzle/memory included) and must NOT need the `bullmq` peer dep resolved
+ * by the consumer's tsc. The backend internally treats it as the real
+ * `ConnectionOptions`.
  */
-async function loadRedisEventBus(): Promise<new (url: string) => object> {
-  // Non-literal specifier — TS gives this an `any` module type, sidestepping
-  // resolution of a file that may not be vendored.
-  const specifier = './event-bus.redis-backend';
-  const mod = (await import(specifier)) as { RedisEventBus: new (url: string) => object };
-  return mod.RedisEventBus;
+type EventsBullMqConnection = { url?: string; [key: string]: unknown };
+
+/**
+ * Lazy-load the BullMQ backend. Routed through a non-literal specifier so the
+ * consumer's `tsc` doesn't resolve `./event-bus.bullmq-backend` at type-check
+ * time — that file is filtered out of drizzle/memory installs (#6,
+ * `backendFileFilter`) and carries the optional `bullmq` peer-dep type surface.
+ * Mirrors the jobs orchestrator's lazy load.
+ */
+async function loadBullMqEventBus(): Promise<
+  new (
+    db: DrizzleClient,
+    connection: EventsBullMqConnection,
+    opts?: EventsModuleOptions,
+    bridgeHook?: unknown,
+  ) => object
+> {
+  const specifier = './event-bus.bullmq-backend';
+  const mod = (await import(specifier)) as {
+    BullMQEventBus: new (
+      db: DrizzleClient,
+      connection: EventsBullMqConnection,
+      opts?: EventsModuleOptions,
+      bridgeHook?: unknown,
+    ) => object;
+  };
+  return mod.BullMQEventBus;
+}
+
+/**
+ * Resolve the BullMQ connection: explicit `options.redisUrl` → `REDIS_URL`
+ * env → `redis://localhost:6379`. Same precedence as the jobs subsystem's
+ * `resolveBullMqConfig`, so jobs + events share one Redis by default.
+ */
+function resolveEventsBullMqConnection(
+  options: EventsModuleOptions,
+): EventsBullMqConnection {
+  return {
+    url: options.redisUrl ?? process.env['REDIS_URL'] ?? 'redis://localhost:6379',
+  };
 }
 
 export interface EventsModuleOptions {
-  backend: 'drizzle' | 'memory' | 'redis';
+  backend: 'drizzle' | 'memory' | 'bullmq';
   /**
-   * Redis connection URL used when `backend` is `'redis'`.
-   * Falls back to the REDIS_URL environment variable, then
-   * `redis://localhost:6379` if neither is set.
+   * Redis connection URL used when `backend` is `'bullmq'` (ADR-041 — durable
+   * dispatch over the Postgres outbox via a BullMQ wake queue). Falls back to
+   * the `REDIS_URL` environment variable, then `redis://localhost:6379`. Shares
+   * the env default with the jobs subsystem so both compose on one Redis.
    */
   redisUrl?: string;
+  /**
+   * Optional queue-name prefix for the BullMQ wake queue, so several codegen
+   * apps can share one Redis without collisions (mirrors
+   * `jobs.extensions.bullmq.queue_prefix`). Only consulted when
+   * `backend: 'bullmq'`.
+   */
+  queuePrefix?: string;
   /**
    * Restrict the drain loop to these pools. Each pool name matches the
    * `domain_events.pool` column (populated from `event.metadata.pool` at
@@ -122,9 +161,10 @@ export interface EventsModuleOptions {
    * the fallback heartbeat; a lost notify degrades to poll latency, never to
    * lost work. Defaults to `false`.
    *
-   * Ignored by the memory + redis backends (memory dispatches inline; redis has
-   * its own fan-out). Requires a direct (non-transaction-pooler) connection —
-   * see the events/jobs config block re: PgBouncer.
+   * Ignored by the memory + bullmq backends (memory dispatches inline; bullmq
+   * has its own BullMQ wake queue, which — unlike LISTEN/NOTIFY — works through
+   * a transaction pooler). Requires a direct (non-transaction-pooler)
+   * connection — see the events/jobs config block re: PgBouncer.
    */
   listenNotify?: boolean;
   /**
@@ -192,7 +232,9 @@ export interface EventsModuleOptions {
  * Lifecycle holder for the `EventScheduler` (ADR-039). Registered as a provider
  * on the drizzle/memory `forRoot` branches. Reads the scheduled-event set from
  * the threaded `eventRegistry` and starts the materialiser. No-op when nothing
- * declared `schedule:`, or under the redis backend (no outbox history).
+ * declared `schedule:`. Added only on the drizzle/memory `forRoot` branches —
+ * the bullmq backend owns scheduling via the BullMQ Job Scheduler (SCHED-1),
+ * not this polling loop (ADR-041: one scheduler source of truth per backend).
  *
  * **Why `onApplicationBootstrap`, not `onModuleInit` (boot-tick race fix).**
  * `start()` runs `materializeBoot()`, which inserts the current slot's
@@ -227,7 +269,7 @@ export class EventSchedulerLifecycle implements OnApplicationBootstrap, OnModule
   async onApplicationBootstrap(): Promise<void> {
     const registry = this.opts?.eventRegistry;
     if (!registry) return;
-    if (typeof this.bus.materializeScheduledEvent !== 'function') return; // redis
+    if (typeof this.bus.materializeScheduledEvent !== 'function') return;
     const schedules = scheduledEventsFromRegistry(registry);
     if (schedules.length === 0) return;
     this.scheduler = new EventScheduler(this.bus, schedules);
@@ -282,7 +324,8 @@ function buildTypedBusProviders(
 async function buildEventBusAsync(
   options: EventsModuleOptions,
   db: DrizzleClient | null,
-  redisUrl: string,
+  connection: EventsBullMqConnection,
+  bridgeHook: unknown,
 ): Promise<unknown> {
   if (options.backend === 'drizzle') {
     if (!db) {
@@ -291,13 +334,22 @@ async function buildEventBusAsync(
           'Ensure DatabaseModule (or another provider exposing DRIZZLE) is imported before EventsModule.forRootAsync.',
       );
     }
-    return new DrizzleEventBus(db, options);
+    return new DrizzleEventBus(db, options, bridgeHook as never);
   }
-  if (options.backend === 'redis') {
-    // #6: lazy import — the redis backend ships only with `--backend redis`
-    // installs; drizzle/memory consumers never touch the file.
-    const RedisEventBus = await loadRedisEventBus();
-    return new RedisEventBus(redisUrl);
+  if (options.backend === 'bullmq') {
+    // #6: lazy import — the bullmq backend ships only with `--backend bullmq`
+    // installs; drizzle/memory consumers never touch the file. It extends
+    // DrizzleEventBus (Postgres outbox = source of truth), so it requires
+    // DRIZZLE just like the drizzle backend.
+    if (!db) {
+      throw new Error(
+        "EventsModule.forRootAsync: backend: 'bullmq' selected but DRIZZLE provider is not available. " +
+          'The BullMQ events backend dispatches over the Postgres outbox (ADR-041); ' +
+          'import DatabaseModule (or another provider exposing DRIZZLE) before EventsModule.forRootAsync.',
+      );
+    }
+    const BullMQEventBus = await loadBullMqEventBus();
+    return new BullMQEventBus(db, connection, options, bridgeHook);
   }
   return new MemoryEventBus(options);
 }
@@ -321,9 +373,9 @@ export class EventsModule {
           inject: [EVENTS_MODULE_OPTIONS],
         },
         {
-          provide: REDIS_URL,
+          provide: EVENTS_BULLMQ_CONNECTION,
           useFactory: (options: EventsModuleOptions) =>
-            options.redisUrl ?? process.env['REDIS_URL'] ?? 'redis://localhost:6379',
+            resolveEventsBullMqConnection(options),
           inject: [EVENTS_MODULE_OPTIONS],
         },
         {
@@ -331,24 +383,22 @@ export class EventsModule {
           useFactory: (
             options: EventsModuleOptions,
             db: DrizzleClient | null,
-            redisUrl: string,
-          ) => buildEventBusAsync(options, db, redisUrl),
+            connection: EventsBullMqConnection,
+            bridgeHook: unknown,
+          ) => buildEventBusAsync(options, db, connection, bridgeHook),
           inject: [
             EVENTS_MODULE_OPTIONS,
             { token: DRIZZLE, optional: true },
-            REDIS_URL,
+            EVENTS_BULLMQ_CONNECTION,
+            { token: BRIDGE_OUTBOX_DRAIN_HOOK, optional: true },
           ],
         },
         {
-          // Read port (OBS-LIST-1). Drizzle + memory backends implement
-          // IEventReadPort on the EVENT_BUS instance; the redis backend
-          // retains no history, so EVENT_READ_PORT resolves to `null` and
-          // optional consumers (the observability combiner) degrade to
-          // empty results.
+          // Read port (OBS-LIST-1). All three backends implement
+          // IEventReadPort on the EVENT_BUS instance (bullmq inherits it from
+          // DrizzleEventBus), so EVENT_READ_PORT is the same instance.
           provide: EVENT_READ_PORT,
-          useFactory: (options: EventsModuleOptions, bus: unknown) =>
-            options.backend === 'redis' ? null : bus,
-          inject: [EVENTS_MODULE_OPTIONS, EVENT_BUS],
+          useExisting: EVENT_BUS,
         },
         TypedEventBus,
         { provide: TYPED_EVENT_BUS, useExisting: TypedEventBus },
@@ -362,33 +412,56 @@ export class EventsModule {
   ): DynamicModule {
     const multiTenant = options.multiTenant ?? false;
 
-    if (options.backend === 'redis') {
-      const resolvedUrl =
-        options.redisUrl ?? process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+    if (options.backend === 'bullmq') {
+      const connection = resolveEventsBullMqConnection(options);
 
       return {
         module: EventsModule,
         global: true,
         providers: [
           { provide: EVENTS_MODULE_OPTIONS, useValue: options },
-          { provide: REDIS_URL, useValue: resolvedUrl },
+          { provide: EVENTS_BULLMQ_CONNECTION, useValue: connection },
           {
-            // #6: useFactory + dynamic import so the consumer's tsc never
-            // needs to resolve `event-bus.redis-backend.ts` for drizzle/
-            // memory installs (the file is filtered out by
-            // `backendFileFilter`). Nest awaits async factories + manages
-            // lifecycle on the returned instance, so we drop the old bare
-            // `RedisEventBus` provider entry.
+            // #6: useFactory + dynamic import so the consumer's tsc never needs
+            // to resolve `event-bus.bullmq-backend.ts` for drizzle/memory
+            // installs (filtered out by `backendFileFilter`). Nest awaits async
+            // factories + manages lifecycle (onModuleInit/onModuleDestroy) on
+            // the returned instance. The BullMQ events backend extends
+            // DrizzleEventBus (Postgres outbox = source of truth, ADR-041), so
+            // it injects DRIZZLE + the bridge hook just like the drizzle path.
             provide: EVENT_BUS,
-            useFactory: async (url: string): Promise<object> => {
-              const RedisEventBus = await loadRedisEventBus();
-              return new RedisEventBus(url);
+            useFactory: async (
+              db: DrizzleClient | null,
+              conn: EventsBullMqConnection,
+              bridgeHook: unknown,
+            ): Promise<object> => {
+              if (!db) {
+                throw new Error(
+                  "EventsModule.forRoot: backend: 'bullmq' selected but DRIZZLE provider is not available. " +
+                    'The BullMQ events backend dispatches over the Postgres outbox (ADR-041); ' +
+                    'import DatabaseModule (or another provider exposing DRIZZLE) before EventsModule.',
+                );
+              }
+              const BullMQEventBus = await loadBullMqEventBus();
+              return new BullMQEventBus(db, conn, options, bridgeHook);
             },
-            inject: [REDIS_URL],
+            inject: [
+              { token: DRIZZLE, optional: true },
+              EVENTS_BULLMQ_CONNECTION,
+              { token: BRIDGE_OUTBOX_DRAIN_HOOK, optional: true },
+            ],
           },
+          // The bullmq backend retains the Postgres outbox, so it DOES provide
+          // a read port (inherited from DrizzleEventBus) — unlike the deleted
+          // redis pub/sub backend.
+          { provide: EVENT_READ_PORT, useExisting: EVENT_BUS },
+          // ADR-041: scheduling under backend:'bullmq' is owned by the BullMQ
+          // Job Scheduler (SCHED-1 — `BullMqEventSchedulerLifecycle`), NOT the
+          // polling `EventSchedulerLifecycle`. Exactly one scheduler source of
+          // truth per backend. (Wired in SCHED-1.)
           ...buildTypedBusProviders(multiTenant, options.typedBus),
         ],
-        exports: [EVENT_BUS, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
+        exports: [EVENT_BUS, EVENT_READ_PORT, TYPED_EVENT_BUS, EVENTS_MULTI_TENANT],
       };
     }
 
@@ -404,12 +477,12 @@ export class EventsModule {
         { provide: EVENTS_MODULE_OPTIONS, useValue: options },
         provider,
         // Read port (OBS-LIST-1): drizzle + memory backends implement
-        // IEventReadPort on the same instance as EVENT_BUS. The redis
-        // backend retains no history and does not provide this token.
+        // IEventReadPort on the same instance as EVENT_BUS.
         { provide: EVENT_READ_PORT, useExisting: EVENT_BUS },
-        // ADR-039 — the scheduler lifecycle. No-op unless `eventRegistry` was
-        // threaded AND some event declared `schedule:`. Drizzle/memory only
-        // (the redis branch above never reaches here).
+        // ADR-039 — the polling scheduler lifecycle. No-op unless
+        // `eventRegistry` was threaded AND some event declared `schedule:`.
+        // Drizzle/memory only (the bullmq branch above uses the BullMQ Job
+        // Scheduler instead — ADR-041).
         EventSchedulerLifecycle,
         ...buildTypedBusProviders(multiTenant, options.typedBus),
       ],

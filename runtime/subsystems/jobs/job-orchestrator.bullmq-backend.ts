@@ -32,7 +32,7 @@ import { eq } from 'drizzle-orm';
 // (it is statically imported by `jobs-domain.module.ts`). The VALUE
 // constructors (`Queue`, `FlowProducer`) are loaded lazily via `await
 // import('bullmq')` in `loadBullMq()` — mirrors
-// `event-bus.redis-backend.ts:createRedisClient`. See BULLMQ-1 §Lazy import.
+// the events `event-bus.bullmq-backend.ts` loader. See BULLMQ-1 §Lazy import.
 import type { ConnectionOptions, FlowProducer, Queue } from 'bullmq';
 import type { DrizzleClient } from '../../types/drizzle';
 import type { DrizzleTransaction } from '../events/event-bus.protocol';
@@ -69,6 +69,12 @@ import {
 export function sha1JobId(idempotencyKey: string): string {
   return createHash('sha1').update(idempotencyKey).digest('hex');
 }
+
+/**
+ * BullMQ's lowest priority value (2^21). Used to invert the `job_run.priority`
+ * scale (higher = first) onto BullMQ's (1 = highest) — see `scheduleOpts`.
+ */
+const BULLMQ_MAX_PRIORITY = 2_097_152;
 
 // Constructor types for the lazily-loaded `bullmq` value exports. Typed via
 // `typeof` the type-only imports so the cached ctors stay strongly typed
@@ -226,6 +232,7 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
       jobId,
       ...this.retryOpts(def),
       ...this.dedupeOpts(run, def),
+      ...this.scheduleOpts(run),
     };
 
     if (run.parentRunId) {
@@ -285,6 +292,38 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
         ttl: def.dedupeWindowMs,
       },
     };
+  }
+
+  /**
+   * Map the core `StartOptions` scheduling/ordering fields onto BullMQ job
+   * opts so the BullMQ backend honours them identically to the Drizzle worker
+   * (ADR-041 — these are core-contract fields, NOT extensions; the backend
+   * previously dropped both, silently degrading future-dated/prioritised
+   * starts to immediate-FIFO dispatch):
+   *
+   *   - `runAt` (future) → `delay` ms. The Drizzle claim query gates on
+   *     `run_at <= now()` (idx_job_run_claim); BullMQ instead delays the job
+   *     until the boundary elapses. `run_at` is `NOT NULL DEFAULT now()`, so a
+   *     past/now value (the default) produces a non-positive delta and sets no
+   *     `delay` — the common path stays a plain enqueue.
+   *   - `priority` → BullMQ `priority`. The `job_run` contract is "0 = default,
+   *     higher claimed first" (`ORDER BY priority DESC`). BullMQ inverts the
+   *     scale (1 = highest, larger = lower, 0/undefined = unprioritised FIFO),
+   *     so we map `priority = MAX − run.priority` and only set it when elevated
+   *     (`run.priority > 0`). Default-priority jobs stay on the fast,
+   *     unprioritised FIFO path; relative ordering among elevated jobs matches
+   *     Drizzle's `DESC`.
+   */
+  private scheduleOpts(run: JobRun): { delay?: number; priority?: number } {
+    const out: { delay?: number; priority?: number } = {};
+    if (run.runAt) {
+      const delay = run.runAt.getTime() - Date.now();
+      if (delay > 0) out.delay = delay;
+    }
+    if (typeof run.priority === 'number' && run.priority > 0) {
+      out.priority = Math.max(1, BULLMQ_MAX_PRIORITY - run.priority);
+    }
+    return out;
   }
 
   // ==========================================================================
