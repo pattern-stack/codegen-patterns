@@ -66,9 +66,11 @@ import { entityTypeEnum } from './entity-types.schema';
 <% } -%>
 <% if (enumFields.length > 0 && isPostgres) { -%>
 
-// Enum definitions (Postgres only)
+// Enum definitions (Postgres only). The pg TYPE name is namespaced by entity
+// (`enumDbName`, e.g. `opportunity_status`) so same-named enum fields on
+// different entities don't emit a duplicate `CREATE TYPE`.
 <% enumFields.forEach((field) => { -%>
-export const <%= field.enumName %> = pgEnum('<%= field.name %>', [<%- field.choices.map(c => `'${c}'`).join(', ') %>]);
+export const <%= field.enumName %> = pgEnum('<%= field.enumDbName || field.name %>', [<%- field.choices.map(c => `'${c}'`).join(', ') %>]);
 <% }) -%>
 <% } -%>
 <%

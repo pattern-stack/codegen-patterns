@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.1] — 2026-06-20
+
+### Fixed
+
+- **pg enum types are now namespaced by ENTITY, not just the field — no more
+  cross-entity collisions.** The entity generators (both `clean-lite-ps`, the
+  `codegen init` default, and the legacy `backend` clean-architecture pipeline)
+  derived an enum field's exported const AND its Postgres TYPE name from the
+  FIELD name alone. Two entities that each declared an enum field with the same
+  name (e.g. `role`, `status`, `agg`, `additivity`) therefore generated the SAME
+  `export const roleEnum = pgEnum('role', …)` in two files — a duplicate barrel
+  export (**TS2308** "has already exported a member named 'roleEnum'") and a
+  duplicate `CREATE TYPE role` at the DB level (a real migration conflict).
+  Discovered building a real NestJS + Drizzle consumer app (`field_config` and
+  `canonical_field` both declaring `role`). The const and pg type name are now
+  namespaced by entity — pg type `field_config_role`, export `fieldConfigRoleEnum`
+  — matching the convention the junction generator already used. The COLUMN name
+  is unchanged (still the bare snake field name), so the generated table shape and
+  `InferSelectModel` types are identical; only the type/const identifiers move.
+- **`belongs_to` + an explicit unique FK `queries:` entry no longer emit a
+  duplicate method.** An entity with BOTH a `belongs_to` on a column AND an
+  explicit `queries: [{ by: [that_fk_column], unique: true }]` emitted
+  `findByFieldDefinitionId` TWICE — once from the declarative-query generator
+  (single-row return) and once from the `belongs_to` FK-traversal generator
+  (array return) → **TS2393** "Duplicate function implementation." CGP-358 already
+  resolved the *non-unique* case (the FK method, which accepts `opts`, is a
+  superset, so the plain declarative impl is skipped); the unique/via/select case
+  was the gap. Now a unique/via/select declarative query is treated as the more
+  specific intent and WINS — the colliding FK-traversal method is skipped. Fixed
+  in all three repository templates (clean-lite-ps + backend base-class + backend
+  inline). Exactly one method emits in every case.
+
 ## [0.28.0] — 2026-06-14
 
 ### Added

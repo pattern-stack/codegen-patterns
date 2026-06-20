@@ -1,0 +1,26 @@
+# Smoke fixture: canonical_field
+# Third entity carrying a same-named `role` enum field (see field_definition /
+# field_config). Confirms the BUG 1 enum-namespacing fix scales past two
+# entities — pre-fix this was the THIRD duplicate `roleEnum` export. Post-fix →
+# `canonicalFieldRoleEnum` / `canonical_field_role`.
+entity:
+  name: canonical_field
+  plural: canonical_fields
+  table: canonical_fields
+  pattern: Base
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  role:
+    type: enum
+    choices: [reader, writer]
+    required: true
+    default: reader
+
+behaviors:
+  - timestamps

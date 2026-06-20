@@ -783,8 +783,16 @@ export default {
         zodType = `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`;
       }
 
-      // Generate enum name for Drizzle pgEnum (camelCase + 'Enum')
-      const enumName = hasChoices ? camelCase(fieldName) + "Enum" : null;
+      // Generate enum name for Drizzle pgEnum. Namespace the const + pg TYPE
+      // name by entity (`opportunity_status` / `opportunityStatusEnum`) so two
+      // entities that each declare a same-named enum field (e.g. `status`,
+      // `role`) don't emit a duplicate `export const statusEnum` (TS2308) or a
+      // duplicate `CREATE TYPE status` (a migration conflict). The COLUMN name
+      // stays the bare field name — only the type + export are namespaced.
+      const enumDbName = hasChoices
+        ? (name ? `${name}_${fieldName}` : fieldName)
+        : null;
+      const enumName = hasChoices ? camelCase(enumDbName) + "Enum" : null;
 
       // Infer UI metadata with defaults
       const ui_type = inferUiType(fieldName, field);
@@ -815,6 +823,7 @@ export default {
         choicesFrom: field.choices_from,
         hasChoices,
         enumName,
+        enumDbName,
         default: field.default,
         index: field.index ?? false,
         unique: field.unique ?? false,
