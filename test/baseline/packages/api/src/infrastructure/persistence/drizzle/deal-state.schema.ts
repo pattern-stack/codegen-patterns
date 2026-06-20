@@ -15,15 +15,17 @@ import {
 } from 'drizzle-orm/pg-core';
 import { opportunities } from './opportunities.schema';
 
-// Enum definitions (Postgres only)
-export const stateTypeEnum = pgEnum('state_type', ['open', 'won', 'lost', 'stalled']);
+// Enum definitions (Postgres only). The pg TYPE name is namespaced by entity
+// (`enumDbName`, e.g. `opportunity_status`) so same-named enum fields on
+// different entities don't emit a duplicate `CREATE TYPE`.
+export const dealStateStateTypeEnum = pgEnum('deal_state_state_type', ['open', 'won', 'lost', 'stalled']);
 
 export const deal_states = pgTable('deal_states', {
 	id: uuid('id').defaultRandom().primaryKey(),
 	tenantId: uuid('tenant_id'),
 	name: varchar('name', { length: 50 }).notNull(),
 	displayName: varchar('display_name', { length: 100 }).notNull(),
-	stateType: stateTypeEnum('state_type').notNull(),
+	stateType: dealStateStateTypeEnum('state_type').notNull(),
 	sortOrder: integer('sort_order').notNull(),
 	probabilityDefault: integer('probability_default'),
 	color: varchar('color', { length: 20 }),

@@ -302,9 +302,17 @@ function renderColumnDefault(value, drizzleType) {
 }
 
 /**
- * Process entity fields into ProcessedField[]
+ * Process entity fields into ProcessedField[].
+ *
+ * `entityName` (snake_case) namespaces enum-typed fields so two entities that
+ * each declare an enum field with the SAME name (e.g. `role`, `status`) don't
+ * collide. Without it the pg type name AND the exported const were derived from
+ * the field name alone, so a second entity with the same enum field produced a
+ * duplicate `export const roleEnum` (TS2308) and a duplicate `CREATE TYPE role`
+ * at the DB level (a real migration conflict). Namespacing yields
+ * `field_config_role` (pg type) / `fieldConfigRoleEnum` (export) instead.
  */
-function processFields(fields) {
+function processFields(fields, entityName = '') {
   const processed = [];
 
   for (const [fieldName, field] of Object.entries(fields)) {
@@ -325,7 +333,14 @@ function processFields(fields) {
     const drizzleType = hasChoices
       ? 'enum'
       : (DRIZZLE_TYPE_MAP[type] || 'text');
-    const enumName = hasChoices ? camelCase(fieldName) + 'Enum' : null;
+    // Namespace the enum const + pg type name by entity so same-named enum
+    // fields on different entities don't collide (TS2308 / duplicate CREATE TYPE).
+    // The COLUMN name keeps the bare snake field name (`role`); only the const
+    // (`fieldConfigRoleEnum`) and pg type (`field_config_role`) are namespaced.
+    const enumDbName = hasChoices
+      ? (entityName ? `${entityName}_${fieldName}` : fieldName)
+      : null;
+    const enumName = hasChoices ? camelCase(enumDbName) + 'Enum' : null;
     const tsType = hasChoices
       ? choices.map((c) => `'${c}'`).join(' | ')
       : (TS_TYPE_MAP[type] || 'unknown');
@@ -350,6 +365,7 @@ function processFields(fields) {
       choices,
       hasChoices,
       enumName,
+      enumDbName,
     });
   }
 
@@ -1133,8 +1149,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     typeof patternConfigBlock === 'object' &&
     Object.keys(patternConfigBlock).length > 0;
 
-  // Process entity fields
-  const processedFields = processFields(fields);
+  // Process entity fields. Pass the entity name so enum fields namespace their
+  // pg type + exported const by entity (prevents same-named enum collisions
+  // across entities — TS2308 / duplicate CREATE TYPE).
+  const processedFields = processFields(fields, entityName);
 
   // Behavior flags (re-read from behaviors array for clean-lite-ps use).
   //
@@ -1250,11 +1268,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
   // the `pgTable(...)` block. Both FK-filtered and unfiltered processing
   // include the same enum fields; they're never FKs.
+  //
+  // `dbName` is the Postgres TYPE name — namespaced by entity
+  // (`field_config_role`) so two entities with a same-named enum field don't
+  // emit duplicate `CREATE TYPE`s. The COLUMN name is still the bare field
+  // name and is carried by the column reference (`f.name`) in the entity
+  // template, not here.
   const clpEnumFields = processedFields
     .filter((f) => f.hasChoices && f.enumName)
     .map((f) => ({
       enumName: f.enumName,
-      dbName: f.name,
+      dbName: f.enumDbName,
       choices: f.choices,
     }));
 

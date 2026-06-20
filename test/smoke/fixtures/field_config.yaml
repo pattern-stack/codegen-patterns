@@ -1,0 +1,53 @@
+# Smoke fixture: field_config
+# Reproduces BOTH generator bugs fixed in v0.28.1:
+#
+#   BUG 1 (enum namespacing): declares a `role` enum field — same name as
+#   field_definition.role and canonical_field.role. Pre-fix all three emitted
+#   `export const roleEnum = pgEnum('role', …)` → duplicate barrel export (TS2308)
+#   + duplicate `CREATE TYPE role`. Post-fix → `fieldConfigRoleEnum` /
+#   `field_config_role`.
+#
+#   BUG 2 (belongs_to + explicit unique FK query → duplicate method): has a
+#   belongs_to on field_definition_id AND an explicit `queries: [{ by:
+#   [field_definition_id], unique: true }]`. Pre-fix this emitted
+#   `findByFieldDefinitionId` TWICE (declarative single-row + belongs_to FK array)
+#   → TS2393 "Duplicate function implementation". Post-fix the unique declarative
+#   query wins and the FK-traversal method is skipped → exactly one method.
+entity:
+  name: field_config
+  plural: field_configs
+  table: field_configs
+  pattern: Base
+  folder_structure: nested
+
+fields:
+  field_definition_id:
+    type: uuid
+    required: true
+    index: true
+
+  value:
+    type: string
+    required: true
+    max_length: 255
+
+  role:
+    type: enum
+    choices: [reader, writer]
+    required: true
+    default: reader
+
+behaviors:
+  - timestamps
+
+relationships:
+  field_definition:
+    type: belongs_to
+    target: field_definition
+    foreign_key: field_definition_id
+
+queries:
+  # Explicit unique FK query — collides by name with the belongs_to
+  # findByFieldDefinitionId FK-traversal method (BUG 2 repro).
+  - by: [field_definition_id]
+    unique: true

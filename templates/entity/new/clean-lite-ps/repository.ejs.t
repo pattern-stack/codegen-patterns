@@ -13,6 +13,22 @@ const _fkMethodNamesCLP = new Set(_fkMethods.map(rel => {
   const _p = rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1);
   return `findBy${_p}`;
 }));
+// A declarative query and an FK-traversal method can resolve to the SAME method
+// name (e.g. `findByFieldDefinitionId` from both a `belongs_to` FK and an
+// explicit `queries: [{ by: [field_definition_id], unique: true }]`). Emitting
+// both is a duplicate function implementation (TS2393). Exactly one wins:
+//   - plain non-unique single-param declarative → FK method wins (it accepts
+//     `opts` and is a superset), the declarative impl is skipped (CGP-358, the
+//     `_skipClpDq` flag below);
+//   - unique / via / select declarative → the declarative is the more specific
+//     intent (single-row return, junction join, projection), so IT wins and the
+//     FK-traversal method is skipped here.
+const _emittedDqNamesCLP = new Set(
+  (typeof processedQueries !== 'undefined' ? processedQueries : [])
+    .filter((q) => q.isUnique || q.hasVia || q.hasSelect)
+    .map((q) => q.methodName),
+);
+const _skipFkMethodCLP = (name) => _emittedDqNamesCLP.has(name);
 const _needsEq = hasDeclarativeQueries || _fkMethods.length > 0;
 _%>
 <% if (_needsEq) { -%>
@@ -174,13 +190,16 @@ _%>
 
   // TODO: Add entity-specific query methods here.
 <% } -%>
-<%_ if (_fkMethods.length > 0) { _%>
+<%_ const _emittedFkMethods = _fkMethods.filter(rel => !_skipFkMethodCLP(`findBy${rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1)}`)); _%>
+<%_ if (_emittedFkMethods.length > 0) { _%>
 
   // ═══════════════════════════════════════════════════════════════════════
   // FK traversal methods (from belongs_to relationships — CGP-358b)
   // Called by service-layer composition methods on the inverse (has_many) side.
+  // A FK method whose name collides with a unique/via/select declarative query
+  // is skipped — that declarative query is the more specific intent and wins.
   // ═══════════════════════════════════════════════════════════════════════
-<%_ _fkMethods.forEach(rel => { _%>
+<%_ _emittedFkMethods.forEach(rel => { _%>
 
   async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= classNames.entity %>[]> {
     let q = this.baseQuery().where(eq(this.table['<%= rel.camelField %>'], id));

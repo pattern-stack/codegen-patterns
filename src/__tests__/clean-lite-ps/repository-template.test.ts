@@ -200,3 +200,78 @@ describe('clean-lite-ps repository template — declarative queries use baseQuer
     expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe('clean-lite-ps repository template — belongs_to + explicit FK query collision (TS2393)', () => {
+  // Regression: an entity with BOTH a `belongs_to` on a column AND an explicit
+  // `queries: [{ by: [that_fk_column], unique: true }]` previously emitted
+  // `findByFieldDefinitionId` TWICE — once from the declarative-query generator
+  // (single-row return) and once from the belongs_to FK-traversal generator
+  // (array return) → "Duplicate function implementation" (TS2393). Exactly one
+  // method must emit; the explicit declarative query is the more specific intent.
+  const collisionEntity = {
+    entity: {
+      name: 'field_config',
+      plural: 'field_configs',
+      table: 'field_configs',
+      pattern: 'Base',
+    },
+    fields: { value: { type: 'string', required: true } },
+    relationships: {
+      field_definition: {
+        type: 'belongs_to',
+        target: 'field_definition',
+        foreign_key: 'field_definition_id',
+      },
+    },
+    queries: [{ by: ['field_definition_id'], unique: true }],
+    behaviors: [],
+  };
+
+  const countMethodDefs = (out: string, method: string): number =>
+    (out.match(new RegExp(`async ${method}\\(`, 'g')) ?? []).length;
+
+  it('emits findByFieldDefinitionId exactly ONCE when belongs_to + unique query collide', () => {
+    const locals = buildCleanLitePsLocals(collisionEntity, {});
+    const output = renderRepository(locals);
+
+    expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
+  });
+
+  it('keeps the declarative (unique, single-row) method and drops the FK-traversal array method', () => {
+    const locals = buildCleanLitePsLocals(collisionEntity, {});
+    const output = renderRepository(locals);
+
+    // The surviving method is the unique declarative one — single-row return.
+    expect(output).toContain(
+      'async findByFieldDefinitionId(fieldDefinitionId: string): Promise<FieldConfig | null>',
+    );
+    // The FK-traversal array variant must NOT also be emitted.
+    expect(output).not.toContain(
+      'async findByFieldDefinitionId(id: string, opts?: { cursor?: string; limit?: number })',
+    );
+  });
+
+  it('still emits the FK-traversal method when there is NO colliding declarative query (CGP-358 unchanged)', () => {
+    // A non-unique declarative query on the same column → FK method wins
+    // (CGP-358), declarative impl is skipped; either way exactly one method.
+    const nonUnique = {
+      ...collisionEntity,
+      queries: [{ by: ['field_definition_id'] }],
+    };
+    const output = renderRepository(buildCleanLitePsLocals(nonUnique, {}));
+    expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
+    // The FK-traversal (opts) variant is the survivor here.
+    expect(output).toContain(
+      'async findByFieldDefinitionId(id: string, opts?: { cursor?: string; limit?: number })',
+    );
+  });
+
+  it('emits the FK-traversal method when there are no declarative queries at all', () => {
+    const noQueries = { ...collisionEntity, queries: undefined as unknown as [] };
+    const output = renderRepository(buildCleanLitePsLocals(noQueries, {}));
+    expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
+    expect(output).toContain(
+      'async findByFieldDefinitionId(id: string, opts?: { cursor?: string; limit?: number })',
+    );
+  });
+});
