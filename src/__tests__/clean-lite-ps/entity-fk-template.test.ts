@@ -345,6 +345,159 @@ describe('external_id_tracking unique index emission', () => {
   });
 });
 
+// ============================================================================
+// belongs_to FK column inherits the underlying field's required + index
+//
+// When the FK column is ALSO declared as a `fields:` entry (e.g.
+// `conversation_id: { type: uuid, required: true, index: true }`), the
+// relationship moves that column out of clpProcessedFields into clpBelongsTo.
+// The belongs_to column must still inherit the field's `required` (→ .notNull())
+// and `index: true` (→ a `<table>_<col>_idx` index) — otherwise both are
+// silently dropped. The .references() FK and relations() block stay intact.
+// ============================================================================
+
+// Fixture: message with conversation_id declared as a required, indexed field
+// AND as a belongs_to relationship (no nullable on the relationship).
+const messageDefinitionFieldBackedFk = {
+  entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+  fields: {
+    body: { type: 'string', required: true },
+    conversation_id: { type: 'uuid', required: true, index: true },
+  },
+  relationships: {
+    conversation: {
+      type: 'belongs_to',
+      target: 'conversation',
+      foreign_key: 'conversation_id',
+      on_delete: 'cascade',
+    },
+  },
+  behaviors: [],
+};
+
+describe('belongs_to FK inherits field required + index (#34 follow-on)', () => {
+  it('emits .notNull() for a required:true field-backed FK (no rel.nullable)', () => {
+    const locals = buildCleanLitePsLocals(messageDefinitionFieldBackedFk, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    expect(output).toContain(
+      "conversationId: uuid('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' })",
+    );
+  });
+
+  it('derives nullable:false on the clpBelongsTo entry from the field required flag', () => {
+    const locals = buildCleanLitePsLocals(messageDefinitionFieldBackedFk, EMPTY_BASE_LOCALS);
+    const rel = (locals.clpBelongsTo as any[]).find((r: any) => r.field === 'conversation_id');
+
+    expect(rel).toBeDefined();
+    expect(rel!.nullable).toBe(false);
+    expect(rel!.hasIndex).toBe(true);
+  });
+
+  it('emits a <table>_<col>_idx index for the field-backed FK', () => {
+    const locals = buildCleanLitePsLocals(messageDefinitionFieldBackedFk, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    expect(output).toContain("index('messages_conversation_id_idx').on(t.conversationId)");
+    // index() must be imported from drizzle-orm/pg-core
+    expect(locals.clpDrizzleImports).toContain('index');
+    expect(output).toContain('index,');
+  });
+
+  it('still emits the .references() FK and the relations() block', () => {
+    const locals = buildCleanLitePsLocals(messageDefinitionFieldBackedFk, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    // .references() DB FK preserved
+    expect(output).toContain(".references(() => conversations.id, { onDelete: 'cascade' })");
+    // relations() one() block preserved
+    expect(output).toContain('export const messagesRelations = relations(messages');
+    expect(output).toContain('conversation: one(conversations, {');
+    expect(output).toContain('fields: [messages.conversationId],');
+  });
+
+  it('does NOT emit the FK column twice (it stays out of clpProcessedFields)', () => {
+    const locals = buildCleanLitePsLocals(messageDefinitionFieldBackedFk, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    // Exactly one `conversation_id` column definition (from the belongs_to loop).
+    const occurrences = output.split("uuid('conversation_id')").length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it('an explicit rel.nullable:true overrides the field required flag (no .notNull())', () => {
+    const override = {
+      ...messageDefinitionFieldBackedFk,
+      relationships: {
+        conversation: {
+          type: 'belongs_to',
+          target: 'conversation',
+          foreign_key: 'conversation_id',
+          nullable: true,
+          on_delete: 'cascade',
+        },
+      },
+    };
+    const locals = buildCleanLitePsLocals(override, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    expect(output).toContain("conversationId: uuid('conversation_id').references(");
+    expect(output).not.toContain("conversationId: uuid('conversation_id').notNull()");
+  });
+
+  it('emits the index for a nullable indexed FK (index independent of nullability)', () => {
+    const nullableIndexed = {
+      entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+      fields: {
+        body: { type: 'string', required: true },
+        conversation_id: { type: 'uuid', index: true },
+      },
+      relationships: {
+        conversation: {
+          type: 'belongs_to',
+          target: 'conversation',
+          foreign_key: 'conversation_id',
+          on_delete: 'cascade',
+        },
+      },
+      behaviors: [],
+    };
+    const locals = buildCleanLitePsLocals(nullableIndexed, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    // nullable (no .notNull()) but indexed
+    expect(output).toContain("conversationId: uuid('conversation_id').references(");
+    expect(output).not.toContain("conversationId: uuid('conversation_id').notNull()");
+    expect(output).toContain("index('messages_conversation_id_idx').on(t.conversationId)");
+  });
+
+  it('does NOT emit an index when the field-backed FK has no index:true', () => {
+    const noIndex = {
+      entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+      fields: {
+        body: { type: 'string', required: true },
+        conversation_id: { type: 'uuid', required: true },
+      },
+      relationships: {
+        conversation: {
+          type: 'belongs_to',
+          target: 'conversation',
+          foreign_key: 'conversation_id',
+          on_delete: 'cascade',
+        },
+      },
+      behaviors: [],
+    };
+    const locals = buildCleanLitePsLocals(noIndex, EMPTY_BASE_LOCALS);
+    const output = render(locals as Record<string, unknown>);
+
+    // required → notNull, but no index
+    expect(output).toContain("conversationId: uuid('conversation_id').notNull().references(");
+    expect(output).not.toContain('_idx');
+    expect(locals.clpDrizzleImports).not.toContain('index');
+  });
+});
+
 describe('prompt-extension processBelongsTo on_delete propagation', () => {
   it('includes onDelete in clpBelongsTo entries', () => {
     const locals = buildCleanLitePsLocals(messageDefinitionCascade, EMPTY_BASE_LOCALS);

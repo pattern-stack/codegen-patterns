@@ -441,8 +441,17 @@ function processHasMany(relationships, parentEntityNamePlural, fs, path, srcRoot
 
 /**
  * Process belongs_to relationships into BelongsToRelation[]
+ *
+ * `fields` is the raw `fields:` map (snake_case keyed). When the FK column is
+ * ALSO declared as a field (e.g. `conversation_id: { type: uuid, required:
+ * true, index: true }`), the belongs_to column must inherit that field's
+ * `required`/`nullable` (→ `.notNull()`) and `index: true` (→ a single-column
+ * index). The relationship moves the column out of `clpProcessedFields`, so
+ * those declarations would otherwise be silently dropped. An explicit
+ * `nullable:` on the relationship still wins (back-compat for fixtures that set
+ * it directly on the relation).
  */
-function processBelongsTo(relationships, parentEntityNamePlural) {
+function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
   if (!relationships) return [];
 
   const result = [];
@@ -452,7 +461,27 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
 
     const target = rel.target;
     const field = rel.foreign_key;
-    const nullable = rel.nullable ?? true;
+    // Inherit nullability from the underlying field declaration when present.
+    // Precedence: explicit relationship `nullable:` → field `required`/`nullable`
+    // → default nullable (true). A `required: true` field is NOT NULL.
+    const fieldDef = fields[field];
+    let nullable;
+    if (rel.nullable !== undefined && rel.nullable !== null) {
+      nullable = rel.nullable;
+    } else if (fieldDef) {
+      if (fieldDef.required === true) {
+        nullable = false;
+      } else if (fieldDef.nullable !== undefined && fieldDef.nullable !== null) {
+        nullable = fieldDef.nullable;
+      } else {
+        nullable = true;
+      }
+    } else {
+      nullable = true;
+    }
+    // Carry the field's `index: true` so the table-constraints builder can emit
+    // the same single-column index a non-FK field would get.
+    const hasIndex = fieldDef?.index === true;
     const relatedPlural = pluralize(target);
     const isSelfFk = relatedPlural === parentEntityNamePlural;
 
@@ -483,6 +512,7 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
       relatedTable: relatedPlural,
       relatedPlural,
       nullable,
+      hasIndex,
       importPath: `../${relatedPlural}/${target}.entity`,
       relationKey,
       isSelfFk,
@@ -1198,8 +1228,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const hasOrderedQuery = processedQueries.some((q) => q.hasOrder);
   const hasViaQuery = processedQueries.some((q) => q.hasVia);
 
-  // Process belongs_to relationships
-  const belongsTo = processBelongsTo(relationships, entityNamePlural);
+  // Process belongs_to relationships. Pass the raw fields map so a FK column
+  // also declared as a field inherits its `required`/`nullable` (→ .notNull())
+  // and `index: true` (→ a single-column index emitted below).
+  const belongsTo = processBelongsTo(relationships, entityNamePlural, fields);
 
   // Process has_many relationships (CGP-358b)
   const hasMany = processHasMany(relationships, entityNamePlural, fs, path, srcRoot);
@@ -1250,10 +1282,23 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Composite unique indexes (#356).
   const uniqueIndexExpressions = processUniqueIndexes(definition.unique_indexes, entityNamePlural);
 
-  // pgTable extra-config callback entries, in emission order: single-column
-  // indexes, composite unique indexes, then the external_id_tracking unique
-  // index (the ON CONFLICT target integrationUpsert relies on).
+  // belongs_to FK columns that declared `index: true` on their underlying
+  // field. The FK column lives in clpBelongsTo (not clpProcessedFields), so
+  // processFieldFeatures never sees it — emit its index here using the same
+  // `<table>_<col>_idx` naming a non-FK indexed field gets.
+  const belongsToIndexExpressions = belongsTo
+    .filter((rel) => rel.hasIndex)
+    .map((rel) => ({
+      comment: null,
+      expr: `index('${entityNamePlural}_${rel.field}_idx').on(t.${rel.camelField})`,
+    }));
+
+  // pgTable extra-config callback entries, in emission order: belongs_to FK
+  // indexes, single-column field indexes, composite unique indexes, then the
+  // external_id_tracking unique index (the ON CONFLICT target integrationUpsert
+  // relies on).
   const clpTableConstraints = [
+    ...belongsToIndexExpressions,
     ...fieldFeatures.indexExpressions,
     ...uniqueIndexExpressions,
   ];
@@ -1286,7 +1331,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // field declares `index: true` or the entity declares `unique_indexes:`
   // (external_id_tracking adds `uniqueIndex` on its own flag below).
   const extraDrizzleImports = [];
-  if (fieldFeatures.indexExpressions.length > 0) extraDrizzleImports.push('index');
+  if (fieldFeatures.indexExpressions.length > 0 || belongsToIndexExpressions.length > 0) {
+    extraDrizzleImports.push('index');
+  }
   if (uniqueIndexExpressions.length > 0) extraDrizzleImports.push('uniqueIndex');
   const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany, extraDrizzleImports);
   // Whether relations() import is needed (CGP-358b: also trigger on has_many)
