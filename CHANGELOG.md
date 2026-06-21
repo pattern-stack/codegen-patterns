@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.28.3] — 2026-06-21
+
+### Fixed
+
+- **`belongs_to` relationships no longer emit an invalid `FieldMeta` relation
+  key in the generated frontend `fields/<entity>.ts` (TS2820).** The frontend
+  fields emitter rendered a belongs_to relation row keyed on, and with `field:`
+  set to, the relationship's PROPERTY name (e.g. `person: { field: 'person' }`).
+  The generated db-entity / output-DTO type carries the FK COLUMN (`personId`)
+  but never a resolved relation object, so `field: 'person'` is not assignable
+  to `keyof T` — **TS2820** ("Type '"person"' is not assignable to … Did you
+  mean '"personId"'?"). It also emitted TWO rows for one FK (the field-derived
+  column row + the phantom relation row), and the runtime `ReferenceCell` reads
+  the cell value as the lookup id — which only exists on the FK column. The
+  relation row now surfaces ON its FK column: keyed on `personId`, `field:
+  'personId'`, enriched to `type: 'entity'` + `reference: '<targetPlural>'`,
+  superseding the plain field-derived row (one row, valid `keyof T`). This is
+  the frontend mirror of the 0.28.2 backend FK fix (#553); discovered building a
+  real consumer (swe-brain `interaction_party`).
+
+## [0.28.2] — 2026-06-20
+
+### Fixed
+
+- **`clean-lite-ps` `belongs_to` FK columns inherit the underlying field's
+  `required` + `index`.** When a FK column is also declared as a `fields:` entry
+  (`required: true, index: true`) and moved into a `belongs_to`, the emitted
+  column silently dropped `.notNull()` and the index. The belongs_to column now
+  inherits the field's nullability (`required: true` ⇒ `.notNull()`) and
+  `index: true` (a `<table>_<col>_idx`); the `.references()` DB FK and the
+  `relations()` block are unchanged (#553).
+
 ## [0.28.1] — 2026-06-20
 
 ### Fixed
