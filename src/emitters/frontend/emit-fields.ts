@@ -228,13 +228,29 @@ export function buildEntityFieldsFile(
 	const ts = hasTimestamps(parsed);
 	const sd = hasSoftDelete(parsed);
 
-	// FieldMeta map entries: fields, then belongs_to relation rows, then the
-	// behavior-contributed rows (timestamps, soft_delete).
-	const fieldEntries = fields.map(renderFieldMeta);
+	// A belongs_to relation row is keyed on, and references, the FK COLUMN
+	// (`fieldNameCamel`, e.g. `personId`) — never the relationship's property
+	// name (`person`). The generated DB-entity / output-DTO type carries the FK
+	// column but NOT a resolved relation object, so `field: 'person'` is a
+	// TS2820 ("'person' not assignable to keyof T") and the ReferenceCell needs
+	// the id value anyway. This mirrors the backend fix where the FK column
+	// inherits the relationship's intent (codegen #553): the relation surfaces
+	// ON its FK column, enriching that one row to `type: 'entity'` + the target
+	// reference, rather than emitting a phantom property. The enriched relation
+	// row therefore SUPERSEDES the plain field-derived row for the same column —
+	// emit it once, keyed on the FK column, so there is no duplicate key.
+	const relFkColumns = new Set(rels.map((r) => r.fieldNameCamel));
+
+	// FieldMeta map entries: fields (minus FK columns a relation enriches), then
+	// belongs_to relation rows, then the behavior-contributed rows (timestamps,
+	// soft_delete).
+	const fieldEntries = fields
+		.filter((f) => !relFkColumns.has(f.field))
+		.map(renderFieldMeta);
 
 	const relEntries = rels.map(
-		(r) => `\t${r.propertyName}: {
-\t\tfield: '${r.propertyName}',
+		(r) => `\t${r.fieldNameCamel}: {
+\t\tfield: '${r.fieldNameCamel}',
 \t\tlabel: '${humanizeClass(r.target.className)}',
 \t\ttype: 'entity' as FieldType,
 \t\timportance: 'secondary' as FieldImportance,
