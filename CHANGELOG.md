@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.0] — 2026-06-22
+
+### Added
+
+- **Entity-level frontend-exclude knob: `entity.frontend: false`.** An entity may
+  now declare `frontend: false` (inside the `entity:` block, sibling to `sync:` /
+  `surface:` / `context:`) to emit **NO frontend artifacts** while leaving backend
+  generation completely unaffected. Defaults to `true` — absent ⇒ current
+  behavior, fully backwards-compatible. When `false`, the whole-set frontend
+  emitter (ADR-038) produces no `api`/`collections`/`entities`/`fields` files for
+  the entity, no `store/index.ts` entry, no full-fetch `listAll()` call in the
+  store hydration (`resolvers.ts` / `lookups.ts`), no resolver/lookup entry, and
+  no dangling import referencing it. Filtered at the single emit chokepoint
+  (`loadFrontendEmitContext` — the entity set + parsed map are both filtered
+  before the context is built), so every downstream per-entity emitter sees only
+  the kept set. Backend emitters never read this path.
+
+  Use case: a consumer (swe-brain) has SECRET entities (`auth_session`,
+  `user_credential`, `password_reset`, `email_verification`) whose backend routes
+  are deliberately blocked, but codegen still emitted frontend artifacts + a
+  full-fetch `listAll()` for them, so the frontend eager-fetched them on app load →
+  404 spam against the blocked routes. `frontend: false` keeps those entities dark
+  in the frontend while still generating their backend, killing the 404 spam.
+
 ## [0.28.3] — 2026-06-21
 
 ### Fixed
