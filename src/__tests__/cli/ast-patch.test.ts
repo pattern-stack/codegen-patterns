@@ -18,6 +18,8 @@ import {
 	ensureClassDeclaration,
 	ensureModuleImportEntry,
 	ensureMainSwaggerBlock,
+	ensureMainRequesterContextBlock,
+	ensureModuleDynamicImportEntry,
 } from '../../cli/shared/ast-patch.js';
 
 function mkProject() {
@@ -271,5 +273,103 @@ describe('ensureMainSwaggerBlock', () => {
 		});
 		expect(res.changed).toBe(false);
 		expect(res.bail).toContain('NestFactory.create');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ensureMainRequesterContextBlock (ADR-043)
+// ---------------------------------------------------------------------------
+
+describe('ensureMainRequesterContextBlock', () => {
+	const AUTH_IMPORT = './shared/subsystems/auth';
+	const AUTH_BLOCK = `  installRequesterContext(app);\n  // BOOT_FAIL_MARKER\n`;
+
+	function mainSf(project: ReturnType<typeof mkProject>) {
+		return project.createSourceFile(
+			'src/main.ts',
+			`import { NestFactory } from '@nestjs/core';\nimport { AppModule } from './app.module';\nasync function bootstrap() {\n  const app = await NestFactory.create(AppModule);\n  await app.listen(3000);\n}\nbootstrap();\n`
+		);
+	}
+
+	test('inserts the boundary block + auth import after NestFactory.create', () => {
+		const project = mkProject();
+		const sf = mainSf(project);
+		const res = ensureMainRequesterContextBlock(sf, { authImport: AUTH_IMPORT, block: AUTH_BLOCK });
+		expect(res.changed).toBe(true);
+		const text = sf.getFullText();
+		expect(text).toContain('installRequesterContext(app)');
+		expect(text).toContain('BOOT_FAIL_MARKER');
+		expect(text).toContain("from './shared/subsystems/auth'");
+		// Block lands after app creation, before listen (match the call, not the import).
+		expect(text.indexOf('NestFactory.create')).toBeLessThan(text.indexOf('installRequesterContext(app)'));
+		expect(text.indexOf('installRequesterContext(app)')).toBeLessThan(text.indexOf('app.listen'));
+	});
+
+	test('is idempotent — second application is a no-op', () => {
+		const project = mkProject();
+		const sf = mainSf(project);
+		ensureMainRequesterContextBlock(sf, { authImport: AUTH_IMPORT, block: AUTH_BLOCK });
+		const once = sf.getFullText();
+		const res2 = ensureMainRequesterContextBlock(sf, { authImport: AUTH_IMPORT, block: AUTH_BLOCK });
+		expect(res2.changed).toBe(false);
+		expect(sf.getFullText()).toBe(once);
+		expect((sf.getFullText().match(/installRequesterContext\(app\)/g) ?? []).length).toBe(1);
+	});
+
+	test('bails on custom bootstrap (no NestFactory.create)', () => {
+		const project = mkProject();
+		const sf = project.createSourceFile('src/main.ts', `console.log('hi');\n`);
+		const res = ensureMainRequesterContextBlock(sf, { authImport: AUTH_IMPORT, block: AUTH_BLOCK });
+		expect(res.changed).toBe(false);
+		expect(res.bail).toContain('NestFactory.create');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ensureModuleDynamicImportEntry (ADR-043)
+// ---------------------------------------------------------------------------
+
+describe('ensureModuleDynamicImportEntry', () => {
+	const ENTRY = "AuthModule.forRoot({ encryptionKey: 'env' })";
+
+	function appModuleSf(project: ReturnType<typeof mkProject>, importsBody: string) {
+		return project.createSourceFile(
+			'src/app.module.ts',
+			`import { Module } from '@nestjs/common';\n@Module({\n  imports: [${importsBody}],\n})\nexport class AppModule {}\n`
+		);
+	}
+
+	test('inserts the dynamic-module call before the spread element', () => {
+		const project = mkProject();
+		const sf = appModuleSf(project, 'DatabaseModule, ...GENERATED_MODULES');
+		const cls = sf.getClass('AppModule')!;
+		const res = ensureModuleDynamicImportEntry(cls, 'AuthModule', ENTRY);
+		expect(res.changed).toBe(true);
+		const text = sf.getFullText();
+		expect(text).toContain(ENTRY);
+		expect(text.indexOf('AuthModule.forRoot')).toBeLessThan(text.indexOf('...GENERATED_MODULES'));
+	});
+
+	test('is idempotent — matches by leading identifier', () => {
+		const project = mkProject();
+		const sf = appModuleSf(project, 'DatabaseModule, ...GENERATED_MODULES');
+		const cls = sf.getClass('AppModule')!;
+		ensureModuleDynamicImportEntry(cls, 'AuthModule', ENTRY);
+		const once = sf.getFullText();
+		const res2 = ensureModuleDynamicImportEntry(sf.getClass('AppModule')!, 'AuthModule', ENTRY);
+		expect(res2.changed).toBe(false);
+		expect(sf.getFullText()).toBe(once);
+		expect((sf.getFullText().match(/AuthModule\.forRoot/g) ?? []).length).toBe(1);
+	});
+
+	test('bails when @Module.imports is not an array literal', () => {
+		const project = mkProject();
+		const sf = project.createSourceFile(
+			'src/app.module.ts',
+			`import { Module } from '@nestjs/common';\nconst mods = [];\n@Module({ imports: mods })\nexport class AppModule {}\n`
+		);
+		const res = ensureModuleDynamicImportEntry(sf.getClass('AppModule')!, 'AuthModule', ENTRY);
+		expect(res.changed).toBe(false);
+		expect(res.bail).toContain('not an array literal');
 	});
 });

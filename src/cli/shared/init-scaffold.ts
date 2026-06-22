@@ -15,7 +15,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
-import { runtimeImport, type RuntimeMode } from './runtime-import.js';
+import { runtimeImport, subsystemsImport, type RuntimeMode } from './runtime-import.js';
 import { FRONTEND_EMITTED_DEPS } from '../../emitters/frontend/deps.js';
 
 // ---------------------------------------------------------------------------
@@ -307,9 +307,71 @@ export class AppModule {}
  * bootstrap file. Consumers with a pre-authored main.ts should copy the
  * Swagger block verbatim (see CONSUMER-SETUP §OpenAPI).
  */
-function mainTsContent(mode: RuntimeMode): string {
+/**
+ * The package-mode RequesterContext boundary + closed-by-default boot-fail
+ * (ADR-043 §4). Inserted before `app.listen()` in the generated `main.ts`.
+ */
+function authBoundaryBlock(): string {
+	return `  // Ambient requester boundary (ADR-043 / ADR-0002): bridge the verified
+  // principal into AsyncLocalStorage so every downstream repository read/write
+  // is scoped with no threaded userId. No-op + warn if AUTH_USER_CONTEXT is
+  // unbound — the boot-fail check below then decides whether that is allowed.
+  installRequesterContext(app);
+
+  // Closed-by-default data plane (ADR-043 §4). This is the HTTP entrypoint
+  // (we are about to app.listen()), so an unauthenticated data plane here is a
+  // real exposure. Refuse to serve when no IUserContext is bound, unless the
+  // localhost-only escape hatch is set. This check lives ONLY in the HTTP
+  // bootstrap — a worker process that imports AppModule but never listens must
+  // not trip it.
+  const userContext = app.get(AUTH_USER_CONTEXT, { strict: false });
+  const allowAnonymous = config.auth?.devAllowAnonymous === true;
+  if (!userContext && !allowAnonymous) {
+    throw new Error(
+      '[auth] FATAL: entity HTTP controllers are exposed but no IUserContext ' +
+        'is bound under AUTH_USER_CONTEXT. The data plane would be ' +
+        'unauthenticated. Bind an IUserContext (install the auth subsystem, ' +
+        'or provide your own), or set auth.devAllowAnonymous=true in ' +
+        'codegen.config.yaml for LOCALHOST DEV ONLY.',
+    );
+  }
+  if (!userContext && allowAnonymous) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[auth] auth.devAllowAnonymous=true — the data plane is ' +
+        'UNAUTHENTICATED. This must never be set in a non-localhost deployment.',
+    );
+  }
+`;
+}
+
+/**
+ * The vendored-mode hint (the auth subsystem files aren't vendored on a bare
+ * scaffold, so we can't statically import them yet). `subsystem install auth`
+ * vendors them; `project upgrade-auth` then wires this block in via AST patch.
+ */
+function authBoundaryHint(): string {
+	return `  // Closed-by-default data plane (ADR-043). The auth subsystem is not yet
+  // vendored on a fresh project, so wiring is deferred:
+  //   1. codegen subsystem install auth     # vendors the auth runtime
+  //   2. codegen project upgrade-auth        # AST-wires the boundary + boot-fail
+  //                                           # here and AuthModule.forRoot in app.module.ts
+`;
+}
+
+export function mainTsContent(mode: RuntimeMode): string {
 	const openApiImport =
 		mode === 'vendored' ? './shared/openapi' : runtimeImport(mode, 'shared/openapi');
+	// Closed-by-default data plane (ADR-043). We wire the boundary + boot-fail
+	// directly into the scaffold ONLY in package mode, where the auth barrel
+	// always resolves from the published package. In vendored mode a bare
+	// scaffold has no `./shared/subsystems/auth` until `subsystem install auth`
+	// vendors it, so we emit a hint instead and let `project upgrade-auth` do
+	// the AST wiring after install (avoids a dangling import on a fresh project).
+	const wireAuth = mode === 'package';
+	const authImportLine = wireAuth
+		? `import { installRequesterContext, AUTH_USER_CONTEXT } from '${subsystemsImport(mode, 'auth')}';\n`
+		: '';
 	return `import 'reflect-metadata';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -318,7 +380,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { parse as parseYaml } from 'yaml';
 import { AppModule } from './app.module';
 import { OPENAPI_REGISTRY, OpenApiRegistry } from '${openApiImport}';
-
+${authImportLine}
 interface OpenApiConfig {
   enabled?: boolean;
   path?: string;
@@ -328,8 +390,18 @@ interface OpenApiConfig {
   auth?: 'bearer' | 'none';
 }
 
+interface AuthConfig {
+  /**
+   * Localhost-only escape hatch (ADR-043 §4). When true, an app with no
+   * IUserContext bound serves an UNAUTHENTICATED data plane instead of
+   * refusing to boot. NEVER set this in a non-localhost deployment.
+   */
+  devAllowAnonymous?: boolean;
+}
+
 interface CodegenConfig {
   openapi?: OpenApiConfig;
+  auth?: AuthConfig;
 }
 
 /**
@@ -409,12 +481,7 @@ async function bootstrap(): Promise<void> {
     });
   }
 
-  // Ambient tenant scoping (auth subsystem). Uncomment once the auth subsystem
-  // is installed and an IUserContext is bound under AUTH_USER_CONTEXT — then
-  // every request is scoped to its requester with no threaded userId:
-  //   import { installRequesterContext } from './shared/subsystems/auth/middleware/requester-context';
-  //   installRequesterContext(app); // no-op + warn if AUTH_USER_CONTEXT is unbound
-
+${wireAuth ? authBoundaryBlock() : authBoundaryHint()}
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
   // eslint-disable-next-line no-console

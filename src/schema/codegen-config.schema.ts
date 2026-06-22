@@ -284,3 +284,33 @@ export const FrontendConfigSchema = z
   .default({});
 
 export type FrontendConfig = z.infer<typeof FrontendConfigSchema>;
+
+// ============================================================================
+// Auth Config (ADR-043)
+// ============================================================================
+
+/**
+ * The `auth:` block — closed-by-default data-plane authentication (ADR-043).
+ *
+ * Today it carries a single knob, `devAllowAnonymous`, read at bootstrap by the
+ * generated `main.ts` boot-fail check (ADR-043 §4). When no `IUserContext` is
+ * bound under `AUTH_USER_CONTEXT` and entity HTTP controllers are exposed, the
+ * app refuses to serve — UNLESS this flag is `true`, which downgrades the hard
+ * failure to a loud warning so a bare scaffold can be run on localhost.
+ *
+ * It is named to announce the hazard: setting it ships an UNAUTHENTICATED data
+ * plane and must never be set in a non-localhost deployment. A future hardening
+ * (ADR-043 follow-up #3) may hard-refuse it on a non-loopback bind /
+ * `NODE_ENV==='production'`.
+ *
+ * `.strict()` — an unknown key under `auth:` is a stale-config error, not a
+ * silent passthrough.
+ */
+export const AuthConfigSchema = z
+  .object({
+    devAllowAnonymous: z.boolean().default(false),
+  })
+  .strict()
+  .default({});
+
+export type AuthConfig = z.infer<typeof AuthConfigSchema>;
