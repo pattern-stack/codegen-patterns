@@ -37,6 +37,16 @@ describe('pattern / patterns / config', () => {
 		}
 	});
 
+	it('defaults `api` to true and accepts an explicit false (ADR-043 §6)', () => {
+		const dflt = EntityDefinitionSchema.safeParse({ ...base });
+		expect(dflt.success).toBe(true);
+		if (dflt.success) expect(dflt.data.api).toBe(true);
+
+		const off = EntityDefinitionSchema.safeParse({ ...base, api: false });
+		expect(off.success).toBe(true);
+		if (off.success) expect(off.data.api).toBe(false);
+	});
+
 	it('accepts a `patterns:` array for multi-pattern composition', () => {
 		const result = EntityDefinitionSchema.safeParse({
 			...base,
