@@ -76,6 +76,24 @@ describe('AuthenticatedGuard', () => {
   });
 });
 
+describe('curated /subsystems barrel re-exports the auth wiring (ADR-043 §7)', () => {
+  // The generated main.ts (package mode) imports installRequesterContext +
+  // AUTH_USER_CONTEXT from '@pattern-stack/codegen/subsystems'. project
+  // upgrade-auth imports AuthModule from the same barrel. These MUST resolve
+  // from the curated combined barrel, not only the auth sub-barrel.
+  it('exports the boundary, guard, decorator, and tokens', async () => {
+    const barrel = await import('../../../../../runtime/subsystems/index');
+    expect(typeof barrel.installRequesterContext).toBe('function');
+    expect(typeof barrel.makeRequesterContextMiddleware).toBe('function');
+    expect(typeof barrel.resolveRequesterContext).toBe('function');
+    expect(typeof barrel.AuthenticatedGuard).toBe('function');
+    expect(typeof barrel.Public).toBe('function');
+    expect(barrel.IS_PUBLIC_KEY).toBe('auth:isPublic');
+    expect(barrel.AUTH_USER_CONTEXT).toBeDefined();
+    expect(typeof barrel.AuthModule).toBe('function');
+  });
+});
+
 describe('AuthController self-lockout fix (ADR-043 §2)', () => {
   const reflector = new Reflector();
 
