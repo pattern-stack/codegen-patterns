@@ -9,7 +9,6 @@ import {
 	Controller,
 	Delete,
 	Get,
-	Headers,
 	Param,
 	ParseUUIDPipe,
 	Post,
@@ -86,10 +85,8 @@ export class DealStatesController {
 	@UsePipes(new ZodValidationPipe(createDealStateSchema))
 	async create(
 		@Body() dto: CreateDealStateDto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<DealState> {
-		return this.createDealStateCommand.execute(dto, { actor: { tenantId, userId } });
+		return this.createDealStateCommand.execute(dto);
 	}
 
 	@ApiOperation({ summary: 'Update deal_state', operationId: 'updateDealState' })
@@ -103,10 +100,8 @@ export class DealStatesController {
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
 		@Body(new ZodValidationPipe(updateDealStateSchema)) dto: UpdateDealStateDto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<DealState> {
-		return this.updateDealStateCommand.execute(id, dto, { actor: { tenantId, userId } });
+		return this.updateDealStateCommand.execute(id, dto);
 	}
 
 	@ApiOperation({ summary: 'Delete deal_state', operationId: 'deleteDealState' })
@@ -117,10 +112,8 @@ export class DealStatesController {
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<DealState> {
-		return this.deleteDealStateCommand.execute(id, { actor: { tenantId, userId } });
+		return this.deleteDealStateCommand.execute(id);
 	}
 }
 

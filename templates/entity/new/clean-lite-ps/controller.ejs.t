@@ -4,7 +4,7 @@ skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
-import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body, Headers<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '<%= typeof zodValidationPipeImport !== 'undefined' ? zodValidationPipeImport : '@shared/pipes/zod-validation.pipe' %>';
 import type { Page } from '<%= typeof paginationImport !== 'undefined' ? paginationImport : '@shared/http/pagination' %>';
@@ -126,10 +126,8 @@ export class <%= classNames.controller %> {
   @Post()
   async create(
     @Body(new ZodValidationPipe(<%= classNames.createSchema %>)) dto: <%= classNames.createDto %>,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
   ): Promise<<%= classNames.entity %>> {
-    return this.createUseCase.execute(dto, { actor: { tenantId, userId } });
+    return this.createUseCase.execute(dto);
   }
 
   @ApiOperation({ summary: 'Update <%= entityName %>', operationId: 'update<%= classNames.entity %>' })
@@ -143,10 +141,8 @@ export class <%= classNames.controller %> {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(<%= classNames.updateSchema %>)) dto: <%= classNames.updateDto %>,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
   ): Promise<<%= classNames.entity %>> {
-    const entity = await this.updateUseCase.execute(id, dto, { actor: { tenantId, userId } });
+    const entity = await this.updateUseCase.execute(id, dto);
     if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
     return entity;
   }
@@ -159,10 +155,8 @@ export class <%= classNames.controller %> {
   @Delete(':id')
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
-    @Headers('x-tenant-id') tenantId?: string,
-    @Headers('x-user-id') userId?: string,
   ): Promise<void> {
-    return this.deleteUseCase.execute(id, { actor: { tenantId, userId } });
+    return this.deleteUseCase.execute(id);
   }
 <% } %>
 }

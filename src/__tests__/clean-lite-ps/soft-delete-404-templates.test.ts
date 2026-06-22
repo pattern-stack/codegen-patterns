@@ -85,9 +85,9 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
     const locals = buildCleanLitePsLocals(baseEntity, {});
     const output = render('controller.ejs.t', locals);
 
-    // F10: execute() now takes an actor opts arg threaded from headers
+    // ADR-043 §5: no header-threaded actor — use-case reads the principal from ALS.
     expect(output).toContain(
-      'const entity = await this.updateUseCase.execute(id, dto, { actor: { tenantId, userId } });',
+      'const entity = await this.updateUseCase.execute(id, dto);',
     );
     expect(output).toContain('if (!entity) throw new NotFoundException(`Contact ${id} not found`);');
     // Signature returns Promise<Entity>, not Entity | null.
@@ -100,7 +100,7 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
 
     // Per PR #52 dogfooding fix, delete is void. Double-check the 404
     // change didn't regress this. D3 adds ParseUUIDPipe to the @Param.
-    // F10: delete signature now also threads actor headers.
+    // ADR-043 §5: delete signature carries only the id (no header actor).
     expect(output).toMatch(
       /async remove\([\s\S]*?@Param\('id', ParseUUIDPipe\) id: string[\s\S]*?\): Promise<void>/,
     );

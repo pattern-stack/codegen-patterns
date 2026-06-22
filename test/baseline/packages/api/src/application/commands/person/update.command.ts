@@ -27,7 +27,6 @@ export class UpdatePersonCommand {
 	async execute(
 		id: string,
 		dto: UpdatePersonDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Person> {
 		const existing = await this.personRepository.findById(id);
 		if (!existing) {

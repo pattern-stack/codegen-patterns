@@ -9,6 +9,7 @@ import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 
 /**
@@ -25,8 +26,8 @@ export class <%= classNames.deleteUseCase %> {
 
   async execute(
     id: string,
-    opts?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<void> {
+    const requester = tryGetRequester();
     return this.db.transaction(async (tx) => {
       const entity = await this.service.findById(id);
       if (!entity) {
@@ -45,9 +46,7 @@ export class <%= classNames.deleteUseCase %> {
         },
         {
           tx,
-          metadata: opts?.actor
-            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-            : undefined,
+          metadata: requester ? { userId: requester.userId } : undefined,
         },
       );
     });
@@ -63,7 +62,6 @@ export class <%= classNames.deleteUseCase %> {
 
   async execute(
     id: string,
-    _opts?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<void> {
     return this.service.delete(id);
   }
