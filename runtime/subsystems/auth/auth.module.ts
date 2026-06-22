@@ -36,6 +36,7 @@
  * inject the auth tokens.
  */
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import {
   AUTH_OPTIONS,
   ENCRYPTION_KEY,
@@ -45,6 +46,7 @@ import { EnvEncryptionKey } from './backends/encryption-key/env';
 import { MemoryOAuthStateStore } from './backends/state-store.memory-backend';
 import { DrizzleOAuthStateStore } from './backends/state-store.drizzle-backend';
 import { AuthController } from './controllers/auth.controller';
+import { AuthenticatedGuard } from './guards/authenticated.guard';
 import { DRIZZLE } from '../../constants/tokens';
 import type { DrizzleClient } from '../../types/drizzle';
 
@@ -137,10 +139,24 @@ export class AuthModule {
       useValue: resolved,
     };
 
+    // Closed-by-default data plane (ADR-043 §2): bind the global authentication
+    // guard so every route requires a verified ambient principal. There is no
+    // option to disable it while auth is installed — the only route-level escape
+    // is the explicit, greppable `@Public()` decorator.
+    const guardProvider: Provider = {
+      provide: APP_GUARD,
+      useClass: AuthenticatedGuard,
+    };
+
     return {
       module: AuthModule,
       global: true,
-      providers: [encryptionKeyProvider, oauthStateStoreProvider, optionsProvider],
+      providers: [
+        encryptionKeyProvider,
+        oauthStateStoreProvider,
+        optionsProvider,
+        guardProvider,
+      ],
       controllers: resolved.enableController ? [AuthController] : [],
       exports: [ENCRYPTION_KEY, OAUTH_STATE_STORE, AUTH_OPTIONS],
     };
