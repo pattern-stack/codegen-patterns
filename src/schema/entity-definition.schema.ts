@@ -838,6 +838,17 @@ export const EntityDefinitionSchema = z
     // Per-entity generation toggles (e.g. disable write-side emission)
     generate: GenerateConfigSchema.optional(),
 
+    // HTTP surface emission (ADR-043 §6, #557). When `false`, codegen emits NO
+    // HTTP-facing surface for this entity — no REST controller, no Electric
+    // controller, no tRPC router, and no routes. The entity, repository,
+    // service, and use-cases are still generated, so the entity stays reachable
+    // IN-PROCESS (other modules can inject its service) — it simply has no
+    // data-plane presence. The correct posture for secret entities (credentials,
+    // internal join tables) that must never traverse HTTP, rather than emitting
+    // a route that is merely guarded. The backend analogue of the frontend
+    // exclude knob (#556). Defaults to `true`.
+    api: z.boolean().optional().default(true),
+
     // EAV (entity-attribute-value) dual-write + paired reads (ADR-13).
     // When `true`, codegen emits:
     //   - FindXWithFieldsUseCase + ListXWithFieldsUseCase (paired reads)

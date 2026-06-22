@@ -1082,6 +1082,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const relationships = definition.relationships || {};
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
+  // ADR-043 §6: `api: false` suppresses the HTTP surface (controller + search
+  // controller + their module wiring) while keeping the entity/repository/
+  // service/use-cases in-process reachable. Defaults to true.
+  const clpApiEnabled = definition.api !== false;
 
   // Source root — resolved in priority order:
   //   1. baseLocals.srcRoot (e.g. set explicitly by tests or callers)
@@ -1508,6 +1512,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     entityNamePascal,
     entityNamePlural,
     entityNamePluralPascal,
+
+    // ADR-043 §6: HTTP surface gate (controller + search controller + wiring)
+    clpApiEnabled,
 
     // EVT-7 emits locals (null-safe defaults if baseLocals didn't provide them)
     hasEmits,

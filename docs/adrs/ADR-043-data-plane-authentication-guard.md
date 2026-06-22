@@ -177,11 +177,12 @@ Add to `EntityDefinitionSchema` (`src/schema/entity-definition.schema.ts`, along
 api: z.boolean().optional().default(true),
 ```
 
-When `api: false`:
+When `api: false`, the **entire HTTP surface** is suppressed — not just the REST `@Controller`. Resolved during implementation: `api: false` semantically means "no network data plane," so it turns off **REST + Electric + tRPC** together (equivalent to `expose: ['repository']`), while the entity / repository / service / use-cases stay generated and in-process reachable. The two pipelines reach this differently:
 
-- The controller template (`controller.ejs.t` in both pipelines) and the NestJS route registration are skipped — the `entity new` post-step gates the controller emission on `api !== false`.
-- The module still binds the service/use-cases (in-process reachability is unchanged); only the `@Controller` and its routes are absent.
-- This is route *emission*, not auth — an `api: false` entity is invisible to HTTP regardless of guard state, which is the correct posture for material that should never traverse the data plane. It composes with §1–§4: a secret entity has no route to guard, and a guarded route is the floor for everything that does emit.
+- **Clean (backend):** `exposeRest` / `exposeElectric` / `exposeTrpc` are AND-ed with `entity.api !== false` in `prompt.js`. The controller `to:` (gated on `exposeRest || exposeElectric`), the core module's controller import + `controllers: [...]`, and the tRPC module/router (gated on `exposeTrpc`) all already key off those flags, so flipping them off suppresses emission *and* wiring with no per-template change. (One gotcha handled: the clean path injects *stub* CLP locals so CLP template bodies render before their `to:null` guard skips the write — `clpApiEnabled: true` had to be added to that stub.)
+- **Clean-Lite-PS:** a `clpApiEnabled` local (`definition.api !== false`) gates the controller + search-controller `skip_if`, and the module template's controller/search-controller import + `controllers: [...]` array (`<% if (clpApiEnabled) %>`).
+
+This is route *emission*, not auth — an `api: false` entity is invisible to HTTP regardless of guard state, the correct posture for material that should never traverse the data plane. It composes with §1–§4: a secret entity has no route to guard, and a guarded route is the floor for everything that does emit.
 
 ### 7. Auto-wire the boundary + guard at install (complete ADR-0002's deferral)
 

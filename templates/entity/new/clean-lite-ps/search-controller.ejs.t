@@ -1,6 +1,6 @@
 ---
 to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.searchController : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.searchController %>"
+skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.searchController || clpApiEnabled === false %>"
 force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
