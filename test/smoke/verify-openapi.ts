@@ -78,6 +78,14 @@ async function main(): Promise<void> {
 	process.env.DATABASE_URL =
 		process.env.DATABASE_URL ?? 'postgresql://stub:stub@127.0.0.1:1/stub';
 
+	// ADR-043: after `project upgrade-auth` the generated AppModule imports
+	// AuthModule.forRoot({ encryptionKey: 'env' }), whose EnvEncryptionKey
+	// reads INTEGRATION_TOKEN_ENCRYPTION_KEY at construction (app.init()).
+	// Provide a syntactically valid 32-byte base64 key — this path only builds
+	// the OpenAPI document; no token is ever encrypted.
+	process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY =
+		process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY ?? Buffer.alloc(32, 7).toString('base64');
+
 	const appModuleUrl = pathToFileURL(
 		path.join(tmpDir, 'src', 'app.module.ts'),
 	).href;

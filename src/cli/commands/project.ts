@@ -43,6 +43,7 @@ import { loadContext, type Context } from '../shared/context.js';
 import { buildInitPlan, writePlan, type InitPlan } from '../shared/init-scaffold.js';
 import { SUBSYSTEMS } from '../shared/subsystem-detect.js';
 import { ProjectUpgradeOpenapiCommand } from './project-upgrade-openapi.js';
+import { ProjectUpgradeAuthCommand } from './project-upgrade-auth.js';
 import { ProjectUpdateCommand } from './project-update.js';
 import { runSkillsInstall } from './skills.js';
 
@@ -881,6 +882,7 @@ const projectNoun: NounModule = {
 		ProjectInspectCommand,
 		ProjectGraphCommand,
 		ProjectUpgradeOpenapiCommand,
+		ProjectUpgradeAuthCommand,
 		ProjectUpdateCommand,
 	] as CommandClass[],
 	summary,

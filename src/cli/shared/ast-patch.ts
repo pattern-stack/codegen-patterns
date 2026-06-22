@@ -322,3 +322,128 @@ export function ensureMainSwaggerBlock(
 
 	return { changed: true, note: 'inserted Swagger bootstrap block' };
 }
+
+// ---------------------------------------------------------------------------
+// main.ts — RequesterContext boundary + closed-by-default boot-fail (ADR-043)
+// ---------------------------------------------------------------------------
+
+export interface MainRequesterContextPatchOptions {
+	/** Import specifier the auth barrel resolves to (mode-aware). */
+	authImport: string;
+	/** The block inserted inside the bootstrap function, after `app` creation. */
+	block: string;
+}
+
+/**
+ * Best-effort patch of `src/main.ts` to wire the ADR-043 closed-by-default data
+ * plane: `installRequesterContext(app)` + the boot-fail guard, inserted right
+ * after `NestFactory.create(...)` so the boundary runs before `app.listen()`.
+ *
+ * Idempotent: skips if `installRequesterContext(` already appears anywhere.
+ *
+ * Bails when `NestFactory.create(...)` is not found (exotic bootstrap).
+ */
+export function ensureMainRequesterContextBlock(
+	sourceFile: SourceFile,
+	opts: MainRequesterContextPatchOptions
+): PatchResult {
+	const text = sourceFile.getFullText();
+	if (/installRequesterContext\s*\(/.test(text)) {
+		return { changed: false, note: 'installRequesterContext already present' };
+	}
+
+	const calls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression);
+	const createCall = calls.find((c) => {
+		const expr = c.getExpression();
+		return Node.isPropertyAccessExpression(expr) && expr.getText() === 'NestFactory.create';
+	});
+	if (!createCall) {
+		return {
+			changed: false,
+			bail: "couldn't find NestFactory.create(...) — custom bootstrap shape",
+		};
+	}
+
+	let stmt: Node | undefined = createCall;
+	while (stmt && !Node.isStatement(stmt)) stmt = stmt.getParent();
+	if (!stmt) {
+		return { changed: false, bail: 'NestFactory.create(...) is not inside a statement' };
+	}
+
+	const insertPos = stmt.getEnd();
+	sourceFile.insertText(insertPos, '\n\n' + opts.block.trimEnd() + '\n');
+
+	ensureImport(sourceFile, opts.authImport, [
+		'installRequesterContext',
+		'AUTH_USER_CONTEXT',
+	]);
+
+	return { changed: true, note: 'inserted RequesterContext boundary + boot-fail block' };
+}
+
+/**
+ * Ensure a DYNAMIC module entry — a call expression like
+ * `AuthModule.forRoot({...})` — appears in a class's `@Module({ imports: [...] })`.
+ *
+ * Unlike {@link ensureModuleImportEntry} (which matches a bare identifier), this
+ * matches idempotently by the leading identifier (`matchIdentifier`, e.g.
+ * `AuthModule`): if any imports element's text starts with it, this is a no-op.
+ * Otherwise `elementText` (the full call expression) is inserted before the
+ * first spread element (convention: named modules precede `...GENERATED_MODULES`).
+ *
+ * Same bail-outs as {@link ensureModuleImportEntry}.
+ */
+export function ensureModuleDynamicImportEntry(
+	classDecl: ClassDeclaration,
+	matchIdentifier: string,
+	elementText: string
+): PatchResult {
+	const decorator = classDecl.getDecorator('Module');
+	if (!decorator) {
+		return { changed: false, bail: `class '${classDecl.getName()}' has no @Module() decorator` };
+	}
+	if (!decorator.isDecoratorFactory()) {
+		return { changed: false, bail: `@Module on '${classDecl.getName()}' is not a call expression` };
+	}
+	const [arg] = decorator.getArguments();
+	if (!arg || !Node.isObjectLiteralExpression(arg)) {
+		return {
+			changed: false,
+			bail: `@Module on '${classDecl.getName()}' takes a non-object argument (factory?)`,
+		};
+	}
+
+	const importsProp = arg.getProperty('imports');
+	if (!importsProp) {
+		arg.addPropertyAssignment({ name: 'imports', initializer: `[${elementText}]` });
+		return { changed: true, note: `created imports: [${matchIdentifier}...]` };
+	}
+	if (!Node.isPropertyAssignment(importsProp)) {
+		return {
+			changed: false,
+			bail: `@Module.imports on '${classDecl.getName()}' is not a simple property assignment`,
+		};
+	}
+	const init = importsProp.getInitializer();
+	if (!init || !Node.isArrayLiteralExpression(init)) {
+		return {
+			changed: false,
+			bail: `@Module.imports on '${classDecl.getName()}' is not an array literal (spread/alias?)`,
+		};
+	}
+
+	const already = init.getElements().some((el) => {
+		const t = el.getText();
+		return t === matchIdentifier || t.startsWith(matchIdentifier + '.');
+	});
+	if (already) {
+		return { changed: false, note: `${matchIdentifier} already in imports` };
+	}
+
+	const elements = init.getElements();
+	const spreadIdx = elements.findIndex((el) => Node.isSpreadElement(el));
+	const insertAt = spreadIdx === -1 ? elements.length : spreadIdx;
+	init.insertElement(insertAt, elementText);
+
+	return { changed: true, note: `added ${matchIdentifier}.forRoot(...) to imports` };
+}
