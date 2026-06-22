@@ -82,6 +82,9 @@ const EntityConfigSchema = z.object({
   expose: z.array(z.enum(["repository", "rest", "trpc"])).optional().describe(
     "Which layers to generate"
   ),
+  frontend: z.boolean().optional().describe(
+    "Emit frontend artifacts for this entity (default true). Set false to keep the entity dark in the frontend (no api/collections/entities/fields, no store entry, no full-fetch listAll) while still generating its backend."
+  ),
 });
 
 const EntityDefinitionSchema = z.object({

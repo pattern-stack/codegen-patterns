@@ -27,6 +27,7 @@ export interface EntityRegistryEntry {
 	camelName: string; // 'dealState'
 	pluralCamelName: string;
 	sync: 'api' | 'electric' | null; // null → inherit global frontend.sync.mode
+	frontend: boolean; // entity.frontend — false ⇒ excluded from all frontend emit (backend unaffected)
 }
 
 export interface LoadEntityRegistryResult {
@@ -114,6 +115,9 @@ export function loadEntityRegistry(entitiesDir: string): LoadEntityRegistryResul
 			camelName: camelCase(entity.name),
 			pluralCamelName: camelCase(entity.plural),
 			sync: entity.sync ?? null,
+			// `entity.frontend` carries a Zod `.default(true)`, so a validated
+			// definition always has it; `?? true` guards an unvalidated/partial entity.
+			frontend: entity.frontend ?? true,
 		});
 	}
 

@@ -54,6 +54,10 @@
               "trpc"
             ]
           }
+        },
+        "frontend": {
+          "description": "Emit frontend artifacts for this entity (default true). Set false to keep the entity dark in the frontend (no api/collections/entities/fields, no store entry, no full-fetch listAll) while still generating its backend.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -293,6 +297,29 @@
               "name"
             ]
           }
+        ]
+      }
+    },
+    "unique_indexes": {
+      "description": "Composite (multi-column) unique indexes",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Columns the composite unique constraint spans (2+)"
+          },
+          "name": {
+            "description": "Index name (default <table>_<col1>_<col2>_uniq)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fields"
         ]
       }
     }

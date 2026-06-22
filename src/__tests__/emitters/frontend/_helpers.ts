@@ -26,6 +26,7 @@ export function entry(
 	name: string,
 	plural: string,
 	sync: 'api' | 'electric' | null = null,
+	frontend = true,
 ): EntityRegistryEntry {
 	return {
 		name,
@@ -36,6 +37,7 @@ export function entry(
 		camelName: camelCase(name),
 		pluralCamelName: camelCase(plural),
 		sync,
+		frontend,
 	};
 }
 

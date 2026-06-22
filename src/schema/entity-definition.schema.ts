@@ -545,6 +545,25 @@ const EntityConfigSchema = z
     // docs/specs/2026-06-04-frontend-pipeline-rebuild.md OQ-6.
     // Sibling to `surface:`/`context:`; lives inside the `entity:` block.
     sync: z.enum(['api', 'electric']).optional(),
+
+    // Per-entity FRONTEND opt-out. When `false`, the whole-set frontend emitter
+    // (ADR-038) emits NO frontend artifacts for this entity — no api/collections/
+    // entities/fields files, no store index/resolver/lookup entry, no full-fetch
+    // `listAll()` call, and no dangling import referencing it. Backend generation
+    // (domain/application/infrastructure/presentation + Drizzle schema) is
+    // UNAFFECTED. Defaults to `true` (absent ⇒ current behavior: frontend emitted).
+    //
+    // Use case: an entity whose backend routes are deliberately blocked (e.g.
+    // auth_session / user_credential / password_reset / email_verification). The
+    // frontend would otherwise generate a store entry + a full-fetch `listAll()`
+    // in store hydration and eager-fetch the entity on load → 404 spam against the
+    // blocked routes. Setting `frontend: false` keeps the entity dark in the
+    // frontend while still generating its backend.
+    //
+    // Filtered at the single frontend-emit chokepoint (loadFrontendEmitContext) so
+    // every downstream emitter sees only the kept set. Sibling to `sync:`/
+    // `surface:`/`context:`; lives inside the `entity:` block.
+    frontend: z.boolean().optional().default(true),
   })
   .strict()
   .refine((d) => !(d.pattern && d.patterns), {

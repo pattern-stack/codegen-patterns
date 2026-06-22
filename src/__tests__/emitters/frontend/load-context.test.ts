@@ -9,12 +9,19 @@
  *     skip, and the outDir resolution from `locations.frontendGenerated`.
  */
 
-import { describe, expect, it } from 'bun:test';
-import { resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
 	loadFrontendEmitContext,
 	mapFrontendEmitConfig,
 } from '../../../emitters/frontend/load-context';
+import {
+	buildStoreIndexFile,
+	buildResolversFile,
+	lookupFullFetchNames,
+} from '../../../emitters/frontend/emit-store';
 
 // A focused, intentional entity set (explicit-plural `person` + FK-consumer
 // `user`) — the same fixtures the golden-tree emitter snapshot uses. Avoids the
@@ -198,5 +205,89 @@ describe('loadFrontendEmitContext — zero entities skips', () => {
 		const r = loadFrontendEmitContext(empty, {}, { entitiesDir: empty });
 		expect(r.skip).toBeDefined();
 		expect(r.ctx).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// entity.frontend: false — per-entity frontend-exclude knob
+// ---------------------------------------------------------------------------
+
+describe('loadFrontendEmitContext — entity.frontend:false excludes from the emit set', () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), 'frontend-exclude-'));
+		// A normal entity (frontend emitted by default) ...
+		writeFileSync(
+			join(dir, 'deal.yaml'),
+			`entity:
+  name: deal
+  plural: deals
+  table: deals
+fields:
+  name: { type: string, required: true, max_length: 200 }
+`,
+			'utf-8',
+		);
+		// ... and a route-blocked SECRET entity that opts OUT of the frontend.
+		writeFileSync(
+			join(dir, 'auth_session.yaml'),
+			`entity:
+  name: auth_session
+  plural: auth_sessions
+  table: auth_sessions
+  frontend: false
+fields:
+  token: { type: string, required: true, max_length: 200 }
+`,
+			'utf-8',
+		);
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it('drops the frontend:false entity from the emit set but keeps the normal one', () => {
+		const r = loadFrontendEmitContext(dir, {}, { entitiesDir: dir });
+		expect(r.skip).toBeUndefined();
+		if (r.skip !== undefined) return;
+
+		const names = r.ctx.entities.map((e) => e.name);
+		expect(names).toContain('deal');
+		expect(names).not.toContain('auth_session');
+		// the parsed map is filtered to the kept set too (no incidental lookups)
+		expect(r.ctx.parsed.has('deal')).toBe(true);
+		expect(r.ctx.parsed.has('auth_session')).toBe(false);
+	});
+
+	it('produces no store entry / full-fetch / resolver entry for the excluded entity', () => {
+		const r = loadFrontendEmitContext(dir, {}, { entitiesDir: dir });
+		if (r.skip !== undefined) throw new Error(r.skip);
+
+		// The excluded entity must not appear in the store full-fetch/lookup set ...
+		const fullFetch = lookupFullFetchNames(r.ctx);
+		expect(fullFetch.has('deal')).toBe(true);
+		expect(fullFetch.has('auth_session')).toBe(false);
+
+		// ... nor anywhere in the generated store index or resolvers (no dangling
+		// import, no `authSessions:` entry, no `authSessionApi.listAll()` call).
+		const storeIndex = buildStoreIndexFile(r.ctx);
+		const resolvers = buildResolversFile(r.ctx);
+		expect(storeIndex).toContain('deals:');
+		expect(storeIndex).not.toContain('authSession');
+		expect(resolvers).not.toContain('authSession');
+		// deal IS full-fetched (no unbounded text column) so its listAll() is present —
+		// proving the resolver wiring works while the excluded entity is fully absent.
+		expect(resolvers).toContain('dealApi.listAll()');
+	});
+
+	it('a normal entity is still fully wired when a sibling is excluded', () => {
+		const r = loadFrontendEmitContext(dir, {}, { entitiesDir: dir });
+		if (r.skip !== undefined) throw new Error(r.skip);
+		const storeIndex = buildStoreIndexFile(r.ctx);
+		// deal's hooks/collection/fields are imported and registered by plural.
+		expect(storeIndex).toContain("import { dealHooks } from '../entities/deal';");
+		expect(storeIndex).toContain('deals: dealHooks,');
 	});
 });

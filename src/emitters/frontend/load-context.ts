@@ -202,7 +202,18 @@ export function loadFrontendEmitContext(
 		path.resolve(cwd, config.paths?.entities_dir ?? 'entities');
 
 	const { registry } = loadEntityRegistry(entitiesDir);
-	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
+
+	// FRONTEND-EXCLUDE chokepoint: drop entities that opted out (`entity.frontend:
+	// false`) BEFORE building the context. Every downstream emitter (api,
+	// collections, entities, fields, store index/resolvers/lookups/module-index,
+	// root barrel) iterates `ctx.entities`, so filtering here is the single point
+	// that removes all their per-entity files, the store entry, the full-fetch
+	// `listAll()` call, the resolver/lookup entries, AND every import that would
+	// otherwise reference the dropped entity. Backend emission never reads this
+	// path, so it is unaffected. Default `frontend: true` ⇒ no behavior change.
+	const entities: EntityRegistryEntry[] = sortEntities(
+		[...registry.values()].filter((e) => e.frontend !== false),
+	);
 
 	if (entities.length === 0) {
 		return {
@@ -210,7 +221,13 @@ export function loadFrontendEmitContext(
 		};
 	}
 
-	const parsedList = loadEntities(entitiesDir).entities;
+	// The parsed map is filtered to the kept set too, so emitters that look up
+	// `ctx.parsed.get(name)` (field metadata, FK resolvers) never see an excluded
+	// entity even incidentally.
+	const kept = new Set(entities.map((e) => e.name));
+	const parsedList = loadEntities(entitiesDir).entities.filter((p) =>
+		kept.has(p.name),
+	);
 	const parsed: Map<string, ParsedEntity> = new Map(
 		parsedList.map((p) => [p.name, p]),
 	);
