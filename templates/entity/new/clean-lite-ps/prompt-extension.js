@@ -1491,6 +1491,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     baseLocals?.drizzleTokenImport ?? '@shared/constants/tokens';
   const drizzleTypeImport =
     baseLocals?.drizzleTypeImport ?? '@shared/types/drizzle';
+  // ADR-043 §5: use-cases read the acting principal from the ambient
+  // RequesterContext (ALS), never from self-asserted request headers.
+  const tenantContextImport =
+    baseLocals?.tenantContextImport ?? '@shared/base-classes/tenant-context';
   // Pagination contract (pagination-by-default). Package mode → the runtime
   // module `@pattern-stack/codegen/runtime/http/pagination`; vendored / default
   // → the consumer-owned `@shared/http/pagination`. Threaded from prompt.js;
@@ -1515,6 +1519,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     typedEventBusImport,
     drizzleTokenImport,
     drizzleTypeImport,
+    tenantContextImport,
     paginationImport,
 
     // Pattern — registry-driven (ADR-031)

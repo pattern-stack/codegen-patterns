@@ -26,7 +26,6 @@ export class CreateOpportunityCommand {
 
 	async execute(
 		dto: CreateOpportunityDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Opportunity> {
 		// TODO: Add pre-create validation and business rules here
 

@@ -10,6 +10,7 @@ import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 <% if (hasEmits && updateEventType) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
 import { FieldValueService } from '../../field_values/field_value.service';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
@@ -43,8 +44,10 @@ export class <%= classNames.updateUseCase %> {
   async execute(
     id: string,
     dto: <%= classNames.updateDto %> & { fields?: Record<string, unknown> },
-    <%= hasEmits && updateEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %> | null> {
+<% if (hasEmits && updateEventType) { -%>
+    const requester = tryGetRequester();
+<% } -%>
     return this.db.transaction(async (tx) => {
       const { fields, ...core } = dto;
       const entity = await this.<%= entityNamePlural %>.update(id, core as <%= classNames.updateDto %>, tx);
@@ -71,9 +74,7 @@ export class <%= classNames.updateUseCase %> {
         },
         {
           tx,
-          metadata: opts?.actor
-            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-            : undefined,
+          metadata: requester ? { userId: requester.userId } : undefined,
         },
       );
 <% } -%>
@@ -87,6 +88,7 @@ import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityName %>.dto';
 import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
@@ -106,8 +108,8 @@ export class <%= classNames.updateUseCase %> {
   async execute(
     id: string,
     dto: <%= classNames.updateDto %>,
-    opts?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %> | null> {
+    const requester = tryGetRequester();
     return this.db.transaction(async (tx) => {
       const entity = await this.service.update(id, dto, tx);
       if (!entity) return null;
@@ -123,9 +125,7 @@ export class <%= classNames.updateUseCase %> {
         },
         {
           tx,
-          metadata: opts?.actor
-            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-            : undefined,
+          metadata: requester ? { userId: requester.userId } : undefined,
         },
       );
       return entity;
@@ -145,7 +145,6 @@ export class <%= classNames.updateUseCase %> {
   async execute(
     id: string,
     dto: <%= classNames.updateDto %>,
-    _opts?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %> | null> {
     return this.service.update(id, dto);
   }

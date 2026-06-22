@@ -26,7 +26,6 @@ export class CreateUserCommand {
 
 	async execute(
 		dto: CreateUserDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<User> {
 		// TODO: Add pre-create validation and business rules here
 

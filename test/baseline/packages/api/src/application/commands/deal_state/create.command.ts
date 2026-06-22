@@ -26,7 +26,6 @@ export class CreateDealStateCommand {
 
 	async execute(
 		dto: CreateDealStateDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<DealState> {
 		// TODO: Add pre-create validation and business rules here
 

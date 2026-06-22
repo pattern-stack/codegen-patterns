@@ -19,6 +19,7 @@ import type { CreateContactDto } from '../../schemas';
 import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/subsystems/events';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
+import { tryGetRequester } from '@shared/base-classes/tenant-context';
 
 @Injectable()
 export class CreateContactCommand {
@@ -31,7 +32,6 @@ export class CreateContactCommand {
 
 	async execute(
 		dto: CreateContactDto,
-		opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Contact> {
 		// TODO: Add pre-create validation and business rules here
 
@@ -47,6 +47,7 @@ export class CreateContactCommand {
 			linkedinUrl: dto.linkedinUrl ?? null,
 		};
 
+		const requester = tryGetRequester();
 		return this.db.transaction(async (tx) => {
 			const entity = await this.contactRepository.create(input, tx);
 			// TODO: verify payload mapping against events/contact_created.yaml
@@ -63,9 +64,7 @@ export class CreateContactCommand {
 				},
 				{
 					tx,
-					metadata: opts?.actor
-						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-						: undefined,
+					metadata: requester ? { userId: requester.userId } : undefined,
 				},
 			);
 			// TODO: Add post-create side effects here (non-event hooks, notifications, etc.)
