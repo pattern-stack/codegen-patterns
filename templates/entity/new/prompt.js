@@ -1569,20 +1569,23 @@ export default {
       hasTemporalValidity: resolvedBehaviors.hasTemporalValidity,
       repositoryBehaviorConfig: resolvedBehaviors.repositoryConfig,
 
-      // Expose configuration (which layers to generate)
+      // Expose configuration (which layers to generate).
+      // ADR-043 §6: `api: false` suppresses the ENTIRE HTTP surface (REST +
+      // Electric + tRPC) — equivalent to repository-only — while leaving the
+      // entity/repository/service/use-cases in-process reachable.
       expose: entity.expose || ["repository", "rest", "trpc"],
       exposeRepository: (
         entity.expose || ["repository", "rest", "trpc"]
       ).includes("repository"),
-      exposeRest: (entity.expose || ["repository", "rest", "trpc"]).includes(
-        "rest",
-      ),
-      exposeTrpc: (entity.expose || ["repository", "rest", "trpc"]).includes(
-        "trpc",
-      ),
-      exposeElectric: (
-        entity.expose || ["repository", "rest", "trpc"]
-      ).includes("electric"),
+      exposeRest:
+        entity.api !== false &&
+        (entity.expose || ["repository", "rest", "trpc"]).includes("rest"),
+      exposeTrpc:
+        entity.api !== false &&
+        (entity.expose || ["repository", "rest", "trpc"]).includes("trpc"),
+      exposeElectric:
+        entity.api !== false &&
+        (entity.expose || ["repository", "rest", "trpc"]).includes("electric"),
 
       // Electric SQL where clause (derived from entity FK fields)
       electricWhereColumn,
@@ -1670,6 +1673,10 @@ export default {
       Object.assign(locals, {
         clpOutputPaths: undefined,
         clpImports: undefined,
+        // ADR-043 §6: stub so CLP template bodies referencing clpApiEnabled
+        // render without crashing on the clean-architecture path (the to: guard
+        // still skips the actual write).
+        clpApiEnabled: true,
         entityName: _n,
         entityNamePlural: _p,
         entityNamePascal: _n,

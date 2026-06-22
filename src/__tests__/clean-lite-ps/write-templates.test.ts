@@ -272,3 +272,29 @@ describe('clean-lite-ps write templates — module rendering', () => {
     expect(output).not.toContain('DeleteContactUseCase');
   });
 });
+
+describe('clean-lite-ps api:false HTTP-surface suppression (ADR-043 §6)', () => {
+  it('clpApiEnabled defaults true and flips false when api: false', () => {
+    expect(buildCleanLitePsLocals(baseEntity, {}).clpApiEnabled).toBe(true);
+    expect(
+      buildCleanLitePsLocals({ ...baseEntity, api: false }, {}).clpApiEnabled,
+    ).toBe(false);
+  });
+
+  it('module omits the controller import + registration when api: false', () => {
+    const locals = buildCleanLitePsLocals({ ...baseEntity, api: false }, {});
+    const output = render('module.ejs.t', locals);
+    // No controller import, empty controllers array — but service + repository stay.
+    expect(output).not.toContain("from './contact.controller'");
+    expect(output).toContain('controllers: [],');
+    expect(output).toContain('ContactService');
+    expect(output).toContain('ContactRepository');
+  });
+
+  it('module wires the controller normally when api is enabled (default)', () => {
+    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const output = render('module.ejs.t', locals);
+    expect(output).toContain("import { ContactController } from './contact.controller';");
+    expect(output).toContain('controllers: [ContactController]');
+  });
+});
