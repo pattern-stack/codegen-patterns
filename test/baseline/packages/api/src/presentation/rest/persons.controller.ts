@@ -9,7 +9,6 @@ import {
 	Controller,
 	Delete,
 	Get,
-	Headers,
 	Param,
 	ParseUUIDPipe,
 	Post,
@@ -86,10 +85,8 @@ export class PersonsController {
 	@UsePipes(new ZodValidationPipe(createPersonSchema))
 	async create(
 		@Body() dto: CreatePersonDto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<Person> {
-		return this.createPersonCommand.execute(dto, { actor: { tenantId, userId } });
+		return this.createPersonCommand.execute(dto);
 	}
 
 	@ApiOperation({ summary: 'Update person', operationId: 'updatePerson' })
@@ -103,10 +100,8 @@ export class PersonsController {
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
 		@Body(new ZodValidationPipe(updatePersonSchema)) dto: UpdatePersonDto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<Person> {
-		return this.updatePersonCommand.execute(id, dto, { actor: { tenantId, userId } });
+		return this.updatePersonCommand.execute(id, dto);
 	}
 
 	@ApiOperation({ summary: 'Delete person', operationId: 'deletePerson' })
@@ -117,10 +112,8 @@ export class PersonsController {
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<Person> {
-		return this.deletePersonCommand.execute(id, { actor: { tenantId, userId } });
+		return this.deletePersonCommand.execute(id);
 	}
 }
 

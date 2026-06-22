@@ -27,7 +27,6 @@ export class UpdateOpportunityCommand {
 	async execute(
 		id: string,
 		dto: UpdateOpportunityDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Opportunity> {
 		const existing = await this.opportunityRepository.findById(id);
 		if (!existing) {

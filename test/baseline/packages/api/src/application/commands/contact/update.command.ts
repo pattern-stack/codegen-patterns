@@ -27,7 +27,6 @@ export class UpdateContactCommand {
 	async execute(
 		id: string,
 		dto: UpdateContactDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Contact> {
 		const existing = await this.contactRepository.findById(id);
 		if (!existing) {

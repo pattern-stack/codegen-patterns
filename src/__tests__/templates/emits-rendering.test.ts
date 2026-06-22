@@ -96,6 +96,7 @@ function cleanArchBase() {
     eventsTokenImport: '@shared/subsystems/events',
     drizzleTokenImport: '@shared/constants/tokens',
     drizzleTypeImport: '@shared/types/drizzle',
+    tenantContextImport: '@shared/base-classes/tenant-context',
 
     // Repository-interface extras
     hasEntityRefFields: false,
@@ -171,11 +172,12 @@ describe('EVT-7 Clean Architecture — create command template', () => {
     expect(output).toContain("'contact_created'");
     expect(output).toContain('contactId: entity.id,');
     expect(output).toContain('accountId: entity.accountId,');
-    // F10: actor threaded through opts → metadata on publish
-    expect(output).toContain('opts?: { actor?: { tenantId?: string | null; userId?: string } }');
+    // ADR-043 §5: actor derived from the ambient RequesterContext (ALS).
+    expect(output).toContain("import { tryGetRequester } from '@shared/base-classes/tenant-context';");
+    expect(output).toContain('const requester = tryGetRequester();');
     expect(output).toContain('tx,');
-    expect(output).toContain('metadata: opts?.actor');
-    expect(output).toContain('{ tenantId: opts.actor.tenantId, userId: opts.actor.userId }');
+    expect(output).toContain('metadata: requester ? { userId: requester.userId } : undefined');
+    expect(output).not.toContain('opts.actor');
   });
 });
 
@@ -220,10 +222,11 @@ describe('EVT-7 Clean Architecture — update command template', () => {
     );
     expect(output).toContain("'contact_updated'");
     expect(output).toContain('contactId: entity.id,');
-    // F10: actor threaded through opts → metadata on publish
-    expect(output).toContain('opts?: { actor?: { tenantId?: string | null; userId?: string } }');
+    // ADR-043 §5: actor derived from the ambient RequesterContext (ALS).
+    expect(output).toContain('const requester = tryGetRequester();');
     expect(output).toContain('tx,');
-    expect(output).toContain('metadata: opts?.actor');
+    expect(output).toContain('metadata: requester ? { userId: requester.userId } : undefined');
+    expect(output).not.toContain('opts.actor');
   });
 });
 
@@ -268,10 +271,11 @@ describe('EVT-7 Clean Architecture — delete command template', () => {
     );
     expect(output).toContain("'contact_deleted'");
     expect(output).toContain('contactId: entity.id,');
-    // F10: actor threaded through opts → metadata on publish
-    expect(output).toContain('opts?: { actor?: { tenantId?: string | null; userId?: string } }');
+    // ADR-043 §5: actor derived from the ambient RequesterContext (ALS).
+    expect(output).toContain('const requester = tryGetRequester();');
     expect(output).toContain('tx,');
-    expect(output).toContain('metadata: opts?.actor');
+    expect(output).toContain('metadata: requester ? { userId: requester.userId } : undefined');
+    expect(output).not.toContain('opts.actor');
   });
 });
 
@@ -359,6 +363,7 @@ function clpBase() {
     eventsTokenImport: '@shared/subsystems/events',
     drizzleTokenImport: '@shared/constants/tokens',
     drizzleTypeImport: '@shared/types/drizzle',
+    tenantContextImport: '@shared/base-classes/tenant-context',
   };
 }
 

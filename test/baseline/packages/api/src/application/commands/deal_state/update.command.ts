@@ -27,7 +27,6 @@ export class UpdateDealStateCommand {
 	async execute(
 		id: string,
 		dto: UpdateDealStateDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<DealState> {
 		const existing = await this.dealStateRepository.findById(id);
 		if (!existing) {

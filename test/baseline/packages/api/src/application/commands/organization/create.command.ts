@@ -26,7 +26,6 @@ export class CreateOrganizationCommand {
 
 	async execute(
 		dto: CreateOrganizationDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Organization> {
 		// TODO: Add pre-create validation and business rules here
 

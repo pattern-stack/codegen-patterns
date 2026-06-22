@@ -25,7 +25,6 @@ export class DeleteOrganizationCommand {
 
 	async execute(
 		id: string,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Organization> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
