@@ -75,12 +75,12 @@ export interface IEventBus {
    * handler execution. Other consumers may use it for replay tooling and
    * audit dashboards.
    *
-   * Backends:
+   * Backends (ADR-041 option #2: the event log is drizzle | memory only — it
+   * does not run on BullMQ):
    *   - `MemoryEventBus` — searches its in-memory `publishedEvents` log.
    *   - `DrizzleEventBus` — `SELECT … FROM domain_events WHERE id = ? LIMIT 1`.
-   *   - `RedisEventBus` — Redis Pub/Sub does not retain history; returns
-   *     `null` (and logs a one-time warning at first call). Bridge usage
-   *     of Redis backend is unsupported.
+   *     The bridge re-fetches the committed row here, so both backends support
+   *     it. (BullMQ runs the scheduler clock + the jobs, not the event store.)
    */
   findById(eventId: string): Promise<DomainEvent | null>;
 

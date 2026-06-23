@@ -40,6 +40,7 @@ import {
 } from '../../../../runtime/subsystems/jobs';
 import {
   BullMQJobOrchestrator,
+  bullmqPriorityFor,
   sha1JobId,
 } from '../../../../runtime/subsystems/jobs/job-orchestrator.bullmq-backend';
 import { JobsDomainModule } from '../../../../runtime/subsystems/jobs/jobs-domain.module';
@@ -72,6 +73,33 @@ describe('sha1JobId', () => {
 
   it('distinct keys map to distinct ids', () => {
     expect(sha1JobId('account:1')).not.toBe(sha1JobId('account:2'));
+  });
+});
+
+// ─── bullmqPriorityFor — job_run.priority → BullMQ priority (review fix) ──────
+describe('bullmqPriorityFor', () => {
+  it('always returns a positive, in-range priority (never 0/unset)', () => {
+    // BullMQ drains the unprioritised FIFO list (priority 0/undefined) AHEAD of
+    // the prioritised set, so EVERY run must carry an explicit priority.
+    for (const p of [0, 1, 5, 100, 1_000_000]) {
+      const v = bullmqPriorityFor(p);
+      expect(v).toBeGreaterThanOrEqual(1);
+      expect(v).toBeLessThanOrEqual(2_097_152);
+    }
+  });
+
+  it('preserves the job_run contract: HIGHER job_run.priority → claimed first', () => {
+    // BullMQ: lower number = higher precedence. So a higher job_run.priority
+    // must map to a LOWER BullMQ value than a lower job_run.priority.
+    expect(bullmqPriorityFor(5)).toBeLessThan(bullmqPriorityFor(0));
+    expect(bullmqPriorityFor(100)).toBeLessThan(bullmqPriorityFor(5));
+    // The default (0) sits at the midpoint so elevated runs sort ahead of it.
+    expect(bullmqPriorityFor(0)).toBe(1_048_576);
+  });
+
+  it('clamps absurd / non-finite priorities into range', () => {
+    expect(bullmqPriorityFor(Number.POSITIVE_INFINITY)).toBe(1_048_576); // treated as 0
+    expect(bullmqPriorityFor(5_000_000)).toBe(1); // beyond base → top priority, clamped
   });
 });
 
