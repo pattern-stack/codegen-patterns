@@ -466,6 +466,13 @@ export class DrizzleEventBus implements IEventBus, IEventReadPort, OnModuleInit,
     const limit = clampEventLimit(query.limit);
     const conditions: SQL<unknown>[] = [];
 
+    if (query.type) conditions.push(eq(domainEvents.type, query.type));
+    if (query.aggregateType)
+      conditions.push(eq(domainEvents.aggregateType, query.aggregateType));
+    if (query.aggregateId)
+      conditions.push(eq(domainEvents.aggregateId, query.aggregateId));
+    if (query.status) conditions.push(eq(domainEvents.status, query.status));
+    if (query.tier) conditions.push(eq(domainEvents.tier, query.tier));
     if (query.poolId) conditions.push(eq(domainEvents.pool, query.poolId));
     if (query.direction)
       conditions.push(eq(domainEvents.direction, query.direction));
