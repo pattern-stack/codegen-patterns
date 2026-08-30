@@ -502,7 +502,9 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 						emitDecoratorMetadata: true,
 						allowImportingTsExtensions: true,
 						types: [],
-						baseUrl: '.',
+						// NO `baseUrl` — TS7 removed it (TS5102). The `paths`
+						// value below is an ABSOLUTE path, so baseUrl was inert
+						// here anyway.
 						paths: { '*': [path.join(tmpDir, 'node_modules', '*')] },
 					},
 					include: ['src/**/*'],
