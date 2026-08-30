@@ -140,6 +140,24 @@ export class MemoryJobRunService implements IJobRunService {
     }
   }
 
+  async getRun(runId: string, tenantId?: string | null): Promise<JobRun | null> {
+    const tenantCheck = this.tenantPredicate('getRun', tenantId);
+    const run = this.store.runs.get(runId);
+    if (!run) return null;
+    // A tenant-scoped caller must not see another tenant's run just because
+    // it knows the id — the id is not the authorisation.
+    if (tenantCheck && !tenantCheck(run)) return null;
+    return run as JobRun;
+  }
+
+  async countRuns(tenantId?: string | null): Promise<number> {
+    const tenantCheck = this.tenantPredicate('countRuns', tenantId);
+    if (!tenantCheck) return this.store.runs.size;
+    let n = 0;
+    for (const r of this.store.runs.values()) if (tenantCheck(r)) n += 1;
+    return n;
+  }
+
   async countByPoolAndStatus(
     tenantId?: string | null,
   ): Promise<PoolStatusCount[]> {

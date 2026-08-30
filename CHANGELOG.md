@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.0] — 2026-08-30
+
+### Added
+
+- **`ListEventsQuery` exposes the first-class columns `domain_events` already
+  indexes** (#568 part 1). `type`, `aggregate_id`, `aggregate_type`, `status`
+  and `tier` are declared columns on the schema (`domain-events.schema.ts`
+  :56, :57, :58, :63, :77) and the port exposed none of them — while it DID
+  expose `rootRunId`, which filters through a `metadata->>` jsonb probe. So the
+  query surface shipped a JSON path and omitted five plain indexed columns on
+  the same table, and a consumer asking "failed audit-tier events for this
+  aggregate" had to bypass the port with raw SQL against a table this
+  subsystem owns and may migrate.
+
+  `type` / `aggregateType` / `aggregateId` are first-class on `DomainEvent` and
+  read directly. `status` / `tier` are OUTBOX columns with no field on
+  `DomainEvent` — the same situation `pool` and `direction` were already in —
+  so the memory backend reads them from metadata, following the existing
+  convention rather than inventing a second one. Documented at the call site:
+  the memory backend models no delivery lifecycle, so a `status` filter there
+  matches what a publisher declared, not an observed outbox transition.
+
+- **`IJobRunService.getRun(runId, tenantId?)`** (#568 part 2) — one full
+  `job_run` by id. `listJobRuns` could only page and filter client-side.
+  Returns the FULL row (`input` / `output` / `error` / `tags`), not the
+  `JobRunSummary` projection, because a run inspector renders all of it and a
+  second round trip for what the list dropped is the shape this removes.
+  Tenant-gated: the id is not the authorisation.
+
+- **`IJobRunService.countRuns(tenantId?)`** — a plain total. Callers were
+  summing `countByPoolAndStatus`, which is correct only while every run has
+  both a pool and a status — an invariant nothing states.
+
+- **`IJobStepService.listSteps(runId)`** — every step of one run in execution
+  order. NOT a plural `findStep`, and the difference is load-bearing:
+  `findStep` returns only `completed` steps because it serves `ctx.step`
+  memoisation, while a timeline needs the opposite — the failed step is the
+  interesting one and a running step is where the run currently is.
+
+  All three implemented across protocol + drizzle + memory backends.
+
+### Notes
+
+Found by building an operator console on the subsystems and discovering the
+ports could not serve it — both `events` and `jobs` own their tables and
+exposed an arbitrary subset of reads over them, forcing consumers into raw SQL
+against subsystem-owned tables. `observability`'s combiner inherited the limits
+because it delegates.
+
+**Still open from #568:** a read of the `job` table itself (the definitions
+list materialised by `upsertJobRows` at boot has no read method on any port).
+Deferred rather than rushed — it belongs on `IJobOrchestrator` and touches
+three backends including bullmq.
+
 ## [0.28.3] — 2026-06-21
 
 ### Fixed
