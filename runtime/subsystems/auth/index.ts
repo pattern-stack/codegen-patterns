@@ -7,6 +7,8 @@
  * import {
  *   AuthModule,
  *   AuthController,
+ *   AuthenticatedGuard,
+ *   Public,
  *   ENCRYPTION_KEY,
  *   OAUTH_STATE_STORE,
  *   AUTH_CONNECTION_READER,
@@ -111,6 +113,10 @@ export {
 
 // Controller
 export { AuthController } from './controllers/auth.controller';
+
+// Guard — closed-by-default data-plane authentication (ADR-043)
+export { AuthenticatedGuard } from './guards/authenticated.guard';
+export { Public, IS_PUBLIC_KEY } from './guards/public.decorator';
 
 // Middleware — RequesterContext boundary (bridges auth → ambient tenant scope)
 export {

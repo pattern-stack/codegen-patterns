@@ -48,6 +48,7 @@ import type {
   ProviderStrategyRegistry,
 } from '../protocols/provider-strategy';
 import type { IConnectionGrantSink } from '../protocols/connection-store';
+import { Public } from '../guards/public.decorator';
 
 /**
  * Minimal response surface used by the controller — typed loosely so we
@@ -90,6 +91,12 @@ export class AuthController {
     return res.redirect(HttpStatus.FOUND, url);
   }
 
+  // The provider redirects the browser here with no app session — the caller's
+  // identity is carried in the signed `state`, consumed below. It must therefore
+  // bypass the global AuthenticatedGuard (ADR-043 §2: self-lockout ship-blocker).
+  // `connect` deliberately stays guarded: starting a connect flow requires an
+  // already-authenticated user (see `getCurrentUserId` above).
+  @Public()
   @Get(':provider/callback')
   async callback(
     @Param('provider') slug: string,
