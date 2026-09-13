@@ -492,7 +492,6 @@ function tsconfigTemplate(): string {
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@modules/*": ["./src/modules/*"],
@@ -629,7 +628,13 @@ export function mergeTsconfig(raw: string): TsconfigMergeResult & { parseError?:
 	}
 
 	compilerOptions.paths = paths;
-	if (compilerOptions.baseUrl === undefined) compilerOptions.baseUrl = '.';
+	// NO `baseUrl`. TypeScript 7 REMOVED the option outright (TS5102, not a
+	// deprecation), so emitting it into a consumer's tsconfig hands them a
+	// config their compiler rejects. Every `paths` entry this scaffold writes
+	// is already relative (`./src/shared/*`), and without `baseUrl` those
+	// resolve against the tsconfig's own directory — the same target `baseUrl:
+	// '.'` was producing. `provider-module-generator.ts` reads
+	// `compilerOptions.baseUrl ?? '.'`, so the alias map is unaffected.
 	parsed.compilerOptions = compilerOptions;
 
 	return {

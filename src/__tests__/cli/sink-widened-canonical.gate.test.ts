@@ -173,11 +173,23 @@ const TSCONFIG = JSON.stringify({
     strict: true,
     noEmit: true,
     skipLibCheck: true,
-    module: 'commonjs',
-    moduleResolution: 'bundler',
+    // Matches `tsconfig.build.json`'s proven pairing. `commonjs` +
+    // `moduleResolution: 'bundler'` is rejected outright by TS >=6
+    // (TS5095 — bundler needs `preserve` or es2015+), which failed this
+    // gate for a reason that had nothing to do with what it gates. These
+    // fixtures only type-check, so the module format is irrelevant to the
+    // proof; what matters is that it is a pairing TypeScript accepts.
+    //
+    // `baseUrl` + `ignoreDeprecations` are both GONE rather than updated.
+    // `ignoreDeprecations` takes a different literal per TS release, so
+    // it re-breaks on every major — and it existed only to silence the
+    // `baseUrl` deprecation, while `baseUrl` itself was doing no work
+    // here. Removing the pair removes the version coupling instead of
+    // re-pinning it.
+    module: 'ESNext',
+    moduleResolution: 'Bundler',
     target: 'es2020',
     lib: ['es2020'],
-    ignoreDeprecations: '6.0',
   },
   include: ['./**/*.ts'],
 }, null, 2);

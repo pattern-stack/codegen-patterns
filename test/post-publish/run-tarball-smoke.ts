@@ -95,6 +95,55 @@ console.log(`Tarball smoke: ${rootPkg.name}@${rootPkg.version} + ${surfacePkgs.l
 const stageDir = mkdtempSync(join(tmpdir(), 'codegen-tarball-smoke-'));
 process.on('exit', () => rmSync(stageDir, { recursive: true, force: true }));
 
+/**
+ * Extract the packed tarball name from `npm pack --json`, tolerating BOTH
+ * output shapes.
+ *
+ * npm <=10 prints an ARRAY of entries; npm >=11 prints an OBJECT. This script
+ * destructured the array form (`const [{ filename }] = ...`), so under npm 11
+ * it died with `TypeError: {} is not iterable` — a message that names neither
+ * npm, nor `pack`, nor the shape it actually received.
+ *
+ * CI is pinned to the moving target on purpose: `.github/workflows/ci.yml`
+ * runs `npm install -g npm@latest` because trusted publishing needs >= 11.5.1.
+ * So the publish job will keep meeting whatever npm ships next, and this
+ * function is where that gets absorbed. Local npm 10 returns the array form,
+ * which is why this passed every local run and failed only on merge to main.
+ *
+ * Throws with the RAW payload rather than a shape assertion — the previous
+ * failure cost a CI round trip precisely because the error described the
+ * symptom (`{}` is not iterable) and not the input.
+ */
+function packedFilename(packJson: string): string {
+  const parsed: unknown = JSON.parse(packJson);
+
+  const asEntry = (v: unknown): string | null =>
+    typeof v === 'object' && v !== null && typeof (v as { filename?: unknown }).filename === 'string'
+      ? (v as { filename: string }).filename
+      : null;
+
+  if (Array.isArray(parsed)) {
+    const name = asEntry(parsed[0]);
+    if (name) return name;
+  } else {
+    // npm >= 11: either the entry itself, or an object keyed by package id.
+    const direct = asEntry(parsed);
+    if (direct) return direct;
+    if (typeof parsed === 'object' && parsed !== null) {
+      for (const v of Object.values(parsed)) {
+        const name = asEntry(v);
+        if (name) return name;
+      }
+    }
+  }
+
+  throw new Error(
+    `npm pack --json returned no recognisable { filename } entry.\n` +
+      `npm --version: ${execSync('npm --version', { encoding: 'utf-8' }).trim()}\n` +
+      `raw output:\n${packJson}`,
+  );
+}
+
 // Root builds first — the surface packages' .d.ts builds resolve
 // @pattern-stack/codegen/subsystems against its dist/ (ADR-036 §8).
 console.log('Building + packing...');
@@ -106,7 +155,7 @@ for (const pkg of [rootPkg, ...surfacePkgs]) {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-  const [{ filename }] = JSON.parse(packJson);
+  const filename = packedFilename(packJson);
   tarballs.push(join(stageDir, filename));
   console.log(`  packed ${pkg.name}@${pkg.version}`);
 }

@@ -207,4 +207,28 @@ export interface IJobRunService {
    * for keyset pagination. Tenant gate follows `countByPoolAndStatus`.
    */
   listJobRuns(query?: ListJobRunsQuery): Promise<JobRunPage>;
+
+  /**
+   * One full `job_run` by id, or `null` when no such run exists (#568).
+   *
+   * `listJobRuns` could not answer this: paging the whole table and filtering
+   * client-side is the only way to reach a single run through that method, and
+   * a consumer that needs one run by id was forced past this port into raw SQL
+   * against a table this subsystem owns.
+   *
+   * Returns the FULL row (`input`, `output`, `error`, `tags`), not the
+   * `JobRunSummary` projection `listJobRuns` pages — a run inspector renders
+   * all of it, and a second round trip to fetch what the list dropped is the
+   * shape this method exists to remove.
+   */
+  getRun(runId: string, tenantId?: string | null): Promise<JobRun | null>;
+
+  /**
+   * Total `job_run` count.
+   *
+   * `countByPoolAndStatus` already exists and callers were summing its rows to
+   * get a total — which is correct only while every run has a pool and a
+   * status, an invariant nothing states. This asks the database directly.
+   */
+  countRuns(tenantId?: string | null): Promise<number>;
 }

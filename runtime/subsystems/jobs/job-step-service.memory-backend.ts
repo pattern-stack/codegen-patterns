@@ -26,6 +26,12 @@ export class MemoryJobStepService implements IJobStepService {
     @Inject(MemoryJobStore) private readonly store: MemoryJobStore,
   ) {}
 
+  async listSteps(runId: string): Promise<JobStep[]> {
+    // Insertion order IS execution order here, and deliberately NOT filtered
+    // to `completed` the way `findStep` is — see the protocol's note.
+    return [...(this.store.steps.get(runId) ?? [])] as JobStep[];
+  }
+
   async findStep(runId: string, stepId: string): Promise<JobStep | null> {
     const rows = this.store.steps.get(runId);
     if (!rows) return null;

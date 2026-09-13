@@ -50,4 +50,21 @@ export interface IJobStepService {
    * Lookup for memoization. Returns `null` when no prior row exists.
    */
   findStep(runId: string, stepId: string): Promise<JobStep | null>;
+
+  /**
+   * Every step of one run, in execution order (#568).
+   *
+   * NOT a plural `findStep`, and the difference is load-bearing.
+   * {@link findStep} exists for step MEMOISATION — `ctx.step` asks "did this
+   * step already complete?" — so it returns only `completed` steps. A run
+   * timeline needs the opposite: the failed step is the interesting one, and
+   * a running step is what tells an operator where the run currently is.
+   * This method filters by status not at all.
+   *
+   * `[]` is a real answer (a run that has recorded no steps), distinct from a
+   * run that does not exist — callers distinguish those by asking
+   * `IJobRunService.getRun` first. Without this method a consumer could reach
+   * a run's steps only through raw SQL against a table this subsystem owns.
+   */
+  listSteps(runId: string): Promise<JobStep[]>;
 }

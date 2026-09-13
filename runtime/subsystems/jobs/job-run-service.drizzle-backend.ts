@@ -271,6 +271,28 @@ export class DrizzleJobRunService implements IJobRunService {
    * Exposed as a public method on the concrete class so infrastructure
    * code (cascade tests, debug tools) can call it without a cast.
    */
+  async getRun(runId: string, tenantId?: string | null): Promise<JobRun | null> {
+    const conditions = [eq(jobRuns.id, runId)];
+    const tenantCond = this.tenantCondition('getRun', tenantId);
+    if (tenantCond) conditions.push(tenantCond);
+
+    const rows = await this.db
+      .select()
+      .from(jobRuns)
+      .where(and(...conditions))
+      .limit(1);
+    return (rows[0] as JobRun | undefined) ?? null;
+  }
+
+  async countRuns(tenantId?: string | null): Promise<number> {
+    const tenantCond = this.tenantCondition('countRuns', tenantId);
+    const rows = await this.db
+      .select({ value: sql<number>`count(*)::int`.as('value') })
+      .from(jobRuns)
+      .where(tenantCond ?? undefined);
+    return rows[0]?.value ?? 0;
+  }
+
   async findByRootRunId(rootRunId: string): Promise<JobRun[]> {
     const rows = await this.db
       .select()

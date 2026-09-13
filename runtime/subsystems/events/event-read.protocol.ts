@@ -28,6 +28,25 @@ import type { DomainEvent } from './event-bus.protocol';
  * machinery so an event can be traced back to the run tree that emitted it.
  */
 export interface ListEventsQuery {
+  /**
+   * Filter on the first-class `type` column — the event's name
+   * (`<aggregate>_<verb>`), as declared in `events/*.yaml`.
+   */
+  type?: string;
+  /** Filter on the first-class `aggregate_type` column. */
+  aggregateType?: string;
+  /**
+   * Filter on the first-class `aggregate_id` column.
+   *
+   * Pairs with {@link aggregateType} to answer "everything that happened to
+   * THIS entity" — the question an operator surface asks most often, and the
+   * one the correlation filters below cannot express.
+   */
+  aggregateId?: string;
+  /** Filter on the first-class `status` column (pending|processed|failed). */
+  status?: string;
+  /** Filter on the first-class `tier` column (domain|audit). */
+  tier?: string;
   /** Filter on `metadata->>'rootRunId'` (correlation id). */
   rootRunId?: string;
   /** Filter on the first-class `pool` column. */

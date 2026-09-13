@@ -8,10 +8,14 @@
     "strict": true,
     "skipLibCheck": true,
     "outDir": "./dist",
-    "baseUrl": ".",
     "paths": {
-      "@gen/*": ["../../*"],
-      "@shared/*": ["./shared/*", "../../shared/*"]
+      "@gen/*": [
+        "../../*"
+      ],
+      "@shared/*": [
+        "./shared/*",
+        "../../shared/*"
+      ]
     }
   },
   "include": [
