@@ -1389,6 +1389,9 @@ export default {
     const typedEventBusImport = subsystemsImport(runtimeMode, 'events');
     const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
     const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
+    // ADR-043 §5: use-cases read the acting principal from the ambient
+    // RequesterContext (ALS), never from self-asserted request headers.
+    const tenantContextImport = runtimeImport(runtimeMode, 'base-classes/tenant-context');
     // Pagination contract (pagination-by-default). ASYMMETRIC by mode:
     //   - package  → `@pattern-stack/codegen/runtime/http/pagination` (Page<T>,
     //     ListQuerySchema, resolveListQuery, buildPage, cursor codec) — the
@@ -1627,6 +1630,7 @@ export default {
       typedEventBusImport,
       drizzleTokenImport,
       drizzleTypeImport,
+      tenantContextImport,
       paginationImport,
       integrationSubsystemImport,
       withAnalyticsImport,

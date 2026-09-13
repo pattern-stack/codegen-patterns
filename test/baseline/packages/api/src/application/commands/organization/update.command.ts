@@ -27,7 +27,6 @@ export class UpdateOrganizationCommand {
 	async execute(
 		id: string,
 		dto: UpdateOrganizationDto,
-		_opts?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<Organization> {
 		const existing = await this.organizationRepository.findById(id);
 		if (!existing) {

@@ -10,6 +10,7 @@ import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 <% if (hasEmits && createEventType) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
 import { FieldValueService } from '../../field_values/field_value.service';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
@@ -44,8 +45,10 @@ export class <%= classNames.createUseCase %> {
 
   async execute(
     dto: <%= classNames.createDto %> & { fields?: Record<string, unknown> },
-    <%= hasEmits && createEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %>> {
+<% if (hasEmits && createEventType) { -%>
+    const requester = tryGetRequester();
+<% } -%>
     return this.db.transaction(async (tx) => {
       const { fields, ...core } = dto;
       const entity = await this.<%= entityNamePlural %>.create(core as <%= classNames.createDto %>, tx);
@@ -71,9 +74,7 @@ export class <%= classNames.createUseCase %> {
         },
         {
           tx,
-          metadata: opts?.actor
-            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-            : undefined,
+          metadata: requester ? { userId: requester.userId } : undefined,
         },
       );
 <% } -%>
@@ -87,6 +88,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityName %>.dto';
 import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
@@ -105,8 +107,8 @@ export class <%= classNames.createUseCase %> {
 
   async execute(
     dto: <%= classNames.createDto %>,
-    opts?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %>> {
+    const requester = tryGetRequester();
     return this.db.transaction(async (tx) => {
       const entity = await this.service.create(dto, tx);
       // TODO: verify payload mapping against events/<%= createEventType.type %>.yaml
@@ -121,9 +123,7 @@ export class <%= classNames.createUseCase %> {
         },
         {
           tx,
-          metadata: opts?.actor
-            ? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-            : undefined,
+          metadata: requester ? { userId: requester.userId } : undefined,
         },
       );
       return entity;
@@ -142,7 +142,6 @@ export class <%= classNames.createUseCase %> {
 
   async execute(
     dto: <%= classNames.createDto %>,
-    _opts?: { actor?: { tenantId?: string | null; userId?: string } },
   ): Promise<<%= classNames.entity %>> {
     return this.service.create(dto);
   }

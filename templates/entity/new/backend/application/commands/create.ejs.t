@@ -26,6 +26,7 @@ import type { Create<%= className %>Dto } from '<%= imports.schemas %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
 
 @Injectable()
@@ -41,7 +42,6 @@ export class <%= createCommandClass %> {
 
 	async execute(
 		dto: Create<%= className %>Dto,
-		<%= hasEmits && createEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<<%= className %>> {
 		// TODO: Add pre-create validation and business rules here
 
@@ -59,6 +59,7 @@ export class <%= createCommandClass %> {
 		};
 
 <% if (hasEmits && createEventType) { -%>
+		const requester = tryGetRequester();
 		return this.db.transaction(async (tx) => {
 			const entity = await this.<%= camelName %>Repository.create(input, tx);
 			// TODO: verify payload mapping against events/<%= createEventType.type %>.yaml
@@ -73,9 +74,7 @@ export class <%= createCommandClass %> {
 				},
 				{
 					tx,
-					metadata: opts?.actor
-						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-						: undefined,
+					metadata: requester ? { userId: requester.userId } : undefined,
 				},
 			);
 			// TODO: Add post-create side effects here (non-event hooks, notifications, etc.)

@@ -25,6 +25,7 @@ import { <%= className %> } from '<%= imports.domain %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
 
 @Injectable()
@@ -40,12 +41,12 @@ export class <%= deleteCommandClass %> {
 
 	async execute(
 		id: string,
-		<%= hasEmits && deleteEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<<%= className %>> {
 		// TODO: Add pre-delete validation here
 		// e.g., check for dependent records, verify user permissions
 
 <% if (hasEmits && deleteEventType) { -%>
+		const requester = tryGetRequester();
 		return this.db.transaction(async (tx) => {
 			const entity = await this.<%= camelName %>Repository.delete(id, tx);
 			if (!entity) {
@@ -63,9 +64,7 @@ export class <%= deleteCommandClass %> {
 				},
 				{
 					tx,
-					metadata: opts?.actor
-						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-						: undefined,
+					metadata: requester ? { userId: requester.userId } : undefined,
 				},
 			);
 			// TODO: Add post-delete side effects here (cleanup, etc.)
