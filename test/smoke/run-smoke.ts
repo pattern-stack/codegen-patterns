@@ -495,6 +495,32 @@ async function main(): Promise<number> {
 		if (!appModule.includes('AuthModule')) {
 			throw new Error('AuthModule TODO hint missing from app.module.ts after auth install');
 		}
+
+		// 5.6a. ADR-043 — wire the auth subsystem via the AST codemod, then
+		// assert it landed: AuthModule.forRoot in app.module.ts imports +
+		// installRequesterContext + boot-fail in main.ts. Idempotent (run twice).
+		run(`${cli(tmpDir)} project upgrade-auth`, tmpDir);
+		run(`${cli(tmpDir)} project upgrade-auth`, tmpDir); // idempotency
+		const appModuleAfterUpgrade = fs.readFileSync(appModulePath, 'utf8');
+		if (!/imports:\s*\[[^\]]*AuthModule\.forRoot/.test(appModuleAfterUpgrade)) {
+			throw new Error('project upgrade-auth did not add AuthModule.forRoot to AppModule.imports');
+		}
+		const mainTsAfterUpgrade = fs.readFileSync(path.join(tmpDir, 'src/main.ts'), 'utf8');
+		if (!mainTsAfterUpgrade.includes('installRequesterContext(app)')) {
+			throw new Error('project upgrade-auth did not wire installRequesterContext into main.ts');
+		}
+		if ((mainTsAfterUpgrade.match(/installRequesterContext\(app\)/g) ?? []).length !== 1) {
+			throw new Error('project upgrade-auth is not idempotent — installRequesterContext wired more than once');
+		}
+
+		// 5.6b. Copy the auth-probe module into src/ so step 7.5 can boot it
+		// over HTTP against the vendored auth runtime (ADR-043 both-direction
+		// assertion). Lives in src/ so tsc (step 6) validates it too.
+		fs.copyFileSync(
+			path.join(REPO_ROOT, 'test', 'smoke', 'fixtures', 'auth-probe', 'auth-probe.module.ts'),
+			path.join(tmpDir, 'src', 'auth-probe.module.ts'),
+		);
+
 		const envConfigPath = path.join(tmpDir, '.env.config');
 		if (!fs.existsSync(envConfigPath)) {
 			throw new Error('.env.config not created by auth install');
@@ -638,6 +664,30 @@ async function main(): Promise<number> {
 				// Surface the verify script's own log lines for visibility.
 				if (verifyResult.out.trim()) {
 					for (const line of verifyResult.out.split('\n')) {
+						if (line.trim()) log(`  ${line}`);
+					}
+				}
+			}
+		}
+
+		// 7.5. ADR-043: boot the auth-probe module over HTTP against the vendored
+		// auth runtime and assert the closed-by-default data plane both ways —
+		// unauth → 401, authed → 200 + ALS-scoped principal, @Public → 200.
+		if (exitCode === 0) {
+			log('verifying closed-by-default auth boot (probe module over HTTP)');
+			const authVerify = runSilent(
+				`bun ${path.join(REPO_ROOT, 'test', 'smoke', 'verify-auth-boot.ts')} ${tmpDir}`,
+				tmpDir,
+			);
+			if (authVerify.code !== 0) {
+				console.error(authVerify.out);
+				console.error(authVerify.err);
+				logError('auth boot verification failed');
+				exitCode = 1;
+			} else {
+				log('auth OK (closed-by-default data plane verified)');
+				if (authVerify.out.trim()) {
+					for (const line of authVerify.out.split('\n')) {
 						if (line.trim()) log(`  ${line}`);
 					}
 				}

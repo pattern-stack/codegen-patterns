@@ -46,9 +46,9 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('project NounModule', () => {
-	test('exports name=project with all seven commands', () => {
+	test('exports name=project with all eight commands', () => {
 		expect(projectNoun.name).toBe('project');
-		expect(projectNoun.commandClasses.length).toBe(7);
+		expect(projectNoun.commandClasses.length).toBe(8);
 		expect(typeof projectNoun.summary).toBe('function');
 		expect(typeof projectNoun.hints).toBe('function');
 	});

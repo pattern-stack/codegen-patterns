@@ -14,10 +14,12 @@ import {
   PatternsConfigSchema,
   RuntimeModeSchema,
   FrontendConfigSchema,
+  AuthConfigSchema,
   type GenerateConfig,
   type PatternsConfig,
   type RuntimeMode,
   type FrontendConfig,
+  type AuthConfig,
 } from '../schema/codegen-config.schema.js';
 
 // ============================================================================
@@ -49,6 +51,13 @@ export interface ProjectConfig {
    * so the emitter reads a complete config without per-key fallbacks.
    */
   frontend?: FrontendConfig;
+  /**
+   * Closed-by-default data-plane authentication knobs (ADR-043). Always
+   * populated after load (defaults applied even when the block is absent). The
+   * `devAllowAnonymous` escape hatch is read at bootstrap by the generated
+   * `main.ts` boot-fail check.
+   */
+  auth?: AuthConfig;
   [key: string]: unknown;
 }
 
@@ -130,6 +139,22 @@ function loadProjectConfig(cwd = process.cwd()): ProjectConfig | null {
       console.warn(
         `Warning: codegen.config.yaml has an invalid "frontend" block:\n` +
           frontendResult.error.issues
+            .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+            .join('\n')
+      );
+    }
+
+    // Validate the auth block (always — full defaults applied even when the
+    // block is absent; ADR-043).
+    const rawAuth =
+      raw && typeof raw === 'object' && 'auth' in raw ? raw.auth : undefined;
+    const authResult = AuthConfigSchema.safeParse(rawAuth ?? {});
+    if (authResult.success) {
+      raw.auth = authResult.data;
+    } else {
+      console.warn(
+        `Warning: codegen.config.yaml has an invalid "auth" block:\n` +
+          authResult.error.issues
             .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
             .join('\n')
       );
