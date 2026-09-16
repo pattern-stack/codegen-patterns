@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0] — 2026-09-16
+
+**Breaking.** The generated data plane is closed by default (ADR-043, #557).
+Upgrading consumers must run `codegen project upgrade-auth`, then either bind an
+`IUserContext` under `AUTH_USER_CONTEXT` in `AppModule` or set
+`auth.devAllowAnonymous: true` (localhost-only) — otherwise the app refuses to
+boot.
+
+### Added
+
+- **`AuthenticatedGuard` + `@Public()`** (#562). `AuthModule.forRoot` binds the
+  guard as `APP_GUARD`: any non-`@Public()` route with no ambient
+  `RequesterContext` returns 401. The guard reads the ALS the boundary
+  middleware established; it never re-resolves the principal. The OAuth
+  callback is `@Public()` (identity travels in signed state); `connect` stays
+  guarded.
+- **`codegen project upgrade-auth`** (#563) — idempotent AST codemod wiring
+  `AuthModule.forRoot` into `AppModule.imports` and the requester-context +
+  boot-fail block into `main.ts`.
+- **`auth.devAllowAnonymous`** config key (strict, default `false`) (#563).
+- **Per-entity `api: false`** (#565) — suppresses the entire HTTP surface
+  (REST + Electric + tRPC) while entity / repository / service / use-cases stay
+  generated and reachable in-process.
+- `installRequesterContext`, `makeRequesterContextMiddleware`,
+  `resolveRequesterContext`, `AuthenticatedGuard`, `Public`, `IS_PUBLIC_KEY`
+  exported from `@pattern-stack/codegen/subsystems` (#563).
+
+### Changed
+
+- **Package-mode scaffold `main.ts`** wires `installRequesterContext(app)` and
+  refuses to `listen()` when no `IUserContext` is bound (unless
+  `auth.devAllowAnonymous`). HTTP-entrypoint only — `worker.ts` never gets the
+  check (#563).
+
+### Removed
+
+- **The self-asserted `x-user-id` / `x-tenant-id` header path** (#564). Both
+  controller pipelines drop the `@Headers(...)` params and `{ actor }`
+  threading; use-cases derive the actor from `tryGetRequester()`. Deleted, not
+  deprecated.
+
+### Fixed
+
+- The publish job tolerates npm 11's `pack --json` output shape (#572).
+
 ## [0.29.0] — 2026-08-30
 
 ### Added
