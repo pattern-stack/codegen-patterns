@@ -8,7 +8,7 @@
  * that `ctx.step()` consults on every invocation; null on miss.
  */
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { DRIZZLE } from '../../constants/tokens';
 import { jobSteps, type JobStepRow } from './job-orchestration.schema';
@@ -53,6 +53,18 @@ export class DrizzleJobStepService implements IJobStepService {
       .returning();
 
     return row as JobStep;
+  }
+
+  async listSteps(runId: string): Promise<JobStep[]> {
+    // `seq` asc is the execution order and rides the (job_run_id, seq)
+    // timeline index. Unordered, Postgres returns heap order, which reads as
+    // a shuffled timeline.
+    const rows = await this.db
+      .select()
+      .from(jobSteps)
+      .where(eq(jobSteps.jobRunId, runId))
+      .orderBy(asc(jobSteps.seq));
+    return rows as JobStep[];
   }
 
   async findStep(runId: string, stepId: string): Promise<JobStep | null> {

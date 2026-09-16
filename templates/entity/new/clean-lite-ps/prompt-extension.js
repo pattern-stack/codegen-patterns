@@ -302,9 +302,17 @@ function renderColumnDefault(value, drizzleType) {
 }
 
 /**
- * Process entity fields into ProcessedField[]
+ * Process entity fields into ProcessedField[].
+ *
+ * `entityName` (snake_case) namespaces enum-typed fields so two entities that
+ * each declare an enum field with the SAME name (e.g. `role`, `status`) don't
+ * collide. Without it the pg type name AND the exported const were derived from
+ * the field name alone, so a second entity with the same enum field produced a
+ * duplicate `export const roleEnum` (TS2308) and a duplicate `CREATE TYPE role`
+ * at the DB level (a real migration conflict). Namespacing yields
+ * `field_config_role` (pg type) / `fieldConfigRoleEnum` (export) instead.
  */
-function processFields(fields) {
+function processFields(fields, entityName = '') {
   const processed = [];
 
   for (const [fieldName, field] of Object.entries(fields)) {
@@ -325,7 +333,14 @@ function processFields(fields) {
     const drizzleType = hasChoices
       ? 'enum'
       : (DRIZZLE_TYPE_MAP[type] || 'text');
-    const enumName = hasChoices ? camelCase(fieldName) + 'Enum' : null;
+    // Namespace the enum const + pg type name by entity so same-named enum
+    // fields on different entities don't collide (TS2308 / duplicate CREATE TYPE).
+    // The COLUMN name keeps the bare snake field name (`role`); only the const
+    // (`fieldConfigRoleEnum`) and pg type (`field_config_role`) are namespaced.
+    const enumDbName = hasChoices
+      ? (entityName ? `${entityName}_${fieldName}` : fieldName)
+      : null;
+    const enumName = hasChoices ? camelCase(enumDbName) + 'Enum' : null;
     const tsType = hasChoices
       ? choices.map((c) => `'${c}'`).join(' | ')
       : (TS_TYPE_MAP[type] || 'unknown');
@@ -350,6 +365,7 @@ function processFields(fields) {
       choices,
       hasChoices,
       enumName,
+      enumDbName,
     });
   }
 
@@ -425,8 +441,17 @@ function processHasMany(relationships, parentEntityNamePlural, fs, path, srcRoot
 
 /**
  * Process belongs_to relationships into BelongsToRelation[]
+ *
+ * `fields` is the raw `fields:` map (snake_case keyed). When the FK column is
+ * ALSO declared as a field (e.g. `conversation_id: { type: uuid, required:
+ * true, index: true }`), the belongs_to column must inherit that field's
+ * `required`/`nullable` (→ `.notNull()`) and `index: true` (→ a single-column
+ * index). The relationship moves the column out of `clpProcessedFields`, so
+ * those declarations would otherwise be silently dropped. An explicit
+ * `nullable:` on the relationship still wins (back-compat for fixtures that set
+ * it directly on the relation).
  */
-function processBelongsTo(relationships, parentEntityNamePlural) {
+function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
   if (!relationships) return [];
 
   const result = [];
@@ -436,7 +461,27 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
 
     const target = rel.target;
     const field = rel.foreign_key;
-    const nullable = rel.nullable ?? true;
+    // Inherit nullability from the underlying field declaration when present.
+    // Precedence: explicit relationship `nullable:` → field `required`/`nullable`
+    // → default nullable (true). A `required: true` field is NOT NULL.
+    const fieldDef = fields[field];
+    let nullable;
+    if (rel.nullable !== undefined && rel.nullable !== null) {
+      nullable = rel.nullable;
+    } else if (fieldDef) {
+      if (fieldDef.required === true) {
+        nullable = false;
+      } else if (fieldDef.nullable !== undefined && fieldDef.nullable !== null) {
+        nullable = fieldDef.nullable;
+      } else {
+        nullable = true;
+      }
+    } else {
+      nullable = true;
+    }
+    // Carry the field's `index: true` so the table-constraints builder can emit
+    // the same single-column index a non-FK field would get.
+    const hasIndex = fieldDef?.index === true;
     const relatedPlural = pluralize(target);
     const isSelfFk = relatedPlural === parentEntityNamePlural;
 
@@ -467,6 +512,7 @@ function processBelongsTo(relationships, parentEntityNamePlural) {
       relatedTable: relatedPlural,
       relatedPlural,
       nullable,
+      hasIndex,
       importPath: `../${relatedPlural}/${target}.entity`,
       relationKey,
       isSelfFk,
@@ -1036,6 +1082,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const relationships = definition.relationships || {};
   const behaviors = definition.behaviors || [];
   const queriesBlock = definition.queries || null;
+  // ADR-043 §6: `api: false` suppresses the HTTP surface (controller + search
+  // controller + their module wiring) while keeping the entity/repository/
+  // service/use-cases in-process reachable. Defaults to true.
+  const clpApiEnabled = definition.api !== false;
 
   // Source root — resolved in priority order:
   //   1. baseLocals.srcRoot (e.g. set explicitly by tests or callers)
@@ -1133,8 +1183,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     typeof patternConfigBlock === 'object' &&
     Object.keys(patternConfigBlock).length > 0;
 
-  // Process entity fields
-  const processedFields = processFields(fields);
+  // Process entity fields. Pass the entity name so enum fields namespace their
+  // pg type + exported const by entity (prevents same-named enum collisions
+  // across entities — TS2308 / duplicate CREATE TYPE).
+  const processedFields = processFields(fields, entityName);
 
   // Behavior flags (re-read from behaviors array for clean-lite-ps use).
   //
@@ -1180,8 +1232,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const hasOrderedQuery = processedQueries.some((q) => q.hasOrder);
   const hasViaQuery = processedQueries.some((q) => q.hasVia);
 
-  // Process belongs_to relationships
-  const belongsTo = processBelongsTo(relationships, entityNamePlural);
+  // Process belongs_to relationships. Pass the raw fields map so a FK column
+  // also declared as a field inherits its `required`/`nullable` (→ .notNull())
+  // and `index: true` (→ a single-column index emitted below).
+  const belongsTo = processBelongsTo(relationships, entityNamePlural, fields);
 
   // Process has_many relationships (CGP-358b)
   const hasMany = processHasMany(relationships, entityNamePlural, fs, path, srcRoot);
@@ -1232,10 +1286,23 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Composite unique indexes (#356).
   const uniqueIndexExpressions = processUniqueIndexes(definition.unique_indexes, entityNamePlural);
 
-  // pgTable extra-config callback entries, in emission order: single-column
-  // indexes, composite unique indexes, then the external_id_tracking unique
-  // index (the ON CONFLICT target integrationUpsert relies on).
+  // belongs_to FK columns that declared `index: true` on their underlying
+  // field. The FK column lives in clpBelongsTo (not clpProcessedFields), so
+  // processFieldFeatures never sees it — emit its index here using the same
+  // `<table>_<col>_idx` naming a non-FK indexed field gets.
+  const belongsToIndexExpressions = belongsTo
+    .filter((rel) => rel.hasIndex)
+    .map((rel) => ({
+      comment: null,
+      expr: `index('${entityNamePlural}_${rel.field}_idx').on(t.${rel.camelField})`,
+    }));
+
+  // pgTable extra-config callback entries, in emission order: belongs_to FK
+  // indexes, single-column field indexes, composite unique indexes, then the
+  // external_id_tracking unique index (the ON CONFLICT target integrationUpsert
+  // relies on).
   const clpTableConstraints = [
+    ...belongsToIndexExpressions,
     ...fieldFeatures.indexExpressions,
     ...uniqueIndexExpressions,
   ];
@@ -1250,11 +1317,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
   // the `pgTable(...)` block. Both FK-filtered and unfiltered processing
   // include the same enum fields; they're never FKs.
+  //
+  // `dbName` is the Postgres TYPE name — namespaced by entity
+  // (`field_config_role`) so two entities with a same-named enum field don't
+  // emit duplicate `CREATE TYPE`s. The COLUMN name is still the bare field
+  // name and is carried by the column reference (`f.name`) in the entity
+  // template, not here.
   const clpEnumFields = processedFields
     .filter((f) => f.hasChoices && f.enumName)
     .map((f) => ({
       enumName: f.enumName,
-      dbName: f.name,
+      dbName: f.enumDbName,
       choices: f.choices,
     }));
 
@@ -1262,7 +1335,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // field declares `index: true` or the entity declares `unique_indexes:`
   // (external_id_tracking adds `uniqueIndex` on its own flag below).
   const extraDrizzleImports = [];
-  if (fieldFeatures.indexExpressions.length > 0) extraDrizzleImports.push('index');
+  if (fieldFeatures.indexExpressions.length > 0 || belongsToIndexExpressions.length > 0) {
+    extraDrizzleImports.push('index');
+  }
   if (uniqueIndexExpressions.length > 0) extraDrizzleImports.push('uniqueIndex');
   const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany, extraDrizzleImports);
   // Whether relations() import is needed (CGP-358b: also trigger on has_many)
@@ -1420,6 +1495,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     baseLocals?.drizzleTokenImport ?? '@shared/constants/tokens';
   const drizzleTypeImport =
     baseLocals?.drizzleTypeImport ?? '@shared/types/drizzle';
+  // ADR-043 §5: use-cases read the acting principal from the ambient
+  // RequesterContext (ALS), never from self-asserted request headers.
+  const tenantContextImport =
+    baseLocals?.tenantContextImport ?? '@shared/base-classes/tenant-context';
   // Pagination contract (pagination-by-default). Package mode → the runtime
   // module `@pattern-stack/codegen/runtime/http/pagination`; vendored / default
   // → the consumer-owned `@shared/http/pagination`. Threaded from prompt.js;
@@ -1434,6 +1513,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     entityNamePlural,
     entityNamePluralPascal,
 
+    // ADR-043 §6: HTTP surface gate (controller + search controller + wiring)
+    clpApiEnabled,
+
     // EVT-7 emits locals (null-safe defaults if baseLocals didn't provide them)
     hasEmits,
     emitsEvents,
@@ -1444,6 +1526,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     typedEventBusImport,
     drizzleTokenImport,
     drizzleTypeImport,
+    tenantContextImport,
     paginationImport,
 
     // Pattern — registry-driven (ADR-031)

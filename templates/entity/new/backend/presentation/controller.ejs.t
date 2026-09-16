@@ -15,7 +15,6 @@ import {
 	Controller,
 	Delete,
 	Get,
-	Headers,
 	Param,
 	ParseUUIDPipe,
 	Post,
@@ -92,10 +91,8 @@ export class <%= classNamePlural %>Controller {
 	@UsePipes(new ZodValidationPipe(create<%= className %>Schema))
 	async create(
 		@Body() dto: Create<%= className %>Dto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<<%= className %>> {
-		return this.create<%= className %>Command.execute(dto, { actor: { tenantId, userId } });
+		return this.create<%= className %>Command.execute(dto);
 	}
 
 	@ApiOperation({ summary: 'Update <%= name %>', operationId: 'update<%= className %>' })
@@ -109,10 +106,8 @@ export class <%= classNamePlural %>Controller {
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
 		@Body(new ZodValidationPipe(update<%= className %>Schema)) dto: Update<%= className %>Dto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<<%= className %>> {
-		return this.update<%= className %>Command.execute(id, dto, { actor: { tenantId, userId } });
+		return this.update<%= className %>Command.execute(id, dto);
 	}
 
 	@ApiOperation({ summary: 'Delete <%= name %>', operationId: 'delete<%= className %>' })
@@ -123,10 +118,8 @@ export class <%= classNamePlural %>Controller {
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<<%= className %>> {
-		return this.delete<%= className %>Command.execute(id, { actor: { tenantId, userId } });
+		return this.delete<%= className %>Command.execute(id);
 	}
 }
 
@@ -142,7 +135,6 @@ import {
 	Get,
 	Body,
 	Delete,
-	Headers,
 	Param,
 	ParseUUIDPipe,
 	Post,
@@ -226,10 +218,8 @@ export class <%= classNamePlural %>Controller {
 	@UsePipes(new ZodValidationPipe(create<%= className %>Schema))
 	async create(
 		@Body() dto: Create<%= className %>Dto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<<%= className %>> {
-		return this.create<%= className %>Command.execute(dto, { actor: { tenantId, userId } });
+		return this.create<%= className %>Command.execute(dto);
 	}
 
 	@ApiOperation({ summary: 'Update <%= name %>', operationId: 'update<%= className %>' })
@@ -243,10 +233,8 @@ export class <%= classNamePlural %>Controller {
 	async update(
 		@Param('id', ParseUUIDPipe) id: string,
 		@Body(new ZodValidationPipe(update<%= className %>Schema)) dto: Update<%= className %>Dto,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<<%= className %>> {
-		return this.update<%= className %>Command.execute(id, dto, { actor: { tenantId, userId } });
+		return this.update<%= className %>Command.execute(id, dto);
 	}
 
 	@ApiOperation({ summary: 'Delete <%= name %>', operationId: 'delete<%= className %>' })
@@ -257,10 +245,8 @@ export class <%= classNamePlural %>Controller {
 	@Delete(':id')
 	async delete(
 		@Param('id', ParseUUIDPipe) id: string,
-		@Headers('x-tenant-id') tenantId?: string,
-		@Headers('x-user-id') userId?: string,
 	): Promise<<%= className %>> {
-		return this.delete<%= className %>Command.execute(id, { actor: { tenantId, userId } });
+		return this.delete<%= className %>Command.execute(id);
 	}
 }
 <% } -%>

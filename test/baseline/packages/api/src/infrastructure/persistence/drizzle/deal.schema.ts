@@ -19,14 +19,16 @@ import {
 import { users } from './users.schema';
 import { accounts } from './accounts.schema';
 
-// Enum definitions (Postgres only)
-export const stageEnum = pgEnum('stage', ['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']);
+// Enum definitions (Postgres only). The pg TYPE name is namespaced by entity
+// (`enumDbName`, e.g. `opportunity_status`) so same-named enum fields on
+// different entities don't emit a duplicate `CREATE TYPE`.
+export const dealStageEnum = pgEnum('deal_stage', ['prospecting', 'qualification', 'proposal', 'negotiation', 'closed_won', 'closed_lost']);
 
 export const deals = pgTable('deals', {
 	id: uuid('id').defaultRandom().primaryKey(),
 	name: varchar('name', { length: 255 }).notNull(),
 	amount: numeric('amount'),
-	stage: stageEnum('stage').notNull(),
+	stage: dealStageEnum('stage').notNull(),
 	ownerId: uuid('owner_id').notNull().references(() => users.id),
 	accountId: uuid('account_id').notNull().references(() => accounts.id),
 	closeDate: date('close_date', { mode: 'date' }),

@@ -266,6 +266,12 @@ async function main(): Promise<number> {
 			path.join(FIXTURE_ROOT, 'providers'),
 			path.join(tmpDir, 'definitions/providers'),
 		);
+		// Jobs definitions (RFC-0005 #7) — copied into the default `definitions/jobs/`
+		// so the jobs emitter runs and its src/jobs/** handler tree gets tsc-compiled.
+		const jobsFixtureDir = path.join(FIXTURE_ROOT, 'jobs');
+		if (fs.existsSync(jobsFixtureDir)) {
+			copyDir(jobsFixtureDir, path.join(tmpDir, 'definitions/jobs'));
+		}
 
 		// 7. Author-owned provider client + OAuth stubs (consumer-owned, committed
 		//    under stubs/ — not codegen's job to emit).
@@ -313,8 +319,12 @@ async function main(): Promise<number> {
 		const integErrors = allErrorLines.filter((l) =>
 			/(^|[\s(])src[/\\]integrations[/\\]/.test(l),
 		);
+		// RFC-0005 #9: the emitted src/jobs/** handler tree is in scope too.
+		const jobErrors = allErrorLines.filter((l) =>
+			/(^|[\s(])src[/\\]jobs[/\\]/.test(l),
+		);
 		const otherErrors = allErrorLines.filter(
-			(l) => !/(^|[\s(])src[/\\]integrations[/\\]/.test(l),
+			(l) => !/(^|[\s(])src[/\\](integrations|jobs)[/\\]/.test(l),
 		);
 
 		// Out-of-scope errors (e.g. src/shared/subsystems/events/generated/bus.ts —
@@ -335,6 +345,31 @@ async function main(): Promise<number> {
 			exitCode = 1;
 		} else {
 			log('tsc OK — src/integrations/** compiles clean against in-repo runtime + surfaces');
+		}
+
+		// RFC-0005 #9 — the emitted jobs handler tree must compile too.
+		const jobsRoot = path.join(tmpDir, 'src/jobs');
+		const jobFiles = fs.existsSync(jobsRoot)
+			? execSync(`find src/jobs -type f -name '*.ts'`, { cwd: tmpDir })
+					.toString()
+					.split('\n')
+					.filter(Boolean)
+			: [];
+		log(`src/jobs: ${jobFiles.length} .ts files`);
+		if (fs.existsSync(jobsFixtureDir) && jobFiles.length === 0) {
+			throw new Error(
+				'no files under src/jobs/** — the jobs emitter did not run despite a ' +
+					'definitions/jobs/ fixture being present. This test would pass vacuously.',
+			);
+		}
+		if (jobErrors.length > 0) {
+			logError(
+				`${jobErrors.length} tsc error(s) in src/jobs/** (the emitted jobs tree did NOT compile):`,
+			);
+			for (const l of jobErrors) console.error(l);
+			exitCode = 1;
+		} else if (jobFiles.length > 0) {
+			log('tsc OK — src/jobs/** compiles clean against in-repo runtime');
 		}
 	} catch (err: unknown) {
 		logError(err instanceof Error ? err.message : String(err));

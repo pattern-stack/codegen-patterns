@@ -4,8 +4,9 @@
  * Covers the keyset-paginated, filterable domain_events list:
  *   - Empty log
  *   - Ordering (occurred_at desc, id desc tie-break)
- *   - Filters: poolId, direction, rootRunId (metadata->>'rootRunId'), since,
- *     tenantId (string + null)
+ *   - Filters: type, aggregateType, aggregateId, status, tier (the
+ *     first-class-column filters), poolId, direction,
+ *     rootRunId (metadata->>'rootRunId'), since, tenantId (string + null)
  *   - Keyset pagination round-trip
  *   - EventSummary projection (rootRunId lifted from metadata)
  *   - Malformed cursor tolerated
@@ -157,5 +158,80 @@ describe('MemoryEventBus.listEvents — keyset pagination', () => {
     await bus.publish(evt({ id: 'x', occurredAt: new Date('2026-01-01T00:00:00Z') }));
     const page = await bus.listEvents({ cursor: '@@@not-base64@@@' });
     expect(page.items.map((e) => e.id)).toEqual(['x']);
+  });
+});
+
+/**
+ * The first-class-column filters (upstream #568).
+ *
+ * These five name columns `domain-events.schema.ts` declares — `type` (:56),
+ * `aggregate_id` (:57), `aggregate_type` (:58), `status` (:63), `tier` (:77) —
+ * which the port did not expose while it DID expose `rootRunId`, a
+ * `metadata->>` jsonb probe. A consumer asking "failed audit-tier events for
+ * this aggregate" had to bypass the port with raw SQL against a table the
+ * subsystem owns and may migrate.
+ *
+ * `type` / `aggregateType` / `aggregateId` are first-class on `DomainEvent`
+ * and read directly. `status` / `tier` are OUTBOX columns with no field on
+ * `DomainEvent`, so — exactly as `pool` and `direction` already do — the
+ * memory backend reads them from metadata. The drizzle backend filters the
+ * real columns; status *semantics* (an observed outbox transition rather than
+ * a publisher's declaration) are drizzle's to assert, not this file's.
+ */
+describe('MemoryEventBus.listEvents — first-class column filters', () => {
+  let bus: MemoryEventBus;
+  const at = (n: number) => new Date(`2026-01-0${n}T00:00:00Z`);
+
+  beforeEach(async () => {
+    bus = new MemoryEventBus();
+    await seed(bus, [
+      evt({ id: 'a', type: 'order_placed', aggregateType: 'order', aggregateId: 'o-1',
+            occurredAt: at(1), metadata: { status: 'processed', tier: 'domain' } }),
+      evt({ id: 'b', type: 'order_shipped', aggregateType: 'order', aggregateId: 'o-1',
+            occurredAt: at(2), metadata: { status: 'failed', tier: 'domain' } }),
+      evt({ id: 'c', type: 'order_placed', aggregateType: 'order', aggregateId: 'o-2',
+            occurredAt: at(3), metadata: { status: 'processed', tier: 'audit' } }),
+      evt({ id: 'd', type: 'user_created', aggregateType: 'user', aggregateId: 'u-1',
+            occurredAt: at(4), metadata: { status: 'pending', tier: 'audit' } }),
+    ]);
+  });
+
+  const ids = async (q: Parameters<MemoryEventBus['listEvents']>[0]) =>
+    (await bus.listEvents(q)).items.map((i) => i.id).sort();
+
+  // DONOR for each: drop that line from the memory backend's filter chain and
+  // the assertion goes from a subset to the full four-event log.
+  it('filters on type', async () => {
+    expect(await ids({ type: 'order_placed' })).toEqual(['a', 'c']);
+  });
+
+  it('filters on aggregateType', async () => {
+    expect(await ids({ aggregateType: 'user' })).toEqual(['d']);
+  });
+
+  it('filters on aggregateId', async () => {
+    expect(await ids({ aggregateId: 'o-1' })).toEqual(['a', 'b']);
+  });
+
+  it('filters on status', async () => {
+    expect(await ids({ status: 'failed' })).toEqual(['b']);
+  });
+
+  it('filters on tier', async () => {
+    expect(await ids({ tier: 'audit' })).toEqual(['c', 'd']);
+  });
+
+  it('COMBINES with each other and with the pre-existing filters', async () => {
+    // The actual consumer question that could not be asked before: everything
+    // that happened to ONE entity, narrowed by tier. A single-filter test
+    // passes even if the chain short-circuits after the first match.
+    expect(await ids({ aggregateType: 'order', aggregateId: 'o-2', tier: 'audit' })).toEqual(['c']);
+    expect(await ids({ type: 'order_placed', status: 'processed' })).toEqual(['a', 'c']);
+    // A contradictory pair must yield nothing, not fall back to unfiltered.
+    expect(await ids({ aggregateId: 'o-1', aggregateType: 'user' })).toEqual([]);
+  });
+
+  it('ignores an absent filter rather than matching on undefined', async () => {
+    expect(await ids({})).toEqual(['a', 'b', 'c', 'd']);
   });
 });

@@ -109,12 +109,10 @@ describe('clean-lite-ps write templates — use-case rendering', () => {
     expect(output).toContain(
       "import type { CreateContactDto } from '../dto/create-contact.dto';",
     );
-    // F10: execute() accepts the actor opts even when no emit is declared (ignored);
-    //      keeps the controller signature uniform across emit / no-emit entities.
+    // ADR-043 §5: the actor comes from the ambient RequesterContext (ALS), not a
+    // self-asserted opts.actor — the use-case takes only the dto.
     expect(output).toContain('dto: CreateContactDto,');
-    expect(output).toContain(
-      '_opts?: { actor?: { tenantId?: string | null; userId?: string } },',
-    );
+    expect(output).not.toContain('actor?:');
     expect(output).toContain('): Promise<Contact> {');
     expect(output).toContain('return this.service.create(dto);');
   });
@@ -127,12 +125,10 @@ describe('clean-lite-ps write templates — use-case rendering', () => {
     expect(output).toContain(
       "import type { UpdateContactDto } from '../dto/update-contact.dto';",
     );
-    // F10: execute() accepts actor opts even when no emit is declared (ignored).
+    // ADR-043 §5: actor from ALS, not opts.actor.
     expect(output).toContain('id: string,');
     expect(output).toContain('dto: UpdateContactDto,');
-    expect(output).toContain(
-      '_opts?: { actor?: { tenantId?: string | null; userId?: string } },',
-    );
+    expect(output).not.toContain('actor?:');
     expect(output).toContain('): Promise<Contact | null> {');
     expect(output).toContain('return this.service.update(id, dto);');
   });
@@ -142,11 +138,9 @@ describe('clean-lite-ps write templates — use-case rendering', () => {
     const output = render('use-cases/delete.ejs.t', locals);
 
     expect(output).toContain('export class DeleteContactUseCase');
-    // F10: execute() accepts actor opts even when no emit is declared (ignored).
+    // ADR-043 §5: actor from ALS, not opts.actor.
     expect(output).toContain('id: string,');
-    expect(output).toContain(
-      '_opts?: { actor?: { tenantId?: string | null; userId?: string } },',
-    );
+    expect(output).not.toContain('actor?:');
     expect(output).toContain('): Promise<void> {');
     expect(output).toContain('return this.service.delete(id);');
   });
@@ -206,21 +200,19 @@ describe('clean-lite-ps write templates — controller rendering', () => {
     expect(output).toContain(
       '@Body(new ZodValidationPipe(UpdateContactSchema)) dto: UpdateContactDto',
     );
-    // F10: controllers thread x-tenant-id / x-user-id headers through actor
-    expect(output).toContain("@Headers('x-tenant-id') tenantId?: string");
-    expect(output).toContain("@Headers('x-user-id') userId?: string");
-    expect(output).toContain(
-      'return this.createUseCase.execute(dto, { actor: { tenantId, userId } });',
-    );
+    // ADR-043 §5: no self-asserted header actor — the use-case reads the
+    // principal from the ambient RequesterContext (ALS).
+    expect(output).not.toContain("@Headers('x-tenant-id')");
+    expect(output).not.toContain("@Headers('x-user-id')");
+    expect(output).not.toContain('actor:');
+    expect(output).toContain('return this.createUseCase.execute(dto);');
     expect(output).toContain("@Patch(':id')");
     expect(output).toContain(
-      'const entity = await this.updateUseCase.execute(id, dto, { actor: { tenantId, userId } });',
+      'const entity = await this.updateUseCase.execute(id, dto);',
     );
     expect(output).toContain('throw new NotFoundException');
     expect(output).toContain("@Delete(':id')");
-    expect(output).toContain(
-      'return this.deleteUseCase.execute(id, { actor: { tenantId, userId } });',
-    );
+    expect(output).toContain('return this.deleteUseCase.execute(id);');
 
     // No TODO hand-writing scaffolding left behind
     expect(output).not.toContain('TODO: Add write routes');
@@ -278,5 +270,31 @@ describe('clean-lite-ps write templates — module rendering', () => {
     expect(output).not.toContain('CreateContactUseCase');
     expect(output).not.toContain('UpdateContactUseCase');
     expect(output).not.toContain('DeleteContactUseCase');
+  });
+});
+
+describe('clean-lite-ps api:false HTTP-surface suppression (ADR-043 §6)', () => {
+  it('clpApiEnabled defaults true and flips false when api: false', () => {
+    expect(buildCleanLitePsLocals(baseEntity, {}).clpApiEnabled).toBe(true);
+    expect(
+      buildCleanLitePsLocals({ ...baseEntity, api: false }, {}).clpApiEnabled,
+    ).toBe(false);
+  });
+
+  it('module omits the controller import + registration when api: false', () => {
+    const locals = buildCleanLitePsLocals({ ...baseEntity, api: false }, {});
+    const output = render('module.ejs.t', locals);
+    // No controller import, empty controllers array — but service + repository stay.
+    expect(output).not.toContain("from './contact.controller'");
+    expect(output).toContain('controllers: [],');
+    expect(output).toContain('ContactService');
+    expect(output).toContain('ContactRepository');
+  });
+
+  it('module wires the controller normally when api is enabled (default)', () => {
+    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const output = render('module.ejs.t', locals);
+    expect(output).toContain("import { ContactController } from './contact.controller';");
+    expect(output).toContain('controllers: [ContactController]');
   });
 });

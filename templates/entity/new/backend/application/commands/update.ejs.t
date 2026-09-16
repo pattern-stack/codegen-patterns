@@ -26,6 +26,7 @@ import type { Update<%= className %>Dto } from '<%= imports.schemas %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
 
 @Injectable()
@@ -42,7 +43,6 @@ export class <%= updateCommandClass %> {
 	async execute(
 		id: string,
 		dto: Update<%= className %>Dto,
-		<%= hasEmits && updateEventType ? 'opts' : '_opts' %>?: { actor?: { tenantId?: string | null; userId?: string } },
 	): Promise<<%= className %>> {
 		const existing = await this.<%= camelName %>Repository.findById(id);
 		if (!existing) {
@@ -60,6 +60,7 @@ export class <%= updateCommandClass %> {
 		};
 
 <% if (hasEmits && updateEventType) { -%>
+		const requester = tryGetRequester();
 		return this.db.transaction(async (tx) => {
 			const entity = await this.<%= camelName %>Repository.update(id, input, tx);
 			if (!entity) {
@@ -77,9 +78,7 @@ export class <%= updateCommandClass %> {
 				},
 				{
 					tx,
-					metadata: opts?.actor
-						? { tenantId: opts.actor.tenantId, userId: opts.actor.userId }
-						: undefined,
+					metadata: requester ? { userId: requester.userId } : undefined,
 				},
 			);
 			// TODO: Add post-update side effects here (non-event hooks, cache invalidation, etc.)

@@ -783,8 +783,16 @@ export default {
         zodType = `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`;
       }
 
-      // Generate enum name for Drizzle pgEnum (camelCase + 'Enum')
-      const enumName = hasChoices ? camelCase(fieldName) + "Enum" : null;
+      // Generate enum name for Drizzle pgEnum. Namespace the const + pg TYPE
+      // name by entity (`opportunity_status` / `opportunityStatusEnum`) so two
+      // entities that each declare a same-named enum field (e.g. `status`,
+      // `role`) don't emit a duplicate `export const statusEnum` (TS2308) or a
+      // duplicate `CREATE TYPE status` (a migration conflict). The COLUMN name
+      // stays the bare field name — only the type + export are namespaced.
+      const enumDbName = hasChoices
+        ? (name ? `${name}_${fieldName}` : fieldName)
+        : null;
+      const enumName = hasChoices ? camelCase(enumDbName) + "Enum" : null;
 
       // Infer UI metadata with defaults
       const ui_type = inferUiType(fieldName, field);
@@ -815,6 +823,7 @@ export default {
         choicesFrom: field.choices_from,
         hasChoices,
         enumName,
+        enumDbName,
         default: field.default,
         index: field.index ?? false,
         unique: field.unique ?? false,
@@ -1380,6 +1389,9 @@ export default {
     const typedEventBusImport = subsystemsImport(runtimeMode, 'events');
     const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
     const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
+    // ADR-043 §5: use-cases read the acting principal from the ambient
+    // RequesterContext (ALS), never from self-asserted request headers.
+    const tenantContextImport = runtimeImport(runtimeMode, 'base-classes/tenant-context');
     // Pagination contract (pagination-by-default). ASYMMETRIC by mode:
     //   - package  → `@pattern-stack/codegen/runtime/http/pagination` (Page<T>,
     //     ListQuerySchema, resolveListQuery, buildPage, cursor codec) — the
@@ -1557,20 +1569,23 @@ export default {
       hasTemporalValidity: resolvedBehaviors.hasTemporalValidity,
       repositoryBehaviorConfig: resolvedBehaviors.repositoryConfig,
 
-      // Expose configuration (which layers to generate)
+      // Expose configuration (which layers to generate).
+      // ADR-043 §6: `api: false` suppresses the ENTIRE HTTP surface (REST +
+      // Electric + tRPC) — equivalent to repository-only — while leaving the
+      // entity/repository/service/use-cases in-process reachable.
       expose: entity.expose || ["repository", "rest", "trpc"],
       exposeRepository: (
         entity.expose || ["repository", "rest", "trpc"]
       ).includes("repository"),
-      exposeRest: (entity.expose || ["repository", "rest", "trpc"]).includes(
-        "rest",
-      ),
-      exposeTrpc: (entity.expose || ["repository", "rest", "trpc"]).includes(
-        "trpc",
-      ),
-      exposeElectric: (
-        entity.expose || ["repository", "rest", "trpc"]
-      ).includes("electric"),
+      exposeRest:
+        entity.api !== false &&
+        (entity.expose || ["repository", "rest", "trpc"]).includes("rest"),
+      exposeTrpc:
+        entity.api !== false &&
+        (entity.expose || ["repository", "rest", "trpc"]).includes("trpc"),
+      exposeElectric:
+        entity.api !== false &&
+        (entity.expose || ["repository", "rest", "trpc"]).includes("electric"),
 
       // Electric SQL where clause (derived from entity FK fields)
       electricWhereColumn,
@@ -1618,6 +1633,7 @@ export default {
       typedEventBusImport,
       drizzleTokenImport,
       drizzleTypeImport,
+      tenantContextImport,
       paginationImport,
       integrationSubsystemImport,
       withAnalyticsImport,
@@ -1657,6 +1673,10 @@ export default {
       Object.assign(locals, {
         clpOutputPaths: undefined,
         clpImports: undefined,
+        // ADR-043 §6: stub so CLP template bodies referencing clpApiEnabled
+        // render without crashing on the clean-architecture path (the to: guard
+        // still skips the actual write).
+        clpApiEnabled: true,
         entityName: _n,
         entityNamePlural: _p,
         entityNamePascal: _n,

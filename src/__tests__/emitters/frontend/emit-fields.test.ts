@@ -172,12 +172,19 @@ describe('emit-fields — entity metadata file', () => {
 		expect(out).toContain("defaultSort: { field: 'createdAt', direction: 'desc' as const }");
 	});
 
-	it('emits belongs_to relation row with registry plural reference', () => {
+	it('emits belongs_to relation row keyed on the FK column with registry plural reference', () => {
 		const { deal, c } = dealCtx();
 		const out = buildEntityFieldsFile(deal, c);
-		expect(out).toContain('account: {');
+		// The relation row keys on, and `field`s on, the FK COLUMN (accountId) —
+		// a real key of Deal — NOT the relationship property name (account),
+		// which the output DTO does not carry (that would be TS2820).
+		expect(out).toContain('accountId: {');
+		expect(out).toContain("field: 'accountId',");
 		expect(out).toContain("type: 'entity' as FieldType,");
 		expect(out).toContain("reference: 'accounts',");
+		// No phantom `account` property key / field.
+		expect(out).not.toContain('\taccount: {');
+		expect(out).not.toContain("field: 'account',");
 	});
 
 	it('emits createdAt/updatedAt rows when timestamps behavior is set', () => {
@@ -214,6 +221,75 @@ describe('emit-fields — entity metadata file', () => {
 		// read is never gated.
 		expect(offOut).toContain('list: true,');
 		expect(offOut).toContain('get: true,');
+	});
+});
+
+// ============================================================================
+// belongs_to relation row is keyed on the FK column, never the property name
+//
+// The generated db-entity / output-DTO type carries the FK column (e.g.
+// `personId`) but NOT a resolved relation object (`person`). Emitting
+// `person: { field: 'person', ... }` is therefore a TS2820 (`'person'` is not
+// assignable to `keyof T`). The relation must surface ON its FK column —
+// enriching that one row to `type: 'entity'` + `reference: '<plural>'`,
+// superseding the plain field-derived row so there is no duplicate key.
+//
+// Mirrors the backend fix (codegen #553) where the FK column inherits the
+// relationship's intent. Surfaced downstream by swe-brain interaction_party.
+// ============================================================================
+
+describe('emit-fields — belongs_to relation row keys on the FK column (TS2820)', () => {
+	// swe-brain shape: a plain `uuid` FK column declared in `fields:` with the FK
+	// expressed ONLY via the relationship (no `foreign_key` on the field itself,
+	// so its field-derived row would be a bare `type: text`).
+	function interactionPartyCtx() {
+		const ip = entry('interaction_party', 'interaction_parties');
+		const person = entry('person', 'people');
+		const parsed = parsedMap(
+			parsedEntity(person),
+			parsedEntity(ip, {
+				behaviors: ['timestamps'],
+				fields: new Map([
+					['person_id', field('person_id', { type: 'uuid', required: true, index: true })],
+				]),
+				relationships: new Map([
+					['person', relationship('person', { target: 'person', foreignKey: 'person_id' })],
+				]),
+			}),
+		);
+		return { ip, c: ctx([person, ip], {}, parsed) };
+	}
+
+	it('keys the relation row on the FK column (personId), not the property name (person)', () => {
+		const { ip, c } = interactionPartyCtx();
+		const out = buildEntityFieldsFile(ip, c);
+		expect(out).toContain('personId: {');
+		expect(out).toContain("field: 'personId',");
+		expect(out).toContain("type: 'entity' as FieldType,");
+		expect(out).toContain("reference: 'people',");
+	});
+
+	it('never emits a phantom `person` property key / field (the TS2820 source)', () => {
+		const { ip, c } = interactionPartyCtx();
+		const out = buildEntityFieldsFile(ip, c);
+		expect(out).not.toContain('\tperson: {');
+		expect(out).not.toContain("field: 'person',");
+	});
+
+	it('emits the FK column exactly once (relation row supersedes the field row)', () => {
+		const { ip, c } = interactionPartyCtx();
+		const out = buildEntityFieldsFile(ip, c);
+		// Exactly one `personId: {` map key — no duplicate-key collision.
+		expect(out.split('personId: {').length - 1).toBe(1);
+		// The bare field-derived row (type: text) is gone — replaced by the entity row.
+		expect(out).not.toContain("field: 'personId',\n\t\tlabel: 'Person Id',");
+	});
+
+	it('preserves the FK column in primaryFields (required FK ⇒ primary)', () => {
+		const { ip, c } = interactionPartyCtx();
+		const out = buildEntityFieldsFile(ip, c);
+		// person_id is required → primary; the key survives the relation rewrite.
+		expect(out).toContain("primaryFields: [\n\t\t'personId',\n\t],");
 	});
 });
 

@@ -52,8 +52,20 @@ export class <%= className %>Repository
 // covers the same method name (simple single-FK, non-unique, non-via, non-select).
 // The declarative use-case class still works because opts is optional.
 const _fkMethodNames = new Set(belongsToRelations.map(rel => `findBy${rel.foreignKeyPascal}`));
+// Inverse guard: a unique/via/select declarative query is the more specific
+// intent (single-row / junction / projection) and WINS over a same-named FK
+// method; emitting both is a duplicate function implementation (TS2393). Skip
+// the FK method when such a declarative query already owns its name.
+const _emittedDqNames = new Set(
+	(typeof processedQueries !== 'undefined' ? processedQueries : [])
+		.filter((q) => q.isUnique || q.hasVia || q.hasSelect)
+		.map((q) => q.methodName),
+);
+const _emittedFkRels = belongsToRelations.filter(
+	(rel) => !_emittedDqNames.has(`findBy${rel.foreignKeyPascal}`),
+);
 _%>
-<% belongsToRelations.forEach((rel) => { -%>
+<% _emittedFkRels.forEach((rel) => { -%>
 
 	async findBy<%= rel.foreignKeyPascal %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= className %>[]> {
 		let q = this.baseQuery()
@@ -275,8 +287,19 @@ export class <%= className %>Repository implements I<%= className %>Repository {
 // CGP-358: FK methods with opts take priority over same-named declarative query impl.
 // Always emit FK methods with opts; skip declarative body when FK covers it.
 const _fkMethodNamesInline = new Set(belongsToRelations.map(rel => `findBy${rel.foreignKeyPascal}`));
+// Inverse guard (see base_class strategy above): a unique/via/select declarative
+// query wins over a same-named FK method, so skip the FK method to avoid a
+// duplicate function implementation (TS2393).
+const _emittedDqNamesInline = new Set(
+	(typeof processedQueries !== 'undefined' ? processedQueries : [])
+		.filter((q) => q.isUnique || q.hasVia || q.hasSelect)
+		.map((q) => q.methodName),
+);
+const _emittedFkRelsInline = belongsToRelations.filter(
+	(rel) => !_emittedDqNamesInline.has(`findBy${rel.foreignKeyPascal}`),
+);
 _%>
-<% belongsToRelations.forEach((rel) => { -%>
+<% _emittedFkRelsInline.forEach((rel) => { -%>
 
 	async findBy<%= rel.foreignKeyPascal %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= className %>[]> {
 		let q = this.baseQuery()

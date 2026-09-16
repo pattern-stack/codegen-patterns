@@ -501,8 +501,20 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 						experimentalDecorators: true,
 						emitDecoratorMetadata: true,
 						allowImportingTsExtensions: true,
-						types: [],
-						baseUrl: '.',
+						// `checkDir` is a SEPARATE temp dir with no node_modules
+						// of its own — `paths` below redirects MODULE resolution
+						// back to the smoke project, but `types` does not travel
+						// through `paths`, so `typeRoots` has to point there too.
+						// Without this, `types: []` was the only workable value
+						// and the emitted worker could not be checked against the
+						// globals it legitimately uses (`process`,
+						// `import.meta.main`, `Timeout.unref`) — all provided by
+						// `@types/bun`, which DEV_DEPS already installs.
+						typeRoots: [path.join(tmpDir, 'node_modules', '@types')],
+						types: ['bun'],
+						// NO `baseUrl` — TS7 removed it (TS5102). The `paths`
+						// value below is an ABSOLUTE path, so baseUrl was inert
+						// here anyway.
 						paths: { '*': [path.join(tmpDir, 'node_modules', '*')] },
 					},
 					include: ['src/**/*'],

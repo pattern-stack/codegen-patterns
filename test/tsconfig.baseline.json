@@ -8,15 +8,26 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "ignoreDeprecations": "6.0",
-    "baseUrl": "..",
     "paths": {
-      "@shared/subsystems/*": ["runtime/subsystems/*"],
-      "@shared/constants/*": ["runtime/constants/*"],
-      "@shared/types/*": ["runtime/types/*"],
-      "@shared/openapi": ["runtime/shared/openapi/index.ts"],
-      "@shared/openapi/*": ["runtime/shared/openapi/*"],
-      "@shared/*": ["runtime/shared/*", "test/scaffold/shared/*"]
+      "@shared/subsystems/*": [
+        "../runtime/subsystems/*"
+      ],
+      "@shared/constants/*": [
+        "../runtime/constants/*"
+      ],
+      "@shared/types/*": [
+        "../runtime/types/*"
+      ],
+      "@shared/openapi": [
+        "../runtime/shared/openapi/index.ts"
+      ],
+      "@shared/openapi/*": [
+        "../runtime/shared/openapi/*"
+      ],
+      "@shared/*": [
+        "../runtime/shared/*",
+        "../test/scaffold/shared/*"
+      ]
     }
   },
   "include": [

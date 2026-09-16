@@ -197,6 +197,24 @@ export class MemoryEventBus implements IEventBus, IEventReadPort {
     };
 
     const matched = this.publishedEvents.filter((e) => {
+      // First-class fields on `DomainEvent` — read directly, not via metadata.
+      if (query.type && e.type !== query.type) return false;
+      if (query.aggregateType && e.aggregateType !== query.aggregateType)
+        return false;
+      if (query.aggregateId && e.aggregateId !== query.aggregateId)
+        return false;
+      // `status` and `tier` are OUTBOX COLUMNS, not fields on `DomainEvent` —
+      // same situation as `pool`/`direction` below, and handled the same way:
+      // read from metadata, where a publisher that cares puts them.
+      //
+      // Stated rather than discovered later: the memory backend models no
+      // delivery lifecycle — everything in `publishedEvents` has been
+      // published — so a `status` filter here matches on what the publisher
+      // declared, not on an observed outbox transition. The drizzle backend
+      // filters the real column. Tests that assert status semantics belong
+      // against drizzle.
+      if (query.status && str(e, 'status') !== query.status) return false;
+      if (query.tier && str(e, 'tier') !== query.tier) return false;
       if (query.poolId && str(e, 'pool') !== query.poolId) return false;
       if (query.direction && str(e, 'direction') !== query.direction)
         return false;

@@ -1,0 +1,26 @@
+# Smoke fixture: field_definition
+# Target of field_config's belongs_to. Declares a `role` enum field so that the
+# same-named `role` enum on field_config / canonical_field would COLLIDE pre-fix
+# (duplicate `roleEnum` export → TS2308; duplicate `CREATE TYPE role`). Post-fix
+# each entity's enum is namespaced (`field_definition_role` / `fieldDefinitionRoleEnum`).
+entity:
+  name: field_definition
+  plural: field_definitions
+  table: field_definitions
+  pattern: Base
+  folder_structure: nested
+
+fields:
+  key:
+    type: string
+    required: true
+    max_length: 255
+
+  role:
+    type: enum
+    choices: [system, custom]
+    required: true
+    default: custom
+
+behaviors:
+  - timestamps

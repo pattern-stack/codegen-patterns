@@ -1,0 +1,23 @@
+# Smoke-integration jobs fixture (RFC-0005 #9). Exercises the jobs emitter
+# end-to-end through the real `entity new` pipeline so the emitted src/jobs/**
+# tree is tsc-compiled.
+#
+# A schedule arm (job-owned cadence — the emitter generates its own
+# `contact_sync__sched` event, so no pre-existing event is referenced and bridge
+# validation can't trip) over a poll arm. The arm domain is a label; the embedded
+# DetectionConfig is emitted as a literal — the handler compiles independently of
+# whether the smoke project happens to have a matching entity.
+type: contact_sync
+pool: integration
+retry: { attempts: 3, backoff: exponential, baseMs: 1000 }
+triggers:
+  - schedule: { every: 15m, align: true }
+arms:
+  - kind: poll
+    domain: contact
+    read:
+      mode: poll
+      poll:
+        cursor: { kind: systemModstamp, field: SystemModstamp }
+      mapping:
+        - { source: id, target: external_id }

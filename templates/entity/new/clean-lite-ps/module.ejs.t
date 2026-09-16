@@ -38,7 +38,9 @@ import { <%= eavDefinitionPluralPascal %>Module } from '../<%= eavDefinitionEnti
 
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import { <%= classNames.service %> } from './<%= entityName %>.service';
+<% if (clpApiEnabled) { -%>
 import { <%= classNames.controller %> } from './<%= entityName %>.controller';
+<% } -%>
 // OPENAPI-2: Zod schemas registered with OpenApiRegistry at module init.
 import { <%= classNames.createSchema %> } from './dto/create-<%= entityName %>.dto';
 import { <%= classNames.updateSchema %> } from './dto/update-<%= entityName %>.dto';
@@ -59,7 +61,9 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
 <% } -%>
 <% if (hasSearchQuery) { -%>
 import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityNamePlural %>.use-case';
+<% if (clpApiEnabled) { -%>
 import { <%= classNames.searchController %> } from './<%= entityName %>-search.controller';
+<% } -%>
 <% } -%>
 
 @Module({
@@ -77,7 +81,7 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
     // <%= rel.relatedEntityPascal %>sModule,
 <%_ }) _%>
   ],
-  controllers: [<%= classNames.controller %><% if (hasSearchQuery) { %>, <%= classNames.searchController %><% } %>],
+  controllers: [<% if (clpApiEnabled) { %><%= classNames.controller %><% if (hasSearchQuery) { %>, <%= classNames.searchController %><% } %><% } %>],
   providers: [
     <%= classNames.repository %>,
     <%= classNames.service %>,

@@ -18,13 +18,6 @@ export const userFields: Record<string, FieldMeta<User>> = {
 		type: 'email' as FieldType,
 		importance: 'primary' as FieldImportance,
 	},
-	personId: {
-		field: 'personId',
-		label: 'Person Id',
-		type: 'reference' as FieldType,
-		importance: 'secondary' as FieldImportance,
-		reference: 'persons',
-	},
 	externalId: {
 		field: 'externalId',
 		label: 'External Id',
@@ -39,8 +32,8 @@ export const userFields: Record<string, FieldMeta<User>> = {
 		importance: 'secondary' as FieldImportance,
 		group: 'external_sync',
 	},
-	person: {
-		field: 'person',
+	personId: {
+		field: 'personId',
 		label: 'Person',
 		type: 'entity' as FieldType,
 		importance: 'secondary' as FieldImportance,

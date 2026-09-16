@@ -2,6 +2,124 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.29.0] — 2026-08-30
+
+### Added
+
+- **`ListEventsQuery` exposes the first-class columns `domain_events` already
+  indexes** (#568 part 1). `type`, `aggregate_id`, `aggregate_type`, `status`
+  and `tier` are declared columns on the schema (`domain-events.schema.ts`
+  :56, :57, :58, :63, :77) and the port exposed none of them — while it DID
+  expose `rootRunId`, which filters through a `metadata->>` jsonb probe. So the
+  query surface shipped a JSON path and omitted five plain indexed columns on
+  the same table, and a consumer asking "failed audit-tier events for this
+  aggregate" had to bypass the port with raw SQL against a table this
+  subsystem owns and may migrate.
+
+  `type` / `aggregateType` / `aggregateId` are first-class on `DomainEvent` and
+  read directly. `status` / `tier` are OUTBOX columns with no field on
+  `DomainEvent` — the same situation `pool` and `direction` were already in —
+  so the memory backend reads them from metadata, following the existing
+  convention rather than inventing a second one. Documented at the call site:
+  the memory backend models no delivery lifecycle, so a `status` filter there
+  matches what a publisher declared, not an observed outbox transition.
+
+- **`IJobRunService.getRun(runId, tenantId?)`** (#568 part 2) — one full
+  `job_run` by id. `listJobRuns` could only page and filter client-side.
+  Returns the FULL row (`input` / `output` / `error` / `tags`), not the
+  `JobRunSummary` projection, because a run inspector renders all of it and a
+  second round trip for what the list dropped is the shape this removes.
+  Tenant-gated: the id is not the authorisation.
+
+- **`IJobRunService.countRuns(tenantId?)`** — a plain total. Callers were
+  summing `countByPoolAndStatus`, which is correct only while every run has
+  both a pool and a status — an invariant nothing states.
+
+- **`IJobStepService.listSteps(runId)`** — every step of one run in execution
+  order. NOT a plural `findStep`, and the difference is load-bearing:
+  `findStep` returns only `completed` steps because it serves `ctx.step`
+  memoisation, while a timeline needs the opposite — the failed step is the
+  interesting one and a running step is where the run currently is.
+
+  All three implemented across protocol + drizzle + memory backends.
+
+### Notes
+
+Found by building an operator console on the subsystems and discovering the
+ports could not serve it — both `events` and `jobs` own their tables and
+exposed an arbitrary subset of reads over them, forcing consumers into raw SQL
+against subsystem-owned tables. `observability`'s combiner inherited the limits
+because it delegates.
+
+**Still open from #568:** a read of the `job` table itself (the definitions
+list materialised by `upsertJobRows` at boot has no read method on any port).
+Deferred rather than rushed — it belongs on `IJobOrchestrator` and touches
+three backends including bullmq.
+
+## [0.28.3] — 2026-06-21
+
+### Fixed
+
+- **`belongs_to` relationships no longer emit an invalid `FieldMeta` relation
+  key in the generated frontend `fields/<entity>.ts` (TS2820).** The frontend
+  fields emitter rendered a belongs_to relation row keyed on, and with `field:`
+  set to, the relationship's PROPERTY name (e.g. `person: { field: 'person' }`).
+  The generated db-entity / output-DTO type carries the FK COLUMN (`personId`)
+  but never a resolved relation object, so `field: 'person'` is not assignable
+  to `keyof T` — **TS2820** ("Type '"person"' is not assignable to … Did you
+  mean '"personId"'?"). It also emitted TWO rows for one FK (the field-derived
+  column row + the phantom relation row), and the runtime `ReferenceCell` reads
+  the cell value as the lookup id — which only exists on the FK column. The
+  relation row now surfaces ON its FK column: keyed on `personId`, `field:
+  'personId'`, enriched to `type: 'entity'` + `reference: '<targetPlural>'`,
+  superseding the plain field-derived row (one row, valid `keyof T`). This is
+  the frontend mirror of the 0.28.2 backend FK fix (#553); discovered building a
+  real consumer (swe-brain `interaction_party`).
+
+## [0.28.2] — 2026-06-20
+
+### Fixed
+
+- **`clean-lite-ps` `belongs_to` FK columns inherit the underlying field's
+  `required` + `index`.** When a FK column is also declared as a `fields:` entry
+  (`required: true, index: true`) and moved into a `belongs_to`, the emitted
+  column silently dropped `.notNull()` and the index. The belongs_to column now
+  inherits the field's nullability (`required: true` ⇒ `.notNull()`) and
+  `index: true` (a `<table>_<col>_idx`); the `.references()` DB FK and the
+  `relations()` block are unchanged (#553).
+
+## [0.28.1] — 2026-06-20
+
+### Fixed
+
+- **pg enum types are now namespaced by ENTITY, not just the field — no more
+  cross-entity collisions.** The entity generators (both `clean-lite-ps`, the
+  `codegen init` default, and the legacy `backend` clean-architecture pipeline)
+  derived an enum field's exported const AND its Postgres TYPE name from the
+  FIELD name alone. Two entities that each declared an enum field with the same
+  name (e.g. `role`, `status`, `agg`, `additivity`) therefore generated the SAME
+  `export const roleEnum = pgEnum('role', …)` in two files — a duplicate barrel
+  export (**TS2308** "has already exported a member named 'roleEnum'") and a
+  duplicate `CREATE TYPE role` at the DB level (a real migration conflict).
+  Discovered building a real NestJS + Drizzle consumer app (`field_config` and
+  `canonical_field` both declaring `role`). The const and pg type name are now
+  namespaced by entity — pg type `field_config_role`, export `fieldConfigRoleEnum`
+  — matching the convention the junction generator already used. The COLUMN name
+  is unchanged (still the bare snake field name), so the generated table shape and
+  `InferSelectModel` types are identical; only the type/const identifiers move.
+- **`belongs_to` + an explicit unique FK `queries:` entry no longer emit a
+  duplicate method.** An entity with BOTH a `belongs_to` on a column AND an
+  explicit `queries: [{ by: [that_fk_column], unique: true }]` emitted
+  `findByFieldDefinitionId` TWICE — once from the declarative-query generator
+  (single-row return) and once from the `belongs_to` FK-traversal generator
+  (array return) → **TS2393** "Duplicate function implementation." CGP-358 already
+  resolved the *non-unique* case (the FK method, which accepts `opts`, is a
+  superset, so the plain declarative impl is skipped); the unique/via/select case
+  was the gap. Now a unique/via/select declarative query is treated as the more
+  specific intent and WINS — the colliding FK-traversal method is skipped. Fixed
+  in all three repository templates (clean-lite-ps + backend base-class + backend
+  inline). Exactly one method emits in every case.
+
 ## [0.28.0] — 2026-06-14
 
 ### Added

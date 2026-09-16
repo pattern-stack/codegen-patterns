@@ -68,7 +68,9 @@ describe('column defaults (#345)', () => {
   it('emits .default(literal) on an enum column', () => {
     const { output } = render(definition);
     expect(output).toContain(".default('created')");
-    expect(output).toContain("stateEnum('state').notNull().default('created')");
+    // The enum const is namespaced by entity (conversation_state) — the column
+    // name stays the bare field name.
+    expect(output).toContain("conversationStateEnum('state').notNull().default('created')");
   });
 
   it('emits a bare numeric default on an integer column', () => {
