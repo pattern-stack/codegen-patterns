@@ -65,8 +65,8 @@ relationships:
 ```
 
 - `belongs_to` adds the FK column on this entity.
-- `has_many` / `has_one` are the inverse side (no column here; drives the typed
-  relation accessor + Drizzle `relations()`).
+- `has_many` / `has_one` are the inverse side (no column here; drives the
+  service-layer composition method on the declaring entity's service).
 - Cross-entity targets must resolve at generation time — regenerate the set with
   `codegen entity new --all`.
 

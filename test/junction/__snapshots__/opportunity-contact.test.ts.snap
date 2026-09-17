@@ -12,7 +12,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { relations, type InferSelectModel } from 'drizzle-orm';
+import { type InferSelectModel } from 'drizzle-orm';
 import { opportunities } from '../opportunities/opportunity.entity';
 import { contacts } from '../contacts/contact.entity';
 
@@ -70,23 +70,6 @@ export const opportunityContacts = pgTable(
 
 export type OpportunityContact = InferSelectModel<typeof opportunityContacts>;
 export type OpportunityContactInsert = typeof opportunityContacts.$inferInsert;
-
-// ============================================================================
-// Relations — extension-path metadata for db.query.X.findMany({ with: ... })
-// Generated code does NOT consume these; they exist for hand-written admin
-// queries and for #60's fan-out methods once they land.
-// ============================================================================
-
-export const opportunityContactsRelations = relations(opportunityContacts, ({ one }) => ({
-  opportunity: one(opportunities, {
-    fields: [opportunityContacts.opportunityId],
-    references: [opportunities.id],
-  }),
-  contact: one(contacts, {
-    fields: [opportunityContacts.contactId],
-    references: [contacts.id],
-  }),
-}));
 "
 `;
 
@@ -556,8 +539,7 @@ export class ContactService extends WithAnalytics(
 
   // ═══════════════════════════════════════════════════════════════════════
   // Relationship composition methods (CGP-358b / CGP-62)
-  // Two queries, no SQL JOIN. Core-contract path; relations() const stays
-  // as opt-in extension for hand-written Drizzle queries.
+  // Two queries, no SQL JOIN.
   // ═══════════════════════════════════════════════════════════════════════
 
   /**

@@ -4,7 +4,7 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import {
-<%_ drizzleImports.filter(i => i !== 'relations').forEach(i => { _%>
+<%_ drizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
 } from 'drizzle-orm/pg-core';

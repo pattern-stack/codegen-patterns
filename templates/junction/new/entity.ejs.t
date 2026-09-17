@@ -4,11 +4,11 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import {
-<%_ drizzleImports.filter(i => i !== 'relations').forEach(i => { _%>
+<%_ drizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
 } from 'drizzle-orm/pg-core';
-import { relations, type InferSelectModel } from 'drizzle-orm';
+import { type InferSelectModel } from 'drizzle-orm';
 import { <%= leftTable %> } from '../<%= leftTable %>/<%= leftEntity %>.entity';
 <%_ if (leftEntity !== rightEntity) { _%>
 import { <%= rightTable %> } from '../<%= rightTable %>/<%= rightEntity %>.entity';
@@ -102,22 +102,3 @@ export const <%= tableVarName %> = pgTable(
 
 export type <%= classNames.entity %> = InferSelectModel<typeof <%= tableVarName %>>;
 export type <%= classNames.entity %>Insert = typeof <%= tableVarName %>.$inferInsert;
-
-// ============================================================================
-// Relations — extension-path metadata for db.query.X.findMany({ with: ... })
-// Generated code does NOT consume these; they exist for hand-written admin
-// queries and for #60's fan-out methods once they land.
-// ============================================================================
-
-export const <%= tableVarName %>Relations = relations(<%= tableVarName %>, ({ one }) => ({
-  <%= leftEntity %>: one(<%= leftTable %>, {
-    fields: [<%= tableVarName %>.<%= leftColumnCamel %>],
-    references: [<%= leftTable %>.id],
-  }),
-<%_ if (leftEntity !== rightEntity) { _%>
-  <%= rightEntity %>: one(<%= rightTable %>, {
-    fields: [<%= tableVarName %>.<%= rightColumnCamel %>],
-    references: [<%= rightTable %>.id],
-  }),
-<%_ } _%>
-}));

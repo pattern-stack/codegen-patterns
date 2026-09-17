@@ -95,6 +95,10 @@ This is the project's CLAUDE.md **"core contract + opt-in extensions"** principl
 
 ## 3. Empirical state — what today's templates actually emit
 
+> **Revision — 2026-09:** the `relations()` sub-sections below (B-clean, B-clean-lite-ps) are **historical**. DRZ-1
+> (#583) deleted the v1 `relations()` emission from all three backend pipelines; see §4's revision note. The FK-column,
+> index, `on_delete` and service-composition observations in this section are unaffected.
+
 The four cited commits ship two distinct things sharing the name "relationship". The wave-1 stack uses one of them; both are documented because `junction-association-codegen` will plug into the same emission layer.
 
 ### (A) First-class relationship definitions — wave-1 does NOT use
@@ -203,11 +207,26 @@ This mirrors CLAUDE.md's BullMQ-backend example: not pretending all backends are
 
 It's free typed metadata. Dropping it would force every ad-hoc backend query to fall back to raw SQL or `db.select().from().leftJoin()` boilerplate. The cost-benefit clearly favors keeping. Generated code's discipline (no `with:`) is enforced at the audit/lint layer, not at the schema-emission layer.
 
+> **Revision — 2026-09: resolution Q5 is withdrawn.** Drizzle 1.0 removes the v1 `relations` root export, so the const
+> above does not compile on 1.0 at all — "keep as-is" is no longer an available option, and the cost-benefit that
+> favoured keeping it does not survive the API removal. The emission was deleted from all three backend pipelines
+> (entity/clean, clean-lite-ps, junction) in DRZ-1 (#583); the slot is deliberately left empty. REL-1 (#586) refills it
+> with a whole-set v2 `defineRelations()` manifest under ADR-044, which also supersedes §1's core-contract position
+> (relations, not service-layer composition, become the core contract for cross-entity reads). Everything else this
+> section describes — that the const is schema-layer metadata, that it costs nothing at runtime, and that it does not
+> affect ElectricSQL parity — still holds of the v2 manifest.
+
 ---
 
 ## 5. CRM-domain coverage table
 
 Each wave-1 `crm-domain` relationship shape, the entity that declares it, the upstream commit that supports it, and what's emitted today.
+
+> **Revision — 2026-09:** the "Clean emit" / "Clean-Lite-PS emit" columns below describe the v1 `relations()` const
+> (`one(...)` / `many(...)` entries, `_Relations` cross-imports). DRZ-1 (#583) deleted that emission from both pipelines
+> — see §4. What each shape still emits is the FK column, its index and its `on_delete`, plus (for clean-lite-ps) the
+> CGP-358b service-composition method. REL-1 (#586) reintroduces a relation graph as a whole-set v2 `defineRelations()`
+> manifest.
 
 | Shape | Declared in | Supporting commit | Clean emit | Clean-Lite-PS emit |
 |---|---|---|---|---|
@@ -238,18 +257,22 @@ Invoked via `bun test/smoke/run-smoke.ts --scenario relationship` (`just test-sm
 
 Assertions (in `test/smoke/run-smoke.ts`):
 
+Assertions as of DRZ-1 (#583) — the `relations()` presence checks were **inverted**, not deleted, so the harness still
+names the contract:
+
 | Shape | Assertion |
 |---|---|
-| Self-ref `belongs_to` (regression of `269ab3f`) | `parentAccount: one(accounts, ...)` in `account.entity.ts` |
-| `relations()` const presence | `export const <plural>Relations = relations(<plural>` in each of `account.entity.ts`, `contact.entity.ts`, `opportunity.entity.ts` |
-| Cross-entity `belongs_to` (contact → account) | `account: one(accounts, { fields: [contacts.accountId], references: [...] })` in `contact.entity.ts` |
-| Cross-entity `belongs_to` (opportunity → account) | `account: one(accounts, { fields: [opportunities.accountId], references: [...] })` in `opportunity.entity.ts` |
+| Self-ref `belongs_to` (regression of `269ab3f`) | `parentAccountId: uuid('parent_account_id') … .references((): AnyPgColumn => accounts.id` in `account.entity.ts` |
+| Cross-entity `belongs_to` (contact → account) | `accountId: uuid('account_id') … .references(() => accounts.id` in `contact.entity.ts` |
+| Cross-entity `belongs_to` (opportunity → account) | same, in `opportunity.entity.ts` |
+| `relations()` const **absence** (DRZ-1, #583) | `assertNoV1Relations()` on all three entity files: no `<plural>Relations = relations(`, no `drizzle-orm` root `relations` import, and a positive check that the only root import left is `import { type InferSelectModel }` |
+| `many(` **absence** (DRZ-1, #583) | `has_many` contributes no entity-file emission at all now — only the service-composition method below |
+| Service composition (CGP-358b) | `async contacts(accountId: string, opts?:` on `AccountService`; `async account(contactId: string)` on `ContactService`; absence of `include?` / `…With` / `findByIdWithRelations` |
 | Barrel-import-depth (regression of `01bb917`) | `bunx tsc --noEmit` succeeds (TS2307 would surface here) |
-| **Gap-naming negative assertion** | `assertNotContains(/\bmany\(/, accountSchema)` — clean-lite-ps drops `has_many`; flip to positive after #358 |
 
-The negative assertion is deliberate. Tests should fail if clean-lite-ps starts emitting `many(` for `has_many` — at which point #358 has landed and the test should be updated to a positive assertion in the same PR.
-
-**Not asserted:** service-composition surface (`AccountService.contacts()`, etc.). Today's templates don't emit it. Follow-up smoke assertions live with #358.
+The `many(` negative is deliberate and, since DRZ-1, permanent for the v1 shape: if a template starts emitting `many(`
+again it is either a v1 regression (wrong) or REL-1's v2 manifest landing (in which case REL-1 rewrites these
+assertions in the same PR).
 
 ---
 
@@ -272,13 +295,13 @@ A reader who finds the r2 comment in the issue thread should see this section an
 
 ## Appendix — anatomy of the Drizzle emission layers (reference)
 
-The 4-part Drizzle anatomy preserved from r2 as reference for implementers navigating the templates. **Demoted from "the architecture" to "the table-metadata implementation".** These four parts are how the templates emit `<plural>Relations` consts today; the canonical API path (§1) layers on top of them via service-layer composition that does NOT use `with:` joins.
+The 4-part Drizzle anatomy preserved from r2 as reference for implementers navigating the templates. **Demoted from "the architecture" to "the table-metadata implementation".** These four parts are how the templates emitted `<plural>Relations` consts **before DRZ-1 (#583)**; part 3 is now deleted, and parts 1, 2 and 4 still run (they drive FK columns, target-existence and barrel paths). The canonical API path (§1) layers on top via service-layer composition that does NOT use `with:` joins.
 
 | Part | Entry point | What it does |
 |---|---|---|
 | **Per-entity bucketing pass** | Clean: `templates/entity/new/prompt.js:838-883` (buckets all three rel types). Clean-Lite-PS: `templates/entity/new/clean-lite-ps/prompt-extension.js:312-362` (`processBelongsTo` only — no parallel `processHasMany`/`processHasOne`). | Reads `entity.relationships`, partitions into `belongsToRelations` / `hasManyRelations` / `hasOneRelations` (clean) or just `belongsTo` (clean-lite-ps), derives Pascal/plural/foreign-key permutations once and reuses across templates. |
 | **Target-existence check** | `templates/entity/new/prompt.js:887-912` (`checkEntityExists` + `targetExists` marking) | Each relationship is annotated with whether the **target** entity's `<name>.entity.ts` already exists on disk. Templates use this to suppress imports/methods that would dangle. This is why baseline tests two-pass: pass 1 seeds entity files, pass 2 emits with `targetExists: true`. |
-| **Drizzle `relations()` emission** | Clean: `templates/entity/new/backend/database/schema.ejs.t:224-244` — bidirectional (`one()` for belongsTo/hasOne, `many()` for hasMany). Clean-Lite-PS: `templates/entity/new/clean-lite-ps/entity.ejs.t:59-69` — **unidirectional**, only `one()` for `belongs_to`. Gated by `hasRelationsBlock = belongsTo.length > 0`. | Emits the `<plural>Relations` const. Enables hand-written `db.query.X.findMany({ with: { Y: true } })` only on clean (which ships the inverse); clean-lite-ps's `with:` path works only forward (target-side join). |
+| **Drizzle `relations()` emission** — ~~Clean: `schema.ejs.t:224-244`; Clean-Lite-PS: `entity.ejs.t:59-69`, gated by `hasRelationsBlock`~~ **Deleted in DRZ-1 (#583), 2026-09.** Both sites and the `hasRelationsBlock` gate are gone; the slot is empty until REL-1 (#586). | — | Nothing. The `belongs_to` side still emits the FK column + index + `on_delete` from the same bucketing pass; there is no `<plural>Relations` const and no `with:` path. |
 | **Schema-aware barrel** | `src/cli/shared/barrel-generator.ts:189-244` (`entityFilePaths`) | Computes module + schema file paths per architecture so cross-entity imports resolve at the right depth (the `01bb917` fix). Clean-lite-ps: `${prefix}modules/${plural}/${name}.entity.ts`. Clean: `${backendSrc}/infrastructure/persistence/drizzle/${pluralKebab}.schema.ts`. Junction modules from mechanism (A) merge with regular modules here — the integration seam `junction-association-codegen` extends. |
 
 ### What `junction-association-codegen` reuses from this anatomy
