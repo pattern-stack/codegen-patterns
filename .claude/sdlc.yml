@@ -3,3 +3,5 @@ framework: nestjs
 quality_profile: strict
 commit_style: conventional
 task_management: github
+repo: pattern-stack/codegen-patterns
+project_number: 3
