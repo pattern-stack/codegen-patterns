@@ -5,18 +5,14 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import {
-<%_ clpDrizzleImports.filter(i => i !== 'relations').forEach(i => { _%>
+<%_ clpDrizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
 <%_ if (typeof clpHasSelfFk !== 'undefined' && clpHasSelfFk) { _%>
   type AnyPgColumn,
 <%_ } _%>
 } from 'drizzle-orm/pg-core';
-<%_ if (clpHasRelationsBlock) { _%>
-import { relations, type InferSelectModel } from 'drizzle-orm';
-<%_ } else { _%>
 import { type InferSelectModel } from 'drizzle-orm';
-<%_ } _%>
 <%_ clpBelongsTo.forEach(rel => { _%>
 <%_ if (rel.relatedTable !== entityNamePlural) { _%>
 import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
@@ -26,12 +22,6 @@ import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
 <%_ if (typeof clpFieldFkImports !== 'undefined') { clpFieldFkImports.forEach(imp => { _%>
 import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
 <%_ }) } _%>
-<%_ /* CGP-358b: import has_many target tables for many() relation const */ _%>
-<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
-<%_ clpExistingHasMany.filter(rel => !rel.isSelfRef).forEach(rel => { _%>
-import { <%= rel.targetPlural %> } from '../<%= rel.targetPlural %>/<%= rel.target %>.entity';
-<%_ }) _%>
-<%_ } _%>
 <%_ if (typeof clpEnumFields !== 'undefined' && clpEnumFields.length > 0) { _%>
 
 <%_ clpEnumFields.forEach(ef => { _%>
@@ -81,21 +71,6 @@ export const <%= entityNamePlural %> = pgTable(
   ],
 <%_ } _%>
 );
-<%_ if (clpHasRelationsBlock) { _%>
-<%_ const needsMany = typeof clpExistingHasMany !== 'undefined' && clpExistingHasMany.length > 0; _%>
-
-export const <%= entityNamePlural %>Relations = relations(<%= entityNamePlural %>, ({ one<%= needsMany ? ', many' : '' %> }) => ({
-<%_ clpBelongsTo.forEach(rel => { _%>
-  <%= rel.relationKey %>: one(<%= rel.relatedTable %>, {
-    fields: [<%= entityNamePlural %>.<%= rel.camelField %>],
-    references: [<%= rel.relatedTable %>.id],
-  }),
-<%_ }) _%>
-<%_ if (typeof clpExistingHasMany !== 'undefined') { clpExistingHasMany.forEach(rel => { _%>
-  <%= rel.name %>: many(<%= rel.targetPlural %>),
-<%_ }) } _%>
-}));
-<%_ } _%>
 
 export type <%= classNames.entity %> = InferSelectModel<typeof <%= entityNamePlural %>>;
 export type <%= classNames.entity %>Insert = typeof <%= entityNamePlural %>.$inferInsert;

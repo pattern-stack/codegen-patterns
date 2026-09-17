@@ -11,7 +11,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { relations, type InferSelectModel } from 'drizzle-orm';
+import { type InferSelectModel } from 'drizzle-orm';
 import { opportunities } from '../opportunities/opportunity.entity';
 import { activities } from '../activities/activity.entity';
 
@@ -54,23 +54,6 @@ export const opportunityActivities = pgTable(
 
 export type OpportunityActivity = InferSelectModel<typeof opportunityActivities>;
 export type OpportunityActivityInsert = typeof opportunityActivities.$inferInsert;
-
-// ============================================================================
-// Relations — extension-path metadata for db.query.X.findMany({ with: ... })
-// Generated code does NOT consume these; they exist for hand-written admin
-// queries and for #60's fan-out methods once they land.
-// ============================================================================
-
-export const opportunityActivitiesRelations = relations(opportunityActivities, ({ one }) => ({
-  opportunity: one(opportunities, {
-    fields: [opportunityActivities.opportunityId],
-    references: [opportunities.id],
-  }),
-  activity: one(activities, {
-    fields: [opportunityActivities.activityId],
-    references: [activities.id],
-  }),
-}));
 "
 `;
 

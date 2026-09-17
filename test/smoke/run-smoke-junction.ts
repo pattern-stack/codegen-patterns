@@ -145,8 +145,7 @@ function assertContains(haystack: string, needle: RegExp, label: string): void {
 function assertAbsent(haystack: string, needle: RegExp, label: string): void {
   if (needle.test(haystack)) {
     throw new Error(
-      `Smoke assertion failed [${label}]: expected NOT to find ${needle} in generated output. ` +
-      `This leaf must not emit fan-out association methods — they land via #60.`,
+      `Smoke assertion failed [${label}]: expected NOT to find ${needle} in generated output.`,
     );
   }
 }
@@ -202,11 +201,25 @@ function assertJunctionEmission(
   assertContains(entityFile, /confidence.*numeric|numeric.*confidence/, 'entity: confidence column');
   assertContains(entityFile, /matched_at|matchedAt/, 'entity: matched_at column');
 
-  // relations() extension const
+  // DRZ-1 (#583): the v1 Drizzle `relations()` extension const is no longer
+  // emitted — Drizzle 1.0 removes the v1 root export. This was a presence
+  // assertion; it is inverted rather than deleted so the harness still names
+  // the contract. REL-1 (#586) refills the slot with a v2 `defineRelations()`
+  // manifest under ADR-044.
+  assertAbsent(
+    entityFile,
+    new RegExp(`${camelCase(pluralName)}Relations\\s*=\\s*relations\\(`),
+    'entity: no v1 relations() const (DRZ-1)',
+  );
+  assertAbsent(
+    entityFile,
+    /import\s*\{[^}]*\brelations\b[^}]*\}\s*from\s*'drizzle-orm'/,
+    'entity: no drizzle-orm root `relations` import (DRZ-1)',
+  );
   assertContains(
     entityFile,
-    new RegExp(`${camelCase(pluralName)}Relations\\s*=\\s*relations\\(${camelCase(pluralName)}`),
-    'entity: relations() extension const',
+    /import \{ type InferSelectModel \} from 'drizzle-orm';/,
+    'entity: type-only drizzle-orm root import',
   );
 
   if (hasRole) {

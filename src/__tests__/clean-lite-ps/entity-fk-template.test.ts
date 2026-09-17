@@ -353,7 +353,9 @@ describe('external_id_tracking unique index emission', () => {
 // relationship moves that column out of clpProcessedFields into clpBelongsTo.
 // The belongs_to column must still inherit the field's `required` (→ .notNull())
 // and `index: true` (→ a `<table>_<col>_idx` index) — otherwise both are
-// silently dropped. The .references() FK and relations() block stay intact.
+// silently dropped. The .references() FK stays intact; the v1 `relations()`
+// const is no longer emitted at all (DRZ-1, #583 — Drizzle 1.0 removes the
+// v1 API; REL-1/#586 refills the slot with a v2 `defineRelations()` manifest).
 // ============================================================================
 
 // Fixture: message with conversation_id declared as a required, indexed field
@@ -404,16 +406,17 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
     expect(output).toContain('index,');
   });
 
-  it('still emits the .references() FK and the relations() block', () => {
+  it('still emits the .references() FK and emits NO v1 relations() const', () => {
     const locals = buildCleanLitePsLocals(messageDefinitionFieldBackedFk, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    // .references() DB FK preserved
+    // .references() DB FK preserved — belongs_to still drives the FK column
     expect(output).toContain(".references(() => conversations.id, { onDelete: 'cascade' })");
-    // relations() one() block preserved
-    expect(output).toContain('export const messagesRelations = relations(messages');
-    expect(output).toContain('conversation: one(conversations, {');
-    expect(output).toContain('fields: [messages.conversationId],');
+    // DRZ-1 (#583): the v1 relations() const and its drizzle-orm import are gone.
+    expect(output).not.toContain('Relations = relations(');
+    expect(output).not.toMatch(/import \{[^}]*\brelations\b[^}]*\} from 'drizzle-orm'/);
+    // The only drizzle-orm root import left is the type-only InferSelectModel.
+    expect(output).toContain("import { type InferSelectModel } from 'drizzle-orm';");
   });
 
   it('does NOT emit the FK column twice (it stays out of clpProcessedFields)', () => {

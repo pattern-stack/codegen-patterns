@@ -612,7 +612,7 @@ function processUniqueIndexes(uniqueIndexes, entityNamePlural) {
 /**
  * Collect drizzle imports needed for entity fields
  */
-function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany = [], extraImports = []) {
+function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraImports = []) {
   const imports = new Set(['pgTable', 'uuid']);
 
   for (const field of processedFields) {
@@ -643,10 +643,6 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
     imports.add('varchar');
     imports.add('jsonb');
     imports.add('uniqueIndex');
-  }
-
-  if (belongsTo.length > 0 || hasMany.length > 0) {
-    imports.add('relations');
   }
 
   // Caller-supplied extras: `index` (field-level index: true) and
@@ -1339,9 +1335,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     extraDrizzleImports.push('index');
   }
   if (uniqueIndexExpressions.length > 0) extraDrizzleImports.push('uniqueIndex');
-  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, hasMany, extraDrizzleImports);
-  // Whether relations() import is needed (CGP-358b: also trigger on has_many)
-  const hasRelationsBlock = belongsTo.length > 0 || hasMany.length > 0;
+  const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // Output paths
   const outputPaths = {
@@ -1592,7 +1586,6 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // Drizzle
     clpDrizzleImports: drizzleEntityImports,
-    clpHasRelationsBlock: hasRelationsBlock,
     // A self-referential belongs_to FK requires the `references()` callback
     // to carry a `: AnyPgColumn` return-type annotation; otherwise TypeScript's
     // strict mode flags the table const with TS7022/TS7024 (circular initializer).

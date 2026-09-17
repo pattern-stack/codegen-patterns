@@ -113,9 +113,6 @@ function buildDrizzleImports(hasRole, temporal, sourced, hasCustomFields, proces
     }
   }
 
-  // relations() is needed for the extension-path const
-  needed.add("relations");
-
   return Array.from(needed).sort();
 }
 
