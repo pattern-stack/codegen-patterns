@@ -56,8 +56,7 @@ function resolvePatternGlobs(ctx: Context): string[] {
  * here from the same shape.
  */
 function resolveOrchestrationOutputRoot(ctx: Context): string {
-	const paths = (ctx.config as { paths?: Record<string, unknown> } | null)
-		?.paths;
+	const paths = ctx.config?.paths;
 	const explicit = paths?.orchestration_src;
 	if (typeof explicit === 'string' && explicit.length > 0) {
 		return path.resolve(ctx.cwd, explicit);

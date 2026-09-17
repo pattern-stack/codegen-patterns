@@ -1,7 +1,7 @@
 # GATE-1 — Make the three out-of-CI gates honest
 
-**Status:** Draft
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #599 · **Epic:** #579 · **Project:** #578
 **Depends on:** DRZ-1 (#583) · **Blocks:** DRZ-2 (#584)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · CLAUDE.md
@@ -80,15 +80,30 @@ The same drift is already being worked around elsewhere rather than fixed — `s
 (`as Record<string, unknown>`) all cast around keys the interface omits. Those casts are why only `jobs_dir` surfaced
 as an error: it is the one site nobody had cast yet.
 
-**Fix (root):** one definition. Declare on `PathsConfigSchema` every `paths.*` key the codebase actually reads
-(`backend_src`, `frontend_src`, `entities`, `entities_dir`, `events_dir`, `jobs_dir`, `subsystems`, `providers`,
-`orchestration_src`, `generated`), keep `.passthrough()` for genuinely unknown legacy keys, and derive
-`CodegenConfig['paths']` from it as `z.input<typeof PathsConfigSchema>` (input, not output: the CLI reads raw YAML that
-has not been through `.parse()`, so defaulted keys must stay optional). Delete the casts that existed only to route
-around the gap — they are the same defect, pre-emptively silenced.
+**Fix (root):** one definition. Declare on `PathsConfigSchema` every `paths.*` key the codebase actually reads —
+**11 of them**: `backend_src`, `frontend_src`, `entities`, `entities_dir`, `events_dir`, `jobs_dir`, `providers`,
+`subsystems`, `modules_dir`, `orchestration_src`, `generated` (`modules_dir` was missed at design time; its readers are
+`auth-integrations-scaffold-locals.ts` and `subsystem-detect.ts`). Keep `.passthrough()` for genuinely unknown legacy
+keys, and derive `CodegenConfig['paths']` from it as `z.input<typeof PathsConfigSchema>` (input, not output: the CLI
+reads raw YAML that has not been through `.parse()`, so defaulted keys must stay optional). Delete the casts that
+existed only to route around the gap — they are the same defect, pre-emptively silenced.
 
-This is the "cannot rot again" half of the fix: a new `paths.*` key can no longer be added to the schema and forgotten
-in the CLI, because there is only one type.
+**15 cast sites were removed**, not the 4 the design enumerated: `subsystem-detect.ts` (×3, one of them
+`as Record<string, unknown>`), `project.ts`, `auth-integrations-scaffold-locals.ts` (×2), `entity.ts` (×4),
+`events.ts` (×2), `barrel-generator.ts` (×2), `init-scaffold.ts`, `orchestration.ts`. After the change
+`grep -rn "as { paths" src/` is empty.
+
+Two limits of the guarantee, worth stating because the schema's doc comment could be read as stronger:
+
+- **The `typeof === 'string'` guards stay.** They are not redundant with the type: `loadConfigFromPath` is
+  `yaml.parse` output cast to `CodegenConfig`, so nothing enforces the shape at runtime and a blank `entities:` key is
+  `null` however it is typed. One guard was dropped during implementation and restored after review.
+- **`.passthrough()` makes the drift check one-directional.** `PathsConfigInput` carries a `[k: string]: unknown`
+  index signature, so reading an *undeclared* key types as `unknown` rather than raising TS2339. Schema → CLI can no
+  longer drift; CLI → schema is caught only because `unknown` cannot be used as a string without narrowing.
+
+A third `paths` shape exists at `src/emitters/frontend/load-context.ts` (`FrontendConfigInput.paths`). It is not part
+of the CLI's `Context` and was left alone; folding it into `PathsConfigInput` is a follow-up, not a gate fix.
 
 ## Failure 2 — `just test-smoke-junction-clean` — **BLOCKED, out of scope**
 
@@ -188,11 +203,28 @@ Three separate pieces of rot, each fatal on its own:
    (`@gen/shared/subsystems/…`), and those are only vendored under ADR-037 `runtime: vendored`, which the config does
    not set either.
 
-**Fix (root):** the harness writes a config that matches the scaffold's own alias contract — `runtime: vendored`,
-`paths.backend_src: .`, `paths.subsystems: shared/subsystems`, `generate.architecture: clean-lite-ps`,
-`generate.frontend: false` — invokes the CLI the way every other harness does (`bun src/cli/index.ts entity new …`),
-and installs the three subsystems the scaffold schema re-exports before pushing. The config swap/restore around the
-repo-root `codegen.config.yaml` stays as-is.
+**Fix (root):** as designed for 1–3 — the harness invokes `bun src/cli/index.ts entity new … --force` and writes a
+config matching the scaffold's alias contract (`runtime: vendored`, `paths.backend_src: .`,
+`paths.generated: generated`, `generate.architecture: clean-lite-ps`, `generate.frontend: false`).
+
+**Implementation found six more layers behind those three.** The gate had been dead long enough that every contract it
+touches had moved:
+
+| # | What was wrong | Fix |
+|---|---|---|
+| 4 | **Two copies of `drizzle-orm`.** The scaffold pinned `^0.30.0` (resolved 0.30.10) against the repo's 0.45.2; tables built by one and handed to `drizzle()` from the other threw `JSON Parse error: Unexpected identifier "undefined"`. The same shape with `@nestjs/common` — same version, two physical copies — made `instanceof HttpException` fail, so every `NotFoundException` surfaced as a 500. | `test/scaffold/package.json` now declares **no dependencies at all**; the scaffold resolves everything by walking up to the repo's `node_modules`. The four packages only it needed moved to the root devDeps. `just install` no longer runs a second `bun install`, and the harness's own install step is gone. |
+| 5 | **`@shared/*` pointed at a hand-vendored copy.** `test/scaffold/shared/` held stale duplicates: `constants/tokens.ts` had no `EVENT_BUS`; the family base classes (activity / metadata / integrated) were never copied at all. | Both tsconfigs map `@shared/*` onto the real split runtime tree (`runtime/base-classes`, `runtime/subsystems`, `runtime/constants`, `runtime/types`, `runtime/shared`), with an exact `@shared/http/page → runtime/http/pagination` entry for the rename `project init` performs when vendoring. The stale `constants/` and `types/` copies are deleted. |
+| 6 | **`schema.ts` re-exported a table the jobs subsystem stopped emitting** (`jobQueue` from `job-queue.schema`), and naming individual tables meant `drizzle-kit push` never created the pgEnums their columns reference — push aborted partway, silently leaving later tables (including the scaffold's own) uncreated. | `export *` from each subsystem schema, resolved through `@shared/*` (runtime) rather than a vendored copy — so nothing needs installing and nothing is left behind. |
+| 7 | **`truncateAll()` named a hard-coded table list** including the removed `job_queue`, failing the whole `TRUNCATE`. | Derives the list from `pg_tables` at runtime. |
+| 8 | **Three fixtures asserted contracts that had changed.** `helpers.ts` still exported `syncedEntityFactory` after the family was renamed Integrated; the event-bus suite published domain-tier events with no `pool`/`direction`, which `domain_events_tier_routing_check` rejects (the declared-events pipeline always populates them); the HTTP suite asserted a bare-array list body and a 200-with-empty-body for a missing id, where the generator now emits the `Page<T>` envelope and `NotFoundException`. | Each fixture corrected to the current contract. None was weakened: the HTTP suite now also asserts `total`, and the 404 assertion is strictly tighter than the 200 it replaced. |
+| 9 | **The harness left its output in the repo root.** `subsystem install jobs` writes `src/worker.ts` at a fixed path regardless of `backend_src`, and `tsconfig.build.json` includes `src/**/*` — so after one `just test-integration`, `bun run typecheck` (and therefore `just test-all`) was red for everyone. The first implementation hid it with a `.gitignore` entry, which hides it from git but not from `tsc`. | Fixed at the cause: pointing `schema.ts` at `@shared/*` removed the vendoring step entirely, so no `src/worker.ts` and no `shared/` tree is emitted; and the harness's teardown now removes `modules/`, `generated/` and `shared/` from the repo root (skipped under `--skip-codegen`, which exists to iterate on an already-generated tree). |
+
+The same `bun codegen …` invocation was also rotting six other justfile recipes (`validate-entities`, `analyze`,
+`stats`, `doc`, `manifest`, `suggestions` — all documented in CLAUDE.md) and `scan`; all seven now call
+`bun src/cli/index.ts <noun> <verb>`. `test-family` pointed at `crm-entity-repository.test.ts`, deleted when the family
+was renamed. `test/scaffold/validate.sh` and its `just validate` recipe carried every one of these defects and
+duplicate what `just test-integration` now does end to end; under I7 (replace, don't parallel) they are **deleted**
+rather than repaired.
 
 ## Putting them where they cannot rot again
 
@@ -222,14 +254,23 @@ recipes since. Corrected in the same PR, together with the new Known-red gates e
 4. Docs: CLAUDE.md `test-all` description, Known-red gates entry, `test-integration` local-gate note.
 5. Full gates from a clean tree, after the last edit.
 
-## Acceptance
+## Acceptance — all met
 
-- `bun run typecheck` exit 0.
-- `just test-integration` exit 0 (Docker present).
-- `just test-all` exit 0 **and** it runs `bun run typecheck`.
-- `just test-smoke-junction-clean` still exits 1, unchanged, with its status documented and a split proposed — no
-  filter, skip or suppression added anywhere.
-- No `any` cast introduced; the casts deleted in 1b are removals, not replacements.
+Output from the run made after the last edit:
+
+| Gate | Before | After |
+|---|---|---|
+| `bun run typecheck` | exit 2 (4 × TS2339) | **exit 0** |
+| `bun run build` | exit 0 | exit 0 |
+| `bun run test` (baseline) | exit 0 | exit 0 |
+| `just test-all` | exit 0, no typecheck | **exit 0, `typecheck` first** |
+| `just test-integration` | exit 1 (`Script not found "codegen"`) | **exit 0** — 64 pass · 2 skip (pre-existing `test.skip` in `bridge-e2e.test.ts`) · 0 fail |
+| `just test-smoke-junction-clean` | exit 1 | exit 1 — **unchanged, by design** (Failure 2) |
+
+- `just test-smoke-junction-clean` exits 1 with nothing filtered, skipped or loosened: `test/smoke/` is untouched by
+  this PR, the gate is in neither `test-all` nor CI, and its status is in CLAUDE.md › Testing › Known-red gates.
+- No `any` introduced; the 15 casts removed in 1b are removals, not replacements (`grep -rn "as { paths" src/` → empty).
+- `bun run typecheck` stays exit 0 **after** a `just test-integration` run — the harness cleans up after itself.
 
 ## Risks
 
@@ -239,10 +280,35 @@ recipes since. Corrected in the same PR, together with the new Known-red gates e
   accepted configs stay accepted; the added keys are all `.optional()`. Covered by `just test-all`.
 - **`test-integration` in CI is flaky (Docker/compose)** → it gets its own job, so a flake cannot mask `test-all`.
 
+## Review
+
+Gate 2.5 ran before the final gate pass. Both lenses returned **REVISE**, and both were right:
+
+- **The two honest gates broke each other.** `just test-integration` emitted `src/worker.ts` into the generator's own
+  `src/`, which `tsconfig.build.json` includes — so `bun run typecheck`, which this PR had just added to `test-all`,
+  was red for anyone who ran the integration gate first. The first implementation had added the file to `.gitignore`,
+  which hides it from git but not from `tsc` — a filter in everything but name. Fixed at the cause (item 9 above).
+- **The new `.gitignore` entries were unanchored.** Bare `generated/` and `shared/` match at every depth, so they
+  swallowed `src/cli/shared/`, `runtime/shared/`, `test/scaffold/shared/` and `runtime/subsystems/*/generated/` — the
+  last of which the same file explicitly says is committed. Any new file in those directories would have been
+  invisible to `git add`. All entries are now root-anchored, including the pre-existing `modules/`.
+- **The cast sweep was half-done** (8 sites left) and one runtime `typeof === 'string'` guard had been dropped in
+  favour of the static type, which the raw-YAML reality does not support. Both fixed.
+- A dangling `../types/drizzle` import into a deleted directory, and a comment that misattributed where the junction
+  YAML is rejected, were also fixed.
+
 ## Definition of done (charter §9)
 
 Gates green from the run after the last edit (except the documented known-red one) · this spec corrected to
 post-implementation truth and marked `Implemented` · epic #579 body + log entry updated · board Status moved.
+
+## Follow-ups
+
+- **Proposed split (owner to file):** *"The `clean` backend pipeline does not typecheck — 120 unresolved module
+  specifiers"* (Failure 2). Carries the census above, the 15-error junction self-import fix, and a gate that actually
+  compiles `clean` output.
+- `src/emitters/frontend/load-context.ts` holds a third `paths` shape; fold it into `PathsConfigInput`.
+- `filterConsumerErrors` (#576) also masks 2 real errors on the *green* clean-lite-ps path.
 
 ## Open questions
 

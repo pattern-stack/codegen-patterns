@@ -47,6 +47,34 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # Scaffold integration suite — needs Docker (it starts its own Postgres via
+  # docker compose), so it is NOT in `just test-all` and gets its own job: a
+  # Docker flake fails here instead of masking the main suite. `ubuntu-latest`
+  # ships Docker + compose, so CI can run it (GATE-1, #599).
+  integration:
+    name: test-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.x
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Install dependencies
+        run: just install
+
+      - name: Run scaffold integration suite
+        run: just test-integration
+
   # Publish to npm on every merge to main, gated on green tests. Runs the
   # tarball smoke (#190), then publishes the root + each opted-in workspace
   # package IFF its version isn't already on npm — so merges without a
@@ -58,7 +86,9 @@ jobs:
   publish:
     name: publish
     runs-on: ubuntu-latest
-    needs: test
+    # Both suites: a gate that cannot block a publish is a gate that rots
+    # (GATE-1, #599).
+    needs: [test, integration]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 20
     permissions:

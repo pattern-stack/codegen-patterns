@@ -29,7 +29,22 @@ export function getTestDb() {
 export async function truncateAll() {
   const client = getTestDb();
   await client.execute(
-    sql`TRUNCATE contacts, crm_entities, activity_entities, metadata_entities, domain_events, job_queue, cache_entries CASCADE`,
+    // Every table in the public schema, so this list cannot go stale as the
+    // subsystem schemas evolve. It used to name `job_queue`, a table the jobs
+    // subsystem stopped emitting, which failed the whole TRUNCATE (GATE-1, #599).
+    sql`
+      DO $$
+      DECLARE tables text;
+      BEGIN
+        SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+          INTO tables
+          FROM pg_tables
+         WHERE schemaname = 'public';
+        IF tables IS NOT NULL THEN
+          EXECUTE 'TRUNCATE ' || tables || ' CASCADE';
+        END IF;
+      END $$;
+    `,
   );
 }
 

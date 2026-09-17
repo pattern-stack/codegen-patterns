@@ -37,9 +37,10 @@ async function run() {
     await $`docker compose -f ${SCAFFOLD_DIR}/docker-compose.yml up -d --wait`.quiet();
     console.log('    Postgres ready');
 
-    // 3. Install scaffold deps
-    console.log('==> Installing scaffold dependencies...');
-    await $`cd ${SCAFFOLD_DIR} && bun install`.quiet();
+    // 3. Dependencies: the scaffold declares none of its own and resolves
+    //    everything from the repo's node_modules (see justfile `install`), so
+    //    the app under test and the generated code it loads share one copy of
+    //    each package. `just install` is the prerequisite.
 
     if (!skipCodegen) {
       // 4. Setup codegen config
@@ -52,13 +53,41 @@ async function run() {
         await Bun.write(configBackup, existingConfig);
       }
 
+      // The scaffold's aliases pin the layout codegen must emit into:
+      //   tsconfig.json  @gen/*   -> <repo root>/*
+      //   schema.ts               -> @gen/modules/contacts/contact.entity
+      // so emit at the repo root (`backend_src: .`) in clean-lite-ps's flat
+      // `modules/<plural>/` layout. Writing only `generate.architecture` sent
+      // the output to `app/backend/src/…`, where no alias resolves (GATE-1, #599).
+      //
+      // `runtime: vendored` selects the `@shared/*` import specifiers in the
+      // emitted code, which the scaffold's tsconfig maps onto `runtime/` — the
+      // real source. Nothing is vendored into the repo; the only output is
+      // `modules/` and `generated/`, both removed in the teardown below.
       await Bun.write(
         configPath,
-        'generate:\n  architecture: clean-lite-ps\n  frontend: false\n',
+        [
+          'runtime: vendored',
+          'generate:',
+          '  architecture: clean-lite-ps',
+          '  frontend: false',
+          'paths:',
+          '  backend_src: .',
+          '  generated: generated',
+          '',
+        ].join('\n'),
       );
 
       try {
-        await $`cd ${REPO_ROOT} && bun codegen entity test/scaffold/contact-scaffold.yaml`.quiet();
+        // Invoke the CLI entrypoint directly, as every other harness does.
+        // `bun codegen …` resolved a package script that does not exist
+        // (package.json has `cdp`; `codegen` is a published bin), and the
+        // command shape was pre-noun-verb (GATE-1, #599). `--force` is the
+        // same flag every other harness passes: the emit target is throwaway
+        // output, and without it the CLI's uncommitted-changes guard (which
+        // sees this repo's own working tree, since the emit root is the repo
+        // root) refuses to write.
+        await $`cd ${REPO_ROOT} && bun src/cli/index.ts entity new test/scaffold/contact-scaffold.yaml --force`.quiet();
         console.log('    Codegen complete');
 
         // 5. Push schema
@@ -103,6 +132,21 @@ async function run() {
     } else {
       console.log('==> Tearing down Postgres...');
       await $`docker compose -f ${SCAFFOLD_DIR}/docker-compose.yml down -v`.quiet();
+
+      // Remove the generated consumer from the repo root. This harness is the
+      // only thing that writes there, and leaving it behind poisons OTHER
+      // gates: `tsconfig.build.json` includes `src/**/*`, so any stray emission
+      // under `src/` turns `bun run typecheck` — and therefore `just test-all`
+      // — red for everyone afterwards. `.gitignore` hides such output from git
+      // but not from tsc, so cleaning up is the actual fix (GATE-1, #599).
+      // `--skip-codegen` keeps the tree: that mode exists to iterate on an
+      // already-generated scaffold.
+      if (!skipCodegen) {
+        console.log('==> Removing generated scaffold from the repo root...');
+        for (const dir of ['modules', 'generated', 'shared']) {
+          await $`rm -rf ${REPO_ROOT}/${dir}`.quiet();
+        }
+      }
     }
   }
 

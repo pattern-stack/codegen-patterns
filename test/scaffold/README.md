@@ -7,11 +7,16 @@ orchestrated by `test/scaffold/run-integration.ts`.
 
 ## Why they're gated
 
-Each suite imports from `@gen/*` and `@shared/*` path aliases that resolve to
-files produced by codegen (e.g. `modules/contacts/contact.repository.ts`,
-`test/scaffold/shared/base-classes/*-entity-repository.ts`, event-bus Drizzle
-backend). Those files only exist after running `bun codegen entity
-test/scaffold/contact-scaffold.yaml`.
+Each suite imports through the `@gen/*` and `@shared/*` path aliases:
+
+- `@gen/*` → the repo root, where the harness generates the consumer
+  (`modules/contacts/contact.repository.ts`, …). Those files only exist after
+  `bun src/cli/index.ts entity new test/scaffold/contact-scaffold.yaml`, which
+  `run-integration.ts` runs for you — and its teardown removes them again.
+- `@shared/*` → `runtime/` (the real source), with the scaffold's own
+  `shared/database/database.module.ts` and base-class stubs taking precedence.
+  Nothing is vendored: one copy of every module, so `instanceof` holds across
+  the boundary.
 
 To prevent `bun test` from erroring on missing modules when no scaffold has
 been generated, each file is gated by `SCAFFOLD_INTEGRATION=1` via
