@@ -28,6 +28,14 @@ Concretely:
 
 The cost of stale documentation compounds: every future agent reading it pays for the drift. The cost of updating it as you go is one extra paragraph per PR. Pay the small cost.
 
+## Active project
+
+**Relations v2 + semantic model** (tracker #578). Before planning, specifying, implementing or reviewing anything that
+touches relationships, repositories/services, tenant scoping, the `analytics:` block, patterns/capabilities, the
+frontend emitter's relations, or the Drizzle version: read the charter at
+`.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md`. Its §4 invariants bind every PR, and its §9 protocol says
+what to update (spec, epic issue, project issue) when work lands. Remove this section when #578 closes.
+
 ## Commands
 
 ```bash
