@@ -84,9 +84,10 @@ DRZ-1 ──► DRZ-2 ──┬──► TEN-1 ──► REL-1 ──► REL-2 �
 |---|---|---|---|---|
 | DRZ-1 | 1 | `feat(emit): drop v1 relations() const emission — the slot Drizzle 1.0 removes` | S | — |
 | DRZ-2 | 1 | `chore(drizzle): 1.0.0-rc.4 — generator, runtime, scaffold, smoke` | M | DRZ-1 |
-| TEN-1 | 2-pre | `feat(runtime): ADR-042 — ALS-fed repository tenant scoping (tenant_scoped: true, strict enforcement)` | M | DRZ-2 |
+| REL-0 | 2-pre | `refactor(runtime): BaseRepository generic over its concrete table (#603)` | L | DRZ-2 |
+| TEN-1 | 2-pre | `feat(runtime): ADR-042 — ALS-fed repository tenant scoping (tenant_scoped: true, strict enforcement)` | M | REL-0 |
 | REL-1 | 2 | `feat(emit): defineRelations() manifest from relationships: + Junction; wire drizzle({ client, relations })` | M | DRZ-2 |
-| REL-2 | 2 | `feat(repo): typed with-includes on generated repositories — scoped + soft-delete-filtered at every hop` | L | REL-1, TEN-1 |
+| REL-2 | 2 | `feat(repo): typed with-includes on generated repositories — scoped + soft-delete-filtered at every hop` | L | REL-0, REL-1, TEN-1 |
 | REL-3 | 2 | `refactor(clean-lite-ps): relationship methods + typed navigator delegate to graph traversal; delete CGP-358b cross-repo injection` | L | REL-2 |
 | FE-REL | 5 | `feat(frontend): graph accessors — has_many / junction traversal + typed include over TanStack DB collections` | L | REL-1 |
 | QS-1 | 3-ext | *(query-surface repo)* `drizzle 1.0 peer; has_one; publish; introspection off v1 Relations` | M | — |
@@ -167,6 +168,29 @@ CGP-358b service composition, `queries:` forwarders.
 - `just test-post-publish` green (tarball peer range resolves).
 
 ---
+
+### 4.5 Checkpoint 1 — what unit 1 actually surfaced (2026-09-17)
+
+Specs `DRZ-1.md`, `GATE-1.md`, `DRZ-2.md`, `GATE-2.md` are the post-implementation truth; this is the digest that
+changes later units. Full list: epic #579 › "What downstream must know".
+
+- **The bump itself was small** (3 type errors, 4 specs) — the cost was in gates that had rotted. Three were red on
+  `main` and outside CI (GATE-1, #599); the smoke `tsc` filters matched on error *message* and hid real generated-code
+  errors (#575, #576); `test-smoke-integration` printed errors it did not gate on (GATE-2, #604). All now fail loudly.
+  Consequence for every later unit: **new emission that does not compile fails a gate immediately.**
+- **The relations slot is a named seam.** Emitted `database.module.ts` is `drizzle({ client: pool })` with
+  `export type DrizzleDB = NodePgDatabase`; 1.0 removed `schema` from the pg config. REL-1 passes `relations` and
+  parameterises `DrizzleDB` and `runtime/types/drizzle.ts` with the manifest's type (`TRelations`).
+- **`BaseRepository.table` is `PgTableWithColumns<any>` and cannot be narrowed in place** (#603): the obvious narrowing
+  passes `bun run typecheck` and breaks generated code under consumer tsconfigs. → REL-0 (§5A.0).
+- **jsonb mapping changed in 1.0:** Drizzle no longer serializes `jsonb`; the driver does. Specs asserting captured
+  params assert the object. Relevant to TEN-1/REL-2 tests that capture SQL, and to any non-`pg` driver path.
+- **`getColumns`** replaces `getTableColumns` — SEM-2 and REL-0 use it.
+- **`paths.*` config keys are declared once**, in `PathsConfigSchema`; the CLI type derives from it. SEM-2 / REL-1 add
+  output paths there.
+- **`drizzle-orm` is pinned in exactly one place** (root `package.json`); fixtures resolve by walking up. Do not add a
+  second declaration in any harness.
+- **The `clean` pipeline is known-red (#602)** and out of scope; do not mistake its failures for regressions.
 
 ## 5. Unit 3 — semantic / aggregate model emitter
 
@@ -277,6 +301,15 @@ model); add `has_one` to the relationship kinds; publish. Its tenancy hook (`sco
 ---
 
 ## 5A. Unit 2 — relations graph as the core contract (ADR-044)
+
+### 5A.0 REL-0 (#603) — `BaseRepository` generic over its concrete table
+Added at checkpoint 1. `BaseRepository<TEntity>` holds `table: PgTableWithColumns<any>`; that `any` is why 1.0's
+`.returning()` needs an array assertion and why column access is untyped. Make the class (and the family repositories
+and mixins) generic over the concrete `pgTable` type, derive `TEntity` from `$inferSelect`, read columns via
+`getColumns`. Generated repositories pass their table type. Must hold under the **consumer** tsconfig
+(`noUncheckedIndexedAccess`) — validate with `just test-smoke`, not `bun run typecheck` (charter I9). Lands before
+TEN-1 (same choke point, avoids a rebase fight) and is a hard prerequisite of REL-2's typed includes. `clean-lite-ps`
+generated repos + vendored runtime both covered; the `clean` pipeline is not (#602).
 
 ### 5A.1 What "reads are generated" means
 RQBv2 resolves a nested include tree from one root in a single statement, typed end to end:

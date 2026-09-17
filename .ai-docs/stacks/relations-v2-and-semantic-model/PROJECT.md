@@ -1,7 +1,7 @@
 # Project charter — Relations v2 + semantic model
 
 **Stack:** `relations-v2-and-semantic-model` · **Tracker:** project #578 · **Board:** https://github.com/orgs/pattern-stack/projects/3
-**Owner:** Doug · **Opened:** 2026-09-16 · **Last revised:** 2026-09-17
+**Owner:** Doug · **Opened:** 2026-09-16 · **Last revised:** 2026-09-17 (checkpoint 1, after unit 1)
 
 This is the document every agent and every spec on this project starts from. It says what we are building, why, the
 rules no PR may break, and how the project's state is kept current. It is deliberately short on *how* — that lives in
@@ -91,7 +91,7 @@ uphold the ones they touch.
 | **I6** | **HTTP is closed by default.** | Includes over HTTP are a YAML allowlist with a depth cap. A client never supplies a raw include tree. An `api: false` entity is unreachable through an exposed neighbour unless the allowlist names it. Internal callers get the full typed include. |
 | **I7** | **No backwards compatibility.** | Replace, don't parallel. No deprecated aliases, no old-and-new composition types, no migration shims (CLAUDE.md). Baselines and snapshots regenerate. |
 | **I8** | **Core contract + opt-in extensions.** | Where a backend-specific capability is exposed, it is an extension on top of a portable core — not a uniform interface that hides features. |
-| **I9** | **Gates are honest.** | No filtered or ignored error classes. Report gate output from the run made *after* the last edit. A real residual error class gets its own issue, not a filter. |
+| **I9** | **Gates are honest.** | No filtered or ignored error classes, no scope carve-outs. Report gate output from the run made *after* the last edit. A real residual error class gets its own issue and a named single-purpose expectation, not a filter. **`bun run typecheck` does not validate a `runtime/base-classes/**` type change** — consumer tsconfigs are stricter (`noUncheckedIndexedAccess`); run `just test-smoke` before believing a runtime type change. A gate that is not in CI rots: new gates go into `just test-all` or their own CI job. |
 | **I10** | **This repository is public.** | No consumer, customer, product-strategy, infrastructure or security-defect detail in any file, commit, issue or PR. Refer to "a host application". |
 | **I11** | **Scope discipline.** | `clean-lite-ps` is the backend pipeline in scope. Cross-entity files are whole-set TS emitters (ADR-038 precedent); per-entity backend files stay hygen. No consumer-application changes; no consumer production pin to the Drizzle RC. |
 
@@ -107,15 +107,17 @@ uphold the ones they touch.
 ## 6. Units, order, and what "done" means
 
 ```
-DRZ-1 ─► DRZ-2 ─┬─► TEN-1 ─► REL-1 ─► REL-2 ─► REL-3 ─► FE-REL      epic #580
-   epic #579    ├─► SEM-1 ─► SEM-2 ─► SEM-3   (+ query-surface#40)   epic #581
-                └─► CAP-1 ─► CAP-2 ─► CAP-3                          epic #582
+DRZ-1 ─► GATE-1 ─► DRZ-2 ─► GATE-2 ─┬─► REL-0 ─► TEN-1 ─┐
+        epic #579                   │      REL-1 ───────┴─► REL-2 ─► REL-3 ─► FE-REL   epic #580
+                                    ├─► SEM-1 ─► SEM-2 ─► SEM-3  (+ query-surface#40)  epic #581
+                                    └─► CAP-1 ─► CAP-2 ─► CAP-3                        epic #582
 ```
+GATE-1 (#599), GATE-2 (#604) and REL-0 (#603) were added at checkpoint 1 — see §7.
 
 | Epic | Exit criteria (the epic closes when all are true) |
 |---|---|
-| **#579 Unit 1 — Drizzle 1.0** | Generator, runtime, scaffold and every harness run on `drizzle-orm@1.0.0-rc.4`; no `relations(` emitted; **zero** filtered error classes in smoke; `drizzle-orm` is a peer; tarball smoke green; #576 closed. |
-| **#580 Units 2+5 — relation graph** | ADR-042 implemented and proven by cross-tenant integration tests; manifest round-trips YAML → traversal; includes scoped at every hop with leak tests at depth ≥ 3; HTTP include allowlist enforced; services delegate + navigator shipped; CGP-358b composition deleted; frontend accessors emitted and type-checking. |
+| **#579 Unit 1 — Drizzle 1.0** | Generator, runtime, scaffold and every harness run on `drizzle-orm@1.0.0-rc.4`; no `relations(` emitted; **zero** filtered error classes or scope carve-outs in any smoke (#576, #575, #604 closed); typecheck + integration suite green **and in CI** (#599); `drizzle-orm` is a peer; tarball smoke green. |
+| **#580 Units 2+5 — relation graph** | `BaseRepository` generic over its concrete table (#603); ADR-042 implemented and proven by cross-tenant integration tests; manifest round-trips YAML → traversal; includes scoped at every hop with leak tests at depth ≥ 3; HTTP include allowlist enforced; services delegate + navigator shipped; CGP-358b composition deleted; frontend accessors emitted and type-checking. |
 | **#581 Unit 3 — semantic model** | New `analytics` vocabulary replaces the old; emitted `AggregateModel` type-checks against the published package; CRM slice answers a fan-out-trap measure correctly; query-surface#40 shipped. |
 | **#582 Unit 4 — capabilities** | ADR-041 implemented (3-capability fixture compiles); `roles:` parsed/validated and feeding v2 `alias`; `Actor`/`Communication` mixins shipped with ALS scope; `findByRole` round-trips in integration. |
 
@@ -141,6 +143,9 @@ Append-only. A decision that changes an invariant or the target picture also get
 | 2026-09-17 | Building the generator on the Drizzle 1.0 **prerelease** line is approved. `drizzle-orm` becomes a peer + dev dependency. | PLAN §4.3 |
 | 2026-09-17 | Electric parity restated: both sides project from the same declared graph (frontend unit 5). | ADR-044 |
 | 2026-09-17 | `queries:` stays for non-relationship lookups + index emission. | PLAN §5A.6 |
+| 2026-09-17 · checkpoint 1 | **GATE-1 (#599) and GATE-2 (#604) added to unit 1.** Three gates were red on `main` and outside CI; a fourth printed errors it did not gate on. Unit 1 closes only when every gate is honest. | PLAN §4.5 |
+| 2026-09-17 · checkpoint 1 | **REL-0 (#603) added, ahead of TEN-1 and REL-2:** `BaseRepository` becomes generic over its concrete table. The typed include/navigator needs the concrete table type, TEN-1 edits the same choke point, and the 1.0 bump showed the `PgTableWithColumns<any>` is what forces casts. | PLAN §5A.0 |
+| 2026-09-17 · checkpoint 1 | **The `clean` backend pipeline is out of the project and known-red (#602)** — 118 raw tsc errors, never typechecked. Not repaired, not filtered, not in CI. Repair-or-retire is an owner decision (Q5). | #602 |
 
 ### Open questions
 
@@ -150,12 +155,15 @@ Append-only. A decision that changes an invariant or the target picture also get
 | Q2 | Per-hop scoping mechanism: v2 predefined relation `where` filters vs repository rewriting the include tree | REL-2 | decide by spike in REL-2's spec | REL-2 specifier |
 | Q3 | YAML shape of the HTTP include allowlist | REL-2 | design in REL-2's spec | REL-2 specifier |
 | Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | YAML for atomic tags + pure composites; adapter for data-driven | Doug (confirm at SEM-1) |
+| Q5 | The `clean` backend pipeline (#602): repair it and gate it, or retire it? | nothing in this project; CAP/REL are `clean-lite-ps`-only | retire — no users, "no backwards compat", and every REL/CAP unit already skips it | Doug |
+| Q6 | Cut 0.31.0 when unit 1 merges, or hold until REL-1 refills the relations slot? | release only | cut it: the peer-dependency change and honest gates are worth shipping; note the empty relations slot in the changelog | Doug |
 
 ## 8. Risks
 
 | Risk | Signal | Response |
 |---|---|---|
-| Drizzle 1.0 changes between rc.4 and GA | a gate fails after a pin move | pins are exact in harnesses; re-run gates on each RC; DRZ-2's spec records the API surface we depend on |
+| Drizzle 1.0 changes between rc.4 and GA | a gate fails after a pin move | pins are exact (`package.json` is the only pin that travels — `bun.lock` is gitignored); use plain `1.0.0-rc.N`, never the `-<sha>` builds; re-verify `docs/specs/DRZ-2.md` §A1–A10 on every RC move |
+| Probing Drizzle behaviour against the wrong copy | a scratch script behaves differently from the repo | probe from **inside** the repo — outside it, resolution can pick up a transitive 0.45 copy |
 | Per-hop scoping cannot be expressed cleanly in RQBv2 | REL-2 spike | fall back to include-tree rewriting in the repository; if neither is sound, traversal stays internal-only until it is — never ship unscoped hops (I3) |
 | A scope leak through traversal | — | leak tests at depth ≥ 3 are exit criteria for #580; `gate:human` on TEN-1 and REL-2 |
 | query-surface not published when SEM-2 is ready | query-surface#40 still open | documented fallback: vendored type mirror + conformance test (PLAN §5.3) |
