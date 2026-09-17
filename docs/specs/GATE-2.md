@@ -1,7 +1,7 @@
 # GATE-2 — Default list sort without `timestamps`, and an honest `test-smoke-integration`
 
-**Status:** Draft
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #604 · **Epic:** #579 · **Project:** #578
 **Depends on:** DRZ-2 (#584) · **Blocks:** epic #579 closing honestly
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · CLAUDE.md
@@ -124,6 +124,10 @@ path prefix and fails only on the first two. The header comment (`:44-50`) justi
 - Keep both vacuity guards (`no generated files under src/integrations/**`, `no files under src/jobs/**`) and the
   per-tree file counts. They are what stops the gate passing green on an empty project, and they get *more*
   load-bearing once the error check is no longer partitioned by tree.
+- The separate `src/jobs/**` **error** check goes with the partition — it is a subset of what step 9 now fails on
+  (Found #3). Its vacuity guard stays.
+
+Shipped as described.
 
 ### `_consumer-errors.ts` needs one addition
 
@@ -153,6 +157,9 @@ the program see one identity. `paths` are consulted for every non-relative speci
 the repo-source files, which is exactly the unification needed. If other shared peers turn out to have the same split,
 they get the same treatment — this is a resolution fix, not a suppression.
 
+Shipped. **No other peer needed it**: after this one mapping the generated project compiles with zero diagnostics, so
+`@nestjs/common` was the only package split across the two trees in a way that reached a type position.
+
 ### If something cannot be fixed
 
 A residual diagnostic gets a **named single-purpose expectation**: the exact file + error code + a comment carrying
@@ -165,30 +172,74 @@ predicate. The expectation fails if the error changes shape or disappears, so it
 - #603 (`BaseRepository.table` typing) — REL-2/REL-3.
 - Keyset paging itself (the v1 engine stays offset; the seam is unchanged).
 
-## Acceptance
+## Found during implementation
+
+1. **Two test assertions were too strict, and the emitted prose is why.** The first draft asserted
+   `not.toContain('created_at')` over the whole timestamp-less render, and `not.toContain('KEYSET SEAM')`. Both failed
+   — because the replacement comments *explain* that there is no `created_at` and that there is no keyset seam, which
+   is exactly what a generated file should say. The assertions were made **more precise**, not weaker: `.createdAt` is
+   matched as a property access (`/\.createdAt\b/`, the form that does not compile), plus a check that no
+   non-comment line mentions it at all; and the seam is matched as its directive (`/^\s*\/\/ KEYSET SEAM \(/m`)
+   rather than as a phrase. Worth stating as a rule: when a fix makes generated prose talk about the thing it removed,
+   assert on the *code shape*, not on the words.
+2. **`projectDir` had to default to keeping, not dropping.** The first cut dropped every absolute location when no
+   `projectDir` was passed. That is a silent-pass risk in the three harnesses that do not pass one — precisely the
+   failure I9 exists to prevent. Inverted: an absolute location is dropped only when we *know* it is outside the
+   project. All four call sites now pass their directory anyway, so the ambiguous case does not arise in practice;
+   the default is the safe one for whatever calls it next.
+3. **The jobs-tree error check became dead code**, not just the `otherErrors` partition. Once step 9 fails on every
+   diagnostic in the project, `jobErrors` is a subset of what already failed. Deleted; the jobs **vacuity guard**
+   stays and is now the only thing that file does for `src/jobs/**` — and it matters more, because a gate that fails
+   on nothing because nothing was emitted is the other way to be dishonest.
+4. **No baseline or snapshot churn.** Neither `test/baseline/**` nor `test/junction/__snapshots__/**` contains a list
+   or search use-case (`grep -c orderBy` over both snapshots → 0), so the template change is invisible to them.
+   Checked before running, because a surprise snapshot diff here would have been the thing to explain.
+
+## Acceptance — all met
 
 Output from the run made **after the last edit** (charter I9).
 
-- `bun run typecheck && bun run build && bun run test` green.
-- `just test-all` green, including the new unit test.
-- `just test-integration` green.
-- `just test-post-publish` green.
-- `just test-smoke-integration` green **with no carve-out**: its output contains no "out of scope — not failing" line,
-  and it fails on any `tsc` diagnostic located in the generated project.
+| Gate | Result |
+|---|---|
+| `bun run typecheck` | **exit 0** |
+| `bun run build` | **exit 0** |
+| `bun run test` | **exit 0** |
+| `just test-all` | **exit 0** — unit **3176/3176** (16 new) · baseline · 6 smokes · junction · integration-emit · smoke-integration |
+| `just test-integration` | **exit 0** — 64 pass · 2 pre-existing skip · 0 fail |
+| `just test-post-publish` | **exit 0** |
+
+- `just test-smoke-integration` is green **with no carve-out**: `grep -c "out of scope"` over the whole `test-all`
+  log → **0**.
+- **The new check was proven non-vacuous**, which is the risk a location-scoped check carries when the harness
+  compiles against out-of-tree sources. On a kept project (`KEEP_SMOKE_DIR=1`), with a baseline of 0 errors:
+
+  | Injected defect | Reported |
+  |---|---|
+  | re-introduce #604 (`desc(accounts.createdAt)` in the list use-case) | **1** — `…list-accounts.use-case.ts(45,31): error TS2339: Property 'createdAt' does not exist…` |
+  | break a relative import (`from '../nope-does-not-exist'`) | **1** — `…(5,32): error TS2307: Cannot find module…` |
+  | restore | **0** |
+
+  Both live in `src/modules/**` — outside `src/integrations/**` and `src/jobs/**`, i.e. exactly what the old
+  carve-out printed and passed.
 - No generated `list-*.use-case.ts` or `search-*.use-case.ts` references `.createdAt` for an entity without
-  `timestamps`.
-- CLAUDE.md › Known-red gates reflects reality: the #604 paragraph goes away.
+  `timestamps` (10 rendering tests, both templates × both behavior shapes).
+- CLAUDE.md › Known-red gates: the #604 paragraph is gone, replaced by the rule that now holds — location-only
+  scoping everywhere, and what to do instead if something truly cannot be fixed.
+- **Nothing needed a named expectation.** Both residual classes were fixable at the root.
 
-## Risks
+## Risks — outcome
 
-- **`id desc` is not a valid default for a non-UUID primary key.** Every pipeline emits
-  `id: uuid('id').primaryKey().defaultRandom()`, and the existing tie-break already assumes `.id` unconditionally, so
-  this adds no new assumption. If a configurable primary key ever lands, the default sort is one of its call sites.
-- **Removing the carve-out surfaces more than the one known error.** Then the gate is telling the truth for the first
-  time. Fix at the root, or a named expectation plus an issue — time-boxed, and reported in this spec either way.
+- **`id desc` is not a valid default for a non-UUID primary key.** Open, and unchanged by this PR: every pipeline
+  emits `id: uuid('id').primaryKey().defaultRandom()`, and the existing tie-break already assumed `.id`
+  unconditionally. If a configurable primary key ever lands, the default sort is one of its call sites.
+- **Removing the carve-out surfaces more than the one known error.** It did not: after the #604 fix and the
+  `@nestjs/*` mapping, the generated project compiles with **zero** diagnostics. The seven printed errors were the
+  whole set.
 - **Mapping `@nestjs/*` hides a real dual-copy problem in consumers.** It does not: the duplication is an artifact of
   *this harness* compiling one program out of two trees. A real consumer installs one copy; the dual-copy hazard for
-  consumers is covered by `just test-post-publish` and documented in `docs/CONSUMER-SETUP.md`.
+  consumers is covered by `just test-post-publish` (green) and documented in `docs/CONSUMER-SETUP.md`.
+- **A location-scoped check goes vacuous in a harness that compiles out-of-tree sources.** Real enough to test for
+  rather than reason about — see the injection table under Acceptance.
 
 ## Definition of done (charter §9)
 
