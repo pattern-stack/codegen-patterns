@@ -51,6 +51,15 @@ export abstract class BaseRepository<TEntity> {
   /**
    * The Drizzle table schema for this entity.
    * Concrete repositories declare this as a class property.
+   *
+   * The `any` is load-bearing and cannot be narrowed here — see
+   * `docs/specs/DRZ-2.md` §A4 and issue #603. `PgTableWithColumns<TableConfig>`
+   * is NOT a supertype of a concrete `pgTable(...)` (`TableConfig['columns']`
+   * is an index signature that a concrete column map does not satisfy), and it
+   * makes `this.table['id']` `PgColumn | undefined` under the consumer
+   * tsconfig's `noUncheckedIndexedAccess`. Typing the table properly means
+   * making this class generic over it; that lands with the typed navigator
+   * (REL-2/REL-3), which needs the concrete table type anyway.
    */
   protected abstract readonly table: PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -187,10 +196,17 @@ export abstract class BaseRepository<TEntity> {
    */
   async create(input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
     const data = this.withTimestamps(input as Record<string, unknown>, 'create');
-    const rows = await this.runner(tx)
+    // `as TEntity[]`, not `rows[0] as TEntity`: Drizzle 1.0 derives an insert's
+    // `.returning()` row type from `table['$inferSelect']`, which is `any`
+    // while `table` is (see the `table` declaration and #603). The conditional
+    // `TReturning extends undefined ? QueryResult<never> : TReturning[]` then
+    // distributes into a union whose non-array arm is unreachable — we called
+    // `.returning()`. Asserting the array states that; it is the same
+    // assertion the element-level cast always made.
+    const rows = (await this.runner(tx)
       .insert(this.table)
       .values(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .returning();
+      .returning()) as TEntity[];
     return rows[0] as TEntity;
   }
 

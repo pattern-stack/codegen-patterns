@@ -198,7 +198,7 @@ beforeAll(async () => {
     .start();
 
   pool = new Pool({ connectionString: container.getConnectionUri() });
-  db = drizzle(pool) as unknown as DrizzleClient;
+  db = drizzle({ client: pool }) as unknown as DrizzleClient;
   await pool.query(JOBS_DDL);
 
   // The live function key lives in the in-process registry — the Drizzle

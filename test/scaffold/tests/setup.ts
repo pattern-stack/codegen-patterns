@@ -4,23 +4,23 @@
  * Provides a Drizzle client connected to the Docker Postgres instance
  * from docker-compose.yml. Used by both repository and HTTP tests.
  */
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { sql } from 'drizzle-orm';
-import * as schema from '../schema';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
   'postgresql://postgres:postgres@localhost:5432/scaffold_test';
 
 let pool: Pool | null = null;
-let db: ReturnType<typeof drizzle<typeof schema>> | null = null;
+let db: NodePgDatabase | null = null;
 
 /** Get or create the shared Drizzle client. */
 export function getTestDb() {
   if (!db) {
     pool = new Pool({ connectionString: DATABASE_URL });
-    db = drizzle(pool, { schema });
+    // Drizzle 1.0: config object, `schema` removed (DRZ-2, #584).
+    db = drizzle({ client: pool });
   }
   return db;
 }

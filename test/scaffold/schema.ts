@@ -1,9 +1,11 @@
 /**
  * Drizzle schema for the scaffold test harness.
  *
- * Re-exports the contacts table from codegen output so that:
- *   1. drizzle-kit push can create the contacts table in Docker Postgres
- *   2. DatabaseModule can pass the schema to drizzle() for typed queries
+ * Re-exports the contacts table from codegen output so that drizzle-kit push
+ * can create the contacts table in Docker Postgres. (Under Drizzle 1.0 the
+ * client no longer takes a `schema` — `drizzle({ client })` — so this barrel
+ * exists for kit and for test code that imports tables directly, not for the
+ * client constructor. DRZ-2, #584.)
  *
  * The import path uses the @gen alias (maps to repo root via tsconfig.json).
  * After running codegen, the entity file lives at:

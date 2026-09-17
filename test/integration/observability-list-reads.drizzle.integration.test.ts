@@ -151,7 +151,7 @@ beforeAll(async () => {
     .start();
 
   pool = new Pool({ connectionString: container.getConnectionUri() });
-  db = drizzle(pool) as unknown as DrizzleClient;
+  db = drizzle({ client: pool }) as unknown as DrizzleClient;
 
   // Apply the schema (enums + job + job_run + domain_events + CHECK).
   await pool.query(OBS_LIST_DDL);
