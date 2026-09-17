@@ -1,5 +1,5 @@
 # Stack plan — relations-v2-and-semantic-model
-# Governs: BRIEF.md + PLAN.md (same directory), ADR-044, ADR-042.
+# Governed by: PROJECT.md (charter) + PLAN.md (same directory), ADR-044, ADR-042.
 # Hierarchy on the tracker: Project issue → one Epic per track → Task per PR.
 # Each task carries a high-level plan only; the per-issue spec is written by /design at implementation time.
 
@@ -37,7 +37,7 @@ plan:
     `state:strategy-approved` (directly for `gate:auto`, after human review for `gate:human`). PR open = in review.
     Closed = merged.
 
-    Source docs: `.ai-docs/stacks/relations-v2-and-semantic-model/{BRIEF,PLAN}.md`, `docs/adrs/ADR-044-*.md`.
+    Source docs: `.ai-docs/stacks/relations-v2-and-semantic-model/{PROJECT,PLAN}.md`, `docs/adrs/ADR-044-*.md`.
 
 epics:
   - key: "579"

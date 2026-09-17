@@ -1,17 +1,20 @@
-# Handoff — 2026-06-07 — jobs worker-scaffold train shipped (#513 → #517)
+# Handoff — 2026-09-17 — relations-v2 + semantic model project opened
 
-**Branch:** `main`
-**Last action:** Shipped the standalone-worker train: #513 (PR #516 — mode-aware `worker.ejs.t`, AppModule composition, `src/worker.ts` emission) + #517 (PR #519 — package-mode install emits worker + main-hook, schema stays barrel-driven) + two doc-recovery PRs (#518, #522 — both born from merge-vs-fixup races; see memory `merge-races-verdict-timing`). Issues #513/#517 closed. Filed with validator-verified diagnoses: **#520** (main-hook inject silently no-ops — `skip_if` renders literal `true` + hygen treats inject `skip_if` as whole-file regex) and **#521** (no tarball gate for the package-mode worker import — new member of the works-from-checkout-broken-from-tarball class). CLAUDE.md Integration-Codegen sink description corrected in this PR (was the standing obstacle from the 2026-06-06 assembly-train handoff).
-**Next action:** Close epic #485 (work shipped 0.23.0; rollup issue still open). Then: **#521 must land before the next version bump** — 0.24.0 published at the `chore/bump-0.24.0` merge, so #516/#519 are on main **unpublished**; the next bump ships them to npm, and #521 is the gate proving the worker's package import resolves from the real tarball. Then #520 (small, fully specified). Then pick the next train: #458 (use-case registry, unblocked) / #494 (FK write-key normalization) / #482+RFC-0004 (canonical ownership).
+**Active project:** `relations-v2-and-semantic-model` — tracker #578, board https://github.com/orgs/pattern-stack/projects/3
+**Start here:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter: goal, invariants, decisions,
+update protocol). State lives on #578 (body = current dashboard, comments = log), not in this file.
+
+**Last action:** Planning closed. ADR-044 (relations are the core read contract) accepted; ADR-042 accepted; charter,
+`PLAN.md`, `plan.yaml` on `main`; 13 tasks under 4 epics filed (#579–#595) + pattern-stack/query-surface#40.
+**Next action:** `/design` → `/develop` on **#583 (DRZ-1)**, then **#584 (DRZ-2)**, then the mandatory checkpoint
+(charter §6) before the REL / SEM / CAP tracks fan out.
 **Obstacles:**
-- DATED (also filed as #512): `actions/checkout@v4` runs Node 20; GitHub forces Node 24 from **2026-06-16** — bump checkout in `.github/workflows/ci.yml` before then.
-- UNFILED (carried over): swe-brain `MessageSink` writes `conversationExternalId: null` every upsert → likely live clobber bug vs its ADR-0008 §8 (verified mechanics: `integrationUpsertOne` writes every writeColumns member; no-clobber guard is FK-only). Fix = the `exclude_fields` knob. File in dugshub/swe-brain (Doug to confirm).
-- Agent `isolation:"worktree"` still broken by the claudecode-patterns plugin's WorktreeCreate telemetry hook — every git-touching mission needs explicit manual `git worktree add worktrees/<issue>` steps + post-spawn `git status` verification.
+- Open question Q1 (charter §7) blocks FE-REL design only.
+- Agent `isolation: "worktree"` was reported broken by a plugin telemetry hook (2026-06-07). Unverified since; until
+  confirmed fixed, create worktrees manually (`git worktree add worktrees/<key> origin/main`) and verify with
+  `git status` after spawning.
 
 ## Notes
-- swe-brain consumes via bun-link, so it can pick up #516/#519 without a publish; its `worker_mode: standalone` adoption (sdlc-patterns#131) triggered this train and is now the scaffold's default shape.
-- `docs/specs/JOB-6.md` is the post-implementation truth for the jobs scaffold (corrected root causes, package/vendored split); `.ai-docs/specs/{513,517}.md` carry the per-PR deviations.
-- Unverified carry-over from the EMIT-CHANGES handoff: sanity-check `docs/specs/EMIT-CHANGES-1.md` reflects post-implementation truth (the at-merge check was never confirmed done).
-- Worktree hygiene 2026-06-07: `worktrees/{513,517}` removed, their branches deleted local+remote, 6 dead publish-worktree entries pruned. NOT touched (other sessions / unverified): `.claude/worktrees/*` (one locked), `worktrees/{490,pr-271}`, `/tmp/cdp-wt-0162` (live branch `fix/concurrency-fn-keys-and-differ-unignore`), `~/Projects/codegen-patterns-worktrees/*`. The main working tree sits on merged branch `feat/integration-change-emit-seam` — safe to retire to `main` once no session claims it.
-- Parked track (handoff 2026-06-05, see `7a5ed07`): ADR-038 frontend emitter consumer test — in a consumer (swe-brain bun-linked, or codegen-pattern-demo-app), `generate.frontend: true` + `entity new --all` + pairing deps + typecheck. Two contracts only a consumer can verify: `@repo/db/entities` plain `<Class>` export assumption; `frontend-patterns@alpha` + TanStack pairing typechecks. Likely first trip: `EntityStoreProvider` mounting (OQ-4, documented not scaffolded).
-- Prior handoffs (2026-06-06 ×2: assembly-train + EMIT-CHANGES) superseded by this one.
+- Older open issues not part of this project remain on the board-less backlog (#575, #576 — the latter is absorbed by
+  #584; #520/#521 tarball-gate debt; #512 checkout bump overdue; #557 looks closable after 0.30.0).
+- Previous handoff (2026-06-07, jobs worker-scaffold train) is superseded; see git history.

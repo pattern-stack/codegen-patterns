@@ -1,9 +1,9 @@
 # Plan — Drizzle 1.0 + relations graph + semantic model + pattern extension (units 1–5)
 
-**Stack:** `relations-v2-and-semantic-model` · **Governs:** `BRIEF.md` (same directory)
-**Base:** `main` @ `efe6afb`, v0.29.0 · **Written:** 2026-09-16 · **Status:** operator decisions recorded 2026-09-17 (see §0); PR list still a proposal
-**Scope of this document:** all five units. §2 keeps the tradeoff table as the record of what ADR-044 chose between.
-No GitHub issues have been opened — the PR list in §3 is a proposal.
+**Stack:** `relations-v2-and-semantic-model` · **Governed by:** `PROJECT.md` (the charter — goal, invariants, decisions, update protocol)
+**Written:** 2026-09-16 against `main` @ `efe6afb` (v0.29.0) · **Revised:** 2026-09-17 after operator decisions
+**Scope of this document:** the per-unit technical plan. Decisions and open questions live in `PROJECT.md` §7; this
+file only says *how* each unit is expected to be built. Specs (`docs/specs/<KEY>.md`) supersede it per issue.
 
 > **Tracker (synced 2026-09-17).** Project #578 → epics #579 (unit 1), #580 (units 2+5), #581 (unit 3), #582 (unit 4).
 > DRZ-1 #583 · DRZ-2 #584 · TEN-1 #585 · REL-1 #586 · REL-2 #587 · REL-3 #588 · FE-REL #589 · SEM-1 #590 · SEM-2 #591 ·
@@ -11,36 +11,22 @@ No GitHub issues have been opened — the PR list in §3 is a proposal.
 > `plan.yaml` (same directory). Board: https://github.com/orgs/pattern-stack/projects/3 (Status = the SDLC stage
 > taxonomy; `sdlc.yml.project_number: 3`). All tasks start `state:planned`; specs are written per issue by `/design`.
 
-## 0. Operator decisions — 2026-09-17
-
-| # | Question | Decision |
-|---|---|---|
-| 1 | Access-pattern contract (BRIEF §3) | **Option 1 — relations are the core contract.** ADR-044. The CGP-358b composition is replaced, not paralleled; `clean-lite-ps` stays the pipeline in scope. |
-| 2 | Layering | Services are fully generated atomic operations (verified: `clean-lite-ps/service.ejs.t` is `force: true` + `@generated`). Consumers hand-write **use-cases and queries on top**. Generated reads may be arbitrarily deep row-shaped traversals; cross-entity **writes**/transactions/workflows are use-cases; **aggregations** go through the sibling semantic-query package, injected into a use-case/query. |
-| 3 | Tenant scope | **ALS-fed at the repository (ADR-042 → Accepted)**, `strict` enforcement for tenant-scoped entities. Reverses the BRIEF's explicit-parameter rule. Implementing ADR-042 (TEN-1) is a precondition for unit 2. |
-| 4 | Metric layer | **Use `@pattern-stack/query-surface`.** Codegen emits its `AggregateModel`; it builds no metric engine. The package is operator-owned, so it is changed rather than worked around (publish, Drizzle 1.0 peer, `has_one`) — see §5.6. |
-| 5 | Unit 1 slot | (A) remove and leave empty; unit 2 fills it for real. Option (B) is dropped. |
-| 6 | Electric parity | Restated as "both sides project from the same YAML graph": new unit 5 (frontend graph accessors). |
-
-Still open: where the frontend include API lives (§6A.3); `drizzle-orm` as peer+dev (§4.3, recommended yes);
-catalog home / additivity granularity (§5.5, recommendations stand).
-
 Everything marked *verified* was checked this session against the working tree at `efe6afb`, the sibling
 semantic-query package's checkout, or a scratchpad install of `drizzle-orm@1.0.0-rc.4` + `drizzle-kit@1.0.0-rc.4`
 compiled with this repo's TypeScript 6.0.3.
 
 ---
 
-## 1. Verified facts that correct the brief
+## 1. Verified facts (corrections to the launch brief, since folded into `PROJECT.md`)
 
-| Claim in BRIEF / upstream notes | What is actually true (verified) | Consequence |
+| Claim in the launch brief / upstream notes | What is actually true (verified) | Consequence |
 |---|---|---|
 | "zero `relations(` emission anywhere in `src`" | True for `src/`, **false for `templates/`**: v1 `relations()` consts are emitted by `templates/entity/new/backend/database/schema.ejs.t:234`, `templates/entity/new/clean-lite-ps/entity.ejs.t:87`, `templates/junction/new/entity.ejs.t:112`; gated in `prompt-extension.js:648-650`, `:1343`, `junction/new/prompt.js:116`. Locked by 6 baseline files + 2 junction snapshots. | Unit 1 cannot leave that slot untouched — 1.0 removes the API it uses. See §4.2. |
 | "1.0 removes `relations()`" | `relations` is gone from the `drizzle-orm` root export (TS2724 on import); the v1 implementation survives only under the underscored legacy entry `drizzle-orm/_relations`. `defineRelations` is on the root export. | Emitted v1 consts fail to compile on 1.0. Do not import from `_relations`. |
 | "`.array()` no longer chainable" | `text('x').array()` compiles on rc.4 (`pg-core/columns/common.d.ts:251`). | No template change for `string_array`. |
 | "`.enableRLS()` → `withRLS()`" | `enableRLS` is deprecated, not removed. Repo uses neither. | Nothing to do. |
 | "`getTableColumns()` → `getColumns()`" | Both exported; `getTableColumns` is marked "use `getColumns`". Used only in 3 spec files. | Rename in unit 1 (cheap). |
-| drizzle-kit migration format | rc.4 `generate` writes `<timestamp>_<name>/{migration.sql,snapshot.json}` per migration folder; snapshot `version: "8"` with `prevIds`. No `meta/_journal.json` written. | Generator emits no migrations, so no code change; document in CONSUMER-SETUP. Consumer continuity is out of scope (BRIEF §4.1). |
+| drizzle-kit migration format | rc.4 `generate` writes `<timestamp>_<name>/{migration.sql,snapshot.json}` per migration folder; snapshot `version: "8"` with `prevIds`. No `meta/_journal.json` written. | Generator emits no migrations, so no code change; document in CONSUMER-SETUP. Consumer continuity is out of scope (charter §5). |
 | Driver generics | `NodePgDatabase<TRelations extends AnyRelations = EmptyRelations>`; `drizzle(...)` config takes `relations`, **not `schema`**. | `src/cli/shared/init-scaffold.ts:204-230` (emitted `database.module.ts`) breaks twice: `drizzle(pool, { schema })` is rejected, and `ReturnType<typeof drizzle<typeof schema>>` fails the `TablesRelationalConfig` constraint. `runtime/types/drizzle.ts` (`NodePgDatabase<any>`) still compiles. |
 | pg-proxy test harness | `drizzle(async () => ({ rows: [] }))` callback shape unchanged. | 8 runtime specs need no rewrite. |
 | Sibling package coupling | `@pattern-stack/query-surface` is `private: true` (unpublished), peer-pins `drizzle-orm ^0.45.2`, and its Drizzle adapter (`registry/introspect.ts`, `registry/schema-registry.ts`) walks **v1** `Relations` objects. Its **model shape** (`AggregateModel`, `EntityDescriptor`, `AggRegistry`, `MeasureCatalog`) is plain data + `PgTable`/`PgColumn` refs and does not require introspection. | Unit 3 must emit a *declared* model, never one recovered by walking `relations()`. Whether that package itself runs on 1.0 is its own work, not this repo's. |
@@ -50,7 +36,7 @@ compiled with this repo's TypeScript 6.0.3.
 
 ---
 
-## 2. §3 — the access-pattern contract (operator decision; tradeoffs only)
+## 2. The access-pattern contract — tradeoff record (decided: option 1, ADR-044)
 
 **What is being decided.** Whether generated repositories traverse a Drizzle v2 relation graph, or whether cross-entity
 access stays service-layer composition over single-table repositories (the cgp-62 r4 contract, `docs/relationship-pattern-audit.md` §1, `.ai-docs/plans/codegen-app-patterns.yaml` `architectural_notes.cross_entity_access`).
@@ -112,7 +98,7 @@ DRZ-1 ──► DRZ-2 ──┬──► TEN-1 ──► REL-1 ──► REL-2 �
 | CAP-3 | 4 | `feat(runtime+patterns): Actor + Communication capabilities (mixins, explicit scope)` | L | CAP-2 |
 
 The three tracks after DRZ-2 (REL, SEM, CAP) are independent. Sizes: S ≈ one sitting, M ≈ one day, L ≈ two to three days including fixtures and docs. Each PR carries its spec update (CLAUDE.md
-"living documentation") and the gate output from the final run before commit (BRIEF §5).
+"living documentation") and the gate output from the final run before commit (charter §9).
 
 Why DRZ-1 before DRZ-2: DRZ-1 is green on 0.45 *and* 1.0 (it only deletes emission), so it isolates the snapshot churn
 from the dependency bump. DRZ-2 then fails nowhere on the removed API.
@@ -123,7 +109,7 @@ from the dependency bump. DRZ-2 then fails nowhere on the removed API.
 
 ### 4.1 Scope
 The generator, its runtime, the scaffold it emits, and the harnesses that compile them. **Not** consumer migration
-history, **not** a production pin for any consumer (BRIEF §4.1, §6).
+history, **not** a production pin for any consumer (charter §5).
 
 ### 4.2 DRZ-1 — drop v1 `relations()` emission
 
@@ -145,7 +131,7 @@ CGP-358b service composition, `queries:` forwarders.
   consumes the const; no shape is pre-decided.
 - **(B) Emit a metadata-only `defineRelations()` manifest now** (option-2 shape). Gets a v2 graph into consumers
   earlier and lets the "round-trips" gate run sooner, but does half of unit 2 before ADR-044 and pre-decides the file
-  layout and `alias` source. Not recommended; noted because it is the smallest path to the BRIEF §5 round-trip gate.
+  layout and `alias` source. Not recommended; noted because it is the smallest path to the charter §9 round-trip gate.
 
 ### 4.3 DRZ-2 — the bump
 
@@ -240,13 +226,10 @@ in `src/cli/commands/entity.ts` next to the frontend block (`:827-866`), same wa
 under `paths.generated` (`src/generated/semantic/`).
 
 Emitted files:
-- ~~`types.ts` vendored mirror~~ **Revised 2026-09-17:** once QS-1 publishes the package, `model.ts` imports the
-  types from `@pattern-stack/query-surface` directly (optional peer, gated by `generate.semantic`); no mirror, no
-  conformance test. The mirror below is the fallback only if publishing slips past SEM-2.
-  Original: `types.ts` — a vendored mirror of `AggregateModel` / `EntityDescriptor` / `AggFieldMeta` / `MeasureCatalog` (the
-  ADR-040 "emit verbatim so the copies cannot drift" precedent). Reason: the package is `private: true`, so a
-  type-only import is not resolvable in an arbitrary consumer. A conformance test in this repo type-checks the mirror
-  against the package (path-linked from a sibling checkout when present; skipped with a printed reason otherwise).
+- Types are imported from the published `@pattern-stack/query-surface` (optional peer, gated by `generate.semantic`)
+  — no vendored mirror. **Fallback only if query-surface#40 slips past SEM-2:** emit `types.ts` as a verbatim mirror of
+  `AggregateModel` / `EntityDescriptor` / `AggFieldMeta` / `MeasureCatalog` (the ADR-040 precedent) plus a conformance
+  test that type-checks the mirror against a path-linked sibling checkout.
 - `model.ts` — imports the generated tables from the schema barrel (`locations.dbEntities` / `src/generated/schema.ts`)
   and exports `buildAggregateModel(): AggregateModel` assembling registry, analytics, `tables`, `colByDbName` (via
   `getColumns`), and the catalog. Junction pattern entities emit `meta.kind: 'junction'` with two `belongs_to`
@@ -255,7 +238,7 @@ Emitted files:
 - `index.ts` barrel.
 
 Mapping rules that need a decision (recommendation first):
-- **`has_one`** → **decided: extend the package (QS-1)** and emit `has_one` faithfully. Fallback if QS-1 slips: emit as `has_many` (the package has no `has_one`; treating it as to-many is *conservative* for the
+- **`has_one`** → emitted faithfully; the package gains the kind in query-surface#40. Fallback if that slips: emit as `has_many` (the package has no `has_one`; treating it as to-many is *conservative* for the
   grain oracle — it can only refuse a sum it would otherwise allow). Alternative: extend the package.
 - **`through:` (transitive relationships)** → not emitted in SEM-2; the package resolves multi-hop paths itself.
 - **Tenant/scope columns** (`tenant_id`, `organization_id`, `user_id` from `user_tracking`) → `role: dimension`,
@@ -273,7 +256,7 @@ sibling package is linkable in CI, run its `describe` and one `measure` with a f
 grouped at the parent grain) and assert the plan reports `needsCte: true` and correct rows — otherwise record that
 step as a manual gate in the spec.
 
-### 5.5 Open questions (BRIEF §8) — with recommendations
+### 5.5 Open questions (charter §7) — with recommendations
 - **Where does the metric catalog live: YAML or the consuming adapter?** Recommend **YAML for atomic tags and
   composites that are pure functions of declared fields** (ratio/derived/cumulative over named measures), **adapter
   for anything data-driven** (declared domains harvested from live data, EAV overlays). The catalog is then emitted,
@@ -316,7 +299,7 @@ on `create()`, jobs enter the ALS from `jobRuns.tenantId`. Default `scopeEnforce
 One `defineRelations()` manifest per schema under `paths.generated`, whole-set emitted (TS emitter, not hygen inject —
 it is a cross-entity file; ADR-038 precedent). `belongs_to`/`has_many`/`has_one` from `relationships:`; `alias` from
 `inverse`, and from `roles:` when CAP-2 has landed; junctions via `.through()`. `init-scaffold.ts` database module
-passes `relations`. Gate: BRIEF §5 round-trip (YAML → manifest → traversal returns expected rows) in `test-integration`.
+passes `relations`. Gate: charter §9 round-trip (YAML → manifest → traversal returns expected rows) in `test-integration`.
 
 ### 5A.4 REL-2 — typed includes on repositories
 `findById` / `list` / declarative `queries:` accept a typed `with`. **Every hop** must carry: tenant predicate (ALS),
@@ -420,21 +403,18 @@ semantic model as a `belongs_to`/`has_many` descriptor with the role name, and i
 two roles targeting the same table (host vs attendee). CAP-2 records that mapping in its spec; unit 2 implements it.
 
 ### 6.4 CAP-3 — runtime mixins + library definitions
-TS shape per BRIEF §4: **interfaces + generic constraints, behavior via mixins** (`runtime/base-classes/with-analytics.ts`
+TS shape (charter I2/I3): **interfaces + generic constraints, behavior via mixins** (`runtime/base-classes/with-analytics.ts`
 is the shipped precedent), no base-class chain. Proposed:
 
 ```ts
 export interface RoleEdge { role: string; target: string; cardinality: 'one'|'many'; column?: string; via?: string }
 export interface CommunicationConfig { roles: readonly RoleEdge[] }
-export function WithCommunication<TBase extends RepoCtor>(Base: TBase) { /* findByRole(role, actorId, scope), participants(id, scope) */ }
-export function WithActor<TBase extends RepoCtor>(Base: TBase) { /* memberPredicate(actorId, scope) for group kind */ }
+export function WithCommunication<TBase extends RepoCtor>(Base: TBase) { /* findByRole(role, actorId), participants(id) */ }
+export function WithActor<TBase extends RepoCtor>(Base: TBase) { /* memberPredicate(actorId) for group kind */ }
 ```
 
-- **Revised 2026-09-17 — tenant scope is ALS-fed (ADR-042), not a parameter.** Capability methods take no `scope`
-  argument; they compose their predicate through the repository's `scopeAnd()` like every other read. The signatures
-  above lose their `scope` parameter. Superseded text: ~~Tenant scope is an explicit parameter~~ on every capability method (`scope: { tenantId: string | null }` → a
-  predicate AND-ed by the mixin). The mixins never read the ALS. This deliberately does **not** adopt ADR-042
-  (Proposed, ALS-fed) for the new surface — see open question 4 in §9.
+- **Tenant scope is ALS-fed (ADR-042), never a parameter** (charter I3). Capability methods compose their predicate
+  through the repository's `scopeAnd()` like every other read.
 - Library definitions `src/patterns/library/{actor,communication}.pattern.ts` with `kind: 'capability'`, Zod
   `configSchema`, `forwarderMethods` for the service-side pass-throughs, `mixinImport` for the repo side.
 - Emission: `patternConfig.roles` literal on the concrete repo (the `renderPatternConfigLiteral` path
@@ -469,17 +449,5 @@ last edit, immediately before the commit.
   same PR.
 - Skills: `.claude/skills/codegen/SKILL.md` routing table gains semantic + capability entries when they land.
 
-## 9. Open questions for the operator
-1. ~~§3 contract~~ — decided, option 1 (§0, ADR-044).
-2. ~~Unit 1 slot handling~~ — decided, (A).
-3. **`drizzle-orm` as peer + dev instead of dependency** (§4.3). Recommendation: yes; it fixes a documented
-   dual-identity hazard and is not a consumer pin.
-4. ~~Tenant scope vs ADR-042~~ — decided, ALS-fed (§0). Original question: **Tenant scope on the new capabilities vs ADR-042.** The BRIEF's rule (explicit parameter, never ambient) and
-   ADR-042 (ALS-fed, Proposed) point opposite ways. Unit 4 follows the BRIEF for its own surface; `BaseRepository`'s
-   existing ambient `userTracking` scope is untouched. Should ADR-042 get a revision note now, or wait until a consumer
-   needs entity-level tenant isolation?
-5. **Semantic metric catalog home and additivity granularity** — recommendations in §5.5.
-6. ~~`has_one`~~ — decided, extend the package (QS-1).
-8. **Frontend include API home** — `frontend-patterns` vs fully generated (§6A.3). Recommendation: `frontend-patterns`.
-7. **Sync to GitHub issues** — none opened. On approval this plan can be turned into a `.ai-docs/plans/<slug>.yaml`
-   for `/sdlc:sync-issues`, or the eight PRs can be opened by hand with the titles in §3.
+## 9. Open questions
+Tracked in `PROJECT.md` §7 (one place). Nothing is tracked here.
