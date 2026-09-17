@@ -103,3 +103,45 @@ describe('consumerErrors — drops diagnostics located outside the generated pro
 		expect(consumerErrors(out)).toEqual([]);
 	});
 });
+
+describe('consumerErrors — absolute locations and the optional projectDir', () => {
+	// test/smoke-integration compiles the generated tree against THIS repo's
+	// runtime + surface sources through tsconfig `paths`, so tsc can report an
+	// absolute location that the `../` rule never sees (GATE-2 / #604).
+	const project = '/tmp/codegen-integ-tsc-abc123';
+
+	it('drops an absolute location outside the project when projectDir is given', () => {
+		const out = `/root/codegen-patterns/runtime/base-classes/base-repository.ts(115,42): error TS2769: No overload matches this call.`;
+		expect(consumerErrors(out, project)).toEqual([]);
+	});
+
+	it('keeps an absolute location INSIDE the project', () => {
+		const out = `${project}/src/modules/x/x.ts(1,1): error TS2307: Cannot find module './y'.`;
+		expect(consumerErrors(out, project)).toHaveLength(1);
+	});
+
+	it('does not treat a sibling directory with a shared prefix as inside', () => {
+		const out = `${project}-other/src/x.ts(1,1): error TS2307: Cannot find module './y'.`;
+		expect(consumerErrors(out, project)).toEqual([]);
+	});
+
+	it('tolerates a trailing slash on projectDir', () => {
+		const out = `${project}/src/x.ts(1,1): error TS2307: Cannot find module './y'.`;
+		expect(consumerErrors(out, `${project}/`)).toHaveLength(1);
+	});
+
+	it('KEEPS an absolute location when projectDir is omitted — never a silent pass', () => {
+		// Without projectDir we cannot know whether the file is ours. I9: the
+		// failure mode to avoid is the gate that passes quietly.
+		const out = '/somewhere/else/x.ts(1,1): error TS2307: Cannot find module y.';
+		expect(consumerErrors(out)).toHaveLength(1);
+	});
+
+	it('still drops node_modules and ../ locations when projectDir is given', () => {
+		const out = [
+			`${project}/node_modules/pkg/index.d.ts(1,1): error TS2304: Cannot find name 'Foo'.`,
+			'../../runtime/x.ts(1,1): error TS2769: No overload matches this call.',
+		].join('\n');
+		expect(consumerErrors(out, project)).toEqual([]);
+	});
+});

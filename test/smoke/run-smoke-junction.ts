@@ -354,7 +354,7 @@ async function main(): Promise<number> {
     // 8. bunx tsc --noEmit --skipLibCheck
     log('running bunx tsc --noEmit --skipLibCheck');
     const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', result.projectDir);
-    const consumerErrors = scopeToConsumer(tsc.out + tsc.err);
+    const consumerErrors = scopeToConsumer(tsc.out + tsc.err, result.projectDir);
     if (consumerErrors.length > 0) {
       for (const line of consumerErrors) console.error(line);
       logError(`${consumerErrors.length} typecheck errors in consumer-emitted code`);

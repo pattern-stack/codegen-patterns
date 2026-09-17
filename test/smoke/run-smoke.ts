@@ -562,7 +562,7 @@ async function main(): Promise<number> {
 		// there are no error-class exclusions, and none may be added (I9).
 		log('running bunx tsc --noEmit --skipLibCheck');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
-		const consumerErrors = scopeToConsumer(tsc.out + tsc.err);
+		const consumerErrors = scopeToConsumer(tsc.out + tsc.err, tmpDir);
 		if (consumerErrors.length > 0) {
 			for (const line of consumerErrors) console.error(line);
 			logError(
