@@ -4,9 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased] — 0.31.0
 
-**Breaking (generated output):** the v1 Drizzle `relations()` const is no longer
-emitted (entity, clean-lite-ps entity, junction). Hand-written `db.query.*` code
-that relied on it must wait for the v2 manifest (REL-1) or declare its own.
+**Breaking:** this release requires the **Drizzle 1.0 line**, and `drizzle-orm`
+is now a **peer dependency** (`^1.0.0-rc.4`) rather than a bundled dependency —
+install it yourself. The v1 Drizzle `relations()` const is no longer emitted
+(entity, clean-lite-ps entity, junction); hand-written `db.query.*` code that
+relied on it must wait for the v2 manifest (REL-1) or declare its own.
+
+### Changed
+
+- **Drizzle 1.0 (`drizzle-orm@^1.0.0-rc.4`)** (#584). `drizzle-orm` moves from
+  `dependencies` to `peerDependencies` so a consumer resolves exactly one copy —
+  generated code and the package's runtime base classes must share one
+  `PgTable` type identity. The emitted `database.module.ts` moves to 1.0's
+  constructor: `drizzle({ client: pool })` (1.0 **removed** `schema` from the pg
+  config) and `export type DrizzleDB = NodePgDatabase` in place of
+  `ReturnType<typeof drizzle<typeof schema>>`. The generic slot on
+  `NodePgDatabase` is the `defineRelations()` manifest, which REL-1 will fill.
+  New consumer doc: `docs/consumer/drizzle.md`, including drizzle-kit 1.0's
+  changed `generate` layout (one directory per migration, no `meta/_journal.json`,
+  snapshot `version: 8`).
+
+### Fixed
+
+- **Vendored events: `generated/bus.ts` could not compile** (#575). The generated
+  typed bus facade imports three vendored siblings — `../event-bus.protocol`,
+  `../events.tokens` and `../events-errors` — but only the protocol was in the
+  `project init` / `project update` vendored closure. `events.tokens.ts`,
+  `events-errors.ts` and their dependency `subsystems/token-key.ts` are now
+  vendored too.
+- **Smoke gates no longer hide typecheck errors** (#576). The three
+  `filterConsumerErrors` copies dropped `tsc` lines by matching the error
+  *message*, so `Cannot find module '../x'` in generated code could never fail a
+  smoke. They are replaced by one shared, location-scoped helper
+  (`test/smoke/_consumer-errors.ts`) with no error-class exclusions, plus unit
+  tests. The main smoke now also runs `entity new connection` after
+  `subsystem install auth-integrations`, completing the flow the install's own
+  next-step output documents.
 
 ### Removed
 

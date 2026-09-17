@@ -18,7 +18,7 @@
  * (see the index callback in `integration-audit.schema.ts`).
  */
 import { describe, it, expect } from 'bun:test';
-import { getTableColumns } from 'drizzle-orm';
+import { getColumns } from 'drizzle-orm';
 import {
   integrationSubscriptions,
   integrationRuns,
@@ -46,7 +46,7 @@ describe('integration-audit.schema — import smoke', () => {
 });
 
 describe('integration_subscriptions — column presence', () => {
-  const cols = getTableColumns(integrationSubscriptions) as Record<string, unknown>;
+  const cols = getColumns(integrationSubscriptions) as Record<string, unknown>;
 
   it.each([
     'id',
@@ -67,7 +67,7 @@ describe('integration_subscriptions — column presence', () => {
 });
 
 describe('integration_runs — column presence', () => {
-  const cols = getTableColumns(integrationRuns) as Record<string, unknown>;
+  const cols = getColumns(integrationRuns) as Record<string, unknown>;
 
   it.each([
     'id',
@@ -90,7 +90,7 @@ describe('integration_runs — column presence', () => {
 });
 
 describe('integration_run_items — column presence', () => {
-  const cols = getTableColumns(integrationRunItems) as Record<string, unknown>;
+  const cols = getColumns(integrationRunItems) as Record<string, unknown>;
 
   it.each([
     'id',

@@ -13,7 +13,7 @@
  * (see `domain-events.schema.ts` index callback).
  */
 import { describe, it, expect } from 'bun:test';
-import { getTableColumns } from 'drizzle-orm';
+import { getColumns } from 'drizzle-orm';
 import {
   domainEvents,
   type DomainEventRecord,
@@ -27,7 +27,7 @@ describe('domain-events.schema — import smoke', () => {
 });
 
 describe('domain_events — column presence', () => {
-  const cols = getTableColumns(domainEvents) as Record<string, unknown>;
+  const cols = getColumns(domainEvents) as Record<string, unknown>;
 
   it.each([
     // existing columns

@@ -25,10 +25,10 @@ compiled with this repo's TypeScript 6.0.3.
 | "1.0 removes `relations()`" | `relations` is gone from the `drizzle-orm` root export (TS2724 on import); the v1 implementation survives only under the underscored legacy entry `drizzle-orm/_relations`. `defineRelations` is on the root export. | Emitted v1 consts fail to compile on 1.0. Do not import from `_relations`. |
 | "`.array()` no longer chainable" | `text('x').array()` compiles on rc.4 (`pg-core/columns/common.d.ts:251`). | No template change for `string_array`. |
 | "`.enableRLS()` → `withRLS()`" | `enableRLS` is deprecated, not removed. Repo uses neither. | Nothing to do. |
-| "`getTableColumns()` → `getColumns()`" | Both exported; `getTableColumns` is marked "use `getColumns`". Used only in 3 spec files. | Rename in unit 1 (cheap). |
-| drizzle-kit migration format | rc.4 `generate` writes `<timestamp>_<name>/{migration.sql,snapshot.json}` per migration folder; snapshot `version: "8"` with `prevIds`. No `meta/_journal.json` written. | Generator emits no migrations, so no code change; document in CONSUMER-SETUP. Consumer continuity is out of scope (charter §5). |
-| Driver generics | `NodePgDatabase<TRelations extends AnyRelations = EmptyRelations>`; `drizzle(...)` config takes `relations`, **not `schema`**. | `src/cli/shared/init-scaffold.ts:204-230` (emitted `database.module.ts`) breaks twice: `drizzle(pool, { schema })` is rejected, and `ReturnType<typeof drizzle<typeof schema>>` fails the `TablesRelationalConfig` constraint. `runtime/types/drizzle.ts` (`NodePgDatabase<any>`) still compiles. |
-| pg-proxy test harness | `drizzle(async () => ({ rows: [] }))` callback shape unchanged. | 8 runtime specs need no rewrite. |
+| "`getTableColumns()` → `getColumns()`" | Both exported; `getTableColumns` is marked "use `getColumns`". Used in **4** spec files, not 3 (`domain-events.schema.spec.ts` was missed). | Renamed in DRZ-2. |
+| drizzle-kit migration format | Re-verified in DRZ-2 against the installed kit: `generate` writes `drizzle/<timestamp>_<name>/{migration.sql,snapshot.json}`; snapshot is `version: 8` (number, not the string `"8"`), `dialect: "postgres"`, keys `ddl / dialect / id / prevIds / renames / version`. No `meta/_journal.json`. | Generator emits no migrations, so no code change. Documented in **`docs/consumer/drizzle.md`** (new), linked from CONSUMER-SETUP. Consumer continuity is out of scope (charter §5). |
+| Driver generics | `NodePgDatabase<TRelations extends AnyRelations = EmptyRelations>`; the pg config is `Omit<DrizzleConfig, 'schema'> & { codecs? }` — `schema` is **removed**, and `relations` is the slot. | Fixed in DRZ-2: the emitted `database.module.ts` is now `drizzle({ client: pool })` with `export type DrizzleDB = NodePgDatabase`, and no longer imports the schema barrel at all. `runtime/types/drizzle.ts` (`NodePgDatabase<any>`) still compiles; REL-1 replaces that `any` with the emitted manifest's type. |
+| pg-proxy test harness | The `drizzle(async () => ({ rows: [] }))` callback shape is unchanged, **but the param/row mapping is not**: 1.0's pg codec system stopped serializing `jsonb` itself, so a `jsonb` bind param now reaches the callback as the raw JS object and a `jsonb` row value is passed through unparsed (`pg` does both conversions). | 4 runtime specs asserted 0.45's mapping and were corrected in DRZ-2 (DRZ-2 §A6). Any future spec that asserts captured params for a `jsonb` column must assert the object. |
 | Sibling package coupling | `@pattern-stack/query-surface` is `private: true` (unpublished), peer-pins `drizzle-orm ^0.45.2`, and its Drizzle adapter (`registry/introspect.ts`, `registry/schema-registry.ts`) walks **v1** `Relations` objects. Its **model shape** (`AggregateModel`, `EntityDescriptor`, `AggRegistry`, `MeasureCatalog`) is plain data + `PgTable`/`PgColumn` refs and does not require introspection. | Unit 3 must emit a *declared* model, never one recovered by walking `relations()`. Whether that package itself runs on 1.0 is its own work, not this repo's. |
 | ADR-041 (capability composition) | **Accepted but unimplemented**: `PatternKind` is still `'domain' \| 'orchestration'` (`src/patterns/pattern-definition.ts:47`); no `mixinImport`/`forwarderMethods`; clean-lite-ps still takes the base from `patterns[0]` (`prompt-extension.js:86-107`). | Unit 4 has a hard prerequisite: implement ADR-041 first. |
 | `analytics:` vocabulary | Parse-only. Nothing outside `src/schema/` reads `analytics`, `measure_packs`, `analytics_aggregation`, or `generate.analytics: cube`; no fixture or example declares an `analytics:` block; no cube emitter exists. | Unit 3 replaces the vocabulary rather than extending it (CLAUDE.md: no backwards compat). |
@@ -135,6 +135,15 @@ CGP-358b service composition, `queries:` forwarders.
   layout and `alias` source. Not recommended; noted because it is the smallest path to the charter §9 round-trip gate.
 
 ### 4.3 DRZ-2 — the bump
+
+> **Shipped 2026-09-17. `docs/specs/DRZ-2.md` is the post-implementation truth**; the sub-section below is the
+> pre-implementation plan, corrected where it was wrong. Read the spec's "1.0 API surface we depend on" table (A1–A9)
+> before any later RC/GA bump, and its §Found-during-implementation before assuming anything here is still current.
+> Three things every later unit needs to know: (1) `BaseRepository.table` is still `PgTableWithColumns<any>` and
+> cannot be narrowed without making the class generic over its table — #603, which REL-2/REL-3 will have to resolve
+> anyway; (2) the smoke harnesses no longer filter tsc output by message, so any new emission that does not compile
+> fails a gate immediately (`test/smoke/_consumer-errors.ts`); (3) the generated typed event bus's vendored sibling
+> closure is now explicit in `VENDORED_RUNTIME_FILES` and must be extended if the emitted bus grows a `../` import.
 
 - **`package.json`.** `drizzle-orm` is currently a `dependency` (not a peer) of `@pattern-stack/codegen`. In `package`
   runtime mode the consumer resolves the runtime from this package, so a bundled `drizzle-orm` creates exactly the

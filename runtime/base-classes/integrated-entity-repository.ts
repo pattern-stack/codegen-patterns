@@ -119,14 +119,17 @@ export abstract class IntegratedEntityRepository<
         if (resolvedFks[fk.column] !== null) set[fk.column] = resolvedFks[fk.column];
       }
 
-      const rows = await db
+      // `as Record<string, unknown>[]` — see BaseRepository.create: 1.0 types
+      // an insert's `.returning()` off `table['$inferSelect']`, which is `any`
+      // here, so the result is a union whose non-array arm is unreachable (#603).
+      const rows = (await db
         .insert(this.table)
         .values(values as never)
         .onConflictDoUpdate({
           target: cfg.conflictTarget.map((c: string) => this.table[c]),
           set: set as never,
         })
-        .returning();
+        .returning()) as Record<string, unknown>[];
 
       const saved = rows[0] as Record<string, unknown>;
 

@@ -18,6 +18,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { consumerErrors as scopeToConsumer } from './_consumer-errors';
 
 import {
   bootstrapJunctionProject,
@@ -99,25 +100,6 @@ function runSilent(cmd: string, cwd: string): { code: number; out: string; err: 
     out: r.stdout ?? '',
     err: r.stderr ?? '',
   };
-}
-
-function filterConsumerErrors(output: string): string[] {
-  const lines = output.split('\n').filter((l) => l.trim());
-  const errors: string[] = [];
-  for (const line of lines) {
-    if (line.includes('../') || line.includes('/codegen-patterns/runtime/')) continue;
-    if (line.includes('node_modules/')) continue;
-    if (line.includes('TS5101')) continue;
-    if (!/error TS\d+:/.test(line)) continue;
-    if (/\.schema\.ts\(\d+,\d+\): error/.test(line)) continue;
-    if (line.includes("Property 'table' in type") && line.includes('not assignable')) continue;
-    if (line.includes("Cannot assign an abstract constructor")) continue;
-    if (/Argument of type .* is not assignable to parameter of type 'Constructor<\{\}>'/.test(line)) continue;
-    if (/Property '(findBy[A-Z]\w*|findById|findAll|list|findWithDeleted|findOnlyDeleted)'/.test(line)) continue;
-    if (line.includes("'@pattern-stack/codegen/")) continue;
-    errors.push(line);
-  }
-  return errors;
 }
 
 function pascalCase(s: string): string {
@@ -372,7 +354,7 @@ async function main(): Promise<number> {
     // 8. bunx tsc --noEmit --skipLibCheck
     log('running bunx tsc --noEmit --skipLibCheck');
     const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', result.projectDir);
-    const consumerErrors = filterConsumerErrors(tsc.out + tsc.err);
+    const consumerErrors = scopeToConsumer(tsc.out + tsc.err);
     if (consumerErrors.length > 0) {
       for (const line of consumerErrors) console.error(line);
       logError(`${consumerErrors.length} typecheck errors in consumer-emitted code`);

@@ -24,6 +24,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { consumerErrors as scopeToConsumer } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -80,10 +81,10 @@ const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 
 // Pinned peer deps — version drift here would undermine the harness.
 //
-// drizzle-orm is pinned to 0.45 (matching the repo's own devDeps) for
-// consistency. CONSUMER-SETUP.md warns about a 0.30/0.45 API mismatch in
-// the runtime base classes; the smoke test doesn't compile the runtime
-// itself — only the generated code — so this pin is safe.
+// drizzle-orm is pinned EXACTLY to the prerelease the repo's own devDeps
+// pin (charter §8: prerelease pins are exact in harnesses). The generated
+// project must compile against the same drizzle the runtime base classes
+// were type-checked against — one identity, no range drift.
 const RUNTIME_DEPS = [
 	'@nestjs/common@10',
 	'@nestjs/core@10',
@@ -93,7 +94,7 @@ const RUNTIME_DEPS = [
 	'@nestjs/platform-express@10',
 	'@nestjs/swagger@7',
 	'@anatine/zod-openapi@2',
-	'drizzle-orm@0.45',
+	'drizzle-orm@1.0.0-rc.4',
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',
@@ -141,96 +142,6 @@ function runSilent(cmd: string, cwd: string): { code: number; out: string; err: 
 		out: r.stdout ?? '',
 		err: r.stderr ?? '',
 	};
-}
-
-/**
- * Filter tsc output to errors in consumer-emitted files (under the tmp dir).
- *
- * Excludes two classes of error that trace to pre-existing, documented
- * issues in the runtime — not to bugs introduced by the code generator:
- *
- * 1. drizzle-orm 0.30/0.45 API mismatch (CONSUMER-SETUP.md troubleshooting).
- *    Manifests as `Property 'table' ... not assignable` and
- *    `shouldInlineParams` / `PgColumn` errors. Cleared when the runtime
- *    catches up to drizzle 0.45.
- *
- * 2. Mixin-erasure on declarative queries — the generated repository
- *    subclasses expose typed findByX methods, but the service and use-case
- *    files see only the base class type through WithAnalytics, so TypeScript
- *    can't resolve findByStatus/findById/etc. Same root cause as #1 once the
- *    runtime's base classes narrow their generic bounds.
- *
- * The harness's mission is to catch *generator* bugs (e.g. HTML-escaped
- * enum unions, bad import paths). Pre-existing runtime bugs are out of
- * scope; fixing them is tracked separately.
- */
-function filterConsumerErrors(output: string, tmpDir: string): string[] {
-	const lines = output.split('\n').filter((l) => l.trim());
-	const errors: string[] = [];
-	for (const line of lines) {
-		// Skip lines referencing paths outside the tmp dir (runtime, node_modules).
-		if (line.includes('../') || line.includes('/codegen-patterns/runtime/')) continue;
-		if (line.includes('node_modules/')) continue;
-		// Skip deprecated baseUrl warnings.
-		if (line.includes('TS5101')) continue;
-		// Only count actual error lines.
-		if (!/error TS\d+:/.test(line)) continue;
-
-		// Ignore drizzle-schema files — schema emission uses types that
-		// cascade into the drizzle-orm version-mismatch error class.
-		if (/\.schema\.ts\(\d+,\d+\): error/.test(line)) continue;
-
-		// ---- documented-runtime-issue filters ----
-		// "Property 'table' in type '...Repository' is not assignable"
-		if (line.includes("Property 'table' in type") && line.includes('not assignable')) {
-			continue;
-		}
-		// WithAnalytics mixin typing: "Cannot assign an abstract constructor..."
-		if (line.includes("Cannot assign an abstract constructor")) continue;
-		// WithAnalytics mixin typing through service constructor arg.
-		if (/Argument of type .* is not assignable to parameter of type 'Constructor<\{\}>'/.test(line)) {
-			continue;
-		}
-		// Declarative query methods on the repo subclass aren't visible
-		// through the generic'd base class type (mixin erasure — same root
-		// cause as #1). Filter out TS2339 errors for findByX / findById /
-		// list / findAll on Service and Repository types specifically.
-		if (
-			/Property '(findBy[A-Z]\w*|findById|findAll|list|findWithDeleted|findOnlyDeleted)'/
-				.test(line)
-		) {
-			continue;
-		}
-
-		// #287 / #303 fix #5: the vendored `auth-integrations` starter
-		// (under `<modules>/connections/{adapters,facade,oauth,
-		// connections-auth.module.ts}`) imports from the codegen-emitted
-		// connection entity module — `<modules>/connections/connection.service`,
-		// `<modules>/connections/connection.entity`, `<modules>/connections/connections.module`.
-		// We don't run `cdp entity new connection` in this smoke (it
-		// would require also scaffolding a Drizzle schema for `connections`
-		// and bundling a fixture, AND it surfaces a separate codegen enum
-		// literal-type bug — filed as follow-up). Filter errors emitted
-		// from inside the vendored subfolders only — narrow filter so a
-		// real codegen bug in `<modules>/connections/connection.{entity,
-		// service,...}.ts` would still surface.
-		const vendoredConnectionsPattern =
-			/modules[/\\]connections[/\\](?:adapters|facade|oauth|connections-auth\.module\.ts)/;
-		if (vendoredConnectionsPattern.test(line)) {
-			continue;
-		}
-		// Tolerate the `@pattern-stack/codegen/runtime/subsystems/auth`
-		// barrel import — but ONLY in checkout mode, where the smoke project
-		// doesn't `bun add` the package. In tarball mode (#190) the package IS
-		// installed, so these imports must resolve; filtering them there would
-		// mask exactly the bug class the tarball smoke exists to catch.
-		if (!TARBALL && line.includes("'@pattern-stack/codegen/")) {
-			continue;
-		}
-
-		errors.push(line);
-	}
-	return errors;
 }
 
 function cleanup(dir: string): void {
@@ -619,23 +530,39 @@ async function main(): Promise<number> {
 			);
 		}
 
-		// 6. Syntax-check the scaffolded project.
+		// 5.8. Generate the codegen layer the vendored starter imports.
 		//
-		// Uses `tsc --noEmit --skipLibCheck` to catch parse errors and
-		// trivially broken imports in the generated code (the dogfood bug
-		// class this harness targets: HTML-escaped enum unions, missing
-		// query methods, wrong use-case names, etc.).
+		// `subsystem install auth-integrations` vendors `connection.yaml` into
+		// entities/ AFTER step 5's `entity new --all` ran, and its own next-step
+		// output tells the operator to run `entity new connection`. Until this
+		// step existed the smoke stopped one command short of the documented
+		// consumer flow, so the starter's imports of
+		// `<modules>/connections/connection.{entity,service}` and
+		// `<modules>/connections/connections.module` could not resolve — 13
+		// TS2307s that the old message-matching tsc filter hid by excluding the
+		// vendored subfolders wholesale (#576). Completing the flow is the fix;
+		// the exclusion is gone.
+		run(`${cli(tmpDir)} entity new ${path.join('entities', 'connection.yaml')} --force`, tmpDir);
+		const connectionService = path.join(connectionsRoot, 'connection.service.ts');
+		if (!fs.existsSync(connectionService)) {
+			throw new Error(
+				`entity new connection did not emit ${connectionService} — the vendored starter imports it`,
+			);
+		}
+
+		// 6. Typecheck the scaffolded project.
 		//
-		// Deep drizzle-orm type errors in runtime/base-classes are a known
-		// and documented issue (see CONSUMER-SETUP.md troubleshooting, the
-		// 0.30/0.45 API mismatch). Those are out of scope for the smoke
-		// test until the runtime catches up.
+		// `tsc --noEmit --skipLibCheck` catches parse errors, broken imports
+		// and real type errors in the generated code (the dogfood bug class
+		// this harness targets: HTML-escaped enum unions, missing query
+		// methods, wrong use-case names, unresolvable relative imports).
 		//
-		// We filter tsc's output to the consumer's own files to keep signal
-		// high — any syntax error in a generated file fails the smoke.
+		// Diagnostics are scoped to files inside the generated project — by
+		// LOCATION, never by message. See test/smoke/_consumer-errors.ts:
+		// there are no error-class exclusions, and none may be added (I9).
 		log('running bunx tsc --noEmit --skipLibCheck');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
-		const consumerErrors = filterConsumerErrors(tsc.out + tsc.err, tmpDir);
+		const consumerErrors = scopeToConsumer(tsc.out + tsc.err);
 		if (consumerErrors.length > 0) {
 			for (const line of consumerErrors) console.error(line);
 			logError(
