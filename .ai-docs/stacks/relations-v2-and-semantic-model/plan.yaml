@@ -1,0 +1,407 @@
+# Stack plan — relations-v2-and-semantic-model
+# Governs: BRIEF.md + PLAN.md (same directory), ADR-044, ADR-042.
+# Hierarchy on the tracker: Project issue → one Epic per track → Task per PR.
+# Each task carries a high-level plan only; the per-issue spec is written by /design at implementation time.
+
+plan:
+  slug: relations-v2-and-semantic-model
+  summary: Entity YAML becomes the single declaration for the Drizzle v2 relation graph, the semantic model, and the app layers — on Drizzle 1.0.
+  milestone: relations-v2-and-semantic-model
+  stack_topology: per_epic
+  project_issue: "578"
+  project_title: "[Project] Relations v2 + semantic model — one YAML declaration for the ORM graph, the semantic model and the app layers"
+  project_body: |
+    ## Goal
+    Make the entity YAML the single declaration that emits the Drizzle relation graph, a semantic/aggregate model, and
+    the app layers already generated — and move the generator onto Drizzle 1.0.
+
+    ## Decisions (2026-09-17)
+    - **ADR-044** — the YAML-declared relation graph is the core contract for cross-entity reads. Generated services stay
+      atomic and gain a typed navigator; writes/workflows are hand-written use-cases; aggregates go through the
+      semantic-query package.
+    - **ADR-042** accepted — tenant scope is ALS-fed at the repository, strict for tenant-scoped entities. Precondition
+      for traversal.
+    - The metric layer is `@pattern-stack/query-surface`; codegen emits its `AggregateModel`, it builds no engine.
+    - Building on the Drizzle 1.0 prerelease line (`1.0.0-rc.4`) is approved for the generator.
+
+    ## Sequencing
+    ```
+    DRZ-1 ─► DRZ-2 ─┬─► TEN-1 ─► REL-1 ─► REL-2 ─► REL-3 ─► FE-REL
+                    ├─► SEM-1 ─► SEM-2 ─► SEM-3      (+ QS-1 in the query-surface repo)
+                    └─► CAP-1 ─► CAP-2 ─► CAP-3
+    ```
+    Checkpoint after DRZ-2: re-read the plan against what the 1.0 bump actually surfaced before starting the three tracks.
+
+    ## Stage convention
+    `state:planned` = high-level plan on the issue, no spec yet. `/design` writes the spec and moves it to
+    `state:strategy-approved` (directly for `gate:auto`, after human review for `gate:human`). PR open = in review.
+    Closed = merged.
+
+    Source docs: `.ai-docs/stacks/relations-v2-and-semantic-model/{BRIEF,PLAN}.md`, `docs/adrs/ADR-044-*.md`.
+
+epics:
+  - key: "579"
+    key_original: drz
+    title: "[Epic] Unit 1 — Drizzle 0.45 → 1.0 (generator, runtime, scaffold, harnesses)"
+    body: |
+      Move the generator and everything it emits onto the Drizzle 1.0 line. Two PRs: first delete the v1 `relations()`
+      emission (green on both versions), then bump. Scope is the generator only — no consumer migration history, no
+      consumer production pin. PLAN §4.
+    issues: ["583", "584"]
+  - key: "580"
+    key_original: rel
+    title: "[Epic] Units 2 + 5 — relation graph as the core read contract (backend traversal + frontend accessors)"
+    body: |
+      ADR-044. Emit a `defineRelations()` manifest from `relationships:`, give generated repositories typed includes
+      scoped at every hop, make generated services delegate to them (plus a typed navigator), and project the same
+      graph into the frontend emitter. Tenant scoping (ADR-042) lands first because unscoped traversal is a
+      cross-tenant read path. PLAN §5A, §6A.
+    issues: ["585", "586", "587", "588", "589"]
+  - key: "581"
+    key_original: sem
+    title: "[Epic] Unit 3 — semantic model emitter (declared AggregateModel for query-surface)"
+    body: |
+      Replace the parse-only `analytics:` vocabulary with field tags, then emit the `AggregateModel` that
+      `@pattern-stack/query-surface` consumes — declared from YAML, never introspected from Drizzle relations. Depends
+      on a companion change in the query-surface repo (Drizzle 1.0 peer, `has_one`, publish). PLAN §5.
+    issues: ["590", "591", "592"]
+  - key: "582"
+    key_original: cap
+    title: "[Epic] Unit 4 — capability composition + Actor / Communication patterns"
+    body: |
+      Implement ADR-041 (accepted, unbuilt), add a `roles:` block, and ship `Actor` / `Communication` capabilities as
+      mixins over the existing pattern library. Scope is ALS-fed, not a parameter. PLAN §6.
+    issues: ["593", "594", "595"]
+
+issues:
+  - key: "583"
+    key_original: drz-1
+    title: "DRZ-1: drop v1 relations() const emission — the slot Drizzle 1.0 removes"
+    size: S
+    depends_on: []
+    labels: [gate:auto, templates, domain:codegen]
+    description: |
+      ## Why
+      Drizzle 1.0 removes `relations` from the root export, so the v1 consts the templates emit stop compiling. Nothing
+      generated consumes them. Deleting them first is green on 0.45 *and* 1.0 and isolates snapshot churn from the bump.
+
+      ## Scope
+      - Remove the import + const from `templates/entity/new/backend/database/schema.ejs.t`,
+        `templates/entity/new/clean-lite-ps/entity.ejs.t`, `templates/junction/new/entity.ejs.t`, and their gates in
+        `prompt-extension.js` / `junction/new/prompt.js` (`hasRelationsBlock`, `imports.add('relations')`).
+      - Fix the stale comment in `clean-lite-ps/service.ejs.t`.
+      - Regenerate the 6 baseline files + 2 junction snapshots.
+      - Dated revision note on `docs/relationship-pattern-audit.md` §4; CHANGELOG.
+      - Keep everything else relationships drive: FK columns, indexes, `on_delete`, service composition, `queries:`.
+
+      ## Decided
+      The slot stays empty until REL-1 (no metadata-only manifest now).
+
+      ## Acceptance
+      `bun run typecheck && bun run build && bun run test`, `just test-baseline`, `just test-junction`,
+      `just test-smoke`, `just test-integration` green. No `relations(` left in `templates/`.
+
+      Plan: PLAN §4.2.
+
+  - key: "584"
+    key_original: drz-2
+    title: "DRZ-2: drizzle-orm 1.0.0-rc.4 — generator, runtime, scaffold, smoke"
+    size: M
+    depends_on: ["583"]
+    labels: [gate:auto, infrastructure, domain:codegen]
+    description: |
+      ## Scope
+      - `package.json`: `drizzle-orm` moves from `dependencies` to `peerDependencies` (`^1.0.0-rc.4`) + a
+        `devDependencies` pin — one drizzle copy in a consumer, fixing the documented dual-type-identity hazard.
+      - Emitted database module (`src/cli/shared/init-scaffold.ts`): `drizzle(pool, { schema })` →
+        `drizzle({ client: pool })`; drop the `typeof schema` generic.
+      - Runtime: fix the real type errors under 1.0. **Delete** the smoke error filters rather than carry them
+        (absorbs #576); any genuinely separate error class gets its own issue.
+      - `getTableColumns` → `getColumns` in the three schema specs.
+      - Harness pins: `test/smoke/run-smoke*.ts`, `test/scaffold/package.json`; tarball smoke inherits the peer range.
+      - Docs: CHANGELOG (0.31.0), README dependency table, CONSUMER-SETUP (rc.4 drizzle-kit folder layout; replace the
+        old version-mismatch troubleshooting entry; note the linked-package duplicate-copy caveat).
+
+      ## Out of scope
+      Consumer migration history; any consumer production pin.
+
+      ## Acceptance
+      All of DRZ-1's gates plus `just test-smoke-junction`, `just test-smoke-subsystems`, `just test-post-publish`,
+      with **no filtered error classes**. Generated project boots and serves `/docs-json` with non-empty schemas.
+
+      ## Checkpoint
+      After merge, re-read PLAN against what the bump surfaced before starting the REL / SEM / CAP tracks.
+
+      Plan: PLAN §4.3–4.4.
+
+  - key: "585"
+    key_original: ten-1
+    title: "TEN-1: ADR-042 — ALS-fed repository tenant scoping (tenant_scoped: true, strict enforcement)"
+    size: M
+    depends_on: ["584"]
+    labels: [gate:human, base-class, domain:codegen]
+    description: |
+      ## Why
+      ADR-042 is accepted but unimplemented, and ADR-044 makes it a precondition: relation traversal must be
+      tenant-scoped at every hop.
+
+      ## Scope (exactly the ADR)
+      - `RequesterContext.tenantId` + `getTenantId()`.
+      - `tenant_scoped: true` on the entity; predicate in `BaseRepository.scopeAnd()`; stamp on `create()`.
+      - `scopeEnforcement: 'strict'` is the default for tenant-scoped entities — missing context throws.
+      - Jobs enter the ALS from the run's `tenantId`.
+      - Column emission + index; rollout notes (nullable → backfill → NOT NULL).
+
+      ## Acceptance
+      Integration tests proving: cross-tenant rows are invisible to find/list/count/update/delete; create stamps the
+      tenant; strict mode throws with no context; a job run reads only its tenant. Standard gates green.
+
+      Human-gated: this is a security property.
+
+      Plan: PLAN §5A.2; `docs/adrs/ADR-042-*.md`.
+
+  - key: "586"
+    key_original: rel-1
+    title: "REL-1: defineRelations() manifest from relationships: + Junction; wire drizzle({ client, relations })"
+    size: M
+    depends_on: ["584"]
+    labels: [gate:auto, domain:codegen]
+    description: |
+      ## Scope
+      - Whole-set TS emitter (cross-entity file; ADR-038 precedent) writing one `defineRelations()` manifest under
+        `paths.generated`.
+      - `belongs_to` / `has_many` / `has_one` from `relationships:`; `alias` from `inverse` (and from `roles:` if CAP-2
+        has landed); many-to-many via `.through()` over Junction-pattern entities.
+      - Emitted database module passes `relations`.
+      - Golden snapshot suite for the manifest.
+
+      ## Acceptance
+      Round-trip gate in `just test-integration`: YAML → manifest → a nested traversal returns the expected rows.
+      Standard gates green.
+
+      Plan: PLAN §5A.3; ADR-044 §1.
+
+  - key: "587"
+    key_original: rel-2
+    title: "REL-2: typed with-includes on generated repositories — scoped and soft-delete-filtered at every hop"
+    size: L
+    depends_on: ["586", "585"]
+    labels: [gate:human, base-class, domain:codegen]
+    description: |
+      ## Scope
+      - `findById` / `list` / declarative `queries:` accept a typed `with` include.
+      - **Spike first:** can v2 predefined relation `where` filters carry per-hop scope, or does the repository rewrite
+        the include tree before executing? Record the answer in the spec.
+      - Every hop applies tenant scope (ALS), soft-delete and `userTracking` filters.
+      - HTTP surface: an **allowlisted, depth-capped** include declared in YAML (shape to be designed here). A client
+        never supplies a raw include tree; an `api: false` entity is not reachable through an exposed neighbour unless
+        the allowlist names it (ADR-043). Internal callers get the full typed include.
+
+      ## Acceptance
+      Integration tests: cross-tenant, soft-deleted and other-user rows never appear at any depth; a non-allowlisted
+      include over HTTP is rejected; `api: false` neighbours are not reachable. Standard gates green.
+
+      Human-gated: per-hop scoping is a security property.
+
+      Plan: PLAN §5A.4; ADR-044 §6–7.
+
+  - key: "588"
+    key_original: rel-3
+    title: "REL-3: generated services delegate to graph traversal + typed navigator; delete cross-repo composition"
+    size: L
+    depends_on: ["587"]
+    labels: [gate:auto, templates, domain:codegen]
+    description: |
+      ## Scope
+      - Keep the generated relationship method names/signatures on the service; bodies become one graph call on the
+        entity's own repository.
+      - Emit a typed **navigator**: `service.from(id).opportunity().account().opportunities({ limit }).fetch()` — a
+        builder that accumulates an include tree and executes **once** (never a lazy per-hop chain). Every declared
+        relationship is navigable internally by default.
+      - Delete the sibling-repository constructor injection and the module imports it forces; confirm the module wiring
+        simplification.
+      - Delete the audit doc's "generated service methods MUST NOT use `with:`" rule with a dated note → ADR-044.
+      - `queries:` stays (non-relationship lookups + index emission). Optional lint: warn when a `by:` is a single FK
+        already covered by a relationship.
+      - `clean-lite-ps` only.
+
+      ## Acceptance
+      Navigator result types are the nested shape (type-level test); one SQL statement per `.fetch()`; baselines and
+      junction snapshots regenerated; standard gates + `just test-integration` green.
+
+      Plan: PLAN §5A.5–5A.6; ADR-044 §2.
+
+  - key: "589"
+    key_original: fe-rel
+    title: "FE-REL: frontend graph accessors — has_many / junction traversal + typed include over TanStack DB collections"
+    size: L
+    depends_on: ["586"]
+    labels: [gate:human, needs:design, domain:codegen]
+    description: |
+      ## Starting point
+      The ADR-038 emitter already emits per-entity TanStack DB collections (`electric` and `api`) and whole-set
+      `belongs_to` resolvers + `<Class>Refs` hydration.
+
+      ## Scope
+      Add `has_many` and junction traversal and a typed include API over live queries, generated from the same graph as
+      REL-1. `electric` entities traverse client-side; `api` entities request REL-2's allowlisted include. This is what
+      replaces the old "compose identically on both sides" parity rationale (ADR-044).
+
+      ## Open (blocks design)
+      Where the include mechanism lives: in `@pattern-stack/frontend-patterns` with thin generated wiring
+      (recommended — the `createEntityHooks` / `createStore` precedent) or fully generated. The former makes this a
+      two-repo unit.
+
+      ## Acceptance
+      Frontend golden snapshots; emitted tree type-checks in the smoke project with `generate.frontend: true`.
+
+      Plan: PLAN §6A.
+
+  - key: "590"
+    key_original: sem-1
+    title: "SEM-1: analytics vocabulary → field tags (role / agg / aggs / additivity / time) + catalog metrics"
+    size: M
+    depends_on: ["584"]
+    labels: [gate:auto, schema, domain:codegen]
+    description: |
+      ## Why
+      The current `analytics:` vocabulary is parse-only — nothing reads it, no fixture declares it, no cube emitter
+      exists. Replace it (no backwards compat) with the vocabulary the semantic-query package actually consumes.
+
+      ## Scope
+      - Field level: `role: measure | dimension`, `agg` / `aggs`, `additivity: additive | semi | non` (**required** on
+        measures, per field), `time: true` (temporal types only). Drop the MetricFlow-shaped keys.
+      - Aggregations narrow to `count | count_distinct | sum | avg | min | max`.
+      - Entity level: drop `measure_packs`, `cube_name`; retype `metrics:` to `ratio` / `derived` (expression tree) /
+        `cumulative`.
+      - Config: `generate.analytics: none | cube` → `generate.semantic: boolean`; drop the cube peer.
+      - Parser: `mapAnalytics()` → `ParsedField.analytics` / `ParsedEntity.analytics`; Zod refinements for the rules.
+
+      ## Acceptance
+      Schema + parser unit tests for every rule (measure requires agg + additivity; `time` needs a temporal type; metric
+      legs resolve to declared measures). Standard gates green.
+
+      Plan: PLAN §5.2.
+
+  - key: "591"
+    key_original: sem-2
+    title: "SEM-2: semantic model emitter — declared AggregateModel from the entity set"
+    size: L
+    depends_on: ["590"]
+    labels: [gate:auto, domain:codegen]
+    description: |
+      ## Scope
+      - New whole-set emitter `src/emitters/semantic/` shaped like the frontend emitter; post-step in `entity new`;
+        output under `paths.generated`.
+      - `model.ts` exports `buildAggregateModel()`: registry, analytics, `tables`, `colByDbName`, catalog — **declared
+        from YAML**, never recovered by walking Drizzle relations.
+      - Types imported from the published `@pattern-stack/query-surface` (optional peer gated by `generate.semantic`).
+        Fallback only if publishing slips: a vendored type mirror + conformance test.
+      - Junction entities → `meta.kind: 'junction'`; `has_one` emitted faithfully (needs the companion package change);
+        tenant/scope columns → dimensions, never measures; EAV out of scope; `through:` not emitted.
+
+      ## Depends on (other repo)
+      The query-surface companion issue: Drizzle 1.0 peer, `has_one`, publish.
+
+      ## Acceptance
+      Golden snapshot suite `test/semantic-golden/`; emitted model type-checks in the smoke project. Standard gates +
+      `just test-integration` green.
+
+      Plan: PLAN §5.3, §5.6.
+
+  - key: "592"
+    key_original: sem-3
+    title: "SEM-3: CRM vertical slice with analytics tags — emitted model answers a fan-out-trap measure"
+    size: M
+    depends_on: ["591"]
+    labels: [gate:auto, needs:tests, domain:codegen]
+    description: |
+      ## Scope
+      Extend the CRM smoke fixtures (account, contact, opportunity + junction shapes) with: an additive money measure
+      with `aggs: [sum, avg, min, max]`, a non-additive percentage, a `time: true` axis, and one ratio metric.
+
+      ## Acceptance
+      Emitted `model.ts` type-checks in the smoke project; golden snapshots locked; with the package linkable, run its
+      `describe` and one `measure` that sums over a `has_many` grouped at the parent grain and assert correct rows and
+      `needsCte: true`. If not linkable in CI, record that step as a manual gate in the spec.
+
+      Plan: PLAN §5.4.
+
+  - key: "593"
+    key_original: cap-1
+    title: "CAP-1: kind:'capability' + composed-base emission (ADR-041 implementation)"
+    size: L
+    depends_on: ["584"]
+    labels: [gate:auto, templates, domain:codegen]
+    description: |
+      ## Why
+      ADR-041 is accepted but unimplemented (`PatternKind` is still `'domain' | 'orchestration'`; clean-lite-ps takes
+      the base from `patterns[0]`). It is a hard prerequisite for the Actor / Communication capabilities.
+
+      ## Scope (exactly the accepted rulings)
+      `PatternKind` gains `'capability'`; `CapabilityPatternDefinition` with `mixinImport` and/or `forwarderMethods`;
+      spine selection by config-bearing base with a hard error on two spines; generation-time collision check;
+      `<Entity>ComposedBase` when ≥2 capabilities stack, inline `extends Cap(Spine<...>)` for one;
+      `assertHasContribution` accepts a mixin/forwarder. `clean-lite-ps` only.
+
+      ## Acceptance
+      The 3-capability smoke fixture compiles against the real bases; ADR-041 gets an "implemented" revision note with
+      deviations. Standard gates + `just test-integration` green.
+
+      Plan: PLAN §6.2.
+
+  - key: "594"
+    key_original: cap-2
+    title: "CAP-2: roles: block — role → (actor entity, cardinality) on communication entities"
+    size: M
+    depends_on: ["593"]
+    labels: [gate:auto, schema, domain:codegen]
+    description: |
+      ## Scope
+      ```yaml
+      roles:
+        host:      { target: contact, cardinality: one,  column: host_contact_id }
+        attendees: { target: contact, cardinality: many, via: meeting_attendees }
+        about:     { target: account, cardinality: one }
+      ```
+      Strict Zod schema: `target` must declare `Actor`; `one` derives a `belongs_to` (FK + index + `on_delete`); `many`
+      requires `via:` naming a Junction. Parser → `ParsedEntity.roles`. Composition validator: `roles:` without
+      `Communication` is an error, and vice versa. Record the role → relation `alias` mapping that REL-1 consumes.
+
+      ## Acceptance
+      Schema/parser/validator unit tests; emitted FK columns for `one` roles. Standard gates green.
+
+      Plan: PLAN §6.3.
+
+  - key: "595"
+    key_original: cap-3
+    title: "CAP-3: Actor + Communication capabilities — runtime mixins + library definitions"
+    size: L
+    depends_on: ["594"]
+    labels: [gate:auto, base-class, domain:codegen]
+    description: |
+      ## Scope
+      - `WithActor` / `WithCommunication` mixins (interfaces + generic constraints, no base-class chain):
+        `findByRole(role, actorId)`, `participants(id)`, `memberPredicate(actorId)` for group actors.
+      - **Scope is ALS-fed** — methods take no scope parameter and compose through the repository's `scopeAnd()`
+        (ADR-042).
+      - Library definitions `src/patterns/library/{actor,communication}.pattern.ts` with `kind: 'capability'`.
+      - Fixture: `meeting` (`[Integrated, Activity, Communication]`, roles host/attendees/about) over `contact`
+        (`Actor: individual`) and `account` (`Actor: group`).
+      - ADR-041.1 (sub-ADR) for `roles:` + the two capabilities.
+
+      ## Out of scope
+      `to_shape` projections, selector catalog, shape registry; `Activity` subject semantics; the full clean pipeline.
+
+      ## Acceptance
+      Smoke tsc + `just test-integration` round-trip of `findByRole('attendees', contactId)`. Standard gates green.
+
+      Plan: PLAN §6.4–6.5.
+
+# Filed separately in pattern-stack/query-surface (different repo; not a sub-issue of this project):
+external:
+  - key: qs-1
+    issue: pattern-stack/query-surface#40
+    repo: pattern-stack/query-surface
+    title: "Drizzle 1.0 peer, has_one relationship kind, publish — companion to codegen's semantic model emitter"
+    blocks: ["591"]

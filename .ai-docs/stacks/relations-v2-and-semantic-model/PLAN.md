@@ -5,6 +5,11 @@
 **Scope of this document:** all five units. §2 keeps the tradeoff table as the record of what ADR-044 chose between.
 No GitHub issues have been opened — the PR list in §3 is a proposal.
 
+> **Tracker (synced 2026-09-17).** Project #578 → epics #579 (unit 1), #580 (units 2+5), #581 (unit 3), #582 (unit 4).
+> DRZ-1 #583 · DRZ-2 #584 · TEN-1 #585 · REL-1 #586 · REL-2 #587 · REL-3 #588 · FE-REL #589 · SEM-1 #590 · SEM-2 #591 ·
+> SEM-3 #592 · CAP-1 #593 · CAP-2 #594 · CAP-3 #595 · QS-1 = pattern-stack/query-surface#40. Source of the sync:
+> `plan.yaml` (same directory). All tasks start `state:planned`; specs are written per issue by `/design`.
+
 ## 0. Operator decisions — 2026-09-17
 
 | # | Question | Decision |
