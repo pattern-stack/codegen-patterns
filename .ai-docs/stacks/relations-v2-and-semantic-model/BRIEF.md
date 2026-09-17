@@ -45,7 +45,7 @@ app layers already generated.
 
 **Verified absences:** zero `relations(` emission anywhere in `src`. `drizzle-orm` is still pinned `^0.45.2`.
 
-## 3. Blocking decision — the access-pattern contract
+## 3. The access-pattern contract (decided 2026-09-17)
 
 `docs/relationship-pattern-audit.md` (architecture from cgp-62 r4, unchanged on `origin/main`) states:
 
@@ -63,8 +63,19 @@ traverse would **promote or reverse that contract**. Three options:
    repositories keep FK + repo composition.
 3. **Split by surface** — relations-driven traversal for reads, service composition for writes.
 
-**Do not choose this yourself.** It is a doctrine change to a shipped library and belongs in a new ADR with the
-operator's decision recorded. Unit 2 is gated on it; units 1, 3 and 4 are not.
+**DECIDED 2026-09-17 (operator): option 1 — promote relations to the core contract.** Recorded in
+`docs/adrs/ADR-044-cross-entity-access-contract.md`. The shape of the decision:
+
+- Generated repositories traverse the v2 graph (RQBv2 `with:`); generated **reads** can be arbitrarily deep row-shaped
+  traversals. The CGP-358b two-query service composition is **replaced**, not kept beside it (no second composition
+  type). `clean-lite-ps` stays the pipeline in scope.
+- Services are fully generated atomic operations ("one surface, many homes"); consumers hand-write **use-cases and
+  queries on top**. Writes that span entities / transactions / workflows are use-cases. Aggregations never ride
+  relations — they go through the sibling semantic-query package, injected into a use-case/query.
+- Electric parity is restated, not dropped: both sides **project from the same YAML graph** — backend via
+  `defineRelations()`, frontend via generated relation accessors over the existing TanStack DB collections.
+- Tenant scope is **ALS-fed at the repository** (ADR-042, accepted the same day) — a precondition for traversal, since
+  every hop must be scoped.
 
 ## 4. Units
 
@@ -72,18 +83,26 @@ operator's decision recorded. Unit 2 is gated on it; units 1, 3 and 4 are not.
    `beta` 1.0.0-beta.22). 1.0 removes `relations()`/RQBv1 and changes drizzle-kit's migration format (folder-matched,
    no `journal.json`). Scope here is the **generator and what it emits**; a consumer's migration-history continuity is
    a separate question the operator is handling elsewhere — do not solve it here.
-2. **v2 relations emitter** — `defineRelations()` derived from the existing `RelationshipSchema`: `alias` from
-   `inverse`, `.through()` from the `Junction` pattern. **Gated on §3.**
+2. **v2 relations emitter + graph traversal** — `defineRelations()` derived from the existing `RelationshipSchema`:
+   `alias` from `inverse` (and unit 4's `roles:`), `.through()` from the `Junction` pattern; typed `with` includes on
+   generated repositories; service relationship methods delegate to them. **Unblocked by ADR-044; depends on unit 1 and
+   on ADR-042 being implemented (TEN-1).**
 3. **Semantic/aggregate model emitter** — extend `analytics:` with `additivity` (additive | semi | non) and a `time`
    axis, then emit the host-supplied model shape the sibling semantic-query package consumes: entities, keys,
    cardinality graph, field tags. Confirm the target shape against that package before designing the emission.
 4. **Pattern-library extension** — an actor/activity split distinguishing communication-style entities from
    record-style ones, expressed as pattern declarations composing over the existing library.
+5. **Frontend graph accessors** — extend the ADR-038 frontend emitter (which already emits TanStack DB collections and
+   `belongs_to` resolvers) with `has_many` / junction traversal and a typed include API, projected from the same graph
+   as unit 2.
 
 **TS shape rule for units 3–4:** express entity families as **interfaces + generic constraints**, sharing behavior via
 mixins/composition — not a generated base-class chain. TS has single inheritance and the families are not mutually
-exclusive; the library already supports `extends` chains *and* composition validation. Keep tenant scope an **explicit
-parameter**, never ambient in a generated base.
+exclusive; the library already supports `extends` chains *and* composition validation. ~~Keep tenant scope an explicit
+parameter, never ambient in a generated base.~~ **Revised 2026-09-17:** tenant scope is **ALS-fed at the repository
+choke point** (ADR-042), with `scopeEnforcement: 'strict'` for tenant-scoped entities so a missing context throws
+rather than reading unscoped. Rationale: the hand-written layer is use-cases; an explicit parameter is forgettable
+exactly there, and cannot be threaded through nested `with:` traversal.
 
 ## 5. Gates
 
@@ -108,6 +127,8 @@ position, the OpenAPI plan — as **current doctrine**: nothing in flight is qui
 
 ## 8. Open questions
 
-- §3's contract decision (**blocking for unit 2**).
+- ~~§3's contract decision~~ — decided, ADR-044.
+- Where the frontend include API lives: in `@pattern-stack/frontend-patterns` with thin generated wiring (recommended,
+  the `createEntityHooks` precedent) or fully generated.
 - Whether the metric/measure catalog is authored in the entity YAML or in the consuming model adapter.
 - Whether `additivity` belongs per-measure, per-measure-pack, or both.

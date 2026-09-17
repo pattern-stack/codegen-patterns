@@ -1,9 +1,18 @@
 # ADR-042 — Automatic Repository-Level Tenant Scoping (ALS-fed, opt-in, a mirror of `userTracking`)
 
-**Status:** Proposed
+**Status:** Accepted (2026-09-17; unimplemented — tracked as TEN-1 in the relations-v2 stack plan)
 **Date:** 2026-06-21
 **Owner:** Doug
 **Related:** ADR-001 (DDD + hexagonal — the repository/service/use-case layering this decision exploits), ADR-005 (entity-family base classes — `BaseRepository` is the choke point), ADR-022 (job orchestration domain — the `MissingTenantIdError` + per-run `tenantId` precedent this extends to entity repos), ADR-037 (runtime mode — package-mode emission constraints), swe-brain `ADR-0031` (tenant registration under single-trusted-tenancy — the driving consumer whose deferred "hardened multi-tenant flip" this ADR mechanizes)
+
+> **Revision note — 2026-09-17 (accepted; rationale corrected).** Accepted alongside ADR-044, which makes relation
+> traversal the core read contract: every hop of a nested include must be tenant-scoped, which an explicit scope
+> parameter cannot reasonably thread — so this ADR is now a **precondition** for traversal, and `scopeEnforcement:
+> 'strict'` is the default for `tenant_scoped: true` entities. One correction to §1 below: it says "consumers
+> hand-author services." They do not — the clean-lite-ps service is fully regenerated (`force: true`, `@generated`);
+> ADR-001's hand-written inventory is **use-cases**. The conclusion is unchanged and stronger: the hand-written layer
+> is where a scope parameter would be forgotten, and a use-case may inject a repository directly, so the repository
+> remains the only layer every path must traverse.
 
 > **Sequencing note.** This ADR settles the *mechanism* for automatic data isolation. It is opt-in and additive: nothing changes for an entity until it carries `tenant_scoped: true`, and the new ALS field is ignored by every existing `userTracking`-only repo. The driving consumer (swe-brain) shipped tenant registration trusting a single tenant (its ADR-0031) and pre-loaded a `tenantId` claim into its access JWT *in anticipation of this seam* — so adoption is a config change plus a boundary interceptor, not a hand-port across N repositories.
 
