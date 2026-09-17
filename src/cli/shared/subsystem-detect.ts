@@ -229,7 +229,7 @@ function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 async function detectSubsystemStatesImpl(
 	ctx: Context,
 ): Promise<InstalledSubsystem[]> {
-	const configured = ctx.config?.paths?.subsystems as string | undefined;
+	const configured = ctx.config?.paths?.subsystems;
 	const roots = candidateRoots(ctx.cwd, configured);
 
 	const found: InstalledSubsystem[] = [];
@@ -307,12 +307,8 @@ async function detectSubsystemStatesImpl(
 	// override via `paths.modules_dir`). Resolution mirrors
 	// `auth-integrations-scaffold-locals.ts`.
 	if (!seen.has('auth-integrations')) {
-		const backendSrc =
-			(ctx.config?.paths?.backend_src as string | undefined) ?? 'src';
-		const pathsAny = ctx.config?.paths as
-			| Record<string, unknown>
-			| undefined;
-		const modulesConfigured = pathsAny?.modules_dir;
+		const backendSrc = ctx.config?.paths?.backend_src ?? 'src';
+		const modulesConfigured = ctx.config?.paths?.modules_dir;
 		const vendorRoot =
 			typeof modulesConfigured === 'string' && modulesConfigured.length > 0
 				? path.resolve(ctx.cwd, modulesConfigured)

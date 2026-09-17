@@ -11,18 +11,18 @@ import yaml from 'yaml';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { scanProject } from '../../scanner/index.js';
 import type { ProjectProfile } from '../../scanner/types.js';
+import type { PathsConfigInput } from '../../schema/codegen-config.schema.js';
 
 export interface CodegenConfig {
-	paths?: {
-		entities?: string;
-		entities_dir?: string;
-		events_dir?: string;
-		subsystems?: string;
-		backend_src?: string;
-		frontend_src?: string;
-		/** Directory codegen writes barrel files into. Default: 'src/generated'. */
-		generated?: string;
-	};
+	/**
+	 * Derived from `PathsConfigSchema` — the single source of truth for
+	 * `paths.*` (`src/schema/codegen-config.schema.ts`). Do NOT re-declare the
+	 * keys here: this was a hand-maintained duplicate and it drifted, which is
+	 * what GATE-1 (#599) fixed. `z.input` (not `z.infer`) because the CLI reads
+	 * raw YAML that has not been through `.parse()`, so defaulted keys such as
+	 * `generated` are still absent.
+	 */
+	paths?: PathsConfigInput;
 	generate?: Record<string, unknown>;
 	framework?: string;
 	orm?: string;

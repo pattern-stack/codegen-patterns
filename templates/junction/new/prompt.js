@@ -71,12 +71,16 @@ function resolveSrcRoot(config, architecture) {
 
 function deriveJunctionName(config) {
   // Q8 resolution: insertion order — between: [opportunity, contact] → opportunity_contact
-  // Explicit `name:` on the YAML overrides the derivation.
-  return config.name ?? `${config.between[0]}_${config.between[1]}`;
+  // No YAML override. This file parses raw YAML, but `codegen junction new`
+  // validates every file through the `.strict()` JunctionDefinitionSchema —
+  // which declares no `name` key — before handing it to hygen, so a YAML
+  // setting one never reaches here (GATE-1, #599).
+  return `${config.between[0]}_${config.between[1]}`;
 }
 
 function deriveTableName(config, junctionName) {
-  return config.table ?? pluralize(junctionName);
+  // Likewise no `table:` override — see deriveJunctionName.
+  return pluralize(junctionName);
 }
 
 // ============================================================================

@@ -61,9 +61,8 @@ just test-unit                       # Unit tests (base classes + subsystems, ~2
 just test-family                     # Family repo integration tests (needs Docker)
 just test-baseline                   # Baseline snapshot test (generate + compare)
 just test-smoke                      # End-to-end smoke: scaffold + generate + typecheck fresh project (~60-120s)
-just test-all                        # test-unit + test-baseline + test-smoke (run on every PR to main via CI)
-just test-integration                # Full integration (Docker + codegen + NestJS)
-just validate                        # End-to-end scaffold validation
+just test-all                        # typecheck + unit + baseline + 6 smokes + junction + integration-emit (CI)
+just test-integration                # Scaffold integration suite (Docker + codegen + NestJS + CRUD) — own CI job
 
 # Database (scaffold testing)
 just db-up                           # Start Postgres
@@ -202,12 +201,25 @@ Auto-detect: `just scan` generates a config from project conventions.
 ### Testing
 
 - **Unit tests**: `just test-unit` — base classes, subsystems, scanner, schema (~200ms)
-- **Integration tests**: `just test-family` / `just test-integration` — real Postgres via Docker
+- **Integration tests**: `just test-family` / `just test-integration` — real Postgres via Docker. `test-integration` generates the scaffold consumer into the **repo root** (the scaffold's `@gen/*` alias maps there) and runs the 7 scaffold test files against it; it is **not** in `test-all` (which stays Docker-free) and has its own CI job. It requires `just install` and nothing else — the scaffold fixture declares no dependencies of its own, on purpose: two physical copies of a package break `instanceof` across the boundary (a duplicate `drizzle-orm` broke table construction; a duplicate `@nestjs/common` turned every `NotFoundException` into a 500).
 - **Smoke test**: `just test-smoke` — end-to-end scaffold + generate + typecheck on a fresh tmp project (~60-120s)
 - **Tarball smoke**: `just test-post-publish` — pack all publishable packages, install into a fresh tmp project via npm, verify the consumer contract (files manifest, exports, bins, peer ranges), then re-run the smoke harness with the CLI/templates/runtime coming from the installed tarball (`SMOKE_TARBALL` mode). Gates every CI publish via `just publish-ci`. Catches the works-from-checkout-broken-from-tarball class (#190)
 - **Baseline tests**: `just test-baseline` — generate from `test/fixtures/` into repo-root `packages/api/` and compare to `test/baseline/` snapshots. Two-pass generation (first pass seeds `packages/api/src/domain/*.entity.ts` files so second-pass `targetExists` checks resolve cross-entity references). Start from pristine state — the runner wipes the generated directories on each run.
-- **CI**: `just test-all` (unit + baseline + smoke) runs on every PR to `main` and every push to `main` (`.github/workflows/ci.yml`)
+- **CI** (`.github/workflows/ci.yml`), on every PR to `main` and every push to `main`:
+  - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-junction` + `test-integration-emit` + `test-smoke-integration`
+  - job `test-integration` → `just test-integration` (needs Docker, hence its own job)
+  - `publish` requires both.
+- **Adding a gate:** put it in `just test-all`, or give it a CI job. A gate that runs nowhere in CI rots — all three gates in #599 were red on `main` for exactly that reason.
 - **241+ total tests**, all passing
+
+#### Known-red gates
+
+Gates that are red on `main` today, on purpose recorded here rather than hidden, filtered or quietly dropped
+(charter I9). Do not add one to CI, and do not "fix" it by loosening its assertions.
+
+| Gate | Status | Tracking |
+|---|---|---|
+| `just test-smoke-junction-clean` | Red. Reports 21 errors through the smoke's error filter; the raw `tsc` count on the generated project is **120** (112 × TS2307 unresolved module + 8 × TS7006). Only 15 are the junction pipeline; the rest are the `clean` entity pipeline's missing `domain/` + `constants/` barrels, DTO `schemas` barrel, `database.module`, `zod-validation.pipe`, the generated schema barrel's singular/plural filename mismatch, and the `@repo/db/server/schema` location contract. The `clean` backend pipeline has never been typechecked anywhere — the baseline gate compiles `packages/api/src/domain/**/*` only. | #599 (diagnosis in `docs/specs/GATE-1.md` §Failure 2); repair is a proposed split, deferred by charter §5 non-goals |
 
 ### Template System
 

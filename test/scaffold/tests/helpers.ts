@@ -23,8 +23,8 @@ export function contactFactory(
   };
 }
 
-/** Factory for Synced family test entities. */
-export function syncedEntityFactory(
+/** Factory for Integrated family test entities (the family formerly named Synced). */
+export function integratedEntityFactory(
   overrides?: Partial<Omit<CrmEntity, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>>,
 ) {
   return {

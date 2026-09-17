@@ -27,6 +27,13 @@ function makeEvent(overrides: Partial<DomainEvent> = {}): DomainEvent {
     aggregateType: 'test_aggregate',
     payload: { test: true },
     occurredAt: new Date(),
+    // Domain-tier events MUST carry routing fields: the storage invariant
+    // `domain_events_tier_routing_check` enforces tier='audit' ⇔ (pool IS NULL
+    // AND direction IS NULL), and the declared-events pipeline populates pool
+    // on every domain-tier event. A raw publish without them is rejected by
+    // Postgres — which this suite never noticed while the gate was dead
+    // (GATE-1, #599). Individual tests override `metadata` as needed.
+    metadata: { pool: 'events_change', direction: 'change' },
     ...overrides,
   };
 }
@@ -34,10 +41,10 @@ function makeEvent(overrides: Partial<DomainEvent> = {}): DomainEvent {
 beforeAll(async () => {
   if (!SHOULD_RUN_SCAFFOLD) return;
   ({ DrizzleEventBus } = await import(
-    '@gen/shared/subsystems/events/event-bus.drizzle-backend'
+    '@shared/subsystems/events/event-bus.drizzle-backend'
   ));
   ({ domainEvents } = await import(
-    '@gen/shared/subsystems/events/domain-events.schema'
+    '@shared/subsystems/events/domain-events.schema'
   ));
   ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
   ({ eq } = await import('drizzle-orm'));
@@ -73,11 +80,25 @@ d('publish', () => {
 
   test('event row stores metadata when provided', async () => {
     const db = getTestDb();
-    const event = makeEvent({ metadata: { queue: 'domain-events', origin: 'test' } });
+    // `metadata` replaces makeEvent's default wholesale, so the routing fields
+    // the CHECK constraint requires have to be restated here.
+    const event = makeEvent({
+      metadata: {
+        queue: 'domain-events',
+        origin: 'test',
+        pool: 'events_change',
+        direction: 'change',
+      },
+    });
     await bus.publish(event);
 
     const rows = await db.select().from(domainEvents).where(eq(domainEvents.id, event.id));
-    expect(rows[0].metadata).toEqual({ queue: 'domain-events', origin: 'test' });
+    expect(rows[0].metadata).toEqual({
+      queue: 'domain-events',
+      origin: 'test',
+      pool: 'events_change',
+      direction: 'change',
+    });
   });
 });
 

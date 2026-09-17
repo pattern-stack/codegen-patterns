@@ -6,9 +6,13 @@ set dotenv-load := false
 # ─── Dev ──────────────────────────────────────────────────────────────────────
 
 # Install all dependencies
+# The scaffold fixture declares NO dependencies of its own: it resolves every
+# package by walking up to the repo's node_modules. Two physical copies of the
+# same version break `instanceof` across the boundary — a duplicate drizzle-orm
+# broke table construction and a duplicate @nestjs/common turned every
+# NotFoundException into a 500 (GATE-1, #599).
 install:
     bun install
-    cd test/scaffold && bun install
 
 # Generate a single entity from YAML (new noun-verb CLI)
 gen entity:
@@ -20,7 +24,7 @@ gen-all:
 
 # Scan a project and generate config
 scan path=".":
-    bun codegen scan {{path}}
+    bun src/cli/index.ts project scan {{path}}
 
 # Scaffold a subsystem (events, jobs, cache, storage) via the new CLI
 gen-subsystem name:
@@ -133,7 +137,7 @@ compare:
 
 # Run family repo integration tests (requires Docker + db-up + db-push)
 test-family:
-    bun test "{{justfile_directory()}}/test/scaffold/tests/crm-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
+    bun test "{{justfile_directory()}}/test/scaffold/tests/integrated-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
 
 # Tarball smoke (#190): build + pack every publishable package, install the
 # tarballs into a fresh tmp project via npm, verify the consumer contract
@@ -178,40 +182,53 @@ test-jobs-fnkey-integration:
 test-listen-notify-leak-integration:
     bun test "{{justfile_directory()}}/test/integration/listen-notify-shutdown-leak.drizzle.integration.test.ts"
 
-# Run the full scaffold validation (Docker + codegen + NestJS + CRUD)
-validate:
-    bash test/scaffold/validate.sh
+# Typecheck the generator itself (`tsc --noEmit -p tsconfig.build.json`).
+# In `test-all` because that is what CI runs: this gate was red on main for
+# an unknown span precisely because nothing in CI executed it (GATE-1, #599).
+typecheck:
+    bun run typecheck
 
-# Run all tests
-test-all: test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction test-integration-emit test-smoke-integration
+# Run all tests. Docker-free by design — `just test-integration` needs Docker
+# and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
+# cannot mask this suite.
+#
+# NOT included, and deliberately so: `just test-smoke-junction-clean`. It is a
+# known-red gate — see CLAUDE.md › Testing › Known-red gates.
+test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction test-integration-emit test-smoke-integration
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
+# Every recipe below invokes `bun src/cli/index.ts <noun> <verb>`. `bun codegen
+# …` resolved a package script that does not exist (package.json declares `cdp`;
+# `codegen` is a published bin), and the bare verbs predate the noun-verb CLI —
+# so all of these failed exactly as `scan` and the integration harness did
+# (GATE-1, #599).
+
 # Validate entity YAML files
 validate-entities dir="entities/":
-    bun codegen validate {{dir}}
+    bun src/cli/index.ts entity validate {{dir}}
 
 # Analyze entities with dependency graph
 analyze dir="entities/":
-    bun codegen analyze {{dir}}
+    bun src/cli/index.ts project inspect --kind analyze {{dir}}
 
 # Print entity statistics
 stats dir="entities/":
-    bun codegen stats {{dir}}
+    bun src/cli/index.ts project inspect --kind stats {{dir}}
 
 # Generate domain documentation
 doc dir="entities/" out="domain.md":
-    bun codegen doc {{dir}} -o {{out}}
+    bun src/cli/index.ts project inspect --kind doc {{dir}} -o {{out}}
 
 # ─── Manifest & Suggestions ──────────────────────────────────────────────────
 
 # Update the codegen manifest
 manifest dir="entities/":
-    bun codegen manifest {{dir}}
+    bun src/cli/index.ts project inspect --kind manifest {{dir}}
 
 # Review pending transitive suggestions
 suggestions:
-    bun codegen suggestions
+    bun src/cli/index.ts project inspect --kind suggestions
 
 # ─── Release ──────────────────────────────────────────────────────────────────
 

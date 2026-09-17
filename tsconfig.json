@@ -4,7 +4,15 @@
     "baseUrl": ".",
     "paths": {
       "@gen/*": ["./*"],
-      "@shared/*": ["./test/scaffold/shared/*"]
+      // Same split-runtime resolution as test/scaffold/tsconfig.json, one
+      // level up. The root config overrides `paths` wholesale, so the two must
+      // be kept in step (GATE-1, #599).
+      "@shared/http/page": ["./runtime/http/pagination"],
+      "@shared/subsystems/*": ["./runtime/subsystems/*"],
+      "@shared/constants/*": ["./runtime/constants/*"],
+      "@shared/types/*": ["./runtime/types/*"],
+      "@shared/base-classes/*": ["./test/scaffold/shared/base-classes/*", "./runtime/base-classes/*"],
+      "@shared/*": ["./test/scaffold/shared/*", "./runtime/shared/*", "./runtime/*"]
     }
   }
 }

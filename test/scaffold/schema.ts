@@ -10,9 +10,19 @@
  *   <repo-root>/modules/contacts/contact.entity.ts
  */
 export { contacts } from '@gen/modules/contacts/contact.entity';
-export { domainEvents } from '@gen/shared/subsystems/events/domain-events.schema';
-export { jobQueue } from '@gen/shared/subsystems/jobs/job-queue.schema';
-export { cacheEntries } from '@gen/shared/subsystems/cache/cache.schema';
+
+// Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
+// real source — NOT from a vendored copy generated into the repo root. One
+// copy, nothing to install, nothing to clean up (GATE-1, #599).
+//
+// Re-exported WHOLESALE, not table-by-table: each schema also declares the
+// pgEnums its columns reference, and drizzle-kit only creates enum types it can
+// see. Naming individual tables made `push` abort partway ("type
+// job_parent_close_policy does not exist"), leaving later tables — including
+// this file's own — uncreated.
+export * from '@shared/subsystems/events/domain-events.schema';
+export * from '@shared/subsystems/jobs/job-orchestration.schema';
+export * from '@shared/subsystems/cache/cache.schema';
 
 // ============================================================================
 // Family base class test tables

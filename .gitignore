@@ -15,11 +15,21 @@ build/
 # Test output (regenerated)
 test/gen/
 
-# Codegen output (generated from entity YAML — never commit)
-gen/
-app/
-apps/
-modules/
+# Codegen output (generated from entity YAML — never commit).
+# ANCHORED to the repo root (leading `/`): unanchored patterns match at every
+# depth, so a bare `generated/` would also swallow `src/generated/`,
+# `runtime/subsystems/*/generated/` (committed — see below) and
+# `packages/graph-components/src/generated/`, and a bare `shared/` would swallow
+# `src/cli/shared/`, `runtime/shared/` and `test/scaffold/shared/` (GATE-1, #599).
+/gen/
+/app/
+/apps/
+/modules/
+# `just test-integration` generates the scaffold consumer into the repo root
+# (the scaffold's `@gen/*` alias maps there). Its teardown removes these; the
+# entries are a safety net for an interrupted run.
+/generated/
+/shared/
 
 # Codegen output packages (not our source packages).
 # packages/graph-components/ is real source; everything else under
