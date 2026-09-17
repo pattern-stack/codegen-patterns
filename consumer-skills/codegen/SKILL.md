@@ -34,15 +34,50 @@ machine-readable output and `--cwd <path>` to target another project root.
   - `src/generated/modules.ts` — the `GENERATED_MODULES` barrel
   - `src/generated/schema.ts` — the Drizzle schema barrel
   - the per-entity module tree (`src/modules/<plural>/…` in clean-lite-ps)
-- **The package vendors** managed copies of its runtime into `src/shared/**`
-  (base classes, types, the `DRIZZLE` token, the Zod pipe, the OpenAPI
-  registry) and installed subsystems into `<subsystems-root>/<name>/`. Treat
-  these as generated output: don't hand-edit; subclass instead. `codegen
-  update` refreshes them after a package bump.
+- **Where the runtime comes from** depends on `runtime:` in
+  `codegen.config.yaml` (ADR-037):
+  - `package` (the default) — generated code imports the runtime straight from
+    `@pattern-stack/codegen/subsystems` and `@pattern-stack/codegen/runtime/*`.
+    Nothing is vendored.
+  - `vendored` — the package copies its runtime (base classes, types, the
+    `DRIZZLE` token, the Zod pipe, the OpenAPI registry) into `src/shared/**`
+    and installed subsystems into `<subsystems-root>/<name>/`, imported via
+    `@shared/*`. Treat those copies as generated output: don't hand-edit;
+    subclass instead. `codegen update` refreshes them after a package bump.
+
+  Check which mode this project uses before writing an import. Don't flip
+  modes by accident.
 
 The generation pipeline: `YAML → parse → analyze → templates → code`. After any
 generation run the two barrels are rewritten and you wire them into
-`app.module.ts` exactly once — codegen never edits that file again.
+`app.module.ts` exactly once — codegen never edits that file again. Installed
+subsystems get their own pair: `src/generated/subsystems.ts`
+(`SUBSYSTEM_MODULES`) and `src/generated/subsystems-schema.ts`. Wire each of
+those once as well.
+
+## Authentication (ADR-043, 0.30.0+)
+
+The generated data plane is **closed by default**:
+
+- `AuthModule.forRoot` binds `AuthenticatedGuard` globally. Any route not
+  marked `@Public()` returns 401 when the request has no authenticated
+  requester.
+- `main.ts` calls `installRequesterContext(app)` and **refuses to start** when
+  no `IUserContext` is bound under `AUTH_USER_CONTEXT`.
+  `auth.devAllowAnonymous: true` in `codegen.config.yaml` bypasses this. It is
+  for localhost only; never ship it.
+- Generated controllers do **not** read `x-user-id` / `x-tenant-id` headers.
+  Use cases get the actor from the request context (`tryGetRequester()`).
+  Don't add header-sourced identity back.
+- To keep an entity internal (no REST/Electric/tRPC routes) while still
+  generating its service and use cases, set `api: false` at the top level of
+  its YAML.
+
+**Upgrading from before 0.30.0:** after bumping the package, run
+`codegen project update`, then `codegen project upgrade-auth`. The latter is
+idempotent: it wires `AuthModule` plus the boot check into `app.module.ts`
+and `main.ts`. Then bind your own `IUserContext`, backed by your session or
+JWT scheme.
 
 ## Routing — load the focused skill for deep work
 
@@ -95,6 +130,7 @@ codegen init                       # scaffold this project's shared layer + conf
 codegen project scan               # detect framework/ORM/architecture → propose config
 codegen project config             # print the resolved codegen.config.yaml
 codegen update                     # re-sync vendored runtime + subsystems + skills after a package bump
+codegen project upgrade-auth       # wire the ADR-043 auth guard + boot check (idempotent)
 
 # Entities
 codegen entity new entities/<file>.yaml   # generate one entity
@@ -102,11 +138,14 @@ codegen entity new --all                  # regenerate every entity in entities/
 codegen entity new --all --dry-run        # preview
 codegen entity list                       # tabular list
 codegen entity validate --strict          # validate YAML + cross-refs (warnings fail)
+codegen relationship new --all            # relationships/*.yaml — junction tables
+codegen junction new --all                # junctions/*.yaml — first-class M:N with role/temporal metadata
 
 # Subsystems (see the `subsystems` skill for wiring + order)
 codegen subsystem                  # summary: installed vs available
 codegen subsystem install <name>   # vendor a subsystem's runtime + inject its config block
 codegen subsystem list
+codegen subsystem remove <name>
 
 # Skills
 codegen skills install             # (re)vendor these consumer skills into .claude/skills
@@ -129,17 +168,21 @@ codegen skills list
   reviewable SQL with Atlas (`atlas migrate diff` → review → `atlas migrate
   apply`). `push` is dev-loop-only.
 - **Upgrades need a re-sync.** After `bun add @pattern-stack/codegen@latest`, run
-  `codegen update` — the vendored `src/shared/**` and installed subsystems are
-  otherwise stale against the new package.
+  `codegen update`. Without it, the installed subsystems and skills (and in
+  vendored mode, `src/shared/**`) are stale against the new package. Crossing
+  0.30.0 also needs `codegen project upgrade-auth` (see Authentication).
+- **`unique: true` on a field or query creates an index, not a DB `UNIQUE`
+  constraint** (#484, #511). Add the constraint yourself if you rely on it.
 
 ## Do not
 
 - **Do not hand-edit anything under `src/generated/`** or the vendored
   `src/shared/**` runtime files — the next `entity new` / `codegen update`
   overwrites them. Need different behavior? Subclass the base in your own module.
-- **Do not declare a fresh `DRIZZLE` token.** Import the one from
-  `@shared/constants/tokens`; a second token has a different identity and DI
-  won't resolve.
+- **Do not declare a fresh `DRIZZLE` token.** Import the one the generated
+  `database.module.ts` imports: `@pattern-stack/codegen/runtime/constants/tokens`
+  in package mode, `@shared/constants/tokens` in vendored mode. A second token has
+  a different identity, and DI won't resolve it.
 - **Do not add tables directly to `src/generated/schema.ts`.** Hand-authored
   tables go in your own file and are combined in the schema root re-export.
 - **Do not reach for `clean` vs `clean-lite-ps` arbitrarily.** Match the

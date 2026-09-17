@@ -1,326 +1,262 @@
-# @pattern-stack/codegen
+---
+name: codegen
+description: Load when working on the @pattern-stack/codegen CLI or its consumer contract — the `codegen` / `cdp` noun-verb commands (entity, relationship, junction, subsystem, project, events, orchestration, skills, dev), entity YAML shape, `codegen.config.yaml` keys, runtime mode (package vs vendored), what `init` / `entity new` / `project update` / `project upgrade-auth` emit into a consumer project, and the generated controller/auth behavior. Routes to the domain skills (jobs, events, bridge, integration, observability, openapi) for subsystem internals.
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+user-invocable: false
+---
 
-Code generation CLI for NestJS + Drizzle applications. Generates entities, repositories, services, controllers, DTOs, use cases, OAuth-ready integrations, the full vendor-integration layer (provider/adapter read side + module assembly write side + the `IncrementalRead` read primitive — Track D, RFC-0001/0002/0003), and infrastructure subsystems from YAML definitions.
+# @pattern-stack/codegen — CLI + consumer contract
 
-## When to Use This Skill
+Generates a NestJS + Drizzle backend (entities, repositories, services, use cases,
+DTOs, controllers, modules, schemas), an optional frontend data layer, the vendor
+integration layer, and infrastructure subsystems from YAML definitions.
 
-Use when the user asks to:
-- Create, scaffold, or generate an entity / module / feature
-- Add an API endpoint or CRUD resource
-- Opt an entity into EAV (custom fields)
-- Mark a table as an EAV value-table (compound methods auto-generated)
-- Install infrastructure (events, jobs, cache, storage)
-- Set up or initialize a codegen project
-- Start, stop, or check the dev environment
-- Validate entity YAML definitions
+Binaries: `codegen` and `cdp` (same entry, `dist/src/cli/index.js`). Every noun
+accepts `--json` and `--cwd <path>`; most accept `--config <path>`. A bare noun
+(`codegen entity`) prints a summary plus suggested next commands.
 
-## CLI Reference
+**Ground truth:** `bun src/cli/index.ts --help` lists every command and flag.
+Schemas: `src/schema/entity-definition.schema.ts`, `src/schema/codegen-config.schema.ts`.
+If this file disagrees with those, they win — fix this file.
 
-Noun-verb pattern. Every noun supports `--json` for machine-readable output and `--cwd <path>` to target a specific project.
+## Routing
 
-**See also:** `.claude/primitives/codegen/clean-lite-ps.md` for the full YAML schema reference.
+| Topic | Load |
+|---|---|
+| Consumer-facing skills shipped in the package (`consumer-skills/`, vendored by `codegen skills install`) | edit `consumer-skills/<name>/` — the package source (ADR-035) |
+| Job handlers, pools, worker, `definitions/jobs/*.yaml` | `jobs` skill |
+| Domain events, outbox, `events/*.yaml`, typed bus, scheduler | `events` skill |
+| Event → job bridge | `bridge` skill |
+| `IChangeSource` / sinks / `surface:` integration codegen | `integration` skill |
+| Observability facade | `observability` skill |
+| `/docs`, Swagger decorators, `openapi:` config | `openapi` skill |
+| ADR / spec / RFC placement | `project-documentation` skill |
 
-### Entity Commands
+## CLI reference
 
-```bash
-codegen entity                           # summary: defined entities, families, queries
-codegen entity new <yaml>                # generate one entity from YAML
-codegen entity new --all                 # regenerate all entities in entities/
-codegen entity new --all --dry-run       # preview what would be generated
-codegen entity new --all --force         # overwrite without git-safety check
-codegen entity list                      # tabular list of all entities
-codegen entity list --format json        # machine-readable entity list
-codegen entity validate                  # check YAML schema + cross-references
-codegen entity validate --strict         # treat warnings as errors
-```
-
-After every generation run, barrel files are regenerated:
-- `src/generated/modules.ts` — exports `GENERATED_MODULES` array
-- `src/generated/schema.ts` — re-exports all entity Drizzle schemas
-
-The user wires these into `app.module.ts` once; codegen never touches that file again.
-
-For entities tagged with `surface:` (when `definitions/providers/*.yaml` exist), `entity new` also runs the Track D integration post-step — emitting the provider/adapter read side, the per-entity module assembly (binds change source + sink + a tokened `ExecuteIntegrationUseCase`), the emit-once default sink, and the `IncrementalReadBase` read-body scaffold inside the adapter's `changeSources`. There is no standalone `provider`/`integration`/`gen` command. The surface ports declare `readonly changeSources: Record<string, IChangeSource<unknown>>` (not the old `sources` registry — the folded `<SURFACE>_ENTITY_SOURCES` registry is the surface aggregator's output). See the `integration` skill (`protocols-and-ports.md`, `SKILL.md`) for the port shapes, output paths, and skip conditions.
-
-### Subsystem Commands
+### Entities, relationships, junctions
 
 ```bash
-codegen subsystem                        # summary: installed vs available
-codegen subsystem install events         # domain event bus (transactional outbox)
-codegen subsystem install jobs           # background job queue
-codegen subsystem install cache          # key-value cache with TTL
-codegen subsystem install storage        # file storage
-codegen subsystem install integration    # external-system integration engine
-codegen subsystem install bridge         # event-to-job bridge (needs events + jobs)
-codegen subsystem install observability  # read-only facade over the others
-codegen subsystem install cache --backend memory    # memory-only (tests)
-codegen subsystem install events --dry-run          # preview install
-codegen subsystem list                   # show installed + available
-# codegen subsystem remove <name>        # NOT YET IMPLEMENTED (stub) — delete the dir + unwire manually
+codegen entity new <yaml>                 # one entity
+codegen entity new --all                  # every YAML under paths.entities_dir (default entities/)
+codegen entity new --all --only <names>   # subset
+codegen entity new --all --dry-run | --force | --continue-on-error
+codegen entity list [--pattern <P>] [--format json]
+codegen entity validate [dir] [--strict]  # schema + cross-refs; --strict fails on warnings
+
+codegen relationship new <yaml> | --all   # relationships/ — junction tables between entities
+codegen relationship list
+codegen junction new <yaml> | --all       # junctions/ — first-class M:N with role/temporal/sourcing metadata
+codegen junction list
 ```
 
-Each subsystem follows Protocol → Backend → Factory (ADR-008). Register via `forRoot({ backend })`. The scaffold offers `drizzle | memory` (`local` for storage); there is no scaffolded `redis` backend. See ADR-035 + the `consumer-skills/subsystems` skill for the dependency/registration order.
+`entity new` also runs the whole-set post-steps, all from the full definition set:
 
-### Relationship Commands
+- **Barrels** — `<paths.generated>/modules.ts` (`GENERATED_MODULES`) and `schema.ts`.
+  Wired into `app.module.ts` once; codegen never edits that file again.
+- **Event registry** — merges `events/*.yaml` (`paths.events_dir`) plus entity
+  `events:` / `emits:` into `<subsystems>/events/generated/` (typed bus, schemas, registry).
+- **Jobs emitter** — `definitions/jobs/*.yaml` (`paths.jobs_dir`, RFC-0005). Optional; absent dir is fine.
+- **Frontend emitter** (`generate.frontend: true`, ADR-038) — `src/emitters/frontend/`.
+- **Integration layer** — for entities with `entity.surface` when
+  `definitions/providers/*.yaml` exist (RFC-0001/0002/0003). There is no separate
+  provider/integration command. Providers with `status: planned` are catalog-only stubs.
 
-First-class junction tables between entities. YAML files live in `relationships/`.
+### Subsystems
 
 ```bash
-codegen relationship new <yaml>          # generate one relationship from YAML
-codegen relationship new --all           # regenerate all in relationships/
-codegen relationship new --all --dry-run # preview
-codegen relationship new <yaml> --force  # overwrite without git-safety check
-codegen relationship list                # tabular list of relationship defs
+codegen subsystem                          # installed vs available
+codegen subsystem install <name> [--backend <b>] [--target <dir>] [--force] [--force-config] [--dry-run]
+codegen subsystem list
+codegen subsystem remove <name>
 ```
 
-### Project Commands
+Names (`src/cli/shared/subsystem-detect.ts`): `events`, `jobs`, `cache`, `storage`,
+`integration`, `bridge` (needs events + jobs), `observability`, `auth`,
+`auth-integrations` (vendored OAuth connections starter), `openapi-config`.
+
+Installs register into `<paths.generated>/subsystems.ts` (`SUBSYSTEM_MODULES`) and
+`subsystems-schema.ts` — wire each once into AppModule / the drizzle-kit schema
+entry. Every subsystem follows Protocol → Backend → Factory (ADR-008) with
+`forRoot({ backend })`; scaffolded backends are `drizzle | memory` (`local` for storage).
+Registration order: `consumer-skills/subsystems/wiring-and-order.md`.
+
+### Project
 
 ```bash
-codegen init                             # scaffold a new consumer project (shortcut)
-codegen project init --yes               # accept all defaults, no prompts
-codegen project init --dry-run           # preview scaffold plan
-codegen project scan                     # detect conventions → propose config
-codegen project scan --write             # write detected config to codegen.config.yaml
-codegen project config                   # show resolved config
-codegen project inspect --kind analyze   # cross-entity dependency graph
-codegen project inspect --kind stats     # entity statistics
-codegen project inspect --kind doc       # markdown domain documentation
-codegen project inspect --kind manifest  # refresh/inspect project manifest
-codegen project inspect --kind suggestions  # review suggested actions
-codegen project graph                    # open interactive ER graph viewer
-codegen project graph --output graph.json   # export graph JSON
+codegen init | project init [--yes] [--dry-run] [--force] [--with-tsconfig] [--runtime package|vendored] [--skills]
+codegen project scan [--write]             # detect framework/ORM/architecture → propose config
+codegen project config                     # resolved config
+codegen update | project update [--dry-run] [--force] [--skip-skills] [--skip-subsystems]
+codegen project upgrade-auth [--dry-run] [--path <dir>]      # ADR-043 wiring (see Auth below)
+codegen project upgrade-openapi [--dry-run] [--force] [--path <dir>]
+codegen project inspect --kind analyze|stats|doc|manifest|suggestions
+codegen project graph [--output graph.json]
 ```
 
-`codegen init` scaffolds the consumer's shared layer (as of PR #55):
-- `src/shared/base-classes/*` — pattern bases (Base / Integrated / Activity / Knowledge / Metadata) with optional `tx?: DrizzleTx` on writes
-- `src/shared/constants/tokens.ts` — `DRIZZLE` DI symbol
-- `src/shared/types/drizzle.ts` — `DrizzleClient` + `DrizzleTx` type aliases
-- `src/shared/http/zod-validation.pipe.ts` — runtime Zod validation on `@Body()`
-- `src/shared/eav-helpers.ts` — pure `toEavRows` + `mergeEavRows`
+`init` (package mode, the default) writes: `codegen.config.yaml`,
+`src/shared/database/database.module.ts`, `src/generated/{modules,schema}.ts`,
+`src/app.module.ts`, `src/main.ts`, `src/schema.ts`, `entities/example.yaml`
+(`tsconfig.json` only with `--with-tsconfig`). It picks `clean-lite-ps` unless the
+scanner finds real clean-architecture dirs. In `--runtime vendored` it also copies
+the runtime closure into `src/shared/**`.
 
-These files are source of truth; don't hand-edit. Rerun `codegen init` to refresh them.
+`update` re-syncs vendored runtime, installed subsystems, and consumer skills to the
+installed package version. It overwrites divergent package-owned files (git-clean
+gate; `--force` overrides) and never touches `codegen.config.yaml`, `app.module.ts`,
+or barrels. Subsystem schema shapes that changed need
+`subsystem install <name> --force --force-config`.
 
-### Dev Environment Commands
+### Other nouns
 
 ```bash
-codegen dev                              # summary: service health, entities, endpoints
-codegen dev up                           # start Docker (Postgres + Redis), push schema, start app
-codegen dev up --no-app                  # start Docker only, skip NestJS app
-codegen dev status                       # dashboard with health checks
-codegen dev logs                         # tail app logs
-codegen dev logs --docker                # tail Docker service logs
-codegen dev restart                      # restart app, keep Docker
-codegen dev down                         # stop everything
-codegen dev down --volumes               # stop + wipe data volumes
+codegen events consumers <eventType>       # consumers across all three tiers (bridge skill)
+codegen orchestration list | validate | gen [--pattern <p>] [--all]   # ADR-032
+codegen skills install [--force] | list    # vendor consumer-skills/ into .claude/skills
+codegen dev up [--no-app] | status | logs [--docker] | restart | down [--volumes]
 ```
 
-### Update + skills (consumer-facing)
+## Runtime mode (ADR-037)
 
-```bash
-codegen update                           # re-sync vendored runtime + installed subsystems + skills to the installed package version
-codegen update --dry-run                 # preview the re-sync
-codegen skills install                   # vendor the consumer-facing skills into .claude/skills
-codegen skills list                      # available vs installed
-```
+`runtime: package | vendored` in `codegen.config.yaml`. **Default `package`.**
 
-`codegen update` runs after `bun add @pattern-stack/codegen@latest` in a consumer project: it overwrites divergent package-owned files (gated on git-cleanliness; `--force` to override) and never touches `codegen.config.yaml`, `app.module.ts`, or generated barrels. It does NOT refresh tenancy-gated subsystem schemas — re-run `subsystem install <name> --force --force-config` if a schema shape changed. See ADR-035.
+- **package** — generated code imports `@pattern-stack/codegen/subsystems` and
+  `@pattern-stack/codegen/runtime/*`; nothing is vendored.
+- **vendored** — generated code imports via the consumer's `@shared/*` alias;
+  the runtime is copied into `src/shared/**`. Existing vendored projects must set
+  `runtime: vendored` explicitly.
 
-## Entity YAML Schema
+Changes to emitted imports must work in both modes. The tarball smoke
+(`just test-post-publish`) covers package mode from the packed artifact.
+
+## Entity YAML
 
 ```yaml
 entity:
-  name: contact                          # singular snake_case
+  name: contact                 # singular snake_case
   plural: contacts
   table: contacts
-  pattern: Integrated                    # Integrated | Activity | Metadata | Knowledge | Base (or app-defined)
+  pattern: Integrated           # Integrated | Activity | Metadata | Knowledge | Base | app-defined (ADR-031)
+  context: crm                  # bounded context (ADR-0004); clean-lite-ps nests modules/<context>/<plural>/
+  surface: crm                  # integration surface (ADR-0006) — drives integration codegen
+  sync: api                     # frontend per-entity override: api | electric
+  config:                       # per-pattern config, e.g. { Activity: { subject: account } }
 
 fields:
-  email:
-    type: string                         # string | integer | decimal | boolean | uuid | date | datetime | json | enum
-    required: true
-    max_length: 255
-    index: true
-  status:
-    type: enum
-    choices: [active, inactive]
-
-behaviors:
-  - timestamps                           # createdAt, updatedAt
-  - soft_delete                          # deletedAt + automatic query filtering
-  - user_tracking                        # createdBy, updatedBy
+  email: { type: string, required: true, max_length: 255, index: true }
+  status: { type: enum, choices: [active, inactive] }
 
 relationships:
-  account:
-    type: belongs_to                     # belongs_to | has_many | has_one
-    target: account
-    foreign_key: account_id
+  account: { type: belongs_to, target: account, foreign_key: account_id }
 
-# Optional top-level flags (PR #52 / #53 / #55)
-context: integration                     # ADR-0004 bounded-context slug; #403 wires it to nest modules/<context>/<plural>/
-eav: true                                # emit paired reads + compound-write use cases for EAV
-eav_value_table: true                    # THIS entity IS the EAV value table
-eav_definition_table: field_definition   # where the value table resolves keys → ids
+behaviors: [timestamps, soft_delete, user_tracking]
 
+api: true                       # false → no HTTP surface (REST/Electric/tRPC); service + use cases still generated (ADR-043 §6)
 generate:
-  writes: true                           # emit POST/PATCH/DELETE + create/update/delete use cases (default true)
+  writes: true                  # false → no create/update/delete use cases or routes
 
 queries:
-  - by: [email]                          # → FindContactByEmailUseCase
-    unique: true
-  - by: [account_id]                     # → FindContactByAccountIdUseCase
+  - by: [email]
+    unique: true                # NOTE: emits an index, not a DB UNIQUE constraint (#484, #511)
+  - by: [account_id]
     order: created_at desc
-  - name: search                         # PR #54: → SearchContactsUseCase + GET /contacts/search
-    filters: [userId, accountId, email]
-    search: name                         # ilike column
-    paginate: true                       # returns { items, total, limit, offset }
+  - name: search                # → SearchXUseCase + GET /<plural>/search
+    filters: [userId, accountId]
+    search: name
+    paginate: true
+
+unique_indexes: [...]           # composite unique indexes
+eav: true                       # paired *WithFields reads + transactional compound writes
+eav_value_table: true           # this entity IS the value table (needs eav_definition_table)
+eav_definition_table: field_definition
+integration: { ... }            # providers / sink (exclude_fields, emit_changes)
+detection: { ... }              # per-provider change detection
+events: [...]                   # declared domain events
+emits: ...
+analytics: { ... }              # cube measures/metrics (generate.analytics: cube)
 ```
 
-### `context:` — bounded-context declaration (ADR-0004)
+Full field reference: `consumer-skills/entities/yaml-reference.md`.
 
-Optional top-level `context:` (lowercase snake_case) declares **which bounded
-context this entity belongs to** — e.g. `integration`, `crm`, `identity`. This
-is the *durable* decision (ADR-0004); it's a plain bounded-context slug, not a
-folder switch. Multiple features read the same field:
+**EAV.** `eav: true` gives the service `findByIdWithFields` / `listWithFields`, and
+create/update use cases accept a `fields` bag written through
+`FieldValueService.upsertFieldsTransactional` inside one transaction. The service
+never injects the value repository directly. `eav_value_table: true` gives the
+value table `upsertCurrentValues(rows, tx)` and
+`upsertFieldsTransactional` / `findMergedByEntity`.
 
-- **Code-folder grouping (#403, wired today):** under `clean-lite-ps`, a
-  context-tagged entity's module folder nests under the context segment.
+## `codegen.config.yaml`
 
-  | YAML | clean-lite-ps emit dir |
-  |------|------------------------|
-  | _(no `context:`)_ | `modules/<plural>/` |
-  | `context: integration` | `modules/integration/<plural>/` |
-
-  So integration entities group together
-  (`modules/integration/{transcripts,connections,…}/`) while untagged entities
-  stay flat. The regenerated barrel (`<generated>/modules.ts`) recomputes its
-  import paths automatically, so import aliases resolve without further wiring.
-
-- **Physical DB layout (ADR-0004, deferred — NOT wired here):** a later
-  `naming: prefix | schema` knob will read this *same* `context:` to drive the
-  Postgres layout — `prefix` → `pgTable('<context>__<table>')`, then the flip
-  to `schema` → `pgSchema('<context>').table('<table>')`. **#403 makes no
-  table/column/schema changes**; table names are unchanged regardless of
-  `context:`.
-
-`context:` is orthogonal to `surface:` (ADR-0006): context = model cohesion
-(which domain), surface = vendor composition (which integration).
-
-> The code-folder nesting applies to the `clean-lite-ps` architecture
-> (self-contained `modules/<plural>/` folders). For the full `clean`
-> architecture — whose layers are split across shared `domain/`,
-> `application/`, `infrastructure/` dirs with cross-layer relative imports —
-> context-subfolder nesting is **not yet wired** (#403 scope).
-
-### `eav: true` — auto-generated EAV routes on a consumer entity
-
-When set on an entity (e.g. `opportunity`):
-
-- Service gains **paired read methods**: `findById` (typed entity only) and `findByIdWithFields` (entity + merged `fields` bag). Same for `list` / `listWithFields`.
-- Use cases: `CreateXUseCase` and `UpdateXUseCase` accept `{ ...core, fields?: Record<string, unknown> }` and run a transactional dual-write via `FieldValueService.upsertFieldsTransactional`.
-- Controller routes: `GET /:id/with-fields`, `GET /with-fields`, `POST / PATCH` accept the `fields` bag.
-
-Service never injects `FieldValueRepository` directly — composition goes through `FieldValueService` (consumer's EAV value-table service — see `eav_value_table` below).
-
-### `eav_value_table: true` — mark an entity as THE EAV value table
-
-When set on the value-table entity (e.g. `field_value`):
-
-- Repository gets `upsertCurrentValues(rows, tx)` with composite `(entity_type, entity_id, field_definition_id)` conflict target.
-- Service gets `upsertFieldsTransactional(entityType, entityId, userId, fields, tx)` and `findMergedByEntity(entityType, entityId)` with internal FieldDefinition-id resolution.
-- Module auto-imports the definition-table module so DI resolves without consumer wiring.
-
-Requires companion `eav_definition_table: '<entity_name>'` pointing at the definition table.
-
-Consumer writes zero code for the EAV compound operations. They get them generated.
-
-## Configuration (`codegen.config.yaml`)
+Top-level keys: `runtime`, `paths`, `locations`, `generate`, `naming`,
+`patterns`, `frontend`, `auth`, `openapi`, `jobs`.
 
 ```yaml
+runtime: package
 paths:
   backend_src: src
   entities_dir: entities
   generated: src/generated
-
+  events_dir: events              # default <cwd>/events
+  jobs_dir: definitions/jobs      # default
 generate:
-  architecture: clean-lite-ps            # clean | clean-lite-ps
+  architecture: clean-lite-ps     # clean | clean-lite-ps — schema default is clean; init writes clean-lite-ps
   frontend: false
-
-naming:
-  fileCase: kebab-case
-  suffixStyle: dotted
-  terminology:
-    command: use-case
-    query: use-case
+  analytics: none                 # none | cube
+patterns: [src/patterns/*.pattern.ts]
+auth:
+  devAllowAnonymous: false        # strict block; localhost-only escape hatch
 ```
 
-## Entity Families
+Known gap: `init` and subsystem scaffolds still emit to root `src/` in places,
+ignoring `paths.backend_src` (#527, #566).
 
-All families inherit the standard CRUD set: `findById`, `findByIds`, `list`, `count`, `exists`, `create`, `update`, `delete`, `upsertMany`. All write methods accept an optional `tx?: DrizzleTx` for transactional composition.
+## Entity families
 
-| Family | Additional Methods |
-|--------|--------------------|
-| `integrated` | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `integrationUpsert` |
-| `activity` | `findByDateRange`, `findByUserId`, `findBySubjectId`, `findRecentBySubjectId` (subject FK + recency column from `config: { Activity: { subject: <entity> } }`) |
-| `metadata` | `findByEntityIdAndType`, `listByEntityId`, `listHistoryByEntityId` |
-| `knowledge` | `semanticSearch`, `findPendingByOpportunityId`, `updateStatus`, `updateStatusBatch` (pgvector at runtime) |
-| `base` | Standard CRUD only |
+All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
+`update`, `delete`, `upsertMany`. Writes take an optional `tx`.
 
-**Dealbrain v2 usage:**
-- `integrated` → `opportunity`, `account`, `contact` (CRM triad per `specs/2026-04-16-crm-sync-engine-overhaul.md`)
-- `metadata` → `field_definition` (definition), `field_value` (value, marked `eav_value_table: true`)
-- `base` → `integration` (OAuth creds, encrypted), `pipeline`, `stage`, `record_type`
+| Family | Adds |
+|---|---|
+| Integrated | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `integrationUpsert` |
+| Activity | `findByDateRange`, `findByUserId`, `findBySubjectId`, `findRecentBySubjectId` |
+| Metadata | `findByEntityIdAndType`, `listByEntityId`, `listHistoryByEntityId` |
+| Knowledge | `semanticSearch`, `findPendingByOpportunityId`, `updateStatus`, `updateStatusBatch` (stub) |
+| Base | CRUD only |
 
-## Generated Controller Behavior
+## Generated HTTP surface + auth (ADR-043, 0.30.0)
 
-As of PR #54, generated controllers:
-- Pipe `@Body()` through `ZodValidationPipe` for runtime validation (422 on failure with RFC 7807 body).
-- Throw `NotFoundException` (404) from GET `:id` when the service returns null, including soft-deleted rows.
-- Emit `POST` / `PATCH` / `DELETE` only when `generate.writes: true` (default).
+- The data plane is **closed by default**. `AuthModule.forRoot` binds
+  `AuthenticatedGuard` as `APP_GUARD`: a non-`@Public()` route without an ambient
+  `RequesterContext` returns 401.
+- The generated `main.ts` calls `installRequesterContext(app)` and refuses to
+  `listen()` when no `IUserContext` is bound under `AUTH_USER_CONTEXT`, unless
+  `auth.devAllowAnonymous: true`. `worker.ts` never gets this check.
+- Controllers take **no** `x-user-id` / `x-tenant-id` headers. Use cases get the
+  actor from `tryGetRequester()` (ALS). Don't reintroduce header-sourced identity.
+- Upgrading an existing app: `codegen project upgrade-auth` (idempotent AST
+  codemod), then bind an `IUserContext`.
+- Controllers pipe `@Body()` through `ZodValidationPipe` (422, RFC 7807), return
+  404 from `GET :id` for missing or soft-deleted rows, and carry Swagger decorators
+  including `@ApiBearerAuth()`.
+- Tenant scoping at the repository level is designed in ADR-042 but not built yet.
 
-## Layer Rules for Consumers
+## Layer rules (ADR-003 / ADR-004)
 
-Aligned with codegen-patterns ADR-003 + ADR-004:
+- **Repository** — one table, extends a pattern base, no business logic.
+- **Service** — aggregate API boundary. May read across domains; must not write across domains.
+- **Use case** — workflow. Composes services, owns the transaction for cross-domain writes, emits events.
+- **Controller** — thin; calls use cases only.
 
-- **Repository** — single table. Extends a pattern base class (library or app-defined, per ADR-031). No business logic. Accepts optional `tx` on writes.
-- **Service** — aggregate. Composes repositories. May read any repo cross-domain. May call same-domain services. **May NOT write cross-domain.** Mandatory API boundary.
-- **Use Case** — workflow. Composes multiple services (including cross-domain). Owns the transaction for cross-domain writes. Emits events, calls external ports.
-- **Controller** — thin adapter. Calls use cases only.
+## Working on the generator
 
-**EAV dual-write** (per ADR-13 revised): use case composes `EntityService + FieldValueService` inside `db.transaction`. Services stay single-domain; the transactional coordinator is the use case.
-
-## Common Workflows
-
-### Add a new entity
-1. Create `entities/<name>.yaml`
-2. `codegen entity new entities/<name>.yaml`
-3. Barrels auto-update — no manual wiring
-
-### Opt an entity into EAV custom fields
-1. Set `eav: true` at the top level of the entity YAML
-2. Ensure your project has an EAV value table (entity marked `eav_value_table: true` + `eav_definition_table: '<definition_entity>'`)
-3. Regenerate — paired reads + compound-write use cases ship automatically
-
-### Add filtered search with pagination
-1. Add `queries: - name: search, filters: [...], search: <column>, paginate: true` to entity YAML
-2. Regenerate — `SearchXUseCase` + `GET /xs/search` land automatically
-
-### Add infrastructure
-1. `codegen subsystem install events`
-2. Register: `EventsModule.forRoot({ backend: 'drizzle' })` in app.module.ts
-3. Inject: `@Inject(EVENT_BUS) private eventBus: IEventBus`
-
-### Initialize a new project
-1. `codegen init --yes` → scaffolds shared layer (base classes, tokens, Zod pipe, eav-helpers)
-2. `bun add @nestjs/common @nestjs/core drizzle-orm reflect-metadata zod`
-3. Create entity YAMLs, run `codegen entity new --all`
-
-### Start dev environment
-1. `codegen dev up` (requires Docker)
-2. App on `localhost:3000`, check with `codegen dev status`
-
-## Recent Upstream Changes
-
-- **PR #52** — `generate.writes` flag emits create/update/delete use cases + POST/PATCH/DELETE routes
-- **PR #53** — `eav: true` flag emits paired reads + transactional compound-write use cases; templates consume `FieldValueService.upsertFieldsTransactional`
-- **PR #54** — filter query generation (`queries: { filters, search, paginate }`), `ZodValidationPipe` runtime validation, 404 on GET after soft-delete
-- **PR #55** — slim consumer contract: tx-aware base classes + `ZodValidationPipe` + `eav-helpers` land via `codegen init`; `eav_value_table: true` flag emits EAV compound methods directly into the generated service/repo
+- Backend: hygen templates (`templates/entity/new/backend/` = clean,
+  `templates/entity/new/clean-lite-ps/` = clean-lite-ps). Frontend and integration: TS emitters in `src/emitters/`.
+- Gates: `just test-unit`, `just test-baseline` (regenerate snapshots when output
+  changes intentionally), `just test-smoke`, `just test-post-publish` (tarball).
+- The smoke harness filters tsc output. `filterConsumerErrors` drops any line
+  containing `../` or `node_modules/`, so a passing smoke does not rule out broken
+  relative imports (#576). To be sure, run `KEEP_SMOKE_DIR=1` and then an
+  unfiltered `bunx tsc --noEmit --skipLibCheck` in the kept directory.
+- Releases: a version bump merged to main publishes. If the version is already on
+  npm, the CI publish job is a **green no-op** — always bump alongside
+  consumer-visible changes, and add a `CHANGELOG.md` entry.
