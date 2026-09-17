@@ -173,7 +173,8 @@ integration: { ... }            # providers / sink (exclude_fields, emit_changes
 detection: { ... }              # per-provider change detection
 events: [...]                   # declared domain events
 emits: ...
-analytics: { ... }              # cube measures/metrics (generate.analytics: cube)
+analytics: { ... }              # composite metrics: ratio | derived | cumulative (SEM-1)
+                                # field tags: role / agg / aggs / additivity / time
 ```
 
 Full field reference: `consumer-skills/entities/yaml-reference.md`.
@@ -201,7 +202,7 @@ paths:
 generate:
   architecture: clean-lite-ps     # clean | clean-lite-ps — schema default is clean; init writes clean-lite-ps
   frontend: false
-  analytics: none                 # none | cube
+  semantic: false                 # emit the declared AggregateModel (SEM-2)
 patterns: [src/patterns/*.pattern.ts]
 auth:
   devAllowAnonymous: false        # strict block; localhost-only escape hatch

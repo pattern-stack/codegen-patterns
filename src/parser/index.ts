@@ -23,6 +23,12 @@ export {
 } from './entity-registry';
 
 export {
+	validateSemanticModel,
+	deriveAtomicMeasureKeys,
+	type AtomicMeasureKey,
+} from './validate-semantic';
+
+export {
 	validateProviders,
 	collectEntitySurfaces,
 	resolveImportRef,
