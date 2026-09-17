@@ -70,22 +70,52 @@ export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
 /**
  * Filesystem path configuration for the `paths` block.
  *
- * Only keys used by the barrel/codegen machinery are validated here. Other
- * legacy `paths.*` keys flow through via `.passthrough()` so existing configs
- * keep working.
+ * **This is the single source of truth for `paths.*`.** The CLI's
+ * `CodegenConfig['paths']` (`src/cli/shared/context.ts`) is derived from it via
+ * `z.input<>`, so a key added here is typed everywhere it is read. It used to be
+ * a hand-maintained duplicate, which drifted: `jobs_dir` was added here for
+ * RFC-0005 and never reached the interface, producing a TS2339 that no CI job
+ * ran (GATE-1, #599). Every key below is one the codebase actually reads —
+ * adding a reader without declaring it here is the defect to avoid.
  *
+ * `.passthrough()` stays for genuinely unknown legacy keys.
+ *
+ * - `backend_src`: backend source root. Default `src` (`app/backend/src` under
+ *   the `clean` architecture's own defaults).
+ * - `frontend_src`: frontend source root (ADR-038 emitter).
+ * - `entities` / `entities_dir`: where entity YAML is read from.
+ * - `events_dir` / `jobs_dir` / `providers`: definition roots for the events,
+ *   jobs (RFC-0005) and integration-provider (RFC-0001) loaders.
+ * - `subsystems`: install root for vendored subsystem runtime files.
+ * - `modules_dir`: vendor target for `auth-integrations` (#303).
+ * - `orchestration_src`: orchestration emission root (ADR-032 Phase 3-2 / O-6).
  * - `generated`: directory where codegen-owned barrel files are written
  *   (modules.ts, schema.ts). Relative to project root. Default: `src/generated`.
  */
 export const PathsConfigSchema = z
   .object({
+    backend_src: z.string().optional(),
+    frontend_src: z.string().optional(),
+    entities: z.string().optional(),
+    entities_dir: z.string().optional(),
     events_dir: z.string().optional(),
     jobs_dir: z.string().optional(),
+    providers: z.string().optional(),
+    subsystems: z.string().optional(),
+    modules_dir: z.string().optional(),
+    orchestration_src: z.string().optional(),
     generated: z.string().default("src/generated"),
   })
   .passthrough();
 
 export type PathsConfig = z.infer<typeof PathsConfigSchema>;
+
+/**
+ * The `paths` block as it appears in raw, un-parsed YAML: same keys, but
+ * defaulted ones are still optional. This is what the CLI holds — it reads
+ * `codegen.config.yaml` directly rather than through `.parse()`.
+ */
+export type PathsConfigInput = z.input<typeof PathsConfigSchema>;
 
 // ============================================================================
 // Patterns Config (ADR-031, PATTERN-5)

@@ -15,7 +15,7 @@ import { Module, Global } from '@nestjs/common';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '../../schema';
-import { DRIZZLE } from '../constants/tokens';
+import { DRIZZLE } from '@shared/constants/tokens';
 
 export { DRIZZLE };
 export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;

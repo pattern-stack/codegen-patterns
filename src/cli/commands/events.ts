@@ -406,13 +406,11 @@ function resolveSubsystemsRootFromContext(
 ): string {
 	// Lazy import to avoid Context coupling in pure-test paths.
 	// Mirrors `subsystems-path.ts:resolveSubsystemsRootFromConfig` semantics.
-	const configured = (config as { paths?: { subsystems?: string } } | null)?.paths
-		?.subsystems;
+	const configured = config?.paths?.subsystems;
 	if (typeof configured === 'string' && configured.length > 0) {
 		return path.resolve(cwd, configured);
 	}
-	const backendSrc = (config as { paths?: { backend_src?: string } } | null)?.paths
-		?.backend_src;
+	const backendSrc = config?.paths?.backend_src;
 	const base =
 		typeof backendSrc === 'string' && backendSrc.length > 0 ? backendSrc : 'src';
 	return path.resolve(cwd, base, 'shared', 'subsystems');

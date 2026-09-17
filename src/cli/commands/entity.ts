@@ -85,9 +85,7 @@ import type { NounModule } from '../noun-module.js';
  * entity loader (where it fails entity validation).
  */
 function resolveProvidersDir(ctx: Context): string {
-	const fromConfig = (
-		ctx.config as { paths?: { providers?: string } } | null | undefined
-	)?.paths?.providers;
+	const fromConfig = ctx.config?.paths?.providers;
 	return fromConfig != null
 		? path.resolve(ctx.cwd, fromConfig)
 		: path.resolve(ctx.cwd, 'definitions/providers');
@@ -220,13 +218,10 @@ async function hints(ctx: Context): Promise<Hint[]> {
 	// it is a post-step of `entity new`. Surface that here when the project has
 	// provider definitions, so the only discoverability path doesn't depend on
 	// reading `entity new --help`.
+	const configuredProviders = ctx.config?.paths?.providers;
 	const providersDir =
-		(ctx.config as { paths?: { providers?: string } } | null | undefined)?.paths
-			?.providers != null
-			? path.resolve(
-					ctx.cwd,
-					(ctx.config as { paths: { providers: string } }).paths.providers,
-				)
+		typeof configuredProviders === 'string' && configuredProviders.length > 0
+			? path.resolve(ctx.cwd, configuredProviders)
 			: path.resolve(ctx.cwd, 'definitions/providers');
 	if (fs.existsSync(providersDir)) {
 		baseHints.push({
@@ -443,9 +438,7 @@ export class EntityNewCommand extends Command {
 		// rest of the backend tree lives) with `src` as final fallback — the
 		// same default `subsystems-path.ts` uses for `subsystems` root.
 		// Recursive scan tolerates absent dir (returns empty registry).
-		const backendSrcForHandlers =
-			(ctx.config as { paths?: { backend_src?: string } } | null | undefined)
-				?.paths?.backend_src ?? 'src';
+		const backendSrcForHandlers = ctx.config?.paths?.backend_src ?? 'src';
 
 		// `runtimeMode` (ADR-037) is resolved above — it drives the bridge
 		// registry output (mode-aware) plus every runtime import specifier the
@@ -458,9 +451,7 @@ export class EntityNewCommand extends Command {
 
 		// Orchestration emission root (ADR-032 Phase 3-2 / O-6). Defaults to
 		// `${backend_src}/orchestration`, override via `paths.orchestration_src`.
-		const orchestrationConfigured = (
-			ctx.config as { paths?: { orchestration_src?: string } } | null | undefined
-		)?.paths?.orchestration_src;
+		const orchestrationConfigured = ctx.config?.paths?.orchestration_src;
 		const orchestrationOutputRoot = path.resolve(
 			ctx.cwd,
 			typeof orchestrationConfigured === 'string' && orchestrationConfigured.length > 0

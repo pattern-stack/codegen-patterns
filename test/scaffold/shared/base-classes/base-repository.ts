@@ -6,7 +6,7 @@
  * This scaffold stub uses Drizzle directly with a generic table reference.
  */
 import { eq, isNull } from 'drizzle-orm';
-import type { DrizzleClient } from '../types/drizzle';
+import type { DrizzleClient } from '@shared/types/drizzle';
 
 export abstract class BaseRepository<TEntity extends { id: string }> {
   protected abstract readonly table: any; // eslint-disable-line @typescript-eslint/no-explicit-any

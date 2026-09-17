@@ -1102,9 +1102,7 @@ export async function buildInitPlan(
 	//     so the user knows what to install. Never fails init.
 	// `@pattern-stack/codegen` itself gains no runtime dep from this.
 	if (frontend) {
-		const frontendSrc =
-			(ctx.config as { paths?: { frontend_src?: string } } | null | undefined)
-				?.paths?.frontend_src ?? 'apps/frontend/src';
+		const frontendSrc = ctx.config?.paths?.frontend_src ?? 'apps/frontend/src';
 		const frontendRoot = path.dirname(path.join(cwd, frontendSrc));
 		const pkgPath = path.join(frontendRoot, 'package.json');
 		const depsList = Object.entries(FRONTEND_EMITTED_DEPS)
