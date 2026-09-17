@@ -355,7 +355,7 @@ async function vendoredLeg(): Promise<number> {
 		//    generation + full-tree typecheck, zero errors, no excludes.
 		log('running bunx tsc --noEmit --skipLibCheck (full consumer tree, no subsystem excludes)');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
-		const errs = scopeToConsumer(tsc.out + tsc.err);
+		const errs = scopeToConsumer(tsc.out + tsc.err, tmpDir);
 		if (errs.length > 0) {
 			for (const line of errs) console.error(line);
 			logError(`${errs.length} typecheck error(s) in consumer-emitted code`);
@@ -518,7 +518,7 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 			'utf-8',
 		);
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', checkDir);
-		return scopeToConsumer(tsc.out + tsc.err);
+		return scopeToConsumer(tsc.out + tsc.err, checkDir);
 	} finally {
 		try {
 			fs.rmSync(checkDir, { recursive: true, force: true });

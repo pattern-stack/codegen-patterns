@@ -54,7 +54,13 @@ export class <%= searchQuery.useCaseClassName %> {
       and(...conditions);
 
     const [items, total] = await Promise.all([
+<% if (hasTimestamps) { -%>
       this.service.list({ where, limit: input.limit, offset: input.offset, orderBy: asc(<%= entityNamePlural %>.createdAt) }),
+<% } else { -%>
+      // No `timestamps` behavior on this entity — order by the uuid primary key
+      // instead of a `created_at` column that does not exist (#604).
+      this.service.list({ where, limit: input.limit, offset: input.offset, orderBy: asc(<%= entityNamePlural %>.id) }),
+<% } -%>
       this.service.count(where),
     ]);
 

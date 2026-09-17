@@ -33,6 +33,17 @@
 /** `path/to/file.ts(12,5): error TS2307: …` — group 1 is the file location. */
 const DIAGNOSTIC_RE = /^(.+?)\((\d+),(\d+)\): error TS\d+:/;
 
+/** True for a location `tsc` printed as an absolute path. */
+function isAbsolute(file: string): boolean {
+	return file.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file);
+}
+
+/** True when `file` is `dir` itself or sits underneath it. */
+function isInside(file: string, dir: string): boolean {
+	const normalized = dir.replace(/[/\\]+$/, '');
+	return file === normalized || file.startsWith(`${normalized}/`) || file.startsWith(`${normalized}\\`);
+}
+
 /**
  * Return the `tsc` diagnostics located in files the generator emitted.
  *
@@ -42,13 +53,21 @@ const DIAGNOSTIC_RE = /^(.+?)\((\d+),(\d+)\): error TS\d+:/;
  * whole-program or tsconfig error, e.g. TS18003 "no inputs were found") is
  * kept — it means the gate did not compile what it thought it was compiling.
  *
+ * `projectDir` is optional and only matters for a harness that compiles the
+ * generated tree against sources OUTSIDE it — `test/smoke-integration/run.ts`
+ * maps this repo's `runtime/` and surface packages in through tsconfig `paths`,
+ * so `tsc` can report an ABSOLUTE location that the `../` rule would not catch.
+ * Pass it and absolute locations outside the project are dropped too.
+ * Diagnostics inside this repo's own `runtime/` are `bun run typecheck`'s
+ * subject, which `just test-all` runs; they are not a smoke gate's.
+ *
  * One returned entry = one diagnostic, so `.length` is the error count. Each
  * entry carries `tsc`'s indented elaboration lines (the "Type X is not
  * assignable to Y" chain under a TS2416) joined with newlines, because that
  * chain is usually the only part that says *why* — dropping it makes a red
  * gate unreadable without re-running `tsc` by hand.
  */
-export function consumerErrors(output: string): string[] {
+export function consumerErrors(output: string, projectDir?: string): string[] {
 	const diagnostics: string[][] = [];
 	// The diagnostic currently being accumulated, or null while inside one that
 	// is being dropped (so its elaboration lines are dropped with it).
@@ -73,6 +92,10 @@ export function consumerErrors(output: string): string[] {
 			// relative to it. A leading `../` means the file lives outside.
 			if (file.startsWith('../') || file.startsWith('..\\')) continue;
 			if (/(^|[/\\])node_modules[/\\]/.test(file)) continue;
+			// An absolute location is dropped only when we KNOW it is outside the
+			// project. Without `projectDir` we cannot know, and I9 says the
+			// failure mode to avoid is the silent pass — so it is kept.
+			if (projectDir && isAbsolute(file) && !isInside(file, projectDir)) continue;
 		}
 		// Either a located diagnostic inside the project, or an unlocated
 		// whole-program / tsconfig diagnostic. Both are real.
