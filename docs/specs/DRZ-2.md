@@ -1,7 +1,7 @@
 # DRZ-2 — drizzle-orm 1.0.0-rc.4: generator, runtime, scaffold, harnesses
 
-**Status:** Draft
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #584 · **Epic:** #579 · **Project:** #578
 **Depends on:** DRZ-1 (#583), GATE-1 (#599) · **Blocks:** TEN-1, REL-1, SEM-1, CAP-1 (after the checkpoint)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · PLAN §4.3–4.4
@@ -103,29 +103,35 @@ the four smoke harness projects, the scaffold integration suite, the tarball smo
   (`packages/{codegen-calendar,codegen-crm,codegen-mail,codegen-messaging,codegen-transcript,graph-components}` —
   none). So "same treatment for every other publishable package" is a no-op here; recorded so a future reader does
   not re-hunt.
-- The 0.45.2 copy in `bun.lock` arrives transitively via a published `@pattern-stack/codegen@0.30.0` dependency of a
-  workspace package. Confirm it disappears (or is harmless) after the swap; a second physical drizzle in the repo's
-  own `node_modules` is the exact hazard this PR closes.
+- The 0.45.2 copy in `bun.lock` arrives transitively: the five surface packages under `packages/` peer-depend on
+  `@pattern-stack/codegen` by RANGE (`>=0.20.0 <1.0.0`), so bun resolves that peer from npm (0.30.0), which still
+  declares `drizzle-orm ^0.45.2`. **Verified harmless:** the copy exists only in bun's store under
+  `.bun/@pattern-stack/codegen@0.30.0/`; `node_modules/@pattern-stack/` contains only workspace symlinks, there is no
+  `node_modules/@pattern-stack/codegen`, and `node_modules/drizzle-orm` is 1.0.0-rc.4. Nothing in this repo resolves
+  the old copy. (It did bite during the spike: a probe script placed in `/tmp` resolved `drizzle-orm` from outside the
+  repo and silently picked up 0.45, producing a misleading result. Probe from inside the repo.)
+- `bun.lock` is **gitignored** here, so the pins that travel are the ones in `package.json`. That is why the
+  devDependency pin is exact rather than a caret.
 
 ### 2. Runtime (`runtime/**`)
 
-- Fix the three TS7053 sites **at the declaration**, not the use site: narrow
-  `BaseRepository.table` from `PgTableWithColumns<any>` to `PgTableWithColumns<TableConfig>`. That gives
-  `$inferSelect` a concrete object type, so `returning()` resolves to `TReturning[]` and `rows[0]` type-checks at all
-  three sites. This **removes** an `any` (and its `eslint-disable`) rather than adding one. Verified: the single
-  change clears all three errors and `bun run typecheck` exits 0.
+- Fix the three TS7053 sites. **The design's fix was wrong and was replaced — see Found #1.** What shipped: a typed
+  assertion on the awaited result (`as TEntity[]` / `as Record<string, unknown>[]`) at each of the three sites,
+  replacing the element-level `rows[0] as TEntity` that was already there. No new `any`, no `as unknown as`; the
+  assertion states a fact the 1.0 types cannot express while the table type is `any` (the union's non-array arm is
+  unreachable because `.returning()` was called), and it is the same assertion the element-level cast always made.
+  Each site carries a comment naming the cause and **#603**, which tracks the real fix.
   - The other `PgTableWithColumns<any>` occurrences (`base-repository.ts:356`, `integrated-entity-repository.ts:281`,
     `junction-integration-repository.ts:25,28,213,233`, `integration-upsert-config.ts:37`,
-    `metadata-entity-repository.ts:22`) are not part of this error class. Narrow them only if free; do not widen the
-    diff chasing them.
+    `metadata-entity-repository.ts:22`) are the same class and are covered by #603. Not touched here.
 - Correct the 4 runtime specs to the measured 1.0 param/row contract (per §Spike). The affected specs' header
   comments document the old contract and must be corrected too, or the next reader re-learns it the hard way.
 - `getTableColumns` → `getColumns`. 1.0 still exports `getTableColumns` but marks it `@deprecated`
   (`drizzle-orm/utils.d.ts:50-54`), so this is I7 hygiene rather than a compile break. **Four** spec files, not the
   three PLAN §4.3 lists: `src/__tests__/runtime/subsystems/{integration-audit,job-orchestration,bridge-delivery,domain-events}.schema.spec.ts`.
 - `runtime/types/drizzle.ts` — `NodePgDatabase<any>` compiles on 1.0 (1.0's generic is
-  `TRelations extends AnyRelations = EmptyRelations`). Tighten to the default (`NodePgDatabase`) only if free; the
-  `any` is pre-existing, and REL-1 is what gives it a real relations type.
+  `TRelations extends AnyRelations = EmptyRelations`). **Left as-is**: the `any` is pre-existing, and REL-1 is what
+  gives it a real relations type. Narrowing it to `EmptyRelations` now would have to be undone by REL-1.
 
 ### 3. Emitted scaffold (`src/cli/shared/init-scaffold.ts`, `databaseModuleContent`, `:201-236`)
 
@@ -188,28 +194,69 @@ inside the generated project and outside `node_modules`. That is scoping the gat
 code), which is what the filter was always *meant* to be; it is not an error-class filter, and it is what #576's own
 "Fix" section asks for.
 
-Then fix what tsc truly reports. Two known targets:
+What replaced them is **one shared helper**, `test/smoke/_consumer-errors.ts`, imported by all three harnesses
+(the "kept narrow + duplicated intentionally" comment no longer holds: three copies of a subtle location parser is
+exactly DRZ-1 Found #6's failure mode). It has **14 unit tests**
+(`src/__tests__/smoke/consumer-errors.test.ts`) pinning that each previously-filtered message class now *fails* a
+gate, and it keeps `tsc`'s indented elaboration lines attached to their diagnostic — without them a red TS2416 is
+unreadable, which cost a diagnosis round-trip during implementation.
 
-- **#575** — vendored events: `generated/bus.ts` imports `'../events-errors'`, which `VENDORED_RUNTIME_FILES`
-  (`init-scaffold.ts:146-199`) does not vendor; `runtime/subsystems/events/event-scheduler.ts` imports
-  `'./events-errors'` and has the same gap. If it is the one-file vendoring omission #575 describes, fix it here and
-  close #575.
-- **The 2 errors GATE-1 measured on the green `clean-lite-ps` path** (GATE-1 §Failure 2: raw tsc = 2, reported = 0).
-  Identify and fix both.
+`TS5101` needed no exclusion after all: the scaffold stopped emitting `baseUrl` (GATE-1 era), so the deprecation
+never fires. **Zero exclusions remain.**
 
-A residual class that genuinely cannot be fixed here gets its own issue **and** a named, single-purpose, commented
-expectation in the harness — never a broad filter (I9). `just test-smoke-junction-clean` is explicitly excluded from
-this work: it is known-red on #602, it is in neither `test-all` nor CI, and this PR neither repairs it nor filters
-for it.
+**Measured surface after deletion, and what each class turned out to be** (main smoke, 14 errors):
+
+| Class | n | Root cause | Outcome |
+|---|---|---|---|
+| `src/modules/connections/**` → `../connection.{service,entity}`, `./connections.module` | 13 | `subsystem install auth-integrations` vendors `connection.yaml` into `entities/` *after* step 5's `entity new --all`, and its own next-step output says to run `entity new connection`. The smoke stopped one command short of the documented consumer flow. | **Fixed by completing the flow** — new step 5.8 runs `entity new entities/connection.yaml --force` and asserts `connection.service.ts` exists. All 13 clear. The old comment's claim that this "surfaces a separate codegen enum literal-type bug" is no longer true. |
+| `generated/bus.ts` → `'../events-errors'` | 1 | #575 | **Fixed**, see below |
+
+Junction smoke (clean-lite-ps) then surfaced a sibling of #575: `generated/bus.ts` → `'../events.tokens'`.
+`eventsRuntimeImports()` (`event-codegen-generator.ts:114-118`) is the closed list of the generated bus's three
+vendored-mode sibling imports — protocol, tokens, errors — and only the protocol was in `VENDORED_RUNTIME_FILES`.
+All three are now vendored, plus `subsystems/token-key.ts` (`events.tokens.ts`'s only relative import), with a
+comment naming the closed list so a fourth import cannot be forgotten. **These two are exactly the "2 errors GATE-1
+measured on the green `clean-lite-ps` path"** — confirmed by `just test-smoke-junction-clean` falling from GATE-1's
+raw 120 to 118.
+
+Subsystems smoke (package leg) surfaced one more: `src/worker.ts` →
+`'@pattern-stack/codegen/runtime/subsystems/jobs/index'`, which the old junction/subsystems filters dropped by
+matching `'@pattern-stack/codegen/`. The package is not installed in checkout mode. **Fixed by telling tsc where it
+is** — the isolated check-dir tsconfig now maps `@pattern-stack/codegen/runtime/*` and friends onto this checkout's
+own source. That is strictly stronger than the exclusion: the gate now proves the specifier resolves to a file that
+exists, where before any wrong package specifier passed. It resolves against `runtime/` source rather than the
+published `dist/`; the export-map contract is `just test-post-publish`'s job, and that gate is green.
+
+**Residual, not fixed here, both tracked:**
+
+- **#602** — `just test-smoke-junction-clean`. Untouched, no filter added, no repair attempted (charter §5 non-goal).
+  It now reports its real number, 118, instead of 21 through a filter. `CLAUDE.md` › Known-red gates updated with the
+  new number and retargeted from #599 to #602.
+- **#604** — `just test-smoke-integration` scopes its pass/fail to `src/integrations/**` and *prints* the rest. That
+  print is 7 errors: 6 × the list use-case emitting `desc(<table>.createdAt)` for entities with no `timestamps`
+  behavior, plus one duplicate-`@nestjs/common` artifact of the harness. **Proven pre-existing**, not caused by the
+  bump: reproduced byte-identically on a clean `dugshub/599-honest-gates` worktree at `drizzle-orm@0.45.2` (only the
+  type printout differs, `PgColumn<…>` vs 1.0's `PgBuildColumn<…>`). Recorded in `CLAUDE.md` beside the known-red
+  table.
 
 ### 6. drizzle-kit
 
 The generator never runs kit except `src/cli/commands/dev.ts:284` (`bunx drizzle-kit push --config …`) and the
-scaffold integration harness (`drizzle-kit push` against `test/scaffold/drizzle.config.ts`). Verify push still works
-on kit 1.0 — `just test-integration` is the gate that proves it. Document the rc.4 `generate` output layout
-(`<timestamp>_<name>/{migration.sql,snapshot.json}`, snapshot `version: "8"`, no `meta/_journal.json`) under
-`docs/consumer/` so a consumer knows what changed; **verify the layout against the installed kit before writing it
-down**, do not copy the draft's numbers.
+scaffold integration harness (`drizzle-kit push` against `test/scaffold/drizzle.config.ts`). `push` works unchanged
+on kit 1.0 — `just test-integration` is green, including its `Schema pushed` step. `defineConfig` is unchanged.
+
+The `generate` layout was **verified against the installed `drizzle-kit@1.0.0-rc.4`**, not copied from the draft
+(the draft said `version: "8"`; it is the number `8`):
+
+```
+drizzle/20260917225701_goofy_the_santerians/
+  migration.sql
+  snapshot.json      # version: 8, dialect: "postgres",
+                     # keys: ddl / dialect / id / prevIds / renames / version
+```
+
+One directory per migration, no `meta/_journal.json` — ordering comes from each snapshot's `prevIds`. Written up in
+the new `docs/consumer/drizzle.md`, linked from CONSUMER-SETUP's reference list.
 
 ### 7. Docs + version
 
@@ -241,61 +288,128 @@ Re-verify each row when moving off `1.0.0-rc.4`. Each is load-bearing somewhere 
 |---|---|---|---|
 | A1 | `drizzle()` (node-postgres) | `drizzle({ client: pool })`; config is `Omit<DrizzleConfig, 'schema'>` + `codecs?`; `relations` is the slot REL-1 fills | emitted `database.module.ts`; scaffold `database.module.ts` + `tests/setup.ts`; `docs/CONSUMER-SETUP.md` |
 | A2 | `NodePgDatabase<TRelations extends AnyRelations = EmptyRelations>` | usable unparameterised and with `any` | `runtime/types/drizzle.ts`; emitted `DrizzleDB` |
-| A3 | insert `.returning()` typing | `TReturning = TTable['$inferSelect']`, result `TReturning extends undefined ? QueryResult<never> : TReturning[]` — so the table type must not be `any` | the 3 TS7053 sites; `BaseRepository.table: PgTableWithColumns<TableConfig>` |
-| A4 | `PgTableWithColumns<TableConfig>` | assignable from a concrete `pgTable(...)`; index access yields `PgColumn` | `BaseRepository.table`, every generated repository's `table` property |
+| A3 | insert `.returning()` typing | `TReturning = TTable['$inferSelect']` (`insert.d.ts:84`), result `TReturning extends undefined ? QueryResult<never> : TReturning[]` (`insert.d.ts:96`). While the table type is `any` this is a union, so the result needs an assertion. `update().set().returning()` is NOT affected — `PgUpdateReturningAll` builds `TReturning` from `SelectResult<…>` (`update.d.ts:64`). | the 3 insert sites in `runtime/base-classes/`; tracked properly by **#603** |
+| A4 | `PgTableWithColumns<T>` | `= PgTable<T> & T['columns'] & {…}` (`pg-core/table.d.ts:21`). With `T = any` the intersection collapses to `any`. With `T = TableConfig` it is **not** a supertype of a concrete table (`TableConfig['columns']` is an index signature a concrete column map does not satisfy) and string-indexing it yields `PgColumn \| undefined` under `noUncheckedIndexedAccess`, which consumer tsconfigs set. | `BaseRepository.table` stays `<any>`; see Found #1 and **#603** |
 | A5 | `getColumns` | exported from the root; `getTableColumns` deprecated | 4 schema specs |
-| A6 | pg codecs / pg-proxy param mapping | jsonb params reach the driver callback as **objects**; jsonb row values pass through **unparsed** | the 4 integration runtime specs (cursor store, run recorder) |
+| A6 | pg codecs / pg-proxy param mapping | jsonb params reach the driver callback as **objects**; jsonb row values pass through **unparsed**. `Date` params are still ISO-stringified by pg-proxy. The `drizzle(async (sql, params, method) => …)` callback signature itself is unchanged. | the 4 integration runtime specs (cursor store, run recorder), and any future spec asserting captured params for a jsonb column |
 | A7 | `relations` **absent** from the root export | nothing imports it | guarded by DRZ-1's `src/__tests__/templates/no-v1-relations-emission.test.ts` |
 | A8 | `pgTable(name, cols, cb)` extraConfig | the object-returning form still type-checks (array form is the 1.0 shape) | `runtime/subsystems/**/*.schema.ts`, generated schemas — if the object form is dropped in a later RC this becomes a wide mechanical change |
-| A9 | `drizzle-kit push` + `defineConfig` | unchanged invocation on kit 1.0 | `src/cli/commands/dev.ts:284`; `just test-integration` |
+| A9 | `drizzle-kit push` + `defineConfig` | unchanged invocation on kit 1.0 (proven by `just test-integration`). `generate` writes `drizzle/<ts>_<name>/{migration.sql,snapshot.json}`, snapshot `version: 8`, no `meta/_journal.json`. | `src/cli/commands/dev.ts:284`; `test/scaffold/drizzle.config.ts`; `docs/consumer/drizzle.md` |
+| A10 | plain `1.0.0-rc.N` versions exist on npm | both `drizzle-orm` and `drizzle-kit` publish hash-free `1.0.0-rc.*` alongside many `1.0.0-rc.N-<sha>` builds. Pin the **plain** one; `drizzle-kit@latest` is still `0.31.x`, and its `rc` dist-tag is what tracks the 1.0 line. | the exact pins in `package.json` and the four harness `RUNTIME_DEPS` lists |
 
-## Acceptance
+## Found during implementation
+
+Things the pre-implementation spec got wrong or missed. Each is reflected in the sections above.
+
+1. **The designed fix for the 3 TS7053 errors was wrong.** Narrowing `BaseRepository.table` to
+   `PgTableWithColumns<TableConfig>` does clear all three and makes `bun run typecheck` exit 0 — which is exactly why
+   it looked right. It is wrong for *generated* code, and only the smoke gates say so:
+   - 5 × `TS2416` on generated repositories — `PgTableWithColumns<concrete>` is not assignable to
+     `PgTableWithColumns<TableConfig>`, because `TableConfig['columns']` is `Record<string, PgColumn>` and a concrete
+     column map has no index signature ("Index signature for type 'string' is missing").
+   - ~35 further errors in the vendored base classes — consumer tsconfigs set `noUncheckedIndexedAccess: true`, so
+     `this.table['id']` becomes `PgColumn | undefined`.
+
+   The repo's own `tsconfig.build.json` compiles no concrete subclass, so neither shows up in `bun run typecheck`.
+   Shipped instead: a typed assertion on the awaited result at the three sites, and **#603** for the real fix
+   (make the class generic over its table and read columns via `getColumns`) — which REL-2/REL-3 needs anyway.
+
+2. **The 4 failing specs were not "assert SQL/params" in general — they were four instances of one jsonb mapping
+   change**, and the diagnosis had to be done from *inside* the repo. A probe script written to the scratchpad
+   resolved `drizzle-orm` from outside the repo and silently picked up the transitive 0.45.2 copy, producing a
+   confident and wrong "behaviour unchanged" reading. Two of the four are read-side (a fixture that returned a JSON
+   *string* where `pg` returns an object) and two are write-side (params).
+
+3. **The smoke filters were three copies, and the `.schema.ts` / message-class exclusions were only half of it.**
+   The real blocker for #576 was that the exclusions matched the error *message*. Replaced by one shared helper with
+   unit tests rather than three synchronised copies.
+
+4. **`TS5101` needed no exclusion.** The scaffold stopped emitting a deprecated `baseUrl`, so the diagnostic the
+   filter was written for no longer fires. Zero exclusions remain, not one.
+
+5. **Deleting the filters surfaced three classes, not the one the spec predicted** — and all three were fixable at
+   the root rather than needing a named expectation: the smoke stopping one command short of the documented consumer
+   flow (13 errors), #575 *plus an unlisted sibling* (`'../events.tokens'` — the generated bus has three vendored
+   siblings, not two), and an unresolved package specifier that the subsystems smoke could simply be told how to
+   resolve. See §5.
+
+6. **`getTableColumns` appears in 4 spec files, not 3**, and `drizzle-orm@0.45` appears in 4 harnesses, not 2. Both
+   counts came from PLAN §4.3 and were stale.
+
+7. **`test/scaffold/package.json` needed no pin at all** (GATE-1 emptied it deliberately); the scaffold's actual 1.0
+   work was its `database.module.ts`, `tests/setup.ts` and `schema.ts` header. The draft had this backwards.
+
+8. **`drizzle(pool)` — the single positional form — is also gone in 1.0**, not just `drizzle(pool, { schema })`.
+   Three `test/integration/*.drizzle.integration.test.ts` files used it. Those run outside `test-all`, so nothing
+   would have caught them.
+
+9. **The scoping helper had to keep `tsc`'s elaboration lines.** The first version returned primary lines only,
+   which made a TS2416 unreadable and cost a diagnosis round-trip — the "why" is entirely in the indented chain.
+
+## Acceptance — all met
 
 Output from the run made **after the last edit** (charter I9).
 
-- `bun run typecheck && bun run build && bun run test` green.
-- `just test-all` green — after GATE-1 that is `typecheck` + `test-unit` + `test-baseline` + `test-smoke` +
-  `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` +
-  `test-junction` + `test-integration-emit` + `test-smoke-integration`. It does **not** include
-  `test-smoke-junction-clean` (known-red, #602).
-- `just test-integration` green (Docker).
-- `just test-post-publish` green (tarball peer range resolves).
-- **No filtered error classes** in any smoke: the only exclusions left are location-scoping and `TS5101`.
-- Generated project boots and serves `/docs-json` with non-empty component schemas
-  (`test/smoke/verify-openapi.ts`).
-- `grep -rn "drizzle-orm@0\|drizzle-kit@0\|drizzle-orm@\^0\|drizzle-kit@\^0\|\^0\.45\|0\.30↔0\.45"` over tracked
-  files → nothing that describes current state (CHANGELOG history and prior specs are history, not current state).
-- `grep -rn "drizzle(pool"` over tracked files → no emitter, runtime, scaffold or doc hit.
-- #576 closed by this PR; #575 closed or explicitly carried with a reason.
+| Gate | Result |
+|---|---|
+| `bun run typecheck` | **exit 0** |
+| `bun run build` | **exit 0** |
+| `bun run test` (baseline) | **exit 0** — all passed |
+| `just test-all` | **exit 0** — typecheck · unit 3160/3160 · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · junction snapshots · integration-emit · smoke-integration |
+| `just test-integration` | **exit 0** — 64 pass · 2 skip (pre-existing `test.skip` in `bridge-e2e.test.ts`) · 0 fail |
+| `just test-post-publish` | **exit 0** — tarball contract + full consumer workflow from the tarball |
+| `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, unchanged by design; now reports its real 118 |
 
-## Risks
+- **No filtered error classes** in any smoke. The only thing `test/smoke/_consumer-errors.ts` drops is a diagnostic
+  whose *file location* is outside the generated project or inside `node_modules` — the gate's subject, not an error
+  class. `TS5101` needed no carve-out.
+- Generated project boots and serves `/docs-json` with non-empty component schemas: 19 schemas / 12 paths
+  (`test/smoke/verify-openapi.ts`), plus the closed-by-default auth boot check.
+- `git grep -nE "drizzle-orm@0|drizzle-kit@0|drizzle-orm@\^0|drizzle-kit@\^0"` → one hit, the `CLAUDE.md` line that
+  *records* the 0.45.2 pre-existence proof for #604. Nothing describes current state.
+- `git grep -n "drizzle(pool"` → two hits, both correct: the before/after table in `docs/consumer/drizzle.md`, and
+  `src/__tests__/scanner/orm-detector.test.ts`'s sample-consumer fixture, which was also moved to the 1.0 form.
+- **#576 closed** (the filters are gone, with unit tests pinning the behaviour). **#575 closed** (all three of the
+  generated bus's vendored siblings, plus `token-key.ts`). **#603** and **#604** filed for what could not be fixed
+  in scope.
+- `drizzle-orm` as a required peer resolves end-to-end: the tarball smoke's `npm install` auto-installs it, and every
+  `exports` entry imports under node — `./subsystems` would throw `ERR_MODULE_NOT_FOUND` otherwise.
 
-- **rc.4 → GA drift.** Mitigated by the checklist above and by exact pins in every harness.
-- **Deleting the filters exposes more than #575 + the 2 known errors.** Time-box; split with issues and named
-  single-purpose expectations rather than re-filtering. Report every residual class in this spec.
-- **Narrowing `BaseRepository.table` breaks a generated repository's assignment.** `PgTableWithColumns<TableConfig>`
-  must accept a concrete `pgTable(...)`. Typecheck proves the runtime; the four smokes + the baseline prove the
-  generated side. If a concrete table is rejected, fall back to constraining the generic on the class rather than
-  re-introducing `any`.
-- **Two drizzle copies in this repo's own `node_modules`.** If the transitive 0.45.2 survives the swap, the
-  dual-identity failure mode moves from consumers into our own harnesses.
+## Risks — outcome
+
+- **rc.4 → GA drift.** Open. Mitigated by the A1–A10 checklist and by exact pins in every harness.
+- **Deleting the filters exposes more than #575 + the 2 known errors.** It did (§5, Found #5) — and all of it was
+  fixable at the root. Nothing needed a named expectation.
+- **Narrowing `BaseRepository.table` breaks a generated repository's assignment.** **This one happened** (Found #1),
+  and only the smoke gates caught it — `bun run typecheck` was green with the broken narrowing, because the repo
+  compiles no concrete subclass. Worth remembering: a runtime-type change is not validated by this repo's typecheck.
+- **Two drizzle copies in this repo's own `node_modules`.** The transitive 0.45.2 survives in bun's store but is
+  unreachable from anything this repo compiles (§1). It *did* mislead a spike probe written outside the repo
+  (Found #2).
 
 ## After merge — mandatory checkpoint (charter §6)
 
 Post a checkpoint entry on #578 and revise `PLAN.md` / the charter against what this PR actually surfaced, before
 TEN-1 / REL-1 / SEM-1 / CAP-1 start.
 
-## Implementation order
+## Implementation order — as executed
 
 1. Dependency shape (§1). `bun install`.
-2. Runtime type fix + the 4 spec corrections + `getColumns` (§2). `bun run typecheck && bun test src/__tests__/runtime`.
-3. Emitted scaffold (§3) + harness pins and scaffold API (§4). `just test-smoke` first, then the rest.
-4. Delete the filters (§5); measure; fix #575 and the 2 masked `clean-lite-ps` errors; triage residuals.
-5. drizzle-kit verification + `docs/consumer/` layout note (§6).
+2. Runtime fix + the 4 spec corrections + `getColumns` (§2). `bun run typecheck && bun test src/__tests__/runtime`.
+3. Emitted scaffold (§3) + harness pins and scaffold API (§4).
+4. Delete the filters (§5); measure; fix each class at its root; file #603/#604 for what could not be.
+5. drizzle-kit verification + `docs/consumer/drizzle.md` (§6).
 6. Docs (§7).
 7. Full gates from a clean tree, after the last edit.
 
+**One process note worth carrying forward:** step 2 was declared done on a green `bun run typecheck`, and step 4's
+first smoke run is what revealed the fix was wrong. For anything touching `runtime/base-classes/**`, run
+`just test-smoke` *before* believing typecheck.
+
 ## Open questions
 
-- **Version bump in this PR?** Default: **no**. `[Unreleased] — 0.31.0` stays open; merging a bump publishes, so
-  cutting the release is the owner's call. Resolve at review if the owner wants 0.31.0 cut with this PR.
+**Resolved: no version bump in this PR.** `[Unreleased] — 0.31.0` stays open and now carries both DRZ-1's and DRZ-2's
+entries. Merging a version bump publishes (CLAUDE.md › Release), so cutting 0.31.0 is the owner's call and should be
+its own commit once the unit is done. Nothing in this PR depends on it.
+
+No others.
