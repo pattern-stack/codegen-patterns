@@ -12,13 +12,12 @@
  * rather than duplicating the token string in multiple places.
  */
 import { Module, Global } from '@nestjs/common';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import * as schema from '../../schema';
 import { DRIZZLE } from '@shared/constants/tokens';
 
 export { DRIZZLE };
-export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
+export type DrizzleDB = NodePgDatabase;
 
 @Global()
 @Module({
@@ -31,7 +30,8 @@ export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
             process.env.DATABASE_URL ??
             'postgresql://postgres:postgres@localhost:5432/scaffold_test',
         });
-        return drizzle(pool, { schema });
+        // Drizzle 1.0: config object, `schema` removed (DRZ-2, #584).
+        return drizzle({ client: pool });
       },
     },
   ],

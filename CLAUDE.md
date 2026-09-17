@@ -219,7 +219,13 @@ Gates that are red on `main` today, on purpose recorded here rather than hidden,
 
 | Gate | Status | Tracking |
 |---|---|---|
-| `just test-smoke-junction-clean` | Red. Reports 21 errors through the smoke's error filter; the raw `tsc` count on the generated project is **120** (112 × TS2307 unresolved module + 8 × TS7006). Only 15 are the junction pipeline; the rest are the `clean` entity pipeline's missing `domain/` + `constants/` barrels, DTO `schemas` barrel, `database.module`, `zod-validation.pipe`, the generated schema barrel's singular/plural filename mismatch, and the `@repo/db/server/schema` location contract. The `clean` backend pipeline has never been typechecked anywhere — the baseline gate compiles `packages/api/src/domain/**/*` only. | #599 (diagnosis in `docs/specs/GATE-1.md` §Failure 2); repair is a proposed split, deferred by charter §5 non-goals |
+| `just test-smoke-junction-clean` | Red, and now reports its real number: **118** errors (110 × TS2307 unresolved module + 8 × TS7006). GATE-1 measured 120 raw behind a filter that reported 21; DRZ-2 deleted the filter (#576) and fixed 2 of the 120 (the vendored events siblings, #575). Only ~15 are the junction pipeline; the rest are the `clean` entity pipeline's missing `domain/` + `constants/` barrels, DTO `schemas` barrel, `database.module`, `zod-validation.pipe`, the generated schema barrel's singular/plural filename mismatch, and the `@repo/db/server/schema` location contract. The `clean` backend pipeline has never been typechecked anywhere — the baseline gate compiles `packages/api/src/domain/**/*` only. | **#602** (diagnosis in `docs/specs/GATE-1.md` §Failure 2); deferred by charter §5 non-goals |
+
+One more error class is **visible but not gating**, recorded for the same reason: `just test-smoke-integration` scopes
+its pass/fail to `src/integrations/**` and prints everything else as `N tsc error(s) OUTSIDE src/integrations/**`.
+Today that is 7 — 6 × the list use-case emitting `desc(<table>.createdAt)` for entities with no `timestamps` behavior
+(**#604**, pre-existing, proven identical at `drizzle-orm@0.45.2`) plus one duplicate-`@nestjs/common` artifact of the
+harness itself. Do not silence the print; fix #604.
 
 ### Template System
 

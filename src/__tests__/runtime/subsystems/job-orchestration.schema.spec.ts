@@ -9,7 +9,7 @@
  *   4. InferSelectModel resolved a concrete row type (no implicit `any` widening).
  */
 import { describe, it, expect } from 'bun:test';
-import { getTableColumns } from 'drizzle-orm';
+import { getColumns } from 'drizzle-orm';
 import {
   jobs,
   jobRuns,
@@ -30,7 +30,7 @@ describe('job-orchestration.schema — import smoke', () => {
 });
 
 describe('job_run — column presence', () => {
-  const cols = getTableColumns(jobRuns) as Record<string, unknown>;
+  const cols = getColumns(jobRuns) as Record<string, unknown>;
 
   it.each([
     'id',
@@ -52,7 +52,7 @@ describe('job_run — column presence', () => {
 });
 
 describe('job_step — column presence', () => {
-  const cols = getTableColumns(jobSteps) as Record<string, unknown>;
+  const cols = getColumns(jobSteps) as Record<string, unknown>;
 
   it.each(['id', 'jobRunId', 'stepId', 'seq', 'kind', 'status', 'output'])(
     'includes column %s',

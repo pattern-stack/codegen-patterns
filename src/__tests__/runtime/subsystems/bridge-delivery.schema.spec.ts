@@ -10,7 +10,7 @@
  * `bridge-delivery.schema.ts` index callback).
  */
 import { describe, it, expect } from 'bun:test';
-import { getTableColumns } from 'drizzle-orm';
+import { getColumns } from 'drizzle-orm';
 import {
   bridgeDelivery,
   bridgeDeliveryStatusEnum,
@@ -30,7 +30,7 @@ describe('bridge-delivery.schema — import smoke', () => {
 });
 
 describe('bridge_delivery — column presence', () => {
-  const cols = getTableColumns(bridgeDelivery) as Record<string, unknown>;
+  const cols = getColumns(bridgeDelivery) as Record<string, unknown>;
 
   it.each([
     'id',
@@ -66,7 +66,7 @@ describe('bridge_delivery — column nullability invariants', () => {
   // The bridge ledger has specific nullability semantics that the schema
   // file documents at length; pin them here so a refactor cannot quietly
   // flip them and break the facade-eager dedup or status-machine guarantees.
-  const cols = getTableColumns(bridgeDelivery) as Record<
+  const cols = getColumns(bridgeDelivery) as Record<
     string,
     { notNull: boolean }
   >;

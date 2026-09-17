@@ -75,14 +75,15 @@ const SURFACE_PACKAGES = ['crm', 'mail', 'calendar', 'transcript'] as const;
 const PROVIDER_STUBS = ['google', 'salesforce'] as const;
 
 // Pinned peer deps — version drift would undermine the harness. Mirrors
-// test/smoke/run-smoke.ts; drizzle pinned to 0.45 to match the repo devDeps.
+// test/smoke/run-smoke.ts; drizzle pinned exactly to the repo's devDep
+// prerelease (charter §8).
 const RUNTIME_DEPS = [
 	'@nestjs/common@10',
 	'@nestjs/core@10',
 	'@nestjs/platform-express@10',
 	'@nestjs/swagger@7',
 	'@anatine/zod-openapi@2',
-	'drizzle-orm@0.45',
+	'drizzle-orm@1.0.0-rc.4',
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',

@@ -6,12 +6,15 @@
  * the operation shape (SELECT/UPDATE, WHERE clauses) and the values
  * written.
  *
- * Note on param shapes: pg-proxy serializes params to strings before
- * handing them to the callback (cursors → JSON strings, Dates → ISO
- * strings). This is pg-proxy-specific; real node-postgres handles typed
- * params directly. Our assertions target the stringified forms since
- * that's what this test harness produces — the Drizzle query builder
- * generates the same SQL shape regardless of driver.
+ * Note on param and row shapes under Drizzle 1.0: the pg codec system does
+ * NOT serialize `jsonb` itself any more (0.45 did, via the column's
+ * `mapToDriverValue` / `mapFromDriverValue`). A `jsonb` bind param reaches the
+ * driver callback as the raw JS object, and a `jsonb` row value from the
+ * driver is passed through unchanged. `pg` serializes objects for `json`/
+ * `jsonb` params and parses `jsonb` columns into objects, so the object IS the
+ * contract on both sides — the fixtures below return what `pg` would return.
+ * `Date` params are still stringified to ISO by pg-proxy. See
+ * docs/specs/DRZ-2.md §A6.
  */
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pg-proxy';
@@ -50,7 +53,7 @@ describe('PostgresCursorStore — single-tenant', () => {
   describe('get', () => {
     it('SELECTs cursor scoped by id only', async () => {
       ({ db, captures } = makeCapturingDb({
-        rows: [['{"systemModstamp":"2026-04-21"}']] as unknown as unknown[],
+        rows: [[{ systemModstamp: '2026-04-21' }]] as unknown as unknown[],
       }));
       store = new PostgresCursorStore(db);
 
@@ -106,12 +109,8 @@ describe('PostgresCursorStore — single-tenant', () => {
       expect(sql.toLowerCase()).not.toContain('tenant_id');
       // id param present.
       expect(params).toContain('sub-1');
-      // Cursor serialized as a JSON string containing the key. pg-proxy
-      // passes jsonb params through as stringified JSON.
-      const cursorParam = params.find(
-        (p) => typeof p === 'string' && p.includes('systemModstamp'),
-      );
-      expect(cursorParam).toBeDefined();
+      // Cursor is jsonb: bound as the object itself under 1.0.
+      expect(params).toContainEqual({ systemModstamp: '2026-04-21T13:00:00Z' });
     });
 
     it('stamps last_integration_at and updated_at with ISO timestamps around now', async () => {
