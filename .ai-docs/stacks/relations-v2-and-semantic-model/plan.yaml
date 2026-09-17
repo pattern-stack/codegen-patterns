@@ -47,7 +47,7 @@ epics:
       Move the generator and everything it emits onto the Drizzle 1.0 line. Two PRs: first delete the v1 `relations()`
       emission (green on both versions), then bump. Scope is the generator only — no consumer migration history, no
       consumer production pin. PLAN §4.
-    issues: ["583", "584"]
+    issues: ["583", "599", "584", "604"]
   - key: "580"
     key_original: rel
     title: "[Epic] Units 2 + 5 — relation graph as the core read contract (backend traversal + frontend accessors)"
@@ -56,7 +56,7 @@ epics:
       scoped at every hop, make generated services delegate to them (plus a typed navigator), and project the same
       graph into the frontend emitter. Tenant scoping (ADR-042) lands first because unscoped traversal is a
       cross-tenant read path. PLAN §5A, §6A.
-    issues: ["585", "586", "587", "588", "589"]
+    issues: ["603", "585", "586", "587", "588", "589"]
   - key: "581"
     key_original: sem
     title: "[Epic] Unit 3 — semantic model emitter (declared AggregateModel for query-surface)"
@@ -134,11 +134,35 @@ issues:
 
       Plan: PLAN §4.3–4.4.
 
+  - key: "599"
+    key_original: gate-1
+    title: "GATE-1: three gates are red on main and outside CI — typecheck, test-smoke-junction-clean, test-integration"
+    size: M
+    depends_on: ["583"]
+    labels: [gate:auto, infrastructure]
+    description: "Added at checkpoint 1. See the issue and docs/specs/GATE-1.md."
+
+  - key: "604"
+    key_original: gate-2
+    title: "GATE-2: list use-case default sort for timestamp-less entities; test-smoke-integration gates on every tsc error"
+    size: S
+    depends_on: ["584"]
+    labels: [gate:auto, templates]
+    description: "Added at checkpoint 1. See the issue and docs/specs/GATE-2.md."
+
+  - key: "603"
+    key_original: rel-0
+    title: "REL-0: BaseRepository generic over its concrete table"
+    size: L
+    depends_on: ["584"]
+    labels: [gate:auto, base-class, domain:codegen]
+    description: "Added at checkpoint 1. PLAN §5A.0. Prerequisite of TEN-1 (same choke point) and REL-2 (typed includes)."
+
   - key: "585"
     key_original: ten-1
     title: "TEN-1: ADR-042 — ALS-fed repository tenant scoping (tenant_scoped: true, strict enforcement)"
     size: M
-    depends_on: ["584"]
+    depends_on: ["603"]
     labels: [gate:human, base-class, domain:codegen]
     description: |
       ## Why
@@ -185,7 +209,7 @@ issues:
     key_original: rel-2
     title: "REL-2: typed with-includes on generated repositories — scoped and soft-delete-filtered at every hop"
     size: L
-    depends_on: ["586", "585"]
+    depends_on: ["603", "586", "585"]
     labels: [gate:human, base-class, domain:codegen]
     description: |
       ## Scope
