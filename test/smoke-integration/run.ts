@@ -38,15 +38,28 @@
  *      author-owned provider client + OAuth stubs (consumer-owned, not codegen).
  *   6. `codegen entity new --all --force` TWICE (two-pass: seed cross-entity
  *      refs, then emit the full integration tree).
- *   7. `bunx tsc --noEmit` and FAIL if there are any `error TS` lines whose
- *      path is under `src/integrations/**`.
+ *   7. `bunx tsc --noEmit` and FAIL on ANY diagnostic located in the generated
+ *      project.
  *
  * SCOPE OF THE FAILURE CHECK
  * --------------------------
- * Only errors under `src/integrations/**` fail the test. Two pre-existing,
- * out-of-scope errors live in `src/shared/subsystems/events/generated/bus.ts`
- * (the events subsystem isn't installed in this flow) — they are NOT
- * integration errors and must not false-fail this smoke.
+ * Every `tsc` diagnostic located in the generated project fails this gate —
+ * there is no per-directory carve-out. There used to be one: only
+ * `src/integrations/**` and `src/jobs/**` failed, and everything else was
+ * PRINTED as "out of scope — not failing". Its stated justification was two
+ * `bus.ts` errors that DRZ-2 (#584) fixed at the root (#575), and what it
+ * actually did in the meantime was let #604 — six real, non-compiling
+ * generated files — sit visible and un-gated for months. A carve-out that
+ * prints a defect and passes anyway is the same failure as a filter, one step
+ * further out (charter I9). Scoping now comes from the shared
+ * `test/smoke/_consumer-errors.ts`, the same helper the other three smokes
+ * use: a diagnostic is dropped only when its LOCATION is outside the generated
+ * project or in `node_modules` — never by message, never by directory.
+ *
+ * This harness compiles the emitted tree against the IN-REPO runtime + surface
+ * sources (step 4), so `tsc` can report an absolute location inside this repo;
+ * `tmpDir` is passed to the helper so those are recognised as outside the
+ * project. They are `bun run typecheck`'s subject, which `just test-all` runs.
  *
  * Set KEEP_SMOKE_DIR=1 to preserve the tmp project for inspection.
  */
@@ -55,6 +68,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { consumerErrors as scopeToConsumer } from '../smoke/_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -242,6 +256,18 @@ async function main(): Promise<number> {
 		// it to the in-repo runtime SOURCES so the whole generated tree — entities
 		// included — compiles in package mode, the contract under test.
 		paths['@pattern-stack/codegen/runtime/*'] = [`${RUNTIME_ROOT}/*`];
+		// ONE @nestjs identity. Mapping the runtime + surfaces at repo sources
+		// builds a single program out of two trees, and each half resolved
+		// `@nestjs/common` from its own `node_modules` — so the tmp project's
+		// `INestApplication` was not assignable to the repo's, and
+		// `installRequesterContext(app)` in the emitted `main.ts` failed TS2345.
+		// Same failure mode GATE-1 (#599) fixed for `test/scaffold`: two physical
+		// copies of one package break type identity (and, at runtime, `instanceof`).
+		// `paths` are consulted for every non-relative specifier in the program,
+		// including from the repo-source files, so this unifies both halves. This
+		// is a resolution fix for an artifact of THIS harness — a real consumer
+		// installs one copy, which `just test-post-publish` gates.
+		paths['@nestjs/*'] = [path.join(tmpDir, 'node_modules/@nestjs/*')];
 		// Surface packages are installed source-only (no built dist/).
 		for (const surface of SURFACE_PACKAGES) {
 			paths[`@pattern-stack/codegen-${surface}`] = [surfaceSrcEntry(surface)];
@@ -310,42 +336,24 @@ async function main(): Promise<number> {
 			);
 		}
 
-		// 9. tsc --noEmit, scoped to src/integrations/**.
+		// 9. tsc --noEmit over the WHOLE generated project. No carve-out.
 		log('running bunx tsc --noEmit --skipLibCheck');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
 
-		const allErrorLines = tsc.out
-			.split('\n')
-			.filter((l) => /error TS\d+:/.test(l));
-		const integErrors = allErrorLines.filter((l) =>
-			/(^|[\s(])src[/\\]integrations[/\\]/.test(l),
-		);
-		// RFC-0005 #9: the emitted src/jobs/** handler tree is in scope too.
-		const jobErrors = allErrorLines.filter((l) =>
-			/(^|[\s(])src[/\\]jobs[/\\]/.test(l),
-		);
-		const otherErrors = allErrorLines.filter(
-			(l) => !/(^|[\s(])src[/\\](integrations|jobs)[/\\]/.test(l),
-		);
-
-		// Out-of-scope errors (e.g. src/shared/subsystems/events/generated/bus.ts —
-		// events subsystem not installed in this flow) are reported for visibility
-		// but never fail the test.
-		if (otherErrors.length > 0) {
-			log(
-				`${otherErrors.length} tsc error(s) OUTSIDE src/integrations/** (out of scope — not failing):`,
-			);
-			for (const l of otherErrors.slice(0, 20)) console.log(`  ${l}`);
-		}
-
-		if (integErrors.length > 0) {
+		// `tsc.err` as well as `tsc.out`: a config or crash diagnostic goes to
+		// stderr, and reading only stdout would pass the gate on a tsc that never
+		// compiled anything.
+		const errors = scopeToConsumer(tsc.out + tsc.err, tmpDir);
+		if (errors.length > 0) {
 			logError(
-				`${integErrors.length} tsc error(s) in src/integrations/** (the integration tree did NOT compile):`,
+				`${errors.length} tsc error(s) in the generated project (it did NOT compile):`,
 			);
-			for (const l of integErrors) console.error(l);
+			for (const l of errors) console.error(l);
 			exitCode = 1;
 		} else {
-			log('tsc OK — src/integrations/** compiles clean against in-repo runtime + surfaces');
+			log(
+				'tsc OK — the generated project compiles clean against in-repo runtime + surfaces',
+			);
 		}
 
 		// RFC-0005 #9 — the emitted jobs handler tree must compile too.
@@ -363,15 +371,10 @@ async function main(): Promise<number> {
 					'definitions/jobs/ fixture being present. This test would pass vacuously.',
 			);
 		}
-		if (jobErrors.length > 0) {
-			logError(
-				`${jobErrors.length} tsc error(s) in src/jobs/** (the emitted jobs tree did NOT compile):`,
-			);
-			for (const l of jobErrors) console.error(l);
-			exitCode = 1;
-		} else if (jobFiles.length > 0) {
-			log('tsc OK — src/jobs/** compiles clean against in-repo runtime');
-		}
+		// No separate jobs error check any more — step 9 already fails on every
+		// diagnostic in the project, this tree included. The vacuity guard above
+		// is the part that still has to be here: it is what stops the gate
+		// passing green because the emitter produced nothing to compile.
 	} catch (err: unknown) {
 		logError(err instanceof Error ? err.message : String(err));
 		exitCode = 1;
