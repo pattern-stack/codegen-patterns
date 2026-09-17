@@ -4,7 +4,22 @@
  * Core type definitions for the domain analysis tool.
  */
 
-import type { EntityDefinition } from '../schema/entity-definition.schema';
+import type {
+	Additivity,
+	Agg,
+	EntityDefinition,
+	MetricDefinition,
+} from '../schema/entity-definition.schema';
+
+// The semantic-model vocabulary is declared once, in the Zod schema; these
+// re-exports let the parser and emitters name the types without reaching past
+// the analyzer's type surface (SEM-1).
+export type {
+	Additivity,
+	Agg,
+	DerivedExpr,
+	MetricDefinition,
+} from '../schema/entity-definition.schema';
 import type { RelationshipDefinition, TypeDirection } from '../schema/relationship-definition.schema';
 
 // ============================================================================
@@ -48,6 +63,24 @@ export interface ParsedField {
 		/** Sort position within the key-field set (qField `keyFieldOrder`). */
 		keyFieldOrder?: number;
 	};
+	/** Semantic-layer field tags (SEM-1, ADR-045). */
+	analytics: ParsedFieldAnalytics;
+}
+
+/**
+ * Field-level analytics tags as parsed from the YAML (SEM-1).
+ *
+ * The object is always present (mirroring `ParsedField.ui`) so downstream
+ * emitters read one shape; an untagged field has every key undefined.
+ * `type` / `column` / `hasDeclaredDomain` are NOT here — they are derived at
+ * emit time from the field's `type:`, the naming config and `choices`.
+ */
+export interface ParsedFieldAnalytics {
+	role?: 'measure' | 'dimension';
+	agg?: Agg;
+	aggs?: Agg[];
+	additivity?: Additivity;
+	time?: boolean;
 }
 
 export interface ParsedRelationship {
@@ -131,7 +164,18 @@ export interface ParsedEntity {
 	 * `[]` ⇒ explicit opt-out (no warning, no typed emission).
 	 */
 	emits?: string[];
+	/**
+	 * Entity-level `analytics:` block (SEM-1) — the composite metric catalog.
+	 * An authoring home, not a scope: the emitted catalog is one flat
+	 * namespace, so a metric here may name legs on another entity.
+	 */
+	analytics?: ParsedEntityAnalytics;
 	sourcePath: string;
+}
+
+/** Entity-level analytics block as parsed from the YAML (SEM-1). */
+export interface ParsedEntityAnalytics {
+	metrics?: Record<string, MetricDefinition>;
 }
 
 // ============================================================================

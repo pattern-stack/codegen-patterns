@@ -61,6 +61,25 @@ function parseUiMetadata(fieldDef: FieldDefinition): ParsedField['ui'] {
 	};
 }
 
+/**
+ * Map the YAML analytics field tags onto `ParsedField.analytics` (SEM-1).
+ * Shared by the entity and relationship-definition field parsers for the same
+ * reason `parseUiMetadata` is: the two must not drift.
+ *
+ * The object is always returned (never `undefined`) so downstream emitters
+ * read one shape. `type` / `column` / `hasDeclaredDomain` are deliberately
+ * absent — they are derived at emit time, not declared.
+ */
+function parseAnalyticsMetadata(fieldDef: FieldDefinition): ParsedField['analytics'] {
+	return {
+		role: fieldDef.role,
+		agg: fieldDef.agg,
+		aggs: fieldDef.aggs,
+		additivity: fieldDef.additivity,
+		time: fieldDef.time,
+	};
+}
+
 export interface LoadEntitiesResult {
 	entities: ParsedEntity[];
 	issues: AnalysisIssue[];
@@ -121,6 +140,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 				max: fieldDef.max,
 			},
 			ui: parseUiMetadata(fieldDef),
+			analytics: parseAnalyticsMetadata(fieldDef),
 		};
 		entity.fields.set(name, field);
 	}
@@ -183,6 +203,12 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 	// validator treats absence as a warning and explicit empty as opt-out.
 	if (definition.emits !== undefined) {
 		entity.emits = definition.emits;
+	}
+
+	// Parse the entity-level analytics block (SEM-1). Carried through
+	// verbatim; leg resolution is cross-entity (`validateSemanticModel`).
+	if (definition.analytics !== undefined) {
+		entity.analytics = { metrics: definition.analytics.metrics };
 	}
 
 	return entity;
@@ -390,6 +416,7 @@ function transformToRelationshipDefinition(
 					max: fieldDef.max,
 				},
 				ui: parseUiMetadata(fieldDef),
+				analytics: parseAnalyticsMetadata(fieldDef),
 			};
 			fields.set(name, field);
 		}

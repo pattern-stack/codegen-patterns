@@ -116,3 +116,87 @@ services stay single-domain (see the layer rules in the `entities` L0 skill).
 
 See `families-and-queries.md` for the full `queries:` block (column finders,
 unique, ordered, filtered+paginated search).
+
+## Analytics field tags + `analytics:` — the semantic model
+
+Optional. Tag the fields the semantic layer aggregates and groups by; declare
+composite metrics in the entity-level `analytics:` block. Nothing is emitted
+unless `generate.semantic: true` in `codegen.config.yaml`.
+
+### Field tags
+
+```yaml
+fields:
+  amount:
+    type: decimal
+    role: measure              # measure | dimension
+    aggs: [sum, avg, min, max] # allowed aggregations → measures amount.sum, amount.avg, …
+    additivity: additive       # REQUIRED on a measure — additive | semi | non
+
+  win_probability:
+    type: decimal
+    role: measure
+    agg: avg                   # a single aggregation → the measure is keyed `win_probability`
+    additivity: non
+
+  stage:
+    type: enum
+    choices: [prospecting, negotiation, closed_won]
+    role: dimension            # declared value domain is derived from choices
+
+  closed_at:
+    type: datetime
+    role: dimension
+    time: true                 # the time axis; date / datetime only
+```
+
+- **`role`** — `measure` is something you aggregate, `dimension` something you
+  group or filter by. The field **is** the measure; aggregation is config on it.
+- **`agg` / `aggs`** — one of `count`, `count_distinct`, `sum`, `avg`, `min`,
+  `max`. Mutually exclusive, and they key the measure differently: `aggs:`
+  produces one measure per entry named `<field>.<agg>`, a single `agg:` produces
+  one named `<field>`. That name is what a metric leg references.
+- **`additivity`** — required on every measure, because it cannot be inferred
+  from the type. `additive` = summable everywhere; `semi` = summable except
+  across the time axis (a balance); `non` = never summable (a rate, a
+  percentage, an average).
+- **`time`** — marks the axis a semi-additive measure may not be summed across.
+  Only `date` / `datetime` fields, and never on a measure. Grains (day, month,
+  quarter) are chosen at query time, not declared.
+
+The field's semantic type, physical column and whether its value domain is
+declared are all derived from what the YAML already says — do not restate them.
+
+### `analytics:` — composite metrics
+
+Three kinds, all naming measures by the keys above. A "simple" metric is not a
+kind: it is a measure-tagged field.
+
+```yaml
+analytics:
+  metrics:
+    win_rate:                          # numerator / denominator
+      type: ratio
+      numerator: won_amount.sum
+      denominator: amount.sum
+      label: Win rate
+
+    gross_profit:                      # arithmetic over measure legs
+      type: derived
+      expr:
+        op: '-'                        # + - * /
+        left:  { ref: revenue.sum }    # { ref } names a measure
+        right: { ref: cost.sum }       # { lit: 0.5 } is a numeric weight
+
+    running_pipeline:                  # running total
+      type: cumulative
+      measure: amount.sum
+      order_by: created_at             # a field on the measure's own entity
+      partition_by: account_id         # optional — the total restarts per partition
+```
+
+The block is an **authoring home, not a scope**: the catalog is one flat
+namespace across the whole domain, so a metric may name legs that live on
+another entity. In exchange, measure keys and metric names must be unique across
+every entity — `codegen entity new` and `codegen entity validate` both refuse a
+duplicate or an unresolvable leg.

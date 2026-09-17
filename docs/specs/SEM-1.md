@@ -1,7 +1,7 @@
 # SEM-1 — analytics vocabulary → field tags (role / agg / aggs / additivity / time) + catalog metrics
 
-**Status:** Draft
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #590 · **Epic:** #581 · **Project:** #578
 **Depends on:** DRZ-2 (#584) · **Blocks:** SEM-2 (#591), SEM-3 (#592)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · PLAN §5.1–5.2, §5.5
@@ -177,8 +177,8 @@ cross-entity rule.
 
 ### 3. Parser (`src/parser/load-entities.ts`, `src/analyzer/types.ts`)
 
-- `parseAnalyticsMetadata(fieldDef)` mirroring the existing `parseUiMetadata` exactly (same file, same shape, shared
-  by the entity and relationship-definition field parsers so the two cannot drift) → `ParsedField.analytics`:
+- `parseAnalyticsMetadata(fieldDef)` mirroring the existing `parseUiMetadata` exactly (same file, same shape, called
+  from both the entity and relationship-definition field parsers so the two cannot drift) → `ParsedField.analytics`:
   `{ role?, agg?, aggs?, additivity?, time? }`.
 - `ParsedEntity.analytics?: { metrics?: Record<string, ParsedMetric> }`, carrying the block through verbatim.
 - New exported types on `src/analyzer/types.ts`: `ParsedFieldAnalytics`, `ParsedMetric` (the discriminated union),
@@ -323,4 +323,72 @@ Gates (charter §7, output reported from the run after the last edit):
 
 ## Found during implementation
 
-*(filled in at implementation; the spec is corrected to post-implementation truth in the same PR — charter §9.)*
+**Found #1 — E1 cannot live on the metric.** The design put the "a derived expression must reference at least one
+measure" rule on `DerivedMetricSchema`. Zod 3's `z.discriminatedUnion` rejects a refined member: a `.refine()` returns
+a `ZodEffects`, not a `ZodObject`, and the union's option type demands the latter (TS2345 at
+`entity-definition.schema.ts`). The rule moved to a `superRefine` on `AnalyticsBlockSchema`, which is strictly better
+anyway — the metric **name** is only in scope there, so the message says *which* metric is malformed instead of
+pointing at an anonymous `expr`. Any later rule spanning a metric's shape belongs at the same level.
+
+**Found #2 — collision rules are target-aware.** C1/C3/C4 are whole-model defects, but reporting every collision in a
+domain would make `codegen entity new <one-entity>` refuse over an unrelated pair. `validateSemanticModel` now reports
+a namespace collision only when at least one side is in `targets`. With the default `targets = allEntities`
+(`analyzeDomain`, hence `entity validate`) nothing is filtered — this is a blast-radius rule for the generate path,
+not a relaxed gate.
+
+**Found #3 — `ParsedField.analytics` is required, not optional.** Making it optional would have every consumer write
+`field.analytics?.role`. It is a required property holding an all-optional object, exactly like `ParsedField.ui`. The
+cost is one line per `ParsedField` construction site (there are two, both in `load-entities.ts`); the compiler names
+both.
+
+**Found #4 — `validateSemanticModel` is wired to the JSON-mode contract of the `emits:` pre-flight, including its
+quirk.** `entity new`'s existing `emits:` gate only returns non-zero inside an `if (!isJsonMode())` branch, so in
+`--json` mode an error is neither printed nor fatal. The semantic pre-flight mirrors that block exactly rather than
+diverging in the same function; fixing the JSON path is a change to both gates and belongs in its own issue, not
+smuggled in here.
+
+**Found #5 — PLAN §5.5's premise about measure packs was wrong, and packs had real referents.** See §6 above. The
+conclusion (delete the key) is unchanged; PLAN is corrected in this PR.
+
+**Found #6 — nothing in the field schema was strict before.** `FieldDefinitionSchema` stripped unknown keys silently
+while `EntityDefinitionSchema` and `RelationshipSchema` were already `.strict()`. Measured across 61 YAML definition
+files before changing it: the only unknown field key anywhere is `values:` in junction fixtures, which parse against
+`JunctionDefinitionSchema`. The strictness landed with no fixture change.
+
+**Not found, worth recording:** `src/schema/generate-json-schema.ts` holds a second, hand-written
+`FieldDefinitionSchema` for editor autocomplete. It never mirrored the analytics keys (nor `queries:`, `events:`,
+`integration:`, `patterns:`), so this PR had nothing to update there. It is pre-existing I1 drift; a later unit adding
+a field key will hit the same fork in the road.
+
+## Gate results
+
+Run after the last code edit, on `dugshub/590-analytics-vocabulary`:
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck` | clean |
+| `bun run build` | clean |
+| `bun run test` (baseline generate + compare) | all tests passed |
+| `just test-all` | **exit 0** — the whole chain: typecheck, 3236 unit tests pass / 0 fail across 201 files, baseline, then `smoke PASS` (×2 — `test-smoke` and `test-smoke-relationship`), `subsystems smoke PASS (vendored + package)`, `smoke-junction PASS` (junction + junction-cross-domain), `test-junction`, `test-integration-emit`, `smoke-integration PASS` |
+| `just test-integration` | **exit 0** — 64 pass / 0 fail / 2 skipped, 66 tests across 7 files |
+
+Two environmental flakes were hit and diagnosed rather than ignored, because under charter I9 an unexplained red is
+not a pass. Both come from harnesses sharing fixed global names with every other checkout on the machine:
+
+- **Shared `bunx` cache.** Three `just test-all` runs failed one rotating test each in
+  `src/__tests__/cli/subsystem*.test.ts`, always with `ENOENT reading "/tmp/bunx-0-hygen@latest/…"` or
+  `Cannot find module './ops'` — a different file each run. The CLI shells out to `bunx hygen`, whose cache lives at a
+  fixed `$TMPDIR` path shared by every checkout; a concurrent run repopulating it produces exactly this. Each failing
+  file passes in isolation, and re-running with a private `TMPDIR` is green.
+- **Shared Docker Compose project.** `test/scaffold/docker-compose.yml` has no `name:`, so the project name derives
+  from the directory (`scaffold`) and is identical in every worktree. Three distinct symptoms, one cause: a
+  `drizzle-kit push` failing with `missing_hints: 15 unresolved decisions` over a half-created schema; a
+  `network scaffold_default not found` while starting; and a run where 57 of 66 tests died with
+  `Connection terminated unexpectedly` because a sibling's `docker compose down -v` removed the container mid-run. The
+  same command on the **base commit** (`cd5d16d`, in a scratch worktree) was run to check and passed, and setting
+  `COMPOSE_PROJECT_NAME` to something unique makes this branch green.
+
+Neither is caused by this change — the diff touches no template, no scaffold, no Hygen call and no schema emission —
+but both are real: **when another checkout on the box may be running gates, run them with a private `TMPDIR` and a
+unique `COMPOSE_PROJECT_NAME`.** Giving the compose file a `name:` derived from the checkout would fix the second one
+at the source; that is a harness change, out of this issue's scope, and is called out in the PR rather than done here.
