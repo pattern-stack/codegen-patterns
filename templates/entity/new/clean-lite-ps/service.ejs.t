@@ -104,8 +104,7 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ if (hasBelongsToComposition || hasHasManyComposition) { _%>
   // ═══════════════════════════════════════════════════════════════════════
   // Relationship composition methods (CGP-358b / CGP-62)
-  // Two queries, no SQL JOIN. Core-contract path; relations() const stays
-  // as opt-in extension for hand-written Drizzle queries.
+  // Two queries, no SQL JOIN.
   // ═══════════════════════════════════════════════════════════════════════
 <%_ } _%>
 <%_ if (hasBelongsToComposition) { _%>

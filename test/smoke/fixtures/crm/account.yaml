@@ -4,11 +4,10 @@
 #   - Self-ref `belongs_to` (parent_account_id → parentAccount one()).
 #     Regression of `269ab3f` — self-ref relation key must derive from FK
 #     column name to avoid colliding with the table's snake_case identifier.
-#   - `has_many` declarations on the inverse side. Under clean-lite-ps these
-#     are silently dropped by the entity template today (see
-#     `cgp-62.md` empirical-state section + codegen-patterns#358). Smoke
-#     asserts this negatively (the `many(` token must NOT appear in
-#     `account.entity.ts`).
+#   - `has_many` declarations on the inverse side. These drive the service-layer
+#     composition method (`AccountService.contacts(...)`, CGP-358b) and nothing
+#     in the entity file: DRZ-1 (#583) deleted the v1 Drizzle `relations()`
+#     const, so smoke asserts `many(` does NOT appear in `account.entity.ts`.
 entity:
   name: account
   plural: accounts

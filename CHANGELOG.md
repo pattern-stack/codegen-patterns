@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] — 0.31.0
+
+**Breaking (generated output):** the v1 Drizzle `relations()` const is no longer
+emitted (entity, clean-lite-ps entity, junction). Hand-written `db.query.*` code
+that relied on it must wait for the v2 manifest (REL-1) or declare its own.
+
+### Removed
+
+- **v1 Drizzle `relations()` emission** (#583). Drizzle 1.0 removes `relations`
+  from the `drizzle-orm` root export, so every generated project with a
+  relationship stopped compiling on 1.0. Nothing generated consumed the const —
+  it was an opt-in extension for hand-written queries. All three backend
+  pipelines lose it, along with the now-dead sibling-table imports it was the
+  only reader of. Everything else relationships drive is untouched: FK columns,
+  indexes, `on_delete`, service-layer composition and `queries:`. The slot is
+  deliberately left empty until REL-1 (#586) emits a whole-set v2
+  `defineRelations()` manifest under ADR-044.
+
 ## [0.30.0] — 2026-09-16
 
 **Breaking.** The generated data plane is closed by default (ADR-043, #557).
