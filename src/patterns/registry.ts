@@ -17,9 +17,11 @@
  * that reuses a domain pattern's name hits the existing duplicate-name check
  * for free.
  *
- * `getPattern()` checks app patterns first so a consumer could, in
- * principle, shadow a library pattern by using the same `name`. That's
- * not a documented feature, but nothing in the API prevents it.
+ * A name is unique across BOTH stores: an app pattern that reuses a library
+ * pattern's name is a load error and is not registered (ADR-041.1). There is
+ * no shadowing — a project cannot silently replace `Actor` or `Integrated`
+ * with its own definition, and a library release that adds a name a project
+ * already uses surfaces as that error rather than as a quiet swap.
  *
  * The Hygen subprocess (`src/cli/shared/hygen.ts:64`) reloads this module
  * independently — it has no shared memory with the CLI process. Both
@@ -212,8 +214,9 @@ export function registerLibraryPattern(def: EntityPatternDefinition): void {
 
 /**
  * Resolve an **entity-attached** pattern by name — domain or capability.
- * App patterns shadow library patterns with the same name — useful in
- * principle but not a documented feature.
+ * Names are unique across library and app patterns (`loadAppPatterns` refuses
+ * an app pattern that reuses a library name), so the lookup order below never
+ * decides between two definitions.
  *
  * Callers that need the two apart narrow with `isCapabilityPattern()` /
  * `isDomainPattern()`, or call `composePatterns()` (`./compose.js`), which does
@@ -375,6 +378,16 @@ export async function loadAppPatterns(
 					} catch (assertErr) {
 						errors.push(
 							`Pattern '${val.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
+						);
+						continue;
+					}
+					// ADR-041.1: one name, one definition — across the library
+					// boundary too. Shadowing a library pattern was possible (the
+					// lookup is app-first) and silent; it is now the same error
+					// as two app patterns sharing a name.
+					if (LIBRARY_PATTERNS.has(val.name)) {
+						errors.push(
+							`Pattern '${val.name}' in ${relPath(filePath, cwd)} reuses the name of a library pattern. Pattern names must be unique across library and app patterns — rename it.`,
 						);
 						continue;
 					}

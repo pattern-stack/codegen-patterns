@@ -1,6 +1,10 @@
 /**
  * App-defined capability patterns — CAP-1 smoke fixture (consumer-authored).
  *
+ * `Actor` and `Communication` are LIBRARY capabilities (CAP-3); this project
+ * cannot redeclare them — an app pattern reusing a library name is a load
+ * error (ADR-041.1). What stays here is the app-capability path.
+ *
  * Loaded by `loadAppPatterns()` from the default `src/patterns/*.pattern.ts`
  * glob. Every export whose name ends in `Pattern` and carries a `name` is
  * registered; `kind: 'capability'` routes it to ADR-041's layering path.
@@ -49,24 +53,4 @@ export const CollidingPattern = {
 	mixinImport: '@modules/capabilities/with-colliding',
 	forwarderMethods: ['findByEmail'],
 	description: 'Deliberate method collision — CAP-1 negative fixture',
-};
-
-/**
- * CAP-2 stand-ins for the capabilities CAP-3 ships. `roles:` validation keys on
- * a `kind: 'capability'` pattern of exactly these names being declared.
- */
-export const ActorPattern = {
-	name: 'Actor',
-	kind: 'capability' as const,
-	mixin: 'WithActor',
-	mixinImport: '@modules/capabilities/with-actor',
-	description: 'An entity a role may point at — CAP-2 stand-in',
-};
-
-export const CommunicationPattern = {
-	name: 'Communication',
-	kind: 'capability' as const,
-	mixin: 'WithCommunication',
-	mixinImport: '@modules/capabilities/with-communication',
-	description: 'An entity with roles: — CAP-2 stand-in',
 };

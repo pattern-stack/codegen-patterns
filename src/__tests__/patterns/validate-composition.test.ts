@@ -31,20 +31,14 @@ import '../../patterns/index.ts';
 import {
 	ActivityPattern,
 	BasePattern,
-	JunctionPattern,
-	KnowledgePattern,
 	MetadataPattern,
 	IntegratedPattern,
+	LIBRARY_PATTERN_DEFINITIONS,
 } from '../../patterns/library/index.ts';
 
 afterAll(() => {
 	_resetRegistryForTests({ includeLibrary: true });
-	registerLibraryPattern(BasePattern);
-	registerLibraryPattern(IntegratedPattern);
-	registerLibraryPattern(ActivityPattern);
-	registerLibraryPattern(KnowledgePattern);
-	registerLibraryPattern(MetadataPattern);
-	registerLibraryPattern(JunctionPattern);
+	for (const p of LIBRARY_PATTERN_DEFINITIONS) registerLibraryPattern(p);
 });
 
 // ============================================================================
@@ -400,12 +394,7 @@ describe('validatePatternComposition — Activity + Integrated composition', () 
 	// afterAll() above re-seeds the canonical library set for later files.
 	beforeEach(() => {
 		_resetRegistryForTests({ includeLibrary: true });
-		registerLibraryPattern(BasePattern);
-		registerLibraryPattern(IntegratedPattern);
-		registerLibraryPattern(ActivityPattern);
-		registerLibraryPattern(KnowledgePattern);
-		registerLibraryPattern(MetadataPattern);
-		registerLibraryPattern(JunctionPattern);
+		for (const p of LIBRARY_PATTERN_DEFINITIONS) registerLibraryPattern(p);
 	});
 
 	test('patterns: [Integrated, Activity] is rejected — two spine bases', () => {
@@ -562,5 +551,50 @@ describe('ADR-041 composition rules', () => {
 		const entity = makeEntity({ name: 'account', patterns: ['VcGroup'] });
 		const issues = errors(validatePatternComposition(entity));
 		expect(issues.filter((i) => i.type === 'pattern_unknown')).toEqual([]);
+	});
+});
+
+// ============================================================================
+// ADR-041.1 — the library Actor capability's config
+// ============================================================================
+
+describe('validatePatternComposition — Actor config (CAP-3)', () => {
+	beforeEach(() => {
+		_resetRegistryForTests({ includeLibrary: true });
+		for (const p of LIBRARY_PATTERN_DEFINITIONS) registerLibraryPattern(p);
+	});
+
+	const actor = (config: unknown, relationships: ParsedEntity['relationships'] = new Map()) => ({
+		...makeEntity({
+			name: 'account',
+			patterns: ['Actor'],
+			patternConfig: config === undefined ? undefined : { Actor: config },
+		}),
+		relationships,
+	});
+
+	test('config is required — an Actor must say individual or group', () => {
+		expect(errors(validatePatternComposition(actor(undefined))).map((i) => i.type)).toEqual([
+			'pattern_config_invalid',
+		]);
+	});
+
+	test('a group whose members: names a has_many is clean', () => {
+		const rels: ParsedEntity['relationships'] = new Map([
+			['contacts', { name: 'contacts', type: 'has_many', target: 'contact', foreignKey: 'account_id', resolved: true }],
+		]);
+		expect(errors(validatePatternComposition(actor({ kind: 'group', members: 'contacts' }, rels)))).toEqual([]);
+	});
+
+	test('a group whose members: is missing or not a has_many is an error', () => {
+		const rels: ParsedEntity['relationships'] = new Map([
+			['owner', { name: 'owner', type: 'belongs_to', target: 'contact', foreignKey: 'owner_id', resolved: true }],
+		]);
+		const missing = errors(validatePatternComposition(actor({ kind: 'group', members: 'contacts' })));
+		expect(missing.map((i) => i.type)).toEqual(['actor_members_not_has_many']);
+		const wrong = errors(validatePatternComposition(actor({ kind: 'group', members: 'owner' }, rels)));
+		expect(wrong.map((i) => i.message)).toEqual([
+			"Actor members: 'owner' must name one of the entity's has_many relationships ('owner' is a belongs_to).",
+		]);
 	});
 });

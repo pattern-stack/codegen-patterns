@@ -167,6 +167,11 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// `@shared/base-classes/capability-mixin`; package mode resolves the same
 	// source through `@pattern-stack/codegen/runtime/base-classes/capability-mixin`.
 	{ runtime: 'base-classes/capability-mixin.ts', target: 'src/shared/base-classes/capability-mixin.ts' },
+	// Library capability mixins (ADR-041.1) — the `mixinImport`s of the library
+	// `Actor` / `Communication` patterns, `@shared/base-classes/with-*` here and
+	// rewritten to the package path in package mode.
+	{ runtime: 'base-classes/with-actor.ts', target: 'src/shared/base-classes/with-actor.ts' },
+	{ runtime: 'base-classes/with-communication.ts', target: 'src/shared/base-classes/with-communication.ts' },
 	// base-classes — transitive deps of base-service
 	{ runtime: 'base-classes/lifecycle-events.ts', target: 'src/shared/base-classes/lifecycle-events.ts' },
 	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'src/shared/base-classes/base-read-use-cases.ts' },
