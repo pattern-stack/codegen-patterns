@@ -20,6 +20,18 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   `--config <path>` now reaches the entity, junction and relationship
   generators too (they used to read `./codegen.config.yaml`).
   `project scan --write` writes only keys the schema declares.
+- **Every `paths.*` key has one default, and every command and scaffold
+  uses it** (#642, #566, #612). `paths.backend_src` defaults to `src` everywhere.
+  The `clean` pipeline used to fall back to `app/backend/src`. `generated`,
+  `subsystems`, `modules_dir` and `orchestration_src` default under
+  `backend_src`. `paths.entities` has no second candidate: a configured
+  directory that does not exist no longer falls back to `entities/`.
+  `project init` honours an existing config: `app.module.ts`, `main.ts`,
+  `schema.ts`, `shared/**`, the barrels, `example.yaml` and the tsconfig
+  aliases / `include` follow `paths.*`, and the emitted imports are computed
+  relative to each file. `subsystem install` (`worker.ts`, the `main.ts` hook,
+  `app.module.ts`) does the same. The no-events `EventOfType<T>` placeholder
+  now uses `T`, so consumers with `noUnusedParameters` compile.
 - **The `events:` block's `extensions.drizzle` example is fully commented
   out** (#640). The block used to leave `extensions:` / `drizzle:` live with
   no values, which parses as `null`.
