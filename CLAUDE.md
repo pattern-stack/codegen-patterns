@@ -267,7 +267,7 @@ Gates that are red on `main` today, on purpose recorded here rather than hidden,
 
 | Gate | Expectation | Tracking |
 |---|---|---|
-| `just test-smoke-capability` (package leg only) | `applyIssue624Expectation`: the generated `meeting_contact` junction's repository + service — all 16 diagnostics enumerated by file, code and named symbol with exact counts (7 × TS2307 for 5 package-owned `@shared/*` runtime modules, 4 × TS4112, 5 × TS2339), compared as a multiset both ways. `junction new` / `relationship new` hardcode `@shared/*` and do not compile under `runtime: package`; every junction harness pins vendored, so nothing saw it until CAP-2 generated a junction in both modes. | **#624** |
+| `just test-smoke-capability` (package leg only) | `applyIssue624Expectation`: the repository + service of each of the fixture set's two generated junctions (`meeting_contact`, CAP-2; `crew_person`, NAME-0) — 16 diagnostics per junction enumerated by file, code and named symbol with exact counts (7 × TS2307 for 5 package-owned `@shared/*` runtime modules, 4 × TS4112, 5 × TS2339), compared as a multiset both ways. `junction new` / `relationship new` hardcode `@shared/*` and do not compile under `runtime: package`; every junction harness pins vendored, so nothing saw it until CAP-2 generated a junction in both modes. | **#624** |
 
 That is the whole list. No gate anywhere filters an error class or carves out a directory: every smoke scopes its
 `tsc` output through `test/smoke/_consumer-errors.ts`, by the diagnostic's **location** only (GATE-2, #604). If a
@@ -282,3 +282,9 @@ Templates use Hygen. Two types:
 - Inject templates (prefixed `_inject-`) modify existing files
 
 Entry point: `templates/entity/new/prompt.js`. Clean-Lite-PS extends via `prompt-extension.js`.
+
+Cross-entity names in the hygen prompts (a `belongs_to` / `has_many` / field `foreign_key:` target, an EAV
+definition entity, a junction endpoint, a group Actor's members) come from `templates/_shared/entity-naming.mjs`:
+`createEntityLookup(resolveEntitiesDir(cwd))` reads the target's own YAML, `entityModuleNaming` turns it into the
+table export + module folder (`plural:`, `context:`), `relativeModuleDir` into the import path. Never
+`pluralize(target)` or a hand-built `'../<plural>/'` (NAME-0, `docs/specs/NAME-0.md`).
