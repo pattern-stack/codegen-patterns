@@ -257,7 +257,7 @@ export class RelationshipNewCommand extends Command {
 
 		// Regenerate barrels so new junction modules land in GENERATED_MODULES
 		// and src/generated/schema.ts. Mirrors what `entity new` does.
-		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 		const architecture = configOrDefaults(ctx.config).generate.architecture;

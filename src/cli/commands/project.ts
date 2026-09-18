@@ -493,7 +493,7 @@ export class ProjectConfigCommand extends Command {
 			cwd: ctx.cwd,
 			isInitialized: ctx.isInitialized,
 			entityCount: ctx.entityCount,
-			entitiesDir: ctx.entitiesDir,
+			entitiesDir: projectLayout(ctx.cwd, ctx.config).entities,
 			config: ctx.config ?? {},
 		};
 
@@ -576,9 +576,8 @@ export class ProjectInspectCommand extends Command {
 		return 2;
 	}
 
-	private resolveEntitiesDir(ctx: Context): string | null {
-		if (this.dir) return path.resolve(ctx.cwd, this.dir);
-		return ctx.entitiesDir ?? projectLayout(ctx.cwd, ctx.config).entities;
+	private resolveEntitiesDir(ctx: Context): string {
+		return this.dir ? path.resolve(ctx.cwd, this.dir) : projectLayout(ctx.cwd, ctx.config).entities;
 	}
 
 	private async runAnalysis(
@@ -586,8 +585,8 @@ export class ProjectInspectCommand extends Command {
 		kind: 'analyze' | 'stats' | 'doc'
 	): Promise<number> {
 		const entitiesDir = this.resolveEntitiesDir(ctx);
-		if (!entitiesDir || !fs.existsSync(entitiesDir)) {
-			printError(`Directory not found: ${entitiesDir ?? '(no entities/ dir)'}`);
+		if (!fs.existsSync(entitiesDir)) {
+			printError(`Directory not found: ${entitiesDir}`);
 			return 1;
 		}
 
@@ -643,8 +642,8 @@ export class ProjectInspectCommand extends Command {
 
 	private async runManifest(ctx: Context): Promise<number> {
 		const entitiesDir = this.resolveEntitiesDir(ctx);
-		if (!entitiesDir || !fs.existsSync(entitiesDir)) {
-			printError(`Directory not found: ${entitiesDir ?? '(no entities/ dir)'}`);
+		if (!fs.existsSync(entitiesDir)) {
+			printError(`Directory not found: ${entitiesDir}`);
 			return 1;
 		}
 
@@ -836,7 +835,7 @@ export class ProjectGraphCommand extends Command {
 
 		const entitiesDir = this.dir
 			? path.resolve(ctx.cwd, this.dir)
-			: ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+			: projectLayout(ctx.cwd, ctx.config).entities;
 
 		if (!fs.existsSync(entitiesDir)) {
 			printError(`Entity directory not found: ${entitiesDir}`);

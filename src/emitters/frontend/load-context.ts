@@ -189,7 +189,7 @@ export function loadProviderCatalogInputs(
  * @param config  The loaded `codegen.config.yaml` (frontend block fully
  *                defaulted by the config loader).
  * @param opts.entitiesDir  The entities directory, already resolved by the
- *                caller (the CLI's `ctx.entitiesDir`, `src/config/entities-dir.ts`).
+ *                caller (the CLI's `projectLayout(...).entities`, `paths.entities`).
  *                Required: the emitter has no rule of its own (#634).
  * @returns `{ ctx, outDir }` ready for `emitFrontendSet`, or `{ skip }` when
  *          there are no entities to emit.

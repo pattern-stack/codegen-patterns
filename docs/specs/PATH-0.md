@@ -154,8 +154,15 @@ A computed `config[name]` read is allowed only in `subsystem-barrel-generator.ts
 checks it. Sweep 1 now also counts `resolvedConfig`, `DEFAULT_CODEGEN_CONFIG` and `configOrDefaults(…)` reads, plus
 `project-layout.ts`'s own `paths.<key>`. It also asserts the converse: every declared `paths` key has a reader.
 
-A second test (`config/path-defaults.test.ts`) greps `src/` and `templates/` for a fallback literal:
-`'app/backend/src'`, `?? 'src'`, `?? 'entities'`, `?? 'src/generated'` and the like, or `|| 'src'`.
+A second test (`config/path-defaults.test.ts`) greps `src/` and `templates/` for a fallback. It catches a literal
+(`'app/backend/src'`, `?? 'src'`, `?? 'entities'`, `?? 'src/generated'` and the like, or `|| 'src'`). It also
+catches a built path, `?? path.resolve(` / `?? path.join(` / `|| path.…(`, which the first revision missed. One
+exact, asserted-present exception is listed: `runtime-copier.ts`'s `depsTargetRoot`, an option default derived from
+the install target, not a `paths.*` default.
+
+`cli/entity.test.ts` adds a case where `paths.entities: definitions/entities` does not exist and a stale `entities/`
+does. `entity new --all`, `entity list` and `entity validate` each exit 1, naming `definitions/entities`, and never
+read the stale directory. All three cases fail on the pre-fix code.
 
 ## Gate
 
@@ -169,9 +176,19 @@ paths:
   entities: definitions/entities
 ```
 
-then runs `project init --with-tsconfig`, `subsystem install events`, `entity new --all`, `junction new --all`,
-`tsc`, the emission/barrel/specifier assertions (now layout-parametrised), an assertion that nothing was written to
-`<tmp>/src` or `<tmp>/entities`, and the DI boot gate.
+then runs, in order:
+
+1. `project init --with-tsconfig`
+2. `subsystem install events` and `subsystem install jobs` (#566's repro: `worker.ts` and the `main.ts` hook must land
+   under `apps/backend/src`)
+3. `entity new --all` and `junction new --all`
+4. `tsc`
+5. the emission / barrel / specifier assertions, now layout-parametrised
+6. an assertion that nothing was written to `<tmp>/src` or `<tmp>/entities`
+7. the DI boot gate
+
+The custom leg does not exercise a *missing* `paths.entities`, because init creates the directory. The unit case
+above covers that.
 
 ## Found
 
@@ -182,9 +199,21 @@ then runs `project init --with-tsconfig`, `subsystem install events`, `entity ne
    `../modules/…`.
 2. **`subsystem install jobs` wrote `src/worker.ts` and hooked `src/main.ts` regardless of config** (the #566 report).
    The subsystem prompts also carried their own fallbacks, one of which (`shared/subsystems/…`) had no `src/` at all.
-3. **Four readers probed fallback chains:** entities (`paths.entities`, then `<cwd>/entities`), subsystem detection
-   (`paths.subsystems`, `src/shared/subsystems`, `src/subsystems`, `shared/subsystems`) in both `context.ts` and
-   `subsystem-detect.ts`, and `project analyze`'s entities dir. Each now reads the one resolved value.
+3. **Readers probed fallback chains.** Subsystem detection tried four roots in both `context.ts` and
+   `subsystem-detect.ts`: `paths.subsystems`, `src/shared/subsystems`, `src/subsystems` and `shared/subsystems`.
+   Entities had the most: `entities-dir.ts` tried `paths.entities`, then `<cwd>/entities`. On top of that,
+   `ctx.entitiesDir`, which is `null` when the configured directory does not exist, had seven
+   `?? path.resolve(ctx.cwd, 'entities')` fallbacks:
+   - `entity.ts` (`new --all`, the `emits:` pre-flight, the barrel plan, `validate`)
+   - `junction.ts`
+   - `relationship.ts`
+   - `project.ts` (`validate`), plus `project analyze`'s `ctx.entitiesDir ?? …`
+
+   So a misconfigured `paths.entities` next to a stale `entities/` silently read the wrong directory. The first
+   revision of this PR missed those seven; the orchestrator's review caught them. They now read
+   `projectLayout(ctx.cwd, ctx.config).entities`. `Context.entitiesDir` is **deleted**: nothing needs a nullable
+   copy of the configured path. Callers that need the directory to exist check for it and report the configured
+   path. `ctx.entityCount` still counts the configured directory.
 4. **`project upgrade-openapi` kept a private copy** of `runtimeRoot` / `loadRuntimeFile` and of the OpenAPI slice
    of `VENDORED_RUNTIME_FILES`. It now imports them.
 5. **`paths.mjs` exported six things nothing imported** (`FRONTEND_LAYERS`, `getFrontendPath`, `PACKAGE_PATHS`,

@@ -57,7 +57,6 @@ describe('loadContext', () => {
 		expect(ctx.configPath).toBe(path.join(path.resolve(root), 'codegen.config.yaml'));
 		expect(ctx.isInitialized).toBe(true);
 		expect(ctx.entityCount).toBe(2);
-		expect(ctx.entitiesDir).toContain('entities');
 	});
 
 	test('walks upward to find config', async () => {

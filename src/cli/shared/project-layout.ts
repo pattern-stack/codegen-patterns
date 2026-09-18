@@ -8,12 +8,17 @@
  * defaults apply (`DEFAULT_CODEGEN_CONFIG`). Directories that have no key of
  * their own (the vendored `shared/` root, `app.module.ts`, `main.ts`, …) derive
  * from `backend_src` here and nowhere else.
+ *
+ * `entitiesDirPath(cwd, paths)` (`src/config/entities-dir.ts`) and
+ * `projectLayout(cwd, config).entities` are two spellings of one value —
+ * `path.resolve(cwd, paths.entities)`. The first exists because the hygen
+ * templates import it from the shipped `src/config/` files, and this module
+ * (under `src/cli/`, compiled into `dist/`) is not shipped as source.
  */
 
 import path from 'node:path';
 
-import type { CodegenConfig } from '../../config/project-config.js';
-import { ResolvedPathsSchema } from '../../schema/codegen-config.schema.js';
+import { ResolvedPathsSchema, type PathsConfigInput } from '../../schema/codegen-config.schema.js';
 
 export interface ProjectLayout {
 	/** Project root (absolute) — every `paths.*` value resolves against it. */
@@ -57,11 +62,12 @@ export interface ProjectLayout {
 /**
  * Absolute locations for the project rooted at `cwd`. The `paths` block goes
  * through `ResolvedPathsSchema` here — idempotent on the loader's parsed config,
- * and the same defaults for a `null` config (no file) or a partial one.
+ * and the same defaults for a `null` config (no file) or a partial one — so it
+ * takes the schema's input type: the loader's parsed config is one instance.
  */
 export function projectLayout(
 	cwd: string,
-	config: Pick<CodegenConfig, 'paths'> | null | undefined,
+	config: { paths?: PathsConfigInput } | null | undefined,
 ): ProjectLayout {
 	const paths = ResolvedPathsSchema.parse(config?.paths ?? {});
 	const at = (rel: string) => path.resolve(cwd, rel);

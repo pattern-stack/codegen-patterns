@@ -147,18 +147,19 @@ function padRight(s: string, n: number): string {
 // ---------------------------------------------------------------------------
 
 async function summary(ctx: Context): Promise<PaneOutput> {
-	if (!ctx.entitiesDir || ctx.entityCount === 0) {
+	const layout = projectLayout(ctx.cwd, ctx.config);
+	if (ctx.entityCount === 0) {
 		return {
 			title: 'entities',
 			body: [
 				'No entities defined yet.',
 				'',
-				`Create one at ${theme.system('entities/<name>.yaml')} to get started.`,
+				`Create one at ${theme.system(`${path.relative(ctx.cwd, layout.entities) || '.'}/<name>.yaml`)} to get started.`,
 			],
 		};
 	}
 
-	const files = listEntityYamls(ctx.entitiesDir, projectLayout(ctx.cwd, ctx.config).providers);
+	const files = listEntityYamls(layout.entities, layout.providers);
 	const rows = files.map(summarizeEntityFile).filter((r): r is EntitySummaryRow => r !== null);
 
 	const patterns = new Set(rows.map((r) => r.pattern));
@@ -186,10 +187,10 @@ async function hints(ctx: Context): Promise<Hint[]> {
 	if (!ctx.isInitialized) {
 		return [{ command: 'codegen init', description: 'Initialize project' }];
 	}
-	if (!ctx.entitiesDir || ctx.entityCount === 0) {
+	if (ctx.entityCount === 0) {
 		return [
 			{
-				command: 'codegen entity new entities/example.yaml',
+				command: `codegen entity new ${path.relative(ctx.cwd, path.join(projectLayout(ctx.cwd, ctx.config).entities, 'example.yaml'))}`,
 				description: 'Generate first entity',
 			},
 		];
@@ -288,7 +289,7 @@ export class EntityNewCommand extends Command {
 
 		let targets: string[] = [];
 		if (this.all) {
-			const dir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+			const dir = projectLayout(ctx.cwd, ctx.config).entities;
 			targets = listEntityYamls(dir, projectLayout(ctx.cwd, ctx.config).providers);
 			if (targets.length === 0) {
 				printError(`No entity YAML files found in ${dir}`);
@@ -322,8 +323,7 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
-		const entitiesDirForEmits =
-			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const entitiesDirForEmits = projectLayout(ctx.cwd, ctx.config).entities;
 		const eventsDirForEmits = projectLayout(ctx.cwd, ctx.config).eventsDir;
 		const allEntitiesForEmits = loadEntities(entitiesDirForEmits, {
 			excludeDirs: [projectLayout(ctx.cwd, ctx.config).providers],
@@ -422,7 +422,7 @@ export class EntityNewCommand extends Command {
 		}
 
 		// Compute barrel plan (used in both dry-run reporting and post-gen execution).
-		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 		const architecture = configOrDefaults(ctx.config).generate.architecture;
@@ -1143,12 +1143,13 @@ export class EntityListCommand extends Command {
 			skipDetection: true,
 		});
 
-		if (!ctx.entitiesDir) {
-			printError('No entities directory found.');
+		const layout = projectLayout(ctx.cwd, ctx.config);
+		if (!fs.existsSync(layout.entities)) {
+			printError(`Entities directory not found: ${layout.entities} (paths.entities)`);
 			return 1;
 		}
 
-		const files = listEntityYamls(ctx.entitiesDir, projectLayout(ctx.cwd, ctx.config).providers);
+		const files = listEntityYamls(layout.entities, layout.providers);
 		const rows = files
 			.map(summarizeEntityFile)
 			.filter((r): r is EntitySummaryRow => r !== null)
@@ -1222,7 +1223,7 @@ export class EntityValidateCommand extends Command {
 
 		const targetDir = this.dir
 			? path.resolve(ctx.cwd, this.dir)
-			: ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+			: projectLayout(ctx.cwd, ctx.config).entities;
 
 		if (!fs.existsSync(targetDir)) {
 			printError(`Directory not found: ${targetDir}`);
