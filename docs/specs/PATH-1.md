@@ -1,7 +1,7 @@
 # PATH-1 — `paths.modules_dir` is honoured by every emitter, `paths.subsystems` is deleted, the `patterns` default follows `backend_src`
 
-**Status:** Designed
-**Date:** 2026-09-18
+**Status:** Implemented
+**Date:** 2026-09-18 · **Implemented:** 2026-09-18
 **Issue:** #645
 **Project:** #578
 **Depends on:** PATH-0 (#642, #646): one default per `paths.*` key, `projectLayout` / `importSpecifier`
@@ -57,6 +57,7 @@ next to the `connection` entity module). The `clean` pipeline's layout is `locat
 | `barrel-generator.ts` › `entityFilePaths` (clean-lite-ps) | `${backendSrc}/modules[/<ctx>]/<plural>/…` | `${modulesDir}[/<ctx>]/<plural>/…` |
 | `assembly-emission-generator.ts` › `resolveEntityModuleImports` | `<backendSrcAbs>/modules[/<ctx>]/<plural>/…` | `<modulesAbs>[/<ctx>]/<plural>/…` (new required input `modulesAbs`); `emitAdapters` passes `layout.modules` |
 | `tsconfigIncludes(layout)` | `<backend_src>/**/*` + `<generated>/**/*` when outside | + `<modules_dir>/**/*` when outside `backend_src` |
+| entity / junction / relationship git-safety | `checkGitSafety([<backend_src>, <generated>])` | `[<backend_src>, <modules_dir>, <generated>]` |
 
 Imports between module files are already relative (computed from these dirs by `relativeModuleDir`), and imports out
 of a module go through `@shared/*` or the runtime package, so no other specifier changes.
@@ -92,7 +93,7 @@ The existing `run-smoke-junction.ts --layout custom` leg (both runtimes, in `jus
 2. authors an app capability pattern at `apps/backend/src/patterns/audited.pattern.ts` (no `patterns:` key — the
    derived default must find it) whose mixin lives at `<modules_dir>/capabilities/with-audited.ts` and is imported as
    `@modules/capabilities/with-audited`;
-3. adds a `ledger` entity (`patterns: [Base, Audited]`) to the fixtures;
+3. writes a `ledger` entity YAML (`patterns: [Base, Audited]`) next to the copied fixtures;
 4. asserts every clean-lite-ps module (entities + junction) lands under `apps/backend/src/domain/…`, nothing under
    `apps/backend/src/modules/`, the modules barrel imports from `../domain/…`, and the ledger repository applies
    `WithAudited(` — so the pattern loaded from the non-default glob;
@@ -106,7 +107,32 @@ the schema rejects `paths.subsystems`; `project-layout` covers `modules_dir` out
 
 ## Found
 
-(filled at implementation)
+1. **`subsystem install` already assumed the subsystems root's parent is the `@shared` root.** It copies each
+   subsystem's runtime closure (base classes, constants, …) into `<subsystems>/..`. So a non-default
+   `paths.subsystems` broke the vendored closure too, not only the `@shared/subsystems/*` imports. This confirmed
+   the delete.
+2. **Two more `<backend_src>/modules` hard-codes than #645 listed.** `assembly-emission-generator.ts` ›
+   `resolveEntityModuleImports`, which the integration assemblies and sinks import through, built
+   `<backend_src>/modules/…` itself. The junction prompt's clean-lite-ps output paths did too, not only its module
+   dir. Both now read `modules_dir`: `resolveEntityModuleImports` takes a required `modulesAbs`, and `emitAdapters`
+   throws if it gets `backendSrcAbs` without it.
+3. **A third one in the capability path.** The library `Communication` capability's junction-table import
+   (`resolveLibraryCapabilityConfig`) built `${srcRoot}/modules/<junction>/…` on its own. It now reads `modulesDir`.
+4. **A dead per-entity override.** The clean-lite-ps extension read `entity.src_root` before `paths.backend_src`.
+   The entity block is `.strict()` and declares no `src_root`, so a YAML with it fails validation first. Deleted,
+   along with the `baseLocals.srcRoot` / `baseLocals.backendSrc` chain. The extension takes one local, `modulesDir`.
+5. **`patterns: []` meant "the default".** Both the CLI (`resolvePatternGlobs`) and the entity prompt re-applied
+   `src/patterns/*.pattern.ts` for an empty list. The schema's default made the empty list reachable only when
+   written explicitly. It now means what it says: no app patterns.
+6. **The `clean` pipeline does not read `modules_dir`.** Its module layout comes from `locations:`
+   (`infrastructure/modules`, `domain/`, …). `modules_dir` is documented as the clean-lite-ps module tree.
+7. **The consumer docs gave the wrong subsystems default.** `docs/consumer/events.md`, `integration.md` and the events
+   skill said "defaulting to `shared/subsystems/…`", with no `src/`. Corrected to
+   `<backend_src>/shared/subsystems/…` (default `src/shared/subsystems/…`).
+8. **Pre-existing, filed: #647.** The clean-lite-ps EAV `FieldValueService` imports are hand-built
+   (`'../field_values/…'`, `'../../field_values/…'`). They break for a `context:`-tagged EAV entity, or for a
+   field-value entity with another `plural:` / `context:`. This is the NAME-0 class, and it is not a `modules_dir`
+   defect: the path is relative inside the one tree.
 
 ## Gates
 
