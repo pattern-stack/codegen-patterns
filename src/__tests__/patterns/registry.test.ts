@@ -37,6 +37,9 @@ describe('library pattern pre-registration', () => {
 		expect(libNames).toContain('Activity');
 		expect(libNames).toContain('Knowledge');
 		expect(libNames).toContain('Metadata');
+		// ADR-041.1 — the two library capabilities.
+		expect(libNames).toContain('Actor');
+		expect(libNames).toContain('Communication');
 	});
 
 	test('library lookup returns the expected class/import metadata', () => {
@@ -201,6 +204,27 @@ export const RealPattern = definePattern({
 		// `danglingConst` is skipped because its export key does
 		// not end in 'Pattern'.
 		expect(result.loaded).toEqual(['Real']);
+	});
+
+	test('an app pattern reusing a LIBRARY name is a load error, not a shadow (ADR-041.1)', async () => {
+		writePatternFile(
+			'src/patterns/shadow.pattern.ts',
+			`export const ShadowActorPattern = { name: 'Actor', kind: 'capability', mixin: 'WithShadow', mixinImport: '@/shadow' };
+export const ShadowIntegratedPattern = { name: 'Integrated', repositoryClass: 'MyRepo', repositoryImport: '@/my-repo' };
+`,
+		);
+
+		const result = await loadAppPatterns(['src/patterns/*.pattern.ts'], tmpdir);
+
+		expect(result.loaded).toEqual([]);
+		expect(result.errors).toHaveLength(2);
+		for (const name of ['Actor', 'Integrated']) {
+			expect(result.errors.some((e) => e.startsWith(`Pattern '${name}' in src/patterns/shadow.pattern.ts reuses the name of a library pattern`))).toBe(true);
+		}
+		// The library definitions are what resolve.
+		expect(getAppPatternNames()).toEqual([]);
+		expect(getPattern('Actor')).toMatchObject({ mixin: 'WithActor' });
+		expect(getPattern('Integrated')?.repositoryClass).toBe('IntegratedEntityRepository');
 	});
 
 	test('reports pattern files that fail to import as errors, does not throw', async () => {

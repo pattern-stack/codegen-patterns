@@ -3,14 +3,18 @@
 # One capability layers, so it is wrapped INLINE in the repository's `extends`
 # clause and no composed-base file is emitted (ADR-041 §6). No domain pattern
 # is declared at all, so the spine falls back to the library `Base`. The one
-# capability is `Actor`, which is what lets a meeting's `host` / `attendees`
-# roles point here (CAP-2).
+# capability is the library `Actor` (CAP-3), which is what lets a meeting's
+# `host` / `attendees` roles point here (CAP-2). An individual actor: its
+# `memberPredicate` is the identity predicate.
 entity:
   name: contact
   plural: contacts
   table: contacts
   patterns: [Actor]
   folder_structure: nested
+  config:
+    Actor:
+      kind: individual
 
 fields:
   account_id:

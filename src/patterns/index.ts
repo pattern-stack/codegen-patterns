@@ -69,12 +69,19 @@ export {
 // them programmatically (rare, but cheap to export).
 export {
 	ActivityPattern,
+	ActorPattern,
 	BasePattern,
+	CommunicationPattern,
 	JunctionPattern,
 	KnowledgePattern,
+	LIBRARY_PATTERN_DEFINITIONS,
 	MetadataPattern,
 	IntegratedPattern,
 } from './library/index.js';
+export {
+	ActorPatternConfigSchema,
+	type ActorPatternConfig,
+} from './library/actor.pattern.js';
 
 // BaseJunctionFields — re-exported for downstream template / codegen leaves
 // that need to reason about the shared junction shape.

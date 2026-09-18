@@ -59,9 +59,25 @@ export { KnowledgeEntityService } from './knowledge-entity-service';
 // Mixins
 export { WithAnalytics } from './with-analytics';
 
+// Library capability mixins (ADR-041.1) — layered by the `Actor` /
+// `Communication` capability patterns.
+export { WithActor } from './with-actor';
+export type { ActorCapability, ActorConfig, IndividualActorConfig, GroupActorConfig } from './with-actor';
+export { WithCommunication } from './with-communication';
+export type {
+	CommunicationConfig,
+	RoleEdge,
+	OneRoleEdge,
+	ManyRoleEdge,
+	Participant,
+	RoleOf,
+	CommunicationCapability,
+} from './with-communication';
+
 // Capability mixin contract (ADR-041) — the types a `kind: 'capability'`
 // pattern's repository mixin is written against.
 export type {
+	CapabilityCtor,
 	RepositoryCtor,
 	RepositoryOf,
 	EntityOf,

@@ -7,6 +7,11 @@
  * patterns before hygen ever runs (CAP-2's roles pre-flight, `entity validate`).
  */
 
+// Side effect: registers the library patterns. They must be in the registry
+// BEFORE app patterns load — the loader refuses an app pattern that reuses a
+// library name (ADR-041.1), and the roles validators resolve the library
+// `Actor` / `Communication` capabilities by name.
+import '../../patterns/library/index.js';
 import { loadAppPatterns } from '../../patterns/registry.js';
 import type { Context } from './context.js';
 

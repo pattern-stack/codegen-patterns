@@ -40,6 +40,7 @@
 
 import type { AnalysisIssue, ParsedEntity } from '../analyzer/types.js';
 import { resolveBehaviorFields } from '../behaviors/index.js';
+import { ACTOR_CAPABILITY } from '../roles/derive.js';
 import { validateRolesCommunicationPairing } from '../roles/validate-roles.js';
 import {
 	composePatterns,
@@ -147,6 +148,8 @@ export function validatePatternComposition(
 					message:
 						`Pattern '${patternName}' config failed validation: ${detail}`,
 				});
+			} else if (patternName === ACTOR_CAPABILITY) {
+				issues.push(...validateActorMembers(entity, result.data));
 			}
 		}
 
@@ -277,4 +280,30 @@ export function validatePatternProject(
 	}
 
 	return issues;
+}
+
+/**
+ * ADR-041.1: a group `Actor`'s `members:` names one of the entity's own
+ * `has_many` relationships — codegen reads the member table and FK from it.
+ * The same rule is enforced at generation (the clean-lite-ps
+ * `resolveLibraryCapabilityConfig`); this reports it at validation.
+ */
+function validateActorMembers(entity: ParsedEntity, config: unknown): AnalysisIssue[] {
+	const members =
+		config !== null && typeof config === 'object' && 'members' in config
+			? config.members
+			: undefined;
+	if (typeof members !== 'string') return [];
+	const rel = entity.relationships.get(members);
+	if (rel && rel.type === 'has_many') return [];
+	return [
+		{
+			severity: 'error',
+			type: 'actor_members_not_has_many',
+			entity: entity.name,
+			message:
+				`${ACTOR_CAPABILITY} members: '${members}' must name one of the entity's has_many ` +
+				`relationships${rel ? ` ('${members}' is a ${rel.type})` : ''}.`,
+		},
+	];
 }
