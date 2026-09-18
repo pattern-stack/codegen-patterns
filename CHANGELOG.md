@@ -214,9 +214,24 @@ resolve against.
   tests. The main smoke now also runs `entity new connection` after
   `subsystem install auth-integrations`, completing the flow the install's own
   next-step output documents.
+- **`entity new` always says why a target was rejected** (#627). Schema,
+  `emits:` and `roles:` pre-flight rejections are printed with their per-issue
+  details in every mode, and carried in the `--json` payload
+  (`failed[].details`, dry-run `invalid[]`). `--continue-on-error` now decides
+  only whether the run stops. An entity with an invalid `emits:` is no longer
+  generated with a TODO payload mapping; it is rejected. A dry run exits 1 when
+  anything was rejected, as the real run does.
+- **`subsystem install auth-integrations` vendors `connection.yaml` into the
+  CLI's entities directory** (#634): `paths.entities`, else `entities/`. It
+  previously defaulted to `definitions/entities/`, which `entity new` does not
+  read.
 
 ### Removed
 
+- **`paths.entities_dir`** (#634). `paths.entities` is the one key for the
+  entity YAML directory (default `entities/`). Rename the key in
+  `codegen.config.yaml`. The old key is not read, and it is ignored without a
+  warning until config validation lands (#640).
 - **v1 Drizzle `relations()` emission** (#583). Drizzle 1.0 removes `relations`
   from the `drizzle-orm` root export, so every generated project with a
   relationship stopped compiling on 1.0. Nothing generated consumed the const —

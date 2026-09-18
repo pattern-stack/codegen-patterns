@@ -40,7 +40,7 @@ If this file disagrees with those, they win — fix this file.
 codegen entity new <yaml>                 # one entity
 codegen entity new --all                  # every YAML under paths.entities (default entities/)
 codegen entity new --all --only <names>   # subset
-codegen entity new --all --dry-run | --force | --continue-on-error
+codegen entity new --all --dry-run | --force | --no-continue-on-error
 codegen entity list [--pattern <P>] [--format json]
 codegen entity validate [dir] [--strict]  # schema + cross-refs; --strict fails on warnings
 
@@ -49,6 +49,10 @@ codegen relationship list
 codegen junction new <yaml> | --all       # junctions/ — first-class M:N with role/temporal/sourcing metadata
 codegen junction list
 ```
+
+`entity new` pre-flights each target (schema, `emits:`, `roles:`) and prints every rejection with its reasons in every
+mode; `--json` carries them in `failed[].details`. Continue-on-error is the default: rejected entities are skipped
+and the run exits 1. With `--no-continue-on-error` a pre-flight rejection stops the run before anything is generated (#627).
 
 **Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
 `eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +

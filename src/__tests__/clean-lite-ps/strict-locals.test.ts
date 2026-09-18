@@ -9,7 +9,10 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import ejs from 'ejs';
-import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import {
+	assertNoUndefinedLocals,
+	buildCleanLitePsLocals,
+} from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
 import { withEntities } from './_entity-lookup';
 
 const CLP_ROOT = resolve(import.meta.dir, '../../../templates/entity/new/clean-lite-ps');
@@ -76,11 +79,13 @@ describe('clean-lite-ps bodies under clean-lite-ps', () => {
 		expect(() => render('repository.ejs.t', l)).toThrow(/drizzleTokenImport is not defined/);
 	});
 
-	it('buildCleanLitePsLocals rejects a local set to undefined', () => {
-		expect(() =>
-			buildCleanLitePsLocals(definition, withEntities({ paginationImport: undefined })),
-		).toThrow(/clean-lite-ps locals for 'note' are undefined: paginationImport/);
+	it('a clean-lite-ps local set to undefined is rejected by name', () => {
+		expect(() => assertNoUndefinedLocals({ clpHasFk: undefined, clpBelongsTo: [] }, 'note')).toThrow(
+			/clean-lite-ps locals for 'note' are undefined: clpHasFk/,
+		);
+		expect(() => assertNoUndefinedLocals({ composedBaseClass: null }, 'note')).not.toThrow();
 	});
+
 });
 
 describe('no per-local typeof guards remain (#638)', () => {

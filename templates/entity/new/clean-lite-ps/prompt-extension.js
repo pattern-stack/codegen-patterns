@@ -2046,14 +2046,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     );
   }
 
-  // The complete local set the clean-lite-ps templates render with: the
-  // prompt's own locals (banner, runtime import specifiers, EVT-7 emits, …)
-  // plus the clean-lite-ps ones. No prompt-owned local is defaulted here — a
-  // missing one is a ReferenceError in the template, and one set to
-  // `undefined` fails `assertNoUndefinedLocals` below (#638).
-  const locals = {
-    ...baseLocals,
-
+  const clpLocals = {
     // Clean-Lite-PS identity
     entityName,
     entityNamePascal,
@@ -2179,16 +2172,21 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     eavDefinitionRepositoryImported: eavDefinitionDep != null,
     eavDefinitionRepoProperty: eavDefinitionDep ? eavDefinitionDep.property : 'definitionRepo',
   };
-  assertNoUndefinedLocals(locals, entity.name);
-  return locals;
+  assertNoUndefinedLocals(clpLocals, entity.name);
+  // The complete local set the clean-lite-ps templates render with: the
+  // prompt's own locals (banner, runtime import specifiers, EVT-7 emits, …)
+  // plus the clean-lite-ps ones — what `prompt.js` holds after merging. No
+  // prompt-owned local is defaulted here: a missing one is a ReferenceError in
+  // the template (#638).
+  return { ...baseLocals, ...clpLocals };
 }
 
 /**
- * A clean-lite-ps local set to `undefined` is a prompt bug: the template would
- * treat it as falsy and silently emit nothing. `null` is a real value (e.g. no
- * composed base) and passes (#638).
+ * A clean-lite-ps local set to `undefined` is a bug in this extension: the
+ * template would treat it as falsy and silently emit nothing. `null` is a real
+ * value (e.g. no composed base) and passes (#638).
  */
-function assertNoUndefinedLocals(locals, entityName) {
+export function assertNoUndefinedLocals(locals, entityName) {
   const missing = Object.keys(locals).filter((k) => locals[k] === undefined);
   if (missing.length > 0) {
     throw new Error(

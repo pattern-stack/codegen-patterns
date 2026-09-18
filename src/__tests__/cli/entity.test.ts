@@ -559,6 +559,43 @@ describe('entity noun — new reports every pre-flight rejection', () => {
 		expect(err).toContain('note.yaml — emits: validation failed');
 		expect(err).toContain("emits 'no_such_event' has no matching");
 	});
+
+	test('an entity with emits: and roles: errors reports both', async () => {
+		const root = mkSelfContainedProject();
+		tempDirs.push(root);
+		fs.appendFileSync(
+			path.join(root, 'entities', 'note.yaml'),
+			[
+				'emits:',
+				'  - no_such_event',
+				'roles:',
+				'  author:',
+				'    target: nobody',
+				'    cardinality: one',
+				'',
+			].join('\n'),
+		);
+		const cli = buildCli();
+		const { result, out } = await captureStreams(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'note.yaml'),
+				'--dry-run',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+		const parsed = JSON.parse(out);
+		expect(parsed.invalid).toHaveLength(1);
+		expect(parsed.invalid[0].message).toBe('emits: and roles: validation failed');
+		const details = parsed.invalid[0].details.join('\n');
+		expect(details).toContain("emits 'no_such_event'");
+		expect(details).toContain('nobody');
+	});
 });
 
 describe('entity noun — module shape', () => {
