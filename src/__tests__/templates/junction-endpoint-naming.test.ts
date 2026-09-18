@@ -143,6 +143,18 @@ describe('junction endpoints resolve from their own YAML', () => {
 		expect(l.leftEntityImportFromJunction).toBe('../org/crews/crew.entity');
 	});
 
+	it('architecture: clean is untouched by paths.modules_dir (PATH-1)', async () => {
+		const withModulesDir = await junctionLocals(
+			['crew', 'person'],
+			ENTITIES,
+			'generate:\n  architecture: clean\npaths:\n  backend_src: app/src\n  modules_dir: app/src/features\n',
+		);
+		expect(withModulesDir.leftEntityImportFromJunction).toBe('../crews/crew.entity');
+		expect(withModulesDir.rightEntityImportFromLeft).toBe('../persons/person.entity');
+		expect(withModulesDir.parentServicePathRight).toBe('app/src/application/persons/person.service.ts');
+		expect(withModulesDir.outputPaths.entity).toBe('app/src/domain/crew_people/crew_person.entity.ts');
+	});
+
 	it('an endpoint with no entity YAML is a named error, not a guess', async () => {
 		await expect(junctionLocals(['crew', 'ghost'], ENTITIES)).rejects.toThrow(
 			/endpoint 'ghost' has no entity YAML — no YAML under \S+\/entities declares `entity: \{ name: ghost \}` \(expected e\.g\. \S+\/entities\/ghost\.yaml\)/,

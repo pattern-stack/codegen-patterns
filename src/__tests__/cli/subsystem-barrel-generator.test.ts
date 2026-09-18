@@ -8,7 +8,8 @@
  *   - jobs `worker_mode: 'embedded'` adds JobWorkerModule
  *   - per-subsystem config plumbed through (multi_tenant → multiTenant)
  *   - subsystems in install list but with no composer are listed in `skipped`
- *   - subsystems root path override via `paths.subsystems` honored
+ *   - the subsystems root is `<backend_src>/shared/subsystems` (there is no
+ *     `paths.subsystems` key, PATH-1 #645)
  */
 
 import { describe, test, expect } from 'bun:test';
