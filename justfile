@@ -54,9 +54,11 @@ test-smoke-junction:
 test-smoke-junction-clean:
     bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean
 
-# Junction smoke: cross-domain pairing (opportunity × activity), clean-lite-ps
+# Junction smoke: cross-domain pairing (opportunity × activity), clean-lite-ps,
+# both runtime modes (ADR-037)
 test-smoke-junction-cross-domain:
-    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps --runtime vendored
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps --runtime package
 
 # Junction smoke: cross-domain pairing, clean
 test-smoke-junction-cross-domain-clean:
