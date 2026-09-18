@@ -24,9 +24,9 @@ afterEach(() => {
 });
 
 describe('entitiesDirCandidates', () => {
-	it('configured first (paths.entities over paths.entities_dir), then <cwd>/entities', () => {
-		expect(entitiesDirCandidates('/p', { entities: 'a', entities_dir: 'b' })).toEqual(['/p/a', '/p/entities']);
-		expect(entitiesDirCandidates('/p', { entities_dir: 'b' })).toEqual(['/p/b', '/p/entities']);
+	it('paths.entities first, then <cwd>/entities', () => {
+		expect(entitiesDirCandidates('/p', { entities: 'a' })).toEqual(['/p/a', '/p/entities']);
+		expect(entitiesDirCandidates('/p', { entities: '' })).toEqual(['/p/entities']);
 		expect(entitiesDirCandidates('/p', null)).toEqual(['/p/entities']);
 		expect(entitiesDirCandidates('/p', { entities: 'entities' })).toEqual(['/p/entities']);
 	});

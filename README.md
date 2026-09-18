@@ -483,7 +483,7 @@ detection:
 
 `codegen.config.yaml` in your project root:
 
-Definition directories (`entities_dir`, `events_dir`) are discovered
+Definition directories (`entities`, `events_dir`) are discovered
 recursively — a flat `entities/contact.yaml` and a domain-foldered
 `entities/crm/contact.yaml` are both picked up. Group definitions into
 per-domain subfolders freely; codegen walks the whole tree.
@@ -491,7 +491,7 @@ per-domain subfolders freely; codegen walks the whole tree.
 ```yaml
 paths:
   backend_src: src
-  entities_dir: entities
+  entities: entities               # the one key for the entity YAML directory (default entities/)
   events_dir: events
   generated: src/generated
 

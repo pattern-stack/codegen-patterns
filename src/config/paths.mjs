@@ -74,9 +74,6 @@ export const BASE_PATHS = {
   // Schema directory (relative to backendSrc)
   schemaDir: projectConfig?.paths?.schema_dir ?? "infrastructure/persistence/drizzle",
 
-  // Entity definitions directory
-  entitiesDir: projectConfig?.paths?.entities_dir ?? "entities",
-
   // Manifest output directory
   manifestDir: projectConfig?.paths?.manifest_dir ?? ".codegen",
 

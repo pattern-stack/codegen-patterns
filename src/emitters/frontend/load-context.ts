@@ -43,6 +43,9 @@ import type {
 } from './types';
 import { sortEntities } from './types';
 
+/** The junctions directory name — not a `paths.*` key (PATH-0, #642). */
+const JUNCTIONS_DIR = 'junctions';
+
 // ---------------------------------------------------------------------------
 // Location defaults (mirror src/config/locations.mjs)
 // ---------------------------------------------------------------------------
@@ -78,7 +81,7 @@ export interface FrontendConfigInput {
 	generate?: { architecture?: 'clean' | 'clean-lite-ps' } & Record<string, unknown>;
 	frontend?: unknown;
 	locations?: Record<string, { path?: string; import?: string } | undefined>;
-	paths?: { entities_dir?: string; providers?: string } & Record<string, unknown>;
+	paths?: { providers?: string } & Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -191,8 +194,9 @@ export function loadProviderCatalogInputs(
  * @param cwd     Project root (the CLI's `--cwd`, NOT `process.cwd()`).
  * @param config  The loaded `codegen.config.yaml` (frontend block fully
  *                defaulted by the config loader).
- * @param opts.entitiesDir  Override the entities directory (default
- *                `<cwd>/<paths.entities_dir | 'entities'>`).
+ * @param opts.entitiesDir  The entities directory, already resolved by the
+ *                caller (the CLI's `ctx.entitiesDir`, `src/config/entities-dir.ts`).
+ *                Required: the emitter has no rule of its own (#634).
  * @param opts.junctionsDir Override the junctions directory (default
  *                `<cwd>/junctions`) — the graph emitter's second input.
  * @returns `{ ctx, outDir }` ready for `emitFrontendSet`, or `{ skip }` when
@@ -201,12 +205,10 @@ export function loadProviderCatalogInputs(
 export function loadFrontendEmitContext(
 	cwd: string,
 	config: FrontendConfigInput,
-	opts: { entitiesDir?: string; junctionsDir?: string } = {},
+	opts: { entitiesDir: string; junctionsDir?: string },
 ): LoadFrontendEmitContextResult {
-	const entitiesDir =
-		opts.entitiesDir ??
-		path.resolve(cwd, config.paths?.entities_dir ?? 'entities');
-	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, 'junctions');
+	const { entitiesDir } = opts;
+	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIR);
 
 	const { registry } = loadEntityRegistry(entitiesDir);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
