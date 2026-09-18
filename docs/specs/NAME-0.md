@@ -166,9 +166,9 @@ Output from the runs made **after the last code edit** (charter I9). The only ed
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | **exit 0**; baseline byte-identical (the clean pipeline is untouched) |
-| `just test-all` | **exit 0**. Unit **3333 pass / 0 fail**. Also: baseline, smoke, smoke-subsystems, smoke-relationship, smoke-junction ×2, **smoke-capability (vendored + package)** with the NAME-0 fixtures, path assertions and the #624 expectation over both junctions, junction snapshots **10/10 unchanged**, integration-emit 56/56, smoke-integration |
+| `just test-all` | **exit 0**. Unit **3340 pass / 0 fail**. Also: baseline, smoke, smoke-subsystems, smoke-relationship, smoke-junction ×2, **smoke-capability (vendored + package)** with the NAME-0 fixtures, path assertions and the #624 expectation over both junctions, junction snapshots **10/10 unchanged**, integration-emit 56/56, smoke-integration |
 | `just test-integration` | **exit 0**: 74 pass · 2 skip (pre-existing `test.skip`) · 0 fail |
-| `just test-post-publish` | **exit 0**: `templates/_shared/entity-naming.mjs` ships with `templates/`, and the consumer workflow compiles from the tarball |
+| `just test-post-publish` | **exit 0**. The tarball ships `templates/_shared/entity-naming.mjs` plus the two `src/` modules it imports (`src/config/entities-dir.ts`, `src/utils/find-yaml-files.ts`), and the consumer workflow compiles from it |
 | `just test-smoke-junction-clean` | exit 1. **Known-red, #602**, still exactly **118** |
 
 - **No filter, no `.skip`.** The #624 expectation grew by one junction's worth of the same 16 named diagnostics
