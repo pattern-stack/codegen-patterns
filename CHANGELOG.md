@@ -179,6 +179,16 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   pre-flight rejection like an invalid job YAML: listed with the other
   rejections (`--json`: `failed[]`, `stopped: 'pre-flight'`), the run stops
   before generating anything whatever `--continue-on-error` says, and exits 1.
+- **An unloadable app-pattern file fails `orchestration gen` and the
+  validators** (#667). `orchestration gen` printed the loader error as a
+  text-mode warning and rewrote the orchestration barrel without the lost
+  pattern's module, exit 0; it now stops before writing, like `entity new`
+  (`--json`: `failed[]`, `stopped: 'pre-flight'`), exit 1. `entity validate`
+  and `project inspect --kind analyze|stats|doc` validated against the partial
+  pattern set with a text-only warning; each loader error is now an error
+  (`app_pattern_load_failed`, in `--json` too) and the command exits 1.
+  `project inspect --kind analyze --json` now prints JSON (it printed the
+  console report).
 - **`entity new --json` never exits non-zero with an empty stdout** (#669).
   `--all` with no entity YAML (exit 1), `--all` plus a path and neither
   (exit 2) now print `{ command: 'entity new', status: 'error', error }`.
