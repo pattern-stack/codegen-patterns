@@ -1,0 +1,12 @@
+# Golden relations fixture — many-to-many pairing.
+#
+# Contributes FOUR edges: the `.through()` hop on each parent
+# (opportunities.contacts / contacts.opportunities), the row-level edge from
+# each parent to the junction table (where role / temporal / provenance columns
+# live), and the junction's own two belongs_to edges.
+pattern: Junction
+between: [opportunity, contact]
+fields:
+  role:
+    type: enum
+    choices: [champion, decision_maker, influencer]

@@ -304,11 +304,38 @@ Exactly the ADR: `RequesterContext.tenantId`, `getTenantId()`, `tenant_scoped: t
 on `create()`, jobs enter the ALS from `jobRuns.tenantId`. Default `scopeEnforcement: 'strict'` when
 `tenant_scoped: true`. Traversal without this is a cross-tenant read path, hence the ordering.
 
-### 5A.3 REL-1 — manifest
+### 5A.3 REL-1 — manifest — **shipped 2026-09-17 (#586)**
 One `defineRelations()` manifest per schema under `paths.generated`, whole-set emitted (TS emitter, not hygen inject —
-it is a cross-entity file; ADR-038 precedent). `belongs_to`/`has_many`/`has_one` from `relationships:`; `alias` from
-`inverse`, and from `roles:` when CAP-2 has landed; junctions via `.through()`. `init-scaffold.ts` database module
-passes `relations`. Gate: charter §9 round-trip (YAML → manifest → traversal returns expected rows) in `test-integration`.
+it is a cross-entity file; ADR-038 precedent). `belongs_to`/`has_many`/`has_one` from `relationships:`; junctions via
+`.through()`. `init-scaffold.ts` database module passes `relations`. Gate: charter §9 round-trip (YAML → manifest →
+traversal returns expected rows) in `test-integration`. `docs/specs/REL-1.md` is the post-implementation truth; what
+changes later units:
+
+- **No `alias`, ever.** The plan said "`alias` from `inverse`, and from `roles:` when CAP-2 has landed". Measured:
+  Drizzle reads `alias` only in `processRelations`' reverse-inference branch, which runs only when a relation omits
+  `from`/`to`. REL-1 emits explicit `from`/`to` on both sides of every relation, so self-references and multiple
+  relations between the same pair need none. **CAP-2 (§6.3) adds role edges the same way — one more entry in
+  `build-graph.ts`, explicitly keyed, no `alias`.** ADR-044 carries a dated revision note.
+- **Relation keys are the YAML relationship names**, camelCased — not the target entity name the deleted v1 const
+  used. REL-2's typed `with` and REL-3's navigator method names derive from these keys, so
+  `meetingService.from(id).parentAccount()` follows the YAML, not the target.
+- **The typed db is generated→generated.** `runtime/types/drizzle.ts` is now
+  `DrizzleClient<TRelations extends AnyRelations = AnyRelations>` (the `any` is gone); the published runtime stays
+  relations-agnostic because it can never see a consumer's manifest. The typed handle is `DrizzleDB =
+  NodePgDatabase<typeof relations>` in the emitted `database.module.ts`. **REL-0/REL-2 bind their generic there**, not
+  in the runtime package.
+- **`paths.generated` was enough** — no new `paths.*` key. The manifest is `<generated>/relations.ts`, a sibling of
+  `modules.ts` / `schema.ts`, and `project init` writes the empty shape so a zero-entity project compiles.
+- **`expose_on_parent` does not gate the graph.** It is CGP-60's parent-service fan-out knob; every declared
+  relationship is navigable internally (§5A.6). REL-2's HTTP allowlist is the separate knob.
+- **A relation-key collision fails the command.** Two declarations claiming one key on one table (e.g. a declared
+  `contacts: has_many` plus an `opportunity × contact` junction) throws; the post-step reports an error and
+  `entity new` exits non-zero. Later units that add edge sources must keep that property.
+- **`relationship:` YAML entities contribute no edges yet.** Their typed edges need a per-type `where`, which is
+  REL-2's surface; their tables carry `{}` in the manifest today.
+- **The scaffold integration harness now generates a SET** — `test/scaffold/entities/` (account · contact ·
+  opportunity) plus `test/scaffold/junctions/`, staged into `<repo>/junctions` because the CLI reads junctions from a
+  fixed path. TEN-1 / REL-2 leak tests at depth ≥ 3 have a graph to traverse there already.
 
 ### 5A.4 REL-2 — typed includes on repositories
 `findById` / `list` / declarative `queries:` accept a typed `with`. **Every hop** must carry: tenant predicate (ALS),

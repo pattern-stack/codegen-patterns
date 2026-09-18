@@ -1,8 +1,8 @@
 /**
  * Drizzle schema for the scaffold test harness.
  *
- * Re-exports the contacts table from codegen output so that drizzle-kit push
- * can create the contacts table in Docker Postgres. (Under Drizzle 1.0 the
+ * Re-exports the generated tables from codegen output so that drizzle-kit push
+ * can create them in Docker Postgres. (Under Drizzle 1.0 the
  * client no longer takes a `schema` — `drizzle({ client })` — so this barrel
  * exists for kit and for test code that imports tables directly, not for the
  * client constructor. DRZ-2, #584.)
@@ -11,7 +11,15 @@
  * After running codegen, the entity file lives at:
  *   <repo-root>/modules/contacts/contact.entity.ts
  */
-export { contacts } from '@gen/modules/contacts/contact.entity';
+// Re-exported WHOLESALE for the same reason the subsystem schemas below are:
+// an entity file also declares the pgEnums its columns reference, and
+// drizzle-kit only creates enum types it can see. Naming `opportunityContacts`
+// alone made `push` abort with `type "opportunity_contact_role" does not exist`.
+export * from '@gen/modules/contacts/contact.entity';
+// REL-1 (#586): the related set the relations round-trip traverses.
+export * from '@gen/modules/accounts/account.entity';
+export * from '@gen/modules/opportunities/opportunity.entity';
+export * from '@gen/modules/opportunity_contacts/opportunity_contact.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

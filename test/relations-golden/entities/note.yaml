@@ -1,0 +1,26 @@
+# Golden relations fixture — note. The has_one target of opportunity.
+entity:
+  name: note
+  plural: notes
+  table: notes
+  folder_structure: nested
+
+fields:
+  opportunity_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: opportunities.id
+
+  body:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps
+
+relationships:
+  opportunity:
+    type: belongs_to
+    target: opportunity
+    foreign_key: opportunity_id

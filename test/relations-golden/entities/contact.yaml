@@ -1,0 +1,39 @@
+# Golden relations fixture — contact.
+#
+# Exercises: a NOT NULL belongs_to (`required: true` ⇒ `optional: false`), a
+# has_many whose target declares an irregular plural, and — via the junction —
+# the many-to-many `.through()` hop plus the row-level edge to the junction
+# table itself.
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  folder_structure: nested
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+  # Target entity declares `plural: persons`; `pluralize('person')` would give
+  # "people". The emitted table identifier must be `persons` — resolved from the
+  # TARGET's own YAML through the cross-entity registry, never derived here.
+  people:
+    type: has_many
+    target: person
+    foreign_key: contact_id

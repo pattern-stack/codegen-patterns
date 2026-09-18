@@ -15,9 +15,14 @@ import { Module, Global } from '@nestjs/common';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { DRIZZLE } from '@shared/constants/tokens';
+// REL-1 (#586): the generated v2 relation manifest. Mirrors what
+// `init-scaffold.ts` emits into a real consumer's database.module.ts —
+// `drizzle({ client, relations })` with `DrizzleDB` parameterised by the
+// manifest type, so `db.query.<table>.findMany({ with: … })` is typed.
+import { relations } from '@gen/generated/relations';
 
 export { DRIZZLE };
-export type DrizzleDB = NodePgDatabase;
+export type DrizzleDB = NodePgDatabase<typeof relations>;
 
 @Global()
 @Module({
@@ -30,8 +35,9 @@ export type DrizzleDB = NodePgDatabase;
             process.env.DATABASE_URL ??
             'postgresql://postgres:postgres@localhost:5432/scaffold_test',
         });
-        // Drizzle 1.0: config object, `schema` removed (DRZ-2, #584).
-        return drizzle({ client: pool });
+        // Drizzle 1.0: config object, `schema` removed (DRZ-2, #584);
+        // `relations` is the generated manifest (REL-1, #586).
+        return drizzle({ client: pool, relations });
       },
     },
   ],
