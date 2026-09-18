@@ -155,4 +155,16 @@ smoke's dependency list (its only justification was "main.ts reads codegen.confi
 
 ## Gates
 
-_(filled in after the last edit)_
+Run after the last code edit (commit `388830b`; the only later change is this table).
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass (baseline runner byte-identical) |
+| `just test-all` | pass: 3484 unit tests, 0 fail (new: `cli/app-config-generator.test.ts`, `cli/project-upgrade-auth.test.ts`; census list empty); baseline; every smoke — both custom-layout junction legs now assert `JOB_POOL_CONFIG` + run `main.ts` (`/reference-json` → `Junction Smoke API` 9.9.9; package: served with the `devAllowAnonymous` warning); subsystems (vendored + package); capability (both); junction snapshots (10); integration-emit (56); smoke-integration |
+| `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair) |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** (110 × TS2307 + 8 × TS7006, #602) |
+| `just test-post-publish` | pass — the schema's import of `runtime/subsystems/jobs/pool-config.ts` resolves from the tarball; the consumer workflow installs no `yaml` |
+
+Two gate runs before this one failed and were fixed in their own commits: the baseline runner invokes the jobs prompt
+directly and lacked the new `--appConfigImport` (`3d7673c`); the package subsystems smoke typechecks `worker.ts` in an
+isolated copy that lacked the generated `app-config.ts` (`388830b`).
