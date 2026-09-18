@@ -11,6 +11,31 @@ install it yourself. The v1 Drizzle `relations()` const is no longer emitted
 `defineRelations()` manifest (#586), which is what `db.query.*` traversals now
 resolve against.
 
+### Fixed
+
+- **The emitted frontend tree did not compile in a real install** (#620). The four `@tanstack/*`
+  packages in the version-pairing contract each pin `@tanstack/db` **exactly** and release in
+  lockstep, but `deps.ts` ranged them with carets — so a consumer installing exactly what codegen
+  told them to got **four** `@tanstack/db` copies (0.5.33 / 0.6.1 / 0.7.0 / 0.9.2), four type
+  identities, and `createCollection(electricCollectionOptions(...))` failed to type-check. The
+  frontend analogue of the dual-`drizzle-orm` hazard the 1.0 bump fixed.
+  - `@tanstack/db`, `@tanstack/react-db`, `@tanstack/electric-db-collection` and
+    `@tanstack/query-db-collection` are now pinned **exactly** to the set that agrees
+    (`0.5.33` / `0.1.77` / `0.2.41` / `1.0.30`), and `project init` merges an
+    `overrides: { "@tanstack/db": "$@tanstack/db" }` entry into the frontend `package.json` to
+    collapse the copy `@pattern-stack/frontend-patterns` bundles. That version is inside its own
+    `^0.5.11`, so the override deduplicates rather than upgrades. Existing entries are never
+    clobbered — the merge only adds what is missing, as it already did for dependencies.
+  - `@electric-sql/client` joins the contract: the emitted electric collections import
+    `snakeCamelMapper` from it, and it previously resolved only by hoisting.
+  - `@pattern-stack/frontend-patterns` deliberately **stays** on the `0.2.0-alpha` line — the
+    `1.0.0` published on npm ships no sync layer (no `createStore` / `createEntityHooks`) and is
+    not dist-tagged `latest`.
+  - New gate `just test-smoke-frontend`, in `just test-all`: scaffolds with
+    `generate.frontend: true`, installs the contract from live npm, asserts exactly one
+    `@tanstack/db`, and type-checks the emitted tree. The emitted frontend tree was previously
+    type-checked nowhere, which is why this shipped unnoticed.
+
 ### Added
 
 - **`<generated>/relations.ts` — the v2 relation manifest** (#586, ADR-044). A

@@ -16,7 +16,10 @@ import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
 import { runtimeImport, subsystemsImport, type RuntimeMode } from './runtime-import.js';
-import { FRONTEND_EMITTED_DEPS } from '../../emitters/frontend/deps.js';
+import {
+	FRONTEND_DEP_OVERRIDES,
+	FRONTEND_EMITTED_DEPS,
+} from '../../emitters/frontend/deps.js';
 import { emptyRelationsManifest } from '../../emitters/relations/index.js';
 
 // ---------------------------------------------------------------------------
@@ -752,15 +755,22 @@ interface PackageJsonMergeResult {
 
 /**
  * Idempotent merge of {@link FRONTEND_EMITTED_DEPS} into a consumer frontend
- * `package.json`'s `dependencies`. Mirrors the {@link mergeTsconfig} precedent:
- * only ADDS missing keys — an existing entry's version is preserved verbatim
- * (the consumer's range choice wins; we never clobber or downgrade). The
- * emitted frontend imports against these packages (ADR-038 version-pairing
- * contract); the deps comment in `generated/index.ts` keeps drift visible.
+ * `package.json`'s `dependencies`, and of {@link FRONTEND_DEP_OVERRIDES} into
+ * its `overrides`. Mirrors the {@link mergeTsconfig} precedent: only ADDS
+ * missing keys — an existing entry is preserved verbatim (the consumer's choice
+ * wins; we never clobber or downgrade). The emitted frontend imports against
+ * these packages (ADR-038 version-pairing contract); the deps comment in
+ * `generated/index.ts` keeps drift visible.
+ *
+ * `overrides` is not decoration. Three of the pinned packages declare
+ * `@tanstack/db` exactly and `@pattern-stack/frontend-patterns` bundles a
+ * fourth copy; without the override the emitted collections do not type-check
+ * at all (FE-0, #620 — `docs/specs/FE-0.md`). It is merged here rather than
+ * documented so a consumer who runs `project init` gets a tree that compiles.
  *
  * Re-running init never duplicates or reorders existing entries — when every
- * required key is already present, `unchanged: true` and the raw content is
- * returned untouched.
+ * required key in BOTH maps is already present, `unchanged: true` and the raw
+ * content is returned untouched.
  */
 export function mergeFrontendDeps(raw: string): PackageJsonMergeResult {
 	let parsed: Record<string, unknown>;
@@ -784,14 +794,26 @@ export function mergeFrontendDeps(raw: string): PackageJsonMergeResult {
 		}
 	}
 
-	if (added.length === 0) {
+	const overrides = (parsed.overrides ?? {}) as Record<string, unknown>;
+	const addedOverrides: string[] = [];
+	for (const [pkg, spec] of Object.entries(FRONTEND_DEP_OVERRIDES)) {
+		if (!(pkg in overrides)) {
+			overrides[pkg] = spec;
+			addedOverrides.push(`overrides.${pkg}`);
+		}
+	}
+
+	if (added.length === 0 && addedOverrides.length === 0) {
 		return { content: raw, added: [], unchanged: true };
 	}
 
 	parsed.dependencies = deps;
+	// Only when there is something to say — an empty `overrides: {}` added to a
+	// consumer's package.json because a DEPENDENCY was missing would be noise.
+	if (Object.keys(overrides).length > 0) parsed.overrides = overrides;
 	return {
 		content: JSON.stringify(parsed, null, 2) + '\n',
-		added,
+		added: [...added, ...addedOverrides],
 		unchanged: false,
 	};
 }
@@ -1149,6 +1171,15 @@ export async function buildInitPlan(
 		const depsList = Object.entries(FRONTEND_EMITTED_DEPS)
 			.map(([p, r]) => `${p}@${r}`)
 			.join(', ');
+		// FE-0 (#620): the override is load-bearing, not advice — without it the
+		// emitted collections do not type-check. Named for every manager, since a
+		// consumer doing this by hand may not be on bun or npm.
+		const overridesList = Object.entries(FRONTEND_DEP_OVERRIDES)
+			.map(([p, spec]) => `"${p}": "${spec}"`)
+			.join(', ');
+		const overridesNote =
+			` — and add {${overridesList}} under "overrides" (npm/bun), "pnpm.overrides" (pnpm)` +
+			` or "resolutions" (yarn); without it the emitted collections do not type-check`;
 		if (fs.existsSync(pkgPath)) {
 			const raw = fs.readFileSync(pkgPath, 'utf-8');
 			const merged = mergeFrontendDeps(raw);
@@ -1157,14 +1188,14 @@ export async function buildInitPlan(
 					path: pkgPath,
 					relPath: relOf(cwd, pkgPath),
 					action: 'skip',
-					reason: `unable to parse (${merged.parseError}); add frontend deps manually: ${depsList}`,
+					reason: `unable to parse (${merged.parseError}); add frontend deps manually: ${depsList}${overridesNote}`,
 				});
 			} else if (merged.unchanged) {
 				entries.push({
 					path: pkgPath,
 					relPath: relOf(cwd, pkgPath),
 					action: 'skip',
-					reason: 'frontend deps already present',
+					reason: 'frontend deps + overrides already present',
 				});
 			} else {
 				entries.push({
@@ -1180,7 +1211,7 @@ export async function buildInitPlan(
 				path: pkgPath,
 				relPath: relOf(cwd, pkgPath),
 				action: 'skip',
-				reason: `frontend enabled but ${relOf(cwd, pkgPath)} not found — install: ${depsList}`,
+				reason: `frontend enabled but ${relOf(cwd, pkgPath)} not found — install: ${depsList}${overridesNote}`,
 			});
 		}
 	}
