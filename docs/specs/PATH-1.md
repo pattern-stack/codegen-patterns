@@ -142,6 +142,8 @@ the schema rejects `paths.subsystems`; `project-layout` covers `modules_dir` out
    `src/__tests__/config/module-tree-spellings.test.ts` pins the two `src/` spellings against `entityModuleNaming`
    for a flat, a `context:`-nested and an irregular-plural entity. Collapsing them into one shipped module under
    `src/config/` is filed as **#649**.
+   *Revision 2026-09-18 (GEN-0, #649):* collapsed — `src/config/module-tree.ts` is the one rule; the pin test is
+   deleted (`docs/specs/GEN-0.md`).
 10. **The junction prompt ran `clean` endpoints through the module tree** (review). `architecture: clean` uses the
     endpoint folders only for their sibling-relative form (`../<plural>/…`), and `modules_dir` never feeds it. The
     prompt now names `clean` endpoints under a neutral `.` root, and a unit case asserts that a non-default
