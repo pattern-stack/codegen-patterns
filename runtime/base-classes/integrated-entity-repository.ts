@@ -1,26 +1,27 @@
 /**
- * IntegratedEntityRepository<TEntity, TIntegrationWrite, TIntegrationProjection>
+ * IntegratedEntityRepository<TEntity, TTable, TIntegrationWrite, TIntegrationProjection>
  *
  * Family-specific base for Integrated entities (contacts, accounts, opportunities).
  * Adds external ID lookups, user-scoped queries, and the generic inbound-integration
  * write surface (canonical→Drizzle upsert + provider-scoped FK resolution +
  * EAV dual-write seam), driven by the concrete repo's `integrationConfig`.
  *
- * The type params default so pre-existing single-param subclasses keep
- * compiling; `pattern: Integrated` repos declare all three plus `integrationConfig`.
+ * `TTable` is the concrete `pgTable(...)` type (REL-0); the write/projection
+ * params default to the entity, so a non-integrated subclass names only the
+ * first two. `pattern: Integrated` repos declare all four plus `integrationConfig`.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import type { DrizzleTx } from '../types/drizzle';
-import { BaseRepository } from './base-repository';
+import { BaseRepository, column } from './base-repository';
 import type { IntegrationUpsertConfig, IntegrationFkResolver } from './integration-upsert-config';
 
 export abstract class IntegratedEntityRepository<
   TEntity,
+  TTable extends PgTable,
   TIntegrationWrite = Partial<TEntity>,
   TIntegrationProjection = TEntity,
-> extends BaseRepository<TEntity> {
+> extends BaseRepository<TEntity, TTable> {
   /**
    * Declarative integration write surface. Concrete (`pattern: Integrated`) repositories
    * declare this — the template emits it from the entity's fields + FKs.
@@ -32,7 +33,7 @@ export abstract class IntegratedEntityRepository<
    */
   async findByExternalId(externalId: string): Promise<TEntity | null> {
     const rows = await this.baseQuery()
-      .where(eq(this.table['externalId'], externalId))
+      .where(eq(this.col('externalId'), externalId))
       .limit(1);
     return (rows[0] as TEntity) ?? null;
   }
@@ -43,7 +44,7 @@ export abstract class IntegratedEntityRepository<
   async findManyByExternalIds(externalIds: string[]): Promise<TEntity[]> {
     if (externalIds.length === 0) return [];
     const rows = await this.baseQuery()
-      .where(inArray(this.table['externalId'], externalIds));
+      .where(inArray(this.col('externalId'), externalIds));
     return rows as TEntity[];
   }
 
@@ -52,7 +53,7 @@ export abstract class IntegratedEntityRepository<
    */
   async findAllByUserId(userId: string): Promise<TEntity[]> {
     const rows = await this.baseQuery()
-      .where(eq(this.table['userId'], userId));
+      .where(eq(this.col('userId'), userId));
     return rows as TEntity[];
   }
 
@@ -119,17 +120,14 @@ export abstract class IntegratedEntityRepository<
         if (resolvedFks[fk.column] !== null) set[fk.column] = resolvedFks[fk.column];
       }
 
-      // `as Record<string, unknown>[]` — see BaseRepository.create: 1.0 types
-      // an insert's `.returning()` off `table['$inferSelect']`, which is `any`
-      // here, so the result is a union whose non-array arm is unreachable (#603).
-      const rows = (await db
-        .insert(this.table)
-        .values(values as never)
+      const rows = await db
+        .insert(this.tableRef)
+        .values(values)
         .onConflictDoUpdate({
-          target: cfg.conflictTarget.map((c: string) => this.table[c]),
-          set: set as never,
+          target: cfg.conflictTarget.map((c: string) => this.col(c)),
+          set,
         })
-        .returning()) as Record<string, unknown>[];
+        .returning();
 
       const saved = rows[0] as Record<string, unknown>;
 
@@ -161,11 +159,11 @@ export abstract class IntegratedEntityRepository<
   ): Promise<TIntegrationProjection | null> {
     const rows = await this.db
       .select()
-      .from(this.table)
+      .from(this.tableRef)
       .where(
         and(
-          eq(this.table['provider'], provider),
-          eq(this.table['externalId'], externalId),
+          eq(this.col('provider'), provider),
+          eq(this.col('externalId'), externalId),
         ),
       )
       .limit(1);
@@ -189,15 +187,15 @@ export abstract class IntegratedEntityRepository<
       ? { deletedAt: new Date(), updatedAt: new Date() }
       : { externalId: null, provider: null, updatedAt: new Date() };
     const rows = await db
-      .update(this.table)
-      .set(set as never)
+      .update(this.tableRef)
+      .set(set)
       .where(
         and(
-          eq(this.table['provider'], provider),
-          eq(this.table['externalId'], externalId),
+          eq(this.col('provider'), provider),
+          eq(this.col('externalId'), externalId),
         ),
       )
-      .returning({ id: this.table['id'] });
+      .returning({ id: this.col('id') });
     return rows[0] ? { id: rows[0].id as string } : null;
   }
 
@@ -222,8 +220,8 @@ export abstract class IntegratedEntityRepository<
         const id = (proj as Record<string, unknown>)['id'] as string;
         const row = await tx
           .select()
-          .from(this.table)
-          .where(eq(this.table['id'], id))
+          .from(this.tableRef)
+          .where(eq(this.col('id'), id))
           .limit(1);
         out.push(row[0] as TEntity);
       }
@@ -280,16 +278,16 @@ export abstract class IntegratedEntityRepository<
       }
       return null;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const refTable: PgTableWithColumns<any> =
-      fk.refTable === 'self' ? this.table : fk.refTable;
+    const refTable: PgTable =
+      fk.refTable === 'self' ? this.tableRef : fk.refTable;
+    const owner = `${this.constructor.name}.integrationConfig.fkResolvers['${fk.column}']`;
     const rows = await db
-      .select({ id: refTable['id'] })
+      .select({ id: column(refTable, 'id', owner) })
       .from(refTable)
       .where(
         and(
-          eq(refTable['provider'], provider),
-          eq(refTable['externalId'], parentExternalId),
+          eq(column(refTable, 'provider', owner), provider),
+          eq(column(refTable, 'externalId', owner), parentExternalId),
         ),
       )
       .limit(1);

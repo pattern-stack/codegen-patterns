@@ -115,6 +115,7 @@ export interface OpportunityContactIntegrationProjection {
 @Injectable()
 export class OpportunityContactRepository extends JunctionIntegrationRepository<
   OpportunityContact,
+  typeof opportunityContacts,
   OpportunityContactIntegrationWrite,
   OpportunityContactIntegrationProjection
 > {

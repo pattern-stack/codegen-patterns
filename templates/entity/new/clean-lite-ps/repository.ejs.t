@@ -91,11 +91,12 @@ export interface <%= classNames.entity %>IntegrationProjection {
 <%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
 export class <%= classNames.repository %> extends <%= repositoryBaseClass %><
   <%= classNames.entity %>,
+  typeof <%= entityNamePlural %>,
   <%= classNames.entity %>IntegrationWrite,
   <%= classNames.entity %>IntegrationProjection
 > {
 <%_ } else { _%>
-export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%= classNames.entity %>> {
+export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%= classNames.entity %>, typeof <%= entityNamePlural %>> {
 <%_ } _%>
   readonly table = <%= entityNamePlural %>;
 <% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
@@ -231,19 +232,19 @@ _%>
     );
     const runner = this.runner(tx);
     const rows = await runner
-      .insert(this.table)
-      .values(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+      .insert(this.tableRef)
+      .values(data)
       .onConflictDoUpdate({
         target: [
-          this.table['entityType'],
-          this.table['entityId'],
-          this.table['fieldDefinitionId'],
+          this.col('entityType'),
+          this.col('entityId'),
+          this.col('fieldDefinitionId'),
         ],
         set: {
           value: sql`excluded.value`,
           userId: sql`excluded.user_id`,
           updatedAt: sql`excluded.updated_at`,
-        } as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        },
       })
       .returning();
     return rows as <%= classNames.entity %>[];
