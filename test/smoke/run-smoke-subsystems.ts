@@ -453,6 +453,14 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 			"import { Module } from '@nestjs/common';\n@Module({})\nexport class AppModule {}\n",
 			'utf-8',
 		);
+		// CFG-1: the worker imports `jobPools` from the generated
+		// `./generated/app-config` — the real one, so its literal is checked
+		// against `JobWorkerModule`'s `domainModulePools` type.
+		fs.mkdirSync(path.join(srcDir, 'generated'), { recursive: true });
+		fs.copyFileSync(
+			path.join(tmpDir, 'src', 'generated', 'app-config.ts'),
+			path.join(srcDir, 'generated', 'app-config.ts'),
+		);
 		// Reuse the consumer's deps (NestJS, reflect-metadata) by pointing
 		// node_modules resolution at the tmpDir install.
 		fs.writeFileSync(
