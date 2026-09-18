@@ -216,19 +216,27 @@ export async function runUpgradeAuth(opts: UpgradeAuthOptions): Promise<UpgradeR
 			authImport,
 			block: MAIN_AUTH_BLOCK,
 		});
-		if (result.changed) {
-			ensureImport(mainSource, importSpecifier(layout.mainTs, path.join(layout.generated, 'app-config')), [
-				'authConfig',
-			]);
-		}
 		if (result.bail) {
 			changes.push({ path: mainRel, action: 'skipped', note: `${result.bail} — see CONSUMER-SETUP §Auth` });
-		} else if (result.changed) {
-			const mainAfter = mainSource.getFullText();
-			if (!dryRun) mainSource.saveSync();
-			changes.push({ path: mainRel, action: 'updated', note: result.note, diff: simpleDiff(mainBefore, mainAfter) });
 		} else {
-			changes.push({ path: mainRel, action: 'unchanged', note: result.note });
+			// The block reads `authConfig` (CFG-1). Ensured on its own, not only
+			// when the block was just inserted: a main.ts that already carries the
+			// block but lost (or never had) the import is repaired too. Idempotent.
+			const importPatch = ensureImport(
+				mainSource,
+				importSpecifier(layout.mainTs, path.join(layout.generated, 'app-config')),
+				['authConfig'],
+			);
+			const mainAfter = mainSource.getFullText();
+			if (mainAfter !== mainBefore) {
+				if (!dryRun) mainSource.saveSync();
+				const note = [result.changed ? result.note : undefined, importPatch.changed ? importPatch.note : undefined]
+					.filter(Boolean)
+					.join('; ');
+				changes.push({ path: mainRel, action: 'updated', note, diff: simpleDiff(mainBefore, mainAfter) });
+			} else {
+				changes.push({ path: mainRel, action: 'unchanged', note: result.note });
+			}
 		}
 	} else {
 		changes.push({ path: mainRel, action: 'skipped', note: "does not exist — run `codegen project init` to scaffold" });

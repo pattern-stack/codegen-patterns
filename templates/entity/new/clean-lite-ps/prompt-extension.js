@@ -1452,6 +1452,12 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     ? resolveTargetNaming('field_value', targetNaming, { required: true })
     : null;
   const eavFieldValueImportDir = eavFieldValueNaming ? eavFieldValueNaming.importDir : null;
+  // The create/update use cases live one folder down (`<moduleDir>/use-cases/`,
+  // clpOutputPaths below); their specifier is computed from that folder, not by
+  // prefixing `../` onto the module-level one.
+  const eavFieldValueUseCaseImportDir = eavFieldValueNaming
+    ? relativeModuleDir(`${ownNaming.moduleDir}/use-cases`, eavFieldValueNaming.moduleDir)
+    : null;
   const eavFieldValuePlural = eavFieldValueNaming ? eavFieldValueNaming.plural : null;
   const eavFieldValueModulePascal = eavFieldValuePlural ? pascalCase(eavFieldValuePlural) : null;
 
@@ -2102,6 +2108,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // EAV (ADR-13)
     eavEnabled,
     eavFieldValueImportDir,
+    eavFieldValueUseCaseImportDir,
     eavFieldValuePlural,
     eavFieldValueModulePascal,
 
