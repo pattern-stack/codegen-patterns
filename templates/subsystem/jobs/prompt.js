@@ -9,7 +9,7 @@
  * Invoked via:
  *   bunx hygen subsystem jobs \
  *     --workerPath <abs> --workerExists <'true'|''> \
- *     --jobWorkerModuleImport <specifier> --workerForRootOpts <ts-literal> \
+ *     --jobWorkerModuleImport <specifier> --appConfigImport <specifier> \
  *     --mainTsPath <abs> --configPath <abs> --schemaPath <abs> \
  *     --multiTenant <'true'|'false'> --workerMode <embedded|standalone> \
  *     --skipSchema <'true'|''> --appName <string>
@@ -23,28 +23,6 @@ function coerceBool(raw) {
   if (raw === false) return false;
   if (typeof raw === "string") return raw.toLowerCase() === "true";
   return false;
-}
-
-// #513: the CLI base64-encodes --workerForRootOpts because Hygen's yargs parser
-// mangles a raw `{ mode: 'standalone', … }` TS literal (the braces/colons are
-// read as nested object syntax). Decode it back to the source string here. A
-// direct hygen invocation that passes a non-encoded value (or omits it) falls
-// back to the plain default below.
-function decodeWorkerForRootOpts(raw) {
-  if (typeof raw !== "string" || raw.length === 0) {
-    return "{ mode: 'standalone', allPools: true }";
-  }
-  try {
-    const decoded = Buffer.from(raw, "base64").toString("utf-8");
-    // Re-encoding round-trips iff `raw` was valid base64 of the decoded bytes;
-    // guards against a hand-passed plain literal being treated as base64.
-    if (Buffer.from(decoded, "utf-8").toString("base64") === raw) {
-      return decoded;
-    }
-  } catch {
-    /* fall through to raw */
-  }
-  return raw;
 }
 
 export default {
@@ -62,15 +40,13 @@ export default {
       // include, next to `app.module.ts`); the CLI always passes an absolute
       // --workerPath, this fallback only guards a direct hygen invocation.
       workerPath: requiredPathArg(args, "workerPath", "subsystem jobs"),
-      // #513: mode-aware JobWorkerModule import + the pre-serialised
-      // forRoot(<opts>) literal (the only mode-dependent import the worker
-      // carries — AppModule is imported relatively).
+      // #513: mode-aware JobWorkerModule import (the only mode-dependent import
+      // the worker carries — AppModule is imported relatively).
       jobWorkerModuleImport:
         args.jobWorkerModuleImport ??
         "@pattern-stack/codegen/runtime/subsystems/jobs/index",
-      workerForRootOpts: decodeWorkerForRootOpts(args.workerForRootOpts),
-      // CFG-1: `<generated>/app-config` from the worker — its `jobPools` is the
-      // `domainModulePools` the forRoot literal above references.
+      // GEN-0: `<generated>/app-config` from the worker — its `jobWorkerOptions`
+      // is the whole `JobWorkerModule.forRoot` argument.
       appConfigImport: requiredPathArg(args, "appConfigImport", "subsystem jobs"),
       schemaPath:
         requiredPathArg(args, "schemaPath", "subsystem jobs"),

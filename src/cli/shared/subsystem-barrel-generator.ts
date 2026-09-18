@@ -31,6 +31,11 @@ import {
 	type SubsystemName,
 } from './subsystem-detect.js';
 import { writeAppConfig } from './app-config-generator.js';
+import {
+	drizzleJobsExtensions,
+	jobWorkerBackendOptions,
+	type DrizzleJobsExt,
+} from './job-worker-options.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 import {
@@ -134,54 +139,13 @@ export function jsonToTs(value: unknown): string {
 }
 
 /**
- * Camel-cased shape of the drizzle jobs backend extension knobs that flow into
- * the generated `forRoot` calls. Snake_case YAML keys map 1:1 to these.
- */
-type DrizzleJobsExt = {
-	listenNotify?: boolean;
-	pollIntervalMs?: number;
-	staleSweeperIntervalMs?: number;
-	staleThresholdMs?: number;
-	claimHeartbeatIntervalMs?: number;
-};
-
-/**
- * LISTEN-NOTIFY-1 / CLAIM-HB-1 — extract the drizzle extension knobs from
- * `jobs.extensions.drizzle` (`listen_notify`, `poll_interval_ms`,
- * `stale_sweeper_interval_ms`, `stale_threshold_ms`,
- * `claim_heartbeat_interval_ms`) and map them to the camelCase runtime shape.
- * Returns `undefined` when no knob is set (so the generated call stays minimal
- * and off-by-default). Only the drizzle/default backend reads these.
- */
-export function drizzleJobsExtensions(
-	backend: string,
-	cfg: Record<string, unknown> | undefined,
-): DrizzleJobsExt | undefined {
-	if (backend !== 'drizzle') return undefined;
-	const drizzle = (cfg?.extensions as { drizzle?: Record<string, unknown> } | undefined)
-		?.drizzle;
-	if (!drizzle) return undefined;
-	const out: DrizzleJobsExt = {};
-	if (typeof drizzle.listen_notify === 'boolean') out.listenNotify = drizzle.listen_notify;
-	if (typeof drizzle.poll_interval_ms === 'number')
-		out.pollIntervalMs = drizzle.poll_interval_ms;
-	if (typeof drizzle.stale_sweeper_interval_ms === 'number')
-		out.staleSweeperIntervalMs = drizzle.stale_sweeper_interval_ms;
-	if (typeof drizzle.stale_threshold_ms === 'number')
-		out.staleThresholdMs = drizzle.stale_threshold_ms;
-	if (typeof drizzle.claim_heartbeat_interval_ms === 'number')
-		out.claimHeartbeatIntervalMs = drizzle.claim_heartbeat_interval_ms;
-	return Object.keys(out).length > 0 ? out : undefined;
-}
-
-/**
  * Serialise the drizzle extension knobs to a `domainModuleExtensions: { drizzle:
  * {...} }` fragment (camelCase keys, matching the runtime shape), or `''` when
  * none apply. Threaded into BOTH `JobsDomainModule.forRoot` (so the orchestrator
  * emits the enqueue notify) and `JobWorkerModule.forRoot` (so the spawned worker
  * holds the listener + honors `pollIntervalMs`).
  */
-export function drizzleExtensionsClause(
+function drizzleExtensionsClause(
 	ext: DrizzleJobsExt | undefined,
 	key: 'extensions' | 'domainModuleExtensions',
 ): string {
@@ -365,25 +329,12 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			// first; BULLMQ-1 forwards the backend + extensions; BRIDGE-8 appends
 			// the pool clause (`pools` / `allPools`) so the embedded worker drains
 			// the reserved `events_*` bridge lanes when bridge is installed.
-			const parts = [`mode: 'embedded'`];
-			if (backend === 'bullmq') {
-				parts.push(`backend: 'bullmq'`);
-				if (bullExt) {
-					parts.push(`domainModuleExtensions: { bullmq: ${jsonToTs(bullExt)} }`);
-				}
-			} else {
-				// LISTEN-NOTIFY-1: the embedded worker needs the drizzle knobs too —
-				// `JobWorkerModule` reads `domainModuleExtensions.drizzle` to thread
-				// `listenNotify` (the listener) + `pollIntervalMs` into each spawned
-				// `JobWorker`. (It also forwards them to the inner `JobsDomainModule`,
-				// but that one already got them via the standalone domain call above;
-				// re-passing is harmless and keeps the embedded worker self-contained.)
-				const workerExtClause = drizzleExtensionsClause(
-					drizzleExt,
-					'domainModuleExtensions',
-				);
-				if (workerExtClause) parts.push(workerExtClause);
-			}
+			const parts = [
+				`mode: 'embedded'`,
+				// GEN-0 (#652): the backend/extension options the standalone worker's
+				// `jobWorkerOptions` (<generated>/app-config.ts) carries too — one builder.
+				...Object.entries(jobWorkerBackendOptions(cfg)).map(([k, v]) => `${k}: ${jsonToTs(v)}`),
+			];
 			parts.push('domainModulePools: jobPools');
 			const poolsClause = workerPoolsClause(cfg, bridgeInstalled);
 			if (poolsClause) parts.push(poolsClause);

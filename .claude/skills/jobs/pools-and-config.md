@@ -123,7 +123,7 @@ jobs:
       description: "Long-running LLM/agent work"
 ```
 
-Then any `@JobHandler({ pool: 'agents', … })` targets it. No hand-written code changes. `JobWorkerModule` finds the pool in `JOB_POOL_CONFIG` at boot, spins up a `JobWorker(pool='agents')`, starts its claim loop. The standalone `worker.ts` imports `jobPools` from the generated module, so it sees the pool too although it is emit-once.
+Then any `@JobHandler({ pool: 'agents', … })` targets it. No hand-written code changes. `JobWorkerModule` finds the pool in `JOB_POOL_CONFIG` at boot, spins up a `JobWorker(pool='agents')`, starts its claim loop. The standalone `worker.ts` passes `jobWorkerOptions` from the generated module (its `domainModulePools` is `jobPools`), so it sees the pool too although it is emit-once.
 
 If you want to restrict which pools a process services (useful for heterogeneous deploys), pass `opts.pools`:
 
@@ -135,7 +135,7 @@ Pools omitted from the list are not claimed by this process.
 
 ## Pool rules (`pool-config.ts`, JOB-5 §1 as revised by CFG-1)
 
-- Nothing reads `codegen.config.yaml` at boot. `jobs.pools` is emitted as `jobPools` into `<generated>/app-config.ts`; the generated barrel passes it to `JobsDomainModule.forRoot({ pools })` and (embedded) `JobWorkerModule.forRoot({ domainModulePools })`; `worker.ts` passes `domainModulePools: jobPools`.
+- Nothing reads `codegen.config.yaml` at boot. `jobs.pools` is emitted as `jobPools` into `<generated>/app-config.ts`; the generated barrel passes it to `JobsDomainModule.forRoot({ pools })` and (embedded) `JobWorkerModule.forRoot({ domainModulePools })`; `worker.ts` passes `jobWorkerOptions` (GEN-0, #652): `{ mode: 'standalone', …backend/extensions, domainModulePools: jobPools, allPools: true }`, generated next to `jobPools`. The backend/extension part is `jobWorkerBackendOptions` (`src/cli/shared/job-worker-options.ts`) — the one builder the embedded composer uses too. `worker.ts` itself holds no config value.
 - `resolvePoolConfig(overrides)` merges onto `FRAMEWORK_POOLS` and is bound under `JOB_POOL_CONFIG` — the one map the worker (activation, concurrency) and the BullMQ orchestrator (queue names) read.
 - `poolOverrideIssues(overrides)` is the rule set, stated once: a framework pool may set only `concurrency` / `description`; a user pool needs `queue` + positive `concurrency` and cannot set `reserved`. The config schema runs it (`jobs.pools` `superRefine`), so a violation is a `CodegenConfigError` naming `jobs.pools.<name>.<key>` at generation; `resolvePoolConfig` throws on the same issues for a hand-written call.
 

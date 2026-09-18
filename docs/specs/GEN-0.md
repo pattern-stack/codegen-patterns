@@ -1,7 +1,7 @@
 # GEN-0 — one module-tree rule (#649); the emit-once `worker.ts` carries no config (#652)
 
-**Status:** Draft
-**Date:** 2026-09-18
+**Status:** Implemented
+**Date:** 2026-09-18 · **Implemented:** 2026-09-18
 **Issues:** #649 (first commit), #652
 **Project:** #578
 **Depends on:** CFG-1 (#643 — `<generated>/app-config.ts`, `--appConfigImport`), PATH-1 (#645 — `paths.modules_dir`)
@@ -44,6 +44,9 @@ Principles (no backwards compatibility)
   `entity-naming.mjs`; the name and argument order are unchanged, so no prompt call site moves.
 - `entityFilePaths` (clean-lite-ps branch) returns `moduleFile` / `schemaFile = entityFile + '.ts'` from it.
 - `resolveEntityModuleImports` resolves `repositoryFile` / `moduleFile` under `modulesAbs` from it.
+- The clean-lite-ps prompt extension's own output-path map (`clpOutputPaths`) reads `moduleDir` / `entityFile` /
+  `moduleFile` / `repositoryFile` instead of re-joining `moduleGroupDir` + plural. `moduleGroupDir` then had no
+  reader and is not exported.
 - The spelling is the emission's (string join, `modulesDir` as resolved by `projectLayout`); the barrel's former
   `path.posix.join` only ever fed `path.posix.relative`, which normalises identically.
 - The pin test is deleted: one definition, nothing left to pin. `module-tree.test.ts` states the rule directly
@@ -61,8 +64,9 @@ because yargs shreds `{ … : … }`). CFG-1 routed `jobs.pools` around it (`dom
 
 ### Decision
 
-- **One builder.** `jobWorkerBackendOptions(jobsBlock)` (in `subsystem-barrel-generator.ts`, next to
-  `drizzleJobsExtensions`) returns the worker's backend/extension options as a value:
+- **One builder.** `jobWorkerBackendOptions(jobsBlock)` (`src/cli/shared/job-worker-options.ts`, with
+  `drizzleJobsExtensions` moved beside it — both generators import it, and `subsystem-barrel-generator.ts` already
+  imports `app-config-generator.ts`) returns the worker's backend/extension options as a value:
   `{}` | `{ domainModuleExtensions: { drizzle: {…camelCase} } }` | `{ backend: 'bullmq', domainModuleExtensions?: { bullmq: {…} } }`.
   The embedded composer serialises it (`jsonToTs`) between `mode: 'embedded'` and `domainModulePools`; the
   app-config generator serialises it between `mode: 'standalone'` and `domainModulePools` / `allPools: true`.
@@ -84,8 +88,10 @@ because yargs shreds `{ … : … }`). CFG-1 routed `jobs.pools` around it (`dom
   reserved `events_*` lanes.
 - **The emit-once file.** `worker.ts` imports `jobWorkerOptions` from `<generated>/app-config` and calls
   `JobWorkerModule.forRoot(jobWorkerOptions)`. It contains no config value.
-- **Existing consumers.** `subsystem install jobs` (both runtime modes) reads an existing `worker.ts`; when it does
-  not contain `JobWorkerModule.forRoot(jobWorkerOptions)` it prints the two-line replacement (the import and the
+- **Existing consumers.** `subsystem install jobs` (both runtime modes, and the package-mode "already installed"
+  early exit — the re-run an upgrading consumer makes) reads an existing `worker.ts`; when it does not contain
+  `JobWorkerModule.forRoot(jobWorkerOptions)` it prints the two-line replacement (`staleWorkerNotice`,
+  `jobs-scaffold-locals.ts`) (the import and the
   call). A string check, not a codemod: the old call is a single literal the consumer may have edited. CHANGELOG
   records the one-time edit.
 
@@ -101,7 +107,9 @@ The junction smoke's custom layout (both runtime modes) installs jobs with no ex
   `allPools: true`, `domainModuleExtensions.drizzle` = `{ listenNotify: true, pollIntervalMs: 4321 }` and the
   configured `domainModulePools` — the value the worker process would boot with, not a grep.
 
-Before the fix, the worker leg fails (`worker.ts` was rendered at install, without the extension).
+Before the fix, the worker leg fails — run on the #649 commit with this PR's test files:
+`[worker-verify] FAIL: domainModuleExtensions.drizzle: expected {"listenNotify":true,"pollIntervalMs":4321}, got {"pollIntervalMs":1000}`
+(the install-time `jobs:` block sets `poll_interval_ms: 1000`, which the old worker baked).
 
 ## Out of scope
 
@@ -110,7 +118,18 @@ Before the fix, the worker leg fails (`worker.ts` was rendered at install, witho
 
 ## Found
 
-_(filled during implementation)_
+1. **The value really changes.** The `jobs:` block `subsystem install jobs` writes already sets
+   `extensions.drizzle.poll_interval_ms: 1000`, so the gate is a 1000 → 4321 edit (plus `listen_notify` added), not
+   an unset → set one.
+2. **An upgrading consumer's re-run never reached the scaffold.** Package-mode `subsystem install jobs` on a project
+   that already lists `jobs` exits early ("already in subsystems.install") before the jobs scaffold runs. The
+   stale-worker notice is printed on that path too.
+3. **The worker's options are read, not booted.** Booting `WorkerAppModule` would start the pool workers against the
+   stub database. `verify-worker.ts` reads the `JobWorkerModule` dynamic module's `JOB_WORKER_MODULE_OPTIONS`
+   provider value from `WorkerAppModule`'s `imports` metadata — the value the orchestrator is injected with.
+4. **`jobs.backend: memory` never reaches `JobWorkerModule`** (pre-existing; the consolidated clause kept it
+   byte-identical). The worker options carry `backend` only for `bullmq`, and `JobWorkerModule` defaults its inner
+   `JobsDomainModule` to `drizzle`. Filed: **#656**.
 
 ## Gates
 
