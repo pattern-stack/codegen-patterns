@@ -12,7 +12,7 @@ import { describe, it, expect, mock } from 'bun:test';
 import { IntegratedEntityRepository } from '../../../../runtime/base-classes/integrated-entity-repository';
 import type { IntegrationUpsertConfig } from '../../../../runtime/base-classes/integration-upsert-config';
 import type { DrizzleClient, DrizzleTx } from '../../../../runtime/types/drizzle';
-import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 // ============================================================================
 // Test entity / table / config
@@ -40,18 +40,21 @@ interface AccountIntegrationWrite {
   fields?: Record<string, unknown>;
 }
 
-const accountsTable = {
-  id: { name: 'id' },
-  externalId: { name: 'external_id' },
-  provider: { name: 'provider' },
-  userId: { name: 'user_id' },
-  name: { name: 'name' },
-  domain: { name: 'domain' },
-  parentAccountId: { name: 'parent_account_id' },
-  createdAt: { name: 'created_at' },
-  updatedAt: { name: 'updated_at' },
-  deletedAt: { name: 'deleted_at' },
-} as unknown as PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+// A REAL Drizzle table: REL-0 resolves columns through `getColumns(table)`,
+// which reads `table[Table.Symbol.Columns]` — an object literal cast to the
+// table type has no such symbol.
+const accountsTable = pgTable('accounts', {
+  id: text('id').primaryKey(),
+  externalId: text('external_id'),
+  provider: text('provider'),
+  userId: text('user_id'),
+  name: text('name'),
+  domain: text('domain'),
+  parentAccountId: text('parent_account_id'),
+  createdAt: timestamp('created_at'),
+  updatedAt: timestamp('updated_at'),
+  deletedAt: timestamp('deleted_at'),
+});
 
 const baseConfig: IntegrationUpsertConfig = {
   conflictTarget: ['provider', 'externalId'],
@@ -106,7 +109,12 @@ function makeMock(): MockHandle {
   };
 }
 
-class AccountRepository extends IntegratedEntityRepository<Account, AccountIntegrationWrite, Account> {
+class AccountRepository extends IntegratedEntityRepository<
+  Account,
+  typeof accountsTable,
+  AccountIntegrationWrite,
+  Account
+> {
   readonly table = accountsTable;
   protected readonly integrationConfig: IntegrationUpsertConfig;
   protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };

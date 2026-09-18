@@ -14,18 +14,29 @@ import {
   type JunctionIntegrationConfig,
 } from '../../../../runtime/base-classes/junction-integration-repository';
 import type { DrizzleClient, DrizzleTx } from '../../../../runtime/types/drizzle';
-import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 // ============================================================================
 // Tables / config
 // ============================================================================
 
-const makeTbl = (cols: string[]) =>
-  Object.fromEntries(cols.map((c) => [c, { name: c }])) as unknown as PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-const opportunities = makeTbl(['id', 'provider', 'externalId']);
-const contacts = makeTbl(['id', 'provider', 'externalId']);
-const junctionTable = makeTbl(['opportunityId', 'contactId', 'role', 'createdAt', 'updatedAt']);
+// REAL Drizzle tables: REL-0 resolves columns through `getColumns(table)`,
+// which reads `table[Table.Symbol.Columns]` — an object literal cast to the
+// table type has no such symbol.
+const parentColumns = {
+  id: text('id').primaryKey(),
+  provider: text('provider'),
+  externalId: text('external_id'),
+};
+const opportunities = pgTable('opportunities', parentColumns);
+const contacts = pgTable('contacts', parentColumns);
+const junctionTable = pgTable('opportunity_contacts', {
+  opportunityId: text('opportunity_id'),
+  contactId: text('contact_id'),
+  role: text('role'),
+  createdAt: timestamp('created_at'),
+  updatedAt: timestamp('updated_at'),
+});
 
 interface OppContact {
   opportunityId: string;
@@ -81,7 +92,12 @@ function makeMock() {
   };
 }
 
-class OppContactRepository extends JunctionIntegrationRepository<OppContact, OppContactWrite, OppContactProjection> {
+class OppContactRepository extends JunctionIntegrationRepository<
+  OppContact,
+  typeof junctionTable,
+  OppContactWrite,
+  OppContactProjection
+> {
   readonly table = junctionTable;
   protected readonly integrationConfig: JunctionIntegrationConfig;
   protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };

@@ -1,7 +1,7 @@
 # REL-0 — `BaseRepository` generic over its concrete table
 
-**Status:** Designed
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #603 · **Epic:** #580 · **Project:** #578
 **Depends on:** DRZ-2 (#584), GATE-2 (#604) · **Blocks:** TEN-1 (#585), REL-2 (#587)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · PLAN §5A.0 · ADR-044 · `docs/specs/DRZ-2.md` §A3/§A4
@@ -229,10 +229,12 @@ real runtime base class for `just test-integration` (`@shared/base-classes/*` re
 second declaration of a generated-code contract — exactly the drift GATE-1 deleted three other copies of — and it
 means the integration suite has never exercised the real `BaseRepository`.
 
-**Delete it.** `@shared/base-classes/base-repository` then resolves to `runtime/base-classes/base-repository.ts`,
-which is the contract consumers actually get. If deleting it turns out to break the scaffold in a way that is not a
-genuine bug in the runtime base class, the fallback is to update the stub's arity in place and file the deletion as
-its own issue — recorded here so the decision is not silently reversed.
+The design said **delete it**. The fallback — update its arity in place and file the deletion as its own issue —
+is what shipped, and the reason is Found #3: the two contracts genuinely disagree about the shipped CRUD surface
+(`delete()` returns the row vs `void`, `update()` returns `TEntity | null` vs `TEntity`, `list()` takes no options),
+and `test/scaffold/tests/repository.test.ts` asserts the stub's behaviour. Collapsing them is a contract decision,
+not a type change, so it is **#608**. REL-0 brought only the stub's table typing into line (`TTable` second, a local
+`tableRef`, `getColumns`-backed `col()`), which removed its `table: any` and its two `as any` write payloads.
 
 ### 8. Specs and fixtures
 
@@ -242,19 +244,77 @@ build their tables as plain object literals cast `as unknown as PgTableWithColum
 is the point: a fake object cast to the table type is precisely what let the DRZ-2 narrowing look correct.
 `test/scaffold/tests/*.test.ts` gain the second type argument.
 
-## Acceptance
+## Found during implementation
 
-1. `runtime/base-classes/**` contains no `PgTableWithColumns<any>`, no `@typescript-eslint/no-explicit-any` disable
-   in the repository files, and no `as TEntity[]` / `as Record<string, unknown>[]` on a `.returning()`.
-2. `just test-smoke`, `just test-smoke-relationship`, `just test-smoke-junction`,
-   `just test-smoke-junction-cross-domain`, `just test-smoke-subsystems` (vendored **and** package mode) and
-   `just test-smoke-integration` green — these are the only gates that compile generated code against a consumer
-   tsconfig with `noUncheckedIndexedAccess`.
-3. `just test-all` green; `just test-integration` green; `just test-post-publish` green.
-4. `just test-smoke-junction-clean` unchanged at its known-red 118 (#602) — not repaired, not filtered.
-5. Every regenerated snapshot class explained in the PR body.
-6. `docs/specs/DRZ-2.md` §A3/§A4 corrected: the workaround they describe is gone, and the A-checklist gains the
-   rows below.
+1. **The design's four measurements all held.** M1–M4 were taken before any code was written and none needed
+   revision — which is the whole reason this did not repeat DRZ-2's Found #1. In particular M4 paid for itself:
+   because the retyped `baseQuery()` keeps every generated query body compiling, the entire snapshot churn for this
+   PR is **two lines** (one `typeof <table>,` per junction repository snapshot) and the baseline did not move at all.
+
+2. **Nothing in the repo typechecks `test/scaffold/`** — filed as **#608**. `bun run typecheck` excludes `test`,
+   and `just test-integration` runs `bun test`, which strips types. Measured directly, with the pre-REL-0 base as
+   the control:
+
+   | | `tsc --noEmit -p test/scaffold/tsconfig.json` |
+   |---|---|
+   | base (`cd5d16d`, pre-REL-0) | **14** errors |
+   | REL-0 | **12** errors |
+
+   No new error class; the one line that differs is the same TS4113 with the base-class type rendered with its
+   second type argument. REL-0 *fixed* two — the DRZ-2 `any[] | QueryResult<never>` insert class, surviving in the
+   one copy of `BaseRepository` that no gate compiled. The residual 12 are pre-existing contract drift between the
+   scaffold's hand-written stubs and the runtime base classes (#608).
+
+3. **The scaffold's stub could not simply be deleted** (§7). It is a second declaration of the CRUD contract whose
+   *behaviour* has drifted, not just its types.
+
+4. **`WithAnalytics` needed no change, and neither did any service.** The issue and PLAN §5A.0 both list mixins as
+   part of the thread. They are not: `BaseService` and the four family services constrain on the structural
+   `IBaseRepository<TEntity>` (`base-service.ts:38`), which names no table, and `WithAnalytics` is a **service**
+   mixin over `Constructor<T>`. There is no repository mixin chain, so the "if the generic cannot be threaded
+   through the mixin chain, stop" risk never materialised. `with-analytics.ts` keeps its two pre-existing `any`s
+   (`Constructor` and `analytics?`); they are unrelated to the table and out of scope here.
+
+5. **The `clean` pipeline needed no change either.** `templates/entity/new/backend/database/repository.ejs.t`
+   already emits a four-parameter, **table-first** `BaseRepository<typeof <plural>, <Class>, Create…, Update…>` and
+   imports it from `'../base.repository'` — a module that does not exist, one of #602's 110 × TS2307. It is not this
+   runtime's base class, so REL-0 neither constrains it nor is constrained by it. `just test-smoke-junction-clean`
+   is unchanged at exactly 118.
+
+6. **`PLAN.md` and `PROJECT.md` were deliberately not edited in this PR.** Charter §9 asks for PLAN updates in the
+   same PR, but the checkpoint-1 revisions that introduced §5A.0 (and REL-0 itself) are in **unmerged PR #606**;
+   this branch carries the pre-checkpoint copies. Editing them here would conflict with #606 and re-litigate its
+   diff. The downstream facts are in the epic #580 body + log entry instead, and §5A.0 needs one correction once
+   #606 lands: *"derive `TEntity` from `$inferSelect`"* was evaluated and rejected — see §1.
+
+## Acceptance — all met
+
+Output from the run made **after the last edit** (charter I9).
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck` | **exit 0** |
+| `bun run build` | **exit 0** |
+| `bun run test` (baseline) | **exit 0** — typecheck passed, all tests passed |
+| `just test-all` | **exit 0** — typecheck · unit 3176/3176 · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
+| `just test-integration` | **exit 0** — 64 pass · 2 skip (pre-existing `test.skip` in `bridge-e2e.test.ts`) · 0 fail |
+| `just test-post-publish` | **exit 0** — tarball contract + full consumer workflow from the tarball |
+| `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, still exactly **118**; not repaired, not filtered |
+
+- `runtime/base-classes/**` contains **zero** `PgTableWithColumns` (one mention survives, in the `tableRef`
+  comment explaining why), **zero** assertions on a `.returning()` result (`grep -rn "returning()) as\|returning() as"`
+  → none), **zero** `as any` / `as never` on a `values()` / `set()` payload, and **zero** `as unknown as` introduced
+  by this PR. The only remaining `@typescript-eslint/no-explicit-any` disable in the directory is
+  `with-analytics.ts` (Found #4).
+- **What deliberately stays:** `return rows as TEntity[]` on the *read* paths. Those are not the DRZ-2 workaround —
+  they cast the table's select model (`InferSelectModel<TTable>`, which `baseQuery()` now returns) to the free
+  `TEntity` parameter, which is precisely what a second, independent `TEntity` parameter means. They become
+  identities wherever `TEntity` is the emitted `InferSelectModel<typeof table>`, i.e. in all generated code.
+  Collapsing `TEntity` into `TTable` would remove them and is rejected in §1. Also pre-existing and untouched:
+  `input as unknown as TIntegrationWrite` in `integrationUpsert` (a write-shape cast, no table involved).
+- Snapshot churn: **two lines**, one per junction repository snapshot. The baseline (`clean` pipeline) is byte-identical.
+- No filtered error classes, no scope carve-outs, no new gate excluded from CI.
+- `docs/specs/DRZ-2.md` §2/§A3/§A4 corrected: the workaround they describe no longer exists.
 
 ### A-checklist additions (carry into the next RC / GA bump)
 
@@ -265,7 +325,14 @@ is the point: a fake object cast to the table type is precisely what let the DRZ
 | A13 | `PgSelectKind` + `AnyPgSelectQueryBuilder` exported from `drizzle-orm/pg-core`; `PgSelectDynamic<T>` = `PgSelectKind<…, T['_']['result'], …>` | the 9-argument shape of `PgSelectKind` | `RowsOf<>` in `base-repository.ts` |
 | A14 | `db.delete(t).returning()` with **no** projection is still a union for a non-generic `PgTable` | unused here; adding one would need the DRZ-2-style assertion back | — |
 
-## Risks
+## Risks — outcome
+
+- **A generated body fails TS2352 against the retyped `baseQuery()`.** Did not happen — every emitted query body
+  is one of the shapes M4 covers. Kept as a live risk for REL-2/REL-3, which change those bodies.
+- **`RowsOf<>` breaks on an RC move.** Open; A13 is the check.
+- **Deleting the scaffold stub surfaces real divergence.** It did, before deletion — §7 / Found #3 / #608.
+- **`col()`'s throw fires on a path that previously limped along.** Did not happen in any gate, including the
+  Docker integration suite.
 
 | Risk | Signal | Response |
 |---|---|---|
@@ -273,6 +340,31 @@ is the point: a fake object cast to the table type is precisely what let the DRZ
 | `RowsOf<>` breaks on an RC move | `tsc` errors inside `base-repository.ts` | A13; the fallback is to drop the retype and remove the generated casts instead — a template change, not a runtime one |
 | Deleting the scaffold stub surfaces real divergence between it and the runtime base class | `just test-integration` fails in the scaffold, not in codegen | §7 fallback |
 | `col()`'s throw fires on a path that previously limped along | an integration test throws `table has no column` | that path was already producing wrong SQL — fix the caller, do not restore the silent `undefined` |
+
+## What downstream must know
+
+- **`TTable` is always the SECOND type parameter**, on `BaseRepository` and on all four family repositories.
+  It is **required** — there is no default (I7).
+  - `BaseRepository<TEntity, TTable extends PgTable>`
+  - `IntegratedEntityRepository<TEntity, TTable, TIntegrationWrite = Partial<TEntity>, TIntegrationProjection = TEntity>`
+  - `JunctionIntegrationRepository<TEntity, TTable, TIntegrationWrite, TIntegrationProjection>`
+  - `ActivityEntityRepository<TEntity, TTable>` · `MetadataEntityRepository<TEntity, TTable>` · `KnowledgeEntityRepository<TEntity, TTable>`
+- **A generated repository spells its table type `typeof <entityNamePlural>`** — the same symbol it already
+  imports for `readonly table = <entityNamePlural>` (`typeof opportunityContacts`, `typeof contacts`, …). There is
+  no generated type alias to look up; `this.table` is that type inside the subclass.
+- **Inside a base class, `this.table` is a naked type parameter and the Drizzle builders will not resolve against
+  it** (§M1). Use `this.tableRef` (widened `PgTable`) for `select` / `insert` / `update` / `delete`, and
+  `this.col('camelName')` for columns. Reserve `this.table` for what genuinely needs the concrete type — which is
+  exactly what REL-2's typed `with` include is for.
+- **`baseQuery()` now returns rows typed `InferSelectModel<TTable>`**, not `any`. A generated `rows as <Entity>[]`
+  is an identity assertion today; REL-2/REL-3 can drop those casts when they rewrite the bodies.
+- **`col()` throws** (`<Repo>: table has no column 'x'`) instead of yielding `undefined`. TEN-1's tenant predicate
+  gets this for free: a `tenant_scoped: true` entity whose table has no tenant column fails loudly at the
+  `scopeAnd()` choke point rather than rendering a filterless query.
+- **TEN-1 (#585) edits `scopeAnd()` / `scopePredicate()` / `create()`**, all of which moved to `this.col(...)`.
+  Rebase onto this before writing the predicate.
+- **Do not reintroduce a second `BaseRepository`.** `test/scaffold/shared/base-classes/base-repository.ts` still
+  shadows the runtime one for `just test-integration`, and nothing typechecks it — **#608**.
 
 ## Open questions
 
