@@ -27,6 +27,15 @@ fields:
     index: true
     foreign_key: accounts.id
 
+  health_score:
+    type: decimal
+    required: false
+    # SEM-1/SEM-2: a NON-additive measure with a single agg, so its catalog key
+    # is the bare field name — the other of the two key shapes.
+    role: measure
+    agg: avg
+    additivity: non
+
 behaviors:
   - timestamps
 

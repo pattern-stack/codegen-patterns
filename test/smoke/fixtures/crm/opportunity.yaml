@@ -27,12 +27,33 @@ fields:
   amount:
     type: decimal
     required: false
+    # SEM-1/SEM-2: an additive money measure with an allowed-agg SET, so the
+    # emitted catalog keys are `amount.sum` / `amount.avg`.
+    role: measure
+    aggs: [sum, avg]
+    additivity: additive
+
+  won_amount:
+    type: decimal
+    required: false
+    role: measure
+    aggs: [sum]
+    additivity: additive
 
   stage:
     type: enum
     choices: [prospect, qualified, proposal, negotiation, closed_won, closed_lost]
     required: true
     default: prospect
+    # A dimension whose value domain is declared by `choices:`.
+    role: dimension
+
+  closed_at:
+    type: datetime
+    required: false
+    role: dimension
+    # The time axis a semi-additive measure may not be summed across.
+    time: true
 
 behaviors:
   - timestamps
@@ -46,3 +67,20 @@ relationships:
 queries:
   - by: [account_id]
   - by: [stage]
+
+# SEM-2: composite catalog entries. Atomic measures are DERIVED by the
+# consuming semantic layer from the `role: measure` field tags above — the
+# emitter never writes them (docs/specs/SEM-2.md §3).
+analytics:
+  metrics:
+    win_rate:
+      type: ratio
+      numerator: won_amount.sum
+      denominator: amount.sum
+      label: Win rate
+    pipeline_gap:
+      type: derived
+      expr:
+        op: '-'
+        left: { ref: amount.sum }
+        right: { ref: won_amount.sum }
