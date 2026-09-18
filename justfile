@@ -137,7 +137,8 @@ compare:
 
 # Run family repo integration tests (requires Docker + db-up + db-push)
 test-family:
-    bun test "{{justfile_directory()}}/test/scaffold/tests/integrated-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
+    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
+        bun test "{{justfile_directory()}}/test/scaffold/tests/integrated-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
 
 # Tarball smoke (#190): build + pack every publishable package, install the
 # tarballs into a fresh tmp project via npm, verify the consumer contract
@@ -407,14 +408,26 @@ update:
 
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
+# Every db-* recipe derives its compose project, port and URL from one place —
+# test/scaffold/harness-env.ts — so sibling worktrees never share a container
+# or tear each other's down (see CLAUDE.md > Testing).
+#
+# Print this checkout's scaffold Postgres identity
+db-env:
+    @bun test/scaffold/harness-env.ts env
+
 # Start scaffold Postgres (for local dev/testing)
 db-up:
-    docker compose -f test/scaffold/docker-compose.yml up -d --wait
+    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
+        docker compose -p "$COMPOSE_PROJECT_NAME" -f test/scaffold/docker-compose.yml up -d --wait && \
+        echo "scaffold postgres: $DATABASE_URL"
 
-# Stop scaffold Postgres
+# Stop scaffold Postgres — only this checkout's project
 db-down:
-    docker compose -f test/scaffold/docker-compose.yml down -v
+    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
+        docker compose -p "$COMPOSE_PROJECT_NAME" -f test/scaffold/docker-compose.yml down -v
 
 # Push schema to scaffold Postgres
 db-push:
-    cd test/scaffold && bun run drizzle-kit push --config drizzle.config.ts
+    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
+        cd test/scaffold && bun run drizzle-kit push --config drizzle.config.ts

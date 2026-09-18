@@ -11,9 +11,22 @@
  *   bun test/scaffold/run-integration.ts --no-teardown   # keep Postgres running after tests
  */
 import { $ } from 'bun';
+import { composeProjectName, scaffoldEnv } from './harness-env';
 
 const REPO_ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
 const SCAFFOLD_DIR = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
+
+// Per-checkout identity. Several agents run gates concurrently in sibling
+// worktrees; without this the Compose project name is `scaffold` in all of
+// them, so `up` joins someone else's container and `down -v` destroys it
+// mid-run. `-p` is passed explicitly on every compose call rather than relying
+// on the env var, so teardown can only ever touch what this run created.
+const COMPOSE_PROJECT = composeProjectName();
+const ENV = scaffoldEnv();
+
+// Every child — drizzle-kit, the codegen CLI, the test runner — reads
+// DATABASE_URL, and the compose file reads SCAFFOLD_PG_PORT.
+Object.assign(process.env, ENV);
 
 const args = new Set(process.argv.slice(2));
 const skipCodegen = args.has('--skip-codegen');
@@ -34,7 +47,8 @@ async function run() {
 
     // 2. Start Postgres
     console.log('==> Starting Postgres...');
-    await $`docker compose -f ${SCAFFOLD_DIR}/docker-compose.yml up -d --wait`.quiet();
+    console.log(`    project ${COMPOSE_PROJECT} · ${ENV.DATABASE_URL}`);
+    await $`docker compose -p ${COMPOSE_PROJECT} -f ${SCAFFOLD_DIR}/docker-compose.yml up -d --wait`.quiet();
     console.log('    Postgres ready');
 
     // 3. Dependencies: the scaffold declares none of its own and resolves
@@ -115,7 +129,7 @@ async function run() {
       {
         cwd: REPO_ROOT,
         stdio: ['inherit', 'inherit', 'inherit'],
-        env: { ...process.env, SCAFFOLD_INTEGRATION: '1' },
+        env: { ...process.env, ...ENV, SCAFFOLD_INTEGRATION: '1' },
       },
     );
     exitCode = testResult.exitCode;
@@ -131,7 +145,7 @@ async function run() {
       console.log('==> Skipping teardown (--no-teardown)');
     } else {
       console.log('==> Tearing down Postgres...');
-      await $`docker compose -f ${SCAFFOLD_DIR}/docker-compose.yml down -v`.quiet();
+      await $`docker compose -p ${COMPOSE_PROJECT} -f ${SCAFFOLD_DIR}/docker-compose.yml down -v`.quiet();
 
       // Remove the generated consumer from the repo root. This harness is the
       // only thing that writes there, and leaving it behind poisons OTHER

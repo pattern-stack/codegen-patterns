@@ -1,3 +1,8 @@
+# NOTE: no `name:` here on purpose — the project name is passed as `-p` by
+# `test/scaffold/harness-env.ts`, which derives it per checkout so sibling
+# worktrees cannot share (or tear down) each other's database. The published
+# port comes from the same place; 5432 is only the fallback for a bare
+# `docker compose` invocation.
 services:
   postgres:
     image: postgres:16
@@ -6,7 +11,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: scaffold_test
     ports:
-      - "5432:5432"
+      - "${SCAFFOLD_PG_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
