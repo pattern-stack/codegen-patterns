@@ -322,7 +322,7 @@ Output from the run made **after the last edit** (charter I9).
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | **exit 0** (baseline byte-identical — now rendered under `bunx --bun hygen`, Found #2) |
-| `just test-all` | **exit 0** — unit **3266 pass / 0 fail** · baseline · smoke · smoke-subsystems · smoke-relationship · smoke-junction (×2) · **smoke-capability (vendored + package)**, including 4 negative CLI gates per leg (2 × CAP-1, 2 × CAP-2) · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
+| `just test-all` | **exit 0** — unit **3272 pass / 0 fail** · baseline · smoke · smoke-subsystems · smoke-relationship · smoke-junction (×2) · **smoke-capability (vendored + package)**, including 4 negative CLI gates per leg (2 × CAP-1, 2 × CAP-2) and a zero-error `project inspect` per leg · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
 | `just test-integration` | **exit 0** — 64 pass · 2 skip (pre-existing `test.skip`) · 0 fail |
 | `just test-post-publish` | **exit 0** — proves `src/roles/derive.ts` ships and the prompt's new import resolves from the tarball |
 | `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, still exactly **118**; untouched |
