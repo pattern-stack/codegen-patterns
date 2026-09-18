@@ -43,7 +43,7 @@ Minimum layout the generator writes into and reads from:
         └── schema.ts              # Drizzle schema barrel
 ```
 
-Only three paths are codegen-owned: `src/generated/*`, the per-entity `modules/<plural>/` tree (clean-lite-ps), and whatever lands under `backend_src/` (full clean). Everything else is yours.
+Only three paths are codegen-owned: `<paths.generated>/*` (default `src/generated/`), the per-entity `modules/<plural>/` tree (clean-lite-ps), and whatever lands under `backend_src/` (full clean). Everything else is yours.
 
 ## tsconfig path aliases
 
@@ -556,7 +556,30 @@ Two maps are open by design: `jobs.pools` (keyed by pool name; each pool's keys 
 
 `codegen project init` defaults `generate.architecture` to `clean-lite-ps` — the lighter consumer-facing layout used by the scaffold-demo app. To opt into the full Clean Architecture pipeline (separate `domain/`, `application/`, `infrastructure/` directories, separate command/query classes), edit `codegen.config.yaml` and set `generate.architecture: clean`. The two pipelines are mutually exclusive and the scanner only overrides the default when it finds existing domain/application directories (see `docs/specs/TEST-SESSION-1.md` §3).
 
+**`paths.*` defaults.** Each key has exactly one default, declared in `PathsConfigSchema`; every command, generator and
+scaffold reads the same resolved value (PATH-0). Four keys default relative to `backend_src`:
+
+| Key | Default |
+|---|---|
+| `backend_src` | `src` |
+| `frontend_src` | `apps/frontend/src` |
+| `entities` | `entities` (no second candidate: a configured directory that does not exist is not replaced by `entities/`) |
+| `events_dir` | `events` |
+| `jobs_dir` | `definitions/jobs` |
+| `providers` | `definitions/providers` |
+| `generated` | `<backend_src>/generated` |
+| `subsystems` | `<backend_src>/shared/subsystems` |
+| `modules_dir` | `<backend_src>/modules` |
+| `orchestration_src` | `<backend_src>/orchestration` |
+
+`project init` and every `subsystem install` honour them. In a monorepo, write `codegen.config.yaml` with e.g.
+`paths.backend_src: apps/backend/src` **before** `codegen project init`: init then writes `app.module.ts`, `main.ts`,
+`schema.ts`, `shared/**` and the barrels there, `example.yaml` into `paths.entities`, and tsconfig aliases
+(`@shared/*`, `@modules/*`, `@generated/*`) and `include` pointing at them. The imports in the emitted files are computed
+relative to each file.
+
 `paths.generated` must sit inside your `tsconfig.json` `"include"` globs — otherwise TS won't typecheck the barrel.
+(`project init --with-tsconfig` adds it when it lies outside `backend_src`.)
 
 ## App-defined patterns
 
