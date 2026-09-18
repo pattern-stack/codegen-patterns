@@ -1,7 +1,7 @@
 # SEM-2 — the semantic model emitter: the entity YAML as a declared `AggregateModel`
 
-**Status:** Draft
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #591 · **Epic:** #581 · **Project:** #578
 **Depends on:** SEM-1 (#590) · **Blocks:** SEM-3 (#592) · **Companion:** pattern-stack/query-surface#40
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · PLAN §5.1, §5.3, §5.6 · ADR-045
@@ -190,17 +190,20 @@ pins that every emitted type import is rendered from `TYPES_MODULE`, so the swit
 
 **Conformance test** — `src/__tests__/emitters/semantic/conformance.test.ts`:
 
-- Locates the sibling checkout from `QUERY_SURFACE_PATH`, else a sibling-relative probe. **Absent ⇒ the test skips
+- Locates the sibling checkout from `QUERY_SURFACE_PATH`, else a sibling-relative probe. **Absent ⇒ the suite skips
   and prints why**, naming the env var. That is a named, single-purpose skip with a stated reason, not a silent
   filter (I9); it is visible in `just test-all` output.
-- Present ⇒ parses the sibling's `internal/analytics/types.ts` and `internal/analytics/measure-catalog.ts` and
-  asserts the **drizzle-free vocabulary types** are declaration-identical to the mirror modulo comments and
-  whitespace: `Agg`, `Additivity`, `AggColType`, `AggFieldMeta`, `AggRelationship`, `AggEntity`, `AggRegistry`,
-  `AtomicMeasureDef`, `RatioMeasureDef`, `CumulativeMeasureDef`, `DerivedMeasureDef`, `MeasureDef`,
-  `MeasureCatalog`, `DerivedExpr`. Those are where the vocabulary lives and where drift will happen.
-- `AggregateModel` / `EntityDescriptor` are **not** text-compared: they reference `PgTable` / `PgColumn` and a stack
-  of package-internal types, and the two checkouts pin different Drizzle majors, so a text or `tsc` comparison would
-  report the version skew rather than real drift. They are checked structurally — property names and optionality.
+- Present ⇒ asserts the mirror is a **sound narrowing** of the package's vocabulary, per declaration: a member on
+  both sides must have the same type (drift ⇒ fail); a member the package declares and the mirror omits is allowed
+  only if it is in a documented `TOLERATED_OMISSIONS` table with a reason; a member the mirror declares and the
+  package does not is a failure, with one named exception. Exact equality would be the *wrong* assertion — an
+  emitted model must be assignable to the package's types, not identical to them, and demanding identity would force
+  the mirror to carry EAV and expression-measure machinery SEM-2 never populates (see Found #2).
+- Covers `Agg`, `Additivity`, `AggColType`, `AggFieldMeta`, `AggRelationship`, `AggEntity`, `AggRegistry`,
+  `DerivedExpr`, the four `*MeasureDef` kinds, `MeasureDef`, `MeasureCatalog` and `RelDescriptor`.
+- `AggregateModel` / `EntityDescriptor` are checked by **member name only**: they reference `PgTable` / `PgColumn`
+  and the two checkouts pin different Drizzle majors, so comparing member types would report version skew rather
+  than real drift.
 - **Named expectation, to delete when query-surface#40 lands:** `AggRelationship.kind` and `RelDescriptor` are
   expected to differ from the mirror in exactly one way — the mirror adds `'has_one'`. The test asserts that
   difference is present *and* sole, with the issue number in the message. When the package gains the kind the
@@ -261,4 +264,57 @@ narrower claim, and the CRM set is the one SEM-3 builds on.
 
 ## Found during implementation
 
-*(filled in at implementation; the spec is corrected to post-implementation truth in the same PR — charter §9.)*
+### Found #1 — a junction's table const is camelCased; an entity's is not
+
+The design said table identifiers are `entity.plural` verbatim, citing REL-1. That is true for entities and **false
+for junctions**. `templates/entity/new/clean-lite-ps/entity.ejs.t:32` emits `export const <plural> = pgTable(…)` —
+`deal_states`, snake — while `templates/junction/new/entity.ejs.t:41` emits `export const <tableVarName>` where
+`tableVarName = camelCase(plural)` — `opportunityContacts`. The first draft emitted
+`schema.opportunity_contacts`, which does not exist. The golden snapshot surfaced it on its first generation;
+`junctionIdentity` now returns a separate `tableVar` and the divergence is documented at the call site, because the
+next emitter to reach for a table identifier will hit exactly this.
+
+### Found #2 — "verbatim mirror" had to become "sound narrowing", and that is a better test
+
+The design said the conformance test asserts the mirrored types are *declaration-identical*. Two declarations make
+that impossible, and both are correct as they stand:
+
+- `AggFieldMeta.eav` — an EAV resolution descriptor. SEM-2 does not populate EAV (PLAN §5.3).
+- `AtomicMeasureDef.on: string | RowExpr` and `.where?: Predicate` — `RowExpr` / `Predicate` are package-internal
+  types the mirror cannot reference, and SEM-2 emits **no** atomic entries at all (the package derives them).
+
+Demanding identity would have forced the mirror to carry machinery the emitter never uses. The test now asserts the
+property that actually matters — *every member declared on both sides has the same type; every omission is in a
+documented table with a reason; every addition is a failure except the named `has_one` expectation*. Verified it
+still bites: widening `additivity` to `Additivity | 'sometimes'` in the mirror fails with
+`AggFieldMeta.additivity drifted from the package`.
+
+### Found #3 — the smoke's `tsc` really does gate the emitted model (measured, not assumed)
+
+The claim "the emitted tree is type-checked by the smoke" was verified rather than asserted, in the spirit of
+GATE-1/GATE-2. Emitting `primaryKey: 42` instead of a string made `just test-smoke-relationship` fail with
+`src/generated/semantic/model.ts(42,3): error TS2322: Type 'number' is not assignable to type 'string'` and exit 1.
+A second probe (`schema.<plural>NoSuchTable`) was caught earlier, by the smoke's own assertions. Both probes were
+reverted.
+
+### Found #4 — the conformance test skips by default in this repo's own CI
+
+`QUERY_SURFACE_PATH` is unset and the sibling is not laid out beside this checkout, so `just test-all` runs the suite
+as 17 skips plus the printed reason. That is deliberate — a machine-specific absolute path does not belong in the
+repo — but it means the mirror's agreement with the package is a **local** gate until the package publishes and the
+mirror disappears. What still gates in CI: the golden snapshot pins the mirror's text, and the smoke's `tsc` pins
+that the emitted model compiles against it. Recorded here rather than papered over.
+
+## Gate results
+
+Run after the last code edit, on `dugshub/591-semantic-model-emitter`:
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | clean / clean / all tests passed |
+| `just test-all` | **exit 0** — 3307 pass / 17 skip / 0 fail across 206 files; every smoke PASS |
+| `just test-integration` | **exit 0** — 64 pass / 2 skip / 0 fail |
+| `just test-smoke-relationship` (the emitter's real gate) | **exit 0**; `semantic model regenerated (3 files) → src/generated/semantic`, `semantic emission OK`, `tsc OK` |
+
+The 17 skips are the conformance suite (Found #4), which prints its reason. With
+`QUERY_SURFACE_PATH=…/query-surface-40` it runs green: 17 pass / 115 assertions.

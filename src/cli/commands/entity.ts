@@ -15,6 +15,10 @@ import { analyzeDomain, validateEntities } from '../../index.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeEntityNew } from '../shared/hygen.js';
+import {
+	isSemanticEnabled,
+	regenerateSemanticModel,
+} from '../shared/semantic-generator.js';
 import { checkGitSafety } from '../shared/git-safety.js';
 import {
 	regenerateBarrels,
@@ -539,6 +543,10 @@ export class EntityNewCommand extends Command {
 				dryRun: true,
 			});
 
+			const semanticPlan = isSemanticEnabled(ctx)
+				? regenerateSemanticModel({ ctx, entitiesDir, generatedDir, dryRun: true })
+				: null;
+
 			const scopePlan = await generateScopeEntityType({
 				entitiesDir,
 				outputPath: scopeEntityTypePath,
@@ -660,6 +668,13 @@ export class EntityNewCommand extends Command {
 				printInfo(`Barrels (${barrelPlan.entityCount} entities):`);
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.modulesBarrel}`);
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.schemaBarrel}`);
+				if (semanticPlan) {
+					printInfo(
+						semanticPlan.skip !== undefined
+							? `semantic model: skipped — ${semanticPlan.skip}`
+							: `semantic model (${Object.keys(semanticPlan.result.contents).length} files): ${semanticPlan.result.outDir}`,
+					);
+				}
 				printInfo(
 					`ScopeEntityType (${scopePlan.scopeableNames.length} scopeable): ${scopePlan.outputPath}`,
 				);
@@ -870,6 +885,42 @@ export class EntityNewCommand extends Command {
 				const msg = err instanceof Error ? err.message : String(err);
 				if (!isJsonMode()) {
 					printWarning(`frontend emission failed — ${msg}`);
+				}
+			}
+		}
+
+		// Semantic model emission (SEM-2, ADR-045). Whole-set: renders the
+		// declared `AggregateModel` — registry, analytics field tags, tables,
+		// colByDbName and the composite catalog — from the FULL entity +
+		// junction set in one pass, so it runs ONCE here, after the per-entity
+		// Hygen loop. Gated on `generate.semantic === true`; off by default.
+		//
+		// Warn-but-don't-fail, like the frontend emitter and UNLIKE the relations
+		// manifest: no emitted file imports the semantic model, so a failure here
+		// does not stop the generated project from compiling.
+		let semanticResult: { outDir: string; written: string[] } | null = null;
+		if (isSemanticEnabled(ctx)) {
+			try {
+				const emitted = regenerateSemanticModel({ ctx, entitiesDir, generatedDir });
+				if (emitted.skip !== undefined) {
+					if (!isJsonMode()) {
+						printInfo(`semantic model skipped — ${emitted.skip}`);
+					}
+				} else {
+					semanticResult = {
+						outDir: emitted.result.outDir,
+						written: emitted.result.written,
+					};
+					if (!isJsonMode()) {
+						for (const warning of emitted.result.warnings) {
+							printWarning(`semantic: ${warning}`);
+						}
+					}
+				}
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				if (!isJsonMode()) {
+					printWarning(`semantic model emission failed — ${msg}`);
 				}
 			}
 		}
@@ -1138,6 +1189,11 @@ export class EntityNewCommand extends Command {
 			if (frontendResult) {
 				printInfo(
 					`frontend regenerated (${frontendResult.written.length} files) → ${path.relative(ctx.cwd, frontendResult.outDir)}`,
+				);
+			}
+			if (semanticResult) {
+				printInfo(
+					`semantic model regenerated (${semanticResult.written.length} files) → ${path.relative(ctx.cwd, semanticResult.outDir)}`,
 				);
 			}
 		}

@@ -1,0 +1,8 @@
+# Semantic golden fixture: the junction. Emits its own registry entry with
+# meta.kind 'junction' plus an inverse has_many on each endpoint.
+pattern: Junction
+between: [opportunity, contact]
+fields:
+  role:
+    type: enum
+    values: [champion, decision_maker, influencer]

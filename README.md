@@ -405,7 +405,7 @@ paths:
 generate:
   architecture: clean-lite-ps    # clean | clean-lite-ps
   frontend: false                # default false; scanner detects apps/frontend/
-  semantic: false                # default false; emit the declared semantic model
+  semantic: false                # default false; emit src/generated/semantic/ (declared AggregateModel)
   commands: true
   queries: true
 
