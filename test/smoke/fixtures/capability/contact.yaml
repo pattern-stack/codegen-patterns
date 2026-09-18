@@ -1,0 +1,41 @@
+# CAP-1 smoke fixture: contact — the single-capability case.
+#
+# One capability layers, so it is wrapped INLINE in the repository's `extends`
+# clause and no composed-base file is emitted (ADR-041 §6). No domain pattern
+# is declared at all, so the spine falls back to the library `Base`.
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  patterns: [Group]
+  folder_structure: nested
+  # Per-capability config (ADR-041 §6) — emitted as `groupConfig` on the
+  # repository, where `WithGroup` declares the property.
+  config:
+    Group:
+      membersColumn: email
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+queries:
+  - by: [email]
+    unique: true

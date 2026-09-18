@@ -347,6 +347,37 @@ Families provide pre-built base classes with domain-specific query patterns:
 | `knowledge` | Vector-searchable content | Stub (needs pgvector) |
 | *(none)* | Generic CRUD | Base repository + service only |
 
+## Pattern Composition — spine + capabilities (ADR-041)
+
+An entity composes **one inheritable spine** (a domain pattern: `Base`, `Integrated`,
+`Activity`, … or an app-defined one) plus any number of **capabilities**
+(`kind: 'capability'` patterns), because TypeScript allows exactly one base class:
+
+```yaml
+entity:
+  patterns: [Actor, Integrated, Communication]   # spine found by contribution, not position
+  config:
+    Actor: { kind: group }                       # per-capability config
+```
+
+- The spine is whichever declared domain pattern contributes a repository/service class —
+  **wherever it appears in the list**. Reordering `patterns:` never changes the emitted base.
+  Declaring **two** inheritable bases (e.g. `[Integrated, Activity]`) is a hard error: express one
+  of them as a capability.
+- Capabilities layer as TypeScript mixins on the **repository**. Declaration order is nesting
+  order, rightmost outermost. Two or more stack into a generated
+  `<entity>.composed-base.ts`; exactly one is wrapped inline.
+- A capability's `forwarderMethods` are emitted as typed pass-throughs on the **service**, and
+  are checked for name collisions against each other, the `queries:` methods and the
+  relationship forwarders **at generation time**.
+- A capability's `config:` block lands on the generated repository as a property its mixin
+  declares (`<camelName>Config` by default).
+
+Write a capability mixin against `@pattern-stack/codegen/runtime/base-classes/capability-mixin`
+(`@shared/base-classes/capability-mixin` in vendored mode) — it ships the constructor constraint
+and the `EntityOf` / `TableOf` helpers that keep a capability method's signature concrete through
+the chain.
+
 ## Declarative Queries
 
 The `queries:` block generates typed repository methods, use case classes, and module registration:

@@ -11,18 +11,35 @@
 import './library/index.js';
 
 export {
+	defineCapabilityPattern,
 	definePattern,
 	defineOrchestrationPattern,
+	isCapabilityPattern,
 	isDomainPattern,
 	isOrchestrationPattern,
 	isPatternDefinition,
 	type AnyPatternDefinition,
+	type CapabilityPatternDefinition,
+	type EntityPatternDefinition,
 	type OrchestrationPatternDefinition,
 	type OrchestrationRegistrySpec,
 	type PatternColumnContribution,
 	type PatternDefinition,
 	type PatternKind,
 } from './pattern-definition.js';
+
+// Composition (ADR-041) — spine selection + capability layering.
+export {
+	composePatterns,
+	declaredPatternNames,
+	detectMethodCollisions,
+	DEFAULT_SPINE,
+	type ComposedPatterns,
+	type CompositionError,
+	type CompositionErrorCode,
+	type MethodVocabulary,
+	type PatternDeclaringEntity,
+} from './compose.js';
 
 export {
 	getAllOrchestrationPatterns,

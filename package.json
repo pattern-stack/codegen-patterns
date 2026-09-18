@@ -58,6 +58,7 @@
     "src/schema/naming-config.schema.mjs",
     "src/patterns/registry.ts",
     "src/patterns/pattern-definition.ts",
+    "src/patterns/compose.ts",
     "src/patterns/library/*.ts",
     "CHANGELOG.md",
     "README.md",

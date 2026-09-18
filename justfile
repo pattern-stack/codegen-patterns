@@ -106,6 +106,14 @@ test-smoke-relationship:
 # uncompilable shipped unnoticed. ~12s; in `test-all`.
 test-smoke-frontend:
     bun test/smoke/run-smoke-frontend.ts
+# Capability-composition smoke (ADR-041 / CAP-1) — the regression guard the ADR
+# asks for by name. Generates the 3-capability fixture set against a real
+# consumer surface (app capability patterns + their mixins) and `tsc`s the
+# composed tree against the REAL base classes, in BOTH runtime modes (vendored
+# + package). Also runs two negative gates through the CLI: two spine bases, and
+# a capability method colliding with a `queries:` method. ~2-4min.
+test-smoke-capability:
+    bun test/smoke/run-smoke-capability.ts
 
 # Subsystems smoke (#6 swe-brain-unblock criterion): events + jobs drizzle
 # install + full-tree tsc with NO subsystem excludes + no static
@@ -218,6 +226,7 @@ typecheck:
 # NOT included, and deliberately so: `just test-smoke-junction-clean`. It is a
 # known-red gate — see CLAUDE.md › Testing › Known-red gates.
 test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-frontend test-junction test-integration-emit test-smoke-integration
+test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-integration-emit test-smoke-integration
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

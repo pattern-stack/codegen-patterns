@@ -1,0 +1,19 @@
+# CAP-1 smoke fixture: note — the control.
+#
+# Declares no pattern at all, so its emission must be byte-identical to what a
+# pre-CAP-1 generator produced: `extends BaseRepository<Note, typeof notes>`,
+# no mixin import, no composed base, no forwarders.
+entity:
+  name: note
+  plural: notes
+  table: notes
+  folder_structure: nested
+
+fields:
+  body:
+    type: string
+    required: true
+    max_length: 1000
+
+behaviors:
+  - timestamps
