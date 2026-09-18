@@ -16,6 +16,7 @@
  */
 
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import { requiredPathArg } from "../../_shared/required-arg.mjs";
 
 function coerceBool(raw) {
   if (raw === true) return true;
@@ -52,7 +53,7 @@ export default {
       appName: args.appName ?? "",
       workerMode: args.workerMode === "standalone" ? "standalone" : "embedded",
       multiTenant: coerceBool(args.multiTenant),
-      mainTsPath: args.mainTsPath ?? "src/main.ts",
+      mainTsPath: requiredPathArg(args, "mainTsPath", "subsystem jobs"),
       configPath: args.configPath ?? "codegen.config.yaml",
       // Hygen's skip_if treats any non-empty string as truthy, so we send an
       // empty string when the file doesn't exist (CLI already does this).
@@ -60,7 +61,7 @@ export default {
       // #513: the worker lands at `src/worker.ts` (inside the default tsconfig
       // include, next to `app.module.ts`); the CLI always passes an absolute
       // --workerPath, this fallback only guards a direct hygen invocation.
-      workerPath: args.workerPath ?? "src/worker.ts",
+      workerPath: requiredPathArg(args, "workerPath", "subsystem jobs"),
       // #513: mode-aware JobWorkerModule import + the pre-serialised
       // forRoot(<opts>) literal (the only mode-dependent import the worker
       // carries — AppModule is imported relatively).
@@ -69,7 +70,7 @@ export default {
         "@pattern-stack/codegen/runtime/subsystems/jobs/index",
       workerForRootOpts: decodeWorkerForRootOpts(args.workerForRootOpts),
       schemaPath:
-        args.schemaPath ?? "shared/subsystems/jobs/job-orchestration.schema.ts",
+        requiredPathArg(args, "schemaPath", "subsystem jobs"),
       // #517: package mode skips the schema template (the schema ships in the
       // package, re-exported via the schema barrel). Hygen's skip_if treats any
       // non-empty string as truthy, so the CLI sends '' in vendored mode and

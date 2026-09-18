@@ -1,6 +1,6 @@
 /**
  * `codegen project upgrade-openapi` — surgical codemod that brings an existing
- * consumer's `src/app.module.ts` + `src/main.ts` up to the shape `project
+ * consumer's `<backend_src>/app.module.ts` + `<backend_src>/main.ts` up to the shape `project
  * init` emits on a fresh project, covering the OPENAPI-4 gap.
  *
  * This is Option A (targeted codemod for the current gap). The generalised
@@ -9,16 +9,16 @@
  * Behaviour:
  *   1. Resolve project root (`--path` or cwd, walking up for
  *      `codegen.config.yaml` / `package.json`).
- *   2. Vendor the `src/shared/openapi/*` slice of VENDORED_RUNTIME_FILES
+ *   2. Vendor the `<backend_src>/shared/openapi/*` slice of VENDORED_RUNTIME_FILES
  *      (idempotent; `--force` overwrites).
- *   3. Patch `src/app.module.ts`:
+ *   3. Patch `<backend_src>/app.module.ts`:
  *        - Merge `@nestjs/common` import to include `Global`, `Module`.
  *        - Add `import { OPENAPI_REGISTRY, OpenApiRegistry } from
  *          './shared/openapi'`.
  *        - Insert `@Global() class OpenApiModule {}` above `AppModule` (if
  *          missing).
  *        - Add `OpenApiModule` to `AppModule.imports: [...]`.
- *   4. Patch `src/main.ts` (best-effort):
+ *   4. Patch `<backend_src>/main.ts` (best-effort):
  *        - If `SwaggerModule.setup` already present → skip.
  *        - Else inject the OPENAPI-4 two-pass Swagger block after
  *          `NestFactory.create(...)`.
@@ -44,6 +44,9 @@ import {
 	ensureMainSwaggerBlock,
 	type PatchResult,
 } from '../shared/ast-patch.js';
+import { loadRuntimeFile, VENDORED_RUNTIME_FILES } from '../shared/init-scaffold.js';
+import { projectLayout } from '../shared/project-layout.js';
+import { loadProjectConfig } from '../../config/project-config.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -53,24 +56,8 @@ const CONSUMER_SETUP_POINTER =
 	'For manual wiring, see docs/CONSUMER-SETUP.md §OpenAPI or ' +
 	'https://github.com/pattern-stack/codegen-patterns/blob/main/docs/CONSUMER-SETUP.md';
 
-/**
- * Subset of VENDORED_RUNTIME_FILES relevant to the OpenAPI slice. Kept as a
- * literal here (rather than imported) so this command is self-contained and
- * the init-scaffold's private list stays private.
- */
-const OPENAPI_VENDORED_FILES: Array<{ runtime: string; target: string }> = [
-	{ runtime: 'shared/openapi/registry.ts', target: 'src/shared/openapi/registry.ts' },
-	{
-		runtime: 'shared/openapi/registry.tokens.ts',
-		target: 'src/shared/openapi/registry.tokens.ts',
-	},
-	{ runtime: 'shared/openapi/errors.ts', target: 'src/shared/openapi/errors.ts' },
-	{
-		runtime: 'shared/openapi/error-response.dto.ts',
-		target: 'src/shared/openapi/error-response.dto.ts',
-	},
-	{ runtime: 'shared/openapi/index.ts', target: 'src/shared/openapi/index.ts' },
-];
+/** The OpenAPI slice of VENDORED_RUNTIME_FILES (targets under `<shared>/openapi/`). */
+const OPENAPI_VENDORED_FILES = VENDORED_RUNTIME_FILES.filter((v) => v.target.startsWith('openapi/'));
 
 const OPEN_API_MODULE_SNIPPET = `/**
  * OpenApiModule — @Global() wrapper around the OPENAPI_REGISTRY singleton.
@@ -140,21 +127,6 @@ const MAIN_SWAGGER_IMPORTS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Runtime-file resolution (mirrors init-scaffold.ts)
-// ---------------------------------------------------------------------------
-
-function runtimeRoot(): string {
-	const pkgRoot = path.resolve(import.meta.dirname, '..', '..', '..');
-	const topLevel = path.join(pkgRoot, 'runtime');
-	if (fs.existsSync(topLevel)) return topLevel;
-	return path.join(pkgRoot, 'dist', 'runtime');
-}
-
-function loadRuntimeFile(rel: string): string {
-	return fs.readFileSync(path.join(runtimeRoot(), rel), 'utf-8');
-}
-
-// ---------------------------------------------------------------------------
 // Project root resolution
 // ---------------------------------------------------------------------------
 
@@ -204,19 +176,25 @@ export interface UpgradeOptions {
 export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeReport> {
 	const { projectRoot, dryRun, force } = opts;
 	const changes: UpgradeChange[] = [];
+	// Every target resolves from the project's `paths.*` (PATH-0).
+	const layout = projectLayout(projectRoot, loadProjectConfig(projectRoot));
+	const relToRoot = (abs: string) => path.relative(projectRoot, abs).split(path.sep).join('/');
+	const appModuleRel = relToRoot(layout.appModule);
+	const mainRel = relToRoot(layout.mainTs);
 
 	// 1. Vendor openapi files
 	for (const v of OPENAPI_VENDORED_FILES) {
-		const target = path.join(projectRoot, v.target);
+		const target = path.join(layout.shared, v.target);
+		const targetRel = relToRoot(target);
 		const exists = fs.existsSync(target);
 		const newContent = loadRuntimeFile(v.runtime);
 		if (exists && !force) {
 			const existing = fs.readFileSync(target, 'utf-8');
 			if (existing === newContent) {
-				changes.push({ path: v.target, action: 'unchanged' });
+				changes.push({ path: targetRel, action: 'unchanged' });
 			} else {
 				changes.push({
-					path: v.target,
+					path: targetRel,
 					action: 'skipped',
 					note: 'exists with different content — pass --force to overwrite',
 				});
@@ -227,20 +205,20 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 				fs.writeFileSync(target, newContent);
 			}
 			changes.push({
-				path: v.target,
+				path: targetRel,
 				action: exists ? 'updated' : 'created',
 			});
 		}
 	}
 
 	// 2. Patch app.module.ts
-	const appModulePath = path.join(projectRoot, 'src', 'app.module.ts');
+	const appModulePath = layout.appModule;
 	if (!fs.existsSync(appModulePath)) {
 		return {
 			projectRoot,
 			changes,
 			bail: {
-				file: 'src/app.module.ts',
+				file: appModuleRel,
 				reason: 'file does not exist — run `codegen project init` first, or author it manually',
 			},
 		};
@@ -266,7 +244,7 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 			projectRoot,
 			changes,
 			bail: {
-				file: 'src/app.module.ts',
+				file: appModuleRel,
 				reason: 'no `AppModule` class found (factory function or unusual shape)',
 				snippet: suggestAppModuleSnippet(),
 			},
@@ -291,7 +269,7 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 			projectRoot,
 			changes,
 			bail: {
-				file: 'src/app.module.ts',
+				file: appModuleRel,
 				reason: 'AppModule disappeared after patching (parser desync)',
 				snippet: suggestAppModuleSnippet(),
 			},
@@ -305,7 +283,7 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 			projectRoot,
 			changes,
 			bail: {
-				file: 'src/app.module.ts',
+				file: appModuleRel,
 				reason: importEntry.bail,
 				snippet: suggestAppModuleSnippet(),
 			},
@@ -322,17 +300,17 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 			.filter(Boolean)
 			.join('; ');
 		changes.push({
-			path: 'src/app.module.ts',
+			path: appModuleRel,
 			action: 'updated',
 			note: notes,
 			diff: simpleDiff(appBefore, appAfter),
 		});
 	} else {
-		changes.push({ path: 'src/app.module.ts', action: 'unchanged' });
+		changes.push({ path: appModuleRel, action: 'unchanged' });
 	}
 
 	// 3. Patch main.ts (best-effort)
-	const mainPath = path.join(projectRoot, 'src', 'main.ts');
+	const mainPath = layout.mainTs;
 	if (fs.existsSync(mainPath)) {
 		const mainSource = project.addSourceFileAtPath(mainPath);
 		const mainBefore = mainSource.getFullText();
@@ -342,7 +320,7 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 		});
 		if (result.bail) {
 			changes.push({
-				path: 'src/main.ts',
+				path: mainRel,
 				action: 'skipped',
 				note: `${result.bail} — see CONSUMER-SETUP §OpenAPI`,
 			});
@@ -350,17 +328,17 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 			const mainAfter = mainSource.getFullText();
 			if (!dryRun) mainSource.saveSync();
 			changes.push({
-				path: 'src/main.ts',
+				path: mainRel,
 				action: 'updated',
 				note: result.note,
 				diff: simpleDiff(mainBefore, mainAfter),
 			});
 		} else {
-			changes.push({ path: 'src/main.ts', action: 'unchanged', note: result.note });
+			changes.push({ path: mainRel, action: 'unchanged', note: result.note });
 		}
 	} else {
 		changes.push({
-			path: 'src/main.ts',
+			path: mainRel,
 			action: 'skipped',
 			note: "does not exist — run `codegen project init` to scaffold",
 		});

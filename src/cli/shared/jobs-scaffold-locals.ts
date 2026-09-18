@@ -14,7 +14,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
+import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, runtimeImport } from './runtime-import.js';
 import {
 	drizzleJobsExtensions,
@@ -106,15 +106,15 @@ export function resolveJobsScaffoldLocals(
 
 	const jobsBlock = (config?.jobs ?? {}) as Record<string, unknown>;
 
-	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
+	const layout = projectLayout(cwd, config);
+	const subsystemsRoot = layout.subsystems;
 
-	// #513: the worker sits at `src/worker.ts`, next to `app.module.ts`. The old
-	// repo-root location escaped the default `include: ["src/**/*"]` tsconfig so
-	// the file was never typechecked, and the relative `./app.module` import the
-	// AppModule-composition (D1) needs only resolves from `src/`. Sibling
-	// convention with `mainTsPath = src/main.ts`.
-	const workerPath = path.resolve(cwd, 'src', 'worker.ts');
-	const mainTsPath = path.resolve(cwd, 'src/main.ts');
+	// #513: the worker sits at `<backend_src>/worker.ts`, next to
+	// `app.module.ts` — inside the backend tsconfig `include`, and where the
+	// relative `./app.module` import the AppModule-composition (D1) needs
+	// resolves. Sibling of `main.ts` (#566: both from `paths.backend_src`).
+	const workerPath = layout.workerTs;
+	const mainTsPath = layout.mainTs;
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const schemaPath = path.resolve(
 		subsystemsRoot,
