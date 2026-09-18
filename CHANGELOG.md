@@ -47,6 +47,33 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
 - **The `events:` block's `extensions.drizzle` example is fully commented
   out** (#640). The block used to leave `extensions:` / `drizzle:` live with
   no values, which parses as `null`.
+- **Your app no longer reads `codegen.config.yaml` at boot** (#643). The
+  values it needs — `openapi.*`, `auth.devAllowAnonymous`, `jobs.pools` — are
+  validated by `codegen` and written into a new generated file,
+  `<paths.generated>/app-config.ts` (`openapiConfig`, `authConfig`,
+  `jobPools`), rewritten on `project init`, every `entity new` and
+  `subsystem install`/`remove`, `subsystem install openapi-config` and both
+  `project upgrade-*` codemods. The generated `main.ts`, the blocks
+  `project upgrade-openapi` / `upgrade-auth` patch in, the subsystem barrel
+  and `worker.ts` import it. **Editing one of these keys now takes effect on
+  regeneration, not on restart**; a bad value fails the regeneration naming
+  the key, where a malformed file used to boot with Swagger and the auth
+  escape hatch silently off. The app no longer needs `yaml`. An existing
+  hand-owned `main.ts` that reads the YAML keeps doing so until you re-run
+  `project upgrade-openapi` on a fresh block (or copy the CONSUMER-SETUP
+  excerpt).
+- **Jobs pools are passed in, not loaded** (#643). `loadPoolConfig` and
+  `JobWorkerModuleOptions.configPath` are removed. `JobsDomainModule.forRoot`
+  takes `pools` (the generated `jobPools`) and binds the resolved map under
+  `JOB_POOL_CONFIG`; `JobWorkerModule.forRoot` takes `domainModulePools`;
+  `resolvePoolConfig` / `poolOverrideIssues` are exported. Setting `queue` or
+  `reserved` on a framework pool, or leaving `queue` / `concurrency` off your
+  own pool, is now a generation error (the framework-pool case used to be
+  silently ignored). The `jobs:` block `subsystem install jobs` writes no
+  longer restates the five framework pools — its `pools:` example is
+  commented.
+- **`project upgrade-auth` follows `paths.*`** (#643). It patched
+  `src/app.module.ts` / `src/main.ts` regardless of `paths.backend_src`.
 
 - **Drizzle 1.0 (`drizzle-orm@^1.0.0-rc.4`)** (#584). `drizzle-orm` moves from
   `dependencies` to `peerDependencies` so a consumer resolves exactly one copy —
@@ -61,6 +88,19 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   snapshot `version: 8`).
 
 ### Fixed
+
+- **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
+  `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
+  and Nest's default `abortOnError` turns that into `process.exit(1)` — so
+  `auth.devAllowAnonymous: true` never worked and the closed-by-default path
+  died with a Nest DI error instead of the `[auth] FATAL` message. The probe is
+  now the runtime's `resolveUserContext(app)`; the generated `main.ts` creates
+  the app with `abortOnError: false`, and `project upgrade-auth` adds that
+  option to your `NestFactory.create` call.
+- **clean-lite-ps EAV imports of `FieldValueService` follow the field-value
+  entity's YAML** (#647). They were hand-built `'../field_values/'` paths that
+  broke for a `context:`-tagged EAV entity or a field-value entity with its own
+  `plural:` / `context:`.
 
 - **Vendored events: `generated/bus.ts` could not compile** (#575). The generated
   typed bus facade imports three vendored siblings — `../event-bus.protocol`,

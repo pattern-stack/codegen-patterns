@@ -85,6 +85,10 @@ The CLI throws `CodegenConfigError` out of `loadContext`; Clipanion prints `Code
 (the error carries `clipanion: { type: 'none' }`, so no stack). A prompt run directly through hygen throws the same
 error at import of `config-loader.mjs`, and hygen exits non-zero.
 
+> **Revision 2026-09-18 — CFG-1 (#643).** Resolved: the consumer's app no longer reads the file at all. The three
+> boot-time keys are emitted into `<generated>/app-config.ts` at generation, and the census's "no second loader"
+> exception list is empty. See `docs/specs/CFG-1.md`.
+
 **Out of scope, declared only:** three readers run inside the *consumer's app*, not the generator — the generated
 `main.ts` (`openapi.*`, `auth.devAllowAnonymous`; `init-scaffold.ts`, `project-upgrade-openapi.ts`,
 `project-upgrade-auth.ts`) and the jobs runtime's `pool-config.loader.ts` (`jobs.pools`). They cannot import the
@@ -158,7 +162,7 @@ reader and from every writer; the schema then rejects it.
 4. Every fixture config (`test/fixtures/codegen.config*.yaml`), every subsystem-config injector block, the config
    `project init` writes and the config `project scan --write` writes pass the strict parse (unit-tested).
 5. No file both locates `codegen.config.yaml` and parses YAML except `project-config.ts` and the four consumer-runtime
-   emitters (#643) — grep-asserted, with the exception list exact.
+   emitters (#643) — grep-asserted, with the exception list exact. *(CFG-1: the exception list is now empty.)*
 
 ## What downstream must know
 
