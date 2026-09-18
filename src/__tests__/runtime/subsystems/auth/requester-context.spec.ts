@@ -6,14 +6,22 @@
  * observes the context), falls back gracefully on unresolved requesters, and
  * that `installRequesterContext` no-ops safely when AUTH_USER_CONTEXT is unbound.
  */
+import 'reflect-metadata';
 import { describe, it, expect, mock } from 'bun:test';
+import { Module } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { AUTH_USER_CONTEXT } from '../../../../../runtime/subsystems/auth/auth.tokens';
 import {
   makeRequesterContextMiddleware,
   resolveRequesterContext,
   installRequesterContext,
+  resolveUserContext,
 } from '../../../../../runtime/subsystems/auth/middleware/requester-context';
 import { tryGetRequester } from '../../../../../runtime/base-classes/tenant-context';
 import type { IUserContext } from '../../../../../runtime/subsystems/auth/protocols/user-context';
+
+@Module({})
+class EmptyModule {}
 
 const FAKE_REQ = { headers: { authorization: 'Bearer x' } };
 
@@ -118,11 +126,37 @@ describe('installRequesterContext', () => {
     expect(use).toHaveBeenCalledTimes(1);
   });
 
-  it('no-ops (does not call app.use) when AUTH_USER_CONTEXT is unbound', () => {
+  it('no-ops (does not call app.use) when AUTH_USER_CONTEXT is unbound', async () => {
     const use = mock(() => {});
-    // app.get(token, { strict: false }) returns undefined when unbound.
-    const app = { get: () => undefined, use } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
-    installRequesterContext(app);
+    // A real HTTP app, created as the generated main.ts creates it (#651):
+    // `app.get(<unbound>, { strict: false })` throws — never a mock that
+    // returns undefined.
+    const app = await NestFactory.create(EmptyModule, { logger: false, abortOnError: false });
+    const spy = Object.assign(Object.create(app), { use });
+    installRequesterContext(spy);
     expect(use).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
+
+describe('resolveUserContext (#651)', () => {
+  it('returns null for an unbound AUTH_USER_CONTEXT on a real HTTP app', async () => {
+    const app = await NestFactory.create(EmptyModule, { logger: false, abortOnError: false });
+    expect(resolveUserContext(app)).toBeNull();
+    await app.close();
+  });
+
+  it('returns the bound IUserContext', async () => {
+    const uc: IUserContext = { getCurrentUserId: async () => 'u1' };
+    @Module({ providers: [{ provide: AUTH_USER_CONTEXT, useValue: uc }] })
+    class Bound {}
+    const app = await NestFactory.createApplicationContext(Bound, { logger: false });
+    expect(resolveUserContext(app)).toBe(uc);
+    await app.close();
+  });
+
+  it('propagates any other error', () => {
+    const app = { get: () => { throw new Error('boom'); } } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    expect(() => resolveUserContext(app)).toThrow('boom');
   });
 });

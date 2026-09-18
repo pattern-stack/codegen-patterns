@@ -382,7 +382,7 @@ function authBoundaryBlock(): string {
   // localhost-only escape hatch is set. This check lives ONLY in the HTTP
   // bootstrap — a worker process that imports AppModule but never listens must
   // not trip it.
-  const userContext = app.get(AUTH_USER_CONTEXT, { strict: false });
+  const userContext = resolveUserContext(app);
   const allowAnonymous = authConfig.devAllowAnonymous;
   if (!userContext && !allowAnonymous) {
     throw new Error(
@@ -430,7 +430,7 @@ export function mainTsContent(mode: RuntimeMode, layout: ProjectLayout): string 
 	// the AST wiring after install (avoids a dangling import on a fresh project).
 	const wireAuth = mode === 'package';
 	const authImportLine = wireAuth
-		? `import { installRequesterContext, AUTH_USER_CONTEXT } from '${subsystemsImport(mode, 'auth')}';\n`
+		? `import { installRequesterContext, resolveUserContext } from '${subsystemsImport(mode, 'auth')}';\n`
 		: '';
 	return `import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
@@ -440,7 +440,10 @@ import { ${wireAuth ? 'authConfig, ' : ''}openapiConfig } from '${importSpecifie
 import { OPENAPI_REGISTRY, OpenApiRegistry } from '${openApiImport}';
 ${authImportLine}
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  // \`abortOnError: false\`: a failure surfaces as a thrown error (logged by
+  // the catch below) instead of Nest's own process.exit(1) — which would also
+  // pre-empt the "is AUTH_USER_CONTEXT bound?" probe (#651).
+  const app = await NestFactory.create(AppModule, { abortOnError: false });
   app.enableShutdownHooks();
 
   // \`openapiConfig\` / \`authConfig\` are codegen.config.yaml, validated and
