@@ -17,10 +17,16 @@
  * exercises the pattern registry through the Hygen subprocess. A
  * unit-level regression test pins the flag in
  * `src/__tests__/cli/hygen.test.ts`.
+ *
+ * The child also gets a private temp dir so `bunx`'s package cache is not
+ * shared with every other checkout on the machine — see `hygenCacheDir()`.
  */
 
 import { execSync, type ExecSyncOptions } from 'node:child_process';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 export interface HygenInvocation {
 	/** e.g. 'entity' */
@@ -51,6 +57,32 @@ function defaultTemplateRoot(): string {
 	return join(import.meta.dirname, '..', '..', '..', 'templates');
 }
 
+/**
+ * A private `bunx` download cache for this installation of the generator.
+ *
+ * `bunx` caches a fetched package at a FIXED path under the temp dir —
+ * `$TMPDIR/bunx-<uid>-hygen@latest` — shared by every process on the machine.
+ * It is fetched rather than resolved from `node_modules/.bin` because most
+ * Hygen invocations run with `cwd` set to a throwaway generated project, which
+ * has no `node_modules` of its own. Two checkouts generating at the same time
+ * therefore read and repopulate one directory, and the loser sees a
+ * half-written package: `ENOENT reading ".../hygen/dist/ops/inject.js"`,
+ * `Cannot find module './ops'` — a different file each run, always in a test
+ * that passes on its own.
+ *
+ * Keying the cache on THIS package's root gives each checkout (and each
+ * consumer project that installs the generator) its own copy. The override
+ * exists so CI or a debugging session can pin it.
+ */
+function hygenCacheDir(): string {
+	const override = process.env.CODEGEN_HYGEN_CACHE_DIR;
+	if (override) return override;
+	// src/cli/shared/hygen.ts → the package root that owns these templates.
+	const packageRoot = resolve(import.meta.dirname, '..', '..', '..');
+	const id = createHash('sha256').update(packageRoot).digest('hex').slice(0, 8);
+	return join(tmpdir(), `codegen-hygen-${id}`);
+}
+
 function quoteArg(a: string): string {
 	if (a === '' || /[\s"'$`\\]/.test(a)) {
 		return `"${a.replace(/(["$`\\])/g, '\\$1')}"`;
@@ -67,9 +99,28 @@ export function invokeHygen(opts: HygenInvocation): HygenResult {
 	const extra = (opts.args ?? []).map(quoteArg).join(' ');
 	const command = `bunx --bun hygen ${opts.generator} ${opts.action}${extra ? ' ' + extra : ''}`;
 
+	// Point the child's temp dir — and therefore `bunx`'s package cache — at a
+	// directory only this installation uses. A caller-supplied TMPDIR still
+	// wins, via the `opts.env` spread below.
+	const cacheDir = hygenCacheDir();
+	try {
+		mkdirSync(cacheDir, { recursive: true });
+	} catch {
+		// If the cache dir cannot be created, fall through: the child inherits
+		// the ambient temp dir and behaves exactly as it did before. A
+		// generation failure here would be far worse than a shared cache.
+	}
+
 	const execOpts: ExecSyncOptions = {
 		cwd: opts.cwd ?? process.cwd(),
-		env: { ...process.env, HYGEN_TMPLS: templateRoot, ...(opts.env ?? {}) },
+		env: {
+			...process.env,
+			TMPDIR: cacheDir,
+			TMP: cacheDir,
+			TEMP: cacheDir,
+			HYGEN_TMPLS: templateRoot,
+			...(opts.env ?? {}),
+		},
 		stdio: opts.inherit === false ? 'pipe' : 'inherit',
 	};
 

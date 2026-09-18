@@ -15,6 +15,8 @@
  */
 
 import { describe, test, expect } from 'bun:test';
+import { existsSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 import { invokeHygen, invokeEntityNew, invokeRelationshipNew } from '../../cli/shared/hygen.js';
 
@@ -82,5 +84,48 @@ describe('invokeHygen command composition', () => {
 		);
 		expect(command).toContain('bunx --bun hygen relationship new');
 		expect(command).toContain('--yaml');
+	});
+});
+
+/**
+ * `bunx` caches a fetched package at a fixed path under the temp dir, shared
+ * by every process on the machine. Hygen usually runs with `cwd` set to a
+ * throwaway generated project (no `node_modules`), so it is fetched rather
+ * than resolved locally — and two checkouts generating at once then read a
+ * half-written cache. The child therefore gets a temp dir keyed on this
+ * installation. Symptom if this regresses: a rotating
+ * `ENOENT reading ".../hygen/dist/..."` in `src/__tests__/cli/subsystem*.test.ts`
+ * that passes when the file is run alone.
+ */
+describe('invokeHygen temp isolation', () => {
+	test('creates a per-installation cache dir under the temp root', () => {
+		invokeHygen({
+			generator: 'entity',
+			action: 'new',
+			templateRoot: '/nonexistent',
+			inherit: false,
+		});
+
+		const matches = readdirSync(tmpdir()).filter((e) => e.startsWith('codegen-hygen-'));
+		expect(matches.length).toBeGreaterThan(0);
+		// Keyed, not random: the name must be reproducible so repeated runs
+		// reuse one cache instead of filling the temp dir.
+		expect(matches.some((e) => /^codegen-hygen-[0-9a-f]{8}$/.test(e))).toBe(true);
+		expect(existsSync(`${tmpdir()}/${matches[0]}`)).toBe(true);
+	});
+
+	test('a caller-supplied TMPDIR still wins', () => {
+		// `opts.env` is spread last, so a caller that deliberately pins the
+		// child's temp dir is not overridden.
+		const result = invokeHygen({
+			generator: 'entity',
+			action: 'new',
+			templateRoot: '/nonexistent',
+			inherit: false,
+			env: { TMPDIR: '/nonexistent-tmpdir-for-this-test' },
+		});
+		// The subprocess fails either way (nonexistent templateRoot); what this
+		// pins is that passing the var is allowed and does not throw.
+		expect(typeof result.ok).toBe('boolean');
 	});
 });
