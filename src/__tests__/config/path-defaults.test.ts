@@ -69,11 +69,22 @@ describe('the defaults table', () => {
 
 describe('no reader carries its own default literal', () => {
 	// A fallback literal for a `paths.*` value, or the deleted `app/backend/src`
-	// default, anywhere outside the schema is a second default (I1).
+	// default, anywhere outside the schema is a second default (I1). So is a
+	// fallback that BUILDS a path (`?? path.resolve(cwd, 'entities')`): a value
+	// that already resolved through the schema never needs one.
 	const FALLBACKS = [
 		/['"]app\/backend\/src['"]/,
 		/\?\?\s*['"](?:src|entities|events|src\/generated|definitions\/(?:jobs|providers))['"]/,
 		/\|\|\s*['"]src['"]/,
+		/\?\?\s*path\.(?:resolve|join)\(/,
+		/\|\|\s*path\.(?:resolve|join)\(/,
+	];
+
+	// Exact, asserted-present exceptions: a `?? path.…(` that derives from an
+	// already-resolved value and is not a `paths.*` default.
+	const NOT_A_PATHS_DEFAULT = [
+		// `copyRuntime`'s option: the parent of the install target it was handed.
+		"src/cli/shared/runtime-copier.ts: const depsTargetRoot = opts.depsTargetRoot ?? path.resolve(targetDir, '..');",
 	];
 
 	it('src/ and templates/ are clean', () => {
@@ -89,7 +100,7 @@ describe('no reader carries its own default literal', () => {
 						.forEach((line, i) => {
 							if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
 							if (FALLBACKS.some((re) => re.test(line))) {
-								offenders.push(`${path.relative(REPO, full)}:${i + 1}: ${line.trim()}`);
+								offenders.push(`${path.relative(REPO, full)}: ${line.trim()}`);
 							}
 						});
 				}
@@ -97,14 +108,15 @@ describe('no reader carries its own default literal', () => {
 		};
 		walk(path.join(REPO, 'src'));
 		walk(path.join(REPO, 'templates'));
-		expect(offenders).toEqual([]);
+		// Exact both ways: a new fallback fails, and so does a stale exception.
+		expect(offenders.sort()).toEqual([...NOT_A_PATHS_DEFAULT].sort());
 	});
 });
 
 describe('projectLayout / importSpecifier', () => {
 	const layout = projectLayout('/p', {
 		paths: { backend_src: 'apps/backend/src', generated: 'apps/backend/codegen' },
-	} as never);
+	});
 
 	it('derives the keyless files from backend_src', () => {
 		expect(layout.appModule).toBe('/p/apps/backend/src/app.module.ts');

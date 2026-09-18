@@ -134,7 +134,7 @@ describe('mergeTsconfig', () => {
 	test('aliases follow paths.* (PATH-0, #566)', () => {
 		const layout = projectLayout('/p', {
 			paths: { backend_src: 'apps/backend/src', generated: 'apps/backend/codegen' },
-		} as never);
+		});
 		const parsed = JSON.parse(mergeTsconfig(JSON.stringify({ compilerOptions: {} }), layout).content);
 		expect(parsed.compilerOptions.paths).toEqual({
 			'@shared/*': ['./apps/backend/src/shared/*'],

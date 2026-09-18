@@ -29,7 +29,6 @@ export interface Context {
 	framework: ProjectProfile | null;
 	installedSubsystems: string[];
 	entityCount: number;
-	entitiesDir: string | null;
 	json: boolean;
 	verbose: boolean;
 }
@@ -87,8 +86,9 @@ export async function loadContext(overrides: LoadContextOptions = {}): Promise<C
 	// prints it and the command exits 1. No command runs on an invalid config.
 	const config = configPath ? loadCodegenConfig(configPath) : null;
 
-	const entitiesDir = resolveEntitiesDir(cwd, configOrDefaults(config).paths);
-	const entityCount = countEntityYamls(entitiesDir);
+	// `paths.entities`, resolved — callers read it through `projectLayout`
+	// (PATH-0); there is no nullable copy on the context.
+	const entityCount = countEntityYamls(resolveEntitiesDir(cwd, configOrDefaults(config).paths));
 
 	const isInitialized = Boolean(configPath) || entityCount > 0;
 
@@ -112,7 +112,6 @@ export async function loadContext(overrides: LoadContextOptions = {}): Promise<C
 		framework,
 		installedSubsystems,
 		entityCount,
-		entitiesDir,
 		json: Boolean(overrides.json),
 		verbose: Boolean(overrides.verbose),
 	};
