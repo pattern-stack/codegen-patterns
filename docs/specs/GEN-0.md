@@ -133,4 +133,14 @@ Before the fix, the worker leg fails — run on the #649 commit with this PR's t
 
 ## Gates
 
-_(filled after the last edit)_
+Run after the last edit.
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass |
+| `just test-all` | pass: 3484 unit tests, 0 fail; baseline unchanged; every smoke (base, subsystems both modes, relationship, junction ×4 incl. `--layout custom` both modes with the new GEN-0 legs, cross-domain ×2, capability both modes); junction snapshots 10 pass; integration-emit 56 pass; smoke-integration |
+| `just test-integration` | pass (76 tests, 2 skip, 0 fail) |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
+| `just test-post-publish` | pass: tarball contract + consumer workflow from the tarball (`src/config/module-tree.ts` resolves from the installed package) |
+| GEN-0 gate, pre-fix | fails as intended on the #649 commit: `domainModuleExtensions.drizzle: expected {"listenNotify":true,"pollIntervalMs":4321}, got {"pollIntervalMs":1000}` |
+
