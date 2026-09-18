@@ -23,7 +23,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
+import { projectLayout } from './project-layout.js';
 
 export interface IntegrationScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -72,7 +72,7 @@ export function resolveIntegrationScaffoldLocals(
 
 	const integrationBlock = (config?.integration ?? {}) as Record<string, unknown>;
 
-	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
+	const subsystemsRoot = projectLayout(cwd, config).subsystems;
 
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const schemaPath = path.resolve(

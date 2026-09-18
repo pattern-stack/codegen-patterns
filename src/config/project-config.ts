@@ -144,3 +144,15 @@ export function loadProjectConfig(cwd: string = process.cwd()): CodegenConfig | 
 	const configPath = resolveConfigPath(cwd);
 	return configPath ? loadCodegenConfig(configPath) : null;
 }
+
+/**
+ * The config a project with no `codegen.config.yaml` gets: every schema
+ * default, `paths.*` resolved (PATH-0, #642). The one fallback every reader
+ * uses — no reader carries its own default literal.
+ */
+export const DEFAULT_CODEGEN_CONFIG: CodegenConfig = Object.freeze(CodegenConfigSchema.parse({}));
+
+/** `config`, or {@link DEFAULT_CODEGEN_CONFIG} when the project has no file. */
+export function configOrDefaults(config: CodegenConfig | null | undefined): CodegenConfig {
+	return config ?? DEFAULT_CODEGEN_CONFIG;
+}

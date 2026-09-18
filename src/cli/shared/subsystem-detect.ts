@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Context } from './context.js';
 import { resolveRuntimeMode } from './runtime-import.js';
+import { projectLayout } from './project-layout.js';
 
 export type SubsystemName =
 	| 'events'
@@ -182,17 +183,6 @@ export function subsystemModuleFile(name: SubsystemName): string | null {
 	return SUBSYSTEM_MODULE_FILE[name] ?? null;
 }
 
-function candidateRoots(cwd: string, configured?: string): string[] {
-	const roots = [
-		...(configured ? [path.resolve(cwd, configured)] : []),
-		path.resolve(cwd, 'src/shared/subsystems'),
-		path.resolve(cwd, 'src/subsystems'),
-		path.resolve(cwd, 'shared/subsystems'),
-	];
-	// Deduplicate while preserving order
-	return Array.from(new Set(roots));
-}
-
 function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 	// OBS-7: observability is a combiner subsystem (ADR-025) — no
 	// drizzle/memory split, no backend files beyond the service itself.
@@ -229,8 +219,9 @@ function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 async function detectSubsystemStatesImpl(
 	ctx: Context,
 ): Promise<InstalledSubsystem[]> {
-	const configured = ctx.config?.paths?.subsystems;
-	const roots = candidateRoots(ctx.cwd, configured);
+	// The one subsystems root (`paths.subsystems`, default
+	// `<backend_src>/shared/subsystems`) — where `subsystem install` writes.
+	const roots = [projectLayout(ctx.cwd, ctx.config).subsystems];
 
 	const found: InstalledSubsystem[] = [];
 	const seen = new Set<SubsystemName>();
@@ -307,12 +298,7 @@ async function detectSubsystemStatesImpl(
 	// override via `paths.modules_dir`). Resolution mirrors
 	// `auth-integrations-scaffold-locals.ts`.
 	if (!seen.has('auth-integrations')) {
-		const backendSrc = ctx.config?.paths?.backend_src ?? 'src';
-		const modulesConfigured = ctx.config?.paths?.modules_dir;
-		const vendorRoot =
-			typeof modulesConfigured === 'string' && modulesConfigured.length > 0
-				? path.resolve(ctx.cwd, modulesConfigured)
-				: path.resolve(ctx.cwd, backendSrc, 'modules');
+		const vendorRoot = projectLayout(ctx.cwd, ctx.config).modules;
 
 		const candidates = [
 			path.join(vendorRoot, 'connections', 'connections-auth.module.ts'),

@@ -24,10 +24,10 @@ import { invokeJunctionNew } from '../shared/hygen.js';
 import { checkGitSafety } from '../shared/git-safety.js';
 import {
 	regenerateBarrels,
-	resolveGeneratedDir,
-	resolveArchitecture,
 	listJunctionYamls,
 } from '../shared/barrel-generator.js';
+import { configOrDefaults } from '../../config/project-config.js';
+import { projectLayout } from '../shared/project-layout.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -205,10 +205,11 @@ export class JunctionNewCommand extends Command {
 
 		// Git safety
 		if (!this.force) {
-			const gitCheck = checkGitSafety(['src'], ctx.cwd);
+			const outputRoots = projectLayout(ctx.cwd, ctx.config);
+			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.generated], ctx.cwd);
 			if (gitCheck.inRepo && !gitCheck.clean) {
 				printWarning(
-					`Uncommitted changes in ${gitCheck.dirty.length} files under src/. Pass --force to overwrite.`
+					`Uncommitted changes in ${gitCheck.dirty.length} generated-output files. Pass --force to overwrite.`
 				);
 				if (!isJsonMode()) return 1;
 			}
@@ -259,8 +260,8 @@ export class JunctionNewCommand extends Command {
 		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
 		const junctionsDir = junctionsDirFor(ctx.cwd);
-		const generatedDir = resolveGeneratedDir(ctx);
-		const architecture = resolveArchitecture(ctx);
+		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
+		const architecture = configOrDefaults(ctx.config).generate.architecture;
 		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>> | null = null;
 		try {
 			barrelResult = await regenerateBarrels({

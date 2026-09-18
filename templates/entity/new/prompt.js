@@ -310,7 +310,7 @@ async function ensurePatternsRegistryLoaded() {
 
       // The `patterns:` manifest from the parsed config (CFG-0); absent or
       // empty ⇒ the ADR-031 default glob (the CLI's `resolvePatternGlobs` rule).
-      const configured = getProjectConfig()?.patterns ?? [];
+      const configured = getProjectConfig().patterns;
       const manifest = configured.length > 0 ? configured : ['src/patterns/*.pattern.ts'];
       const result = await loadAppPatterns(manifest, process.cwd());
       for (const err of result.errors) {
@@ -529,7 +529,7 @@ export default {
     // Behavior strategy (base_class vs inline)
     // Per-entity override takes precedence over global config
     const behaviorStrategy =
-      entity.behavior_strategy || (getProjectConfig()?.behaviors.strategy ?? 'inline');
+      entity.behavior_strategy || getProjectConfig().behaviors.strategy;
 
     // Resolve behaviors
     const resolvedBehaviors = resolveBehaviors(behaviors);
@@ -1356,7 +1356,8 @@ export default {
     const resolveEmitsEvents = () => {
       if (!hasEmits) return [];
 
-      const eventsDir = path.resolve(process.cwd(), 'events');
+      // `paths.events_dir` — the directory the CLI's event codegen reads (PATH-0).
+      const eventsDir = path.resolve(process.cwd(), getProjectConfig().paths.events_dir);
       const topLevel = loadTopLevelEventYamls(eventsDir);
       const sugar = desugarEntityEventsInline(definition);
       // Top-level wins on collision (same policy as event-codegen-generator).

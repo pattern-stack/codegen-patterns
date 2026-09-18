@@ -35,14 +35,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { Context } from './context.js';
-import { resolveGeneratedDir } from './barrel-generator.js';
 import {
 	configuredInstalledSubsystems,
 	detectInstalledSubsystems,
 	type InstalledSubsystem,
 	type SubsystemName,
 } from './subsystem-detect.js';
-import { resolveSubsystemsRoot } from './subsystems-path.js';
+import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 
 const PACKAGE = '@pattern-stack/codegen';
@@ -105,7 +104,7 @@ const SCHEMA_ORDER: SubsystemName[] = ['events', 'jobs', 'bridge', 'integration'
 
 export interface SubsystemSchemaBarrelOptions {
 	ctx: Context;
-	/** Defaults to `resolveGeneratedDir(ctx)`. */
+	/** Defaults to `projectLayout(ctx.cwd, ctx.config).generated`. */
 	generatedDir?: string;
 	dryRun?: boolean;
 }
@@ -201,7 +200,7 @@ export async function regenerateSubsystemSchemaBarrel(
 	opts: SubsystemSchemaBarrelOptions,
 ): Promise<SubsystemSchemaBarrelResult> {
 	const { ctx, dryRun = false } = opts;
-	const generatedDir = opts.generatedDir ?? resolveGeneratedDir(ctx);
+	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
 
 	const mode = resolveRuntimeMode(ctx.config);
 	const installed =
@@ -211,7 +210,7 @@ export async function regenerateSubsystemSchemaBarrel(
 				)
 			: await detectInstalledSubsystems(ctx);
 
-	const subsystemsAbs = resolveSubsystemsRoot(ctx);
+	const subsystemsAbs = projectLayout(ctx.cwd, ctx.config).subsystems;
 	const barrelAbs = path.resolve(generatedDir, 'subsystems-schema.ts');
 	let subsystemsRel = path
 		.relative(path.dirname(barrelAbs), subsystemsAbs)

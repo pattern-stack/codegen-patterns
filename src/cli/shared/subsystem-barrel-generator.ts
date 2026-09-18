@@ -24,14 +24,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { Context } from './context.js';
-import { resolveGeneratedDir } from './barrel-generator.js';
 import {
 	detectInstalledSubsystems,
 	configuredInstalledSubsystems,
 	type InstalledSubsystem,
 	type SubsystemName,
 } from './subsystem-detect.js';
-import { resolveSubsystemsRoot } from './subsystems-path.js';
+import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 import {
 	buildBridgeRegistryContent,
@@ -45,7 +44,7 @@ import { buildEventCodegenContents } from './event-codegen-generator.js';
 
 export interface SubsystemBarrelOptions {
 	ctx: Context;
-	/** Defaults to `<resolveGeneratedDir(ctx)>`. */
+	/** Defaults to `<projectLayout(ctx.cwd, ctx.config).generated>`. */
 	generatedDir?: string;
 	dryRun?: boolean;
 }
@@ -644,7 +643,7 @@ export async function regenerateSubsystemBarrel(
 	opts: SubsystemBarrelOptions
 ): Promise<SubsystemBarrelResult> {
 	const { ctx, dryRun = false } = opts;
-	const generatedDir = opts.generatedDir ?? resolveGeneratedDir(ctx);
+	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
 
 	// ADR-037: "installed" is mode-dependent. Package mode reads
 	// `subsystems.install` from config (nothing is vendored on disk); vendored
@@ -661,7 +660,7 @@ export async function regenerateSubsystemBarrel(
 	// wherever the generated barrel ends up. `resolveSubsystemsRoot` returns
 	// an absolute path; honors `paths.subsystems` override or falls back to
 	// `<paths.backend_src>/shared/subsystems`.
-	const subsystemsAbs = resolveSubsystemsRoot(ctx);
+	const subsystemsAbs = projectLayout(ctx.cwd, ctx.config).subsystems;
 	const barrelAbs = path.resolve(generatedDir, 'subsystems.ts');
 	let subsystemsRel = path
 		.relative(path.dirname(barrelAbs), subsystemsAbs)

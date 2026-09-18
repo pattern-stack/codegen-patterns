@@ -1,26 +1,13 @@
 /**
  * naming-config.schema.mjs
  *
- * Pure-JS mirror of naming-config.schema.ts's constants and resolver, for the
- * hygen-side `.mjs` helpers. Validation is not mirrored: the `naming:` block is
- * validated once, by the Zod schema, in `src/config/project-config.ts` (CFG-0).
+ * Pure-JS mirror of naming-config.schema.ts's resolver and suffix table, for the
+ * hygen-side `.mjs` helpers. Neither validation nor defaults are mirrored: the
+ * `naming:` block is validated and defaulted once, by the Zod schema, in
+ * `src/config/project-config.ts` (CFG-0, PATH-0).
  *
  * Keep in sync with naming-config.schema.ts.
  */
-
-// ============================================================================
-// Default Configuration
-// ============================================================================
-
-export const DEFAULT_BACKEND_NAMING = {
-  fileCase: 'kebab-case',
-  suffixStyle: 'dotted',
-  entityInclusion: 'flat-only',
-  terminology: {
-    command: 'command',
-    query: 'query',
-  },
-};
 
 // ============================================================================
 // Resolution Helper
@@ -64,7 +51,6 @@ export const FILE_TYPE_SUFFIXES = {
 };
 
 export default {
-  DEFAULT_BACKEND_NAMING,
   resolveLayerNaming,
   FILE_TYPE_SUFFIXES,
 };

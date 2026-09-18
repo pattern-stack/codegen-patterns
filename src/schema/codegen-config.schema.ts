@@ -115,35 +115,61 @@ export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
  *
  * `.strict()` — an unknown key is an error naming it.
  *
- * - `backend_src`: backend source root. No schema default: its readers still
- *   disagree on the fallback (`src` in the CLI, `app/backend/src` in
- *   `paths.mjs` / `locations.mjs`, by-architecture in the junction prompt).
- * - `frontend_src`: frontend source root (`paths.mjs`).
- * - `entities`: where entity YAML is read from (`src/config/entities-dir.ts`).
- * - `events_dir` / `jobs_dir` / `providers`: definition roots for the events,
- *   jobs (RFC-0005) and integration-provider (RFC-0001) loaders.
- * - `subsystems`: install root for vendored subsystem runtime files.
- * - `modules_dir`: vendor target for `auth-integrations` (#303).
- * - `orchestration_src`: orchestration emission root (ADR-032 Phase 3-2 / O-6).
- * - `generated`: directory where codegen-owned barrel files are written
- *   (modules.ts, schema.ts). Relative to project root. Default: `src/generated`.
+ * Every key has exactly ONE default, declared here (PATH-0, #642). No reader
+ * carries its own fallback literal: the CLI, the `.mjs` helpers and the prompts
+ * all read the resolved block (`DEFAULT_CODEGEN_CONFIG` when there is no file).
+ *
+ * Static defaults (`.default()` below):
+ * - `backend_src` = `src`: backend source root (ADR-037 consumer layout).
+ * - `frontend_src` = `apps/frontend/src`: frontend source root (init locates the
+ *   frontend `package.json` from its parent).
+ * - `entities` = `entities`: where entity YAML is read from (`entities-dir.ts`).
+ * - `events_dir` = `events`, `jobs_dir` = `definitions/jobs`, `providers` =
+ *   `definitions/providers`: definition roots for the events, jobs (RFC-0005)
+ *   and integration-provider (RFC-0001) loaders.
+ *
+ * Derived from the resolved `backend_src` by {@link resolvePathDefaults} when
+ * absent:
+ * - `generated` = `<backend_src>/generated`: codegen-owned cross-entity barrels.
+ * - `subsystems` = `<backend_src>/shared/subsystems`: subsystem runtime root.
+ * - `modules_dir` = `<backend_src>/modules`: `auth-integrations` vendor target.
+ * - `orchestration_src` = `<backend_src>/orchestration` (ADR-032 / O-6).
  */
 export const PathsConfigSchema = z
   .object({
-    backend_src: z.string().optional(),
-    frontend_src: z.string().optional(),
-    entities: z.string().optional(),
-    events_dir: z.string().optional(),
-    jobs_dir: z.string().optional(),
-    providers: z.string().optional(),
-    subsystems: z.string().optional(),
-    modules_dir: z.string().optional(),
-    orchestration_src: z.string().optional(),
-    generated: z.string().default("src/generated"),
+    backend_src: z.string().min(1).default("src"),
+    frontend_src: z.string().min(1).default("apps/frontend/src"),
+    entities: z.string().min(1).default("entities"),
+    events_dir: z.string().min(1).default("events"),
+    jobs_dir: z.string().min(1).default("definitions/jobs"),
+    providers: z.string().min(1).default("definitions/providers"),
+    subsystems: z.string().min(1).optional(),
+    modules_dir: z.string().min(1).optional(),
+    orchestration_src: z.string().min(1).optional(),
+    generated: z.string().min(1).optional(),
   })
   .strict();
 
-export type PathsConfig = z.infer<typeof PathsConfigSchema>;
+/** The `paths` block as written. */
+export type PathsConfigInput = z.input<typeof PathsConfigSchema>;
+
+/** Fill the keys whose default is relative to `backend_src`. */
+export function resolvePathDefaults(paths: z.output<typeof PathsConfigSchema>) {
+  const root = paths.backend_src.replace(/\/+$/, "");
+  const under = (child: string) => (root === "" || root === "." ? child : `${root}/${child}`);
+  return {
+    ...paths,
+    generated: paths.generated ?? under("generated"),
+    subsystems: paths.subsystems ?? under("shared/subsystems"),
+    modules_dir: paths.modules_dir ?? under("modules"),
+    orchestration_src: paths.orchestration_src ?? under("orchestration"),
+  };
+}
+
+/** `paths` as every reader sees it: every key resolved. */
+export const ResolvedPathsSchema = PathsConfigSchema.transform(resolvePathDefaults);
+
+export type PathsConfig = z.output<typeof ResolvedPathsSchema>;
 
 // ============================================================================
 // Patterns Config (ADR-031, PATTERN-5)
@@ -702,7 +728,7 @@ export const StorageConfigSchema = z
 export const CodegenConfigSchema = z
   .object({
     runtime: RuntimeModeSchema,
-    paths: PathsConfigSchema.default({}),
+    paths: ResolvedPathsSchema.default({}),
     generate: GenerateConfigSchema.default({}),
     patterns: PatternsConfigSchema,
     naming: BackendNamingConfigSchema.default({}),

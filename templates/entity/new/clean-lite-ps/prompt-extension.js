@@ -25,6 +25,7 @@ import {
 } from '../../../../src/patterns/compose.js';
 import '../../../../src/patterns/library/index.js';
 import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
+import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
   ACTOR_CAPABILITY,
   COMMUNICATION_CAPABILITY,
@@ -1411,14 +1412,15 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Source root — resolved in priority order:
   //   1. baseLocals.srcRoot (e.g. set explicitly by tests or callers)
   //   2. entity.src_root (per-entity override in YAML)
-  //   3. baseLocals.backendSrc (clean-lite-ps reads paths.backend_src from
-  //      codegen.config.yaml; prompt.js threads BASE_PATHS.backendSrc here)
-  //   4. 'src' (sane default for greenfield projects)
+  //   3. baseLocals.backendSrc — the resolved `paths.backend_src`
+  //      (prompt.js threads BASE_PATHS.backendSrc here)
+  //   4. the schema's own default (callers that build locals by hand) — the
+  //      one default, declared in `PathsConfigSchema` (PATH-0, #642)
   const srcRoot =
     baseLocals.srcRoot ||
     entity.src_root ||
     baseLocals.backendSrc ||
-    'src';
+    DEFAULT_CODEGEN_CONFIG.paths.backend_src;
 
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);

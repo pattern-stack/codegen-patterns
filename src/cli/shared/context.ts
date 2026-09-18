@@ -9,7 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { findConfigUpward, resolveEntitiesDir } from '../../config/entities-dir.js';
-import { loadCodegenConfig, type CodegenConfig } from '../../config/project-config.js';
+import { configOrDefaults, loadCodegenConfig, type CodegenConfig } from '../../config/project-config.js';
+import { projectLayout } from './project-layout.js';
 import { scanProject } from '../../scanner/index.js';
 import type { ProjectProfile } from '../../scanner/types.js';
 
@@ -57,35 +58,24 @@ function countEntityYamls(entitiesDir: string | null): number {
 const KNOWN_SUBSYSTEMS = ['events', 'jobs', 'cache', 'storage'] as const;
 
 /**
- * Cheap subsystem detection — scans common install paths for a protocol file.
- * The richer {@link ../shared/subsystem-detect.ts} implementation returns
- * full metadata; loadContext() only needs names for the summary.
+ * Cheap subsystem detection — scans the subsystems root (`paths.subsystems`,
+ * default `<backend_src>/shared/subsystems`) for a protocol file. The richer
+ * {@link ../shared/subsystem-detect.ts} implementation returns full metadata;
+ * loadContext() only needs names for the summary.
  */
 function detectInstalledSubsystemNames(
 	cwd: string,
 	config: CodegenConfig | null
 ): string[] {
-	const configured = config?.paths?.subsystems;
-	const roots = [
-		...(configured ? [path.resolve(cwd, configured)] : []),
-		path.resolve(cwd, 'src/shared/subsystems'),
-		path.resolve(cwd, 'src/subsystems'),
-		path.resolve(cwd, 'shared/subsystems'),
-	];
-
-	const found = new Set<string>();
-	for (const root of roots) {
-		if (!fs.existsSync(root)) continue;
-		for (const name of KNOWN_SUBSYSTEMS) {
-			const dir = path.join(root, name);
-			if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
-			const hasProtocol = fs
-				.readdirSync(dir)
-				.some((f) => f.endsWith('.protocol.ts'));
-			if (hasProtocol) found.add(name);
-		}
+	const root = projectLayout(cwd, config).subsystems;
+	if (!fs.existsSync(root)) return [];
+	const found: string[] = [];
+	for (const name of KNOWN_SUBSYSTEMS) {
+		const dir = path.join(root, name);
+		if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
+		if (fs.readdirSync(dir).some((f) => f.endsWith('.protocol.ts'))) found.push(name);
 	}
-	return Array.from(found);
+	return found;
 }
 
 export async function loadContext(overrides: LoadContextOptions = {}): Promise<Context> {
@@ -97,7 +87,7 @@ export async function loadContext(overrides: LoadContextOptions = {}): Promise<C
 	// prints it and the command exits 1. No command runs on an invalid config.
 	const config = configPath ? loadCodegenConfig(configPath) : null;
 
-	const entitiesDir = resolveEntitiesDir(cwd, config?.paths);
+	const entitiesDir = resolveEntitiesDir(cwd, configOrDefaults(config).paths);
 	const entityCount = countEntityYamls(entitiesDir);
 
 	const isInitialized = Boolean(configPath) || entityCount > 0;
