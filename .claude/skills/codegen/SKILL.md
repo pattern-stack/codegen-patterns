@@ -151,6 +151,10 @@ fields:
 relationships:
   account: { type: belongs_to, target: account, foreign_key: account_id }
 
+roles:                          # CAP-2: needs `Communication` in patterns:; every target needs `Actor`
+  host:      { target: contact, cardinality: one }                       # → belongs_to, FK host_contact_id, indexed, key `host`
+  attendees: { target: contact, cardinality: many, via: meeting_contact } # → validated against junctions/, emits nothing
+
 behaviors: [timestamps, soft_delete, user_tracking]
 
 api: true                       # false → no HTTP surface (REST/Electric/tRPC); service + use cases still generated (ADR-043 §6)
