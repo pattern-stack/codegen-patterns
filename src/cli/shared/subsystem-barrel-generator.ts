@@ -422,6 +422,15 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 };
 
 /**
+ * Whether `SUBSYSTEM_MODULES` composes `name`. A composed subsystem reaches
+ * `AppModule` through the barrel alone — the consumer registers nothing by
+ * hand, and a hand registration would be a second `forRoot` (#663).
+ */
+export function composesSubsystem(name: SubsystemName): boolean {
+	return COMPOSERS[name] !== undefined;
+}
+
+/**
  * DIFFER-UNIGNORE (0.17.1): extract `integration.differ.{ignore,unignore}` and
  * serialise to a `differ: { ignore: [...], unignore: [...] }` fragment, or `''`
  * when neither list is present/non-empty. Each is a string array (field names);
