@@ -134,4 +134,13 @@ Option 2 from the issue. Option 1 (split action directories per architecture) is
 
 ## Gates
 
-(filled in after the last edit)
+Run on `af4a4f7`, after the last code edit (only this table changed after it).
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass. `bun run test` is the baseline runner, which runs the `clean` pipeline after the stub locals were deleted |
+| `just test-all` | pass: 3421 unit tests, 0 fail; baseline; smoke; subsystems ×2 modes; relationship; junction ×4 legs; capability ×2 modes; junction unit; integration-emit; smoke-integration |
+| `just test-integration` | pass: 74 pass, 0 fail, 2 skip. The skips are the hard-coded `test.skip` pair in `bridge-e2e.test.ts` and predate this change |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
+| `just test-post-publish` | pass (tarball consumer contract + smoke from the packed artifact) |
+| Before/after byte diff | `entity new --all` over `test/smoke/fixtures` and `fixtures-junction` (clean-lite-ps): `diff -r` empty |
