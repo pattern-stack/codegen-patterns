@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const ENTITY_TEMPLATE = readFileSync(
   resolve(import.meta.dir, '../../../templates/entity/new/clean-lite-ps/entity.ejs.t'),
@@ -41,7 +42,7 @@ function render(definition: Record<string, unknown>): {
   output: string;
   locals: Record<string, unknown>;
 } {
-  const locals = buildCleanLitePsLocals(definition, {}) as Record<string, unknown>;
+  const locals = buildCleanLitePsLocals(definition, withEntities()) as Record<string, unknown>;
   const output = ejs.render(extractBody(ENTITY_TEMPLATE), locals, { rmWhitespace: false });
   return { output, locals };
 }

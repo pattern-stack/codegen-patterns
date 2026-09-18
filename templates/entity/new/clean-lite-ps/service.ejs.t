@@ -16,22 +16,22 @@ import { FieldValueService } from '../field_values/field_value.service';
 <% if (eavValueTable) { -%>
 import { toEavRows, mergeEavRows } from '<%= typeof eavHelpersImport !== 'undefined' ? eavHelpersImport : '@shared/eav-helpers' %>';
 import type { DrizzleTx } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
-import { <%= eavDefinitionPascal %>Repository } from '../<%= eavDefinitionEntityPlural %>/<%= eavDefinitionEntity %>.repository';
+import { <%= eavDefinitionPascal %>Repository } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntity %>.repository';
 <% } -%>
 <%_ /* CGP-358b — service-layer composition: import target repos for belongs_to relationships */ _%>
 <%_ if (typeof clpBelongsTo !== 'undefined') { _%>
 <%_ const uniqueBelongsToTargets = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
 <%_ uniqueBelongsToTargets.forEach(rel => { _%>
-import { <%= rel.relatedEntityPascal %>Repository } from '../<%= rel.relatedPlural %>/<%= rel.relatedEntity %>.repository';
-import type { <%= rel.relatedEntityPascal %> } from '../<%= rel.relatedPlural %>/<%= rel.relatedEntity %>.entity';
+import { <%= rel.relatedEntityPascal %>Repository } from '<%= rel.relatedImportDir %>/<%= rel.relatedEntity %>.repository';
+import type { <%= rel.relatedEntityPascal %> } from '<%= rel.relatedImportDir %>/<%= rel.relatedEntity %>.entity';
 <%_ }) _%>
 <%_ } _%>
 <%_ /* CGP-358b — import target repos for has_many relationships */ _%>
 <%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
 <%_ const uniqueHasManyTargets = [...new Map(clpExistingHasMany.filter(r => !r.isSelfRef).map(r => [r.target, r])).values()]; _%>
 <%_ uniqueHasManyTargets.forEach(rel => { _%>
-import { <%= rel.targetClass %>Repository } from '../<%= rel.targetPlural %>/<%= rel.target %>.repository';
-import type { <%= rel.targetClass %> } from '../<%= rel.targetPlural %>/<%= rel.target %>.entity';
+import { <%= rel.targetClass %>Repository } from '<%= rel.targetImportDir %>/<%= rel.target %>.repository';
+import type { <%= rel.targetClass %> } from '<%= rel.targetImportDir %>/<%= rel.target %>.entity';
 <%_ }) _%>
 <%_ } _%>
 

@@ -25,6 +25,7 @@ import {
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";
 import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import { createEntityLookup, resolveEntitiesDir } from "../../_shared/entity-naming.mjs";
 import {
   loadRuntimeMode,
   subsystemsImport,
@@ -164,18 +165,6 @@ function loadCodegenConfig(cwd) {
     };
   } catch {
     return defaultConfig;
-  }
-}
-
-/** `paths.entities_dir` from codegen.config.yaml, when set. */
-function readEntitiesDirSetting(cwd) {
-  const configPath = path.resolve(cwd, "codegen.config.yaml");
-  if (!fs.existsSync(configPath)) return null;
-  try {
-    const dir = yaml.parse(fs.readFileSync(configPath, "utf-8"))?.paths?.entities_dir;
-    return typeof dir === "string" && dir.length > 0 ? dir : null;
-  } catch {
-    return null;
   }
 }
 
@@ -1700,15 +1689,12 @@ export default {
       // import per pattern file) and matches the two-process load story
       // the registry tests pin down.
       await ensurePatternsRegistryLoaded();
-      const { buildCleanLitePsLocals, createEntityLookup } = await import('./clean-lite-ps/prompt-extension.js');
-      // Cross-entity facts (a group Actor's member entity's `plural:` /
-      // `context:`, ADR-041.1) are read from that entity's own YAML — lazily,
-      // only when a reference needs one. Same entities-dir rule as the
-      // frontend emitter (`paths.entities_dir`, default `entities`).
-      const entitiesDir = path.resolve(
-        process.cwd(),
-        readEntitiesDirSetting(process.cwd()) ?? 'entities',
-      );
+      const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
+      // Every cross-entity fact — a belongs_to / has_many / field foreign_key
+      // target's table and module folder, an EAV definition entity, a group
+      // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
+      // YAML, lazily, on the first reference that needs one.
+      const entitiesDir = resolveEntitiesDir(process.cwd());
       Object.assign(
         locals,
         buildCleanLitePsLocals(definition, { ...locals, entityLookup: createEntityLookup(entitiesDir) }),

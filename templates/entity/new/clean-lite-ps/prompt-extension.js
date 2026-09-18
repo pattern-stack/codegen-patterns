@@ -8,7 +8,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
-import yaml from 'yaml';
+import {
+  entityModuleNaming,
+  relativeModuleDir,
+} from '../../../_shared/entity-naming.mjs';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
@@ -72,64 +75,6 @@ function isIdentifierRef(value) {
     typeof value === 'object' &&
     typeof value[IDENTIFIER_REF] === 'string'
   );
-}
-
-/**
- * An entity's module naming, from its OWN `entity:` block — the rule its own
- * emission uses (`buildCleanLitePsLocals`), so a cross-entity reference and the
- * referenced entity agree by construction: `plural:` (else `pluralize(name)`)
- * is both the table export and the module folder, nested under `context:`.
- */
-export function entityModuleNaming(entityBlock, srcRoot) {
-  const plural = entityBlock.plural || pluralize(entityBlock.name);
-  const groupDir = entityBlock.context
-    ? `${srcRoot}/modules/${entityBlock.context}`
-    : `${srcRoot}/modules`;
-  return {
-    plural,
-    moduleGroupDir: groupDir,
-    entityFile: `${groupDir}/${plural}/${entityBlock.name}.entity`,
-  };
-}
-
-/**
- * Look up another entity's `entity:` block by name from the project's entity
- * YAMLs (`<cwd>/<paths.entities_dir | 'entities'>`, the frontend emitter's
- * rule). Lazy and cached: the directory is read only when a cross-entity
- * reference needs a fact the referencing YAML does not state (ADR-041.1: a
- * group Actor's member entity). Parsed with `yaml` directly, as `prompt.js`
- * parses every entity — the zod-backed registry does not ship to consumers.
- *
- * Exported for unit-testing; `prompt.js` passes one as `entityLookup`.
- */
-export function createEntityLookup(entitiesDir) {
-  let byName = null;
-  const load = () => {
-    byName = new Map();
-    const walk = (dir) => {
-      if (!fs.existsSync(dir)) return;
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) walk(full);
-        else if (/\.ya?ml$/.test(e.name)) {
-          try {
-            const doc = yaml.parse(fs.readFileSync(full, 'utf-8'));
-            if (doc && doc.entity && typeof doc.entity.name === 'string') {
-              byName.set(doc.entity.name, doc.entity);
-            }
-          } catch {
-            // A malformed YAML is reported by the CLI's own validation; it is
-            // simply not resolvable here.
-          }
-        }
-      }
-    };
-    walk(entitiesDir);
-  };
-  return (name) => {
-    if (!byName) load();
-    return byName.get(name) ?? null;
-  };
 }
 
 function _renderLiteral(value, baseIndent, currentIndent) {
@@ -385,7 +330,6 @@ const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
 const pluralize = (s) => pluralizePkg.plural(s);
-const singularize = (s) => pluralizePkg.singular(s);
 
 // ============================================================================
 // Drizzle type mapping
@@ -636,7 +580,7 @@ function mapOnDelete(onDelete) {
  * contacts.account_id. The method name on AccountRepository would be
  * `findByAccountId`.
  */
-function processHasMany(relationships, parentEntityNamePlural, fs, path, srcRoot) {
+function processHasMany(relationships, naming) {
   if (!relationships) return [];
 
   const result = [];
@@ -646,36 +590,74 @@ function processHasMany(relationships, parentEntityNamePlural, fs, path, srcRoot
 
     const target = rel.target;
     const inverseForeignKey = rel.foreign_key;
-    const targetPlural = pluralize(target);
-    const isSelfRef = targetPlural === parentEntityNamePlural;
+    // A has_many whose target has no YAML is simply not wired (soft, as the
+    // file check below) — it contributes no import and no composition.
+    const resolved = resolveTargetNaming(target, naming, { required: false });
+    const isSelfRef = target === naming.entityName;
 
-    // Check whether the target entity has already been generated.
-    // Only include targets that exist so the import block doesn't
-    // reference files that aren't on disk yet (two-pass generation).
-    let targetExists = false;
-    if (fs && path && srcRoot) {
-      const nestedPath = path.resolve(srcRoot, 'modules', targetPlural, `${target}.entity.ts`);
-      const flatPath = path.resolve(srcRoot, 'modules', `${target}.entity.ts`);
-      targetExists = fs.existsSync(nestedPath) || fs.existsSync(flatPath) || isSelfRef;
-    } else {
-      targetExists = isSelfRef;
+    // Check whether the target entity has already been generated — at the
+    // target's OWN module folder (`plural:`, `context:`). Only include targets
+    // that exist so the import block doesn't reference files that aren't on
+    // disk yet (two-pass generation). Deliberately a file check, not a YAML
+    // check: a single `entity new x.yaml` must not import a sibling that has a
+    // YAML but has never been generated.
+    let targetExists = isSelfRef;
+    if (!isSelfRef && resolved) {
+      targetExists = fs.existsSync(
+        path.resolve(resolved.moduleDir, `${target}.entity.ts`),
+      );
     }
 
+    const targetPlural = resolved ? resolved.plural : null;
     result.push({
       name: relName,
       target,
       targetClass: pascalCase(target),
       targetPlural,
+      targetImportDir: resolved ? resolved.importDir : null,
       inverseForeignKey,
       inverseForeignKeyCamel: camelCase(inverseForeignKey),
       inverseForeignKeyPascal: pascalCase(inverseForeignKey),
       isSelfRef,
       targetExists,
-      importPath: `../${targetPlural}/${target}.repository`,
+      importPath: resolved ? `${resolved.importDir}/${target}.repository` : null,
     });
   }
 
   return result;
+}
+
+/**
+ * Resolve a referenced entity's naming from ITS YAML (NAME-0, #630): table
+ * export, module folder, and the folder's import path from this entity's own
+ * module folder. A self-reference is this entity's own naming.
+ *
+ * `naming` is `{ entityName, ownNaming, srcRoot, entityLookup }`. With
+ * `required`, a target with no entity YAML is a generation error: every
+ * caller that passes it emits the target's table unconditionally, and there is
+ * nothing else to read that name from. Otherwise it resolves to `null`.
+ */
+function resolveTargetNaming(target, naming, { required }) {
+  const { entityName, ownNaming, srcRoot, entityLookup } = naming;
+  let targetNaming;
+  if (target === entityName) {
+    targetNaming = ownNaming;
+  } else {
+    const block = entityLookup ? entityLookup(target) : null;
+    if (!block) {
+      if (!required) return null;
+      throw new Error(
+        `[codegen] '${entityName}' references '${target}', which has no entity YAML in the ` +
+          `entities directory — its table and module folder are read from that YAML.`,
+      );
+    }
+    targetNaming = entityModuleNaming(block, srcRoot);
+  }
+  return {
+    plural: targetNaming.plural,
+    moduleDir: targetNaming.moduleDir,
+    importDir: relativeModuleDir(ownNaming.moduleDir, targetNaming.moduleDir),
+  };
 }
 
 /**
@@ -690,7 +672,7 @@ function processHasMany(relationships, parentEntityNamePlural, fs, path, srcRoot
  * `nullable:` on the relationship still wins (back-compat for fixtures that set
  * it directly on the relation).
  */
-function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
+function processBelongsTo(relationships, naming, fields = {}) {
   if (!relationships) return [];
 
   const result = [];
@@ -725,8 +707,9 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
     // traversed. Declaring the FK column in `fields:` is still the way to say
     // otherwise, so an explicit field declaration wins in both directions.
     const hasIndex = fieldDef ? fieldDef.index === true : rel.index === true;
-    const relatedPlural = pluralize(target);
-    const isSelfFk = relatedPlural === parentEntityNamePlural;
+    const resolved = resolveTargetNaming(target, naming, { required: true });
+    const relatedPlural = resolved.plural;
+    const isSelfFk = target === naming.entityName;
 
     // on_delete defaults to 'restrict' per ADR-021
     const onDeleteYaml = rel.on_delete ?? 'restrict';
@@ -760,9 +743,10 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
       relatedEntityPascal: pascalCase(target),
       relatedTable: relatedPlural,
       relatedPlural,
+      relatedImportDir: resolved.importDir,
       nullable,
       hasIndex,
-      importPath: `../${relatedPlural}/${target}.entity`,
+      importPath: `${resolved.importDir}/${target}.entity`,
       relationKey,
       isSelfFk,
       onDelete,
@@ -783,8 +767,8 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
  *   - `foreign_key: <table>.<column>` → append `.references(() => <table>.<column>)`
  *     to the column's Drizzle chain (self-FKs get the `: AnyPgColumn` annotation)
  *     and record the cross-module import. The table segment is the Drizzle table
- *     export name (plural, e.g. `conversations`); the import path singularizes it
- *     to the entity file (`../conversations/conversation.entity`).
+ *     export name (plural, e.g. `conversations`); the import comes from the
+ *     entity whose YAML declares that plural, at its own folder (NAME-0).
  *   - `index: true` → emit a named single-column index in the pgTable
  *     extra-config callback (`<table>_<column>_idx`).
  *
@@ -795,9 +779,10 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
  * @param {object[]} renderedFields  the fields actually emitted as columns
  *                                   (nonFkFields — belongs_to FK columns excluded)
  * @param {object}   fields          raw field map keyed by snake_case name
- * @param {string}   entityNamePlural Drizzle table export name for self-FK detection
+ * @param {object}   naming          `resolveTargetNaming` context (this entity + the lookup)
  */
-function processFieldFeatures(renderedFields, fields, entityNamePlural) {
+function processFieldFeatures(renderedFields, fields, naming) {
+  const entityNamePlural = naming.ownNaming.plural;
   const fkImports = [];
   const indexExpressions = [];
   const seenImports = new Set();
@@ -819,9 +804,21 @@ function processFieldFeatures(renderedFields, fields, entityNamePlural) {
         hasSelfFieldFk = true;
       } else if (!seenImports.has(relatedTable)) {
         seenImports.add(relatedTable);
+        // The segment names a TABLE: the entity that owns it is the one whose
+        // YAML declares that plural (NAME-0) — not `singularize(table)`.
+        const owner = naming.entityLookup?.byPlural
+          ? naming.entityLookup.byPlural(relatedTable)
+          : null;
+        if (!owner) {
+          throw new Error(
+            `[codegen] '${naming.entityName}' field '${pf.name}' foreign_key: '${field.foreign_key}' — ` +
+              `no entity YAML in the entities directory declares the table '${relatedTable}'.`,
+          );
+        }
+        const resolved = resolveTargetNaming(owner.name, naming, { required: true });
         fkImports.push({
           relatedTable,
-          importPath: `../${relatedTable}/${singularize(relatedTable)}.entity`,
+          importPath: `${resolved.importDir}/${owner.name}.entity`,
         });
       }
     }
@@ -1349,6 +1346,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // One naming rule for this entity and for any entity that references it
   // (`entityModuleNaming`).
   const ownNaming = entityModuleNaming(entity, srcRoot);
+  // Every OTHER entity this one references is named from its own YAML through
+  // the same function (NAME-0) — `resolveTargetNaming` reads this context.
+  const entityLookup = baseLocals?.entityLookup ?? null;
+  const targetNaming = { entityName, ownNaming, srcRoot, entityLookup };
   const entityNamePlural = ownNaming.plural;
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
@@ -1381,9 +1382,11 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const eavDefinitionEntity = eavValueTable
     ? (definition.eav_definition_table || null)
     : null;
-  const eavDefinitionEntityPlural = eavDefinitionEntity
-    ? pluralize(eavDefinitionEntity)
+  const eavDefinitionNaming = eavDefinitionEntity
+    ? resolveTargetNaming(eavDefinitionEntity, targetNaming, { required: true })
     : null;
+  const eavDefinitionEntityPlural = eavDefinitionNaming ? eavDefinitionNaming.plural : null;
+  const eavDefinitionImportDir = eavDefinitionNaming ? eavDefinitionNaming.importDir : null;
   const eavDefinitionPascal = eavDefinitionEntity
     ? pascalCase(eavDefinitionEntity)
     : null;
@@ -1520,10 +1523,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Process belongs_to relationships. Pass the raw fields map so a FK column
   // also declared as a field inherits its `required`/`nullable` (→ .notNull())
   // and `index: true` (→ a single-column index emitted below).
-  const belongsTo = processBelongsTo(relationships, entityNamePlural, fields);
+  const belongsTo = processBelongsTo(relationships, targetNaming, fields);
 
   // Process has_many relationships (CGP-358b)
-  const hasMany = processHasMany(relationships, entityNamePlural, fs, path, srcRoot);
+  const hasMany = processHasMany(relationships, targetNaming);
 
   // ADR-041.1 — the two library capabilities' configs are RESOLVED, not copied:
   // `Communication`'s comes from `roles:` (never authored), `Actor`'s `members:`
@@ -1540,7 +1543,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
       belongsTo,
       repositoryDir: `${moduleGroupDir}/${entityNamePlural}`,
       srcRoot,
-      entityLookup: baseLocals?.entityLookup,
+      entityLookup,
     });
     if (!resolved) continue;
     cap.config = resolved.config;
@@ -1589,7 +1592,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // drizzleChain of the rendered (non-belongs_to) columns in place. Skip FK
   // imports for tables belongs_to already imports to avoid duplicate import
   // lines.
-  const fieldFeatures = processFieldFeatures(nonFkFields, fields, entityNamePlural);
+  const fieldFeatures = processFieldFeatures(nonFkFields, fields, targetNaming);
   const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
   const clpFieldFkImports = fieldFeatures.fkImports.filter(
     (imp) => !belongsToTables.has(imp.relatedTable),
@@ -1986,6 +1989,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     eavValueTable,
     eavDefinitionEntity,
     eavDefinitionEntityPlural,
+    eavDefinitionImportDir,
     eavDefinitionPascal,
     eavDefinitionPluralPascal,
     // Search query (#16)

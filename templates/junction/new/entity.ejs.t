@@ -9,9 +9,9 @@ import {
 <%_ }) _%>
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
-import { <%= leftTable %> } from '../<%= leftTable %>/<%= leftEntity %>.entity';
+import { <%= leftTable %> } from '<%= leftEntityImportFromJunction %>';
 <%_ if (leftEntity !== rightEntity) { _%>
-import { <%= rightTable %> } from '../<%= rightTable %>/<%= rightEntity %>.entity';
+import { <%= rightTable %> } from '<%= rightEntityImportFromJunction %>';
 <%_ } _%>
 
 // ============================================================================
