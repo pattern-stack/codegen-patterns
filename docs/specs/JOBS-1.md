@@ -111,11 +111,15 @@ Every step after the barrels, what it writes, who imports it:
 | `generateProviderModules` | `<slug>.provider.module.ts` | surface / assembly modules | fail |
 | `emitAdapters` | adapter scaffolds, surface modules, typed views, assemblies, tokens, sinks, change emitters | the app's integration modules | fail |
 | `emitJobHandlers` | `@generated` handler bases + emit-once subclasses | the app's jobs module | fail |
+| `loadOrchestrationPatterns` → `loadAppPatterns` per-file import errors | (input to orchestration) | — | **still soft — JOBS-2.** An unimportable pattern file is collected, printed as a warning (`loadAppPatternsForCli`), the pattern set is partial, and `generateOrchestrationModules` rewrites the orchestration root barrel without that pattern's module — exit 0. The same stale-output-with-success class; folded into JOBS-2 with #664 (the structurally identical invalid-job-YAML case), not fixed here. Only a *throw* from the loader fails the step in this PR. |
+| `generateProviderModules` blocking issues (invalid / unloadable provider YAML, bad import, unknown surface) | nothing — emission is gated | — | **still soft by default — flagged for JOBS-2.** Exit 1 only under `--no-continue-on-error`; `--continue-on-error` defaults to `true`, so by default the issues print (text mode) and the provider modules stay stale, exit 0. The `--no-continue-on-error` path now emits the JSON error payload. |
 
-**Genuinely optional output: none.** What stays soft is not a failure: declared skips (bridge not installed; no
+**Genuinely optional output: none.** What stays soft and is not a failure: declared skips (bridge not installed; no
 entities for the frontend; a provider surface with no registered port package; an assembly skipped with a reason) keep
-printing info / warnings. The provider step's blocking *issues* already exit 1 (unless `--continue-on-error`) and are
-unchanged.
+printing info / warnings. What stays soft and *is* the defect class — invalid **input** that makes a step emit a
+partial or no set (pattern import errors, provider blocking issues under the default `--continue-on-error`, invalid
+job YAML #664) — is JOBS-2's (rows above), not this PR's: #660 covers failed *regeneration* of what the step does
+emit.
 
 ### Decision
 
@@ -130,6 +134,9 @@ unchanged.
   so a write failure names the innermost file.
 - Every step `return reportRegenerationFailure('entity new', err)` — exit 1, `printError` in text mode, `{ command,
   status: 'error', file, error }` in JSON mode.
+- Provider blocking issues under `--no-continue-on-error` returned 1 with no JSON payload (review). JSON mode now gets
+  the same `{ status: 'error', file: <backend_src>/integrations/providers, error }`; text mode already printed each
+  issue.
 - **`generating` handles async steps** (a returned promise's rejection is rethrown as the named error); four of the
   steps are async.
 - **`GeneratedFileError` + `generating` move to `src/utils/generated-file.ts`.** The frontend emitter
@@ -154,7 +161,9 @@ JOBS-0 recorded for the barrels.
 - `regeneration-failure.test.ts` › *entity new fails when a post-step …* (CLI, in-process, real `EISDIR` / real
   invalid input): scope-entity-type (text), event codegen blocked file (JSON: `status`, `file`, `error`), event codegen
   error-severity issue (names the events output dir, nothing written), bridge registry duplicate trigger (names the
-  output dir, `DuplicateTriggerError`). All four fail on the #661 commit (warning, exit 0).
+  output dir, `DuplicateTriggerError`). All four fail on the #661 commit (warning, exit 0). Provider blocking issue
+  under `--no-continue-on-error`, JSON mode — `{ status: 'error', file, error }` (empty output before the review
+  commit).
 - `emitter-write-failure.test.ts`: `generating` (sync throw, async rejection, nested pass-through); job handler base,
   orchestration per-pattern file, frontend writer, provider module, adapter surface module — each a
   `GeneratedFileError` naming exactly the blocked file.
@@ -175,8 +184,13 @@ JOBS-0 recorded for the barrels.
 - **`loadOrchestrationPatterns` swallowed a throw into an empty pattern set** — folded into #660.
 - **The vendored install hint** (`Register JobsModule.forRoot({ backend: 'drizzle' }) in your app.module.ts`) — #663.
 - **Invalid job definitions are skipped with exit 0** — #664.
-- **Provider blocking issues are silent in JSON mode** (`return 1` with no payload) — noted, not changed: the command
-  already fails.
+- **Provider blocking issues were silent in JSON mode** (`return 1`, no payload) — fixed in the review commit. They are
+  also soft *by default* (`--continue-on-error` defaults to `true`) — JOBS-2.
+- **Pattern-file import errors leave a partial orchestration set with exit 0** — JOBS-2 (audit table).
+- **`entity new --json` with no entity YAML returns 1 with no payload** (`No entity YAML files found` is `printError`
+  only) — pre-existing, not a regeneration failure; noted for JOBS-2's JSON sweep.
+- **`test/run-test.ts` still passed `--workerMode embedded`** to `hygen subsystem jobs` after #659 deleted the flag
+  (hygen ignores unknown args, so nothing failed) — removed in the review commit.
 
 ## Gates
 
