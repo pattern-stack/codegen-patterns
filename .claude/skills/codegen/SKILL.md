@@ -101,8 +101,8 @@ Registration order: `consumer-skills/subsystems/wiring-and-order.md`.
 
 ```bash
 codegen init | project init [--yes] [--dry-run] [--force] [--with-tsconfig] [--runtime package|vendored] [--skills]
-codegen project scan [--write]             # detect framework/ORM/architecture → propose config
-codegen project config                     # resolved config
+codegen project scan [--write]             # detect framework/ORM/architecture → propose config (declared keys only)
+codegen project config                     # resolved config (parsed, defaults applied)
 codegen update | project update [--dry-run] [--force] [--skip-skills] [--skip-subsystems]
 codegen project upgrade-auth [--dry-run] [--path <dir>]      # ADR-043 wiring (see Auth below)
 codegen project upgrade-openapi [--dry-run] [--force] [--path <dir>]
@@ -216,8 +216,18 @@ value table `upsertCurrentValues(rows, tx)` and
 
 ## `codegen.config.yaml`
 
-Top-level keys: `runtime`, `paths`, `locations`, `generate`, `naming`,
-`patterns`, `frontend`, `auth`, `openapi`, `jobs`.
+One schema, `CodegenConfigSchema` (`src/schema/codegen-config.schema.ts`), parsed once by
+`src/config/project-config.ts` for the CLI context AND the hygen prompts (the CLI hands the prompts its resolved path
+as `$CODEGEN_CONFIG_PATH`). Every block is `.strict()`: an unknown or removed key is a `CodegenConfigError` naming the
+key and the file, exit 1 (CFG-0, #640). Open maps only: `jobs.pools.<name>`, `frontend.parsers`.
+
+Top-level keys: `runtime`, `paths`, `generate`, `patterns`, `naming`, `locations`, `frontend`, `auth`, `database`,
+`behaviors`, `dev`, `subsystems`, `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`, `cache`,
+`storage`.
+
+**Adding a key:** declare it in the schema with a comment naming its reader, and read it off the parsed config —
+never `yaml.parse` the file. `src/__tests__/config/config-census.test.ts` greps every `paths.<key>` and top-level
+read and fails on an undeclared one, and fails on a second loader.
 
 ```yaml
 runtime: package

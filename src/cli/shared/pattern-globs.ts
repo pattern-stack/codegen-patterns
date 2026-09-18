@@ -18,11 +18,9 @@ import type { Context } from './context.js';
 export const DEFAULT_PATTERN_GLOBS = ['src/patterns/*.pattern.ts'];
 
 export function resolvePatternGlobs(ctx: Context): string[] {
-	const fromConfig = (ctx.config as { patterns?: unknown } | null | undefined)?.patterns;
-	if (Array.isArray(fromConfig) && fromConfig.length > 0) {
-		return fromConfig.filter((g): g is string => typeof g === 'string');
-	}
-	return DEFAULT_PATTERN_GLOBS;
+	// Same rule as `templates/entity/new/prompt.js`: an empty list is the default.
+	const fromConfig = ctx.config?.patterns ?? [];
+	return fromConfig.length > 0 ? fromConfig : DEFAULT_PATTERN_GLOBS;
 }
 
 /**

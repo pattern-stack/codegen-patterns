@@ -24,11 +24,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
 import yaml from 'yaml';
-import {
-  entitiesDirCandidates,
-  findConfigUpward,
-  resolveEntitiesDir,
-} from '../../src/config/entities-dir.js';
+import { entitiesDirCandidates, resolveEntitiesDir } from '../../src/config/entities-dir.js';
+import { loadProjectConfig } from '../../src/config/project-config.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
 
 /**
@@ -150,21 +147,14 @@ const projectLookups = new Map();
 
 /**
  * The entity lookup for the project at `cwd`, resolved with the CLI's rule
- * (`codegen.config.yaml` found upward; `paths.entities` → `entities/`, first
- * that exists). Cached per resolved directory for the
+ * (the config the CLI resolved, else `codegen.config.yaml` found upward —
+ * parsed by `project-config.ts`; `paths.entities` → `entities/`, first that
+ * exists). Cached per resolved directory for the
  * life of the process, so every prompt call in one process shares one walk.
  * (Each `entity new` runs hygen in its own process — see NAME-0 Found.)
  */
 export function projectEntityLookup(cwd) {
-  let paths = null;
-  const configPath = findConfigUpward(cwd);
-  if (configPath) {
-    try {
-      paths = yaml.parse(fs.readFileSync(configPath, 'utf-8'))?.paths ?? null;
-    } catch {
-      // A malformed config is reported by the CLI's own loader.
-    }
-  }
+  const paths = loadProjectConfig(cwd)?.paths ?? null;
   const dir = resolveEntitiesDir(cwd, paths);
   const candidates = entitiesDirCandidates(cwd, paths);
   const key = dir ?? `<none>:${candidates.join('|')}`;

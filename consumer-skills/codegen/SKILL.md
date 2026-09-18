@@ -154,6 +154,11 @@ codegen skills list
 
 ## Non-obvious rules
 
+- **`codegen.config.yaml` is validated strictly.** An unknown or removed key (a
+  typo, or `paths.entities_dir` — use `paths.entities`) stops every `codegen`
+  command with an error naming the key and the keys expected there. Fix the
+  key; there is no flag to skip validation. Block reference: `docs/CONSUMER-SETUP.md`
+  › `codegen.config.yaml`.
 - **YAML is `snake_case`; generated TS properties are `camelCase`.** The
   templates derive `accountId` from `account_id`. Entity names are singular
   `snake_case` (`opportunity`).

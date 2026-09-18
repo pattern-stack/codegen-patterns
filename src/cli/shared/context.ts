@@ -7,34 +7,18 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import yaml from 'yaml';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import { findConfigUpward, resolveEntitiesDir } from '../../config/entities-dir.js';
+import { loadCodegenConfig, type CodegenConfig } from '../../config/project-config.js';
 import { scanProject } from '../../scanner/index.js';
 import type { ProjectProfile } from '../../scanner/types.js';
-import type { PathsConfigInput } from '../../schema/codegen-config.schema.js';
 
-export interface CodegenConfig {
-	/**
-	 * Derived from `PathsConfigSchema` — the single source of truth for
-	 * `paths.*` (`src/schema/codegen-config.schema.ts`). Do NOT re-declare the
-	 * keys here: this was a hand-maintained duplicate and it drifted, which is
-	 * what GATE-1 (#599) fixed. `z.input` (not `z.infer`) because the CLI reads
-	 * raw YAML that has not been through `.parse()`, so defaulted keys such as
-	 * `generated` are still absent.
-	 */
-	paths?: PathsConfigInput;
-	generate?: Record<string, unknown>;
-	framework?: string;
-	orm?: string;
-	/**
-	 * Which copy of the framework runtime generated code imports from (ADR-037).
-	 * `package` (default) ⇒ `@pattern-stack/codegen/*`; `vendored` ⇒ `@shared/*`.
-	 * Raw value as parsed from YAML; resolve via `resolveRuntimeMode()`.
-	 */
-	runtime?: 'package' | 'vendored';
-	[key: string]: unknown;
-}
+/**
+ * The parsed `codegen.config.yaml` — `CodegenConfigSchema`'s output, defaults
+ * applied (`src/schema/codegen-config.schema.ts`, the single source of truth
+ * for every key). Parsed once, by `src/config/project-config.ts` (CFG-0).
+ */
+export type { CodegenConfig };
 
 export interface Context {
 	cwd: string;
@@ -61,19 +45,6 @@ export interface LoadContextOptions {
 	skipDetection?: boolean;
 }
 
-function loadConfigFromPath(configPath: string): CodegenConfig | null {
-	try {
-		const content = fs.readFileSync(configPath, 'utf-8');
-		const parsed = yaml.parse(content);
-		if (parsed && typeof parsed === 'object') {
-			return parsed as CodegenConfig;
-		}
-		return null;
-	} catch {
-		return null;
-	}
-}
-
 function countEntityYamls(entitiesDir: string | null): number {
 	if (!entitiesDir || !fs.existsSync(entitiesDir)) return 0;
 	try {
@@ -94,7 +65,7 @@ function detectInstalledSubsystemNames(
 	cwd: string,
 	config: CodegenConfig | null
 ): string[] {
-	const configured = config?.paths?.subsystems as string | undefined;
+	const configured = config?.paths?.subsystems;
 	const roots = [
 		...(configured ? [path.resolve(cwd, configured)] : []),
 		path.resolve(cwd, 'src/shared/subsystems'),
@@ -122,7 +93,9 @@ export async function loadContext(overrides: LoadContextOptions = {}): Promise<C
 
 	const explicit = overrides.configPath ? path.resolve(cwd, overrides.configPath) : null;
 	const configPath = explicit && fs.existsSync(explicit) ? explicit : findConfigUpward(cwd);
-	const config = configPath ? loadConfigFromPath(configPath) : null;
+	// Throws `CodegenConfigError` (unknown key, bad value, bad YAML): Clipanion
+	// prints it and the command exits 1. No command runs on an invalid config.
+	const config = configPath ? loadCodegenConfig(configPath) : null;
 
 	const entitiesDir = resolveEntitiesDir(cwd, config?.paths);
 	const entityCount = countEntityYamls(entitiesDir);

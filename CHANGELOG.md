@@ -12,6 +12,18 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
 
 ### Changed
 
+- **`codegen.config.yaml` is validated, strictly, on every command** (#640).
+  One schema (`CodegenConfigSchema`) is parsed once for the CLI and every
+  generator it runs. An unknown or removed key, or a wrong value, stops the
+  command with an error naming the key, the file and the keys expected there;
+  it exits 1. There is no warning mode and no flag to skip validation.
+  `--config <path>` now reaches the entity, junction and relationship
+  generators too (they used to read `./codegen.config.yaml`).
+  `project scan --write` writes only keys the schema declares.
+- **The `events:` block's `extensions.drizzle` example is fully commented
+  out** (#640). The block used to leave `extensions:` / `drizzle:` live with
+  no values, which parses as `null`.
+
 - **Drizzle 1.0 (`drizzle-orm@^1.0.0-rc.4`)** (#584). `drizzle-orm` moves from
   `dependencies` to `peerDependencies` so a consumer resolves exactly one copy —
   generated code and the package's runtime base classes must share one
@@ -54,10 +66,22 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
 
 ### Removed
 
+- **Config keys nothing read** (#640) — each is now rejected by name:
+  `paths.packages`, `paths.schema_dir`, `paths.manifest_dir`;
+  `generate.schemaServer`, `generate.schemaClient`, `generate.electricMigrations`
+  (and every frontend toggle deleted in FE-3); `auth.encryption_key`,
+  `auth.oauth_state_store`, `auth.enable_controller` (the `auth:` block
+  `subsystem install auth` wrote — delete them from your config);
+  `events.pools`; the `locations` entries `backendSrc`, `frontendSrc`,
+  `frontendCollections`, `frontendStore`, `frontendStoreEntities`,
+  `frontendEntities`, `frontendEntityMetadata`, `trpcClient`, and any
+  location name the generator does not define; the `framework`, `orm`,
+  `layout`, `_confidence`, `naming.suffixes` and
+  `paths.{domain,application,infrastructure,presentation}` keys
+  `project scan --write` used to write.
 - **`paths.entities_dir`** (#634). `paths.entities` is the one key for the
   entity YAML directory (default `entities/`). Rename the key in
-  `codegen.config.yaml`. The old key is not read, and it is ignored without a
-  warning until config validation lands (#640).
+  `codegen.config.yaml`. The old key is rejected by name (#640).
 - **v1 Drizzle `relations()` emission** (#583). Drizzle 1.0 removes `relations`
   from the `drizzle-orm` root export, so every generated project with a
   relationship stopped compiling on 1.0. Nothing generated consumed the const —

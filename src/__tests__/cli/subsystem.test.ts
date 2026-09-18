@@ -865,10 +865,9 @@ describe('subsystem — install F13 (config-block preservation)', () => {
 		tempDirs.push(root);
 		const cli = buildCli();
 
-		// Corrupt the YAML before the first install so the config detector hits
-		// parse-error. (Must be install-time detectable — runtime copy still
-		// runs first, which is fine; we're only asserting the config injection
-		// refuses to proceed.)
+		// Corrupt the YAML before the first install. The CLI context parses the
+		// config before any command runs (CFG-0), so the install refuses before
+		// it copies or injects anything.
 		const configPath = path.join(root, 'codegen.config.yaml');
 		fs.writeFileSync(
 			configPath,
@@ -880,8 +879,9 @@ describe('subsystem — install F13 (config-block preservation)', () => {
 			cli.run(['subsystem', 'install', 'events', '--force', '--cwd', root]),
 		);
 		expect(result).toBe(1);
+		expect(out).toContain('Codegen Config Error');
 		expect(out).toContain('not valid YAML');
-		expect(out).toContain('refusing to inject');
+		expect(fs.existsSync(path.join(root, 'src/shared/subsystems/events'))).toBe(false);
 	});
 
 	test('first install (no block yet) injects defaults — baseline path still works', async () => {

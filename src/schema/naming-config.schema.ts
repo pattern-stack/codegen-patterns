@@ -79,10 +79,12 @@ export type EntityInclusion = z.infer<typeof EntityInclusionSchema>;
  * - query: 'query' → GetOpportunityByIdQuery
  *          'use-case' → GetOpportunityByIdUseCase
  */
-export const TerminologySchema = z.object({
-  command: z.enum(["command", "use-case"]).default("command"),
-  query: z.enum(["query", "use-case"]).default("query"),
-});
+export const TerminologySchema = z
+  .object({
+    command: z.enum(["command", "use-case"]).default("command"),
+    query: z.enum(["query", "use-case"]).default("query"),
+  })
+  .strict();
 
 export type Terminology = z.infer<typeof TerminologySchema>;
 
@@ -99,12 +101,14 @@ export type Terminology = z.infer<typeof TerminologySchema>;
  * - infrastructure: repository implementations, Drizzle schemas
  * - presentation: controllers, modules
  */
-export const LayerNamingSchema = z.object({
-  fileCase: FileCaseSchema.optional(),
-  suffixStyle: SuffixStyleSchema.optional(),
-  entityInclusion: EntityInclusionSchema.optional(),
-  terminology: TerminologySchema.partial().optional(),
-});
+export const LayerNamingSchema = z
+  .object({
+    fileCase: FileCaseSchema.optional(),
+    suffixStyle: SuffixStyleSchema.optional(),
+    entityInclusion: EntityInclusionSchema.optional(),
+    terminology: TerminologySchema.partial().optional(),
+  })
+  .strict();
 
 export type LayerNaming = z.infer<typeof LayerNamingSchema>;
 
@@ -115,12 +119,14 @@ export type LayerNaming = z.infer<typeof LayerNamingSchema>;
 /**
  * Per-layer overrides container
  */
-export const LayersConfigSchema = z.object({
-  domain: LayerNamingSchema.optional(),
-  application: LayerNamingSchema.optional(),
-  infrastructure: LayerNamingSchema.optional(),
-  presentation: LayerNamingSchema.optional(),
-});
+export const LayersConfigSchema = z
+  .object({
+    domain: LayerNamingSchema.optional(),
+    application: LayerNamingSchema.optional(),
+    infrastructure: LayerNamingSchema.optional(),
+    presentation: LayerNamingSchema.optional(),
+  })
+  .strict();
 
 export type LayersConfig = z.infer<typeof LayersConfigSchema>;
 
@@ -129,7 +135,11 @@ export type LayersConfig = z.infer<typeof LayersConfigSchema>;
 // ============================================================================
 
 /**
- * Complete backend naming configuration
+ * Complete backend naming configuration — the `naming:` block of
+ * `codegen.config.yaml` (`CodegenConfigSchema`, CFG-0). Read by
+ * `src/config/naming-config.mjs` → `paths.mjs` / `prompt.js`.
+ *
+ * `.strict()` at every level: an unknown naming key is an error naming it.
  *
  * Global defaults apply to all layers unless overridden.
  * Defaults are chosen to match current hardcoded behavior for backward compatibility:
@@ -138,7 +148,8 @@ export type LayersConfig = z.infer<typeof LayersConfigSchema>;
  * - entityInclusion: 'flat-only' → create.command.ts (nested), create-opportunity.command.ts (flat)
  * - terminology: { command: 'command', query: 'query' }
  */
-export const BackendNamingConfigSchema = z.object({
+export const BackendNamingConfigSchema = z
+  .object({
   // Global defaults
   fileCase: FileCaseSchema.default("kebab-case"),
   suffixStyle: SuffixStyleSchema.default("dotted"),
@@ -150,7 +161,8 @@ export const BackendNamingConfigSchema = z.object({
 
   // Per-layer overrides
   layers: LayersConfigSchema.optional(),
-});
+  })
+  .strict();
 
 export type BackendNamingConfig = z.infer<typeof BackendNamingConfigSchema>;
 

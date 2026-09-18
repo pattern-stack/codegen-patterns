@@ -40,6 +40,8 @@ import { formatConsole } from '../../formatters/console-formatter.js';
 import { formatJson, formatStatsJson } from '../../formatters/json-formatter.js';
 import { formatMarkdown } from '../../formatters/markdown-formatter.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
+import type { ProposedConfig } from '../../scanner/config-generator.js';
+import { parseCodegenConfig } from '../../config/project-config.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { buildInitPlan, writePlan, type InitPlan } from '../shared/init-scaffold.js';
@@ -83,7 +85,7 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 	const fw = ctx.framework?.framework?.detected ?? 'unknown';
 	const orm = ctx.framework?.orm?.detected ?? 'unknown';
 	const arch =
-		(ctx.config?.generate as { architecture?: string } | undefined)?.architecture ??
+		ctx.config?.generate.architecture ??
 		ctx.framework?.architecture?.detected ??
 		'clean';
 	const generated =
@@ -337,6 +339,24 @@ function renderPlanOnly(plan: InitPlan, opts: { dryRun: boolean }): number {
 // ProjectScanCommand
 // ---------------------------------------------------------------------------
 
+
+/**
+ * The `codegen.config.yaml` a scan proposes: only keys `CodegenConfigSchema`
+ * declares (CFG-0). The detected framework, ORM, layout, suffix list,
+ * clean-architecture layer paths and confidence scores are reported on the
+ * console and in `--json`, not written — nothing reads them from the config.
+ * Validated before it is shown or written, so a scan never proposes a config
+ * the loader rejects.
+ */
+export function proposedConfigYaml(config: ProposedConfig): Record<string, unknown> {
+	const { suffixes: _suffixes, ...naming } = config.naming;
+	const paths: Record<string, string> = { backend_src: config.paths.backend_src };
+	if (config.paths.frontend_src) paths.frontend_src = config.paths.frontend_src;
+	const yamlConfig = { naming, paths, generate: config.generate };
+	parseCodegenConfig(yamlConfig, '<project scan>');
+	return yamlConfig;
+}
+
 export class ProjectScanCommand extends Command {
 	static paths = [['project', 'scan']];
 	static usage = Command.Usage({
@@ -368,18 +388,7 @@ export class ProjectScanCommand extends Command {
 		const profile = await scanProject({ directory: target });
 		const config = generateConfig(profile);
 
-		const yamlConfig = {
-			framework: config.framework,
-			orm: config.orm,
-			layout: {
-				folder_structure: config.folder_structure,
-				file_grouping: config.file_grouping,
-			},
-			naming: config.naming,
-			paths: config.paths,
-			generate: config.generate,
-			_confidence: config.confidence,
-		};
+		const yamlConfig = proposedConfigYaml(config);
 		const yamlText = stringifyYaml(yamlConfig, { indent: 2 });
 
 		if (isJsonMode()) {

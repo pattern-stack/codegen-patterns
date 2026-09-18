@@ -26,10 +26,4 @@ paths:
 
 # Standard generation settings
 generate:
-  fieldMetadata: true
-  collections: true
-  hooks: true
-  mutations: true
-  structure: monolithic
-  typeNaming: plain
-  fkResolution: true
+  architecture: clean

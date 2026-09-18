@@ -81,11 +81,12 @@ The same drift is already being worked around elsewhere rather than fixed — `s
 as an error: it is the one site nobody had cast yet.
 
 **Fix (root):** one definition. Declare on `PathsConfigSchema` every `paths.*` key the codebase actually reads —
-**11 of them**: `backend_src`, `frontend_src`, `entities`, `entities_dir`, `events_dir`, `jobs_dir`, `providers`,
-`subsystems`, `modules_dir`, `orchestration_src`, `generated` (`modules_dir` was missed at design time; its readers are
-`auth-integrations-scaffold-locals.ts` and `subsystem-detect.ts`). Keep `.passthrough()` for genuinely unknown legacy
-keys, and derive `CodegenConfig['paths']` from it as `z.input<typeof PathsConfigSchema>` (input, not output: the CLI
-reads raw YAML that has not been through `.parse()`, so defaulted keys must stay optional). Delete the casts that
+**10 of them** today: `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `subsystems`,
+`modules_dir`, `orchestration_src`, `generated` (`modules_dir` was missed at design time; its readers are
+`auth-integrations-scaffold-locals.ts` and `subsystem-detect.ts`). GATE-1 declared 11: the eleventh, `entities_dir`,
+was deleted by CLI-0 (#634). *Revised 2026-09-18 (CFG-0, #640):* the schema is now `.strict()` and parsed at runtime,
+and `CodegenConfig` is its parsed output (`z.infer` of `CodegenConfigSchema`); the `.passthrough()` and
+`z.input<typeof PathsConfigSchema>` this fix originally kept are gone. Delete the casts that
 existed only to route around the gap — they are the same defect, pre-emptively silenced.
 
 **15 cast sites were removed**, not the 4 the design enumerated: `subsystem-detect.ts` (×3, one of them

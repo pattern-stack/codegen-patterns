@@ -143,31 +143,6 @@ const behaviorRegistry = {
 };
 
 /**
- * Load codegen config from codegen.config.yaml
- */
-function loadCodegenConfig(cwd) {
-  const configPath = path.resolve(cwd, "codegen.config.yaml");
-  const defaultConfig = { behaviors: { strategy: "inline" } };
-
-  if (!fs.existsSync(configPath)) {
-    return defaultConfig;
-  }
-
-  try {
-    const content = fs.readFileSync(configPath, "utf-8");
-    const parsed = yaml.parse(content);
-
-    return {
-      behaviors: {
-        strategy: parsed?.behaviors?.strategy || "inline",
-      },
-    };
-  } catch {
-    return defaultConfig;
-  }
-}
-
-/**
  * Normalize behavior config (string or object with name/options)
  */
 function normalizeBehaviorConfig(config) {
@@ -251,23 +226,10 @@ async function ensurePatternsRegistryLoaded() {
       await import('../../../src/patterns/library/index.js');
       const { loadAppPatterns } = await import('../../../src/patterns/registry.js');
 
-      // Read the `patterns:` manifest from codegen.config.yaml. Defaults
-      // to a single sensible glob when the key is absent — matches the
-      // ADR-031 default discovery shape.
-      const configPath = path.resolve(process.cwd(), 'codegen.config.yaml');
-      let manifest = ['src/patterns/*.pattern.ts'];
-      if (fs.existsSync(configPath)) {
-        try {
-          const parsed = yaml.parse(fs.readFileSync(configPath, 'utf-8'));
-          if (Array.isArray(parsed?.patterns)) {
-            manifest = parsed.patterns;
-          }
-        } catch {
-          // fall through with the default manifest; a malformed
-          // codegen.config.yaml is already surfaced by the CLI's config
-          // loader elsewhere.
-        }
-      }
+      // The `patterns:` manifest from the parsed config (CFG-0); absent or
+      // empty ⇒ the ADR-031 default glob (the CLI's `resolvePatternGlobs` rule).
+      const configured = getProjectConfig()?.patterns ?? [];
+      const manifest = configured.length > 0 ? configured : ['src/patterns/*.pattern.ts'];
       const result = await loadAppPatterns(manifest, process.cwd());
       for (const err of result.errors) {
         // eslint-disable-next-line no-console
@@ -316,8 +278,6 @@ export default {
       };
     }
 
-    // Load global codegen config
-    const codegenConfig = loadCodegenConfig(process.cwd());
 
     // Resolve the runtime mode (ADR-037) once — drives every runtime import
     // specifier the generated entity code carries.
@@ -487,7 +447,7 @@ export default {
     // Behavior strategy (base_class vs inline)
     // Per-entity override takes precedence over global config
     const behaviorStrategy =
-      entity.behavior_strategy || codegenConfig.behaviors.strategy;
+      entity.behavior_strategy || (getProjectConfig()?.behaviors.strategy ?? 'inline');
 
     // Resolve behaviors
     const resolvedBehaviors = resolveBehaviors(behaviors);
@@ -1429,7 +1389,6 @@ export default {
 
       // Database configuration
       databaseDialect,
-      schemaDir: BASE_PATHS.schemaDir,
 
       // Project layout — used by clean-lite-ps prompt-extension to compute
       // output paths under the configured source root (paths.backend_src).
@@ -1526,13 +1485,10 @@ export default {
       // templates (FE-3). The frontend tree is now emitted by
       // src/emitters/frontend/ and gated solely by `generate.frontend`.
       generate: {
-        drizzleSchema: getProjectConfig()?.generate?.drizzleSchema ?? true,
-        commands: getProjectConfig()?.generate?.commands ?? true,
-        queries: getProjectConfig()?.generate?.queries ?? true,
-        dtos: getProjectConfig()?.generate?.dtos ?? true,
-        schemaServer: getProjectConfig()?.generate?.schemaServer ?? false,
-        schemaClient: getProjectConfig()?.generate?.schemaClient ?? false,
-        electricMigrations: getProjectConfig()?.generate?.electricMigrations ?? false,
+        drizzleSchema: generateConfig.drizzleSchema,
+        commands: generateConfig.commands,
+        queries: generateConfig.queries,
+        dtos: generateConfig.dtos,
       },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
