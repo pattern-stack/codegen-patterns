@@ -15,26 +15,18 @@
  * `@shared/connections/*`. Those stay `@shared/*` in both modes.
  */
 
-import fs from "node:fs";
-import path from "node:path";
-import yaml from "yaml";
+import { loadProjectConfig } from "./project-config.js";
 
 const PACKAGE = "@pattern-stack/codegen";
 
 /**
- * Read the `runtime` mode from `codegen.config.yaml` at `cwd`. Defaults to
- * `package` (ADR-037) when the file/key is absent or invalid.
+ * The `runtime` mode of the project at `cwd`, from the parsed config
+ * (`project-config.ts`, CFG-0). `package` (ADR-037) when there is no config
+ * file; an invalid file throws `CodegenConfigError`.
  * @returns {'package' | 'vendored'}
  */
 export function loadRuntimeMode(cwd = process.cwd()) {
-  const configPath = path.resolve(cwd, "codegen.config.yaml");
-  if (!fs.existsSync(configPath)) return "package";
-  try {
-    const parsed = yaml.parse(fs.readFileSync(configPath, "utf-8"));
-    return parsed?.runtime === "vendored" ? "vendored" : "package";
-  } catch {
-    return "package";
-  }
+  return loadProjectConfig(cwd)?.runtime ?? "package";
 }
 
 /**

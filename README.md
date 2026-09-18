@@ -516,6 +516,11 @@ The `frontend:` block (auth, parsers, sync) is documented under
 [Frontend generation](#frontend-generation). Auto-detect your project's
 conventions with `codegen project scan`.
 
+The file is validated strictly on every command: an unknown or removed key
+(`paths.entitis`, the deleted `paths.entities_dir`) is an error naming the key,
+never a silently applied default. The full block list is in
+[docs/CONSUMER-SETUP.md](docs/CONSUMER-SETUP.md#codegenconfigyaml).
+
 ## Using in Your Project
 
 See [docs/CONSUMER-SETUP.md](docs/CONSUMER-SETUP.md) for the full consumer contract: tsconfig path aliases, `DatabaseModule` scaffold, runtime shims, and the one-time `app.module.ts` wire-up.

@@ -13,8 +13,8 @@ jobs:
   backend: drizzle
 
   # ── Backend-specific extensions (typed per backend) ──
-  # Each backend may publish its own extension keys. Unrecognised keys for
-  # the active backend produce a config validation warning at boot.
+  # Each backend may publish its own extension keys. An unrecognised key is
+  # a codegen.config.yaml validation error naming the key.
   extensions:
     drizzle:
       # listen_notify: true        # Postgres LISTEN/NOTIFY wakes the worker the

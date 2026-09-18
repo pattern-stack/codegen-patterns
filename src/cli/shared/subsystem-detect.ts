@@ -394,6 +394,24 @@ export function configuredSubsystemNames(
 }
 
 /**
+ * The config blocks that declare a `backend:` key (`CodegenConfigSchema`). The
+ * other subsystems have a single backend and no such key (CFG-0).
+ */
+const BACKEND_BLOCKS = ['events', 'jobs', 'cache', 'storage', 'integration', 'bridge'] as const;
+
+/** `<name>.backend` from the parsed config, for a subsystem whose block declares one. */
+function configuredBackend(
+	config: Record<string, unknown> | null | undefined,
+	name: SubsystemName,
+): SubsystemBackend | undefined {
+	if (!(BACKEND_BLOCKS as readonly string[]).includes(name)) return undefined;
+	const block = (config as { [K in (typeof BACKEND_BLOCKS)[number]]?: { backend?: string } } | null | undefined)?.[
+		name as (typeof BACKEND_BLOCKS)[number]
+	];
+	return block?.backend as SubsystemBackend | undefined;
+}
+
+/**
  * Synthesize an `InstalledSubsystem[]` from `subsystems.install` for package
  * mode. There's no on-disk directory to point at (the runtime lives in the
  * package), so `path` is the logical `@pattern-stack/codegen` subpath and
@@ -406,13 +424,7 @@ export function configuredInstalledSubsystems(
 ): InstalledSubsystem[] {
 	return configuredSubsystemNames(config).map((name) => {
 		const desc = SUBSYSTEMS.find((s) => s.name === name);
-		const cfg = (config as Record<string, unknown> | null | undefined)?.[name] as
-			| { backend?: unknown }
-			| undefined;
-		const backend =
-			typeof cfg?.backend === 'string'
-				? (cfg.backend as SubsystemBackend)
-				: (desc?.defaultBackend ?? 'drizzle');
+		const backend = configuredBackend(config, name) ?? desc?.defaultBackend ?? 'drizzle';
 		return {
 			name,
 			path: `@pattern-stack/codegen/subsystems#${name}`,

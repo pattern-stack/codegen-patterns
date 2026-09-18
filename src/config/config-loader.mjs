@@ -1,34 +1,16 @@
 /**
- * Shared configuration loader for codegen
+ * The project's parsed `codegen.config.yaml`, for the hygen-side helpers
+ * (`paths.mjs`, `locations.mjs`, `naming-config.mjs`) and the prompts that read
+ * them.
  *
- * Loads and caches codegen.config.yaml once, shared by all config modules.
+ * Parsed and validated once by `project-config.ts` (CFG-0, #640) — the same
+ * loader the CLI uses. An invalid file throws `CodegenConfigError` here, at
+ * import, so the prompt fails before it generates anything. `null` when the
+ * project has no config file (every reader falls back to its defaults).
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import yaml from 'yaml';
+import { loadProjectConfig } from './project-config.js';
 
-/**
- * Load project-specific codegen configuration from codegen.config.yaml
- * Returns null if config file doesn't exist (falls back to defaults)
- */
-function loadProjectConfig(cwd = process.cwd()) {
-  const configPath = path.resolve(cwd, 'codegen.config.yaml');
-
-  if (!fs.existsSync(configPath)) {
-    return null;
-  }
-
-  try {
-    const content = fs.readFileSync(configPath, 'utf-8');
-    return yaml.parse(content);
-  } catch (error) {
-    console.warn(`Warning: Failed to load codegen.config.yaml: ${error.message}`);
-    return null;
-  }
-}
-
-// Load project config once at module initialization
-export const projectConfig = loadProjectConfig();
+export const projectConfig = loadProjectConfig(process.cwd());
 
 export default projectConfig;

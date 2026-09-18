@@ -68,15 +68,6 @@ export const BASE_PATHS = {
   // Frontend base
   frontendSrc: projectConfig?.paths?.frontend_src ?? "app/frontend/src",
 
-  // Shared packages
-  packages: projectConfig?.paths?.packages ?? "packages",
-
-  // Schema directory (relative to backendSrc)
-  schemaDir: projectConfig?.paths?.schema_dir ?? "infrastructure/persistence/drizzle",
-
-  // Manifest output directory
-  manifestDir: projectConfig?.paths?.manifest_dir ?? ".codegen",
-
   // Orchestration emission root (ADR-032 Phase 3-2, O-6).
   // Default sits under backendSrc so it co-locates with src/modules/ and
   // src/subsystems/ in the consumer's tree; override via paths.orchestration_src.
@@ -623,20 +614,23 @@ export function getGeneratedDir() {
 }
 
 /**
- * Get the `generate` block with defaults applied for the two top-level
- * pipeline switches validated by GenerateConfigSchema.
- *
- * Returns an object that always includes `architecture` and `frontend`
- * alongside any other user-supplied toggles.
+ * The `generate` block, parsed and defaulted by `GenerateConfigSchema`
+ * (`project-config.ts`, CFG-0). Without a config file, the schema's defaults.
  */
 export function getGenerateConfig() {
-  const raw = projectConfig?.generate ?? {};
-  return {
-    ...raw,
-    architecture: raw.architecture ?? 'clean',
-    frontend: raw.frontend ?? false,
-  };
+  return projectConfig?.generate ?? GENERATE_DEFAULTS;
 }
+
+/** `GenerateConfigSchema.parse({})` — kept in step by `config-census.test.ts`. */
+export const GENERATE_DEFAULTS = Object.freeze({
+  architecture: 'clean',
+  frontend: false,
+  analytics: 'none',
+  drizzleSchema: true,
+  commands: true,
+  queries: true,
+  dtos: true,
+});
 
 // Default export for convenience
 export default {

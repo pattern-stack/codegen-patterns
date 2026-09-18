@@ -8,7 +8,8 @@ export interface ProposedConfig {
 	framework: 'nestjs' | 'fastify' | 'express' | 'plain';
 	orm: 'drizzle' | 'prisma' | 'typeorm' | 'none';
 
-	// Layout settings (matching existing codegen.config.yaml schema)
+	// Layout settings — detected and reported by `project scan`; not written to
+	// codegen.config.yaml (no reader; `proposedConfigYaml` in project.ts, CFG-0)
 	folder_structure: 'nested' | 'flat';
 	file_grouping: 'separate' | 'grouped';
 
@@ -36,7 +37,7 @@ export interface ProposedConfig {
 	};
 
 	// Generation toggles emitted into the `generate` block of codegen.config.yaml.
-	// Matches GenerateConfigSchema.
+	// A subset of GenerateConfigSchema.
 	generate: {
 		/** Which backend architecture to emit. Defaults to 'clean'. */
 		architecture: 'clean' | 'clean-lite-ps';

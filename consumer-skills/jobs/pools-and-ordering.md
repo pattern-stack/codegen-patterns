@@ -63,7 +63,7 @@ Field notes:
 | Key | What it controls |
 |---|---|
 | `backend` | Which orchestrator implementation runs. `drizzle` (Postgres) is the portable default. `memory` is for tests. `bullmq` is opt-in (see below). |
-| `extensions.<backend>.*` | Backend-specific knobs. Each backend reads only its own key; unknown keys are ignored, not errors. |
+| `extensions.<backend>.*` | Backend-specific knobs. Each backend reads only its own key. An undeclared key (a typo, a removed knob) is a `codegen.config.yaml` error naming the key — the file is validated strictly on every `codegen` command. |
 | `multi_tenant` | When `true`, service methods require a `tenantId` (explicit `null` allowed for cross-tenant work). The `tenant_id` column exists regardless, so flipping this later needs no migration. |
 | `worker_mode` | Informational hint only — both worker entrypoints are always scaffolded. See "Worker topology". |
 | `pools.<name>.queue` | The queue identifier written into `job_run.pool`. Must be unique. |
