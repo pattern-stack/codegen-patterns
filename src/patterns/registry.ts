@@ -286,11 +286,19 @@ export function getAllOrchestrationPatterns(): OrchestrationPatternDefinition[] 
 // App pattern discovery
 // ============================================================================
 
+/** One app-pattern file the loader could not register. */
+export interface AppPatternLoadError {
+	/** The file (relative to `cwd`), or the glob when expansion failed */
+	file: string;
+	/** Human-readable reason; names the file too, for callers that print it alone */
+	message: string;
+}
+
 export interface LoadAppPatternsResult {
 	/** Pattern names that were successfully registered, sorted */
 	loaded: string[];
-	/** One human-readable error per failed file import */
-	errors: string[];
+	/** One error per file (or glob) that registered nothing it declared */
+	errors: AppPatternLoadError[];
 }
 
 /**
@@ -300,10 +308,11 @@ export interface LoadAppPatternsResult {
  * pass the shape check are registered; other exports are ignored so
  * that files can export helper values alongside their pattern.
  *
- * Import failures are non-fatal — the error is collected and returned
- * so the CLI can surface it without breaking generation of unrelated
- * entities. A pattern that fails the "at-least-one-contribution" check
- * surfaces here as an error too.
+ * The loader never throws: import failures, a pattern that fails the
+ * "at-least-one-contribution" check, and name collisions are collected and
+ * returned, each naming its file. What an error means is the caller's call —
+ * `entity new` rejects the run on any (JOBS-2: a partial pattern set would
+ * regenerate the orchestration barrel without the lost module).
  *
  * Idempotent: calling twice with the same arguments leaves `APP_PATTERNS`
  * in the same state as calling once.
@@ -313,7 +322,7 @@ export async function loadAppPatterns(
 	cwd: string,
 ): Promise<LoadAppPatternsResult> {
 	const loaded = new Set<string>();
-	const errors: string[] = [];
+	const errors: AppPatternLoadError[] = [];
 
 	// Collect + dedupe absolute file paths across every glob pattern so
 	// a file matched by two globs is imported once.
@@ -325,9 +334,10 @@ export async function loadAppPatterns(
 				files.add(filePath);
 			}
 		} catch (err) {
-			errors.push(
-				`Failed to expand pattern glob '${raw}': ${stringifyError(err)}`,
-			);
+			errors.push({
+				file: raw,
+				message: `Failed to expand pattern glob '${raw}': ${stringifyError(err)}`,
+			});
 		}
 	}
 
@@ -358,16 +368,18 @@ export async function loadAppPatterns(
 					try {
 						assertOrchestrationContribution(orch);
 					} catch (assertErr) {
-						errors.push(
-							`Orchestration pattern '${orch.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
-						);
+						errors.push({
+							file: relPath(filePath, cwd),
+							message: `Orchestration pattern '${orch.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
+						});
 						continue;
 					}
 					const existingOrch = ORCHESTRATION_APP_PATTERNS.get(orch.name);
 					if (existingOrch && existingOrch !== orch) {
-						errors.push(
-							`Orchestration pattern '${orch.name}' in ${relPath(filePath, cwd)} duplicates a previously loaded orchestration pattern. Pattern names must be unique.`,
-						);
+						errors.push({
+							file: relPath(filePath, cwd),
+							message: `Orchestration pattern '${orch.name}' in ${relPath(filePath, cwd)} duplicates a previously loaded orchestration pattern. Pattern names must be unique.`,
+						});
 						continue;
 					}
 					ORCHESTRATION_APP_PATTERNS.set(orch.name, orch);
@@ -376,9 +388,10 @@ export async function loadAppPatterns(
 					try {
 						assertHasContribution(val);
 					} catch (assertErr) {
-						errors.push(
-							`Pattern '${val.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
-						);
+						errors.push({
+							file: relPath(filePath, cwd),
+							message: `Pattern '${val.name}' in ${relPath(filePath, cwd)} is invalid: ${stringifyError(assertErr)}`,
+						});
 						continue;
 					}
 					// ADR-041.1: one name, one definition — across the library
@@ -386,16 +399,18 @@ export async function loadAppPatterns(
 					// lookup is app-first) and silent; it is now the same error
 					// as two app patterns sharing a name.
 					if (LIBRARY_PATTERNS.has(val.name)) {
-						errors.push(
-							`Pattern '${val.name}' in ${relPath(filePath, cwd)} reuses the name of a library pattern. Pattern names must be unique across library and app patterns — rename it.`,
-						);
+						errors.push({
+							file: relPath(filePath, cwd),
+							message: `Pattern '${val.name}' in ${relPath(filePath, cwd)} reuses the name of a library pattern. Pattern names must be unique across library and app patterns — rename it.`,
+						});
 						continue;
 					}
 					const existingDom = APP_PATTERNS.get(val.name);
 					if (existingDom && existingDom !== val) {
-						errors.push(
-							`Pattern '${val.name}' in ${relPath(filePath, cwd)} duplicates a previously loaded app pattern. Pattern names must be unique.`,
-						);
+						errors.push({
+							file: relPath(filePath, cwd),
+							message: `Pattern '${val.name}' in ${relPath(filePath, cwd)} duplicates a previously loaded app pattern. Pattern names must be unique.`,
+						});
 						continue;
 					}
 					APP_PATTERNS.set(val.name, val);
@@ -403,9 +418,10 @@ export async function loadAppPatterns(
 				}
 			}
 		} catch (err) {
-			errors.push(
-				`Failed to load pattern file '${relPath(filePath, cwd)}': ${stringifyError(err)}`,
-			);
+			errors.push({
+				file: relPath(filePath, cwd),
+				message: `Failed to load pattern file '${relPath(filePath, cwd)}': ${stringifyError(err)}`,
+			});
 		}
 	}
 

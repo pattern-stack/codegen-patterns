@@ -51,6 +51,7 @@ export {
 	getPattern,
 	loadAppPatterns,
 	registerLibraryPattern,
+	type AppPatternLoadError,
 	type LoadAppPatternsResult,
 } from './registry.js';
 

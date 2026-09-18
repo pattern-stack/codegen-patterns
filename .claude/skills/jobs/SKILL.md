@@ -65,7 +65,7 @@ templates/subsystem/jobs-config/     # #121 (F13): config-block inject, invoked 
                                      #   - `--force-config` opts into regeneration
 ```
 
-User-authored handler classes live in the consumer app, typically under `src/jobs/` or colocated with their use case. **Jobs are TypeScript classes with `@JobHandler`. There is no jobs-as-YAML codegen — ADR-022 rejected it explicitly.**
+User-authored handler classes live in the consumer app, typically under `src/jobs/` or colocated with their use case. **General jobs are TypeScript classes with `@JobHandler` — ADR-022 rejected YAML for them.** The one exception is RFC-0005's narrow *job definition kind* for integration-sync composites: `<paths.jobs_dir>/*.yaml` (default `definitions/jobs/`) → `entity new` emits a `@generated` `<type>.job.generated.ts` base + an emit-once `<type>.job.ts` subclass into `<backend_src>/jobs/`, and feeds each `schedule` arm (a job-private scheduled event) and trigger (a bridge mapping) into the same run's event / bridge codegen (`src/cli/shared/emit-jobs.ts`, `src/parser/load-jobs.ts`). An invalid job YAML is a run-level `entity new` rejection (JOBS-2, #664): printed in every mode, in `--json` `failed[]`, exit 1, before anything is generated, regardless of `--continue-on-error`; a stale base from its last valid definition is left and named.
 
 ## Routing table (read only what your task needs)
 
@@ -173,7 +173,8 @@ DB column is plain `text` with no CHECK constraint — type safety is TS-only, o
 - **Do not build a "uniform BullMQ/Drizzle interface that hides everything."** Core contract is the portability floor; backend extensions live under `codegen.config.yaml: jobs.extensions.<backend>`. The shipped BullMQ backend (BULLMQ-1) follows this: core `IJobOrchestrator` is portable; `bull_board` / `FlowProducer` / `queue_prefix` are opt-in extensions.
 - **Do not target a reserved pool** from a `@JobHandler`. Module init will throw.
 - **Do not use `Date.now()` or randomness for `step_id`.** Memoization requires stable ids.
-- **Do not invent jobs-as-YAML codegen.** ADR-022 explicitly rejected it. Users write TypeScript `@JobHandler` classes; codegen only ships the system around them.
+- **Do not widen the job definition kind into general jobs-as-YAML.** ADR-022 rejected it; RFC-0005's `definitions/jobs/*.yaml` is scoped to integration-sync composites. Everything else is a hand-written `@JobHandler` class.
+- **Do not skip or warn past an invalid job YAML.** It is a run-level `entity new` rejection (#664): a dropped job would leave its `<type>.job.generated.ts` behind while the event / bridge registries lose its schedule and triggers.
 - **Do not call `ctx.waitFor` / `ctx.signal` / `ctx.sleep`.** Phase 3 only. If you need to pause work in Phase 1, split into parent + child runs and let `ctx.spawnChild` drive sequencing.
 - **Do not add a CHECK constraint to `scope_entity_type`.** Type safety lives at the TS layer; the column stays free-text so a new scopeable entity is codegen-only.
 - **The BullMQ backend is shipped (BULLMQ-1), opt-in.** Document it as available behind `jobs.backend: bullmq` — but note the port-promotion gate (broker-up contract suite) lands in a consumer repo, so the default stays `drizzle`. Do not pretend it's the default or that the broker round-trip has been validated in codegen-patterns CI.

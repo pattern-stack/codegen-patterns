@@ -345,7 +345,7 @@ export const ${exportName} = defineOrchestrationPattern({
 		// First load succeeds; second one is rejected with a duplicate-name error.
 		expect(result.loaded).toEqual(['DupName']);
 		expect(result.errors.length).toBe(1);
-		expect(result.errors[0]).toMatch(/duplicates a previously loaded/);
+		expect(result.errors[0]!.message).toMatch(/duplicates a previously loaded/);
 	});
 
 	test('two domain fixtures with the same name → loader error (symmetric protection)', async () => {
@@ -376,7 +376,7 @@ export const ${exportName} = definePattern({
 
 		expect(result.loaded).toEqual(['DupDomain']);
 		expect(result.errors.length).toBe(1);
-		expect(result.errors[0]).toMatch(/duplicates a previously loaded app pattern/);
+		expect(result.errors[0]!.message).toMatch(/duplicates a previously loaded app pattern/);
 	});
 });
 

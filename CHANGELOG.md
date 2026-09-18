@@ -158,6 +158,31 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   `orchestration` fields are never `null`.
   `entity new --json --no-continue-on-error` with a blocking provider issue
   now prints that same error payload instead of nothing.
+- **An invalid job YAML or an unloadable app-pattern file fails `entity new`**
+  (#664). An error in a `definitions/jobs/*.yaml` was printed (text mode only)
+  and the run went on without that job — no handler base, no scheduled
+  events, no bridge triggers — and exited 0, leaving a previously emitted
+  `<type>.job.generated.ts` behind. An app-pattern file the `patterns:` globs
+  matched but that failed to import (or declared an invalid / duplicate
+  pattern) was a warning, and the orchestration barrel was rewritten without
+  its module. Both are now pre-flight rejections: listed with the entity
+  rejections (file, reason, details; `--json`: `failed[]`,
+  `stopped: 'pre-flight'`), the run stops before generating anything —
+  `--continue-on-error` does not apply, since every entity's output depends on
+  them — and exits 1. A stale `<type>.job.generated.ts` is left and named.
+  `orchestration validate --json`'s `loaderErrors[]` entries are now
+  `{ file, message }`.
+- **`subsystem install` tells you what is true about `AppModule`** (#663). The
+  vendored install printed `Register JobsModule.forRoot({ backend: 'drizzle' })
+  in your app.module.ts` for jobs / events / bridge / integration — a module
+  name synthesised from the subsystem name (there is no `JobsModule`), for a
+  subsystem the regenerated `SUBSYSTEM_MODULES` already composes, so following
+  it registered a second `forRoot`; observability's hint did the same. For
+  those five the hint now says the subsystem is composed through
+  `SUBSYSTEM_MODULES` and configured by its `codegen.config.yaml` block. Cache,
+  storage and auth name the module the runtime exports, with its real
+  `forRoot` shape, in both runtime modes (package mode printed no registration
+  hint for them). `subsystem remove` follows the same rule.
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
   `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
   and Nest's default `abortOnError` turns that into `process.exit(1)` — so
