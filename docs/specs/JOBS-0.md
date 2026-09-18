@@ -86,8 +86,17 @@ the generated `main.ts` and `worker.ts` unconditionally.
   failure as a `GeneratedFileError` naming that file. The generators wrap each file's step, so the error names the file
   that failed, not the call.
 - `reportRegenerationFailure(command, err)`: `printError` in text mode, `printJson({ command, status: 'error', file,
-  error })` in JSON mode; returns `1`. All three call sites `return reportRegenerationFailure(…)`; the `try/catch` that
+  error })` in JSON mode; returns `1`. Every call site `return reportRegenerationFailure(…)`; the `try/catch` that
   swallowed and the "opt-in" / "warn-but-don't-fail" comments are deleted.
+- **Every call site, not three.** The same warn-only wrapper around the same generators sat in `subsystem remove`
+  (`subsystems.ts`), `relationship new` and `junction new` (`modules.ts` + `schema.ts`) — the issue's defect at sites
+  it did not list. All six now fail the command. `subsystem remove --json` loses its `barrelRegenerated` field (always
+  true, or the command fails).
+- **`subsystem install --json` (vendored) regenerates at all.** It returned before the barrel step, so in JSON mode
+  `subsystems.ts` / `app-config.ts` were never refreshed. The regeneration now runs before the JSON / dry-run branches
+  (skipped on `--dry-run`), and before the "installed" success line, so a failure is never reported after a success.
+- Subsystem detection (`detectInstalledSubsystems`, which scans the vendored tree) failing is reported against the
+  barrel it feeds (`GeneratedFileError(barrelAbs, …)`); the entity-YAML scan is reported against `modules.ts`.
 - **Genuinely optional output at these sites: none.** Every file the three generators write is imported by the app
   (`modules.ts` / `subsystems.ts` by `app.module.ts`, `schema.ts` / `subsystems-schema.ts` by the Drizzle schema wiring drizzle-kit and the app read,
   `app-config.ts` by `main.ts` / `worker.ts` / `subsystems.ts`, the registry / events stubs by `subsystems.ts`).
@@ -96,9 +105,12 @@ the generated `main.ts` and `worker.ts` unconditionally.
 
 ### Tests
 
-`entity new` and `subsystem install` (both runtime modes) against a temp project whose target file path is occupied
-by a directory (a real `EISDIR`, no mocks): exit code `1`, the message names the file; JSON mode carries
-`status: 'error'` + `file`. The smokes prove the happy path.
+`src/__tests__/cli/regeneration-failure.test.ts`: a temp project whose target path is occupied by a directory (a
+real `EISDIR`, no mocks) — `entity new` (`modules.ts` text mode, `app-config.ts` JSON mode), `subsystem install`
+vendored (`subsystems.ts`; `app-config.ts` in JSON mode) and package (`subsystems-schema.ts`), `subsystem remove`
+(`subsystems.ts`): exit `1`, `could not regenerate <file>: EISDIR …`, JSON `{ status: 'error', file }`. All six fail on
+the #656 commit (exit 0, warning only). `relationship new` / `junction new` call the same `regenerateBarrels` the
+`entity new` case covers. The smokes prove the happy path.
 
 ## Out of scope
 
@@ -115,6 +127,8 @@ by a directory (a real `EISDIR`, no mocks): exit code `1`, the message names the
   `memory` + embedded drain jobs.
 - **Two `worker_mode` defaults (#659).** Barrel: absent = `standalone`; jobs scaffold: absent = `embedded`.
 - **More soft-fails in `entity new` (#660).**
+- **Three more warn-only barrel sites** (`subsystem remove`, `relationship new`, `junction new`) and a **JSON-mode skip**
+  (`subsystem install --json`, vendored, never regenerated) — fixed here, see §#655 Decision.
 
 ## Gates
 

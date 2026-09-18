@@ -69,6 +69,7 @@ import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
+import { reportRegenerationFailure } from '../shared/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
@@ -680,10 +681,17 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
-		// Regenerate barrels once, after all Hygen invocations. This is total —
-		// every .yaml in entitiesDir is re-scanned, so deleting an entity YAML and
-		// re-running removes it from the barrels. See ADR-017.
-		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>> | null = null;
+		// Regenerate the barrels once, after all Hygen invocations. Each is total:
+		// - `<generated>/modules.ts` + `schema.ts` — every .yaml in entitiesDir is
+		//   re-scanned, so deleting an entity YAML and re-running removes it (ADR-017);
+		// - `<generated>/subsystems.ts` + `app-config.ts` — re-read from
+		//   `subsystems.install` + the per-subsystem option blocks;
+		// - `<generated>/subsystems-schema.ts` — each installed subsystem's Drizzle
+		//   tables + pgEnums, so drizzle-kit emits their CREATE TABLE / CREATE TYPE
+		//   without the consumer hand-re-exporting them (the "#9 footgun").
+		// The app imports every one of them: a failed regeneration fails the
+		// command, naming the file (JOBS-0, #655).
+		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>>;
 		try {
 			barrelResult = await regenerateBarrels({
 				ctx,
@@ -692,44 +700,16 @@ export class EntityNewCommand extends Command {
 				generatedDir,
 				architecture,
 			});
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printWarning(`barrel regeneration failed — ${msg}`);
-			}
-		}
-
-		// Regenerate the subsystem composition barrel (<generated>/subsystems.ts).
-		// Total — re-reads `subsystems.install` + per-subsystem option blocks from
-		// codegen.config.yaml every time. Warn-but-don't-fail to match the entity
-		// barrel pattern; the subsystem barrel is opt-in (users who haven't wired
-		// it into AppModule see no behavioral change).
-		try {
 			await regenerateSubsystemBarrel({ ctx, generatedDir });
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printWarning(`subsystem barrel regeneration failed — ${msg}`);
-			}
-		}
-
-		// Regenerate the subsystem SCHEMA barrel (<generated>/subsystems-schema.ts)
-		// re-exporting each installed subsystem's Drizzle tables + pgEnums so
-		// drizzle-kit emits their CREATE TABLE / CREATE TYPE without the consumer
-		// hand-re-exporting them (the "#9 footgun"). Mode-aware like the
-		// composition barrel; same warn-but-don't-fail contract.
-		try {
 			await regenerateSubsystemSchemaBarrel({ ctx, generatedDir });
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printWarning(`subsystem schema barrel regeneration failed — ${msg}`);
-			}
+			return reportRegenerationFailure('entity new', err);
 		}
 
 		// Regenerate ScopeEntityType union after barrels (full directory rescan).
 		// Always runs for both single-file and --all modes (OQ-1: always rescan).
-		// Warn-but-don't-fail on error to match barrel pattern.
+		// Warn-but-don't-fail — a file the app imports, so this soft path is a
+		// defect (#660), no longer backed by the barrels (they fail the command).
 		let scopeResult: Awaited<ReturnType<typeof generateScopeEntityType>> | null = null;
 		try {
 			scopeResult = await generateScopeEntityType({
@@ -744,8 +724,7 @@ export class EntityNewCommand extends Command {
 		}
 
 		// Regenerate event codegen artifacts (EVT-3) after scope-entity-type.
-		// Same "warn-but-don't-fail" pattern as the barrel and scope steps — one
-		// unexpected exception shouldn't abort the whole `entity new` invocation.
+		// Same "warn-but-don't-fail" soft path as the scope step (#660).
 		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>> | null = null;
 		try {
 			eventCodegenResult = await generateEventCodegen({
@@ -1012,13 +991,11 @@ export class EntityNewCommand extends Command {
 				},
 				succeeded,
 				failed,
-				barrels: barrelResult
-					? {
-							modules: barrelResult.modulesBarrel,
-							schema: barrelResult.schemaBarrel,
-							entityCount: barrelResult.entityCount,
-						}
-					: null,
+				barrels: {
+					modules: barrelResult.modulesBarrel,
+					schema: barrelResult.schemaBarrel,
+					entityCount: barrelResult.entityCount,
+				},
 				scopeEntityType: scopeResult
 					? {
 							outputPath: scopeResult.outputPath,
@@ -1088,11 +1065,9 @@ export class EntityNewCommand extends Command {
 					`${total} entities · ${succeeded.length} succeeded · ${failed.length} failed`
 				);
 			}
-			if (barrelResult) {
-				printInfo(
-					`barrels regenerated (${barrelResult.entityCount} entities) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`
-				);
-			}
+			printInfo(
+				`barrels regenerated (${barrelResult.entityCount} entities) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`
+			);
 			if (scopeResult) {
 				printInfo(
 					`scope-entity-type regenerated (${scopeResult.scopeableNames.length} scopeable) → ${path.relative(ctx.cwd, scopeResult.outputPath)}`
