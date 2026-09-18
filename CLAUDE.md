@@ -245,6 +245,6 @@ Entry point: `templates/entity/new/prompt.js`. Clean-Lite-PS extends via `prompt
 
 Cross-entity names in the hygen prompts (a `belongs_to` / `has_many` / field `foreign_key:` target, an EAV
 definition entity, a junction endpoint, a group Actor's members) come from `templates/_shared/entity-naming.mjs`:
-`createEntityLookup(resolveEntitiesDir(cwd))` reads the target's own YAML, `entityModuleNaming` turns it into the
+`projectEntityLookup(cwd)` reads the target's own YAML (the entities-dir rule is the CLI's, `src/config/entities-dir.ts`), `entityModuleNaming` turns it into the
 table export + module folder (`plural:`, `context:`), `relativeModuleDir` into the import path. Never
 `pluralize(target)` or a hand-built `'../<plural>/'` (NAME-0, `docs/specs/NAME-0.md`).

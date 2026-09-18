@@ -15,13 +15,21 @@
  * ships with `templates/`.
  *
  * Readers: `templates/entity/new/prompt.js`, the clean-lite-ps extension, and
- * `templates/junction/new/prompt.js`.
+ * `templates/junction/new/prompt.js`. Where the YAMLs live, and how the tree
+ * is walked, is the CLI's own rule — imported, not restated
+ * (`src/config/entities-dir.ts`, `src/utils/find-yaml-files.ts`).
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
 import yaml from 'yaml';
+import {
+  entitiesDirCandidates,
+  findConfigUpward,
+  resolveEntitiesDir,
+} from '../../src/config/entities-dir.js';
+import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
 
 /**
  * An entity's module naming, from its OWN `entity:` block: `plural:` (else
@@ -57,71 +65,111 @@ export function relativeModuleDir(fromDir, toDir) {
 }
 
 /**
- * Where entity YAMLs live: `paths.entities`, else `paths.entities_dir`, else
- * `entities` — relative to `cwd`. The CLI's own rule
- * (`src/cli/shared/context.ts` › `resolveEntitiesDir`).
+ * Attach the lookup surface to a pair of maps. `where` describes what was
+ * searched, for error messages: the resolved directory, or the candidates
+ * when none exists.
  */
-export function resolveEntitiesDir(cwd) {
-  let configured = null;
-  for (const name of ['codegen.config.yaml', 'codegen.config.yml']) {
-    const configPath = path.resolve(cwd, name);
-    if (!fs.existsSync(configPath)) continue;
-    try {
-      const paths = yaml.parse(fs.readFileSync(configPath, 'utf-8'))?.paths ?? {};
-      const dir = paths.entities ?? paths.entities_dir;
-      if (typeof dir === 'string' && dir.length > 0) configured = dir;
-    } catch {
-      // A malformed config is reported by the CLI's own loader.
-    }
-    break;
-  }
-  return path.resolve(cwd, configured ?? 'entities');
+function makeLookup(load, where) {
+  let maps = null;
+  const get = () => (maps ??= load());
+  const lookup = (name) => get().byName.get(name) ?? null;
+  lookup.byPlural = (plural) => get().byPlural.get(plural) ?? null;
+  /** Why `name` did not resolve: the directory searched and the file expected. */
+  lookup.missingEntity = (name) =>
+    where.dir
+      ? `no YAML under ${where.dir} declares \`entity: { name: ${name} }\` (expected e.g. ${path.join(where.dir, `${name}.yaml`)})`
+      : `no entities directory exists (looked for ${where.candidates.join(', ')}; expected e.g. <entities>/${name}.yaml)`;
+  /** Why a table named by `foreign_key:` did not resolve. */
+  lookup.missingPlural = (plural) =>
+    where.dir
+      ? `no YAML under ${where.dir} declares \`plural: ${plural}\``
+      : `no entities directory exists (looked for ${where.candidates.join(', ')})`;
+  return lookup;
 }
 
 /**
- * Look up another entity's `entity:` block from the project's entity YAMLs.
- * Lazy and cached: the directory is read on the first lookup. Parsed with
- * `yaml` directly, as the prompts parse every entity.
+ * Index blocks by name and by plural. Two entities declaring the same plural
+ * own the same table: a load error naming both, never last-write-wins.
+ */
+function indexBlocks(entries) {
+  const byName = new Map();
+  const byPlural = new Map();
+  const pluralSource = new Map();
+  for (const { block, source } of entries) {
+    byName.set(block.name, block);
+    const plural = entityModuleNaming(block, '').plural;
+    if (pluralSource.has(plural)) {
+      throw new Error(
+        `[codegen] two entity YAMLs declare the table '${plural}': ` +
+          `${pluralSource.get(plural)} and ${source}. A table has one owning entity.`,
+      );
+    }
+    pluralSource.set(plural, source);
+    byPlural.set(plural, block);
+  }
+  return { byName, byPlural };
+}
+
+/**
+ * Look up another entity's `entity:` block from the entity YAMLs under
+ * `entitiesDir` (walked with the CLI's `findYamlFiles`: recursive, dot-dirs
+ * skipped). Lazy: the directory is read on the first lookup. `entitiesDir`
+ * null (no directory exists) resolves nothing. `candidates` names what was
+ * tried, for the error messages.
  *
  * Returns a function `(name) => entityBlock | null`, with `.byPlural(plural)`
- * for a field-level `foreign_key: <table>.<column>`, which names the table.
+ * for a field-level `foreign_key: <table>.<column>` (which names the table),
+ * and `.missingEntity(name)` / `.missingPlural(plural)` message fragments.
  */
-export function createEntityLookup(entitiesDir) {
-  let byName = null;
-  let byPlural = null;
-  const load = () => {
-    byName = new Map();
-    byPlural = new Map();
-    const walk = (dir) => {
-      if (!fs.existsSync(dir)) return;
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) walk(full);
-        else if (/\.ya?ml$/.test(e.name)) {
+export function createEntityLookup(entitiesDir, candidates = []) {
+  return makeLookup(
+    () => {
+      const entries = [];
+      if (entitiesDir && fs.existsSync(entitiesDir)) {
+        for (const file of findYamlFiles(entitiesDir)) {
+          let doc;
           try {
-            const doc = yaml.parse(fs.readFileSync(full, 'utf-8'));
-            if (doc && doc.entity && typeof doc.entity.name === 'string') {
-              byName.set(doc.entity.name, doc.entity);
-              byPlural.set(entityModuleNaming(doc.entity, '').plural, doc.entity);
-            }
+            doc = yaml.parse(fs.readFileSync(file, 'utf-8'));
           } catch {
             // A malformed YAML is reported by the CLI's own validation; it is
             // simply not resolvable here.
+            continue;
+          }
+          if (doc && doc.entity && typeof doc.entity.name === 'string') {
+            entries.push({ block: doc.entity, source: file });
           }
         }
       }
-    };
-    walk(entitiesDir);
-  };
-  const lookup = (name) => {
-    if (!byName) load();
-    return byName.get(name) ?? null;
-  };
-  lookup.byPlural = (plural) => {
-    if (!byPlural) load();
-    return byPlural.get(plural) ?? null;
-  };
-  return lookup;
+      return indexBlocks(entries);
+    },
+    { dir: entitiesDir, candidates },
+  );
+}
+
+const projectLookups = new Map();
+
+/**
+ * The entity lookup for the project at `cwd`, resolved with the CLI's rule
+ * (`codegen.config.yaml` found upward; `paths.entities` → `paths.entities_dir`
+ * → `entities/`, first that exists). Cached per resolved directory for the
+ * life of the process, so every prompt call in one process shares one walk.
+ * (Each `entity new` runs hygen in its own process — see NAME-0 Found.)
+ */
+export function projectEntityLookup(cwd) {
+  let paths = null;
+  const configPath = findConfigUpward(cwd);
+  if (configPath) {
+    try {
+      paths = yaml.parse(fs.readFileSync(configPath, 'utf-8'))?.paths ?? null;
+    } catch {
+      // A malformed config is reported by the CLI's own loader.
+    }
+  }
+  const dir = resolveEntitiesDir(cwd, paths);
+  const candidates = entitiesDirCandidates(cwd, paths);
+  const key = dir ?? `<none>:${candidates.join('|')}`;
+  if (!projectLookups.has(key)) projectLookups.set(key, createEntityLookup(dir, candidates));
+  return projectLookups.get(key);
 }
 
 /**
@@ -129,9 +177,8 @@ export function createEntityLookup(entitiesDir) {
  * without an entities directory (unit tests).
  */
 export function entityLookupFrom(entityBlocks) {
-  const byName = new Map(entityBlocks.map((b) => [b.name, b]));
-  const byPlural = new Map(entityBlocks.map((b) => [entityModuleNaming(b, '').plural, b]));
-  const lookup = (name) => byName.get(name) ?? null;
-  lookup.byPlural = (plural) => byPlural.get(plural) ?? null;
-  return lookup;
+  return makeLookup(
+    () => indexBlocks(entityBlocks.map((block) => ({ block, source: `<${block.name}>` }))),
+    { dir: '<in-memory>', candidates: [] },
+  );
 }

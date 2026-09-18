@@ -52,8 +52,9 @@ codegen junction list
 
 **Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
 `eav_definition_table` and each junction endpoint are addressed by the target entity's own `plural:` (table export +
-folder) and `context:` (folder nesting), read from `paths.entities` / `paths.entities_dir` (default `entities/`). A
-target with no YAML there is a **generation error** naming it. A `has_many` onto a target with no YAML — or one not
+folder) and `context:` (folder nesting), read from `paths.entities` / `paths.entities_dir` / `entities/` (the first that exists — the CLI's rule,
+`src/config/entities-dir.ts`). A target with no YAML there is a **generation error** naming the directory searched;
+for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML — or one not
 generated yet — is not wired (the two-pass `targetExists` check), not an error. `relationship new` does not follow
 this rule yet (#633).
 

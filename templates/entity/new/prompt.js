@@ -25,7 +25,7 @@ import {
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";
 import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
-import { createEntityLookup, resolveEntitiesDir } from "../../_shared/entity-naming.mjs";
+import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
 import {
   loadRuntimeMode,
   subsystemsImport,
@@ -1694,10 +1694,9 @@ export default {
       // target's table and module folder, an EAV definition entity, a group
       // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
       // YAML, lazily, on the first reference that needs one.
-      const entitiesDir = resolveEntitiesDir(process.cwd());
       Object.assign(
         locals,
-        buildCleanLitePsLocals(definition, { ...locals, entityLookup: createEntityLookup(entitiesDir) }),
+        buildCleanLitePsLocals(definition, { ...locals, entityLookup: projectEntityLookup(process.cwd()) }),
       );
     } else {
       // Inject safe stub locals so CLP template bodies can render without crashing.

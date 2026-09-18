@@ -124,7 +124,7 @@ describe('junction endpoints resolve from their own YAML', () => {
 
 	it('an endpoint with no entity YAML is a named error, not a guess', async () => {
 		await expect(junctionLocals(['crew', 'ghost'], ENTITIES)).rejects.toThrow(
-			"endpoint 'ghost' has no entity YAML in the entities directory",
+			/endpoint 'ghost' has no entity YAML — no YAML under \S+\/entities declares `entity: \{ name: ghost \}` \(expected e\.g\. \S+\/entities\/ghost\.yaml\)/,
 		);
 	});
 });

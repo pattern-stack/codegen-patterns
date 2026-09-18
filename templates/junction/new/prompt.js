@@ -19,10 +19,9 @@ import yaml from "yaml";
 import pluralizePkg from "pluralize";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import {
-  createEntityLookup,
   entityModuleNaming,
+  projectEntityLookup,
   relativeModuleDir,
-  resolveEntitiesDir,
 } from "../../_shared/entity-naming.mjs";
 
 // ============================================================================
@@ -339,13 +338,13 @@ export default {
     // The table export and module folder of an endpoint are its `plural:` and
     // `context:`, read through the same function its own emission uses — never
     // `pluralize(name)` here. `architecture: clean` has no `context:` folders.
-    const entityLookup = createEntityLookup(resolveEntitiesDir(cwd));
+    const entityLookup = projectEntityLookup(cwd);
     const endpointNaming = (endpoint) => {
       const block = entityLookup(endpoint);
       if (!block) {
         throw new Error(
-          `[junction/new] ${yamlPath}: endpoint '${endpoint}' has no entity YAML in the entities ` +
-          `directory — the junction reads its table and module folder from that YAML.`
+          `[junction/new] ${yamlPath}: endpoint '${endpoint}' has no entity YAML — ` +
+          `${entityLookup.missingEntity(endpoint)}. The junction reads its table and module folder from that YAML.`
         );
       }
       return entityModuleNaming(
