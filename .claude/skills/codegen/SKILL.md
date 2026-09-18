@@ -202,7 +202,7 @@ paths:
 generate:
   architecture: clean-lite-ps     # clean | clean-lite-ps — schema default is clean; init writes clean-lite-ps
   frontend: false
-  semantic: false                 # emit the declared AggregateModel (SEM-2)
+  semantic: false                 # emit <generated>/semantic/ — the declared AggregateModel (SEM-2)
 patterns: [src/patterns/*.pattern.ts]
 auth:
   devAllowAnonymous: false        # strict block; localhost-only escape hatch

@@ -224,6 +224,71 @@ function assertNoV1Relations(source: string, label: string): void {
  *     manifest. These assertions were the CGP-62/CGP-358b presence checks,
  *     inverted rather than deleted so the harness still names the contract.
  */
+/**
+ * SEM-2 — assert the emitted semantic model (`src/generated/semantic/`).
+ *
+ * The consumer `tsc` pass already proves the tree COMPILES against the real
+ * schema barrel under the consumer tsconfig, which is the gate that matters.
+ * These assertions pin that it is not vacuously correct: the tags survived, the
+ * catalog carries composites and no atomic entries, and the table identifiers
+ * are the ones the barrel actually exports.
+ */
+function assertSemanticEmission(tmpDir: string): void {
+	const dir = path.join(tmpDir, 'src/generated/semantic');
+	for (const file of ['model.ts', 'types.ts', 'index.ts']) {
+		if (!fs.existsSync(path.join(dir, file))) {
+			throw new Error(`semantic model: expected ${file} in src/generated/semantic`);
+		}
+	}
+
+	const model = fs.readFileSync(path.join(dir, 'model.ts'), 'utf8');
+
+	// Tables come from the generated schema barrel, by the barrel's own export
+	// names — the registry-resolved plural, never a re-pluralized string.
+	assertContains(model, /opportunity: schema\.opportunities,/, 'semantic tables → schema.opportunities');
+	assertContains(model, /account: schema\.accounts,/, 'semantic tables → schema.accounts');
+
+	// Both catalog key shapes: `aggs:` → field.agg, single `agg:` → bare field.
+	assertContains(
+		model,
+		/amount: \{ type: 'number', role: 'measure', aggs: \['sum', 'avg'\], additivity: 'additive'/,
+		'opportunity.amount measure tags',
+	);
+	assertContains(
+		model,
+		/health_score: \{ type: 'number', role: 'measure', agg: 'avg', additivity: 'non'/,
+		'account.health_score measure tags',
+	);
+
+	// The time axis and a declared value domain.
+	assertContains(model, /closed_at: \{ type: 'datetime', role: 'dimension', time: true/, 'time axis');
+	assertContains(model, /hasDeclaredDomain: true/, 'enum dimension declared domain');
+
+	// Relationships, keyed by the YAML name.
+	assertContains(
+		model,
+		/parent_account: \{ kind: 'belongs_to', target: 'account', fk: 'parent_account_id' \}/,
+		'self-ref belongs_to descriptor',
+	);
+	assertContains(
+		model,
+		/contacts: \{ kind: 'has_many', target: 'contact', fk: 'account_id' \}/,
+		'has_many descriptor',
+	);
+
+	// Composites present, atomic entries absent — the package derives those.
+	assertContains(model, /win_rate: \{ kind: 'ratio'/, 'ratio metric');
+	assertContains(model, /pipeline_gap: \{ kind: 'derived'/, 'derived metric');
+	assertNotContains(model, /kind: 'atomic'/, 'semantic model must not emit atomic catalog entries');
+
+	// The model is a function, so importing it cannot run before the barrel is up.
+	assertContains(
+		model,
+		/export function buildAggregateModel\(\): AggregateModel/,
+		'buildAggregateModel export',
+	);
+}
+
 function assertRelationshipEmission(tmpDir: string): void {
 	const reads = (rel: string): string =>
 		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
@@ -342,6 +407,25 @@ async function main(): Promise<number> {
 			log(`copied fixture: ${f}`);
 		}
 
+		// 4.5. SEM-2: switch the semantic emitter on for the relationship
+		// scenario. The CRM fixtures carry analytics tags, so `entity new` emits
+		// `src/generated/semantic/{types,model,index}.ts` — and the `tsc` pass
+		// below then type-checks the emitted model under the CONSUMER tsconfig,
+		// against the real schema barrel. That compile is the actual gate for
+		// this emitter; the golden snapshot only pins its text.
+		if (SCENARIO === 'relationship') {
+			const configPath = path.join(tmpDir, 'codegen.config.yaml');
+			const config = fs.readFileSync(configPath, 'utf8');
+			if (!/^generate:/m.test(config)) {
+				throw new Error('codegen.config.yaml has no generate: block to extend');
+			}
+			fs.writeFileSync(
+				configPath,
+				config.replace(/^generate:\n/m, 'generate:\n  semantic: true\n'),
+			);
+			log('enabled generate.semantic for the relationship scenario');
+		}
+
 		// 5. Run `codegen entity new --all`.
 		//
 		// For the relationship scenario, run TWICE (two-pass) so cross-entity
@@ -367,6 +451,15 @@ async function main(): Promise<number> {
 			log('asserting clean-lite-ps relationship emission for CRM fixtures');
 			assertRelationshipEmission(tmpDir);
 			log('relationship emission OK');
+		}
+
+		// 5.2. SEM-2 — the emitted semantic model. `tsc` proves it COMPILES;
+		// these assertions prove it says the right thing, so a silently-empty
+		// or mis-keyed model cannot pass by compiling.
+		if (SCENARIO === 'relationship') {
+			log('asserting semantic model emission for CRM fixtures');
+			assertSemanticEmission(tmpDir);
+			log('semantic emission OK');
 		}
 
 		// 5.5. Install the observability subsystem (combiner — ADR-025).

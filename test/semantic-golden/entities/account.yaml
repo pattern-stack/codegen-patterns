@@ -1,0 +1,54 @@
+# Semantic golden fixture: the measure-bearing parent.
+#  - `annual_revenue` is an additive money measure with an allowed-agg SET
+#    (catalog keys `annual_revenue.sum` / `.avg` / `.min` / `.max`)
+#  - `health_score` is a NON-additive measure with a single agg (catalog key
+#    `health_score`) — the two catalog key shapes in one fixture
+#  - `tier` is an enum dimension with a declared value domain
+#  - `tenant_id` is a scope column: dimension by derivation, never a measure
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+
+fields:
+  name:
+    type: string
+    required: true
+  tenant_id:
+    type: uuid
+    required: true
+  annual_revenue:
+    type: decimal
+    role: measure
+    aggs: [sum, avg, min, max]
+    additivity: additive
+  health_score:
+    type: decimal
+    role: measure
+    agg: avg
+    additivity: non
+  tier:
+    type: enum
+    choices: [bronze, silver, gold]
+    role: dimension
+  website:
+    type: string
+  external_id:
+    type: string
+
+relationships:
+  contacts:
+    type: has_many
+    target: contact
+    foreign_key: account_id
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: account_id
+  primary_contact:
+    type: has_one
+    target: contact
+    foreign_key: primary_for_account_id
+
+behaviors:
+  - timestamps

@@ -211,6 +211,7 @@ Auto-detect: `just scan` generates a config from project conventions.
   - job `test-integration` → `just test-integration` (needs Docker, hence its own job)
   - `publish` requires both.
 - **Adding a gate:** put it in `just test-all`, or give it a CI job. A gate that runs nowhere in CI rots — all three gates in #599 were red on `main` for exactly that reason.
+- **Parallel worktrees:** harness state is per-checkout by derivation — the scaffold's Compose project, its Postgres port and the Hygen `bunx` cache all come from `test/scaffold/harness-env.ts` / `hygenCacheDir()` and need no env var. Run `just db-env` to see this checkout's values. Never name harness state with a fixed global string: sibling agents run gates concurrently, and a shared name means one run's `docker compose down -v` destroys another's database.
 - **241+ total tests**, all passing
 
 #### Known-red gates

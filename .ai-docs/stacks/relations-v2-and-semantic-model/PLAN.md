@@ -246,6 +246,15 @@ metric — a Zod discriminated union may not hold a refined (`ZodEffects`) membe
 
 ### 5.3 SEM-2 — emitter
 
+> **Shipped 2026-09-17 (#591). `docs/specs/SEM-2.md` is the post-implementation truth**; this section is the
+> pre-implementation plan. Three corrections: (1) the **fallback path was taken** — the package is still unpublished
+> AND still has no `has_one`, so `types.ts` is emitted as a mirror and the conformance test carries a named
+> `has_one` expectation; (2) a junction's table const is **camelCased** (`opportunityContacts`) while an entity's is
+> the raw plural (`deal_states`) — the two templates disagree and any emitter referencing a table identifier must
+> too; (3) the conformance test asserts a **sound narrowing**, not declaration identity — an emitted model must be
+> assignable to the package's types, and demanding identity would force the mirror to carry EAV and
+> expression-measure machinery the emitter never populates.
+
 New whole-set emitter `src/emitters/semantic/` shaped like `src/emitters/frontend/` (`loadSemanticEmitContext` +
 `emitSemanticModel(ctx, outDir)`, name-sorted entities, complete-file writes with the `@generated` banner). Post-step
 in `src/cli/commands/entity.ts` next to the frontend block (`:827-866`), same warn-but-print contract; output root
@@ -256,7 +265,7 @@ Emitted files:
   — no vendored mirror. **Fallback only if query-surface#40 slips past SEM-2:** emit `types.ts` as a verbatim mirror of
   `AggregateModel` / `EntityDescriptor` / `AggFieldMeta` / `MeasureCatalog` (the ADR-040 precedent) plus a conformance
   test that type-checks the mirror against a path-linked sibling checkout.
-- `model.ts` — imports the generated tables from the schema barrel (`locations.dbEntities` / `src/generated/schema.ts`)
+- `model.ts` — as built, `<generated>/semantic/model.ts`, importing the generated tables from the schema barrel
   and exports `buildAggregateModel(): AggregateModel` assembling registry, analytics, `tables`, `colByDbName` (via
   `getColumns`), and the catalog. Junction pattern entities emit `meta.kind: 'junction'` with two `belongs_to`
   descriptors; each endpoint gets the inverse `has_many`. `searchableColumns` = text fields not FK/enum/id (the
@@ -266,9 +275,15 @@ Emitted files:
 Mapping rules that need a decision (recommendation first):
 - **`has_one`** → emitted faithfully; the package gains the kind in query-surface#40. Fallback if that slips: emit as `has_many` (the package has no `has_one`; treating it as to-many is *conservative* for the
   grain oracle — it can only refuse a sum it would otherwise allow). Alternative: extend the package.
+  *Measured at SEM-2 (2026-09-17):* query-surface#40 has **not** started — `grep -rn has_one src/` in the sibling
+  checkout is empty and the `dugshub/40-drizzle-1-0-has-one` branch sits at `origin/main`'s tip. SEM-2 emits
+  `has_one` and the conformance test's named expectation is the tripwire; the fallback remains one line in
+  `build-model.ts`.
 - **`through:` (transitive relationships)** → not emitted in SEM-2; the package resolves multi-hop paths itself.
 - **Tenant/scope columns** (`tenant_id`, `organization_id`, `user_id` from `user_tracking`) → `role: dimension`,
   `ui_visible: false` parity, never a measure. `TENANT_GLOBAL` decisions are host-side (`scopeFor`), not emitted.
+  *As built:* "never a measure" holds by construction — a measure is only ever a field the YAML tags — and the
+  explicit dimension role is derived for those three column names.
 - **EAV** (`examples/eav`) → out of scope for SEM-2; the descriptor's `eav?` stays unset. Note in the spec.
 
 ### 5.4 SEM-3 — the demonstration gate
