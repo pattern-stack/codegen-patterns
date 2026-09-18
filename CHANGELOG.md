@@ -345,6 +345,12 @@ resolve against.
   them — and exits 1. A stale `<type>.job.generated.ts` is left and named.
   `orchestration validate --json`'s `loaderErrors[]` entries are now
   `{ file, message }`.
+- **`entity new --json` never exits non-zero with an empty stdout** (#669).
+  `--all` with no entity YAML (exit 1), `--all` plus a path and neither
+  (exit 2) now print `{ command: 'entity new', status: 'error', error }`.
+  A dirty generated-output tree without `--force` stopped the text-mode run
+  but not the `--json` run, which went on to overwrite the uncommitted files;
+  it now exits 1 with the same payload and writes nothing.
 - **`subsystem install observability` no longer edits `app.module.ts`**
   (#668). The vendored install appended a `TODO: Register ObservabilityModule`
   comment block telling you to add `ObservabilityModule.forRoot()` to
