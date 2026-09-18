@@ -45,10 +45,14 @@ test-smoke:
     bun test/smoke/run-smoke.ts
 
 # Junction smoke: intra-domain pairing (opportunity × contact), clean-lite-ps,
-# both runtime modes (ADR-037) — the package leg guards #624
+# both runtime modes (ADR-037) — the package leg guards #624. The `--layout
+# custom` legs set every paths.* key non-default before `project init` and run
+# one `subsystem install` — the PATH-0 gate (#566, #612).
 test-smoke-junction:
     bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime vendored
     bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime package
+    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime vendored --layout custom
+    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime package --layout custom
 
 # Junction smoke: intra-domain pairing, clean (full Clean Architecture)
 test-smoke-junction-clean:
