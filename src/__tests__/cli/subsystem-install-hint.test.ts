@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Cli } from 'clipanion';
 
-import subsystemNoun, { appModuleWiringHint } from '../../cli/commands/subsystem.js';
+import subsystemNoun, { HAND_REGISTERED, appModuleWiringHint } from '../../cli/commands/subsystem.js';
 import { composesSubsystem } from '../../cli/shared/subsystem-barrel-generator.js';
 import { SUBSYSTEMS } from '../../cli/shared/subsystem-detect.js';
 import { setJsonMode } from '../../cli/ui/json.js';
@@ -82,6 +82,12 @@ describe('appModuleWiringHint', () => {
 			expect(hint).not.toContain('Register');
 		});
 	}
+
+	test('the hand-registered table is exactly the non-composed subsystems install and remove reach', () => {
+		const shortCircuited = new Set(['openapi-config', 'auth-integrations']);
+		const expected = SUBSYSTEMS.map((s) => s.name).filter((n) => !composesSubsystem(n) && !shortCircuited.has(n));
+		expect(Object.keys(HAND_REGISTERED).sort()).toEqual(expected.sort());
+	});
 
 	test('cache / storage — the real module and its forRoot({ backend })', () => {
 		expect(appModuleWiringHint('cache', 'memory')).toBe(

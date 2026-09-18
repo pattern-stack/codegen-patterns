@@ -63,7 +63,8 @@ function writeFresh(outPath: string, content: string): void {
 
 /** One job YAML `entity new` rejects, in the CLI-0 rejection-list shape. */
 export interface JobLoadRejection {
-	file: string;
+	/** The job YAML; `null` for an issue `loadJobs` did not attach to a file. */
+	file: string | null;
 	message: string;
 	details: string[];
 }
@@ -80,25 +81,29 @@ export function jobLoadRejections(
 	issues: AnalysisIssue[],
 	jobsHandlersDir: string,
 ): JobLoadRejection[] {
-	const byFile = new Map<string, string[]>();
+	const byFile = new Map<string | null, string[]>();
 	for (const issue of issues) {
 		if (issue.severity !== "error") continue;
-		const file = issue.path ?? "(jobs)";
+		const file = issue.path ?? null;
 		const reasons = byFile.get(file) ?? [];
 		reasons.push(issue.message);
 		byFile.set(file, reasons);
 	}
-	return [...byFile].map(([file, [message, ...details]]) => {
-		const staleBase = join(
-			jobsHandlersDir,
-			`${basename(file, extname(file))}.job.generated.ts`,
-		);
-		if (existsSync(staleBase)) {
-			details.push(
-				`${staleBase} is stale: emitted from this job's last valid definition, it is left on disk until the YAML loads again`,
+	return [...byFile].map(([file, reasons]) => {
+		const details = reasons.slice(1);
+		// No file, no base to name: a stale path is derived from the YAML's name.
+		if (file !== null) {
+			const staleBase = join(
+				jobsHandlersDir,
+				`${basename(file, extname(file))}.job.generated.ts`,
 			);
+			if (existsSync(staleBase)) {
+				details.push(
+					`${staleBase} is stale: emitted from this job's last valid definition, it is left on disk until the YAML loads again`,
+				);
+			}
 		}
-		return { file, message: message!, details };
+		return { file, message: reasons[0], details };
 	});
 }
 

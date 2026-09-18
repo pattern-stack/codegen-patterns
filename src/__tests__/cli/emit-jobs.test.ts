@@ -14,7 +14,7 @@ import { readFileSync as read } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { JobDefinitionSchema, type JobDefinition } from '../../schema/job-definition.schema';
-import { emitJobHandlers } from '../../cli/shared/emit-jobs';
+import { emitJobHandlers, jobLoadRejections } from '../../cli/shared/emit-jobs';
 
 const FIXTURE_DIR = resolve(__dirname, '../../../test/fixtures/jobs');
 const loadJob = (name: string): JobDefinition =>
@@ -68,5 +68,24 @@ describe('emitJobHandlers', () => {
 		const res = emitJobHandlers({ jobs: [drivePoll], jobsHandlersDir: dir, dryRun: true });
 		expect(res.basesWritten).toHaveLength(1);
 		expect(existsSync(join(dir, 'drive_poll.job.generated.ts'))).toBe(false);
+	});
+});
+
+describe('jobLoadRejections (JOBS-2, #664)', () => {
+	it('an issue with no path — file null, no stale base derived', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'job-rej-'));
+		try {
+			const rejections = jobLoadRejections(
+				[
+					{ severity: 'error', type: 'parse_error', message: 'first' },
+					{ severity: 'error', type: 'schema_error', message: 'second' },
+					{ severity: 'warning', type: 'no_files', message: 'ignored' },
+				],
+				dir,
+			);
+			expect(rejections).toEqual([{ file: null, message: 'first', details: ['second'] }]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
