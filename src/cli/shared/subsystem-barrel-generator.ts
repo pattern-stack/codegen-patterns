@@ -139,18 +139,14 @@ export function jsonToTs(value: unknown): string {
 }
 
 /**
- * Serialise the drizzle extension knobs to a `domainModuleExtensions: { drizzle:
- * {...} }` fragment (camelCase keys, matching the runtime shape), or `''` when
- * none apply. Threaded into BOTH `JobsDomainModule.forRoot` (so the orchestrator
- * emits the enqueue notify) and `JobWorkerModule.forRoot` (so the spawned worker
- * holds the listener + honors `pollIntervalMs`).
+ * Serialise the drizzle extension knobs to the `JobsDomainModule.forRoot`
+ * `extensions: { drizzle: {...} }` fragment (camelCase keys, the runtime
+ * shape — so the orchestrator emits the enqueue notify), or `''` when none
+ * apply. The worker's copy is `jobWorkerBackendOptions` (GEN-0).
  */
-function drizzleExtensionsClause(
-	ext: DrizzleJobsExt | undefined,
-	key: 'extensions' | 'domainModuleExtensions',
-): string {
+function drizzleExtensionsClause(ext: DrizzleJobsExt | undefined): string {
 	if (!ext) return '';
-	return `${key}: { drizzle: ${jsonToTs(ext)} }`;
+	return `extensions: { drizzle: ${jsonToTs(ext)} }`;
 }
 
 /**
@@ -173,7 +169,7 @@ function quoteBullmqDomainOpts(input: {
 		parts.push(`extensions: { bullmq: ${jsonToTs(bullExt)} }`);
 		return `{ ${parts.join(', ')} }`;
 	}
-	const extClause = drizzleExtensionsClause(drizzleExt, 'extensions');
+	const extClause = drizzleExtensionsClause(drizzleExt);
 	if (!extClause) {
 		return quoteOpts({ backend, multiTenant });
 	}
