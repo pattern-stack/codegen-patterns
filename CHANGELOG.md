@@ -129,6 +129,12 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   `JobWorkerModule.forRoot({ mode: 'embedded', … })` in `SUBSYSTEM_MODULES`.
   If you run `worker.ts` as a separate process, state
   `jobs.worker_mode: standalone`.
+- **`subsystem install` (vendored) regenerates from the config it just
+  wrote** (#661). The vendored install wrote `<generated>/subsystems.ts` and
+  `app-config.ts` from the config read *before* it injected the subsystem's
+  block — a fresh `subsystem install jobs` composed no `extensions` (and,
+  before #659, no embedded worker) until the next `entity new`. Both runtime
+  paths now reload `codegen.config.yaml` after writing it.
 - **A generated file the app imports that cannot be written fails the
   command** (#655). `entity new`, `relationship new`, `junction new` and
   `subsystem install` / `remove` printed a warning and exited 0 when
