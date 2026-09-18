@@ -179,8 +179,10 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     writeCodegenConfig(tmpDir, architecture, runtime, paths);
     log(`wrote codegen.config.yaml (architecture: ${architecture}, runtime: ${runtime})`);
   } else {
-    // One subsystem install against the non-default layout (#566).
+    // Subsystem installs against the non-default layout (#566): events, and
+    // jobs — #566's repro (`worker.ts` + the `main.ts` hook under backend_src).
     run(`bun ${CLI_PATH} subsystem install events`);
+    run(`bun ${CLI_PATH} subsystem install jobs`);
   }
 
   // 4. copy entity fixtures
