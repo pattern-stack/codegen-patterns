@@ -1,7 +1,7 @@
 # JOBS-0 — `jobs.backend: memory` reaches the worker (#656); generated files the app imports are never optional output (#655)
 
-**Status:** Designed
-**Date:** 2026-09-18
+**Status:** Implemented
+**Date:** 2026-09-18 · **Implemented:** 2026-09-18
 **Issues:** #656 (first commit), #655
 **Project:** #578
 **Depends on:** GEN-0 (#652 — `jobWorkerBackendOptions`, the one worker-options builder), CFG-1 (#643 —
@@ -118,6 +118,7 @@ the #656 commit (exit 0, warning only). `relationship new` / `junction new` call
   tests (#658).
 - The jobs scaffold's second `worker_mode` default (#659).
 - The other soft-failing `entity new` steps (#660).
+- The vendored install's stale-config regeneration (#661).
 
 ## Found
 
@@ -129,7 +130,20 @@ the #656 commit (exit 0, warning only). `relationship new` / `junction new` call
 - **More soft-fails in `entity new` (#660).**
 - **Three more warn-only barrel sites** (`subsystem remove`, `relationship new`, `junction new`) and a **JSON-mode skip**
   (`subsystem install --json`, vendored, never regenerated) — fixed here, see §#655 Decision.
+- **Vendored `subsystem install` regenerates from a stale config (#661).** The vendored path writes `subsystems.ts` /
+  `app-config.ts` from the context read before its own config block was injected (the package path reloads). A fresh
+  `subsystem install jobs` (vendored) emits no embedded `JobWorkerModule` and no drizzle extension until the next
+  `entity new`. Stale input, not failure handling — its own issue.
 
 ## Gates
 
-_Filled after the last edit._
+Run after the last code edit (only this spec changed after them).
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass |
+| `just test-all` | pass: 3499 unit tests, 0 fail; baseline unchanged; every smoke (base, subsystems both modes, relationship, junction ×4 incl. `--layout custom` both modes — `verify-worker.ts` now also asserts `backend: 'drizzle'`, cross-domain ×2, capability both modes); junction snapshots 10 pass; integration-emit 56 pass; smoke-integration |
+| `just test-integration` | pass (74 pass, 2 skip, 0 fail) |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
+| `just test-post-publish` | pass: tarball contract + consumer workflow from the tarball |
+| #655 tests, pre-fix | all 5 in the first version of `regeneration-failure.test.ts` fail on the #656 commit (exit 0 + warning); the later `subsystem remove` case is covered by the same wrapper removal |
