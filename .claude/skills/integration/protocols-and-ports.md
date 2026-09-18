@@ -162,9 +162,13 @@ The step:
    the whole step is silently skipped** — the usual reason "nothing happened."
 2. Runs the D1 cross-validator (slug/surface always; import-path check only when
    a consumer tsconfig resolves path aliases — this is the "`cdp gen` failing on
-   bad import paths" seen in release notes). Blocking issues ⇒ nothing written.
-3. Emits one provider module per YAML → `<backendSrc>/integrations/providers/`.
-4. **Only if provider emission succeeded with zero issues**, runs `emitAdapters`
+   bad import paths" seen in release notes) in `entity new`'s **pre-flight**
+   (`loadProviderSet`). A blocking issue is a run-level rejection (CLI-1, #666):
+   printed in every mode, `--json` `failed[]` + `stopped: 'pre-flight'`, exit 1
+   before hygen — nothing is written, whatever `--continue-on-error` says.
+3. Emits one provider module per YAML → `<backendSrc>/integrations/providers/`
+   (`emitProviderModules`, from the set the pre-flight validated).
+4. Runs `emitAdapters` over the same loaded set
    → `<backendSrc>/integrations/` (emit-once author-owned scaffolds +
    `@generated` files). A provider surface with no Track C surface package is
    skipped with a warning, not an error.

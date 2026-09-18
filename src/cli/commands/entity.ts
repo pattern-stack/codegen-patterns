@@ -39,7 +39,8 @@ import {
 } from '../shared/event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
 import {
-	generateProviderModules,
+	emitProviderModules,
+	loadProviderSet,
 	resolveTsconfigAliases,
 	collectEntitySurfaces,
 } from '../shared/provider-module-generator.js';
@@ -50,7 +51,6 @@ import {
 	emitFrontendSet,
 } from '../../emitters/frontend/index.js';
 import { configuredSubsystemNames } from '../shared/subsystem-detect.js';
-import { loadProvidersFromYaml } from '../../utils/yaml-loader.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
@@ -61,13 +61,21 @@ import {
 	buildJobScheduledEvents,
 } from '../shared/job-emission-generator.js';
 import { emitJobHandlers, jobLoadRejections } from '../shared/emit-jobs.js';
+import {
+	issueRejections,
+	printRejections,
+	rejectionEntry,
+	reportPreflightStop,
+	type RejectionEntry,
+	type RunRejection,
+} from '../shared/run-rejections.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { reportRegenerationFailure } from '../shared/generated-file.js';
-import { GeneratedFileError, generating } from '../../utils/generated-file.js';
+import { generating } from '../../utils/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
@@ -221,26 +229,6 @@ async function hints(ctx: Context): Promise<Hint[]> {
 // ---------------------------------------------------------------------------
 
 /**
- * One failed target, as the `--json` payload reports it. `file` / `name` are
- * `null` only for a run-level rejection no file carries (JOBS-2).
- */
-interface RejectionEntry {
-	name: string | null;
-	file: string | null;
-	message: string;
-	details: string[];
-}
-
-function rejectionEntry(i: { file: string | null; message: string; details?: string[] }): RejectionEntry {
-	return {
-		name: i.file === null ? null : path.basename(i.file),
-		file: i.file,
-		message: i.message,
-		details: i.details ?? [],
-	};
-}
-
-/**
  * An `entity new` stop before any target is considered — a usage error, no
  * entity YAML, a dirty generated-output tree. Text mode prints it; JSON mode
  * gets `{ command, status: 'error', error }`, never an empty stdout (#669).
@@ -371,8 +359,7 @@ export class EntityNewCommand extends Command {
 		// Run-level rejections (JOBS-2): an input every entity's output depends
 		// on, so it is not one target's problem and `--continue-on-error` does not
 		// apply — the run stops before hygen whatever the flag says.
-		const runRejections: Array<{ file: string | null; message: string; details?: string[] }> =
-			[];
+		const runRejections: RunRejection[] = [];
 
 		// App patterns must be in THIS process's registry before the roles
 		// pre-flight: a role's target qualifies by declaring an `Actor`
@@ -403,6 +390,31 @@ export class EntityNewCommand extends Command {
 		const jobLoad = loadJobs(jobsDir);
 		runRejections.push(...jobLoadRejections(jobLoad.issues, jobHandlers));
 
+		// Provider definitions (RFC-0001, Track D) — loaded and cross-validated
+		// ONCE, here; the post-step emits from this set. A blocking issue (a YAML
+		// that does not load, an unknown surface, a duplicate slug, an
+		// unresolvable auth / client import) is a run-level rejection (#666): a
+		// provider's module is imported by its surface's adapters module, its
+		// change sources feed the surface registry, and its assembly modules are
+		// imported by every integrated entity's integration wiring — skipping it
+		// would regenerate the entities beside a stale integration layer. The
+		// D1 import pre-flight resolves `@app/…#Export` against the consumer
+		// tsconfig; with no tsconfig it is skipped (slug / surface checks still run).
+		const { providers: providersDir } = projectLayout(ctx.cwd, ctx.config);
+		const tsAliases = resolveTsconfigAliases(ctx.cwd);
+		const providerSet = loadProviderSet({
+			providersDir,
+			entitySurfaces: collectEntitySurfaces(
+				loadEntitiesFromYaml(listEntityYamls(entitiesDirForEmits, providersDir)).successes.map(
+					(s) => s.definition,
+				),
+			),
+			sourceRoot: tsAliases?.sourceRoot,
+			aliases: tsAliases?.aliases,
+			skipImportCheck: tsAliases === null,
+		});
+		runRejections.push(...issueRejections(providerSet.issues));
+
 		// Reuses the entity set the emits pre-flight already loaded. A bad role is
 		// a generation-time error (the ADR-041 §4 posture).
 		const roleErrors = validateRolesForGeneration({
@@ -430,25 +442,10 @@ export class EntityNewCommand extends Command {
 			validated.splice(i, 1);
 		}
 
-		for (const i of [...invalid, ...runRejections]) {
-			printError(i.file === null ? i.message : `${path.basename(i.file)} — ${i.message}`);
-			for (const detail of i.details ?? []) {
-				printError(`   • ${detail}`);
-			}
-		}
+		printRejections([...invalid, ...runRejections]);
 
 		if (runRejections.length > 0 || (invalid.length > 0 && !this.continueOnError)) {
-			if (isJsonMode()) {
-				const rejected = [...invalid, ...runRejections];
-				printJson({
-					command: 'entity new',
-					stopped: 'pre-flight',
-					totals: { succeeded: 0, failed: rejected.length },
-					succeeded: [],
-					failed: rejected.map(rejectionEntry),
-				});
-			}
-			return 1;
+			return reportPreflightStop('entity new', [...invalid, ...runRejections]);
 		}
 
 		// Git safety — we don't know specific output paths without running Hygen,
@@ -847,56 +844,25 @@ export class EntityNewCommand extends Command {
 		}
 
 		// Provider module emission (RFC-0001 §2, Track D · D2). Emits one
-		// `<slug>.provider.module.ts` per `definitions/providers/*.yaml`. The D1
-		// cross-validator runs here as a pre-flight gate: the source root +
-		// path-alias map come from the consumer tsconfig (so the import-path
-		// check resolves `@app/…#Export` against real files); when no tsconfig
-		// is present the import check is skipped but slug/surface checks still
-		// run. Skips cleanly when no providers dir exists, so projects without
-		// integrations see no change. Blocking issues ⇒ nothing is written.
+		// `<slug>.provider.module.ts` per `definitions/providers/*.yaml`, from the
+		// set the pre-flight loaded and validated (a blocking issue already
+		// stopped the run). Skips cleanly when no providers dir exists, so
+		// projects without integrations see no change.
 		const providerOutputRoot = path.join(layout.backendSrc, 'integrations/providers');
-		let providerResult: ReturnType<typeof generateProviderModules>;
+		let providerResult: ReturnType<typeof emitProviderModules>;
 		try {
-			providerResult = generating(providerOutputRoot, () => {
-				const providersDir = projectLayout(ctx.cwd, ctx.config).providers;
-				const entitySurfaces = fs.existsSync(entitiesDir)
-					? collectEntitySurfaces(
-							loadEntitiesFromYaml(
-								findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
-							).successes.map((s) => s.definition),
-						)
-					: new Set<string>();
-				const tsAliases = resolveTsconfigAliases(ctx.cwd);
-				return generateProviderModules({
-					providersDir,
+			providerResult = generating(providerOutputRoot, () =>
+				emitProviderModules(providerSet, {
 					outputRoot: providerOutputRoot,
-					entitySurfaces,
-					sourceRoot: tsAliases?.sourceRoot,
-					aliases: tsAliases?.aliases,
-					skipImportCheck: tsAliases === null,
 					mode: runtimeMode,
-				});
-			});
+				}),
+			);
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);
 		}
 		if (!providerResult.skipped && !isJsonMode()) {
-			for (const issue of providerResult.issues) {
-				printError(`provider codegen: ${issue.message}`);
-			}
-			if (providerResult.issues.length === 0) {
-				printInfo(
-					`provider modules regenerated (${providerResult.written.length}) → ${providerOutputRoot}`,
-				);
-			}
-		}
-		const providerErrors = providerResult.issues.filter((i) => i.severity === 'error');
-		if (providerErrors.length > 0 && !this.continueOnError) {
-			// Text mode printed each issue above; JSON mode gets the same payload as every other failure.
-			if (!isJsonMode()) return 1;
-			return reportRegenerationFailure(
-				'entity new',
-				new GeneratedFileError(providerOutputRoot, providerErrors.map((i) => i.message).join('; ')),
+			printInfo(
+				`provider modules regenerated (${providerResult.written.length}) → ${providerOutputRoot}`,
 			);
 		}
 
@@ -907,33 +873,23 @@ export class EntityNewCommand extends Command {
 		// provider surface with no surface package (Track C) is skipped with a
 		// reason, not an error.
 		const adapterOutputRoot = path.join(layout.backendSrc, 'integrations');
-		if (!providerResult.skipped && providerResult.issues.length === 0) {
+		if (!providerSet.skipped) {
 			let adapterResult: ReturnType<typeof emitAdapters>;
 			try {
 				adapterResult = generating(adapterOutputRoot, () => {
-					const providersDir = providerResult.providersDir;
-					const entityDefs = fs.existsSync(entitiesDir)
-						? loadEntitiesFromYaml(
-								findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
-							).successes.map((s) => s.definition)
-						: [];
-					const loadedProviders = loadProvidersFromYaml(
-						findYamlFiles(providersDir),
-					).successes.map((s) => ({
-						definition: s.definition,
-						filePath: s.filePath,
-					}));
-					// Resolve the consumer's tsconfig aliases (already loaded above for
-					// the provider import pre-flight) so the assembly's entity repo/module
-					// imports prefer the project's `@modules/...`-style alias.
-					const assemblyTsAliases = resolveTsconfigAliases(ctx.cwd);
+					const entityDefs = loadEntitiesFromYaml(
+						listEntityYamls(entitiesDir, providersDir),
+					).successes.map((s) => s.definition);
+					// The consumer's tsconfig aliases (resolved for the provider import
+					// pre-flight) make the assembly's entity repo/module imports prefer
+					// the project's `@modules/...`-style alias.
 					return emitAdapters({
-						providers: loadedProviders,
+						providers: providerSet.loaded,
 						entities: entityDefs,
 						outputRoot: adapterOutputRoot,
 						backendSrcAbs: layout.backendSrc,
 						modulesAbs: layout.modules,
-						aliases: assemblyTsAliases?.aliases ?? {},
+						aliases: tsAliases?.aliases ?? {},
 						mode: runtimeMode,
 					});
 				});

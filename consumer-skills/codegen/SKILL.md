@@ -173,6 +173,14 @@ codegen skills list
   import. `worker.ts` holds no config value — never edit options into it.
   After editing one, regenerate (`codegen entity new --all` or any
   `codegen subsystem install`); a bad value fails there, naming the key.
+- **`entity new` refuses to generate from a broken shared input.** A job
+  YAML (`definitions/jobs/`), an app-pattern file your `patterns:` globs match
+  or a provider YAML (`definitions/providers/`) that does not load or validate
+  stops the whole run before anything is written — exit 1, the file and reason
+  printed (`--json`: `failed[]`, `stopped: 'pre-flight'`) — whatever
+  `--continue-on-error` says: every entity's output depends on them. A bad
+  entity YAML only skips that entity (exit 1 at the end). Fix the file and
+  re-run.
 - **YAML is `snake_case`; generated TS properties are `camelCase`.** The
   templates derive `accountId` from `account_id`. Entity names are singular
   `snake_case` (`opportunity`).

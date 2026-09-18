@@ -156,8 +156,6 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   writes nothing then), a duplicate or unknown `@JobHandler` trigger. The
   JSON result's `scopeEntityType`, `eventCodegen`, `bridgeRegistry` and
   `orchestration` fields are never `null`.
-  `entity new --json --no-continue-on-error` with a blocking provider issue
-  now prints that same error payload instead of nothing.
 - **An invalid job YAML or an unloadable app-pattern file fails `entity new`**
   (#664). An error in a `definitions/jobs/*.yaml` was printed (text mode only)
   and the run went on without that job — no handler base, no scheduled
@@ -172,6 +170,15 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   them — and exits 1. A stale `<type>.job.generated.ts` is left and named.
   `orchestration validate --json`'s `loaderErrors[]` entries are now
   `{ file, message }`.
+- **A provider YAML with a blocking issue fails `entity new`** (#666). A
+  `definitions/providers/*.yaml` that did not load or failed the provider
+  cross-check (unknown surface, duplicate slug, an auth strategy / client
+  import that does not resolve) was printed in text mode only and, under the
+  default `--continue-on-error`, the run exited 0 with the provider modules and
+  the adapter / assembly files derived from them left stale. It is now a
+  pre-flight rejection like an invalid job YAML: listed with the other
+  rejections (`--json`: `failed[]`, `stopped: 'pre-flight'`), the run stops
+  before generating anything whatever `--continue-on-error` says, and exits 1.
 - **`entity new --json` never exits non-zero with an empty stdout** (#669).
   `--all` with no entity YAML (exit 1), `--all` plus a path and neither
   (exit 2) now print `{ command: 'entity new', status: 'error', error }`.
