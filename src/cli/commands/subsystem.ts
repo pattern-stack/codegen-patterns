@@ -386,6 +386,9 @@ export class SubsystemInstallCommand extends Command {
 		const installed = await detectInstalledSubsystems(ctx);
 		const already = installed.find((i) => i.name === desc.name);
 		if (already && !this.force) {
+			// GEN-0 (#652): the re-run a consumer makes on upgrade — name the
+			// one-time worker.ts edit here too.
+			const staleWorker = alreadyInstalledStaleWorker(desc.name, ctx);
 			if (isJsonMode()) {
 				printJson({
 					command: 'subsystem install',
@@ -393,9 +396,11 @@ export class SubsystemInstallCommand extends Command {
 					status: 'already-installed',
 					path: already.path,
 					backend: already.backend,
+					...(staleWorker ? { staleWorker } : {}),
 				});
 			} else {
 				printInfo(`${desc.name} is already installed at ${already.path} (pass --force to reinstall)`);
+				if (staleWorker) printWarning(staleWorker);
 			}
 			return 0;
 		}
@@ -788,23 +793,22 @@ export class SubsystemInstallCommand extends Command {
 		const already = installed.includes(desc.name);
 
 		if (already && !this.force) {
+			// GEN-0 (#652): the re-run a consumer makes on upgrade — name the
+			// one-time worker.ts edit here too.
+			const staleWorker = alreadyInstalledStaleWorker(desc.name, ctx);
 			if (isJsonMode()) {
 				printJson({
 					command: 'subsystem install',
 					subsystem: desc.name,
 					runtime: 'package',
 					status: 'already-installed',
+					...(staleWorker ? { staleWorker } : {}),
 				});
 			} else {
 				printInfo(
 					`${desc.name} is already in subsystems.install (runtime: package — nothing to vendor). Pass --force to refresh the config block + barrels.`,
 				);
-				// GEN-0 (#652): the re-run a consumer makes on upgrade — name the
-				// one-time worker.ts edit here too.
-				if (desc.name === 'jobs') {
-					const stale = jobsStaleWorker(ctx.cwd, jobsLocals(ctx.cwd, ctx.config));
-					if (stale) printWarning(stale);
-				}
+				if (staleWorker) printWarning(staleWorker);
 			}
 			return 0;
 		}
@@ -1320,6 +1324,11 @@ function jobsStaleWorker(cwd: string, locals: JobsScaffoldLocals): string | unde
 	return (
 		staleWorkerNotice(content, path.relative(cwd, locals.workerPath), locals.appConfigImport) ?? undefined
 	);
+}
+
+/** The stale-worker notice for an "already installed" early exit — jobs only. */
+function alreadyInstalledStaleWorker(subsystem: string, ctx: Context): string | undefined {
+	return subsystem === 'jobs' ? jobsStaleWorker(ctx.cwd, jobsLocals(ctx.cwd, ctx.config)) : undefined;
 }
 
 function runJobsScaffold(

@@ -44,6 +44,7 @@ Principles (no backwards compatibility)
   `entity-naming.mjs`; the name and argument order are unchanged, so no prompt call site moves.
 - `entityFilePaths` (clean-lite-ps branch) returns `moduleFile` / `schemaFile = entityFile + '.ts'` from it.
 - `resolveEntityModuleImports` resolves `repositoryFile` / `moduleFile` under `modulesAbs` from it.
+- The junction prompt's clean-lite-ps output paths (`resolveOutputPaths`) read it too (Found 5).
 - The clean-lite-ps prompt extension's own output-path map (`clpOutputPaths`) reads `moduleDir` / `entityFile` /
   `moduleFile` / `repositoryFile` instead of re-joining `moduleGroupDir` + plural. `moduleGroupDir` then had no
   reader and is not exported.
@@ -88,8 +89,8 @@ because yargs shreds `{ … : … }`). CFG-1 routed `jobs.pools` around it (`dom
   reserved `events_*` lanes.
 - **The emit-once file.** `worker.ts` imports `jobWorkerOptions` from `<generated>/app-config` and calls
   `JobWorkerModule.forRoot(jobWorkerOptions)`. It contains no config value.
-- **Existing consumers.** `subsystem install jobs` (both runtime modes, and the package-mode "already installed"
-  early exit — the re-run an upgrading consumer makes) reads an existing `worker.ts`; when it does not contain
+- **Existing consumers.** `subsystem install jobs` (both runtime modes, including both "already installed" early
+  exits — the re-run an upgrading consumer makes; `--json` carries it as `staleWorker`) reads an existing `worker.ts`; when it does not contain
   `JobWorkerModule.forRoot(jobWorkerOptions)` it prints the two-line replacement (`staleWorkerNotice`,
   `jobs-scaffold-locals.ts`) (the import and the
   call). A string check, not a codemod: the old call is a single literal the consumer may have edited. CHANGELOG
@@ -130,6 +131,15 @@ Before the fix, the worker leg fails — run on the #649 commit with this PR's t
 4. **`jobs.backend: memory` never reaches `JobWorkerModule`** (pre-existing; the consolidated clause kept it
    byte-identical). The worker options carry `backend` only for `bullmq`, and `JobWorkerModule` defaults its inner
    `JobsDomainModule` to `drizzle`. Filed: **#656**.
+5. **#649's census missed a fourth spelling** (review). `templates/junction/new/prompt.js` › `resolveOutputPaths`
+   built the junction's clean-lite-ps `entity` / `repository` / `module` paths by hand although the file already
+   imported `entityModuleNaming`. It now reads them from the rule (junction snapshots byte-identical).
+6. **Both "already installed" exits** (review). The vendored-mode early exit ("already installed at … (pass --force to
+   reinstall)") returned without the stale-worker notice its package-mode twin printed. Both print it now, and both
+   carry it in the `--json` payload as `staleWorker`. The check matches the call as a code line: the current
+   template's doc comment names `JobWorkerModule.forRoot(jobWorkerOptions)` too.
+7. **Posix paths only.** `entityModuleNaming` joins with `/`, and `resolveEntityModuleImports` feeds it an absolute
+   `modulesAbs`. That holds only on posix, which the repo already assumes everywhere else.
 
 ## Gates
 

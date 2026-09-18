@@ -187,6 +187,8 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 
 /** The call a current `worker.ts` makes (GEN-0, #652). */
 const CURRENT_WORKER_CALL = 'JobWorkerModule.forRoot(jobWorkerOptions)';
+/** That call as a line of code — the template's doc comment names it too. */
+const CURRENT_WORKER_CALL_LINE = /^\s*JobWorkerModule\.forRoot\(jobWorkerOptions\)/m;
 
 /**
  * GEN-0 (#652) — a `worker.ts` emitted before GEN-0 bakes `jobs.backend` /
@@ -200,7 +202,7 @@ export function staleWorkerNotice(
 	workerPath: string,
 	appConfigImport: string,
 ): string | null {
-	if (content.includes(CURRENT_WORKER_CALL)) return null;
+	if (CURRENT_WORKER_CALL_LINE.test(content)) return null;
 	return [
 		`${workerPath} predates GEN-0 (#652): its JobWorkerModule.forRoot({ … }) options were fixed at install, so later jobs.backend / jobs.extensions edits never reach it. One-time edit:`,
 		`  import { jobWorkerOptions } from '${appConfigImport}';   // replaces any \`import { jobPools } …\``,

@@ -334,6 +334,16 @@ describe('staleWorkerNotice (GEN-0, #652)', () => {
 		).toBeNull();
 	});
 
+	test('the call named only in a comment does not count', () => {
+		expect(
+			staleWorkerNotice(
+				" * plus `JobWorkerModule.forRoot(jobWorkerOptions)`\n    JobWorkerModule.forRoot({ mode: 'standalone', allPools: true }),",
+				'src/worker.ts',
+				'./generated/app-config',
+			),
+		).not.toBeNull();
+	});
+
 	test('a worker that bakes its options gets the exact replacement', () => {
 		const notice = staleWorkerNotice(
 			"    JobWorkerModule.forRoot({ mode: 'standalone', domainModulePools: jobPools, allPools: true }),",
