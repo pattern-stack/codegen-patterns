@@ -27,6 +27,8 @@ From `pool-config.ts` › `FRAMEWORK_POOLS` (JOB-5 §1):
 
 Concurrency values ship as defaults; consumers may override any framework pool's `concurrency` (and `description`) in config. Its `queue` and `reserved` are fixed — setting either is a generation-time error.
 
+**Pool config is fixed at generation — a decision, with an escape route (CFG-1).** `concurrency`, like every other pool knob and every `jobs.*` knob, takes effect when you regenerate, not when a deployment restarts: the app never reads `codegen.config.yaml`. If a deployment genuinely needs to tune a pool per environment, `JobsDomainModule.forRoot({ pools })` is the seam — pass the generated `jobPools` with an env-derived override merged on (e.g. `{ ...jobPools, batch: { concurrency: Number(process.env.BATCH_CONCURRENCY ?? 5) } }`) in your own wiring. `resolvePoolConfig` applies the same pool rules to it at boot.
+
 ## Reserved pools are off-limits to user handlers
 
 The three `events_*` pools exist to carry the `IEventBus` outbox drain, routed by `DomainEvent.direction` (`inbound | change | outbound`). They are `reserved: true`. User code targeting them must fail loudly at module init:

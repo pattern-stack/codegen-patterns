@@ -78,7 +78,7 @@ export const jobPools = { batch: { concurrency: 8 }, reports: { queue: 'jobs-rep
 |---|---|
 | generated `main.ts` | `import { [authConfig, ]openapiConfig } from '<generated>/app-config'` (`authConfig` only in package mode, where `main.ts` wires the boot-fail check); no `fs`, `path`, `yaml`, no interfaces, no `??` defaults. The app is created with `abortOnError: false` (#651) |
 | `upgrade-openapi` block | imports `openapiConfig` (and a static `DocumentBuilder, SwaggerModule`) relative to `layout.mainTs`; no dynamic imports, no `try`/`warn` |
-| `upgrade-auth` block | imports `authConfig` the same way and probes with `resolveUserContext` (#651); patches `abortOnError: false` onto the consumer's `NestFactory.create`; its targets resolve through `projectLayout` (they were hard-coded `src/`, Found 2) |
+| `upgrade-auth` block | imports `authConfig` the same way — ensured on its own, even when the block is already present — and probes with `resolveUserContext` (#651); patches `abortOnError: false` onto the consumer's `NestFactory.create`; its targets resolve through `projectLayout` (they were hard-coded `src/`, Found 2) |
 | jobs runtime | `pool-config.loader.ts` → `pool-config.ts`: pure `resolvePoolConfig(overrides)` + `poolOverrideIssues(overrides)`; `JobsDomainModule.forRoot({ pools })` provides the resolved map under `JOB_POOL_CONFIG`; `JobWorkerModule.forRoot({ domainModulePools })` forwards it to its inner domain module; the worker and the BullMQ orchestrator inject it (`resolvePoolQueueName` loses its `loadPoolConfig()` default) |
 | generated `<generated>/subsystems.ts` | `JobsDomainModule.forRoot({ …, pools: jobPools })`, and `domainModulePools: jobPools` on the embedded `JobWorkerModule` |
 | standalone `worker.ts` (emit-once) | imports `jobPools` from the generated module and passes `domainModulePools: jobPools` — so pool edits reach it on regeneration although the file itself is never rewritten |
@@ -151,16 +151,29 @@ smoke's dependency list (its only justification was "main.ts reads codegen.confi
 7. **The EAV fix (#647) was wider than filed.** `repository.ejs.t` and `module.ejs.t` carried the same hand-built
    `'../field_values/'` path as the three templates the issue named; all five resolve `field_value` through
    `resolveTargetNaming` now, and the module import uses the field-value entity's own plural
-   (`<Plural>Module` from `<plural>.module`).
+   (`<Plural>Module` from `<plural>.module`). The create/update use cases compute their specifier from their own
+   `use-cases/` folder with `relativeModuleDir` (`eavFieldValueUseCaseImportDir`), not by prefixing `../` onto the
+   module-level one (review).
+8. **App-config regeneration inherits the barrel's warn-only soft-fail.** `regenerateSubsystemBarrel` (which now
+   writes `app-config.ts`) is wrapped in `try … printWarning` at `entity.ts` (~708) and `subsystem.ts` (~718, ~899),
+   so a failed regeneration exits 0 and can leave the generated `main.ts` / `worker.ts` importing a missing or stale
+   module. Behaviour unchanged here (review); filed: **#655**.
+9. **`project upgrade-auth` added the `authConfig` import only with the block** (review). A `main.ts` that already
+   carried the block but lacked the import stayed broken and was reported `unchanged`. The import is now ensured on
+   its own, idempotently, and reported `updated` when it lands (unit-tested).
+10. **Deploy-time pool tuning is gone, by decision.** `jobs.pools.<name>.concurrency` is fixed at generation like every
+    other `jobs.*` knob. The documented escape route for a deployment that needs an env-derived value is the
+    `JobsDomainModule.forRoot({ pools })` seam (`{ ...jobPools, batch: { concurrency: … } }` in the consumer's own
+    wiring), checked by `resolvePoolConfig` at boot — recorded in the jobs skill and the consumer jobs skill.
 
 ## Gates
 
-Run after the last code edit (commit `388830b`; the only later change is this table).
+Run after the last code edit — the review revision (`fix(#643): review …`); that commit's only change after the run is this table.
 
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | pass (baseline runner byte-identical) |
-| `just test-all` | pass: 3484 unit tests, 0 fail (new: `cli/app-config-generator.test.ts`, `cli/project-upgrade-auth.test.ts`; census list empty); baseline; every smoke — both custom-layout junction legs now assert `JOB_POOL_CONFIG` + run `main.ts` (`/reference-json` → `Junction Smoke API` 9.9.9; package: served with the `devAllowAnonymous` warning); subsystems (vendored + package); capability (both); junction snapshots (10); integration-emit (56); smoke-integration |
+| `just test-all` | pass: 3485 unit tests, 0 fail (new: `cli/app-config-generator.test.ts`, `cli/project-upgrade-auth.test.ts`; census list empty); baseline; every smoke — both custom-layout junction legs now assert `JOB_POOL_CONFIG` + run `main.ts` (`/reference-json` → `Junction Smoke API` 9.9.9; package: served with the `devAllowAnonymous` warning); subsystems (vendored + package); capability (both); junction snapshots (10); integration-emit (56); smoke-integration |
 | `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair) |
 | `just test-smoke-junction-clean` | known-red, unchanged: **118** (110 × TS2307 + 8 × TS7006, #602) |
 | `just test-post-publish` | pass — the schema's import of `runtime/subsystems/jobs/pool-config.ts` resolves from the tarball; the consumer workflow installs no `yaml` |

@@ -85,6 +85,22 @@ describe('runUpgradeAuth (CFG-1)', () => {
 		expect(mainChange?.note).toContain('abortOnError');
 	});
 
+	test('adds a missing authConfig import to a main.ts that already has the block', async () => {
+		const root = seed();
+		await runUpgradeAuth({ projectRoot: root, dryRun: false });
+		const mainPath = path.join(root, 'apps/api/src/main.ts');
+		const withBlock = fs.readFileSync(mainPath, 'utf-8');
+		const stripped = withBlock.replace("import { authConfig } from './generated/app-config';\n", '');
+		expect(stripped).not.toContain("from './generated/app-config'");
+		fs.writeFileSync(mainPath, stripped);
+
+		const report = await runUpgradeAuth({ projectRoot: root, dryRun: false });
+		const main = fs.readFileSync(mainPath, 'utf-8');
+		expect(main).toContain("import { authConfig } from './generated/app-config';");
+		expect(main.match(/installRequesterContext\(app\)/g)).toHaveLength(1);
+		expect(report.changes.find((c) => c.path === 'apps/api/src/main.ts')?.action).toBe('updated');
+	});
+
 	test('is idempotent', async () => {
 		const root = seed();
 		await runUpgradeAuth({ projectRoot: root, dryRun: false });
