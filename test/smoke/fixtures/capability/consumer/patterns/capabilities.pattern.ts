@@ -50,3 +50,23 @@ export const CollidingPattern = {
 	forwarderMethods: ['findByEmail'],
 	description: 'Deliberate method collision — CAP-1 negative fixture',
 };
+
+/**
+ * CAP-2 stand-ins for the capabilities CAP-3 ships. `roles:` validation keys on
+ * a `kind: 'capability'` pattern of exactly these names being declared.
+ */
+export const ActorPattern = {
+	name: 'Actor',
+	kind: 'capability' as const,
+	mixin: 'WithActor',
+	mixinImport: '@modules/capabilities/with-actor',
+	description: 'An entity a role may point at — CAP-2 stand-in',
+};
+
+export const CommunicationPattern = {
+	name: 'Communication',
+	kind: 'capability' as const,
+	mixin: 'WithCommunication',
+	mixinImport: '@modules/capabilities/with-communication',
+	description: 'An entity with roles: — CAP-2 stand-in',
+};

@@ -59,6 +59,7 @@
     "src/patterns/registry.ts",
     "src/patterns/pattern-definition.ts",
     "src/patterns/compose.ts",
+    "src/roles/derive.ts",
     "src/patterns/library/*.ts",
     "CHANGELOG.md",
     "README.md",

@@ -9,6 +9,7 @@
  *   | Column conflict with entity field                          | error                  |
  *   | Column conflict with a behavior field                      | error                  |
  *   | Two inheritable spine bases on one entity                  | error (ADR-041)        |
+ *   | `roles:` without `Communication`, or the reverse           | error (CAP-2)          |
  *   | Method-name conflict between two capabilities              | error (ADR-041)        |
  *   | Method-name conflict against an opaque base                | (TS compile error)     |
  *   | Same implied behavior across patterns                      | silent dedup           |
@@ -39,6 +40,7 @@
 
 import type { AnalysisIssue, ParsedEntity } from '../analyzer/types.js';
 import { resolveBehaviorFields } from '../behaviors/index.js';
+import { validateRolesCommunicationPairing } from '../roles/validate-roles.js';
 import {
 	composePatterns,
 	declaredPatternNames,
@@ -65,6 +67,12 @@ export function validatePatternComposition(
 	const issues: AnalysisIssue[] = [];
 
 	const patternNames = declaredPatternNames(entity);
+
+	// Rule: CAP-2 — `roles:` and the `Communication` capability imply each
+	// other. Checked BEFORE the no-pattern early return: `roles:` with no
+	// `patterns:` at all is the commonest form of the mistake.
+	issues.push(...validateRolesCommunicationPairing(entity, patternNames));
+
 	if (patternNames.length === 0) return issues;
 
 	// Column-source tracker: maps column name → human-readable origin.

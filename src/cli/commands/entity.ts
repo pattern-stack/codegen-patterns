@@ -12,6 +12,9 @@ import type { CommandClass } from 'clipanion';
 
 import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
 import { analyzeDomain, validateEntities } from '../../index.js';
+import { junctionsDirFor, loadJunctionSummaries } from '../../parser/load-junctions.js';
+import { validateRolesForGeneration } from '../../roles/validate-roles.js';
+import { resolvePatternGlobs } from '../shared/pattern-globs.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeEntityNew } from '../shared/hygen.js';
@@ -379,6 +382,47 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
+		// App patterns must be in THIS process's registry before the roles
+		// pre-flight: a role's target qualifies by declaring an `Actor`
+		// capability, which an app may define (and must, until the library ships
+		// one). The hygen subprocess loads them for itself; this is the CLI's copy.
+		{
+			const loaded = await loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
+			if (!isJsonMode()) for (const err of loaded.errors) printWarning(err);
+		}
+
+		// CAP-2 pre-flight: `roles:` are cross-entity — a role's target is another
+		// YAML, a `many` role's junction a third — so neither the schema nor the
+		// one-entity hygen prompt can check them. Reuses the entity set the emits
+		// pre-flight already loaded. A bad role is a generation-time error (the
+		// ADR-041 §4 posture): the entity is not generated, the reason is printed
+		// in every mode, and the command exits non-zero.
+		const roleErrors = validateRolesForGeneration({
+			targets: emitsTargetEntities,
+			entities: allEntitiesForEmits,
+			junctions: loadJunctionSummaries(junctionsDirFor(ctx.cwd)),
+		});
+		if (roleErrors.length > 0) {
+			const rejected = new Set<string>();
+			for (const e of roleErrors) {
+				if (!isJsonMode()) printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
+				if (e.entity) rejected.add(e.entity);
+			}
+			for (let i = validated.length - 1; i >= 0; i--) {
+				const v = validated[i]!;
+				if (!rejected.has(v.name)) continue;
+				invalid.push({
+					file: v.file,
+					message: 'roles: validation failed (see errors above)',
+					details: roleErrors
+						.filter((e) => e.entity === v.name)
+						.map((e) => e.message),
+				});
+				validated.splice(i, 1);
+			}
+			if (!this.continueOnError && !isJsonMode()) return 1;
+		}
+
 		// Git safety — we don't know specific output paths without running Hygen,
 		// so scope the check to the cwd's generated source roots if we can.
 		if (!this.force) {
@@ -461,14 +505,7 @@ export class EntityNewCommand extends Command {
 
 		// Pattern globs used to discover orchestration patterns. Default
 		// matches the Phase 3-1 loader: `src/patterns/*.pattern.ts`.
-		const orchestrationGlobs: string[] = (() => {
-			const fromCfg = (ctx.config as { patterns?: unknown } | null | undefined)
-				?.patterns;
-			if (Array.isArray(fromCfg) && fromCfg.length > 0) {
-				return fromCfg.filter((g): g is string => typeof g === 'string');
-			}
-			return ['src/patterns/*.pattern.ts'];
-		})();
+		const orchestrationGlobs = resolvePatternGlobs(ctx);
 
 		// Helper — reload registry + return orchestration patterns. Wrapped
 		// in a try to keep failures non-fatal (post-step contract).
@@ -1236,8 +1273,18 @@ export class EntityValidateCommand extends Command {
 			return 1;
 		}
 
+		// App patterns (ADR-031) and app capabilities (ADR-041) resolve by name
+		// in the validators below — load them into this process's registry
+		// first, or every app pattern is reported as unknown.
+		{
+			const loaded = await loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
+			if (!isJsonMode()) for (const err of loaded.errors) printWarning(err);
+		}
+
 		const quick = validateEntities(targetDir);
-		const full = await analyzeDomain(targetDir);
+		const full = await analyzeDomain(targetDir, {
+			junctionsDir: junctionsDirFor(ctx.cwd),
+		});
 
 		const errors = full.issues.filter((i) => i.severity === 'error');
 		const warnings = full.issues.filter((i) => i.severity === 'warning');

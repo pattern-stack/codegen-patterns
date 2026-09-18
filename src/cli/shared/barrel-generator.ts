@@ -38,6 +38,7 @@ import {
 	detectYamlType,
 } from '../../utils/yaml-loader.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
+import { deriveJunctionName } from '../../schema/junction-definition.schema.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -190,16 +191,6 @@ export function listJunctionYamls(junctionsDir: string): string[] {
 	return findYamlFiles(junctionsDir).filter(
 		(full) => detectYamlType(full) === 'junction',
 	);
-}
-
-/**
- * Derive the junction name from a JunctionDefinition.
- * Q8 resolution: insertion order — between: [opportunity, contact] → 'opportunity_contact'.
- * There is no YAML override: `JunctionDefinitionSchema` is `.strict()` and declares
- * no `name` key, so the pairing is the only source (GATE-1, #599).
- */
-function deriveJunctionName(def: { between: [string, string] }): string {
-	return `${def.between[0]}_${def.between[1]}`;
 }
 
 function collectJunctions(junctionsDir: string): EntityInfo[] {

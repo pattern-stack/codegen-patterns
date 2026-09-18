@@ -1,0 +1,5 @@
+# CAP-2 smoke fixture: the junction a `cardinality: many` role names.
+# `meeting.roles.attendees.via: meeting_contact` resolves to this file — the
+# name is the pairing, in declaration order.
+pattern: Junction
+between: [meeting, contact]
