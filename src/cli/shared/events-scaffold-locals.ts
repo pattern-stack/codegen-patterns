@@ -52,7 +52,7 @@ export interface EventsScaffoldLocalsInput {
  *   YAML truthy surprises like `'yes'` / `1`.
  * - `schemaPath` resolves from `paths.subsystems` (or
  *   `<paths.backend_src>/shared/subsystems` when unset; see
- *   `subsystems-path.ts`), then appends `events/domain-events.schema.ts`
+ *   `project-layout.ts`), then appends `events/domain-events.schema.ts`
  *   — matching exactly the
  *   location `copyRuntime` would have emitted before we skipped that file.
  * - `generatedKeepPath` sits under the same subsystems root as

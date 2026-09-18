@@ -53,7 +53,7 @@ export interface IntegrationScaffoldLocalsInput {
  *   YAML truthy surprises like `'yes'` / `1`.
  * - `schemaPath` resolves from `paths.subsystems` (or
  *   `<paths.backend_src>/shared/subsystems` when unset; see
- *   `subsystems-path.ts`), then appends `integration/integration-audit.schema.ts` —
+ *   `project-layout.ts`), then appends `integration/integration-audit.schema.ts` —
  *   matching exactly the location `copyRuntime` would have emitted before
  *   we skipped that file via `backendFileFilter`.
  *
