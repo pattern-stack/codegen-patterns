@@ -440,7 +440,7 @@ export class EntityNewCommand extends Command {
 		// so scope the check to the cwd's generated source roots if we can.
 		if (!this.force) {
 			const outputRoots = projectLayout(ctx.cwd, ctx.config);
-			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.generated], ctx.cwd);
+			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.modules, outputRoots.generated], ctx.cwd);
 			if (gitCheck.inRepo && !gitCheck.clean) {
 				printWarning(
 					`Uncommitted changes in ${gitCheck.dirty.length} generated-output files. Pass --force to overwrite.`

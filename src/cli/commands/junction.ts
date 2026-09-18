@@ -206,7 +206,7 @@ export class JunctionNewCommand extends Command {
 		// Git safety
 		if (!this.force) {
 			const outputRoots = projectLayout(ctx.cwd, ctx.config);
-			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.generated], ctx.cwd);
+			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.modules, outputRoots.generated], ctx.cwd);
 			if (gitCheck.inRepo && !gitCheck.clean) {
 				printWarning(
 					`Uncommitted changes in ${gitCheck.dirty.length} generated-output files. Pass --force to overwrite.`
