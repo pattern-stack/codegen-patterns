@@ -39,7 +39,7 @@
  *   reach scoped data. Set `onUnresolved: 'reject'` to fail the request at the
  *   boundary instead.
  */
-import type { INestApplication } from '@nestjs/common';
+import type { INestApplication, INestApplicationContext } from '@nestjs/common';
 import {
   withRequester,
   type RequesterContext,
@@ -115,6 +115,31 @@ export function makeRequesterContextMiddleware(
 }
 
 /**
+ * The consumer's `IUserContext` bound under `AUTH_USER_CONTEXT`, or `null` when
+ * nothing is bound (#651). Every "is it bound?" probe goes through here: this
+ * helper, and the generated `main.ts` boot-fail check (ADR-043 §4).
+ *
+ * For an unbound token Nest's `app.get(token, { strict: false })` THROWS
+ * `UnknownElementException` — it never returns `undefined`. On an HTTP app
+ * created with the default `abortOnError: true`, Nest's exception-zone proxy
+ * turns that throw into `process.exit(1)` before any caller can catch it, so
+ * the app must be created with `NestFactory.create(AppModule, { abortOnError:
+ * false })` — the generated `main.ts` does, and `project upgrade-auth` patches
+ * it in. (A symbol token, not `ModuleRef`: a class token breaks when two
+ * `@nestjs/core` copies meet, ADR-037.) Any other error propagates.
+ */
+export function resolveUserContext(app: INestApplicationContext): IUserContext | null {
+  try {
+    return app.get<IUserContext>(AUTH_USER_CONTEXT, { strict: false }) ?? null;
+  } catch (err) {
+    // Matched by name: the class lives under `@nestjs/core/errors`, and a
+    // package-mode app may hold a second copy of it (ADR-037).
+    if (err instanceof Error && err.constructor.name === 'UnknownElementException') return null;
+    throw err;
+  }
+}
+
+/**
  * Register the requester-context boundary on a Nest app. Resolves
  * `AUTH_USER_CONTEXT` from the root container (so it sees the consumer's
  * AppModule binding) and installs the global middleware. No-ops with a warning
@@ -125,9 +150,7 @@ export function installRequesterContext(
   app: INestApplication,
   options: RequesterContextOptions = {},
 ): void {
-  const userContext = app.get<IUserContext>(AUTH_USER_CONTEXT, {
-    strict: false,
-  });
+  const userContext = resolveUserContext(app);
   if (!userContext) {
     // eslint-disable-next-line no-console
     console.warn(

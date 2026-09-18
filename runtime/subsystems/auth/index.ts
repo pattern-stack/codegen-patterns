@@ -123,6 +123,7 @@ export {
   installRequesterContext,
   makeRequesterContextMiddleware,
   resolveRequesterContext,
+  resolveUserContext,
   type RequesterContextOptions,
 } from './middleware/requester-context';
 

@@ -70,7 +70,7 @@ const MAIN_AUTH_BLOCK = `  // ADR-043: bridge the verified principal into AsyncL
   // an unauthenticated data plane here is a real exposure. Refuse to serve when
   // no IUserContext is bound, unless the localhost-only escape hatch is set.
   {
-    const userContext = app.get(AUTH_USER_CONTEXT, { strict: false });
+    const userContext = resolveUserContext(app);
     const allowAnonymous = authConfig.devAllowAnonymous;
     if (!userContext && !allowAnonymous) {
       throw new Error(

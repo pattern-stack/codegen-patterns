@@ -43,6 +43,9 @@ describe('runUpgradeAuth (CFG-1)', () => {
 		const main = fs.readFileSync(path.join(root, 'apps/api/src/main.ts'), 'utf-8');
 		expect(main).toContain('installRequesterContext(app)');
 		expect(main).toContain('authConfig.devAllowAnonymous');
+		// #651: the probe is resolveUserContext, on an app that throws (not exits).
+		expect(main).toContain('const userContext = resolveUserContext(app);');
+		expect(main).toContain('NestFactory.create(AppModule, { abortOnError: false })');
 		expect(main).toContain("import { authConfig } from './generated/app-config';");
 		expect(main).toContain("from './shared/subsystems/auth';");
 		expect(main).not.toContain("'codegen.config.yaml'");
@@ -56,6 +59,30 @@ describe('runUpgradeAuth (CFG-1)', () => {
 			['apps/api/src/generated/app-config.ts', 'created'],
 			['apps/api/src/main.ts', 'updated'],
 		]);
+	});
+
+	test('adds abortOnError to inline create options; bails on abortOnError: true (#651)', async () => {
+		const root = seed();
+		const mainPath = path.join(root, 'apps/api/src/main.ts');
+		const withOpts = (opts: string) =>
+			fs.writeFileSync(
+				mainPath,
+				fs.readFileSync(mainPath, 'utf-8').replace(/NestFactory\.create\(AppModule[^)]*\)/, `NestFactory.create(AppModule, ${opts})`),
+			);
+		withOpts('{ bufferLogs: true }');
+		await runUpgradeAuth({ projectRoot: root, dryRun: false });
+		expect(fs.readFileSync(mainPath, 'utf-8')).toMatch(/NestFactory\.create\(AppModule, \{\s*bufferLogs: true,\s*abortOnError: false\s*\}\)/);
+
+		const other = seed();
+		const otherMain = path.join(other, 'apps/api/src/main.ts');
+		fs.writeFileSync(
+			otherMain,
+			fs.readFileSync(otherMain, 'utf-8').replace('NestFactory.create(AppModule)', 'NestFactory.create(AppModule, { abortOnError: true })'),
+		);
+		const report = await runUpgradeAuth({ projectRoot: other, dryRun: false });
+		const mainChange = report.changes.find((c) => c.path === 'apps/api/src/main.ts');
+		expect(mainChange?.action).toBe('skipped');
+		expect(mainChange?.note).toContain('abortOnError');
 	});
 
 	test('is idempotent', async () => {

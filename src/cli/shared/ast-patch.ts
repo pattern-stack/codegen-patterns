@@ -370,15 +370,49 @@ export function ensureMainRequesterContextBlock(
 		return { changed: false, bail: 'NestFactory.create(...) is not inside a statement' };
 	}
 
+	// #651: the boot-fail probe (`resolveUserContext`) needs the app created
+	// with `abortOnError: false` — with Nest's default, an unbound
+	// AUTH_USER_CONTEXT exits the process inside `app.get` before the probe can
+	// answer. Patched onto the create call's options (before the insert below,
+	// which invalidates these nodes).
+	const optionsNote = ensureAbortOnErrorFalse(createCall);
+	if (optionsNote.bail) return { changed: false, bail: optionsNote.bail };
+
 	const insertPos = stmt.getEnd();
 	sourceFile.insertText(insertPos, '\n\n' + opts.block.trimEnd() + '\n');
 
 	ensureImport(sourceFile, opts.authImport, [
 		'installRequesterContext',
-		'AUTH_USER_CONTEXT',
+		'resolveUserContext',
 	]);
 
-	return { changed: true, note: 'inserted RequesterContext boundary + boot-fail block' };
+	return { changed: true, note: 'inserted RequesterContext boundary + boot-fail block; NestFactory.create({ abortOnError: false })' };
+}
+
+/**
+ * Make `NestFactory.create(Module[, options])` carry `abortOnError: false`
+ * (#651). Adds the options object, or the property to an inline one; bails on
+ * a non-literal options argument or an explicit `abortOnError: true`.
+ */
+function ensureAbortOnErrorFalse(createCall: Node): { bail?: string } {
+	if (!Node.isCallExpression(createCall)) return { bail: 'NestFactory.create(...) is not a call' };
+	const args = createCall.getArguments();
+	// NestFactory.create(module) | (module, options) | (module, httpAdapter, options)
+	const optionsArg = args.length === 1 ? null : args[args.length - 1]!;
+	if (!optionsArg) {
+		createCall.addArgument('{ abortOnError: false }');
+		return {};
+	}
+	if (!Node.isObjectLiteralExpression(optionsArg)) {
+		return { bail: 'NestFactory.create(...) options are not an inline object — add `abortOnError: false` by hand' };
+	}
+	const existing = optionsArg.getProperty('abortOnError');
+	if (!existing) {
+		optionsArg.addPropertyAssignment({ name: 'abortOnError', initializer: 'false' });
+		return {};
+	}
+	if (Node.isPropertyAssignment(existing) && existing.getInitializer()?.getText() === 'false') return {};
+	return { bail: 'NestFactory.create(...) sets abortOnError to something other than `false` — the boot-fail probe needs `false` (#651)' };
 }
 
 /**

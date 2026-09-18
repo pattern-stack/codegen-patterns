@@ -26,7 +26,10 @@ describe('main.ts boot-fail emission (ADR-043)', () => {
 		const main = mainTsContent('package', LAYOUT);
 		expect(main).toContain("from '@pattern-stack/codegen/subsystems'");
 		expect(main).toContain('installRequesterContext(app)');
-		expect(main).toContain('AUTH_USER_CONTEXT');
+		// #651: the bound-or-not probe is the runtime's resolveUserContext —
+		// `app.get(AUTH_USER_CONTEXT, { strict: false })` throws when unbound.
+		expect(main).toContain('const userContext = resolveUserContext(app);');
+		expect(main).not.toContain('app.get(AUTH_USER_CONTEXT');
 		expect(main).toContain('devAllowAnonymous');
 		expect(main).toContain('FATAL');
 		// The check precedes app.listen() (HTTP-entrypoint gating).
