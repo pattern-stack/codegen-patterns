@@ -7,6 +7,10 @@
  * is written: no barrel, no event / bridge registry, no orchestration barrel
  * from a partial pattern set. A stale `<type>.job.generated.ts` is left on disk
  * and named.
+ *
+ * CLI-1 (#666): a provider YAML with a blocking issue is the same kind of input
+ * — its module, change sources and assemblies feed every integrated entity's
+ * wiring — and is rejected the same way.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -199,4 +203,103 @@ describe('entity new rejects the run on an app-pattern file it cannot load (JOBS
 		expect(payload.failed[0].details[0]).toContain('pattern file exploded at import');
 		expect(fs.existsSync(noteEntity(root))).toBe(false);
 	});
+});
+
+const PROVIDER = (surface: string) =>
+	[
+		'slug: hubspot',
+		'display_name: HubSpot',
+		'auth:',
+		'  type: oauth2',
+		"  strategy: '@app/integrations/providers/hubspot/hubspot-oauth.strategy#HubspotOAuthStrategy'",
+		'  scopes: [crm.objects.contacts.read]',
+		'client:',
+		"  class: '@app/integrations/providers/hubspot/hubspot.client#HubspotClient'",
+		'  base_url: https://api.hubapi.com',
+		`surfaces: [${surface}]`,
+		'',
+	].join('\n');
+
+/** The project's `note` entity declares `surface: crm`; no tsconfig, so the import check is skipped. */
+function mkSurfaceProject(): string {
+	const root = mkProject();
+	fs.writeFileSync(
+		path.join(root, 'entities', 'note.yaml'),
+		VALID_ENTITY.replace('  table: notes\n', '  table: notes\n  surface: crm\n'),
+	);
+	return root;
+}
+
+function writeProvider(root: string, name: string, body: string): string {
+	const file = path.join(root, 'definitions/providers', name);
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, body);
+	return file;
+}
+
+const providerModule = (root: string) =>
+	path.join(root, 'src/integrations/providers/hubspot/hubspot.provider.module.ts');
+
+describe('entity new rejects the run on a provider YAML with a blocking issue (CLI-1, #666)', () => {
+	test('text mode — an unknown surface: names the YAML, exit 1, nothing generated (default --continue-on-error)', async () => {
+		const root = mkSurfaceProject();
+		writeProvider(root, 'hubspot.yaml', PROVIDER('mail'));
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(
+			"hubspot.yaml — provider hubspot: surface 'mail' is not declared by any entity (known surfaces: crm)",
+		);
+		expect(out).not.toContain('generating note');
+		expect(fs.existsSync(modulesBarrel(root))).toBe(false);
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
+		expect(fs.existsSync(providerModule(root))).toBe(false);
+	});
+
+	test('JSON mode — the rejection is in failed[], stopped at pre-flight', async () => {
+		const root = mkSurfaceProject();
+		const file = writeProvider(root, 'hubspot.yaml', PROVIDER('mail'));
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(JSON.parse(out)).toMatchObject({
+			command: 'entity new',
+			stopped: 'pre-flight',
+			totals: { succeeded: 0, failed: 1 },
+			failed: [
+				{
+					name: 'hubspot.yaml',
+					file,
+					message: "provider hubspot: surface 'mail' is not declared by any entity (known surfaces: crm)",
+					details: [],
+				},
+			],
+		});
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
+	});
+
+	test('JSON mode — a provider YAML that does not load (schema), whatever --continue-on-error says', async () => {
+		const root = mkSurfaceProject();
+		const file = writeProvider(root, 'broken.yaml', 'slug: broken\n');
+		const { code, out } = await run([
+			'entity', 'new', '--all', '--force', '--continue-on-error', '--json', '--cwd', root,
+		]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out);
+		expect(payload).toMatchObject({
+			command: 'entity new',
+			stopped: 'pre-flight',
+			failed: [{ name: 'broken.yaml', file }],
+		});
+		expect(payload.failed[0].message).toContain("Required at 'surfaces'");
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
+	});
+
+	test('a valid provider — the run is unchanged: exit 0, provider module emitted', async () => {
+		const root = mkSurfaceProject();
+		writeProvider(root, 'hubspot.yaml', PROVIDER('crm'));
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(out).not.toContain('hubspot.yaml —');
+		expect(code).toBe(0);
+		expect(fs.existsSync(providerModule(root))).toBe(true);
+		expect(fs.existsSync(noteEntity(root))).toBe(true);
+	}, 60_000);
 });

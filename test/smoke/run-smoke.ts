@@ -370,13 +370,15 @@ async function main(): Promise<number> {
 
 		// 5.5. Install the observability subsystem (combiner — ADR-025).
 		// No backend flag, no schema; copies runtime/subsystems/observability via
-		// copyRuntime, injects `observability:` into codegen.config.yaml, and
-		// appends a TODO hint to app.module.ts directing the human to wire
-		// ObservabilityModule.forRoot() AFTER Events/Jobs/Bridge/Sync.
+		// copyRuntime and injects `observability:` into codegen.config.yaml. It
+		// leaves app.module.ts alone: the generated SUBSYSTEM_MODULES composes
+		// ObservabilityModule.forRoot() (CLI-1, #668).
 		//
 		// No siblings installed in this smoke — observability must typecheck
 		// standalone because its @Optional() sibling injections degrade to
 		// empty results when ports are absent (per OBS-5 contract).
+		const appModulePath = path.join(tmpDir, 'src/app.module.ts');
+		const appModuleBeforeObservability = fs.readFileSync(appModulePath, 'utf8');
 		run(`${cli(tmpDir)} subsystem install observability`, tmpDir);
 
 		// Verify install artifacts appeared.
@@ -388,11 +390,10 @@ async function main(): Promise<number> {
 			);
 		}
 
-		const appModulePath = path.join(tmpDir, 'src/app.module.ts');
 		let appModule = fs.readFileSync(appModulePath, 'utf8');
-		if (!appModule.includes('ObservabilityModule.forRoot')) {
+		if (appModule !== appModuleBeforeObservability) {
 			throw new Error(
-				'ObservabilityModule TODO hint missing from app.module.ts after install',
+				'subsystem install observability edited app.module.ts — SUBSYSTEM_MODULES composes it (#668)',
 			);
 		}
 

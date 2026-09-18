@@ -23,7 +23,7 @@ import { stringify as stringifyYaml } from 'yaml';
 
 import { analyzeDomain } from '../../index.js';
 import { junctionsDirFor } from '../../parser/load-junctions.js';
-import { loadAppPatternsForCli } from '../shared/pattern-globs.js';
+import { loadAppPatternsForCli, patternLoadIssues } from '../shared/pattern-globs.js';
 import { serializeDomainGraph } from '../../analyzer/serialize-graph.js';
 import {
 	suggestTransitiveRelationships,
@@ -592,13 +592,17 @@ export class ProjectInspectCommand extends Command {
 
 		// App patterns resolve by name in the validators analyzeDomain runs —
 		// load them first, or an app-declared `Actor` capability is invisible
-		// and every role targeting it is reported as a non-actor.
-		for (const err of await loadAppPatternsForCli(ctx)) {
-			if (!isJsonMode()) printWarning(err.message);
-		}
-		const result = await analyzeDomain(entitiesDir, {
+		// and every role targeting it is reported as a non-actor. A file the
+		// loader could not register is an error-severity issue: the registry is
+		// partial, so the analysis is not valid (#667).
+		const loaderIssues = patternLoadIssues(await loadAppPatternsForCli(ctx), ctx.cwd);
+		const analyzed = await analyzeDomain(entitiesDir, {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 		});
+		const result =
+			loaderIssues.length === 0
+				? analyzed
+				: { ...analyzed, isValid: false, issues: [...loaderIssues, ...analyzed.issues] };
 
 		let filtered = result;
 		if (this.entity) {
@@ -614,7 +618,10 @@ export class ProjectInspectCommand extends Command {
 			};
 		}
 
-		const format = kind === 'doc' ? 'markdown' : (this.format as 'console' | 'json' | 'markdown');
+		// `--json` is `--format json` (it used to switch JSON mode on and still
+		// print the console report — CLI-1).
+		const format =
+			kind === 'doc' ? 'markdown' : this.json ? 'json' : (this.format as 'console' | 'json' | 'markdown');
 		let out: string;
 		if (kind === 'stats') {
 			out = format === 'json' ? formatStatsJson(filtered) : formatStatsConsole(filtered);

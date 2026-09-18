@@ -4,9 +4,10 @@
  * Covers the combiner-subsystem scaffold path (ADR-025):
  *   - `--dry-run` lists planned template targets without writing.
  *   - Against a tmp project with a minimal `app.module.ts`, install
- *     appends the TODO comment block (main-hook.ejs.t) and the
- *     `observability:` config block.
- *   - Idempotent re-install is a no-op (both `skip_if` gates hold).
+ *     appends the `observability:` config block and leaves `app.module.ts`
+ *     byte-identical: the generated `SUBSYSTEM_MODULES` composes the module,
+ *     so there is no register-it-yourself TODO (#668).
+ *   - Idempotent re-install is a no-op (the config block's `skip_if` holds).
  *   - `--force-config` strips + re-injects the yaml block.
  *   - `printInfo` says observability is composed through `SUBSYSTEM_MODULES`
  *     (#663) — no hand registration.
@@ -21,21 +22,21 @@ import { Cli } from 'clipanion';
 import subsystemNoun, { appModuleWiringHint } from '../../cli/commands/subsystem.js';
 import { setJsonMode } from '../../cli/ui/json.js';
 
+const APP_MODULE =
+	"import { Module } from '@nestjs/common';\n@Module({ imports: [] })\nexport class AppModule {}\n";
+
 function mkTempProject(): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-install-'));
-	// Minimal config + a stub app.module.ts so the main-hook target exists.
+	// Minimal config + a stub app.module.ts — the install must leave it alone.
 	fs.writeFileSync(
 		path.join(dir, 'codegen.config.yaml'),
-		// ADR-037: this suite exercises the vendored install path (app.module.ts
-		// TODO + comment-block injection). Opt into `vendored` — the default is
-		// now `package`, which skips the runtime-dependent scaffolds.
+		// ADR-037: this suite exercises the vendored install path (runtime copy +
+		// config block). Opt into `vendored` — the default is now `package`, which
+		// skips the runtime-dependent scaffolds.
 		'runtime: vendored\npaths:\n  backend_src: src\n',
 	);
 	fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
-	fs.writeFileSync(
-		path.join(dir, 'src/app.module.ts'),
-		"import { Module } from '@nestjs/common';\n@Module({ imports: [] })\nexport class AppModule {}\n",
-	);
+	fs.writeFileSync(path.join(dir, 'src/app.module.ts'), APP_MODULE);
 	return dir;
 }
 
@@ -92,7 +93,7 @@ function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: string }> {
 }
 
 describe('subsystem install observability — dry-run', () => {
-	test('reports planned files (config block + app.module.ts hook) without writing', async () => {
+	test('plans only the config block — not app.module.ts — and writes nothing', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -114,24 +115,17 @@ describe('subsystem install observability — dry-run', () => {
 		expect(parsed.subsystem).toBe('observability');
 		expect(parsed.dryRun).toBe(true);
 		expect(parsed.files.planned.length).toBeGreaterThan(0);
-		expect(parsed.scaffold.planned).toEqual(
-			expect.arrayContaining([
-				path.join(root, 'codegen.config.yaml'),
-				path.join(root, 'src/app.module.ts'),
-			]),
-		);
+		expect(parsed.scaffold.planned).toEqual([path.join(root, 'codegen.config.yaml')]);
 
 		// Config block must NOT have been injected during dry-run.
 		const cfg = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8');
 		expect(cfg).not.toContain('observability:');
-		// app.module.ts must not contain the TODO comment yet.
-		const app = fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf-8');
-		expect(app).not.toContain('TODO: Register ObservabilityModule');
+		expect(fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf-8')).toBe(APP_MODULE);
 	});
 });
 
 describe('subsystem install observability — real', () => {
-	test('appends comment block to app.module.ts + observability block to codegen.config.yaml', async () => {
+	test('appends the observability block to codegen.config.yaml; app.module.ts untouched (#668)', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -158,11 +152,11 @@ describe('subsystem install observability — real', () => {
 			fs.existsSync(path.join(installDir, 'observability.module.ts')),
 		).toBe(true);
 
-		// Comment block appended to app.module.ts.
+		// No register-it-yourself TODO: SUBSYSTEM_MODULES composes the module.
 		const app = fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf-8');
-		expect(app).toContain('TODO: Register ObservabilityModule');
-		expect(app).toContain('ObservabilityModule.forRoot()');
-		expect(app).toContain('AFTER Events/Jobs/Bridge/Integration');
+		expect(app).toBe(APP_MODULE);
+		expect(app).not.toContain('ObservabilityModule');
+		expect(app).not.toContain('TODO');
 
 		// Config block appended.
 		const cfg = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8');
@@ -226,7 +220,7 @@ describe('subsystem install observability — real', () => {
 		).toBe(cfgBefore);
 	});
 
-	test('--force re-install does NOT re-inject duplicate comment or config block', async () => {
+	test('--force re-install does NOT re-inject the config block, and never touches app.module.ts', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);
 		const cli = buildCli();
@@ -253,10 +247,7 @@ describe('subsystem install observability — real', () => {
 			]),
 		);
 
-		// Comment block appears exactly once (skip_if: "ObservabilityModule").
-		const app = fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf-8');
-		const todoMatches = app.match(/TODO: Register ObservabilityModule/g) ?? [];
-		expect(todoMatches).toHaveLength(1);
+		expect(fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf-8')).toBe(APP_MODULE);
 
 		// observability: block appears exactly once (skip_if: "observability:").
 		const cfg = fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8');

@@ -277,11 +277,9 @@ function stripJsonComments(input: string): string {
 // Orchestration: discover → load → validate → write
 // ============================================================================
 
-export interface GenerateProviderModulesOptions {
+export interface LoadProviderSetOptions {
   /** `definitions/providers/` directory. Absent/empty → no-op skip. */
   providersDir: string;
-  /** Output root, typically `<backend_src>/integrations/providers`. */
-  outputRoot: string;
   /**
    * The closed set of entity surfaces (for the surface cross-check). When not
    * supplied, pass an empty set — every provider will then fail the surface
@@ -294,39 +292,51 @@ export interface GenerateProviderModulesOptions {
   aliases?: Record<string, string>;
   /** Skip the filesystem-bound import pre-flight (e.g. no tsconfig found). */
   skipImportCheck?: boolean;
-  /** When true, validate + compute the plan but write nothing. */
+}
+
+export interface EmitProviderModulesOptions {
+  /** Output root, typically `<backend_src>/integrations/providers`. */
+  outputRoot: string;
+  /** When true, compute the plan but write nothing. */
   dryRun?: boolean;
   /** Runtime mode (ADR-037) — selects the runtime import specifiers the emitted
    *  provider modules carry. Defaults to `package` when omitted. */
   mode?: RuntimeMode;
 }
 
-export interface GenerateProviderModulesResult {
+export type GenerateProviderModulesOptions = LoadProviderSetOptions & EmitProviderModulesOptions;
+
+/** The provider YAMLs, loaded and cross-validated — nothing written. */
+export interface ProviderSet {
   providersDir: string;
   /** True when the providers dir is absent or holds no YAML — nothing to do. */
   skipped: boolean;
-  /** Absolute paths of modules that were (or, in dryRun, would be) written. */
-  written: string[];
+  /** The providers that loaded (the emit input when `issues` is empty). */
+  loaded: LoadedProvider[];
   /** Per-file load/parse failures (schema errors), surfaced as issues too. */
   loadFailures: ProviderLoadError[];
-  /** All blocking issues (load failures + cross-validation). Non-empty ⇒ no emit. */
+  /**
+   * All blocking issues (load failures + cross-validation), every one
+   * `severity: 'error'` with the provider YAML as `path`. Non-empty ⇒ no emit.
+   */
   issues: AnalysisIssue[];
 }
 
+export interface GenerateProviderModulesResult extends Omit<ProviderSet, "loaded"> {
+  /** Absolute paths of modules that were (or, in dryRun, would be) written. */
+  written: string[];
+}
+
 /**
- * Discover, validate, and emit provider modules. Validation is a **gate**: if
- * any provider fails to load or any cross-validation issue is found (including
- * the pre-flight import check), nothing is written and the issues are returned
- * for the caller to surface and fail `cdp gen` (RFC-0001 §1/§2 — fail before
- * emission, with a clear message, not at NestJS boot).
+ * Discover, load and cross-validate the provider YAMLs (RFC-0001 §1). Writes
+ * nothing. `entity new` runs it in its pre-flight: a blocking issue rejects
+ * the run before hygen (CLI-1, #666).
  */
-export function generateProviderModules(
-  opts: GenerateProviderModulesOptions,
-): GenerateProviderModulesResult {
-  const base: GenerateProviderModulesResult = {
+export function loadProviderSet(opts: LoadProviderSetOptions): ProviderSet {
+  const base: ProviderSet = {
     providersDir: opts.providersDir,
     skipped: false,
-    written: [],
+    loaded: [],
     loadFailures: [],
     issues: [],
   };
@@ -360,15 +370,25 @@ export function generateProviderModules(
     }),
   );
 
-  // Gate: any blocking issue ⇒ emit nothing.
-  if (issues.some((i) => i.severity === "error")) {
-    return { ...base, loadFailures: failures, issues };
-  }
+  return { ...base, loaded, loadFailures: failures, issues };
+}
+
+/**
+ * Emit one module per active provider of a validated set. Validation is a
+ * **gate**: a set with any issue writes nothing (RFC-0001 §1/§2 — fail before
+ * emission, with a clear message, not at NestJS boot).
+ */
+export function emitProviderModules(
+  set: ProviderSet,
+  opts: EmitProviderModulesOptions,
+): GenerateProviderModulesResult {
+  const { loaded: _loaded, ...rest } = set;
+  if (set.skipped || set.issues.length > 0) return { ...rest, written: [] };
 
   const mode: RuntimeMode = opts.mode ?? "package";
   const written: string[] = [];
   // planned providers are catalog-only roadmap stubs — no module emission.
-  for (const { definition, filePath } of loaded) {
+  for (const { definition, filePath } of set.loaded) {
     if (!isActiveProvider(definition)) continue;
     const sourceYaml = relativeSource(filePath);
     const content = generateProviderModule(definition, sourceYaml, mode);
@@ -383,7 +403,14 @@ export function generateProviderModules(
     written.push(outPath);
   }
 
-  return { ...base, written, loadFailures: failures, issues };
+  return { ...rest, written };
+}
+
+/** Load, validate and emit in one call — {@link loadProviderSet} then {@link emitProviderModules}. */
+export function generateProviderModules(
+  opts: GenerateProviderModulesOptions,
+): GenerateProviderModulesResult {
+  return emitProviderModules(loadProviderSet(opts), opts);
 }
 
 /** Write only when content differs — avoids spurious mtime churn on re-emit. */

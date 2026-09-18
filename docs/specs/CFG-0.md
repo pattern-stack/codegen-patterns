@@ -144,7 +144,7 @@ reader and from every writer; the schema then rejects it.
 | `bridge.{backend,multi_tenant}` | yes | `subsystem-barrel-generator.ts`, `bridge-scaffold-locals.ts`, `subsystem-detect.ts` |
 | `integration.{backend,multi_tenant}` | yes | `subsystem-barrel-generator.ts`, `integration-scaffold-locals.ts`, `subsystem-detect.ts` |
 | `integration.differ.{ignore,unignore}` | yes | `subsystem-barrel-generator.ts` |
-| `observability.reporters.bridgeMetrics.{enabled,intervalMs,windowHours}` | yes | `subsystem-barrel-generator.ts`, `observability-scaffold-locals.ts` |
+| `observability.reporters.bridgeMetrics.{enabled,intervalMs,windowHours}` | yes | `subsystem-barrel-generator.ts` (the scaffold-locals reader was deleted with the observability hygen action — CLI-1, #668) |
 | `openapi.{enabled,path,title,version,description,auth}` | yes | generated `main.ts` (consumer runtime) |
 | `cache.backend`, `storage.backend` | yes | `subsystem-detect.ts` › `configuredInstalledSubsystems` |
 | `<name>.backend` for `observability`, `auth`, `auth-integrations`, `openapi-config` | **delete** | the same generic `config[name].backend` read; those subsystems have one backend. The read is narrowed to the six blocks that declare `backend` |

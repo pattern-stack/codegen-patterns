@@ -576,11 +576,13 @@ generated file the app imports that cannot be written — the barrels and `app-c
 `entity new` emits after the entity modules (the `ScopeEntityType` union, the event modules, the bridge registry,
 orchestration modules, the frontend tree, provider / adapter / integration-assembly / job-handler files) — fails the
 command with exit 1 and the file named (or the step's output directory, when it failed before writing: an invalid
-`events/*.yaml`, a duplicate `@JobHandler` trigger) — never a warning over a stale module. Two inputs every entity's
+`events/*.yaml`, a duplicate `@JobHandler` trigger) — never a warning over a stale module. Three inputs every entity's
 output depends on stop `entity new` before it generates anything, whatever `--continue-on-error` says: an invalid
-`<paths.jobs_dir>/*.yaml` (its handler, scheduled events and bridge triggers feed registries every module imports) and
-an app-pattern file the `patterns:` globs match but that cannot be loaded (the orchestration barrel would be rewritten
-without its module). Each is listed like a rejected entity YAML — file, reason, details; in `--json`, under `failed[]`
+`<paths.jobs_dir>/*.yaml` (its handler, scheduled events and bridge triggers feed registries every module imports), an
+app-pattern file the `patterns:` globs match but that cannot be loaded (the orchestration barrel would be rewritten
+without its module), and a `<paths.providers>/*.yaml` that does not load or fails the provider cross-check — unknown
+surface, duplicate slug, an auth strategy / client import that does not resolve (its module and assemblies feed every
+integrated entity's wiring). Each is listed like a rejected entity YAML — file, reason, details; in `--json`, under `failed[]`
 with `stopped: 'pre-flight'` — and the command exits 1. A `<type>.job.generated.ts` emitted from a job YAML that no
 longer loads is left on disk and named as stale in the rejection. The app has no `yaml` dependency.
 
