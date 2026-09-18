@@ -6,8 +6,10 @@ unless_exists: true
  * Standalone job worker entrypoint — emitted by `codegen subsystem install jobs`.
  *
  * Boots a Nest application context (NO HTTP listener) that composes the
- * consumer's root `AppModule` plus `JobWorkerModule.forRoot({ mode:
- * 'standalone', allPools: true, … })`. Run with:
+ * consumer's root `AppModule` plus `JobWorkerModule.forRoot(jobWorkerOptions)`
+ * — `{ mode: 'standalone', allPools: true, … }`, generated from
+ * codegen.config.yaml `jobs:` into `<generated>/app-config.ts`. This file holds
+ * no config value; edit the YAML and regenerate. Run with:
  *
  *   bun src/worker.ts
  *
@@ -51,7 +53,7 @@ import { Logger, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
-import { jobPools } from '<%= appConfigImport %>';
+import { jobWorkerOptions } from '<%= appConfigImport %>';
 import { JobWorkerModule } from '<%= jobWorkerModuleImport %>';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
@@ -62,11 +64,12 @@ const SHUTDOWN_TIMEOUT_MS = 30_000;
     // Importing it whole keeps the worker's DI graph identical to the HTTP app's
     // so every `@JobHandler` resolves the same way in both processes.
     AppModule,
-    // `allPools: true` drains the reserved `events_*` lanes (events outbox +
-    // bridge wrappers) alongside the user pools. `jobPools` is
-    // codegen.config.yaml `jobs.pools`, regenerated into <generated>/app-config
-    // (CFG-1) — so pool edits reach this emit-once file on regeneration.
-    JobWorkerModule.forRoot(<%- workerForRootOpts %>),
+    // `jobWorkerOptions` is codegen.config.yaml `jobs.backend`, `jobs.extensions.*`
+    // and `jobs.pools`, regenerated into <generated>/app-config (GEN-0) — so
+    // config edits reach this emit-once file on regeneration. It sets
+    // `allPools: true`: drain the reserved `events_*` lanes (events outbox +
+    // bridge wrappers) alongside the user pools.
+    JobWorkerModule.forRoot(jobWorkerOptions),
   ],
 })
 export class WorkerAppModule {}

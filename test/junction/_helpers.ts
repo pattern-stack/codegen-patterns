@@ -75,6 +75,9 @@ export const CUSTOM_LAYOUT_BOOT_CONFIG = {
     batch: { concurrency: 7 },
     reports: { queue: 'jobs-reports', concurrency: 3 },
   },
+  // GEN-0 (#652): set AFTER `subsystem install jobs` emitted the (emit-once)
+  // worker.ts, then regenerated — both workers must carry it.
+  jobsDrizzle: { listen_notify: true, poll_interval_ms: 4321 },
 } as const;
 
 /**
@@ -87,10 +90,11 @@ export const CUSTOM_LAYOUT_BOOT_CONFIG = {
 function writeBootConfig(tmpDir: string, paths: LayoutPaths): void {
   const configPath = path.join(tmpDir, 'codegen.config.yaml');
   const doc = YAML.parseDocument(fs.readFileSync(configPath, 'utf8'));
-  const { openapi, auth, jobsPools } = CUSTOM_LAYOUT_BOOT_CONFIG;
+  const { openapi, auth, jobsPools, jobsDrizzle } = CUSTOM_LAYOUT_BOOT_CONFIG;
   doc.setIn(['openapi'], doc.createNode(openapi));
   doc.setIn(['auth', 'devAllowAnonymous'], auth.devAllowAnonymous);
   doc.setIn(['jobs', 'pools'], doc.createNode(jobsPools));
+  doc.setIn(['jobs', 'extensions', 'drizzle'], doc.createNode(jobsDrizzle));
   doc.setIn(['jobs', 'worker_mode'], 'standalone');
   fs.writeFileSync(configPath, doc.toString());
 
@@ -307,7 +311,7 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     run(`bun ${CLI_PATH} subsystem install events`);
     run(`bun ${CLI_PATH} subsystem install jobs`);
     writeBootConfig(tmpDir, paths);
-    log(`wrote non-default openapi / auth / jobs.pools (CFG-1): ${JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG)}`);
+    log(`wrote non-default openapi / auth / jobs.pools (CFG-1) / jobs.extensions.drizzle (GEN-0): ${JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG)}`);
     authorAppPattern(tmpDir, runtime, paths);
     log(`authored app pattern Audited under ${paths.backendSrc}/patterns (mixin under ${paths.modules})`);
   }

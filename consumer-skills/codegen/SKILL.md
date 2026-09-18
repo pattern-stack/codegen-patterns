@@ -161,9 +161,11 @@ codegen skills list
   key; there is no flag to skip validation. Block reference: `docs/CONSUMER-SETUP.md`
   › `codegen.config.yaml`.
 - **Your app never reads `codegen.config.yaml`.** The keys it needs at boot —
-  `openapi.*`, `auth.devAllowAnonymous`, `jobs.pools` — are validated and
-  written into `src/generated/app-config.ts` (`openapiConfig`, `authConfig`,
-  `jobPools`), which `main.ts`, the subsystem barrel and `worker.ts` import.
+  `openapi.*`, `auth.devAllowAnonymous`, `jobs.pools`, the worker's
+  `jobs.backend` / `jobs.extensions.*` — are validated and written into
+  `src/generated/app-config.ts` (`openapiConfig`, `authConfig`, `jobPools`,
+  `jobWorkerOptions`), which `main.ts`, the subsystem barrel and `worker.ts`
+  import. `worker.ts` holds no config value — never edit options into it.
   After editing one, regenerate (`codegen entity new --all` or any
   `codegen subsystem install`); a bad value fails there, naming the key.
 - **YAML is `snake_case`; generated TS properties are `camelCase`.** The

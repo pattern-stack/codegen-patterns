@@ -583,14 +583,17 @@ async function main(): Promise<number> {
     if (exitCode === 0) {
       log('booting AppModule (NestFactory DI resolution gate)');
       // CFG-1: the custom layout declares non-default `jobs.pools`; the booted
-      // app's JOB_POOL_CONFIG must carry them.
+      // app's JOB_POOL_CONFIG must carry them. GEN-0: and the
+      // `jobs.extensions.drizzle` set after install, via JOBS_LISTEN_NOTIFY.
       const boot = runArgv(
         [
           'bun',
           path.join(import.meta.dir, 'verify-boot.ts'),
           result.projectDir,
           `${P.backendSrc}/app.module.ts`,
-          ...(layoutArg === 'custom' ? ['--expect-pools', JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG.jobsPools)] : []),
+          ...(layoutArg === 'custom'
+            ? ['--expect-pools', JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG.jobsPools), '--expect-listen-notify']
+            : []),
         ],
         result.projectDir,
       );
@@ -602,6 +605,36 @@ async function main(): Promise<number> {
       } else {
         for (const line of boot.out.trim().split('\n')) log(line);
         log('boot OK (AppModule DI graph resolves)');
+      }
+    }
+
+    // 10b. GEN-0 (#652) — the standalone worker.ts was emitted (emit-once) by
+    // `subsystem install jobs` BEFORE the custom layout set
+    // `jobs.extensions.drizzle`; after regeneration its resolved
+    // `JobWorkerModule` options must carry the new value.
+    if (exitCode === 0 && layoutArg === 'custom') {
+      log('loading worker.ts (GEN-0: the worker options follow the config)');
+      const { jobsDrizzle, jobsPools } = CUSTOM_LAYOUT_BOOT_CONFIG;
+      const worker = runArgv(
+        [
+          'bun',
+          path.join(import.meta.dir, 'verify-worker.ts'),
+          result.projectDir,
+          `${P.backendSrc}/worker.ts`,
+          JSON.stringify({
+            drizzle: { listenNotify: jobsDrizzle.listen_notify, pollIntervalMs: jobsDrizzle.poll_interval_ms },
+            pools: jobsPools,
+          }),
+        ],
+        result.projectDir,
+      );
+      if (worker.code !== 0) {
+        console.error(worker.out);
+        console.error(worker.err);
+        logError('worker.ts does not carry the regenerated jobs options');
+        exitCode = 1;
+      } else {
+        log(worker.out.trim());
       }
     }
 
