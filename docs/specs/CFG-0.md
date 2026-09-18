@@ -106,7 +106,7 @@ reader and from every writer; the schema then rejects it.
 | `paths.events_dir` | yes | `events-path.ts` |
 | `paths.jobs_dir` | yes | `jobs-path.ts` |
 | `paths.providers` | yes | `entity.ts`, `emitters/frontend/load-context.ts` |
-| `paths.subsystems` | yes | `subsystems-path.ts`, `subsystem-detect.ts`, `events.ts`, `context.ts` |
+| `paths.subsystems` | yes | `subsystems-path.ts`, `subsystem-detect.ts`, `events.ts`, `context.ts` — *deleted 2026-09-18 by PATH-1 (#645, `docs/specs/PATH-1.md`): the runtime root is always `<backend_src>/shared/subsystems`* |
 | `paths.modules_dir` | yes | `subsystem-detect.ts`, `auth-integrations-scaffold-locals.ts` |
 | `paths.orchestration_src` | yes | `paths.mjs`, `entity.ts`, `orchestration.ts` |
 | `paths.generated` | yes (default `src/generated`) | `paths.mjs`, `barrel-generator.ts`, `project.ts` |

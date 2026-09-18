@@ -314,7 +314,14 @@ export default {
     // ======================================================================
     // The table export and module folder of an endpoint are its `plural:` and
     // `context:`, read through the same function its own emission uses — never
-    // `pluralize(name)` here. `architecture: clean` has no `context:` folders.
+    // `pluralize(name)` here.
+    //
+    // `architecture: clean` has no module tree and no `context:` folders — its
+    // layout is `locations:`, and `paths.modules_dir` never feeds it. Its
+    // junction and endpoints are siblings under one layer folder
+    // (`application/<plural>`), so only the sibling-relative form of the
+    // imports below matters: `.` is that neutral common root.
+    const namingRoot = architecture === "clean" ? "." : modulesDir;
     const entityLookup = projectEntityLookup(cwd);
     const endpointNaming = (endpoint) => {
       const block = entityLookup(endpoint);
@@ -326,7 +333,7 @@ export default {
       }
       return entityModuleNaming(
         architecture === "clean" ? { ...block, context: undefined } : block,
-        modulesDir,
+        namingRoot,
       );
     };
     const leftNaming = endpointNaming(leftEntity);
@@ -339,7 +346,7 @@ export default {
     const rightTable = rightEntityPlural; // e.g. 'contacts'
 
     // The junction's own folder is flat (a junction has no `context:`).
-    const junctionModuleDir = `${modulesDir}/${entityNamePlural}`;
+    const junctionModuleDir = `${namingRoot}/${entityNamePlural}`;
 
     // ======================================================================
     // CGP-60 — parent-side paths + fan-out locals
