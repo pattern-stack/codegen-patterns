@@ -287,7 +287,7 @@ them.
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | **exit 0** (baseline byte-identical) |
-| `just test-all` | **exit 0** — unit **3297 pass / 0 fail** · baseline · smoke · smoke-subsystems · smoke-relationship · smoke-junction (×2) · **smoke-capability (vendored + package)**, with the library capabilities, the type-level role checks, 4 negative gates plus the library-name refusal per leg, and the #624 expectation unchanged · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
+| `just test-all` | **exit 0** — unit **3303 pass / 0 fail** · baseline · smoke · smoke-subsystems · smoke-relationship · smoke-junction (×2) · **smoke-capability (vendored + package)**, with the library capabilities, the type-level role checks, 4 negative gates plus the library-name refusal per leg, public-emission assertions anchored, and the #624 expectation unchanged · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
 | `just test-integration` | **exit 0** — **74 pass** · 2 skip (pre-existing `test.skip` in `bridge-e2e.test.ts`) · 0 fail; the 10 new CAP-3 cases are included |
 | `just test-post-publish` | **exit 0** — the tarball ships `with-actor.ts` / `with-communication.ts` and the consumer workflow compiles from it |
 | `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, still exactly **118**; untouched |
