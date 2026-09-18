@@ -89,11 +89,12 @@ Precedence, all of it inherited from the existing path rather than restated:
 | Property | Source |
 |---|---|
 | FK column name | `column:` → else `<role>_<target>_id` |
-| `notNull` | the FK field's `required:` when the author also declares it in `fields:`, else the role's `nullable:`, else nullable |
+| `notNull` | the role's `nullable:` when set (it becomes the derived relationship's `nullable:`), else the FK field's `required:` / `nullable:` when the author also declares it in `fields:`, else nullable — exactly `processBelongsTo`'s precedence for a declared `belongs_to` (explicit relationship `nullable:` → field → default), not a second rule |
 | index | the FK field's `index:` when declared in `fields:`, else **`true`** (the role default) |
 | `on_delete` | the role's `on_delete:`, default `restrict` (ADR-021) |
 
-Declaring the FK column in `fields:` as well is the existing escape hatch for `required` / `unique` / `index` — it
+Declaring the FK column in `fields:` as well is the existing escape hatch for `required` / `unique` / `index` (a
+role's own `nullable:` still wins over the field's `required:`, as a relationship's does) — it
 already does not double-emit, because `processBelongsTo`'s FK names are filtered out of `processedFields`.
 
 ### 2. The relation key is the **role name**, not the target
@@ -258,9 +259,14 @@ target-keyed derivation could not express when two roles share a target.
 
 3. **The CLI process never loaded app patterns.** The hygen subprocess loads them (`ensurePatternsRegistryLoaded`);
    the CLI did not, so the new roles pre-flight could not see an app-declared `Actor`, and — pre-existing since
-   ADR-031 — `entity validate` reported every app pattern as `pattern_unknown`. Both now load app patterns first,
-   through one `resolvePatternGlobs` (moved from `orchestration.ts`'s privates to `src/cli/shared/pattern-globs.ts`;
-   `entity.ts` had an inline copy).
+   ADR-031 — `entity validate` reported every app pattern as `pattern_unknown`. Every CLI path that runs those validators now loads app
+   patterns first through one `loadAppPatternsForCli(ctx)` (`src/cli/shared/pattern-globs.ts`, built on
+   `resolvePatternGlobs`, which moved there from `orchestration.ts`'s privates; `entity.ts` had an inline copy):
+   `entity new`'s pre-flight, `entity validate`, and — added in review — `project inspect` (all three analysis
+   kinds + `--kind manifest`) and `project graph`, which had been given `junctionsDir` but not the patterns, so an
+   app-declared `Actor` produced a spurious `role_target_not_actor`. The capability smoke now runs
+   `project inspect --kind analyze` over the fixture in both legs and requires zero errors; it was verified to fail
+   without the fix.
 
 4. **A generation-time pre-flight was needed**, which the design's §5 table did not have. Without it, a role whose
    target is not an `Actor` generates cleanly and is only reported by `entity validate`. `validateRolesForGeneration`
@@ -275,7 +281,9 @@ target-keyed derivation could not express when two roles share a target.
    junction in the default mode. Out of CAP-2's scope, so the package leg of `just test-smoke-capability` carries a
    **named single-purpose expectation** (`applyIssue624Expectation`: the two junction files, the five TS2307
    modules, and the TS4112/TS2339 they cause — asserted present *and* sole), listed in CLAUDE.md › Known-red gates.
-   It fails the moment #624 is fixed. The first attempt — skip `junction new` in the package leg — does not work:
+   It fails the moment #624 is fixed. After review it pins **every** one of the 16 diagnostics by file, code and
+   the symbol the message names (missing module / class / member), with exact counts, compared as a multiset in both
+   directions — so a new TS4112 or TS2339 in those files fails the smoke too, instead of riding along. The first attempt — skip `junction new` in the package leg — does not work:
    the barrel generator references every junction YAML it finds, so the barrels then import files that do not
    exist.
 
@@ -290,7 +298,19 @@ target-keyed derivation could not express when two roles share a target.
 9. **`src/roles/derive.ts` ships** — the CAP-1 manifest-coverage test failed until it was added to `files`, exactly
    as designed.
 
-10. **Not changed, noted:** `src/schema/generate-json-schema.ts` restates the entity schema by hand and has not
+10. **The design table had `notNull` precedence backwards** (field `required:` over the role's `nullable:`). The
+    code does the reverse because the role's `nullable:` lands on the derived relationship, and `processBelongsTo`
+    gives an explicit relationship `nullable:` priority over the field — for declared relationships too. Keeping that
+    single precedence is the I1 answer; the table was corrected (review item) and the case is pinned in
+    `derive.test.ts` + the prompt-extension test.
+
+11. **`ParsedRole` became a discriminated union** (review): `ParsedOneRole` always has `foreignKey`,
+    `ParsedManyRole` always has `via`. That removed the one `as string` cast in the validator and gives CAP-3 a type
+    it can narrow on. `validate-roles.ts` now uses `declaredPatternNames` instead of two inline copies (which
+    disagreed with it for `patterns: []`), and `validateRolesForGeneration` has its own unit tests (target
+    filtering, pairing + project merge, the junction list being authoritative).
+
+12. **Not changed, noted:** `src/schema/generate-json-schema.ts` restates the entity schema by hand and has not
     tracked it since the repo reorg (`context`, `sync`, `api` are absent too); `roles` is not added there. And
     `entity new`'s default `--continue-on-error` mode counts invalid YAMLs as failed without printing why (#627);
     the roles pre-flight prints unconditionally and does not inherit that.
@@ -333,8 +353,9 @@ Output from the run made **after the last edit** (charter I9).
 `cardinality: many` takes `via` (required) and nothing else. `.strict()` throughout.
 
 **Where a role lives after parsing.**
-- `ParsedEntity.roles: Map<string, ParsedRole>` — the declaration (`target`, `cardinality`, `column`, `via`,
-  `nullable`, `onDelete`) plus `foreignKey` for `one` roles.
+- `ParsedEntity.roles: Map<string, ParsedRole>` — the declaration, as a union discriminated on `cardinality`:
+  `ParsedOneRole` (`target`, `column?`, `nullable?`, `onDelete?`, and always `foreignKey`) or `ParsedManyRole`
+  (`target`, always `via`).
 - `ParsedEntity.relationships` — every `one` role **also** appears here as a `belongs_to` **keyed by the role name**,
   with `role: '<name>'` set. Anything that builds edges from `relationships` gets one-roles for free; anything that
   also reads `roles` must not count them twice.
@@ -359,8 +380,8 @@ those. And the fixture's spine is `Activity`: `[Integrated, Activity, Communicat
 **Junctions.** `via:` is validated against `junctions/` (`junctionsDirFor(cwd)`), so junction YAML must exist before
 `entity new`. Junction *emission* in package mode is broken (#624).
 
-**CLI behaviour change.** `entity new` and `entity validate` now load app patterns (the `patterns:` globs) in the CLI
-process before validating. A malformed app pattern file is now a printed warning in `entity new` too.
+**CLI behaviour change.** `entity new`, `entity validate`, `project inspect` and `project graph` now load app
+patterns (the `patterns:` globs) in the CLI process before validating, through `loadAppPatternsForCli`. A malformed app pattern file is now a printed warning in `entity new` too.
 
 ## Open questions
 

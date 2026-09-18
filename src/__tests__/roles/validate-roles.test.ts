@@ -16,7 +16,7 @@ import {
 	registerLibraryPattern,
 } from '../../patterns/registry.ts';
 import { validatePatternComposition } from '../../patterns/validate-composition.ts';
-import { validateRolesProject } from '../../roles/validate-roles.ts';
+import { validateRolesForGeneration, validateRolesProject } from '../../roles/validate-roles.ts';
 import '../../patterns/index.ts';
 import {
 	ActivityPattern,
@@ -220,5 +220,58 @@ describe('parser — roles reach ParsedEntity', () => {
 		]);
 		expect(loadJunctionSummaries(path.join(dir, 'does-not-exist'))).toEqual([]);
 		fs.rmSync(dir, { recursive: true, force: true });
+	});
+});
+
+describe('validateRolesForGeneration — the entity new pre-flight', () => {
+	const contact = entity('contact', { patterns: ['Actor'] });
+	const note = entity('note');
+
+	test('only the entities being generated are reported, even when others are broken', () => {
+		// `memo` is broken twice over (no Communication; targets a non-actor), but
+		// it is not being generated — only `meeting` is.
+		const meeting = entity('meeting', { patterns: ['Communication'], roles: [host] });
+		const memo = entity('memo', { roles: [{ ...host, target: 'note' }] });
+		const issues = validateRolesForGeneration({
+			targets: [meeting],
+			entities: [meeting, memo, contact, note],
+			junctions: [],
+		});
+		expect(issues).toEqual([]);
+	});
+
+	test('merges the per-entity pairing rule with the project rules for a target', () => {
+		// No Communication (pairing) AND a non-actor target (project).
+		const memo = entity('memo', { roles: [{ ...host, target: 'note' }] });
+		const issues = validateRolesForGeneration({
+			targets: [memo],
+			entities: [memo, note],
+			junctions: [],
+		});
+		expect(issues.map((i) => i.type).sort()).toEqual([
+			'role_target_not_actor',
+			'role_without_communication',
+		]);
+		expect(issues.every((i) => i.entity === 'memo')).toBe(true);
+	});
+
+	test('the junction list it is given is authoritative — an empty one fails a many-role', () => {
+		const meeting = entity('meeting', { patterns: ['Communication'], roles: [attendees] });
+		const issues = validateRolesForGeneration({
+			targets: [meeting],
+			entities: [meeting, contact],
+			junctions: [],
+		});
+		expect(issues.map((i) => i.type)).toEqual(['role_via_unknown']);
+	});
+
+	test('a many-role whose junction is in the list passes', () => {
+		const meeting = entity('meeting', { patterns: ['Communication'], roles: [attendees] });
+		const issues = validateRolesForGeneration({
+			targets: [meeting],
+			entities: [meeting, contact],
+			junctions: [{ name: 'meeting_contact', between: ['meeting', 'contact'] }],
+		});
+		expect(issues).toEqual([]);
 	});
 });

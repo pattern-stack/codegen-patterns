@@ -14,7 +14,7 @@ import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loade
 import { analyzeDomain, validateEntities } from '../../index.js';
 import { junctionsDirFor, loadJunctionSummaries } from '../../parser/load-junctions.js';
 import { validateRolesForGeneration } from '../../roles/validate-roles.js';
-import { resolvePatternGlobs } from '../shared/pattern-globs.js';
+import { loadAppPatternsForCli, resolvePatternGlobs } from '../shared/pattern-globs.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeEntityNew } from '../shared/hygen.js';
@@ -387,8 +387,8 @@ export class EntityNewCommand extends Command {
 		// capability, which an app may define (and must, until the library ships
 		// one). The hygen subprocess loads them for itself; this is the CLI's copy.
 		{
-			const loaded = await loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
-			if (!isJsonMode()) for (const err of loaded.errors) printWarning(err);
+			const errors = await loadAppPatternsForCli(ctx);
+			if (!isJsonMode()) for (const err of errors) printWarning(err);
 		}
 
 		// CAP-2 pre-flight: `roles:` are cross-entity — a role's target is another
@@ -1277,8 +1277,8 @@ export class EntityValidateCommand extends Command {
 		// in the validators below — load them into this process's registry
 		// first, or every app pattern is reported as unknown.
 		{
-			const loaded = await loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
-			if (!isJsonMode()) for (const err of loaded.errors) printWarning(err);
+			const errors = await loadAppPatternsForCli(ctx);
+			if (!isJsonMode()) for (const err of errors) printWarning(err);
 		}
 
 		const quick = validateEntities(targetDir);

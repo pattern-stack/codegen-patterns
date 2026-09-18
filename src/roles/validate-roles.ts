@@ -16,6 +16,7 @@
  */
 
 import type { AnalysisIssue, ParsedEntity } from '../analyzer/types.js';
+import { declaredPatternNames } from '../patterns/compose.js';
 import { isCapabilityPattern } from '../patterns/pattern-definition.js';
 import { getPattern } from '../patterns/registry.js';
 import {
@@ -46,7 +47,7 @@ export interface RolesProjectContext {
 
 /** Does this entity declare a `kind: 'capability'` pattern of this name? */
 function declaresCapability(entity: ParsedEntity, capability: string): boolean {
-	const names = entity.patterns ?? (entity.pattern ? [entity.pattern] : []);
+	const names = declaredPatternNames(entity);
 	if (!names.includes(capability)) return false;
 	const def = getPattern(capability);
 	return def !== undefined && isCapabilityPattern(def);
@@ -140,8 +141,7 @@ export function validateRolesProject(
 
 			if (role.cardinality !== 'many') continue;
 
-			// `via:` is required by the schema, so it is present here.
-			const via = role.via as string;
+			const via = role.via;
 			const candidates = junctionNamesFor(entity.name, role.target);
 			if (!candidates.includes(via)) {
 				issues.push({
@@ -214,7 +214,7 @@ export function validateRolesForGeneration(ctx: {
 	const pairing = ctx.targets.flatMap((e) =>
 		validateRolesCommunicationPairing(
 			e,
-			e.patterns ?? (e.pattern ? [e.pattern] : []),
+			declaredPatternNames(e),
 		),
 	);
 	const project = validateRolesProject({

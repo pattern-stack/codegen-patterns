@@ -367,6 +367,41 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 }
 
 // ---------------------------------------------------------------------------
+// `project inspect` resolves app capabilities (CAP-2 review item 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The analyzer's roles validator resolves `Actor` / `Communication` by name in
+ * the pattern registry. Those are APP patterns in this fixture, so any CLI path
+ * that runs the analyzer without first loading app patterns reports a spurious
+ * `role_target_not_actor` (and `pattern_unknown`). `entity new` / `entity
+ * validate` load them; this pins `project inspect` to doing the same.
+ */
+function assertProjectInspectSeesAppCapabilities(tmpDir: string, mode: Mode): void {
+	const out = path.join(tmpDir, 'inspect.json');
+	const r = spawnSync(
+		'bun',
+		[CLI_PATH, 'project', 'inspect', '--kind', 'analyze', '--format', 'json', '--output', out],
+		{ cwd: tmpDir, encoding: 'utf-8' },
+	);
+	if (!fs.existsSync(out)) {
+		throw new Error(`project inspect wrote no report (exit ${r.status}):\n${r.stdout}${r.stderr}`);
+	}
+	const report = JSON.parse(fs.readFileSync(out, 'utf-8')) as {
+		issues: Array<{ severity: string; type: string; entity?: string; message: string }>;
+	};
+	fs.rmSync(out);
+	const errors = report.issues.filter((i) => i.severity === 'error');
+	if (errors.length > 0 || r.status !== 0) {
+		throw new Error(
+			`[${mode}] project inspect over the capability fixture must report zero errors (exit ${r.status}):\n` +
+				errors.map((e) => `  ${e.type} ${e.entity ?? ''}: ${e.message}`).join('\n'),
+		);
+	}
+	log(`[${mode}] project inspect OK — app capabilities resolved, zero errors`);
+}
+
+// ---------------------------------------------------------------------------
 // #624 — named single-purpose expectation (package leg only)
 // ---------------------------------------------------------------------------
 
@@ -378,53 +413,77 @@ function assertEmission(tmpDir: string, mode: Mode): void {
  * tracked as #624 — it is not fixable inside CAP-2's scope.
  *
  * Per CLAUDE.md › Known-red gates this is a NAMED, single-purpose expectation,
- * not a filter: the exact two files, the exact five missing modules (TS2307),
- * and only the two downstream codes those cause (TS4112 `override` with no
- * base, TS2339 inherited member missing). Asserted PRESENT and SOLE:
+ * not a filter: every one of the 16 diagnostics is enumerated below by file,
+ * code and the symbol it names, with an exact count. Asserted PRESENT and SOLE:
  *
- *   - any diagnostic outside that shape fails the smoke (sole);
- *   - if the five TS2307s stop appearing, the smoke ALSO fails, telling whoever
+ *   - any diagnostic not in the list — including a new TS4112/TS2339 in the
+ *     same two files naming a different symbol — fails the smoke (sole);
+ *   - any listed diagnostic that stops appearing ALSO fails it, telling whoever
  *     fixed #624 to delete this expectation (present).
  */
-const ISSUE_624_FILES = new Set([
-	'src/modules/meeting_contacts/meeting_contact.repository.ts',
-	'src/modules/meeting_contacts/meeting_contact.service.ts',
+const ISSUE_624_REPO = 'src/modules/meeting_contacts/meeting_contact.repository.ts';
+const ISSUE_624_SERVICE = 'src/modules/meeting_contacts/meeting_contact.service.ts';
+
+/**
+ * The exact #624 diagnostic set, keyed `file|code|symbol` → count. The symbol is
+ * what each message names — the missing module (TS2307), the class that cannot
+ * `override` with no base (TS4112), the inherited member that is absent
+ * (TS2339). No line numbers (template edits would churn them); no wildcards (a
+ * new TS2339 naming a different member must fail). Compared as a multiset in
+ * both directions: anything extra is a new error, anything missing means #624
+ * moved — both fail the smoke.
+ */
+const ISSUE_624_EXPECTED = new Map<string, number>([
+	// 5 package-owned runtime modules the junction templates hardcode as @shared/*
+	[`${ISSUE_624_REPO}|TS2307|@shared/constants/tokens`, 1],
+	[`${ISSUE_624_REPO}|TS2307|@shared/types/drizzle`, 1],
+	[`${ISSUE_624_REPO}|TS2307|@shared/base-classes/junction-integration-repository`, 2],
+	[`${ISSUE_624_SERVICE}|TS2307|@shared/base-classes/with-analytics`, 1],
+	[`${ISSUE_624_SERVICE}|TS2307|@shared/constants/tokens`, 1],
+	[`${ISSUE_624_SERVICE}|TS2307|@shared/base-classes/base-service`, 1],
+	// …and what an unresolved base class causes downstream
+	[`${ISSUE_624_REPO}|TS4112|MeetingContactRepository`, 1],
+	[`${ISSUE_624_REPO}|TS2339|baseQuery`, 2],
+	[`${ISSUE_624_SERVICE}|TS4112|MeetingContactService`, 3],
+	[`${ISSUE_624_SERVICE}|TS2339|create`, 1],
+	[`${ISSUE_624_SERVICE}|TS2339|delete`, 1],
+	[`${ISSUE_624_SERVICE}|TS2339|update`, 1],
 ]);
-const ISSUE_624_MISSING_MODULES = [
-	'@shared/base-classes/base-service',
-	'@shared/base-classes/junction-integration-repository',
-	'@shared/base-classes/with-analytics',
-	'@shared/constants/tokens',
-	'@shared/types/drizzle',
-];
-const ISSUE_624_DOWNSTREAM_CODES = new Set(['TS4112', 'TS2339']);
+
+/** `file|code|symbol` for one tsc line, or null when it has no recognised shape. */
+function issue624Key(line: string): string | null {
+	const m = /^(.+?)\(\d+,\d+\): error (TS\d+): (.*)$/.exec(line);
+	if (!m) return null;
+	const [, file, code, text] = m;
+	const symbol =
+		code === 'TS2307'
+			? /Cannot find module '([^']+)'/.exec(text!)?.[1]
+			: code === 'TS4112'
+				? /containing class '([^']+)'/.exec(text!)?.[1]
+				: code === 'TS2339'
+					? /Property '([^']+)'/.exec(text!)?.[1]
+					: undefined;
+	return symbol ? `${file}|${code}|${symbol}` : null;
+}
 
 function applyIssue624Expectation(errors: string[]): string[] {
 	const unexpected: string[] = [];
-	const missingSeen = new Set<string>();
+	const remaining = new Map(ISSUE_624_EXPECTED);
 	for (const line of errors) {
-		const m = /^(.+?)\(\d+,\d+\): error (TS\d+): (.*)$/.exec(line);
-		if (!m || !ISSUE_624_FILES.has(m[1]!)) {
+		const key = issue624Key(line);
+		const left = key ? remaining.get(key) ?? 0 : 0;
+		if (key && left > 0) {
+			remaining.set(key, left - 1);
+		} else {
 			unexpected.push(line);
-			continue;
 		}
-		const [, , code, text] = m;
-		if (code === 'TS2307') {
-			const mod = /Cannot find module '([^']+)'/.exec(text!)?.[1];
-			if (mod && ISSUE_624_MISSING_MODULES.includes(mod)) {
-				missingSeen.add(mod);
-				continue;
-			}
-		} else if (ISSUE_624_DOWNSTREAM_CODES.has(code!)) {
-			continue;
-		}
-		unexpected.push(line);
 	}
-	const notSeen = ISSUE_624_MISSING_MODULES.filter((mod) => !missingSeen.has(mod));
-	if (notSeen.length > 0) {
+	const missing = [...remaining].filter(([, n]) => n > 0);
+	if (missing.length > 0) {
 		unexpected.push(
-			`#624 expectation is stale — these expected TS2307s no longer appear: ${notSeen.join(', ')}. ` +
-				`If #624 is fixed, delete applyIssue624Expectation from run-smoke-capability.ts.`,
+			`#624 expectation is stale — expected diagnostics no longer appear: ` +
+				missing.map(([k, n]) => `${k} ×${n}`).join('; ') +
+				`. If #624 is fixed, delete applyIssue624Expectation (and its CLAUDE.md row).`,
 		);
 	}
 	return unexpected;
@@ -519,6 +578,8 @@ async function leg(mode: Mode): Promise<number> {
 
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
 		run(`bun ${CLI_PATH} junction new --all --force`, tmpDir);
+
+		assertProjectInspectSeesAppCapabilities(tmpDir, mode);
 
 		log(`[${mode}] asserting ADR-041 emission shapes`);
 		assertEmission(tmpDir, mode);
