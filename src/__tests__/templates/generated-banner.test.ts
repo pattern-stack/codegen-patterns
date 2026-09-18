@@ -10,9 +10,12 @@
  *   1. The shared helper (`renderGeneratedBanner`) produces the contract
  *      wording, interpolates the source path, and supports the SQL leader.
  *   2. Every `force: true` `.ejs.t` template emits the banner as its first
- *      body line when a `generatedBanner` local is supplied — and degrades to
- *      nothing (no ReferenceError) when it is absent. The single banner line
- *      is `<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>`.
+ *      output line when a `generatedBanner` local is supplied. Outside
+ *      clean-lite-ps the banner line is
+ *      `<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>`
+ *      and degrades to nothing when the local is absent. A clean-lite-ps body
+ *      opens with its architecture guard, then `<%- generatedBanner %>`
+ *      unguarded: a missing banner there is a ReferenceError (#638).
  *
  * The timestamped electric migration is the lone force template intentionally
  * excluded: its filename changes every emit, so it is never overwritten in
@@ -115,14 +118,24 @@ describe('force templates carry the @generated banner', () => {
 
 	const BANNER_LINE =
 		"<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>";
+	const CLP_GUARD_LINE = "<%_ if (typeof clpOutputPaths !== 'undefined') { -%>";
+	const CLP_BANNER_LINE = '<%- generatedBanner %>';
+	const isClp = (rel: string) => rel.startsWith('entity/new/clean-lite-ps/');
+	const bannerLine = (rel: string) => (isClp(rel) ? CLP_BANNER_LINE : BANNER_LINE);
 
-	it.each(templates)('%s — banner is the first body line', (rel) => {
+	it.each(templates)('%s — banner is the first output line', (rel) => {
 		const { body } = frontmatterAndBody(readFileSync(join(TEMPLATES_ROOT, rel), 'utf8'));
+		const lines = body.split('\n');
 
-		// The guarded banner line is the FIRST line of the template body — i.e.
-		// the first thing emitted into the generated file, ahead of any imports
-		// or doc comments. (Single source of truth; not copy-pasted prose.)
-		expect(body.split('\n')[0]).toBe(BANNER_LINE);
+		// The banner is the first thing emitted into the generated file, ahead
+		// of any imports or doc comments. A clean-lite-ps body's guard line emits
+		// nothing (`-%>` slurps its newline), so the banner follows it.
+		if (isClp(rel)) {
+			expect(lines[0]).toBe(CLP_GUARD_LINE);
+			expect(lines[1]).toBe(CLP_BANNER_LINE);
+		} else {
+			expect(lines[0]).toBe(BANNER_LINE);
+		}
 	});
 
 	it.each(templates)('%s — banner line renders to the contract wording', (rel) => {
@@ -135,22 +148,31 @@ describe('force templates carry the @generated banner', () => {
 		// Render just the banner line in isolation (full bodies need richer
 		// locals). With the local supplied it produces the marker line.
 		const rendered = ejs
-			.render(BANNER_LINE, { generatedBanner: banner }, { rmWhitespace: false })
+			.render(bannerLine(rel), { generatedBanner: banner }, { rmWhitespace: false })
 			.trim();
 		expect(rendered).toBe(banner);
 		expect(rendered).toContain(GENERATED_BANNER_MARKER);
 	});
 
-	it.each(templates)('%s — renders without the local (graceful degradation)', (rel) => {
-		const { body } = frontmatterAndBody(readFileSync(join(TEMPLATES_ROOT, rel), 'utf8'));
-		// No `generatedBanner` local: the typeof guard must keep EJS from
-		// throwing a ReferenceError. We only assert the banner line itself does
-		// not crash — full bodies need richer locals, so we render just the
-		// first line in isolation.
-		const firstBodyLine = body
-			.split('\n')
-			.find((l) => l.includes('generatedBanner'))!;
-		expect(() => ejs.render(firstBodyLine, {}, { rmWhitespace: false })).not.toThrow();
-		expect(ejs.render(firstBodyLine, {}, { rmWhitespace: false }).trim()).toBe('');
+	it.each(templates.filter((rel) => !isClp(rel)))(
+		'%s — renders without the local (graceful degradation)',
+		(rel) => {
+			const { body } = frontmatterAndBody(readFileSync(join(TEMPLATES_ROOT, rel), 'utf8'));
+			// No `generatedBanner` local: the typeof guard must keep EJS from
+			// throwing a ReferenceError. We only assert the banner line itself does
+			// not crash — full bodies need richer locals, so we render just the
+			// first line in isolation.
+			const firstBodyLine = body
+				.split('\n')
+				.find((l) => l.includes('generatedBanner'))!;
+			expect(() => ejs.render(firstBodyLine, {}, { rmWhitespace: false })).not.toThrow();
+			expect(ejs.render(firstBodyLine, {}, { rmWhitespace: false }).trim()).toBe('');
+		},
+	);
+
+	it.each(templates.filter(isClp))('%s — a missing banner throws (#638)', (rel) => {
+		expect(() => ejs.render(CLP_BANNER_LINE, {}, { rmWhitespace: false })).toThrow(
+			/generatedBanner is not defined/,
+		);
 	});
 });

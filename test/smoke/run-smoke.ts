@@ -455,7 +455,7 @@ async function main(): Promise<number> {
 		//       `vendorRoot` defaults to `<paths.backend_src>/modules` per fix #5;
 		//       starter sits next to the codegen-emitted integration entity module.
 		//   - examples/auth-integrations/definitions/entities/connection.yaml →
-		//       <paths.entities>/integration.yaml (defaults to definitions/entities/);
+		//       <paths.entities>/connection.yaml (the CLI's entities directory);
 		//   - ConnectionsAuthModule TODO into app.module.ts.
 		run(`${cli(tmpDir)} subsystem install auth-integrations`, tmpDir);
 
@@ -511,9 +511,8 @@ async function main(): Promise<number> {
 				`legacy vendor target ${legacySharedIntegrations} should not exist after auth-integrations install (#303 fix #5)`,
 			);
 		}
-		// Honor the entities_dir set by `project init` (defaults to
-		// `entities/`). Fix #2 reads `paths.entities` → `paths.entities_dir`,
-		// matching `Context.entitiesDir`.
+		// `project init` sets `paths.entities: entities`; the install vendors
+		// into the CLI's entities directory (#634).
 		const connectionYamlPath = path.join(
 			tmpDir,
 			'entities/connection.yaml',

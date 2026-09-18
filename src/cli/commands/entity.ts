@@ -240,6 +240,23 @@ async function hints(ctx: Context): Promise<Hint[]> {
 // EntityNewCommand
 // ---------------------------------------------------------------------------
 
+/** One failed target, as the `--json` payload reports it. */
+interface RejectionEntry {
+	name: string;
+	file: string;
+	message: string;
+	details: string[];
+}
+
+function rejectionEntry(i: { file: string; message: string; details?: string[] }): RejectionEntry {
+	return {
+		name: path.basename(i.file),
+		file: i.file,
+		message: i.message,
+		details: i.details ?? [],
+	};
+}
+
 export class EntityNewCommand extends Command {
 	static paths = [['entity', 'new']];
 	static usage = Command.Usage({
@@ -304,11 +321,15 @@ export class EntityNewCommand extends Command {
 			return 2;
 		}
 
-		// Pre-flight: validate each YAML. Capture the Zod `details` alongside the
-		// short message so `entity new` surfaces the SAME per-issue diagnostics as
-		// `entity validate` — otherwise a failing YAML prints only "Validation
-		// failed for <file>" with no clue which key/level is wrong (the DX miss
-		// that masked Bug 1: `entity.surface` rejected with no actionable detail).
+		// Pre-flight. Three checks can reject a target before hygen runs: the
+		// schema (per file), the EVT-7 `emits:` cross-check against the merged
+		// event registry, and the CAP-2 `roles:` cross-check. The last two are
+		// cross-entity — an emitted event or a role's target lives in another
+		// YAML — so neither the schema nor the one-entity hygen prompt can run
+		// them. Every rejection keeps its per-issue details (the same diagnostics
+		// `entity validate` prints) and is reported in every mode (#627):
+		// `--continue-on-error` decides whether the run stops, never whether the
+		// reason is shown.
 		const validated: Array<{ file: string; name: string }> = [];
 		const invalid: Array<{ file: string; message: string; details?: string[] }> =
 			[];
@@ -321,23 +342,6 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
-		if (invalid.length > 0 && !this.continueOnError) {
-			for (const i of invalid) {
-				printError(`${path.basename(i.file)} — ${i.message}`);
-				for (const detail of i.details ?? []) {
-					printError(`   • ${detail}`);
-				}
-			}
-			if (!isJsonMode()) {
-				return 1;
-			}
-		}
-
-		// EVT-7: pre-flight cross-validate each target's `emits:` block against
-		// the merged event registry (top-level events/*.yaml + entity events:
-		// desugar). Invalid emits are reported and skipped by default; pass
-		// --no-continue-on-error to make the first failure fatal. Warnings are
-		// always surfaced via printWarning + JSON payload and never gate.
 		const entitiesDirForEmits =
 			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
 		const eventsDirForEmits = resolveEventsDir(ctx);
@@ -361,66 +365,67 @@ export class EntityNewCommand extends Command {
 			(i) => i.severity === 'warning',
 		);
 
-		if (emitsErrors.length > 0 && !this.continueOnError) {
-			if (!isJsonMode()) {
-				for (const e of emitsErrors) {
-					printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
-				}
-				return 1;
-			}
+		for (const w of emitsWarnings) {
+			printWarning(w.message);
 		}
-
-		if (!isJsonMode()) {
-			for (const w of emitsWarnings) {
-				printWarning(w.message);
-			}
-			const noEmitsCount = emitsWarnings.filter(
-				(w) => w.type === 'no_emits',
-			).length;
-			if (noEmitsCount > 0) {
-				printInfo(`${noEmitsCount} entities missing emits:`);
-			}
+		const noEmitsCount = emitsWarnings.filter(
+			(w) => w.type === 'no_emits',
+		).length;
+		if (noEmitsCount > 0) {
+			printInfo(`${noEmitsCount} entities missing emits:`);
 		}
 
 		// App patterns must be in THIS process's registry before the roles
 		// pre-flight: a role's target qualifies by declaring an `Actor`
 		// capability, which an app may define (and must, until the library ships
 		// one). The hygen subprocess loads them for itself; this is the CLI's copy.
-		{
-			const errors = await loadAppPatternsForCli(ctx);
-			if (!isJsonMode()) for (const err of errors) printWarning(err);
-		}
+		for (const err of await loadAppPatternsForCli(ctx)) printWarning(err);
 
-		// CAP-2 pre-flight: `roles:` are cross-entity — a role's target is another
-		// YAML, a `many` role's junction a third — so neither the schema nor the
-		// one-entity hygen prompt can check them. Reuses the entity set the emits
-		// pre-flight already loaded. A bad role is a generation-time error (the
-		// ADR-041 §4 posture): the entity is not generated, the reason is printed
-		// in every mode, and the command exits non-zero.
+		// Reuses the entity set the emits pre-flight already loaded. A bad role is
+		// a generation-time error (the ADR-041 §4 posture).
 		const roleErrors = validateRolesForGeneration({
 			targets: emitsTargetEntities,
 			entities: allEntitiesForEmits,
 			junctions: loadJunctionSummaries(junctionsDirFor(ctx.cwd)),
 		});
-		if (roleErrors.length > 0) {
-			const rejected = new Set<string>();
-			for (const e of roleErrors) {
-				if (!isJsonMode()) printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
-				if (e.entity) rejected.add(e.entity);
+
+		// An entity with an `emits:` or `roles:` error is not generated: the
+		// hygen prompt assumes both blocks are valid.
+		for (let i = validated.length - 1; i >= 0; i--) {
+			const v = validated[i]!;
+			const ownEmits = emitsErrors.filter((e) => e.entity === v.name);
+			const ownRoles = roleErrors.filter((e) => e.entity === v.name);
+			if (ownEmits.length === 0 && ownRoles.length === 0) continue;
+			const blocks = [
+				...(ownEmits.length > 0 ? ['emits:'] : []),
+				...(ownRoles.length > 0 ? ['roles:'] : []),
+			];
+			invalid.push({
+				file: v.file,
+				message: `${blocks.join(' and ')} validation failed`,
+				details: [...ownEmits, ...ownRoles].map((e) => e.message),
+			});
+			validated.splice(i, 1);
+		}
+
+		for (const i of invalid) {
+			printError(`${path.basename(i.file)} — ${i.message}`);
+			for (const detail of i.details ?? []) {
+				printError(`   • ${detail}`);
 			}
-			for (let i = validated.length - 1; i >= 0; i--) {
-				const v = validated[i]!;
-				if (!rejected.has(v.name)) continue;
-				invalid.push({
-					file: v.file,
-					message: 'roles: validation failed (see errors above)',
-					details: roleErrors
-						.filter((e) => e.entity === v.name)
-						.map((e) => e.message),
+		}
+
+		if (invalid.length > 0 && !this.continueOnError) {
+			if (isJsonMode()) {
+				printJson({
+					command: 'entity new',
+					stopped: 'pre-flight',
+					totals: { succeeded: 0, failed: invalid.length },
+					succeeded: [],
+					failed: invalid.map(rejectionEntry),
 				});
-				validated.splice(i, 1);
 			}
-			if (!this.continueOnError && !isJsonMode()) return 1;
+			return 1;
 		}
 
 		// Git safety — we don't know specific output paths without running Hygen,
@@ -603,6 +608,7 @@ export class EntityNewCommand extends Command {
 					dryRun: true,
 					entities: validated.map((v) => ({ name: v.name, file: v.file })),
 					totals: { planned: validated.length, invalid: invalid.length },
+					invalid: invalid.map(rejectionEntry),
 					barrels: {
 						modules: barrelPlan.modulesBarrel,
 						schema: barrelPlan.schemaBarrel,
@@ -667,11 +673,6 @@ export class EntityNewCommand extends Command {
 				for (const v of validated) {
 					console.log(`  ${theme.muted(icons.arrow)} ${v.name}  ${theme.muted(v.file)}`);
 				}
-				if (invalid.length > 0) {
-					for (const i of invalid) {
-						printWarning(`${path.basename(i.file)} — ${i.message}`);
-					}
-				}
 				console.log('');
 				printInfo(`Barrels (${barrelPlan.entityCount} entities):`);
 				console.log(`  ${theme.muted(icons.arrow)} ${barrelPlan.modulesBarrel}`);
@@ -683,14 +684,13 @@ export class EntityNewCommand extends Command {
 					`event codegen (${eventCodegenPlan.eventCount} events) → ${eventCodegenPlan.outputDir}`,
 				);
 			}
-			return invalid.length > 0 && !this.continueOnError ? 1 : 0;
+			// A dry run predicts the real run's exit code: rejected entities fail it.
+			return invalid.length > 0 ? 1 : 0;
 		}
 
 		// Invoke Hygen for each validated target.
 		const succeeded: string[] = [];
-		const failed: Array<{ name: string; file: string; message: string }> = [
-			...invalid.map((i) => ({ name: path.basename(i.file), file: i.file, message: i.message })),
-		];
+		const failed: RejectionEntry[] = invalid.map(rejectionEntry);
 		for (const v of validated) {
 			if (!isJsonMode()) {
 				printInfo(`generating ${v.name}`);
@@ -704,6 +704,7 @@ export class EntityNewCommand extends Command {
 					name: v.name,
 					file: v.file,
 					message: res.stderr ?? 'Hygen invocation failed',
+					details: [],
 				});
 				if (!isJsonMode()) printError(`${v.name} — ${res.stderr ?? 'failed'}`);
 				if (!this.continueOnError) break;

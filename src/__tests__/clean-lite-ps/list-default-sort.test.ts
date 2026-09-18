@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -37,7 +38,7 @@ function extractBody(source: string): string {
 
 function render(relPath: string, definition: unknown): string {
   const body = extractBody(readFileSync(resolve(TEMPLATE_ROOT, relPath), 'utf8'));
-  const locals = buildCleanLitePsLocals(definition, {});
+  const locals = buildCleanLitePsLocals(definition, withEntities());
   return ejs.render(body, locals, { rmWhitespace: false });
 }
 

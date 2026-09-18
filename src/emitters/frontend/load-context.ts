@@ -74,7 +74,7 @@ export interface FrontendConfigInput {
 	generate?: { architecture?: 'clean' | 'clean-lite-ps' } & Record<string, unknown>;
 	frontend?: unknown;
 	locations?: Record<string, { path?: string; import?: string } | undefined>;
-	paths?: { entities_dir?: string; providers?: string } & Record<string, unknown>;
+	paths?: { providers?: string } & Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -187,19 +187,18 @@ export function loadProviderCatalogInputs(
  * @param cwd     Project root (the CLI's `--cwd`, NOT `process.cwd()`).
  * @param config  The loaded `codegen.config.yaml` (frontend block fully
  *                defaulted by the config loader).
- * @param opts.entitiesDir  Override the entities directory (default
- *                `<cwd>/<paths.entities_dir | 'entities'>`).
+ * @param opts.entitiesDir  The entities directory, already resolved by the
+ *                caller (the CLI's `ctx.entitiesDir`, `src/config/entities-dir.ts`).
+ *                Required: the emitter has no rule of its own (#634).
  * @returns `{ ctx, outDir }` ready for `emitFrontendSet`, or `{ skip }` when
  *          there are no entities to emit.
  */
 export function loadFrontendEmitContext(
 	cwd: string,
 	config: FrontendConfigInput,
-	opts: { entitiesDir?: string } = {},
+	opts: { entitiesDir: string },
 ): LoadFrontendEmitContextResult {
-	const entitiesDir =
-		opts.entitiesDir ??
-		path.resolve(cwd, config.paths?.entities_dir ?? 'entities');
+	const { entitiesDir } = opts;
 
 	const { registry } = loadEntityRegistry(entitiesDir);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);

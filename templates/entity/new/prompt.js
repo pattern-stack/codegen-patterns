@@ -28,8 +28,7 @@ import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
 import {
   loadRuntimeMode,
-  subsystemsImport,
-  runtimeImport,
+  runtimeImportLocals,
   rewriteSharedImport,
 } from "../../../src/config/runtime-mode.mjs";
 
@@ -1401,54 +1400,9 @@ export default {
     const deleteEventType =
       emitsEvents.find((e) => e.type === `${name}_deleted`) ?? null;
 
-    // Import paths for the TypedEventBus token + DrizzleClient token/type.
-    // Mode-resolved (ADR-037): in `vendored` mode the consumer app wires
-    // `@shared/*` aliases to the vendored runtime under `src/shared/…`
-    // (subsystem barrel at `<subsystems_root>/events/index.ts`); in `package`
-    // mode they resolve to `@pattern-stack/codegen/subsystems` +
-    // `@pattern-stack/codegen/runtime/…`.
-    const eventsTokenImport = subsystemsImport(runtimeMode, 'events');
-    const typedEventBusImport = subsystemsImport(runtimeMode, 'events');
-    const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
-    const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
-    // ADR-043 §5: use-cases read the acting principal from the ambient
-    // RequesterContext (ALS), never from self-asserted request headers.
-    const tenantContextImport = runtimeImport(runtimeMode, 'base-classes/tenant-context');
-    // Pagination contract (pagination-by-default). ASYMMETRIC by mode:
-    //   - package  → `@pattern-stack/codegen/runtime/http/pagination` (Page<T>,
-    //     ListQuerySchema, resolveListQuery, buildPage, cursor codec) — the
-    //     package-published runtime; swe-brain consumes this green.
-    //   - vendored → `@shared/http/page` (vendored to `src/shared/http/page.ts`
-    //     by project init's VENDORED_RUNTIME_FILES). DISTINCT from the consumer's
-    //     OPTIONAL `@shared/http/pagination` search contract ({items,total,limit,
-    //     offset}) — vendoring the Page<T> envelope to `/pagination` would
-    //     clobber it, so the list envelope lives at `/page`.
-    // Unlike most @shared/http/* files (which the package never owns), THIS one
-    // IS package-published — the list endpoint is unconditional, so its contract
-    // must ship with codegen (package mode) and be vendored (vendored mode).
-    const paginationImport =
-      runtimeMode === 'vendored'
-        ? '@shared/http/page'
-        : runtimeImport(runtimeMode, 'http/pagination');
-    // Integration subsystem barrel (ADR-033.1 inline-sync `integration-source`
-    // module — emitted only for entities with an inline `detection:` block).
-    const integrationSubsystemImport = subsystemsImport(runtimeMode, 'integration');
-
-    // Remaining runtime-owned import specifiers the clean-lite-ps templates emit
-    // (ADR-037 — mode-resolved). Consumer-app files the package never owns
-    // (`@shared/database/*`, `@shared/http/*`) stay `@shared/*` in both modes and
-    // are NOT in this set.
-    const withAnalyticsImport = runtimeImport(runtimeMode, 'base-classes/with-analytics');
-    const integrationUpsertConfigImport = runtimeImport(runtimeMode, 'base-classes/integration-upsert-config');
-    const baseRepositoryImport = runtimeImport(runtimeMode, 'base-classes/base-repository');
-    const eavHelpersImport = runtimeImport(runtimeMode, 'eav-helpers');
-    const zodValidationPipeImport = runtimeImport(runtimeMode, 'pipes/zod-validation.pipe');
-    // OpenAPI barrel: the runtime source lives at `runtime/shared/openapi`, but
-    // the VENDORED target drops the leading `shared/` (vendored alias is
-    // `@shared/openapi`, NOT `@shared/shared/openapi`). Package mode keeps the
-    // full runtime relpath. So this one is asymmetric — special-case it.
-    const openApiImport =
-      runtimeMode === 'vendored' ? '@shared/openapi' : runtimeImport(runtimeMode, 'shared/openapi');
+    // Mode-resolved runtime import specifiers (ADR-037), one table shared with
+    // the unit tests that render clean-lite-ps bodies (`runtimeImportLocals`).
+    const runtimeImportSpecifiers = runtimeImportLocals(runtimeMode);
 
     // @generated banner — single line stamped at the top of every
     // force-overwritten output. `yamlPath` is the consumer-relative source
@@ -1655,28 +1609,18 @@ export default {
       createEventType,
       updateEventType,
       deleteEventType,
-      eventsTokenImport,
-      typedEventBusImport,
-      drizzleTokenImport,
-      drizzleTypeImport,
-      tenantContextImport,
-      paginationImport,
-      integrationSubsystemImport,
-      withAnalyticsImport,
-      integrationUpsertConfigImport,
-      baseRepositoryImport,
-      eavHelpersImport,
-      zodValidationPipeImport,
-      openApiImport,
+      ...runtimeImportSpecifiers,
     };
 
     // ========================================================================
     // Clean-Lite-PS template locals
     //
-    // Populated only when `generate.architecture === 'clean-lite-ps'`.
-    // When the architecture is 'clean', stub locals are injected so CLP
-    // template bodies can render without crashing; their `to:` guards resolve
-    // to null which causes Hygen to skip file writing.
+    // Populated only when `generate.architecture === 'clean-lite-ps'`. Under
+    // 'clean', hygen still walks the CLP template bodies (`skip_if` suppresses
+    // the write, not the render); each body is wrapped in one
+    // `typeof clpOutputPaths` guard, so it renders empty without any CLP
+    // locals. Inside the guard every local is referenced unguarded, and a
+    // missing one throws (#638).
     // ========================================================================
     // EVT-7 note: hasEmits / emitsEvents / *EventType / *Import locals are
     // already in `locals` above and are architecture-neutral — CLP templates
@@ -1698,64 +1642,6 @@ export default {
         locals,
         buildCleanLitePsLocals(definition, { ...locals, entityLookup: projectEntityLookup(process.cwd()) }),
       );
-    } else {
-      // Inject safe stub locals so CLP template bodies can render without crashing.
-      // The to: guard resolves to "null" which causes Hygen to skip file writing.
-      const _n = definition.entity?.name || '';
-      const _p = definition.entity?.plural || _n + 's';
-      Object.assign(locals, {
-        clpOutputPaths: undefined,
-        clpImports: undefined,
-        // ADR-043 §6: stub so CLP template bodies referencing clpApiEnabled
-        // render without crashing on the clean-architecture path (the to: guard
-        // still skips the actual write).
-        clpApiEnabled: true,
-        entityName: _n,
-        entityNamePlural: _p,
-        entityNamePascal: _n,
-        entityNamePluralPascal: _p,
-        classNames: {},
-        clpDrizzleImports: [],
-        clpProcessedFields: [],
-        clpCreateDtoFields: [],
-        clpOutputDtoFields: [],
-        clpBelongsTo: [],
-        clpBelongsToFkFields: [],
-        repositoryBaseClass: '',
-        serviceBaseClass: '',
-        repositoryBaseImport: '',
-        serviceBaseImport: '',
-        repositoryInheritedMethods: [],
-        serviceInheritedMethods: [],
-        // Generation toggles — needed so CLP template bodies render without crashing
-        // when architecture is 'clean'. The to:/skip_if: guards prevent file writes.
-        generateWrites: true,
-        eavEnabled: false,
-        eavValueTable: false,
-        eavDefinitionEntity: null,
-        eavDefinitionEntityPlural: null,
-        eavDefinitionPascal: null,
-        eavDefinitionPluralPascal: null,
-        hasSearchQuery: false,
-        searchQuery: null,
-        hasExternalIdTracking: false,
-        // PATTERN-5 stubs — defined even for non-CLP architectures so the
-        // CLP template bodies render without `ReferenceError`s. The
-        // to:/skip_if: guards prevent file writes, but EJS still walks the
-        // body on every template.
-        patternName: 'Base',
-        hasPatternConfig: false,
-        patternConfig: null,
-        renderPatternConfigLiteral: () => '{}',
-        // ADR-041 capability-composition stubs — same reason as the PATTERN-5
-        // stubs above: the CLP template bodies are walked on every architecture.
-        capabilityMixins: [],
-        capabilityForwarders: [],
-        composedBaseClass: null,
-        composedBaseImport: null,
-        repositoryExtendsClause: '',
-        composedBaseExtendsClause: null,
-      });
     }
 
     return locals;

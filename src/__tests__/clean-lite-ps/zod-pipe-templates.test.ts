@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -59,7 +60,7 @@ const baseEntity = {
 
 describe('clean-lite-ps zod validation pipe — controller', () => {
   it('imports ZodValidationPipe + value-level schemas on write routes', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain("import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';");
@@ -78,7 +79,7 @@ describe('clean-lite-ps zod validation pipe — controller', () => {
   });
 
   it('wraps @Body with ZodValidationPipe(schema) on POST + PATCH', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain('@Body(new ZodValidationPipe(CreateContactSchema)) dto: CreateContactDto');
@@ -92,7 +93,7 @@ describe('clean-lite-ps zod validation pipe — controller', () => {
 
   it('imports ZodValidationPipe even when generate.writes is false (list-query validation)', () => {
     const def = { ...baseEntity, generate: { writes: false } };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // pagination-by-default makes ZodValidationPipe unconditional: the @Get()
