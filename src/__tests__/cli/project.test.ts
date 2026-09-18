@@ -16,7 +16,10 @@ import {
 	mergeFrontendDeps,
 } from '../../cli/shared/init-scaffold.js';
 import { loadContext } from '../../cli/shared/context.js';
-import { FRONTEND_EMITTED_DEPS } from '../../emitters/frontend/deps.js';
+import {
+	FRONTEND_DEP_OVERRIDES,
+	FRONTEND_EMITTED_DEPS,
+} from '../../emitters/frontend/deps.js';
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -189,6 +192,90 @@ describe('mergeFrontendDeps', () => {
 		const res = mergeFrontendDeps('{ not json');
 		expect(res.parseError).toBeDefined();
 		expect(res.unchanged).toBe(true);
+	});
+
+	// ── FE-0 (#620): the overrides half of the contract ──────────────────────
+
+	test('adds the @tanstack/db override — without it the emitted collections do not compile', () => {
+		const res = mergeFrontendDeps(JSON.stringify({ dependencies: {} }));
+		const parsed = JSON.parse(res.content);
+		for (const [pkg, spec] of Object.entries(FRONTEND_DEP_OVERRIDES)) {
+			expect(parsed.overrides[pkg]).toBe(spec);
+		}
+		expect(res.added).toContain('overrides.@tanstack/db');
+	});
+
+	test('preserves an existing override — only adds missing keys', () => {
+		const raw = JSON.stringify({
+			dependencies: {},
+			overrides: { '@tanstack/db': '0.5.11' },
+		});
+		const res = mergeFrontendDeps(raw);
+		// the consumer's pin wins, exactly as it does for a dependency range
+		expect(JSON.parse(res.content).overrides['@tanstack/db']).toBe('0.5.11');
+		expect(res.added).not.toContain('overrides.@tanstack/db');
+	});
+
+	test('adds only the overrides when every dependency is already present', () => {
+		const raw = JSON.stringify({ dependencies: { ...FRONTEND_EMITTED_DEPS } });
+		const res = mergeFrontendDeps(raw);
+		expect(res.unchanged).toBe(false);
+		expect(res.added).toEqual(['overrides.@tanstack/db']);
+	});
+
+	test('the override target is a direct dependency, so `$name` resolves', () => {
+		// `overrides: { X: '$X' }` means "resolve every copy of X to the version
+		// the DIRECT dependency X declares". If X were not a direct dependency the
+		// reference would not resolve and the four-copy tree would come back.
+		for (const pkg of Object.keys(FRONTEND_DEP_OVERRIDES)) {
+			const spec = (FRONTEND_DEP_OVERRIDES as Record<string, string>)[pkg];
+			if (!spec?.startsWith('$')) continue;
+			expect(Object.keys(FRONTEND_EMITTED_DEPS)).toContain(spec.slice(1));
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// FE-0 (#620) — the version-pairing contract's own invariants
+// ---------------------------------------------------------------------------
+
+describe('FRONTEND_EMITTED_DEPS', () => {
+	/**
+	 * `@tanstack/react-db`, `@tanstack/electric-db-collection` and
+	 * `@tanstack/query-db-collection` each declare `@tanstack/db` as an EXACT
+	 * dependency and release in lockstep. A caret on any of them lets the tree
+	 * split into several `@tanstack/db` copies — several type identities — and
+	 * the emitted collections stop compiling (docs/specs/FE-0.md).
+	 *
+	 * `just test-smoke-frontend` proves the consequence against a real install;
+	 * this fails in milliseconds and says why.
+	 */
+	const LOCKSTEP = [
+		'@tanstack/db',
+		'@tanstack/react-db',
+		'@tanstack/electric-db-collection',
+		'@tanstack/query-db-collection',
+	] as const;
+
+	test('every lockstep package is pinned exactly — no range prefix', () => {
+		for (const pkg of LOCKSTEP) {
+			const range = (FRONTEND_EMITTED_DEPS as Record<string, string>)[pkg];
+			expect(range, `${pkg} is missing from the pairing`).toBeDefined();
+			expect(range, `${pkg} must be an exact pin, got '${range}'`).toMatch(
+				/^\d+\.\d+\.\d+$/,
+			);
+		}
+	});
+
+	test('declares @electric-sql/client, which the emitted collections import', () => {
+		// `snakeCamelMapper`. It resolved only by hoisting before FE-0.
+		expect(FRONTEND_EMITTED_DEPS).toHaveProperty('@electric-sql/client');
+	});
+
+	test('stays on the frontend-patterns alpha line — 1.0.0 ships no sync layer', () => {
+		// The published 1.0.0 has no dist/sync (no createStore / createEntityHooks)
+		// and is not dist-tagged `latest` — docs/specs/FE-REL.md §2.1.
+		expect(FRONTEND_EMITTED_DEPS['@pattern-stack/frontend-patterns']).toContain('alpha');
 	});
 });
 

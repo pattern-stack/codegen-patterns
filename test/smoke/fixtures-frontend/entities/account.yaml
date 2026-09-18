@@ -1,0 +1,26 @@
+# Frontend smoke fixture — the `sync: electric` branch.
+#
+# Drives `electricCollectionOptions(...)`, which is where FE-0's dual-copy
+# failure landed (`gen/collections/*.ts` TS2769). Also the target of contact's
+# `belongs_to`, so the whole-set store (resolvers, lookups, <Class>Refs) emits.
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  folder_structure: nested
+  sync: electric
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  status:
+    type: enum
+    choices: [active, churned]
+    required: true
+    default: active
+
+behaviors:
+  - timestamps
