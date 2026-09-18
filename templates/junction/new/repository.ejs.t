@@ -5,10 +5,10 @@ force: true
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { DRIZZLE } from '@shared/constants/tokens';
-import type { DrizzleClient } from '@shared/types/drizzle';
-import { JunctionIntegrationRepository } from '@shared/base-classes/junction-integration-repository';
-import type { JunctionIntegrationConfig } from '@shared/base-classes/junction-integration-repository';
+import { DRIZZLE } from '<%= drizzleTokenImport %>';
+import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+import { JunctionIntegrationRepository } from '<%= junctionIntegrationRepositoryImport %>';
+import type { JunctionIntegrationConfig } from '<%= junctionIntegrationRepositoryImport %>';
 <%_ integrationParentImports.forEach((imp) => { _%>
 import { <%= imp.table %> } from '<%= imp.importPath %>';
 <%_ }); _%>

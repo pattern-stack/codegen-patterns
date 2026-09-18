@@ -10,6 +10,10 @@
  * Each scenario × both architectures (clean-lite-ps by default; pass
  * --architecture clean for the second pass) = four total code paths.
  *
+ * `--runtime vendored|package` (default vendored) picks the ADR-037 runtime
+ * mode. `just test-smoke-junction` runs both, so the `package` default — whose
+ * imports no junction gate compiled before #624 — cannot regress.
+ *
  * Bootstrap (tmp project, deps, codegen run) is delegated to
  * `test/junction/_helpers.ts` so snapshot tests can share the same path.
  * This file owns the compile + grep gate.
@@ -24,8 +28,10 @@ import {
   bootstrapJunctionProject,
   SCENARIO_META,
   VALID_ARCHITECTURES,
+  VALID_RUNTIMES,
   VALID_SCENARIOS,
   type Architecture,
+  type RuntimeMode,
   type Scenario,
 } from '../junction/_helpers';
 
@@ -73,6 +79,12 @@ if (!VALID_SCENARIOS.includes(scenarioArg)) {
 const architectureArg = getArg('--architecture', 'clean-lite-ps') as Architecture;
 if (!VALID_ARCHITECTURES.includes(architectureArg)) {
   console.error(`Unknown --architecture: ${architectureArg}. Valid: ${VALID_ARCHITECTURES.join(', ')}`);
+  process.exit(2);
+}
+
+const runtimeArg = getArg('--runtime', 'vendored') as RuntimeMode;
+if (!VALID_RUNTIMES.includes(runtimeArg)) {
+  console.error(`Unknown --runtime: ${runtimeArg}. Valid: ${VALID_RUNTIMES.join(', ')}`);
   process.exit(2);
 }
 
@@ -307,6 +319,40 @@ function assertJunctionEmission(
   log(`assertions passed: ${scenario}/${architecture}`);
 }
 
+/**
+ * #624: the junction's package-owned runtime imports follow the runtime mode —
+ * `@shared/<relpath>` vendored, `@pattern-stack/codegen/runtime/<relpath>`
+ * under `package`. `@shared/database/*` is consumer-local in both modes.
+ */
+function assertRuntimeSpecifiers(
+  generatedSrc: string,
+  scenario: Scenario,
+  architecture: Architecture,
+  runtime: RuntimeMode,
+): void {
+  const { junctionName } = SCENARIO_META[scenario];
+  const pluralName = pluralize(junctionName);
+  const files = architecture === 'clean-lite-ps'
+    ? [`src/modules/${pluralName}/${junctionName}.repository.ts`, `src/modules/${pluralName}/${junctionName}.service.ts`]
+    : [
+        `app/backend/src/infrastructure/persistence/drizzle/${junctionName.replace(/_/g, '-')}.repository.ts`,
+        `app/backend/src/application/${pluralName}/${junctionName}.service.ts`,
+      ];
+  const packageOwned = /'@shared\/(?:base-classes|constants|types)\//;
+  const packageForm = /'@pattern-stack\/codegen\/runtime\/(?:base-classes|constants|types)\//;
+  for (const rel of files) {
+    const src = fs.readFileSync(path.join(generatedSrc, rel), 'utf8');
+    if (runtime === 'package') {
+      assertAbsent(src, packageOwned, `${rel}: no @shared/* package-owned import (package, #624)`);
+      assertContains(src, packageForm, `${rel}: package-form runtime import (#624)`);
+    } else {
+      assertAbsent(src, packageForm, `${rel}: no package-form import (vendored)`);
+      assertContains(src, packageOwned, `${rel}: @shared/* runtime import (vendored)`);
+    }
+  }
+  log(`runtime specifier assertions passed: ${runtime}`);
+}
+
 // Naive pluralize for parent dirs (matches Hygen's pluralize for our fixtures).
 function pluralize(s: string): string {
   if (s.endsWith('y')) return s.slice(0, -1) + 'ies';
@@ -404,7 +450,7 @@ function assertJunctionRelations(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<number> {
-  log(`smoke-junction scenario=${scenarioArg} architecture=${architectureArg}`);
+  log(`smoke-junction scenario=${scenarioArg} architecture=${architectureArg} runtime=${runtimeArg}`);
 
   let exitCode = 0;
   let result: Awaited<ReturnType<typeof bootstrapJunctionProject>> | null = null;
@@ -413,6 +459,7 @@ async function main(): Promise<number> {
     result = await bootstrapJunctionProject({
       scenario: scenarioArg,
       architecture: architectureArg,
+      runtime: runtimeArg,
       log,
     });
 
@@ -439,6 +486,7 @@ async function main(): Promise<number> {
       assertBarrelIncludes(result.projectDir, pluralName, architectureArg);
       const { leftEnt, rightEnt } = SCENARIO_META[scenarioArg];
       assertJunctionRelations(result.projectDir, junctionName, leftEnt, rightEnt);
+      assertRuntimeSpecifiers(result.projectDir, scenarioArg, architectureArg, runtimeArg);
     }
 
     // 10. DI-resolution gate — boot the generated AppModule. `tsc` + grep
@@ -473,9 +521,9 @@ async function main(): Promise<number> {
   }
 
   if (exitCode === 0) {
-    log(`smoke-junction PASS (${scenarioArg}/${architectureArg})`);
+    log(`smoke-junction PASS (${scenarioArg}/${architectureArg}/${runtimeArg})`);
   } else {
-    log(`smoke-junction FAIL (${scenarioArg}/${architectureArg})`);
+    log(`smoke-junction FAIL (${scenarioArg}/${architectureArg}/${runtimeArg})`);
   }
   return exitCode;
 }

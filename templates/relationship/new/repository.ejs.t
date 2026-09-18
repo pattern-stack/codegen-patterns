@@ -7,9 +7,9 @@ import { Injectable, Inject } from '@nestjs/common';
 <% if (hasDeclarativeQueries) { -%>
 import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';
 <% } -%>
-import { DRIZZLE } from '@shared/constants/tokens';
-import type { DrizzleClient } from '@shared/types/drizzle';
-import { BaseRepository } from '@shared/base-classes/base-repository';
+import { DRIZZLE } from '<%= drizzleTokenImport %>';
+import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+import { BaseRepository } from '<%= baseRepositoryImport %>';
 import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= name %>.entity';
 
 @Injectable()
