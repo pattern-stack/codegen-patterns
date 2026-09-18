@@ -338,7 +338,7 @@ In CI, add `atlas migrate lint --env local --latest=1` before merge to catch des
 
 ## Subsystems
 
-Each infrastructure subsystem has its own focused reference — install it with `codegen subsystem install <name>` and wire it in `app.module.ts` (mind the [registration order](#appmodulets-wiring)). Open the one you need; in-project coding agents get the same material, progressively disclosed, from the vendored `.claude/skills/` (see [Agent skills](#agent-skills)).
+Each infrastructure subsystem has its own focused reference — install it with `codegen subsystem install <name>`. Events, jobs, bridge, integration and observability are composed for you: the regenerated `<paths.generated>/subsystems.ts` exports `SUBSYSTEM_MODULES` (spread once into `AppModule.imports`, after `DatabaseModule`), in the right order, configured by each subsystem's `codegen.config.yaml` block — do not register them again in `app.module.ts`. Cache, storage and auth are registered by hand (`CacheModule.forRoot(...)`, `StorageModule.forRoot(...)`, `AuthModule.forRoot(...)`); the install prints the call. Open the one you need; in-project coding agents get the same material, progressively disclosed, from the vendored `.claude/skills/` (see [Agent skills](#agent-skills)).
 
 ### Events subsystem
 

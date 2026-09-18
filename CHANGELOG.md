@@ -158,6 +158,17 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   `orchestration` fields are never `null`.
   `entity new --json --no-continue-on-error` with a blocking provider issue
   now prints that same error payload instead of nothing.
+- **`subsystem install` tells you what is true about `AppModule`** (#663). The
+  vendored install printed `Register JobsModule.forRoot({ backend: 'drizzle' })
+  in your app.module.ts` for jobs / events / bridge / integration — a module
+  name synthesised from the subsystem name (there is no `JobsModule`), for a
+  subsystem the regenerated `SUBSYSTEM_MODULES` already composes, so following
+  it registered a second `forRoot`; observability's hint did the same. For
+  those five the hint now says the subsystem is composed through
+  `SUBSYSTEM_MODULES` and configured by its `codegen.config.yaml` block. Cache,
+  storage and auth name the module the runtime exports, with its real
+  `forRoot` shape, in both runtime modes (package mode printed no registration
+  hint for them). `subsystem remove` follows the same rule.
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
   `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
   and Nest's default `abortOnError` turns that into `process.exit(1)` — so
