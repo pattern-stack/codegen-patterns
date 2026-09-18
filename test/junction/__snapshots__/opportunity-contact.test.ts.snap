@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
 import { opportunities } from '../opportunities/opportunity.entity';
@@ -34,8 +35,8 @@ export const opportunityContacts = pgTable(
   'opportunity_contacts',
   {
     // FK columns — composite primary key (no surrogate id: Q4 resolution)
-    opportunityId: uuid('opportunity_id').notNull().references(() => opportunities.id, { onDelete: 'restrict' }),
-    contactId: uuid('contact_id').notNull().references(() => contacts.id, { onDelete: 'restrict' }),
+    opportunityId: uuid('opportunity_id').notNull().references((): AnyPgColumn => opportunities.id, { onDelete: 'restrict' }),
+    contactId: uuid('contact_id').notNull().references((): AnyPgColumn => contacts.id, { onDelete: 'restrict' }),
 
     // Role enum (per-pairing; declared in junction YAML's fields.role.choices).
     // NOT NULL because role is part of the junction's identity (composite PK

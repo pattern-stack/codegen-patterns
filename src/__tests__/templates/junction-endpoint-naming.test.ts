@@ -94,7 +94,7 @@ describe('junction endpoints resolve from their own YAML', () => {
 		const entity = render('entity.ejs.t', l);
 		expect(entity).toContain("import { crews } from '../org/crews/crew.entity';");
 		expect(entity).toContain("import { persons } from '../persons/person.entity';");
-		expect(entity).toContain('.references(() => persons.id');
+		expect(entity).toContain('.references((): AnyPgColumn => persons.id');
 		expect(entity).not.toContain('people/person');
 		expect(render('_inject-parent-service-import-clp-left.ejs.t', l)).toContain(
 			"import type { CrewPerson } from '../../crew_people/crew_person.entity';",

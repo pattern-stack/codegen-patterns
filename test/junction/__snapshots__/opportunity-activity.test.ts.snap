@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
 import { opportunities } from '../opportunities/opportunity.entity';
@@ -27,8 +28,8 @@ export const opportunityActivities = pgTable(
   'opportunity_activities',
   {
     // FK columns — composite primary key (no surrogate id: Q4 resolution)
-    opportunityId: uuid('opportunity_id').notNull().references(() => opportunities.id, { onDelete: 'restrict' }),
-    activityId: uuid('activity_id').notNull().references(() => activities.id, { onDelete: 'restrict' }),
+    opportunityId: uuid('opportunity_id').notNull().references((): AnyPgColumn => opportunities.id, { onDelete: 'restrict' }),
+    activityId: uuid('activity_id').notNull().references((): AnyPgColumn => activities.id, { onDelete: 'restrict' }),
 
     // BaseJunctionFields — is_primary is always emitted
     isPrimary: boolean('is_primary').notNull().default(false),

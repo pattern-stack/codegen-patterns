@@ -1,0 +1,12 @@
+# NAME-1 smoke fixture (#633): a first-class relationship whose endpoints are
+# the irregular-plural `person` (`plural: persons`, not `people`) and the
+# `context:`-nested `crew` (`src/modules/org/crews/`). `relationship new` must
+# read both from their YAMLs — table exports and folders — never re-pluralize.
+relationship:
+  name: crew_assignment
+  table: crew_assignments
+  from: person
+  to: crew
+  types:
+    - member
+    - reserve
