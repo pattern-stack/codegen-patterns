@@ -63,6 +63,9 @@ export const DEFAULT_LAYOUT = {
  */
 export const BASE_PATHS = {
   backendSrc: resolvedConfig.paths.backend_src,
+  // The clean-lite-ps module tree (PATH-1, #645): `paths.modules_dir`,
+  // default `<backend_src>/modules`.
+  modulesDir: resolvedConfig.paths.modules_dir,
   // Orchestration emission root (ADR-032 Phase 3-2, O-6):
   // `paths.orchestration_src`, default `<backend_src>/orchestration`.
   orchestrationSrc: resolvedConfig.paths.orchestration_src,

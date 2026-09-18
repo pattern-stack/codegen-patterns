@@ -24,6 +24,12 @@
 > "#513 implementation notes" section below (item 2, now resolved) and
 > `.ai-docs/specs/517.md`.
 
+> **PATH-1 revision (2026-09-18).** `paths.subsystems` no longer exists (#645,
+> `docs/specs/PATH-1.md`). The subsystems root is always
+> `<paths.backend_src>/shared/subsystems`, so `schemaPath` derives from
+> `paths.backend_src`. The "custom `paths.subsystems`" unit case below was
+> deleted with the key.
+
 ## Overview
 
 Hygen templates that emit operational glue files when `bun codegen subsystem jobs` runs in a consumer project. Four templates: standalone `worker.ts` at `src/worker.ts`, commented embedded-mode guidance injected into `src/main.ts`, a `jobs:` block appended to `codegen.config.yaml` with all five default pools populated, **and a templated `job-orchestration.schema.ts` that gates the `tenant_id` column on `jobs.multi_tenant` (Q1 2026-04-19 — added to JOB-6 scope because the runtime source file JOB-1 lands is always-emit; the scaffold-time conditional lives in this template layer)**. `SubsystemInstallCommand` is extended to invoke Hygen — after `copyRuntime` in **vendored** mode, and after barrel regeneration in **package** mode (#517). In package mode the scaffold emits only the consumer-owned files (worker + main-hook): the config block is injected by `executePackageMode` step 2b (`skipConfigBlock: true`), and the schema template is skipped (`skipSchema`) because the schema ships in the package and is re-exported via the schema barrel. Scaffolded once per project, not per entity.
@@ -160,7 +166,7 @@ force: true
 ---
 ```
 
-`schemaPath` defaults to `shared/subsystems/jobs/job-orchestration.schema.ts` (or the equivalent consumer-side path resolved from `paths.subsystems`).
+`schemaPath` defaults to `shared/subsystems/jobs/job-orchestration.schema.ts` (or the equivalent consumer-side path under `<paths.backend_src>/shared/subsystems` — `paths.subsystems` was deleted by PATH-1, see the revision note above).
 
 Body: exact EJS port of `runtime/subsystems/jobs/job-orchestration.schema.ts` with a single EJS conditional gating the `tenantId` column definition inside `pgTable 'job_run'`:
 
@@ -296,7 +302,7 @@ jobs:
 ## Testing Strategy
 
 - **Baseline snapshot** — `just test-baseline` (`bun test/run-test.ts full`) renders both variants of `job-orchestration.schema.ejs.t` (single-tenant + multi-tenant) into `runtime/subsystems/jobs/generated/` and compares against `test/baseline/`. The two fixture files live under `test/baseline/runtime/subsystems/jobs/generated/job-orchestration.schema.{single,multi}-tenant.ts`. The baseline capture step uses a throwaway sandbox directory (`test/.jobs-baseline-sandbox`) to mute the non-schema templates (worker.ts, main.ts hook, config block) — they'd otherwise target ROOT during the capture and pollute the workspace.
-- **Unit test** for template-variable resolution: `src/cli/shared/jobs-scaffold-locals.ts` exports `resolveJobsScaffoldLocals` (pure — filesystem probed via injected `fileExists`) and `localsToHygenArgs`. Tests cover the skip_if boolean serialisation contract (worker.ts safety: empty string when absent, `'true'` when present), multi_tenant truthiness (only literal `true` flips the flag — defends against YAML surprises like `'yes'` / `1`), worker_mode normalisation, and custom `paths.subsystems` flowing into `schemaPath`.
+- **Unit test** for template-variable resolution: `src/cli/shared/jobs-scaffold-locals.ts` exports `resolveJobsScaffoldLocals` (pure — filesystem probed via injected `fileExists`) and `localsToHygenArgs`. Tests cover the skip_if boolean serialisation contract (worker.ts safety: empty string when absent, `'true'` when present), multi_tenant truthiness (only literal `true` flips the flag — defends against YAML surprises like `'yes'` / `1`), worker_mode normalisation, and `paths.backend_src` flowing into `schemaPath` (the custom-`paths.subsystems` case was deleted with the key, PATH-1).
 - **Manual walkthrough** — see PR description for scratch-project run. Four-files test plan passes; second run is fully idempotent (worker.ts skipped via `unless_exists: true`, `codegen.config.yaml` `jobs:` block has no duplicate via `skip_if: "jobs:"`, `src/main.ts` JOBS comment has no duplicate via `skip_if: "JobWorkerModule"`, schema is force-re-rendered identically).
 
 No Docker required. Hygen invocation tested via baseline fixture in CI.

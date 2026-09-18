@@ -123,6 +123,7 @@ function run(opts: {
     entities: opts.entities,
     outputRoot: outRoot,
     backendSrcAbs: BACKEND_SRC,
+    modulesAbs: `${BACKEND_SRC}/modules`,
     aliases: ALIASES,
   });
   const read = (rel: string) => readFileSync(join(outRoot, rel), "utf-8");
@@ -364,6 +365,7 @@ describe("E4 · regen semantics — base regenerates, subclass is existsSync-ski
       entities: [ACCOUNT],
       outputRoot: outRoot,
       backendSrcAbs: BACKEND_SRC,
+      modulesAbs: `${BACKEND_SRC}/modules`,
       aliases: ALIASES,
     });
 
@@ -379,6 +381,7 @@ describe("E4 · regen semantics — base regenerates, subclass is existsSync-ski
       entities: [ACCOUNT],
       outputRoot: outRoot,
       backendSrcAbs: BACKEND_SRC,
+      modulesAbs: `${BACKEND_SRC}/modules`,
       aliases: ALIASES,
     });
 

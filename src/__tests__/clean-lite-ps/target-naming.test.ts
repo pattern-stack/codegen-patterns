@@ -50,7 +50,7 @@ function localsFor(
 			behaviors: ['timestamps'],
 			...extra,
 		},
-		{ ...withEntities(), srcRoot: 'src', entityLookup: lookup, ...base },
+		{ ...withEntities(), modulesDir: 'src/modules', entityLookup: lookup, ...base },
 	) as Locals;
 }
 
@@ -125,7 +125,7 @@ describe('belongs_to', () => {
 
 describe('has_many', () => {
 	const roster = (srcRoot: string, relationships: Record<string, unknown>) =>
-		localsFor(CREW, { relationships }, { srcRoot });
+		localsFor(CREW, { relationships }, { modulesDir: `${srcRoot}/modules` });
 
 	it("resolves the target's import folder and checks it on disk at that folder", () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'name0-'));
@@ -226,7 +226,7 @@ describe('a service that composes the same target twice (#632)', () => {
 					led_crews: { type: 'has_many', target: 'crew', foreign_key: 'lead_person_id' },
 				},
 			},
-			{ srcRoot: root },
+			{ modulesDir: path.join(root, 'modules') },
 		);
 	};
 

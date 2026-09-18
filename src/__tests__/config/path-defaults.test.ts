@@ -1,6 +1,8 @@
 /**
  * PATH-0 (#642, #566, #612) — one default per `paths.*` key, declared once in
  * `PathsConfigSchema`; every reader and every scaffold goes through it.
+ * PATH-1 (#645) — `paths.subsystems` is deleted, the `patterns` default derives
+ * from `backend_src`, `modules_dir` reaches the tsconfig `include`.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -36,18 +38,35 @@ describe('the defaults table', () => {
 			jobs_dir: 'definitions/jobs',
 			providers: 'definitions/providers',
 			generated: 'src/generated',
-			subsystems: 'src/shared/subsystems',
 			modules_dir: 'src/modules',
 			orchestration_src: 'src/orchestration',
 		});
 	});
 
-	it('the four derived keys follow paths.backend_src, and yield to an explicit value', () => {
+	it('the three derived keys follow paths.backend_src, and yield to an explicit value', () => {
 		const { paths } = parseCodegenConfig({ paths: { backend_src: 'apps/backend/src/', generated: 'gen' } }, 't');
 		expect(paths.generated).toBe('gen');
-		expect(paths.subsystems).toBe('apps/backend/src/shared/subsystems');
 		expect(paths.modules_dir).toBe('apps/backend/src/modules');
 		expect(paths.orchestration_src).toBe('apps/backend/src/orchestration');
+	});
+
+	it('paths.subsystems is not a key: its only honest value is <backend_src>/shared/subsystems (PATH-1)', () => {
+		expect(() => parseCodegenConfig({ paths: { subsystems: 'src/shared/subsystems' } }, 't')).toThrow(
+			/paths\.subsystems: unknown key/,
+		);
+		expect(projectLayout('/p', { paths: { backend_src: 'apps/backend/src' } }).subsystems).toBe(
+			'/p/apps/backend/src/shared/subsystems',
+		);
+	});
+
+	it('the patterns default derives from paths.backend_src; an explicit list is taken as-is (PATH-1)', () => {
+		expect(DEFAULT_CODEGEN_CONFIG.patterns).toEqual(['src/patterns/*.pattern.ts']);
+		expect(parseCodegenConfig({ paths: { backend_src: 'apps/backend/src' } }, 't').patterns).toEqual([
+			'apps/backend/src/patterns/*.pattern.ts',
+		]);
+		expect(parseCodegenConfig({ paths: { backend_src: '.' } }, 't').patterns).toEqual(['patterns/*.pattern.ts']);
+		expect(parseCodegenConfig({ patterns: ['lib/*.pattern.ts'] }, 't').patterns).toEqual(['lib/*.pattern.ts']);
+		expect(parseCodegenConfig({ patterns: [] }, 't').patterns).toEqual([]);
 	});
 
 	it('an empty path is an error, not a silent default', () => {
@@ -78,6 +97,11 @@ describe('no reader carries its own default literal', () => {
 		/\|\|\s*['"]src['"]/,
 		/\?\?\s*path\.(?:resolve|join)\(/,
 		/\|\|\s*path\.(?:resolve|join)\(/,
+		// PATH-1: the `patterns` default is the schema's, derived from
+		// `backend_src`; a clean-lite-ps module lives under `paths.modules_dir`,
+		// never `<something>/modules`.
+		/['"`]src\/patterns\//,
+		/\$\{[^}]*\}\/modules\b/,
 	];
 
 	// Exact, asserted-present exceptions: a `?? path.…(` that derives from an
@@ -134,6 +158,16 @@ describe('projectLayout / importSpecifier', () => {
 	it('tsconfig include covers a generated dir outside backend_src', () => {
 		expect(tsconfigIncludes(layout)).toEqual(['apps/backend/src/**/*', 'apps/backend/codegen/**/*']);
 		expect(tsconfigIncludes(projectLayout('/p', null))).toEqual(['src/**/*']);
+	});
+
+	it('tsconfig include covers a modules_dir outside backend_src (PATH-1)', () => {
+		const outside = projectLayout('/p', { paths: { backend_src: 'apps/backend/src', modules_dir: 'apps/backend/domain' } });
+		expect(tsconfigIncludes(outside)).toEqual([
+			'apps/backend/src/**/*',
+			'apps/backend/domain/**/*',
+		]);
+		const inside = projectLayout('/p', { paths: { backend_src: 'apps/backend/src', modules_dir: 'apps/backend/src/domain' } });
+		expect(tsconfigIncludes(inside)).toEqual(['apps/backend/src/**/*']);
 	});
 });
 

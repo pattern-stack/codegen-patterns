@@ -878,18 +878,13 @@ export interface EmitAdaptersEntity {
   };
 }
 
-export interface EmitAdaptersOptions {
+interface EmitAdaptersBaseOptions {
   providers: LoadedProvider[];
   /** Entity definitions carrying `surface:` (for capabilities.entities + the
    *  per-entity assembly/sink emission). */
   entities: EmitAdaptersEntity[];
   /** Output root — `<backend_src>/integrations`. */
   outputRoot: string;
-  /** Absolute `<backend_src>` root on disk — needed to resolve the entity
-   *  repo/module import specifiers for the assembly. When omitted, the assembly
-   *  loop is skipped (back-compat for callers that only want the read side, e.g.
-   *  a dry plan with no consumer tree). */
-  backendSrcAbs?: string;
   /** tsconfig path aliases (aliasKey → absolute target dir) for the entity
    *  repo/module imports. Empty/absent ⇒ relative-path imports. */
   aliases?: Record<string, string>;
@@ -899,6 +894,24 @@ export interface EmitAdaptersOptions {
    *  emitted adapter/module/tokens/sink/assembly file. Defaults to `package`. */
   mode?: RuntimeMode;
 }
+
+/**
+ * The consumer tree the assembly loop resolves the entity repo/module imports
+ * against — both roots or neither (PATH-1). Omitted ⇒ the assembly loop is
+ * skipped (callers that only want the read side, e.g. a plan with no consumer
+ * tree).
+ */
+type EmitAdaptersModuleTree =
+  | {
+      /** Absolute `<backend_src>` root on disk (locates `<backend_src>/integrations`). */
+      backendSrcAbs: string;
+      /** Absolute `paths.modules_dir` on disk — the clean-lite-ps module tree
+       *  the entity repo/module imports resolve into. */
+      modulesAbs: string;
+    }
+  | { backendSrcAbs?: undefined; modulesAbs?: undefined };
+
+export type EmitAdaptersOptions = EmitAdaptersBaseOptions & EmitAdaptersModuleTree;
 
 export interface EmitAdaptersResult {
   /** @generated files written (modules, barrels, tokens, aggregators, assemblies). */
@@ -1039,7 +1052,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     // tokens file once. A `surface:` entity that is NOT `pattern: Integrated` is
     // recorded in `skippedAssemblies` (read side still emitted) — never crashes.
     // ------------------------------------------------------------------
-    if (opts.backendSrcAbs) {
+    if (opts.backendSrcAbs !== undefined) {
       const aliases = opts.aliases ?? {};
       const surfaceEntities = entitiesBySurface.get(surface) ?? [];
       const tokenEntries: IntegrationTokenEntry[] = [];
@@ -1077,6 +1090,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           // module dir for the relative-path base (all share the same parent).
           provider: slugs[0],
           backendSrcAbs: opts.backendSrcAbs,
+          modulesAbs: opts.modulesAbs,
           aliases,
         });
 

@@ -241,15 +241,21 @@ generate:
   architecture: clean-lite-ps     # clean | clean-lite-ps — schema default is clean; init writes clean-lite-ps
   frontend: false
   analytics: none                 # none | cube
-patterns: [src/patterns/*.pattern.ts]
+patterns: [src/patterns/*.pattern.ts]   # default <backend_src>/patterns/*.pattern.ts
 auth:
   devAllowAnonymous: false        # strict block; localhost-only escape hatch
 ```
 
 Every `paths.*` key has ONE default, declared in `PathsConfigSchema` (PATH-0):
 `backend_src: src`, `entities`, `events_dir: events`, `jobs_dir`, `providers`,
-`frontend_src: apps/frontend/src`; `generated` / `subsystems` / `modules_dir` /
-`orchestration_src` derive from `backend_src`. No file ⇒ `DEFAULT_CODEGEN_CONFIG`.
+`frontend_src: apps/frontend/src`; `generated` / `modules_dir` /
+`orchestration_src` derive from `backend_src`, and so does the `patterns:` default
+(`<backend_src>/patterns/*.pattern.ts`, filled by `CodegenConfigSchema`'s top-level
+transform). There is no `paths.subsystems` — the runtime root is
+`<backend_src>/shared/subsystems` (`projectLayout(...).subsystems`). `modules_dir`
+places every clean-lite-ps module: `entityModuleNaming(block, modulesDir)`
+(`templates/_shared/entity-naming.mjs`), the junction / relationship prompts,
+`barrel-generator.ts`, the integration assemblies (PATH-1). No file ⇒ `DEFAULT_CODEGEN_CONFIG`.
 CLI code resolves directories through `projectLayout(cwd, config)`
 (`src/cli/shared/project-layout.ts`) and emitted relative imports through
 `importSpecifier(fromFile, toModule)` — never a `?? 'src'` literal (a test greps

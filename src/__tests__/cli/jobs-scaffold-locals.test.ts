@@ -5,7 +5,6 @@
  *   - default locals on first install (no `jobs:` block in config)
  *   - multi_tenant: true honored
  *   - worker_mode: 'standalone' honored
- *   - custom `paths.subsystems` flows into schemaPath
  *   - workerExists: '' when src/worker.ts absent, 'true' when present
  *   - jobWorkerModuleImport is mode-aware (package vs vendored) — #513
  *   - workerForRootOpts mirrors the embedded composer's backend/extension
@@ -55,13 +54,13 @@ describe('resolveJobsScaffoldLocals', () => {
 			"{ mode: 'standalone', allPools: true }",
 		);
 		// Default derives from `backend_src` (fallback 'src') when
-		// `paths.subsystems` is unset — matches `project init` layout.
+		// The subsystems root derives from `paths.backend_src` — the `project init` layout.
 		expect(locals.schemaPath).toBe(
 			path.resolve(CWD, 'src/shared/subsystems/jobs/job-orchestration.schema.ts'),
 		);
 	});
 
-	test('paths.backend_src derives default subsystems root when paths.subsystems is unset', () => {
+	test('the subsystems root derives from paths.backend_src (<backend_src>/shared/subsystems)', () => {
 		const locals = resolveJobsScaffoldLocals({
 			cwd: CWD,
 			config: { paths: { backend_src: 'packages/api/src' } } as any,
@@ -73,23 +72,6 @@ describe('resolveJobsScaffoldLocals', () => {
 				CWD,
 				'packages/api/src/shared/subsystems/jobs/job-orchestration.schema.ts',
 			),
-		);
-	});
-
-	test('paths.subsystems takes precedence over paths.backend_src', () => {
-		const locals = resolveJobsScaffoldLocals({
-			cwd: CWD,
-			config: {
-				paths: {
-					backend_src: 'packages/api/src',
-					subsystems: 'custom/subsystems',
-				},
-			} as any,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(locals.schemaPath).toBe(
-			path.resolve(CWD, 'custom/subsystems/jobs/job-orchestration.schema.ts'),
 		);
 	});
 
@@ -208,21 +190,6 @@ describe('resolveJobsScaffoldLocals', () => {
 		});
 		expect(bullmq.workerForRootOpts).toBe(
 			"{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: { redis_url: 'redis://localhost:6379' } }, allPools: true }",
-		);
-	});
-
-	test('custom paths.subsystems flows into schemaPath', () => {
-		const locals = resolveJobsScaffoldLocals({
-			cwd: CWD,
-			config: { paths: { subsystems: 'packages/api/src/subsystems' } } as any,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(locals.schemaPath).toBe(
-			path.resolve(
-				CWD,
-				'packages/api/src/subsystems/jobs/job-orchestration.schema.ts',
-			),
 		);
 	});
 

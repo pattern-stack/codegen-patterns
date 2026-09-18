@@ -32,6 +32,7 @@ async function relationshipLocals(
 	from: string,
 	to: string,
 	entities: Record<string, string>,
+	config?: string,
 ): Promise<Record<string, any>> {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relationship-naming-'));
 	tmpDirs.push(dir);
@@ -39,6 +40,7 @@ async function relationshipLocals(
 	for (const [name, body] of Object.entries(entities)) {
 		fs.writeFileSync(path.join(dir, 'entities', `${name}.yaml`), body);
 	}
+	if (config) fs.writeFileSync(path.join(dir, 'codegen.config.yaml'), config);
 	const file = path.join(dir, 'relationship.yaml');
 	fs.writeFileSync(
 		file,
@@ -64,6 +66,17 @@ describe('relationship endpoints resolve from their own YAML', () => {
 		expect(locals.fromTable).toBe('persons');
 		expect(locals.toTable).toBe('crews');
 		expect(locals.fromEntityImport).toBe('../persons/person.entity');
+		expect(locals.toEntityImport).toBe('../org/crews/crew.entity');
+	});
+
+	it('places the relationship module under paths.modules_dir (PATH-1)', async () => {
+		const locals = await relationshipLocals(
+			'person',
+			'crew',
+			ENTITIES,
+			'paths:\n  backend_src: apps/api/src\n  modules_dir: apps/api/src/domain\n',
+		);
+		expect(locals.outputPaths.entity).toBe('apps/api/src/domain/person_crews/person_crew.entity.ts');
 		expect(locals.toEntityImport).toBe('../org/crews/crew.entity');
 	});
 

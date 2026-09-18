@@ -108,6 +108,7 @@ export function emitFixture(mode: RuntimeMode = 'package'): EmitResult {
     entities: entityDefs,
     outputRoot: integrationsRoot,
     backendSrcAbs,
+    modulesAbs: join(backendSrcAbs, 'modules'),
     aliases: { '@modules': join(backendSrcAbs, 'modules') },
     mode,
   });

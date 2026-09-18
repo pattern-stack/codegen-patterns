@@ -138,14 +138,13 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
     relationships,
     belongsTo,
     repositoryDir,
-    srcRoot,
+    modulesDir,
     entityLookup,
   } = ctx;
   const importFrom = (target) => {
     const rel = path.posix.relative(repositoryDir, target);
     return rel.startsWith('.') ? rel : `./${rel}`;
   };
-  const modulesRoot = `${srcRoot}/modules`;
 
   if (cap.name === COMMUNICATION_CAPABILITY) {
     const declared = definition.roles || {};
@@ -175,7 +174,7 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
       };
       imports.push({
         name: table,
-        importPath: importFrom(`${modulesRoot}/${junctionPlural}/${def.via}.entity`),
+        importPath: importFrom(`${modulesDir}/${junctionPlural}/${def.via}.entity`),
       });
     }
     if (Object.keys(roles).length === 0) {
@@ -226,7 +225,7 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
           `'${members.target}', which has no entity YAML in the entities directory.`,
       );
     }
-    const naming = entityModuleNaming(target, srcRoot);
+    const naming = entityModuleNaming(target, modulesDir);
     return {
       config: {
         kind: 'group',
@@ -633,13 +632,13 @@ function processHasMany(relationships, naming) {
  * export, module folder, and the folder's import path from this entity's own
  * module folder. A self-reference is this entity's own naming.
  *
- * `naming` is `{ entityName, ownNaming, srcRoot, entityLookup }`. With
+ * `naming` is `{ entityName, ownNaming, modulesDir, entityLookup }`. With
  * `required`, a target with no entity YAML is a generation error: every
  * caller that passes it emits the target's table unconditionally, and there is
  * nothing else to read that name from. Otherwise it resolves to `null`.
  */
 function resolveTargetNaming(target, naming, { required }) {
-  const { entityName, ownNaming, srcRoot, entityLookup } = naming;
+  const { entityName, ownNaming, modulesDir, entityLookup } = naming;
   let targetNaming;
   if (target === entityName) {
     targetNaming = ownNaming;
@@ -653,7 +652,7 @@ function resolveTargetNaming(target, naming, { required }) {
           `Its table and module folder are read from that YAML.`,
       );
     }
-    targetNaming = entityModuleNaming(block, srcRoot);
+    targetNaming = entityModuleNaming(block, modulesDir);
   }
   return {
     plural: targetNaming.plural,
@@ -1366,28 +1365,20 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // service/use-cases in-process reachable. Defaults to true.
   const clpApiEnabled = definition.api !== false;
 
-  // Source root — resolved in priority order:
-  //   1. baseLocals.srcRoot (e.g. set explicitly by tests or callers)
-  //   2. entity.src_root (per-entity override in YAML)
-  //   3. baseLocals.backendSrc — the resolved `paths.backend_src`
-  //      (prompt.js threads BASE_PATHS.backendSrc here)
-  //   4. the schema's own default (callers that build locals by hand) — the
-  //      one default, declared in `PathsConfigSchema` (PATH-0, #642)
-  const srcRoot =
-    baseLocals.srcRoot ||
-    entity.src_root ||
-    baseLocals.backendSrc ||
-    DEFAULT_CODEGEN_CONFIG.paths.backend_src;
+  // The module tree's root: the resolved `paths.modules_dir` (PATH-1, #645) —
+  // prompt.js threads BASE_PATHS.modulesDir here. Callers that build locals by
+  // hand (unit tests) get the schema's one default (PATH-0, #642).
+  const modulesDir = baseLocals.modulesDir || DEFAULT_CODEGEN_CONFIG.paths.modules_dir;
 
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);
   // One naming rule for this entity and for any entity that references it
   // (`entityModuleNaming`).
-  const ownNaming = entityModuleNaming(entity, srcRoot);
+  const ownNaming = entityModuleNaming(entity, modulesDir);
   // Every OTHER entity this one references is named from its own YAML through
   // the same function (NAME-0) — `resolveTargetNaming` reads this context.
   const entityLookup = baseLocals?.entityLookup ?? null;
-  const targetNaming = { entityName, ownNaming, srcRoot, entityLookup };
+  const targetNaming = { entityName, ownNaming, modulesDir, entityLookup };
   const entityNamePlural = ownNaming.plural;
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
@@ -1591,7 +1582,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
       relationships,
       belongsTo,
       repositoryDir: `${moduleGroupDir}/${entityNamePlural}`,
-      srcRoot,
+      modulesDir,
       entityLookup,
     });
     if (!resolved) continue;
@@ -1753,10 +1744,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
       ? `${moduleGroupDir}/${entityNamePlural}/${entityName}.composed-base.ts`
       : null,
     // ADR-033.1 §8 — integration-source module emission for clean-lite-ps. Co-located
-    // with the entity feature module under src/modules/<plural>/. Closes #267.
+    // with the entity feature module under <modules_dir>/<plural>/. Closes #267.
     // #403: routed through moduleGroupDir so a `context:`-tagged entity nests the
-    // integration-source module under its context segment (untagged → flat, the
-    // same `${srcRoot}/modules/<plural>/…` path as before).
+    // integration-source module under its context segment (untagged → flat,
+    // `<modules_dir>/<plural>/…`).
     integrationSourceModule: `${moduleGroupDir}/${entityNamePlural}/${entityName}-integration-source.module.ts`,
     // ADR-033.2's per-entity provider tuples (`<entity>-integration-source.providers.ts`)
     // are removed by RFC-0001 §8 (D4). The surface-scoped typed view

@@ -39,6 +39,7 @@ import {
 	detectYamlType,
 } from '../../utils/yaml-loader.js';
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
+import type { PathsConfig } from '../../schema/codegen-config.schema.js';
 import { deriveJunctionName } from '../../schema/junction-definition.schema.js';
 
 // ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ export interface BarrelResult {
 	written: boolean;
 }
 
-interface EntityInfo {
+export interface EntityInfo {
 	name: string;
 	plural: string;
 	/**
@@ -208,23 +209,29 @@ function collectJunctions(junctionsDir: string): EntityInfo[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * The two resolved `paths.*` keys the barrel's module paths read:
+ * `modules_dir` (clean-lite-ps) and `backend_src` (clean).
+ */
+export type BarrelPaths = Pick<PathsConfig, 'backend_src' | 'modules_dir'>;
+
+/**
  * Where each entity's module + schema file lives, relative to project root.
  *
  * Must match the output of the actual Hygen templates:
- *   - clean-lite-ps:  modules/<plural>/<plural>.module.ts
- *                     modules/<plural>/<name>.entity.ts
- *   - clean:          src/infrastructure/modules/<plural>.module.ts
- *                     src/infrastructure/persistence/drizzle/<plural>.schema.ts
+ *   - clean-lite-ps:  <modules_dir>[/<context>]/<plural>/<plural>.module.ts
+ *                     <modules_dir>[/<context>]/<plural>/<name>.entity.ts
+ *   - clean:          <backend_src>/infrastructure/modules/<plural>.module.ts
+ *                     <backend_src>/infrastructure/persistence/drizzle/<plural>.schema.ts
  *
  * Note: the `clean` paths mirror the defaults in src/config/locations.mjs and
  * the backend template set's output paths. If a project overrides those via
  * `locations:` in codegen.config.yaml, the barrel will still point at the
  * default locations — a known limitation documented in ADR-017.
  */
-function entityFilePaths(
+export function entityFilePaths(
 	info: EntityInfo,
 	architecture: Architecture,
-	backendSrc: string
+	paths: BarrelPaths
 ): {
 	moduleFile: string;
 	moduleClass: string;
@@ -237,25 +244,24 @@ function entityFilePaths(
 
 	if (architecture === 'clean-lite-ps') {
 		// Clean-Lite-PS templates emit directories/files using the raw snake_case
-		// `plural`/`name` values, prefixed with `paths.backend_src` (see
-		// templates/entity/new/clean-lite-ps/prompt-extension.js — `srcRoot`).
+		// `plural`/`name` values under `paths.modules_dir` (see
+		// templates/_shared/entity-naming.mjs — `entityModuleNaming`, PATH-1).
 		// The barrel must match that on-disk layout.
-		const prefix = backendSrc && backendSrc !== '.' ? `${backendSrc}/` : '';
-		// #403: a bounded-context entity nests under `modules/<context>/<plural>/`
+		// #403: a bounded-context entity nests under `<modules_dir>/<context>/<plural>/`
 		// — must mirror `moduleGroupDir` in the clean-lite-ps prompt-extension.
-		// Untagged entities stay flat (`modules/<plural>/`).
-		const ctxSeg = info.context ? `${info.context}/` : '';
+		// Untagged entities stay flat (`<modules_dir>/<plural>/`).
+		const dir = path.posix.join(paths.modules_dir, info.context ?? '', plural);
 		return {
-			moduleFile: `${prefix}modules/${ctxSeg}${plural}/${plural}.module.ts`,
+			moduleFile: `${dir}/${plural}.module.ts`,
 			moduleClass: `${toPascalCase(plural)}Module`,
 			// Drizzle entity schema lives alongside the entity file in clean-lite-ps.
-			schemaFile: `${prefix}modules/${ctxSeg}${plural}/${name}.entity.ts`,
+			schemaFile: `${dir}/${name}.entity.ts`,
 		};
 	}
 
 	// 'clean' — full Clean Architecture. Paths mirror src/config/locations.mjs
-	// defaults; a `paths.backend_src` override in codegen.config.yaml is honored
-	// via the `backendSrc` parameter.
+	// defaults under `paths.backend_src`.
+	const backendSrc = paths.backend_src;
 	return {
 		moduleFile: `${backendSrc}/infrastructure/modules/${pluralKebab}.module.ts`,
 		moduleClass: `${toPascalCase(plural)}Module`,
@@ -282,13 +288,13 @@ export function buildModulesBarrel(
 	entities: EntityInfo[],
 	barrelFile: string,
 	architecture: Architecture,
-	backendSrc: string
+	paths: BarrelPaths
 ): string {
 	const imports: string[] = [];
 	const exportsList: string[] = [];
 
 	for (const ent of entities) {
-		const { moduleFile, moduleClass } = entityFilePaths(ent, architecture, backendSrc);
+		const { moduleFile, moduleClass } = entityFilePaths(ent, architecture, paths);
 		const importPath = relativeImport(barrelFile, moduleFile);
 		imports.push(`import { ${moduleClass} } from '${importPath}';`);
 		exportsList.push(moduleClass);
@@ -312,14 +318,14 @@ export function buildSchemaBarrel(
 	entities: EntityInfo[],
 	barrelFile: string,
 	architecture: Architecture,
-	backendSrc: string
+	paths: BarrelPaths
 ): string {
 	if (entities.length === 0) {
 		return `${HEADER}export {};\n`;
 	}
 
 	const lines = entities.map((ent) => {
-		const { schemaFile } = entityFilePaths(ent, architecture, backendSrc);
+		const { schemaFile } = entityFilePaths(ent, architecture, paths);
 		return `export * from '${relativeImport(barrelFile, schemaFile)}';`;
 	});
 
@@ -343,8 +349,9 @@ export async function regenerateBarrels(
 		dryRun = false,
 	} = opts;
 	const cwd = ctx.cwd;
-	// `paths.backend_src`, resolved (PATH-0): the clean pipeline's module paths.
-	const backendSrc = configOrDefaults(ctx.config).paths.backend_src;
+	// The resolved `paths` block (PATH-0): `modules_dir` places clean-lite-ps
+	// modules, `backend_src` the clean pipeline's.
+	const paths = configOrDefaults(ctx.config).paths;
 
 	// Entities, relationship modules, and junction modules all produce peer
 	// modules on disk — merge all three into the same deterministic list so the
@@ -371,8 +378,8 @@ export async function regenerateBarrels(
 		'schema.ts'
 	);
 
-	const modulesContent = buildModulesBarrel(entities, modulesRel, architecture, backendSrc);
-	const schemaContent = buildSchemaBarrel(entities, schemaRel, architecture, backendSrc);
+	const modulesContent = buildModulesBarrel(entities, modulesRel, architecture, paths);
+	const schemaContent = buildSchemaBarrel(entities, schemaRel, architecture, paths);
 
 	const modulesAbs = path.resolve(cwd, modulesRel);
 	const schemaAbs = path.resolve(cwd, schemaRel);

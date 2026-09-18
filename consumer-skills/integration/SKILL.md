@@ -17,7 +17,7 @@ your codebase. You write per-provider detection code against a single port
 per-record audit, run lifecycle — is provided by the subsystem.
 
 You opt in with `codegen subsystem install integration`, which vendors the runtime
-into `<paths.subsystems>/integration/` (imported as `@shared/subsystems/integration`), adds a
+into `<backend_src>/shared/subsystems/integration/` (imported as `@shared/subsystems/integration`), adds a
 `integration:` block to `codegen.config.yaml`, and emits the audit schema
 (`integration-audit.schema.ts`). Unlike some subsystems, integration ships **no `generated/`
 directory** — there are no codegen-emitted runtime artifacts from the base

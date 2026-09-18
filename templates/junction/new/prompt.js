@@ -143,15 +143,17 @@ function processCustomFields(fields, junctionName) {
 // Output Path Resolution (architecture-aware)
 // ============================================================================
 
-function resolveOutputPaths(name, plural, architecture, srcRoot) {
+function resolveOutputPaths(name, plural, architecture, srcRoot, modulesDir) {
   if (architecture === "clean-lite-ps") {
-    const prefix = srcRoot && srcRoot !== "." ? `${srcRoot}/` : "";
+    // The junction's own folder is flat under the module tree (a junction has
+    // no `context:`) — `paths.modules_dir` (PATH-1, #645).
+    const dir = path.posix.normalize(`${modulesDir}/${plural}`);
     return {
-      entity:     `${prefix}modules/${plural}/${name}.entity.ts`,
-      repository: `${prefix}modules/${plural}/${name}.repository.ts`,
-      service:    `${prefix}modules/${plural}/${name}.service.ts`,
-      module:     `${prefix}modules/${plural}/${plural}.module.ts`,
-      index:      `${prefix}modules/${plural}/index.ts`,
+      entity:     `${dir}/${name}.entity.ts`,
+      repository: `${dir}/${name}.repository.ts`,
+      service:    `${dir}/${name}.service.ts`,
+      module:     `${dir}/${plural}.module.ts`,
+      index:      `${dir}/index.ts`,
     };
   }
 
@@ -304,14 +306,22 @@ export default {
     const config_ = configOrDefaults(loadProjectConfig(cwd));
     const architecture = config_.generate.architecture;
     const srcRoot = config_.paths.backend_src;
-    const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, architecture, srcRoot);
+    const modulesDir = config_.paths.modules_dir;
+    const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, architecture, srcRoot, modulesDir);
 
     // ======================================================================
     // Endpoint naming — from each endpoint's OWN YAML (NAME-0, #611)
     // ======================================================================
     // The table export and module folder of an endpoint are its `plural:` and
     // `context:`, read through the same function its own emission uses — never
-    // `pluralize(name)` here. `architecture: clean` has no `context:` folders.
+    // `pluralize(name)` here.
+    //
+    // `architecture: clean` has no module tree and no `context:` folders — its
+    // layout is `locations:`, and `paths.modules_dir` never feeds it. Its
+    // junction and endpoints are siblings under one layer folder
+    // (`application/<plural>`), so only the sibling-relative form of the
+    // imports below matters: `.` is that neutral common root.
+    const namingRoot = architecture === "clean" ? "." : modulesDir;
     const entityLookup = projectEntityLookup(cwd);
     const endpointNaming = (endpoint) => {
       const block = entityLookup(endpoint);
@@ -323,7 +333,7 @@ export default {
       }
       return entityModuleNaming(
         architecture === "clean" ? { ...block, context: undefined } : block,
-        srcRoot,
+        namingRoot,
       );
     };
     const leftNaming = endpointNaming(leftEntity);
@@ -336,7 +346,7 @@ export default {
     const rightTable = rightEntityPlural; // e.g. 'contacts'
 
     // The junction's own folder is flat (a junction has no `context:`).
-    const junctionModuleDir = `${srcRoot}/modules/${entityNamePlural}`;
+    const junctionModuleDir = `${namingRoot}/${entityNamePlural}`;
 
     // ======================================================================
     // CGP-60 — parent-side paths + fan-out locals

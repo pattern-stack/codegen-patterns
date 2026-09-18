@@ -530,10 +530,10 @@ export default {
     }));
 
     // ======================================================================
-    // Source root — `paths.backend_src`, resolved (PATH-0, #642)
+    // Module tree — `paths.modules_dir`, resolved (PATH-0 #642, PATH-1 #645)
     // ======================================================================
 
-    const srcRoot = configOrDefaults(loadProjectConfig(process.cwd())).paths.backend_src;
+    const modulesDir = configOrDefaults(loadProjectConfig(process.cwd())).paths.modules_dir;
 
     // ======================================================================
     // Endpoint naming — from each endpoint's OWN YAML (NAME-1, #633)
@@ -550,7 +550,7 @@ export default {
           `${entityLookup.missingEntity(endpoint)}. The relationship reads its table and module folder from that YAML.`
         );
       }
-      return entityModuleNaming(block, srcRoot);
+      return entityModuleNaming(block, modulesDir);
     };
     const fromNaming = endpointNaming(config.from);
     const toNaming = selfReferential ? fromNaming : endpointNaming(config.to);
@@ -558,7 +558,7 @@ export default {
     const toEntityPlural = toNaming.plural;
 
     // The relationship's own folder is flat (a relationship has no `context:`).
-    const relationshipModuleDir = `${srcRoot}/modules/${entityNamePlural}`;
+    const relationshipModuleDir = `${modulesDir}/${entityNamePlural}`;
     const fromEntityImport = `${relativeModuleDir(relationshipModuleDir, fromNaming.moduleDir)}/${config.from}.entity`;
     const toEntityImport = `${relativeModuleDir(relationshipModuleDir, toNaming.moduleDir)}/${config.to}.entity`;
 
@@ -734,8 +734,8 @@ export default {
       // Class names
       classNames,
 
-      // srcRoot
-      srcRoot,
+      // The module tree's root (`paths.modules_dir`)
+      modulesDir,
 
       // Endpoint table exports (for FK .references()) and their entity-file
       // imports from the relationship's folder — from each endpoint's YAML.
