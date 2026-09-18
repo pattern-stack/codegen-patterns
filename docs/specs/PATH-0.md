@@ -1,7 +1,7 @@
 # PATH-0 — one default per `paths.*` key; every reader and every scaffold goes through it
 
-**Status:** Design
-**Date:** 2026-09-18
+**Status:** Implemented
+**Date:** 2026-09-18 · **Implemented:** 2026-09-18
 **Issues:** #642 (readers' fallbacks disagree) · #566 (init + subsystem scaffolds ignore `paths.backend_src` /
 `paths.entities`) · #612 (emitted `app.module.ts` / root `schema.ts` hard-code `./generated`)
 **Project:** #578
@@ -81,6 +81,12 @@ The same rule removes the `naming-config.mjs` no-file fallback. `DEFAULT_BACKEND
 - `importSpecifier(fromFile, toModule)` returns the relative, extension-less, `./`-prefixed POSIX specifier from an
   emitted file to a module.
 - `tsconfigAliases(layout, tsconfigDir)` returns `@shared/*`, `@modules/*`, `@generated/*` → `./<rel>/*`.
+- `tsconfigIncludes(layout)` returns `<backend_src>/**/*`, plus `<generated>/**/*` when `generated` lies outside
+  `backend_src`.
+
+`projectLayout` runs the `paths` block through `ResolvedPathsSchema.parse` itself. That is idempotent on the loader's
+parsed config, and it gives the same defaults to a `null` config (no file) or a partial one. Every scaffold-locals
+resolver is handed one of those, so none of them needs a defaults path of its own.
 
 It replaces `subsystems-path.ts`, `events-path.ts`, `jobs-path.ts`, `barrel-generator.ts` › `resolveGeneratedDir` /
 `resolveBackendSrc` / `resolveArchitecture`, `entity.ts` › `resolveProvidersDir` and `orchestration.ts`'s root
@@ -120,7 +126,15 @@ on this branch. When REL-1 adds it, it takes `importSpecifier(databaseModule, <g
   architecture fallback and the by-architecture `backend_src` fallback are gone.
 - `entity/new/prompt.js` › `loadTopLevelEventYamls` reads `paths.events_dir`.
 - `relationship/new/prompt.js` `srcRoot` = `paths.backend_src` (was the literal `"src"`).
-- `clean-lite-ps/prompt-extension.js` drops its final `'src'` fallback; `baseLocals.backendSrc` is always set.
+- `clean-lite-ps/prompt-extension.js`'s final `'src'` fallback becomes `DEFAULT_CODEGEN_CONFIG.paths.backend_src`.
+  Unit tests build its locals by hand without `backendSrc`, and the schema value is still the one default.
+- The subsystem prompts (`templates/subsystem/{jobs,events,bridge,integration,auth,observability,auth-integrations}`)
+  lose their own path fallbacks (`src/main.ts`, `shared/subsystems/...` without `src/`, …). A missing path arg throws
+  (`templates/_shared/required-arg.mjs`). The CLI always passes them from the layout.
+- The frontend emitter (`emitters/frontend/load-context.ts`) takes `generate.architecture` and `paths.providers`
+  through `GenerateConfigSchema` / `ResolvedPathsSchema` instead of its own `'clean'` / `'definitions/providers'`
+  fallbacks.
+- `entities-dir.ts`: `entitiesDirCandidates` is replaced by `entitiesDirPath(cwd, paths)`, a single value.
 
 ### #566 nit: the `EventOfType` placeholder
 
@@ -130,10 +144,18 @@ for every `T`, with `T` used. `PayloadOfType` gets the same treatment.
 
 ### Census (#644 nit a)
 
-`config-census.test.ts` sweep 2 also matches a bare `config.<block>` / `config?.<block>` read, which is how
-scaffold-locals files that hold the parsed config as `config` read it, and bracket access
-`config[…'<block>']`. Dynamic `config[name]` is allowed only in `subsystem-detect.ts` (narrowed to the six `backend`
-blocks, CFG-0), and that exception is asserted exact.
+`config-census.test.ts` sweep 2 also matches two more read forms. The first is a bare `config.<block>` /
+`config?.<block>` read, which is how the scaffold-locals resolvers read the parsed config they are handed. The second is
+literal bracket access, `config['<block>']`. The sweep covers files whose `config` is typed `CodegenConfig` /
+`Context['config']`, or `Record<string, unknown>` in a file about `codegen.config.yaml`.
+
+A computed `config[name]` read is allowed only in `subsystem-barrel-generator.ts`, which indexes by `COMPOSABLE_ORDER`
+(every one a declared block), and the list is asserted exact. `subsystem-detect.ts`'s narrowed read is typed, so TS
+checks it. Sweep 1 now also counts `resolvedConfig`, `DEFAULT_CODEGEN_CONFIG` and `configOrDefaults(…)` reads, plus
+`project-layout.ts`'s own `paths.<key>`. It also asserts the converse: every declared `paths` key has a reader.
+
+A second test (`config/path-defaults.test.ts`) greps `src/` and `templates/` for a fallback literal:
+`'app/backend/src'`, `?? 'src'`, `?? 'entities'`, `?? 'src/generated'` and the like, or `|| 'src'`.
 
 ## Gate
 
@@ -153,7 +175,31 @@ then runs `project init --with-tsconfig`, `subsystem install events`, `entity ne
 
 ## Found
 
-Filled in at implementation.
+1. **The clean-lite-ps barrels used the wrong root with no `backend_src`.** `barrel-generator.ts` defaulted to
+   `app/backend/src` and applied it to clean-lite-ps as well. Its doc comment said "ignored for clean-lite-ps", which
+   was not true. A project that omitted `backend_src` got barrels importing `app/backend/src/modules/…`, while the
+   modules were emitted under `src/`. Fixed by the single default; the barrel unit expectations now read
+   `../modules/…`.
+2. **`subsystem install jobs` wrote `src/worker.ts` and hooked `src/main.ts` regardless of config** (the #566 report).
+   The subsystem prompts also carried their own fallbacks, one of which (`shared/subsystems/…`) had no `src/` at all.
+3. **Four readers probed fallback chains:** entities (`paths.entities`, then `<cwd>/entities`), subsystem detection
+   (`paths.subsystems`, `src/shared/subsystems`, `src/subsystems`, `shared/subsystems`) in both `context.ts` and
+   `subsystem-detect.ts`, and `project analyze`'s entities dir. Each now reads the one resolved value.
+4. **`project upgrade-openapi` kept a private copy** of `runtimeRoot` / `loadRuntimeFile` and of the OpenAPI slice
+   of `VENDORED_RUNTIME_FILES`. It now imports them.
+5. **`paths.mjs` exported six things nothing imported** (`FRONTEND_LAYERS`, `getFrontendPath`, `PACKAGE_PATHS`,
+   `TEST_OUTPUT_PATHS`, `INJECTABLE_FILES`, `BASE_PATHS.frontendSrc`), carrying a second `frontend_src` default
+   (`app/frontend/src`). Deleted.
+6. **#612's `database.module.ts` relations import does not exist on this branch.** #586 has not landed. When REL-1
+   adds it, it takes `importSpecifier(layout.databaseModule, <generated>/relations)`.
+7. **Two keys are read consistently but not honoured by every emitter.** The entity/relationship pipelines and
+   `barrel-generator.ts` hard-code `<backend_src>/modules`, ignoring `paths.modules_dir`. The vendored
+   `@shared/subsystems/*` imports assume `paths.subsystems` is `<backend_src>/shared/subsystems`. The `patterns`
+   default glob is `src/…`. Filed: **#645**.
+8. **The `clean` junction smoke asserts `app/backend/src/…`** while its own config sets `backend_src: src`. It never
+   gets that far (tsc is red first, #602), so this is unchanged. It is recorded here for whoever turns #602 green.
+9. **The junction prompt's no-config fallback that CFG-0 Found 9 recorded** (`clean-lite-ps`) is gone. The four
+   junction-naming unit cases that relied on it now declare `architecture: clean-lite-ps` in their config.
 
 ## Gates
 
