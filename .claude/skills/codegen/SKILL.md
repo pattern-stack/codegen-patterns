@@ -241,8 +241,11 @@ into that module (`src/cli/shared/app-config-generator.ts`), never a runtime YAM
 **A generated file the app imports is never optional output (JOBS-0, #655).** `modules.ts`, `schema.ts`,
 `subsystems.ts` (+ its registry / events stubs), `subsystems-schema.ts` and `app-config.ts` are written through
 `generating(file, step)` (`src/cli/shared/generated-file.ts`), which rethrows any failure as a `GeneratedFileError`
-naming the file; every command that regenerates them (`entity new`, `relationship new`, `junction new`,
-`subsystem install` / `remove`) returns `reportRegenerationFailure(...)` — exit 1, never a warning. Other
+naming the file (`writeAppConfig` / `syncAppConfig` wrap themselves); every command that regenerates them
+(`entity new`, `relationship new`, `junction new`, `subsystem install` / `remove`, `subsystem install openapi-config`)
+returns `reportRegenerationFailure(...)` — exit 1, never a warning; `project upgrade-openapi` / `upgrade-auth` exit 1
+through their own catch. No rollback: a failed `entity new` post-step exits 1 with hygen's entity tree already written
+and the barrels stale — fix the cause and re-run (idempotent). Other
 `entity new` post-steps (scope type, event codegen, bridge registry, integration emitters) still soft-fail — #660.
 
 ```yaml

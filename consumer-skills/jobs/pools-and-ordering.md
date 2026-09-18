@@ -137,7 +137,7 @@ import { JobWorkerModule } from '@shared/subsystems/jobs';
 export class AppModule {}
 ```
 
-`JobWorkerModule.forRoot({ mode, backend?, pools?, allPools?, domainModulePools?, multiTenant?, shutdownTimeoutMs? })` (`domainModulePools` is the generated `jobPools`; the generated wiring passes it) imports `JobsDomainModule` internally and starts a worker per active pool. The protocol tokens (`JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`) become available project-wide.
+`JobWorkerModule.forRoot({ mode, backend, pools?, allPools?, domainModulePools?, multiTenant?, shutdownTimeoutMs? })` (`backend` is required and must equal `jobs.backend` — the generated wiring states it; `domainModulePools` is the generated `jobPools`; the generated wiring passes it) imports `JobsDomainModule` internally and starts a worker per active pool. The protocol tokens (`JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`) become available project-wide.
 
 - Pass `pools: ['batch', 'agents']` to restrict which pools *this* process services — useful for heterogeneous standalone deploys. Pools omitted from the list are not claimed by this process.
 - A process that only needs to *start* jobs (not run them) can import `JobsDomainModule.forRoot({ backend })` alone — services available, no worker loop.

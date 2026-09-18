@@ -38,6 +38,19 @@ domain call already does (`JobsDomainModule.forRoot({ backend: '<backend>', … 
 every generated jobs install gains `backend: 'drizzle'` in the embedded `JobWorkerModule.forRoot({ … })` call and in
 `jobWorkerOptions` (`<generated>/app-config.ts`) — the intended changed case; snapshots regenerate (I7).
 
+**`JobWorkerModuleOptions.backend` is required; the runtime fallback is deleted** (review). With the generator always
+stating it, `opts.backend ?? 'drizzle'` (`job-worker.module.ts`, `onModuleInit` and `forRoot`) was reachable only by
+hand-written callers — and a defaulted worker backend next to a differently-configured `JobsDomainModule` is exactly
+the two-backend boot #656 removes. One default, in the config schema (I1, I7). Every in-repo caller (runtime specs,
+integration test, smoke verifiers, skill examples) already passed it.
+
+**The `main.ts` jobs hint stops telling consumers to hand-wire the worker** (review). `templates/subsystem/jobs/
+main-hook.ejs.t` said "add `JobWorkerModule.forRoot({ mode: 'embedded' })` to AppModule imports" — no `backend`, and a
+second `JobWorkerModule` next to the one the barrel composes. It now says: set `jobs.worker_mode: embedded` and
+regenerate; the generated `SUBSYSTEM_MODULES` composes the worker with `jobs.backend`. (Not `jobWorkerOptions`: that
+value is the standalone worker's — `mode: 'standalone'`, `allPools: true`.) The sentinel line is unchanged, so
+already-injected `main.ts` files are left alone.
+
 **`backend: memory` with a standalone worker is a config error.** A separate worker process cannot share an
 in-memory store: the API enqueues into its own process's `MemoryJobStore`, the worker drains another. `JobsConfigSchema`
 gains a `superRefine`: `backend: 'memory'` with the effective worker mode `standalone` is an issue at path
@@ -95,6 +108,10 @@ the generated `main.ts` and `worker.ts` unconditionally.
 - **`subsystem install --json` (vendored) regenerates at all.** It returned before the barrel step, so in JSON mode
   `subsystems.ts` / `app-config.ts` were never refreshed. The regeneration now runs before the JSON / dry-run branches
   (skipped on `--dry-run`), and before the "installed" success line, so a failure is never reported after a success.
+- `writeAppConfig` / `syncAppConfig` wrap their own write in `generating(...)`, so every writer of `app-config.ts` —
+  including `subsystem install openapi-config` (now `reportRegenerationFailure`, was an uncaught stack trace) and
+  `project upgrade-openapi` / `upgrade-auth` (already exit 1 on a throw; the message now names the file) — reports the
+  file. `project init` writes it through its own plan writer.
 - Subsystem detection (`detectInstalledSubsystems`, which scans the vendored tree) failing is reported against the
   barrel it feeds (`GeneratedFileError(barrelAbs, …)`); the entity-YAML scan is reported against `modules.ts`.
 - **Genuinely optional output at these sites: none.** Every file the three generators write is imported by the app
@@ -108,7 +125,9 @@ the generated `main.ts` and `worker.ts` unconditionally.
 `src/__tests__/cli/regeneration-failure.test.ts`: a temp project whose target path is occupied by a directory (a
 real `EISDIR`, no mocks) — `entity new` (`modules.ts` text mode, `app-config.ts` JSON mode), `subsystem install`
 vendored (`subsystems.ts`; `app-config.ts` in JSON mode) and package (`subsystems-schema.ts`), `subsystem remove`
-(`subsystems.ts`): exit `1`, `could not regenerate <file>: EISDIR …`, JSON `{ status: 'error', file }`. All six fail on
+(`subsystems.ts`), `subsystem install openapi-config` (`app-config.ts`): exit `1`, `could not regenerate <file>: EISDIR
+…`, JSON `{ status: 'error', file }`. Plus the positive case: vendored `subsystem install --json` writes `subsystems.ts`
+and `app-config.ts`. All six fail on
 the #656 commit (exit 0, warning only). `relationship new` / `junction new` call the same `regenerateBarrels` the
 `entity new` case covers. The smokes prove the happy path.
 
@@ -130,6 +149,9 @@ the #656 commit (exit 0, warning only). `relationship new` / `junction new` call
 - **More soft-fails in `entity new` (#660).**
 - **Three more warn-only barrel sites** (`subsystem remove`, `relationship new`, `junction new`) and a **JSON-mode skip**
   (`subsystem install --json`, vendored, never regenerated) — fixed here, see §#655 Decision.
+- **A failed `entity new` post-step leaves partial state.** Hygen has already written the entity module tree when the
+  barrels are regenerated, so a barrel failure exits 1 with the new tree on disk and the barrels stale — no rollback.
+  Re-running after fixing the cause converges (every step is idempotent). Recorded, not changed.
 - **Vendored `subsystem install` regenerates from a stale config (#661).** The vendored path writes `subsystems.ts` /
   `app-config.ts` from the context read before its own config block was injected (the package path reloads). A fresh
   `subsystem install jobs` (vendored) emits no embedded `JobWorkerModule` and no drizzle extension until the next
@@ -137,13 +159,13 @@ the #656 commit (exit 0, warning only). `relationship new` / `junction new` call
 
 ## Gates
 
-Run after the last code edit (only this spec changed after them).
+Run after the last code edit (the review commit; only this spec's table changed after them).
 
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | pass |
-| `just test-all` | pass: 3499 unit tests, 0 fail; baseline unchanged; every smoke (base, subsystems both modes, relationship, junction ×4 incl. `--layout custom` both modes — `verify-worker.ts` now also asserts `backend: 'drizzle'`, cross-domain ×2, capability both modes); junction snapshots 10 pass; integration-emit 56 pass; smoke-integration |
+| `just test-all` | pass: 3501 unit tests, 0 fail; baseline unchanged; every smoke (base, subsystems both modes, relationship, junction ×4 incl. custom layout both modes — `verify-worker.ts` asserts `backend: 'drizzle'`, cross-domain ×2, capability both modes); junction snapshots 10 pass; integration-emit 56 pass; smoke-integration |
 | `just test-integration` | pass (74 pass, 2 skip, 0 fail) |
 | `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
-| `just test-post-publish` | pass: tarball contract + consumer workflow from the tarball |
-| #655 tests, pre-fix | all 5 in the first version of `regeneration-failure.test.ts` fail on the #656 commit (exit 0 + warning); the later `subsystem remove` case is covered by the same wrapper removal |
+| `just test-post-publish` | pass (runtime change: `JobWorkerModuleOptions.backend` required) |
+| #655 tests, pre-fix | the first 5 cases of `regeneration-failure.test.ts` all fail on the #656 commit (exit 0 + warning) |

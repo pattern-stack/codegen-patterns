@@ -290,7 +290,11 @@ resolve against.
   `backend: 'drizzle'` in them). `jobs.backend: memory` with a standalone
   worker — `jobs.worker_mode: standalone`, or no `worker_mode` — is now a
   config error naming both keys: a separate process cannot share the
-  in-memory job store.
+  in-memory job store. `JobWorkerModule.forRoot` now **requires**
+  `backend` (no `'drizzle'` default) — a hand-written call must state the
+  same backend as your `JobsDomainModule`. The `main.ts` jobs hint no longer
+  suggests hand-wiring `JobWorkerModule`: set `jobs.worker_mode: embedded`
+  and regenerate.
 - **A generated file the app imports that cannot be written fails the
   command** (#655). `entity new`, `relationship new`, `junction new` and
   `subsystem install` / `remove` printed a warning and exited 0 when
@@ -298,7 +302,8 @@ resolve against.
   `subsystems-schema.ts` or `app-config.ts` failed to regenerate — leaving
   `main.ts` / `worker.ts` importing a missing or stale module. They now exit 1
   with `could not regenerate <file>: <cause>` (JSON: `{ status: 'error', file,
-  error }`). `subsystem install --json` (vendored) now regenerates the barrel
+  error }`); so does `subsystem install openapi-config`, and `project
+  upgrade-openapi` / `upgrade-auth` name the file. `subsystem install --json` (vendored) now regenerates the barrel
   at all; the `barrelRegenerated` field of `subsystem remove --json` is gone
   (it is always regenerated, or the command fails).
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
