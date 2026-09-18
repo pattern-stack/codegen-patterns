@@ -196,3 +196,15 @@ reader and from every writer; the schema then rejects it.
    `clean-lite-ps`); with no config file at all the junction prompt still uses `clean-lite-ps`.
 10. **Consumer-app readers parse the file raw at boot** (generated `main.ts`, the jobs pool loader). Filed: **#643**.
 11. **`project config` prints the parsed config**, defaults included, rather than the raw file.
+
+## Gates
+
+Run after the last code edit (commit `f2ea421`; the only later change is this table).
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass (baseline runner, `clean` pipeline, byte-identical) |
+| `just test-all` | pass: 3446 unit tests, 0 fail (new: `config/project-config.test.ts`, `config/config-census.test.ts`); baseline; every smoke; junction unit; integration-emit; smoke-integration |
+| `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair in `bridge-e2e.test.ts`) |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
+| `just test-post-publish` | pass — the shipped loader (`src/config/project-config.ts` + both schema files, added to `files`) resolves `zod` / `yaml` from the tarball |
