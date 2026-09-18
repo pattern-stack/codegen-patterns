@@ -52,7 +52,6 @@ const RUNTIME_DEPS = [
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',
-	'yaml@2',
 ];
 const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
 

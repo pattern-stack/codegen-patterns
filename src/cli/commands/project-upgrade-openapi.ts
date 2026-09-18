@@ -18,11 +18,13 @@
  *        - Insert `@Global() class OpenApiModule {}` above `AppModule` (if
  *          missing).
  *        - Add `OpenApiModule` to `AppModule.imports: [...]`.
- *   4. Patch `<backend_src>/main.ts` (best-effort):
+ *   4. (Re)generate `<paths.generated>/app-config.ts` (CFG-1).
+ *   5. Patch `<backend_src>/main.ts` (best-effort):
  *        - If `SwaggerModule.setup` already present → skip.
  *        - Else inject the OPENAPI-4 two-pass Swagger block after
- *          `NestFactory.create(...)`.
- *   5. Report what changed, exit 0 on success, 1 on bail.
+ *          `NestFactory.create(...)`, reading `openapiConfig` from the
+ *          generated module (the app never parses codegen.config.yaml).
+ *   6. Report what changed, exit 0 on success, 1 on bail.
  *
  * `--dry-run` prints the diff but writes nothing.
  */
@@ -45,7 +47,8 @@ import {
 	type PatchResult,
 } from '../shared/ast-patch.js';
 import { loadRuntimeFile, VENDORED_RUNTIME_FILES } from '../shared/init-scaffold.js';
-import { projectLayout } from '../shared/project-layout.js';
+import { importSpecifier, projectLayout, type ProjectLayout } from '../shared/project-layout.js';
+import { APP_CONFIG_FILE, syncAppConfig } from '../shared/app-config-generator.js';
 import { loadProjectConfig } from '../../config/project-config.js';
 
 // ---------------------------------------------------------------------------
@@ -76,55 +79,45 @@ const OPEN_API_MODULE_SNIPPET = `/**
 class OpenApiModule {}
 `;
 
-const MAIN_SWAGGER_BLOCK = `  try {
-    // OPENAPI-4: build the document in two passes — registry owns component
-    // schemas (Zod-derived), Nest's scanner owns the paths map. See
-    // docs/CONSUMER-SETUP.md §OpenAPI for details.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fsMod = await import('node:fs');
-    const pathMod = await import('node:path');
-    const { parse: parseYaml } = await import('yaml');
-    const { DocumentBuilder, SwaggerModule } = await import('@nestjs/swagger');
+const MAIN_SWAGGER_BLOCK = `  // OPENAPI-4: build the document in two passes — registry owns component
+  // schemas (Zod-derived), Nest's scanner owns the paths map. \`openapiConfig\`
+  // is codegen.config.yaml's \`openapi:\` block, validated and written into
+  // <generated>/app-config.ts by the generator (CFG-1). See
+  // docs/CONSUMER-SETUP.md §OpenAPI.
+  if (openapiConfig.enabled) {
+    const registry = app.get<OpenApiRegistry>(OPENAPI_REGISTRY);
+    const registryDocument = await registry.build({
+      title: openapiConfig.title,
+      version: openapiConfig.version,
+      description: openapiConfig.description,
+    });
 
-    const configPath = pathMod.resolve(process.cwd(), 'codegen.config.yaml');
-    const cfg: { openapi?: { enabled?: boolean; path?: string; title?: string; version?: string; description?: string; auth?: 'bearer' | 'none'; } } =
-      fsMod.existsSync(configPath)
-        ? (parseYaml(fsMod.readFileSync(configPath, 'utf-8')) ?? {})
-        : {};
+    const docBuilder = new DocumentBuilder()
+      .setTitle(openapiConfig.title)
+      .setVersion(openapiConfig.version);
+    if (openapiConfig.description) docBuilder.setDescription(openapiConfig.description);
+    if (openapiConfig.auth === 'bearer') docBuilder.addBearerAuth();
 
-    if (cfg.openapi?.enabled) {
-      const registry = app.get<OpenApiRegistry>(OPENAPI_REGISTRY);
-      const registryDocument = await registry.build({
-        title: cfg.openapi.title ?? 'API',
-        version: cfg.openapi.version ?? '0.0.0',
-        description: cfg.openapi.description,
-      });
-
-      const docBuilder = new DocumentBuilder()
-        .setTitle(cfg.openapi.title ?? 'API')
-        .setVersion(cfg.openapi.version ?? '0.0.0');
-      if (cfg.openapi.description) docBuilder.setDescription(cfg.openapi.description);
-      if ((cfg.openapi.auth ?? 'bearer') === 'bearer') docBuilder.addBearerAuth();
-
-      const nestDocument = SwaggerModule.createDocument(app, docBuilder.build());
-      nestDocument.components = {
-        ...nestDocument.components,
-        schemas: {
-          ...(nestDocument.components?.schemas ?? {}),
-          ...registryDocument.components.schemas,
-        } as NonNullable<typeof nestDocument.components>['schemas'],
-      };
-      SwaggerModule.setup(cfg.openapi.path ?? '/docs', app, nestDocument);
-    }
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[openapi] Swagger bootstrap skipped:', e instanceof Error ? e.message : e);
+    const nestDocument = SwaggerModule.createDocument(app, docBuilder.build());
+    nestDocument.components = {
+      ...nestDocument.components,
+      schemas: {
+        ...(nestDocument.components?.schemas ?? {}),
+        ...registryDocument.components.schemas,
+      } as NonNullable<typeof nestDocument.components>['schemas'],
+    };
+    SwaggerModule.setup(openapiConfig.path, app, nestDocument);
   }
 `;
 
-const MAIN_SWAGGER_IMPORTS = [
-	"import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';",
-];
+/** The imports the Swagger block needs, `main.ts`-relative where local. */
+function mainSwaggerImports(layout: ProjectLayout): string[] {
+	return [
+		"import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';",
+		`import { OPENAPI_REGISTRY, OpenApiRegistry } from '${importSpecifier(layout.mainTs, path.join(layout.shared, 'openapi'))}';`,
+		`import { openapiConfig } from '${importSpecifier(layout.mainTs, path.join(layout.generated, 'app-config'))}';`,
+	];
+}
 
 // ---------------------------------------------------------------------------
 // Project root resolution
@@ -177,7 +170,8 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 	const { projectRoot, dryRun, force } = opts;
 	const changes: UpgradeChange[] = [];
 	// Every target resolves from the project's `paths.*` (PATH-0).
-	const layout = projectLayout(projectRoot, loadProjectConfig(projectRoot));
+	const config = loadProjectConfig(projectRoot);
+	const layout = projectLayout(projectRoot, config);
 	const relToRoot = (abs: string) => path.relative(projectRoot, abs).split(path.sep).join('/');
 	const appModuleRel = relToRoot(layout.appModule);
 	const mainRel = relToRoot(layout.mainTs);
@@ -309,13 +303,20 @@ export async function runUpgradeOpenapi(opts: UpgradeOptions): Promise<UpgradeRe
 		changes.push({ path: appModuleRel, action: 'unchanged' });
 	}
 
-	// 3. Patch main.ts (best-effort)
+	// 3. (Re)generate <generated>/app-config.ts — the patched block imports
+	// `openapiConfig` from it (CFG-1).
+	{
+		const action = syncAppConfig(layout.generated, config, dryRun);
+		changes.push({ path: relToRoot(path.join(layout.generated, APP_CONFIG_FILE)), action });
+	}
+
+	// 4. Patch main.ts (best-effort)
 	const mainPath = layout.mainTs;
 	if (fs.existsSync(mainPath)) {
 		const mainSource = project.addSourceFileAtPath(mainPath);
 		const mainBefore = mainSource.getFullText();
 		const result = ensureMainSwaggerBlock(mainSource, {
-			swaggerImports: MAIN_SWAGGER_IMPORTS,
+			swaggerImports: mainSwaggerImports(layout),
 			swaggerBlock: MAIN_SWAGGER_BLOCK,
 		});
 		if (result.bail) {

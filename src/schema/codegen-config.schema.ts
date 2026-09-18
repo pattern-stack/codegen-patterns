@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BackendNamingConfigSchema } from "./naming-config.schema.js";
+import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js";
 
 /**
  * Codegen Configuration Schemas
@@ -12,7 +13,9 @@ import { BackendNamingConfigSchema } from "./naming-config.schema.js";
  * removed key is an error naming the key — never a silent default.
  *
  * Ships in the package's `files` (the hygen prompts import the loader, `.ts`
- * resolved by bun), so it may import only `zod` and other shipped schema files.
+ * resolved by bun), so it may import only `zod`, other shipped schema files,
+ * and pure shipped runtime modules (`runtime/subsystems/jobs/pool-config.ts`,
+ * whose pool rules `jobs.pools` runs — CFG-1).
  *
  * Only two blocks are open maps, because they model a map: `jobs.pools` (keyed
  * by pool name; each value is strict) and `frontend.parsers` (keyed by Electric
@@ -370,8 +373,9 @@ export type FrontendConfig = z.infer<typeof FrontendConfigSchema>;
  * The `auth:` block — closed-by-default data-plane authentication (ADR-043)
  * plus the auth subsystem's install knob.
  *
- * - `devAllowAnonymous` — read at bootstrap by the generated `main.ts`
- *   boot-fail check (ADR-043 §4; consumer runtime). When no `IUserContext` is
+ * - `devAllowAnonymous` — emitted into `<generated>/app-config.ts`
+ *   (`authConfig`, CFG-1) and read by the generated `main.ts` boot-fail check
+ *   (ADR-043 §4). When no `IUserContext` is
  *   bound under `AUTH_USER_CONTEXT` and entity HTTP controllers are exposed,
  *   the app refuses to serve — UNLESS this flag is `true`, which downgrades the
  *   hard failure to a loud warning so a bare scaffold can be run on localhost.
@@ -557,10 +561,13 @@ export const EventsConfigSchema = z
   .strict();
 
 /**
- * One `jobs.pools.<name>` entry. Read by the jobs runtime's
- * `pool-config.loader.ts` (in the consumer's app), which merges it onto the
- * five framework pools and enforces the rest (a user pool needs `queue` +
- * `concurrency`; `reserved` is framework-only).
+ * One `jobs.pools.<name>` entry. Emitted by the generator into
+ * `<generated>/app-config.ts` (`jobPools`, CFG-1) and handed to
+ * `JobsDomainModule.forRoot({ pools })`, which merges it onto the five
+ * framework pools. The pool rules (a framework pool's `queue`/`reserved` are
+ * fixed; a user pool needs `queue` + `concurrency`; `reserved` is
+ * framework-only) are the runtime's `poolOverrideIssues`, run on the whole map
+ * below — so they fail here, at generation, naming the key.
  */
 const JobsPoolSchema = z
   .object({
@@ -588,7 +595,14 @@ export const JobsConfigSchema = z
     worker_pools: z.array(z.string()).optional(),
     /** Embedded worker drains every pool (`JobWorkerModule.forRoot({ allPools })`). */
     all_pools: z.boolean().optional(),
-    pools: z.record(JobsPoolSchema).optional(),
+    pools: z
+      .record(JobsPoolSchema)
+      .superRefine((pools, ctx) => {
+        for (const issue of poolOverrideIssues(pools)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
+        }
+      })
+      .optional(),
     extensions: z
       .object({
         /** LISTEN-NOTIFY-1 / CLAIM-HB-1 knobs, camelCased into the module options. */
@@ -679,18 +693,22 @@ export const ObservabilityConfigSchema = z
   .strict();
 
 /**
- * `openapi:` — written by `templates/subsystem/openapi-config/`; read at boot
- * by the generated `main.ts` (consumer runtime; `init-scaffold.ts`,
- * `project-upgrade-openapi.ts`).
+ * `openapi:` — written by `templates/subsystem/openapi-config/`; parsed with
+ * its defaults and emitted into `<generated>/app-config.ts` (`openapiConfig`,
+ * CFG-1) by `app-config-generator.ts`, which the generated `main.ts` (and the
+ * `project upgrade-openapi` block) import. The defaults live here, once.
  */
 export const OpenApiConfigSchema = z
   .object({
-    enabled: z.boolean().optional(),
-    path: z.string().optional(),
-    title: z.string().optional(),
-    version: z.string().optional(),
+    /** Master switch: `false` ⇒ no `/docs`, no `<path>-json`. */
+    enabled: z.boolean().default(false),
+    /** Swagger UI mount point; the JSON document is served at `<path>-json`. */
+    path: z.string().default('/docs'),
+    title: z.string().default('API'),
+    version: z.string().default('0.0.0'),
     description: z.string().optional(),
-    auth: z.enum(['bearer', 'none']).optional(),
+    /** `bearer` ⇒ `DocumentBuilder.addBearerAuth()`. */
+    auth: z.enum(['bearer', 'none']).default('bearer'),
   })
   .strict();
 

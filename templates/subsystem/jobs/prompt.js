@@ -69,6 +69,9 @@ export default {
         args.jobWorkerModuleImport ??
         "@pattern-stack/codegen/runtime/subsystems/jobs/index",
       workerForRootOpts: decodeWorkerForRootOpts(args.workerForRootOpts),
+      // CFG-1: `<generated>/app-config` from the worker — its `jobPools` is the
+      // `domainModulePools` the forRoot literal above references.
+      appConfigImport: requiredPathArg(args, "appConfigImport", "subsystem jobs"),
       schemaPath:
         requiredPathArg(args, "schemaPath", "subsystem jobs"),
       // #517: package mode skips the schema template (the schema ships in the

@@ -1,7 +1,7 @@
 /**
  * `codegen project upgrade-auth` — surgical codemod that wires the ADR-043
- * closed-by-default data plane into an existing consumer's `src/main.ts` +
- * `src/app.module.ts`, bringing them up to the shape `project init` now emits.
+ * closed-by-default data plane into an existing consumer's `<backend_src>/main.ts` +
+ * `<backend_src>/app.module.ts`, bringing them up to the shape `project init` now emits.
  *
  * Sibling of `project upgrade-openapi`; same ts-morph AST-patch toolkit, same
  * idempotent / surgical / honest-bail discipline.
@@ -10,15 +10,17 @@
  *   1. Resolve project root (`--path` or cwd, walking up for
  *      `codegen.config.yaml` / `package.json`); resolve the runtime mode so the
  *      auth import specifier matches package vs vendored.
- *   2. Patch `src/app.module.ts`:
+ *   2. Patch `<backend_src>/app.module.ts`:
  *        - Add `import { AuthModule } from '<auth-barrel>'`.
  *        - Insert `AuthModule.forRoot({...})` into `AppModule.imports` (binds the
  *          global AuthenticatedGuard via APP_GUARD).
- *   3. Patch `src/main.ts` (best-effort):
+ *   3. (Re)generate `<paths.generated>/app-config.ts` (CFG-1).
+ *   4. Patch `<backend_src>/main.ts` (best-effort):
  *        - If `installRequesterContext(` already present → skip.
  *        - Else insert the RequesterContext boundary + boot-fail block after
- *          `NestFactory.create(...)`, plus the auth import.
- *   4. Report what changed, exit 0 on success, 1 on bail.
+ *          `NestFactory.create(...)`, plus the auth import and the
+ *          `authConfig` import from the generated module.
+ *   5. Report what changed, exit 0 on success, 1 on bail.
  *
  * It does NOT bind `AUTH_USER_CONTEXT` — that is always app-specific (the
  * consumer's session/JWT scheme). Until they bind it, the boot-fail block this
@@ -37,7 +39,9 @@ import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { resolveRuntimeMode, subsystemsImport } from '../shared/runtime-import.js';
-import { loadCodegenConfig } from '../../config/project-config.js';
+import { loadProjectConfig, type CodegenConfig } from '../../config/project-config.js';
+import { importSpecifier, projectLayout, type ProjectLayout } from '../shared/project-layout.js';
+import { APP_CONFIG_FILE, syncAppConfig } from '../shared/app-config-generator.js';
 import {
 	ensureImport,
 	ensureMainRequesterContextBlock,
@@ -54,9 +58,9 @@ const AUTH_MODULE_ENTRY = "AuthModule.forRoot({ encryptionKey: 'env', oauthState
 
 /**
  * The RequesterContext boundary + closed-by-default boot-fail block, inserted
- * after `NestFactory.create(...)`. Self-contained: it loads the `auth:` block
- * from `codegen.config.yaml` inline so it works in a hand-authored main.ts that
- * has no pre-existing `config` variable.
+ * after `NestFactory.create(...)`. `authConfig` is codegen.config.yaml's
+ * `auth:` block, written into `<generated>/app-config.ts` by the generator
+ * (CFG-1) — the app never parses the YAML.
  */
 const MAIN_AUTH_BLOCK = `  // ADR-043: bridge the verified principal into AsyncLocalStorage so every
   // downstream repository read/write is scoped with no threaded userId.
@@ -66,22 +70,15 @@ const MAIN_AUTH_BLOCK = `  // ADR-043: bridge the verified principal into AsyncL
   // an unauthenticated data plane here is a real exposure. Refuse to serve when
   // no IUserContext is bound, unless the localhost-only escape hatch is set.
   {
-    const { parse: parseYaml } = await import('yaml');
-    const fsMod = await import('node:fs');
-    const pathMod = await import('node:path');
-    const cfgPath = pathMod.resolve(process.cwd(), 'codegen.config.yaml');
-    const cfg: { auth?: { devAllowAnonymous?: boolean } } = fsMod.existsSync(cfgPath)
-      ? (parseYaml(fsMod.readFileSync(cfgPath, 'utf-8')) ?? {})
-      : {};
     const userContext = app.get(AUTH_USER_CONTEXT, { strict: false });
-    const allowAnonymous = cfg.auth?.devAllowAnonymous === true;
+    const allowAnonymous = authConfig.devAllowAnonymous;
     if (!userContext && !allowAnonymous) {
       throw new Error(
         '[auth] FATAL: entity HTTP controllers are exposed but no IUserContext ' +
           'is bound under AUTH_USER_CONTEXT. The data plane would be ' +
           'unauthenticated. Bind an IUserContext (install the auth subsystem, ' +
           'or provide your own), or set auth.devAllowAnonymous=true in ' +
-          'codegen.config.yaml for LOCALHOST DEV ONLY.',
+          'codegen.config.yaml and regenerate, for LOCALHOST DEV ONLY.',
       );
     }
     if (!userContext && allowAnonymous) {
@@ -110,17 +107,15 @@ function resolveProjectRoot(startDir: string): string {
 	return path.resolve(startDir);
 }
 
-function authBarrelImport(projectRoot: string): string {
-	// The parsed config (CFG-0) — an invalid file throws `CodegenConfigError`.
-	const cfgPath = path.join(projectRoot, 'codegen.config.yaml');
-	const config = fs.existsSync(cfgPath) ? loadCodegenConfig(cfgPath) : null;
-	const mode = resolveRuntimeMode(config);
-	return mode === 'vendored' ? './shared/subsystems/auth' : subsystemsImport(mode, 'auth');
+function authBarrelImport(config: CodegenConfig | null, layout: ProjectLayout): string {
+	return resolveRuntimeMode(config) === 'vendored'
+		? importSpecifier(layout.mainTs, path.join(layout.subsystems, 'auth'))
+		: subsystemsImport('package', 'auth');
 }
 
 interface UpgradeChange {
 	path: string;
-	action: 'updated' | 'unchanged' | 'skipped';
+	action: 'created' | 'updated' | 'unchanged' | 'skipped';
 	note?: string;
 	diff?: string;
 }
@@ -139,7 +134,14 @@ export interface UpgradeAuthOptions {
 export async function runUpgradeAuth(opts: UpgradeAuthOptions): Promise<UpgradeReport> {
 	const { projectRoot, dryRun } = opts;
 	const changes: UpgradeChange[] = [];
-	const authImport = authBarrelImport(projectRoot);
+	// Every target resolves from the project's `paths.*` (PATH-0) — the parsed
+	// config (CFG-0; an invalid file throws `CodegenConfigError`).
+	const config = loadProjectConfig(projectRoot);
+	const layout = projectLayout(projectRoot, config);
+	const relToRoot = (abs: string) => path.relative(projectRoot, abs).split(path.sep).join('/');
+	const appModuleRel = relToRoot(layout.appModule);
+	const mainRel = relToRoot(layout.mainTs);
+	const authImport = authBarrelImport(config, layout);
 
 	const project = new Project({
 		useInMemoryFileSystem: false,
@@ -154,13 +156,13 @@ export async function runUpgradeAuth(opts: UpgradeAuthOptions): Promise<UpgradeR
 	});
 
 	// 1. Patch app.module.ts
-	const appModulePath = path.join(projectRoot, 'src', 'app.module.ts');
+	const appModulePath = layout.appModule;
 	if (!fs.existsSync(appModulePath)) {
 		return {
 			projectRoot,
 			changes,
 			bail: {
-				file: 'src/app.module.ts',
+				file: appModuleRel,
 				reason: 'file does not exist — run `codegen project init` first, or author it manually',
 			},
 		};
@@ -172,7 +174,7 @@ export async function runUpgradeAuth(opts: UpgradeAuthOptions): Promise<UpgradeR
 		return {
 			projectRoot,
 			changes,
-			bail: { file: 'src/app.module.ts', reason: 'no `AppModule` class found (factory function or unusual shape)' },
+			bail: { file: appModuleRel, reason: 'no `AppModule` class found (factory function or unusual shape)' },
 		};
 	}
 
@@ -182,24 +184,31 @@ export async function runUpgradeAuth(opts: UpgradeAuthOptions): Promise<UpgradeR
 	const entry = ensureModuleDynamicImportEntry(appModuleClass, 'AuthModule', AUTH_MODULE_ENTRY);
 	patches.push(entry);
 	if (entry.bail) {
-		return { projectRoot, changes, bail: { file: 'src/app.module.ts', reason: entry.bail } };
+		return { projectRoot, changes, bail: { file: appModuleRel, reason: entry.bail } };
 	}
 
 	const appAfter = appSource.getFullText();
 	if (appAfter !== appBefore) {
 		if (!dryRun) appSource.saveSync();
 		changes.push({
-			path: 'src/app.module.ts',
+			path: appModuleRel,
 			action: 'updated',
 			note: patches.filter((p) => p.changed).map((p) => p.note).filter(Boolean).join('; '),
 			diff: simpleDiff(appBefore, appAfter),
 		});
 	} else {
-		changes.push({ path: 'src/app.module.ts', action: 'unchanged' });
+		changes.push({ path: appModuleRel, action: 'unchanged' });
 	}
 
-	// 2. Patch main.ts (best-effort)
-	const mainPath = path.join(projectRoot, 'src', 'main.ts');
+	// 2. (Re)generate <generated>/app-config.ts — the patched block reads
+	// `authConfig` from it (CFG-1).
+	{
+		const action = syncAppConfig(layout.generated, config, dryRun);
+		changes.push({ path: relToRoot(path.join(layout.generated, APP_CONFIG_FILE)), action });
+	}
+
+	// 3. Patch main.ts (best-effort)
+	const mainPath = layout.mainTs;
 	if (fs.existsSync(mainPath)) {
 		const mainSource = project.addSourceFileAtPath(mainPath);
 		const mainBefore = mainSource.getFullText();
@@ -207,17 +216,22 @@ export async function runUpgradeAuth(opts: UpgradeAuthOptions): Promise<UpgradeR
 			authImport,
 			block: MAIN_AUTH_BLOCK,
 		});
+		if (result.changed) {
+			ensureImport(mainSource, importSpecifier(layout.mainTs, path.join(layout.generated, 'app-config')), [
+				'authConfig',
+			]);
+		}
 		if (result.bail) {
-			changes.push({ path: 'src/main.ts', action: 'skipped', note: `${result.bail} — see CONSUMER-SETUP §Auth` });
+			changes.push({ path: mainRel, action: 'skipped', note: `${result.bail} — see CONSUMER-SETUP §Auth` });
 		} else if (result.changed) {
 			const mainAfter = mainSource.getFullText();
 			if (!dryRun) mainSource.saveSync();
-			changes.push({ path: 'src/main.ts', action: 'updated', note: result.note, diff: simpleDiff(mainBefore, mainAfter) });
+			changes.push({ path: mainRel, action: 'updated', note: result.note, diff: simpleDiff(mainBefore, mainAfter) });
 		} else {
-			changes.push({ path: 'src/main.ts', action: 'unchanged', note: result.note });
+			changes.push({ path: mainRel, action: 'unchanged', note: result.note });
 		}
 	} else {
-		changes.push({ path: 'src/main.ts', action: 'skipped', note: "does not exist — run `codegen project init` to scaffold" });
+		changes.push({ path: mainRel, action: 'skipped', note: "does not exist — run `codegen project init` to scaffold" });
 	}
 
 	return { projectRoot, changes };
@@ -285,7 +299,7 @@ export class ProjectUpgradeAuthCommand extends Command {
 		console.log('');
 		for (const c of report.changes) {
 			const icon =
-				c.action === 'updated'
+				c.action === 'created' || c.action === 'updated'
 					? theme.success(icons.check)
 					: c.action === 'skipped'
 						? theme.warning(icons.warning)

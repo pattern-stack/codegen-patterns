@@ -33,6 +33,7 @@ import { consumerErrors as scopeToConsumer } from './_consumer-errors';
 import {
   bootstrapJunctionProject,
   CUSTOM_LAYOUT_APP_PATTERN,
+  CUSTOM_LAYOUT_BOOT_CONFIG,
   LAYOUT_PATHS,
   SCENARIO_META,
   VALID_ARCHITECTURES,
@@ -130,6 +131,12 @@ function runSilent(cmd: string, cwd: string): { code: number; out: string; err: 
     out: r.stdout ?? '',
     err: r.stderr ?? '',
   };
+}
+
+/** `runSilent` with an argv array — for arguments that carry spaces (JSON). */
+function runArgv(argv: string[], cwd: string): { code: number; out: string; err: string } {
+  const r = spawnSync(argv[0]!, argv.slice(1), { cwd, encoding: 'utf-8' });
+  return { code: r.status ?? 1, out: r.stdout ?? '', err: r.stderr ?? '' };
 }
 
 function pascalCase(s: string): string {
@@ -508,8 +515,16 @@ async function main(): Promise<number> {
     // cross-module dependency throws here, not on a consumer's first boot.
     if (exitCode === 0) {
       log('booting AppModule (NestFactory DI resolution gate)');
-      const boot = runSilent(
-        `bun ${path.join(import.meta.dir, 'verify-boot.ts')} ${result.projectDir} ${P.backendSrc}/app.module.ts`,
+      // CFG-1: the custom layout declares non-default `jobs.pools`; the booted
+      // app's JOB_POOL_CONFIG must carry them.
+      const boot = runArgv(
+        [
+          'bun',
+          path.join(import.meta.dir, 'verify-boot.ts'),
+          result.projectDir,
+          `${P.backendSrc}/app.module.ts`,
+          ...(layoutArg === 'custom' ? ['--expect-pools', JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG.jobsPools)] : []),
+        ],
         result.projectDir,
       );
       if (boot.code !== 0) {
@@ -518,7 +533,37 @@ async function main(): Promise<number> {
         logError('AppModule boot failed — DI graph did not resolve');
         exitCode = 1;
       } else {
+        for (const line of boot.out.trim().split('\n')) log(line);
         log('boot OK (AppModule DI graph resolves)');
+      }
+    }
+
+    // 11. CFG-1 (#643) — run the generated main.ts and assert the non-default
+    // `openapi.*` / `auth.devAllowAnonymous` reached the running app. The app
+    // never reads codegen.config.yaml; these arrive through the generated
+    // `<generated>/app-config.ts`. main.ts wires the auth boot-fail check only
+    // in package mode (vendored defers it to `project upgrade-auth`).
+    if (exitCode === 0 && layoutArg === 'custom') {
+      log('running main.ts (CFG-1: boot config reaches the app)');
+      const { openapi } = CUSTOM_LAYOUT_BOOT_CONFIG;
+      const run = runArgv(
+        [
+          'bun',
+          path.join(import.meta.dir, 'verify-main.ts'),
+          result.projectDir,
+          `${P.backendSrc}/main.ts`,
+          JSON.stringify(openapi),
+          ...(runtimeArg === 'package' ? ['--expect-anonymous-warning'] : []),
+        ],
+        result.projectDir,
+      );
+      if (run.code !== 0) {
+        console.error(run.out);
+        console.error(run.err);
+        logError('main.ts did not serve the configured boot values');
+        exitCode = 1;
+      } else {
+        log(run.out.trim());
       }
     }
 

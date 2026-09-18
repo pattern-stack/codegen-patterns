@@ -9,7 +9,8 @@
  *      bracket access) → a top-level key of the schema; a computed
  *      `config[name]` only in the one narrowed reader.
  *   3. No second loader: nothing but `project-config.ts` both locates the file
- *      and parses YAML, bar the code emitted into the consumer's app.
+ *      and parses YAML — including the code emitted into the consumer's app
+ *      (CFG-1).
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -132,15 +133,9 @@ describe('config key census (CFG-0 gate 2)', () => {
 
 	it('nothing but the loader locates and parses codegen.config.yaml', () => {
 		// A file that builds the config file's path itself AND calls a YAML
-		// parser is a second loader — unless the code is emitted into the
-		// consumer's app (generated `main.ts`, the jobs runtime), which runs
-		// where the generator's loader is not a dependency (CFG-0 § out of scope).
-		const consumerRuntime = new Set([
-			'src/cli/shared/init-scaffold.ts',
-			'src/cli/commands/project-upgrade-auth.ts',
-			'src/cli/commands/project-upgrade-openapi.ts',
-			'runtime/subsystems/jobs/pool-config.loader.ts',
-		]);
+		// parser is a second loader. No exceptions: the consumer's app never
+		// reads the file — the values it needs at boot are emitted into
+		// `<generated>/app-config.ts` (CFG-1, #643).
 		const locates = /(?:(?:resolve|join)\([^)]*['"]codegen\.config\.yaml['"]|\/codegen\.config\.yaml`)/;
 		const parses = /\b(?:yaml\.parse|parseYaml|parseDocument)\(/;
 		const loaders = sourceFiles()
@@ -149,8 +144,6 @@ describe('config key census (CFG-0 gate 2)', () => {
 				const text = fs.readFileSync(path.join(REPO, rel), 'utf-8');
 				return locates.test(text) && parses.test(text);
 			});
-		expect(loaders.filter((rel) => !consumerRuntime.has(rel))).toEqual([]);
-		// The consumer-runtime list is exact: a stale entry fails too.
-		expect(loaders.sort()).toEqual([...consumerRuntime].sort());
+		expect(loaders).toEqual([]);
 	});
 });
