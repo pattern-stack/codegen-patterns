@@ -202,21 +202,79 @@ describe('analytics tags', () => {
 		expect(model.entities[0]!.fields.user_id!.role).toBe('dimension');
 	});
 
-	it('leaves behavior columns present but untagged', () => {
+	it('keeps an EXPLICITLY declared lifecycle field untagged unless the author tags it', () => {
+		// Declared in `fields:` rather than contributed by a behavior — the
+		// author owns it, so nothing is derived onto it.
 		const model = buildSemanticModel(
 			context([
-				parsedEntity('thing', 'things', [
-					field('created_at', 'datetime'),
-					field('deleted_at', 'datetime'),
-				]),
+				parsedEntity('thing', 'things', [field('closed_at', 'datetime')]),
 			]),
+		);
+		expect(model.entities[0]!.fields.closed_at).toEqual({
+			key: 'closed_at',
+			type: 'datetime',
+			column: 'closed_at',
+		});
+	});
+});
+
+describe('behavior-contributed columns (SEM-3)', () => {
+	const withBehaviors = (behaviors: string[], fields: ParsedField[] = []) => {
+		const entity = parsedEntity('thing', 'things', [field('name', 'string'), ...fields]);
+		entity.behaviors = behaviors;
+		return context([entity]);
+	};
+
+	it('expands timestamps into dimensions', () => {
+		const model = buildSemanticModel(withBehaviors(['timestamps']));
+		expect(model.entities[0]!.fields.created_at).toEqual({
+			key: 'created_at',
+			type: 'datetime',
+			role: 'dimension',
+			column: 'created_at',
+		});
+		expect(model.entities[0]!.fields.updated_at!.role).toBe('dimension');
+	});
+
+	it('expands soft_delete and user_tracking', () => {
+		const model = buildSemanticModel(withBehaviors(['soft_delete', 'user_tracking']));
+		const fields = model.entities[0]!.fields;
+		expect(fields.deleted_at!.role).toBe('dimension');
+		// created_by / updated_by are uuids — registered so they resolve in a
+		// filter, but not derived to dimensions.
+		expect(fields.created_by).toEqual({ key: 'created_by', type: 'uuid', column: 'created_by' });
+		expect(fields.updated_by!.role).toBeUndefined();
+	});
+
+	it('never derives `time` — which column is THE time axis is the author\'s call', () => {
+		const model = buildSemanticModel(withBehaviors(['timestamps']));
+		expect(model.entities[0]!.fields.created_at!.time).toBeUndefined();
+	});
+
+	it('an explicitly declared field wins over the behavior default', () => {
+		const model = buildSemanticModel(
+			withBehaviors(
+				['timestamps'],
+				[field('created_at', 'datetime', { role: 'dimension', time: true })],
+			),
 		);
 		expect(model.entities[0]!.fields.created_at).toEqual({
 			key: 'created_at',
 			type: 'datetime',
+			role: 'dimension',
+			time: true,
 			column: 'created_at',
 		});
-		expect(model.entities[0]!.fields.deleted_at!.role).toBeUndefined();
+	});
+
+	it('adds nothing when no behaviors are declared', () => {
+		const model = buildSemanticModel(withBehaviors([]));
+		expect(Object.keys(model.entities[0]!.fields)).toEqual(['name']);
+	});
+
+	it('ignores an unknown behavior name rather than throwing', () => {
+		const model = buildSemanticModel(withBehaviors(['not_a_behavior']));
+		expect(Object.keys(model.entities[0]!.fields)).toEqual(['name']);
 	});
 });
 

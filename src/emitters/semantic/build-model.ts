@@ -14,6 +14,7 @@
 
 import pluralize from 'pluralize';
 
+import { getBehavior } from '../../behaviors/index';
 import type { ParsedEntity, ParsedField } from '../../analyzer/types';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 import type {
@@ -138,6 +139,26 @@ function buildJunctionFields(def: JunctionDefinition): {
 /** Identifier columns that are never worth full-text matching. */
 const NEVER_SEARCHABLE = new Set(['id', 'external_id']);
 
+/**
+ * Behavior-contributed columns that are natural group-by axes.
+ *
+ * A behavior column is not in the entity's `fields:` block, so the author has
+ * no place to tag it — and an untagged column is registered but NOT groupable
+ * (the consuming layer refuses a `group_by` on a column with no
+ * `role: 'dimension'`). Emitting the temporal lifecycle columns as dimensions
+ * is what makes "opportunities created per month" expressible at all.
+ *
+ * `time: true` is deliberately NOT derived: which column is THE time axis is a
+ * semantic decision — it governs whether a semi-additive measure may be summed
+ * across it — and the author declares it on a field they own (the CRM slice
+ * uses `closed_at`).
+ */
+const BEHAVIOR_DIMENSION_COLUMNS = new Set([
+	'created_at',
+	'updated_at',
+	'deleted_at',
+]);
+
 /** snake_case → camelCase, matching the template helpers. */
 function camelCase(value: string): string {
 	return value.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase());
@@ -169,6 +190,36 @@ export function junctionIdentity(def: JunctionDefinition): {
 	const name = `${def.between[0]}_${def.between[1]}`;
 	const plural = pluralize(name);
 	return { name, plural, table: plural, tableVar: camelCase(plural) };
+}
+
+/**
+ * Columns an entity's declared `behaviors:` add, as `AggFieldMeta` entries.
+ *
+ * These are real columns on the emitted table — `behaviors: [timestamps]` puts
+ * `created_at` in the `pgTable` — so a model that omits them cannot filter or
+ * group on them, and the consuming layer reports them as unregistered. They are
+ * still DECLARED (the `behaviors:` list is YAML, and `src/behaviors/` is the
+ * single definition of what each contributes), so this is not introspection.
+ *
+ * A field declared explicitly in `fields:` always wins: the author's tags are
+ * authoritative over the behavior default.
+ */
+function buildBehaviorFields(entity: ParsedEntity): Record<string, SemanticField> {
+	const out: Record<string, SemanticField> = {};
+	for (const behaviorName of entity.behaviors) {
+		const behavior = getBehavior(behaviorName);
+		if (!behavior) continue;
+		for (const field of behavior.fields) {
+			if (entity.fields.has(field.name)) continue;
+			const type = AGG_COL_TYPE[field.type];
+			if (type === undefined) continue;
+			const meta: SemanticField = { key: field.name, type, column: field.name };
+			if (BEHAVIOR_DIMENSION_COLUMNS.has(field.name)) meta.role = 'dimension';
+			else if (SCOPE_COLUMNS.has(field.name)) meta.role = 'dimension';
+			out[field.name] = meta;
+		}
+	}
+	return out;
 }
 
 /** Is this field's column a `belongs_to` foreign key on its own entity? */
@@ -334,7 +385,8 @@ export function buildSemanticModel(context: SemanticEmitContext): SemanticModel 
 			continue;
 		}
 
-		const fields: Record<string, SemanticField> = {};
+		// Behavior columns first so an explicitly declared field always wins.
+		const fields: Record<string, SemanticField> = buildBehaviorFields(parsed);
 		for (const [name, field] of parsed.fields) {
 			const built = buildField(name, field);
 			if (built) fields[name] = built;

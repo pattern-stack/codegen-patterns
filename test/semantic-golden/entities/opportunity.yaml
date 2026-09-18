@@ -15,13 +15,20 @@ fields:
   amount:
     type: decimal
     role: measure
-    aggs: [sum, avg]
+    aggs: [sum, avg, min, max]
     additivity: additive
   won_amount:
     type: decimal
     role: measure
     aggs: [sum]
     additivity: additive
+  win_probability:
+    type: decimal
+    # SEM-3: the NON-ADDITIVE measure — a percentage, never summable.
+    role: measure
+    agg: avg
+    additivity: non
+
   stage:
     type: enum
     choices: [prospecting, negotiation, closed_won]

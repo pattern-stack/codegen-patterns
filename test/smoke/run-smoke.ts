@@ -251,13 +251,28 @@ function assertSemanticEmission(tmpDir: string): void {
 	// Both catalog key shapes: `aggs:` → field.agg, single `agg:` → bare field.
 	assertContains(
 		model,
-		/amount: \{ type: 'number', role: 'measure', aggs: \['sum', 'avg'\], additivity: 'additive'/,
-		'opportunity.amount measure tags',
+		/amount: \{ type: 'number', role: 'measure', aggs: \['sum', 'avg', 'min', 'max'\], additivity: 'additive'/,
+		'opportunity.amount measure tags (SEM-3: the additive money measure)',
 	);
 	assertContains(
 		model,
 		/health_score: \{ type: 'number', role: 'measure', agg: 'avg', additivity: 'non'/,
 		'account.health_score measure tags',
+	);
+	// SEM-3: the non-additive percentage — a rate is never summable, and that is
+	// not inferable from `decimal`.
+	assertContains(
+		model,
+		/win_probability: \{ type: 'number', role: 'measure', agg: 'avg', additivity: 'non'/,
+		'opportunity.win_probability (SEM-3: the non-additive percentage)',
+	);
+	// SEM-3: behavior-contributed columns reach the model as dimensions. Both
+	// CRM fixtures declare `behaviors: [timestamps]` and neither lists these in
+	// `fields:` — without the expansion they were absent and ungroupable.
+	assertContains(
+		model,
+		/created_at: \{ type: 'datetime', role: 'dimension', column: 'created_at' \}/,
+		'behavior-contributed created_at as a dimension (SEM-3)',
 	);
 
 	// The time axis and a declared value domain.

@@ -81,6 +81,15 @@ jobs:
       - name: Run scaffold integration suite
         run: just test-integration
 
+      # SEM-3's demonstration gate. It shares this job's Docker rather than
+      # getting one of its own, because it is one testcontainers suite. Today it
+      # SKIPS here, loudly: @pattern-stack/query-surface is unpublished and does
+      # not load against drizzle-orm 1.0 (query-surface#40). Wired in now so it
+      # starts gating the day the package is installable, instead of being a
+      # local-only check nobody remembers (CLAUDE.md: a gate outside CI rots).
+      - name: Run the semantic demonstration gate
+        run: just test-semantic-integration
+
   # Publish to npm on every merge to main, gated on green tests. Runs the
   # tarball smoke (#190), then publishes the root + each opted-in workspace
   # package IFF its version isn't already on npm — so merges without a
