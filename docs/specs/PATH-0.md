@@ -232,12 +232,13 @@ above covers that.
 
 ## Gates
 
-Run after the last code edit (commit `d9096c5`). The later commits change only docs, the spec, the CHANGELOG and four source comments that still named deleted resolvers (typecheck re-run: clean).
+Run after the last code edit (commit `8f59f04`, the review revision). The later commit changes only this table.
+Earlier-revision note: `b8c80a8` was comment-only, touching six lines in five files.
 
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | pass (baseline runner, `clean` pipeline, byte-identical) |
-| `just test-all` | pass: 3451 unit tests, 0 fail (new: `config/path-defaults.test.ts`; census extended); baseline; every smoke, including the new `junction --layout custom` legs in both runtimes; junction snapshots unchanged (10 pass); integration-emit (56 pass); smoke-integration |
+| `just test-all` | pass: 3454 unit tests, 0 fail. New: `config/path-defaults.test.ts` and the stale-`entities/` cases in `cli/entity.test.ts`; the census is extended. Also: baseline; every smoke, including the `junction --layout custom` legs (events + jobs installs) in both runtimes; junction snapshots unchanged (10 pass); integration-emit (56 pass); smoke-integration |
 | `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair in `bridge-e2e.test.ts`) |
 | `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (110 × TS2307 + 8 × TS7006, #602) |
 | `just test-post-publish` | pass: the shipped templates resolve `project-config.ts` (`DEFAULT_CODEGEN_CONFIG`) from the tarball |
