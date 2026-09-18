@@ -380,8 +380,8 @@ ADR-041 and `.ai-docs/research/subject-lattice-codegen-lift.md` already forward-
 
 - **`Actor`** (capability) — declares an entity can occupy roles; `config: { Actor: { kind: individual | group,
   members?: <has_many relation> } }`. `group` yields members as a predicate fragment (no materialized list).
-- **`Communication`** (capability) — attaches to an interaction entity (typically `patterns: [Integrated, Activity,
-  Communication]`); reads the `roles:` block; contributes role-edge finders.
+- **`Communication`** (capability) — attaches to an interaction entity (typically `patterns: [Activity,
+  Communication]` — one spine, CAP-1); reads the `roles:` block; contributes role-edge finders.
 - **Record-style** needs no new pattern: it is `Base`/`Integrated` as today.
 
 ### 6.2 CAP-1 — implement ADR-041 (prerequisite)
@@ -428,9 +428,13 @@ export function WithActor<TBase extends RepoCtor>(Base: TBase) { /* memberPredic
   `configSchema`, `forwarderMethods` for the service-side pass-throughs, `mixinImport` for the repo side.
 - Emission: `patternConfig.roles` literal on the concrete repo (the `renderPatternConfigLiteral` path
   `service.ejs.t:49`); a `Communication` entity's `roles` also drive FK columns via CAP-2.
-- Fixture: `meeting` (`patterns: [Integrated, Activity, Communication]`, roles host/attendees/about) over `contact`
+- Fixture: `meeting` (`patterns: [Activity, Communication]`, roles host/attendees/about) over `contact`
   (`Actor: individual`) and `account` (`Actor: group`, members via `contacts`); smoke tsc + `just test-integration`
-  round-trip of `findByRole('attendee', contactId, scope)`.
+  round-trip of `findByRole('attendees', contactId)` under an ALS scope (a second scope sees nothing).
+  *(Corrected 2026-09-17, CAP-3: `[Integrated, Activity, …]` has two spines and does not generate since CAP-1, and
+  ADR-041 §5 defers authoring `Activity` as a capability. Scope is ambient, never an argument. As built, the
+  junction is a live table handle in the emitted `communicationConfig`, `participants` returns ids only, and
+  `memberPredicate` is over the actor's own table — `docs/specs/CAP-3.md`, ADR-041.1.)*
 
 ### 6.5 Out of scope for unit 4
 `to_shape` projections, selector/Find-target catalog, and shape registry from the subject-lattice research; any

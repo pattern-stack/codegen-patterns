@@ -77,6 +77,7 @@ const whereSql = (table: typeof accounts | typeof contacts, predicate: ReturnTyp
 
 describe('WithCommunication', () => {
 	it('findByRole on an undeclared role rejects, naming the declared roles', async () => {
+		// @ts-expect-error — an undeclared role is a compile error; this pins the runtime guard
 		await expect(new MeetingRepository().findByRole('organizer', 'c1')).rejects.toThrow(
 			"MeetingRepository: no role 'organizer'. Declared roles: host, attendees.",
 		);

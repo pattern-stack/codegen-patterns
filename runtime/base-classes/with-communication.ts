@@ -71,6 +71,18 @@ export interface Participant {
 }
 
 /**
+ * The role names a repository declares — the keys of its generated
+ * `communicationConfig.roles` (emitted `as const`), so `findByRole('atendees', …)`
+ * is a compile error on the repository and through the service forwarder.
+ * Falls back to `string` where the config is not narrowed.
+ */
+export type RoleOf<TRepo> = TRepo extends { readonly communicationConfig?: infer C }
+	? C extends CommunicationConfig
+		? Extract<keyof C['roles'], string>
+		: string
+	: string;
+
+/**
  * What `WithCommunication` adds to a repository — its public surface, stated
  * explicitly because a mixin shipped in the runtime is compiled with
  * declarations, and TypeScript cannot emit the anonymous class type of a mixin
@@ -81,7 +93,7 @@ export interface CommunicationCapability<TEntity> {
 	/** Filled by the generated repository from the entity's `roles:` block. */
 	readonly communicationConfig?: CommunicationConfig;
 	/** The rows in which `actorId` occupies `role`, under this repository's scope. */
-	findByRole(role: string, actorId: string): Promise<TEntity[]>;
+	findByRole(role: RoleOf<this>, actorId: string): Promise<TEntity[]>;
 	/** Every participant of row `id`, across all roles, as ids. */
 	participants(id: string): Promise<Participant[]>;
 }
@@ -96,7 +108,7 @@ export function WithCommunication<TBase extends RepositoryCtor>(
 		readonly communicationConfig?: CommunicationConfig;
 
 		/** The rows in which `actorId` occupies `role`, under this repository's scope. */
-		async findByRole(role: string, actorId: string): Promise<Array<EntityOf<TBase>>> {
+		async findByRole(role: RoleOf<this>, actorId: string): Promise<Array<EntityOf<TBase>>> {
 			const rows = await this.baseQuery(this.rolePredicate(role, actorId));
 			return rows as Array<EntityOf<TBase>>;
 		}
