@@ -3,7 +3,7 @@
  * emission — the cohesive cluster of "YAML metadata read but not emitted" bugs:
  *
  *   #345 — field `default:` → `.default(...)` / `.defaultNow()` on the column
- *   #354 — field `foreign_key: <table>.<col>` → `.references(() => ...)` + import
+ *   #354 — field `foreign_key: <table>.<col>` → `.references((): AnyPgColumn => ...)` + import
  *   #355 — field `index: true` → `index('<table>_<col>_idx').on(t.<col>)` in the
  *          pgTable extra-config callback + `index` import
  *   #356 — top-level `unique_indexes:` → `uniqueIndex(...).on(...)` + import
@@ -126,10 +126,10 @@ describe('field-level foreign_key (#354)', () => {
     behaviors: [],
   };
 
-  it('appends .references(() => <table>.<col>) to the FK column chain', () => {
+  it('appends .references((): AnyPgColumn => <table>.<col>) to the FK column chain', () => {
     const { output } = render(definition);
     expect(output).toContain(
-      "conversationId: uuid('conversation_id').notNull().references(() => conversations.id),",
+      "conversationId: uuid('conversation_id').notNull().references((): AnyPgColumn => conversations.id),",
     );
   });
 
@@ -147,7 +147,7 @@ describe('field-level foreign_key (#354)', () => {
       relationships: {},
       behaviors: [],
     });
-    expect(output).toContain("conversationId: uuid('conversation_id').references(() => conversations.id),");
+    expect(output).toContain("conversationId: uuid('conversation_id').references((): AnyPgColumn => conversations.id),");
     expect(output).not.toContain("uuid('conversation_id').notNull()");
   });
 
@@ -164,7 +164,7 @@ describe('field-level foreign_key (#354)', () => {
       "branchedFromId: uuid('branched_from_id').references((): AnyPgColumn => conversations.id),",
     );
     expect(output).toContain('type AnyPgColumn');
-    expect(locals.clpHasSelfFk).toBe(true);
+    expect(locals.clpHasFk).toBe(true);
     // No self-import.
     expect(output).not.toContain("import { conversations } from");
   });
@@ -207,7 +207,7 @@ describe('single-column index (#355)', () => {
       behaviors: [],
     });
     // Both the reference AND the index land.
-    expect(output).toContain(".references(() => conversations.id)");
+    expect(output).toContain(".references((): AnyPgColumn => conversations.id)");
     expect(output).toContain("index('tool_calls_conversation_id_idx').on(t.conversationId)");
   });
 

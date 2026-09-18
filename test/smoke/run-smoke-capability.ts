@@ -22,11 +22,15 @@
  *      `@modules/…`, a `project init` alias; deliberately NOT `@shared/…`,
  *      which is reserved for the package runtime and gets rewritten in package
  *      mode).
- *   4. `codegen entity new --all --force` over the CAP-1 fixtures.
- *   5. Assert the three emission shapes ADR-041 §6 specifies, and (NAME-0)
- *      that every edge onto an irregular-`plural:` entity (`person`) and a
- *      `context:`-nested one (`crew`) — belongs_to, has_many, junction
- *      endpoint — addresses it by its own YAML's naming.
+ *   4. `codegen entity new --all --force` over the CAP-1 fixtures, then
+ *      `junction new --all` and `relationship new --all`.
+ *   5. Assert the three emission shapes ADR-041 §6 specifies, and (NAME-0 /
+ *      NAME-1) that every edge onto an irregular-`plural:` entity (`person`)
+ *      and a `context:`-nested one (`crew`) — belongs_to, has_many, junction
+ *      endpoint, relationship endpoint — addresses it by its own YAML's
+ *      naming; that `person`, which both belongs_to and has_many `crew`,
+ *      composes one `CrewRepository` (#632); and that the `crew` ↔ `person`
+ *      FK cycle compiles (#631).
  *   6. `tsc --noEmit` — FAIL on any diagnostic located in the generated project.
  *   7. Two NEGATIVE gates through the CLI: two spine bases, and a capability
  *      method colliding with a `queries:` method. Both must exit non-zero.
@@ -348,12 +352,12 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	const meetingEntity = reads('modules/meetings/meeting.entity.ts');
 	assertContains(
 		meetingEntity,
-		/hostContactId: uuid\('host_contact_id'\)\.references\(\(\) => contacts\.id, \{ onDelete: 'restrict' \}\),/,
+		/hostContactId: uuid\('host_contact_id'\)\.references\(\(\): AnyPgColumn => contacts\.id, \{ onDelete: 'restrict' \}\),/,
 		'meeting.entity.ts host role FK column (explicit column:)',
 	);
 	assertContains(
 		meetingEntity,
-		/aboutAccountId: uuid\('about_account_id'\)\.references\(\(\) => accounts\.id, \{ onDelete: 'restrict' \}\),/,
+		/aboutAccountId: uuid\('about_account_id'\)\.references\(\(\): AnyPgColumn => accounts\.id, \{ onDelete: 'restrict' \}\),/,
 		'meeting.entity.ts about role FK column (<role>_<target>_id default)',
 	);
 	assertContains(
@@ -489,7 +493,7 @@ function assertTargetNaming(tmpDir: string): void {
 
 	// belongs_to — irregular plural (from inside a context) and nested target
 	expectImport('org/crews/crew.entity.ts', "import { persons } from '../../persons/person.entity';");
-	assertContains(reads('org/crews/crew.entity.ts'), /\.references\(\(\) => persons\.id/, 'crew.entity.ts FK table');
+	assertContains(reads('org/crews/crew.entity.ts'), /\.references\(\(\): AnyPgColumn => persons\.id/, 'crew.entity.ts FK table');
 	expectImport('shifts/shift.entity.ts', "import { crews } from '../org/crews/crew.entity';");
 	// has_many — irregular plural and nested target
 	expectImport('squads/squad.service.ts', "import { PersonRepository } from '../persons/person.repository';");
@@ -508,12 +512,33 @@ function assertTargetNaming(tmpDir: string): void {
 		throw new Error(`crew.service.ts: expected one Person type import, found ${personTypeImports.length}`);
 	}
 
+	// relationship (NAME-1, #633) — both endpoints from their own YAML
+	expectImport('crew_assignments/crew_assignment.entity.ts', "import { persons } from '../persons/person.entity';");
+	expectImport('crew_assignments/crew_assignment.entity.ts', "import { crews } from '../org/crews/crew.entity';");
+
+	// #632 — `person` belongs_to AND has_many `crew`: one repository, once.
+	const countLines = (file: string, line: string): number =>
+		(reads(file).match(new RegExp(`^${escapeRe(line)}$`, 'gm')) ?? []).length;
+	for (const [file, line] of [
+		['persons/person.service.ts', "import { CrewRepository } from '../org/crews/crew.repository';"],
+		['persons/person.service.ts', '    private readonly crewRepo: CrewRepository,'],
+		['persons/persons.module.ts', "import { CrewRepository } from '../org/crews/crew.repository';"],
+		['persons/persons.module.ts', '    CrewRepository,'],
+	] as const) {
+		const n = countLines(file, line);
+		if (n !== 1) throw new Error(`${file}: expected exactly one \`${line.trim()}\` (#632), found ${n}`);
+	}
+
+	// #631 — `crew.lead` ↔ `person.crew` is an FK cycle; every FK callback is annotated.
+	assertContains(reads('persons/person.entity.ts'), /\.references\(\(\): AnyPgColumn => crews\.id/, 'person.entity.ts FK table');
+
 	for (const file of [
 		'org/crews/crew.entity.ts',
 		'org/crews/crew.service.ts',
 		'squads/squad.service.ts',
 		'crew_people/crew_person.entity.ts',
 		'crew_people/crew_person.service.ts',
+		'crew_assignments/crew_assignment.entity.ts',
 	]) {
 		assertNotContains(reads(file), /\bpeople\/person\b|'\.\.\/crews\//, `${file} (re-derived target path)`);
 	}
@@ -535,7 +560,8 @@ function assertTargetNaming(tmpDir: string): void {
  * below by file, code and the symbol it names, with an exact count, for each of
  * the fixture set's two junctions — `meeting_contact` (CAP-2) and
  * `crew_person` (NAME-0, whose endpoints are an irregular plural and a
- * `context:`-nested entity). Asserted PRESENT and SOLE:
+ * `context:`-nested entity) — and the 12 of the `crew_assignment` relationship
+ * (NAME-1, below). Asserted PRESENT and SOLE:
  *
  *   - any diagnostic not in the list — including a new TS4112/TS2339 in the
  *     same two files naming a different symbol — fails the smoke (sole);
@@ -573,9 +599,34 @@ function issue624Junction(folder: string, name: string, pascal: string): Array<[
 	];
 }
 
+/**
+ * The same defect in `relationship new` (NAME-1, #633: the fixture set's
+ * `crew_assignment` relationship is the first `relationship new` output any
+ * gate compiles). Its repository + service hardcode `@shared/*` for the same
+ * package-owned bases; 12 diagnostics, enumerated exactly as above.
+ */
+function issue624Relationship(folder: string, name: string, pascal: string): Array<[string, number]> {
+	const dir = `src/modules/${folder}`;
+	const repo = `${dir}/${name}.repository.ts`;
+	const service = `${dir}/${name}.service.ts`;
+	return [
+		[`${repo}|TS2307|@shared/constants/tokens`, 1],
+		[`${repo}|TS2307|@shared/types/drizzle`, 1],
+		[`${repo}|TS2307|@shared/base-classes/base-repository`, 1],
+		[`${service}|TS2307|@shared/base-classes/with-analytics`, 1],
+		[`${service}|TS2307|@shared/constants/tokens`, 1],
+		[`${service}|TS2307|@shared/base-classes/base-service`, 1],
+		[`${repo}|TS4112|${pascal}Repository`, 1],
+		[`${service}|TS4112|${pascal}Service`, 3],
+		[`${dir}/use-cases/find-${name}-by-id.use-case.ts|TS2339|findById`, 1],
+		[`${dir}/use-cases/list-${folder}.use-case.ts|TS2339|list`, 1],
+	];
+}
+
 const ISSUE_624_EXPECTED = new Map<string, number>([
 	...issue624Junction('meeting_contacts', 'meeting_contact', 'MeetingContact'),
 	...issue624Junction('crew_people', 'crew_person', 'CrewPerson'),
+	...issue624Relationship('crew_assignments', 'crew_assignment', 'CrewAssignment'),
 ]);
 
 /** `file|code|symbol` for one tsc line, or null when it has no recognised shape. */
@@ -740,8 +791,17 @@ async function leg(mode: Mode): Promise<number> {
 			fs.copyFileSync(path.join(FIXTURES, 'junctions', f), path.join(junctionsDir, f));
 		}
 
+		// NAME-1 (#633): a first-class relationship over the irregular-plural
+		// `person` and the `context:`-nested `crew`.
+		const relationshipsDir = path.join(tmpDir, 'relationships');
+		fs.mkdirSync(relationshipsDir, { recursive: true });
+		for (const f of fs.readdirSync(path.join(FIXTURES, 'relationships'))) {
+			fs.copyFileSync(path.join(FIXTURES, 'relationships', f), path.join(relationshipsDir, f));
+		}
+
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
 		run(`bun ${CLI_PATH} junction new --all --force`, tmpDir);
+		run(`bun ${CLI_PATH} relationship new --all --force`, tmpDir);
 
 		assertProjectInspectSeesAppCapabilities(tmpDir, mode);
 
@@ -757,7 +817,8 @@ async function leg(mode: Mode): Promise<number> {
 		});
 		const scoped = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
 		// Package leg only: the #624 named expectation (see above). The vendored
-		// leg gets no expectation at all — there the junction compiles cleanly.
+		// leg gets no expectation at all — there the junction and the relationship
+		// compile cleanly.
 		const errors = mode === 'package' ? applyIssue624Expectation(scoped) : scoped;
 		if (errors.length > 0) {
 			for (const line of errors) console.error(line);
@@ -766,7 +827,7 @@ async function leg(mode: Mode): Promise<number> {
 		} else {
 			log(
 				mode === 'package'
-					? `[${mode}] tsc OK — the composed tree compiles against the real bases; the #624 named expectation (junction @shared imports) matched, present and sole`
+					? `[${mode}] tsc OK — the composed tree compiles against the real bases; the #624 named expectation (junction + relationship @shared imports) matched, present and sole`
 					: `[${mode}] tsc OK — the composed tree compiles against the real bases`,
 			);
 		}

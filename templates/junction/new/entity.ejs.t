@@ -7,6 +7,7 @@ import {
 <%_ drizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
 import { <%= leftTable %> } from '<%= leftEntityImportFromJunction %>';
@@ -42,8 +43,8 @@ export const <%= tableVarName %> = pgTable(
   '<%= tableName %>',
   {
     // FK columns — composite primary key (no surrogate id: Q4 resolution)
-    <%= leftColumnCamel %>: uuid('<%= leftColumn %>').notNull().references(() => <%= leftTable %>.id, { onDelete: '<%= onDeleteLeft %>' }),
-    <%= rightColumnCamel %>: uuid('<%= rightColumn %>').notNull().references(() => <%= rightTable %>.id, { onDelete: '<%= onDeleteRight %>' }),
+    <%= leftColumnCamel %>: uuid('<%= leftColumn %>').notNull().references((): AnyPgColumn => <%= leftTable %>.id, { onDelete: '<%= onDeleteLeft %>' }),
+    <%= rightColumnCamel %>: uuid('<%= rightColumn %>').notNull().references((): AnyPgColumn => <%= rightTable %>.id, { onDelete: '<%= onDeleteRight %>' }),
 <%_ if (hasRole) { _%>
 
     // Role enum (per-pairing; declared in junction YAML's fields.role.choices).

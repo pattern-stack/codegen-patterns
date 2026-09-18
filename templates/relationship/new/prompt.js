@@ -13,6 +13,11 @@ import path from "node:path";
 import yaml from "yaml";
 import pluralizePkg from "pluralize";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import {
+  entityModuleNaming,
+  projectEntityLookup,
+  relativeModuleDir,
+} from "../../_shared/entity-naming.mjs";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -398,8 +403,6 @@ export default {
     // From/to entity name variations
     const fromEntityPascal = pascalCase(config.from);
     const toEntityPascal = pascalCase(config.to);
-    const fromEntityPlural = pluralize(config.from);
-    const toEntityPlural = pluralize(config.to);
     const fromColumnCamel = camelCase(fromColumn);
     const toColumnCamel = camelCase(toColumn);
 
@@ -531,23 +534,50 @@ export default {
     const srcRoot = "src";
 
     // ======================================================================
+    // Endpoint naming — from each endpoint's OWN YAML (NAME-1, #633)
+    // ======================================================================
+    // An endpoint's table export and module folder are its `plural:` and
+    // `context:`, read through the same function its own emission uses —
+    // never `pluralize(name)` here (NAME-0; CLAUDE.md › Template System).
+    const entityLookup = projectEntityLookup(process.cwd());
+    const endpointNaming = (endpoint) => {
+      const block = entityLookup(endpoint);
+      if (!block) {
+        throw new Error(
+          `[relationship/new] ${yamlPath}: endpoint '${endpoint}' has no entity YAML — ` +
+          `${entityLookup.missingEntity(endpoint)}. The relationship reads its table and module folder from that YAML.`
+        );
+      }
+      return entityModuleNaming(block, srcRoot);
+    };
+    const fromNaming = endpointNaming(config.from);
+    const toNaming = selfReferential ? fromNaming : endpointNaming(config.to);
+    const fromEntityPlural = fromNaming.plural;
+    const toEntityPlural = toNaming.plural;
+
+    // The relationship's own folder is flat (a relationship has no `context:`).
+    const relationshipModuleDir = `${srcRoot}/modules/${entityNamePlural}`;
+    const fromEntityImport = `${relativeModuleDir(relationshipModuleDir, fromNaming.moduleDir)}/${config.from}.entity`;
+    const toEntityImport = `${relativeModuleDir(relationshipModuleDir, toNaming.moduleDir)}/${config.to}.entity`;
+
+    // ======================================================================
     // Output paths (mirrors clean-lite-ps layout)
     // ======================================================================
 
     const outputPaths = {
-      entity: `${srcRoot}/modules/${entityNamePlural}/${name}.entity.ts`,
-      repository: `${srcRoot}/modules/${entityNamePlural}/${name}.repository.ts`,
-      service: `${srcRoot}/modules/${entityNamePlural}/${name}.service.ts`,
-      controller: `${srcRoot}/modules/${entityNamePlural}/${name}.controller.ts`,
-      module: `${srcRoot}/modules/${entityNamePlural}/${entityNamePlural}.module.ts`,
-      createDto: `${srcRoot}/modules/${entityNamePlural}/dto/create-${name}.dto.ts`,
-      updateDto: `${srcRoot}/modules/${entityNamePlural}/dto/update-${name}.dto.ts`,
-      outputDto: `${srcRoot}/modules/${entityNamePlural}/dto/${name}-output.dto.ts`,
-      index: `${srcRoot}/modules/${entityNamePlural}/index.ts`,
-      findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${name}-by-id.use-case.ts`,
-      listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+      entity: `${relationshipModuleDir}/${name}.entity.ts`,
+      repository: `${relationshipModuleDir}/${name}.repository.ts`,
+      service: `${relationshipModuleDir}/${name}.service.ts`,
+      controller: `${relationshipModuleDir}/${name}.controller.ts`,
+      module: `${relationshipModuleDir}/${entityNamePlural}.module.ts`,
+      createDto: `${relationshipModuleDir}/dto/create-${name}.dto.ts`,
+      updateDto: `${relationshipModuleDir}/dto/update-${name}.dto.ts`,
+      outputDto: `${relationshipModuleDir}/dto/${name}-output.dto.ts`,
+      index: `${relationshipModuleDir}/index.ts`,
+      findByIdUseCase: `${relationshipModuleDir}/use-cases/find-${name}-by-id.use-case.ts`,
+      listUseCase: `${relationshipModuleDir}/use-cases/list-${entityNamePlural}.use-case.ts`,
       declarativeQueries: hasDeclarativeQueries
-        ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
+        ? `${relationshipModuleDir}/use-cases/declarative-queries.ts`
         : null,
     };
 
@@ -687,9 +717,12 @@ export default {
       // srcRoot
       srcRoot,
 
-      // From entity table references (for FK .references())
+      // Endpoint table exports (for FK .references()) and their entity-file
+      // imports from the relationship's folder — from each endpoint's YAML.
       fromTable: fromEntityPlural,
       toTable: toEntityPlural,
+      fromEntityImport,
+      toEntityImport,
     };
   },
 };

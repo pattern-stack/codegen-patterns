@@ -759,14 +759,45 @@ function processBelongsTo(relationships, naming, fields = {}) {
 }
 
 /**
+ * The other entities this service needs a repository for (#632), deduped by
+ * target entity across every edge that composes one: non-self `belongs_to`
+ * (parent fetch) and wired non-self `has_many` (child list), in that order.
+ * `service.ejs.t` imports + injects each once; `module.ejs.t` imports +
+ * provides each once. The per-relationship methods still iterate
+ * `clpBelongsTo` / `clpExistingHasMany`; they address the repository by the
+ * same `property`.
+ *
+ * @param {object[]} belongsTo          clpBelongsTo entries
+ * @param {object[]} existingHasMany    clpExistingHasMany entries
+ */
+function collectRepositoryDeps(belongsTo, existingHasMany) {
+  const deps = new Map();
+  const add = (entity, importDir) => {
+    if (deps.has(entity)) return;
+    const className = pascalCase(entity);
+    deps.set(entity, {
+      entity,
+      entityClass: className,
+      repositoryClass: `${className}Repository`,
+      property: `${camelCase(entity)}Repo`,
+      importDir,
+    });
+  };
+  for (const rel of belongsTo) if (!rel.isSelfFk) add(rel.relatedEntity, rel.relatedImportDir);
+  for (const rel of existingHasMany) if (!rel.isSelfRef) add(rel.target, rel.targetImportDir);
+  return [...deps.values()];
+}
+
+/**
  * Field-level `foreign_key:` + `index:` emission (#354, #355).
  *
  * Distinct from `relationships:`-driven belongs_to FKs (processBelongsTo),
  * which own their own column + import. This handles features declared
  * directly on a column field:
  *
- *   - `foreign_key: <table>.<column>` → append `.references(() => <table>.<column>)`
- *     to the column's Drizzle chain (self-FKs get the `: AnyPgColumn` annotation)
+ *   - `foreign_key: <table>.<column>` → append
+ *     `.references((): AnyPgColumn => <table>.<column>)` to the column's Drizzle
+ *     chain (every FK callback is annotated — #631, see `clpHasFk`)
  *     and record the cross-module import. The table segment is the Drizzle table
  *     export name (plural, e.g. `conversations`); the import comes from the
  *     entity whose YAML declares that plural, at its own folder (NAME-0).
@@ -787,7 +818,7 @@ function processFieldFeatures(renderedFields, fields, naming) {
   const fkImports = [];
   const indexExpressions = [];
   const seenImports = new Set();
-  let hasSelfFieldFk = false;
+  let hasFieldFk = false;
 
   for (const pf of renderedFields) {
     const field = fields[pf.name];
@@ -797,13 +828,11 @@ function processFieldFeatures(renderedFields, fields, naming) {
     if (typeof field.foreign_key === 'string' && field.foreign_key.includes('.')) {
       const [relatedTable, fkColumn] = field.foreign_key.split('.');
       const isSelfFk = relatedTable === entityNamePlural;
-      pf.drizzleChain += isSelfFk
-        ? `.references((): AnyPgColumn => ${relatedTable}.${fkColumn})`
-        : `.references(() => ${relatedTable}.${fkColumn})`;
+      // Every FK callback is annotated (#631): see `clpHasFk`.
+      pf.drizzleChain += `.references((): AnyPgColumn => ${relatedTable}.${fkColumn})`;
+      hasFieldFk = true;
 
-      if (isSelfFk) {
-        hasSelfFieldFk = true;
-      } else if (!seenImports.has(relatedTable)) {
+      if (!isSelfFk && !seenImports.has(relatedTable)) {
         seenImports.add(relatedTable);
         // The segment names a TABLE: the entity that owns it is the one whose
         // YAML declares that plural (NAME-0) — not `singularize(table)`.
@@ -839,7 +868,7 @@ function processFieldFeatures(renderedFields, fields, naming) {
     }
   }
 
-  return { fkImports, indexExpressions, hasSelfFieldFk };
+  return { fkImports, indexExpressions, hasFieldFk };
 }
 
 /**
@@ -1535,6 +1564,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // Process has_many relationships (CGP-358b)
   const hasMany = processHasMany(relationships, targetNaming);
 
+  // The other entities whose repository this service composes (#632): one
+  // entry per target, whichever edges reach it — a belongs_to and a has_many
+  // onto the same target share one import and one constructor parameter.
+  const repositoryDeps = collectRepositoryDeps(
+    belongsTo,
+    hasMany.filter((r) => r.targetExists),
+  );
+  const eavDefinitionDep = eavDefinitionEntity
+    ? repositoryDeps.find((d) => d.entity === eavDefinitionEntity) ?? null
+    : null;
+
   // ADR-041.1 — the two library capabilities' configs are RESOLVED, not copied:
   // `Communication`'s comes from `roles:` (never authored), `Actor`'s `members:`
   // names a has_many whose table + FK codegen looks up. The result replaces the
@@ -2026,12 +2066,14 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // Drizzle
     clpDrizzleImports: drizzleEntityImports,
-    // A self-referential belongs_to FK requires the `references()` callback
-    // to carry a `: AnyPgColumn` return-type annotation; otherwise TypeScript's
-    // strict mode flags the table const with TS7022/TS7024 (circular initializer).
-    // Surfaced by the cgp-62 relationship-scenario smoke when generating a CRM
-    // account with a `parent_account_id` self-FK.
-    clpHasSelfFk: belongsTo.some((rel) => rel.isSelfFk) || fieldFeatures.hasSelfFieldFk,
+    // Every FK `references()` callback carries a `: AnyPgColumn` return-type
+    // annotation (#631). An unannotated callback whose target table is on an
+    // FK cycle with this one — a self-FK, or A → B → A across files — makes
+    // TypeScript's strict mode flag the table const with TS7022/TS7024
+    // (circular initializer). Annotating every callback is one rule with no
+    // cycle detection; the annotation is type-only and does not change the
+    // column's inferred type. `true` whenever this table has an FK column.
+    clpHasFk: belongsTo.length > 0 || fieldFeatures.hasFieldFk,
     clpEnumFields,
 
     // Field-level foreign_key imports (#354) and pgTable extra-config
@@ -2052,5 +2094,14 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     clpHasMany: hasMany,
     clpHasManyRelations: hasMany.length > 0,
     clpExistingHasMany: hasMany.filter((r) => r.targetExists),
+
+    // #632: every other entity's repository the service composes, once each
+    clpRepositoryDeps: repositoryDeps,
+    // The EAV definition repository is imported + injected by its own block
+    // unless a relationship onto the same entity already put it in
+    // `clpRepositoryDeps`; either way the EAV methods address it by
+    // `eavDefinitionRepoProperty` (one constructor parameter per class).
+    eavDefinitionRepositoryImported: eavDefinitionDep != null,
+    eavDefinitionRepoProperty: eavDefinitionDep ? eavDefinitionDep.property : 'definitionRepo',
   };
 }
