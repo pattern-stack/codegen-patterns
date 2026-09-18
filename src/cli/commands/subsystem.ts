@@ -2111,9 +2111,10 @@ function runAuthIntegrationsScaffold(
  * How a consumer registers, by hand, the subsystems `SUBSYSTEM_MODULES` does
  * not compose (#663): the module the runtime actually exports and its real
  * `forRoot` shape. Named, never synthesised from the subsystem name — there is
- * no `JobsModule`.
+ * no `JobsModule`. `openapi-config` and `auth-integrations` never reach it:
+ * install and remove short-circuit both first.
  */
-const HAND_REGISTERED: Partial<
+export const HAND_REGISTERED: Partial<
 	Record<SubsystemName, { module: string; registration: (backend: SubsystemBackend) => string }>
 > = {
 	cache: { module: 'CacheModule', registration: (b) => `CacheModule.forRoot({ backend: '${b}' })` },
@@ -2123,7 +2124,6 @@ const HAND_REGISTERED: Partial<
 		registration: () =>
 			'AuthModule.forRoot({ encryptionKey, oauthStateStore, enableController, redirectUriBase })',
 	},
-	'auth-integrations': { module: 'ConnectionsAuthModule', registration: () => 'ConnectionsAuthModule' },
 };
 
 /**

@@ -220,17 +220,20 @@ async function hints(ctx: Context): Promise<Hint[]> {
 // EntityNewCommand
 // ---------------------------------------------------------------------------
 
-/** One failed target, as the `--json` payload reports it. */
+/**
+ * One failed target, as the `--json` payload reports it. `file` / `name` are
+ * `null` only for a run-level rejection no file carries (JOBS-2).
+ */
 interface RejectionEntry {
-	name: string;
-	file: string;
+	name: string | null;
+	file: string | null;
 	message: string;
 	details: string[];
 }
 
-function rejectionEntry(i: { file: string; message: string; details?: string[] }): RejectionEntry {
+function rejectionEntry(i: { file: string | null; message: string; details?: string[] }): RejectionEntry {
 	return {
-		name: path.basename(i.file),
+		name: i.file === null ? null : path.basename(i.file),
 		file: i.file,
 		message: i.message,
 		details: i.details ?? [],
@@ -357,7 +360,7 @@ export class EntityNewCommand extends Command {
 		// Run-level rejections (JOBS-2): an input every entity's output depends
 		// on, so it is not one target's problem and `--continue-on-error` does not
 		// apply — the run stops before hygen whatever the flag says.
-		const runRejections: Array<{ file: string; message: string; details?: string[] }> =
+		const runRejections: Array<{ file: string | null; message: string; details?: string[] }> =
 			[];
 
 		// App patterns must be in THIS process's registry before the roles
@@ -385,11 +388,9 @@ export class EntityNewCommand extends Command {
 		// rejection (#664): its handler base, scheduled events and bridge triggers
 		// feed registries every entity imports, and a previously emitted
 		// `<type>.job.generated.ts` would outlive its dropped registrations.
-		const jobsDir = projectLayout(ctx.cwd, ctx.config).jobsDir;
+		const { jobsDir, jobHandlers } = projectLayout(ctx.cwd, ctx.config);
 		const jobLoad = loadJobs(jobsDir);
-		runRejections.push(
-			...jobLoadRejections(jobLoad.issues, projectLayout(ctx.cwd, ctx.config).jobHandlers),
-		);
+		runRejections.push(...jobLoadRejections(jobLoad.issues, jobHandlers));
 
 		// Reuses the entity set the emits pre-flight already loaded. A bad role is
 		// a generation-time error (the ADR-041 §4 posture).
@@ -419,7 +420,7 @@ export class EntityNewCommand extends Command {
 		}
 
 		for (const i of [...invalid, ...runRejections]) {
-			printError(`${path.basename(i.file)} — ${i.message}`);
+			printError(i.file === null ? i.message : `${path.basename(i.file)} — ${i.message}`);
 			for (const detail of i.details ?? []) {
 				printError(`   • ${detail}`);
 			}

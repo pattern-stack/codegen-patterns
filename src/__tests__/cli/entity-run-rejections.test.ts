@@ -102,6 +102,8 @@ async function run(argv: string[]): Promise<{ code: number; out: string }> {
 }
 
 const modulesBarrel = (root: string) => path.join(root, 'src/generated/modules.ts');
+/** A file hygen writes for the `note` entity — absent means hygen never ran. */
+const noteEntity = (root: string) => path.join(root, 'src/domain/note/note.entity.ts');
 
 describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 	test('text mode — names the YAML and its reason, exit 1, nothing generated (default --continue-on-error)', async () => {
@@ -114,6 +116,7 @@ describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 		expect(out).toContain("Expected string, received number at 'pool'");
 		expect(out).not.toContain('generating note');
 		expect(fs.existsSync(modulesBarrel(root))).toBe(false);
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
 		expect(fs.existsSync(path.join(root, 'src/jobs/note_poll.job.generated.ts'))).toBe(false);
 	});
 
@@ -136,6 +139,7 @@ describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 			],
 		});
 		expect(fs.existsSync(modulesBarrel(root))).toBe(false);
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
 	});
 
 	test('a previously emitted base is left on disk and named as stale', async () => {
@@ -147,6 +151,7 @@ describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 		const { code, out } = await run(['entity', 'new', '--all', '--force', '--json', '--cwd', root]);
 		expect(code).toBe(1);
 		const [rejection] = JSON.parse(out).failed;
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
 		expect(rejection.details).toContain(
 			`${stale} is stale: emitted from this job's last valid definition, it is left on disk until the YAML loads again`,
 		);
@@ -160,6 +165,7 @@ describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 		expect(out).not.toContain('note_poll.yaml —');
 		expect(code).toBe(0);
 		expect(fs.existsSync(path.join(root, 'src/jobs/note_poll.job.generated.ts'))).toBe(true);
+		expect(fs.existsSync(noteEntity(root))).toBe(true);
 	}, 60_000);
 });
 
@@ -176,6 +182,7 @@ describe('entity new rejects the run on an app-pattern file it cannot load (JOBS
 		expect(out).toContain('pattern file exploded at import');
 		expect(fs.readFileSync(barrel, 'utf-8')).toBe('// previous orchestration barrel\n');
 		expect(fs.existsSync(modulesBarrel(root))).toBe(false);
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
 	});
 
 	test('JSON mode — the rejection is in failed[]', async () => {
@@ -190,5 +197,6 @@ describe('entity new rejects the run on an app-pattern file it cannot load (JOBS
 			failed: [{ name: 'broken.pattern.ts', file, message: 'app pattern file could not be loaded' }],
 		});
 		expect(payload.failed[0].details[0]).toContain('pattern file exploded at import');
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
 	});
 });

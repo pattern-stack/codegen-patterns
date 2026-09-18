@@ -33,6 +33,9 @@ Three defects in the generator's own plumbing, found by CAP-1, NAME-0 and NAME-1
   entries carry `details`; the dry-run payload gains `invalid[]`).
 - `--continue-on-error` decides only whether the run stops after the pre-flights. When it stops, JSON mode prints a
   payload too (previously `--json --no-continue-on-error` fell through and generated anyway).
+  *Revision 2026-09-18 (JOBS-2, #664):* this holds for per-entity rejections only. JOBS-2 adds run-level pre-flight
+  rejections — an invalid job YAML, an unloadable app-pattern file — which share this list, printing and payload but
+  stop the run whatever `--continue-on-error` says; the flag decides nothing for them (`docs/specs/JOBS-2.md`).
 - An entity whose `emits:` fails the cross-check is now rejected like a bad role, with the message
   `emits: validation failed` and one detail per error. It is not generated and counts as failed. Before, the default mode generated it anyway, and `prompt.js` emitted a TODO-only payload mapping for the
   unknown event. The EVT-7 comment already said "reported and skipped by default".

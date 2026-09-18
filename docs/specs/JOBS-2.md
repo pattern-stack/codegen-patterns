@@ -39,8 +39,10 @@ auth.
   app.module.ts.` Observability's special branch is deleted; the barrel owns its ordering.
 - **Not composed →** the module the runtime exports, with its real `forRoot` shape, from one table
   (`HAND_REGISTERED`): `CacheModule.forRoot({ backend })`, `StorageModule.forRoot({ backend })`,
-  `AuthModule.forRoot({ encryptionKey, oauthStateStore, enableController, redirectUriBase })`, and
-  `ConnectionsAuthModule` (remove only). A name in neither throws — nothing is synthesised.
+  `AuthModule.forRoot({ encryptionKey, oauthStateStore, enableController, redirectUriBase })`. A name in neither
+  throws — nothing is synthesised. `openapi-config` and `auth-integrations` are in neither on purpose: install and
+  remove short-circuit both before any hint, so a table entry for them would be dead (a test pins the table's keys to
+  exactly the non-composed, non-short-circuited subsystems).
 - **Where it prints.** Vendored: the generic branch (auth keeps its next-steps block). Package: after the
   `SUBSYSTEM_MODULES` wire-once line, for every subsystem — which gives cache / storage / auth the registration hint
   package mode never printed. `subsystem remove`: step 1 names the hand-registered module, or says there is nothing
@@ -51,7 +53,8 @@ auth.
 `subsystem-install-hint.test.ts`: the composed set equals the composers; the hint text per composed subsystem; cache /
 storage / auth; the throw; in-process vendored `install jobs` (no `JobsModule`), vendored `install cache`, package
 `install events`, package `install storage`, vendored `remove jobs`. `subsystem-install.observability.test.ts` asserts
-the composed hint instead of the old one.
+the composed hint instead of the old one. The `HAND_REGISTERED` keys equal the non-composed subsystems minus the two
+short-circuited ones.
 
 ## #664 — an invalid job YAML or an unloadable app-pattern file rejects the run
 
@@ -85,7 +88,9 @@ the composed hint instead of the old one.
   `loaderErrors[]` entries are now objects (no compat shim — I7).
 - **One job rejection per YAML.** `jobLoadRejections(issues, jobsHandlersDir)` (`emit-jobs.ts`) groups the
   error-severity issues by path: the first is the message (`Validation failed for …`, `Job file 'x' must contain …`,
-  `Duplicate job type …`), the rest are details (the Zod issues).
+  `Duplicate job type …`), the rest are details (the Zod issues). An issue with no path (the type allows it; `loadJobs`
+  always sets one for errors today) groups under `file: null` — no stale base is derived, the JSON entry's `name` /
+  `file` are `null`, and text mode prints the message alone.
 - **A stale base is left and named — no rollback.** If `<jobsHandlersDir>/<yaml basename>.job.generated.ts` exists, the
   rejection's details carry `<path> is stale: emitted from this job's last valid definition, it is left on disk until
   the YAML loads again`. Deleting it would be the command acting on a broken input (the author may be mid-edit; the
@@ -106,11 +111,13 @@ the composed hint instead of the old one.
   printed, no hygen, no barrel, no handler base for the valid job beside it;
 - filename/type mismatch, JSON mode: `stopped: 'pre-flight'`, `failed[0]` names the YAML with the loader message;
 - an existing `note_poll.job.generated.ts` whose YAML is now invalid: named as stale in `details`, byte-identical after;
-- a valid job: exit 0, the base emitted (unchanged behaviour);
+- a valid job: exit 0, the base emitted and the `note` entity generated (unchanged behaviour); every rejection case
+  asserts that entity file is absent — hygen never ran;
 - a `*.pattern.ts` that throws at import, text mode: exit 1, the file and the import error printed, a pre-existing
   `src/orchestration/index.ts` byte-identical, no barrel; JSON mode: `failed[0]` names the file.
 
 The five rejection cases fail on the #663 commit (exit 0 / warning); the valid-job case passes on both.
+`emit-jobs.test.ts`: a path-less issue yields `{ file: null, message, details }` and no stale base.
 
 ## Default output
 
@@ -129,9 +136,18 @@ smoke pass unchanged.
 - **`orchestration gen` emits from a partial pattern set** on loader errors (text-mode warning, exit 0), and the
   validators (`entity validate`, `project analyze` / `validate` / `stats`) print loader errors in text mode only:
   **#667**.
-- **The observability scaffold appends an `app.module.ts` TODO to register `ObservabilityModule`**, which
-  `SUBSYSTEM_MODULES` already composes — the file-level twin of #663's hint: **#668**.
+- **This PR introduces a contradiction for observability, fixed next by #668.** The printed install hint now says
+  observability is composed through `SUBSYSTEM_MODULES` — "do not register it in app.module.ts" — while the vendored
+  scaffold still appends the opposite to `app.module.ts` (`templates/subsystem/observability/main-hook.ejs.t:8`,
+  described in `prompt.js:18`: `TODO: Register ObservabilityModule … ObservabilityModule.forRoot()`). The TODO was
+  already wrong (the barrel composes it); after #663 the two outputs of one command disagree. Deliberately not fixed
+  here: **#668**.
 - **`entity new --json` with no entity YAML returns 1 with no payload** (JOBS-1 Found, noted for this sweep): **#669**.
+- **A dirty generated-output tree without `--force`** (`entity.ts`, the git-safety check after the pre-flight) exits 1
+  in text mode, but under `--json` it only warns (a no-op in JSON mode) and falls through to generate — no payload,
+  and the check it exists for is skipped. Handed to **CLI-1** (the next task), not fixed here.
+- **CLI-0's "`--continue-on-error` decides only whether the run stops"** no longer holds for run-level rejections —
+  dated revision note added to `docs/specs/CLI-0.md`.
 
 ## Gates
 
@@ -140,7 +156,7 @@ Run after the last code edit.
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | pass |
-| `just test-all` | pass: 3534 unit, 0 fail; baseline unchanged; every smoke (base, subsystems both modes, relationship, junction ×4, cross-domain ×2, capability both modes); junction snapshots 10 pass; integration-emit 56 pass; smoke-integration |
+| `just test-all` | pass: 3536 unit, 0 fail; baseline unchanged; every smoke (base, subsystems both modes, relationship, junction ×4, cross-domain ×2, capability both modes); junction snapshots 10 pass; integration-emit 56 pass; smoke-integration |
 | `just test-integration` | pass (74 pass, 2 skip, 0 fail) |
 | `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
 | `just test-post-publish` | pass (shipped CLI / template change) |
