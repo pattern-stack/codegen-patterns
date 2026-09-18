@@ -15,7 +15,7 @@ import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= typeof openApiImport !== 'undefined' ? openApiImport : '@shared/openapi' %>';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ /* #632: one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
-<%_ clpRepositoryDeps.forEach(dep => { _%>
+<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
 import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
 <%_ }) _%>
 <% if (eavEnabled) { -%>
@@ -75,7 +75,7 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
     <%= classNames.repository %>,
     <%= classNames.service %>,
 <%_ /* CGP-358b / #632: register each composed repository once (needed for service DI) */ _%>
-<%_ clpRepositoryDeps.forEach(dep => { _%>
+<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
     <%= dep.repositoryClass %>,
 <%_ }) _%>
     <%= classNames.findByIdUseCase %>,

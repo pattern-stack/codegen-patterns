@@ -16,12 +16,12 @@ import { FieldValueService } from '../field_values/field_value.service';
 <% if (eavValueTable) { -%>
 import { toEavRows, mergeEavRows } from '<%= typeof eavHelpersImport !== 'undefined' ? eavHelpersImport : '@shared/eav-helpers' %>';
 import type { DrizzleTx } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
-<% if (!eavDefinitionRepositoryImported) { -%>
+<% if (typeof eavDefinitionRepositoryImported === 'undefined' || !eavDefinitionRepositoryImported) { -%>
 import { <%= eavDefinitionPascal %>Repository } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntity %>.repository';
 <% } -%>
 <% } -%>
 <%_ /* #632 — one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
-<%_ clpRepositoryDeps.forEach(dep => { _%>
+<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
 import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
 import type { <%= dep.entityClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.entity';
 <%_ }) _%>
@@ -52,7 +52,7 @@ export class <%= classNames.service %> extends WithAnalytics(
     private readonly definitionRepo: <%= eavDefinitionPascal %>Repository,
 <% } -%>
 <%_ /* #632 — one constructor parameter per composed repository */ _%>
-<%_ clpRepositoryDeps.forEach(dep => { _%>
+<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
     private readonly <%= dep.property %>: <%= dep.repositoryClass %>,
 <%_ }) _%>
   ) {

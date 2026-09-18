@@ -8,7 +8,7 @@ import {
 <%_ clpDrizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
-<%_ if (clpHasFk) { _%>
+<%_ if (typeof clpHasFk !== 'undefined' && clpHasFk) { _%>
   type AnyPgColumn,
 <%_ } _%>
 } from 'drizzle-orm/pg-core';

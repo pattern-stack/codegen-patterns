@@ -60,8 +60,9 @@ lists.
   It is keyed by target entity and holds non-self belongs_to targets, then wired non-self has_many targets. Each
   entry is `{ entity, entityClass, repositoryClass, property, importDir }`.
 - The service's imports and constructor parameters, and the module's imports and providers, each iterate that set
-  once. The templates no longer carry `typeof` fallbacks for it. A caller that omits the local fails loudly instead of
-  emitting no imports.
+  once. The templates keep a `typeof` guard on it, like every clean-lite-ps local. Under
+  `architecture: clean` hygen still renders these bodies (the `skip_if` only suppresses the write), and it renders them
+  without clean-lite-ps locals. Dropping the guard broke the baseline.
 - The per-relationship methods are unchanged. They still iterate `clpBelongsTo` / `clpExistingHasMany`, and
   `property` is the same `<camel>Repo` name they address.
 - **Same class, one more site:** the EAV value-table block (`eav_definition_table`) imported its definition
