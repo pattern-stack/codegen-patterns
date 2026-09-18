@@ -31,7 +31,7 @@ function localsFor(entityExtra: Record<string, unknown>) {
 		relationships: {},
 		behaviors: ['timestamps'],
 	};
-	return buildCleanLitePsLocals(definition, { backendSrc: SRC });
+	return buildCleanLitePsLocals(definition, { modulesDir: `${SRC}/modules` });
 }
 
 describe('#403 clean-lite-ps — context nests module output paths', () => {

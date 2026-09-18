@@ -51,9 +51,9 @@ export interface IntegrationScaffoldLocalsInput {
  * - `integration.multi_tenant` defaults to `false` when the block is absent (first
  *   install case). Only the literal `true` flips the flag — defends against
  *   YAML truthy surprises like `'yes'` / `1`.
- * - `schemaPath` resolves from `paths.subsystems` (or
- *   `<paths.backend_src>/shared/subsystems` when unset; see
- *   `project-layout.ts`), then appends `integration/integration-audit.schema.ts` —
+ * - `schemaPath` resolves from the subsystems root
+ *   (`<paths.backend_src>/shared/subsystems`; see `project-layout.ts`),
+ *   then appends `integration/integration-audit.schema.ts` —
  *   matching exactly the location `copyRuntime` would have emitted before
  *   we skipped that file via `backendFileFilter`.
  *

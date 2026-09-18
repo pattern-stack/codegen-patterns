@@ -51,7 +51,7 @@ describe('resolveBridgeScaffoldLocals', () => {
 		}
 	});
 
-	test('paths.backend_src derives default subsystems root when paths.subsystems is unset', () => {
+	test('the subsystems root derives from paths.backend_src (<backend_src>/shared/subsystems)', () => {
 		const locals = resolveBridgeScaffoldLocals({
 			cwd: CWD,
 			config: { paths: { backend_src: 'packages/api/src' } } as any,
@@ -62,22 +62,6 @@ describe('resolveBridgeScaffoldLocals', () => {
 				CWD,
 				'packages/api/src/shared/subsystems/bridge/generated/.gitkeep',
 			),
-		);
-	});
-
-	test('paths.subsystems takes precedence over paths.backend_src', () => {
-		const locals = resolveBridgeScaffoldLocals({
-			cwd: CWD,
-			config: {
-				paths: {
-					backend_src: 'packages/api/src',
-					subsystems: 'custom/subsystems',
-				},
-			} as any,
-			fileExists: () => false,
-		});
-		expect(locals.generatedKeepPath).toBe(
-			path.resolve(CWD, 'custom/subsystems/bridge/generated/.gitkeep'),
 		);
 	});
 

@@ -32,6 +32,18 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   relative to each file. `subsystem install` (`worker.ts`, the `main.ts` hook,
   `app.module.ts`) does the same. The no-events `EventOfType<T>` placeholder
   now uses `T`, so consumers with `noUnusedParameters` compile.
+- **`paths.modules_dir` is honoured by every emitter; `paths.subsystems` is
+  removed; the `patterns:` default follows `backend_src`** (#645). Every
+  clean-lite-ps entity, relationship and junction module, the generated
+  barrels, the integration assemblies and the library-capability imports are
+  placed under `paths.modules_dir` (default `<backend_src>/modules`), and
+  `project init --with-tsconfig` adds it to `include` when it lies outside
+  `backend_src`. `paths.subsystems` is gone — the runtime lives at
+  `<backend_src>/shared/subsystems`, the only place `@shared/subsystems/*`
+  reaches; a config that sets it is an unknown-key error. `patterns:` defaults
+  to `<backend_src>/patterns/*.pattern.ts` (was `src/patterns/*.pattern.ts`
+  regardless of `backend_src`), and an explicit `patterns: []` now means no app
+  patterns instead of the default.
 - **The `events:` block's `extensions.drizzle` example is fully commented
   out** (#640). The block used to leave `extensions:` / `drizzle:` live with
   no values, which parses as `null`.

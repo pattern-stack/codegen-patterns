@@ -363,27 +363,17 @@ describe('buildCleanLitePsLocals', () => {
     expect(locals.clpOutputPaths.declarativeQueries).toBeNull();
   });
 
-  it('uses custom srcRoot from baseLocals', () => {
-    const locals = buildCleanLitePsLocals(contactDefinition, withEntities({ srcRoot: 'app' }));
+  it('places the module under the modulesDir local (paths.modules_dir, PATH-1)', () => {
+    const locals = buildCleanLitePsLocals(contactDefinition, withEntities({ modulesDir: 'app/domain' }));
 
-    expect(locals.clpOutputPaths.entity).toBe('app/modules/contacts/contact.entity.ts');
-    expect(locals.clpOutputPaths.service).toBe('app/modules/contacts/contact.service.ts');
+    expect(locals.clpOutputPaths.entity).toBe('app/domain/contacts/contact.entity.ts');
+    expect(locals.clpOutputPaths.service).toBe('app/domain/contacts/contact.service.ts');
   });
 
-  it('uses src_root from entity definition', () => {
-    const withSrcRoot = {
-      ...contactDefinition,
-      entity: { ...contactDefinition.entity, src_root: 'lib' },
-    };
-    const locals = buildCleanLitePsLocals(withSrcRoot, EMPTY_BASE_LOCALS);
-
-    expect(locals.clpOutputPaths.entity).toBe('lib/modules/contacts/contact.entity.ts');
-  });
-
-  it('defaults srcRoot to src when not specified', () => {
+  it('defaults modulesDir to the schema default (src/modules) when not specified', () => {
     const locals = buildCleanLitePsLocals(contactDefinition, EMPTY_BASE_LOCALS);
 
-    expect(locals.clpOutputPaths.entity).toStartWith('src/');
+    expect(locals.clpOutputPaths.entity).toBe('src/modules/contacts/contact.entity.ts');
   });
 });
 

@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CodegenConfigSchema, PathsConfigSchema } from '../../schema/codegen-config.schema';
+import { CodegenConfigObjectSchema, PathsConfigSchema } from '../../schema/codegen-config.schema';
 
 const REPO = path.resolve(import.meta.dir, '../../..');
 const ROOTS = ['src', 'templates', 'runtime'];
@@ -96,7 +96,7 @@ describe('config key census (CFG-0 gate 2)', () => {
 	});
 
 	it('every top-level block read off the parsed config is declared', () => {
-		const declared = new Set(Object.keys(CodegenConfigSchema.shape));
+		const declared = new Set(Object.keys(CodegenConfigObjectSchema.shape));
 		// The CLI's `ctx.config` is nullable, so it is always read with `?.`
 		// (the frontend emitter's own `ctx.config.` is its flat emit config).
 		const found = reads(

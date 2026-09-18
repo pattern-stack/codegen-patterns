@@ -56,7 +56,7 @@ const opportunityDefinition = {
 
 describe('integration-source emission (clean-lite-ps) — #267', () => {
   it('clean-lite-ps locals expose integrationSourceModule + clpImports.integrationSourceToEntity', () => {
-    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ backendSrc: 'src' }));
+    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ modulesDir: 'src/modules' }));
 
     expect(locals.clpOutputPaths.integrationSourceModule).toBe(
       'src/modules/opportunities/opportunity-integration-source.module.ts',
@@ -68,7 +68,7 @@ describe('integration-source emission (clean-lite-ps) — #267', () => {
   });
 
   it('module template `to:` resolves to the CLP path when isCleanLitePs is true', () => {
-    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ backendSrc: 'src' }));
+    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ modulesDir: 'src/modules' }));
     const { frontmatter } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
     // Render the frontmatter as EJS so the conditional ternary evaluates.
     const rendered = ejs.render(frontmatter, {
@@ -88,7 +88,7 @@ describe('integration-source emission (clean-lite-ps) — #267', () => {
   // surface-scoped typed view replaces it (adapter-emission-generator.test.ts).
 
   it('module body imports the entity sibling-style under clean-lite-ps', () => {
-    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ backendSrc: 'src' }));
+    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ modulesDir: 'src/modules' }));
     const { body } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
     const rendered = ejs.render(body, {
       name: 'opportunity',

@@ -393,6 +393,7 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
       entities: ASSEMBLY_ENTITIES,
       outputRoot: outRoot,
       backendSrcAbs: '/proj/src',
+      modulesAbs: '/proj/src/modules',
       aliases: { '@modules': '/proj/src/modules' },
       dryRun: true,
     });
@@ -405,6 +406,7 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
       entities: [ASSEMBLY_ENTITIES[0]],
       outputRoot: outRoot,
       backendSrcAbs: '/proj/src',
+      modulesAbs: '/proj/src/modules',
       aliases: { '@modules': '/proj/src/modules' },
     });
 
@@ -457,6 +459,7 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
       entities: [ASSEMBLY_ENTITIES[0]],
       outputRoot: outRoot,
       backendSrcAbs,
+      modulesAbs: join(backendSrcAbs, 'modules'),
       aliases: {}, // no alias → relative path
     });
 
@@ -499,6 +502,7 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
       entities: [ASSEMBLY_ENTITIES[0]],
       outputRoot: outRoot,
       backendSrcAbs,
+      modulesAbs: join(backendSrcAbs, 'modules'),
       aliases: { '@modules': join(backendSrcAbs, 'modules') },
     });
     void res;

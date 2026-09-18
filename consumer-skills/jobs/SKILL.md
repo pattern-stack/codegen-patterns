@@ -11,7 +11,7 @@ user-invocable: false
 
 The jobs subsystem is the durable background-work engine vendored into your app by `codegen subsystem install jobs`. It gives you a way to run work asynchronously, retry it, scope it to a domain entity, cancel it as a tree, and resume it after a crash without redoing finished steps. You author jobs as plain TypeScript classes decorated with `@JobHandler`; the runtime handles claiming, retry, memoization, and lifecycle.
 
-The vendored code lives under `<paths.subsystems>/jobs/` (default `src/shared/subsystems/jobs/`) and is imported as `@shared/subsystems/jobs`. Do not hand-edit it — it is managed by the package.
+The vendored code lives under `<backend_src>/shared/subsystems/jobs/` (default `src/shared/subsystems/jobs/`) and is imported as `@shared/subsystems/jobs`. Do not hand-edit it — it is managed by the package.
 
 ## Mental model
 
@@ -62,5 +62,5 @@ For running a job *in response to a domain event*, that is the Event-to-Job Brid
 - Do not target a reserved `events_*` pool from a `@JobHandler`. It fails at boot.
 - Do not use `Date.now()` or randomness for a `step_id`.
 - Do not wrap `ctx.spawnChild` inside a `ctx.step` — a child run is its own memoization root.
-- Do not hand-edit anything under `<paths.subsystems>/jobs/`. It is vendored from the package.
+- Do not hand-edit anything under `<backend_src>/shared/subsystems/jobs/`. It is vendored from the package.
 - Do not reach for a job when the caller is waiting synchronously on the result — that is a use case, not a job. Jobs are durable because they are asynchronous.

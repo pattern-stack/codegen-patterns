@@ -15,8 +15,8 @@ codegen subsystem install events
 # or: bun /path/to/codegen-patterns/src/cli/index.ts subsystem install events
 ```
 
-This copies the runtime files into `<paths.subsystems>/events/` (defaulting to
-`shared/subsystems/events/`) and additionally:
+This copies the runtime files into `<backend_src>/shared/subsystems/events/` (default
+`src/shared/subsystems/events/`) and additionally:
 
 - Injects an `events:` block into `codegen.config.yaml`:
   ```yaml
@@ -28,7 +28,7 @@ This copies the runtime files into `<paths.subsystems>/events/` (defaulting to
 - Writes `domain-events.schema.ts` via a Hygen template (the runtime file is
   skipped by `copyRuntime`). This template owns the scaffold-time `tenant_id`
   conditional — the column is emitted only when `events.multi_tenant: true`.
-- Creates `<paths.subsystems>/events/generated/.gitkeep` so the directory
+- Creates `<backend_src>/shared/subsystems/events/generated/.gitkeep` so the directory
   exists in source control before `just gen-all` runs for the first time.
 
 Switch the backend with `--backend memory` (useful in tests); the default is
@@ -61,7 +61,7 @@ integration). Regenerate the typed artifacts with:
 just gen-all
 ```
 
-This produces five files under `<paths.subsystems>/events/generated/`:
+This produces five files under `<backend_src>/shared/subsystems/events/generated/`:
 `types.ts` (the `AppDomainEvent` discriminated union), `schemas.ts` (Zod
 payload schemas), `registry.ts` (the runtime metadata map), `bus.ts` (the
 `TypedEventBus` facade), and `index.ts`.

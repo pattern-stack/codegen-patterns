@@ -890,6 +890,10 @@ export interface EmitAdaptersOptions {
    *  loop is skipped (back-compat for callers that only want the read side, e.g.
    *  a dry plan with no consumer tree). */
   backendSrcAbs?: string;
+  /** Absolute `paths.modules_dir` on disk — the clean-lite-ps module tree the
+   *  entity repo/module imports resolve into (PATH-1). Required with
+   *  `backendSrcAbs`. */
+  modulesAbs?: string;
   /** tsconfig path aliases (aliasKey → absolute target dir) for the entity
    *  repo/module imports. Empty/absent ⇒ relative-path imports. */
   aliases?: Record<string, string>;
@@ -1040,6 +1044,9 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
     // recorded in `skippedAssemblies` (read side still emitted) — never crashes.
     // ------------------------------------------------------------------
     if (opts.backendSrcAbs) {
+      if (!opts.modulesAbs) {
+        throw new Error("emitAdapters: `modulesAbs` (paths.modules_dir) is required with `backendSrcAbs`");
+      }
       const aliases = opts.aliases ?? {};
       const surfaceEntities = entitiesBySurface.get(surface) ?? [];
       const tokenEntries: IntegrationTokenEntry[] = [];
@@ -1077,6 +1084,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           // module dir for the relative-path base (all share the same parent).
           provider: slugs[0],
           backendSrcAbs: opts.backendSrcAbs,
+          modulesAbs: opts.modulesAbs,
           aliases,
         });
 
