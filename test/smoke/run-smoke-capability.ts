@@ -1,0 +1,427 @@
+#!/usr/bin/env bun
+/**
+ * Capability-composition smoke (ADR-041 / CAP-1) — the regression guard the ADR
+ * asks for by name: "a 3-capability smoke fixture that tsc-compiles against the
+ * published bases … must land with the implementation".
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * ADR-041's decision rests on a hermetic `tsc` spike that *modelled* the
+ * repository bases — it never imported the real, drizzle-bearing classes. The
+ * baseline snapshots are clean-arch-only and consume no patterns, and no other
+ * smoke declares one. So without this harness, nothing anywhere compiles a
+ * composed entity, and the emission would be gated by string assertions alone.
+ *
+ * WHAT IT DOES, per leg
+ * ---------------------
+ *   1. Fresh tmp project: `bun init` + the pinned peer deps.
+ *   2. `codegen project init --runtime <vendored|package>`.
+ *   3. Author a realistic consumer capability surface — three `kind:'capability'`
+ *      app patterns under the default `src/patterns/*.pattern.ts` glob, and
+ *      their mixins under `src/modules/capabilities/` (addressed as
+ *      `@modules/…`, a `project init` alias; deliberately NOT `@shared/…`,
+ *      which is reserved for the package runtime and gets rewritten in package
+ *      mode).
+ *   4. `codegen entity new --all --force` over the CAP-1 fixtures.
+ *   5. Assert the three emission shapes ADR-041 §6 specifies.
+ *   6. `tsc --noEmit` — FAIL on any diagnostic located in the generated project.
+ *   7. Two NEGATIVE gates through the CLI: two spine bases, and a capability
+ *      method colliding with a `queries:` method. Both must exit non-zero.
+ *
+ * SCOPE OF THE FAILURE CHECK
+ * --------------------------
+ * Diagnostics are scoped by the shared `test/smoke/_consumer-errors.ts` — by
+ * LOCATION only, never by message and never by directory (charter I9 / GATE-2).
+ *
+ * THE TWO LEGS
+ * ------------
+ * `vendored` compiles the generated tree against the runtime vendored into
+ * `src/shared/**`. `package` compiles it against the in-repo `runtime/`
+ * sources, aliased through tsconfig `paths` — the package is not `bun add`-ed in
+ * checkout mode, and this is the same technique `test/smoke-integration/run.ts`
+ * uses. Both matter: the mixin chain is assembled from base classes whose import
+ * specifier differs per mode, and `mixinImport` is rewritten per mode too.
+ *
+ * Set KEEP_SMOKE_DIR=1 to preserve the tmp projects.
+ */
+
+import { execSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { consumerErrors as scopeToConsumer } from './_consumer-errors';
+
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
+const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
+const FIXTURES = path.join(REPO_ROOT, 'test', 'smoke', 'fixtures', 'capability');
+const CONSUMER_SRC = path.join(FIXTURES, 'consumer');
+const RUNTIME_ROOT = path.join(REPO_ROOT, 'runtime');
+const RUNTIME_BARREL = path.join(REPO_ROOT, 'runtime/subsystems/index.ts');
+const RUNTIME_SUBSYSTEMS = path.join(REPO_ROOT, 'runtime/subsystems');
+
+const KEEP = process.env.KEEP_SMOKE_DIR === '1';
+
+/** Same pins as `run-smoke.ts` — one drizzle identity across every harness. */
+const RUNTIME_DEPS = [
+	'@nestjs/common@10',
+	'@nestjs/core@10',
+	'@nestjs/platform-express@10',
+	'@nestjs/swagger@7',
+	'@anatine/zod-openapi@2',
+	'drizzle-orm@1.0.0-rc.4',
+	'reflect-metadata@0.2',
+	'pg@8',
+	'zod@3',
+	'yaml@2',
+];
+const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
+
+type Mode = 'vendored' | 'package';
+
+// ---------------------------------------------------------------------------
+// Logging / helpers
+// ---------------------------------------------------------------------------
+
+const t0 = Date.now();
+function log(msg: string): void {
+	console.log(`[+${((Date.now() - t0) / 1000).toFixed(1).padStart(5)}s] ${msg}`);
+}
+function logError(msg: string): void {
+	console.error(`[FAIL] ${msg}`);
+}
+
+function run(cmd: string, cwd: string): void {
+	log(`$ ${cmd}`);
+	execSync(cmd, { cwd, stdio: 'inherit', env: { ...process.env } });
+}
+
+/** Run a command that is EXPECTED to fail; returns its exit code + output. */
+function runExpectingFailure(
+	args: string[],
+	cwd: string,
+): { code: number; output: string } {
+	const r = spawnSync(args[0]!, args.slice(1), { cwd, encoding: 'utf-8' });
+	return { code: r.status ?? 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+}
+
+function cleanup(dir: string): void {
+	if (KEEP) {
+		log(`keeping tmp dir (KEEP_SMOKE_DIR=1): ${dir}`);
+		return;
+	}
+	fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function assertContains(haystack: string, needle: RegExp, source: string): void {
+	if (!needle.test(haystack)) {
+		throw new Error(
+			`Capability smoke assertion failed (${source}): expected ${needle} in:\n${haystack}`,
+		);
+	}
+}
+
+function assertNotContains(haystack: string, needle: RegExp, source: string): void {
+	if (needle.test(haystack)) {
+		throw new Error(
+			`Capability smoke assertion failed (${source}): did NOT expect ${needle} in:\n${haystack}`,
+		);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Consumer capability surface
+// ---------------------------------------------------------------------------
+
+/**
+ * Copy the checked-in consumer fixtures into the tmp project, substituting the
+ * base-classes import prefix for the leg under test. The mixins are the only
+ * files whose text differs between legs — everything else, including the
+ * pattern definitions and their `@modules/…` mixinImports, is mode-agnostic.
+ */
+function authorCapabilitySurface(tmpDir: string, mode: Mode): void {
+	const prefix =
+		mode === 'vendored'
+			? '@shared/base-classes'
+			: '@pattern-stack/codegen/runtime/base-classes';
+
+	const mixinDir = path.join(tmpDir, 'src', 'modules', 'capabilities');
+	fs.mkdirSync(mixinDir, { recursive: true });
+	for (const file of fs.readdirSync(path.join(CONSUMER_SRC, 'capabilities'))) {
+		const src = fs.readFileSync(path.join(CONSUMER_SRC, 'capabilities', file), 'utf8');
+		fs.writeFileSync(
+			path.join(mixinDir, file),
+			src.replaceAll('__RUNTIME_BASE_CLASSES__', prefix),
+		);
+	}
+
+	const patternDir = path.join(tmpDir, 'src', 'patterns');
+	fs.mkdirSync(patternDir, { recursive: true });
+	for (const file of fs.readdirSync(path.join(CONSUMER_SRC, 'patterns'))) {
+		fs.copyFileSync(
+			path.join(CONSUMER_SRC, 'patterns', file),
+			path.join(patternDir, file),
+		);
+	}
+	log(`authored capability surface (${mode}: ${prefix}/capability-mixin)`);
+}
+
+/**
+ * Package mode: the generated tree imports `@pattern-stack/codegen/runtime/*`,
+ * which is unresolvable in checkout mode (the package is not installed). Alias
+ * it to the in-repo runtime SOURCES — the contract under test — and pin
+ * `@nestjs/*` to the project's own copy so there is exactly one Nest identity.
+ * Same technique as `test/smoke-integration/run.ts`.
+ */
+function aliasPackageRuntime(tmpDir: string): void {
+	const tsconfigPath = path.join(tmpDir, 'tsconfig.json');
+	const tsconfig = JSON.parse(
+		fs.readFileSync(tsconfigPath, 'utf-8').replace(/\/\/.*$/gm, ''),
+	) as { compilerOptions?: { paths?: Record<string, string[]> } };
+	tsconfig.compilerOptions ??= {};
+	tsconfig.compilerOptions.paths ??= {};
+	const paths = tsconfig.compilerOptions.paths;
+	paths['@pattern-stack/codegen/runtime/*'] = [`${RUNTIME_ROOT}/*`];
+	// The generated `main.ts` bootstraps off the subsystems barrel.
+	paths['@pattern-stack/codegen/subsystems'] = [RUNTIME_BARREL];
+	paths['@pattern-stack/codegen/subsystems/*'] = [`${RUNTIME_SUBSYSTEMS}/*`];
+	paths['@nestjs/*'] = [path.join(tmpDir, 'node_modules/@nestjs/*')];
+	fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2));
+	log('aliased @pattern-stack/codegen/runtime/* → in-repo runtime sources');
+}
+
+// ---------------------------------------------------------------------------
+// Emission assertions — ADR-041 §6's three shapes
+// ---------------------------------------------------------------------------
+
+function assertEmission(tmpDir: string, mode: Mode): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+	const baseClasses =
+		mode === 'vendored'
+			? '@shared/base-classes'
+			: '@pattern-stack/codegen/runtime/base-classes';
+
+	// ── account: THREE capabilities → a generated composed base ──────────────
+	const composedBasePath = path.join(
+		tmpDir,
+		'src/modules/accounts/account.composed-base.ts',
+	);
+	if (!fs.existsSync(composedBasePath)) {
+		throw new Error(
+			`expected a composed base at ${composedBasePath} — three capabilities stack on the account fixture (ADR-041 §6)`,
+		);
+	}
+	const composedBase = fs.readFileSync(composedBasePath, 'utf8');
+	// Declaration order is `[Group, Integrated, Individual, Audited]`, so the
+	// capability nesting is Group innermost → Audited outermost.
+	assertContains(
+		composedBase,
+		/export abstract class AccountComposedBase extends WithAudited\(\n  WithIndividual\(\n    WithGroup\(\n      IntegratedEntityRepository<\n        Account,\n        typeof accounts,\n        AccountIntegrationWrite,\n        AccountIntegrationProjection\n      >,\n    \),\n  \),\n\) \{\}/,
+		'account.composed-base.ts mixin chain, rightmost capability outermost',
+	);
+	assertContains(
+		composedBase,
+		new RegExp(
+			`import \\{ IntegratedEntityRepository \\} from '${baseClasses.replace(/[/@-]/g, '\\$&')}/integrated-entity-repository';`,
+		),
+		`account.composed-base.ts spine import (${mode} mode)`,
+	);
+	assertContains(
+		composedBase,
+		/import \{ WithGroup \} from '@modules\/capabilities\/with-group';/,
+		'account.composed-base.ts capability import is the app alias, unrewritten',
+	);
+	// The integration interfaces live in the repository module; the cycle back
+	// is type-only, and therefore erased.
+	assertContains(
+		composedBase,
+		/import type \{\s*AccountIntegrationWrite,\s*AccountIntegrationProjection,\s*\} from '\.\/account\.repository';/,
+		'account.composed-base.ts type-only import cycle',
+	);
+
+	const accountRepo = reads('modules/accounts/account.repository.ts');
+	assertContains(
+		accountRepo,
+		/export class AccountRepository extends AccountComposedBase \{/,
+		'account.repository.ts extends the composed base',
+	);
+	assertContains(
+		accountRepo,
+		/import \{ AccountComposedBase \} from '\.\/account\.composed-base';/,
+		'account.repository.ts composed-base import',
+	);
+	// ADR-041 §6 config hand-off: the concrete repository fills the property the
+	// mixin declares.
+	assertContains(
+		accountRepo,
+		/protected override readonly groupConfig = \{\s*membersColumn: 'status',\s*\} as const;/,
+		'account.repository.ts groupConfig literal',
+	);
+	// The spine is `Integrated` even though it is second in `patterns:` — the
+	// integration write surface is the observable proof.
+	assertContains(
+		accountRepo,
+		/export interface AccountIntegrationWrite \{/,
+		'account.repository.ts Integrated spine selected out of position 0',
+	);
+
+	const accountService = reads('modules/accounts/account.service.ts');
+	for (const method of ['members', 'principal', 'auditCount']) {
+		assertContains(
+			accountService,
+			new RegExp(
+				`${method}\\(\\s*\\.\\.\\.args: Parameters<AccountRepository\\['${method}'\\]>\\s*\\): ReturnType<AccountRepository\\['${method}'\\]> \\{`,
+			),
+			`account.service.ts forwarder for '${method}'`,
+		);
+	}
+	assertNotContains(
+		accountService,
+		/async members\(/,
+		'account.service.ts forwarders are not async (a capability method may be sync)',
+	);
+
+	// ── contact: ONE capability → inline extends, no composed-base file ──────
+	if (fs.existsSync(path.join(tmpDir, 'src/modules/contacts/contact.composed-base.ts'))) {
+		throw new Error(
+			'contact declares ONE capability — it must be wrapped inline, with no composed-base file (ADR-041 §6)',
+		);
+	}
+	const contactRepo = reads('modules/contacts/contact.repository.ts');
+	assertContains(
+		contactRepo,
+		/export class ContactRepository extends WithGroup\(BaseRepository<Contact, typeof contacts>\) \{/,
+		'contact.repository.ts inline capability wrap over the default Base spine',
+	);
+	assertContains(
+		contactRepo,
+		/import \{ WithGroup \} from '@modules\/capabilities\/with-group';/,
+		'contact.repository.ts mixin import',
+	);
+
+	// ── note: NO pattern → unchanged emission ────────────────────────────────
+	const noteRepo = reads('modules/notes/note.repository.ts');
+	assertContains(
+		noteRepo,
+		/export class NoteRepository extends BaseRepository<Note, typeof notes> \{/,
+		'note.repository.ts is byte-identical to the pre-CAP-1 shape',
+	);
+	assertNotContains(noteRepo, /ComposedBase|With[A-Z]/, 'note.repository.ts has no capability trace');
+	const noteService = reads('modules/notes/note.service.ts');
+	assertNotContains(
+		noteService,
+		/Capability forwarders/,
+		'note.service.ts has no forwarder block',
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Negative gates — ADR-041 §2 and §4 must FAIL generation, not warn
+// ---------------------------------------------------------------------------
+
+function assertNegativeGates(tmpDir: string): void {
+	const cases: Array<{ fixture: string; expect: RegExp; label: string }> = [
+		{
+			fixture: 'two-spines.yaml',
+			expect: /inheritable spine bases \(Integrated, Activity\)/,
+			label: 'two spine bases (ADR-041 §2)',
+		},
+		{
+			fixture: 'method-collision.yaml',
+			expect: /Method 'findByEmail' is contributed by capability 'Colliding' and the entity's `queries:` block/,
+			label: 'capability × queries: method collision (ADR-041 §4)',
+		},
+	];
+
+	for (const c of cases) {
+		const dest = path.join(tmpDir, 'entities', c.fixture);
+		fs.copyFileSync(path.join(FIXTURES, 'negative', c.fixture), dest);
+		const res = runExpectingFailure(
+			['bun', CLI_PATH, 'entity', 'new', path.join('entities', c.fixture), '--force'],
+			tmpDir,
+		);
+		fs.rmSync(dest);
+		if (res.code === 0) {
+			throw new Error(
+				`negative gate '${c.label}' did NOT fail generation — exit 0.\n${res.output}`,
+			);
+		}
+		if (!c.expect.test(res.output)) {
+			throw new Error(
+				`negative gate '${c.label}' failed for the wrong reason — expected ${c.expect} in:\n${res.output}`,
+			);
+		}
+		log(`negative gate OK — ${c.label} (exit ${res.code})`);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// One leg
+// ---------------------------------------------------------------------------
+
+async function leg(mode: Mode): Promise<number> {
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `codegen-smoke-cap-${mode}-`));
+	log(`[${mode}] tmp dir: ${tmpDir}`);
+	let exitCode = 0;
+
+	try {
+		run('bun init -y', tmpDir);
+		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
+		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
+		run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime ${mode}`, tmpDir);
+		if (mode === 'package') aliasPackageRuntime(tmpDir);
+
+		authorCapabilitySurface(tmpDir, mode);
+
+		const entitiesDir = path.join(tmpDir, 'entities');
+		fs.mkdirSync(entitiesDir, { recursive: true });
+		const examplePath = path.join(entitiesDir, 'example.yaml');
+		if (fs.existsSync(examplePath)) fs.rmSync(examplePath);
+		for (const f of fs.readdirSync(FIXTURES).filter((f) => f.endsWith('.yaml'))) {
+			fs.copyFileSync(path.join(FIXTURES, f), path.join(entitiesDir, f));
+		}
+
+		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+
+		log(`[${mode}] asserting ADR-041 emission shapes`);
+		assertEmission(tmpDir, mode);
+		log(`[${mode}] emission OK`);
+
+		log(`[${mode}] running bunx tsc --noEmit --skipLibCheck`);
+		const tsc = spawnSync('bunx', ['tsc', '--noEmit', '--skipLibCheck'], {
+			cwd: tmpDir,
+			encoding: 'utf-8',
+		});
+		const errors = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
+		if (errors.length > 0) {
+			for (const line of errors) console.error(line);
+			logError(`[${mode}] ${errors.length} typecheck errors in consumer-emitted code`);
+			exitCode = 1;
+		} else {
+			log(`[${mode}] tsc OK — the composed tree compiles against the real bases`);
+		}
+
+		if (exitCode === 0) {
+			log(`[${mode}] asserting negative gates`);
+			assertNegativeGates(tmpDir);
+		}
+	} catch (err: unknown) {
+		logError(err instanceof Error ? err.message : String(err));
+		exitCode = 1;
+	} finally {
+		cleanup(tmpDir);
+	}
+
+	log(`[${mode}] capability smoke ${exitCode === 0 ? 'PASS' : 'FAIL'}`);
+	return exitCode;
+}
+
+async function main(): Promise<number> {
+	const vendored = await leg('vendored');
+	const pkg = await leg('package');
+	const code = vendored === 0 && pkg === 0 ? 0 : 1;
+	log(code === 0 ? 'capability smoke PASS (both runtime modes)' : 'capability smoke FAIL');
+	return code;
+}
+
+main().then((code) => process.exit(code));

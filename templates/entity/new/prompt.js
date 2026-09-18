@@ -1718,6 +1718,14 @@ export default {
         hasPatternConfig: false,
         patternConfig: null,
         renderPatternConfigLiteral: () => '{}',
+        // ADR-041 capability-composition stubs — same reason as the PATTERN-5
+        // stubs above: the CLP template bodies are walked on every architecture.
+        capabilityMixins: [],
+        capabilityForwarders: [],
+        composedBaseClass: null,
+        composedBaseImport: null,
+        repositoryExtendsClause: '',
+        composedBaseExtendsClause: null,
       });
     }
 

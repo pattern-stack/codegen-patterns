@@ -1,0 +1,40 @@
+# CAP-1 smoke fixture: account — ADR-041's three-capability case.
+#
+# `Integrated` is the spine and is deliberately NOT first in the list: spine
+# selection is by contribution, not position (ADR-041 §2). Three capabilities
+# layer over it, so codegen emits `<Entity>ComposedBase` rather than a
+# three-deep inline `extends`.
+#
+# The `Integrated` spine also emits the `AccountIntegrationWrite` /
+# `AccountIntegrationProjection` interfaces INTO the repository file, which the
+# composed base imports back with `import type` — the one import cycle this
+# emission creates, proven erased by the tsc leg of this smoke.
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  patterns: [Group, Integrated, Individual, Audited]
+  folder_structure: nested
+  # Per-capability config (ADR-041 §6) — emitted as `groupConfig` on the
+  # repository, where `WithGroup` declares the property.
+  config:
+    Group:
+      membersColumn: status
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  status:
+    type: enum
+    choices: [active, inactive, archived]
+    required: true
+    default: active
+
+behaviors:
+  - timestamps
+
+queries:
+  - by: [status]

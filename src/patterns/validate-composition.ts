@@ -8,16 +8,24 @@
  *   | Column conflict between two patterns                       | error                  |
  *   | Column conflict with entity field                          | error                  |
  *   | Column conflict with a behavior field                      | error                  |
- *   | Method-name conflict between patterns                      | (TS compile error)     |
+ *   | Two inheritable spine bases on one entity                  | error (ADR-041)        |
+ *   | Method-name conflict between two capabilities              | error (ADR-041)        |
+ *   | Method-name conflict against an opaque base                | (TS compile error)     |
  *   | Same implied behavior across patterns                      | silent dedup           |
  *   | Pattern referenced in YAML but not in the registry         | error                  |
  *   | `config:` key for a pattern the entity is not using        | warning                |
  *   | Pattern config fails its Zod schema                        | error                  |
  *
- * Method-name conflicts are explicitly **not** checked here — they surface as
- * TypeScript compile errors at the consumer when the generated concrete
- * class extends the base. Adding a codegen check would duplicate work
- * the type system already does, so we stay silent on that row per ADR-031.
+ * Method-name conflicts against an **opaque** base are still not checked here —
+ * a pattern exposes its base as a string class name with no machine-readable
+ * method list (ADR-031 Decision 1 / ADR-041 Context #1), so they surface as
+ * TypeScript compile errors at the consumer. What ADR-041 *made* checkable is
+ * the capability vocabulary: a `kind: 'capability'` pattern declares
+ * `forwarderMethods`, so collisions between two capabilities are detected here.
+ * Collisions between a capability and the emitted `queries:` / relationship
+ * methods need the generated method names, which only the clean-lite-ps locals
+ * builder computes — that check lives there (charter I1: one declaration of the
+ * naming rules), and generation time is ADR-041 §4's authoritative gate anyway.
  *
  * Project-level validation (`validatePatternProject`) covers plan Risk 4:
  * entities declaring `pattern:` while `generate.architecture: clean` is
@@ -31,6 +39,11 @@
 
 import type { AnalysisIssue, ParsedEntity } from '../analyzer/types.js';
 import { resolveBehaviorFields } from '../behaviors/index.js';
+import {
+	composePatterns,
+	declaredPatternNames,
+	detectMethodCollisions,
+} from './compose.js';
 import { getPattern } from './registry.js';
 
 // ============================================================================
@@ -51,11 +64,7 @@ export function validatePatternComposition(
 ): AnalysisIssue[] {
 	const issues: AnalysisIssue[] = [];
 
-	// Normalise `pattern:` (single) and `patterns:` (multi) into one list,
-	// preserving declaration order. `pattern` + `patterns` mutual exclusion
-	// is a schema-level check — by the time we get here, at most one shape
-	// is set.
-	const patternNames: string[] = entity.patterns ?? (entity.pattern ? [entity.pattern] : []);
+	const patternNames = declaredPatternNames(entity);
 	if (patternNames.length === 0) return issues;
 
 	// Column-source tracker: maps column name → human-readable origin.
@@ -158,6 +167,36 @@ export function validatePatternComposition(
 		for (const b of def.impliedBehaviors ?? []) {
 			impliedBehaviors.add(b);
 		}
+	}
+
+	// Rules: ADR-041 composition — one inheritable spine, and no method-name
+	// collision between the capability vocabularies. `composePatterns` is the
+	// single implementation the generation path also runs.
+	const composed = composePatterns(patternNames, getPattern, {
+		entity: entity.name,
+	});
+	for (const err of composed.errors) {
+		issues.push({
+			severity: 'error',
+			type: err.code,
+			entity: entity.name,
+			message: err.message,
+		});
+	}
+	const capabilityVocabs = composed.capabilities
+		.filter((c) => (c.forwarderMethods ?? []).length > 0)
+		.map((c) => ({
+			source: `capability '${c.name}'`,
+			methods: c.forwarderMethods ?? [],
+			capability: true,
+		}));
+	for (const err of detectMethodCollisions(capabilityVocabs)) {
+		issues.push({
+			severity: 'error',
+			type: err.code,
+			entity: entity.name,
+			message: err.message,
+		});
 	}
 
 	// Rule: `config:` key for a pattern not in the declared list → warning.

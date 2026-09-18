@@ -407,7 +407,10 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
     expect(locals.patternName).toBe('Integrated');
   });
 
-  it('first entry of `patterns:` wins the base-class resolution', () => {
+  // ADR-041 §2 — positional selection is gone. Two inheritable bases is a hard
+  // error at generation; before CAP-1 this quietly emitted the first one and
+  // dropped the second pattern's entire contribution.
+  it('two inheritable spine bases throw at generation', () => {
     const def = {
       entity: {
         name: 'deal',
@@ -419,9 +422,9 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
       relationships: {},
       behaviors: ['timestamps'],
     };
-    const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
-    expect(locals.patternName).toBe('Integrated');
-    expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
+    expect(() => buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS)).toThrow(
+      /inheritable spine bases \(Integrated, Activity\)/,
+    );
   });
 
   it('hasPatternConfig is false for patterns that declare no config', () => {
@@ -553,9 +556,12 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
     expect(serviceLines).not.toContain('Opportunity');
   });
 
-  // ACTIVITY-SUBJECT-1 D4 — the swe-brain composition target. `Integrated`
-  // wins the base; `Activity` rides along as the subject marker + config.
-  it('patterns: [Integrated, Activity] resolves base to IntegratedEntityRepository', () => {
+  // ADR-041 §2 names `patterns: [Integrated, Activity]` as its worked example:
+  // two config-bearing bases, and it fails "until one is authored as a
+  // capability". What it used to do — emit `Integrated` and silently ignore the
+  // `config: { Activity: ... }` block below, since `patternConfig` is looked up
+  // under the SPINE's name — is the defect, not the contract.
+  it('patterns: [Integrated, Activity] throws instead of silently dropping Activity', () => {
     const def = {
       entity: {
         name: 'message',
@@ -568,12 +574,38 @@ describe('buildCleanLitePsLocals — PATTERN-5 registry integration', () => {
       behaviors: ['timestamps'],
       config: { Activity: { subject: 'person' } },
     };
+    expect(() => buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS)).toThrow(
+      /pattern composition failed for 'message'/,
+    );
+  });
+
+  // The spine still resolves when only ONE pattern is inheritable, wherever it
+  // sits — `Integrated` is second here, and its implied behavior + integration
+  // write surface still land.
+  it('a capability before the spine does not change the base class', () => {
+    registerLibraryPattern({
+      name: 'PeLead',
+      kind: 'capability',
+      mixin: 'WithPeLead',
+      mixinImport: '@shared/base-classes/with-pe-lead',
+      forwarderMethods: ['leads'],
+    });
+    const def = {
+      entity: {
+        name: 'message',
+        plural: 'messages',
+        table: 'messages',
+        patterns: ['PeLead', 'Integrated'],
+      },
+      fields: {},
+      relationships: {},
+      behaviors: ['timestamps'],
+    };
     const locals = buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS);
-    // First pattern wins the base class (documented single-base Phase-1 rule).
-    expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
     expect(locals.patternName).toBe('Integrated');
-    // Integrated's implied behavior still folds in under composition.
+    expect(locals.repositoryBaseClass).toBe('IntegratedEntityRepository');
     expect(locals.hasExternalIdTracking).toBe(true);
+    expect(locals.capabilityMixins.map((c) => c.name)).toEqual(['PeLead']);
   });
 });
 
@@ -700,4 +732,192 @@ _afterAllForCleanup(() => {
   registerLibraryPattern(KnowledgePattern);
   registerLibraryPattern(MetadataPattern);
   registerLibraryPattern(JunctionPattern);
+});
+
+// ============================================================================
+// ADR-041 — capability composition emission
+// ============================================================================
+
+describe('capability composition emission (ADR-041)', () => {
+  const registerCapabilities = (): void => {
+    registerLibraryPattern({
+      name: 'CeGroup',
+      kind: 'capability',
+      mixin: 'WithCeGroup',
+      // Authored as a library capability would be, so the package-mode rewrite
+      // below has something to act on.
+      mixinImport: '@shared/base-classes/with-ce-group',
+      forwarderMethods: ['members'],
+    });
+    registerLibraryPattern({
+      name: 'CeIndividual',
+      kind: 'capability',
+      mixin: 'WithCeIndividual',
+      mixinImport: '@shared/base-classes/with-ce-individual',
+      forwarderMethods: ['principal'],
+    });
+    registerLibraryPattern({
+      name: 'CeAudited',
+      kind: 'capability',
+      mixin: 'WithCeAudited',
+      // An APP capability's alias — must survive both runtime modes untouched.
+      mixinImport: '@modules/capabilities/with-audited',
+      forwarderMethods: ['auditCount'],
+    });
+  };
+
+  const entityWith = (patterns: string[], extra: Record<string, unknown> = {}) => ({
+    entity: {
+      name: 'account',
+      plural: 'accounts',
+      table: 'accounts',
+      patterns,
+      ...extra,
+    },
+    fields: { name: { type: 'string', required: true } },
+    relationships: {},
+    behaviors: ['timestamps'],
+  });
+
+  it('no capability → the extends clause is exactly the pre-CAP-1 string', () => {
+    registerCapabilities();
+    const locals = buildCleanLitePsLocals(entityWith([]), EMPTY_BASE_LOCALS);
+    expect(locals.repositoryExtendsClause).toBe('BaseRepository<Account, typeof accounts>');
+    expect(locals.composedBaseClass).toBeNull();
+    expect(locals.clpOutputPaths.composedBase).toBeNull();
+    expect(locals.capabilityMixins).toEqual([]);
+    expect(locals.capabilityForwarders).toEqual([]);
+  });
+
+  it('one capability → inline wrap, still no composed-base file', () => {
+    registerCapabilities();
+    const locals = buildCleanLitePsLocals(entityWith(['CeGroup']), EMPTY_BASE_LOCALS);
+    expect(locals.repositoryExtendsClause).toBe(
+      'WithCeGroup(BaseRepository<Account, typeof accounts>)',
+    );
+    expect(locals.composedBaseClass).toBeNull();
+    expect(locals.clpOutputPaths.composedBase).toBeNull();
+  });
+
+  it('two or more capabilities → a composed-base file, rightmost outermost', () => {
+    registerCapabilities();
+    const locals = buildCleanLitePsLocals(
+      entityWith(['CeGroup', 'CeIndividual', 'CeAudited']),
+      EMPTY_BASE_LOCALS,
+    );
+    expect(locals.composedBaseClass).toBe('AccountComposedBase');
+    expect(locals.composedBaseImport).toBe('./account.composed-base');
+    expect(locals.clpOutputPaths.composedBase).toMatch(
+      /modules\/accounts\/account\.composed-base\.ts$/,
+    );
+    // The repository extends the generated base; the chain lives in that file.
+    expect(locals.repositoryExtendsClause).toBe('AccountComposedBase');
+    expect(locals.composedBaseExtendsClause).toBe(
+      'WithCeAudited(WithCeIndividual(WithCeGroup(BaseRepository<Account, typeof accounts>)))',
+    );
+  });
+
+  it('the Integrated spine keeps its four-argument multi-line form inside the chain', () => {
+    registerCapabilities();
+    const locals = buildCleanLitePsLocals(
+      entityWith(['CeGroup', 'Integrated', 'CeIndividual']),
+      EMPTY_BASE_LOCALS,
+    );
+    expect(locals.patternName).toBe('Integrated');
+    expect(locals.composedBaseExtendsClause).toBe(
+      [
+        'WithCeIndividual(',
+        '  WithCeGroup(',
+        '    IntegratedEntityRepository<',
+        '      Account,',
+        '      typeof accounts,',
+        '      AccountIntegrationWrite,',
+        '      AccountIntegrationProjection',
+        '    >,',
+        '  ),',
+        ')',
+      ].join('\n'),
+    );
+  });
+
+  it('forwarders carry the contributing capability, in declaration order', () => {
+    registerCapabilities();
+    const locals = buildCleanLitePsLocals(
+      entityWith(['CeGroup', 'CeIndividual', 'CeAudited']),
+      EMPTY_BASE_LOCALS,
+    );
+    expect(locals.capabilityForwarders).toEqual([
+      { capability: 'CeGroup', method: 'members' },
+      { capability: 'CeIndividual', method: 'principal' },
+      { capability: 'CeAudited', method: 'auditCount' },
+    ]);
+  });
+
+  it('a library capability mixinImport is rewritten per runtime mode; an app alias is not', () => {
+    registerCapabilities();
+    const vendored = buildCleanLitePsLocals(
+      entityWith(['CeGroup', 'CeAudited']),
+      { runtimeMode: 'vendored' },
+    );
+    expect(vendored.capabilityMixins.map((c) => c.importPath)).toEqual([
+      '@shared/base-classes/with-ce-group',
+      '@modules/capabilities/with-audited',
+    ]);
+
+    const pkg = buildCleanLitePsLocals(entityWith(['CeGroup', 'CeAudited']), {
+      runtimeMode: 'package',
+    });
+    expect(pkg.capabilityMixins.map((c) => c.importPath)).toEqual([
+      '@pattern-stack/codegen/runtime/base-classes/with-ce-group',
+      // An app capability's own alias is NOT a package path — untouched.
+      '@modules/capabilities/with-audited',
+    ]);
+  });
+
+  it('per-capability config resolves to `<camelName>Config` by default', () => {
+    registerLibraryPattern({
+      name: 'CeConfigured',
+      kind: 'capability',
+      mixin: 'WithCeConfigured',
+      mixinImport: '@shared/base-classes/with-ce-configured',
+    });
+    const locals = buildCleanLitePsLocals(
+      entityWith(['CeConfigured'], { config: { CeConfigured: { membersColumn: 'status' } } }),
+      EMPTY_BASE_LOCALS,
+    );
+    const cap = locals.capabilityMixins[0];
+    expect(cap.configProperty).toBe('ceConfiguredConfig');
+    expect(cap.hasConfig).toBe(true);
+    expect(cap.config).toEqual({ membersColumn: 'status' });
+  });
+
+  it('an explicit `configProperty` wins, and no config block means nothing is emitted', () => {
+    registerLibraryPattern({
+      name: 'CeNamed',
+      kind: 'capability',
+      mixin: 'WithCeNamed',
+      mixinImport: '@shared/base-classes/with-ce-named',
+      configProperty: 'actorConfig',
+    });
+    const locals = buildCleanLitePsLocals(entityWith(['CeNamed']), EMPTY_BASE_LOCALS);
+    expect(locals.capabilityMixins[0].configProperty).toBe('actorConfig');
+    expect(locals.capabilityMixins[0].hasConfig).toBe(false);
+  });
+
+  it('a capability method colliding with a `queries:` method throws at generation', () => {
+    registerLibraryPattern({
+      name: 'CeColliding',
+      kind: 'capability',
+      mixin: 'WithCeColliding',
+      mixinImport: '@shared/base-classes/with-ce-colliding',
+      forwarderMethods: ['findByName'],
+    });
+    const def = {
+      ...entityWith(['CeColliding']),
+      queries: [{ by: ['name'] }],
+    };
+    expect(() => buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS)).toThrow(
+      /Method 'findByName' is contributed by capability 'CeColliding'/,
+    );
+  });
 });

@@ -104,3 +104,71 @@ Only the **new** lattice capabilities (`Group`/`Individual`) ship in `kind: 'cap
 1. Pin `Group`/`Individual`'s exact `forwarderMethods` vocab from the swe-brain dogfood (ADR-0022's `members()` / `to_shape()` are the seed).
 2. Land the 3-capability smoke fixture (tsc against the real published bases).
 3. Confirm how ADR-031's single-depth `extends?` chain interacts with capability layering (likely orthogonal — `extends` builds a spine, capabilities layer on top — but verify at build time).
+
+---
+
+## Revision note — implemented 2026-09-17 (CAP-1, #593)
+
+Built in CAP-1 (`docs/specs/CAP-1.md`), which is the post-implementation truth for the mechanism. Every decision
+above holds; the differences below are what implementation discovered, and each one is a decision this ADR did not
+get to make for itself.
+
+**1. Spine selection reads "contributes an inheritable base", not "carries an abstract-config contract" (§2).**
+Decision 2's phrasing is not machine-readable — `Activity` carries a `configSchema`, but `Integrated`'s
+`integrationConfig` contract is invisible to codegen for exactly the reason Context #1 gives. Honouring the wording
+would have meant a new declared flag whose only job was to reproduce a rule the existing `repositoryClass` /
+`serviceClass` fields already express. Worse, taken literally the "no config-bearing base → spine = `Base`; all
+declared patterns layer as capabilities" clause makes `patterns: [Metadata]` emit `BaseRepository` and drop
+`Metadata`, and `patterns: [Integrated, Metadata]` drop `Metadata` silently — the defect this ADR opens with.
+Implemented rule: the spine is *the* declared domain pattern contributing an inheritable base, wherever it sits in
+the list; **two is a hard error**, with this ADR's message. §2's worked example is reproduced exactly —
+`patterns: [Integrated, Activity]` fails until one is authored as a capability.
+
+**2. Open follow-up #3 is answered: `extends` and capability layering are orthogonal, with one interaction.** A spine
+candidate that another candidate declares in its `extends` chain is dropped as *redundant* rather than counted as a
+competitor, so `patterns: [Base, Integrated]` resolves to `Integrated` instead of erroring. Capabilities never
+participate in `extends`.
+
+**3. Mixins layer on the repository; `forwarderMethods` surface on the service.** Decision 1 leaves the two
+mechanisms as alternatives; in practice they are two halves of one capability (as PLAN §6.4 anticipated). A
+forwarder's signature is derived from the repository method with `Parameters<>` / `ReturnType<>` rather than
+re-declared, so `forwarderMethods` stays a list of names — which is also what the Ruling #3 collision check reads.
+Forwarders are emitted **non-`async`** so a synchronous capability method forwards too.
+
+**4. The delegate-with-constructor-config variant of §6 is not built.** Forwarders forward to the composed
+repository, whose methods the mixin contributed. No consumer needs an injected delegate object, and inventing its DI
+shape would be speculative — the same posture §5 takes.
+
+**5. A capability-mixin contract ships in the runtime**
+(`runtime/base-classes/capability-mixin.ts`: `RepositoryCtor`, `RepositoryOf`, `EntityOf`, `TableOf`). This ADR did
+not call for one, but the naive mixin shapes do not compile against the post-REL-0 generic repository, and the
+failures are non-obvious: a narrower constructor constraint is **TS2545**, `unknown`/`never` in the entity slot
+rejects a concrete repository, and an `EntityOf` that collapses to `never` makes every generated
+`class X extends WithY(…)` fail **TS2417** on the static-side check. Measured in CAP-1 §M1–M4. The spike's finding
+that generic signatures survive holds — with these types, and not without them.
+
+**6. No library capability ships yet.** §5 nominates `Group`/`Individual`; PLAN §6.4 has since folded that lattice
+into `Actor` (`config: { Actor: { kind: individual | group } }`) and `Communication`, which CAP-3 ships. Building
+§5's placeholders now would ship something CAP-3 deletes. The regression fixture therefore uses **app-defined**
+capabilities in the smoke's generated project — which also exercises the app-pattern declaration path end to end.
+
+**7. Collision detection is scoped to collisions involving a capability (§4).** The `queries:` × FK-traversal
+overlap is pre-existing, intentional, and resolved by a documented precedence rule with its own emission logic; it is
+a resolved overlap, not an undetected clash, and reporting it would break entities that work today.
+
+**8. Emission details settled.** `<entity>.composed-base.ts` holds `export abstract class <Entity>ComposedBase extends
+<chain> {}` — abstract, so the spine's abstract members stay abstract and the concrete repository must still
+implement them (verified: TS2515). Over an `Integrated` spine it imports the two integration interfaces back from the
+repository module with `import type`; the cycle is erased. Per-capability config lands on the **repository** as
+`protected override readonly <configProperty>`, defaulting to `<camelCase(name)>Config`.
+
+**9. The regression guard is `just test-smoke-capability`, not `test-smoke-integration`.** "Testing / safety" above
+names the latter, but that harness exists to compile an integration *surface* (providers, adapters) and has no
+pattern declarations. CAP-1 added a dedicated two-leg harness — vendored **and** package runtime modes — that
+compiles the three-capability fixture against the real base classes and additionally asserts, through the CLI, that
+the two spine-base and method-collision cases **fail** generation. It is in `just test-all`, therefore in CI.
+
+**Behaviour change worth restating.** `patterns: [Integrated, Activity]` previously validated clean, emitted
+`IntegratedEntityRepository`, and silently ignored both `Activity`'s methods and its `config:` block (which is read
+under the *spine's* name). It is now a generation-time error. Any entity in that shape needs one of the two authored
+as a capability — which is what §5's migration scope always implied.

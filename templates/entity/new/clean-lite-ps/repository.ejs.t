@@ -39,7 +39,14 @@ import { sql } from 'drizzle-orm';
 <% } -%>
 import { DRIZZLE } from '<%= typeof drizzleTokenImport !== 'undefined' ? drizzleTokenImport : '@shared/constants/tokens' %>';
 import type { DrizzleClient<% if (eavValueTable || (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface)) { %>, DrizzleTx<% } %> } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
+<%_ if (composedBaseClass) { _%>
+import { <%= composedBaseClass %> } from '<%= composedBaseImport %>';
+<%_ } else { _%>
 import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
+<%_ capabilityMixins.forEach((cap) => { _%>
+import { <%= cap.mixin %> } from '<%= cap.importPath %>';
+<%_ }) _%>
+<%_ } _%>
 <% if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { -%>
 import type { IntegrationUpsertConfig } from '<%= typeof integrationUpsertConfigImport !== 'undefined' ? integrationUpsertConfigImport : '@shared/base-classes/integration-upsert-config' %>';
 <% } -%>
@@ -88,16 +95,10 @@ export interface <%= classNames.entity %>IntegrationProjection {
 <%_ } _%>
 
 @Injectable()
-<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
-export class <%= classNames.repository %> extends <%= repositoryBaseClass %><
-  <%= classNames.entity %>,
-  typeof <%= entityNamePlural %>,
-  <%= classNames.entity %>IntegrationWrite,
-  <%= classNames.entity %>IntegrationProjection
-> {
-<%_ } else { _%>
-export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%= classNames.entity %>, typeof <%= entityNamePlural %>> {
-<%_ } _%>
+<%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
+      the generated `<Entity>ComposedBase` when two or more stack. Built in
+      prompt-extension.js so both shapes live in one place. */ _%>
+export class <%= classNames.repository %> extends <%- repositoryExtendsClause %> {
   readonly table = <%= entityNamePlural %>;
 <% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
 
@@ -116,6 +117,13 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%=
   // runtime (identical shape to `behaviors: BehaviorConfig`).
   protected override readonly patternConfig = <%- renderPatternConfigLiteral(patternConfig, '  ', '  ') %> as const;
 <% } -%>
+<%_ capabilityMixins.filter((cap) => cap.hasConfig).forEach((cap) => { _%>
+
+  // Per-entity `<%= cap.name %>` capability config (from YAML `config:` block).
+  // The capability's mixin declares `<%= cap.configProperty %>`; this concrete
+  // record fills it — ADR-041 §6's config hand-off for a layered capability.
+  protected override readonly <%= cap.configProperty %> = <%- renderPatternConfigLiteral(cap.config, '  ', '  ') %> as const;
+<%_ }) _%>
 <%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
 
   // Inbound-integration write surface (#374). Drives the generic integrationUpsertOne /

@@ -1,0 +1,19 @@
+# CAP-1 negative fixture: two inheritable spine bases.
+#
+# ADR-041 §2's worked example. Before CAP-1 this silently emitted
+# `IntegratedEntityRepository` and dropped everything `Activity` contributes,
+# including its `config:` block. It is now a hard error at generation.
+entity:
+  name: two_spine
+  plural: two_spines
+  table: two_spines
+  patterns: [Integrated, Activity]
+  folder_structure: nested
+
+fields:
+  label:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps
