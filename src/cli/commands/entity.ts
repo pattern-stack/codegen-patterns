@@ -240,6 +240,20 @@ function rejectionEntry(i: { file: string | null; message: string; details?: str
 	};
 }
 
+/**
+ * An `entity new` stop before any target is considered — a usage error, no
+ * entity YAML, a dirty generated-output tree. Text mode prints it; JSON mode
+ * gets `{ command, status: 'error', error }`, never an empty stdout (#669).
+ */
+function reportEntityNewError(error: string, code: 1 | 2): 1 | 2 {
+	if (isJsonMode()) {
+		printJson({ command: 'entity new', status: 'error', error });
+	} else {
+		printError(error);
+	}
+	return code;
+}
+
 export class EntityNewCommand extends Command {
 	static paths = [['entity', 'new']];
 	static usage = Command.Usage({
@@ -285,8 +299,7 @@ export class EntityNewCommand extends Command {
 		});
 
 		if (this.all && this.yaml) {
-			printError('Pass either a YAML path or --all, not both.');
-			return 2;
+			return reportEntityNewError('Pass either a YAML path or --all, not both.', 2);
 		}
 
 		let targets: string[] = [];
@@ -294,14 +307,12 @@ export class EntityNewCommand extends Command {
 			const dir = projectLayout(ctx.cwd, ctx.config).entities;
 			targets = listEntityYamls(dir, projectLayout(ctx.cwd, ctx.config).providers);
 			if (targets.length === 0) {
-				printError(`No entity YAML files found in ${dir}`);
-				return 1;
+				return reportEntityNewError(`No entity YAML files found in ${dir}`, 1);
 			}
 		} else if (this.yaml) {
 			targets = [path.resolve(ctx.cwd, this.yaml)];
 		} else {
-			printError('Missing YAML path. Pass a file or --all.');
-			return 2;
+			return reportEntityNewError('Missing YAML path. Pass a file or --all.', 2);
 		}
 
 		// Pre-flight. Three checks can reject a target before hygen runs: the
@@ -446,10 +457,11 @@ export class EntityNewCommand extends Command {
 			const outputRoots = projectLayout(ctx.cwd, ctx.config);
 			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.modules, outputRoots.generated], ctx.cwd);
 			if (gitCheck.inRepo && !gitCheck.clean) {
-				printWarning(
-					`Uncommitted changes in ${gitCheck.dirty.length} generated-output files. Pass --force to overwrite.`
-				);
-				if (!isJsonMode()) return 1;
+				const error = `Uncommitted changes in ${gitCheck.dirty.length} generated-output files. Pass --force to overwrite.`;
+				// JSON mode stops too (it used to fall through and overwrite them): CLI-1.
+				if (isJsonMode()) return reportEntityNewError(error, 1);
+				printWarning(error);
+				return 1;
 			}
 		}
 
