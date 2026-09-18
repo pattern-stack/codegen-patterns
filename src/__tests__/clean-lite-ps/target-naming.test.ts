@@ -259,7 +259,7 @@ describe('a service that composes the same target twice (#632)', () => {
 		expect(count('    CrewRepository,\n')).toBe(1);
 	});
 
-	it('an EAV definition entity also reached by a belongs_to is imported once', () => {
+	it('an EAV definition entity also reached by a belongs_to is imported and injected once', () => {
 		const locals = localsFor(
 			{ name: 'criterion_value', plural: 'criterion_values', pattern: 'Metadata' },
 			{
@@ -281,8 +281,11 @@ describe('a service that composes the same target twice (#632)', () => {
 		expect(
 			service.split("import { CriterionRepository } from '../meta/criterions/criterion.repository';").length - 1,
 		).toBe(1);
-		expect(service).toContain('private readonly definitionRepo: CriterionRepository,');
+		// One constructor parameter for the class; the EAV methods address it.
+		expect(service.split(': CriterionRepository,').length - 1).toBe(1);
 		expect(service).toContain('private readonly criterionRepo: CriterionRepository,');
+		expect(service).not.toContain('definitionRepo');
+		expect(service).toContain('this.criterionRepo.list()');
 	});
 });
 

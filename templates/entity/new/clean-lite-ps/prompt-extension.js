@@ -1638,6 +1638,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     belongsTo,
     hasMany.filter((r) => r.targetExists),
   );
+  const eavDefinitionDep = eavDefinitionEntity
+    ? repositoryDeps.find((d) => d.entity === eavDefinitionEntity) ?? null
+    : null;
 
   // ADR-041.1 — the two library capabilities' configs are RESOLVED, not copied:
   // `Communication`'s comes from `roles:` (never authored), `Actor`'s `members:`
@@ -2204,9 +2207,11 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // #632: every other entity's repository the service composes, once each
     clpRepositoryDeps: repositoryDeps,
-    // The EAV definition repository is imported by its own block unless a
-    // relationship onto the same entity already imported it.
-    eavDefinitionRepositoryImported:
-      eavDefinitionEntity != null && repositoryDeps.some((d) => d.entity === eavDefinitionEntity),
+    // The EAV definition repository is imported + injected by its own block
+    // unless a relationship onto the same entity already put it in
+    // `clpRepositoryDeps`; either way the EAV methods address it by
+    // `eavDefinitionRepoProperty` (one constructor parameter per class).
+    eavDefinitionRepositoryImported: eavDefinitionDep != null,
+    eavDefinitionRepoProperty: eavDefinitionDep ? eavDefinitionDep.property : 'definitionRepo',
   };
 }

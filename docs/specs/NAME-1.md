@@ -62,13 +62,16 @@ lists.
 - The service's imports and constructor parameters, and the module's imports and providers, each iterate that set
   once. The templates keep a `typeof` guard on it, like every clean-lite-ps local. Under
   `architecture: clean` hygen still renders these bodies (the `skip_if` only suppresses the write), and it renders them
-  without clean-lite-ps locals. Dropping the guard broke the baseline.
+  without clean-lite-ps locals. Dropping the guard broke the baseline. The cost is that a genuinely missing local
+  silently emits nothing. That is **#638**: gate the render, or fail loudly on a missing local.
 - The per-relationship methods are unchanged. They still iterate `clpBelongsTo` / `clpExistingHasMany`, and
   `property` is the same `<camel>Repo` name they address.
-- **Same class, one more site:** the EAV value-table block (`eav_definition_table`) imported its definition
-  repository on its own. A value table that also belongs_to its definition entity would import it twice. The new
-  local `eavDefinitionRepositoryImported` skips that import when the set already holds the entity. The
-  `definitionRepo` parameter stays; two parameters of one class are legal.
+- **Same class, one more site:** the EAV value-table block (`eav_definition_table`) imported and injected its
+  definition repository on its own. A value table that also belongs_to its definition entity would import it twice.
+  When the set already holds that entity, the new local `eavDefinitionRepositoryImported` skips the EAV block's import
+  and its `definitionRepo` parameter. The EAV methods address the repository by `eavDefinitionRepoProperty`: the
+  deduped `<entity>Repo` in that case, and `definitionRepo` otherwise. The result is one constructor parameter per
+  repository class (review nit).
 - **Order change:** the module used to list has_many repositories before belongs_to repositories. It now follows the
   set order (belongs_to first). This only affects an entity with both kinds of edge onto *different* targets. No
   baseline or snapshot covers that.
@@ -132,7 +135,7 @@ The package leg fails with 26 diagnostics.
 
 ## Gates
 
-Output from the runs made after the last code edit (charter I9). The only edit since is this table.
+Output from the runs made after the last code edit (charter I9), re-run after the review nits. Nothing has been edited since those runs.
 
 | Gate | Result |
 |---|---|
