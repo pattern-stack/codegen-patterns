@@ -1,12 +1,13 @@
 import { defineConfig } from 'drizzle-kit';
+import { scaffoldDatabaseUrl } from './harness-env';
 
 export default defineConfig({
   schema: './schema.ts',
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url:
-      process.env.DATABASE_URL ??
-      'postgresql://postgres:postgres@localhost:5432/scaffold_test',
+    // Falls back to this checkout's derived port, not a fixed 5432 — sibling
+    // worktrees each publish their own (`harness-env.ts`).
+    url: scaffoldDatabaseUrl(),
   },
 });
