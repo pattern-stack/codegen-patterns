@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
+import yaml from 'yaml';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
@@ -55,23 +56,85 @@ function renderPatternConfigLiteral(value, indent = '  ', initialIndent = '') {
  * Drizzle table handle a library capability's resolved config carries
  * (`via: { table: meetingContacts }`, ADR-041.1). `_renderLiteral` writes it
  * bare; the resolver that produced it also returns the import.
+ *
+ * The marker is a module-private Symbol key, so no value parsed from YAML (an
+ * app capability's verbatim `config:`) can ever be mistaken for one.
  */
+const IDENTIFIER_REF = Symbol('codegen.identifierRef');
+
 export function identifierRef(name) {
-  return { $identifier: name };
+  return { [IDENTIFIER_REF]: name };
 }
 
 function isIdentifierRef(value) {
   return (
     value !== null &&
     typeof value === 'object' &&
-    Object.keys(value).length === 1 &&
-    typeof value.$identifier === 'string'
+    typeof value[IDENTIFIER_REF] === 'string'
   );
+}
+
+/**
+ * An entity's module naming, from its OWN `entity:` block — the rule its own
+ * emission uses (`buildCleanLitePsLocals`), so a cross-entity reference and the
+ * referenced entity agree by construction: `plural:` (else `pluralize(name)`)
+ * is both the table export and the module folder, nested under `context:`.
+ */
+export function entityModuleNaming(entityBlock, srcRoot) {
+  const plural = entityBlock.plural || pluralize(entityBlock.name);
+  const groupDir = entityBlock.context
+    ? `${srcRoot}/modules/${entityBlock.context}`
+    : `${srcRoot}/modules`;
+  return {
+    plural,
+    moduleGroupDir: groupDir,
+    entityFile: `${groupDir}/${plural}/${entityBlock.name}.entity`,
+  };
+}
+
+/**
+ * Look up another entity's `entity:` block by name from the project's entity
+ * YAMLs (`<cwd>/<paths.entities_dir | 'entities'>`, the frontend emitter's
+ * rule). Lazy and cached: the directory is read only when a cross-entity
+ * reference needs a fact the referencing YAML does not state (ADR-041.1: a
+ * group Actor's member entity). Parsed with `yaml` directly, as `prompt.js`
+ * parses every entity — the zod-backed registry does not ship to consumers.
+ *
+ * Exported for unit-testing; `prompt.js` passes one as `entityLookup`.
+ */
+export function createEntityLookup(entitiesDir) {
+  let byName = null;
+  const load = () => {
+    byName = new Map();
+    const walk = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (/\.ya?ml$/.test(e.name)) {
+          try {
+            const doc = yaml.parse(fs.readFileSync(full, 'utf-8'));
+            if (doc && doc.entity && typeof doc.entity.name === 'string') {
+              byName.set(doc.entity.name, doc.entity);
+            }
+          } catch {
+            // A malformed YAML is reported by the CLI's own validation; it is
+            // simply not resolvable here.
+          }
+        }
+      }
+    };
+    walk(entitiesDir);
+  };
+  return (name) => {
+    if (!byName) load();
+    return byName.get(name) ?? null;
+  };
 }
 
 function _renderLiteral(value, baseIndent, currentIndent) {
   if (value === null) return 'null';
-  if (isIdentifierRef(value)) return value.$identifier;
+  if (isIdentifierRef(value)) return value[IDENTIFIER_REF];
   if (typeof value === 'string') {
     // Single-quoted TS string with \\ + ' escapes. Matches ADR-031 example style.
     return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -122,7 +185,16 @@ function _renderLiteral(value, baseIndent, currentIndent) {
  * Exported for unit-testing.
  */
 export function resolveLibraryCapabilityConfig(cap, ctx) {
-  const { entityName, definition, relationships, belongsTo, repositoryDir, srcRoot } = ctx;
+  const {
+    entityName,
+    entityNamePlural,
+    definition,
+    relationships,
+    belongsTo,
+    repositoryDir,
+    srcRoot,
+    entityLookup,
+  } = ctx;
   const importFrom = (target) => {
     const rel = path.posix.relative(repositoryDir, target);
     return rel.startsWith('.') ? rel : `./${rel}`;
@@ -190,21 +262,31 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
           `its has_many relationships.`,
       );
     }
-    const targetPlural = pluralize(members.target);
+    const foreignKey = camelCase(members.foreign_key);
+    // A self-referential group (members of an account are accounts): the
+    // table is this entity's own, already imported by the repository.
+    if (members.target === entityName) {
+      return {
+        config: { kind: 'group', members: { table: identifierRef(entityNamePlural), foreignKey } },
+        imports: [],
+      };
+    }
+    // The member entity's table export and module folder come from ITS YAML
+    // (`plural:`, `context:`) — never re-pluralized here (charter I1).
+    const target = entityLookup ? entityLookup(members.target) : null;
+    if (!target) {
+      throw new Error(
+        `[codegen] '${entityName}' ${ACTOR_CAPABILITY} members: '${config.members}' targets ` +
+          `'${members.target}', which has no entity YAML in the entities directory.`,
+      );
+    }
+    const naming = entityModuleNaming(target, srcRoot);
     return {
       config: {
         kind: 'group',
-        members: {
-          table: identifierRef(targetPlural),
-          foreignKey: camelCase(members.foreign_key),
-        },
+        members: { table: identifierRef(naming.plural), foreignKey },
       },
-      imports: [
-        {
-          name: targetPlural,
-          importPath: importFrom(`${modulesRoot}/${targetPlural}/${members.target}.entity`),
-        },
-      ],
+      imports: [{ name: naming.plural, importPath: importFrom(naming.entityFile) }],
     };
   }
 
@@ -1264,7 +1346,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);
-  const entityNamePlural = entity.plural || pluralize(entityName);
+  // One naming rule for this entity and for any entity that references it
+  // (`entityModuleNaming`).
+  const ownNaming = entityModuleNaming(entity, srcRoot);
+  const entityNamePlural = ownNaming.plural;
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
   // #403: bounded-context folder grouping. `entity.context:` nests this
@@ -1275,9 +1360,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // the generated barrel recomputes its import paths from the full file paths
   // below. The module-folder base used by every clpOutputPaths entry:
   const entityContext = entity.context || null;
-  const moduleGroupDir = entityContext
-    ? `${srcRoot}/modules/${entityContext}`
-    : `${srcRoot}/modules`;
+  const moduleGroupDir = ownNaming.moduleGroupDir;
 
   // Generation toggles — `generate.writes` defaults to true so consumers who
   // regenerate pick up create/update/delete use cases without YAML changes.
@@ -1451,11 +1534,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   for (const cap of capabilityMixins) {
     const resolved = resolveLibraryCapabilityConfig(cap, {
       entityName,
+      entityNamePlural,
       definition,
       relationships,
       belongsTo,
       repositoryDir: `${moduleGroupDir}/${entityNamePlural}`,
       srcRoot,
+      entityLookup: baseLocals?.entityLookup,
     });
     if (!resolved) continue;
     cap.config = resolved.config;

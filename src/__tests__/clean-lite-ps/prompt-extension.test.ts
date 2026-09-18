@@ -5,6 +5,8 @@
 import { describe, it, expect } from 'bun:test';
 import {
   buildCleanLitePsLocals,
+  createEntityLookup,
+  identifierRef,
   resolveImpliedBehaviors,
 } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
 
@@ -1070,6 +1072,14 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
     contacts: { type: 'has_many', target: 'contact', foreign_key: 'account_id' },
   };
 
+  // What prompt.js passes: other entities' own `entity:` blocks, by name.
+  const lookupOf = (...blocks: Array<Record<string, unknown>>) => (name: string) =>
+    blocks.find((b) => b.name === name) ?? null;
+  const withLookup = (...blocks: Array<Record<string, unknown>>) => ({
+    ...EMPTY_BASE_LOCALS,
+    entityLookup: lookupOf(...blocks),
+  });
+
   const configOf = (locals: { capabilityMixins: Array<{ name: string; config: unknown }> }, name: string) =>
     locals.capabilityMixins.find((c) => c.name === name)?.config;
 
@@ -1082,7 +1092,7 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
         attendees: {
           cardinality: 'many',
           target: 'contact',
-          via: { table: { $identifier: 'meetingContacts' }, self: 'meetingId', target: 'contactId' },
+          via: { table: identifierRef('meetingContacts'), self: 'meetingId', target: 'contactId' },
         },
         about: { cardinality: 'one', target: 'account', column: 'aboutAccountId' },
       },
@@ -1120,15 +1130,81 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
     restoreLibrary();
     const locals = buildCleanLitePsLocals(
       account({ kind: 'group', members: 'contacts' }, hasManyContacts),
-      EMPTY_BASE_LOCALS,
+      withLookup({ name: 'contact', plural: 'contacts' }),
     );
     expect(configOf(locals, 'Actor')).toEqual({
       kind: 'group',
-      members: { table: { $identifier: 'contacts' }, foreignKey: 'accountId' },
+      members: { table: identifierRef('contacts'), foreignKey: 'accountId' },
     });
     expect(locals.capabilityConfigImports).toEqual([
       { name: 'contacts', importPath: '../contacts/contact.entity' },
     ]);
+  });
+
+  it("Actor group → the member's irregular plural: comes from ITS YAML, never re-pluralized", () => {
+    restoreLibrary();
+    const locals = buildCleanLitePsLocals(
+      account(
+        { kind: 'group', members: 'staff' },
+        { staff: { type: 'has_many', target: 'person', foreign_key: 'account_id' } },
+      ),
+      // pluralize('person') is 'people' too — so declare something it would never produce.
+      withLookup({ name: 'person', plural: 'personnel' }),
+    );
+    expect(configOf(locals, 'Actor')).toEqual({
+      kind: 'group',
+      members: { table: identifierRef('personnel'), foreignKey: 'accountId' },
+    });
+    expect(locals.capabilityConfigImports).toEqual([
+      { name: 'personnel', importPath: '../personnel/person.entity' },
+    ]);
+  });
+
+  it("Actor group → a context-nested member entity's module folder comes from its YAML", () => {
+    restoreLibrary();
+    const locals = buildCleanLitePsLocals(
+      account({ kind: 'group', members: 'contacts' }, hasManyContacts),
+      withLookup({ name: 'contact', plural: 'contacts', context: 'crm' }),
+    );
+    expect(locals.capabilityConfigImports).toEqual([
+      { name: 'contacts', importPath: '../crm/contacts/contact.entity' },
+    ]);
+  });
+
+  it('Actor group whose member entity has no YAML is a generation error', () => {
+    restoreLibrary();
+    expect(() =>
+      buildCleanLitePsLocals(
+        account({ kind: 'group', members: 'contacts' }, hasManyContacts),
+        withLookup(),
+      ),
+    ).toThrow(/targets 'contact', which has no entity YAML/);
+  });
+
+  it('Actor group over a self-referential has_many uses its own table and adds no import', () => {
+    restoreLibrary();
+    const locals = buildCleanLitePsLocals(
+      account(
+        { kind: 'group', members: 'subsidiaries' },
+        { subsidiaries: { type: 'has_many', target: 'account', foreign_key: 'parent_account_id' } },
+      ),
+      withLookup(),
+    );
+    expect(configOf(locals, 'Actor')).toEqual({
+      kind: 'group',
+      members: { table: identifierRef('accounts'), foreignKey: 'parentAccountId' },
+    });
+    // The repository already imports `accounts` from './account.entity' — a
+    // second import would be TS2300.
+    expect(locals.capabilityConfigImports).toEqual([]);
+  });
+
+  it("an app config value shaped like the old marker is rendered as data, not code", () => {
+    restoreLibrary();
+    const locals = buildCleanLitePsLocals(account({ kind: 'individual' }), EMPTY_BASE_LOCALS);
+    expect(locals.renderPatternConfigLiteral({ $identifier: 'process.exit()' }, '  ', '')).toBe(
+      "{\n  $identifier: 'process.exit()',\n}",
+    );
   });
 
   it('Actor without config is a generation error', () => {
@@ -1180,5 +1256,24 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
     );
     expect(configOf(locals, 'CeVerbatim')).toEqual({ column: 'status' });
     restoreLibrary();
+  });
+});
+
+describe('createEntityLookup (ADR-041.1 cross-entity facts)', () => {
+  it("reads another entity's own entity: block from the entities directory, recursively", async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-lookup-'));
+    fs.mkdirSync(path.join(dir, 'people'));
+    fs.writeFileSync(
+      path.join(dir, 'people', 'person.yaml'),
+      'entity:\n  name: person\n  plural: personnel\n  context: hr\n',
+    );
+    fs.writeFileSync(path.join(dir, 'broken.yaml'), 'entity: [unclosed');
+    const lookup = createEntityLookup(dir);
+    expect(lookup('person')).toEqual({ name: 'person', plural: 'personnel', context: 'hr' });
+    expect(lookup('nobody')).toBeNull();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

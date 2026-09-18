@@ -274,14 +274,14 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	// mixin declares.
 	assertContains(
 		accountRepo,
-		/ override readonly groupConfig = \{\s*membersColumn: 'status',\s*\} as const;/,
+		/^  override readonly groupConfig = \{\s*membersColumn: 'status',\s*\} as const;/m,
 		'account.repository.ts groupConfig literal',
 	);
 	// CAP-3: the library `Actor` config is RESOLVED — `members: contacts` (a
 	// has_many) becomes the live `contacts` table + its FK key.
 	assertContains(
 		accountRepo,
-		/ override readonly actorConfig = \{\s*kind: 'group',\s*members: \{\s*table: contacts,\s*foreignKey: 'accountId',\s*\},\s*\} as const;/,
+		/^  override readonly actorConfig = \{\s*kind: 'group',\s*members: \{\s*table: contacts,\s*foreignKey: 'accountId',\s*\},\s*\} as const;/m,
 		'account.repository.ts actorConfig (group, resolved members)',
 	);
 	assertContains(
@@ -335,7 +335,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	);
 	assertContains(
 		contactRepo,
-		/ override readonly actorConfig = \{\s*kind: 'individual',\s*\} as const;/,
+		/^  override readonly actorConfig = \{\s*kind: 'individual',\s*\} as const;/m,
 		'contact.repository.ts actorConfig (individual)',
 	);
 
@@ -398,7 +398,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	// the FK CAP-2 derived, the many-role the live junction table.
 	assertContains(
 		meetingRepo,
-		/ override readonly communicationConfig = \{\s*roles: \{\s*host: \{\s*cardinality: 'one',\s*target: 'contact',\s*column: 'hostContactId',\s*\},\s*attendees: \{\s*cardinality: 'many',\s*target: 'contact',\s*via: \{\s*table: meetingContacts,\s*self: 'meetingId',\s*target: 'contactId',\s*\},\s*\},\s*about: \{\s*cardinality: 'one',\s*target: 'account',\s*column: 'aboutAccountId',\s*\},\s*\},\s*\} as const;/,
+		/^  override readonly communicationConfig = \{\s*roles: \{\s*host: \{\s*cardinality: 'one',\s*target: 'contact',\s*column: 'hostContactId',\s*\},\s*attendees: \{\s*cardinality: 'many',\s*target: 'contact',\s*via: \{\s*table: meetingContacts,\s*self: 'meetingId',\s*target: 'contactId',\s*\},\s*\},\s*about: \{\s*cardinality: 'one',\s*target: 'account',\s*column: 'aboutAccountId',\s*\},\s*\},\s*\} as const;/m,
 		'meeting.repository.ts communicationConfig from roles:',
 	);
 	assertContains(
