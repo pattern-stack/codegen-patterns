@@ -14,6 +14,12 @@
  * mode. `just test-smoke-junction` runs both, so the `package` default — whose
  * imports no junction gate compiled before #624 — cannot regress.
  *
+ * `--layout default|custom` (default `default`, PATH-0). `custom` sets every
+ * path non-default (`paths.backend_src: apps/backend/src`, `paths.generated`,
+ * `paths.entities`) in a config written BEFORE `project init`, runs one
+ * `subsystem install`, and asserts nothing lands at the default locations —
+ * the #566 / #612 gate. `just test-smoke-junction` runs it in both modes.
+ *
  * Bootstrap (tmp project, deps, codegen run) is delegated to
  * `test/junction/_helpers.ts` so snapshot tests can share the same path.
  * This file owns the compile + grep gate.
@@ -26,11 +32,15 @@ import { consumerErrors as scopeToConsumer } from './_consumer-errors';
 
 import {
   bootstrapJunctionProject,
+  LAYOUT_PATHS,
   SCENARIO_META,
   VALID_ARCHITECTURES,
+  VALID_LAYOUTS,
   VALID_RUNTIMES,
   VALID_SCENARIOS,
   type Architecture,
+  type Layout,
+  type LayoutPaths,
   type RuntimeMode,
   type Scenario,
 } from '../junction/_helpers';
@@ -87,6 +97,13 @@ if (!VALID_RUNTIMES.includes(runtimeArg)) {
   console.error(`Unknown --runtime: ${runtimeArg}. Valid: ${VALID_RUNTIMES.join(', ')}`);
   process.exit(2);
 }
+
+const layoutArg = getArg('--layout', 'default') as Layout;
+if (!VALID_LAYOUTS.includes(layoutArg)) {
+  console.error(`Unknown --layout: ${layoutArg}. Valid: ${VALID_LAYOUTS.join(', ')}`);
+  process.exit(2);
+}
+const P: LayoutPaths = LAYOUT_PATHS[layoutArg];
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -164,7 +181,7 @@ function assertJunctionEmission(
 
   // Architecture-specific expected directory
   const junctionDir = architecture === 'clean-lite-ps'
-    ? `src/modules/${pluralName}`
+    ? `${P.backendSrc}/modules/${pluralName}`
     : `app/backend/src/domain/${pluralName}`;
 
   const leftPascal = pascalCase(leftEnt);
@@ -279,8 +296,8 @@ function assertJunctionEmission(
 
   // ── CGP-60: parent service fan-out injection (clean-lite-ps only) ───────
   if (architecture === 'clean-lite-ps') {
-    const leftParentSvc = reads(`src/modules/${pluralize(leftEnt)}/${leftEnt}.service.ts`);
-    const rightParentSvc = reads(`src/modules/${pluralize(rightEnt)}/${rightEnt}.service.ts`);
+    const leftParentSvc = reads(`${P.backendSrc}/modules/${pluralize(leftEnt)}/${leftEnt}.service.ts`);
+    const rightParentSvc = reads(`${P.backendSrc}/modules/${pluralize(rightEnt)}/${rightEnt}.service.ts`);
 
     // Anchor presence (Q4 anti-regression) — verifies #362's emission still
     // emits the literal `// Inherited from` comment that #60's inject
@@ -333,7 +350,10 @@ function assertRuntimeSpecifiers(
   const { junctionName } = SCENARIO_META[scenario];
   const pluralName = pluralize(junctionName);
   const files = architecture === 'clean-lite-ps'
-    ? [`src/modules/${pluralName}/${junctionName}.repository.ts`, `src/modules/${pluralName}/${junctionName}.service.ts`]
+    ? [
+        `${P.backendSrc}/modules/${pluralName}/${junctionName}.repository.ts`,
+        `${P.backendSrc}/modules/${pluralName}/${junctionName}.service.ts`,
+      ]
     : [
         `app/backend/src/infrastructure/persistence/drizzle/${junctionName.replace(/_/g, '-')}.repository.ts`,
         `app/backend/src/application/${pluralName}/${junctionName}.service.ts`,
@@ -360,8 +380,8 @@ function pluralize(s: string): string {
 }
 
 function assertBarrelIncludes(generatedSrc: string, pluralName: string, _architecture: Architecture): void {
-  const modulesBarrel = path.join(generatedSrc, 'src/generated/modules.ts');
-  const schemaBarrel = path.join(generatedSrc, 'src/generated/schema.ts');
+  const modulesBarrel = path.join(generatedSrc, P.generated, 'modules.ts');
+  const schemaBarrel = path.join(generatedSrc, P.generated, 'schema.ts');
 
   if (!fs.existsSync(modulesBarrel)) {
     throw new Error(`modules barrel not found: ${modulesBarrel}`);
@@ -443,6 +463,29 @@ function assertJunctionRelations(
   );
 
   log(`relations manifest assertions passed: ${junctionVar}`);
+ * PATH-0 (#566 / #612): with every path non-default, nothing may land at a
+ * default location — init, the subsystem install, entity and junction codegen
+ * all resolve from `paths.*`.
+ */
+function assertCustomLayout(projectDir: string): void {
+  for (const stray of ['src', 'entities']) {
+    if (fs.existsSync(path.join(projectDir, stray))) {
+      throw new Error(`layout custom: '${stray}/' was created at the project root — a scaffold ignored paths.*`);
+    }
+  }
+  for (const rel of [
+    `${P.backendSrc}/app.module.ts`,
+    `${P.backendSrc}/main.ts`,
+    `${P.backendSrc}/schema.ts`,
+    `${P.generated}/modules.ts`,
+    `${P.generated}/subsystems.ts`,
+    `${P.entities}/opportunity.yaml`,
+  ]) {
+    if (!fs.existsSync(path.join(projectDir, rel))) {
+      throw new Error(`layout custom: expected ${rel}`);
+    }
+  }
+  log('layout assertions passed: custom');
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +493,7 @@ function assertJunctionRelations(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<number> {
-  log(`smoke-junction scenario=${scenarioArg} architecture=${architectureArg} runtime=${runtimeArg}`);
+  log(`smoke-junction scenario=${scenarioArg} architecture=${architectureArg} runtime=${runtimeArg} layout=${layoutArg}`);
 
   let exitCode = 0;
   let result: Awaited<ReturnType<typeof bootstrapJunctionProject>> | null = null;
@@ -460,6 +503,7 @@ async function main(): Promise<number> {
       scenario: scenarioArg,
       architecture: architectureArg,
       runtime: runtimeArg,
+      layout: layoutArg,
       log,
     });
 
@@ -487,6 +531,7 @@ async function main(): Promise<number> {
       const { leftEnt, rightEnt } = SCENARIO_META[scenarioArg];
       assertJunctionRelations(result.projectDir, junctionName, leftEnt, rightEnt);
       assertRuntimeSpecifiers(result.projectDir, scenarioArg, architectureArg, runtimeArg);
+      if (layoutArg === 'custom') assertCustomLayout(result.projectDir);
     }
 
     // 10. DI-resolution gate — boot the generated AppModule. `tsc` + grep
@@ -497,7 +542,7 @@ async function main(): Promise<number> {
     if (exitCode === 0) {
       log('booting AppModule (NestFactory DI resolution gate)');
       const boot = runSilent(
-        `bun ${path.join(import.meta.dir, 'verify-boot.ts')} ${result.projectDir}`,
+        `bun ${path.join(import.meta.dir, 'verify-boot.ts')} ${result.projectDir} ${P.backendSrc}/app.module.ts`,
         result.projectDir,
       );
       if (boot.code !== 0) {
@@ -521,9 +566,9 @@ async function main(): Promise<number> {
   }
 
   if (exitCode === 0) {
-    log(`smoke-junction PASS (${scenarioArg}/${architectureArg}/${runtimeArg})`);
+    log(`smoke-junction PASS (${scenarioArg}/${architectureArg}/${runtimeArg}/${layoutArg})`);
   } else {
-    log(`smoke-junction FAIL (${scenarioArg}/${architectureArg}/${runtimeArg})`);
+    log(`smoke-junction FAIL (${scenarioArg}/${architectureArg}/${runtimeArg}/${layoutArg})`);
   }
   return exitCode;
 }

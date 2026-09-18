@@ -30,6 +30,31 @@ export type Architecture = (typeof VALID_ARCHITECTURES)[number];
 export const VALID_RUNTIMES = ['vendored', 'package'] as const;
 export type RuntimeMode = (typeof VALID_RUNTIMES)[number];
 
+/**
+ * `default` — the ADR-037 consumer layout (`src/`, `entities/`,
+ * `src/generated/`). `custom` — every path non-default (PATH-0, #566/#612):
+ * `codegen.config.yaml` is written BEFORE `project init`, which must honour it,
+ * and one `subsystem install` runs against it.
+ */
+export const VALID_LAYOUTS = ['default', 'custom'] as const;
+export type Layout = (typeof VALID_LAYOUTS)[number];
+
+/** Project-relative paths a layout resolves to. */
+export interface LayoutPaths {
+  backendSrc: string;
+  generated: string;
+  entities: string;
+}
+
+export const LAYOUT_PATHS: Record<Layout, LayoutPaths> = {
+  default: { backendSrc: 'src', generated: 'src/generated', entities: 'entities' },
+  custom: {
+    backendSrc: 'apps/backend/src',
+    generated: 'apps/backend/src/codegen',
+    entities: 'definitions/entities',
+  },
+};
+
 export interface ScenarioMeta {
   junctionName: string;
   leftEnt: string;
@@ -70,6 +95,8 @@ export interface BootstrapOptions {
    * (#624) so the default mode's imports stay compiled.
    */
   runtime?: RuntimeMode;
+  /** Path layout (PATH-0). Defaults to `default`. */
+  layout?: Layout;
   log?: (msg: string) => void;
 }
 
@@ -77,13 +104,20 @@ export interface BootstrapResult {
   projectDir: string;
   scenario: Scenario;
   architecture: Architecture;
+  /** The project-relative paths the run used. */
+  paths: LayoutPaths;
   /** Reads the contents of a file emitted into the tmp project (relative to projectDir). */
   emittedFile(relPath: string): string;
   /** Removes the tmp dir unless KEEP_SMOKE_DIR=1 is set. */
   cleanup(): void;
 }
 
-function writeCodegenConfig(tmpDir: string, architecture: Architecture, runtime: RuntimeMode): void {
+function writeCodegenConfig(
+  tmpDir: string,
+  architecture: Architecture,
+  runtime: RuntimeMode,
+  paths: LayoutPaths,
+): void {
   const configPath = path.join(tmpDir, 'codegen.config.yaml');
   const content = [
     // ADR-037 runtime mode (init wrote this too, but this overwrite would
@@ -92,9 +126,9 @@ function writeCodegenConfig(tmpDir: string, architecture: Architecture, runtime:
     'generate:',
     `  architecture: ${architecture}`,
     'paths:',
-    '  backend_src: src',
-    '  entities: entities',
-    '  generated: src/generated',
+    `  backend_src: ${paths.backendSrc}`,
+    `  entities: ${paths.entities}`,
+    `  generated: ${paths.generated}`,
   ].join('\n') + '\n';
   fs.writeFileSync(configPath, content);
 }
@@ -102,6 +136,8 @@ function writeCodegenConfig(tmpDir: string, architecture: Architecture, runtime:
 export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<BootstrapResult> {
   const { scenario, architecture } = opts;
   const runtime = opts.runtime ?? 'vendored';
+  const layout = opts.layout ?? 'default';
+  const paths = LAYOUT_PATHS[layout];
   const log = opts.log ?? (() => {});
 
   const fixturesDir = FIXTURES_DIR_MAP[scenario];
@@ -126,19 +162,30 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
 
   // 3. codegen project init — `--runtime <mode>` (ADR-037). Package mode
   //    vendors nothing; alias the package specifiers to the in-repo runtime.
+  //    The custom layout writes its config FIRST: init must place every file
+  //    it scaffolds from that config's `paths.*` (#566).
+  if (layout === 'custom') {
+    writeCodegenConfig(tmpDir, architecture, runtime, paths);
+    log(`wrote codegen.config.yaml before init (layout: custom — ${JSON.stringify(paths)})`);
+  }
   run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime ${runtime}`);
   if (runtime === 'package') {
     aliasPackageRuntime(tmpDir);
     log('aliased @pattern-stack/codegen/runtime/* → in-repo runtime sources');
   }
 
-  // override architecture
-  writeCodegenConfig(tmpDir, architecture, runtime);
-  log(`wrote codegen.config.yaml (architecture: ${architecture}, runtime: ${runtime})`);
+  if (layout === 'default') {
+    // override architecture
+    writeCodegenConfig(tmpDir, architecture, runtime, paths);
+    log(`wrote codegen.config.yaml (architecture: ${architecture}, runtime: ${runtime})`);
+  } else {
+    // One subsystem install against the non-default layout (#566).
+    run(`bun ${CLI_PATH} subsystem install events`);
+  }
 
   // 4. copy entity fixtures
   const entityFixturesDir = path.join(fixturesDir, 'entities');
-  const entitiesDir = path.join(tmpDir, 'entities');
+  const entitiesDir = path.join(tmpDir, paths.entities);
   fs.mkdirSync(entitiesDir, { recursive: true });
   const examplePath = path.join(entitiesDir, 'example.yaml');
   if (fs.existsSync(examplePath)) fs.rmSync(examplePath);
@@ -170,6 +217,7 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     projectDir: tmpDir,
     scenario,
     architecture,
+    paths,
     emittedFile(relPath: string): string {
       const fullPath = path.join(tmpDir, relPath);
       if (!fs.existsSync(fullPath)) {
