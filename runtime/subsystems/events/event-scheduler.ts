@@ -25,9 +25,11 @@
  * is a pure function of (type, slot), so every instance computes the same key
  * and the constraint collapses the race.
  *
- * Drizzle + memory only. The Redis bus retains no outbox history, so slot-key
- * idempotency can't be enforced there (mirrors bridge-on-Redis being
- * unsupported); the scheduler is not wired under `backend: 'redis'`.
+ * This polling `EventScheduler` drives the drizzle + memory backends. The
+ * bullmq backend keeps the same `domain_events` outbox + slot-key idempotency
+ * but is driven by the BullMQ Job Scheduler instead of this setInterval loop
+ * (ADR-041 / SCHED-1: one scheduler source of truth per backend), so this
+ * class is not wired under `backend: 'bullmq'`.
  */
 import { Logger } from '@nestjs/common';
 import type { IEventBus } from './event-bus.protocol';

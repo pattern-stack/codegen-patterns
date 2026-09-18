@@ -175,6 +175,33 @@ export interface IJobBridge {
 // ============================================================================
 
 /**
+ * The three — and only three — canonical ways to turn data into started work
+ * (ADR-041 §"three canonical dispatch speeds"). A single typed vocabulary over
+ * primitives that already exist; there is deliberately NO fourth "raw
+ * `queue.add`" / Postgres-free option on the public surface.
+ *
+ *   - `'direct'`     → `IJobOrchestrator.start(type, input)` — enqueue a job,
+ *                      no event. Instant (one `job_run` write + dispatch). Use
+ *                      when actionability is already proven *before* the data
+ *                      reaches you (pre-admitted sources — e.g. a Slack webhook
+ *                      whose payload is itself the proof).
+ *   - `'eager'`      → `IEventFlow.publishAndStart(event, jobType, input)` —
+ *                      record the event AND start the job in ONE transaction.
+ *                      ~Instant + durable. Use when you want the fact recorded
+ *                      alongside the work, in the request path.
+ *   - `'deliberate'` → `IEventFlow.publish(event)` + the bridge drain — record
+ *                      the event; the bridge decides the async fanout at a
+ *                      bounded pull rate. Flood-resistant. Use when you must
+ *                      inspect state to decide what (if anything) runs.
+ *
+ * Choice rule: actionability proven before the data arrives → `direct`/`eager`;
+ * must inspect state to decide → `deliberate`. The per-trigger CODEGEN knob that
+ * selects `eager` vs `deliberate` declaratively is a fast-follow (DISPATCH-1);
+ * this type is the canonical runtime vocabulary all three primitives share.
+ */
+export type DispatchMode = 'direct' | 'eager' | 'deliberate';
+
+/**
  * Caller-supplied options for `IEventFlow.publishAndStart`.
  *
  * `tenantId` semantics match `IJobOrchestrator.StartOptions.tenantId`

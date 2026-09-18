@@ -73,6 +73,15 @@ import {
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 
+/**
+ * BRIDGE-1 — how often the BullMQ backend re-dispatches pending reserved-pool
+ * runs (the event→job bridge's wrapper job_runs, inserted out-of-band by the
+ * outbox drain). Matches the Drizzle worker's default 1s claim cadence so
+ * bridge latency is the same across backends. Idempotent, so the interval is a
+ * wake + self-heal backstop, not a throughput path.
+ */
+const BULLMQ_RESERVED_RELAY_MS = 1_000;
+
 export interface JobWorkerModuleOptions {
   mode: 'embedded' | 'standalone';
   /**
@@ -145,6 +154,8 @@ export const JOB_WORKER_MODULE_OPTIONS = Symbol.for(tokenKey('jobs', 'worker-mod
 export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(JobWorkerOrchestrator.name);
   private readonly workers: Array<Pick<JobWorker, 'onModuleInit' | 'onModuleDestroy'>> = [];
+  /** BRIDGE-1 — reserved-pool enqueue relay timer (bullmq backend only). */
+  private reservedRelayTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     @Inject(JOB_ORCHESTRATOR) private readonly orchestrator: IJobOrchestrator,
@@ -285,9 +296,53 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
           `concurrency=${def.concurrency} backend='${backend}'`,
       );
     }
+
+    // (7) BRIDGE-1 — reserved-pool enqueue relay (bullmq backend only). The
+    //     event→job bridge inserts wrapper job_runs directly into reserved
+    //     `events_*` pools (raw insert, for FK + dedup correctness), so the
+    //     normal start→dispatch path never enqueues them. The Drizzle worker
+    //     polls them; under BullMQ this relay re-dispatches pending reserved-pool
+    //     runs (idempotent by jobId) on a short interval so the bridge's
+    //     wrappers reach a BullMQ worker — and self-heals any enqueue lost to a
+    //     Redis hiccup. Only the reserved pools this process actually consumes.
+    if (backend === 'bullmq') {
+      const reservedActive = activePools.filter(
+        (p) => poolConfig.get(p)?.reserved,
+      );
+      const orch = this.orchestrator as {
+        reconcilePending?: (pools: string[]) => Promise<void>;
+      };
+      if (reservedActive.length > 0 && typeof orch.reconcilePending === 'function') {
+        // Initial pass — catch wrappers inserted while this process was down.
+        await orch.reconcilePending(reservedActive).catch((err) =>
+          this.logger.error(
+            `reserved-pool relay (boot) failed: ${(err as Error).message}`,
+          ),
+        );
+        this.reservedRelayTimer = setInterval(() => {
+          void orch.reconcilePending!(reservedActive).catch((err) =>
+            this.logger.error(
+              `reserved-pool relay failed: ${(err as Error).message}`,
+            ),
+          );
+        }, BULLMQ_RESERVED_RELAY_MS);
+        (this.reservedRelayTimer as { unref?: () => void }).unref?.();
+        this.logger.log(
+          `BullMQ reserved-pool relay started for [${reservedActive.join(', ')}] ` +
+            `(every ${BULLMQ_RESERVED_RELAY_MS}ms).`,
+        );
+      }
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
+    // BRIDGE-1 — stop the reserved-pool relay before tearing down workers so no
+    // new enqueue races the shutdown.
+    if (this.reservedRelayTimer) {
+      clearInterval(this.reservedRelayTimer);
+      this.reservedRelayTimer = null;
+    }
+
     // Tear down in reverse order so the most recently started worker
     // drains first — keeps the SIGTERM handler graph predictable.
     for (let i = this.workers.length - 1; i >= 0; i--) {

@@ -266,6 +266,24 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			(cfg?.extensions as { drizzle?: { listen_notify?: unknown } } | undefined)?.drizzle
 				?.listen_notify === true;
 		const listenNotifyClause = listenNotify ? `, listenNotify: true` : '';
+		// ADR-041 option #2 — the event bus stays drizzle|memory; the BullMQ
+		// scheduler is an orthogonal CLOCK selected by `events.scheduler.driver`.
+		// Thread `scheduler: { driver }` + the scheduler's redis_url/queue_prefix
+		// into forRoot when driver==='bullmq'. The prefix namespaces the
+		// `events-scheduler` queue so a multi-app shared Redis doesn't clobber
+		// another app's @schedule/* ids on reconcile-prune.
+		const schedulerCfg = cfg?.scheduler as
+			| { driver?: unknown; redis_url?: unknown; queue_prefix?: unknown }
+			| undefined;
+		const schedulerParts: string[] = [];
+		if (schedulerCfg?.driver === 'bullmq') {
+			schedulerParts.push(`scheduler: { driver: 'bullmq' }`);
+			if (typeof schedulerCfg.redis_url === 'string')
+				schedulerParts.push(`redisUrl: ${jsonToTs(schedulerCfg.redis_url)}`);
+			if (typeof schedulerCfg.queue_prefix === 'string')
+				schedulerParts.push(`queuePrefix: ${jsonToTs(schedulerCfg.queue_prefix)}`);
+		}
+		const schedulerClause = schedulerParts.length ? `, ${schedulerParts.join(', ')}` : '';
 		const imports = [
 			`import { EventsModule } from '${moduleImport('events', 'events.module')}';`,
 		];
@@ -301,7 +319,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			return {
 				imports,
 				calls: [
-					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus${registryClause}${listenNotifyClause} }),`,
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}, typedBus: TypedEventBus${registryClause}${listenNotifyClause}${schedulerClause} }),`,
 				],
 			};
 		}
@@ -309,14 +327,14 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			return {
 				imports,
 				calls: [
-					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause}, listenNotify: true }),`,
+					`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause}, listenNotify: true${schedulerClause} }),`,
 				],
 			};
 		}
 		return {
 			imports,
 			calls: [
-				`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause} }),`,
+				`\tEventsModule.forRoot({ backend: '${backend}', multiTenant: ${multiTenant}${registryClause}${schedulerClause} }),`,
 			],
 		};
 	},

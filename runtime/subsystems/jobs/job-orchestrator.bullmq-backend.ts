@@ -25,14 +25,14 @@
  */
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, lte } from 'drizzle-orm';
 // `bullmq` is an OPTIONAL peer dependency. Only TYPE imports here — types are
 // erased at compile time and never resolve `'bullmq'` at runtime, so a
 // `drizzle`-only consumer who didn't install bullmq can still load this file
 // (it is statically imported by `jobs-domain.module.ts`). The VALUE
 // constructors (`Queue`, `FlowProducer`) are loaded lazily via `await
 // import('bullmq')` in `loadBullMq()` — mirrors
-// `event-bus.redis-backend.ts:createRedisClient`. See BULLMQ-1 §Lazy import.
+// the events `event-scheduler.bullmq-backend.ts` loader. See BULLMQ-1 §Lazy import.
 import type { ConnectionOptions, FlowProducer, Queue } from 'bullmq';
 import type { DrizzleClient } from '../../types/drizzle';
 import type { DrizzleTransaction } from '../events/event-bus.protocol';
@@ -68,6 +68,34 @@ import {
  */
 export function sha1JobId(idempotencyKey: string): string {
   return createHash('sha1').update(idempotencyKey).digest('hex');
+}
+
+/** BullMQ's lowest priority value (2^21). */
+const BULLMQ_MAX_PRIORITY = 2_097_152;
+/**
+ * Midpoint of BullMQ's [1, 2^21] priority range. `job_run.priority = 0` (the
+ * schema default) maps here so elevated runs sort ahead and any de-prioritised
+ * caller sorts behind — all within the valid range.
+ */
+const BULLMQ_PRIORITY_BASE = 1_048_576;
+
+/**
+ * Map a `job_run.priority` onto a BullMQ `priority` job opt.
+ *
+ * The `job_run` contract is "0 = default, HIGHER = claimed first" (Drizzle:
+ * `ORDER BY priority DESC`). BullMQ inverts the scale — 1 is the HIGHEST
+ * priority and larger numbers are lower — AND, critically, a job with
+ * `priority` 0/undefined is NOT "lowest": it goes on the plain FIFO `wait`
+ * list, which BullMQ drains AHEAD of the prioritised set. So leaving default
+ * jobs unprioritised (the original bug) demoted every *elevated* run behind
+ * every *default* run — the exact opposite of the contract. The fix: give
+ * EVERY run an explicit priority. Higher `job_run.priority` → numerically lower
+ * BullMQ priority; the default (0) lands at the midpoint. Relative ordering
+ * then matches Drizzle's `DESC` for the whole cohort.
+ */
+export function bullmqPriorityFor(runPriority: number): number {
+  const p = Number.isFinite(runPriority) ? runPriority : 0;
+  return Math.max(1, Math.min(BULLMQ_MAX_PRIORITY, BULLMQ_PRIORITY_BASE - p));
 }
 
 // Constructor types for the lazily-loaded `bullmq` value exports. Typed via
@@ -153,7 +181,15 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
     const name = resolvePoolQueueName(pool, this.bullConfig);
     let q = this.queues.get(name);
     if (!q) {
-      q = new this.QueueCtor(name, { connection: this.connection });
+      // Bounded retention so completed/failed job keys are reaped — otherwise
+      // Redis grows unbounded (the bridge relay re-adds ~1 wrapper job/s). Safe
+      // for relay idempotency: reconcilePending gates on Postgres
+      // `status='pending'`, not the retained Redis key (the
+      // dealbrain-bullmq-audit DEFAULT_JOB_OPTIONS pattern).
+      q = new this.QueueCtor(name, {
+        connection: this.connection,
+        defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 },
+      });
       this.queues.set(name, q);
     }
     return q;
@@ -226,6 +262,7 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
       jobId,
       ...this.retryOpts(def),
       ...this.dedupeOpts(run, def),
+      ...this.scheduleOpts(run),
     };
 
     if (run.parentRunId) {
@@ -285,6 +322,34 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
         ttl: def.dedupeWindowMs,
       },
     };
+  }
+
+  /**
+   * Map the core `StartOptions` scheduling/ordering fields onto BullMQ job
+   * opts so the BullMQ backend honours them identically to the Drizzle worker
+   * (ADR-041 — these are core-contract fields, NOT extensions; the backend
+   * previously dropped both, silently degrading future-dated/prioritised
+   * starts to immediate-FIFO dispatch):
+   *
+   *   - `runAt` (future) → `delay` ms. The Drizzle claim query gates on
+   *     `run_at <= now()` (idx_job_run_claim); BullMQ instead delays the job
+   *     until the boundary elapses. `run_at` is `NOT NULL DEFAULT now()`, so a
+   *     past/now value (the default) produces a non-positive delta and sets no
+   *     `delay` — the common path stays a plain enqueue.
+   *   - `priority` → BullMQ `priority`, for EVERY run (see `bullmqPriorityFor`
+   *     — leaving default-priority jobs unprioritised inverts the contract,
+   *     because BullMQ drains the unprioritised FIFO list ahead of the
+   *     prioritised set).
+   */
+  private scheduleOpts(run: JobRun): { delay?: number; priority: number } {
+    const out: { delay?: number; priority: number } = {
+      priority: bullmqPriorityFor(typeof run.priority === 'number' ? run.priority : 0),
+    };
+    if (run.runAt) {
+      const delay = run.runAt.getTime() - Date.now();
+      if (delay > 0) out.delay = delay;
+    }
+    return out;
   }
 
   // ==========================================================================
@@ -365,6 +430,52 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
       .where(eq(jobRuns.id, id))
       .limit(1);
     return (row as JobRun) ?? null;
+  }
+
+  /**
+   * BRIDGE-1 — reserved-pool enqueue relay. The event→job bridge inserts
+   * wrapper `job_run` rows DIRECTLY (raw insert in `BridgeOutboxDrainHook`, for
+   * FK + dedup correctness) rather than via `start()`, so they are never
+   * dispatched to BullMQ by the normal start→dispatch path. Under the Drizzle
+   * backend a polling worker claims them; under BullMQ there is no poll. This
+   * relay closes the seam: re-dispatch every pending run in the given (reserved)
+   * pools. `dispatch` is idempotent — the wrapper's `jobId` is its `run.id`
+   * (colon-free UUID), so a re-add for an already-queued/in-flight job is a
+   * BullMQ no-op; a run that has been claimed is no longer `pending` and is
+   * skipped. Safe to run on a short interval as the bridge's wake, and
+   * self-healing: a wrapper whose enqueue was lost (Redis hiccup) is
+   * re-dispatched on the next tick. (This is the outbox-relay half of the
+   * transactional-outbox pattern — the wrapper rows are an outbox that BullMQ
+   * needs relayed, exactly like the events drain relays domain_events.)
+   *
+   * Scoped to RESERVED pools only: regular runs are dispatched promptly by
+   * `start()`, and reserved `events_*` pools carry only framework bridge
+   * wrappers, so there is no race with a freshly-started regular run.
+   */
+  async reconcilePending(pools: string[]): Promise<void> {
+    if (pools.length === 0) return;
+    await this.loadBullMq();
+    const rows = await this.bullDb
+      .select()
+      .from(jobRuns)
+      .where(
+        and(
+          eq(jobRuns.status, 'pending'),
+          inArray(jobRuns.pool, pools),
+          lte(jobRuns.runAt, new Date()),
+        ),
+      );
+    for (const row of rows) {
+      const run = row as JobRun;
+      try {
+        await this.dispatch(run, run.jobType);
+      } catch (err) {
+        this.bullLogger.warn(
+          `reconcilePending: dispatch of run ${run.id} (pool=${run.pool}) ` +
+            `failed: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   /** Close all open queue + flow connections. Called on module destroy. */

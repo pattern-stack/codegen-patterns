@@ -18,11 +18,10 @@ export const EVENT_BUS = 'EVENT_BUS' as const;
  * (OBS-LIST-1).
  *
  * Bound by `EventsModule.forRoot` to the same backend instance as
- * `EVENT_BUS` for the `drizzle` and `memory` backends (both implement
- * `IEventReadPort`). The `redis` backend retains no history and therefore
- * does NOT provide this token — consumers composing it (e.g. the
- * observability combiner) inject it `@Optional()` and degrade to empty
- * results.
+ * `EVENT_BUS` for ALL backends — `drizzle`, `memory`, and `bullmq` (the
+ * bullmq backend extends `DrizzleEventBus`, so it inherits `IEventReadPort`
+ * over the same `domain_events` outbox; ADR-041). Consumers composing it
+ * (e.g. the observability combiner) may still inject it `@Optional()`.
  *
  * String constant (not Symbol) so it matches by value across import
  * boundaries — same convention as `EVENT_BUS`.
@@ -61,15 +60,22 @@ export const TYPED_EVENT_BUS = 'TYPED_EVENT_BUS' as const;
 export const EVENTS_MULTI_TENANT = 'EVENTS_MULTI_TENANT' as const;
 
 /**
- * Injection token for the Redis connection URL used by RedisEventBus.
- * Provided automatically by EventsModule.forRoot({ backend: 'redis' }).
+ * Injection token for the resolved BullMQ/ioredis `ConnectionOptions` used by
+ * the BullMQ SCHEDULER driver (`event-scheduler.bullmq-backend.ts`, ADR-041
+ * option #2) — NOT an events backend (the event log stays on Postgres). Bound
+ * by `EventsModule.forRoot/forRootAsync` as `{ url }`, resolved from
+ * `options.redisUrl` → `process.env.REDIS_URL` → `redis://localhost:6379`.
+ * Only consumed when `events.scheduler.driver: 'bullmq'`; harmless otherwise.
  *
- * ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) so it matches by value
- * across runtime copies (the sibling string tokens above are already value-stable).
- * Note the jobs subsystem defines its own `REDIS_URL`-equivalent; this is the
- * events one.
+ * Shares the `REDIS_URL` env default with the jobs subsystem's
+ * `BULLMQ_CONNECTION`, so jobs + the events scheduler compose on one Redis.
+ *
+ * ADR-037: namespaced `Symbol.for(...)` (via `tokenKey()`) so it matches by
+ * value across runtime copies.
  */
-export const REDIS_URL = Symbol.for(tokenKey('events', 'redis-url'));
+export const EVENTS_BULLMQ_CONNECTION = Symbol.for(
+  tokenKey('events', 'bullmq-connection'),
+);
 
 /**
  * Injection token for the resolved `EventsModuleOptions` object.

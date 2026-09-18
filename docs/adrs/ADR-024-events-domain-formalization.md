@@ -6,6 +6,13 @@
 **Related:** ADR-008 (Subsystem Architecture), ADR-022 (Job Orchestration), ADR-023 (Event-to-Job Bridge, blocked on this ADR)
 **Unblocks:** ADR-023 (Event-to-Job Bridge), ADR-026 (JobEvent Observability)
 
+> **Revision (2026-06-15, ADR-041):** the backend set changed. The
+> fire-and-forget `RedisEventBus` (Pub/Sub) named in "Starting point" below was
+> **deleted** (no history, bridge/scheduler-incompatible), and a durable
+> `BullMQEventBus` was added — durable dispatch over the same Postgres outbox via
+> a BullMQ wake queue + a BullMQ Job Scheduler for `schedule:` events. Current
+> backends: `drizzle` (default) | `memory` | `bullmq`. See ADR-041 + BULLMQ-2.
+
 ## Context
 
 The existing events subsystem (`runtime/subsystems/events/`) ships:

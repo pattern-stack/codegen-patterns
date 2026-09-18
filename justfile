@@ -178,6 +178,24 @@ test-jobs-fnkey-integration:
 test-listen-notify-leak-integration:
     bun test "{{justfile_directory()}}/test/integration/listen-notify-shutdown-leak.drizzle.integration.test.ts"
 
+# BULLMQ-VERIFY (ADR-041) — the BullMQ broker round-trip the unit suites cannot
+# reach. Spins its own ephemeral postgres:16 + redis:7-alpine via testcontainers;
+# skips gracefully when Docker is unavailable. NOT in test-unit/CI unit run.
+# Proves start→queue.add→BullMQJobWorker→completed, runAt delay, collisionMode
+# serialization, events publish→wake→drain→findById, scheduled-slot idempotency,
+# and the BullMQ Job Scheduler firing a tick (SCHED-1). Closes the honest
+# BULLMQ-1 §Verification gap (the broker path had never run in-repo).
+test-bullmq-integration:
+    bun test "{{justfile_directory()}}/test/integration/bullmq.integration.test.ts"
+
+# Alias — the jobs slice of the BullMQ broker round-trip (same file).
+test-jobs-bullmq-integration:
+    bun test --test-name-pattern "BullMQ jobs" "{{justfile_directory()}}/test/integration/bullmq.integration.test.ts"
+
+# Alias — the events + scheduler slice of the BullMQ broker round-trip (same file).
+test-events-bullmq-integration:
+    bun test --test-name-pattern "BullMQ events|BullMQ scheduler" "{{justfile_directory()}}/test/integration/bullmq.integration.test.ts"
+
 # Run the full scaffold validation (Docker + codegen + NestJS + CRUD)
 validate:
     bash test/scaffold/validate.sh

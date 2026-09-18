@@ -71,14 +71,22 @@ export interface SubsystemDescriptor {
 export const SUBSYSTEMS: SubsystemDescriptor[] = [
 	{
 		name: 'events',
+		// ADR-041 option #2: the event log stays on Postgres (drizzle outbox) or
+		// memory — it does NOT run on BullMQ (a Redis enqueue can't be atomic with
+		// a PG commit). BullMQ's role for events is the SCHEDULER clock, selected
+		// by the `events.scheduler.driver: bullmq` CONFIG knob (not a --backend),
+		// which vendors `event-scheduler.bullmq-backend.ts`. The old fire-and-forget
+		// RedisEventBus was deleted.
 		description: 'Domain event bus (transactional outbox)',
 		backends: ['drizzle', 'memory'],
 		defaultBackend: 'drizzle',
 	},
 	{
 		name: 'jobs',
+		// BULLMQ-1/ADR-041: the BullMQ orchestrator + worker ship in runtime/;
+		// this gate is what makes `--backend bullmq` installable via the CLI.
 		description: 'Background job queue',
-		backends: ['drizzle', 'memory'],
+		backends: ['drizzle', 'memory', 'bullmq'],
 		defaultBackend: 'drizzle',
 	},
 	{

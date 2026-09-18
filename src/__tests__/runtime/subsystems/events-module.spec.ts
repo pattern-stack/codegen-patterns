@@ -19,6 +19,7 @@ import { EventsModule } from '../../../../runtime/subsystems/events/events.modul
 import {
   EVENT_BUS,
   EVENT_READ_PORT,
+  EVENTS_BULLMQ_CONNECTION,
   EVENTS_MULTI_TENANT,
   TYPED_EVENT_BUS,
 } from '../../../../runtime/subsystems/events/events.tokens';
@@ -353,17 +354,28 @@ describe('EventsModule.forRoot({ backend: "drizzle" })', () => {
   });
 });
 
-describe('EventsModule.forRoot({ backend: "redis" })', () => {
-  it('exposes TYPED_EVENT_BUS and EVENTS_MULTI_TENANT alongside EVENT_BUS', () => {
+describe('EventsModule.forRoot — backend validation (ADR-041 option #2)', () => {
+  it('rejects an unknown backend (e.g. the removed "bullmq"/"redis" event backends) — throws, no silent fallback', () => {
+    // Option #2: the event log is drizzle|memory only. There is no bullmq event
+    // BACKEND (BullMQ is the scheduler clock, selected by scheduler.driver).
+    expect(() =>
+      EventsModule.forRoot({ backend: 'bullmq' as unknown as 'drizzle' }),
+    ).toThrow(/unknown backend 'bullmq'/);
+    expect(() =>
+      EventsModule.forRoot({ backend: 'redis' as unknown as 'drizzle' }),
+    ).toThrow(/unknown backend 'redis'/);
+  });
+
+  it('scheduler.driver=bullmq is accepted on a drizzle backend (cron on BullMQ, events on Postgres)', () => {
     const dyn = EventsModule.forRoot({
-      backend: 'redis',
-      redisUrl: 'redis://localhost:6379',
+      backend: 'drizzle',
+      scheduler: { driver: 'bullmq' },
       multiTenant: true,
     });
     expect(dyn.global).toBe(true);
     expect(dyn.exports).toContain(EVENT_BUS);
+    expect(dyn.exports).toContain(EVENT_READ_PORT);
     expect(dyn.exports).toContain(TYPED_EVENT_BUS);
-    expect(dyn.exports).toContain(EVENTS_MULTI_TENANT);
   });
 });
 
@@ -478,35 +490,50 @@ describe('EventsModule.forRootAsync — DI for backend constructor args (#108)',
     ).rejects.toThrow(/DRIZZLE provider is not available/);
   });
 
-  it('redis backend receives the resolved REDIS_URL via DI (no bare construction)', async () => {
-    // We don't want to actually connect to Redis; assert the instance was
-    // constructed with the expected injected URL. Constructor alone does
-    // not open a connection — that happens in onModuleInit, which
-    // compile() does not invoke.
-    const { RedisEventBus } = await import(
-      '../../../../runtime/subsystems/events/event-bus.redis-backend'
-    );
+  it('forRootAsync with scheduler.driver=bullmq on a drizzle backend wires the bus + connection token (no connect)', async () => {
+    // ADR-041 option #2: events stay Drizzle; the bullmq scheduler is selected
+    // via scheduler.driver. The async path resolves EVENTS_BULLMQ_CONNECTION for
+    // the scheduler driver and binds the Drizzle EVENT_BUS. compile() does not
+    // run onApplicationBootstrap, so no Redis connection opens here.
+    const { db } = makeMockDb();
+
+    @Global()
+    @Module({
+      providers: [{ provide: DRIZZLE, useValue: db }],
+      exports: [DRIZZLE],
+    })
+    class FakeDrizzleModule {}
 
     const moduleRef = await Test.createTestingModule({
       imports: [
+        FakeDrizzleModule,
         EventsModule.forRootAsync({
           useFactory: () => ({
-            backend: 'redis',
+            backend: 'drizzle',
+            scheduler: { driver: 'bullmq' },
             redisUrl: 'redis://test-host:6379/0',
           }),
         }),
       ],
     }).compile();
 
-    const bus = moduleRef.get(EVENT_BUS);
-    expect(bus).toBeInstanceOf(RedisEventBus);
-    // The constructor stores the URL on a private field; cast to access
-    // for the assertion. The important property is that the URL arrived —
-    // pre-fix it would have been `undefined`.
-    expect((bus as unknown as { redisUrl: string }).redisUrl).toBe(
+    expect(moduleRef.get(EVENT_BUS)).toBeInstanceOf(DrizzleEventBus);
+    expect((moduleRef.get(EVENTS_BULLMQ_CONNECTION) as { url: string }).url).toBe(
       'redis://test-host:6379/0',
     );
 
     await moduleRef.close();
+  });
+
+  it('forRootAsync rejects an unknown backend (option #2: no bullmq/redis event backend)', async () => {
+    await expect(
+      Test.createTestingModule({
+        imports: [
+          EventsModule.forRootAsync({
+            useFactory: () => ({ backend: 'bullmq' as unknown as 'drizzle' }),
+          }),
+        ],
+      }).compile(),
+    ).rejects.toThrow(/unknown backend 'bullmq'/);
   });
 });

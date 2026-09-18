@@ -25,9 +25,9 @@ import type { ModuleRef } from '@nestjs/core';
 // `Job`, `ConnectionOptions` are erased at compile time and never resolve
 // `'bullmq'` at runtime. The `Worker` VALUE constructor is loaded lazily via
 // `await import('bullmq')` in `onModuleInit` (mirrors
-// `event-bus.redis-backend.ts:createRedisClient`). See BULLMQ-1 §Lazy import.
+// the events `event-scheduler.bullmq-backend.ts` loader). See BULLMQ-1 §Lazy import.
 import type { Worker, Job, ConnectionOptions } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { DrizzleClient } from '../../types/drizzle';
 import { jobRuns, type JobRunRow } from './job-orchestration.schema';
 import type { IJobOrchestrator, JobRun } from './job-orchestrator.protocol';
@@ -45,6 +45,14 @@ interface BullJobPayload {
   type: string;
   input: unknown;
 }
+
+/**
+ * How long to delay a run that lost the `collisionMode:'queue'` gate before
+ * BullMQ re-offers it. Mirrors the Drizzle worker's release-to-pending +
+ * re-claim-on-next-poll cadence (job-worker.ts:627-652); the active same-key
+ * run has usually transitioned by the time the job comes back.
+ */
+const COLLISION_REQUEUE_DELAY_MS = 1_000;
 
 function serialiseError(err: unknown, attempt: number, retryable: boolean) {
   const e = err as { message?: string; stack?: string } | undefined;
@@ -73,6 +81,13 @@ export interface BullMQJobWorkerOptions {
 export class BullMQJobWorker {
   private readonly logger = new Logger(BullMQJobWorker.name);
   private worker: Worker | null = null;
+  /**
+   * Cached `bullmq` `DelayedError` constructor. Thrown (after `moveToDelayed`)
+   * to tell BullMQ a job was deliberately deferred by the `collisionMode:
+   * 'queue'` gate — NOT failed, and NOT counting against `attempts`. Loaded
+   * lazily in `onModuleInit` alongside `Worker` (optional peer dep).
+   */
+  private DelayedErrorCtor: (new () => Error) | null = null;
 
   constructor(
     private readonly db: DrizzleClient,
@@ -87,6 +102,7 @@ export class BullMQJobWorker {
     try {
       const mod = await import('bullmq');
       WorkerCtor = mod.Worker;
+      this.DelayedErrorCtor = mod.DelayedError as unknown as new () => Error;
     } catch {
       throw new Error(
         'BullMQ backend requires the "bullmq" package. Install it with: npm install bullmq',
@@ -96,8 +112,9 @@ export class BullMQJobWorker {
       this.options.queueName,
       // #6 / noImplicitAny — explicit annotations so the file stays
       // strict-clean even when consumers compile under a stricter tsconfig
-      // than the one used to type-check the runtime tree.
-      (job: Job<BullJobPayload>) => this.process(job),
+      // than the one used to type-check the runtime tree. `token` is the
+      // BullMQ lock token, needed by `moveToDelayed` in the collision gate.
+      (job: Job<BullJobPayload>, token?: string) => this.process(job, token),
       {
         connection: this.options.connection,
         concurrency: this.options.concurrency,
@@ -110,7 +127,16 @@ export class BullMQJobWorker {
       const attemptsMade = job.attemptsMade;
       const maxAttempts = job.opts.attempts ?? 1;
       if (attemptsMade >= maxAttempts) {
-        void this.markFailed(job.data.runId, err, attemptsMade);
+        // Never let a DB hiccup here become an unhandled rejection (Node v15+
+        // terminates the process) — the run would also be stranded in 'running'
+        // (no stale-claim sweeper on the BullMQ worker; reconcilePending only
+        // touches 'pending'). markFailed is internally guarded; this is the
+        // final backstop.
+        void this.markFailed(job.data.runId, err, attemptsMade).catch((e) =>
+          this.logger.error(
+            `markFailed(${job.data.runId}) failed: ${(e as Error).message}`,
+          ),
+        );
       }
     });
     this.logger.log(
@@ -130,7 +156,7 @@ export class BullMQJobWorker {
    * the job return value AND written to `job_run.output`). Throws on handler
    * failure so BullMQ applies the retry policy.
    */
-  private async process(job: Job<BullJobPayload>): Promise<unknown> {
+  private async process(job: Job<BullJobPayload>, token?: string): Promise<unknown> {
     const { runId } = job.data;
     const [row] = await this.db
       .select()
@@ -158,17 +184,41 @@ export class BullMQJobWorker {
       );
     }
 
-    // Mark running (mirrors the Drizzle worker's claim transition).
-    await this.db
-      .update(jobRuns)
-      .set({
-        status: 'running',
-        claimedAt: new Date(),
-        startedAt: new Date(),
-        attempts: job.attemptsMade + 1,
-        updatedAt: new Date(),
-      })
-      .where(eq(jobRuns.id, run.id));
+    // collisionMode:'queue' gate + mark-running, ATOMIC. Serialize same-
+    // concurrency-key runs (the orchestrator inserted the second pending row on
+    // collision — DrizzleJobOrchestrator.start `case 'queue'`; the worker is
+    // what actually serializes execution). BullMQ claims up to `concurrency`
+    // jobs at once, so a plain "is another running?" check before marking
+    // running races: two same-key processors both read zero-running and both
+    // proceed. `claimConcurrencyLane` closes that race with a per-key Postgres
+    // advisory xact lock so the check + the `status='running'` mark happen
+    // atomically — at most one same-key run is ever `running`. When the lane is
+    // taken we DEFER: BullMQ has no "unclaim", so `moveToDelayed` + a thrown
+    // `DelayedError` re-offers the job after a short delay WITHOUT marking it
+    // failed or consuming an attempt. `token` is always present for a live
+    // worker; the `&& token` guard keeps the call type-safe.
+    if (run.concurrencyKey && token) {
+      const claimed = await this.claimConcurrencyLane(run, job.attemptsMade + 1);
+      if (!claimed) {
+        await job.moveToDelayed(Date.now() + COLLISION_REQUEUE_DELAY_MS, token);
+        if (this.DelayedErrorCtor) throw new this.DelayedErrorCtor();
+        // Defensive: ctor not loaded (should never happen post-onModuleInit).
+        return {};
+      }
+      // The run is now `running` (marked atomically inside the lane claim).
+    } else {
+      // No concurrency key → mark running directly.
+      await this.db
+        .update(jobRuns)
+        .set({
+          status: 'running',
+          claimedAt: new Date(),
+          startedAt: new Date(),
+          attempts: job.attemptsMade + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobRuns.id, run.id));
+    }
 
     const HandlerClass = registryEntry.handlerClass;
     const handler = this.moduleRef.get(
@@ -206,23 +256,34 @@ export class BullMQJobWorker {
     err: unknown,
     finalAttempts: number,
   ): Promise<void> {
-    const [row] = await this.db
-      .select()
-      .from(jobRuns)
-      .where(eq(jobRuns.id, runId))
-      .limit(1);
-    if (!row) return;
-    const run = row as JobRunRow;
-    await this.db
-      .update(jobRuns)
-      .set({
-        status: 'failed',
-        attempts: finalAttempts,
-        finishedAt: new Date(),
-        error: serialiseError(err, finalAttempts, false),
-        updatedAt: new Date(),
-      })
-      .where(eq(jobRuns.id, runId));
+    let run: JobRunRow;
+    try {
+      const [row] = await this.db
+        .select()
+        .from(jobRuns)
+        .where(eq(jobRuns.id, runId))
+        .limit(1);
+      if (!row) return;
+      run = row as JobRunRow;
+      await this.db
+        .update(jobRuns)
+        .set({
+          status: 'failed',
+          attempts: finalAttempts,
+          finishedAt: new Date(),
+          error: serialiseError(err, finalAttempts, false),
+          updatedAt: new Date(),
+        })
+        .where(eq(jobRuns.id, runId));
+    } catch (dbErr) {
+      // A DB failure stamping the terminal status would otherwise strand the
+      // run in 'running' (no stale-claim sweeper on this worker). Log loudly so
+      // it's visible; the caller's .catch is the unhandled-rejection backstop.
+      this.logger.error(
+        `markFailed: could not stamp 'failed' for run ${runId}: ${(dbErr as Error).message}`,
+      );
+      return;
+    }
 
     // Parent-close-policy cascade — identical semantics to the Drizzle worker.
     if (run.parentClosePolicy === 'terminate') {
@@ -238,6 +299,49 @@ export class BullMQJobWorker {
         );
       }
     }
+  }
+
+  /**
+   * Atomically claim the concurrency lane for a `collisionMode:'queue'` run.
+   * Returns `true` if this run took the lane (and was marked `running` in the
+   * same tx), `false` if another same-key run already holds it (caller defers).
+   *
+   * A per-key `pg_advisory_xact_lock` serialises concurrent same-key claims:
+   * without it, two BullMQ processors claimed at once both read "no same-key
+   * run is running" before either marks running, and both proceed (the
+   * check-then-act race that a plain SELECT-then-UPDATE cannot close). The lock
+   * is keyed by a 64-bit hash of the concurrency key (`hashtextextended`), so
+   * only same-key claims contend; it releases on commit/rollback. Hash
+   * collisions merely over-serialise two unrelated keys — never a correctness
+   * loss.
+   */
+  private async claimConcurrencyLane(
+    run: JobRunRow,
+    attempts: number,
+  ): Promise<boolean> {
+    const key = run.concurrencyKey;
+    if (!key) return true; // no key → no lane to claim (caller already guarded)
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
+      );
+      const inflight = await tx
+        .select({ id: jobRuns.id })
+        .from(jobRuns)
+        .where(and(eq(jobRuns.concurrencyKey, key), eq(jobRuns.status, 'running')));
+      if (inflight.some((r) => r.id !== run.id)) return false;
+      await tx
+        .update(jobRuns)
+        .set({
+          status: 'running',
+          claimedAt: new Date(),
+          startedAt: new Date(),
+          attempts,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobRuns.id, run.id));
+      return true;
+    });
   }
 
   // ── ctx.step / ctx.spawnChild (mirror JobWorker) ──────────────────────────

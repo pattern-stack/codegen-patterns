@@ -216,6 +216,7 @@ function isValidBackend(
 export function backendFileFilter(
 	backend: SubsystemBackend,
 	subsystemName: SubsystemName,
+	opts?: { keepBullmqFiles?: boolean },
 ): (file: string) => boolean {
 	return (file: string) => {
 		// JOB-6 (Q1 2026-04-19): the Hygen template
@@ -267,28 +268,33 @@ export function backendFileFilter(
 		}
 
 		// #6: alternate-backend pruning. Each subsystem ships every backend
-		// variant in `runtime/subsystems/<name>/`, but vendoring the BACKEND
-		// IMPLEMENTATION files into a consumer that picked another backend
-		// drags peer deps (`ioredis`, `bullmq`) the consumer never installs.
-		// Skip backend implementation files for backends that aren't the
-		// selected one, regardless of which subsystem we're in:
+		// variant in `runtime/subsystems/<name>/`, but vendoring a `*.bullmq-backend.ts`
+		// file into a consumer who didn't select bullmq drags the optional
+		// `bullmq` peer dep into their tsc graph (even a type-only import of
+		// 'bullmq' is a TS2307 when the package isn't installed). So prune
+		// `*.bullmq-backend.ts` unless bullmq is wanted:
 		//
-		//   - `*.redis-backend.ts`  — only vendor when backend === 'redis'
-		//   - `*.bullmq-backend.ts` — only vendor when backend === 'bullmq'
+		//   - jobs: `backend === 'bullmq'` (job-{orchestrator,worker}.bullmq-backend.ts).
+		//   - events: the event bus has NO bullmq backend (drizzle|memory only,
+		//     ADR-041 option #2), but the SCHEDULER does —
+		//     `event-scheduler.bullmq-backend.ts` is vendored when
+		//     `events.scheduler.driver: bullmq` (passed as `opts.keepBullmqFiles`),
+		//     orthogonal to the drizzle events backend. That file stays type-only
+		//     + lazy-loaded, so a poll-driver install never resolves bullmq.
 		//
 		// `bullmq.config.ts` (tokens + helpers) is intentionally NOT pruned
-		// — `jobs-domain.module.ts` and `job-worker.module.ts` static-import
-		// from it, and it carries no `bullmq` peer-dep type surface (its
-		// `BullMqConnectionOptions` is a local structural alias — see
-		// runtime/subsystems/jobs/bullmq.config.ts). Pruning it broke the
-		// module files' static imports → `TS2307` on every drizzle install.
+		// — `jobs-domain.module.ts` static-imports from it and it carries no
+		// `bullmq` peer-dep type surface (local structural alias).
 		//
 		// Memory backend gets the same pruning PLUS its existing skip of
-		// `.drizzle-backend.ts` + `.schema.ts`. Drizzle / local / unknown
-		// vendor everything EXCEPT the alternate-backend implementation
-		// files.
-		if (file.endsWith('.redis-backend.ts') && backend !== 'redis') return false;
-		if (file.endsWith('.bullmq-backend.ts') && backend !== 'bullmq') return false;
+		// `.drizzle-backend.ts` + `.schema.ts`.
+		if (
+			file.endsWith('.bullmq-backend.ts') &&
+			backend !== 'bullmq' &&
+			!opts?.keepBullmqFiles
+		) {
+			return false;
+		}
 
 		if (backend === 'memory') {
 			if (file.endsWith('.drizzle-backend.ts')) return false;
@@ -424,10 +430,19 @@ export class SubsystemInstallCommand extends Command {
 			printInfo(`backend = ${backend}`);
 		}
 
+		// ADR-041: the events bullmq SCHEDULER file (`event-scheduler.bullmq-backend.ts`)
+		// is vendored when `events.scheduler.driver: bullmq`, independent of the
+		// (drizzle|memory) events backend. Read it from the existing config so a
+		// re-install / `codegen update` after opting in brings the file in.
+		const keepBullmqFiles =
+			desc.name === 'events' &&
+			(ctx.config?.events as { scheduler?: { driver?: string } } | undefined)
+				?.scheduler?.driver === 'bullmq';
+
 		const result = await copyRuntime({
 			sourceDir: source,
 			targetDir: subsystemTarget,
-			filter: backendFileFilter(backend, desc.name),
+			filter: backendFileFilter(backend, desc.name, { keepBullmqFiles }),
 			resolveDeps: true,
 			runtimeRoot: runtimeRoot(),
 			depsTargetRoot: path.resolve(targetRoot, '..'),
