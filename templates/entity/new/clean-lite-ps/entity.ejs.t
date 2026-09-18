@@ -8,7 +8,7 @@ import {
 <%_ clpDrizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
-<%_ if (typeof clpHasSelfFk !== 'undefined' && clpHasSelfFk) { _%>
+<%_ if (clpHasFk) { _%>
   type AnyPgColumn,
 <%_ } _%>
 } from 'drizzle-orm/pg-core';
@@ -40,7 +40,7 @@ export const <%= entityNamePlural %> = pgTable(
     // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
     // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
 <%_ } _%>
-    <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>.references(<%= rel.isSelfFk ? '(): AnyPgColumn ' : '() ' %>=> <%= rel.relatedTable %>.id, { onDelete: '<%= rel.onDelete %>' }),
+    <%= rel.camelField %>: uuid('<%= rel.field %>')<%= rel.nullable ? '' : '.notNull()' %>.references((): AnyPgColumn => <%= rel.relatedTable %>.id, { onDelete: '<%= rel.onDelete %>' }),
 <%_ }) _%>
 <%_ clpProcessedFields.forEach(field => { _%>
     <%= field.camelName %>: <%- field.drizzleChain %>,

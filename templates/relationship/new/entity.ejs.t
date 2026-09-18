@@ -7,11 +7,12 @@ import {
 <%_ drizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
-import { <%= fromTable %> } from '../<%= fromTable %>/<%= from %>.entity';
+import { <%= fromTable %> } from '<%= fromEntityImport %>';
 <%_ if (from !== to) { _%>
-import { <%= toTable %> } from '../<%= toTable %>/<%= to %>.entity';
+import { <%= toTable %> } from '<%= toEntityImport %>';
 <%_ } _%>
 
 // ============================================================================
@@ -52,8 +53,8 @@ export const <%= tableVarName %> = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
 
     // FK columns (auto-generated from relationship endpoints)
-    <%= fromColumnCamel %>: uuid('<%= fromColumn %>').notNull().references(() => <%= fromTable %>.id, { onDelete: '<%= onDeleteFromSql %>' }),
-    <%= toColumnCamel %>: uuid('<%= toColumn %>').notNull().references(() => <%= toTable %>.id, { onDelete: '<%= onDeleteToSql %>' }),
+    <%= fromColumnCamel %>: uuid('<%= fromColumn %>').notNull().references((): AnyPgColumn => <%= fromTable %>.id, { onDelete: '<%= onDeleteFromSql %>' }),
+    <%= toColumnCamel %>: uuid('<%= toColumn %>').notNull().references((): AnyPgColumn => <%= toTable %>.id, { onDelete: '<%= onDeleteToSql %>' }),
 <%_ if (hasTypes) { _%>
 
     // Type taxonomy

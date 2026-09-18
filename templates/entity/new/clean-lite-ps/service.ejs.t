@@ -16,24 +16,15 @@ import { FieldValueService } from '../field_values/field_value.service';
 <% if (eavValueTable) { -%>
 import { toEavRows, mergeEavRows } from '<%= typeof eavHelpersImport !== 'undefined' ? eavHelpersImport : '@shared/eav-helpers' %>';
 import type { DrizzleTx } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
+<% if (!eavDefinitionRepositoryImported) { -%>
 import { <%= eavDefinitionPascal %>Repository } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntity %>.repository';
 <% } -%>
-<%_ /* CGP-358b — service-layer composition: import target repos for belongs_to relationships */ _%>
-<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
-<%_ const uniqueBelongsToTargets = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
-<%_ uniqueBelongsToTargets.forEach(rel => { _%>
-import { <%= rel.relatedEntityPascal %>Repository } from '<%= rel.relatedImportDir %>/<%= rel.relatedEntity %>.repository';
-import type { <%= rel.relatedEntityPascal %> } from '<%= rel.relatedImportDir %>/<%= rel.relatedEntity %>.entity';
+<% } -%>
+<%_ /* #632 — one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
+<%_ clpRepositoryDeps.forEach(dep => { _%>
+import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
+import type { <%= dep.entityClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.entity';
 <%_ }) _%>
-<%_ } _%>
-<%_ /* CGP-358b — import target repos for has_many relationships */ _%>
-<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
-<%_ const uniqueHasManyTargets = [...new Map(clpExistingHasMany.filter(r => !r.isSelfRef).map(r => [r.target, r])).values()]; _%>
-<%_ uniqueHasManyTargets.forEach(rel => { _%>
-import { <%= rel.targetClass %>Repository } from '<%= rel.targetImportDir %>/<%= rel.target %>.repository';
-import type { <%= rel.targetClass %> } from '<%= rel.targetImportDir %>/<%= rel.target %>.entity';
-<%_ }) _%>
-<%_ } _%>
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(
@@ -60,20 +51,10 @@ export class <%= classNames.service %> extends WithAnalytics(
 <% if (eavValueTable) { -%>
     private readonly definitionRepo: <%= eavDefinitionPascal %>Repository,
 <% } -%>
-<%_ /* CGP-358b — inject target repos for belongs_to (non-self-ref) */ _%>
-<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
-<%_ const uniqueBelongsToTargets2 = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
-<%_ uniqueBelongsToTargets2.forEach(rel => { _%>
-    private readonly <%= rel.relatedEntity.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) %>Repo: <%= rel.relatedEntityPascal %>Repository,
+<%_ /* #632 — one constructor parameter per composed repository */ _%>
+<%_ clpRepositoryDeps.forEach(dep => { _%>
+    private readonly <%= dep.property %>: <%= dep.repositoryClass %>,
 <%_ }) _%>
-<%_ } _%>
-<%_ /* CGP-358b — inject target repos for has_many (non-self-ref) */ _%>
-<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
-<%_ const uniqueHasManyTargets2 = [...new Map(clpExistingHasMany.filter(r => !r.isSelfRef).map(r => [r.target, r])).values()]; _%>
-<%_ uniqueHasManyTargets2.forEach(rel => { _%>
-    private readonly <%= rel.target.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) %>Repo: <%= rel.targetClass %>Repository,
-<%_ }) _%>
-<%_ } _%>
   ) {
     super(repository);
   }

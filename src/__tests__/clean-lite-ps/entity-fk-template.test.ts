@@ -3,7 +3,7 @@
  * and soft-delete warning comments (issue #41).
  *
  * Verifies that:
- *   - belongs_to relations emit `.references(() => parentTable.id, { onDelete: '...' })`
+ *   - belongs_to relations emit `.references((): AnyPgColumn => parentTable.id, { onDelete: '...' })`
  *   - Default on_delete is 'restrict' when not specified in YAML
  *   - All four on_delete values are correctly mapped from YAML snake_case to Drizzle SQL form
  *   - A soft-delete warning comment is emitted when the entity has soft_delete behavior
@@ -148,21 +148,21 @@ describe('entity FK emission (issue #34)', () => {
     const locals = buildCleanLitePsLocals(messageDefinitionCascade, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    expect(output).toContain(".references(() => conversations.id, { onDelete: 'cascade' })");
+    expect(output).toContain(".references((): AnyPgColumn => conversations.id, { onDelete: 'cascade' })");
   });
 
   it('emits .references() with onDelete: restrict for restrict relation', () => {
     const locals = buildCleanLitePsLocals(messageDefinitionRestrict, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    expect(output).toContain(".references(() => conversations.id, { onDelete: 'restrict' })");
+    expect(output).toContain(".references((): AnyPgColumn => conversations.id, { onDelete: 'restrict' })");
   });
 
   it('emits .references() with onDelete: set null for set_null relation', () => {
     const locals = buildCleanLitePsLocals(childDefinitionSetNull, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    expect(output).toContain(".references(() => posts.id, { onDelete: 'set null' })");
+    expect(output).toContain(".references((): AnyPgColumn => posts.id, { onDelete: 'set null' })");
   });
 
   it('defaults to restrict when on_delete is not specified in YAML', () => {
@@ -170,7 +170,7 @@ describe('entity FK emission (issue #34)', () => {
     const output = render(locals as Record<string, unknown>);
 
     // Should still emit references with restrict
-    expect(output).toContain(".references(() => conversations.id, { onDelete: 'restrict' })");
+    expect(output).toContain(".references((): AnyPgColumn => conversations.id, { onDelete: 'restrict' })");
   });
 
   it('emits .notNull() for non-nullable FK columns', () => {
@@ -234,7 +234,7 @@ describe('soft-delete FK warning (issue #41)', () => {
     const locals = buildCleanLitePsLocals(messageDefinitionSoftDeleteCascade, EMPTY_BASE_LOCALS);
     const output = render(locals as Record<string, unknown>);
 
-    expect(output).toContain(".references(() => conversations.id, { onDelete: 'cascade' })");
+    expect(output).toContain(".references((): AnyPgColumn => conversations.id, { onDelete: 'cascade' })");
   });
 });
 
@@ -384,7 +384,7 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
     const output = render(locals as Record<string, unknown>);
 
     expect(output).toContain(
-      "conversationId: uuid('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' })",
+      "conversationId: uuid('conversation_id').notNull().references((): AnyPgColumn => conversations.id, { onDelete: 'cascade' })",
     );
   });
 
@@ -412,7 +412,7 @@ describe('belongs_to FK inherits field required + index (#34 follow-on)', () => 
     const output = render(locals as Record<string, unknown>);
 
     // .references() DB FK preserved — belongs_to still drives the FK column
-    expect(output).toContain(".references(() => conversations.id, { onDelete: 'cascade' })");
+    expect(output).toContain(".references((): AnyPgColumn => conversations.id, { onDelete: 'cascade' })");
     // DRZ-1 (#583): the v1 relations() const and its drizzle-orm import are gone.
     expect(output).not.toContain('Relations = relations(');
     expect(output).not.toMatch(/import \{[^}]*\brelations\b[^}]*\} from 'drizzle-orm'/);

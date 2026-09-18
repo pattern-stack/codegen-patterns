@@ -355,7 +355,7 @@ function assertRelationshipEmission(tmpDir: string): void {
 	const contactSchema = reads('modules/contacts/contact.entity.ts');
 	assertContains(
 		contactSchema,
-		/accountId:\s*uuid\('account_id'\)[^\n]*?\.references\(\(\) => accounts\.id/,
+		/accountId:\s*uuid\('account_id'\)[^\n]*?\.references\(\(\): AnyPgColumn => accounts\.id/,
 		'contacts.entity.ts belongs_to account FK column',
 	);
 	assertNoV1Relations(contactSchema, 'contacts.entity.ts');
@@ -373,7 +373,7 @@ function assertRelationshipEmission(tmpDir: string): void {
 	const opportunitySchema = reads('modules/opportunities/opportunity.entity.ts');
 	assertContains(
 		opportunitySchema,
-		/accountId:\s*uuid\('account_id'\)[^\n]*?\.references\(\(\) => accounts\.id/,
+		/accountId:\s*uuid\('account_id'\)[^\n]*?\.references\(\(\): AnyPgColumn => accounts\.id/,
 		'opportunities.entity.ts belongs_to account FK column',
 	);
 	assertNoV1Relations(opportunitySchema, 'opportunities.entity.ts');

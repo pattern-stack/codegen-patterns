@@ -1,0 +1,92 @@
+/**
+ * NAME-1 (#633) — `relationship new` names both endpoints from their own entity
+ * YAMLs (`plural:`, `context:`), the way the endpoints' own emission does —
+ * never `pluralize(endpoint)`.
+ *
+ * Runs the real prompt.js in a temp project whose `entities/` holds:
+ *   - `crew` — `context: org`, so its folder is `src/modules/org/crews/`;
+ *   - `person` — `plural: persons`, where `pluralize('person')` is `people`.
+ */
+
+import { afterEach, describe, expect, it } from 'bun:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import ejs from 'ejs';
+import promptModule from '../../../templates/relationship/new/prompt.js';
+
+const TEMPLATES = path.resolve(import.meta.dir, '../../../templates/relationship/new');
+
+function render(template: string, locals: Record<string, unknown>): string {
+	const source = fs.readFileSync(path.join(TEMPLATES, template), 'utf8');
+	const body = source.replace(/^---\n[\s\S]*?\n---\n/, '');
+	return ejs.render(body, locals, { rmWhitespace: false });
+}
+
+const tmpDirs: string[] = [];
+afterEach(() => {
+	for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+});
+
+async function relationshipLocals(
+	from: string,
+	to: string,
+	entities: Record<string, string>,
+): Promise<Record<string, any>> {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relationship-naming-'));
+	tmpDirs.push(dir);
+	fs.mkdirSync(path.join(dir, 'entities'));
+	for (const [name, body] of Object.entries(entities)) {
+		fs.writeFileSync(path.join(dir, 'entities', `${name}.yaml`), body);
+	}
+	const file = path.join(dir, 'relationship.yaml');
+	fs.writeFileSync(
+		file,
+		`relationship:\n  name: ${from}_${to}\n  from: ${from}\n  to: ${to}\n`,
+	);
+	const cwd = process.cwd();
+	process.chdir(dir);
+	try {
+		return (await promptModule.prompt({ args: { yaml: file } })) as Record<string, any>;
+	} finally {
+		process.chdir(cwd);
+	}
+}
+
+const ENTITIES = {
+	crew: 'entity:\n  name: crew\n  plural: crews\n  context: org\n',
+	person: 'entity:\n  name: person\n  plural: persons\n',
+};
+
+describe('relationship endpoints resolve from their own YAML', () => {
+	it("takes each endpoint's table export and folder from its YAML", async () => {
+		const locals = await relationshipLocals('person', 'crew', ENTITIES);
+		expect(locals.fromTable).toBe('persons');
+		expect(locals.toTable).toBe('crews');
+		expect(locals.fromEntityImport).toBe('../persons/person.entity');
+		expect(locals.toEntityImport).toBe('../org/crews/crew.entity');
+	});
+
+	it('renders the resolved names into the relationship entity', async () => {
+		const entity = render('entity.ejs.t', await relationshipLocals('person', 'crew', ENTITIES));
+		expect(entity).toContain("import { persons } from '../persons/person.entity';");
+		expect(entity).toContain("import { crews } from '../org/crews/crew.entity';");
+		expect(entity).toContain('.references((): AnyPgColumn => persons.id');
+		expect(entity).toContain('.references((): AnyPgColumn => crews.id');
+		expect(entity).toContain('type AnyPgColumn,');
+		expect(entity).not.toContain('people');
+	});
+
+	it('a self-referential relationship imports its one endpoint once', async () => {
+		const locals = await relationshipLocals('person', 'person', ENTITIES);
+		expect(locals.fromEntityImport).toBe('../persons/person.entity');
+		const entity = render('entity.ejs.t', locals);
+		expect(entity.match(/import \{ persons \}/g)).toHaveLength(1);
+	});
+
+	it('an endpoint with no entity YAML is a generation error naming it and the directory searched', async () => {
+		await expect(relationshipLocals('person', 'ghost', ENTITIES)).rejects.toThrow(
+			/endpoint 'ghost' has no entity YAML — no YAML under \S+entities declares `entity: \{ name: ghost \}`/,
+		);
+	});
+});
