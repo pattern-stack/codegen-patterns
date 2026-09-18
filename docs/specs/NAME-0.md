@@ -120,8 +120,9 @@ Every one of these also assumed the target's folder is a sibling (`../<plural>/`
      `AnyPgColumn`.
    - **#632**: an entity that both belongs_to and has_many the same target imports its repository twice (TS2300).
    - The NAME-0 fixtures are therefore a DAG (shift → crew → person → squad).
+   - *(Fixed in NAME-1, `docs/specs/NAME-1.md`, which restores the `person.crew` edge.)*
 10. **Still re-pluralizing, out of scope:**
-    - `relationship new` (**#633**; same fix, same primitive).
+    - `relationship new` (**#633**; same fix, same primitive). *Fixed in NAME-1.*
     - The `clean` pipeline's own `targetPlural` locals (`templates/entity/new/prompt.js`). That is #602 territory
       (I11).
     - Not a defect: `Communication`'s `via:` junction is addressed as `pluralize(via)`. That is the junction's
