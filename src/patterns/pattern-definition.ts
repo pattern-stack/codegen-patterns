@@ -16,10 +16,20 @@
  *   - **orchestration** (ADR-032) — `OrchestrationPatternDefinition`. Declares
  *     a DI registry + optional dispatcher scaffold. Not entity-attached;
  *     codegen emits a NestJS module under `src/orchestration/` instead.
+ *   - **capability** (ADR-041) — `CapabilityPatternDefinition`. Entity-attached
+ *     like a domain pattern, but *layered* rather than inherited: it contributes
+ *     a repository mixin and/or a small method vocabulary forwarded on the
+ *     service. TypeScript allows exactly one base class, so an entity composes
+ *     one domain **spine** plus N capabilities.
+ *
+ * Domain and capability patterns share one registry store — both are resolved
+ * by a name in an entity's `pattern:` / `patterns:` list. Orchestration lives in
+ * a disjoint store; it is not entity-attached.
  *
  * See `docs/adrs/ADR-031-app-defined-patterns.md` §"Decision 1" for the
- * domain binding surface and `docs/adrs/ADR-032-orchestration-patterns.md`
- * for the orchestration kind.
+ * domain binding surface, `docs/adrs/ADR-032-orchestration-patterns.md`
+ * for the orchestration kind, and
+ * `docs/adrs/ADR-041-capability-composition-emission.md` for capabilities.
  */
 
 import type { ZodSchema } from 'zod';
@@ -40,11 +50,11 @@ export interface PatternColumnContribution {
 }
 
 /**
- * Discriminator for the two pattern shapes. Default is `"domain"` to preserve
+ * Discriminator for the three pattern shapes. Default is `"domain"` to preserve
  * Phase 1 (ADR-031) behaviour — every existing PatternDefinition without a
  * `kind` field continues to register as a domain pattern.
  */
-export type PatternKind = 'domain' | 'orchestration';
+export type PatternKind = 'domain' | 'orchestration' | 'capability';
 
 /**
  * The full pattern metadata record. Every `definePattern({...})` call
@@ -142,18 +152,128 @@ export function definePattern<TConfig = unknown>(
  * Stricter shape rules belong in the registry's "at-least-one-contribution"
  * check, not here.
  *
- * This function is intentionally **kind-agnostic** — both
- * `PatternDefinition` (domain) and `OrchestrationPatternDefinition`
- * (orchestration) pass. The discriminator routing happens in the loader
- * via `isOrchestrationPattern()`/`isDomainPattern()`.
+ * This function is intentionally **kind-agnostic** — `PatternDefinition`
+ * (domain), `CapabilityPatternDefinition` (capability) and
+ * `OrchestrationPatternDefinition` (orchestration) all pass. The discriminator
+ * routing happens in the loader via
+ * `isOrchestrationPattern()` / `isCapabilityPattern()` / `isDomainPattern()`.
  */
-export function isPatternDefinition(val: unknown): val is PatternDefinition {
+export function isPatternDefinition(val: unknown): val is EntityPatternDefinition {
 	return (
 		typeof val === 'object' &&
 		val !== null &&
 		'name' in val &&
 		typeof (val as { name: unknown }).name === 'string'
 	);
+}
+
+// ============================================================================
+// Capability kind (ADR-041)
+// ============================================================================
+
+/**
+ * A pattern that **layers** onto an entity instead of being inherited by it.
+ *
+ * ADR-041 §3. Single inheritance means an entity can extend exactly one base
+ * class — its *spine* (a domain pattern). Everything else a composed entity
+ * needs has to arrive some other way, and a capability declares which:
+ *
+ *   - `mixin` / `mixinImport` — a TS mixin applied to the generated
+ *     **repository**'s `extends` clause. The shipped `WithAnalytics`
+ *     (`runtime/base-classes/with-analytics.ts`) is the mechanism; write new
+ *     ones against `runtime/base-classes/capability-mixin.ts`.
+ *   - `forwarderMethods` — the small, codegen-known method vocabulary this
+ *     capability contributes. Two jobs, one declaration (charter I1): the
+ *     generated **service** forwards each name to the repository, and the
+ *     generation-time collision check (ADR-041 §4) reads the same list.
+ *
+ * A capability never carries `repositoryClass` / `serviceClass` — those make a
+ * pattern inheritable, which is precisely what a capability is not.
+ */
+export interface CapabilityPatternDefinition<TConfig = unknown> {
+	/** Unique name used in YAML — e.g. `patterns: [Integrated, Actor]` */
+	name: string;
+
+	/** Discriminator. Always `"capability"`. */
+	kind: 'capability';
+
+	/**
+	 * Mixin function name codegen wraps the repository's base in, e.g.
+	 * `WithActor`. Requires `mixinImport`.
+	 */
+	mixin?: string;
+
+	/**
+	 * Module specifier for `mixin`. A library capability authors this as
+	 * `@shared/base-classes/…` and codegen rewrites it to the package form in
+	 * `runtime: package` mode (ADR-037); an app capability's own alias
+	 * (e.g. `@modules/capabilities/…`) passes through untouched.
+	 */
+	mixinImport?: string;
+
+	/**
+	 * Method names this capability contributes to the repository. Each is
+	 * emitted as a typed pass-through on the generated service (signatures are
+	 * derived from the repository method, never re-declared) and each
+	 * participates in the generation-time collision check.
+	 *
+	 * Viable only for small, known vocabularies — that is the trade ADR-041 §3
+	 * makes in exchange for collision detection codegen otherwise cannot do.
+	 */
+	forwarderMethods?: string[];
+
+	/**
+	 * Property on the generated repository that carries this capability's
+	 * per-entity `config:` block. Defaults to `<camelCase(name)>Config`
+	 * (`Actor` → `actorConfig`). The mixin must declare it — the generated
+	 * property is emitted with `override`.
+	 *
+	 * Only meaningful together with `configSchema`.
+	 */
+	configProperty?: string;
+
+	/**
+	 * Columns this capability adds to every entity that declares it. Same
+	 * conflict rules as a domain pattern's columns.
+	 */
+	columns?: PatternColumnContribution[];
+
+	/** Behaviors this capability implicitly enables. Deduped across patterns. */
+	impliedBehaviors?: string[];
+
+	/**
+	 * Zod schema for the per-entity `config: { <Name>: {...} }` block. When
+	 * present and the entity supplies a block, codegen emits it as
+	 * `configProperty` on the repository.
+	 */
+	configSchema?: ZodSchema<TConfig>;
+
+	/** One-line description for codegen help output and error messages. */
+	description?: string;
+}
+
+/**
+ * Identity function — capability counterpart to `definePattern()`. Trivial on
+ * purpose; it exists so consumer files get full compile-time checking.
+ */
+export function defineCapabilityPattern<TConfig = unknown>(
+	def: CapabilityPatternDefinition<TConfig>,
+): CapabilityPatternDefinition<TConfig> {
+	return def;
+}
+
+/**
+ * Every pattern an entity can declare in `pattern:` / `patterns:` — the two
+ * kinds that share the registry store.
+ */
+export type EntityPatternDefinition =
+	| PatternDefinition
+	| CapabilityPatternDefinition;
+
+export function isCapabilityPattern(
+	def: AnyPatternDefinition,
+): def is CapabilityPatternDefinition {
+	return (def as { kind?: PatternKind }).kind === 'capability';
 }
 
 // ============================================================================
@@ -250,9 +370,10 @@ export interface OrchestrationPatternDefinition {
 	description?: string;
 }
 
-/** Union for callers that need to handle both shapes. */
+/** Union for callers that need to handle every shape. */
 export type AnyPatternDefinition =
 	| PatternDefinition
+	| CapabilityPatternDefinition
 	| OrchestrationPatternDefinition;
 
 export function isOrchestrationPattern(
@@ -261,10 +382,16 @@ export function isOrchestrationPattern(
 	return (def as { kind?: PatternKind }).kind === 'orchestration';
 }
 
+/**
+ * A domain pattern is one that contributes an *inheritable* base — the default
+ * kind. Checked positively rather than as "not orchestration", because a third
+ * kind exists now (ADR-041).
+ */
 export function isDomainPattern(
 	def: AnyPatternDefinition,
 ): def is PatternDefinition {
-	return !isOrchestrationPattern(def);
+	const kind = (def as { kind?: PatternKind }).kind;
+	return kind === undefined || kind === 'domain';
 }
 
 /**

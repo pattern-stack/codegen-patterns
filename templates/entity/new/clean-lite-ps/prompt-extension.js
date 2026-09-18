@@ -14,6 +14,11 @@ import pluralizePkg from 'pluralize';
 // prompt.js via loadAppPatterns() against `codegen.config.yaml patterns:`
 // globs before this helper runs — we only read the registry here.
 import { getPattern } from '../../../../src/patterns/registry.js';
+import {
+  composePatterns,
+  declaredPatternNames,
+  detectMethodCollisions,
+} from '../../../../src/patterns/compose.js';
 import '../../../../src/patterns/library/index.js';
 import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
 
@@ -69,32 +74,45 @@ function _renderLiteral(value, baseIndent, currentIndent) {
 }
 
 /**
- * Resolve the base-class locals (repository + service class name + import
- * path + inherited-method comment lines) for an entity by looking up its
- * declared pattern in the shared registry.
+ * Resolve an entity's composition (ADR-041): one inherited **spine** plus N
+ * layered **capabilities**.
  *
- * Resolution order:
- *   1. `entity.pattern` — single-pattern case. Returns that pattern's record.
- *   2. `entity.patterns[0]` — multi-pattern case: the first name drives the
- *      base-class choice. Subsequent patterns contribute columns + implied
- *      behaviors (PATTERN-4 composition check) but do not change the
- *      template's repository/service base class.
- *   3. `'Base'` fallback — library pattern that anchors the identity case.
+ * Replaces the PATTERN-5 `resolvePatternBaseClasses()`, whose rule was
+ * positional — `patterns[0]` won the base class and every later pattern's
+ * `repositoryClass` / `serviceClass` was silently dropped. Two things changed
+ * (ADR-041 §2/§3):
+ *
+ *   - the spine is the declared domain pattern that contributes an inheritable
+ *     base, *wherever it sits in the list*, and two of them is a hard error
+ *     rather than a silent drop;
+ *   - a `kind: 'capability'` pattern is layered as a repository mixin and/or a
+ *     set of service forwarders instead of being dropped.
+ *
+ * Throws on a composition error. Generation time is ADR-041 §4's authoritative
+ * gate — `validatePatternComposition()` reports the same errors earlier and
+ * more cheaply, but nothing forces a consumer to run it before `entity new`.
  *
  * Exported for unit-testing; consumers import `buildCleanLitePsLocals`.
  */
-export function resolvePatternBaseClasses(entity) {
-  const name =
-    (typeof entity.pattern === 'string' && entity.pattern) ||
-    (Array.isArray(entity.patterns) && entity.patterns[0]) ||
-    'Base';
-  const def = getPattern(name) || getPattern('Base');
-  if (!def) {
+export function resolvePatternComposition(entity) {
+  const names = declaredPatternNames(entity);
+  const composed = composePatterns(names, getPattern, { entity: entity.name });
+
+  if (composed.errors.length > 0) {
     throw new Error(
-      `Pattern '${name}' is not registered, and the library 'Base' pattern ` +
-      `is also missing. Did the patterns barrel fail to load?`,
+      `[codegen] pattern composition failed for '${entity.name}':\n  ` +
+      composed.errors.map((e) => e.message).join('\n  '),
     );
   }
+
+  const def = composed.spine;
+  if (!def) {
+    throw new Error(
+      `Pattern '${composed.spineName}' is not registered, and the library 'Base' ` +
+      `pattern is also missing. Did the patterns barrel fail to load?`,
+    );
+  }
+
   return {
     patternName: def.name,
     repositoryBaseClass: def.repositoryClass,
@@ -103,6 +121,7 @@ export function resolvePatternBaseClasses(entity) {
     serviceBaseImport: def.serviceImport,
     repositoryInheritedMethods: def.repositoryInheritedMethods ?? [],
     serviceInheritedMethods: def.serviceInheritedMethods ?? [],
+    capabilities: composed.capabilities,
   };
 }
 
@@ -1141,14 +1160,16 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     ? pascalCase(eavDefinitionEntityPlural)
     : null;
 
-  // Pattern resolution — registry-driven (ADR-031, PATTERN-5).
+  // Pattern resolution — registry-driven (ADR-031, PATTERN-5) and composed
+  // (ADR-041): one inherited spine + N layered capabilities.
   //
   // The prior PATTERN-3 bridge that lowercased the pattern name to index
   // FAMILY_MAP is gone; the registry returns the canonical record. The
-  // shape returned by `resolvePatternBaseClasses` matches the legacy
+  // shape returned by `resolvePatternComposition` matches the legacy
   // FAMILY_MAP entries verbatim for the five library patterns so the
-  // emitted output is byte-identical.
-  const patternBase = resolvePatternBaseClasses(entity);
+  // emitted output is byte-identical for every entity that declares no
+  // capability.
+  const patternBase = resolvePatternComposition(entity);
   const { patternName } = patternBase;
   // Runtime mode (ADR-037) — rewrite library base-class imports authored as
   // `@shared/base-classes/…` to the mode-correct form (package mode →
@@ -1178,6 +1199,41 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     patternConfigBlock != null &&
     typeof patternConfigBlock === 'object' &&
     Object.keys(patternConfigBlock).length > 0;
+
+  // Capability layering (ADR-041). Declaration order is nesting order with the
+  // RIGHTMOST outermost, so `patterns: [Integrated, A, B]` emits `B(A(Spine))`.
+  //
+  // `mixinImport` gets the same runtime-mode rewrite as the base-class imports:
+  // a library capability authors `@shared/base-classes/…`, an app capability's
+  // own alias (`@modules/…`, `@/patterns/…`) passes through untouched.
+  const capabilityMixins = [];
+  const capabilityForwarders = [];
+  for (const cap of patternBase.capabilities) {
+    const capConfigBlock =
+      (definition.config && definition.config[cap.name]) ||
+      (definition.entity && definition.entity.config && definition.entity.config[cap.name]) ||
+      null;
+    const hasCapConfig =
+      capConfigBlock != null &&
+      typeof capConfigBlock === 'object' &&
+      Object.keys(capConfigBlock).length > 0;
+    if (cap.mixin) {
+      capabilityMixins.push({
+        name: cap.name,
+        mixin: cap.mixin,
+        importPath: rewriteSharedImport(runtimeMode, cap.mixinImport),
+        // The property the concrete repository fills with this capability's
+        // `config:` block. The mixin declares it; the generated property is
+        // emitted with `override`.
+        configProperty: cap.configProperty || `${camelCase(cap.name.charAt(0).toLowerCase() + cap.name.slice(1))}Config`,
+        config: capConfigBlock,
+        hasConfig: hasCapConfig,
+      });
+    }
+    for (const method of cap.forwarderMethods ?? []) {
+      capabilityForwarders.push({ capability: cap.name, method });
+    }
+  }
 
   // Process entity fields. Pass the entity name so enum fields namespace their
   // pg type + exported const by entity (prevents same-named enum collisions
@@ -1377,6 +1433,13 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     declarativeQueries: hasDeclarativeQueries
       ? `${moduleGroupDir}/${entityNamePlural}/use-cases/declarative-queries.ts`
       : null,
+    // ADR-041 — the generated `<Entity>ComposedBase` that applies the mixin
+    // chain. Emitted only when TWO OR MORE capabilities stack; one capability
+    // is wrapped inline in the repository's `extends` clause, and none leaves
+    // the repository byte-identical to its pre-CAP-1 shape.
+    composedBase: capabilityMixins.length >= 2
+      ? `${moduleGroupDir}/${entityNamePlural}/${entityName}.composed-base.ts`
+      : null,
     // ADR-033.1 §8 — integration-source module emission for clean-lite-ps. Co-located
     // with the entity feature module under src/modules/<plural>/. Closes #267.
     // #403: routed through moduleGroupDir so a `context:`-tagged entity nests the
@@ -1471,6 +1534,101 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     sinkPolicy,
   );
 
+  // ── ADR-041 emission ──────────────────────────────────────────────────────
+  //
+  // The repository's `extends` clause, by how many capabilities layer:
+  //    0  → `Spine<…>`               — byte-identical to the pre-CAP-1 output
+  //    1  → `WithX(Spine<…>)`        — inline (ADR-041 §6)
+  //   ≥2  → `<Entity>ComposedBase`   — a generated file, for readability
+  //
+  // The spine expression is built here rather than in the template because the
+  // integrated form carries four type arguments over five lines; keeping both
+  // forms in one place is what makes "no capability ⇒ no diff" checkable.
+  const spineTypeArgs = integrationSurface !== null
+    ? [
+        classNames.entity,
+        `typeof ${entityNamePlural}`,
+        `${classNames.entity}IntegrationWrite`,
+        `${classNames.entity}IntegrationProjection`,
+      ]
+    : [classNames.entity, `typeof ${entityNamePlural}`];
+  // The integrated spine's four arguments have always been emitted one per
+  // line; the two-argument form has always been inline. Both are reproduced
+  // byte-for-byte so an entity with no capability sees no diff.
+  const spineIsMultiline = integrationSurface !== null;
+  // Every renderer below leaves its FIRST line unpadded — the caller has
+  // already written the indent (or the `extends ` keyword) — and pads only the
+  // continuation lines.
+  const renderSpine = (depth) => {
+    if (!spineIsMultiline) {
+      return `${patternConfigClasses.repositoryBaseClass}<${spineTypeArgs.join(', ')}>`;
+    }
+    const pad = '  '.repeat(depth);
+    const argPad = '  '.repeat(depth + 1);
+    return (
+      `${patternConfigClasses.repositoryBaseClass}<\n` +
+      spineTypeArgs.map((a) => `${argPad}${a}`).join(',\n') +
+      `\n${pad}>`
+    );
+  };
+  // Rightmost capability outermost (ADR-041 §6). A chain over a single-line
+  // spine stays on one line; over the multi-line integrated spine each layer
+  // gets its own indent level, which is the readability ADR-041 §6 asks for
+  // when it sends two-or-more capabilities to their own file.
+  const renderChain = (outermostFirst, depth) => {
+    if (outermostFirst.length === 0) return renderSpine(depth);
+    const [head, ...rest] = outermostFirst;
+    if (!spineIsMultiline) {
+      return `${head.mixin}(${renderChain(rest, depth)})`;
+    }
+    const inner = renderChain(rest, depth + 1);
+    return `${head.mixin}(\n${'  '.repeat(depth + 1)}${inner},\n${'  '.repeat(depth)})`;
+  };
+  const capabilityChain = renderChain([...capabilityMixins].reverse(), 0);
+  const composedBaseClass =
+    capabilityMixins.length >= 2 ? `${entityNamePascal}ComposedBase` : null;
+  const composedBaseImport = composedBaseClass
+    ? `./${entityName}.composed-base`
+    : null;
+  const repositoryExtendsClause = composedBaseClass ?? capabilityChain;
+
+  // Generation-time collision check (ADR-041 §4). Codegen can only see the
+  // vocabularies it generates or that a capability declares; a clash against an
+  // opaque spine base still surfaces as a consumer compile error, which ADR-041
+  // §4 accepts as irreducible.
+  //
+  // Only collisions INVOLVING a capability are errors here — the `queries:` ×
+  // FK-traversal overlap is pre-existing and resolved by the precedence rule
+  // documented in repository.ejs.t, not an undetected clash.
+  const compositionCollisions = detectMethodCollisions([
+    ...patternBase.capabilities
+      .filter((cap) => (cap.forwarderMethods ?? []).length > 0)
+      .map((cap) => ({
+        source: `capability '${cap.name}'`,
+        methods: cap.forwarderMethods ?? [],
+        capability: true,
+      })),
+    {
+      source: "the entity's `queries:` block",
+      methods: processedQueries.map((q) => q.methodName),
+      capability: false,
+    },
+    {
+      source: 'a relationship forwarder',
+      methods: [
+        ...belongsTo.map((rel) => rel.relationKey),
+        ...hasMany.filter((rel) => rel.targetExists).map((rel) => rel.name),
+      ],
+      capability: false,
+    },
+  ]);
+  if (compositionCollisions.length > 0) {
+    throw new Error(
+      `[codegen] pattern composition failed for '${entityName}':\n  ` +
+      compositionCollisions.map((e) => e.message).join('\n  '),
+    );
+  }
+
   // EVT-7: emits locals flow through from baseLocals (prompt.js computed them
   // against the full events registry). When this helper is called in isolation
   // (e.g. from unit tests) baseLocals.hasEmits may be undefined — provide
@@ -1529,6 +1687,16 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     patternConfig: patternConfigBlock,
     renderPatternConfigLiteral,
     ...patternConfigClasses,
+
+    // Capability composition (ADR-041). `capabilityMixins` is empty for every
+    // entity that declares no capability, and then `repositoryExtendsClause` is
+    // exactly the string the template used to build inline.
+    capabilityMixins,
+    capabilityForwarders,
+    composedBaseClass,
+    composedBaseImport,
+    repositoryExtendsClause,
+    composedBaseExtendsClause: composedBaseClass ? capabilityChain : null,
 
     // Integration write-surface (#374) — emitted only for pattern: Integrated. The
     // template hand-emits the integrationConfig literal (live refTable handles) +

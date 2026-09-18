@@ -230,8 +230,13 @@ describe('validatePatternComposition — implied behavior dedup', () => {
 			impliedBehaviors: ['external_id_tracking'],
 		});
 		registerLibraryPattern({
+			// A capability, not a second domain pattern: two inheritable bases on
+			// one entity is a hard error since ADR-041. Dedup across a spine and a
+			// capability is the shape that exists now.
 			name: 'IntegratedB',
-			repositoryClass: 'IntegratedBRepo',
+			kind: 'capability',
+			mixin: 'WithIntegratedB',
+			mixinImport: '@shared/base-classes/with-integrated-b',
 			impliedBehaviors: ['external_id_tracking'], // same implied behavior
 		});
 	});
@@ -249,7 +254,7 @@ describe('validatePatternComposition — implied behavior dedup', () => {
 // Row: method-name conflict → NOT checked (ADR-031 delegates to TS)
 // ============================================================================
 
-describe('validatePatternComposition — method-name conflicts are NOT checked', () => {
+describe('validatePatternComposition — OPAQUE method conflicts are NOT checked', () => {
 	beforeEach(() => {
 		_resetRegistryForTests();
 		registerLibraryPattern({
@@ -258,19 +263,24 @@ describe('validatePatternComposition — method-name conflicts are NOT checked',
 			repositoryInheritedMethods: ['findThing, countThing'],
 		});
 		registerLibraryPattern({
+			// A capability with a mixin but NO `forwarderMethods`: it contributes
+			// methods codegen cannot see, exactly like a base class's.
 			name: 'MethodB',
-			repositoryClass: 'BR',
-			repositoryInheritedMethods: ['findThing, save'], // overlapping method
+			kind: 'capability',
+			mixin: 'WithMethodB',
+			mixinImport: '@shared/base-classes/with-method-b',
 		});
 	});
 
-	test('overlapping method signatures produce no codegen error', () => {
+	test('overlapping method signatures codegen cannot see produce no error', () => {
 		const entity = makeEntity({
 			name: 'x',
 			patterns: ['MethodA', 'MethodB'],
 		});
-		// Per ADR-031 the TypeScript compiler catches this at the
-		// consumer. Codegen does not duplicate the check.
+		// `repositoryInheritedMethods` is a doc-comment string and a mixin with no
+		// declared vocabulary is opaque, so neither is machine-readable. ADR-031
+		// and ADR-041 §4 both leave this remainder to the consumer's compiler;
+		// what ADR-041 made checkable is `forwarderMethods`, covered below.
 		expect(validatePatternComposition(entity)).toEqual([]);
 	});
 });
@@ -374,7 +384,15 @@ describe('validatePatternComposition — configSchema validation', () => {
 });
 
 // ============================================================================
-// ACTIVITY-SUBJECT-1 — Activity ⨉ Integrated composition (the swe-brain target)
+// ADR-041 §2 — `patterns: [Integrated, Activity]` is a HARD ERROR
+//
+// These cases previously asserted that the pair validated clean. It did — and
+// then emission silently dropped everything `Activity` contributes, including
+// the `config:` block these tests supply, because only `patterns[0]` reached
+// the template. ADR-041 §2 names this exact pair as the worked example of two
+// config-bearing spine bases and rules it an error "until one is authored as a
+// capability". The config-validation rows are kept, re-based on a single spine,
+// because they cover `configSchema` handling rather than composition.
 // ============================================================================
 
 describe('validatePatternComposition — Activity + Integrated composition', () => {
@@ -390,28 +408,33 @@ describe('validatePatternComposition — Activity + Integrated composition', () 
 		registerLibraryPattern(JunctionPattern);
 	});
 
-	test('patterns: [Integrated, Activity] with a valid Activity config → no issues', () => {
+	test('patterns: [Integrated, Activity] is rejected — two spine bases', () => {
 		const entity = makeEntity({
 			name: 'message',
 			patterns: ['Integrated', 'Activity'],
 			fields: fieldMap(['person_id']),
 			patternConfig: { Activity: { subject: 'person' } },
 		});
-		expect(validatePatternComposition(entity)).toEqual([]);
+		const errs = errors(validatePatternComposition(entity));
+		expect(errs.map((e) => e.type)).toContain('pattern_multiple_spines');
+		expect(errs.find((e) => e.type === 'pattern_multiple_spines')?.message).toContain(
+			"kind: 'capability'",
+		);
 	});
 
-	test('patterns: [Integrated, Activity] with no config → no issues (all-optional schema)', () => {
+	test('the pair is rejected with no config too — it is about the bases, not the config', () => {
 		const entity = makeEntity({
 			name: 'message',
 			patterns: ['Integrated', 'Activity'],
 		});
-		expect(validatePatternComposition(entity)).toEqual([]);
+		const errs = errors(validatePatternComposition(entity));
+		expect(errs.map((e) => e.type)).toContain('pattern_multiple_spines');
 	});
 
 	test('invalid Activity config (non-string subject) → pattern_config_invalid', () => {
 		const entity = makeEntity({
 			name: 'message',
-			patterns: ['Integrated', 'Activity'],
+			pattern: 'Activity',
 			patternConfig: { Activity: { subject: 42 as unknown as string } },
 		});
 		const errs = errors(validatePatternComposition(entity));
@@ -463,5 +486,81 @@ describe('validatePatternProject — clean-pipeline no-op warning', () => {
 		const entities = [makeEntity({ name: 'a', pattern: 'Integrated' })];
 		const issues = validatePatternProject({ entities });
 		expect(issues).toEqual([]);
+	});
+});
+
+// ============================================================================
+// ADR-041 composition — spine count + capability vocabulary collisions
+// ============================================================================
+
+describe('ADR-041 composition rules', () => {
+	beforeEach(() => {
+		_resetRegistryForTests({ includeLibrary: true });
+		registerLibraryPattern(BasePattern);
+		registerLibraryPattern(IntegratedPattern);
+		registerLibraryPattern(ActivityPattern);
+		registerLibraryPattern(MetadataPattern);
+		registerLibraryPattern({
+			name: 'VcGroup',
+			kind: 'capability',
+			mixin: 'WithVcGroup',
+			mixinImport: '@shared/base-classes/with-vc-group',
+			forwarderMethods: ['members'],
+		});
+		registerLibraryPattern({
+			name: 'VcCrowd',
+			kind: 'capability',
+			mixin: 'WithVcCrowd',
+			mixinImport: '@shared/base-classes/with-vc-crowd',
+			// Same vocabulary as VcGroup — the composed class can only declare it once.
+			forwarderMethods: ['members'],
+		});
+	});
+
+	test('two config-bearing bases is an error — ADR-041 §2 worked example', () => {
+		const entity = makeEntity({
+			name: 'message',
+			patterns: ['Integrated', 'Activity'],
+		});
+		const issues = errors(validatePatternComposition(entity));
+		const spineIssues = issues.filter((i) => i.type === 'pattern_multiple_spines');
+		expect(spineIssues).toHaveLength(1);
+		expect(spineIssues[0]?.message).toContain('Integrated, Activity');
+	});
+
+	test('two inheritable bases is an error even when neither carries config', () => {
+		// The constraint is single inheritance, not config-bearing-ness: dropping
+		// `Metadata` silently is the defect ADR-041 opens with.
+		const entity = makeEntity({
+			name: 'record',
+			patterns: ['Integrated', 'Metadata'],
+		});
+		const issues = errors(validatePatternComposition(entity));
+		expect(issues.filter((i) => i.type === 'pattern_multiple_spines')).toHaveLength(1);
+	});
+
+	test('one spine plus capabilities validates clean', () => {
+		const entity = makeEntity({
+			name: 'account',
+			patterns: ['VcGroup', 'Integrated'],
+		});
+		expect(errors(validatePatternComposition(entity))).toEqual([]);
+	});
+
+	test('two capabilities contributing the same method is an error', () => {
+		const entity = makeEntity({
+			name: 'crowd',
+			patterns: ['VcGroup', 'VcCrowd'],
+		});
+		const issues = errors(validatePatternComposition(entity));
+		const collisions = issues.filter((i) => i.type === 'pattern_method_collision');
+		expect(collisions).toHaveLength(1);
+		expect(collisions[0]?.message).toContain("'members'");
+	});
+
+	test('a capability is never reported as an unknown pattern', () => {
+		const entity = makeEntity({ name: 'account', patterns: ['VcGroup'] });
+		const issues = errors(validatePatternComposition(entity));
+		expect(issues.filter((i) => i.type === 'pattern_unknown')).toEqual([]);
 	});
 });

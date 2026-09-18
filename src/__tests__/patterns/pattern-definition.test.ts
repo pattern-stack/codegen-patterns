@@ -5,6 +5,9 @@
 import { describe, test, expect } from 'bun:test';
 import { z } from 'zod';
 import {
+	defineCapabilityPattern,
+	isCapabilityPattern,
+	isDomainPattern,
 	definePattern,
 	isPatternDefinition,
 	type PatternDefinition,
@@ -62,5 +65,44 @@ describe('isPatternDefinition', () => {
 	test('rejects objects where `name` is not a string', () => {
 		expect(isPatternDefinition({ name: 42 })).toBe(false);
 		expect(isPatternDefinition({ name: null })).toBe(false);
+	});
+});
+
+// ============================================================================
+// Capability kind (ADR-041)
+// ============================================================================
+
+describe('defineCapabilityPattern + kind guards', () => {
+	const ActorPattern = defineCapabilityPattern({
+		name: 'Actor',
+		kind: 'capability',
+		mixin: 'WithActor',
+		mixinImport: '@shared/base-classes/with-actor',
+		forwarderMethods: ['findByRole'],
+		configSchema: z.object({ kind: z.enum(['individual', 'group']) }).strict(),
+	});
+
+	test('returns its argument unchanged', () => {
+		expect(ActorPattern.name).toBe('Actor');
+		expect(ActorPattern.mixin).toBe('WithActor');
+		expect(ActorPattern.forwarderMethods).toEqual(['findByRole']);
+	});
+
+	test('isCapabilityPattern narrows on kind', () => {
+		expect(isCapabilityPattern(ActorPattern)).toBe(true);
+		expect(isCapabilityPattern({ name: 'Base' })).toBe(false);
+		expect(isCapabilityPattern({ name: 'Orch', kind: 'orchestration' } as never)).toBe(
+			false,
+		);
+	});
+
+	test('a capability is NOT a domain pattern — the guard checks kind, not "not orchestration"', () => {
+		expect(isDomainPattern(ActorPattern)).toBe(false);
+		expect(isDomainPattern({ name: 'Base' })).toBe(true);
+		expect(isDomainPattern({ name: 'Base', kind: 'domain' })).toBe(true);
+	});
+
+	test('a capability passes the kind-agnostic shape check', () => {
+		expect(isPatternDefinition(ActorPattern)).toBe(true);
 	});
 });

@@ -4,13 +4,18 @@
  * Three stores keyed by pattern name:
  *   - `LIBRARY_PATTERNS` — seeded by the codegen package itself when the
  *     `src/patterns/library/*` barrel imports execute. Consumers never
- *     list these in `codegen.config.yaml patterns:`. Domain only.
+ *     list these in `codegen.config.yaml patterns:`.
  *   - `APP_PATTERNS`     — populated by `loadAppPatterns()` from a
  *     consumer-supplied glob set (default `src/patterns/*.pattern.ts`).
- *     Domain only.
  *   - `ORCHESTRATION_APP_PATTERNS` — populated by the same loader,
  *     routed by `kind: 'orchestration'` (ADR-032). No library
  *     orchestration patterns ship in Phase 3-1.
+ *
+ * Both stores hold **entity-attached** patterns — domain (ADR-031) and
+ * capability (ADR-041) — because both are resolved the same way: by a name in
+ * an entity's `pattern:` / `patterns:` list. One store also means a capability
+ * that reuses a domain pattern's name hits the existing duplicate-name check
+ * for free.
  *
  * `getPattern()` checks app patterns first so a consumer could, in
  * principle, shadow a library pattern by using the same `name`. That's
@@ -30,9 +35,12 @@ import { glob } from 'glob';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
+	isCapabilityPattern,
 	isOrchestrationPattern,
 	isPatternDefinition,
 	type AnyPatternDefinition,
+	type CapabilityPatternDefinition,
+	type EntityPatternDefinition,
 	type OrchestrationPatternDefinition,
 	type PatternDefinition,
 } from './pattern-definition.js';
@@ -41,8 +49,8 @@ import {
 // Stores
 // ============================================================================
 
-const LIBRARY_PATTERNS: Map<string, PatternDefinition> = new Map();
-const APP_PATTERNS: Map<string, PatternDefinition> = new Map();
+const LIBRARY_PATTERNS: Map<string, EntityPatternDefinition> = new Map();
+const APP_PATTERNS: Map<string, EntityPatternDefinition> = new Map();
 
 /**
  * Orchestration patterns (ADR-032). Library never ships orchestration
@@ -54,13 +62,34 @@ const ORCHESTRATION_APP_PATTERNS: Map<string, OrchestrationPatternDefinition> =
 	new Map();
 
 /**
- * Every pattern must contribute *something* — either at least one column
- * or at least one of the two class references. A pattern that contributes
+ * Every pattern must contribute *something*. A pattern that contributes
  * nothing would generate no useful output and almost certainly indicates
  * a typo or an unfinished definition.
+ *
+ * What counts differs by kind, because the two kinds reach generated code by
+ * different routes (ADR-041 §3):
+ *
+ *   - **domain** — columns, or one of the two inheritable class references.
+ *   - **capability** — columns, a repository `mixin`, or a `forwarderMethods`
+ *     vocabulary.
  */
-function assertHasContribution(def: PatternDefinition): void {
+function assertHasContribution(def: EntityPatternDefinition): void {
 	const hasColumns = Array.isArray(def.columns) && def.columns.length > 0;
+
+	if (isCapabilityPattern(def)) {
+		assertCapabilityShape(def);
+		const hasMixin = typeof def.mixin === 'string' && def.mixin.length > 0;
+		const hasForwarders =
+			Array.isArray(def.forwarderMethods) && def.forwarderMethods.length > 0;
+		if (!hasColumns && !hasMixin && !hasForwarders) {
+			throw new Error(
+				`Capability pattern '${def.name}' contributes nothing — at least one of ` +
+					'`columns`, `mixin`, or `forwarderMethods` is required.',
+			);
+		}
+		return;
+	}
+
 	const hasRepo =
 		typeof def.repositoryClass === 'string' && def.repositoryClass.length > 0;
 	const hasService =
@@ -70,6 +99,49 @@ function assertHasContribution(def: PatternDefinition): void {
 		throw new Error(
 			`Pattern '${def.name}' contributes nothing — at least one of ` +
 				'`columns`, `repositoryClass`, or `serviceClass` is required.',
+		);
+	}
+}
+
+/**
+ * Shape rules specific to `kind: 'capability'` (ADR-041 §3).
+ *
+ * A capability is *layered*, never inherited, so declaring an inheritable base
+ * on one is a contradiction rather than a harmless extra field — codegen would
+ * have no place to emit it, and the author would silently get nothing. The
+ * mixin pair is all-or-nothing for the same reason: a name codegen cannot
+ * import, or an import with no name to call, emits nothing.
+ */
+function assertCapabilityShape(def: CapabilityPatternDefinition): void {
+	// A hand-authored capability can carry these keys even though the interface
+	// forbids them (app patterns arrive from a dynamic import, unchecked), which
+	// is exactly the case worth catching.
+	const stray = def as CapabilityPatternDefinition &
+		Partial<Pick<PatternDefinition, 'repositoryClass' | 'serviceClass'>>;
+	const inheritable = (
+		[
+			['repositoryClass', stray.repositoryClass],
+			['serviceClass', stray.serviceClass],
+		] as const
+	).filter(([, value]) => typeof value === 'string' && value.length > 0);
+
+	if (inheritable.length > 0) {
+		throw new Error(
+			`Capability pattern '${def.name}' declares ` +
+				inheritable.map(([key]) => `\`${key}\``).join(' and ') +
+				' — a capability is layered, never inherited. Drop it, or declare the ' +
+				"pattern as `kind: 'domain'` if it really is a spine base.",
+		);
+	}
+
+	const hasMixin = typeof def.mixin === 'string' && def.mixin.length > 0;
+	const hasMixinImport =
+		typeof def.mixinImport === 'string' && def.mixinImport.length > 0;
+	if (hasMixin !== hasMixinImport) {
+		throw new Error(
+			`Capability pattern '${def.name}' declares ` +
+				(hasMixin ? '`mixin` without `mixinImport`' : '`mixinImport` without `mixin`') +
+				' — codegen needs both to emit the `extends` clause.',
 		);
 	}
 }
@@ -129,7 +201,7 @@ function assertOrchestrationContribution(
  * intentional for hot-reload scenarios but should not happen in normal
  * use.
  */
-export function registerLibraryPattern(def: PatternDefinition): void {
+export function registerLibraryPattern(def: EntityPatternDefinition): void {
 	assertHasContribution(def);
 	LIBRARY_PATTERNS.set(def.name, def);
 }
@@ -139,21 +211,25 @@ export function registerLibraryPattern(def: PatternDefinition): void {
 // ============================================================================
 
 /**
- * Resolve a **domain** pattern by name. App patterns shadow library
- * patterns with the same name — useful in principle but not a documented
- * feature.
+ * Resolve an **entity-attached** pattern by name — domain or capability.
+ * App patterns shadow library patterns with the same name — useful in
+ * principle but not a documented feature.
+ *
+ * Callers that need the two apart narrow with `isCapabilityPattern()` /
+ * `isDomainPattern()`, or call `composePatterns()` (`./compose.js`), which does
+ * the partition and the spine selection in one place.
  *
  * Orchestration patterns live in a disjoint store; use
- * `getOrchestrationPattern()` to look those up. The two surfaces are
- * intentionally separate (ADR-032 Decision 8) so callers don't have to
- * narrow the result on every callsite.
+ * `getOrchestrationPattern()` to look those up. That surface is
+ * intentionally separate (ADR-032 Decision 8) — it is not entity-attached at
+ * all, so no entity-side caller should have to narrow it away.
  */
-export function getPattern(name: string): PatternDefinition | undefined {
+export function getPattern(name: string): EntityPatternDefinition | undefined {
 	return APP_PATTERNS.get(name) ?? LIBRARY_PATTERNS.get(name);
 }
 
 /**
- * Return every registered domain pattern name (library + app), sorted for
+ * Return every registered entity-attached pattern name (library + app), sorted for
  * deterministic output. The two-process determinism test relies on this
  * ordering being stable across processes. Orchestration names are NOT
  * included — see `getOrchestrationPatternNames()`.

@@ -161,6 +161,12 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'base-classes/knowledge-entity-repository.ts', target: 'src/shared/base-classes/knowledge-entity-repository.ts' },
 	{ runtime: 'base-classes/knowledge-entity-service.ts', target: 'src/shared/base-classes/knowledge-entity-service.ts' },
 	{ runtime: 'base-classes/with-analytics.ts', target: 'src/shared/base-classes/with-analytics.ts' },
+	// Capability mixin contract (ADR-041) — the types a `kind: 'capability'`
+	// pattern's repository mixin is written against. A vendored consumer whose
+	// entity declares a capability imports this from
+	// `@shared/base-classes/capability-mixin`; package mode resolves the same
+	// source through `@pattern-stack/codegen/runtime/base-classes/capability-mixin`.
+	{ runtime: 'base-classes/capability-mixin.ts', target: 'src/shared/base-classes/capability-mixin.ts' },
 	// base-classes — transitive deps of base-service
 	{ runtime: 'base-classes/lifecycle-events.ts', target: 'src/shared/base-classes/lifecycle-events.ts' },
 	{ runtime: 'base-classes/base-read-use-cases.ts', target: 'src/shared/base-classes/base-read-use-cases.ts' },

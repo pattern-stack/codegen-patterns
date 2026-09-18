@@ -417,3 +417,87 @@ process.stdout.write(JSON.stringify({
 		fs.rmSync(tmp, { recursive: true, force: true });
 	});
 });
+
+// ============================================================================
+// Capability patterns (ADR-041)
+// ============================================================================
+
+describe('capability pattern registration', () => {
+	beforeEach(() => {
+		_resetRegistryForTests();
+	});
+
+	test('a capability with a mixin registers and resolves through getPattern', () => {
+		registerLibraryPattern({
+			name: 'RegTestActor',
+			kind: 'capability',
+			mixin: 'WithActor',
+			mixinImport: '@shared/base-classes/with-actor',
+			forwarderMethods: ['findByRole'],
+		});
+		const def = getPattern('RegTestActor');
+		expect(def).toBeDefined();
+		expect(def?.kind).toBe('capability');
+		expect(getLibraryPatternNames()).toContain('RegTestActor');
+	});
+
+	test('forwarderMethods alone is a contribution — no mixin required', () => {
+		expect(() =>
+			registerLibraryPattern({
+				name: 'RegTestForwarderOnly',
+				kind: 'capability',
+				forwarderMethods: ['somethingUseful'],
+			}),
+		).not.toThrow();
+	});
+
+	test('a capability contributing nothing is rejected', () => {
+		expect(() =>
+			registerLibraryPattern({
+				name: 'RegTestEmptyCapability',
+				kind: 'capability',
+				description: 'contributes nothing',
+			}),
+		).toThrow(/contributes nothing/);
+	});
+
+	test('a capability declaring an inheritable base class is rejected', () => {
+		expect(() =>
+			registerLibraryPattern({
+				name: 'RegTestNotACapability',
+				kind: 'capability',
+				// A capability is layered, never inherited (ADR-041 §3).
+				repositoryClass: 'SomeRepository',
+			} as never),
+		).toThrow(/layered, never inherited/);
+	});
+
+	test('`mixin` without `mixinImport` is rejected', () => {
+		expect(() =>
+			registerLibraryPattern({
+				name: 'RegTestHalfMixin',
+				kind: 'capability',
+				mixin: 'WithSomething',
+			}),
+		).toThrow(/`mixin` without `mixinImport`/);
+	});
+
+	test('`mixinImport` without `mixin` is rejected', () => {
+		expect(() =>
+			registerLibraryPattern({
+				name: 'RegTestHalfImport',
+				kind: 'capability',
+				mixinImport: '@shared/base-classes/with-something',
+			}),
+		).toThrow(/`mixinImport` without `mixin`/);
+	});
+
+	test('capabilities and domain patterns share one name space', () => {
+		registerLibraryPattern({
+			name: 'RegTestShared',
+			kind: 'capability',
+			forwarderMethods: ['x'],
+		});
+		expect(getAllPatternNames()).toContain('RegTestShared');
+	});
+});

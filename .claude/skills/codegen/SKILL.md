@@ -137,10 +137,12 @@ entity:
   plural: contacts
   table: contacts
   pattern: Integrated           # Integrated | Activity | Metadata | Knowledge | Base | app-defined (ADR-031)
+  patterns: [Integrated, Actor] # composition (ADR-041): ONE inheritable spine + N kind:'capability' patterns.
+                                #   two spines is a hard error; order is nesting order, rightmost outermost.
   context: crm                  # bounded context (ADR-0004); clean-lite-ps nests modules/<context>/<plural>/
   surface: crm                  # integration surface (ADR-0006) — drives integration codegen
   sync: api                     # frontend per-entity override: api | electric
-  config:                       # per-pattern config, e.g. { Activity: { subject: account } }
+  config:                       # per-pattern AND per-capability config, e.g. { Activity: { subject: account } }
 
 fields:
   email: { type: string, required: true, max_length: 255, index: true }
