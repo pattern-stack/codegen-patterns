@@ -728,7 +728,6 @@ describe('subsystem — remove (#5 + #7)', () => {
 		const parsed = JSON.parse(out);
 		expect(parsed.status).toBe('removed');
 		expect(parsed.subsystem).toBe('jobs');
-		expect(parsed.barrelRegenerated).toBe(true);
 
 		// Dir is gone.
 		expect(fs.existsSync(jobsDir)).toBe(false);

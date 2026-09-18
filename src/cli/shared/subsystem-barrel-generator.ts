@@ -36,6 +36,8 @@ import {
 	jobWorkerBackendOptions,
 	type DrizzleJobsExt,
 } from './job-worker-options.js';
+import { DEFAULT_JOBS_WORKER_MODE } from '../../schema/codegen-config.schema.js';
+import { GeneratedFileError, generating } from './generated-file.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 import {
@@ -291,7 +293,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 	jobs: ({ moduleImport, cfg, bridgeInstalled }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
-		const workerMode = ((cfg?.worker_mode as string | undefined) ?? 'standalone').trim();
+		const workerMode = ((cfg?.worker_mode as string | undefined) ?? DEFAULT_JOBS_WORKER_MODE).trim();
 		const imports = [
 			`import { JobsDomainModule } from '${moduleImport('jobs', 'jobs-domain.module')}';`,
 		];
@@ -607,16 +609,7 @@ export async function regenerateSubsystemBarrel(
 	const { ctx, dryRun = false } = opts;
 	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
 
-	// ADR-037: "installed" is mode-dependent. Package mode reads
-	// `subsystems.install` from config (nothing is vendored on disk); vendored
-	// mode scans for the vendored `<name>.module.ts` files exactly as before.
 	const mode = resolveRuntimeMode(ctx.config);
-	const installed =
-		mode === 'package'
-			? configuredInstalledSubsystems(
-					ctx.config as Record<string, unknown> | null | undefined,
-				)
-			: await detectInstalledSubsystems(ctx);
 
 	// Subsystems root → barrel can import via a relative path that works
 	// wherever the generated barrel ends up. `projectLayout(...).subsystems` is
@@ -629,17 +622,38 @@ export async function regenerateSubsystemBarrel(
 		.join('/');
 	if (!subsystemsRel.startsWith('.')) subsystemsRel = './' + subsystemsRel;
 
-	const { content, emitted, skipped } = buildSubsystemBarrel(
-		installed,
-		ctx.config as Record<string, unknown> | null | undefined,
-		subsystemsRel,
-		mode
+	// ADR-037: "installed" is mode-dependent. Package mode reads
+	// `subsystems.install` from config (nothing is vendored on disk); vendored
+	// mode scans for the vendored `<name>.module.ts` files exactly as before.
+	// JOBS-0 (#655): every file below is imported by the app — a failure throws
+	// a `GeneratedFileError` naming it, and the command fails.
+	let installed: InstalledSubsystem[];
+	try {
+		installed =
+			mode === 'package'
+				? configuredInstalledSubsystems(
+						ctx.config as Record<string, unknown> | null | undefined,
+					)
+				: await detectInstalledSubsystems(ctx);
+	} catch (err: unknown) {
+		throw new GeneratedFileError(barrelAbs, err);
+	}
+
+	const { content, emitted, skipped } = generating(barrelAbs, () =>
+		buildSubsystemBarrel(
+			installed,
+			ctx.config as Record<string, unknown> | null | undefined,
+			subsystemsRel,
+			mode
+		)
 	);
 
 	let written = false;
 	if (!dryRun) {
-		fs.mkdirSync(path.dirname(barrelAbs), { recursive: true });
-		fs.writeFileSync(barrelAbs, content);
+		generating(barrelAbs, () => {
+			fs.mkdirSync(path.dirname(barrelAbs), { recursive: true });
+			fs.writeFileSync(barrelAbs, content);
+		});
 		written = true;
 
 		// CFG-1: the jobs composer imports `jobPools` from `./app-config`, and
@@ -656,9 +670,11 @@ export async function regenerateSubsystemBarrel(
 		if (mode === 'package' && emitted.includes('bridge')) {
 			const registryPath = path.resolve(generatedDir, 'bridge-registry.ts');
 			if (!fs.existsSync(registryPath)) {
-				fs.writeFileSync(
-					registryPath,
-					buildBridgeRegistryContent([], PACKAGE_BRIDGE_TYPE_IMPORT),
+				generating(registryPath, () =>
+					fs.writeFileSync(
+						registryPath,
+						buildBridgeRegistryContent([], PACKAGE_BRIDGE_TYPE_IMPORT),
+					),
 				);
 			}
 		}
@@ -672,9 +688,12 @@ export async function regenerateSubsystemBarrel(
 		if (mode === 'package' && emitted.includes('events')) {
 			const eventsDir = path.resolve(generatedDir, 'events');
 			if (!fs.existsSync(path.resolve(eventsDir, 'bus.ts'))) {
-				fs.mkdirSync(eventsDir, { recursive: true });
 				for (const { name, content } of buildEventCodegenContents([], 'package')) {
-					fs.writeFileSync(path.resolve(eventsDir, name), content);
+					const file = path.resolve(eventsDir, name);
+					generating(file, () => {
+						fs.mkdirSync(eventsDir, { recursive: true });
+						fs.writeFileSync(file, content);
+					});
 				}
 			}
 		}
@@ -690,9 +709,12 @@ export async function regenerateSubsystemBarrel(
 		if (mode === 'vendored' && emitted.includes('events')) {
 			const eventsGenDir = path.resolve(subsystemsAbs, 'events', 'generated');
 			if (!fs.existsSync(path.resolve(eventsGenDir, 'registry.ts'))) {
-				fs.mkdirSync(eventsGenDir, { recursive: true });
 				for (const { name, content } of buildEventCodegenContents([], 'vendored')) {
-					fs.writeFileSync(path.resolve(eventsGenDir, name), content);
+					const file = path.resolve(eventsGenDir, name);
+					generating(file, () => {
+						fs.mkdirSync(eventsGenDir, { recursive: true });
+						fs.writeFileSync(file, content);
+					});
 				}
 			}
 		}

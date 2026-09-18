@@ -27,6 +27,7 @@ import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
+import { reportRegenerationFailure } from '../shared/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
@@ -261,7 +262,9 @@ export class RelationshipNewCommand extends Command {
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 		const architecture = configOrDefaults(ctx.config).generate.architecture;
-		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>> | null = null;
+		// The app imports both barrels: a failed regeneration fails the command,
+		// naming the file (JOBS-0, #655).
+		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>>;
 		try {
 			barrelResult = await regenerateBarrels({
 				ctx,
@@ -271,10 +274,7 @@ export class RelationshipNewCommand extends Command {
 				architecture,
 			});
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printWarning(`barrel regeneration failed — ${msg}`);
-			}
+			return reportRegenerationFailure('relationship new', err);
 		}
 
 		if (isJsonMode()) {
@@ -286,13 +286,11 @@ export class RelationshipNewCommand extends Command {
 				},
 				succeeded,
 				failed,
-				barrels: barrelResult
-					? {
-							modules: barrelResult.modulesBarrel,
-							schema: barrelResult.schemaBarrel,
-							entityCount: barrelResult.entityCount,
-						}
-					: null,
+				barrels: {
+					modules: barrelResult.modulesBarrel,
+					schema: barrelResult.schemaBarrel,
+					entityCount: barrelResult.entityCount,
+				},
 			});
 		} else {
 			const total = validated.length + invalid.length;
@@ -304,11 +302,9 @@ export class RelationshipNewCommand extends Command {
 					`${total} relationships · ${succeeded.length} succeeded · ${failed.length} failed`
 				);
 			}
-			if (barrelResult) {
-				printInfo(
-					`barrels regenerated (${barrelResult.entityCount} modules) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`,
-				);
-			}
+			printInfo(
+				`barrels regenerated (${barrelResult.entityCount} modules) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`,
+			);
 		}
 
 		return failed.length === 0 ? 0 : 1;

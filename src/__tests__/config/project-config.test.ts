@@ -286,3 +286,24 @@ describe('the CLI and a direct hygen run both refuse an invalid config', () => {
 		expect(fs.existsSync(path.join(dir, 'src'))).toBe(false);
 	}, 30_000);
 });
+
+describe('jobs.backend: memory cannot run a standalone worker (JOBS-0, #656)', () => {
+	const parse = (jobs: Record<string, unknown>) => () => parseCodegenConfig({ jobs }, 'x.yaml');
+
+	it('memory + worker_mode: standalone names both keys', () => {
+		expect(parse({ backend: 'memory', worker_mode: 'standalone' })).toThrow(
+			/jobs\.worker_mode.*`jobs\.backend: memory` cannot run a standalone worker \(`jobs\.worker_mode: standalone`\) — a separate process cannot share the in-memory job store/,
+		);
+	});
+
+	it('memory with worker_mode absent is the default standalone worker — rejected', () => {
+		expect(parse({ backend: 'memory' })).toThrow(/`jobs\.worker_mode: standalone`, the default\)/);
+	});
+
+	it('memory + embedded, and every other backend + standalone, parse', () => {
+		expect(parse({ backend: 'memory', worker_mode: 'embedded' })).not.toThrow();
+		expect(parse({ backend: 'drizzle', worker_mode: 'standalone' })).not.toThrow();
+		expect(parse({ backend: 'bullmq' })).not.toThrow();
+		expect(parse({})).not.toThrow();
+	});
+});

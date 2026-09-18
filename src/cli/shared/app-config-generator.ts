@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { OpenApiConfigSchema, type CodegenConfig } from '../../schema/codegen-config.schema.js';
+import { generating } from './generated-file.js';
 import { jobWorkerBackendOptions } from './job-worker-options.js';
 
 /** Placeholder serialised as a bare `undefined` (JSON has none). */
@@ -86,8 +87,11 @@ export const jobWorkerOptions = ${literal(jobWorkerOptions)} as const;
 /** Write `<generatedDir>/app-config.ts`. Returns the absolute path. */
 export function writeAppConfig(generatedDir: string, config: CodegenConfig | null): string {
 	const target = path.join(generatedDir, APP_CONFIG_FILE);
-	fs.mkdirSync(generatedDir, { recursive: true });
-	fs.writeFileSync(target, buildAppConfigContent(config));
+	// JOBS-0 (#655): a failure names the file (`GeneratedFileError`).
+	generating(target, () => {
+		fs.mkdirSync(generatedDir, { recursive: true });
+		fs.writeFileSync(target, buildAppConfigContent(config));
+	});
 	return target;
 }
 
@@ -101,12 +105,15 @@ export function syncAppConfig(
 	dryRun: boolean,
 ): 'created' | 'updated' | 'unchanged' {
 	const target = path.join(generatedDir, APP_CONFIG_FILE);
-	const content = buildAppConfigContent(config);
-	const existing = fs.existsSync(target) ? fs.readFileSync(target, 'utf-8') : null;
-	if (existing === content) return 'unchanged';
-	if (!dryRun) {
-		fs.mkdirSync(generatedDir, { recursive: true });
-		fs.writeFileSync(target, content);
-	}
-	return existing === null ? 'created' : 'updated';
+	// JOBS-0 (#655): a failure names the file (`GeneratedFileError`).
+	return generating(target, () => {
+		const content = buildAppConfigContent(config);
+		const existing = fs.existsSync(target) ? fs.readFileSync(target, 'utf-8') : null;
+		if (existing === content) return 'unchanged';
+		if (!dryRun) {
+			fs.mkdirSync(generatedDir, { recursive: true });
+			fs.writeFileSync(target, content);
+		}
+		return existing === null ? 'created' : 'updated';
+	});
 }

@@ -82,10 +82,10 @@ Field semantics:
 
 | Key | Who reads it | Notes |
 |---|---|---|
-| `backend` | `JobsDomainModule.forRoot` | `'drizzle'` or `'memory'`. BullMQ is a reserved slot only. |
+| `backend` | `JobsDomainModule.forRoot` + the worker (`JobWorkerModule.forRoot` embedded, `jobWorkerOptions` standalone) | `'drizzle'` (default), `'memory'` (tests) or `'bullmq'`. `jobWorkerBackendOptions` always states it in the worker options — the worker never falls back to `forRoot`'s `?? 'drizzle'` (JOBS-0, #656). `memory` with a standalone worker (`worker_mode: standalone`, or absent) is a config error: a separate process cannot share the in-memory store. `memory` has no job-draining worker outside tests (#658). |
 | `extensions.<backend>.*` | Backend class during init | Each backend reads only its own key. Every declared key of every backend is accepted whichever backend is active (swap is non-destructive); an undeclared key is a `codegen.config.yaml` error at generate time (`JobsConfigSchema`, CFG-0). |
 | `multi_tenant` | `JobsDomainModule.forRoot` | Threads `JOBS_MULTI_TENANT` token through. Default `false`. When `true`, service methods require `tenantId` (see JOB-8). |
-| `worker_mode` | Informational + scaffold hint | `embedded` means `JobWorkerModule` imported by `AppModule`; `standalone` means run `src/worker.ts` (`bun src/worker.ts`) separately. Switching does not change generated code — both entrypoints are always emitted. |
+| `worker_mode` | The jobs composer in `<generated>/subsystems.ts` | `embedded` adds `JobWorkerModule.forRoot({ mode: 'embedded', … })` to `SUBSYSTEM_MODULES`; `standalone` (the default when absent, `DEFAULT_JOBS_WORKER_MODE`) omits it — run `src/worker.ts` (`bun src/worker.ts`) separately. Both entrypoints are always emitted; switching regenerates the barrel. (The jobs scaffold reads absent as `embedded` — #659.) |
 | `pools` | the generator → `<generated>/app-config.ts` (`jobPools`) → `JobsDomainModule.forRoot({ pools })` → `JOB_POOL_CONFIG` | CFG-1: validated at generation (`poolOverrideIssues`, run by the schema) and emitted; the app never reads the YAML. Edit, then regenerate. |
 | `pools.<name>.queue` | `JobWorker`, BullMQ queue naming | Required on a user pool; fixed on a framework pool. |
 | `pools.<name>.concurrency` | `JobWorker` | Per-process max in-flight. Horizontal scale multiplies. Required on a user pool. |
@@ -164,7 +164,7 @@ interface JobsDomainModuleOptions {
 
 Module is `global: true`, provides `JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`, (JOB-8) `JOBS_MULTI_TENANT`, and (CFG-1) `JOB_POOL_CONFIG`.
 
-`JobWorkerModule.forRoot` separately takes `{ mode, backend?, pools?, allPools?, domainModulePools?, shutdownTimeoutMs? }` (`pools` = the activation list; `domainModulePools` = the pool definitions, forwarded to its inner domain module) and imports `JobsDomainModule` internally. A process can import `JobsDomainModule` alone (read-only — services available, no worker running) or `JobWorkerModule` (which brings the domain module with it plus the claim loop).
+`JobWorkerModule.forRoot` separately takes `{ mode, backend, pools?, allPools?, domainModulePools?, shutdownTimeoutMs? }` (`pools` = the activation list; `domainModulePools` = the pool definitions, forwarded to its inner domain module) and imports `JobsDomainModule` internally. A process can import `JobsDomainModule` alone (read-only — services available, no worker running) or `JobWorkerModule` (which brings the domain module with it plus the claim loop).
 
 ## Worker topology — embedded vs. standalone
 
@@ -188,14 +188,14 @@ the schema template is skipped there). The choice below is operational.
 **Embedded** (`AppModule` imports `JobWorkerModule.forRoot({ mode: 'embedded' })`):
 - API process and workers share CPU.
 - Simplest deploy; good default for dev and small installs.
-- `jobs.worker_mode: embedded` in config is informational / hint.
+- `jobs.worker_mode: embedded` is what makes the generated barrel compose it.
 
 **Standalone** (run `src/worker.ts` as a separate process — `bun src/worker.ts`):
 - `main.ts` does not import `JobWorkerModule`.
 - `src/worker.ts` boots a NestJS application context (no HTTP listener) that imports the consumer's root `AppModule` (DI parity with the API process) + `JobWorkerModule.forRoot({ mode: 'standalone', allPools: true, … })`. It lands inside the default tsconfig `src/**` include so it is typechecked (#513).
 - Scale workers independently from the API; CPU spikes on one side don't stall the other.
 
-Switching is an operational change plus the config `worker_mode` toggle. **No regeneration needed — both files ship regardless.**
+Switching is the config `worker_mode` toggle plus a regeneration (`codegen entity new --all` rewrites `<generated>/subsystems.ts`); both entrypoint files ship regardless.
 
 ## Multi-tenancy surface
 

@@ -77,11 +77,14 @@ export interface JobWorkerModuleOptions {
   mode: 'embedded' | 'standalone';
   /**
    * Threads into the internal `JobsDomainModule.forRoot({ backend })`
-   * import. Default `'drizzle'`. The boot-time validator runs for both
-   * `'drizzle'` and `'bullmq'` (both persist `job` rows to Postgres);
-   * `'memory'` skips it.
+   * import. Required, no default: it must equal the app's own
+   * `JobsDomainModule` backend (JOBS-0, #656 — a defaulted `'drizzle'` next
+   * to a `'memory'` domain module booted two backends). The generated
+   * callers state `jobs.backend`; `jobs.backend`'s one default lives in the
+   * config schema. The boot-time validator runs for both `'drizzle'` and
+   * `'bullmq'` (both persist `job` rows to Postgres); `'memory'` skips it.
    */
-  backend?: 'drizzle' | 'memory' | 'bullmq';
+  backend: 'drizzle' | 'memory' | 'bullmq';
   /**
    * Active pool names. Defaults to every non-reserved pool in the resolved
    * config (i.e. `interactive`, `batch`, plus any user-defined pools).
@@ -192,7 +195,7 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
   // ============================================================================
 
   async onModuleInit(): Promise<void> {
-    const backend = this.options.backend ?? 'drizzle';
+    const backend = this.options.backend;
 
     // (1) Pool config first — every later step needs the resolved map.
     const poolConfig = this.poolConfig;
@@ -467,7 +470,7 @@ export class JobWorkerModule {
       module: JobWorkerModule,
       imports: [
         JobsDomainModule.forRoot({
-          backend: opts.backend ?? 'drizzle',
+          backend: opts.backend,
           extensions: opts.domainModuleExtensions,
           multiTenant: opts.multiTenant,
           pools: opts.domainModulePools,
