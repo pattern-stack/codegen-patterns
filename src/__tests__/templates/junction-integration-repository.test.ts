@@ -11,7 +11,7 @@
  *   - the two pairing finders are preserved
  */
 import { describe, it, expect } from 'bun:test';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import ejs from 'ejs';
@@ -31,12 +31,32 @@ function extractBody(source: string): string {
   return end === -1 ? source : lines.slice(end + 1).join('\n');
 }
 
-/** Write a junction YAML to a temp file and run the real prompt.js against it. */
+/** The endpoints' entity YAMLs — prompt.js reads each endpoint's plural from its own (NAME-0). */
+const ENDPOINTS: Record<string, string> = {
+  opportunity: 'opportunities',
+  contact: 'contacts',
+  activity: 'activities',
+};
+
+/**
+ * Write a junction YAML (and its endpoints' entity YAMLs under `entities/`) to
+ * a temp project and run the real prompt.js against it from there.
+ */
 async function localsFromYaml(yaml: string): Promise<Record<string, unknown>> {
   const dir = mkdtempSync(resolve(tmpdir(), 'junction-integration-'));
+  mkdirSync(resolve(dir, 'entities'));
+  for (const [name, plural] of Object.entries(ENDPOINTS)) {
+    writeFileSync(resolve(dir, 'entities', `${name}.yaml`), `entity:\n  name: ${name}\n  plural: ${plural}\n`);
+  }
   const file = resolve(dir, 'junction.yaml');
   writeFileSync(file, yaml, 'utf8');
-  return promptModule.prompt({ args: { yaml: file } }) as Promise<Record<string, unknown>>;
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    return (await promptModule.prompt({ args: { yaml: file } })) as Record<string, unknown>;
+  } finally {
+    process.chdir(cwd);
+  }
 }
 
 const render = (locals: Record<string, unknown>) =>

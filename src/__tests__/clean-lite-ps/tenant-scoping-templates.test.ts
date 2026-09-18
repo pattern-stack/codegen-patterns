@@ -25,6 +25,8 @@ function extractBody(source: string): string {
   const end = lines.indexOf('---', 1);
   return end === -1 ? source : lines.slice(end + 1).join('\n');
 }
+import { withEntities } from './_entity-lookup';
+
 
 const ENTITY_TEMPLATE = extractBody(
   readFileSync(
@@ -54,7 +56,7 @@ const noteDefinition = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-const localsFor = (def: Record<string, unknown>) => buildCleanLitePsLocals(def, {});
+const localsFor = (def: Record<string, unknown>) => buildCleanLitePsLocals(def, withEntities());
 
 // ============================================================================
 // (a) The column

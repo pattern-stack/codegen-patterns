@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_PATH = resolve(
   import.meta.dir,
@@ -57,7 +58,7 @@ const baseEntity = {
 describe('clean-lite-ps repository template — behaviors config (issue #33)', () => {
   it('emits behaviors override with softDelete: true when soft_delete behavior is present', () => {
     const def = { ...baseEntity, behaviors: ['timestamps', 'soft_delete'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('protected override readonly behaviors: BehaviorConfig');
@@ -71,7 +72,7 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
 
   it('emits behaviors override with softDelete: false when only timestamps is present', () => {
     const def = { ...baseEntity, behaviors: ['timestamps'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('protected override readonly behaviors: BehaviorConfig');
@@ -81,7 +82,7 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
 
   it('emits behaviors override with timestamps: false when only soft_delete is present', () => {
     const def = { ...baseEntity, behaviors: ['soft_delete'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('protected override readonly behaviors: BehaviorConfig');
@@ -94,7 +95,7 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
   // entity declared `user_tracking` in its behaviors array.
   it('emits behaviors override with userTracking: true when user_tracking behavior is present', () => {
     const def = { ...baseEntity, behaviors: ['timestamps', 'user_tracking'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('protected override readonly behaviors: BehaviorConfig');
@@ -105,7 +106,7 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
 
   it('emits behaviors block with only userTracking: true when user_tracking is the sole behavior', () => {
     const def = { ...baseEntity, behaviors: ['user_tracking'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     // The block must still be emitted (fix verified at the template
@@ -121,7 +122,7 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
 
   it('emits userTracking: false when user_tracking behavior is absent', () => {
     const def = { ...baseEntity, behaviors: ['timestamps'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('userTracking: false');
@@ -129,7 +130,7 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
 
   it('omits behaviors override and BehaviorConfig import when no behaviors are declared', () => {
     const def = { ...baseEntity, behaviors: [] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).not.toContain('BehaviorConfig');
@@ -140,7 +141,7 @@ describe('clean-lite-ps repository template — behaviors config (issue #33)', (
 describe('clean-lite-ps repository template — user_tracking behavior (issue #38)', () => {
   it('emits userTracking: true when user_tracking behavior is declared', () => {
     const def = { ...baseEntity, behaviors: ['timestamps', 'user_tracking'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('userTracking: true');
@@ -149,7 +150,7 @@ describe('clean-lite-ps repository template — user_tracking behavior (issue #3
 
   it('emits userTracking: false when user_tracking behavior is absent', () => {
     const def = { ...baseEntity, behaviors: ['timestamps', 'soft_delete'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('userTracking: false');
@@ -158,7 +159,7 @@ describe('clean-lite-ps repository template — user_tracking behavior (issue #3
 
   it('emits userTracking: true alongside soft_delete when both are present', () => {
     const def = { ...baseEntity, behaviors: ['timestamps', 'soft_delete', 'user_tracking'] };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('softDelete: true');
@@ -190,7 +191,7 @@ describe('clean-lite-ps repository template — declarative queries use baseQuer
   };
 
   it('unique (findByX with limit 1) query passes the predicate to baseQuery()', () => {
-    const locals = buildCleanLitePsLocals(queriesEntity, {});
+    const locals = buildCleanLitePsLocals(queriesEntity, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('async findByEmail(email: string)');
@@ -202,7 +203,7 @@ describe('clean-lite-ps repository template — declarative queries use baseQuer
   });
 
   it('non-unique list query also passes the predicate to baseQuery()', () => {
-    const locals = buildCleanLitePsLocals(queriesEntity, {});
+    const locals = buildCleanLitePsLocals(queriesEntity, withEntities());
     const output = renderRepository(locals);
 
     expect(output).toContain('async findByUserId(userId: string)');
@@ -212,7 +213,7 @@ describe('clean-lite-ps repository template — declarative queries use baseQuer
   });
 
   it('emits NO `baseQuery().where(` — the guards would be replaced, not AND-ed', () => {
-    const locals = buildCleanLitePsLocals(queriesEntity, {});
+    const locals = buildCleanLitePsLocals(queriesEntity, withEntities());
     const output = renderRepository(locals);
 
     expect(output).not.toMatch(/baseQuery\(\s*\)\s*\.where\s*\(/);
@@ -228,7 +229,7 @@ describe('clean-lite-ps repository template — declarative queries use baseQuer
         behaviors: ['timestamps', 'soft_delete'],
         queries: [{ by: ['email', 'user_id'] }],
       },
-      {},
+      withEntities(),
     );
     const output = renderRepository(locals);
 
@@ -251,7 +252,7 @@ describe('clean-lite-ps repository template — declarative queries use baseQuer
           },
         },
       },
-      {},
+      withEntities(),
     );
     const output = renderRepository(locals);
 
@@ -293,14 +294,14 @@ describe('clean-lite-ps repository template — belongs_to + explicit FK query c
     (out.match(new RegExp(`async ${method}\\(`, 'g')) ?? []).length;
 
   it('emits findByFieldDefinitionId exactly ONCE when belongs_to + unique query collide', () => {
-    const locals = buildCleanLitePsLocals(collisionEntity, {});
+    const locals = buildCleanLitePsLocals(collisionEntity, withEntities());
     const output = renderRepository(locals);
 
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
   });
 
   it('keeps the declarative (unique, single-row) method and drops the FK-traversal array method', () => {
-    const locals = buildCleanLitePsLocals(collisionEntity, {});
+    const locals = buildCleanLitePsLocals(collisionEntity, withEntities());
     const output = renderRepository(locals);
 
     // The surviving method is the unique declarative one — single-row return.
@@ -320,7 +321,7 @@ describe('clean-lite-ps repository template — belongs_to + explicit FK query c
       ...collisionEntity,
       queries: [{ by: ['field_definition_id'] }],
     };
-    const output = renderRepository(buildCleanLitePsLocals(nonUnique, {}));
+    const output = renderRepository(buildCleanLitePsLocals(nonUnique, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
     // The FK-traversal (opts) variant is the survivor here.
     expect(output).toContain(
@@ -330,7 +331,7 @@ describe('clean-lite-ps repository template — belongs_to + explicit FK query c
 
   it('emits the FK-traversal method when there are no declarative queries at all', () => {
     const noQueries = { ...collisionEntity, queries: undefined as unknown as [] };
-    const output = renderRepository(buildCleanLitePsLocals(noQueries, {}));
+    const output = renderRepository(buildCleanLitePsLocals(noQueries, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
     expect(output).toContain(
       'async findByFieldDefinitionId(id: string, opts?: { cursor?: string; limit?: number })',

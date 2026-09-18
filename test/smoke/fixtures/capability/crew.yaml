@@ -1,0 +1,27 @@
+# NAME-0 smoke fixture: crew — a `context:`-nested entity (#630 / #611).
+#
+# Its module folder is `src/modules/org/crews/`, not a flat sibling, so every
+# reference to it — `shift.crew` (belongs_to), `person.led_crews` (has_many)
+# and the `crew_person` junction — must address it there. And from inside
+# `org/`, its own `lead` FK must climb out to the flat `persons/` folder.
+entity:
+  name: crew
+  plural: crews
+  table: crews
+  context: org
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  lead:
+    type: belongs_to
+    target: person
+    foreign_key: lead_person_id

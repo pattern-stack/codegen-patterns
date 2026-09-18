@@ -23,7 +23,10 @@
  *      which is reserved for the package runtime and gets rewritten in package
  *      mode).
  *   4. `codegen entity new --all --force` over the CAP-1 fixtures.
- *   5. Assert the three emission shapes ADR-041 §6 specifies.
+ *   5. Assert the three emission shapes ADR-041 §6 specifies, and (NAME-0)
+ *      that every edge onto an irregular-`plural:` entity (`person`) and a
+ *      `context:`-nested one (`crew`) — belongs_to, has_many, junction
+ *      endpoint — addresses it by its own YAML's naming.
  *   6. `tsc --noEmit` — FAIL on any diagnostic located in the generated project.
  *   7. Two NEGATIVE gates through the CLI: two spine bases, and a capability
  *      method colliding with a `queries:` method. Both must exit non-zero.
@@ -468,6 +471,55 @@ function assertProjectInspectSeesAppCapabilities(tmpDir: string, mode: Mode): vo
 }
 
 // ---------------------------------------------------------------------------
+// NAME-0 — cross-entity names come from the target's own YAML (#630 / #611)
+// ---------------------------------------------------------------------------
+
+/**
+ * `person` declares `plural: persons` (`pluralize` says `people`); `crew`
+ * declares `context: org` (folder `modules/org/crews/`). Every edge onto them —
+ * belongs_to, has_many, and the `crew_person` junction's endpoints and parent
+ * injects — must use that naming. `tsc` proves the imports resolve; these pin
+ * the exact paths, so a regression names the edge that broke.
+ */
+function assertTargetNaming(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src/modules', rel), 'utf8');
+	const expectImport = (file: string, line: string): void =>
+		assertContains(reads(file), new RegExp(`^${escapeRe(line)}$`, 'm'), file);
+
+	// belongs_to — irregular plural (from inside a context) and nested target
+	expectImport('org/crews/crew.entity.ts', "import { persons } from '../../persons/person.entity';");
+	assertContains(reads('org/crews/crew.entity.ts'), /\.references\(\(\) => persons\.id/, 'crew.entity.ts FK table');
+	expectImport('shifts/shift.entity.ts', "import { crews } from '../org/crews/crew.entity';");
+	// has_many — irregular plural and nested target
+	expectImport('squads/squad.service.ts', "import { PersonRepository } from '../persons/person.repository';");
+	expectImport('persons/person.service.ts', "import { CrewRepository } from '../org/crews/crew.repository';");
+	// junction — both endpoints, both directions, and the parent injects
+	expectImport('crew_people/crew_person.entity.ts', "import { crews } from '../org/crews/crew.entity';");
+	expectImport('crew_people/crew_person.entity.ts', "import { persons } from '../persons/person.entity';");
+	expectImport('crew_people/crew_people.module.ts', "import { PersonsModule } from '../persons/persons.module';");
+	expectImport('org/crews/crews.module.ts', "import { CrewPeopleModule } from '../../crew_people/crew_people.module';");
+	expectImport('persons/persons.module.ts', "import { CrewPeopleModule } from '../crew_people/crew_people.module';");
+	// The counterparty import and crew's own belongs_to import are one line —
+	// the inject's skip_if only dedupes them when both use the same path.
+	const crewService = reads('org/crews/crew.service.ts');
+	const personTypeImports = crewService.match(/^import type \{ Person \} from '\.\.\/\.\.\/persons\/person\.entity';$/gm) ?? [];
+	if (personTypeImports.length !== 1) {
+		throw new Error(`crew.service.ts: expected one Person type import, found ${personTypeImports.length}`);
+	}
+
+	for (const file of [
+		'org/crews/crew.entity.ts',
+		'org/crews/crew.service.ts',
+		'squads/squad.service.ts',
+		'crew_people/crew_person.entity.ts',
+		'crew_people/crew_person.service.ts',
+	]) {
+		assertNotContains(reads(file), /\bpeople\/person\b|'\.\.\/crews\//, `${file} (re-derived target path)`);
+	}
+}
+
+// ---------------------------------------------------------------------------
 // #624 — named single-purpose expectation (package leg only)
 // ---------------------------------------------------------------------------
 
@@ -479,16 +531,17 @@ function assertProjectInspectSeesAppCapabilities(tmpDir: string, mode: Mode): vo
  * tracked as #624 — it is not fixable inside CAP-2's scope.
  *
  * Per CLAUDE.md › Known-red gates this is a NAMED, single-purpose expectation,
- * not a filter: every one of the 16 diagnostics is enumerated below by file,
- * code and the symbol it names, with an exact count. Asserted PRESENT and SOLE:
+ * not a filter: every one of the 16 diagnostics PER JUNCTION is enumerated
+ * below by file, code and the symbol it names, with an exact count, for each of
+ * the fixture set's two junctions — `meeting_contact` (CAP-2) and
+ * `crew_person` (NAME-0, whose endpoints are an irregular plural and a
+ * `context:`-nested entity). Asserted PRESENT and SOLE:
  *
  *   - any diagnostic not in the list — including a new TS4112/TS2339 in the
  *     same two files naming a different symbol — fails the smoke (sole);
  *   - any listed diagnostic that stops appearing ALSO fails it, telling whoever
  *     fixed #624 to delete this expectation (present).
  */
-const ISSUE_624_REPO = 'src/modules/meeting_contacts/meeting_contact.repository.ts';
-const ISSUE_624_SERVICE = 'src/modules/meeting_contacts/meeting_contact.service.ts';
 
 /**
  * The exact #624 diagnostic set, keyed `file|code|symbol` → count. The symbol is
@@ -499,21 +552,30 @@ const ISSUE_624_SERVICE = 'src/modules/meeting_contacts/meeting_contact.service.
  * both directions: anything extra is a new error, anything missing means #624
  * moved — both fail the smoke.
  */
+function issue624Junction(folder: string, name: string, pascal: string): Array<[string, number]> {
+	const repo = `src/modules/${folder}/${name}.repository.ts`;
+	const service = `src/modules/${folder}/${name}.service.ts`;
+	return [
+		// 5 package-owned runtime modules the junction templates hardcode as @shared/*
+		[`${repo}|TS2307|@shared/constants/tokens`, 1],
+		[`${repo}|TS2307|@shared/types/drizzle`, 1],
+		[`${repo}|TS2307|@shared/base-classes/junction-integration-repository`, 2],
+		[`${service}|TS2307|@shared/base-classes/with-analytics`, 1],
+		[`${service}|TS2307|@shared/constants/tokens`, 1],
+		[`${service}|TS2307|@shared/base-classes/base-service`, 1],
+		// …and what an unresolved base class causes downstream
+		[`${repo}|TS4112|${pascal}Repository`, 1],
+		[`${repo}|TS2339|baseQuery`, 2],
+		[`${service}|TS4112|${pascal}Service`, 3],
+		[`${service}|TS2339|create`, 1],
+		[`${service}|TS2339|delete`, 1],
+		[`${service}|TS2339|update`, 1],
+	];
+}
+
 const ISSUE_624_EXPECTED = new Map<string, number>([
-	// 5 package-owned runtime modules the junction templates hardcode as @shared/*
-	[`${ISSUE_624_REPO}|TS2307|@shared/constants/tokens`, 1],
-	[`${ISSUE_624_REPO}|TS2307|@shared/types/drizzle`, 1],
-	[`${ISSUE_624_REPO}|TS2307|@shared/base-classes/junction-integration-repository`, 2],
-	[`${ISSUE_624_SERVICE}|TS2307|@shared/base-classes/with-analytics`, 1],
-	[`${ISSUE_624_SERVICE}|TS2307|@shared/constants/tokens`, 1],
-	[`${ISSUE_624_SERVICE}|TS2307|@shared/base-classes/base-service`, 1],
-	// …and what an unresolved base class causes downstream
-	[`${ISSUE_624_REPO}|TS4112|MeetingContactRepository`, 1],
-	[`${ISSUE_624_REPO}|TS2339|baseQuery`, 2],
-	[`${ISSUE_624_SERVICE}|TS4112|MeetingContactService`, 3],
-	[`${ISSUE_624_SERVICE}|TS2339|create`, 1],
-	[`${ISSUE_624_SERVICE}|TS2339|delete`, 1],
-	[`${ISSUE_624_SERVICE}|TS2339|update`, 1],
+	...issue624Junction('meeting_contacts', 'meeting_contact', 'MeetingContact'),
+	...issue624Junction('crew_people', 'crew_person', 'CrewPerson'),
 ]);
 
 /** `file|code|symbol` for one tsc line, or null when it has no recognised shape. */
@@ -685,6 +747,7 @@ async function leg(mode: Mode): Promise<number> {
 
 		log(`[${mode}] asserting ADR-041 emission shapes`);
 		assertEmission(tmpDir, mode);
+		assertTargetNaming(tmpDir);
 		log(`[${mode}] emission OK`);
 
 		log(`[${mode}] running bunx tsc --noEmit --skipLibCheck`);

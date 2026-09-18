@@ -1,0 +1,6 @@
+# NAME-0 smoke fixture (#611): a junction whose endpoints are the two shapes a
+# re-pluralizing generator gets wrong — `crew` (nested under `context: org`)
+# and `person` (`plural: persons`). Its FK tables, imports, and the parent
+# service/module injects must all use the endpoints' own naming.
+pattern: Junction
+between: [crew, person]

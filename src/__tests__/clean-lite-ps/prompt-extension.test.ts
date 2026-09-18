@@ -5,17 +5,17 @@
 import { describe, it, expect } from 'bun:test';
 import {
   buildCleanLitePsLocals,
-  createEntityLookup,
   identifierRef,
   resolveImpliedBehaviors,
 } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 // Minimal base locals (the real version has many more fields, but we only need
 // the shape to test the extension itself). `runtimeMode: 'vendored'` keeps the
 // base-class import assertions on the `@shared/*` form the pattern library
 // authors — i.e. these tests verify the vendored emission stays byte-identical
 // (ADR-037). The package-mode rewrite has its own dedicated test below.
-const EMPTY_BASE_LOCALS = { runtimeMode: 'vendored' };
+const EMPTY_BASE_LOCALS = withEntities({ runtimeMode: 'vendored' });
 
 // ============================================================================
 // Contact entity definition matching test/fixtures/contact-v2.yaml
@@ -364,7 +364,7 @@ describe('buildCleanLitePsLocals', () => {
   });
 
   it('uses custom srcRoot from baseLocals', () => {
-    const locals = buildCleanLitePsLocals(contactDefinition, { srcRoot: 'app' });
+    const locals = buildCleanLitePsLocals(contactDefinition, withEntities({ srcRoot: 'app' }));
 
     expect(locals.clpOutputPaths.entity).toBe('app/modules/contacts/contact.entity.ts');
     expect(locals.clpOutputPaths.service).toBe('app/modules/contacts/contact.service.ts');
@@ -1256,24 +1256,5 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
     );
     expect(configOf(locals, 'CeVerbatim')).toEqual({ column: 'status' });
     restoreLibrary();
-  });
-});
-
-describe('createEntityLookup (ADR-041.1 cross-entity facts)', () => {
-  it("reads another entity's own entity: block from the entities directory, recursively", async () => {
-    const fs = await import('node:fs');
-    const os = await import('node:os');
-    const path = await import('node:path');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-lookup-'));
-    fs.mkdirSync(path.join(dir, 'people'));
-    fs.writeFileSync(
-      path.join(dir, 'people', 'person.yaml'),
-      'entity:\n  name: person\n  plural: personnel\n  context: hr\n',
-    );
-    fs.writeFileSync(path.join(dir, 'broken.yaml'), 'entity: [unclosed');
-    const lookup = createEntityLookup(dir);
-    expect(lookup('person')).toEqual({ name: 'person', plural: 'personnel', context: 'hr' });
-    expect(lookup('nobody')).toBeNull();
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

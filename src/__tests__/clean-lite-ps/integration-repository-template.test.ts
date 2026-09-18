@@ -19,6 +19,7 @@ import {
   buildCleanLitePsLocals,
   buildIntegrationSurface,
 } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const REPO_TEMPLATE = readFileSync(
   resolve(import.meta.dir, '../../../templates/entity/new/clean-lite-ps/repository.ejs.t'),
@@ -88,7 +89,7 @@ describe('buildIntegrationSurface derivation', () => {
   });
 
   it('derives writeColumns from non-FK fields and conflictTarget (provider, externalId)', () => {
-    const locals = buildCleanLitePsLocals(account, {});
+    const locals = buildCleanLitePsLocals(account, withEntities());
     expect(locals.clpIntegrationConfig).not.toBeNull();
     const cfg = locals.clpIntegrationConfig as any;
     expect(cfg.conflictTarget).toEqual(['provider', 'externalId']);
@@ -96,7 +97,7 @@ describe('buildIntegrationSurface derivation', () => {
   });
 
   it('names the FK write-key ${relationKey}ExternalId and self-FK refTable self', () => {
-    const locals = buildCleanLitePsLocals(account, {});
+    const locals = buildCleanLitePsLocals(account, withEntities());
     const fk = (locals.clpIntegrationFkResolvers as any[])[0];
     expect(fk.column).toBe('parentAccountId');
     expect(fk.writeKey).toBe('parentAccountExternalId');
@@ -104,7 +105,7 @@ describe('buildIntegrationSurface derivation', () => {
   });
 
   it('non-self integrated FK uses target table name + adds a parent import', () => {
-    const locals = buildCleanLitePsLocals(contact, {});
+    const locals = buildCleanLitePsLocals(contact, withEntities());
     const fk = (locals.clpIntegrationFkResolvers as any[])[0];
     expect(fk.column).toBe('accountId');
     expect(fk.writeKey).toBe('accountExternalId');
@@ -116,12 +117,12 @@ describe('buildIntegrationSurface derivation', () => {
   });
 
   it('self-FK contributes NO parent import', () => {
-    const locals = buildCleanLitePsLocals(account, {});
+    const locals = buildCleanLitePsLocals(account, withEntities());
     expect(locals.clpIntegrationParentTableImports).toEqual([]);
   });
 
   it('projectionColumns include id/externalId/FK/timestamps, never provider', () => {
-    const locals = buildCleanLitePsLocals(account, {});
+    const locals = buildCleanLitePsLocals(account, withEntities());
     const cfg = locals.clpIntegrationConfig as any;
     expect(cfg.projectionColumns).toEqual([
       'id', 'externalId', 'userId', 'name', 'domain', 'employeeCount',
@@ -164,7 +165,7 @@ describe('buildIntegrationSurface derivation', () => {
 // ============================================================================
 
 describe('integrated repository emission — self-FK (account)', () => {
-  const out = render(buildCleanLitePsLocals(account, {}) as Record<string, unknown>);
+  const out = render(buildCleanLitePsLocals(account, withEntities()) as Record<string, unknown>);
 
   it('emits TIntegrationWrite with nullable-aware fields + FK write-key', () => {
     expect(out).toContain('export interface AccountIntegrationWrite {');
@@ -212,7 +213,7 @@ describe('integrated repository emission — self-FK (account)', () => {
 });
 
 describe('integrated repository emission — non-self FK + eav (contact)', () => {
-  const out = render(buildCleanLitePsLocals(contact, {}) as Record<string, unknown>);
+  const out = render(buildCleanLitePsLocals(contact, withEntities()) as Record<string, unknown>);
 
   it('imports the parent table as a live handle and uses it in fkResolvers', () => {
     expect(out).toContain("import { accounts } from '../accounts/account.entity';");
@@ -233,7 +234,7 @@ describe('integrated repository emission — non-self FK + eav (contact)', () =>
 });
 
 describe('non-Integrated repository emission', () => {
-  const out = render(buildCleanLitePsLocals(widget, {}) as Record<string, unknown>);
+  const out = render(buildCleanLitePsLocals(widget, withEntities()) as Record<string, unknown>);
 
   it('emits no integration surface', () => {
     expect(out).not.toContain('IntegrationWrite');
