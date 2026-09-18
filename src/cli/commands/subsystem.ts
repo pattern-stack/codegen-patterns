@@ -1037,9 +1037,14 @@ export class SubsystemInstallCommand extends Command {
 		}
 
 		// CFG-1: main.ts reads `openapiConfig` from <generated>/app-config.ts,
-		// never the YAML — regenerate it from the config just written.
+		// never the YAML — regenerate it from the config just written. A failure
+		// fails the install, naming the file (JOBS-0, #655).
 		const written = loadCodegenConfig(configPath);
-		writeAppConfig(projectLayout(ctx.cwd, written).generated, written);
+		try {
+			writeAppConfig(projectLayout(ctx.cwd, written).generated, written);
+		} catch (err: unknown) {
+			return reportRegenerationFailure('subsystem install', err);
+		}
 
 		if (isJsonMode()) {
 			printJson({

@@ -30,7 +30,7 @@ import {
 	type InstalledSubsystem,
 	type SubsystemName,
 } from './subsystem-detect.js';
-import { APP_CONFIG_FILE, writeAppConfig } from './app-config-generator.js';
+import { writeAppConfig } from './app-config-generator.js';
 import {
 	drizzleJobsExtensions,
 	jobWorkerBackendOptions,
@@ -658,9 +658,7 @@ export async function regenerateSubsystemBarrel(
 
 		// CFG-1: the jobs composer imports `jobPools` from `./app-config`, and
 		// main.ts imports the rest of it — regenerated from the same config.
-		generating(path.resolve(generatedDir, APP_CONFIG_FILE), () =>
-			writeAppConfig(generatedDir, ctx.config),
-		);
+		writeAppConfig(generatedDir, ctx.config);
 
 		// Package mode: the bridge composer imports `./bridge-registry`. The real
 		// registry is emitted by `entity new --all` (which scans handlers); but

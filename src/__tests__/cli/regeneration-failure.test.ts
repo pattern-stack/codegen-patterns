@@ -140,3 +140,27 @@ describe('subsystem remove fails when the barrel cannot be regenerated', () => {
 		expect(out).toContain(`could not regenerate ${file}: EISDIR`);
 	});
 });
+
+describe('subsystem install openapi-config fails when app-config.ts cannot be regenerated', () => {
+	test('names the file, exit 1 — not a stack trace', async () => {
+		const root = mkProject('paths:\n  backend_src: src\n');
+		const file = block(root, 'src/generated/app-config.ts');
+		const { code, out } = await run(['subsystem', 'install', 'openapi-config', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`could not regenerate ${file}: EISDIR`);
+		expect(out).not.toContain('openapi config block');
+	});
+});
+
+describe('subsystem install --json (vendored) regenerates the barrel', () => {
+	test('writes subsystems.ts and app-config.ts', async () => {
+		const root = mkProject('runtime: vendored\npaths:\n  backend_src: src\n');
+		const { code, out } = await run(['subsystem', 'install', 'events', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(0);
+		expect(JSON.parse(out)).toMatchObject({ command: 'subsystem install', subsystem: 'events' });
+		expect(fs.readFileSync(path.join(root, 'src/generated/subsystems.ts'), 'utf-8')).toContain(
+			'EventsModule.forRoot(',
+		);
+		expect(fs.existsSync(path.join(root, 'src/generated/app-config.ts'))).toBe(true);
+	});
+});

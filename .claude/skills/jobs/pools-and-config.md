@@ -164,7 +164,7 @@ interface JobsDomainModuleOptions {
 
 Module is `global: true`, provides `JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`, (JOB-8) `JOBS_MULTI_TENANT`, and (CFG-1) `JOB_POOL_CONFIG`.
 
-`JobWorkerModule.forRoot` separately takes `{ mode, backend?, pools?, allPools?, domainModulePools?, shutdownTimeoutMs? }` (`pools` = the activation list; `domainModulePools` = the pool definitions, forwarded to its inner domain module) and imports `JobsDomainModule` internally. A process can import `JobsDomainModule` alone (read-only — services available, no worker running) or `JobWorkerModule` (which brings the domain module with it plus the claim loop).
+`JobWorkerModule.forRoot` separately takes `{ mode, backend, pools?, allPools?, domainModulePools?, shutdownTimeoutMs? }` (`pools` = the activation list; `domainModulePools` = the pool definitions, forwarded to its inner domain module) and imports `JobsDomainModule` internally. A process can import `JobsDomainModule` alone (read-only — services available, no worker running) or `JobWorkerModule` (which brings the domain module with it plus the claim loop).
 
 ## Worker topology — embedded vs. standalone
 
