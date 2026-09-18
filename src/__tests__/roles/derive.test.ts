@@ -81,3 +81,14 @@ describe('junctionNamesFor', () => {
 		]);
 	});
 });
+
+describe('nullable precedence — the role rides the belongs_to rule (CAP-2 review)', () => {
+	test('a role nullable: is carried onto the derived relationship', () => {
+		const derived = deriveRoleRelationships({
+			host: { target: 'contact', cardinality: 'one', nullable: true },
+		});
+		// On the relationship, where processBelongsTo gives an explicit
+		// `nullable:` priority over the FK field's `required:`.
+		expect(derived.host?.nullable).toBe(true);
+	});
+});

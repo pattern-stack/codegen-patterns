@@ -12,6 +12,9 @@ import type { CommandClass } from 'clipanion';
 
 import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
 import { analyzeDomain, validateEntities } from '../../index.js';
+import { junctionsDirFor, loadJunctionSummaries } from '../../parser/load-junctions.js';
+import { validateRolesForGeneration } from '../../roles/validate-roles.js';
+import { loadAppPatternsForCli, resolvePatternGlobs } from '../shared/pattern-globs.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeEntityNew } from '../shared/hygen.js';
@@ -43,7 +46,6 @@ import {
 	collectMergedEvents,
 	generateEventCodegen,
 } from '../shared/event-codegen-generator.js';
-import { resolvePatternGlobs } from '../shared/pattern-globs.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
 import { validateSemanticModel } from '../../parser/validate-semantic.js';
 import {
@@ -413,8 +415,8 @@ export class EntityNewCommand extends Command {
 		// capability, which an app may define (and must, until the library ships
 		// one). The hygen subprocess loads them for itself; this is the CLI's copy.
 		{
-			const loaded = await loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
-			if (!isJsonMode()) for (const err of loaded.errors) printWarning(err);
+			const errors = await loadAppPatternsForCli(ctx);
+			if (!isJsonMode()) for (const err of errors) printWarning(err);
 		}
 
 		// Git safety — we don't know specific output paths without running Hygen,
@@ -1404,6 +1406,14 @@ export class EntityValidateCommand extends Command {
 		if (!fs.existsSync(targetDir)) {
 			printError(`Directory not found: ${targetDir}`);
 			return 1;
+		}
+
+		// App patterns (ADR-031) and app capabilities (ADR-041) resolve by name
+		// in the validators below — load them into this process's registry
+		// first, or every app pattern is reported as unknown.
+		{
+			const errors = await loadAppPatternsForCli(ctx);
+			if (!isJsonMode()) for (const err of errors) printWarning(err);
 		}
 
 		const quick = validateEntities(targetDir);

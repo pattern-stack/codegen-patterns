@@ -46,7 +46,12 @@ export interface RoleDefinition {
 	column?: string;
 	/** `many` only — the junction between this entity and the target. */
 	via?: string;
-	/** `one` only — FK nullability. Default `true`. */
+	/**
+	 * `one` only — FK nullability. Carried onto the derived relationship, where
+	 * `processBelongsTo` gives it priority over the FK field's `required:` /
+	 * `nullable:` — the same precedence a declared `belongs_to`'s `nullable:`
+	 * has (no second rule). Unset: the field decides, else nullable.
+	 */
 	nullable?: boolean;
 	/** `one` only — FK cascade action. Default `restrict`. */
 	on_delete?: RoleOnDelete;

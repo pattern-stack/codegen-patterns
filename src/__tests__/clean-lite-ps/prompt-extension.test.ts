@@ -988,6 +988,33 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
     ).toBe(false);
   });
 
+  it('role nullable: wins over the FK field required: — the same precedence as a declared belongs_to', async () => {
+    const roleLocals = buildCleanLitePsLocals(
+      await withRoles(
+        { host: { target: 'contact', cardinality: 'one', nullable: true } },
+        { host_contact_id: { type: 'uuid', required: true } },
+      ),
+      EMPTY_BASE_LOCALS,
+    );
+    const declaredLocals = buildCleanLitePsLocals(
+      {
+        entity: { name: 'meeting', plural: 'meetings', table: 'meetings' },
+        fields: { host_contact_id: { type: 'uuid', required: true } },
+        relationships: {
+          host: { type: 'belongs_to', target: 'contact', foreign_key: 'host_contact_id', nullable: true },
+        },
+        behaviors: [],
+      },
+      EMPTY_BASE_LOCALS,
+    );
+    const role = roleLocals.clpBelongsTo.find((r: { field: string }) => r.field === 'host_contact_id');
+    const declared = declaredLocals.clpBelongsTo.find((r: { field: string }) => r.field === 'host_contact_id');
+    expect(role.nullable).toBe(true);
+    // One rule, two entry points: the role and the equivalent declared
+    // relationship resolve identically.
+    expect(role.nullable).toBe(declared.nullable);
+  });
+
   it('a declared (non-role) relationship keeps its target-derived key', () => {
     const locals = buildCleanLitePsLocals(
       {

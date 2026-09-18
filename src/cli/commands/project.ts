@@ -23,6 +23,7 @@ import { stringify as stringifyYaml } from 'yaml';
 
 import { analyzeDomain } from '../../index.js';
 import { junctionsDirFor } from '../../parser/load-junctions.js';
+import { loadAppPatternsForCli } from '../shared/pattern-globs.js';
 import { serializeDomainGraph } from '../../analyzer/serialize-graph.js';
 import {
 	suggestTransitiveRelationships,
@@ -578,6 +579,12 @@ export class ProjectInspectCommand extends Command {
 			return 1;
 		}
 
+		// App patterns resolve by name in the validators analyzeDomain runs —
+		// load them first, or an app-declared `Actor` capability is invisible
+		// and every role targeting it is reported as a non-actor.
+		for (const err of await loadAppPatternsForCli(ctx)) {
+			if (!isJsonMode()) printWarning(err);
+		}
 		const result = await analyzeDomain(entitiesDir, {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 		});
@@ -641,6 +648,12 @@ export class ProjectInspectCommand extends Command {
 			}
 		}
 
+		// App patterns resolve by name in the validators analyzeDomain runs —
+		// load them first, or an app-declared `Actor` capability is invisible
+		// and every role targeting it is reported as a non-actor.
+		for (const err of await loadAppPatternsForCli(ctx)) {
+			if (!isJsonMode()) printWarning(err);
+		}
 		const analysis = await analyzeDomain(entitiesDir, {
 			junctionsDir: junctionsDirFor(ctx.cwd),
 		});
@@ -826,6 +839,12 @@ export class ProjectGraphCommand extends Command {
 		];
 		const relationshipsDir = relCandidates.find((d) => fs.existsSync(d));
 
+		// App patterns resolve by name in the validators analyzeDomain runs —
+		// load them first, or an app-declared `Actor` capability is invisible
+		// and every role targeting it is reported as a non-actor.
+		for (const err of await loadAppPatternsForCli(ctx)) {
+			if (!isJsonMode()) printWarning(err);
+		}
 		const result = await analyzeDomain(entitiesDir, {
 			relationshipsDir,
 			junctionsDir: junctionsDirFor(ctx.cwd),

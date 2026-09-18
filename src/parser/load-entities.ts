@@ -36,7 +36,7 @@ import {
 	type RelationshipTypes,
 } from '../schema/relationship-definition.schema';
 import type { FieldDefinition } from '../schema/entity-definition.schema';
-import { deriveRoleRelationships } from '../roles/derive';
+import { deriveRoleRelationships, roleForeignKey } from '../roles/derive';
 
 /**
  * Map the YAML `ui_*` keys onto `ParsedField.ui`. Shared by the entity and
@@ -175,16 +175,28 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 		const derivedRelationships = deriveRoleRelationships(definition.roles);
 
 		for (const [name, roleDef] of Object.entries(definition.roles)) {
-			const derived = derivedRelationships[name];
+			if (roleDef.cardinality === 'many') {
+				// RolesSchema's superRefine rejects a many-role without `via:`, so
+				// this only fires if that rule is ever removed.
+				if (roleDef.via === undefined) {
+					throw new Error(`role '${name}': cardinality many without via (schema invariant broken)`);
+				}
+				entity.roles.set(name, {
+					name,
+					target: roleDef.target,
+					cardinality: 'many',
+					via: roleDef.via,
+				});
+				continue;
+			}
 			entity.roles.set(name, {
 				name,
 				target: roleDef.target,
-				cardinality: roleDef.cardinality,
+				cardinality: 'one',
 				column: roleDef.column,
-				via: roleDef.via,
 				nullable: roleDef.nullable,
 				onDelete: roleDef.on_delete,
-				foreignKey: derived?.foreign_key,
+				foreignKey: roleForeignKey(name, roleDef.target, roleDef.column),
 			});
 		}
 
