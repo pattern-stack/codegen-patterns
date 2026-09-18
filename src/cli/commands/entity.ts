@@ -14,7 +14,12 @@ import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loade
 import { analyzeDomain, validateEntities } from '../../index.js';
 import { junctionsDirFor, loadJunctionSummaries } from '../../parser/load-junctions.js';
 import { validateRolesForGeneration } from '../../roles/validate-roles.js';
-import { loadAppPatternsForCli, resolvePatternGlobs } from '../shared/pattern-globs.js';
+import {
+	loadAppPatternsForCli,
+	patternLoadIssues,
+	patternLoadRejections,
+	resolvePatternGlobs,
+} from '../shared/pattern-globs.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeEntityNew } from '../shared/hygen.js';
@@ -397,13 +402,7 @@ export class EntityNewCommand extends Command {
 		// orchestration step would rewrite its root barrel without that module,
 		// and a role or `patterns:` entry naming it would resolve against the
 		// wrong registry (#664, from the #660 audit).
-		for (const err of await loadAppPatternsForCli(ctx)) {
-			runRejections.push({
-				file: path.resolve(ctx.cwd, err.file),
-				message: 'app pattern file could not be loaded',
-				details: [err.message],
-			});
-		}
+		runRejections.push(...patternLoadRejections(await loadAppPatternsForCli(ctx), ctx.cwd));
 
 		// Job definitions (RFC-0005 #7) — loaded ONCE, here, so their derived
 		// artifacts feed the event + bridge codegen in the SAME pass: each
@@ -1334,16 +1333,14 @@ export class EntityValidateCommand extends Command {
 
 		// App patterns (ADR-031) and app capabilities (ADR-041) resolve by name
 		// in the validators below — load them into this process's registry
-		// first, or every app pattern is reported as unknown.
-		{
-			const errors = await loadAppPatternsForCli(ctx);
-			if (!isJsonMode()) for (const err of errors) printWarning(err.message);
-		}
+		// first, or every app pattern is reported as unknown. A file the loader
+		// could not register is an error: the registry is partial (#667).
+		const loaderIssues = patternLoadIssues(await loadAppPatternsForCli(ctx), ctx.cwd);
 
 		const quick = validateEntities(targetDir);
 		const full = await analyzeDomain(targetDir);
 
-		const errors = full.issues.filter((i) => i.severity === 'error');
+		const errors = [...loaderIssues, ...full.issues.filter((i) => i.severity === 'error')];
 		const warnings = full.issues.filter((i) => i.severity === 'warning');
 
 		if (isJsonMode()) {

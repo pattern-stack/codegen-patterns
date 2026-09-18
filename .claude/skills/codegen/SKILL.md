@@ -66,6 +66,14 @@ target is considered — no entity YAML, `--all` plus a path, neither, a dirty g
 — prints `{ command: 'entity new', status: 'error', error }` under `--json` (#669); the dirty-tree check stops the
 JSON run too.
 
+An app-pattern loader error is never a warning (CLI-1, #667). `orchestration gen` writes from the set, so it stops
+before the validator and before writing, with the same rejection and payload (`patternLoadRejections`,
+`reportPreflightStop`). `entity validate` and `project inspect --kind analyze|stats|doc` read against the set, so
+each loader error is an error-severity `app_pattern_load_failed` issue (`patternLoadIssues`) printed and carried
+with the others; their exit-1-on-error rule applies. `project inspect --json` now emits JSON for `analyze` (it
+printed the console report). Still text-only warnings: `project inspect --kind manifest` and `project graph`
+(#671).
+
 **Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
 `eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +
 folder) and `context:` (folder nesting), read from `paths.entities` / `entities/` (the first that exists — the CLI's rule,
