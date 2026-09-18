@@ -156,8 +156,7 @@ export class OpportunityContactRepository extends JunctionIntegrationRepository<
     opportunityId: string,
     opts?: { cursor?: string; limit?: number },
   ): Promise<OpportunityContact[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table.opportunityId, opportunityId))
+    const rows = await this.baseQuery(eq(this.table.opportunityId, opportunityId))
       .limit(opts?.limit ?? 100);
     return rows as OpportunityContact[];
   }
@@ -172,8 +171,7 @@ export class OpportunityContactRepository extends JunctionIntegrationRepository<
     contactId: string,
     opts?: { cursor?: string; limit?: number },
   ): Promise<OpportunityContact[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table.contactId, contactId))
+    const rows = await this.baseQuery(eq(this.table.contactId, contactId))
       .limit(opts?.limit ?? 100);
     return rows as OpportunityContact[];
   }

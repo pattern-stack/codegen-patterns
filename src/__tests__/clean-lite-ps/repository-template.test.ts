@@ -166,11 +166,20 @@ describe('clean-lite-ps repository template — user_tracking behavior (issue #3
   });
 });
 
-describe('clean-lite-ps repository template — declarative queries use baseQuery()', () => {
+describe('clean-lite-ps repository template — declarative queries use baseQuery(leaf)', () => {
   // Regression: the declarative query methods must go through baseQuery()
-  // (which applies the soft-delete isNull(deletedAt) filter) rather than
-  // raw this.db.select(), so soft-deleted rows don't leak through
-  // findByX queries when soft_delete is enabled.
+  // (which applies the soft-delete isNull(deletedAt) filter and the
+  // userTracking scope) rather than raw this.db.select().
+  //
+  // SCOPE-0 (#616) tightened this from "calls baseQuery()" to "passes the leaf
+  // predicate AS ITS ARGUMENT". Chaining `.where(...)` onto the returned
+  // builder does call baseQuery() — and then REPLACES everything it applied
+  // (drizzle's `.where()` is `this.config.where = where`), which is how these
+  // finders shipped leaking soft-deleted and other users' rows. The earlier
+  // form of this test asserted `this.baseQuery()` literally and therefore
+  // passed on the leaky emission; that is why the assertion is now on the
+  // argument, and why the repo-wide shape guard
+  // (src/__tests__/templates/no-basequery-where.test.ts) exists.
   const queriesEntity = {
     ...baseEntity,
     behaviors: ['timestamps', 'soft_delete'],
@@ -180,24 +189,77 @@ describe('clean-lite-ps repository template — declarative queries use baseQuer
     ],
   };
 
-  it('unique (findByX with limit 1) query delegates to baseQuery()', () => {
+  it('unique (findByX with limit 1) query passes the predicate to baseQuery()', () => {
     const locals = buildCleanLitePsLocals(queriesEntity, {});
     const output = renderRepository(locals);
 
     expect(output).toContain('async findByEmail(email: string)');
-    expect(output).toContain('await this.baseQuery()');
+    expect(output).toContain(
+      "await this.baseQuery(eq(this.table['email'], email))",
+    );
     // Must not use raw db.select() for the declarative read path.
     expect(output).not.toContain('this.db.select().from(this.table)');
   });
 
-  it('non-unique list query also delegates to baseQuery()', () => {
+  it('non-unique list query also passes the predicate to baseQuery()', () => {
     const locals = buildCleanLitePsLocals(queriesEntity, {});
     const output = renderRepository(locals);
 
     expect(output).toContain('async findByUserId(userId: string)');
-    // Count the number of baseQuery() usages — should be 2 (one per query).
-    const matches = output.match(/this\.baseQuery\(\)/g) ?? [];
+    expect(output).toContain(
+      "await this.baseQuery(eq(this.table['userId'], userId))",
+    );
+  });
+
+  it('emits NO `baseQuery().where(` — the guards would be replaced, not AND-ed', () => {
+    const locals = buildCleanLitePsLocals(queriesEntity, {});
+    const output = renderRepository(locals);
+
+    expect(output).not.toMatch(/baseQuery\(\s*\)\s*\.where\s*\(/);
+    // Every read still goes through the choke point.
+    const matches = output.match(/this\.baseQuery\(/g) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a multi-column query wraps its predicates in and() inside baseQuery()', () => {
+    const locals = buildCleanLitePsLocals(
+      {
+        ...baseEntity,
+        behaviors: ['timestamps', 'soft_delete'],
+        queries: [{ by: ['email', 'user_id'] }],
+      },
+      {},
+    );
+    const output = renderRepository(locals);
+
+    expect(output).toContain(
+      "await this.baseQuery(and(eq(this.table['email'], email), eq(this.table['userId'], userId)))",
+    );
+    expect(output).not.toMatch(/baseQuery\(\s*\)\s*\.where\s*\(/);
+  });
+
+  it('the FK-traversal method passes its predicate to baseQuery() and drops the `as any`', () => {
+    const locals = buildCleanLitePsLocals(
+      {
+        ...baseEntity,
+        behaviors: ['timestamps', 'soft_delete'],
+        relationships: {
+          account: {
+            type: 'belongs_to',
+            target: 'account',
+            foreign_key: 'account_id',
+          },
+        },
+      },
+      {},
+    );
+    const output = renderRepository(locals);
+
+    expect(output).toContain(
+      "let q = this.baseQuery(eq(this.table['accountId'], id));",
+    );
+    expect(output).toContain('q = q.limit(opts.limit) as typeof q;');
+    expect(output).not.toContain('(q as any)');
   });
 });
 
