@@ -136,4 +136,12 @@ the schema rejects `paths.subsystems`; `project-layout` covers `modules_dir` out
 
 ## Gates
 
-(filled after the last edit)
+Run after the last code edit (commit `5c2bbfb`). The later commit changes only this table.
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass (baseline runner, `clean` pipeline, byte-identical) |
+| `just test-all` | pass: 3453 unit tests, 0 fail. New cases: `patterns` default + `paths.subsystems` rejection + `modules_dir` include (`config/path-defaults.test.ts`), non-default `modules_dir` in the naming / barrel / assembly / junction / relationship units. Also: baseline; every smoke, including `junction --layout custom` in both runtimes (modules under `apps/backend/src/domain`, the app pattern loaded from `apps/backend/src/patterns/`, `tsc` + DI boot); junction snapshots unchanged (10 pass); integration-emit (56 pass); smoke-integration |
+| `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair in `bridge-e2e.test.ts`) |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (110 × TS2307 + 8 × TS7006, #602) |
+| `just test-post-publish` | pass |
