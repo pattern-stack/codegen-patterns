@@ -31,6 +31,7 @@ import pluralize from 'pluralize';
 import { findYamlFiles } from '../../utils/find-yaml-files';
 
 import type { Context } from './context.js';
+import { entityModuleNaming } from '../../config/module-tree.js';
 import { configOrDefaults } from '../../config/project-config.js';
 import {
 	loadEntityFromYaml,
@@ -218,8 +219,8 @@ export type BarrelPaths = Pick<PathsConfig, 'backend_src' | 'modules_dir'>;
  * Where each entity's module + schema file lives, relative to project root.
  *
  * Must match the output of the actual Hygen templates:
- *   - clean-lite-ps:  <modules_dir>[/<context>]/<plural>/<plural>.module.ts
- *                     <modules_dir>[/<context>]/<plural>/<name>.entity.ts
+ *   - clean-lite-ps:  `entityModuleNaming` (src/config/module-tree.ts) —
+ *                     <modules_dir>[/<context>]/<plural>/{<plural>.module,<name>.entity}.ts
  *   - clean:          <backend_src>/infrastructure/modules/<plural>.module.ts
  *                     <backend_src>/infrastructure/persistence/drizzle/<plural>.schema.ts
  *
@@ -237,25 +238,18 @@ export function entityFilePaths(
 	moduleClass: string;
 	schemaFile: string;
 } {
-	const name = info.name;
 	const plural = info.plural;
-	const nameKebab = toKebabCase(name);
 	const pluralKebab = toKebabCase(plural);
 
 	if (architecture === 'clean-lite-ps') {
-		// Clean-Lite-PS templates emit directories/files using the raw snake_case
-		// `plural`/`name` values under `paths.modules_dir` (see
-		// templates/_shared/entity-naming.mjs — `entityModuleNaming`, PATH-1).
-		// The barrel must match that on-disk layout.
-		// #403: a bounded-context entity nests under `<modules_dir>/<context>/<plural>/`
-		// — must mirror `moduleGroupDir` in the clean-lite-ps prompt-extension.
-		// Untagged entities stay flat (`<modules_dir>/<plural>/`).
-		const dir = path.posix.join(paths.modules_dir, info.context ?? '', plural);
+		// The module tree is the emission's own rule (`src/config/module-tree.ts`,
+		// GEN-0 #649): `<modules_dir>[/<context>]/<plural>`, raw snake_case names.
+		const naming = entityModuleNaming(info, paths.modules_dir);
 		return {
-			moduleFile: `${dir}/${plural}.module.ts`,
+			moduleFile: naming.moduleFile,
 			moduleClass: `${toPascalCase(plural)}Module`,
 			// Drizzle entity schema lives alongside the entity file in clean-lite-ps.
-			schemaFile: `${dir}/${name}.entity.ts`,
+			schemaFile: `${naming.entityFile}.ts`,
 		};
 	}
 

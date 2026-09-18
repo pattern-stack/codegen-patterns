@@ -32,6 +32,7 @@
  */
 
 import { relative, resolve, sep } from "node:path";
+import { entityModuleNaming } from "../../config/module-tree.js";
 import { changeEmitterClass } from "./change-emitter-emission-generator";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
@@ -477,20 +478,13 @@ export function resolveEntityModuleImports(
   const repoClass = `${entityClass}Repository`;
   const moduleClass = `${pluralPascalCase(input.entityPlural)}Module`;
 
-  // clean-lite-ps module-folder base: `<modules_dir>[/<context>]/<plural>`.
-  const moduleGroupSegs = input.context
-    ? [input.context, input.entityPlural]
-    : [input.entityPlural];
-  const repoFileAbs = resolve(
+  // The clean-lite-ps module tree (`src/config/module-tree.ts`, GEN-0 #649).
+  const naming = entityModuleNaming(
+    { name: input.entityName, plural: input.entityPlural, context: input.context },
     input.modulesAbs,
-    ...moduleGroupSegs,
-    `${input.entityName}.repository.ts`,
   );
-  const moduleFileAbs = resolve(
-    input.modulesAbs,
-    ...moduleGroupSegs,
-    `${input.entityPlural}.module.ts`,
-  );
+  const repoFileAbs = resolve(naming.repositoryFile);
+  const moduleFileAbs = resolve(naming.moduleFile);
 
   // The assembly file's directory: `<backend_src>/integrations/<surface>/modules/<provider>`.
   const assemblyDirAbs = resolve(

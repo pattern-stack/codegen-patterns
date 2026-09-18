@@ -1416,7 +1416,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);
   // One naming rule for this entity and for any entity that references it
-  // (`entityModuleNaming`).
+  // (`entityModuleNaming`, `src/config/module-tree.ts`).
   const ownNaming = entityModuleNaming(entity, modulesDir);
   // Every OTHER entity this one references is named from its own YAML through
   // the same function (NAME-0) — `resolveTargetNaming` reads this context.
@@ -1433,7 +1433,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // the generated barrel recomputes its import paths from the full file paths
   // below. The module-folder base used by every clpOutputPaths entry:
   const entityContext = entity.context || null;
-  const moduleGroupDir = ownNaming.moduleGroupDir;
+  const moduleDir = ownNaming.moduleDir;
 
   // Generation toggles — `generate.writes` defaults to true so consumers who
   // regenerate pick up create/update/delete use cases without YAML changes.
@@ -1663,7 +1663,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
       definition,
       relationships,
       belongsTo,
-      repositoryDir: `${moduleGroupDir}/${entityNamePlural}`,
+      repositoryDir: moduleDir,
       modulesDir,
       entityLookup,
     });
@@ -1819,57 +1819,57 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Output paths
   const outputPaths = {
-    entity: `${moduleGroupDir}/${entityNamePlural}/${entityName}.entity.ts`,
-    repository: `${moduleGroupDir}/${entityNamePlural}/${entityName}.repository.ts`,
-    service: `${moduleGroupDir}/${entityNamePlural}/${entityName}.service.ts`,
-    controller: `${moduleGroupDir}/${entityNamePlural}/${entityName}.controller.ts`,
-    module: `${moduleGroupDir}/${entityNamePlural}/${entityNamePlural}.module.ts`,
-    index: `${moduleGroupDir}/${entityNamePlural}/index.ts`,
-    findByIdUseCase: `${moduleGroupDir}/${entityNamePlural}/use-cases/find-${entityName}-by-id.use-case.ts`,
-    listUseCase: `${moduleGroupDir}/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+    entity: `${ownNaming.entityFile}.ts`,
+    repository: ownNaming.repositoryFile,
+    service: `${moduleDir}/${entityName}.service.ts`,
+    controller: `${moduleDir}/${entityName}.controller.ts`,
+    module: ownNaming.moduleFile,
+    index: `${moduleDir}/index.ts`,
+    findByIdUseCase: `${moduleDir}/use-cases/find-${entityName}-by-id.use-case.ts`,
+    listUseCase: `${moduleDir}/use-cases/list-${entityNamePlural}.use-case.ts`,
     findByIdWithFieldsUseCase: eavEnabled
-      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/find-${entityName}-by-id-with-fields.use-case.ts`
+      ? `${moduleDir}/use-cases/find-${entityName}-by-id-with-fields.use-case.ts`
       : null,
     listWithFieldsUseCase: eavEnabled
-      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/list-${entityNamePlural}-with-fields.use-case.ts`
+      ? `${moduleDir}/use-cases/list-${entityNamePlural}-with-fields.use-case.ts`
       : null,
     createUseCase: generateWrites
-      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/create-${entityName}.use-case.ts`
+      ? `${moduleDir}/use-cases/create-${entityName}.use-case.ts`
       : null,
     updateUseCase: generateWrites
-      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/update-${entityName}.use-case.ts`
+      ? `${moduleDir}/use-cases/update-${entityName}.use-case.ts`
       : null,
     deleteUseCase: generateWrites
-      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/delete-${entityName}.use-case.ts`
+      ? `${moduleDir}/use-cases/delete-${entityName}.use-case.ts`
       : null,
-    createDto: `${moduleGroupDir}/${entityNamePlural}/dto/create-${entityName}.dto.ts`,
-    updateDto: `${moduleGroupDir}/${entityNamePlural}/dto/update-${entityName}.dto.ts`,
-    outputDto: `${moduleGroupDir}/${entityNamePlural}/dto/${entityName}-output.dto.ts`,
+    createDto: `${moduleDir}/dto/create-${entityName}.dto.ts`,
+    updateDto: `${moduleDir}/dto/update-${entityName}.dto.ts`,
+    outputDto: `${moduleDir}/dto/${entityName}-output.dto.ts`,
     // Pagination-by-default: the universal list query DTO (page/cursor/pageSize
     // + sort). Always emitted — the list endpoint is unconditional.
-    listQueryDto: `${moduleGroupDir}/${entityNamePlural}/dto/list-${entityNamePlural}.query.ts`,
+    listQueryDto: `${moduleDir}/dto/list-${entityNamePlural}.query.ts`,
     searchUseCase: searchQueryResolved
-      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/search-${entityNamePlural}.use-case.ts`
+      ? `${moduleDir}/use-cases/search-${entityNamePlural}.use-case.ts`
       : null,
     searchController: searchQueryResolved
-      ? `${moduleGroupDir}/${entityNamePlural}/${entityName}-search.controller.ts`
+      ? `${moduleDir}/${entityName}-search.controller.ts`
       : null,
     declarativeQueries: hasDeclarativeQueries
-      ? `${moduleGroupDir}/${entityNamePlural}/use-cases/declarative-queries.ts`
+      ? `${moduleDir}/use-cases/declarative-queries.ts`
       : null,
     // ADR-041 — the generated `<Entity>ComposedBase` that applies the mixin
     // chain. Emitted only when TWO OR MORE capabilities stack; one capability
     // is wrapped inline in the repository's `extends` clause, and none leaves
     // the repository byte-identical to its pre-CAP-1 shape.
     composedBase: capabilityMixins.length >= 2
-      ? `${moduleGroupDir}/${entityNamePlural}/${entityName}.composed-base.ts`
+      ? `${moduleDir}/${entityName}.composed-base.ts`
       : null,
     // ADR-033.1 §8 — integration-source module emission for clean-lite-ps. Co-located
     // with the entity feature module under <modules_dir>/<plural>/. Closes #267.
-    // #403: routed through moduleGroupDir so a `context:`-tagged entity nests the
+    // #403: routed through moduleDir so a `context:`-tagged entity nests the
     // integration-source module under its context segment (untagged → flat,
     // `<modules_dir>/<plural>/…`).
-    integrationSourceModule: `${moduleGroupDir}/${entityNamePlural}/${entityName}-integration-source.module.ts`,
+    integrationSourceModule: `${moduleDir}/${entityName}-integration-source.module.ts`,
     // ADR-033.2's per-entity provider tuples (`<entity>-integration-source.providers.ts`)
     // are removed by RFC-0001 §8 (D4). The surface-scoped typed view
     // (`src/integrations/<surface>/types.generated.ts`) is the single source of

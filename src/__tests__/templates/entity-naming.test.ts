@@ -11,7 +11,6 @@ import path from 'node:path';
 import {
 	createEntityLookup,
 	entityLookupFrom,
-	entityModuleNaming,
 	projectEntityLookup,
 	relativeModuleDir,
 } from '../../../templates/_shared/entity-naming.mjs';
@@ -26,28 +25,8 @@ afterEach(() => {
 	for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-describe('entityModuleNaming', () => {
-	it('reads plural: as table export and folder — never pluralize(name)', () => {
-		expect(entityModuleNaming({ name: 'person', plural: 'persons' }, 'src/modules')).toEqual({
-			plural: 'persons',
-			moduleGroupDir: 'src/modules',
-			moduleDir: 'src/modules/persons',
-			entityFile: 'src/modules/persons/person.entity',
-		});
-	});
-
-	it('nests the module folder under context:', () => {
-		const naming = entityModuleNaming({ name: 'crew', plural: 'crews', context: 'org' }, 'src/modules');
-		expect(naming.moduleDir).toBe('src/modules/org/crews');
-		expect(naming.entityFile).toBe('src/modules/org/crews/crew.entity');
-	});
-
-	it('roots the module tree at paths.modules_dir, whatever it is (PATH-1)', () => {
-		const naming = entityModuleNaming({ name: 'crew', plural: 'crews', context: 'org' }, 'apps/backend/src/domain');
-		expect(naming.moduleGroupDir).toBe('apps/backend/src/domain/org');
-		expect(naming.entityFile).toBe('apps/backend/src/domain/org/crews/crew.entity');
-	});
-});
+// `entityModuleNaming` is `src/config/module-tree.ts` re-exported (GEN-0, #649):
+// its rule is stated in `src/__tests__/config/module-tree.test.ts`.
 
 describe('relativeModuleDir', () => {
 	it('flat → flat is the sibling form existing output uses', () => {
