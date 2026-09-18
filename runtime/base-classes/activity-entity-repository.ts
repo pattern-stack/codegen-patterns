@@ -1,5 +1,5 @@
 /**
- * ActivityEntityRepository<TEntity>
+ * ActivityEntityRepository<TEntity, TTable>
  *
  * Family-specific base for activity / interaction entities (emails, calls,
  * meetings, messages, transcripts). Adds date-range queries, actor (`user_id`)
@@ -14,6 +14,7 @@
  * entity's `config: { Activity: {...} }` block. See ACTIVITY-SUBJECT-1.
  */
 import { eq, between, desc } from 'drizzle-orm';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import { BaseRepository } from './base-repository';
 
 /**
@@ -33,7 +34,10 @@ export interface ActivityPatternConfig {
 const toCamel = (snake: string): string =>
   snake.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 
-export abstract class ActivityEntityRepository<TEntity> extends BaseRepository<TEntity> {
+export abstract class ActivityEntityRepository<
+  TEntity,
+  TTable extends PgTable,
+> extends BaseRepository<TEntity, TTable> {
   /**
    * Per-entity Activity config. The template emits this from `config:
    * { Activity: {...} }`; entities that only use date-range / user scoping omit
@@ -73,7 +77,7 @@ export abstract class ActivityEntityRepository<TEntity> extends BaseRepository<T
    */
   async findByDateRange(start: Date, end: Date): Promise<TEntity[]> {
     const rows = await this.baseQuery()
-      .where(between(this.table[this.occurredAtColumn], start, end));
+      .where(between(this.col(this.occurredAtColumn), start, end));
     return rows as TEntity[];
   }
 
@@ -82,7 +86,7 @@ export abstract class ActivityEntityRepository<TEntity> extends BaseRepository<T
    */
   async findByUserId(userId: string): Promise<TEntity[]> {
     const rows = await this.baseQuery()
-      .where(eq(this.table['userId'], userId));
+      .where(eq(this.col('userId'), userId));
     return rows as TEntity[];
   }
 
@@ -91,7 +95,7 @@ export abstract class ActivityEntityRepository<TEntity> extends BaseRepository<T
    */
   async findBySubjectId(subjectId: string): Promise<TEntity[]> {
     const rows = await this.baseQuery()
-      .where(eq(this.table[this.subjectColumn], subjectId));
+      .where(eq(this.col(this.subjectColumn), subjectId));
     return rows as TEntity[];
   }
 
@@ -101,8 +105,8 @@ export abstract class ActivityEntityRepository<TEntity> extends BaseRepository<T
    */
   async findRecentBySubjectId(subjectId: string, limit = 10): Promise<TEntity[]> {
     const rows = await this.baseQuery()
-      .where(eq(this.table[this.subjectColumn], subjectId))
-      .orderBy(desc(this.table[this.occurredAtColumn]))
+      .where(eq(this.col(this.subjectColumn), subjectId))
+      .orderBy(desc(this.col(this.occurredAtColumn)))
       .limit(limit);
     return rows as TEntity[];
   }

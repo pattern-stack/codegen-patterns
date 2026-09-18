@@ -97,6 +97,7 @@ export interface OpportunityActivityIntegrationProjection {
 @Injectable()
 export class OpportunityActivityRepository extends JunctionIntegrationRepository<
   OpportunityActivity,
+  typeof opportunityActivities,
   OpportunityActivityIntegrationWrite,
   OpportunityActivityIntegrationProjection
 > {

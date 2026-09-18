@@ -165,9 +165,12 @@ describe('clean-lite-ps eav_value_table — repository emission', () => {
     expect(output).toContain("import { sql } from 'drizzle-orm';");
     expect(output).toContain("import type { DrizzleClient, DrizzleTx } from '@shared/types/drizzle';");
     expect(output).toContain('onConflictDoUpdate');
-    expect(output).toContain("this.table['entityType']");
-    expect(output).toContain("this.table['entityId']");
-    expect(output).toContain("this.table['fieldDefinitionId']");
+    // REL-0: columns resolve through the base's `col()` (getColumns-backed),
+    // and the insert runs against the widened `tableRef`.
+    expect(output).toContain("this.col('entityType')");
+    expect(output).toContain("this.col('entityId')");
+    expect(output).toContain("this.col('fieldDefinitionId')");
+    expect(output).toContain('.insert(this.tableRef)');
     // Runner threaded through the tx.
     expect(output).toContain('this.runner(tx)');
   });
