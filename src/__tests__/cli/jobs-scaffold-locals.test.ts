@@ -4,7 +4,6 @@
  * Covers:
  *   - default locals on first install (no `jobs:` block in config)
  *   - multi_tenant: true honored
- *   - worker_mode: 'standalone' honored
  *   - workerExists: '' when src/worker.ts absent, 'true' when present
  *   - jobWorkerModuleImport is mode-aware (package vs vendored) — #513
  *   - the worker carries no config value: it imports `jobWorkerOptions` from
@@ -38,7 +37,6 @@ describe('resolveJobsScaffoldLocals', () => {
 		});
 
 		expect(locals.multiTenant).toBe(false);
-		expect(locals.workerMode).toBe('embedded');
 		expect(locals.workerExists).toBe(false);
 		expect(locals.appName).toBe('project-fixture');
 		expect(locals.mainTsPath).toBe(path.resolve(CWD, 'src/main.ts'));
@@ -96,24 +94,6 @@ describe('resolveJobsScaffoldLocals', () => {
 			});
 			expect(locals.multiTenant).toBe(false);
 		}
-	});
-
-	test('jobs.worker_mode: standalone is honored; any other value defaults to embedded', () => {
-		const standalone = resolveJobsScaffoldLocals({
-			cwd: CWD,
-			config: { jobs: { worker_mode: 'standalone' } } as any,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(standalone.workerMode).toBe('standalone');
-
-		const bogus = resolveJobsScaffoldLocals({
-			cwd: CWD,
-			config: { jobs: { worker_mode: 'wobbly' } } as any,
-			fileExists: () => false,
-			readFile: () => null,
-		});
-		expect(bogus.workerMode).toBe('embedded');
 	});
 
 	test('jobWorkerModuleImport: package mode (default) resolves the package runtime subpath', () => {
@@ -226,7 +206,6 @@ describe('resolveJobsScaffoldLocals', () => {
 describe('localsToHygenArgs', () => {
 	const base: JobsScaffoldLocals = {
 		appName: 'demo',
-		workerMode: 'embedded',
 		multiTenant: false,
 		mainTsPath: '/abs/src/main.ts',
 		configPath: '/abs/codegen.config.yaml',
@@ -264,7 +243,6 @@ describe('localsToHygenArgs', () => {
 		const args = localsToHygenArgs(base);
 		for (const flag of [
 			'--appName',
-			'--workerMode',
 			'--multiTenant',
 			'--mainTsPath',
 			'--configPath',

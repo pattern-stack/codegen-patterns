@@ -114,14 +114,21 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   for `bullmq`, so a `memory` config booted the embedded worker's own
   orchestrator on drizzle — two backends in one process. The worker options
   now always state `backend` (every jobs install regenerates with
-  `backend: 'drizzle'` in them). `jobs.backend: memory` with a standalone
-  worker — `jobs.worker_mode: standalone`, or no `worker_mode` — is now a
-  config error naming both keys: a separate process cannot share the
+  `backend: 'drizzle'` in them). `jobs.backend: memory` with
+  `jobs.worker_mode: standalone` is now a config error naming both keys: a separate process cannot share the
   in-memory job store. `JobWorkerModule.forRoot` now **requires**
   `backend` (no `'drizzle'` default) — a hand-written call must state the
   same backend as your `JobsDomainModule`. The `main.ts` jobs hint no longer
   suggests hand-wiring `JobWorkerModule`: set `jobs.worker_mode: embedded`
   and regenerate.
+- **`jobs.worker_mode` has one default: `embedded`** (#659). A `jobs:` block
+  without `worker_mode` composed no worker in `<generated>/subsystems.ts`
+  (standalone) while the jobs scaffold treated it as embedded. The config
+  schema now defaults it to `embedded` — the value `subsystem install jobs`
+  writes — so such a block regenerates with
+  `JobWorkerModule.forRoot({ mode: 'embedded', … })` in `SUBSYSTEM_MODULES`.
+  If you run `worker.ts` as a separate process, state
+  `jobs.worker_mode: standalone`.
 - **A generated file the app imports that cannot be written fails the
   command** (#655). `entity new`, `relationship new`, `junction new` and
   `subsystem install` / `remove` printed a warning and exited 0 when
