@@ -75,7 +75,8 @@ CAP-1's config hand-off renders the author's `config:` block verbatim. Both CAP-
 constants. It lives in the prompt, not in `src/roles`, because its inputs are the prompt's own locals
 (`clpBelongsTo`, the module folder, `pluralize`). Output replaces the `capabilityMixins[].config` slot, and the tables
 it references become `capabilityConfigImports`, which the repository template emits. A table handle is marked
-`identifierRef(name)` (`{ $identifier }`) so `renderPatternConfigLiteral` writes it bare. An app capability's config
+`identifierRef(name)` (a module-private Symbol key, so no YAML value can impersonate it) so
+`renderPatternConfigLiteral` writes it bare. An app capability's config
 is still copied verbatim.
 
 **`Communication`** — from `clpBelongsTo.filter(r => r.role)` (one-roles; the column is that entry's `camelField`,
@@ -97,7 +98,12 @@ The junction's table identifier, file and column names follow `junction new`'s r
 computed relative to the repository's own folder so a `context:`-nested entity still resolves.
 
 **`Actor`** — `individual` emits `{ kind: 'individual' }`. `group` resolves `members:` against the entity's
-`relationships:`; it must name a `has_many`, whose `target` and `foreign_key` give the member table and column:
+`relationships:`; it must name a `has_many`, whose `foreign_key` gives the column and whose `target` names the
+member entity. That entity's table export and module folder come from **its own YAML** (`plural:`, `context:`),
+read through `createEntityLookup` (`prompt.js` passes one over `paths.entities_dir`, default `entities`) and
+`entityModuleNaming` — the one naming rule, which the entity's own emission also uses. Nothing is re-pluralized at
+emit time (Found #9). A self-referential group (`members:` naming a `has_many` back to this entity) uses this
+entity's own table and adds no import:
 
 ```ts
 override readonly actorConfig = {
@@ -222,7 +228,8 @@ first library consumers; the resolved-config hand-off; the shadowing rule; the `
 | Risk | Signal | Response |
 |---|---|---|
 | The member hop in `memberPredicate` ignores the member entity's soft-delete / tenant scope | a soft-deleted contact still makes its account match | Recorded, not hidden: the fragment tests FK membership and returns no member rows. Scoping a hop by another entity's behaviors needs that entity's declaration at emit time, which the one-YAML prompt does not have; REL-2's include tree is where per-hop scope lands. |
-| The junction naming rule is restated in the resolver | a junction rename breaks the import | The smoke's `tsc` leg compiles the import in both modes; the rule has no YAML override (CAP-2 §4). |
+| The junction naming rule is restated in the resolver | a junction rename breaks the import | The smoke's `tsc` leg compiles the import in both modes. Deriving the junction's table from `pluralize(via)` is safe because `junction new` derives it the same way and a junction YAML has **no `plural:` / `table:` / name override** (its `.strict()` schema rejects them, CAP-2 §4). An *entity* reference, by contrast, is never re-pluralized — a group Actor's member entity is read from its own YAML (Found #9). |
+| Pre-existing: a chained `.where()` after `baseQuery()` replaces the scoped predicate in several family-base finders and generated FK methods | out of CAP-3's scope | Tracked as **#616** (fix in PR #619). CAP-3's methods pass their predicate *into* `baseQuery(extra)` / `scopeAnd()` and never chain `.where()`. |
 | A library pattern name now collides with a project's own | load error on upgrade | Intended (I7). The message names the library pattern. |
 
 ## Found during implementation
@@ -258,6 +265,19 @@ first library consumers; the resolved-config hand-off; the shadowing rule; the `
    #1 made it public, `role: RoleOf<this>` works on the repository and through the forwarder. It is pinned by
    `test/smoke/fixtures/capability/consumer/checks/roles.check.ts`, compiled by both `tsc` legs: its
    `@ts-expect-error` probes fail the smoke (TS2578) if the parameter ever widens back to `string`.
+9. **(Review) A group Actor's member entity was re-pluralized at emit time.** The first version used
+   `pluralize(members.target)` for the table identifier and the folder, so a member entity declaring an irregular
+   `plural:` got an unresolvable import. (The clean-lite-ps `belongs_to` path has the same pattern —
+   `processBelongsTo`'s `relatedPlural = pluralize(target)`, and `processHasMany` — which predates this PR; filed as #630.) The
+   zod-backed `loadEntityRegistry` (ADR-038) cannot be used from the hygen prompt: its import graph does not ship in
+   the package's `files`. So the prompt reads the target's `entity:` block with `yaml` (`createEntityLookup`), and
+   `entityModuleNaming` — also used for the entity's own `entityNamePlural` / module folder — turns it into the
+   plural and path. A missing member YAML is a generation error. Unit-tested with `plural: personnel`, a
+   `context:`-nested member, a missing member, a self-referential group (no duplicate import, TS2300) and the lookup
+   itself.
+10. **(Review) The identifier marker could collide.** `{ $identifier: '…' }` in an app capability's verbatim
+    `config:` would have been rendered as code. The marker is now a module-private Symbol key; a test pins that the
+    old shape renders as data.
 
 ## Acceptance — all met
 
@@ -297,7 +317,9 @@ The names are the CAP-2 constants; an app pattern can no longer reuse them (or a
 **Emitted shape.** `communicationConfig` / `actorConfig` are `override readonly … as const` on the repository, with
 **live table handles** imported from the junction / member entity module. `resolveLibraryCapabilityConfig` in the
 clean-lite-ps prompt is where both are built; `identifierRef()` marks a bare identifier for
-`renderPatternConfigLiteral`. **Every** capability config is now public `override readonly` (Found #1).
+`renderPatternConfigLiteral` with a private Symbol key, so no key in an app capability's `config:` is reserved. A
+cross-entity fact (a member entity's `plural:` / `context:`) is read from that entity's YAML through the
+`entityLookup` local and `entityModuleNaming`; reuse those rather than calling `pluralize` on another entity's name. **Every** capability config is now public `override readonly` (Found #1).
 
 **Writing a runtime mixin.** Annotate `TBase & CapabilityCtor<Surface>` with an exported `Surface` interface. The
 CAP-1 `as TBase & typeof Mixin` idiom is fine for consumer mixins only (Found #1). Alias every raw `sql` field
