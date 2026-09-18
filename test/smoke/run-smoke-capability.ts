@@ -166,6 +166,15 @@ function authorCapabilitySurface(tmpDir: string, mode: Mode): void {
 			path.join(patternDir, file),
 		);
 	}
+	// Type-level checks against the GENERATED code (CAP-3): compiled by the tsc
+	// leg, never run. They sit outside `src/modules/` so the barrel generator
+	// never sees them.
+	const checksDir = path.join(tmpDir, 'src', 'capability-checks');
+	fs.mkdirSync(checksDir, { recursive: true });
+	for (const file of fs.readdirSync(path.join(CONSUMER_SRC, 'checks'))) {
+		fs.copyFileSync(path.join(CONSUMER_SRC, 'checks', file), path.join(checksDir, file));
+	}
+
 	log(`authored capability surface (${mode}: ${prefix}/capability-mixin)`);
 }
 

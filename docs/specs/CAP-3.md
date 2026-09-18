@@ -1,7 +1,7 @@
 # CAP-3 — `Actor` + `Communication`: library capabilities and their runtime mixins
 
-**Status:** Draft
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #595 · **Epic:** #582 · **Project:** #578
 **Depends on:** CAP-1 (#593), CAP-2 (#594)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · PLAN §6.4–6.5 ·
@@ -44,9 +44,10 @@ in the library, with runtime mixins that answer those questions in one scoped st
 | # | Question | Measurement | Result |
 |---|---|---|---|
 | M1 | Does the many-role need a lazy table reference to avoid an import cycle? | Generated the CAP-2 fixture (`KEEP_SMOKE_DIR=1`) and traced imports: `meeting.repository` → `meeting_contact.entity` → `meeting.entity` / `contact.entity`. Nothing imports a repository back. | **No cycle.** A live handle (`table: meetingContacts`) is typed and needs no thunk — the same thing `integrationConfig.fkResolvers` already emits. |
-| M2 | Can `findByRole`'s `role` parameter be typed to the declared role names? | Spiked `role: RoleName<NonNullable<this['communicationConfig']>>` in the kept project. | **TS4105** — a protected member cannot be indexed on a type parameter; making the config public would break CAP-1's `protected override` hand-off for every capability. `role: string`, validated at runtime with a named error. |
+| M2 | Can `findByRole`'s `role` parameter be typed to the declared role names? | Spiked `role: RoleName<NonNullable<this['communicationConfig']>>` in the kept project, config `protected`. Re-measured after M5 made the config public: `role: RoleOf<this>` on the mixin and its surface interface, with `@ts-expect-error` probes on the repository and through a generated-shape service forwarder. | First: **TS4105** (a protected member cannot be indexed on a type parameter). After M5: **works** — `Parameters<MeetingRepository['findByRole']>` resolves `this` to the concrete repository, so the forwarder is typed too. Adopted; the smoke's `tsc` leg now pins it (Found #8). |
 | M3 | Do `exists(...)` and `unionAll` over the widened `tableRef` compile inside a mixin against drizzle 1.0.0-rc.4? | Same spike, `tsc --noEmit` in the kept vendored project. | **Clean.** |
 | M4 | What does the registry do with an app pattern named like a library one? | Read `src/patterns/registry.ts`: `getPattern()` checks `APP_PATTERNS` first; `loadAppPatterns()` checks duplicates only within `APP_PATTERNS`. | **Silent shadow**, as CAP-2 recorded. |
+| M5 | Can a runtime-shipped mixin return its anonymous class (`as TBase & typeof Mixin`, the CAP-1 idiom)? | `bun run typecheck` (`declaration: true` over `runtime/**`). | **TS4094** ×31 — declaration emit cannot name the inherited `protected` members (`table`, `scopeAnd`, …). Consumer-authored mixins compile without declarations and never hit it. See Found #1. |
 
 ## Design
 
@@ -69,17 +70,19 @@ mode by the existing `rewriteSharedImport` path — the same route `WithAnalytic
 ### 2. The emitted configs — resolved, not copied
 
 CAP-1's config hand-off renders the author's `config:` block verbatim. Both CAP-3 capabilities need codegen to
-*resolve* names to tables and columns, so the clean-lite-ps prompt gains one resolver per library capability
-(`resolveCapabilityConfigs` in `src/roles/capability-config.ts` — dependency-free like `derive.ts`, so the prompt
-can import it). Output lands in the existing `capabilityMixins[].config` slot, plus a list of table imports the
-repository template emits. A value that is a table handle is marked so `renderPatternConfigLiteral` writes it as an
-identifier rather than a string.
+*resolve* names to tables and columns, so the clean-lite-ps prompt gains `resolveLibraryCapabilityConfig(cap, ctx)`
+(`templates/entity/new/clean-lite-ps/prompt-extension.js`, exported for tests), keyed on the two CAP-2 name
+constants. It lives in the prompt, not in `src/roles`, because its inputs are the prompt's own locals
+(`clpBelongsTo`, the module folder, `pluralize`). Output replaces the `capabilityMixins[].config` slot, and the tables
+it references become `capabilityConfigImports`, which the repository template emits. A table handle is marked
+`identifierRef(name)` (`{ $identifier }`) so `renderPatternConfigLiteral` writes it bare. An app capability's config
+is still copied verbatim.
 
 **`Communication`** — from `clpBelongsTo.filter(r => r.role)` (one-roles; the column is that entry's `camelField`,
 so the FK derivation stays CAP-2's) plus `definition.roles` for many-roles:
 
 ```ts
-protected override readonly communicationConfig = {
+override readonly communicationConfig = {
   roles: {
     host:      { cardinality: 'one',  target: 'contact', column: 'hostContactId' },
     about:     { cardinality: 'one',  target: 'account', column: 'aboutAccountId' },
@@ -97,35 +100,41 @@ computed relative to the repository's own folder so a `context:`-nested entity s
 `relationships:`; it must name a `has_many`, whose `target` and `foreign_key` give the member table and column:
 
 ```ts
-protected override readonly actorConfig = {
+override readonly actorConfig = {
   kind: 'group',
   members: { table: contacts, foreignKey: 'accountId' },
 } as const;
 ```
 
 Both are **generation errors** when wrong (the ADR-041 §4 posture): `Actor` without a `config:` block, a config the
-schema rejects, or `members:` naming something that is not a `has_many`. The schema rules are also reported by
-`validatePatternComposition` (it already safe-parses every `configSchema`); the `members:` → `has_many` rule is
-per-entity, so it goes there too.
+schema rejects, or `members:` naming something that is not a `has_many`. `validatePatternComposition` reports the
+same at validation time: the schema rules through its existing `configSchema` parse (`pattern_config_invalid`), and
+the `members:` rule as `actor_members_not_has_many`.
+
+Every capability config, library or app, is emitted **`override readonly`** (public) — see Found #1.
 
 ### 3. `WithCommunication`
 
 ```ts
-export function WithCommunication<TBase extends RepositoryCtor>(Base: TBase) {
-  abstract class CommunicationMixin extends Base {
-    protected readonly communicationConfig?: CommunicationConfig;
-    findByRole(role: string, actorId: string): Promise<Array<EntityOf<TBase>>>;
-    participants(id: string): Promise<Participant[]>;
-    protected rolePredicate(role: string, actorId: string): SQL;
-  }
+export type RoleOf<TRepo> = /* keys of TRepo's communicationConfig.roles, else string */;
+export interface CommunicationCapability<TEntity> {
+  readonly communicationConfig?: CommunicationConfig;
+  findByRole(role: RoleOf<this>, actorId: string): Promise<TEntity[]>;
+  participants(id: string): Promise<Participant[]>;
 }
+export function WithCommunication<TBase extends RepositoryCtor>(
+  Base: TBase,
+): TBase & CapabilityCtor<CommunicationCapability<EntityOf<TBase>>>;
 ```
 
-- **`findByRole`** — `this.baseQuery(this.rolePredicate(role, actorId))`. A one-role is `eq(col, actorId)`; a
+- **`findByRole`** — `role` is `RoleOf<this>`, the keys of the generated `communicationConfig.roles` (a typo is a
+  compile error on the repository and through the service forwarder; `string` where the config is not narrowed).
+  Body: `this.baseQuery(this.rolePredicate(role, actorId))`. A one-role is `eq(col, actorId)`; a
   many-role is `EXISTS (SELECT 1 FROM <junction> WHERE <junction>.<self> = <this>.id AND <junction>.<target> =
   actorId)`. One statement, the repository's own scope around it. An undeclared role throws, naming the repository
   and the declared roles.
-- **`participants(id)`** → `Array<{ role: string; target: string; id: string }>`, **ids only**, one `UNION ALL`:
+- **`participants(id)`** → `Array<{ role: string; target: string; id: string }>`, **ids only**, one `UNION ALL`
+  (every selected field aliased — Found #2):
   a one-role branch reads the FK from this table under `scopeAnd` (null FKs skipped); a many-role branch reads the
   junction `INNER JOIN` this table under `scopeAnd`. So a row the caller's scope cannot see contributes nothing from
   any branch. Hydration is **out of scope**: role targets are different entities, and REL-2's typed includes are the
@@ -176,7 +185,7 @@ forwarder.
 ### 8. Integration
 
 A new scaffold suite (`test/scaffold/tests/communication-actor.test.ts`) on the scaffold's precedent — test repos
-extending the **real runtime** bases with the config shape codegen emits (the smoke proves the generated literal
+extending the **real runtime** bases (imported by path — Found #4) with the config shape codegen emits (the smoke proves the generated literal
 type-checks against the mixin; this proves the SQL). Tables `cap_contacts`, `cap_accounts`, `cap_meetings`,
 `cap_meeting_contacts` in `test/scaffold/schema.ts`; the meeting repo is `userTracking` + `scopeEnforcement: 'strict'`
 over the `Activity` spine:
@@ -185,8 +194,14 @@ over the `Activity` spine:
 - `findByRole('host', contactId)` returns the meeting (one-role);
 - `participants(meetingId)` returns host, about and both attendees;
 - under a **second** `withUserScope`, all three return nothing (I3);
-- an undeclared role throws;
+- an undeclared role throws, and a `strict` repository with no ambient scope throws rather than reading unscoped;
+- an unset one-role contributes nothing to `participants`;
 - `memberPredicate`: group → the account containing the contact; individual → identity.
+
+Unit coverage: `actor-communication-mixins.spec.ts` renders `memberPredicate`'s SQL with `toSQL()` (correlated,
+one statement) and pins the error paths; `prompt-extension.test.ts` pins both resolved configs, the context-nested
+junction import, the identifier rendering and the three generation errors; `registry.test.ts` pins the
+library-name rule; `validate-composition.test.ts` the `members:` rule.
 
 ### 9. ADR-041.1
 
@@ -196,7 +211,7 @@ first library consumers; the resolved-config hand-off; the shadowing rule; the `
 
 ## Out of scope
 
-- Typed role-name parameters (M2), hydration in `participants` (REL-2), a `Group`→`Individual` expansion predicate
+- Hydration in `participants` (REL-2), a `Group`→`Individual` expansion predicate
   over the member table (see §4).
 - Authoring `Activity` as a capability (ADR-041 §5).
 - `to_shape`, selector catalog, shape registry; `Activity` subject semantics; the `clean` pipeline (#602).
@@ -210,12 +225,86 @@ first library consumers; the resolved-config hand-off; the shadowing rule; the `
 | The junction naming rule is restated in the resolver | a junction rename breaks the import | The smoke's `tsc` leg compiles the import in both modes; the rule has no YAML override (CAP-2 §4). |
 | A library pattern name now collides with a project's own | load error on upgrade | Intended (I7). The message names the library pattern. |
 
-## Acceptance
+## Found during implementation
 
-- `bun run typecheck && bun run build && bun run test` · `just test-all` · `just test-integration` ·
-  `just test-post-publish` (runtime base-classes change) · `just test-smoke-junction-clean` stays exactly 118.
-- No new `any` beyond the mixin idiom, no `as unknown as`, no filter, no `.skip`.
+1. **Runtime mixins cannot use CAP-1's return idiom (TS4094).** `return Mixin as TBase & typeof Mixin` works for a
+   consumer mixin (compiled without declarations) and fails for one in `runtime/` (compiled with `declaration: true`):
+   the emitted type would have to name the base's inherited `protected` members. Library mixins now annotate
+   `TBase & CapabilityCtor<Surface>` — `CapabilityCtor` is new in `capability-mixin.ts`, next to `RepositoryCtor`,
+   with the same mandated `any[]` rest parameter. An interface has no `protected`, so a library mixin's config
+   property is **public**, and the repository template now emits every capability config as `override readonly`
+   instead of `protected override readonly`. A public override also fills a consumer mixin's `protected`
+   declaration (the smoke's `WithGroup` still declares it `protected` and still compiles). One side effect worth
+   knowing: `rolePredicate` became `private`, because a `protected` helper cannot be part of the surface.
+2. **`UNION ALL` needs aliased raw fields.** The first `participants` passed `tsc` and failed at runtime in
+   the integration suite: *"You tried to reference "role" field from a subquery, which is a raw SQL field, but it
+   doesn't have an alias declared"*. Every branch field is now `.as('role' | 'target' | 'id')`. Only the Postgres
+   round-trip could catch this, so that suite is required, not optional.
+3. **The CLI process loaded app patterns before the library.** `pattern-globs.ts` imported only the registry. The
+   library-name rule (and CAP-2's roles pre-flight, now that `Actor` is a library pattern) needs the library
+   registered first. `loadAppPatternsForCli` imports the library barrel. The capability smoke proves it end to end:
+   an app `Actor` must be refused with the new message.
+4. **The scaffold's `@shared/base-classes/base-repository` is a stub.** It resolves scaffold-first to a hand-written
+   stub with a drifted contract (its header, #603) that has no `col` / `scopeAnd`. The new suite imports the runtime
+   classes by path. The existing suites are unaffected.
+5. **Four test files re-seeded the library registry by hand**, listing six patterns each. That would have silently
+   dropped `Actor` / `Communication` for every later test file in the Bun process. `LIBRARY_PATTERN_DEFINITIONS`
+   (library barrel, exported from the package) is now the one list, and the barrel registers from it.
+6. **The roles-test stubs are gone.** `validate-roles.test.ts` registered fake `Actor` / `Communication`; it now uses
+   the library.
+7. **#624 needed nothing.** The package leg's named expectation matched unchanged. The new repository import of the
+   junction's *entity* module resolves in package mode, because the entity file has no `@shared/*` import.
+8. **Typed role names became reachable.** M2's TS4105 was a consequence of the config being `protected`; once Found
+   #1 made it public, `role: RoleOf<this>` works on the repository and through the forwarder. It is pinned by
+   `test/smoke/fixtures/capability/consumer/checks/roles.check.ts`, compiled by both `tsc` legs: its
+   `@ts-expect-error` probes fail the smoke (TS2578) if the parameter ever widens back to `string`.
+
+## Acceptance — all met
+
+Output from the runs made **after the last code edit** (charter I9); the table below is the only edit made after
+them.
+
+GATE_TABLE_PLACEHOLDER
+
+- **No filter, no `.skip`, no new expectation.** The #624 expectation is untouched and still matches, present and
+  sole.
+- **New `any`s:** one, `CapabilityCtor`'s rest parameter in `capability-mixin.ts` — the TS2545-mandated mixin idiom,
+  identical to `RepositoryCtor`'s, with the same `eslint-disable` line. The scaffold suite keeps the scaffold's
+  `let repo: any` precedent for the three repositories declared inside `beforeAll`; everything else in it is typed.
+  **No `as unknown as`.**
 
 ## What downstream must know
 
-_Filled in at implementation._
+**Using the capabilities.** `patterns: [<spine>, Communication]` + `roles:`; `patterns: [Actor]` +
+`config: { Actor: { kind: individual } }` or `{ kind: group, members: <has_many name> }` — the config is required.
+The names are the CAP-2 constants; an app pattern can no longer reuse them (or any library name).
+
+**What the repository and service get.**
+- `Communication`: `findByRole(role: RoleOf<this>, actorId)` → entity rows; `participants(id)` →
+  `{ role, target, id }[]` (ids only). Both are forwarded on the service. `role` is typed to the declared role
+  names (Found #8); at runtime an unknown role still throws, naming the declared roles.
+- `Actor`: `memberPredicate(actorId): SQL` over the actor's own table. It is **not** forwarded. Use it inside that
+  repository's own reads (`list({ where })`).
+- All of them read through `baseQuery()` / `scopeAnd()`. The member hop in `memberPredicate` tests the FK only (see
+  Risks).
+
+**Emitted shape.** `communicationConfig` / `actorConfig` are `override readonly … as const` on the repository, with
+**live table handles** imported from the junction / member entity module. `resolveLibraryCapabilityConfig` in the
+clean-lite-ps prompt is where both are built; `identifierRef()` marks a bare identifier for
+`renderPatternConfigLiteral`. **Every** capability config is now public `override readonly` (Found #1).
+
+**Writing a runtime mixin.** Annotate `TBase & CapabilityCtor<Surface>` with an exported `Surface` interface. The
+CAP-1 `as TBase & typeof Mixin` idiom is fine for consumer mixins only (Found #1). Alias every raw `sql` field
+that crosses a set operation (Found #2).
+
+**For REL-1 / REL-2 (#625, epic #580).** `participants` is deliberately ids-only; hydration is the include tree's.
+A many-role's edge (`via` junction, `self`/`target` columns) is in `communicationConfig`, but the manifest must
+still derive it from `roles:` (I1), not from this emitted config. Per-hop scope for `memberPredicate`'s member hop
+belongs there too.
+
+**Registry.** `LIBRARY_PATTERN_DEFINITIONS` is the library list; a test that resets the registry re-seeds from it.
+The CLI registers the library before app patterns (`pattern-globs.ts`).
+
+## Open questions
+
+None.

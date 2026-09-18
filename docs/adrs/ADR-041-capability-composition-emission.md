@@ -172,3 +172,14 @@ the two spine-base and method-collision cases **fail** generation. It is in `jus
 `IntegratedEntityRepository`, and silently ignored both `Activity`'s methods and its `config:` block (which is read
 under the *spine's* name). It is now a generation-time error. Any entity in that shape needs one of the two authored
 as a capability — which is what §5's migration scope always implied.
+
+## Revision note — 2026-09-17 (CAP-3, #595)
+
+Revision note #6 above ("no library capability ships yet") no longer holds. The first library capabilities are
+`Actor` and `Communication`, recorded in **ADR-041.1**, which also amends two points of this ADR:
+
+- **§6's config hand-off:** a library capability's config is *resolved* at generation (tables and columns looked up
+  from `roles:` / `has_many`), not copied. Every capability config is now emitted `override readonly` (public)
+  because a runtime-shipped mixin must declare its surface with an interface (TS4094 under declaration emit).
+- **Registry:** a name is unique across library and app patterns. An app pattern can no longer shadow a library
+  pattern.
