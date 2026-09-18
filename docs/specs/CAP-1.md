@@ -1,7 +1,7 @@
 # CAP-1 — `kind: 'capability'` + composed-base emission (ADR-041 implementation)
 
-**Status:** Draft
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #593 · **Epic:** #582 · **Project:** #578
 **Depends on:** DRZ-2 (#584), REL-0 (#603) · **Blocks:** CAP-2 (#594), CAP-3 (#595)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · PLAN §6.2 ·
@@ -58,8 +58,10 @@ ADR-041's spike *modelled* the bases; these measurements use them.
 | **M7** | Generic method signatures survive | ✅ `members()` on a `BaseRepository<Contact, typeof contacts>` chain returns `Contact[]`; on `IntegratedEntityRepository<Deal, typeof deals, …>` it returns `Deal[]`. No collapse to `any`. |
 | **M8** | A service forwarder can be typed from the repository method | ✅ `m(...args: Parameters<R['m']>): ReturnType<R['m']>` type-checks and forwards. Emitted **non-`async`** so a sync capability method forwards too (`async` + a non-`Promise` return type is TS1064). |
 
-Probe: `.cap1-probe/` (untracked, deleted before commit; reproduced from §M1–M8 in one file if it needs re-measuring
-on an RC move). These extend DRZ-2's A-checklist — see §"A-checklist additions".
+The probe was a scratch file inside the repo, deleted before commit; §M1–M8 reproduce it. The *shipped* form of the
+same measurement is `runtime/base-classes/capability-mixin.ts` plus `just test-smoke-capability`, which compiles the
+three-capability fixture against the real bases on every CI run — so a future RC or TS bump that breaks M1–M8 fails a
+gate rather than needing a re-probe. These extend DRZ-2's A-checklist — see §"A-checklist additions".
 
 ## Design
 
@@ -179,8 +181,9 @@ export type TableOf<TBase extends RepositoryCtor> =
   RepositoryOf<TBase> extends BaseRepository<infer _TEntity, infer TTable> ? TTable : PgTable;
 ```
 
-Two `any`s, both measured as unavoidable (§M2, §M3) and both already present in the shipped `WithAnalytics`
-precedent; one `eslint-disable` line, as there. No `as unknown as`. A capability mixin is then:
+Three `any` occurrences across two declarations — the mixin rest parameter (twice) and the entity slot — each
+measured as unavoidable (§M2, §M3) and each the same idiom the shipped `WithAnalytics` carries; two
+`eslint-disable-next-line` comments. No `as unknown as`. A capability mixin is then:
 
 ```ts
 export function WithX<TBase extends RepositoryCtor>(Base: TBase) {
@@ -306,14 +309,88 @@ capability-vs-`queries:` method collision must each fail `entity new` with a non
   speculative (ADR-041 §5's own posture).
 - Anything in the frontend emitter, the relations manifest, or CGP-358b service composition.
 
-## Risks
+## Found during implementation
+
+1. **M1 is the finding that matters, and it is good news.** The design was written expecting to have to work around
+   TypeScript's mixin/`protected` limitation. It does not apply: `this.col(...)`, `this.baseQuery(...)` and the rest
+   of the post-REL-0 `protected` surface resolve inside `abstract class M extends TBase`. CAP-3's `WithActor` /
+   `WithCommunication` can therefore build a scoped predicate through the repository's own `scopeAnd()` choke point
+   (charter I3) instead of taking a scope argument or casting `this`.
+
+2. **`EntityOf` had to widen, and the failure was invisible until a *generated* class existed.** The first version
+   returned `never` on a non-match and passed every direct test of the mixin itself; it fails only where a class
+   extends the mixin, because the checker instantiates the base type parameter as `any` (§M4, TS2417). A spike that
+   only writes mixins — as ADR-041's did — cannot see this. It is the concrete reason the fixture has to compile
+   *generated* code, not model it.
+
+3. **The spine expression moved from the template into JS, and that is what makes "no capability ⇒ no diff"
+   checkable.** `repository.ejs.t` had the two forms (two-argument inline, four-argument multi-line) as EJS branches.
+   Building both in `prompt-extension.js` means one place asserts the byte-identical strings, and the unit test can
+   assert them directly. Evidence it held: the junction snapshots and the baseline are unmoved by this PR.
+
+4. **A capability's `config:` block goes inside the `entity:` block**, next to `pattern:` — `config` is not a
+   top-level key (`EntityDefinitionSchema`), and the first draft of the fixtures put it at the root and was rejected
+   by the schema. The locals builder reads both shapes; the schema accepts one.
+
+5. **`VENDORED_RUNTIME_FILES` needed the new contract.** A vendored consumer's capability mixin imports
+   `@shared/base-classes/capability-mixin`, which resolves only if `project init` vendors it. Caught by the vendored
+   leg of the new smoke, which is precisely why both legs exist.
+
+6. **Three existing unit tests asserted the behaviour ADR-041 deletes** and were rewritten, not deleted: the two
+   `patterns[0]`-wins cases in `prompt-extension.test.ts` and the `Activity + Integrated` composition block in
+   `validate-composition.test.ts` now pin the hard error. Two further cases (implied-behaviour dedup, opaque
+   method-name conflicts) had fixtures that happened to use *two* domain patterns; they were re-based on one spine
+   plus one capability, which is the shape those rules live in now.
+
+7. **`src/patterns/compose.ts` is the fourth `src/` module the templates import, and the manifest is hand-maintained.**
+   `just test-post-publish` would have caught a missing entry, but it is not in `just test-all` — so the PR adds
+   `src/__tests__/templates/template-src-imports.test.ts`, which walks the template → `src/` import graph
+   transitively and asserts the `files` globs cover every module reached. Verified to bite: removing the new entry
+   fails it. (JSDoc `import('…')` type references are stripped first — they are erased and never loaded.)
+
+8. **`PLAN.md` / `PROJECT.md` were deliberately not edited here**, for REL-0's reason: the checkpoint-1 revisions are
+   in unmerged PR #606 and this branch carries the pre-checkpoint copies. PLAN §6.4's proposed CAP-3 fixture
+   (`patterns: [Integrated, Activity, Communication]`) is now a hard error and needs revising once #606 lands — it is
+   called out in "What downstream must know" and in the epic #582 log entry.
+
+## Acceptance — all met
+
+Output from the run made **after the last edit** (charter I9).
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | **exit 0** |
+| `just test-all` | **exit 0** — typecheck · unit **3225 pass / 0 fail** · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · **smoke-capability (vendored + package)** · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
+| `just test-integration` | **exit 0** — 64 pass · 2 skip (pre-existing `test.skip` in `bridge-e2e.test.ts`) · 0 fail |
+| `just test-smoke` | **exit 0** — run separately because `runtime/base-classes/**` changed (charter I9) |
+| `just test-post-publish` | **exit 0** — tarball contract + full consumer workflow from the tarball; proves `src/patterns/compose.ts` actually ships |
+| `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, still exactly **118**; not repaired, not filtered |
+
+- **No snapshot moved.** The baseline (`clean` pipeline) and all 10 junction snapshots are byte-identical: an entity
+  that declares no capability emits exactly what it emitted before.
+- **No filters, no carve-outs, no new gate outside CI.** `just test-smoke-capability` is in `just test-all`, which is
+  what the CI `test-all` job runs. Its `tsc` output is scoped through the shared `test/smoke/_consumer-errors.ts`, by
+  location only.
+- **New `any`s: three occurrences in two type declarations**, all in `runtime/base-classes/capability-mixin.ts` —
+  the mixin rest parameter (`(...args: any[])`, twice) and the entity slot of the constructor constraint. Each is
+  measured as unavoidable (§M2, §M3: `never[]` is TS2545, `unknown`/`never` in the entity slot rejects a concrete
+  repository) and each is the idiom the shipped `WithAnalytics` already carries; two `eslint-disable-next-line`
+  comments, no blanket disable. No `as unknown as` introduced anywhere, and none in generated code.
+
+## Risks — outcome
+
+- **A throw inside the hygen subprocess does not fail the CLI.** Did not happen — both negative gates exit non-zero
+  and the message reaches stderr. Now permanently gated by the smoke rather than assumed.
+- **The type-only import cycle breaks.** Did not happen; it compiles in both runtime modes.
+- **A capability mixin cannot reach a `protected` base member.** Did not happen (§M1) — this was the risk that would
+  have forced a redesign.
 
 | Risk | Signal | Response |
 |---|---|---|
-| A throw inside the hygen subprocess does not fail the CLI | the negative smoke gate passes when it should fail | verified explicitly before the gate is written; if the subprocess swallows it, raise the error in the CLI path instead — do **not** weaken the gate |
-| The type-only import cycle (composed base ↔ repository) breaks under a consumer bundler | smoke `tsc` is green but a consumer runtime fails | the cycle is erased at emit (`import type`); if it ever isn't, move the two integration interfaces into the composed-base file |
-| `EntityOf`/`TableOf` break on a TS or drizzle bump | `tsc` errors inside a capability mixin | §M3/§M4 are the check; the A-checklist additions carry them forward |
-| A capability mixin needs a base member REL-0 made `protected` | a CAP-3 mixin fails TS2445 | measured working (§M1); if a specific member is unreachable, widen that member deliberately — do not cast `this` |
+| `EntityOf` / `TableOf` break on a TS or drizzle bump | `tsc` errors inside a capability mixin, or TS2417 on a generated composed base | A15–A17; `just test-smoke-capability` is the detector. Do **not** "fix" it by widening a capability method's return to `unknown` |
+| A capability's mixin omits a `configProperty` the entity configures | TS4114 in the generated repository | the mixin declares the property — that is the §4 contract; do not drop the `override` |
+| A capability vocabulary grows beyond a handful of names | `forwarderMethods` becomes a maintenance list | ADR-041 §3's stated trade: `forwarderMethods` is viable only for small, known vocabularies. A large one wants a different mechanism, not a longer list |
+| CAP-3 lands `Activity` as a capability and the two spine rules interact | a `[Integrated, Activity, Communication]` entity | decide in CAP-3 whether `Activity` becomes a capability or the fixture takes a different spine; the error message already names the choice |
 
 ## A-checklist additions (carry into the next RC / TS bump)
 
@@ -321,13 +398,61 @@ capability-vs-`queries:` method collision must each fail `entity new` with a non
 |---|---|---|---|
 | A15 | TS mixin rules | a mixin base constraint must be `(...args: any[])` (TS2545), and the static-side check instantiates the base type parameter as `any` | `runtime/base-classes/capability-mixin.ts` §M2/§M4 |
 | A16 | `protected` access through a generic mixin base | allowed — `this.col` / `this.baseQuery` resolve inside `abstract class M extends TBase` | every capability mixin (CAP-3) |
-| A17 | instantiation expressions in an `extends` clause | `Cap(Spine<TEntity, typeof table>)` resolves | `repositoryExtendsClause`, `<Entity>ComposedBase` |
+| A17 | instantiation expressions in an `extends` clause | `Cap(Spine<TEntity, typeof table>)` resolves, inline and inside a generated `abstract class … extends` | `repositoryExtendsClause`, `<Entity>ComposedBase` |
 
 ## What downstream must know
 
-*(filled in at implementation; see the merged version)*
+**How a capability is declared.** `kind: 'capability'` on a pattern definition — library
+(`src/patterns/library/*.pattern.ts`, via `defineCapabilityPattern()`) or app
+(`src/patterns/*.pattern.ts`, the default glob). Fields: `mixin` + `mixinImport` (both or neither),
+`forwarderMethods`, `configProperty`, `configSchema`, `columns`, `impliedBehaviors`. It must **not** carry
+`repositoryClass` / `serviceClass` — registration rejects that. Contribution minimum: columns, a mixin, or
+forwarder methods.
+
+**How a capability mixin is written.** Against `runtime/base-classes/capability-mixin.ts` —
+`RepositoryCtor`, `EntityOf<TBase>`, `TableOf<TBase>`, exported from the base-classes barrel and vendored to
+`@shared/base-classes/capability-mixin`. The shape that works is in that module's doc comment. Do not narrow
+`RepositoryCtor`, and do not make `EntityOf` fall back to `never` (§M3/§M4). A mixin **may** use the repository's
+`protected` surface — `this.table`, `this.tableRef`, `this.col()`, `this.baseQuery()`, `this.scopeAnd()` (§M1) — and
+it **must** get its tenant scope that way rather than taking a parameter (charter I3).
+
+**How config reaches the mixin.** The entity's `config: { <Capability>: {...} }` block (inside the `entity:` block)
+is emitted on the generated **repository** as `protected override readonly <configProperty> = {...} as const`,
+defaulting to `<camelCase(name)>Config`. The mixin declares that property — optional (`?`) or abstract — and reads it
+at runtime. Nothing is emitted on the service, and nothing is passed to a constructor.
+
+**How forwarders are emitted on the service.** One non-`async` method per `forwarderMethods` entry:
+`m(...args: Parameters<<Entity>Repository['m']>): ReturnType<<Entity>Repository['m']> { return this.repository.m(...args); }`.
+The capability declares only the **name**; the signature comes from the repository method the mixin contributed. A
+forwarder naming a method the composed repository does not have is a consumer `tsc` error (TS2339), by design.
+
+**Spine rules CAP-2 / CAP-3 must design against.**
+- Exactly one declared domain pattern may contribute a repository/service class. Two is a **hard error** at
+  generation *and* at validation (`pattern_multiple_spines`).
+- **`patterns: [Integrated, Activity]` is now an error.** PLAN §6.4's proposed CAP-3 fixture
+  `patterns: [Integrated, Activity, Communication]` therefore does not generate. CAP-3 must either author `Activity`
+  as a capability (which ADR-041 §5 anticipated) or give the fixture a single spine. This is the one decision CAP-1
+  hands forward.
+- Position does not matter. `patterns: [Actor, Integrated]` and `[Integrated, Actor]` emit the same base; declaration
+  order controls only **mixin nesting** (rightmost outermost).
+
+**Collision rules.** `forwarderMethods` are checked against each other, the emitted `queries:` methods and the
+relationship forwarders, at generation time. A capability that wants to *replace* a generated method name cannot —
+rename one of them. Methods a capability does not declare stay invisible to codegen and surface as consumer compile
+errors.
+
+**Emission artifacts a later unit may need to touch.**
+- `<entity>.composed-base.ts` — new `@generated` file, `clpOutputPaths.composedBase`, emitted only at ≥2
+  capabilities. It is **not** in the module barrel (`index.ts`); add it there only if something outside the module
+  needs the type.
+- `repositoryExtendsClause` / `composedBaseExtendsClause` are built in `prompt-extension.js`, not in the template.
+  Any future change to the repository's type arguments (REL-2's typed includes, for instance) edits `spineTypeArgs`
+  in one place and both shapes follow.
+- `composePatterns()` / `detectMethodCollisions()` (`src/patterns/compose.ts`, exported from the package barrel) are
+  the single implementation of the spine rule. CAP-2's `roles:` validation ("`roles:` without `Communication`" and
+  vice versa) belongs next to it, not in a second partition of the pattern list.
 
 ## Open questions
 
-None new. ADR-041's open follow-up #3 ("how does ADR-031's `extends` chain interact with capability layering") is
-answered in §2: `extends` only eliminates a redundant spine candidate; capabilities never participate in it.
+None. ADR-041's open follow-up #3 is answered in §2 and in the ADR's revision note; follow-ups #1 and #2 belong to
+CAP-3 and are now unblocked.

@@ -22,8 +22,9 @@
  *     `EntityOf<any>` resolving to `never` makes every generated
  *     `class X extends WithY(...)` fail TS2417.
  *
- * The two `any`s below are exactly the two the shipped `WithAnalytics` mixin
- * already carries (`with-analytics.ts`); they are the mixin idiom, not erasure —
+ * The `any`s below are the same two the shipped `WithAnalytics` mixin already
+ * carries — the rest-parameter and the erased instance slot; they are the mixin
+ * idiom, not erasure —
  * `EntityOf<TBase>` recovers the concrete entity type, so a capability method's
  * signature survives composition (CAP-1 §M7).
  *
