@@ -37,14 +37,17 @@ export interface ProjectLayout {
 	providers: string;
 	/** `paths.generated` — codegen-owned cross-entity barrels. */
 	generated: string;
-	/** `paths.subsystems` — subsystem runtime root. */
-	subsystems: string;
-	/** `paths.modules_dir` — `auth-integrations` vendor target. */
+	/** `paths.modules_dir` — the clean-lite-ps entity module tree (target of
+	 *  `@modules/*`) and the `auth-integrations` vendor root. */
 	modules: string;
 	/** `paths.orchestration_src` — orchestration emission root. */
 	orchestration: string;
 	/** `<backend_src>/shared` — the vendored runtime root, target of `@shared/*`. */
 	shared: string;
+	/** `<backend_src>/shared/subsystems` — the subsystem runtime root. No key of
+	 *  its own: `@shared/subsystems/<name>` is the only import that reaches it
+	 *  (PATH-1, #645). */
+	subsystems: string;
 	/** `<backend_src>/shared/database/database.module.ts`. */
 	databaseModule: string;
 	/** `<backend_src>/app.module.ts`. */
@@ -82,10 +85,10 @@ export function projectLayout(
 		jobsDir: at(paths.jobs_dir),
 		providers: at(paths.providers),
 		generated: at(paths.generated),
-		subsystems: at(paths.subsystems),
 		modules: at(paths.modules_dir),
 		orchestration: at(paths.orchestration_src),
 		shared,
+		subsystems: path.join(shared, 'subsystems'),
 		databaseModule: path.join(shared, 'database', 'database.module.ts'),
 		appModule: path.join(backendSrc, 'app.module.ts'),
 		mainTs: path.join(backendSrc, 'main.ts'),
@@ -127,12 +130,14 @@ export function tsconfigAliases(layout: ProjectLayout, tsconfigDir: string = lay
 
 /**
  * The tsconfig `include` globs for the generated backend: `<backend_src>`, plus
- * `<generated>` when it lies outside it.
+ * `<generated>` and `<modules_dir>` when they lie outside it.
  */
 export function tsconfigIncludes(layout: ProjectLayout, tsconfigDir: string = layout.root): string[] {
 	const glob = (dir: string) => `${path.relative(tsconfigDir, dir).split(path.sep).join('/') || '.'}/**/*`;
 	const includes = [glob(layout.backendSrc)];
-	const rel = path.relative(layout.backendSrc, layout.generated);
-	if (rel.startsWith('..') || path.isAbsolute(rel)) includes.push(glob(layout.generated));
+	for (const dir of [layout.generated, layout.modules]) {
+		const rel = path.relative(layout.backendSrc, dir);
+		if (rel.startsWith('..') || path.isAbsolute(rel)) includes.push(glob(dir));
+	}
 	return includes;
 }

@@ -6,7 +6,7 @@
  *     `src/patterns/library/*` barrel imports execute. Consumers never
  *     list these in `codegen.config.yaml patterns:`.
  *   - `APP_PATTERNS`     — populated by `loadAppPatterns()` from a
- *     consumer-supplied glob set (default `src/patterns/*.pattern.ts`).
+ *     consumer-supplied glob set (default `<backend_src>/patterns/*.pattern.ts`).
  *   - `ORCHESTRATION_APP_PATTERNS` — populated by the same loader,
  *     routed by `kind: 'orchestration'` (ADR-032). No library
  *     orchestration patterns ship in Phase 3-1.

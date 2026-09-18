@@ -22,7 +22,7 @@ import {
 	CONFIG_PATH_ENV,
 } from '../../config/project-config';
 import {
-	CodegenConfigSchema,
+	CodegenConfigObjectSchema,
 	SUBSYSTEM_NAMES,
 } from '../../schema/codegen-config.schema';
 import { SUBSYSTEMS } from '../../cli/shared/subsystem-detect';
@@ -214,7 +214,7 @@ describe('tables kept in step with the schema', () => {
 	});
 
 	it('the top-level schema is strict', () => {
-		expect(CodegenConfigSchema._def.unknownKeys).toBe('strict');
+		expect(CodegenConfigObjectSchema._def.unknownKeys).toBe('strict');
 	});
 });
 

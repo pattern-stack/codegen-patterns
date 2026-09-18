@@ -93,9 +93,9 @@ function workerSkipValue(exists: boolean): string {
  * - `jobs.multi_tenant` defaults to `false` when the block is absent (first
  *   install case). JOB-8 flips this to an opt-in toggle end-to-end.
  * - `worker_mode` mirrors the spec default (`embedded`).
- * - `schemaPath` resolves from `paths.subsystems` (or
- *   `<paths.backend_src>/shared/subsystems` when unset; see
- *   `project-layout.ts`), then appends `jobs/job-orchestration.schema.ts`
+ * - `schemaPath` resolves from the subsystems root
+ *   (`<paths.backend_src>/shared/subsystems`; see `project-layout.ts`),
+ *   then appends `jobs/job-orchestration.schema.ts`
  *   — matching exactly the
  *   location `copyRuntime` would have emitted before we skipped that file.
  */

@@ -32,9 +32,12 @@ export type RuntimeMode = (typeof VALID_RUNTIMES)[number];
 
 /**
  * `default` — the ADR-037 consumer layout (`src/`, `entities/`,
- * `src/generated/`). `custom` — every path non-default (PATH-0, #566/#612):
- * `codegen.config.yaml` is written BEFORE `project init`, which must honour it,
- * and one `subsystem install` runs against it.
+ * `src/generated/`, `src/modules/`). `custom` — every path non-default
+ * (PATH-0, #566/#612; PATH-1, #645): `codegen.config.yaml` is written BEFORE
+ * `project init`, which must honour it; the events + jobs installs run against
+ * it; the clean-lite-ps module tree is `paths.modules_dir`; and an app
+ * capability pattern under `<backend_src>/patterns/` is found by the derived
+ * default `patterns:` glob (the config declares none).
  */
 export const VALID_LAYOUTS = ['default', 'custom'] as const;
 export type Layout = (typeof VALID_LAYOUTS)[number];
@@ -44,16 +47,89 @@ export interface LayoutPaths {
   backendSrc: string;
   generated: string;
   entities: string;
+  /** `paths.modules_dir` — the clean-lite-ps module tree. */
+  modules: string;
 }
 
 export const LAYOUT_PATHS: Record<Layout, LayoutPaths> = {
-  default: { backendSrc: 'src', generated: 'src/generated', entities: 'entities' },
+  default: { backendSrc: 'src', generated: 'src/generated', entities: 'entities', modules: 'src/modules' },
   custom: {
     backendSrc: 'apps/backend/src',
     generated: 'apps/backend/src/codegen',
     entities: 'definitions/entities',
+    modules: 'apps/backend/src/domain',
   },
 };
+
+/**
+ * The custom layout's app capability pattern (PATH-1, #645): the pattern file
+ * sits under `<backend_src>/patterns/` and the config declares no `patterns:`,
+ * so only the derived default glob finds it. Its mixin sits in the module tree
+ * and is imported through `@modules/*`, which points at `paths.modules_dir`.
+ */
+export const CUSTOM_LAYOUT_APP_PATTERN = {
+  entity: 'ledger',
+  plural: 'ledgers',
+  mixin: 'WithAudited',
+} as const;
+
+function authorAppPattern(tmpDir: string, runtime: RuntimeMode, paths: LayoutPaths): void {
+  const baseClasses =
+    runtime === 'vendored' ? '@shared/base-classes' : '@pattern-stack/codegen/runtime/base-classes';
+  const patternsDir = path.join(tmpDir, paths.backendSrc, 'patterns');
+  const mixinDir = path.join(tmpDir, paths.modules, 'capabilities');
+  fs.mkdirSync(patternsDir, { recursive: true });
+  fs.mkdirSync(mixinDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(patternsDir, 'audited.pattern.ts'),
+    [
+      '// App capability pattern — PATH-1 custom-layout smoke fixture.',
+      'export const AuditedPattern = {',
+      "  name: 'Audited',",
+      "  kind: 'capability' as const,",
+      `  mixin: '${CUSTOM_LAYOUT_APP_PATTERN.mixin}',`,
+      "  mixinImport: '@modules/capabilities/with-audited',",
+      "  forwarderMethods: ['auditCount'],",
+      "  description: 'Audit counter — PATH-1 smoke fixture',",
+      '};',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(
+    path.join(mixinDir, 'with-audited.ts'),
+    [
+      `import type { RepositoryCtor } from '${baseClasses}/capability-mixin';`,
+      '',
+      `export function ${CUSTOM_LAYOUT_APP_PATTERN.mixin}<TBase extends RepositoryCtor>(Base: TBase) {`,
+      '  abstract class AuditedMixin extends Base {',
+      '    async auditCount(): Promise<number> {',
+      '      return this.count();',
+      '    }',
+      '  }',
+      '  return AuditedMixin as TBase & typeof AuditedMixin;',
+      '}',
+      '',
+    ].join('\n'),
+  );
+}
+
+const LEDGER_YAML = [
+  '# PATH-1 custom-layout smoke fixture: an entity composing the app capability.',
+  'entity:',
+  `  name: ${CUSTOM_LAYOUT_APP_PATTERN.entity}`,
+  `  plural: ${CUSTOM_LAYOUT_APP_PATTERN.plural}`,
+  `  table: ${CUSTOM_LAYOUT_APP_PATTERN.plural}`,
+  '  patterns: [Base, Audited]',
+  '',
+  'fields:',
+  '  title:',
+  '    type: string',
+  '    required: true',
+  '',
+  'behaviors:',
+  '  - timestamps',
+  '',
+].join('\n');
 
 export interface ScenarioMeta {
   junctionName: string;
@@ -129,6 +205,8 @@ function writeCodegenConfig(
     `  backend_src: ${paths.backendSrc}`,
     `  entities: ${paths.entities}`,
     `  generated: ${paths.generated}`,
+    // Written only when non-default: the default layout's config is unchanged.
+    ...(paths.modules === LAYOUT_PATHS.default.modules ? [] : [`  modules_dir: ${paths.modules}`]),
   ].join('\n') + '\n';
   fs.writeFileSync(configPath, content);
 }
@@ -183,6 +261,8 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     // jobs — #566's repro (`worker.ts` + the `main.ts` hook under backend_src).
     run(`bun ${CLI_PATH} subsystem install events`);
     run(`bun ${CLI_PATH} subsystem install jobs`);
+    authorAppPattern(tmpDir, runtime, paths);
+    log(`authored app pattern Audited under ${paths.backendSrc}/patterns (mixin under ${paths.modules})`);
   }
 
   // 4. copy entity fixtures
@@ -195,6 +275,10 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     if (!f.endsWith('.yaml') && !f.endsWith('.yml')) continue;
     fs.copyFileSync(path.join(entityFixturesDir, f), path.join(entitiesDir, f));
     log(`copied entity fixture: ${f}`);
+  }
+  if (layout === 'custom') {
+    fs.writeFileSync(path.join(entitiesDir, `${CUSTOM_LAYOUT_APP_PATTERN.entity}.yaml`), LEDGER_YAML);
+    log(`wrote entity fixture: ${CUSTOM_LAYOUT_APP_PATTERN.entity}.yaml (patterns: [Base, Audited])`);
   }
 
   // 5. codegen entity new --all

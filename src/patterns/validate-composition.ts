@@ -128,7 +128,7 @@ export function validatePatternComposition(
 				message:
 					`Unknown pattern '${patternName}'. ` +
 					`Library patterns are pre-registered; app patterns are loaded from ` +
-					`globs in codegen.config.yaml 'patterns:' (default 'src/patterns/*.pattern.ts').`,
+					`globs in codegen.config.yaml 'patterns:' (default '<backend_src>/patterns/*.pattern.ts').`,
 			});
 			continue;
 		}

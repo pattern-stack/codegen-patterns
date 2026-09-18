@@ -129,6 +129,20 @@ describe('junction endpoints resolve from their own YAML', () => {
 		expect(l.parentServicePathRight).toBe('app/src/application/persons/person.service.ts');
 	});
 
+	it('clean-lite-ps output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
+		const l = await junctionLocals(
+			['crew', 'person'],
+			ENTITIES,
+			`${CLEAN_LITE_PS}paths:\n  backend_src: apps/api/src\n  modules_dir: apps/api/src/domain\n`,
+		);
+		expect(l.outputPaths.entity).toBe('apps/api/src/domain/crew_people/crew_person.entity.ts');
+		expect(l.outputPaths.module).toBe('apps/api/src/domain/crew_people/crew_people.module.ts');
+		expect(l.parentServicePathLeft).toBe('apps/api/src/domain/org/crews/crew.service.ts');
+		expect(l.parentServicePathRight).toBe('apps/api/src/domain/persons/person.service.ts');
+		// Imports are relative between folders of the one tree — unchanged.
+		expect(l.leftEntityImportFromJunction).toBe('../org/crews/crew.entity');
+	});
+
 	it('an endpoint with no entity YAML is a named error, not a guess', async () => {
 		await expect(junctionLocals(['crew', 'ghost'], ENTITIES)).rejects.toThrow(
 			/endpoint 'ghost' has no entity YAML — no YAML under \S+\/entities declares `entity: \{ name: ghost \}` \(expected e\.g\. \S+\/entities\/ghost\.yaml\)/,

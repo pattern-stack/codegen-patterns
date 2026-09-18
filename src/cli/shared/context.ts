@@ -57,8 +57,8 @@ function countEntityYamls(entitiesDir: string | null): number {
 const KNOWN_SUBSYSTEMS = ['events', 'jobs', 'cache', 'storage'] as const;
 
 /**
- * Cheap subsystem detection — scans the subsystems root (`paths.subsystems`,
- * default `<backend_src>/shared/subsystems`) for a protocol file. The richer
+ * Cheap subsystem detection — scans the subsystems root
+ * (`<backend_src>/shared/subsystems`) for a protocol file. The richer
  * {@link ../shared/subsystem-detect.ts} implementation returns full metadata;
  * loadContext() only needs names for the summary.
  */

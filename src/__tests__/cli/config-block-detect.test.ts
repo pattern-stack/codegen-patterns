@@ -28,7 +28,7 @@ describe('detectConfigBlock — missing', () => {
 	});
 
 	test('YAML without the subsystem key', () => {
-		const src = 'paths:\n  subsystems: src/shared/subsystems\n';
+		const src = 'paths:\n  backend_src: src\n';
 		expect(detectConfigBlock(src, 'jobs')).toBe('missing');
 		expect(detectConfigBlock(src, 'events')).toBe('missing');
 	});
@@ -78,7 +78,7 @@ describe('detectConfigBlock — present (various shapes)', () => {
 	test('events alongside other top-level keys', () => {
 		const src = [
 			'paths:',
-			'  subsystems: src/shared/subsystems',
+			'  backend_src: src',
 			'events:',
 			'  backend: drizzle',
 			'  multi_tenant: true',
@@ -123,7 +123,7 @@ describe('stripConfigBlock', () => {
 	test('removes the named block and leaves siblings intact', () => {
 		const src = [
 			'paths:',
-			'  subsystems: src/shared/subsystems',
+			'  backend_src: src',
 			'jobs:',
 			'  backend: drizzle',
 			'  multi_tenant: false',
@@ -137,11 +137,11 @@ describe('stripConfigBlock', () => {
 		expect(detectConfigBlock(stripped, 'events')).toBe('present');
 		// paths sibling survives
 		expect(stripped).toContain('paths:');
-		expect(stripped).toContain('subsystems: src/shared/subsystems');
+		expect(stripped).toContain('backend_src: src');
 	});
 
 	test('is a no-op when the block is already absent', () => {
-		const src = 'paths:\n  subsystems: src/shared/subsystems\n';
+		const src = 'paths:\n  backend_src: src\n';
 		const stripped = stripConfigBlock(src, 'jobs');
 		expect(detectConfigBlock(stripped, 'jobs')).toBe('missing');
 		expect(stripped).toContain('paths:');

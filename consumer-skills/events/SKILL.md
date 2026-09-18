@@ -11,7 +11,7 @@ user-invocable: false
 
 The events subsystem is the transactional event backbone vendored into your app by `codegen subsystem install events`. You declare each event type as a YAML file; codegen generates a typed `TypedEventBus` facade, a discriminated union of every event, Zod payload schemas, and a runtime registry. You publish events inside the same database transaction as your domain write (the outbox pattern); a background loop drains them and delivers to subscribers.
 
-The vendored code lives under `<paths.subsystems>/events/` (default `src/shared/subsystems/events/`), imported as `@shared/subsystems/events`. The generated files live under `<paths.subsystems>/events/generated/` and are reproduced from `events/*.yaml` on every `codegen` run — do not hand-edit them.
+The vendored code lives under `<backend_src>/shared/subsystems/events/` (default `src/shared/subsystems/events/`), imported as `@shared/subsystems/events`. The generated files live under `<backend_src>/shared/subsystems/events/generated/` and are reproduced from `events/*.yaml` on every `codegen` run — do not hand-edit them.
 
 ## Mental model
 
@@ -67,5 +67,5 @@ To run a durable background job *when an event fires*, that is the Event-to-Job 
 - Do not collapse the three directions into one pool — lane isolation is the point.
 - Do not couple two services with a direct method call when the second merely reacts to a state change in the first. Publish a `change` event from the first, subscribe (or bridge a job) from the second.
 - Do not do heavy I/O directly in a subscriber. Enqueue a job instead.
-- Do not hand-edit anything under `<paths.subsystems>/events/generated/`. It is regenerated from `events/*.yaml`.
+- Do not hand-edit anything under `<backend_src>/shared/subsystems/events/generated/`. It is regenerated from `events/*.yaml`.
 - Do not route events through user pools (`batch`, `interactive`) — events only ever drain through the reserved `events_*` lanes.

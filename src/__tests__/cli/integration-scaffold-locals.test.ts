@@ -5,7 +5,6 @@
  *   - default locals on first install (no `integration:` block in config)
  *   - multi_tenant: true honored
  *   - multi_tenant non-boolean values do not leak through
- *   - custom `paths.subsystems` flows into schemaPath
  *   - localsToHygenArgs serialises all flags
  *   - localsToHygenArgs emits absolute paths
  *   - NO generatedKeepPath — integration ships no codegen artifacts
@@ -59,7 +58,7 @@ describe('resolveIntegrationScaffoldLocals', () => {
 		}
 	});
 
-	test('paths.backend_src derives default subsystems root when paths.subsystems is unset', () => {
+	test('the subsystems root derives from paths.backend_src (<backend_src>/shared/subsystems)', () => {
 		const locals = resolveIntegrationScaffoldLocals({
 			cwd: CWD,
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,38 +69,6 @@ describe('resolveIntegrationScaffoldLocals', () => {
 			path.resolve(
 				CWD,
 				'packages/api/src/shared/subsystems/integration/integration-audit.schema.ts',
-			),
-		);
-	});
-
-	test('paths.subsystems takes precedence over paths.backend_src', () => {
-		const locals = resolveIntegrationScaffoldLocals({
-			cwd: CWD,
-			config: {
-				paths: {
-					backend_src: 'packages/api/src',
-					subsystems: 'custom/subsystems',
-				},
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			} as any,
-			fileExists: () => false,
-		});
-		expect(locals.schemaPath).toBe(
-			path.resolve(CWD, 'custom/subsystems/integration/integration-audit.schema.ts'),
-		);
-	});
-
-	test('custom paths.subsystems flows into schemaPath', () => {
-		const locals = resolveIntegrationScaffoldLocals({
-			cwd: CWD,
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			config: { paths: { subsystems: 'packages/api/src/subsystems' } } as any,
-			fileExists: () => false,
-		});
-		expect(locals.schemaPath).toBe(
-			path.resolve(
-				CWD,
-				'packages/api/src/subsystems/integration/integration-audit.schema.ts',
 			),
 		);
 	});

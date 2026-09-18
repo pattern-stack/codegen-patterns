@@ -365,15 +365,15 @@ export class ${aggregatorClass} {}
  * and how to import them from the assembly file.
  *
  * Mirrors `buildCleanLitePsLocals` (templates/.../clean-lite-ps/prompt-extension.js):
- *   - repo:   `<backend_src>/modules[/<context>]/<plural>/<entity>.repository.ts`
- *   - module: `<backend_src>/modules[/<context>]/<plural>/<plural>.module.ts`
+ *   - repo:   `<modules_dir>[/<context>]/<plural>/<entity>.repository.ts`
+ *   - module: `<modules_dir>[/<context>]/<plural>/<plural>.module.ts`
  *
  * The assembly file lives at
  *   `<backend_src>/integrations/<surface>/modules/<provider>/<entity>-integration.module.ts`.
  *
  * Import strategy (matches swe-brain's proven `@modules/...` form): prefer a
  * tsconfig **path alias** whose target dir contains the entity's module folder
- * (e.g. `@modules` → `<backend_src>/modules` ⇒ `@modules/meetings/meeting.repository`);
+ * (e.g. `@modules` → `<modules_dir>` ⇒ `@modules/meetings/meeting.repository`);
  * fall back to a correct **relative path** when no alias matches.
  */
 export interface EntityModuleLocation {
@@ -411,8 +411,12 @@ export interface ResolveEntityModuleImportsInput {
   surface: string;
   /** Provider slug (`google`) — locates the assembly file. */
   provider: string;
-  /** Absolute `<backend_src>` root on disk (e.g. `/abs/project/src`). */
+  /** Absolute `<backend_src>` root on disk (e.g. `/abs/project/src`) — locates
+   *  the assembly under `<backend_src>/integrations`. */
   backendSrcAbs: string;
+  /** Absolute `paths.modules_dir` on disk (e.g. `/abs/project/src/modules`) —
+   *  the clean-lite-ps module tree the entity's repo + module live in (PATH-1). */
+  modulesAbs: string;
   /** tsconfig path aliases: aliasKey → absolute target dir. May be empty. */
   aliases: Record<string, string>;
 }
@@ -473,17 +477,17 @@ export function resolveEntityModuleImports(
   const repoClass = `${entityClass}Repository`;
   const moduleClass = `${pluralPascalCase(input.entityPlural)}Module`;
 
-  // clean-lite-ps module-folder base: `<backend_src>/modules[/<context>]/<plural>`.
+  // clean-lite-ps module-folder base: `<modules_dir>[/<context>]/<plural>`.
   const moduleGroupSegs = input.context
-    ? ["modules", input.context, input.entityPlural]
-    : ["modules", input.entityPlural];
+    ? [input.context, input.entityPlural]
+    : [input.entityPlural];
   const repoFileAbs = resolve(
-    input.backendSrcAbs,
+    input.modulesAbs,
     ...moduleGroupSegs,
     `${input.entityName}.repository.ts`,
   );
   const moduleFileAbs = resolve(
-    input.backendSrcAbs,
+    input.modulesAbs,
     ...moduleGroupSegs,
     `${input.entityPlural}.module.ts`,
   );

@@ -157,6 +157,7 @@ describe('#528 — emitted sink base compiles against the swe-brain layout', () 
     entities: [ENTITY],
     outputRoot: outRoot,
     backendSrcAbs: srcAbs,
+    modulesAbs: join(srcAbs, 'modules'),
     aliases: {}, // relative-path layout (the failing swe-brain case)
     mode: 'package',
   });
