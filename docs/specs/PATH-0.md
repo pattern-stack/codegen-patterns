@@ -203,4 +203,12 @@ then runs `project init --with-tsconfig`, `subsystem install events`, `entity ne
 
 ## Gates
 
-Filled in after the last edit.
+Run after the last code edit (commit `d9096c5`). The later commits change only docs, the spec and the CHANGELOG.
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass (baseline runner, `clean` pipeline, byte-identical) |
+| `just test-all` | pass: 3451 unit tests, 0 fail (new: `config/path-defaults.test.ts`; census extended); baseline; every smoke, including the new `junction --layout custom` legs in both runtimes; junction snapshots unchanged (10 pass); integration-emit (56 pass); smoke-integration |
+| `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair in `bridge-e2e.test.ts`) |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (110 × TS2307 + 8 × TS7006, #602) |
+| `just test-post-publish` | pass: the shipped templates resolve `project-config.ts` (`DEFAULT_CODEGEN_CONFIG`) from the tarball |
