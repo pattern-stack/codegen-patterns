@@ -58,18 +58,21 @@ function junctionFkColumn(entityName: string): string {
  * declaration — `required: true` ⇒ NOT NULL ⇒ not optional, `nullable: true` ⇒
  * optional — else optional.
  *
- * One deliberate divergence from the template, forced by the schema rather than
- * chosen: `FieldDefinitionSchema` defaults BOTH `required` and `nullable` to
- * `false` (`entity-definition.schema.ts:172-173`), so after parsing, a field
- * that declared neither is indistinguishable from one that declared
- * `nullable: false`. The template sees the raw YAML and treats "declared
- * neither" as nullable. This function therefore keys off `required` alone, which
- * matches the template for every declaration except `{ required: false,
- * nullable: false }` — there the column is NOT NULL but the include's type stays
- * `T | null`. Over-permissive, never a wrong row. The underlying default is a
- * pre-existing inconsistency between the TS and hygen halves of the generator
- * (`ParsedField` collapses the same way) and is filed as #613, not
- * papered over here.
+ * The field branch keys off `required` alone, and deliberately does NOT read
+ * `field.nullable`, for two compounding reasons:
+ *
+ *  - `FieldDefinitionSchema` defaults BOTH flags to `false`
+ *    (`entity-definition.schema.ts:172-173`), so after parsing, a field that
+ *    declared neither is indistinguishable from one that declared
+ *    `nullable: false`. The template sees the raw YAML and treats "declared
+ *    neither" as nullable (#613).
+ *  - `nullable: true` can never coexist with `required: true` — the schema
+ *    rejects that pair outright — so reading it could only ever agree with
+ *    `required`.
+ *
+ * The result matches the template for every declaration except
+ * `{ required: false, nullable: false }`, where the column is NOT NULL but the
+ * include's type stays `T | null`. Over-permissive, never a wrong row.
  */
 function belongsToOptional(
 	def: EntityDefinition,
@@ -79,7 +82,6 @@ function belongsToOptional(
 	if (relNullable !== undefined && relNullable !== null) return relNullable;
 	const field = def.fields[fk];
 	if (!field) return true;
-	if (field.nullable === true) return true;
 	return field.required !== true;
 }
 

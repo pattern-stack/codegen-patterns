@@ -128,11 +128,10 @@ Per-relationship rules — the whole of the semantics:
 | `has_one`, `target: T`, `foreign_key: f` | `r.one.<T.plural>({ from: r.<self.plural>.id, to: r.<T.plural>.<camel(f)>, optional: true })` — inverse side, so the row may be absent |
 | junction `between: [A, B]` | on `A`: `r.many.<B.plural>({ from: r.<A.plural>.id.through(r.<J>.<camel(A)>Id), to: r.<B.plural>.id.through(r.<J>.<camel(B)>Id) })`, and the mirror on `B`; on the junction table itself, `r.one.<A.plural>` / `r.one.<B.plural>` from its two FK columns |
 
-- **`optional`** (belongs_to only; the other three are fixed): explicit relationship `nullable:` wins → else the FK
-  column's own `fields:` declaration (`nullable: true` ⇒ optional; `required: true` ⇒ not optional) → else `true`.
-  This targets `processBelongsTo`'s precedence (`prompt-extension.js:468-482`) on the same YAML, with **one
-  divergence forced by the schema** — see Found #1. It affects the include's result type only; getting it wrong is a
-  type inaccuracy, not a wrong row.
+- **`optional`** (belongs_to only; the other three are fixed): an explicit relationship `nullable:` wins, else the FK
+  column's `required:` (`true` ⇒ not optional), else `true`. This targets `processBelongsTo`'s precedence
+  (`prompt-extension.js:468-482`) on the same YAML, with **one divergence forced by the schema** — see Found #1. It
+  affects the include's result type only; getting it wrong is a type inaccuracy, not a wrong row.
 - **Relation keys are the YAML relationship names**, camelCased (`parent_account` → `parentAccount`). This replaces
   the v1 derivation, which used the *target entity name* for non-self relations and ignored the author's key
   (`prompt-extension.js:492-505`). I1: the author named the edge; the manifest uses that name. I7: the old derivation
@@ -274,11 +273,15 @@ first draft of `belongsToOptional` read `field.nullable` and duly emitted `optio
 `parent_account_id: { required: false }` — a column that is in fact nullable. The golden snapshot caught it on its
 first generation.
 
-What shipped keys off `required` (with an explicit `nullable: true` still winning), which matches the template for
-every declaration except `{ required: false, nullable: false }` — there the column is NOT NULL while the include's
-type stays `T | null`. Over-permissive, never a wrong row. The underlying default is a pre-existing inconsistency
-between the generator's TS and hygen halves (`ParsedField` collapses the same way), filed as #613 rather than
-changed under this PR.
+What shipped keys off `required` alone. Building the unit-test fixtures through `EntityDefinitionSchema.parse`
+rather than hand-shaping objects then showed why `field.nullable` should not be read at all: the schema rejects
+`{ required: true, nullable: true }` outright, so `nullable: true` implies `required !== true` and the branch reading
+it was unreachable. It was deleted, and a test now pins the schema fact that makes it so.
+
+The result matches the template for every declaration except `{ required: false, nullable: false }` — there the column
+is NOT NULL while the include's type stays `T | null`. Over-permissive, never a wrong row. The underlying default is a
+pre-existing inconsistency between the generator's TS and hygen halves (`ParsedField` collapses the same way), filed
+as #613 rather than changed under this PR.
 
 ### Found #2 — the DRZ-1 guard's file-wide rule had to be narrowed, not just widened
 
@@ -323,7 +326,7 @@ Output from the run made after the last code edit.
 |---|---|
 | `bun run typecheck` | exit 0 |
 | `bun run build` | exit 0 |
-| `bun run test` / `just test-unit` | **3204 pass**, 3 skip, 0 fail |
+| `bun run test` / `just test-unit` | **3205 pass**, 3 skip, 0 fail |
 | `just test-all` | exit 0 — typecheck + unit + baseline + `test-smoke` + `-subsystems` (vendored + package) + `-relationship` + `-junction` + `-junction-cross-domain` + `test-junction` + `test-integration-emit` + `test-smoke-integration`, every one PASS |
 | `just test-integration` (Docker) | **68 pass**, 2 skip, 0 fail — including the 4 new round-trip tests |
 | `just test-smoke` (the `runtime/**` gate, I9) | PASS, inside `test-all` |

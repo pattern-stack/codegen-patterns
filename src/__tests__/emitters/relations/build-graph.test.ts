@@ -17,8 +17,14 @@ import {
 	type EntityRegistryEntry,
 	type RelationsEmitContext,
 } from '../../../emitters/relations/types';
-import type { EntityDefinition } from '../../../schema/entity-definition.schema';
-import type { JunctionDefinition } from '../../../schema/junction-definition.schema';
+import {
+	EntityDefinitionSchema,
+	type EntityDefinition,
+} from '../../../schema/entity-definition.schema';
+import {
+	JunctionDefinitionSchema,
+	type JunctionDefinition,
+} from '../../../schema/junction-definition.schema';
 
 // ---------------------------------------------------------------------------
 // Fixture builders — plain objects, no fs.
@@ -37,19 +43,23 @@ function registryEntry(name: string, plural: string): EntityRegistryEntry {
 	};
 }
 
+/**
+ * Build a definition through the REAL schema, so a fixture that the parser
+ * would reject cannot quietly pass here — and so the defaults these tests
+ * depend on (notably `required`/`nullable` ⇒ `false`) are the parser's, not a
+ * hand-written approximation.
+ */
 function definition(
 	name: string,
 	plural: string,
 	fields: Record<string, unknown> = {},
 	relationships: Record<string, unknown> = {},
 ): EntityDefinition {
-	return {
+	return EntityDefinitionSchema.parse({
 		entity: { name, plural, table: plural },
 		fields,
 		relationships,
-		behaviors: [],
-		api: true,
-	} as unknown as EntityDefinition;
+	});
 }
 
 function context(
@@ -63,14 +73,16 @@ function context(
 	};
 }
 
-function junction(left: string, right: string): JunctionDefinition {
-	return {
+function junction(
+	left: string,
+	right: string,
+	exposeOnParent: { left: boolean; right: boolean } = { left: true, right: true },
+): JunctionDefinition {
+	return JunctionDefinitionSchema.parse({
 		pattern: 'Junction',
 		between: [left, right],
-		temporal: true,
-		sourced: true,
-		expose_on_parent: { left: true, right: true },
-	} as unknown as JunctionDefinition;
+		expose_on_parent: exposeOnParent,
+	});
 }
 
 /** Find one edge by (table, key). */
@@ -116,8 +128,15 @@ describe('buildRelationGraph — belongs_to', () => {
 		expect(edge(withFk({ required: false }), 'contacts', 'account').optional).toBe(true);
 	});
 
-	it('an explicitly nullable FK column is optional even when required', () => {
-		expect(edge(withFk({ required: true, nullable: true }), 'contacts', 'account').optional).toBe(true);
+	it('an explicitly nullable FK column is optional', () => {
+		expect(edge(withFk({ nullable: true }), 'contacts', 'account').optional).toBe(true);
+	});
+
+	it('the schema forbids required + nullable, so the two can never disagree', () => {
+		// Why `belongsToOptional` reads `required` alone and never `nullable`.
+		expect(() => withFk({ required: true, nullable: true })).toThrow(
+			/cannot both be set/,
+		);
 	});
 
 	it('an explicit relationship `nullable:` beats the field declaration', () => {
@@ -272,12 +291,7 @@ describe('buildRelationGraph — junctions', () => {
 				{ entry: registryEntry('opportunity', 'opportunities'), def: definition('opportunity', 'opportunities') },
 				{ entry: registryEntry('contact', 'contacts'), def: definition('contact', 'contacts') },
 			],
-			[
-				{
-					...junction('opportunity', 'contact'),
-					expose_on_parent: { left: false, right: false },
-				} as JunctionDefinition,
-			],
+			[junction('opportunity', 'contact', { left: false, right: false })],
 		);
 		expect(edge(closed, 'opportunities', 'contacts').from.through).toEqual({
 			table: 'opportunityContacts',
