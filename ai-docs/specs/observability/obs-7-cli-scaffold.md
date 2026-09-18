@@ -4,6 +4,11 @@
 **Status:** Draft
 **Last Updated:** 2026-04-23
 
+> *Revision 2026-09-18 (CLI-1, #668):* the `templates/subsystem/observability/` hygen action (`main-hook.ejs.t` +
+> `prompt.js`) and `observability-scaffold-locals.ts` are deleted. The `app.module.ts` TODO contradicted the generated
+> `SUBSYSTEM_MODULES`, which composes `ObservabilityModule.forRoot()`; the install is the config block alone
+> (`docs/specs/CLI-1.md`).
+
 ## Overview
 
 Wires the `observability` combiner subsystem (shipped in OBS-5) into the `codegen subsystem install observability` CLI path. Consumers get `ObservabilityModule.forRoot()` registration guidance + an `observability:` config block in `codegen.config.yaml` via `just gen-subsystem observability`. Scaffold is lean — mirrors bridge — no schema, no worker, no `generated/` directory.

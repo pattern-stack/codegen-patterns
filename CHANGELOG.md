@@ -172,6 +172,13 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   them — and exits 1. A stale `<type>.job.generated.ts` is left and named.
   `orchestration validate --json`'s `loaderErrors[]` entries are now
   `{ file, message }`.
+- **`subsystem install observability` no longer edits `app.module.ts`**
+  (#668). The vendored install appended a `TODO: Register ObservabilityModule`
+  comment block telling you to add `ObservabilityModule.forRoot()` to
+  `AppModule.imports` — which the regenerated `SUBSYSTEM_MODULES` already
+  composes, so following it registered the module twice (and contradicted the
+  install's own printed hint). The install is now the `observability:` config
+  block alone.
 - **`subsystem install` tells you what is true about `AppModule`** (#663). The
   vendored install printed `Register JobsModule.forRoot({ backend: 'drizzle' })
   in your app.module.ts` for jobs / events / bridge / integration — a module

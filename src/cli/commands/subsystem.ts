@@ -41,10 +41,6 @@ import {
 	resolveBridgeScaffoldLocals,
 } from '../shared/bridge-scaffold-locals.js';
 import {
-	localsToHygenArgs as observabilityLocalsToHygenArgs,
-	resolveObservabilityScaffoldLocals,
-} from '../shared/observability-scaffold-locals.js';
-import {
 	localsToHygenArgs as authLocalsToHygenArgs,
 	resolveAuthScaffoldLocals,
 } from '../shared/auth-scaffold-locals.js';
@@ -508,13 +504,12 @@ export class SubsystemInstallCommand extends Command {
 				: null;
 
 		// OBS-7: observability combiner subsystem — injects the placeholder
-		// `observability:` config block and appends a TODO comment block to
-		// `app.module.ts` directing the human to wire
-		// `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration.
-		// No schema, no worker, no generated/ dir (ADR-025).
+		// `observability:` config block, nothing else. No schema, no worker, no
+		// generated/ dir (ADR-025), and no `app.module.ts` edit: the generated
+		// `SUBSYSTEM_MODULES` composes `ObservabilityModule.forRoot()` (#668).
 		const observabilityScaffold =
 			desc.name === 'observability'
-				? runObservabilityScaffold(ctx.cwd, ctx.config, {
+				? runObservabilityScaffold(ctx.cwd, {
 						dryRun: this.dryRun,
 						json: isJsonMode(),
 						forceConfig: this.forceConfig,
@@ -725,11 +720,11 @@ export class SubsystemInstallCommand extends Command {
 		if (observabilityScaffold) {
 			if (observabilityScaffold.ok) {
 				printSuccess(
-					`observability scaffold applied (config block, app.module.ts hint)`,
+					`observability scaffold applied (config block)`,
 				);
 			} else {
 				printWarning(
-					`observability scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${observabilityScaffold.error ?? 'unknown error'}`,
+					`observability config block failed — runtime files were written; re-run after fixing: ${observabilityScaffold.error ?? 'unknown error'}`,
 				);
 			}
 		}
@@ -1706,22 +1701,16 @@ interface ObservabilityScaffoldOutcome {
 
 function runObservabilityScaffold(
 	cwd: string,
-	config: Context['config'],
 	opts: { dryRun: boolean; json: boolean; forceConfig: boolean },
 ): ObservabilityScaffoldOutcome {
-	const locals = resolveObservabilityScaffoldLocals({
-		cwd,
-		config,
-		fileExists: (p: string) => fs.existsSync(p),
-	});
-
-	// Planned files: the `observability:` config block + the TODO comment
-	// block appended to `app.module.ts`. No schema, no worker, no
-	// generated/ (combiner subsystem — ADR-025).
-	const planned: string[] = [locals.configPath, locals.appModulePath];
+	// The scaffold is the `observability:` config block alone (#668): no
+	// schema, no worker, no generated/ (combiner subsystem — ADR-025), and no
+	// hygen action — the barrel composes the module.
+	const configPath = path.resolve(cwd, 'codegen.config.yaml');
+	const planned: string[] = [configPath];
 
 	const configBlockOutcome = planConfigBlockAction(
-		locals.configPath,
+		configPath,
 		'observability',
 		opts.forceConfig,
 	);
@@ -1734,27 +1723,10 @@ function runObservabilityScaffold(
 		return { ok: true, planned, configBlockOutcome };
 	}
 
-	const result = invokeHygen({
-		generator: 'subsystem',
-		action: 'observability',
-		cwd,
-		args: observabilityLocalsToHygenArgs(locals),
-		inherit: !opts.json,
-	});
-
-	if (!result.ok) {
-		return {
-			ok: false,
-			planned,
-			error: result.stderr?.trim() || 'hygen exited non-zero',
-			configBlockOutcome,
-		};
-	}
-
 	const configResult = runConfigBlockAction({
 		cwd,
 		actionFolder: 'observability-config',
-		configPath: locals.configPath,
+		configPath,
 		subsystem: 'observability',
 		outcome: configBlockOutcome,
 		json: opts.json,
