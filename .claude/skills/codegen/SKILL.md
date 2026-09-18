@@ -234,8 +234,8 @@ runtime: package
 paths:
   backend_src: src
   entities: entities                # entity YAML directory; default entities/
-  generated: src/generated
-  events_dir: events              # default <cwd>/events
+  generated: src/generated        # default <backend_src>/generated
+  events_dir: events              # default events
   jobs_dir: definitions/jobs      # default
 generate:
   architecture: clean-lite-ps     # clean | clean-lite-ps — schema default is clean; init writes clean-lite-ps
@@ -246,8 +246,15 @@ auth:
   devAllowAnonymous: false        # strict block; localhost-only escape hatch
 ```
 
-Known gap: `init` and subsystem scaffolds still emit to root `src/` in places,
-ignoring `paths.backend_src` (#527, #566).
+Every `paths.*` key has ONE default, declared in `PathsConfigSchema` (PATH-0):
+`backend_src: src`, `entities`, `events_dir: events`, `jobs_dir`, `providers`,
+`frontend_src: apps/frontend/src`; `generated` / `subsystems` / `modules_dir` /
+`orchestration_src` derive from `backend_src`. No file ⇒ `DEFAULT_CODEGEN_CONFIG`.
+CLI code resolves directories through `projectLayout(cwd, config)`
+(`src/cli/shared/project-layout.ts`) and emitted relative imports through
+`importSpecifier(fromFile, toModule)` — never a `?? 'src'` literal (a test greps
+for it). `project init` and every `subsystem install` honour a config written
+before them (#566, #612).
 
 ## Entity families
 
