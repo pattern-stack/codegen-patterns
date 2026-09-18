@@ -34,31 +34,12 @@ import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import type { Hint, NounModule, PaneOutput } from '../noun-module.js';
 import { resolvePatternGlobs } from '../shared/pattern-globs.js';
+import { projectLayout } from '../shared/project-layout.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-
-/**
- * Resolve the orchestration emission root for `cwd`. Default mirrors
- * `BASE_PATHS.orchestrationSrc`: `${backend_src}/orchestration` falling back
- * to `app/backend/src/orchestration`. The CLI does NOT import paths.mjs
- * because mjs/ts module resolution differs in the bundle; we recompute
- * here from the same shape.
- */
-function resolveOrchestrationOutputRoot(ctx: Context): string {
-	const paths = ctx.config?.paths;
-	const explicit = paths?.orchestration_src;
-	if (typeof explicit === 'string' && explicit.length > 0) {
-		return path.resolve(ctx.cwd, explicit);
-	}
-	const backendSrc =
-		typeof paths?.backend_src === 'string' && paths.backend_src.length > 0
-			? paths.backend_src
-			: 'app/backend/src';
-	return path.resolve(ctx.cwd, backendSrc, 'orchestration');
-}
 
 /**
  * Reset the in-process registry and reload from disk. Necessary because
@@ -138,7 +119,7 @@ export class OrchestrationGenCommand extends Command {
 			return 1;
 		}
 
-		const outputRoot = resolveOrchestrationOutputRoot(ctx);
+		const outputRoot = projectLayout(ctx.cwd, ctx.config).orchestration;
 
 		try {
 			const result = generateOrchestrationModules({

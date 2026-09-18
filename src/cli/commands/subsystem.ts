@@ -51,7 +51,6 @@ import {
 	resolveAuthIntegrationsScaffoldLocals,
 } from '../shared/auth-integrations-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
-import { resolveGeneratedDir } from '../shared/barrel-generator.js';
 import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
 import {
@@ -66,10 +65,7 @@ import {
 } from '../shared/subsystem-detect.js';
 import { resolveRuntimeMode } from '../shared/runtime-import.js';
 import { ensureSubsystemInstalled } from '../shared/subsystems-install-config.js';
-import {
-	resolveSubsystemsRoot,
-	resolveSubsystemsRootFromConfig,
-} from '../shared/subsystems-path.js';
+import { projectLayout } from '../shared/project-layout.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -400,7 +396,7 @@ export class SubsystemInstallCommand extends Command {
 			return 0;
 		}
 
-		const targetRoot = resolveSubsystemsRoot(ctx, this.target);
+		const targetRoot = (this.target ? path.resolve(ctx.cwd, this.target) : projectLayout(ctx.cwd, ctx.config).subsystems);
 		const subsystemTarget = path.join(targetRoot, desc.name);
 		const source = subsystemSource(desc.name);
 
@@ -716,7 +712,7 @@ export class SubsystemInstallCommand extends Command {
 		// the next boot. Soft-fail — the barrel is opt-in; consumers who haven't
 		// wired it see no behavioral change.
 		try {
-			const generatedDir = resolveGeneratedDir(ctx);
+			const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 			await regenerateSubsystemBarrel({ ctx, generatedDir });
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -897,7 +893,7 @@ export class SubsystemInstallCommand extends Command {
 		let barrelEmitted: string[] = [];
 		let schemaEmitted: string[] = [];
 		try {
-			const generatedDir = resolveGeneratedDir(refreshed);
+			const generatedDir = projectLayout(refreshed.cwd, refreshed.config).generated;
 			const barrel = await regenerateSubsystemBarrel({ ctx: refreshed, generatedDir });
 			barrelEmitted = barrel.emitted;
 			const schema = await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir });
@@ -950,8 +946,10 @@ export class SubsystemInstallCommand extends Command {
 		if (jobsScaffold) {
 			if (jobsScaffold.ok) {
 				// Emitted the consumer-owned files even though no runtime was vendored.
+				const layout = projectLayout(ctx.cwd, ctx.config);
+				const rel = (abs: string) => path.relative(ctx.cwd, abs);
 				printSuccess(
-					`jobs scaffold applied (emitted src/worker.ts + src/main.ts hook; schema ships in the package).`,
+					`jobs scaffold applied (emitted ${rel(layout.workerTs)} + ${rel(layout.mainTs)} hook; schema ships in the package).`,
 				);
 			} else {
 				printWarning(
@@ -1124,7 +1122,7 @@ export class SubsystemInstallCommand extends Command {
 
 		printInfo('auth-integrations starter vendored.');
 		printInfo('Next steps:');
-		printInfo('  1. Run `cdp entity new connection` to scaffold the codegen layer (apps/api/src/modules/connections/connection.service) the adapters import.');
+		printInfo('  1. Run `cdp entity new connection` to scaffold the codegen layer (`<paths.modules_dir>/connections/connection.service`) the adapters import.');
 		printInfo('  2. Ensure AuthModule.forRoot(...) is registered in AppModule (run `cdp subsystem install auth` if not).');
 		printInfo('  3. Wire ConnectionsAuthModule into AppModule (see TODO appended to app.module.ts).');
 		return 0;
@@ -1997,7 +1995,7 @@ function runAuthIntegrationsScaffold(
 	// Vendor the adapters tree, rewriting the bare-package auth imports
 	// to relative paths that resolve against the consumer's vendored
 	// auth subsystem (see buildAuthImportRewriter).
-	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
+	const subsystemsRoot = projectLayout(cwd, config).subsystems;
 	const adapterCopy = copyTreeIdempotent(
 		adaptersSrc,
 		adaptersDest,
@@ -2269,7 +2267,7 @@ export class SubsystemRemoveCommand extends Command {
 		// removal itself.
 		let barrelRegenerated = false;
 		try {
-			const generatedDir = resolveGeneratedDir(ctx);
+			const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 			await regenerateSubsystemBarrel({ ctx, generatedDir });
 			barrelRegenerated = true;
 		} catch (err: unknown) {

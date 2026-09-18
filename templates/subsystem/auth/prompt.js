@@ -30,6 +30,7 @@
  */
 
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import { requiredPathArg } from "../../_shared/required-arg.mjs";
 
 export default {
   prompt: async ({ args }) => {
@@ -37,9 +38,8 @@ export default {
       appName: args.appName ?? "",
       configPath: args.configPath ?? "codegen.config.yaml",
       schemaPath:
-        args.schemaPath ??
-        "src/shared/subsystems/auth/auth-oauth-state.schema.ts",
-      appModulePath: args.appModulePath ?? "src/app.module.ts",
+        requiredPathArg(args, "schemaPath", "subsystem auth"),
+      appModulePath: requiredPathArg(args, "appModulePath", "subsystem auth"),
       envConfigPath: args.envConfigPath ?? ".env.config",
       redirectUriBase: args.redirectUriBase ?? "http://localhost:3000",
       tokenEncryptionKey: args.tokenEncryptionKey ?? "",

@@ -20,7 +20,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
+import { projectLayout } from './project-layout.js';
 
 export interface EventsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -52,7 +52,7 @@ export interface EventsScaffoldLocalsInput {
  *   YAML truthy surprises like `'yes'` / `1`.
  * - `schemaPath` resolves from `paths.subsystems` (or
  *   `<paths.backend_src>/shared/subsystems` when unset; see
- *   `subsystems-path.ts`), then appends `events/domain-events.schema.ts`
+ *   `project-layout.ts`), then appends `events/domain-events.schema.ts`
  *   — matching exactly the
  *   location `copyRuntime` would have emitted before we skipped that file.
  * - `generatedKeepPath` sits under the same subsystems root as
@@ -75,7 +75,7 @@ export function resolveEventsScaffoldLocals(
 
 	const eventsBlock = (config?.events ?? {}) as Record<string, unknown>;
 
-	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
+	const subsystemsRoot = projectLayout(cwd, config).subsystems;
 
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const schemaPath = path.resolve(

@@ -131,12 +131,12 @@ describe('createEntityLookup — the CLI walk and its guards', () => {
 });
 
 describe('projectEntityLookup — the CLI rule, cached per process', () => {
-	it('falls back to <cwd>/entities when the configured directory does not exist', () => {
+	it('reads only the configured directory — no fallback to <cwd>/entities (PATH-0)', () => {
 		const cwd = tmp();
 		fs.writeFileSync(path.join(cwd, 'codegen.config.yaml'), 'paths:\n  entities: stale/dir\n');
 		fs.mkdirSync(path.join(cwd, 'entities'));
 		fs.writeFileSync(path.join(cwd, 'entities', 'person.yaml'), 'entity:\n  name: person\n  plural: persons\n');
-		expect(projectEntityLookup(cwd)('person')?.plural).toBe('persons');
+		expect(projectEntityLookup(cwd)('person')?.plural).toBeUndefined();
 	});
 
 	it('finds codegen.config.yaml upward and honours paths.entities', () => {

@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-	entitiesDirCandidates,
+	entitiesDirPath,
 	findConfigUpward,
 	resolveEntitiesDir,
 } from '../../config/entities-dir';
@@ -23,31 +23,25 @@ afterEach(() => {
 	for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-describe('entitiesDirCandidates', () => {
-	it('paths.entities first, then <cwd>/entities', () => {
-		expect(entitiesDirCandidates('/p', { entities: 'a' })).toEqual(['/p/a', '/p/entities']);
-		expect(entitiesDirCandidates('/p', { entities: '' })).toEqual(['/p/entities']);
-		expect(entitiesDirCandidates('/p', null)).toEqual(['/p/entities']);
-		expect(entitiesDirCandidates('/p', { entities: 'entities' })).toEqual(['/p/entities']);
+describe('entitiesDirPath', () => {
+	it('the resolved paths.entities, against cwd — one value, no second candidate (PATH-0)', () => {
+		expect(entitiesDirPath('/p', { entities: 'a' })).toBe('/p/a');
+		expect(entitiesDirPath('/p', { entities: 'entities' })).toBe('/p/entities');
 	});
 });
 
 describe('resolveEntitiesDir', () => {
-	it('the first candidate that exists as a directory', () => {
+	it('the configured directory when it exists', () => {
 		const cwd = tmp();
 		fs.mkdirSync(path.join(cwd, 'defs'));
 		fs.mkdirSync(path.join(cwd, 'entities'));
 		expect(resolveEntitiesDir(cwd, { entities: 'defs' })).toBe(path.join(cwd, 'defs'));
 	});
 
-	it('a stale configured path falls back to <cwd>/entities', () => {
+	it('a stale configured path is null — no fallback to <cwd>/entities (PATH-0)', () => {
 		const cwd = tmp();
 		fs.mkdirSync(path.join(cwd, 'entities'));
-		expect(resolveEntitiesDir(cwd, { entities: 'gone' })).toBe(path.join(cwd, 'entities'));
-	});
-
-	it('null when nothing exists', () => {
-		expect(resolveEntitiesDir(tmp(), { entities: 'gone' })).toBeNull();
+		expect(resolveEntitiesDir(cwd, { entities: 'gone' })).toBeNull();
 	});
 });
 

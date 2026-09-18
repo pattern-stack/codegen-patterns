@@ -28,11 +28,13 @@ function coerceBool(raw) {
   return false;
 }
 
+import { requiredPathArg } from "../../_shared/required-arg.mjs";
+
 export default {
   prompt: async ({ args }) => {
     return {
       appName: args.appName ?? "",
-      appModulePath: args.appModulePath ?? "src/app.module.ts",
+      appModulePath: requiredPathArg(args, "appModulePath", "subsystem observability"),
       configPath: args.configPath ?? "codegen.config.yaml",
       bridgeMetricsEnabled: coerceBool(args.bridgeMetricsEnabled),
     };

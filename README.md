@@ -518,8 +518,11 @@ conventions with `codegen project scan`.
 
 The file is validated strictly on every command: an unknown or removed key
 (`paths.entitis`, the deleted `paths.entities_dir`) is an error naming the key,
-never a silently applied default. The full block list is in
-[docs/CONSUMER-SETUP.md](docs/CONSUMER-SETUP.md#codegenconfigyaml).
+never a silently applied default. Every `paths.*` key has one default, declared
+in the schema (`backend_src: src`; `generated`, `subsystems`, `modules_dir` and
+`orchestration_src` derive from `backend_src`), and `project init` / `subsystem
+install` honour a config written before them. The full block list and the
+defaults table are in [docs/CONSUMER-SETUP.md](docs/CONSUMER-SETUP.md#codegenconfigyaml).
 
 ## Using in Your Project
 

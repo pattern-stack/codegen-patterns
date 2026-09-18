@@ -28,7 +28,11 @@ import path from 'node:path';
 import { loadEntityRegistry } from '../../parser/entity-registry';
 import { loadEntities } from '../../parser/load-entities';
 import type { ParsedEntity } from '../../analyzer/types';
-import { FrontendConfigSchema } from '../../schema/codegen-config.schema';
+import {
+	FrontendConfigSchema,
+	GenerateConfigSchema,
+	ResolvedPathsSchema,
+} from '../../schema/codegen-config.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
 import { loadProvidersFromYaml } from '../../utils/yaml-loader';
 import type {
@@ -123,8 +127,8 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 		'frontendCollectionsAuth',
 		DEFAULT_FRONTEND_COLLECTIONS_AUTH,
 	);
-	const architecture =
-		config.generate?.architecture === 'clean-lite-ps' ? 'clean-lite-ps' : 'clean';
+	// The schema's default when absent — declared once (PATH-0, charter Q5).
+	const architecture = GenerateConfigSchema.parse(config.generate ?? {}).architecture;
 
 	return {
 		globalSyncMode: fe.sync.mode,
@@ -148,8 +152,7 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 
 /**
  * Load provider definitions for the catalog emission. Resolves the providers
- * dir the same way the Track D CLI step does (`paths.providers`, default
- * `definitions/providers`); a missing dir or zero loadable files ⇒ `[]` (no
+ * dir the same way the Track D CLI step does (`paths.providers`); a missing dir or zero loadable files ⇒ `[]` (no
  * catalog emitted). Load FAILURES are ignored here by design — the provider
  * codegen step owns reporting them; the catalog just emits from whatever
  * parses.
@@ -158,10 +161,8 @@ export function loadProviderCatalogInputs(
 	cwd: string,
 	config: FrontendConfigInput,
 ): ProviderCatalogInput[] {
-	const providersDir = path.resolve(
-		cwd,
-		config.paths?.providers ?? 'definitions/providers',
-	);
+	// `paths.providers`, its one default applied by the schema (PATH-0).
+	const providersDir = path.resolve(cwd, ResolvedPathsSchema.parse(config.paths ?? {}).providers);
 	if (!existsSync(providersDir) || !statSync(providersDir).isDirectory()) {
 		return [];
 	}
@@ -188,7 +189,7 @@ export function loadProviderCatalogInputs(
  * @param config  The loaded `codegen.config.yaml` (frontend block fully
  *                defaulted by the config loader).
  * @param opts.entitiesDir  The entities directory, already resolved by the
- *                caller (the CLI's `ctx.entitiesDir`, `src/config/entities-dir.ts`).
+ *                caller (the CLI's `projectLayout(...).entities`, `paths.entities`).
  *                Required: the emitter has no rule of its own (#634).
  * @returns `{ ctx, outDir }` ready for `emitFrontendSet`, or `{ skip }` when
  *          there are no entities to emit.

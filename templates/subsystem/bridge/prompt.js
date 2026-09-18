@@ -22,6 +22,8 @@ function coerceBool(raw) {
   return false;
 }
 
+import { requiredPathArg } from "../../_shared/required-arg.mjs";
+
 export default {
   prompt: async ({ args }) => {
     return {
@@ -29,8 +31,7 @@ export default {
       multiTenant: coerceBool(args.multiTenant),
       configPath: args.configPath ?? "codegen.config.yaml",
       generatedKeepPath:
-        args.generatedKeepPath ??
-        "shared/subsystems/bridge/generated/.gitkeep",
+        requiredPathArg(args, "generatedKeepPath", "subsystem bridge"),
     };
   },
 };

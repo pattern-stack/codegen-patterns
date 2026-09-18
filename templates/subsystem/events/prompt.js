@@ -17,6 +17,7 @@
  */
 
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import { requiredPathArg } from "../../_shared/required-arg.mjs";
 
 function coerceBool(raw) {
   if (raw === true) return true;
@@ -32,10 +33,9 @@ export default {
       multiTenant: coerceBool(args.multiTenant),
       configPath: args.configPath ?? "codegen.config.yaml",
       schemaPath:
-        args.schemaPath ?? "shared/subsystems/events/domain-events.schema.ts",
+        requiredPathArg(args, "schemaPath", "subsystem events"),
       generatedKeepPath:
-        args.generatedKeepPath ??
-        "shared/subsystems/events/generated/.gitkeep",
+        requiredPathArg(args, "generatedKeepPath", "subsystem events"),
       // @generated DO-NOT-EDIT banner — the events subsystem schema is
       // force-overwritten on every `subsystem install`.
       generatedBanner: renderGeneratedBanner({

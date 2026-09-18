@@ -29,19 +29,8 @@
  */
 import path from 'node:path';
 
-import { entitiesDirCandidates } from '../../config/entities-dir.js';
 import type { CodegenConfig } from './context.js';
-
-/** Default when `paths.backend_src` is unset. Matches `project init`. */
-const FALLBACK_BACKEND_SRC = 'src';
-
-/**
- * Default modules directory — where codegen emits the `connection`
- * entity module under clean-lite-ps. The auth-integrations install
- * vendors next to the codegen output to keep the connections surface
- * unified (#303 fix #5). Override via `paths.modules_dir`.
- */
-const DEFAULT_MODULES_DIR = 'modules';
+import { projectLayout } from './project-layout.js';
 
 export interface AuthIntegrationsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -93,7 +82,7 @@ export interface AuthIntegrationsScaffoldLocalsInput {
  *   is vendored under `<vendorRoot>/connections/` next to the
  *   codegen-emitted `connection` entity module (#303 fix #5).
  * - `definitionsPath` is `connection.yaml` in the entities directory the CLI
- *   reads (`paths.entities`, else `<cwd>/entities`),
+ *   reads (`paths.entities`),
  *   so `entity new` finds the vendored YAML (#634).
  * - `authModuleRegistered` is detected by reading `app.module.ts` and
  *   substring-checking for `AuthModule.forRoot`. False positives (a
@@ -105,31 +94,18 @@ export function resolveAuthIntegrationsScaffoldLocals(
 ): AuthIntegrationsScaffoldLocals {
 	const { cwd, config } = input;
 
-	const backendSrc =
-		typeof config?.paths?.backend_src === 'string' &&
-		config.paths.backend_src.length > 0
-			? config.paths.backend_src
-			: FALLBACK_BACKEND_SRC;
+	const layout = projectLayout(cwd, config);
 
 	// #303 fix #5: vendor target lives next to the codegen-emitted
-	// connection entity module, NOT under shared/. Default mirrors the
-	// clean-lite-ps emit path (`<backendSrc>/modules/`).
-	const modulesConfigured = config?.paths?.modules_dir;
-	const vendorRoot =
-		typeof modulesConfigured === 'string' && modulesConfigured.length > 0
-			? path.resolve(cwd, modulesConfigured)
-			: path.resolve(cwd, backendSrc, DEFAULT_MODULES_DIR);
+	// connection entity module, NOT under shared/: `paths.modules_dir`
+	// (default `<backend_src>/modules`).
+	const vendorRoot = layout.modules;
 
-	// The CLI's entities-directory rule (#634): `paths.entities`, else
-	// `<cwd>/entities`. Its first candidate, not the existence-checked resolver,
-	// so this module stays filesystem-free. (Older `paths.definitions` is NOT a
-	// real key — #303.)
-	const definitionsPath = path.resolve(
-		entitiesDirCandidates(cwd, config?.paths)[0]!,
-		'connection.yaml',
-	);
+	// `connection.yaml` goes into the entities directory the CLI reads
+	// (`paths.entities`, #634). This module stays filesystem-free.
+	const definitionsPath = path.join(layout.entities, 'connection.yaml');
 
-	const appModulePath = path.resolve(cwd, backendSrc, 'app.module.ts');
+	const appModulePath = layout.appModule;
 
 	let authModuleRegistered = false;
 	const appModuleSource = input.readFile(appModulePath);

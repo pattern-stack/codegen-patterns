@@ -16,12 +16,14 @@ import path from 'node:path';
 import { describe, test, expect } from 'bun:test';
 import { mainTsContent } from '../../cli/shared/init-scaffold.js';
 import { AuthConfigSchema } from '../../schema/codegen-config.schema.js';
+import { projectLayout } from '../../cli/shared/project-layout.js';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
+const LAYOUT = projectLayout('/p', null);
 
 describe('main.ts boot-fail emission (ADR-043)', () => {
 	test('package mode wires the boundary + boot-fail', () => {
-		const main = mainTsContent('package');
+		const main = mainTsContent('package', LAYOUT);
 		expect(main).toContain("from '@pattern-stack/codegen/subsystems'");
 		expect(main).toContain('installRequesterContext(app)');
 		expect(main).toContain('AUTH_USER_CONTEXT');
@@ -32,7 +34,7 @@ describe('main.ts boot-fail emission (ADR-043)', () => {
 	});
 
 	test('vendored mode defers wiring to project upgrade-auth (no dangling import)', () => {
-		const main = mainTsContent('vendored');
+		const main = mainTsContent('vendored', LAYOUT);
 		expect(main).not.toContain('installRequesterContext(app)');
 		expect(main).not.toContain("from './shared/subsystems/auth'");
 		expect(main).toContain('project upgrade-auth');

@@ -31,6 +31,7 @@ import pluralize from 'pluralize';
 import { findYamlFiles } from '../../utils/find-yaml-files';
 
 import type { Context } from './context.js';
+import { configOrDefaults } from '../../config/project-config.js';
 import {
 	loadEntityFromYaml,
 	loadRelationshipFromYaml,
@@ -66,12 +67,6 @@ export interface BarrelGeneratorOptions {
 	generatedDir: string;
 	/** Architecture flavor — drives where entity modules live on disk. */
 	architecture: Architecture;
-	/**
-	 * Backend source root, relative to project root. Used to compute module
-	 * file paths for the 'clean' architecture. Ignored for 'clean-lite-ps'.
-	 * Defaults to 'app/backend/src' to match src/config/locations.mjs.
-	 */
-	backendSrc?: string;
 	/** If true, compute content but don't touch the filesystem. */
 	dryRun?: boolean;
 }
@@ -287,7 +282,7 @@ export function buildModulesBarrel(
 	entities: EntityInfo[],
 	barrelFile: string,
 	architecture: Architecture,
-	backendSrc: string = 'app/backend/src'
+	backendSrc: string
 ): string {
 	const imports: string[] = [];
 	const exportsList: string[] = [];
@@ -317,7 +312,7 @@ export function buildSchemaBarrel(
 	entities: EntityInfo[],
 	barrelFile: string,
 	architecture: Architecture,
-	backendSrc: string = 'app/backend/src'
+	backendSrc: string
 ): string {
 	if (entities.length === 0) {
 		return `${HEADER}export {};\n`;
@@ -345,10 +340,11 @@ export async function regenerateBarrels(
 		junctionsDir = path.resolve(ctx.cwd, 'junctions'),
 		generatedDir,
 		architecture,
-		backendSrc = resolveBackendSrc(ctx),
 		dryRun = false,
 	} = opts;
 	const cwd = ctx.cwd;
+	// `paths.backend_src`, resolved (PATH-0): the clean pipeline's module paths.
+	const backendSrc = configOrDefaults(ctx.config).paths.backend_src;
 
 	// Entities, relationship modules, and junction modules all produce peer
 	// modules on disk — merge all three into the same deterministic list so the
@@ -397,42 +393,4 @@ export async function regenerateBarrels(
 		schemaContent,
 		written,
 	};
-}
-
-/**
- * Resolve the architecture to target from a context's loaded config.
- * Honors `generate.architecture`, falling back to 'clean'.
- */
-export function resolveArchitecture(ctx: Context): Architecture {
-	return ctx.config?.generate.architecture ?? 'clean';
-}
-
-/**
- * Resolve the absolute generated directory from a context.
- * Honors `paths.generated`, falling back to `<cwd>/src/generated`.
- */
-export function resolveGeneratedDir(ctx: Context): string {
-	const fromConfig = ctx.config?.paths?.generated;
-	const rel = typeof fromConfig === 'string' && fromConfig.length > 0
-		? fromConfig
-		: 'src/generated';
-	return path.resolve(ctx.cwd, rel);
-}
-
-/**
- * Resolve backend_src from config.
- *
- * Default differs by architecture:
- *   - clean: 'app/backend/src' (matches src/config/locations.mjs)
- *   - clean-lite-ps: 'src' (matches the init-scaffold layout)
- *
- * The architecture isn't visible here, so we keep the historical 'app/backend/src'
- * default for backwards compatibility. Callers in the clean-lite-ps path pass
- * 'src' (or whatever paths.backend_src declares) explicitly.
- */
-export function resolveBackendSrc(ctx: Context): string {
-	const fromConfig = ctx.config?.paths?.backend_src;
-	return typeof fromConfig === 'string' && fromConfig.length > 0
-		? fromConfig
-		: 'app/backend/src';
 }

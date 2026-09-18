@@ -3,9 +3,11 @@
  * is declared in `CodegenConfigSchema`. Grep-asserted, so a new reader of an
  * undeclared key fails here rather than silently reading `undefined`.
  *
- * Three sweeps over `src/` (tests excluded), `templates/` and `runtime/`:
+ * Sweeps over `src/` (tests excluded), `templates/` and `runtime/`:
  *   1. `paths.<key>` read off a config object → declared in `PathsConfigSchema`.
- *   2. `<block>` read off the parsed config → a top-level key of the schema.
+ *   2. `<block>` read off the parsed config (named, bare `config.`, or literal
+ *      bracket access) → a top-level key of the schema; a computed
+ *      `config[name]` only in the one narrowed reader.
  *   3. No second loader: nothing but `project-config.ts` both locates the file
  *      and parses YAML, bar the code emitted into the consumer's app.
  */
@@ -37,10 +39,12 @@ function sourceFiles(): string[] {
 }
 
 /** Every `(key, file:line)` a regex's first group captures across the sweep. */
-function reads(pattern: RegExp): Map<string, string[]> {
+function reads(pattern: RegExp, fileFilter: (text: string) => boolean = () => true): Map<string, string[]> {
 	const found = new Map<string, string[]>();
 	for (const file of sourceFiles()) {
-		const lines = fs.readFileSync(file, 'utf-8').split('\n');
+		const text = fs.readFileSync(file, 'utf-8');
+		if (!fileFilter(text)) continue;
+		const lines = text.split('\n');
 		lines.forEach((line, i) => {
 			for (const m of line.matchAll(pattern)) {
 				const at = `${path.relative(REPO, file)}:${i + 1}`;
@@ -53,10 +57,21 @@ function reads(pattern: RegExp): Map<string, string[]> {
 
 /**
  * A config object: the CLI's `ctx.config` / `config` / `cfg`, the hygen side's
- * `projectConfig` / `getProjectConfig()`, the junction prompt's `config_`, the
- * frontend emitter's `config`.
+ * `projectConfig` / `resolvedConfig` / `getProjectConfig()`, the junction
+ * prompt's `config_`, the schema defaults `DEFAULT_CODEGEN_CONFIG` and
+ * `configOrDefaults(…)` (PATH-0).
  */
-const CONFIG = String.raw`(?:\bctx\.config|\bconfig_?|\bcfg|\bprojectConfig|getProjectConfig\(\))`;
+const CONFIG = String.raw`(?:\bctx\.config|\bconfig_?|\bcfg|\bprojectConfig|\bresolvedConfig|\bDEFAULT_CODEGEN_CONFIG|\bconfigOrDefaults\([^)]*\)|getProjectConfig\(\))`;
+
+/**
+ * Files whose `config` is the parsed codegen config, so a bare `config.<block>`
+ * is a config read: a `config` typed `CodegenConfig` / `Context['config']`, or
+ * typed `Record<string, unknown>` in a file about `codegen.config.yaml`.
+ */
+function holdsCodegenConfig(text: string): boolean {
+	if (/\bconfig\??\s*:\s*(?:CodegenConfig\b|Context\['config'\])/.test(text)) return true;
+	return /codegen\.config\.yaml/.test(text) && /\bconfig\??\s*:\s*Record<string, unknown>/.test(text);
+}
 
 describe('config key census (CFG-0 gate 2)', () => {
 	it('every paths.<key> read is declared in PathsConfigSchema', () => {
@@ -68,9 +83,16 @@ describe('config key census (CFG-0 gate 2)', () => {
 		for (const [key, at] of reads(/\bpaths\?\.([A-Za-z_]\w*)/g)) {
 			found.set(key, [...(found.get(key) ?? []), ...at]);
 		}
-		expect(found.size).toBeGreaterThanOrEqual(8);
+		// `project-layout.ts` reads the block it resolved itself
+		// (`ResolvedPathsSchema.parse`) as a plain `paths.<key>` (PATH-0).
+		for (const [key, at] of reads(/\bpaths\.([a-z]\w*)/g, (t) => /ResolvedPathsSchema\.parse/.test(t))) {
+			found.set(key, [...(found.get(key) ?? []), ...at]);
+		}
 		const undeclared = [...found].filter(([key]) => !declared.has(key));
 		expect(undeclared).toEqual([]);
+		// And the converse: every declared key has a reader (a key nothing reads
+		// is deleted, CFG-0).
+		expect([...declared].filter((key) => !found.has(key))).toEqual([]);
 	});
 
 	it('every top-level block read off the parsed config is declared', () => {
@@ -78,11 +100,34 @@ describe('config key census (CFG-0 gate 2)', () => {
 		// The CLI's `ctx.config` is nullable, so it is always read with `?.`
 		// (the frontend emitter's own `ctx.config.` is its flat emit config).
 		const found = reads(
-			new RegExp(String.raw`(?:\bctx\.config\?|\bprojectConfig\??|getProjectConfig\(\)\??|\bconfig_\??)\.([A-Za-z_]\w*)`, 'g'),
+			new RegExp(
+				String.raw`(?:\bctx\.config\?|\bprojectConfig\??|\bresolvedConfig|\bDEFAULT_CODEGEN_CONFIG|\bconfigOrDefaults\([^)]*\)|getProjectConfig\(\)\??|\bconfig_\??)\.([A-Za-z_]\w*)`,
+				'g',
+			),
 		);
-		expect(found.size).toBeGreaterThanOrEqual(5);
+		// #644 review (a): a bare `config.<block>` / `config?.<block>` — how the
+		// scaffold-locals resolvers read the parsed config they are handed — and
+		// literal bracket access `config['<block>']`, in every file that holds a
+		// `CodegenConfig`.
+		for (const [key, at] of reads(/(?<![\w.$-])config\??\.(?!\[|yaml\b)([A-Za-z_]\w*)/g, holdsCodegenConfig)) {
+			found.set(key, [...(found.get(key) ?? []), ...at]);
+		}
+		for (const [key, at] of reads(/\bconfig\??\.?\[\s*['"]([A-Za-z_][\w-]*)['"]\s*\]/g, holdsCodegenConfig)) {
+			found.set(key, [...(found.get(key) ?? []), ...at]);
+		}
+		expect(found.size).toBeGreaterThanOrEqual(10);
 		const undeclared = [...found].filter(([key]) => !declared.has(key));
 		expect(undeclared).toEqual([]);
+	});
+
+	it('a dynamic config[<name>] read happens only where it is narrowed', () => {
+		// A computed key escapes both sweeps above. The one reader indexes the
+		// parsed config by a subsystem name from `COMPOSABLE_ORDER`, every one a
+		// declared block; the list is exact, so a new dynamic read fails here.
+		const dynamic = [...reads(/\bconfig\??\.?\[\s*(?!['"\s])([A-Za-z_]\w*)\s*\]/g, holdsCodegenConfig).values()]
+			.flat()
+			.map((at) => at.replace(/:\d+$/, ''));
+		expect([...new Set(dynamic)].sort()).toEqual(['src/cli/shared/subsystem-barrel-generator.ts']);
 	});
 
 	it('nothing but the loader locates and parses codegen.config.yaml', () => {
