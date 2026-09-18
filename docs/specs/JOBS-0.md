@@ -9,6 +9,11 @@
 **Governed by:** charter (`.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md`) §4 · CLAUDE.md § Operating
 Principles
 
+> **Revised 2026-09-18 by JOBS-1** (`docs/specs/JOBS-1.md`): `DEFAULT_JOBS_WORKER_MODE` is deleted —
+> `JobsConfigSchema.worker_mode` defaults to `embedded` (#659), so `memory` with no `worker_mode` parses.
+> `GeneratedFileError` / `generating` moved to `src/utils/generated-file.ts` (the frontend emitter uses them);
+> `reportRegenerationFailure` stays in `src/cli/shared/generated-file.ts`. The #660 and #661 items below are fixed there.
+
 ## Charter invariants this PR touches
 
 - **I1 declare once.** #656: the worker's backend default is restated implicitly — the builder omits `backend` for
