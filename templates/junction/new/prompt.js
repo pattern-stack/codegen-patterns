@@ -42,7 +42,8 @@ const kebabCase = (s) => s.replace(/_/g, "-");
 
 function resolveArchitecture(config) {
   // The parsed config (CFG-0) always carries `generate.architecture` (schema
-  // default `clean`). No config file at all ⇒ the clean-lite-ps layout.
+  // default `clean`). No config file at all ⇒ the clean-lite-ps layout — a
+  // different fallback from the entity prompt's, tracked in #642.
   return config ? config.generate.architecture : "clean-lite-ps";
 }
 
