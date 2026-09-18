@@ -132,7 +132,10 @@ the schema rejects `paths.subsystems`; `project-layout` covers `modules_dir` out
 8. **Pre-existing, filed: #647.** The clean-lite-ps EAV `FieldValueService` imports are hand-built
    (`'../field_values/…'`, `'../../field_values/…'`). They break for a `context:`-tagged EAV entity, or for a
    field-value entity with another `plural:` / `context:`. This is the NAME-0 class, and it is not a `modules_dir`
-   defect: the path is relative inside the one tree.
+   defect: the path is relative inside the one tree. **Fixed in #647** (CFG-1 branch): the prompt resolves `field_value`
+   through `resolveTargetNaming` (its own `plural:` / `context:`), and the service, repository, module and create/update
+   use-case templates import from `eavFieldValueImportDir`; the repository and module templates carried the same
+   hand-built path and were fixed with them. A missing `field_value` YAML under `eav: true` is a generation error.
 9. **The module-tree shape is spelled three times** (review). `entityModuleNaming` (`templates/`),
    `barrel-generator.ts` › `entityFilePaths` and `assembly-emission-generator.ts` › `resolveEntityModuleImports`
    each build `<modules_dir>[/<context>]/<plural>`. `src/` cannot import `templates/` outside tests, so

@@ -13,7 +13,7 @@ import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
-import { FieldValueService } from '../../field_values/field_value.service';
+import { FieldValueService } from '../<%= eavFieldValueImportDir %>/field_value.service';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityName %>.dto';
 import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
