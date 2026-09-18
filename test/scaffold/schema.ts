@@ -41,6 +41,7 @@ export * from '@shared/subsystems/cache/cache.schema';
 import {
   index,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -166,8 +167,42 @@ export const tenantMetadataEntities = pgTable('tenant_metadata_entities', {
   fieldValue: text('field_value'),
   validFrom: timestamp('valid_from').notNull().defaultNow(),
   userId: text('user_id'),
+// ============================================================================
+// CAP-3 — Actor / Communication capability test tables
+// ============================================================================
+//
+// The shape the capability smoke's fixture generates (meeting ─roles→ contact /
+// account, attendees through a junction), under `cap_` names so they cannot
+// collide with the generated `contacts` table above.
+
+export const capAccounts = pgTable('cap_accounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+});
+
+export const capContacts = pgTable('cap_contacts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  capAccountId: uuid('cap_account_id').references(() => capAccounts.id),
+  email: text('email').notNull(),
+});
+
+export const capMeetings = pgTable('cap_meetings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id'),
+  title: text('title').notNull(),
+  occurredAt: timestamp('occurred_at').notNull().defaultNow(),
+  hostContactId: uuid('host_contact_id').references(() => capContacts.id),
+  aboutAccountId: uuid('about_account_id').references(() => capAccounts.id),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
 export type TenantMetadataEntity = InferSelectModel<typeof tenantMetadataEntities>;
+export const capMeetingContacts = pgTable(
+  'cap_meeting_contacts',
+  {
+    capMeetingId: uuid('cap_meeting_id').notNull().references(() => capMeetings.id),
+    capContactId: uuid('cap_contact_id').notNull().references(() => capContacts.id),
+  },
+  (t) => [primaryKey({ columns: [t.capMeetingId, t.capContactId] })],
+);

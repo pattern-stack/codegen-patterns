@@ -21,6 +21,10 @@ import {
 } from '../../../../src/patterns/compose.js';
 import '../../../../src/patterns/library/index.js';
 import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
+import {
+  ACTOR_CAPABILITY,
+  COMMUNICATION_CAPABILITY,
+} from '../../../../src/roles/derive.js';
 
 // ============================================================================
 // Pattern registry resolution
@@ -46,8 +50,28 @@ function renderPatternConfigLiteral(value, indent = '  ', initialIndent = '') {
   return _renderLiteral(value, indent, initialIndent);
 }
 
+/**
+ * A config value that is a TypeScript identifier rather than a string — a
+ * Drizzle table handle a library capability's resolved config carries
+ * (`via: { table: meetingContacts }`, ADR-041.1). `_renderLiteral` writes it
+ * bare; the resolver that produced it also returns the import.
+ */
+export function identifierRef(name) {
+  return { $identifier: name };
+}
+
+function isIdentifierRef(value) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    Object.keys(value).length === 1 &&
+    typeof value.$identifier === 'string'
+  );
+}
+
 function _renderLiteral(value, baseIndent, currentIndent) {
   if (value === null) return 'null';
+  if (isIdentifierRef(value)) return value.$identifier;
   if (typeof value === 'string') {
     // Single-quoted TS string with \\ + ' escapes. Matches ADR-031 example style.
     return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -71,6 +95,120 @@ function _renderLiteral(value, baseIndent, currentIndent) {
   }
   // Anything else — fall back to a safe JSON serialization.
   return JSON.stringify(value);
+}
+
+/**
+ * Resolve a library capability's repository config (ADR-041.1, CAP-3).
+ *
+ * CAP-1's hand-off renders a capability's `config:` block verbatim. The two
+ * library capabilities need more: their mixins read Drizzle tables and column
+ * keys, and the YAML names neither — it names roles, junctions and has_many
+ * relationships. This resolves those names, once, at generation:
+ *
+ *   - `Communication` → `{ roles: { <role>: edge } }` from the `roles:` block.
+ *     A one-role's column is its `clpBelongsTo` entry's `camelField` — the FK
+ *     CAP-2 already derived, not a second derivation. A many-role's junction is
+ *     addressed by `junction new`'s naming rules (table
+ *     `camelCase(pluralize(via))`, file `modules/<plural>/<via>.entity`, FK
+ *     columns `<entity>_id`), which have no YAML override.
+ *   - `Actor` → `{ kind }`, plus for a group the member table + FK of the
+ *     `has_many` that `members:` names.
+ *
+ * Returns `null` for any other capability (its config stays verbatim), else
+ * `{ config, imports }`. Throws — a generation error, ADR-041 §4's posture — on
+ * a missing or invalid `Actor` config, a `members:` that is not a has_many, or
+ * a `Communication` entity with no roles.
+ *
+ * Exported for unit-testing.
+ */
+export function resolveLibraryCapabilityConfig(cap, ctx) {
+  const { entityName, definition, relationships, belongsTo, repositoryDir, srcRoot } = ctx;
+  const importFrom = (target) => {
+    const rel = path.posix.relative(repositoryDir, target);
+    return rel.startsWith('.') ? rel : `./${rel}`;
+  };
+  const modulesRoot = `${srcRoot}/modules`;
+
+  if (cap.name === COMMUNICATION_CAPABILITY) {
+    const declared = definition.roles || {};
+    const roles = {};
+    const imports = [];
+    for (const [role, def] of Object.entries(declared)) {
+      if (def.cardinality === 'one') {
+        const fk = belongsTo.find((r) => r.role === role);
+        if (!fk) {
+          throw new Error(
+            `[codegen] '${entityName}' role '${role}': no derived belongs_to — was the roles: block merged?`,
+          );
+        }
+        roles[role] = { cardinality: 'one', target: def.target, column: fk.camelField };
+        continue;
+      }
+      const junctionPlural = pluralize(def.via);
+      const table = camelCase(junctionPlural);
+      roles[role] = {
+        cardinality: 'many',
+        target: def.target,
+        via: {
+          table: identifierRef(table),
+          self: camelCase(`${entityName}_id`),
+          target: camelCase(`${def.target}_id`),
+        },
+      };
+      imports.push({
+        name: table,
+        importPath: importFrom(`${modulesRoot}/${junctionPlural}/${def.via}.entity`),
+      });
+    }
+    if (Object.keys(roles).length === 0) {
+      throw new Error(
+        `[codegen] '${entityName}' declares the '${COMMUNICATION_CAPABILITY}' capability but no roles: — ` +
+          `the two imply each other.`,
+      );
+    }
+    return { config: { roles }, imports };
+  }
+
+  if (cap.name === ACTOR_CAPABILITY) {
+    const parsed = cap.configSchema ? cap.configSchema.safeParse(cap.config ?? undefined) : null;
+    if (!parsed || !parsed.success) {
+      const detail = parsed
+        ? parsed.error.issues.map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`).join(', ')
+        : 'no config schema';
+      throw new Error(
+        `[codegen] '${entityName}' declares the '${ACTOR_CAPABILITY}' capability, whose config is ` +
+          `required: config: { ${ACTOR_CAPABILITY}: { kind: individual } } or ` +
+          `{ kind: group, members: <has_many relationship> } (${detail}).`,
+      );
+    }
+    const config = parsed.data;
+    if (config.kind === 'individual') return { config: { kind: 'individual' }, imports: [] };
+    const members = relationships[config.members];
+    if (!members || members.type !== 'has_many') {
+      throw new Error(
+        `[codegen] '${entityName}' ${ACTOR_CAPABILITY} members: '${config.members}' must name one of ` +
+          `its has_many relationships.`,
+      );
+    }
+    const targetPlural = pluralize(members.target);
+    return {
+      config: {
+        kind: 'group',
+        members: {
+          table: identifierRef(targetPlural),
+          foreignKey: camelCase(members.foreign_key),
+        },
+      },
+      imports: [
+        {
+          name: targetPlural,
+          importPath: importFrom(`${modulesRoot}/${targetPlural}/${members.target}.entity`),
+        },
+      ],
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -1281,6 +1419,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
         configProperty: cap.configProperty || `${camelCase(cap.name.charAt(0).toLowerCase() + cap.name.slice(1))}Config`,
         config: capConfigBlock,
         hasConfig: hasCapConfig,
+        // Read by `resolveLibraryCapabilityConfig` to validate at generation.
+        configSchema: cap.configSchema,
       });
     }
     for (const method of cap.forwarderMethods ?? []) {
@@ -1368,6 +1508,31 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Process has_many relationships (CGP-358b)
   const hasMany = processHasMany(relationships, entityNamePlural, fs, path, srcRoot);
+
+  // ADR-041.1 — the two library capabilities' configs are RESOLVED, not copied:
+  // `Communication`'s comes from `roles:` (never authored), `Actor`'s `members:`
+  // names a has_many whose table + FK codegen looks up. The result replaces the
+  // verbatim `config:` block on the matching `capabilityMixins` entry, and the
+  // tables it references become repository imports.
+  const capabilityConfigImports = [];
+  for (const cap of capabilityMixins) {
+    const resolved = resolveLibraryCapabilityConfig(cap, {
+      entityName,
+      definition,
+      relationships,
+      belongsTo,
+      repositoryDir: `${moduleGroupDir}/${entityNamePlural}`,
+      srcRoot,
+    });
+    if (!resolved) continue;
+    cap.config = resolved.config;
+    cap.hasConfig = true;
+    for (const imp of resolved.imports) {
+      if (!capabilityConfigImports.some((i) => i.name === imp.name)) {
+        capabilityConfigImports.push(imp);
+      }
+    }
+  }
 
   // Issue #41 — warn when a soft-delete entity declares non-restrict on_delete on any
   // belongs_to relation. The FK constraint applies to hard-delete only;
@@ -1810,6 +1975,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // exactly the string the template used to build inline.
     capabilityMixins,
     capabilityForwarders,
+    capabilityConfigImports,
     composedBaseClass,
     composedBaseImport,
     repositoryExtendsClause,

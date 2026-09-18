@@ -57,6 +57,9 @@ import type { BehaviorConfig } from '<%= typeof baseRepositoryImport !== 'undefi
 import { FieldValueService } from '../field_values/field_value.service';
 <% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
+<%_ (typeof capabilityConfigImports !== 'undefined' ? capabilityConfigImports : []).forEach((imp) => { _%>
+import { <%= imp.name %> } from '<%= imp.importPath %>';
+<%_ }) _%>
 <%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
 <%_ clpIntegrationParentTableImports.forEach((imp) => { _%>
 import { <%= imp.table %> } from '<%= imp.importPath %>';
@@ -132,10 +135,12 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 <% } -%>
 <%_ capabilityMixins.filter((cap) => cap.hasConfig).forEach((cap) => { _%>
 
-  // Per-entity `<%= cap.name %>` capability config (from YAML `config:` block).
+  // Per-entity `<%= cap.name %>` capability config (from the entity YAML).
   // The capability's mixin declares `<%= cap.configProperty %>`; this concrete
   // record fills it — ADR-041 §6's config hand-off for a layered capability.
-  protected override readonly <%= cap.configProperty %> = <%- renderPatternConfigLiteral(cap.config, '  ', '  ') %> as const;
+  // Public: a runtime-shipped mixin declares it public (declaration emit,
+  // ADR-041.1), and a public override also fills a protected declaration.
+  override readonly <%= cap.configProperty %> = <%- renderPatternConfigLiteral(cap.config, '  ', '  ') %> as const;
 <%_ }) _%>
 <%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
 

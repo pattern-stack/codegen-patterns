@@ -5,7 +5,8 @@
 # `Integrated` and `Activity` are both spines. `Activity` is the spine here — a
 # meeting IS a subject-scoped interaction, which is what that base class is for,
 # and nothing in this fixture syncs from a provider. `Communication` is the
-# capability that makes `roles:` legal (and vice versa).
+# library capability (CAP-3) that makes `roles:` legal (and vice versa); its
+# config is generated from `roles:` — `findByRole` / `participants`.
 entity:
   name: meeting
   plural: meetings

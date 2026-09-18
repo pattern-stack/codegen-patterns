@@ -112,6 +112,10 @@ function cleanup(dir: string): void {
 	fs.rmSync(dir, { recursive: true, force: true });
 }
 
+function escapeRe(s: string): string {
+	return s.replace(/[/@.-]/g, '\\$&');
+}
+
 function assertContains(haystack: string, needle: RegExp, source: string): void {
 	if (!needle.test(haystack)) {
 		throw new Error(
@@ -231,6 +235,13 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 		/import \{ WithGroup \} from '@modules\/capabilities\/with-group';/,
 		'account.composed-base.ts capability import is the app alias, unrewritten',
 	);
+	// …while the LIBRARY capability's `@shared/…` mixinImport is rewritten per
+	// runtime mode, exactly like a spine base (CAP-3).
+	assertContains(
+		composedBase,
+		new RegExp(`import \\{ WithActor \\} from '${escapeRe(baseClasses)}/with-actor';`),
+		`account.composed-base.ts library Actor mixin import (${mode} mode)`,
+	);
 	// The integration interfaces live in the repository module; the cycle back
 	// is type-only, and therefore erased.
 	assertContains(
@@ -254,8 +265,20 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	// mixin declares.
 	assertContains(
 		accountRepo,
-		/protected override readonly groupConfig = \{\s*membersColumn: 'status',\s*\} as const;/,
+		/ override readonly groupConfig = \{\s*membersColumn: 'status',\s*\} as const;/,
 		'account.repository.ts groupConfig literal',
+	);
+	// CAP-3: the library `Actor` config is RESOLVED — `members: contacts` (a
+	// has_many) becomes the live `contacts` table + its FK key.
+	assertContains(
+		accountRepo,
+		/ override readonly actorConfig = \{\s*kind: 'group',\s*members: \{\s*table: contacts,\s*foreignKey: 'accountId',\s*\},\s*\} as const;/,
+		'account.repository.ts actorConfig (group, resolved members)',
+	);
+	assertContains(
+		accountRepo,
+		/import \{ contacts \} from '\.\.\/contacts\/contact\.entity';/,
+		'account.repository.ts imports the member table',
 	);
 	// The spine is `Integrated` even though it is second in `patterns:` — the
 	// integration write surface is the observable proof.
@@ -280,6 +303,9 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 		/async members\(/,
 		'account.service.ts forwarders are not async (a capability method may be sync)',
 	);
+	// `memberPredicate` returns a Drizzle SQL fragment — repository vocabulary,
+	// never forwarded to the service.
+	assertNotContains(accountService, /memberPredicate/, 'account.service.ts has no memberPredicate');
 
 	// ── contact: ONE capability → inline extends, no composed-base file ──────
 	if (fs.existsSync(path.join(tmpDir, 'src/modules/contacts/contact.composed-base.ts'))) {
@@ -295,8 +321,13 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	);
 	assertContains(
 		contactRepo,
-		/import \{ WithActor \} from '@modules\/capabilities\/with-actor';/,
-		'contact.repository.ts mixin import',
+		new RegExp(`import \\{ WithActor \\} from '${escapeRe(baseClasses)}/with-actor';`),
+		`contact.repository.ts library mixin import (${mode} mode)`,
+	);
+	assertContains(
+		contactRepo,
+		/ override readonly actorConfig = \{\s*kind: 'individual',\s*\} as const;/,
+		'contact.repository.ts actorConfig (individual)',
 	);
 
 	// ── meeting: CAP-2 roles on an Activity spine ────────────────────────────
@@ -349,6 +380,32 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 		/export class MeetingRepository extends WithCommunication\(ActivityEntityRepository<Meeting, typeof meetings>\) \{/,
 		'meeting.repository.ts Activity spine + Communication capability',
 	);
+	assertContains(
+		meetingRepo,
+		new RegExp(`import \\{ WithCommunication \\} from '${escapeRe(baseClasses)}/with-communication';`),
+		`meeting.repository.ts library Communication mixin import (${mode} mode)`,
+	);
+	// CAP-3: `communicationConfig` is generated from `roles:` — one-roles carry
+	// the FK CAP-2 derived, the many-role the live junction table.
+	assertContains(
+		meetingRepo,
+		/ override readonly communicationConfig = \{\s*roles: \{\s*host: \{\s*cardinality: 'one',\s*target: 'contact',\s*column: 'hostContactId',\s*\},\s*attendees: \{\s*cardinality: 'many',\s*target: 'contact',\s*via: \{\s*table: meetingContacts,\s*self: 'meetingId',\s*target: 'contactId',\s*\},\s*\},\s*about: \{\s*cardinality: 'one',\s*target: 'account',\s*column: 'aboutAccountId',\s*\},\s*\},\s*\} as const;/,
+		'meeting.repository.ts communicationConfig from roles:',
+	);
+	assertContains(
+		meetingRepo,
+		/import \{ meetingContacts \} from '\.\.\/meeting_contacts\/meeting_contact\.entity';/,
+		'meeting.repository.ts imports the junction table',
+	);
+	for (const method of ['findByRole', 'participants']) {
+		assertContains(
+			meetingService,
+			new RegExp(
+				`${method}\\(\\s*\\.\\.\\.args: Parameters<MeetingRepository\\['${method}'\\]>\\s*\\): ReturnType<MeetingRepository\\['${method}'\\]> \\{`,
+			),
+			`meeting.service.ts forwarder for '${method}'`,
+		);
+	}
 
 	// ── note: NO pattern → unchanged emission ────────────────────────────────
 	const noteRepo = reads('modules/notes/note.repository.ts');
@@ -540,6 +597,42 @@ function assertNegativeGates(tmpDir: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// ADR-041.1 — an app pattern cannot reuse a library pattern's name
+// ---------------------------------------------------------------------------
+
+/**
+ * Before CAP-3 an app `Actor` silently shadowed the library one (the lookup is
+ * app-first). It is now a load error, reported by the CLI — which also proves
+ * the CLI registers the library patterns BEFORE loading the app's.
+ */
+function assertLibraryNameIsNotShadowed(tmpDir: string): void {
+	const file = path.join(tmpDir, 'src', 'patterns', 'shadow.pattern.ts');
+	fs.writeFileSync(
+		file,
+		[
+			'export const ShadowActorPattern = {',
+			"\tname: 'Actor',",
+			"\tkind: 'capability' as const,",
+			"\tmixin: 'WithShadow',",
+			"\tmixinImport: '@modules/capabilities/with-shadow',",
+			'};',
+			'',
+		].join('\n'),
+	);
+	const res = runExpectingFailure(
+		['bun', CLI_PATH, 'entity', 'new', path.join('entities', 'note.yaml'), '--force'],
+		tmpDir,
+	);
+	fs.rmSync(file);
+	if (!/Pattern 'Actor' in src\/patterns\/shadow\.pattern\.ts reuses the name of a library pattern/.test(res.output)) {
+		throw new Error(
+			`an app pattern named 'Actor' must be refused as a library-name reuse (ADR-041.1):\n${res.output}`,
+		);
+	}
+	log('library-name reuse refused — the app pattern was not registered');
+}
+
+// ---------------------------------------------------------------------------
 // One leg
 // ---------------------------------------------------------------------------
 
@@ -609,6 +702,7 @@ async function leg(mode: Mode): Promise<number> {
 		if (exitCode === 0) {
 			log(`[${mode}] asserting negative gates`);
 			assertNegativeGates(tmpDir);
+			assertLibraryNameIsNotShadowed(tmpDir);
 		}
 	} catch (err: unknown) {
 		logError(err instanceof Error ? err.message : String(err));
