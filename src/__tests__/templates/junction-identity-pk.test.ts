@@ -68,6 +68,8 @@ function localsFor({ hasRole }: { hasRole: boolean }): Record<string, unknown> {
     rightEntity: 'contact',
     leftTable: 'opportunities',
     rightTable: 'contacts',
+    leftEntityImportFromJunction: '../opportunities/opportunity.entity',
+    rightEntityImportFromJunction: '../contacts/contact.entity',
     leftColumn: 'opportunity_id',
     rightColumn: 'contact_id',
     leftColumnCamel: 'opportunityId',

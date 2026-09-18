@@ -18,6 +18,11 @@ import path from "node:path";
 import yaml from "yaml";
 import pluralizePkg from "pluralize";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import {
+  entityModuleNaming,
+  projectEntityLookup,
+  relativeModuleDir,
+} from "../../_shared/entity-naming.mjs";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -187,6 +192,23 @@ function resolveOutputPaths(name, plural, architecture, srcRoot) {
   };
 }
 
+/**
+ * An endpoint's service / module file paths — the files the `_inject-parent-*`
+ * templates modify. clean-lite-ps: the endpoint's own module folder
+ * (`entityModuleNaming`, so `context:` nesting is honoured). 'clean': the
+ * architecture's fixed layout, with the endpoint's declared plural.
+ */
+function resolveParentPaths(name, naming, architecture, srcRoot) {
+  if (architecture === "clean-lite-ps") {
+    const dir = path.posix.normalize(naming.moduleDir);
+    return {
+      service: `${dir}/${name}.service.ts`,
+      module:  `${dir}/${naming.plural}.module.ts`,
+    };
+  }
+  return resolveOutputPaths(name, naming.plural, architecture, srcRoot);
+}
+
 // ============================================================================
 // Main Export
 // ============================================================================
@@ -250,8 +272,6 @@ export default {
     const rightEntity = config.between[1];  // e.g. 'contact'
     const leftEntityPascal = pascalCase(leftEntity);
     const rightEntityPascal = pascalCase(rightEntity);
-    const leftEntityPlural = pluralize(leftEntity);
-    const rightEntityPlural = pluralize(rightEntity);
 
     // FK column names (same derivation as relationship — no self-referential
     // prefix needed since between[] endpoints must be distinct per schema)
@@ -259,10 +279,6 @@ export default {
     const rightColumn = `${rightEntity}_id`;
     const leftColumnCamel = camelCase(leftColumn);
     const rightColumnCamel = camelCase(rightColumn);
-
-    // Drizzle variable names for the parent tables (used in FK .references())
-    const leftTable = leftEntityPlural;   // e.g. 'opportunities'
-    const rightTable = rightEntityPlural; // e.g. 'contacts'
 
     // ======================================================================
     // Role enum
@@ -317,13 +333,45 @@ export default {
     const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, architecture, srcRoot);
 
     // ======================================================================
+    // Endpoint naming — from each endpoint's OWN YAML (NAME-0, #611)
+    // ======================================================================
+    // The table export and module folder of an endpoint are its `plural:` and
+    // `context:`, read through the same function its own emission uses — never
+    // `pluralize(name)` here. `architecture: clean` has no `context:` folders.
+    const entityLookup = projectEntityLookup(cwd);
+    const endpointNaming = (endpoint) => {
+      const block = entityLookup(endpoint);
+      if (!block) {
+        throw new Error(
+          `[junction/new] ${yamlPath}: endpoint '${endpoint}' has no entity YAML — ` +
+          `${entityLookup.missingEntity(endpoint)}. The junction reads its table and module folder from that YAML.`
+        );
+      }
+      return entityModuleNaming(
+        architecture === "clean" ? { ...block, context: undefined } : block,
+        srcRoot,
+      );
+    };
+    const leftNaming = endpointNaming(leftEntity);
+    const rightNaming = endpointNaming(rightEntity);
+    const leftEntityPlural = leftNaming.plural;
+    const rightEntityPlural = rightNaming.plural;
+
+    // Drizzle variable names for the parent tables (used in FK .references())
+    const leftTable = leftEntityPlural;   // e.g. 'opportunities'
+    const rightTable = rightEntityPlural; // e.g. 'contacts'
+
+    // The junction's own folder is flat (a junction has no `context:`).
+    const junctionModuleDir = `${srcRoot}/modules/${entityNamePlural}`;
+
+    // ======================================================================
     // CGP-60 — parent-side paths + fan-out locals
     // ======================================================================
     // Parent service / module file paths — anchored on each endpoint.
     // The parent's own `entity new` pipeline previously wrote these files
     // with `force: true`; the junction inject templates target them.
-    const leftParentPaths = resolveOutputPaths(leftEntity, leftEntityPlural, architecture, srcRoot);
-    const rightParentPaths = resolveOutputPaths(rightEntity, rightEntityPlural, architecture, srcRoot);
+    const leftParentPaths = resolveParentPaths(leftEntity, leftNaming, architecture, srcRoot);
+    const rightParentPaths = resolveParentPaths(rightEntity, rightNaming, architecture, srcRoot);
     const parentServicePathLeft = leftParentPaths.service;
     const parentServicePathRight = rightParentPaths.service;
     const parentModulePathLeft = leftParentPaths.module;
@@ -343,27 +391,39 @@ export default {
     const injectionMarkerLeft = `// junction:${junctionName}:left-fan-out`;
     const injectionMarkerRight = `// junction:${junctionName}:right-fan-out`;
 
-    // Import path for the junction service from each parent's perspective.
-    // clean-lite-ps layout: parent service lives at
-    // `src/modules/<parentPlural>/<parent>.service.ts`; junction service at
-    // `src/modules/<junctionPlural>/<junction>.service.ts`. Relative import
-    // is `../<junctionPlural>/<junction>.service`.
-    // 'clean' layout: parents live under application/<plural>, junction
-    // under application/<junctionPlural>. Same `../` relative form works.
-    const junctionServiceImportFromLeft = `../${entityNamePlural}/${junctionName}.service`;
-    const junctionServiceImportFromRight = `../${entityNamePlural}/${junctionName}.service`;
-    const junctionModuleImportFromLeft = `../${entityNamePlural}/${entityNamePlural}.module`;
-    const junctionModuleImportFromRight = `../${entityNamePlural}/${entityNamePlural}.module`;
+    // Relative imports between the junction's folder and each endpoint's, in
+    // both directions — computed from the two module folders, so an endpoint
+    // nested under a `context:` gets the extra segment. Flat siblings give
+    // `../<plural>`. ('clean' layout: parents under application/<plural>, the
+    // junction under application/<junctionPlural> — the same sibling form.)
+    const junctionDirFromLeft = relativeModuleDir(leftNaming.moduleDir, junctionModuleDir);
+    const junctionDirFromRight = relativeModuleDir(rightNaming.moduleDir, junctionModuleDir);
+    const leftDirFromJunction = relativeModuleDir(junctionModuleDir, leftNaming.moduleDir);
+    const rightDirFromJunction = relativeModuleDir(junctionModuleDir, rightNaming.moduleDir);
+
+    const junctionServiceImportFromLeft = `${junctionDirFromLeft}/${junctionName}.service`;
+    const junctionServiceImportFromRight = `${junctionDirFromRight}/${junctionName}.service`;
+    const junctionModuleImportFromLeft = `${junctionDirFromLeft}/${entityNamePlural}.module`;
+    const junctionModuleImportFromRight = `${junctionDirFromRight}/${entityNamePlural}.module`;
+    const junctionEntityImportFromLeft = `${junctionDirFromLeft}/${junctionName}.entity`;
+    const junctionEntityImportFromRight = `${junctionDirFromRight}/${junctionName}.entity`;
 
     // Left/right repo + module import paths from the junction service's
     // perspective (used by service.ejs.t to import target repos and by
     // module.ejs.t to import the parent modules).
-    const leftRepoImportFromJunction = `../${leftEntityPlural}/${leftEntity}.repository`;
-    const rightRepoImportFromJunction = `../${rightEntityPlural}/${rightEntity}.repository`;
-    const leftEntityImportFromJunction = `../${leftEntityPlural}/${leftEntity}.entity`;
-    const rightEntityImportFromJunction = `../${rightEntityPlural}/${rightEntity}.entity`;
-    const leftModuleImportFromJunction = `../${leftEntityPlural}/${leftEntityPlural}.module`;
-    const rightModuleImportFromJunction = `../${rightEntityPlural}/${rightEntityPlural}.module`;
+    const leftRepoImportFromJunction = `${leftDirFromJunction}/${leftEntity}.repository`;
+    const rightRepoImportFromJunction = `${rightDirFromJunction}/${rightEntity}.repository`;
+    const leftEntityImportFromJunction = `${leftDirFromJunction}/${leftEntity}.entity`;
+    const rightEntityImportFromJunction = `${rightDirFromJunction}/${rightEntity}.entity`;
+    const leftModuleImportFromJunction = `${leftDirFromJunction}/${leftEntityPlural}.module`;
+    const rightModuleImportFromJunction = `${rightDirFromJunction}/${rightEntityPlural}.module`;
+
+    // Each parent's import of its counterparty's entity type (the fan-out
+    // methods return it) — from the parent's folder, not the junction's.
+    const rightEntityImportFromLeft =
+      `${relativeModuleDir(leftNaming.moduleDir, rightNaming.moduleDir)}/${rightEntity}.entity`;
+    const leftEntityImportFromRight =
+      `${relativeModuleDir(rightNaming.moduleDir, leftNaming.moduleDir)}/${leftEntity}.entity`;
 
     // Parent module / service class names + repo class names.
     const leftRepositoryClass = `${leftEntityPascal}Repository`;
@@ -556,6 +616,8 @@ export default {
       junctionServiceImportFromRight,
       junctionModuleImportFromLeft,
       junctionModuleImportFromRight,
+      junctionEntityImportFromLeft,
+      junctionEntityImportFromRight,
       // Parent-side repo + entity + module import paths from the junction's
       // perspective (used by junction service.ejs.t + module.ejs.t).
       leftRepoImportFromJunction,
@@ -564,6 +626,9 @@ export default {
       rightEntityImportFromJunction,
       leftModuleImportFromJunction,
       rightModuleImportFromJunction,
+      // Counterparty entity import paths from each parent's perspective.
+      rightEntityImportFromLeft,
+      leftEntityImportFromRight,
       // Class names used by the inject + service + module templates.
       leftRepositoryClass,
       rightRepositoryClass,

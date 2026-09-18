@@ -1,0 +1,21 @@
+# NAME-0 smoke fixture: shift — a flat entity with a belongs_to onto the
+# `context:`-nested `crew` (#630), whose folder is `src/modules/org/crews/`.
+entity:
+  name: shift
+  plural: shifts
+  table: shifts
+  folder_structure: nested
+
+fields:
+  starts_at:
+    type: datetime
+    required: true
+
+behaviors:
+  - timestamps
+
+relationships:
+  crew:
+    type: belongs_to
+    target: crew
+    foreign_key: crew_id

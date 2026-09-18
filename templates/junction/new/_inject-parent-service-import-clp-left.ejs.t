@@ -6,4 +6,4 @@ skip_if: "<%= classNames.service %> }"
 ---
 // CGP-60 — junction service + types
 import { <%= classNames.service %>, <%= entityNamePascal %>LinkInput } from '<%= junctionServiceImportFromLeft %>';
-import type { <%= entityNamePascal %> } from '../<%= entityNamePlural %>/<%= name %>.entity';
+import type { <%= entityNamePascal %> } from '<%= junctionEntityImportFromLeft %>';

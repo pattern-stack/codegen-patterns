@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -76,7 +77,7 @@ const entityWithoutSearch = { ...baseEntity, queries: undefined };
 
 describe('clean-lite-ps search templates — prompt-extension wiring', () => {
   it('builds searchQuery locals when queries declares a search', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
 
     expect(locals.hasSearchQuery).toBe(true);
     expect(locals.searchQuery).not.toBeNull();
@@ -88,7 +89,7 @@ describe('clean-lite-ps search templates — prompt-extension wiring', () => {
   });
 
   it('resolves belongs_to FKs in filters (account_id → isUuid)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const accountIdFilter = locals.searchQuery.filters.find((f: any) => f.camelName === 'accountId');
 
     expect(accountIdFilter).toBeDefined();
@@ -96,7 +97,7 @@ describe('clean-lite-ps search templates — prompt-extension wiring', () => {
   });
 
   it('resolves enum filter with choices', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const enumFilter = locals.searchQuery.filters.find((f: any) => f.camelName === 'canonicalState');
 
     expect(enumFilter).toBeDefined();
@@ -105,7 +106,7 @@ describe('clean-lite-ps search templates — prompt-extension wiring', () => {
   });
 
   it('resolves boolean filter (isBoolean flag set)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const isClosedFilter = locals.searchQuery.filters.find((f: any) => f.camelName === 'isClosed');
 
     expect(isClosedFilter).toBeDefined();
@@ -113,7 +114,7 @@ describe('clean-lite-ps search templates — prompt-extension wiring', () => {
   });
 
   it('exposes search use-case + controller output paths', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
 
     expect(locals.clpOutputPaths.searchUseCase).toBe(
       'src/modules/opportunities/use-cases/search-opportunities.use-case.ts',
@@ -124,7 +125,7 @@ describe('clean-lite-ps search templates — prompt-extension wiring', () => {
   });
 
   it('nulls search locals when no search query is declared', () => {
-    const locals = buildCleanLitePsLocals(entityWithoutSearch, {});
+    const locals = buildCleanLitePsLocals(entityWithoutSearch, withEntities());
 
     expect(locals.hasSearchQuery).toBe(false);
     expect(locals.searchQuery).toBeNull();
@@ -135,7 +136,7 @@ describe('clean-lite-ps search templates — prompt-extension wiring', () => {
 
 describe('clean-lite-ps search templates — use-case rendering', () => {
   it('emits SearchOpportunitiesUseCase with filter-AND + count for total', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/search.ejs.t', locals);
 
     expect(output).toContain('export class SearchOpportunitiesUseCase');
@@ -147,7 +148,7 @@ describe('clean-lite-ps search templates — use-case rendering', () => {
   });
 
   it('emits an ilike guard for the search field when declared', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/search.ejs.t', locals);
 
     expect(output).toContain('ilike');
@@ -155,14 +156,14 @@ describe('clean-lite-ps search templates — use-case rendering', () => {
   });
 
   it('emits boolean-aware filter guard (`!== undefined`) for boolean columns', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/search.ejs.t', locals);
 
     expect(output).toContain('if (input.isClosed !== undefined) conditions.push(eq(opportunities.isClosed, input.isClosed));');
   });
 
   it('emits truthy-check filter guard for non-boolean columns', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/search.ejs.t', locals);
 
     expect(output).toContain('if (input.userId) conditions.push(eq(opportunities.userId, input.userId));');
@@ -172,7 +173,7 @@ describe('clean-lite-ps search templates — use-case rendering', () => {
 
 describe('clean-lite-ps search templates — controller rendering', () => {
   it('emits the search controller with Zod querystring schema + /search route', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('search-controller.ejs.t', locals);
 
     expect(output).toContain('export class OpportunitySearchController');
@@ -186,7 +187,7 @@ describe('clean-lite-ps search templates — controller rendering', () => {
   });
 
   it('emits correct zod types per filter kind', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('search-controller.ejs.t', locals);
 
     // UUID (belongs_to FK)
@@ -206,7 +207,7 @@ describe('clean-lite-ps search templates — controller rendering', () => {
 
 describe('clean-lite-ps search templates — module rendering', () => {
   it('registers the search controller and use case when search is declared', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('module.ejs.t', locals);
 
     expect(output).toContain(
@@ -220,7 +221,7 @@ describe('clean-lite-ps search templates — module rendering', () => {
   });
 
   it('omits search wiring when no search query is declared', () => {
-    const locals = buildCleanLitePsLocals(entityWithoutSearch, {});
+    const locals = buildCleanLitePsLocals(entityWithoutSearch, withEntities());
     const output = render('module.ejs.t', locals);
 
     expect(output).not.toContain('SearchOpportunitiesUseCase');
@@ -238,7 +239,7 @@ describe('clean-lite-ps search templates — schema union with legacy by-column 
         { by: ['email'], unique: true },
       ],
     };
-    const locals = buildCleanLitePsLocals(mixed, {});
+    const locals = buildCleanLitePsLocals(mixed, withEntities());
 
     expect(locals.hasSearchQuery).toBe(true);
     // Legacy shape still processes; by-column queries appear in

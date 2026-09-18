@@ -19,21 +19,21 @@ import { DatabaseModule } from '@shared/database/database.module';
 <%_ const hasManyNeedingImport = clpExistingHasMany.filter(r => !r.isSelfRef); _%>
 <%_ const uniqueHasManyForModule = [...new Map(hasManyNeedingImport.map(r => [r.target, r])).values()]; _%>
 <%_ uniqueHasManyForModule.forEach(rel => { _%>
-import { <%= rel.targetClass %>Repository } from '../<%= rel.targetPlural %>/<%= rel.target %>.repository';
+import { <%= rel.targetClass %>Repository } from '<%= rel.targetImportDir %>/<%= rel.target %>.repository';
 <%_ }) _%>
 <%_ } _%>
 <%_ /* CGP-358b: Import cross-entity repos needed for belongs_to composition */ _%>
 <%_ if (typeof clpBelongsTo !== 'undefined') { _%>
 <%_ const uniqueBelongsToForModule = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
 <%_ uniqueBelongsToForModule.forEach(rel => { _%>
-import { <%= rel.relatedEntityPascal %>Repository } from '../<%= rel.relatedPlural %>/<%= rel.relatedEntity %>.repository';
+import { <%= rel.relatedEntityPascal %>Repository } from '<%= rel.relatedImportDir %>/<%= rel.relatedEntity %>.repository';
 <%_ }) _%>
 <%_ } _%>
 <% if (eavEnabled) { -%>
 import { FieldValuesModule } from '../field_values/field_values.module';
 <% } -%>
 <% if (eavValueTable) { -%>
-import { <%= eavDefinitionPluralPascal %>Module } from '../<%= eavDefinitionEntityPlural %>/<%= eavDefinitionEntityPlural %>.module';
+import { <%= eavDefinitionPluralPascal %>Module } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntityPlural %>.module';
 <% } -%>
 
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';

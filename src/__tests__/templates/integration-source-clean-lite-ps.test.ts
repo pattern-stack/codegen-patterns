@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from '../clean-lite-ps/_entity-lookup';
 
 const MODULE_TEMPLATE = resolve(
   import.meta.dir,
@@ -55,7 +56,7 @@ const opportunityDefinition = {
 
 describe('integration-source emission (clean-lite-ps) — #267', () => {
   it('clean-lite-ps locals expose integrationSourceModule + clpImports.integrationSourceToEntity', () => {
-    const locals = buildCleanLitePsLocals(opportunityDefinition, { backendSrc: 'src' });
+    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ backendSrc: 'src' }));
 
     expect(locals.clpOutputPaths.integrationSourceModule).toBe(
       'src/modules/opportunities/opportunity-integration-source.module.ts',
@@ -67,7 +68,7 @@ describe('integration-source emission (clean-lite-ps) — #267', () => {
   });
 
   it('module template `to:` resolves to the CLP path when isCleanLitePs is true', () => {
-    const locals = buildCleanLitePsLocals(opportunityDefinition, { backendSrc: 'src' });
+    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ backendSrc: 'src' }));
     const { frontmatter } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
     // Render the frontmatter as EJS so the conditional ternary evaluates.
     const rendered = ejs.render(frontmatter, {
@@ -87,7 +88,7 @@ describe('integration-source emission (clean-lite-ps) — #267', () => {
   // surface-scoped typed view replaces it (adapter-emission-generator.test.ts).
 
   it('module body imports the entity sibling-style under clean-lite-ps', () => {
-    const locals = buildCleanLitePsLocals(opportunityDefinition, { backendSrc: 'src' });
+    const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ backendSrc: 'src' }));
     const { body } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
     const rendered = ejs.render(body, {
       name: 'opportunity',

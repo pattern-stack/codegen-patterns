@@ -2,6 +2,6 @@
 to: "<%= architecture === 'clean-lite-ps' && exposeOnParent.left ? parentServicePathLeft : '' %>"
 inject: true
 after: "from '@nestjs/common';"
-skip_if: "from '<%= rightEntityImportFromJunction %>'"
+skip_if: "from '<%= rightEntityImportFromLeft %>'"
 ---
-import type { <%= rightEntityPascal %> } from '<%= rightEntityImportFromJunction %>';
+import type { <%= rightEntityPascal %> } from '<%= rightEntityImportFromLeft %>';
