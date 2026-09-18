@@ -16,8 +16,8 @@
  *
  * `--layout default|custom` (default `default`, PATH-0). `custom` sets every
  * path non-default (`paths.backend_src: apps/backend/src`, `paths.generated`,
- * `paths.entities`) in a config written BEFORE `project init`, runs one
- * `subsystem install`, and asserts nothing lands at the default locations —
+ * `paths.entities`) in a config written BEFORE `project init`, runs
+ * `subsystem install events` + `jobs`, and asserts nothing lands at the default locations —
  * the #566 / #612 gate. `just test-smoke-junction` runs it in both modes.
  *
  * Bootstrap (tmp project, deps, codegen run) is delegated to
@@ -402,7 +402,7 @@ function assertBarrelIncludes(generatedSrc: string, pluralName: string, _archite
 
 /**
  * PATH-0 (#566 / #612): with every path non-default, nothing may land at a
- * default location — init, the subsystem install, entity and junction codegen
+ * default location — init, the subsystem installs, entity and junction codegen
  * all resolve from `paths.*`.
  */
 function assertCustomLayout(projectDir: string): void {
@@ -414,6 +414,7 @@ function assertCustomLayout(projectDir: string): void {
   for (const rel of [
     `${P.backendSrc}/app.module.ts`,
     `${P.backendSrc}/main.ts`,
+    `${P.backendSrc}/worker.ts`,
     `${P.backendSrc}/schema.ts`,
     `${P.generated}/modules.ts`,
     `${P.generated}/subsystems.ts`,
@@ -422,6 +423,10 @@ function assertCustomLayout(projectDir: string): void {
     if (!fs.existsSync(path.join(projectDir, rel))) {
       throw new Error(`layout custom: expected ${rel}`);
     }
+  }
+  const main = fs.readFileSync(path.join(projectDir, P.backendSrc, 'main.ts'), 'utf8');
+  if (!main.includes('JOBS — Embedded worker mode')) {
+    throw new Error(`layout custom: the jobs main.ts hook did not land in ${P.backendSrc}/main.ts`);
   }
   log('layout assertions passed: custom');
 }
