@@ -132,9 +132,19 @@ The package leg fails with 26 diagnostics.
 
 ## Gates
 
-Output from the runs made after the last code edit (charter I9).
+Output from the runs made after the last code edit (charter I9). The only edit since is this table.
 
-GATES_TABLE
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | **exit 0**. The baseline is byte-identical: the `clean` pipeline is untouched. |
+| `just test-all` | **exit 0**. Unit tests: **3351 pass / 0 fail**. Also green: baseline, smoke, smoke-subsystems (both modes), smoke-relationship, smoke-junction ×2, and **smoke-capability (vendored + package)** with the NAME-1 fixtures and the #624 expectation now covering 2 junctions + 1 relationship. Junction snapshots: **10/10**, regenerated, and the diff is 4 FK lines + 2 `type AnyPgColumn` import lines, nothing else. integration-emit 56/56; smoke-integration green. |
+| `just test-integration` | **exit 0**: 74 pass · 2 skip (the existing `test.skip`s) · 0 fail |
+| `just test-smoke-junction-clean` | exit 1. **Known-red, #602**, still exactly **118** |
+| `just test-post-publish` | not run: `files` is unchanged. `relationship new` imports `templates/_shared/entity-naming.mjs`, which NAME-0 already ships. |
+
+- **No filter, no `.skip`.** The #624 expectation grew by the relationship's 12 named diagnostics. It is still
+  exact, present and sole.
+- **New `any`s:** none. **No `as unknown as`.**
 
 ## What downstream must know
 
