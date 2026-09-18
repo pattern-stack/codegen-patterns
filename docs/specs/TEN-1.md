@@ -54,7 +54,14 @@ ADR-042 §"Insufficient injection points" claims `findById` / `findByIds` / `lis
 "via `baseQuery`". `count()` is not: it builds its own `select({count})` and assembles the soft-delete + scope
 conditions by hand (`base-repository.ts:237-262`). It would have silently counted across tenants.
 
-**M2 — every generated finder and every family finder DISCARDS the guard predicate.** `baseQuery()` returns a
+**M2 — every generated finder and every family finder DISCARDS the guard predicate.**
+**Split out and fixed ahead of this spec: #616 / `docs/specs/SCOPE-0.md` (PR #619), which this branch now sits on.**
+The measurement below is what SCOPE-0 was cut from; it is kept because it is the reason TEN-1's predicate is safe to
+add at all. Two consequences for this spec: §3.5 ("the `.where()` override fix") is **already done** — TEN-1 no
+longer touches those 17 sites — and §M1's `count()` finding is **also already fixed** there, so TEN-1's §3.2 keeps
+only the `scopeAnd()` diff. SCOPE-0's control run reproduced the leak as data: as user A, `findByExternalId`
+returned user B's row and `findAllByUserId(USER_B)` returned 1.
+ `baseQuery()` returns a
 `$dynamic()` builder that already has `.where(<guards>)` applied (`base-repository.ts:345-355`). Drizzle's
 `.where()` **overwrites**: `select.js:548-554` is literally `this.config.where = where`. So every
 `this.baseQuery().where(<leaf>)` throws the guards away — the exact footgun the method's own docblock warns about
