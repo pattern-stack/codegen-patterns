@@ -319,6 +319,16 @@ resolve against.
   upgrade-openapi` / `upgrade-auth` name the file. `subsystem install --json` (vendored) now regenerates the barrel
   at all; the `barrelRegenerated` field of `subsystem remove --json` is gone
   (it is always regenerated, or the command fails).
+- **Every `entity new` post-step fails the command when it cannot regenerate
+  its output** (#660). The `ScopeEntityType` union, the event modules, the
+  bridge registry, orchestration modules, the frontend tree and the provider /
+  adapter / integration-assembly / job-handler files printed a warning (or an
+  error) and exited 0 on failure. They now exit 1 naming the file (JSON:
+  `{ status: 'error', file, error }`), or the step's output directory when it
+  failed before writing — an `events/*.yaml` with an error (event codegen
+  writes nothing then), a duplicate or unknown `@JobHandler` trigger. The
+  JSON result's `scopeEntityType`, `eventCodegen`, `bridgeRegistry` and
+  `orchestration` fields are never `null`.
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
   `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
   and Nest's default `abortOnError` turns that into `process.exit(1)` — so

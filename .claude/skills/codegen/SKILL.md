@@ -240,13 +240,18 @@ into that module (`src/cli/shared/app-config-generator.ts`), never a runtime YAM
 
 **A generated file the app imports is never optional output (JOBS-0, #655).** `modules.ts`, `schema.ts`,
 `subsystems.ts` (+ its registry / events stubs), `subsystems-schema.ts` and `app-config.ts` are written through
-`generating(file, step)` (`src/cli/shared/generated-file.ts`), which rethrows any failure as a `GeneratedFileError`
+`generating(file, step)` (`src/utils/generated-file.ts` — sync or async; a nested `GeneratedFileError` passes
+through, so the innermost file is named), which rethrows any failure as a `GeneratedFileError`
 naming the file (`writeAppConfig` / `syncAppConfig` wrap themselves); every command that regenerates them
 (`entity new`, `relationship new`, `junction new`, `subsystem install` / `remove`, `subsystem install openapi-config`)
 returns `reportRegenerationFailure(...)` — exit 1, never a warning; `project upgrade-openapi` / `upgrade-auth` exit 1
 through their own catch. No rollback: a failed `entity new` post-step exits 1 with hygen's entity tree already written
-and the barrels stale — fix the cause and re-run (idempotent). Other
-`entity new` post-steps (scope type, event codegen, bridge registry, integration emitters) still soft-fail — #660.
+and the barrels stale — fix the cause and re-run (idempotent). JOBS-1 (#660): so does every other `entity new`
+post-step — scope-entity-type, event codegen (an error-severity issue included: it writes nothing), bridge registry
+(a rejected trigger set included), orchestration, frontend, provider / adapter / assembly / job-handler emitters. Each
+emitter's write helper wraps its own file; the CLI wraps each step in `generating(<step output root>, …)` so a failure
+before any write names the step's output. Declared skips (bridge not installed, no entities, a surface with no port
+package) stay informational. The dry-run orchestration *plan* still warns (it writes nothing).
 
 ```yaml
 runtime: package
