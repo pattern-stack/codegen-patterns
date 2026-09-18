@@ -23,6 +23,7 @@ export {
   JOB_STEP_SERVICE,
   JOBS_MULTI_TENANT,
   JOBS_LISTEN_NOTIFY,
+  JOB_POOL_CONFIG,
 } from './jobs-domain.tokens';
 
 // ─── JOB-2: orchestrator protocol ──────────────────────────────────────────
@@ -137,7 +138,7 @@ export { MemoryJobOrchestrator } from './job-orchestrator.memory-backend';
 export { MemoryJobRunService } from './job-run-service.memory-backend';
 export { MemoryJobStepService } from './job-step-service.memory-backend';
 
-// ─── JOB-5: domain + worker modules + pool config loader ───────────────────
+// ─── JOB-5: domain + worker modules + pool config (CFG-1) ───────────────────
 export {
   JobsDomainModule,
   type JobsDomainModuleOptions,
@@ -149,11 +150,15 @@ export {
   type JobWorkerModuleOptions,
 } from './job-worker.module';
 export {
-  loadPoolConfig,
+  resolvePoolConfig,
+  poolOverrideIssues,
   allNonReservedPoolNames,
   allPoolNames,
   FRAMEWORK_POOLS,
   RESERVED_POOL_NAMES,
   type PoolConfig,
   type PoolDefinition,
-} from './pool-config.loader';
+  type PoolOverride,
+  type PoolOverrides,
+  type PoolOverrideIssue,
+} from './pool-config';

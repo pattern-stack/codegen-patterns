@@ -51,6 +51,7 @@ import { Logger, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from './app.module';
+import { jobPools } from '<%= appConfigImport %>';
 import { JobWorkerModule } from '<%= jobWorkerModuleImport %>';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
@@ -62,7 +63,9 @@ const SHUTDOWN_TIMEOUT_MS = 30_000;
     // so every `@JobHandler` resolves the same way in both processes.
     AppModule,
     // `allPools: true` drains the reserved `events_*` lanes (events outbox +
-    // bridge wrappers) alongside the user pools.
+    // bridge wrappers) alongside the user pools. `jobPools` is
+    // codegen.config.yaml `jobs.pools`, regenerated into <generated>/app-config
+    // (CFG-1) — so pool edits reach this emit-once file on regeneration.
     JobWorkerModule.forRoot(<%- workerForRootOpts %>),
   ],
 })

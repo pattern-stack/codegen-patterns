@@ -13,6 +13,7 @@ import path from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { APP_CONFIG_FILE, buildAppConfigContent } from './app-config-generator.js';
 import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
 import { runtimeImport, subsystemsImport, type RuntimeMode } from './runtime-import.js';
@@ -353,8 +354,9 @@ export class AppModule {}
 /**
  * Default `src/main.ts` — NestFactory bootstrap + conditional Swagger setup.
  *
- * OPENAPI-4: the Swagger block is gated on `config.openapi?.enabled`
- * loaded from `codegen.config.yaml` at startup. Disabled mode skips the
+ * OPENAPI-4: the Swagger block is gated on `openapiConfig.enabled`, imported
+ * from the generated `<generated>/app-config.ts` (CFG-1 — the app never parses
+ * `codegen.config.yaml`). Disabled mode skips the
  * entire SwaggerModule.setup call so no `/docs` or `/docs-json` routes are
  * registered; the registry still exists (it's a singleton provider) but is
  * never built.
@@ -381,14 +383,14 @@ function authBoundaryBlock(): string {
   // bootstrap — a worker process that imports AppModule but never listens must
   // not trip it.
   const userContext = app.get(AUTH_USER_CONTEXT, { strict: false });
-  const allowAnonymous = config.auth?.devAllowAnonymous === true;
+  const allowAnonymous = authConfig.devAllowAnonymous;
   if (!userContext && !allowAnonymous) {
     throw new Error(
       '[auth] FATAL: entity HTTP controllers are exposed but no IUserContext ' +
         'is bound under AUTH_USER_CONTEXT. The data plane would be ' +
         'unauthenticated. Bind an IUserContext (install the auth subsystem, ' +
         'or provide your own), or set auth.devAllowAnonymous=true in ' +
-        'codegen.config.yaml for LOCALHOST DEV ONLY.',
+        'codegen.config.yaml and regenerate, for LOCALHOST DEV ONLY.',
     );
   }
   if (!userContext && allowAnonymous) {
@@ -431,61 +433,19 @@ export function mainTsContent(mode: RuntimeMode, layout: ProjectLayout): string 
 		? `import { installRequesterContext, AUTH_USER_CONTEXT } from '${subsystemsImport(mode, 'auth')}';\n`
 		: '';
 	return `import 'reflect-metadata';
-import fs from 'node:fs';
-import path from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { parse as parseYaml } from 'yaml';
 import { AppModule } from './app.module';
+import { ${wireAuth ? 'authConfig, ' : ''}openapiConfig } from '${importSpecifier(layout.mainTs, path.join(layout.generated, 'app-config'))}';
 import { OPENAPI_REGISTRY, OpenApiRegistry } from '${openApiImport}';
 ${authImportLine}
-interface OpenApiConfig {
-  enabled?: boolean;
-  path?: string;
-  title?: string;
-  version?: string;
-  description?: string;
-  auth?: 'bearer' | 'none';
-}
-
-interface AuthConfig {
-  /**
-   * Localhost-only escape hatch (ADR-043 §4). When true, an app with no
-   * IUserContext bound serves an UNAUTHENTICATED data plane instead of
-   * refusing to boot. NEVER set this in a non-localhost deployment.
-   */
-  devAllowAnonymous?: boolean;
-}
-
-interface CodegenConfig {
-  openapi?: OpenApiConfig;
-  auth?: AuthConfig;
-}
-
-/**
- * Load \`codegen.config.yaml\` to pick up the \`openapi:\` block. Missing or
- * malformed → no config (Swagger disabled). The registry is the source of
- * truth for the document content; this just toggles whether Swagger UI
- * mounts + which metadata the header shows.
- */
-function loadConfig(): CodegenConfig {
-  const configPath = path.resolve(process.cwd(), 'codegen.config.yaml');
-  if (!fs.existsSync(configPath)) return {};
-  try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
-    const parsed = parseYaml(raw);
-    return (parsed && typeof parsed === 'object' ? parsed : {}) as CodegenConfig;
-  } catch {
-    return {};
-  }
-}
-
 async function bootstrap(): Promise<void> {
-  const config = loadConfig();
   const app = await NestFactory.create(AppModule);
   app.enableShutdownHooks();
 
-  if (config.openapi?.enabled) {
+  // \`openapiConfig\` / \`authConfig\` are codegen.config.yaml, validated and
+  // written into <generated>/app-config.ts by the generator (CFG-1).
+  if (openapiConfig.enabled) {
     // OPENAPI-4: build the document in two passes.
     //
     //   1. Our vendored \`OpenApiRegistry\` owns the component schemas
@@ -501,16 +461,16 @@ async function bootstrap(): Promise<void> {
     // for schemas (Zod can't be inferred from reflection metadata).
     const registry = app.get<OpenApiRegistry>(OPENAPI_REGISTRY);
     const registryDocument = await registry.build({
-      title: config.openapi.title ?? 'API',
-      version: config.openapi.version ?? '0.0.0',
-      description: config.openapi.description,
+      title: openapiConfig.title,
+      version: openapiConfig.version,
+      description: openapiConfig.description,
     });
 
     const docBuilder = new DocumentBuilder()
-      .setTitle(config.openapi.title ?? 'API')
-      .setVersion(config.openapi.version ?? '0.0.0');
-    if (config.openapi.description) docBuilder.setDescription(config.openapi.description);
-    if ((config.openapi.auth ?? 'bearer') === 'bearer') docBuilder.addBearerAuth();
+      .setTitle(openapiConfig.title)
+      .setVersion(openapiConfig.version);
+    if (openapiConfig.description) docBuilder.setDescription(openapiConfig.description);
+    if (openapiConfig.auth === 'bearer') docBuilder.addBearerAuth();
 
     const nestDocument = SwaggerModule.createDocument(app, docBuilder.build());
 
@@ -534,7 +494,7 @@ async function bootstrap(): Promise<void> {
     // reloads, so the token pasted in Swagger UI keeps flowing as the
     // \`Authorization\` header — which the RequesterContext boundary (below)
     // turns into ambient tenant scope on every request.
-    SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument, {
+    SwaggerModule.setup(openapiConfig.path, app, nestDocument, {
       swaggerOptions: { persistAuthorization: true },
     });
   }
@@ -1109,6 +1069,19 @@ export async function buildInitPlan(
 			{ force }
 		)
 	);
+
+	// 7b. <generated>/app-config.ts — the config values main.ts reads (CFG-1).
+	// Generated, so always (re)written from the config in effect: the existing
+	// file's when there is one, else the defaults the config in step 1 carries.
+	{
+		const appConfigPath = path.join(layout.generated, APP_CONFIG_FILE);
+		entries.push({
+			path: appConfigPath,
+			relPath: relOf(cwd, appConfigPath),
+			action: fs.existsSync(appConfigPath) ? 'overwrite' : 'create',
+			content: buildAppConfigContent(ctx.config),
+		});
+	}
 
 	// 8. <backend_src>/app.module.ts — only if missing (never clobber user auth'd module)
 	{

@@ -48,12 +48,10 @@ import { DrizzleJobRunService } from '../../../../runtime/subsystems/jobs/job-ru
 import { DRIZZLE } from '../../../../runtime/constants/tokens';
 import {
   FRAMEWORK_POOLS,
-  loadPoolConfig,
-  _resetPoolConfigCacheForTests,
-} from '../../../../runtime/subsystems/jobs/pool-config.loader';
+  resolvePoolConfig,
+} from '../../../../runtime/subsystems/jobs/pool-config';
 
 afterEach(() => {
-  _resetPoolConfigCacheForTests();
   delete process.env.REDIS_URL;
 });
 
@@ -121,14 +119,14 @@ describe('resolveBullMqConfig', () => {
 
 describe('resolvePoolQueueName', () => {
   it('maps a logical pool name to its queue alias', () => {
-    const poolConfig = loadPoolConfig();
+    const poolConfig = resolvePoolConfig();
     expect(resolvePoolQueueName('batch', null, poolConfig)).toBe(
       FRAMEWORK_POOLS.batch!.queue,
     );
   });
 
   it('applies the queue_prefix namespace', () => {
-    const poolConfig = loadPoolConfig();
+    const poolConfig = resolvePoolConfig();
     const cfg = resolveBullMqConfig({ queue_prefix: 'myapp' });
     expect(resolvePoolQueueName('batch', cfg, poolConfig)).toBe(
       `myapp:${FRAMEWORK_POOLS.batch!.queue}`,
@@ -136,7 +134,7 @@ describe('resolvePoolQueueName', () => {
   });
 
   it('falls back to the logical name for an unknown pool', () => {
-    const poolConfig = loadPoolConfig();
+    const poolConfig = resolvePoolConfig();
     expect(resolvePoolQueueName('unknown_pool', null, poolConfig)).toBe(
       'unknown_pool',
     );
@@ -160,12 +158,23 @@ describe('JobsDomainModule.forRoot({ backend: "bullmq" })', () => {
         JobsDomainModule.forRoot({
           backend: 'bullmq',
           extensions: { bullmq: { redis_url: 'redis://localhost:6399' } },
+          pools: { reports: { queue: 'jobs-reports', concurrency: 2 } },
         }),
       ],
     }).compile();
 
     // Orchestrator is the BullMQ backend (constructing it does NOT connect).
     expect(moduleRef.get(JOB_ORCHESTRATOR)).toBeInstanceOf(BullMQJobOrchestrator);
+    // CFG-1: the orchestrator names queues from the `pools` the module was
+    // given — the same map the worker reads under JOB_POOL_CONFIG.
+    const { JOB_POOL_CONFIG } = await import(
+      '../../../../runtime/subsystems/jobs/jobs-domain.tokens'
+    );
+    const poolConfig = moduleRef.get(JOB_POOL_CONFIG) as ReturnType<typeof resolvePoolConfig>;
+    expect(poolConfig.get('reports')?.queue).toBe('jobs-reports');
+    expect(
+      (moduleRef.get(JOB_ORCHESTRATOR) as unknown as { poolConfig: unknown }).poolConfig,
+    ).toBe(poolConfig);
     // Run service stays Drizzle — listForScope is an unchanged Postgres query.
     const { JOB_RUN_SERVICE } = await import(
       '../../../../runtime/subsystems/jobs/jobs-domain.tokens'

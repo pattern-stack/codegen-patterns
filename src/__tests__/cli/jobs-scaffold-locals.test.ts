@@ -51,7 +51,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			'@pattern-stack/codegen/runtime/subsystems/jobs/index',
 		);
 		expect(locals.workerForRootOpts).toBe(
-			"{ mode: 'standalone', allPools: true }",
+			"{ mode: 'standalone', domainModulePools: jobPools, allPools: true }",
 		);
 		// Default derives from `backend_src` (fallback 'src') when
 		// The subsystems root derives from `paths.backend_src` — the `project init` layout.
@@ -152,7 +152,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			readFile: () => null,
 		});
 		expect(drizzleDefault.workerForRootOpts).toBe(
-			"{ mode: 'standalone', allPools: true }",
+			"{ mode: 'standalone', domainModulePools: jobPools, allPools: true }",
 		);
 	});
 
@@ -172,7 +172,7 @@ describe('resolveJobsScaffoldLocals', () => {
 		});
 		// mode first, allPools last, knobs mirrored as camelCase between them.
 		expect(withKnobs.workerForRootOpts).toBe(
-			"{ mode: 'standalone', domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } }, allPools: true }",
+			"{ mode: 'standalone', domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } }, domainModulePools: jobPools, allPools: true }",
 		);
 	});
 
@@ -189,7 +189,7 @@ describe('resolveJobsScaffoldLocals', () => {
 			readFile: () => null,
 		});
 		expect(bullmq.workerForRootOpts).toBe(
-			"{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: { redis_url: 'redis://localhost:6379' } }, allPools: true }",
+			"{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: { redis_url: 'redis://localhost:6379' } }, domainModulePools: jobPools, allPools: true }",
 		);
 	});
 

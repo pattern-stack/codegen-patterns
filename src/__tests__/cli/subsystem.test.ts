@@ -1268,9 +1268,10 @@ describe('subsystem — install (runtime: package)', () => {
 		// Exactly one top-level `jobs:` block key.
 		const jobsBlockCount = (cfg.match(/^jobs:/gm) ?? []).length;
 		expect(jobsBlockCount).toBe(1);
-		// Pool config (emitted only by the config-block template) appears once,
-		// not duplicated — a second injection would append a whole second block.
-		const poolHeaderCount = (cfg.match(/^\s+pools:/gm) ?? []).length;
+		// The (commented) pool example, emitted only by the config-block
+		// template, appears once — a second injection would append a whole
+		// second block.
+		const poolHeaderCount = (cfg.match(/^\s+# pools:/gm) ?? []).length;
 		expect(poolHeaderCount).toBe(1);
 	});
 

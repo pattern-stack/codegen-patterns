@@ -7,7 +7,7 @@
  * protocol). The Drizzle backend never reads any of it.
  */
 import { tokenKey } from '../token-key';
-import { loadPoolConfig, type PoolConfig } from './pool-config.loader';
+import type { PoolConfig } from './pool-config';
 
 /**
  * #6 — Structural mirror of BullMQ's `ConnectionOptions`. Declared locally
@@ -134,13 +134,13 @@ export function resolveBullMqConfig(
  *      sharing — `:` is fine in the *queue name* (it is only forbidden in the
  *      `jobId`, hence the sha1 there).
  *
- * `poolConfig` defaults to the cached `loadPoolConfig()` so callers that only
- * hold the logical pool name (the orchestrator) don't need to thread the map.
+ * `poolConfig` is the resolved map bound under `JOB_POOL_CONFIG` (CFG-1) —
+ * the worker and the orchestrator inject the same one.
  */
 export function resolvePoolQueueName(
   pool: string,
   config: BullMqResolvedConfig | null | undefined,
-  poolConfig: PoolConfig = loadPoolConfig(),
+  poolConfig: PoolConfig,
 ): string {
   const alias = poolConfig.get(pool)?.queue ?? pool;
   const prefix = config?.queuePrefix;

@@ -54,22 +54,16 @@ jobs:
   worker_mode: embedded            # embedded | standalone
 
   # ── Pools (logical lanes; one worker per pool) ──
-  pools:
-    events_inbound:
-      queue: jobs-events-inbound
-      concurrency: 20
-      reserved: true               # framework-only; user @JobHandler cannot target
-    events_change:
-      queue: jobs-events-change
-      concurrency: 30
-      reserved: true
-    events_outbound:
-      queue: jobs-events-outbound
-      concurrency: 10
-      reserved: true
-    interactive:
-      queue: jobs-interactive
-      concurrency: 20
-    batch:
-      queue: jobs-batch
-      concurrency: 5
+  # Five framework pools always exist: events_inbound (20), events_change (30)
+  # and events_outbound (10) — reserved for the events outbox drain — plus
+  # interactive (20) and batch (5, the @JobHandler default). A framework pool
+  # may tune `concurrency` / `description`; its `queue` and `reserved` are
+  # fixed. A pool of your own needs `queue` + `concurrency`. The generator
+  # validates this block and writes it into <generated>/app-config.ts — edit,
+  # then regenerate (`codegen entity new --all`); the app never reads this file.
+  # pools:
+  #   batch:
+  #     concurrency: 10
+  #   reports:
+  #     queue: jobs-reports
+  #     concurrency: 2

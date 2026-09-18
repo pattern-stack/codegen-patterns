@@ -22,6 +22,7 @@ import {
   JOB_STEP_SERVICE,
   JOBS_MULTI_TENANT,
   JOBS_LISTEN_NOTIFY,
+  JOB_POOL_CONFIG,
 } from './jobs-domain.tokens';
 import { DrizzleJobOrchestrator } from './job-orchestrator.drizzle-backend';
 import { DrizzleJobRunService } from './job-run-service.drizzle-backend';
@@ -34,6 +35,7 @@ import { MemoryJobOrchestrator } from './job-orchestrator.memory-backend';
 import { MemoryJobRunService } from './job-run-service.memory-backend';
 import { MemoryJobStepService } from './job-step-service.memory-backend';
 import { MemoryJobStore } from './memory-job-store';
+import { resolvePoolConfig, type PoolOverrides } from './pool-config';
 import {
   BULLMQ_CONNECTION,
   BULLMQ_RESOLVED_CONFIG,
@@ -98,6 +100,13 @@ export interface JobsDomainModuleOptions {
   };
   /** Multi-tenancy opt-in. Wired by JOB-8; module signature stays stable. */
   multiTenant?: boolean;
+  /**
+   * `codegen.config.yaml: jobs.pools` overrides (CFG-1). The generated wiring
+   * passes the generator-validated `jobPools` from `<generated>/app-config.ts`;
+   * merged onto the five framework pools and bound under `JOB_POOL_CONFIG`.
+   * Omitted ⇒ the framework pools alone.
+   */
+  pools?: PoolOverrides;
 }
 
 @Module({})
@@ -120,6 +129,9 @@ export class JobsDomainModule {
       // LISTEN-NOTIFY-1 — always provided so the orchestrator's `@Inject`
       // resolves; the orchestrator skips the `pg_notify` emit when `false`.
       { provide: JOBS_LISTEN_NOTIFY, useValue: listenNotify },
+      // CFG-1 — the resolved pool map. One value for the worker (activation,
+      // concurrency) and the BullMQ orchestrator (queue names).
+      { provide: JOB_POOL_CONFIG, useValue: resolvePoolConfig(opts.pools) },
     ];
 
     if (opts.backend === 'memory') {
@@ -162,7 +174,7 @@ export class JobsDomainModule {
         // tokens. Importing token references would force a static dep on the
         // tokens file in this module's import graph; using the existing
         // symbols already in scope is sufficient.
-        inject: [DRIZZLE, JOBS_MULTI_TENANT, BULLMQ_CONNECTION, BULLMQ_RESOLVED_CONFIG],
+        inject: [DRIZZLE, JOBS_MULTI_TENANT, BULLMQ_CONNECTION, BULLMQ_RESOLVED_CONFIG, JOB_POOL_CONFIG],
       });
       providers.push({ provide: JOB_RUN_SERVICE, useClass: DrizzleJobRunService });
       providers.push({ provide: JOB_STEP_SERVICE, useClass: DrizzleJobStepService });
@@ -178,6 +190,7 @@ export class JobsDomainModule {
       JOB_STEP_SERVICE,
       JOBS_MULTI_TENANT,
       JOBS_LISTEN_NOTIFY,
+      JOB_POOL_CONFIG,
     ];
     // BULLMQ-1 — only export the BullMQ tokens when they were actually
     // provided. Nest throws "exported but not provided" otherwise. Exported so

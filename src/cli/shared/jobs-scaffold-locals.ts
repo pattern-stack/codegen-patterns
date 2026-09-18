@@ -14,7 +14,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { projectLayout } from './project-layout.js';
+import { importSpecifier, projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, runtimeImport } from './runtime-import.js';
 import {
 	drizzleJobsExtensions,
@@ -49,6 +49,9 @@ export interface JobsScaffoldLocals {
 	 * extension clauses, with `mode: 'standalone'` first and `allPools: true`
 	 * last (reserved-lane drain). */
 	workerForRootOpts: string;
+	/** CFG-1 — `<generated>/app-config` as imported from `worker.ts`, for the
+	 * `jobPools` the worker passes as `domainModulePools`. */
+	appConfigImport: string;
 	/** Where `job-orchestration.schema.ejs.t` writes the scaffolded schema. */
 	schemaPath: string;
 	/** Sentinel-based idempotence flag for `main-hook.ejs.t`'s `skip_if`. */
@@ -136,6 +139,7 @@ export function resolveJobsScaffoldLocals(
 		workerPath,
 		jobWorkerModuleImport: resolveJobWorkerModuleImport(config),
 		workerForRootOpts: resolveWorkerForRootOpts(jobsBlock),
+		appConfigImport: importSpecifier(workerPath, path.join(layout.generated, 'app-config')),
 		schemaPath,
 		mainHookInjected,
 		// #517 — in package mode the schema ships in the package (consumed via the
@@ -165,11 +169,14 @@ function resolveJobWorkerModuleImport(config: CodegenConfig | null): string {
  * from the embedded branch: `mode: 'standalone'` is always first, and
  * `allPools: true` is always last — the standalone process is the sole worker,
  * so it MUST drain the reserved `events_*` lanes (the bridge fanout footgun).
+ * `domainModulePools: jobPools` (CFG-1) precedes it: the pool map is imported
+ * from the regenerated `<generated>/app-config`, so it stays current although
+ * `worker.ts` is emit-once.
  *
  * Shapes:
- *   - drizzle default → `{ mode: 'standalone', allPools: true }`
- *   - drizzle + knobs → `{ mode: 'standalone', domainModuleExtensions: { drizzle: {...} }, allPools: true }`
- *   - bullmq          → `{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: {...} }, allPools: true }`
+ *   - drizzle default → `{ mode: 'standalone', domainModulePools: jobPools, allPools: true }`
+ *   - drizzle + knobs → `{ mode: 'standalone', domainModuleExtensions: { drizzle: {...} }, domainModulePools: jobPools, allPools: true }`
+ *   - bullmq          → `{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: {...} }, domainModulePools: jobPools, allPools: true }`
  */
 function resolveWorkerForRootOpts(
 	jobsBlock: Record<string, unknown>,
@@ -191,6 +198,7 @@ function resolveWorkerForRootOpts(
 		);
 		if (workerExtClause) parts.push(workerExtClause);
 	}
+	parts.push('domainModulePools: jobPools');
 	parts.push(`allPools: true`);
 	return `{ ${parts.join(', ')} }`;
 }
@@ -235,6 +243,7 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 		'--workerPath', locals.workerPath,
 		'--jobWorkerModuleImport', locals.jobWorkerModuleImport,
 		'--workerForRootOpts', encodeWorkerForRootOpts(locals.workerForRootOpts),
+		'--appConfigImport', locals.appConfigImport,
 		'--schemaPath', locals.schemaPath,
 		'--mainHookInjected', workerSkipValue(locals.mainHookInjected),
 		// #517 — boolean-ish for `skip_if` (same '' / 'true' encoding as

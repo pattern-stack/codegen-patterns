@@ -85,6 +85,46 @@ describe('unknown and removed keys are errors naming the key and the file (issue
 		);
 	});
 
+	it('the jobs pool rules, at generation — CFG-1', () => {
+		const err = errorOf(() =>
+			parseCodegenConfig(
+				{
+					jobs: {
+						pools: {
+							events_inbound: { reserved: false },
+							batch: { queue: 'elsewhere', concurrency: 8 },
+							reports: { concurrency: 2 },
+							rogue: { queue: 'jobs-rogue', concurrency: 1, reserved: true },
+						},
+					},
+				},
+				'x.yaml',
+			),
+		);
+		expect(err.issues).toEqual([
+			expect.stringMatching(/^jobs\.pools\.events_inbound\.reserved: 'events_inbound' is a framework pool/),
+			expect.stringMatching(/^jobs\.pools\.batch\.queue: 'batch' is a framework pool/),
+			expect.stringMatching(/^jobs\.pools\.reports\.queue: user-defined pool 'reports' must declare a non-empty 'queue'/),
+			expect.stringMatching(/^jobs\.pools\.rogue\.reserved: .*framework-only/),
+		]);
+		// A framework pool tuning concurrency, and a complete user pool, pass.
+		expect(() =>
+			parseCodegenConfig(
+				{ jobs: { pools: { batch: { concurrency: 8 }, reports: { queue: 'jobs-reports', concurrency: 2 } } } },
+				'x.yaml',
+			),
+		).not.toThrow();
+	});
+
+	it('openapi: a bad value or an unknown key — CFG-1', () => {
+		expect(errorOf(() => parseCodegenConfig({ openapi: { auth: 'basic' } }, 'x.yaml')).issues[0]).toStartWith(
+			'openapi.auth:',
+		);
+		expect(errorOf(() => parseCodegenConfig({ openapi: { titel: 'x' } }, 'x.yaml')).issues[0]).toStartWith(
+			'openapi.titel: unknown key',
+		);
+	});
+
 	it('every issue is reported, not just the first', () => {
 		const err = errorOf(() =>
 			parseCodegenConfig({ paths: { entitis: 'a' }, generate: { architecture: 'mvc' } }, 'x.yaml'),
