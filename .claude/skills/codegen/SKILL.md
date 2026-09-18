@@ -53,11 +53,18 @@ codegen junction list
 `entity new` pre-flights each target (schema, `emits:`, `roles:`) and prints every rejection with its reasons in every
 mode; `--json` carries them in `failed[].details`. Continue-on-error is the default: rejected entities are skipped
 and the run exits 1. With `--no-continue-on-error` a pre-flight rejection stops the run before anything is generated (#627).
-Two pre-flight rejections are **run-level** and stop the run before hygen whatever the flag says (JOBS-2): an invalid
-`<paths.jobs_dir>/*.yaml` (#664 — its handler, scheduled events and bridge triggers feed registries every entity
-imports) and an app-pattern file the loader cannot register (a partial set would rewrite the orchestration barrel
-without its module). Same list, same printing, same `failed[]` entries; a stale `<type>.job.generated.ts` is left on
-disk and named in the rejection's details.
+Three pre-flight rejections are **run-level** and stop the run before hygen whatever the flag says: an invalid
+`<paths.jobs_dir>/*.yaml` (JOBS-2, #664 — its handler, scheduled events and bridge triggers feed registries every
+entity imports), an app-pattern file the loader cannot register (a partial set would rewrite the orchestration barrel
+without its module), and a `<paths.providers>/*.yaml` with a blocking issue — it does not load, names an unknown
+surface, reuses a slug, or its auth / client import does not resolve (CLI-1, #666 — its module, change sources and
+assemblies feed every integrated entity's wiring). Same list, same printing, same `failed[]` entries (`stopped:
+'pre-flight'`); a stale `<type>.job.generated.ts` is left on disk and named in the rejection's details. The provider
+set is loaded and validated once, in the pre-flight (`loadProviderSet`), and emitted from in the post-step
+(`emitProviderModules`); the rejection helpers are `src/cli/shared/run-rejections.ts`. Every other stop before a
+target is considered — no entity YAML, `--all` plus a path, neither, a dirty generated-output tree without `--force`
+— prints `{ command: 'entity new', status: 'error', error }` under `--json` (#669); the dirty-tree check stops the
+JSON run too.
 
 **Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
 `eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +
@@ -256,9 +263,8 @@ post-step — scope-entity-type, event codegen (an error-severity issue included
 (a rejected trigger set included), orchestration, frontend, provider / adapter / assembly / job-handler emitters. Each
 emitter's write helper wraps its own file; the CLI wraps each step in `generating(<step output root>, …)` so a failure
 before any write names the step's output. Declared skips (bridge not installed, no entities, a surface with no port
-package) stay informational. The dry-run orchestration *plan* still warns (it writes nothing). Invalid job YAML and
-unloadable pattern files are pre-flight rejections now (JOBS-2, above). Still soft: provider blocking issues under the
-default `--continue-on-error` (#666).
+package) stay informational. The dry-run orchestration *plan* still warns (it writes nothing). Invalid job YAML,
+unloadable pattern files and provider blocking issues are pre-flight rejections (JOBS-2, CLI-1, above).
 
 ```yaml
 runtime: package

@@ -21,6 +21,7 @@ import { generating } from "../../utils/generated-file";
 import type { AnalysisIssue } from "../../analyzer/types";
 import type { RuntimeMode } from "./runtime-import";
 import type { JobDefinition } from "../../schema/job-definition.schema";
+import { issueRejections } from "./run-rejections";
 import {
 	generateJobHandlerBase,
 	generateJobHandlerSubclass,
@@ -81,16 +82,7 @@ export function jobLoadRejections(
 	issues: AnalysisIssue[],
 	jobsHandlersDir: string,
 ): JobLoadRejection[] {
-	const byFile = new Map<string | null, string[]>();
-	for (const issue of issues) {
-		if (issue.severity !== "error") continue;
-		const file = issue.path ?? null;
-		const reasons = byFile.get(file) ?? [];
-		reasons.push(issue.message);
-		byFile.set(file, reasons);
-	}
-	return [...byFile].map(([file, reasons]) => {
-		const details = reasons.slice(1);
+	return issueRejections(issues).map(({ file, message, details }) => {
 		// No file, no base to name: a stale path is derived from the YAML's name.
 		if (file !== null) {
 			const staleBase = join(
@@ -103,7 +95,7 @@ export function jobLoadRejections(
 				);
 			}
 		}
-		return { file, message: reasons[0], details };
+		return { file, message, details };
 	});
 }
 
