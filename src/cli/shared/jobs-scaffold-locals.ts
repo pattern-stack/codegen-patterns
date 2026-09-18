@@ -95,7 +95,7 @@ function workerSkipValue(exists: boolean): string {
  * - `worker_mode` mirrors the spec default (`embedded`).
  * - `schemaPath` resolves from `paths.subsystems` (or
  *   `<paths.backend_src>/shared/subsystems` when unset; see
- *   `subsystems-path.ts`), then appends `jobs/job-orchestration.schema.ts`
+ *   `project-layout.ts`), then appends `jobs/job-orchestration.schema.ts`
  *   — matching exactly the
  *   location `copyRuntime` would have emitted before we skipped that file.
  */

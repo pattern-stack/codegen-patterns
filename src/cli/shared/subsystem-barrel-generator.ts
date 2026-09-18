@@ -657,8 +657,8 @@ export async function regenerateSubsystemBarrel(
 			: await detectInstalledSubsystems(ctx);
 
 	// Subsystems root → barrel can import via a relative path that works
-	// wherever the generated barrel ends up. `resolveSubsystemsRoot` returns
-	// an absolute path; honors `paths.subsystems` override or falls back to
+	// wherever the generated barrel ends up. `projectLayout(...).subsystems` is
+	// an absolute path: `paths.subsystems`, default
 	// `<paths.backend_src>/shared/subsystems`.
 	const subsystemsAbs = projectLayout(ctx.cwd, ctx.config).subsystems;
 	const barrelAbs = path.resolve(generatedDir, 'subsystems.ts');

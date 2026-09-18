@@ -84,7 +84,7 @@ export interface AuthScaffoldLocalsInput {
 /**
  * Resolve all Hygen locals for `subsystem install auth` from config + cwd.
  *
- * - `schemaPath` resolves through `resolveSubsystemsRootFromConfig` so it
+ * - `schemaPath` resolves through `projectLayout(...).subsystems` so it
  *   matches exactly where `copyRuntime` would have emitted the file
  *   (before `backendFileFilter` skipped it — see subsystem.ts).
  * - `appModulePath` resolves to `<cwd>/<paths.backend_src>/app.module.ts`,
