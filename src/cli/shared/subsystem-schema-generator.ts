@@ -41,6 +41,7 @@ import {
 	type InstalledSubsystem,
 	type SubsystemName,
 } from './subsystem-detect.js';
+import { GeneratedFileError, generating } from './generated-file.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 
@@ -203,13 +204,6 @@ export async function regenerateSubsystemSchemaBarrel(
 	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
 
 	const mode = resolveRuntimeMode(ctx.config);
-	const installed =
-		mode === 'package'
-			? configuredInstalledSubsystems(
-					ctx.config as Record<string, unknown> | null | undefined,
-				)
-			: await detectInstalledSubsystems(ctx);
-
 	const subsystemsAbs = projectLayout(ctx.cwd, ctx.config).subsystems;
 	const barrelAbs = path.resolve(generatedDir, 'subsystems-schema.ts');
 	let subsystemsRel = path
@@ -218,16 +212,30 @@ export async function regenerateSubsystemSchemaBarrel(
 		.join('/');
 	if (!subsystemsRel.startsWith('.')) subsystemsRel = './' + subsystemsRel;
 
-	const { content, emitted } = buildSubsystemSchemaBarrel(
-		installed,
-		subsystemsRel,
-		mode,
+	// JOBS-0 (#655): the Drizzle schema wiring imports this barrel — a failure
+	// throws a `GeneratedFileError` naming it, and the command fails.
+	let installed: InstalledSubsystem[];
+	try {
+		installed =
+			mode === 'package'
+				? configuredInstalledSubsystems(
+						ctx.config as Record<string, unknown> | null | undefined,
+					)
+				: await detectInstalledSubsystems(ctx);
+	} catch (err: unknown) {
+		throw new GeneratedFileError(barrelAbs, err);
+	}
+
+	const { content, emitted } = generating(barrelAbs, () =>
+		buildSubsystemSchemaBarrel(installed, subsystemsRel, mode),
 	);
 
 	let written = false;
 	if (!dryRun) {
-		fs.mkdirSync(path.dirname(barrelAbs), { recursive: true });
-		fs.writeFileSync(barrelAbs, content);
+		generating(barrelAbs, () => {
+			fs.mkdirSync(path.dirname(barrelAbs), { recursive: true });
+			fs.writeFileSync(barrelAbs, content);
+		});
 		written = true;
 	}
 

@@ -291,6 +291,16 @@ resolve against.
   worker — `jobs.worker_mode: standalone`, or no `worker_mode` — is now a
   config error naming both keys: a separate process cannot share the
   in-memory job store.
+- **A generated file the app imports that cannot be written fails the
+  command** (#655). `entity new`, `relationship new`, `junction new` and
+  `subsystem install` / `remove` printed a warning and exited 0 when
+  `<generated>/modules.ts`, `schema.ts`, `subsystems.ts`,
+  `subsystems-schema.ts` or `app-config.ts` failed to regenerate — leaving
+  `main.ts` / `worker.ts` importing a missing or stale module. They now exit 1
+  with `could not regenerate <file>: <cause>` (JSON: `{ status: 'error', file,
+  error }`). `subsystem install --json` (vendored) now regenerates the barrel
+  at all; the `barrelRegenerated` field of `subsystem remove --json` is gone
+  (it is always regenerated, or the command fails).
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
   `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
   and Nest's default `abortOnError` turns that into `process.exit(1)` — so

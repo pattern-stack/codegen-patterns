@@ -75,6 +75,7 @@ import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
+import { reportRegenerationFailure } from '../shared/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
@@ -561,6 +562,19 @@ export class SubsystemInstallCommand extends Command {
 			return 1;
 		}
 
+		// Refresh the subsystem composition barrel (<generated>/subsystems.ts +
+		// app-config.ts) so AppModule's `...SUBSYSTEM_MODULES` picks up the new
+		// install on the next boot. The app imports both: a failed regeneration
+		// fails the install, naming the file (JOBS-0, #655).
+		if (!this.dryRun) {
+			try {
+				const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
+				await regenerateSubsystemBarrel({ ctx, generatedDir });
+			} catch (err: unknown) {
+				return reportRegenerationFailure('subsystem install', err);
+			}
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'subsystem install',
@@ -716,18 +730,6 @@ export class SubsystemInstallCommand extends Command {
 			}
 		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
-
-		// Refresh the subsystem composition barrel (<generated>/subsystems.ts)
-		// so AppModule's `...SUBSYSTEM_MODULES` picks up the new install on
-		// the next boot. Soft-fail — the barrel is opt-in; consumers who haven't
-		// wired it see no behavioral change.
-		try {
-			const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
-			await regenerateSubsystemBarrel({ ctx, generatedDir });
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			printWarning(`subsystem barrel regeneration failed — ${msg}`);
-		}
 
 		// OBS-7: observability is a combiner (ADR-025) — no backend selection,
 		// and module order matters (composes siblings via @Optional() DI).
@@ -914,8 +916,7 @@ export class SubsystemInstallCommand extends Command {
 			const schema = await regenerateSubsystemSchemaBarrel({ ctx: refreshed, generatedDir });
 			schemaEmitted = schema.emitted;
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			printWarning(`barrel regeneration failed — ${msg}`);
+			return reportRegenerationFailure('subsystem install', err);
 		}
 
 		// #517: jobs is the only subsystem with consumer-owned scaffold files in
@@ -2307,17 +2308,13 @@ export class SubsystemRemoveCommand extends Command {
 		}
 
 		// Regenerate the barrel — detection now no longer finds this subsystem,
-		// so `SUBSYSTEM_MODULES` won't reference it. Soft-fail (the regen is
-		// opt-in like in install) so a missing generated dir doesn't fail the
-		// removal itself.
-		let barrelRegenerated = false;
+		// so `SUBSYSTEM_MODULES` won't reference it. The app imports it: a failed
+		// regeneration fails the removal, naming the file (JOBS-0, #655).
 		try {
 			const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 			await regenerateSubsystemBarrel({ ctx, generatedDir });
-			barrelRegenerated = true;
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			printWarning(`subsystem barrel regeneration failed — ${msg}`);
+			return reportRegenerationFailure('subsystem remove', err);
 		}
 
 		if (isJsonMode()) {
@@ -2326,7 +2323,6 @@ export class SubsystemRemoveCommand extends Command {
 				subsystem: desc.name,
 				status: 'removed',
 				path: subsystemDir,
-				barrelRegenerated,
 			});
 			return 0;
 		}
@@ -2334,9 +2330,7 @@ export class SubsystemRemoveCommand extends Command {
 		printSuccess(
 			`${desc.name} subsystem removed (${path.relative(ctx.cwd, subsystemDir) || subsystemDir}).`,
 		);
-		if (barrelRegenerated) {
-			printInfo('Regenerated <generated>/subsystems.ts barrel.');
-		}
+		printInfo('Regenerated <generated>/subsystems.ts barrel.');
 		printInfo('Next steps (manual):');
 		printInfo(
 			`  1. Remove the \`${capitalize(desc.name)}Module.forRoot(...)\` registration from app.module.ts.`,
