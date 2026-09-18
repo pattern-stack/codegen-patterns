@@ -231,9 +231,10 @@ read and fails on an undeclared one, and fails on any second loader — with no 
 
 **The consumer's app never reads the file (CFG-1, #643).** Keys the app needs at boot — `openapi.*`,
 `auth.devAllowAnonymous`, `jobs.pools` — are validated at generation and written into `<paths.generated>/app-config.ts`
-(`openapiConfig`, `authConfig`, `jobPools`; `@generated`, rewritten by `project init`, every `entity new` /
+(`openapiConfig`, `authConfig`, `jobPools`, `jobWorkerOptions` — GEN-0; `@generated`, rewritten by `project init`, every `entity new` /
 `subsystem install`/`remove`, `subsystem install openapi-config`, `project upgrade-openapi` / `upgrade-auth`).
-`main.ts`, the subsystem barrel and `worker.ts` import it. Edit the YAML, then regenerate. A new boot-time key goes
+`main.ts`, the subsystem barrel and `worker.ts` import it; an emit-once file never holds a config value (the
+standalone worker is `JobWorkerModule.forRoot(jobWorkerOptions)`, GEN-0 #652). Edit the YAML, then regenerate. A new boot-time key goes
 into that module (`src/cli/shared/app-config-generator.ts`), never a runtime YAML read.
 
 ```yaml

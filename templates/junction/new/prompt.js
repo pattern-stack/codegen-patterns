@@ -146,13 +146,15 @@ function processCustomFields(fields, junctionName) {
 function resolveOutputPaths(name, plural, architecture, srcRoot, modulesDir) {
   if (architecture === "clean-lite-ps") {
     // The junction's own folder is flat under the module tree (a junction has
-    // no `context:`) — `paths.modules_dir` (PATH-1, #645).
-    const dir = path.posix.normalize(`${modulesDir}/${plural}`);
+    // no `context:`) — the module-tree rule (`entityModuleNaming`, GEN-0 #649)
+    // under `paths.modules_dir` (PATH-1, #645).
+    const naming = entityModuleNaming({ name, plural }, modulesDir);
+    const dir = path.posix.normalize(naming.moduleDir);
     return {
-      entity:     `${dir}/${name}.entity.ts`,
-      repository: `${dir}/${name}.repository.ts`,
+      entity:     path.posix.normalize(`${naming.entityFile}.ts`),
+      repository: path.posix.normalize(naming.repositoryFile),
       service:    `${dir}/${name}.service.ts`,
-      module:     `${dir}/${plural}.module.ts`,
+      module:     path.posix.normalize(naming.moduleFile),
       index:      `${dir}/index.ts`,
     };
   }

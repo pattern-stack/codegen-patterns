@@ -30,7 +30,7 @@ function fail(msg: string): never {
 
 async function main(): Promise<void> {
 	const [tmpDir, appModuleArg, ...flags] = process.argv.slice(2);
-	if (!tmpDir) fail('usage: verify-boot.ts <tmpDir> [<app.module.ts, project-relative>] [--expect-pools <json>]');
+	if (!tmpDir) fail('usage: verify-boot.ts <tmpDir> [<app.module.ts, project-relative>] [--expect-pools <json>] [--expect-listen-notify]');
 	// `<paths.backend_src>/app.module.ts` — `src/` unless the harness says (PATH-0).
 	const appModuleRel = appModuleArg ?? 'src/app.module.ts';
 	// CFG-1: `--expect-pools <json>` — `jobs.pools` overrides the config declared;
@@ -43,6 +43,11 @@ async function main(): Promise<void> {
 					{ queue?: string; concurrency?: number }
 				>)
 			: null;
+
+	// GEN-0: `--expect-listen-notify` — `jobs.extensions.drizzle.listen_notify:
+	// true` was set after install; the regenerated `JobsDomainModule.forRoot`
+	// in `<generated>/subsystems.ts` must bind it.
+	const expectListenNotify = flags.includes('--expect-listen-notify');
 
 	// AppModule's path aliases (@shared/*, @modules/*, @generated/*) resolve
 	// relative to the tmp project's tsconfig — make it the cwd.
@@ -93,6 +98,11 @@ async function main(): Promise<void> {
 			}
 		}
 		console.log(`[boot-verify] OK — JOB_POOL_CONFIG carries the configured pools (${Object.keys(expectPools).join(', ')})`);
+	}
+	if (expectListenNotify) {
+		const listenNotify = app.get(Symbol.for('@pattern-stack/codegen.jobs.listen-notify'), { strict: false });
+		if (listenNotify !== true) fail(`JOBS_LISTEN_NOTIFY: expected true, got ${JSON.stringify(listenNotify)}`);
+		console.log('[boot-verify] OK — JOBS_LISTEN_NOTIFY carries the regenerated jobs.extensions.drizzle');
 	}
 	await app.close();
 

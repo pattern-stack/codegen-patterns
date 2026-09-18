@@ -315,6 +315,11 @@ No Docker required. Hygen invocation tested via baseline fixture in CI.
 - **Does not** modify `src/main.ts` beyond commented block — uncommenting = consumer decision
 - ~~`worker.ts` uses hard-coded `@shared/subsystems/jobs` import path~~ **Resolved by #513.** The worker's `JobWorkerModule` import now routes through the ADR-037 mode-aware resolver (package → `@pattern-stack/codegen/runtime/subsystems/jobs/index`, vendored → `@shared/subsystems/jobs/index`); `AppModule` is imported relatively. (`workerPath`/`mainTsPath` still hard-code `src/`; threading `paths.backend_src` into this resolver remains out of scope — it would move both together.)
 
+> **Revision 2026-09-18 (GEN-0, #652):** `workerForRootOpts`, its base64 argv crossing and `prompt.js`'s decode are
+> deleted. `worker.ts` renders `JobWorkerModule.forRoot(jobWorkerOptions)`, importing `jobWorkerOptions` from the
+> regenerated `<generated>/app-config.ts` (`--appConfigImport`); the emit-once file holds no config value. The notes
+> below are the #513 history. See `docs/specs/GEN-0.md`.
+
 ## #513 implementation notes (discovered during build)
 
 Two things the #513 design missed, recorded here as post-implementation truth:

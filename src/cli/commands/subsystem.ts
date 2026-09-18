@@ -29,6 +29,8 @@ import {
 import {
 	localsToHygenArgs,
 	resolveJobsScaffoldLocals,
+	staleWorkerNotice,
+	type JobsScaffoldLocals,
 } from '../shared/jobs-scaffold-locals.js';
 import {
 	localsToHygenArgs as integrationLocalsToHygenArgs,
@@ -384,6 +386,9 @@ export class SubsystemInstallCommand extends Command {
 		const installed = await detectInstalledSubsystems(ctx);
 		const already = installed.find((i) => i.name === desc.name);
 		if (already && !this.force) {
+			// GEN-0 (#652): the re-run a consumer makes on upgrade — name the
+			// one-time worker.ts edit here too.
+			const staleWorker = alreadyInstalledStaleWorker(desc.name, ctx);
 			if (isJsonMode()) {
 				printJson({
 					command: 'subsystem install',
@@ -391,9 +396,11 @@ export class SubsystemInstallCommand extends Command {
 					status: 'already-installed',
 					path: already.path,
 					backend: already.backend,
+					...(staleWorker ? { staleWorker } : {}),
 				});
 			} else {
 				printInfo(`${desc.name} is already installed at ${already.path} (pass --force to reinstall)`);
+				if (staleWorker) printWarning(staleWorker);
 			}
 			return 0;
 		}
@@ -646,6 +653,7 @@ export class SubsystemInstallCommand extends Command {
 				printSuccess(
 					`jobs scaffold applied (worker.ts, main.ts hook, config block, schema)`,
 				);
+				if (jobsScaffold.staleWorker) printWarning(jobsScaffold.staleWorker);
 			} else {
 				printWarning(
 					`jobs scaffold (Hygen) failed — runtime files were written; re-run after fixing: ${jobsScaffold.error ?? 'unknown error'}`,
@@ -785,17 +793,22 @@ export class SubsystemInstallCommand extends Command {
 		const already = installed.includes(desc.name);
 
 		if (already && !this.force) {
+			// GEN-0 (#652): the re-run a consumer makes on upgrade — name the
+			// one-time worker.ts edit here too.
+			const staleWorker = alreadyInstalledStaleWorker(desc.name, ctx);
 			if (isJsonMode()) {
 				printJson({
 					command: 'subsystem install',
 					subsystem: desc.name,
 					runtime: 'package',
 					status: 'already-installed',
+					...(staleWorker ? { staleWorker } : {}),
 				});
 			} else {
 				printInfo(
 					`${desc.name} is already in subsystems.install (runtime: package — nothing to vendor). Pass --force to refresh the config block + barrels.`,
 				);
+				if (staleWorker) printWarning(staleWorker);
 			}
 			return 0;
 		}
@@ -911,9 +924,9 @@ export class SubsystemInstallCommand extends Command {
 		// was already injected above (step 2b) and the schema ships in the
 		// package, so this scaffold pass emits ONLY those two files
 		// (`skipConfigBlock: true` neutralises the scaffold's own config plan).
-		// It runs against `refreshed.config` so `workerForRootOpts` reflects the
-		// freshly-injected jobs block (backend + extensions). `unless_exists` on
-		// the worker + the main-hook sentinel keep it idempotent.
+		// The worker's options live in the regenerated `<generated>/app-config.ts`
+		// (GEN-0), never in the file itself. `unless_exists` on the worker + the
+		// main-hook sentinel keep it idempotent.
 		const jobsScaffold =
 			desc.name === 'jobs'
 				? runJobsScaffold(ctx.cwd, refreshed.config, {
@@ -953,6 +966,7 @@ export class SubsystemInstallCommand extends Command {
 				printSuccess(
 					`jobs scaffold applied (emitted ${rel(layout.workerTs)} + ${rel(layout.mainTs)} hook; schema ships in the package).`,
 				);
+				if (jobsScaffold.staleWorker) printWarning(jobsScaffold.staleWorker);
 			} else {
 				printWarning(
 					`jobs scaffold (Hygen) failed — config + barrels were written; re-run after fixing: ${jobsScaffold.error ?? 'unknown error'}`,
@@ -1287,6 +1301,34 @@ interface JobsScaffoldOutcome {
 	/** #121 (F13): surfaces the detector state so the CLI can print a single
 	 * authoritative message and, on 'parse-error', fail the command. */
 	configBlockOutcome?: ConfigBlockOutcome;
+	/** GEN-0 (#652): the one-time edit an existing pre-GEN-0 `worker.ts` needs. */
+	staleWorker?: string;
+}
+
+function jobsLocals(cwd: string, config: Context['config']): JobsScaffoldLocals {
+	return resolveJobsScaffoldLocals({
+		cwd,
+		config,
+		fileExists: (p: string) => fs.existsSync(p),
+		readFile: (p: string) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null),
+	});
+}
+
+/**
+ * GEN-0 (#652): `worker.ts` is emit-once, so an existing one is never
+ * rewritten; name the one-time edit when it still bakes its options.
+ */
+function jobsStaleWorker(cwd: string, locals: JobsScaffoldLocals): string | undefined {
+	if (!locals.workerExists) return undefined;
+	const content = fs.readFileSync(locals.workerPath, 'utf-8');
+	return (
+		staleWorkerNotice(content, path.relative(cwd, locals.workerPath), locals.appConfigImport) ?? undefined
+	);
+}
+
+/** The stale-worker notice for an "already installed" early exit — jobs only. */
+function alreadyInstalledStaleWorker(subsystem: string, ctx: Context): string | undefined {
+	return subsystem === 'jobs' ? jobsStaleWorker(ctx.cwd, jobsLocals(ctx.cwd, ctx.config)) : undefined;
 }
 
 function runJobsScaffold(
@@ -1308,13 +1350,7 @@ function runJobsScaffold(
 		skipConfigBlock?: boolean;
 	},
 ): JobsScaffoldOutcome {
-	const locals = resolveJobsScaffoldLocals({
-		cwd,
-		config,
-		fileExists: (p: string) => fs.existsSync(p),
-		readFile: (p: string) =>
-			fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : null,
-	});
+	const locals = jobsLocals(cwd, config);
 
 	// Files the jobs templates will target (used by --dry-run output and
 	// JSON reporting). Ordering matches the template set. #517: the schema
@@ -1326,6 +1362,8 @@ function runJobsScaffold(
 		...(opts.skipConfigBlock ? [] : [locals.configPath]),
 		...(locals.skipSchema ? [] : [locals.schemaPath]),
 	];
+
+	const staleWorker = jobsStaleWorker(cwd, locals);
 
 	// #121 (F13): inspect the user's codegen.config.yaml BEFORE we invoke the
 	// main scaffold so a parse-error aborts early. The main scaffold
@@ -1343,7 +1381,7 @@ function runJobsScaffold(
 	}
 
 	if (opts.dryRun) {
-		return { ok: true, planned, configBlockOutcome };
+		return { ok: true, planned, configBlockOutcome, staleWorker };
 	}
 
 	const result = invokeHygen({
@@ -1388,7 +1426,7 @@ function runJobsScaffold(
 		}
 	}
 
-	return { ok: true, planned, configBlockOutcome };
+	return { ok: true, planned, configBlockOutcome, staleWorker };
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
  * #403 — `context:` drives the generated module output subfolder (clean-lite-ps).
  *
  * Verifies the central resolver (`buildCleanLitePsLocals` →
- * `clpOutputPaths` + `moduleGroupDir`):
+ * `clpOutputPaths` + `moduleDir`):
  *   - A top-level `context:` nests EVERY module file under
  *     `<src>/modules/<context>/<plural>/…`.
  *   - An untagged entity stays flat (`<src>/modules/<plural>/…`) — byte-identical

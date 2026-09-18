@@ -1323,3 +1323,51 @@ describe('subsystem — install (runtime: package)', () => {
 		expect(fs.existsSync(path.join(root, 'src/worker.ts'))).toBe(true);
 	});
 });
+
+// GEN-0 (#652): an upgrading consumer re-runs `subsystem install jobs` and hits
+// the "already installed" early exit — in both runtime modes that exit names
+// the one-time edit for a pre-GEN-0 `worker.ts`, in text and in `--json`.
+describe('subsystem — install jobs: stale worker.ts notice on the already-installed exit (GEN-0)', () => {
+	const STALE_CALL = "JobWorkerModule.forRoot({ mode: 'standalone', allPools: true })";
+
+	function mkProject(runtime: 'vendored' | 'package'): string {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), `subsystem-stale-${runtime}-`));
+		tempDirs.push(dir);
+		fs.writeFileSync(
+			path.join(dir, 'codegen.config.yaml'),
+			`runtime: ${runtime}\npaths:\n  backend_src: src\n`,
+		);
+		return dir;
+	}
+
+	for (const runtime of ['vendored', 'package'] as const) {
+		test(`${runtime}: a current worker.ts gets no notice; an old-shape one gets the edit`, async () => {
+			const root = mkProject(runtime);
+			const cli = buildCli();
+			const firstArgs = ['subsystem', 'install', 'jobs', '--cwd', root];
+			await capture(() => cli.run(runtime === 'vendored' ? [...firstArgs, '--force'] : firstArgs));
+			const workerPath = path.join(root, 'src/worker.ts');
+			const current = fs.readFileSync(workerPath, 'utf-8');
+			expect(current).toContain('JobWorkerModule.forRoot(jobWorkerOptions)');
+
+			const rerun = ['subsystem', 'install', 'jobs', '--json', '--cwd', root];
+			const fresh = JSON.parse((await capture(() => cli.run(rerun))).out);
+			expect(fresh.status).toBe('already-installed');
+			expect(fresh.staleWorker).toBeUndefined();
+
+			fs.writeFileSync(workerPath, current.replaceAll('JobWorkerModule.forRoot(jobWorkerOptions)', STALE_CALL));
+
+			const { result, out } = await capture(() => cli.run(rerun));
+			expect(result).toBe(0);
+			const parsed = JSON.parse(out);
+			expect(parsed.status).toBe('already-installed');
+			expect(parsed.staleWorker).toContain('src/worker.ts predates GEN-0 (#652)');
+			expect(parsed.staleWorker).toContain("import { jobWorkerOptions } from './generated/app-config';");
+
+			setJsonMode(false);
+			const text = await capture(() => cli.run(['subsystem', 'install', 'jobs', '--cwd', root]));
+			expect(text.out).toContain('predates GEN-0 (#652)');
+			expect(text.out).toContain('JobWorkerModule.forRoot(jobWorkerOptions),');
+		});
+	}
+});

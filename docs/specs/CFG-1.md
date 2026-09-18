@@ -118,6 +118,8 @@ smoke's dependency list (its only justification was "main.ts reads codegen.confi
 - The standalone `worker.ts` is emit-once, so the extension knobs `resolveWorkerForRootOpts` bakes into it
   (`backend`, `listen_notify`, `poll_interval_ms`, `stale_*`, `bullmq.*`) are frozen at first install. Same I2 defect
   class, different keys. Filed: **#652**. (`jobs.pools` is routed around it: `worker.ts` imports `jobPools`.)
+  *Revision 2026-09-18 (GEN-0, #652):* closed — `worker.ts` passes `jobWorkerOptions` from `app-config.ts` and holds
+  no config value; `resolveWorkerForRootOpts` is deleted (`docs/specs/GEN-0.md`).
 
 ## Found
 
