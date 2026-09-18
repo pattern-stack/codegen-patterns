@@ -13,9 +13,13 @@
  */
 
 import { describe, test, expect } from 'bun:test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { buildSubsystemBarrel } from '../../cli/shared/subsystem-barrel-generator.js';
 import type { InstalledSubsystem } from '../../cli/shared/subsystem-detect.js';
+
+const REPO_ROOT = path.resolve(import.meta.dir, '../../..');
 
 function inst(
 	name: InstalledSubsystem['name'],
@@ -126,13 +130,29 @@ describe('buildSubsystemBarrel', () => {
 		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools }),");
 	});
 
-	test("jobs `worker_mode: 'standalone'` (default) does NOT add JobWorkerModule", () => {
+	test("jobs `worker_mode: 'standalone'` does NOT add JobWorkerModule", () => {
 		const out = buildSubsystemBarrel(
 			[inst('jobs')],
-			{ jobs: { backend: 'drizzle' } },
+			{ jobs: { backend: 'drizzle', worker_mode: 'standalone' } },
 			subsystemsRel,
 		);
 		expect(out.content).not.toContain('JobWorkerModule');
+	});
+
+	test('jobs `worker_mode` absent composes what the jobs-config scaffold writes — embedded (JOBS-1, #659)', () => {
+		// The scaffold's config block states `worker_mode: embedded`; the schema's
+		// one default says the same for a block that omits it (or no block at all).
+		const block = fs.readFileSync(
+			path.join(REPO_ROOT, 'templates/subsystem/jobs-config/codegen-config-jobs-block.ejs.t'),
+			'utf-8',
+		);
+		const scaffolded = /^\s*worker_mode:\s*(\w+)/m.exec(block)?.[1];
+		expect(scaffolded).toBe('embedded');
+		const stated = buildSubsystemBarrel([inst('jobs')], { jobs: { backend: 'drizzle', worker_mode: scaffolded } }, subsystemsRel);
+		for (const cfg of [{ jobs: { backend: 'drizzle' } }, {}]) {
+			expect(buildSubsystemBarrel([inst('jobs')], cfg, subsystemsRel).content).toBe(stated.content);
+		}
+		expect(stated.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded'");
 	});
 
 	test('jobs `backend: bullmq` inlines the extensions block (BULLMQ-1)', () => {

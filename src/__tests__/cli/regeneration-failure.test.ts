@@ -6,6 +6,9 @@
  * exit 1, an error naming the file (text and JSON mode). The failure is a real
  * one — a directory sits where the file must be written (`EISDIR`), no mocks.
  * The smokes prove the happy path.
+ *
+ * JOBS-1 (#661): `subsystem install` (both runtime paths) regenerates those
+ * files from the config block it just injected, not the config read before.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -162,5 +165,113 @@ describe('subsystem install --json (vendored) regenerates the barrel', () => {
 			'EventsModule.forRoot(',
 		);
 		expect(fs.existsSync(path.join(root, 'src/generated/app-config.ts'))).toBe(true);
+	});
+});
+
+describe('subsystem install regenerates from the config block it just wrote (JOBS-1, #661)', () => {
+	const drizzleExt = '{ drizzle: { pollIntervalMs: 1000 } }';
+	for (const runtime of ['vendored', 'package'] as const) {
+		test(`${runtime}: jobs — subsystems.ts and app-config.ts carry the injected jobs: block`, async () => {
+			const root = mkProject(`runtime: ${runtime}\npaths:\n  backend_src: src\n`);
+			const { code } = await run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]);
+			expect(code).toBe(0);
+			expect(fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8')).toContain('worker_mode: embedded');
+			const barrel = fs.readFileSync(path.join(root, 'src/generated/subsystems.ts'), 'utf-8');
+			expect(barrel).toContain(`JobsDomainModule.forRoot({ backend: 'drizzle', extensions: ${drizzleExt}, pools: jobPools })`);
+			expect(barrel).toContain(
+				`JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModuleExtensions: ${drizzleExt}, domainModulePools: jobPools })`,
+			);
+			const appConfig = fs.readFileSync(path.join(root, 'src/generated/app-config.ts'), 'utf-8');
+			expect(appConfig).toMatch(
+				/export const jobWorkerOptions = \{[^}]*"backend": "drizzle",\s*"domainModuleExtensions": \{\s*"drizzle": \{\s*"pollIntervalMs": 1000\s*\}/,
+			);
+		}, 60_000);
+	}
+});
+
+describe('entity new fails when a post-step cannot regenerate a file the app imports (JOBS-1, #660)', () => {
+	// Package mode (the default); the only entity YAML is invalid, so hygen does
+	// nothing and the barrels (nothing installed) succeed — the step under test
+	// is the first to fail.
+	const project = (extra = '') => {
+		const root = mkProject(`paths:\n  entities: entities\n${extra}`);
+		fs.mkdirSync(path.join(root, 'entities'));
+		fs.writeFileSync(path.join(root, 'entities', 'example.yaml'), '# placeholder\n');
+		return root;
+	};
+
+	test('scope-entity-type.ts — names the file, exit 1', async () => {
+		const root = project();
+		const file = block(root, 'src/generated/scope-entity-type.ts');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`could not regenerate ${file}: EISDIR`);
+		expect(out).not.toContain('scope-entity-type generation failed');
+	});
+
+	test('event codegen — a blocked file, JSON mode', async () => {
+		const root = project();
+		const file = block(root, 'src/generated/events/types.ts');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out);
+		expect(payload).toMatchObject({ command: 'entity new', status: 'error', file });
+		expect(payload.error).toContain(`could not regenerate ${file}: EISDIR`);
+	});
+
+	test('event codegen — an error-severity issue (nothing written) fails, naming the output dir', async () => {
+		const root = project();
+		fs.mkdirSync(path.join(root, 'events'));
+		fs.writeFileSync(path.join(root, 'events', 'bad.yaml'), 'events:\n  - name: not an event\n');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`could not regenerate ${path.join(root, 'src/generated/events')}: `);
+		expect(out).toContain('bad.yaml');
+		expect(fs.existsSync(path.join(root, 'src/generated/events/types.ts'))).toBe(false);
+	});
+
+	test('provider blocking issue (--no-continue-on-error), JSON mode — the same error payload', async () => {
+		const root = project();
+		fs.mkdirSync(path.join(root, 'definitions/providers'), { recursive: true });
+		fs.writeFileSync(path.join(root, 'definitions/providers/broken.yaml'), 'slug: broken\n');
+		// --no-continue-on-error stops on an invalid entity YAML, so this case needs a valid one.
+		fs.writeFileSync(
+			path.join(root, 'entities', 'example.yaml'),
+			'entity:\n  name: note\n  plural: notes\n  table: notes\nfields:\n  body:\n    type: string\n',
+		);
+		const { code, out } = await run([
+			'entity', 'new', '--all', '--force', '--no-continue-on-error', '--json', '--cwd', root,
+		]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out);
+		expect(payload).toMatchObject({
+			command: 'entity new',
+			status: 'error',
+			file: path.join(root, 'src/integrations/providers'),
+		});
+		expect(payload.error).toContain("Required at 'surfaces'");
+	}, 60_000);
+
+	test('bridge registry — a duplicate trigger fails, naming the output dir', async () => {
+		const root = project('subsystems:\n  install: [bridge]\n');
+		fs.mkdirSync(path.join(root, 'src/jobs'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'src/jobs/welcome.handler.ts'),
+			[
+				"import { JobHandler } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
+				"@JobHandler<{}>('send_welcome', {",
+				'  triggers: [',
+				"    { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
+				"    { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
+				'  ],',
+				'})',
+				'export class SendWelcomeHandler { async run() {} }',
+				'',
+			].join('\n'),
+		);
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`could not regenerate ${path.join(root, 'src/generated')}: DuplicateTriggerError`);
+		expect(out).not.toContain('bridge registry codegen failed');
 	});
 });

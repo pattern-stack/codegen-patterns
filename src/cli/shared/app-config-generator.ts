@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { OpenApiConfigSchema, type CodegenConfig } from '../../schema/codegen-config.schema.js';
-import { generating } from './generated-file.js';
+import { generating } from '../../utils/generated-file.js';
 import { jobWorkerBackendOptions } from './job-worker-options.js';
 
 /** Placeholder serialised as a bare `undefined` (JSON has none). */

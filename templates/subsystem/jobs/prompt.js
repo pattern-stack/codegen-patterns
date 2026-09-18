@@ -11,7 +11,7 @@
  *     --workerPath <abs> --workerExists <'true'|''> \
  *     --jobWorkerModuleImport <specifier> --appConfigImport <specifier> \
  *     --mainTsPath <abs> --configPath <abs> --schemaPath <abs> \
- *     --multiTenant <'true'|'false'> --workerMode <embedded|standalone> \
+ *     --multiTenant <'true'|'false'> \
  *     --skipSchema <'true'|''> --appName <string>
  */
 
@@ -29,7 +29,6 @@ export default {
   prompt: async ({ args }) => {
     return {
       appName: args.appName ?? "",
-      workerMode: args.workerMode === "standalone" ? "standalone" : "embedded",
       multiTenant: coerceBool(args.multiTenant),
       mainTsPath: requiredPathArg(args, "mainTsPath", "subsystem jobs"),
       configPath: args.configPath ?? "codegen.config.yaml",

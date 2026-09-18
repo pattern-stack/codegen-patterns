@@ -570,9 +570,14 @@ them once with that call and `import { jobWorkerOptions } from './generated/app-
 prints the edit). Like every other generated file it
 is rewritten on regeneration (`codegen entity new --all`, any `codegen subsystem install`, `project upgrade-openapi` /
 `upgrade-auth`); editing `codegen.config.yaml` changes nothing until you regenerate, and a bad value fails the
-regeneration with the key named — never a silently-defaulted boot. A generated file the app imports that cannot be
-written (`modules.ts`, `schema.ts`, `subsystems.ts`, `subsystems-schema.ts`, `app-config.ts`) fails the command with
-exit 1 and the file named — never a warning over a stale module. The app has no `yaml` dependency.
+regeneration with the key named — never a silently-defaulted boot. `codegen subsystem install` regenerates from the
+config block it has just written, so a fresh install's `subsystems.ts` / `app-config.ts` already reflect it. A
+generated file the app imports that cannot be written — the barrels and `app-config.ts`, and everything else
+`entity new` emits after the entity modules (the `ScopeEntityType` union, the event modules, the bridge registry,
+orchestration modules, the frontend tree, provider / adapter / integration-assembly / job-handler files) — fails the
+command with exit 1 and the file named (or the step's output directory, when it failed before writing: an invalid
+`events/*.yaml`, a duplicate `@JobHandler` trigger) — never a warning over a stale module. The app has no `yaml`
+dependency.
 
 `codegen project init` defaults `generate.architecture` to `clean-lite-ps` — the lighter consumer-facing layout used by the scaffold-demo app. To opt into the full Clean Architecture pipeline (separate `domain/`, `application/`, `infrastructure/` directories, separate command/query classes), edit `codegen.config.yaml` and set `generate.architecture: clean`. The two pipelines are mutually exclusive and the scanner only overrides the default when it finds existing domain/application directories (see `docs/specs/TEST-SESSION-1.md` §3).
 

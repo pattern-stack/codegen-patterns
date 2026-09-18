@@ -42,7 +42,7 @@ import {
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
 import type { PathsConfig } from '../../schema/codegen-config.schema.js';
 import { deriveJunctionName } from '../../schema/junction-definition.schema.js';
-import { generating } from './generated-file.js';
+import { generating } from '../../utils/generated-file.js';
 
 // ---------------------------------------------------------------------------
 // Types
