@@ -115,6 +115,7 @@ Every one of these also assumed the target's folder is a sibling (`../<plural>/`
    junctions (`issue624Junction(folder, name, Pascal)`). It is still exact, named and asserted present-and-sole, not
    a filter. Against the **pre-NAME-0 generator** the extended smoke fails with 20 `TS2307`s per leg
    (`../people/…`, `../crews/…`), so the gate is real.
+   **Revision 2026-09-17:** fixed by RT-0 (#624, `docs/specs/RT-0.md`): both templates resolve these imports by runtime mode, and the expectation is deleted.
 9. **Pre-existing defects that shaped the fixtures** (not naming; filed, not fixed):
    - **#631**: two entities with FKs to each other fail `tsc` (TS7022/TS7024). Only a self-FK gets
      `AnyPgColumn`.

@@ -44,17 +44,21 @@ test-unit:
 test-smoke:
     bun test/smoke/run-smoke.ts
 
-# Junction smoke: intra-domain pairing (opportunity × contact), clean-lite-ps
+# Junction smoke: intra-domain pairing (opportunity × contact), clean-lite-ps,
+# both runtime modes (ADR-037) — the package leg guards #624
 test-smoke-junction:
-    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps
+    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime vendored
+    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime package
 
 # Junction smoke: intra-domain pairing, clean (full Clean Architecture)
 test-smoke-junction-clean:
     bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean
 
-# Junction smoke: cross-domain pairing (opportunity × activity), clean-lite-ps
+# Junction smoke: cross-domain pairing (opportunity × activity), clean-lite-ps,
+# both runtime modes (ADR-037)
 test-smoke-junction-cross-domain:
-    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps --runtime vendored
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps --runtime package
 
 # Junction smoke: cross-domain pairing, clean
 test-smoke-junction-cross-domain-clean:
