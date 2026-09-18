@@ -149,7 +149,7 @@ Append-only. A decision that changes an invariant or the target picture also get
 | Q1 | Frontend include mechanism: in `@pattern-stack/frontend-patterns` with thin generated wiring, or fully generated? | FE-REL design | `frontend-patterns` (the `createEntityHooks` precedent) | Doug |
 | Q2 | Per-hop scoping mechanism: v2 predefined relation `where` filters vs repository rewriting the include tree | REL-2 | decide by spike in REL-2's spec | REL-2 specifier |
 | Q3 | YAML shape of the HTTP include allowlist | REL-2 | design in REL-2's spec | REL-2 specifier |
-| Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | YAML for atomic tags + pure composites; adapter for data-driven | Doug (confirm at SEM-1) |
+| Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | **Decided by default at SEM-1 (#590)** per this recommendation — YAML for atomic tags + pure composites, adapter for data-driven — and built. Recorded in ADR-045 §Decision 7. Reversing it now means moving the composite metric schema out of the entity YAML. | Doug (confirm) |
 
 ## 8. Risks
 
