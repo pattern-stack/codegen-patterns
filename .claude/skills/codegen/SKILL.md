@@ -250,7 +250,9 @@ post-step — scope-entity-type, event codegen (an error-severity issue included
 (a rejected trigger set included), orchestration, frontend, provider / adapter / assembly / job-handler emitters. Each
 emitter's write helper wraps its own file; the CLI wraps each step in `generating(<step output root>, …)` so a failure
 before any write names the step's output. Declared skips (bridge not installed, no entities, a surface with no port
-package) stay informational. The dry-run orchestration *plan* still warns (it writes nothing).
+package) stay informational. The dry-run orchestration *plan* still warns (it writes nothing). Still soft, for
+JOBS-2: invalid *input* that yields a partial set — pattern-file import errors (a partial orchestration barrel),
+provider blocking issues under the default `--continue-on-error`, invalid job YAML (#664).
 
 ```yaml
 runtime: package

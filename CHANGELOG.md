@@ -156,6 +156,8 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   writes nothing then), a duplicate or unknown `@JobHandler` trigger. The
   JSON result's `scopeEntityType`, `eventCodegen`, `bridgeRegistry` and
   `orchestration` fields are never `null`.
+  `entity new --json --no-continue-on-error` with a blocking provider issue
+  now prints that same error payload instead of nothing.
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
   `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
   and Nest's default `abortOnError` turns that into `process.exit(1)` — so

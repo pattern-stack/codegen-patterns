@@ -67,7 +67,7 @@ import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { reportRegenerationFailure } from '../shared/generated-file.js';
-import { generating } from '../../utils/generated-file.js';
+import { GeneratedFileError, generating } from '../../utils/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
@@ -862,8 +862,14 @@ export class EntityNewCommand extends Command {
 				);
 			}
 		}
-		if (providerResult.issues.some((i) => i.severity === 'error') && !this.continueOnError) {
-			return 1;
+		const providerErrors = providerResult.issues.filter((i) => i.severity === 'error');
+		if (providerErrors.length > 0 && !this.continueOnError) {
+			// Text mode printed each issue above; JSON mode gets the same payload as every other failure.
+			if (!isJsonMode()) return 1;
+			return reportRegenerationFailure(
+				'entity new',
+				new GeneratedFileError(providerOutputRoot, providerErrors.map((i) => i.message).join('; ')),
+			);
 		}
 
 		// Adapter / module / barrel / surface-aggregator emission (RFC-0001 §2/§4,
