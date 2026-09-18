@@ -50,6 +50,13 @@ codegen junction new <yaml> | --all       # junctions/ — first-class M:N with 
 codegen junction list
 ```
 
+**Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
+`eav_definition_table` and each junction endpoint are addressed by the target entity's own `plural:` (table export +
+folder) and `context:` (folder nesting), read from `paths.entities` / `paths.entities_dir` (default `entities/`). A
+target with no YAML there is a **generation error** naming it. A `has_many` onto a target with no YAML — or one not
+generated yet — is not wired (the two-pass `targetExists` check), not an error. `relationship new` does not follow
+this rule yet (#633).
+
 `entity new` also runs the whole-set post-steps, all from the full definition set:
 
 - **Barrels** — `<paths.generated>/modules.ts` (`GENERATED_MODULES`) and `schema.ts`.
