@@ -23,6 +23,7 @@ import {
   projectEntityLookup,
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
+import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -510,6 +511,20 @@ export default {
     // Return all template locals
     // ======================================================================
 
+    // Package-owned runtime imports resolve by `runtime:` mode (ADR-037, #624)
+    // through the entity pipeline's resolver: `@shared/<relpath>` vendored,
+    // `@pattern-stack/codegen/runtime/<relpath>` under the package default.
+    // `@shared/database/database.module` is consumer-local in both modes.
+    const runtimeMode = loadRuntimeMode(cwd);
+    const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
+    const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
+    const junctionIntegrationRepositoryImport = runtimeImport(
+      runtimeMode,
+      'base-classes/junction-integration-repository',
+    );
+    const withAnalyticsImport = runtimeImport(runtimeMode, 'base-classes/with-analytics');
+    const baseServiceImport = runtimeImport(runtimeMode, 'base-classes/base-service');
+
     // @generated DO-NOT-EDIT banner — stamped at the top of every
     // force-overwritten junction output. `yamlPath` is the consumer-relative
     // source definition.
@@ -523,6 +538,13 @@ export default {
     return {
       // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
       generatedBanner,
+
+      // Runtime-mode import specifiers (#624)
+      drizzleTokenImport,
+      drizzleTypeImport,
+      junctionIntegrationRepositoryImport,
+      withAnalyticsImport,
+      baseServiceImport,
 
       // Identity
       name: junctionName,
