@@ -48,7 +48,7 @@ export class <%= classNames.service %> extends WithAnalytics(
 <% if (eavEnabled) { -%>
     private readonly fieldValues: FieldValueService,
 <% } -%>
-<% if (eavValueTable) { -%>
+<% if (eavValueTable && !eavDefinitionRepositoryImported) { -%>
     private readonly definitionRepo: <%= eavDefinitionPascal %>Repository,
 <% } -%>
 <%_ /* #632 — one constructor parameter per composed repository */ _%>
@@ -197,7 +197,7 @@ export class <%= classNames.service %> extends WithAnalytics(
     tx?: DrizzleTx,
   ): Promise<void> {
     if (!fields || Object.keys(fields).length === 0) return;
-    const allDefs = await this.definitionRepo.list();
+    const allDefs = await this.<%= eavDefinitionRepoProperty %>.list();
     const defs = allDefs.filter((d) => (d as any).entityType === entityType);
     const defIdByKey = new Map(defs.map((d) => [d.key, d.id]));
     const rows = toEavRows(entityId, entityType, userId, fields, defIdByKey);
@@ -215,7 +215,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   ): Promise<Record<string, unknown>> {
     const [rows, allDefs] = await Promise.all([
       this.repository.findByEntityIdAndType(entityId, entityType),
-      this.definitionRepo.list(),
+      this.<%= eavDefinitionRepoProperty %>.list(),
     ]);
     const defs = allDefs.filter((d) => (d as any).entityType === entityType);
     const defsById = new Map(defs.map((d) => [d.id, { key: d.key }]));

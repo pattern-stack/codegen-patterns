@@ -565,19 +565,19 @@ export default {
     // ======================================================================
 
     const outputPaths = {
-      entity: `${srcRoot}/modules/${entityNamePlural}/${name}.entity.ts`,
-      repository: `${srcRoot}/modules/${entityNamePlural}/${name}.repository.ts`,
-      service: `${srcRoot}/modules/${entityNamePlural}/${name}.service.ts`,
-      controller: `${srcRoot}/modules/${entityNamePlural}/${name}.controller.ts`,
-      module: `${srcRoot}/modules/${entityNamePlural}/${entityNamePlural}.module.ts`,
-      createDto: `${srcRoot}/modules/${entityNamePlural}/dto/create-${name}.dto.ts`,
-      updateDto: `${srcRoot}/modules/${entityNamePlural}/dto/update-${name}.dto.ts`,
-      outputDto: `${srcRoot}/modules/${entityNamePlural}/dto/${name}-output.dto.ts`,
-      index: `${srcRoot}/modules/${entityNamePlural}/index.ts`,
-      findByIdUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/find-${name}-by-id.use-case.ts`,
-      listUseCase: `${srcRoot}/modules/${entityNamePlural}/use-cases/list-${entityNamePlural}.use-case.ts`,
+      entity: `${relationshipModuleDir}/${name}.entity.ts`,
+      repository: `${relationshipModuleDir}/${name}.repository.ts`,
+      service: `${relationshipModuleDir}/${name}.service.ts`,
+      controller: `${relationshipModuleDir}/${name}.controller.ts`,
+      module: `${relationshipModuleDir}/${entityNamePlural}.module.ts`,
+      createDto: `${relationshipModuleDir}/dto/create-${name}.dto.ts`,
+      updateDto: `${relationshipModuleDir}/dto/update-${name}.dto.ts`,
+      outputDto: `${relationshipModuleDir}/dto/${name}-output.dto.ts`,
+      index: `${relationshipModuleDir}/index.ts`,
+      findByIdUseCase: `${relationshipModuleDir}/use-cases/find-${name}-by-id.use-case.ts`,
+      listUseCase: `${relationshipModuleDir}/use-cases/list-${entityNamePlural}.use-case.ts`,
       declarativeQueries: hasDeclarativeQueries
-        ? `${srcRoot}/modules/${entityNamePlural}/use-cases/declarative-queries.ts`
+        ? `${relationshipModuleDir}/use-cases/declarative-queries.ts`
         : null,
     };
 
