@@ -17,6 +17,7 @@
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { generating } from "../../utils/generated-file";
 import type { RuntimeMode } from "./runtime-import";
 import type { JobDefinition } from "../../schema/job-definition.schema";
 import {
@@ -49,13 +50,14 @@ function writeIfChanged(outPath: string, content: string): void {
 	if (existsSync(outPath) && statSync(outPath).isFile() && readFileSync(outPath, "utf-8") === content) {
 		return;
 	}
-	mkdirSync(dirname(outPath), { recursive: true });
-	writeFileSync(outPath, content);
+	writeFresh(outPath, content);
 }
 
 function writeFresh(outPath: string, content: string): void {
-	mkdirSync(dirname(outPath), { recursive: true });
-	writeFileSync(outPath, content);
+	generating(outPath, () => {
+		mkdirSync(dirname(outPath), { recursive: true });
+		writeFileSync(outPath, content);
+	});
 }
 
 export function emitJobHandlers(opts: EmitJobsOptions): EmitJobsResult {

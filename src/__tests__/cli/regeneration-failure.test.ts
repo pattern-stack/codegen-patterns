@@ -188,3 +188,68 @@ describe('subsystem install regenerates from the config block it just wrote (JOB
 		}, 60_000);
 	}
 });
+
+describe('entity new fails when a post-step cannot regenerate a file the app imports (JOBS-1, #660)', () => {
+	// Package mode (the default); the only entity YAML is invalid, so hygen does
+	// nothing and the barrels (nothing installed) succeed — the step under test
+	// is the first to fail.
+	const project = (extra = '') => {
+		const root = mkProject(`paths:\n  entities: entities\n${extra}`);
+		fs.mkdirSync(path.join(root, 'entities'));
+		fs.writeFileSync(path.join(root, 'entities', 'example.yaml'), '# placeholder\n');
+		return root;
+	};
+
+	test('scope-entity-type.ts — names the file, exit 1', async () => {
+		const root = project();
+		const file = block(root, 'src/generated/scope-entity-type.ts');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`could not regenerate ${file}: EISDIR`);
+		expect(out).not.toContain('scope-entity-type generation failed');
+	});
+
+	test('event codegen — a blocked file, JSON mode', async () => {
+		const root = project();
+		const file = block(root, 'src/generated/events/types.ts');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out);
+		expect(payload).toMatchObject({ command: 'entity new', status: 'error', file });
+		expect(payload.error).toContain(`could not regenerate ${file}: EISDIR`);
+	});
+
+	test('event codegen — an error-severity issue (nothing written) fails, naming the output dir', async () => {
+		const root = project();
+		fs.mkdirSync(path.join(root, 'events'));
+		fs.writeFileSync(path.join(root, 'events', 'bad.yaml'), 'events:\n  - name: not an event\n');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`could not regenerate ${path.join(root, 'src/generated/events')}: `);
+		expect(out).toContain('bad.yaml');
+		expect(fs.existsSync(path.join(root, 'src/generated/events/types.ts'))).toBe(false);
+	});
+
+	test('bridge registry — a duplicate trigger fails, naming the output dir', async () => {
+		const root = project('subsystems:\n  install: [bridge]\n');
+		fs.mkdirSync(path.join(root, 'src/jobs'), { recursive: true });
+		fs.writeFileSync(
+			path.join(root, 'src/jobs/welcome.handler.ts'),
+			[
+				"import { JobHandler } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
+				"@JobHandler<{}>('send_welcome', {",
+				'  triggers: [',
+				"    { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
+				"    { event: 'contact_created', map: (e) => ({ id: e.aggregateId }) },",
+				'  ],',
+				'})',
+				'export class SendWelcomeHandler { async run() {} }',
+				'',
+			].join('\n'),
+		);
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`could not regenerate ${path.join(root, 'src/generated')}: DuplicateTriggerError`);
+		expect(out).not.toContain('bridge registry codegen failed');
+	});
+});

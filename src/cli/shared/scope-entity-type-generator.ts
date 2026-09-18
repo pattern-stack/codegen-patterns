@@ -21,6 +21,7 @@ import path from 'node:path';
 
 import { loadEntityFromYaml } from '../../utils/yaml-loader.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { generating } from '../../utils/generated-file.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -132,8 +133,10 @@ export async function generateScopeEntityType(
 
 	let written = false;
 	if (!dryRun) {
-		fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-		fs.writeFileSync(outputPath, content);
+		generating(outputPath, () => {
+			fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+			fs.writeFileSync(outputPath, content);
+		});
 		written = true;
 	}
 

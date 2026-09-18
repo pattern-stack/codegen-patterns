@@ -31,6 +31,7 @@
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { generating } from "../../utils/generated-file";
 import type { AnalysisIssue } from "../../analyzer/types";
 import {
   type ActiveProviderDefinition,
@@ -387,9 +388,11 @@ export function generateProviderModules(
 
 /** Write only when content differs — avoids spurious mtime churn on re-emit. */
 function writeIfChanged(outPath: string, content: string): void {
-  if (existsSync(outPath) && readFileSync(outPath, "utf-8") === content) return;
-  mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, content);
+  generating(outPath, () => {
+    if (existsSync(outPath) && readFileSync(outPath, "utf-8") === content) return;
+    mkdirSync(dirname(outPath), { recursive: true });
+    writeFileSync(outPath, content);
+  });
 }
 
 /**
