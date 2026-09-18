@@ -31,7 +31,7 @@ import { d } from './_skip-guard';
 //   (4) the codegen-emitted `bridgeRegistry` populated by step (2)'s
 //       trigger declaration.
 //
-// The current `test/scaffold/contact-scaffold.yaml` is intentionally
+// The current `test/scaffold/entities/contact-scaffold.yaml` is intentionally
 // minimal (`pattern: Base`, no events, no queries — see header comment
 // in that file). Adding a triggered handler + event fixture would
 // require either:

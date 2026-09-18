@@ -219,10 +219,13 @@ function assertNoV1Relations(source: string, label: string): void {
  *   - Service composition methods: `account(contactId)` on ContactService
  *   - Absence of `include?`, `With`, `findByIdWithRelations` (CGP-358 destructive cleanup)
  *   - **Absence of the v1 Drizzle `relations()` const and its `drizzle-orm`
- *     root import** (DRZ-1, #583). Drizzle 1.0 removes the v1 API; the slot is
- *     deliberately empty until REL-1 (#586) emits a v2 `defineRelations()`
- *     manifest. These assertions were the CGP-62/CGP-358b presence checks,
- *     inverted rather than deleted so the harness still names the contract.
+ *     root import** (DRZ-1, #583). Drizzle 1.0 removes the v1 API. These
+ *     assertions were the CGP-62/CGP-358b presence checks, inverted rather than
+ *     deleted so the harness still names the contract.
+ *   - **Presence of the v2 `defineRelations()` manifest** and its wiring into
+ *     the emitted `database.module.ts` (REL-1, #586) — the slot DRZ-1 left
+ *     empty, now filled. The whole project type-checks after this function
+ *     returns, so these assertions pin the SHAPE while `tsc` proves it compiles.
  */
 /**
  * SEM-2 — assert the emitted semantic model (`src/generated/semantic/`).
@@ -374,6 +377,66 @@ function assertRelationshipEmission(tmpDir: string): void {
 		'opportunities.entity.ts belongs_to account FK column',
 	);
 	assertNoV1Relations(opportunitySchema, 'opportunities.entity.ts');
+
+	// ── generated/relations.ts — the v2 manifest (REL-1, #586) ──────────────
+	const manifest = reads('generated/relations.ts');
+	assertContains(
+		manifest,
+		/import \{ defineRelations \} from 'drizzle-orm';/,
+		'generated/relations.ts imports defineRelations',
+	);
+	assertContains(
+		manifest,
+		/import \* as schema from '\.\/schema';/,
+		'generated/relations.ts builds over the generated schema barrel',
+	);
+	// Self-ref one(), keyed by the YAML relationship name, nullable FK ⇒ optional.
+	assertContains(
+		manifest,
+		/parentAccount: r\.one\.accounts\(\{ from: r\.accounts\.parentAccountId, to: r\.accounts\.id, optional: true \}\)/,
+		'generated/relations.ts self-referential belongs_to',
+	);
+	// Both has_many inverses: the declared foreign_key lives on the TARGET table.
+	assertContains(
+		manifest,
+		/contacts: r\.many\.contacts\(\{ from: r\.accounts\.id, to: r\.contacts\.accountId \}\)/,
+		'generated/relations.ts account has_many contacts',
+	);
+	assertContains(
+		manifest,
+		/opportunities: r\.many\.opportunities\(\{ from: r\.accounts\.id, to: r\.opportunities\.accountId \}\)/,
+		'generated/relations.ts account has_many opportunities',
+	);
+	// Required FK ⇒ the include is not nullable.
+	assertContains(
+		manifest,
+		/account: r\.one\.accounts\(\{ from: r\.contacts\.accountId, to: r\.accounts\.id, optional: false \}\)/,
+		'generated/relations.ts contact belongs_to account',
+	);
+	// R2: explicit from/to on every relation is why no alias is ever emitted.
+	assertNotContains(
+		manifest,
+		/alias:/,
+		'generated/relations.ts must not emit an alias (REL-1 R2)',
+	);
+
+	// ── shared/database/database.module.ts — the DRZ-2 seam, now filled ─────
+	const databaseModule = reads('shared/database/database.module.ts');
+	assertContains(
+		databaseModule,
+		/import \{ relations \} from '\.\.\/\.\.\/generated\/relations';/,
+		'database.module.ts imports the generated manifest',
+	);
+	assertContains(
+		databaseModule,
+		/return drizzle\(\{ client: pool, relations \}\);/,
+		'database.module.ts passes relations to drizzle()',
+	);
+	assertContains(
+		databaseModule,
+		/export type DrizzleDB = NodePgDatabase<typeof relations>;/,
+		'database.module.ts parameterises DrizzleDB with the manifest type',
+	);
 }
 
 // ---------------------------------------------------------------------------

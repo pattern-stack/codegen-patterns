@@ -1,0 +1,40 @@
+# Account — scaffold integration fixture (REL-1, #586).
+#
+# Exists so the suite can prove the emitted `defineRelations()` manifest
+# round-trips against real Postgres: a SELF-REFERENTIAL belongs_to
+# (`parent_account`) plus two has_many inverses whose `foreign_key` lives on the
+# target table.
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  pattern: Base
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  parent_account_id:
+    type: uuid
+    required: false
+    index: true
+    foreign_key: accounts.id
+
+behaviors:
+  - timestamps
+
+relationships:
+  parent_account:
+    type: belongs_to
+    target: account
+    foreign_key: parent_account_id
+  contacts:
+    type: has_many
+    target: contact
+    foreign_key: account_id
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: account_id

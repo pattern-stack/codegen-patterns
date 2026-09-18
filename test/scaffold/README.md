@@ -11,8 +11,9 @@ Each suite imports through the `@gen/*` and `@shared/*` path aliases:
 
 - `@gen/*` → the repo root, where the harness generates the consumer
   (`modules/contacts/contact.repository.ts`, …). Those files only exist after
-  `bun src/cli/index.ts entity new test/scaffold/contact-scaffold.yaml`, which
-  `run-integration.ts` runs for you — and its teardown removes them again.
+  `bun src/cli/index.ts entity new --all` over `test/scaffold/entities/` plus
+  `junction new --all` over the junction fixtures staged into `<repo>/junctions`,
+  which `run-integration.ts` runs for you — and its teardown removes them again.
 - `@shared/*` → `runtime/` (the real source), with the scaffold's own
   `shared/database/database.module.ts` and base-class stubs taking precedence.
   Nothing is vendored: one copy of every module, so `instanceof` holds across
