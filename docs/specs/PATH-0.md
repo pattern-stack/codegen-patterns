@@ -203,7 +203,7 @@ then runs `project init --with-tsconfig`, `subsystem install events`, `entity ne
 
 ## Gates
 
-Run after the last code edit (commit `d9096c5`). The later commits change only docs, the spec and the CHANGELOG.
+Run after the last code edit (commit `d9096c5`). The later commits change only docs, the spec, the CHANGELOG and four source comments that still named deleted resolvers (typecheck re-run: clean).
 
 | Gate | Result |
 |---|---|
