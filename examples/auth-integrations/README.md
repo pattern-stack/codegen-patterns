@@ -46,8 +46,8 @@ cdp entity new connection          # emits the entity module next to the vendor
 ```
 
 The `auth-integrations` install:
-- copies `definitions/entities/connection.yaml` into your configured
-  `paths.entities` (or legacy `paths.entities_dir`) directory.
+- copies `definitions/entities/connection.yaml` into your entities
+  directory (`paths.entities`, default `entities/`).
 - vendors `runtime/connections/**` under
   `<backend_src>/modules/connections/` (override via `paths.modules_dir`),
   rewriting bare `@pattern-stack/codegen/runtime/subsystems/auth` imports to

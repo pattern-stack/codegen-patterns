@@ -150,8 +150,8 @@ const projectLookups = new Map();
 
 /**
  * The entity lookup for the project at `cwd`, resolved with the CLI's rule
- * (`codegen.config.yaml` found upward; `paths.entities` → `paths.entities_dir`
- * → `entities/`, first that exists). Cached per resolved directory for the
+ * (`codegen.config.yaml` found upward; `paths.entities` → `entities/`, first
+ * that exists). Cached per resolved directory for the
  * life of the process, so every prompt call in one process shares one walk.
  * (Each `entity new` runs hygen in its own process — see NAME-0 Found.)
  */

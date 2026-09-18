@@ -9,8 +9,8 @@
  * bun), so it may import only node built-ins and other shipped modules.
  *
  *   1. `codegen.config.yaml` is found walking upward from `cwd`.
- *   2. Candidates, in order: `paths.entities`, else `paths.entities_dir`
- *      (resolved against `cwd`), then `<cwd>/entities`.
+ *   2. Candidates, in order: `paths.entities` (resolved against `cwd`), then
+ *      `<cwd>/entities`.
  *   3. The first candidate that is an existing directory wins; none → null.
  */
 
@@ -19,7 +19,6 @@ import path from 'node:path';
 
 export interface EntitiesDirPaths {
 	entities?: unknown;
-	entities_dir?: unknown;
 }
 
 /**
@@ -41,11 +40,13 @@ export function findConfigUpward(start: string): string | null {
 
 /** The directories tried, in order (absolute). */
 export function entitiesDirCandidates(cwd: string, paths?: EntitiesDirPaths | null): string[] {
-	const configured = [paths?.entities, paths?.entities_dir].find(
-		(v): v is string => typeof v === 'string' && v.length > 0,
-	);
+	// `typeof` is load-bearing: callers hold raw `yaml.parse` output, so a blank
+	// `entities:` key is null at runtime however it is typed.
+	const configured = paths?.entities;
 	const candidates: string[] = [];
-	if (configured) candidates.push(path.resolve(cwd, configured));
+	if (typeof configured === 'string' && configured.length > 0) {
+		candidates.push(path.resolve(cwd, configured));
+	}
 	const fallback = path.resolve(cwd, 'entities');
 	if (!candidates.includes(fallback)) candidates.push(fallback);
 	return candidates;
