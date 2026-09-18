@@ -240,6 +240,23 @@ async function hints(ctx: Context): Promise<Hint[]> {
 // EntityNewCommand
 // ---------------------------------------------------------------------------
 
+/** One failed target, as the `--json` payload reports it. */
+interface RejectionEntry {
+	name: string;
+	file: string;
+	message: string;
+	details: string[];
+}
+
+function rejectionEntry(i: { file: string; message: string; details?: string[] }): RejectionEntry {
+	return {
+		name: path.basename(i.file),
+		file: i.file,
+		message: i.message,
+		details: i.details ?? [],
+	};
+}
+
 export class EntityNewCommand extends Command {
 	static paths = [['entity', 'new']];
 	static usage = Command.Usage({
@@ -374,21 +391,21 @@ export class EntityNewCommand extends Command {
 
 		// An entity with an `emits:` or `roles:` error is not generated: the
 		// hygen prompt assumes both blocks are valid.
-		for (const [block, errors] of [
-			['emits', emitsErrors],
-			['roles', roleErrors],
-		] as const) {
-			for (let i = validated.length - 1; i >= 0; i--) {
-				const v = validated[i]!;
-				const own = errors.filter((e) => e.entity === v.name);
-				if (own.length === 0) continue;
-				invalid.push({
-					file: v.file,
-					message: `${block}: validation failed`,
-					details: own.map((e) => e.message),
-				});
-				validated.splice(i, 1);
-			}
+		for (let i = validated.length - 1; i >= 0; i--) {
+			const v = validated[i]!;
+			const ownEmits = emitsErrors.filter((e) => e.entity === v.name);
+			const ownRoles = roleErrors.filter((e) => e.entity === v.name);
+			if (ownEmits.length === 0 && ownRoles.length === 0) continue;
+			const blocks = [
+				...(ownEmits.length > 0 ? ['emits:'] : []),
+				...(ownRoles.length > 0 ? ['roles:'] : []),
+			];
+			invalid.push({
+				file: v.file,
+				message: `${blocks.join(' and ')} validation failed`,
+				details: [...ownEmits, ...ownRoles].map((e) => e.message),
+			});
+			validated.splice(i, 1);
 		}
 
 		for (const i of invalid) {
@@ -405,12 +422,7 @@ export class EntityNewCommand extends Command {
 					stopped: 'pre-flight',
 					totals: { succeeded: 0, failed: invalid.length },
 					succeeded: [],
-					failed: invalid.map((i) => ({
-						name: path.basename(i.file),
-						file: i.file,
-						message: i.message,
-						details: i.details ?? [],
-					})),
+					failed: invalid.map(rejectionEntry),
 				});
 			}
 			return 1;
@@ -596,12 +608,7 @@ export class EntityNewCommand extends Command {
 					dryRun: true,
 					entities: validated.map((v) => ({ name: v.name, file: v.file })),
 					totals: { planned: validated.length, invalid: invalid.length },
-					invalid: invalid.map((i) => ({
-						name: path.basename(i.file),
-						file: i.file,
-						message: i.message,
-						details: i.details ?? [],
-					})),
+					invalid: invalid.map(rejectionEntry),
 					barrels: {
 						modules: barrelPlan.modulesBarrel,
 						schema: barrelPlan.schemaBarrel,
@@ -683,17 +690,7 @@ export class EntityNewCommand extends Command {
 
 		// Invoke Hygen for each validated target.
 		const succeeded: string[] = [];
-		const failed: Array<{
-			name: string;
-			file: string;
-			message: string;
-			details: string[];
-		}> = invalid.map((i) => ({
-			name: path.basename(i.file),
-			file: i.file,
-			message: i.message,
-			details: i.details ?? [],
-		}));
+		const failed: RejectionEntry[] = invalid.map(rejectionEntry);
 		for (const v of validated) {
 			if (!isJsonMode()) {
 				printInfo(`generating ${v.name}`);
