@@ -270,6 +270,9 @@ function runCodegen() {
         `--configPath "${join(sandbox, 'codegen.config.yaml')}" ` +
         `--workerExists true ` +
         `--workerPath "${join(sandbox, 'src/worker.ts')}" ` +
+        // CFG-1: required by the jobs prompt (worker.ts imports `jobPools`);
+        // unused here — `--workerExists true` skips the worker template.
+        `--appConfigImport ./generated/app-config ` +
         `--schemaPath "${v.out}" ` +
         // Silence the `mainHookInjected is not defined` EJS error in
         // `templates/subsystem/jobs/main-hook.ejs.t`. The baseline's
