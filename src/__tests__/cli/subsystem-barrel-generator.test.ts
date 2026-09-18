@@ -123,7 +123,7 @@ describe('buildSubsystemBarrel', () => {
 		expect(out.content).toContain(
 			"import { JobWorkerModule } from './shared/subsystems/jobs/job-worker.module';",
 		);
-		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', domainModulePools: jobPools }),");
+		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools }),");
 	});
 
 	test("jobs `worker_mode: 'standalone'` (default) does NOT add JobWorkerModule", () => {
@@ -287,7 +287,7 @@ describe('buildSubsystemBarrel', () => {
 			subsystemsRel,
 		);
 		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', domainModulePools: jobPools, allPools: true }),",
+			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, allPools: true }),",
 		);
 	});
 
@@ -297,7 +297,7 @@ describe('buildSubsystemBarrel', () => {
 			{ jobs: { backend: 'drizzle', worker_mode: 'embedded' } },
 			subsystemsRel,
 		);
-		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', domainModulePools: jobPools }),");
+		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools }),");
 		expect(out.content).not.toContain('allPools');
 		expect(out.content).not.toMatch(/JobWorkerModule\.forRoot\([^)]*\bpools:/);
 	});
@@ -327,7 +327,7 @@ describe('buildSubsystemBarrel', () => {
 			subsystemsRel,
 		);
 		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', domainModulePools: jobPools, pools: ['interactive', 'batch', 'events_inbound'] }),",
+			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, pools: ['interactive', 'batch', 'events_inbound'] }),",
 		);
 		expect(out.content).not.toContain('allPools');
 	});
@@ -339,7 +339,7 @@ describe('buildSubsystemBarrel', () => {
 			subsystemsRel,
 		);
 		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', domainModulePools: jobPools, allPools: true }),",
+			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, allPools: true }),",
 		);
 	});
 
@@ -540,7 +540,7 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		expect(out.content).toContain(
 			"import { JobWorkerModule } from '@pattern-stack/codegen/runtime/subsystems/jobs/index';",
 		);
-		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', domainModulePools: jobPools }),");
+		expect(out.content).toContain("JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools }),");
 	});
 
 	test('package-mode events listen_notify threads listenNotify alongside typedBus (LISTEN-NOTIFY-1)', () => {
@@ -634,7 +634,7 @@ describe('buildSubsystemBarrel — package mode (ADR-037)', () => {
 		);
 		// Gate 1 — the embedded worker drains every lane (reserved included).
 		expect(out.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', domainModulePools: jobPools, allPools: true }),",
+			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModulePools: jobPools, allPools: true }),",
 		);
 		// Gate 2b — the consumer registry is threaded in.
 		expect(out.content).toContain(
