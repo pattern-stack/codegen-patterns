@@ -44,9 +44,10 @@ The OpenAPI subsystem is a **cross-cutting documentation surface**, not a Protoc
                                      │
                                      ▼
               ┌──────────────────────────────────────────────┐
-              │ main.ts bootstrap:                           │
+              │ main.ts bootstrap (openapiConfig from the    │
+              │ generated <generated>/app-config.ts, CFG-1): │
               │   const doc = await registry.build({...})    │ (OPENAPI-4)
-              │   SwaggerModule.setup('/docs', app, doc)     │
+              │   SwaggerModule.setup(openapiConfig.path, …) │
               └──────────────────────────────────────────────┘
 ```
 
@@ -124,6 +125,10 @@ Controllers reference registered schemas by **string name** via
   `main.ts` awaits it once at bootstrap; that's the only intended call
   site.
 
+- **Do not read `codegen.config.yaml` from `main.ts` (or anything in the
+  consumer's app).** The `openapi:` block reaches the app as the generated
+  `openapiConfig` (`<generated>/app-config.ts`, CFG-1); its defaults live in
+  `OpenApiConfigSchema`, not in `??` fallbacks at the call site.
 - **Do not route Swagger UI setup through per-entity modules.**
   `SwaggerModule.setup()` is a bootstrap concern; the generated modules'
   sole OpenAPI responsibility is `registerSchema` at `onModuleInit`. The
