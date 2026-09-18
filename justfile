@@ -165,6 +165,14 @@ test-integration-quick:
 test-obs-integration:
     bun test "{{justfile_directory()}}/test/integration/observability-list-reads.drizzle.integration.test.ts"
 
+# Skips WITH A PRINTED REASON when the package checkout is absent, when Docker
+# is absent, or while the package cannot load against drizzle-orm 1.0
+# (query-surface#40). Point it at a checkout with QUERY_SURFACE_PATH=<path>.
+#
+# SEM-3 demonstration gate: the EMITTED model answers a fan-out-trap measure
+test-semantic-integration:
+    bun test "{{justfile_directory()}}/test/integration/semantic-fanout.drizzle.integration.test.ts"
+
 # JOB-FN-KEY (0.17.1) — function-form concurrency keys serialize at the DB
 # level against a real Postgres (testcontainers). Spins its own ephemeral
 # postgres:16; skips gracefully when Docker is unavailable. NOT in test-unit/CI

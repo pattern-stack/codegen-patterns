@@ -156,7 +156,7 @@ camelCases its relation keys because Drizzle needs JS identifiers; that constrai
 | `column` | always emitted explicitly (the snake field name) rather than relying on the package's "defaults to the field key" |
 | `choices` / `choices_from` | `hasDeclaredDomain: true` |
 | `tenant_id`, `organization_id`, `user_id` | `role: 'dimension'`, never a measure. Measures are only ever what the YAML tags, so "never a measure" holds by construction; the explicit dimension role makes them group-able. |
-| behavior columns (`created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) | present in `fields` with their type, no role — they are real columns and must resolve in a filter, but the author did not declare them analytically |
+| behavior columns (`created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) | **Corrected by SEM-3 (#592):** as built here they were *absent* — `ParsedEntity.fields` holds only the YAML `fields:` block, so a behavior's columns reached the table but not the model. SEM-3 expands them from `src/behaviors/`, keyed off the entity's `behaviors:` list, and gives the lifecycle columns `role: 'dimension'`. See `docs/specs/SEM-3.md` Found #2. |
 | EAV | `descriptor.eav` left unset (PLAN §5.3 defers it); `eav: true` entities emit normally minus custom fields |
 
 `searchableColumns` replicates the package's rule — string columns that are not identifiers or enums — but derives it
