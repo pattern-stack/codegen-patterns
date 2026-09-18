@@ -76,8 +76,9 @@ export abstract class ActivityEntityRepository<
    * Find activities within a date range (inclusive), by the recency column.
    */
   async findByDateRange(start: Date, end: Date): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(between(this.col(this.occurredAtColumn), start, end));
+    const rows = await this.baseQuery(
+      between(this.col(this.occurredAtColumn), start, end),
+    );
     return rows as TEntity[];
   }
 
@@ -85,8 +86,7 @@ export abstract class ActivityEntityRepository<
    * Find all activities for a specific user (actor / owner scoping).
    */
   async findByUserId(userId: string): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.col('userId'), userId));
+    const rows = await this.baseQuery(eq(this.col('userId'), userId));
     return rows as TEntity[];
   }
 
@@ -94,8 +94,7 @@ export abstract class ActivityEntityRepository<
    * Find all activities for a specific subject (config-driven FK column).
    */
   async findBySubjectId(subjectId: string): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.col(this.subjectColumn), subjectId));
+    const rows = await this.baseQuery(eq(this.col(this.subjectColumn), subjectId));
     return rows as TEntity[];
   }
 
@@ -104,8 +103,7 @@ export abstract class ActivityEntityRepository<
    * column descending.
    */
   async findRecentBySubjectId(subjectId: string, limit = 10): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.col(this.subjectColumn), subjectId))
+    const rows = await this.baseQuery(eq(this.col(this.subjectColumn), subjectId))
       .orderBy(desc(this.col(this.occurredAtColumn)))
       .limit(limit);
     return rows as TEntity[];

@@ -233,31 +233,23 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
   /**
    * Count entities matching an optional WHERE clause.
    * Soft-deleted rows are always excluded when softDelete=true.
+   *
+   * Routes the caller predicate through `scopeAnd()` — the SAME assembly
+   * `baseQuery()` uses — rather than re-listing the guards here. It used to
+   * hand-assemble them, which is how it silently drifted out of the choke
+   * point (SCOPE-0, #616); there is now exactly one place a guard is added.
    */
   async count(where?: SQL): Promise<number> {
-    let query = this.db
+    const query = this.db
       .select({ count: sql<number>`cast(count(*) as integer)` })
-      .from(this.tableRef);
+      .from(this.tableRef)
+      .$dynamic();
 
-    const conditions: SQL[] = [];
-    if (this.behaviors.softDelete) {
-      conditions.push(isNull(this.col('deletedAt')));
-    }
-    const scope = this.scopePredicate();
-    if (scope) {
-      conditions.push(scope);
-    }
-    if (where) {
-      conditions.push(where);
-    }
+    const scoped = this.scopeAnd(where, {
+      softDelete: this.behaviors.softDelete,
+    });
 
-    if (conditions.length === 1) {
-      query = query.where(conditions[0]) as typeof query;
-    } else if (conditions.length > 1) {
-      query = query.where(and(...conditions)) as typeof query;
-    }
-
-    const rows = await query;
+    const rows = await (scoped ? query.where(scoped) : query);
     return rows[0]?.count ?? 0;
   }
 
@@ -339,8 +331,14 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
    *
    * Pass the leaf predicate as `extra` rather than chaining a second
    * `.where(...)`: Drizzle's `.where()` OVERRIDES (does not AND) a prior
-   * `.where()` on a `$dynamic()` query, so a chained call would silently drop
-   * the soft-delete and scope guards. `baseQuery(extra)` is the safe form.
+   * `.where()` on a `$dynamic()` query — `pg-core/query-builders/select.js`
+   * is literally `this.config.where = where` — so a chained call silently
+   * drops the soft-delete and scope guards. `baseQuery(extra)` is the ONLY
+   * safe form.
+   *
+   * This is not advice: `this.baseQuery().where(...)` is a defect, 17 of them
+   * shipped (SCOPE-0, #616), and `src/__tests__/templates/no-basequery-where.test.ts`
+   * now fails the build on the shape anywhere under `templates/` or `runtime/`.
    */
   protected baseQuery(extra?: SQL) {
     const query = this.db.select().from(this.tableRef).$dynamic();
