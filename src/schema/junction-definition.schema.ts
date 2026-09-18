@@ -149,3 +149,21 @@ export function safeValidateJunctionDefinition(data: unknown): {
 	}
 	return { success: false, error: result.error };
 }
+
+// ============================================================================
+// Naming
+// ============================================================================
+
+/**
+ * A junction's name is its pairing, in declaration order:
+ * `between: [opportunity, contact]` → `opportunity_contact`.
+ *
+ * There is no YAML override — `JunctionDefinitionSchema` is `.strict()` and
+ * declares no `name` key, so the pairing is the only source (GATE-1, #599).
+ * Lives here, next to the schema that makes that true, because two readers now
+ * depend on it: the barrel generator (which names the emitted module) and
+ * CAP-2's role validator (which resolves a `many` role's `via:`).
+ */
+export function deriveJunctionName(def: { between: [string, string] }): string {
+	return `${def.between[0]}_${def.between[1]}`;
+}

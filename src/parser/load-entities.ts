@@ -36,6 +36,7 @@ import {
 	type RelationshipTypes,
 } from '../schema/relationship-definition.schema';
 import type { FieldDefinition } from '../schema/entity-definition.schema';
+import { deriveRoleRelationships, roleForeignKey } from '../roles/derive';
 
 /**
  * Map the YAML `ui_*` keys onto `ParsedField.ui`. Shared by the entity and
@@ -138,6 +139,55 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 				resolved: false,
 			};
 			entity.relationships.set(name, relationship);
+		}
+	}
+
+	// Parse roles (CAP-2) and merge the `cardinality: one` ones into
+	// `relationships` as derived `belongs_to` edges, keyed by role name.
+	//
+	// The merge is the point: graph building, `resolveReferences`, the relations
+	// manifest and every later consumer see a role as the edge it is, without
+	// any of them learning a second vocabulary. `role` marks where it came from
+	// for the consumers that do care (CAP-3, the semantic model).
+	if (definition.roles) {
+		entity.roles = new Map();
+		const derivedRelationships = deriveRoleRelationships(definition.roles);
+
+		for (const [name, roleDef] of Object.entries(definition.roles)) {
+			if (roleDef.cardinality === 'many') {
+				// RolesSchema's superRefine rejects a many-role without `via:`, so
+				// this only fires if that rule is ever removed.
+				if (roleDef.via === undefined) {
+					throw new Error(`role '${name}': cardinality many without via (schema invariant broken)`);
+				}
+				entity.roles.set(name, {
+					name,
+					target: roleDef.target,
+					cardinality: 'many',
+					via: roleDef.via,
+				});
+				continue;
+			}
+			entity.roles.set(name, {
+				name,
+				target: roleDef.target,
+				cardinality: 'one',
+				column: roleDef.column,
+				nullable: roleDef.nullable,
+				onDelete: roleDef.on_delete,
+				foreignKey: roleForeignKey(name, roleDef.target, roleDef.column),
+			});
+		}
+
+		for (const [name, derived] of Object.entries(derivedRelationships)) {
+			entity.relationships.set(name, {
+				name,
+				type: derived.type,
+				target: derived.target,
+				foreignKey: derived.foreign_key,
+				resolved: false,
+				role: name,
+			});
 		}
 	}
 

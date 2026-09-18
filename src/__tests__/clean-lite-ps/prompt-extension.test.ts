@@ -921,3 +921,112 @@ describe('capability composition emission (ADR-041)', () => {
     );
   });
 });
+
+// ============================================================================
+// CAP-2 — role-derived belongs_to rides the existing FK path
+// ============================================================================
+
+describe('roles: → belongs_to emission (CAP-2)', () => {
+  // prompt.js merges derived relationships before calling the extension; this
+  // reproduces that merge with the same shared function.
+  const withRoles = async (roles: Record<string, unknown>, fields: Record<string, unknown> = {}) => {
+    const { deriveRoleRelationships } = await import('../../roles/derive.ts');
+    return {
+      entity: { name: 'meeting', plural: 'meetings', table: 'meetings' },
+      fields: { title: { type: 'string', required: true }, ...fields },
+      relationships: { ...deriveRoleRelationships(roles as never) },
+      behaviors: ['timestamps'],
+    };
+  };
+
+  it('a one-role emits its FK column, keyed by the ROLE, indexed by default', async () => {
+    const locals = buildCleanLitePsLocals(
+      await withRoles({ host: { target: 'contact', cardinality: 'one' } }),
+      EMPTY_BASE_LOCALS,
+    );
+    const host = locals.clpBelongsTo.find((r: { field: string }) => r.field === 'host_contact_id');
+    expect(host).toBeDefined();
+    expect(host.relationKey).toBe('host');
+    expect(host.role).toBe('host');
+    expect(host.hasIndex).toBe(true);
+    expect(host.onDelete).toBe('restrict');
+    expect(host.nullable).toBe(true);
+    expect(
+      locals.clpTableConstraints.map((c: { expr: string }) => c.expr),
+    ).toContain("index('meetings_host_contact_id_idx').on(t.hostContactId)");
+  });
+
+  it('two one-roles to the same target get two distinct relation keys', async () => {
+    const locals = buildCleanLitePsLocals(
+      await withRoles({
+        host: { target: 'contact', cardinality: 'one' },
+        organizer: { target: 'contact', cardinality: 'one' },
+      }),
+      EMPTY_BASE_LOCALS,
+    );
+    expect(locals.clpBelongsTo.map((r: { relationKey: string }) => r.relationKey).sort()).toEqual([
+      'host',
+      'organizer',
+    ]);
+  });
+
+  it('declaring the FK field explicitly still controls required + index', async () => {
+    const locals = buildCleanLitePsLocals(
+      await withRoles(
+        { host: { target: 'contact', cardinality: 'one' } },
+        { host_contact_id: { type: 'uuid', required: true } },
+      ),
+      EMPTY_BASE_LOCALS,
+    );
+    const host = locals.clpBelongsTo.find((r: { field: string }) => r.field === 'host_contact_id');
+    expect(host.nullable).toBe(false);
+    // The field is declared without `index: true`, so the author has opted out.
+    expect(host.hasIndex).toBe(false);
+    // And the FK column is not emitted twice as a plain field.
+    expect(
+      locals.clpProcessedFields.some((f: { name: string }) => f.name === 'host_contact_id'),
+    ).toBe(false);
+  });
+
+  it('role nullable: wins over the FK field required: — the same precedence as a declared belongs_to', async () => {
+    const roleLocals = buildCleanLitePsLocals(
+      await withRoles(
+        { host: { target: 'contact', cardinality: 'one', nullable: true } },
+        { host_contact_id: { type: 'uuid', required: true } },
+      ),
+      EMPTY_BASE_LOCALS,
+    );
+    const declaredLocals = buildCleanLitePsLocals(
+      {
+        entity: { name: 'meeting', plural: 'meetings', table: 'meetings' },
+        fields: { host_contact_id: { type: 'uuid', required: true } },
+        relationships: {
+          host: { type: 'belongs_to', target: 'contact', foreign_key: 'host_contact_id', nullable: true },
+        },
+        behaviors: [],
+      },
+      EMPTY_BASE_LOCALS,
+    );
+    const role = roleLocals.clpBelongsTo.find((r: { field: string }) => r.field === 'host_contact_id');
+    const declared = declaredLocals.clpBelongsTo.find((r: { field: string }) => r.field === 'host_contact_id');
+    expect(role.nullable).toBe(true);
+    // One rule, two entry points: the role and the equivalent declared
+    // relationship resolve identically.
+    expect(role.nullable).toBe(declared.nullable);
+  });
+
+  it('a declared (non-role) relationship keeps its target-derived key', () => {
+    const locals = buildCleanLitePsLocals(
+      {
+        entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
+        fields: {},
+        relationships: { account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
+        behaviors: [],
+      },
+      EMPTY_BASE_LOCALS,
+    );
+    expect(locals.clpBelongsTo[0].relationKey).toBe('account');
+    expect(locals.clpBelongsTo[0].role).toBeNull();
+    expect(locals.clpBelongsTo[0].hasIndex).toBe(false);
+  });
+});

@@ -222,6 +222,13 @@ Gates that are red on `main` today, on purpose recorded here rather than hidden,
 |---|---|---|
 | `just test-smoke-junction-clean` | Red, and now reports its real number: **118** errors (110 × TS2307 unresolved module + 8 × TS7006). GATE-1 measured 120 raw behind a filter that reported 21; DRZ-2 deleted the filter (#576) and fixed 2 of the 120 (the vendored events siblings, #575). Only ~15 are the junction pipeline; the rest are the `clean` entity pipeline's missing `domain/` + `constants/` barrels, DTO `schemas` barrel, `database.module`, `zod-validation.pipe`, the generated schema barrel's singular/plural filename mismatch, and the `@repo/db/server/schema` location contract. The `clean` backend pipeline has never been typechecked anywhere — the baseline gate compiles `packages/api/src/domain/**/*` only. | **#602** (diagnosis in `docs/specs/GATE-1.md` §Failure 2); deferred by charter §5 non-goals |
 
+**Named expectations inside green gates** — each one exact file, exact error code, issue number, asserted present
+*and* sole, so it fails the moment the defect is fixed and must then be deleted:
+
+| Gate | Expectation | Tracking |
+|---|---|---|
+| `just test-smoke-capability` (package leg only) | `applyIssue624Expectation`: the generated `meeting_contact` junction's repository + service — all 16 diagnostics enumerated by file, code and named symbol with exact counts (7 × TS2307 for 5 package-owned `@shared/*` runtime modules, 4 × TS4112, 5 × TS2339), compared as a multiset both ways. `junction new` / `relationship new` hardcode `@shared/*` and do not compile under `runtime: package`; every junction harness pins vendored, so nothing saw it until CAP-2 generated a junction in both modes. | **#624** |
+
 That is the whole list. No gate anywhere filters an error class or carves out a directory: every smoke scopes its
 `tsc` output through `test/smoke/_consumer-errors.ts`, by the diagnostic's **location** only (GATE-2, #604). If a
 future error genuinely cannot be fixed in the PR that surfaces it, give it a **named single-purpose expectation** —

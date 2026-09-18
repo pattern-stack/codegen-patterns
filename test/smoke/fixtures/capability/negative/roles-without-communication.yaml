@@ -1,0 +1,20 @@
+# CAP-2 negative fixture: `roles:` on an entity without `Communication`.
+#
+# `roles:` and the `Communication` capability imply each other — without it the
+# roles are declared participants nothing will ever read.
+entity:
+  name: memo
+  plural: memos
+  table: memos
+  folder_structure: nested
+
+fields:
+  body:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps
+
+roles:
+  host: { target: contact, cardinality: one }
