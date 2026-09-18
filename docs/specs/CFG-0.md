@@ -1,7 +1,7 @@
 # CFG-0 — `codegen.config.yaml` is validated at runtime, once, for every reader
 
-**Status:** Design
-**Date:** 2026-09-18
+**Status:** Implemented
+**Date:** 2026-09-18 · **Implemented:** 2026-09-18
 **Issue:** #640
 **Project:** #578
 **Depends on:** CLI-0 (#641, `paths.entities_dir` deleted)
@@ -54,8 +54,9 @@ also ship) owns reading, parsing and validating:
 
 - `resolveConfigPath(cwd)` — `CODEGEN_CONFIG_PATH` when set (the CLI sets it for the hygen subprocess, so an explicit
   `--config` reaches the prompts), else `findConfigUpward(cwd)` (the CLI's existing rule).
-- `loadCodegenConfig(configPath)` — read, `yaml.parse`, `CodegenConfigSchema.parse`; cached per path for the life of
-  the process. Throws `CodegenConfigError`, whose message names the file and lists every issue as
+- `loadCodegenConfig(configPath)` — read, `yaml.parse`, `CodegenConfigSchema.parse`; cached per path and reused while
+  the file text is unchanged (`subsystem install` edits the file and re-reads it in the same process, so a
+  path-only cache served a stale parse). Throws `CodegenConfigError`, whose message names the file and lists every issue as
   `<key.path>: <message>`; an unknown key reads `paths.entities_dir: unknown key (expected one of: backend_src, …)`.
 - `loadProjectConfig(cwd)` — `resolveConfigPath` + `loadCodegenConfig`; `null` when there is no file.
 
@@ -69,10 +70,16 @@ Readers after the change:
 | `templates/_shared/entity-naming.mjs` | own `yaml.parse` of `paths` | `loadProjectConfig(cwd)?.paths` |
 | `templates/entity/new/prompt.js` | two own `yaml.parse`s (`behaviors`, `patterns`) | `getProjectConfig()` |
 | `templates/junction/new/prompt.js` | own `yaml.parse` | `loadProjectConfig(cwd)` |
+| `src/cli/shared/pattern-globs.ts` / `prompt.js` `patterns` | CLI: empty list ⇒ default glob; prompt: empty list ⇒ `[]` | both: absent or empty ⇒ default glob |
+| `src/cli/shared/subsystem-detect.ts` › `configuredInstalledSubsystems` | `config[name].backend` for every installed name | only for the six blocks that declare `backend` |
 | `src/config/naming-config.mjs` | deep-merge + re-validate `naming` | reads the parsed, defaulted `naming` |
 | `src/cli/commands/project-upgrade-auth.ts` › `authBarrelImport` | regex over the file text for `runtime: vendored` | `loadProjectConfig(projectRoot)?.runtime` |
 | `src/emitters/frontend/load-context.ts` | re-parses `frontend` with `safeParse`, silently defaulting on failure | reads the parsed block |
 | `src/config/config-loader.ts`, `src/utils/config-loader.ts` | unimported | deleted |
+
+`src/schema/naming-config.schema.mjs` keeps its constants and resolver but loses its plain-JS validator (a second
+validator of the same block). `src/config/paths.mjs` exports `GENERATE_DEFAULTS` (= `GenerateConfigSchema.parse({})`,
+unit-tested) for the no-config-file case.
 
 The CLI throws `CodegenConfigError` out of `loadContext`; Clipanion prints `Codegen Config Error: …` and exits 1
 (the error carries `clipanion: { type: 'none' }`, so no stack). A prompt run directly through hygen throws the same
@@ -82,7 +89,8 @@ error at import of `config-loader.mjs`, and hygen exits non-zero.
 `main.ts` (`openapi.*`, `auth.devAllowAnonymous`; `init-scaffold.ts`, `project-upgrade-openapi.ts`,
 `project-upgrade-auth.ts`) and the jobs runtime's `pool-config.loader.ts` (`jobs.pools`). They cannot import the
 generator's loader without making it a runtime dependency of the app. Their keys are declared, so the generator
-rejects a bad value before the app sees it. Follow-up issue filed (see Found).
+rejects a bad value before the app sees it. Follow-up: **#643**. The census test's "no second loader" check lists
+exactly these four files as allowed.
 
 ### Key census
 
@@ -149,8 +157,8 @@ reader and from every writer; the schema then rejects it.
 3. `codegen entity new --all` with an unknown key exits 1 and prints the key; so does `hygen entity new` run directly.
 4. Every fixture config (`test/fixtures/codegen.config*.yaml`), every subsystem-config injector block, the config
    `project init` writes and the config `project scan --write` writes pass the strict parse (unit-tested).
-5. No reader of `codegen.config.yaml` in the generator calls `yaml.parse` on it except `project-config.ts` (the
-   config-block injectors edit the file as text and are writers).
+5. No file both locates `codegen.config.yaml` and parses YAML except `project-config.ts` and the four consumer-runtime
+   emitters (#643) — grep-asserted, with the exception list exact.
 
 ## What downstream must know
 
@@ -159,3 +167,32 @@ reader and from every writer; the schema then rejects it.
 - The parsed config carries schema defaults (`generate`, `frontend`, `auth`, `naming`, `behaviors`, `database`,
   `paths.generated`, `runtime`, `patterns`). `ctx.config` is `null` only when there is no file.
 - PLAN Unit 3 renames `generate.analytics` → `generate.semantic` in this schema.
+
+## Found
+
+1. **Seven loaders, two of them dead.** Five hygen-side raw parses, the CLI's cast, and two Zod loaders
+   (`src/config/config-loader.ts`, `src/utils/config-loader.ts`) that nothing imported. The dead ones disagreed with
+   the live ones: `behaviors.strategy` defaulted to `base_class` there and `inline` in the prompt. Deleted.
+2. **The `auth:` injector wrote three keys nothing read** (`encryption_key`, `oauth_state_store`,
+   `enable_controller`), and `AuthConfigSchema` was already `.strict()` without them. The conflict was invisible only
+   because the one loader that validated `auth:` was never imported. Deleted from the injector.
+3. **The `events:` injector's config failed its own schema.** `extensions:` / `drizzle:` were live with every value
+   commented out, which YAML parses as `drizzle: null`. The whole example is now commented. Found by
+   `src/__tests__/cli/subsystem.test.ts` once the parse was strict.
+4. **The frontend emitter swallowed an invalid `frontend:` block** (`safeParse`, fall back to defaults). It now
+   throws; the test that pinned the fallback is inverted.
+5. **`--config <path>` never reached the prompts** — they read `./codegen.config.yaml` (or walked upward). The CLI
+   now passes its resolved path as `$CODEGEN_CONFIG_PATH`.
+6. **`subsystems.install` silently skipped unknown names.** Now an enum.
+7. **`project scan --write` wrote nine keys nothing read** (`framework`, `orm`, `layout.*`, `_confidence`,
+   `naming.suffixes`, four clean-architecture `paths.*`). It now writes `naming`, `paths.{backend_src,frontend_src}`
+   and `generate`, validated before it is shown.
+8. **Two fixture configs carried dead keys**: `locations.backendSrc` (baseline fixture) and eight FE-3 frontend
+   toggles (`codegen.config.custom-naming.yaml`). Fixed in the fixtures; the schema was not loosened.
+9. **Readers still disagree on fallbacks** for an absent `paths.backend_src`, the orchestration root and (with no
+   config file) `generate.architecture`; the entity prompt hard-codes `events/` instead of reading
+   `paths.events_dir`. Filed: **#642**. One consequence of the single parse is already visible: a config that
+   omits `generate.architecture` now gives the junction prompt the schema default `clean` (it used to fall back to
+   `clean-lite-ps`); with no config file at all the junction prompt still uses `clean-lite-ps`.
+10. **Consumer-app readers parse the file raw at boot** (generated `main.ts`, the jobs pool loader). Filed: **#643**.
+11. **`project config` prints the parsed config**, defaults included, rather than the raw file.
