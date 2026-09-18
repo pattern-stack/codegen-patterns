@@ -6,6 +6,9 @@
  * exit 1, an error naming the file (text and JSON mode). The failure is a real
  * one — a directory sits where the file must be written (`EISDIR`), no mocks.
  * The smokes prove the happy path.
+ *
+ * JOBS-1 (#661): `subsystem install` (both runtime paths) regenerates those
+ * files from the config block it just injected, not the config read before.
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -163,4 +166,25 @@ describe('subsystem install --json (vendored) regenerates the barrel', () => {
 		);
 		expect(fs.existsSync(path.join(root, 'src/generated/app-config.ts'))).toBe(true);
 	});
+});
+
+describe('subsystem install regenerates from the config block it just wrote (JOBS-1, #661)', () => {
+	const drizzleExt = '{ drizzle: { pollIntervalMs: 1000 } }';
+	for (const runtime of ['vendored', 'package'] as const) {
+		test(`${runtime}: jobs — subsystems.ts and app-config.ts carry the injected jobs: block`, async () => {
+			const root = mkProject(`runtime: ${runtime}\npaths:\n  backend_src: src\n`);
+			const { code } = await run(['subsystem', 'install', 'jobs', '--force', '--cwd', root]);
+			expect(code).toBe(0);
+			expect(fs.readFileSync(path.join(root, 'codegen.config.yaml'), 'utf-8')).toContain('worker_mode: embedded');
+			const barrel = fs.readFileSync(path.join(root, 'src/generated/subsystems.ts'), 'utf-8');
+			expect(barrel).toContain(`JobsDomainModule.forRoot({ backend: 'drizzle', extensions: ${drizzleExt}, pools: jobPools })`);
+			expect(barrel).toContain(
+				`JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModuleExtensions: ${drizzleExt}, domainModulePools: jobPools })`,
+			);
+			const appConfig = fs.readFileSync(path.join(root, 'src/generated/app-config.ts'), 'utf-8');
+			expect(appConfig).toMatch(
+				/export const jobWorkerOptions = \{[^}]*"backend": "drizzle",\s*"domainModuleExtensions": \{\s*"drizzle": \{\s*"pollIntervalMs": 1000\s*\}/,
+			);
+		}, 60_000);
+	}
 });

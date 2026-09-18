@@ -327,14 +327,24 @@ export class SubsystemInstallCommand extends Command {
 	cwd = Option.String('--cwd', { required: false });
 	configPath = Option.String('--config', { required: false });
 
-	async execute(): Promise<number> {
-		if (this.json) setJsonMode(true);
-		const ctx = await loadContext({
+	/**
+	 * Load `codegen.config.yaml`. Called once up front and again after the
+	 * install writes the file (`subsystems.install`, the subsystem's config
+	 * block): the barrel + app-config regeneration reads the config as written,
+	 * never the context loaded before it — on both runtime paths (JOBS-1, #661).
+	 */
+	private loadInstallContext(): Promise<Context> {
+		return loadContext({
 			cwd: this.cwd,
 			configPath: this.configPath,
 			json: this.json,
 			skipDetection: true,
 		});
+	}
+
+	async execute(): Promise<number> {
+		if (this.json) setJsonMode(true);
+		const ctx = await this.loadInstallContext();
 
 		const desc = describeSubsystem(this.name);
 		if (!desc) {
@@ -564,12 +574,14 @@ export class SubsystemInstallCommand extends Command {
 
 		// Refresh the subsystem composition barrel (<generated>/subsystems.ts +
 		// app-config.ts) so AppModule's `...SUBSYSTEM_MODULES` picks up the new
-		// install on the next boot. The app imports both: a failed regeneration
+		// install on the next boot — from the config the scaffold above just
+		// wrote (JOBS-1, #661). The app imports both: a failed regeneration
 		// fails the install, naming the file (JOBS-0, #655).
 		if (!this.dryRun) {
+			const refreshed = await this.loadInstallContext();
 			try {
-				const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
-				await regenerateSubsystemBarrel({ ctx, generatedDir });
+				const generatedDir = projectLayout(refreshed.cwd, refreshed.config).generated;
+				await regenerateSubsystemBarrel({ ctx: refreshed, generatedDir });
 			} catch (err: unknown) {
 				return reportRegenerationFailure('subsystem install', err);
 			}
@@ -899,14 +911,9 @@ export class SubsystemInstallCommand extends Command {
 			}
 		}
 
-		// 3. Regenerate both barrels. Reload context so the barrel generators
-		// see the freshly-written subsystems.install + config block.
-		const refreshed = await loadContext({
-			cwd: ctx.cwd,
-			configPath: this.configPath,
-			json: this.json,
-			skipDetection: true,
-		});
+		// 3. Regenerate both barrels from the freshly-written subsystems.install
+		// + config block.
+		const refreshed = await this.loadInstallContext();
 		let barrelEmitted: string[] = [];
 		let schemaEmitted: string[] = [];
 		try {
