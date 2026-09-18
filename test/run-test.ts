@@ -193,7 +193,7 @@ function runCodegen() {
       console.log(`     Generating: ${fixture}`);
 
       try {
-        execSync(`HYGEN_TMPLS="${templatesDir}" bunx hygen entity new --yaml "${yamlPath}"`, {
+        execSync(`HYGEN_TMPLS="${templatesDir}" bunx --bun hygen entity new --yaml "${yamlPath}"`, {
           cwd: ROOT,
           stdio: 'pipe',
         });
@@ -262,7 +262,7 @@ function runCodegen() {
   for (const v of variantOutputs) {
     console.log(`   Generating: job-orchestration.schema (${v.label})`);
     execSync(
-      `HYGEN_TMPLS="${templatesDir}" bunx hygen subsystem jobs ` +
+      `HYGEN_TMPLS="${templatesDir}" bunx --bun hygen subsystem jobs ` +
         `--appName baseline ` +
         `--workerMode embedded ` +
         `--multiTenant ${v.multiTenant} ` +

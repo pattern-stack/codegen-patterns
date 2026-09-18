@@ -33,20 +33,12 @@ import { printError, printInfo, printSuccess, printWarning } from '../ui/output.
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import type { Hint, NounModule, PaneOutput } from '../noun-module.js';
+import { resolvePatternGlobs } from '../shared/pattern-globs.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const DEFAULT_PATTERN_GLOBS = ['src/patterns/*.pattern.ts'];
-
-function resolvePatternGlobs(ctx: Context): string[] {
-	const fromConfig = (ctx.config as { patterns?: unknown } | null)?.patterns;
-	if (Array.isArray(fromConfig) && fromConfig.length > 0) {
-		return fromConfig.filter((g): g is string => typeof g === 'string');
-	}
-	return DEFAULT_PATTERN_GLOBS;
-}
 
 /**
  * Resolve the orchestration emission root for `cwd`. Default mirrors

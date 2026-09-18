@@ -1,0 +1,21 @@
+# CAP-2 negative fixture: a role pointing at an entity that is not an Actor.
+#
+# `note` declares no patterns at all. A role may only point at an entity that
+# declares the `Actor` capability; generation must refuse, and say what to add.
+entity:
+  name: briefing
+  plural: briefings
+  table: briefings
+  patterns: [Communication]
+  folder_structure: nested
+
+fields:
+  summary:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps
+
+roles:
+  about: { target: note, cardinality: one }

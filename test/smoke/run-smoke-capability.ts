@@ -201,22 +201,22 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 			? '@shared/base-classes'
 			: '@pattern-stack/codegen/runtime/base-classes';
 
-	// ── account: THREE capabilities → a generated composed base ──────────────
+	// ── account: FOUR capabilities → a generated composed base ───────────────
 	const composedBasePath = path.join(
 		tmpDir,
 		'src/modules/accounts/account.composed-base.ts',
 	);
 	if (!fs.existsSync(composedBasePath)) {
 		throw new Error(
-			`expected a composed base at ${composedBasePath} — three capabilities stack on the account fixture (ADR-041 §6)`,
+			`expected a composed base at ${composedBasePath} — four capabilities stack on the account fixture (ADR-041 §6)`,
 		);
 	}
 	const composedBase = fs.readFileSync(composedBasePath, 'utf8');
-	// Declaration order is `[Group, Integrated, Individual, Audited]`, so the
-	// capability nesting is Group innermost → Audited outermost.
+	// Declaration order is `[Group, Integrated, Individual, Audited, Actor]`, so
+	// the capability nesting is Group innermost → Actor outermost.
 	assertContains(
 		composedBase,
-		/export abstract class AccountComposedBase extends WithAudited\(\n  WithIndividual\(\n    WithGroup\(\n      IntegratedEntityRepository<\n        Account,\n        typeof accounts,\n        AccountIntegrationWrite,\n        AccountIntegrationProjection\n      >,\n    \),\n  \),\n\) \{\}/,
+		/export abstract class AccountComposedBase extends WithActor\(\n  WithAudited\(\n    WithIndividual\(\n      WithGroup\(\n        IntegratedEntityRepository<\n          Account,\n          typeof accounts,\n          AccountIntegrationWrite,\n          AccountIntegrationProjection\n        >,\n      \),\n    \),\n  \),\n\) \{\}/,
 		'account.composed-base.ts mixin chain, rightmost capability outermost',
 	);
 	assertContains(
@@ -290,13 +290,64 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	const contactRepo = reads('modules/contacts/contact.repository.ts');
 	assertContains(
 		contactRepo,
-		/export class ContactRepository extends WithGroup\(BaseRepository<Contact, typeof contacts>\) \{/,
+		/export class ContactRepository extends WithActor\(BaseRepository<Contact, typeof contacts>\) \{/,
 		'contact.repository.ts inline capability wrap over the default Base spine',
 	);
 	assertContains(
 		contactRepo,
-		/import \{ WithGroup \} from '@modules\/capabilities\/with-group';/,
+		/import \{ WithActor \} from '@modules\/capabilities\/with-actor';/,
 		'contact.repository.ts mixin import',
+	);
+
+	// ── meeting: CAP-2 roles on an Activity spine ────────────────────────────
+	// `one` roles derive FK columns through the existing belongs_to path —
+	// `.references()` with the on-delete action, and an index by default.
+	const meetingEntity = reads('modules/meetings/meeting.entity.ts');
+	assertContains(
+		meetingEntity,
+		/hostContactId: uuid\('host_contact_id'\)\.references\(\(\) => contacts\.id, \{ onDelete: 'restrict' \}\),/,
+		'meeting.entity.ts host role FK column (explicit column:)',
+	);
+	assertContains(
+		meetingEntity,
+		/aboutAccountId: uuid\('about_account_id'\)\.references\(\(\) => accounts\.id, \{ onDelete: 'restrict' \}\),/,
+		'meeting.entity.ts about role FK column (<role>_<target>_id default)',
+	);
+	assertContains(
+		meetingEntity,
+		/index\('meetings_host_contact_id_idx'\)\.on\(t\.hostContactId\)/,
+		'meeting.entity.ts host role FK is indexed by default',
+	);
+	assertContains(
+		meetingEntity,
+		/index\('meetings_about_account_id_idx'\)\.on\(t\.aboutAccountId\)/,
+		'meeting.entity.ts about role FK is indexed by default',
+	);
+	// A `many` role names its junction; it contributes no column here.
+	assertNotContains(
+		meetingEntity,
+		/attendees/i,
+		'meeting.entity.ts has no column for the many-role',
+	);
+	// The relation key is the ROLE name, so two roles to one target stay two
+	// methods — `host`, not `contact`.
+	const meetingService = reads('modules/meetings/meeting.service.ts');
+	assertContains(
+		meetingService,
+		/async host\(meetingId: string\): Promise<Contact \| null>/,
+		'meeting.service.ts host(meetingId) — keyed by role',
+	);
+	assertContains(
+		meetingService,
+		/async about\(meetingId: string\): Promise<Account \| null>/,
+		'meeting.service.ts about(meetingId) — keyed by role',
+	);
+	// The spine is Activity; Communication layers inline.
+	const meetingRepo = reads('modules/meetings/meeting.repository.ts');
+	assertContains(
+		meetingRepo,
+		/export class MeetingRepository extends WithCommunication\(ActivityEntityRepository<Meeting, typeof meetings>\) \{/,
+		'meeting.repository.ts Activity spine + Communication capability',
 	);
 
 	// ── note: NO pattern → unchanged emission ────────────────────────────────
@@ -316,6 +367,70 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 }
 
 // ---------------------------------------------------------------------------
+// #624 — named single-purpose expectation (package leg only)
+// ---------------------------------------------------------------------------
+
+/**
+ * `junction new` hardcodes `@shared/*` imports for five package-owned runtime
+ * files, so under `runtime: package` the generated junction cannot resolve
+ * them. A pre-existing defect in the junction templates, surfaced by this
+ * smoke (CAP-2 is the first harness to generate a junction in package mode) and
+ * tracked as #624 — it is not fixable inside CAP-2's scope.
+ *
+ * Per CLAUDE.md › Known-red gates this is a NAMED, single-purpose expectation,
+ * not a filter: the exact two files, the exact five missing modules (TS2307),
+ * and only the two downstream codes those cause (TS4112 `override` with no
+ * base, TS2339 inherited member missing). Asserted PRESENT and SOLE:
+ *
+ *   - any diagnostic outside that shape fails the smoke (sole);
+ *   - if the five TS2307s stop appearing, the smoke ALSO fails, telling whoever
+ *     fixed #624 to delete this expectation (present).
+ */
+const ISSUE_624_FILES = new Set([
+	'src/modules/meeting_contacts/meeting_contact.repository.ts',
+	'src/modules/meeting_contacts/meeting_contact.service.ts',
+]);
+const ISSUE_624_MISSING_MODULES = [
+	'@shared/base-classes/base-service',
+	'@shared/base-classes/junction-integration-repository',
+	'@shared/base-classes/with-analytics',
+	'@shared/constants/tokens',
+	'@shared/types/drizzle',
+];
+const ISSUE_624_DOWNSTREAM_CODES = new Set(['TS4112', 'TS2339']);
+
+function applyIssue624Expectation(errors: string[]): string[] {
+	const unexpected: string[] = [];
+	const missingSeen = new Set<string>();
+	for (const line of errors) {
+		const m = /^(.+?)\(\d+,\d+\): error (TS\d+): (.*)$/.exec(line);
+		if (!m || !ISSUE_624_FILES.has(m[1]!)) {
+			unexpected.push(line);
+			continue;
+		}
+		const [, , code, text] = m;
+		if (code === 'TS2307') {
+			const mod = /Cannot find module '([^']+)'/.exec(text!)?.[1];
+			if (mod && ISSUE_624_MISSING_MODULES.includes(mod)) {
+				missingSeen.add(mod);
+				continue;
+			}
+		} else if (ISSUE_624_DOWNSTREAM_CODES.has(code!)) {
+			continue;
+		}
+		unexpected.push(line);
+	}
+	const notSeen = ISSUE_624_MISSING_MODULES.filter((mod) => !missingSeen.has(mod));
+	if (notSeen.length > 0) {
+		unexpected.push(
+			`#624 expectation is stale — these expected TS2307s no longer appear: ${notSeen.join(', ')}. ` +
+				`If #624 is fixed, delete applyIssue624Expectation from run-smoke-capability.ts.`,
+		);
+	}
+	return unexpected;
+}
+
+// ---------------------------------------------------------------------------
 // Negative gates — ADR-041 §2 and §4 must FAIL generation, not warn
 // ---------------------------------------------------------------------------
 
@@ -325,6 +440,16 @@ function assertNegativeGates(tmpDir: string): void {
 			fixture: 'two-spines.yaml',
 			expect: /inheritable spine bases \(Integrated, Activity\)/,
 			label: 'two spine bases (ADR-041 §2)',
+		},
+		{
+			fixture: 'role-target-not-actor.yaml',
+			expect: /Role 'about' targets 'note', which does not declare the 'Actor' capability/,
+			label: 'role targeting a non-Actor entity (CAP-2)',
+		},
+		{
+			fixture: 'roles-without-communication.yaml',
+			expect: /declares 'roles:' but not the 'Communication' capability/,
+			label: 'roles: without the Communication capability (CAP-2)',
 		},
 		{
 			fixture: 'method-collision.yaml',
@@ -381,7 +506,19 @@ async function leg(mode: Mode): Promise<number> {
 			fs.copyFileSync(path.join(FIXTURES, f), path.join(entitiesDir, f));
 		}
 
+		// CAP-2: the `attendees` many-role names the `meeting_contact` junction.
+		// The junction YAML is AUTHORED before generation — `entity new`'s roles
+		// pre-flight resolves `via:` against `junctions/` — and generated by its
+		// own command afterwards. The role validates against the file; it never
+		// emits the junction.
+		const junctionsDir = path.join(tmpDir, 'junctions');
+		fs.mkdirSync(junctionsDir, { recursive: true });
+		for (const f of fs.readdirSync(path.join(FIXTURES, 'junctions'))) {
+			fs.copyFileSync(path.join(FIXTURES, 'junctions', f), path.join(junctionsDir, f));
+		}
+
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+		run(`bun ${CLI_PATH} junction new --all --force`, tmpDir);
 
 		log(`[${mode}] asserting ADR-041 emission shapes`);
 		assertEmission(tmpDir, mode);
@@ -392,13 +529,20 @@ async function leg(mode: Mode): Promise<number> {
 			cwd: tmpDir,
 			encoding: 'utf-8',
 		});
-		const errors = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
+		const scoped = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
+		// Package leg only: the #624 named expectation (see above). The vendored
+		// leg gets no expectation at all — there the junction compiles cleanly.
+		const errors = mode === 'package' ? applyIssue624Expectation(scoped) : scoped;
 		if (errors.length > 0) {
 			for (const line of errors) console.error(line);
 			logError(`[${mode}] ${errors.length} typecheck errors in consumer-emitted code`);
 			exitCode = 1;
 		} else {
-			log(`[${mode}] tsc OK — the composed tree compiles against the real bases`);
+			log(
+				mode === 'package'
+					? `[${mode}] tsc OK — the composed tree compiles against the real bases; the #624 named expectation (junction @shared imports) matched, present and sole`
+					: `[${mode}] tsc OK — the composed tree compiles against the real bases`,
+			);
 		}
 
 		if (exitCode === 0) {

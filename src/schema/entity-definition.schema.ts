@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { roleForeignKey } from "../roles/derive.js";
 import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
 
 /**
@@ -450,6 +451,120 @@ const RelationshipSchema = z
   );
 
 export type Relationship = z.infer<typeof RelationshipSchema>;
+
+// ============================================================================
+// Roles (CAP-2, ADR-041)
+// ============================================================================
+
+/**
+ * One `roles:` entry — a named, typed edge from a communication-style entity to
+ * an actor entity.
+ *
+ * `cardinality: one` derives a `belongs_to` (see `src/roles/derive.ts`), so the
+ * three keys it may carry beyond `target` are exactly the ones a `belongs_to`
+ * carries. `cardinality: many` points at a junction that already owns the edge,
+ * so it carries `via:` and nothing else — the junction's own YAML is where its
+ * columns are configured.
+ *
+ * `.strict()`: a `via:` on a `one` role, or a `column:` on a `many` role, is a
+ * statement about a mechanism that will not run. Silently ignoring it is how
+ * an author ends up believing an edge exists that does not.
+ */
+const RoleSchema = z
+  .object({
+    /** Actor entity this role points at (must declare the `Actor` capability). */
+    target: z.string(),
+    cardinality: z.enum(["one", "many"]),
+    /** `one` only — FK column override; default `<role>_<target>_id`. */
+    column: z.string().optional(),
+    /** `many` only — the junction between this entity and the target. */
+    via: z.string().optional(),
+    /** `one` only — FK nullability; default `true`. */
+    nullable: z.boolean().optional(),
+    /** `one` only — FK cascade action; default `restrict` (ADR-021). */
+    on_delete: OnDeleteSchema.optional(),
+  })
+  .strict();
+
+const ONE_ONLY_ROLE_KEYS = ["column", "nullable", "on_delete"] as const;
+
+/**
+ * `roles:` — keyed by role name (snake_case, the name a measure or a
+ * `findByRole` call uses).
+ */
+const RolesSchema = z
+  .record(
+    z
+      .string()
+      .regex(
+        /^[a-z][a-z0-9_]*$/,
+        "role names must be lowercase snake_case (e.g. 'host', 'attendees')",
+      ),
+    RoleSchema,
+  )
+  .superRefine((roles, ctx) => {
+    for (const [role, def] of Object.entries(roles)) {
+      if (def.cardinality === "many") {
+        if (!def.via) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [role, "via"],
+            message:
+              `role '${role}' is 'cardinality: many' and must declare 'via:' — ` +
+              `the junction between this entity and '${def.target}'. A many-role ` +
+              `names an existing junction; it does not create one.`,
+          });
+        }
+        for (const key of ONE_ONLY_ROLE_KEYS) {
+          if (def[key] !== undefined) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [role, key],
+              message:
+                `'${key}' is meaningless on a 'cardinality: many' role — the ` +
+                `junction named by 'via:' owns its own columns. Configure it in ` +
+                `the junction's YAML.`,
+            });
+          }
+        }
+        continue;
+      }
+
+      // cardinality: one
+      if (def.via !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [role, "via"],
+          message:
+            `'via:' is meaningless on a 'cardinality: one' role — it derives a ` +
+            `foreign key on this entity, not a junction.`,
+        });
+      }
+
+      // The derived belongs_to must itself be valid. Running it through
+      // RelationshipSchema is what keeps role FK rules and relationship FK
+      // rules from drifting apart (e.g. `on_delete: set_null` requiring
+      // `nullable: true` — Postgres cannot null a NOT NULL column).
+      const derived = RelationshipSchema.safeParse({
+        type: "belongs_to",
+        target: def.target,
+        foreign_key: roleForeignKey(role, def.target, def.column),
+        ...(def.nullable === undefined ? {} : { nullable: def.nullable }),
+        ...(def.on_delete === undefined ? {} : { on_delete: def.on_delete }),
+      });
+      if (!derived.success) {
+        for (const issue of derived.error.issues) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [role, ...issue.path],
+            message: `role '${role}' derives an invalid belongs_to: ${issue.message}`,
+          });
+        }
+      }
+    }
+  });
+
+export type RolesBlock = z.infer<typeof RolesSchema>;
 
 // ============================================================================
 // Behavior Configuration
@@ -948,6 +1063,15 @@ export const EntityDefinitionSchema = z
     entity: EntityConfigSchema,
     fields: z.record(z.string(), FieldDefinitionSchema),
     relationships: z.record(z.string(), RelationshipSchema).optional(),
+
+    // CAP-2 (ADR-041): named, typed edges to actor entities. A top-level
+    // SIBLING of `relationships:` rather than an annotation on it — a role is a
+    // different statement (who participates, in what capacity), and annotating
+    // would make every consumer of `relationships:` learn to ignore a key it
+    // does not understand. `cardinality: one` roles are merged INTO
+    // `relationships` downstream (`src/roles/derive.ts`), so the FK column,
+    // index and on-delete action ride the existing path.
+    roles: RolesSchema.optional(),
     // Behaviors add cross-cutting concerns (timestamps, soft_delete, user_tracking, etc.)
     behaviors: z.array(BehaviorConfigSchema).optional().default([]),
 
@@ -1170,6 +1294,49 @@ export const EntityDefinitionSchema = z
           message: `exclude_fields: 'user_id' cannot be excluded. It is used for user-scoping and EAV dual-write; excluding it would break those mechanisms.`,
         });
       }
+    }
+  })
+  .superRefine((entity, ctx) => {
+    // CAP-2: a role and a declared relationship cannot share a name. Both
+    // become relation keys on the same entity — the generated service would
+    // declare one method twice, and the relation graph would carry two edges
+    // under one name.
+    const roles = entity.roles;
+    if (!roles) return;
+    const declared = new Set(Object.keys(entity.relationships ?? {}));
+    const fkColumns = new Map<string, string>();
+    for (const [name, rel] of Object.entries(entity.relationships ?? {})) {
+      if (rel.type === 'belongs_to') fkColumns.set(rel.foreign_key, `relationship '${name}'`);
+    }
+
+    for (const [role, def] of Object.entries(roles)) {
+      if (declared.has(role)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['roles', role],
+          message:
+            `role '${role}' collides with the relationship of the same name. ` +
+            `Both become relation keys on this entity — rename one.`,
+        });
+      }
+      if (def.cardinality !== 'one') continue;
+
+      // The derived FK column must not already be claimed. A declared field of
+      // the same name is the documented way to control `required` / `index` on
+      // a role FK, so only relationship-owned columns collide.
+      const fk = roleForeignKey(role, def.target, def.column);
+      const owner = fkColumns.get(fk);
+      if (owner) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['roles', role, 'column'],
+          message:
+            `role '${role}' derives the foreign key '${fk}', which is already ` +
+            `the foreign key of ${owner}. Set an explicit 'column:' on the role, ` +
+            `or drop the relationship and let the role own the edge.`,
+        });
+      }
+      fkColumns.set(fk, `role '${role}'`);
     }
   });
 

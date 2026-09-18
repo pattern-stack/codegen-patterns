@@ -500,7 +500,11 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
     }
     // Carry the field's `index: true` so the table-constraints builder can emit
     // the same single-column index a non-FK field would get.
-    const hasIndex = fieldDef?.index === true;
+    //
+    // CAP-2: a role-derived FK is indexed by DEFAULT — a role edge exists to be
+    // traversed. Declaring the FK column in `fields:` is still the way to say
+    // otherwise, so an explicit field declaration wins in both directions.
+    const hasIndex = fieldDef ? fieldDef.index === true : rel.index === true;
     const relatedPlural = pluralize(target);
     const isSelfFk = relatedPlural === parentEntityNamePlural;
 
@@ -515,7 +519,12 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
     // consumer code (e.g. drizzle queryBuilder.with.field_definition)
     // keeps working.
     let relationKey;
-    if (isSelfFk) {
+    if (rel.role) {
+      // CAP-2: a role names its own edge. Keying by target would give `host:
+      // contact` and `organizer: contact` one method name between them, and
+      // describe two graph edges with one name.
+      relationKey = camelCase(rel.role);
+    } else if (isSelfFk) {
       // parent_account_id → parent_account → parentAccount
       const base = field.endsWith('_id') ? field.slice(0, -3) : field;
       relationKey = camelCase(base);
@@ -525,6 +534,7 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
 
     result.push({
       field,
+      role: rel.role ?? null,
       camelField: camelCase(field),
       relatedEntity: target,
       relatedEntityPascal: pascalCase(target),

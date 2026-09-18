@@ -36,6 +36,7 @@ import {
 	type RelationshipTypes,
 } from '../schema/relationship-definition.schema';
 import type { FieldDefinition } from '../schema/entity-definition.schema';
+import { deriveRoleRelationships } from '../roles/derive';
 
 /**
  * Map the YAML `ui_*` keys onto `ParsedField.ui`. Shared by the entity and
@@ -159,6 +160,43 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 				resolved: false,
 			};
 			entity.relationships.set(name, relationship);
+		}
+	}
+
+	// Parse roles (CAP-2) and merge the `cardinality: one` ones into
+	// `relationships` as derived `belongs_to` edges, keyed by role name.
+	//
+	// The merge is the point: graph building, `resolveReferences`, the relations
+	// manifest and every later consumer see a role as the edge it is, without
+	// any of them learning a second vocabulary. `role` marks where it came from
+	// for the consumers that do care (CAP-3, the semantic model).
+	if (definition.roles) {
+		entity.roles = new Map();
+		const derivedRelationships = deriveRoleRelationships(definition.roles);
+
+		for (const [name, roleDef] of Object.entries(definition.roles)) {
+			const derived = derivedRelationships[name];
+			entity.roles.set(name, {
+				name,
+				target: roleDef.target,
+				cardinality: roleDef.cardinality,
+				column: roleDef.column,
+				via: roleDef.via,
+				nullable: roleDef.nullable,
+				onDelete: roleDef.on_delete,
+				foreignKey: derived?.foreign_key,
+			});
+		}
+
+		for (const [name, derived] of Object.entries(derivedRelationships)) {
+			entity.relationships.set(name, {
+				name,
+				type: derived.type,
+				target: derived.target,
+				foreignKey: derived.foreign_key,
+				resolved: false,
+				role: name,
+			});
 		}
 	}
 

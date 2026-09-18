@@ -43,6 +43,7 @@ import {
 	collectMergedEvents,
 	generateEventCodegen,
 } from '../shared/event-codegen-generator.js';
+import { resolvePatternGlobs } from '../shared/pattern-globs.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
 import { validateSemanticModel } from '../../parser/validate-semantic.js';
 import {
@@ -405,6 +406,15 @@ export class EntityNewCommand extends Command {
 				}
 				return 1;
 			}
+		}
+
+		// App patterns must be in THIS process's registry before the roles
+		// pre-flight: a role's target qualifies by declaring an `Actor`
+		// capability, which an app may define (and must, until the library ships
+		// one). The hygen subprocess loads them for itself; this is the CLI's copy.
+		{
+			const loaded = await loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
+			if (!isJsonMode()) for (const err of loaded.errors) printWarning(err);
 		}
 
 		// Git safety — we don't know specific output paths without running Hygen,

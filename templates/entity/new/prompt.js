@@ -23,6 +23,7 @@ import {
   getGenerateConfig,
 } from "../../../src/config/paths.mjs";
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";
+import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import {
   loadRuntimeMode,
@@ -376,6 +377,26 @@ export default {
 
     const content = fs.readFileSync(fullPath, "utf-8");
     const definition = yaml.parse(content);
+
+    // CAP-2 (ADR-041): a `cardinality: one` role IS a `belongs_to`, so it is
+    // merged into `definition.relationships` HERE — once, at the single point
+    // the YAML enters the template pipeline — and rides the existing FK / index
+    // / on-delete path from then on. Every reader downstream (this file's
+    // locals, the clean-lite-ps extension) sees the merged form without knowing
+    // roles exist. The derivation is shared with the analyzer parser
+    // (`src/roles/derive.ts`) because this file parses YAML directly and never
+    // sees `EntityDefinitionSchema`: writing the rules in either place alone
+    // would make the other a second implementation (I1).
+    //
+    // A role key can never silently overwrite a declared relationship: the
+    // schema rejects that collision at load, and `entity new` validates every
+    // file against the schema before hygen runs.
+    if (definition && definition.roles) {
+      definition.relationships = {
+        ...(definition.relationships || {}),
+        ...deriveRoleRelationships(definition.roles),
+      };
+    }
 
     // Load global codegen config
     const codegenConfig = loadCodegenConfig(process.cwd());

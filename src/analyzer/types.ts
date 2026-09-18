@@ -97,6 +97,38 @@ export interface ParsedRelationship {
 	inverse?: string;
 	through?: string; // For transitive relationships: "owned_opportunities.updates"
 	resolved: boolean;
+	/**
+	 * CAP-2: set when this relationship was DERIVED from a `roles:` entry of
+	 * that name. Consumers that care about the edge treat it like any other
+	 * `belongs_to`; consumers that care about *why* it exists (the semantic
+	 * model's dimension label, CAP-3's role vocabulary) read this.
+	 */
+	role?: string;
+}
+
+/**
+ * One `roles:` entry as authored (CAP-2, ADR-041) — a named, typed edge to an
+ * actor entity.
+ *
+ * A `cardinality: one` role ALSO appears in `ParsedEntity.relationships` as a
+ * derived `belongs_to` keyed by the role name, so graph building, reference
+ * resolution and the relations manifest see it as the edge it is. This record
+ * keeps the *declaration*, which is what CAP-3's `Communication` mixin and the
+ * semantic model read (the role name is the dimension label; the derived
+ * relationship only knows its FK).
+ */
+export interface ParsedRole {
+	name: string;
+	target: string;
+	cardinality: 'one' | 'many';
+	/** Explicit FK column, when the author overrode `<role>_<target>_id`. */
+	column?: string;
+	/** `many` only — the junction that owns this edge. */
+	via?: string;
+	nullable?: boolean;
+	onDelete?: 'restrict' | 'cascade' | 'set_null' | 'no_action';
+	/** The FK column a `one` role derives. `undefined` for `many`. */
+	foreignKey?: string;
 }
 
 export interface ParsedQuery {
@@ -159,6 +191,12 @@ export interface ParsedEntity {
 	folderStructure: 'nested' | 'flat';
 	fields: Map<string, ParsedField>;
 	relationships: Map<string, ParsedRelationship>;
+	/**
+	 * CAP-2 `roles:` — named edges to actor entities, keyed by role name.
+	 * `cardinality: one` roles are ALSO present in `relationships` as derived
+	 * `belongs_to` entries under the same key.
+	 */
+	roles?: Map<string, ParsedRole>;
 	behaviors: string[];
 	queries?: ParsedQuery[];
 	integration?: ParsedIntegration;

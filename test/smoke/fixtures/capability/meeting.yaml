@@ -1,0 +1,34 @@
+# CAP-2 smoke fixture: meeting — a communication entity with roles.
+#
+# PLAN §6.4 proposed `patterns: [Integrated, Activity, Communication]`. That no
+# longer generates: CAP-1 made two inheritable spine bases a hard error, and
+# `Integrated` and `Activity` are both spines. `Activity` is the spine here — a
+# meeting IS a subject-scoped interaction, which is what that base class is for,
+# and nothing in this fixture syncs from a provider. `Communication` is the
+# capability that makes `roles:` legal (and vice versa).
+entity:
+  name: meeting
+  plural: meetings
+  table: meetings
+  patterns: [Activity, Communication]
+  folder_structure: nested
+
+fields:
+  title:
+    type: string
+    required: true
+    max_length: 255
+
+  occurred_at:
+    type: datetime
+    required: true
+
+behaviors:
+  - timestamps
+
+# `one` roles derive FK columns (host_contact_id, about_account_id) through the
+# existing belongs_to path; `many` names the junction that owns the edge.
+roles:
+  host:      { target: contact, cardinality: one, column: host_contact_id }
+  attendees: { target: contact, cardinality: many, via: meeting_contact }
+  about:     { target: account, cardinality: one }
