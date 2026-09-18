@@ -3,7 +3,8 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.module : null %>
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 <% if (hasEmits) { -%>
 /**
  * EVT-7: This entity emits typed domain events. Use-cases depend on
@@ -12,10 +13,10 @@ force: true
  */
 <% } -%>
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
-import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= typeof openApiImport !== 'undefined' ? openApiImport : '@shared/openapi' %>';
+import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= openApiImport %>';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ /* #632: one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
-<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
+<%_ clpRepositoryDeps.forEach(dep => { _%>
 import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
 <%_ }) _%>
 <% if (eavEnabled) { -%>
@@ -75,7 +76,7 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
     <%= classNames.repository %>,
     <%= classNames.service %>,
 <%_ /* CGP-358b / #632: register each composed repository once (needed for service DI) */ _%>
-<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
+<%_ clpRepositoryDeps.forEach(dep => { _%>
     <%= dep.repositoryClass %>,
 <%_ }) _%>
     <%= classNames.findByIdUseCase %>,
@@ -122,3 +123,4 @@ export class <%= classNames.module %> implements OnModuleInit {
     this.openApi.registerSchema('<%= classNames.outputDto %>', <%= classNames.outputSchema %>);
   }
 }
+<%_ } -%>

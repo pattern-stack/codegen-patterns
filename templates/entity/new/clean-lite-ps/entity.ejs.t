@@ -3,12 +3,13 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.entity : null %>
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 import {
 <%_ clpDrizzleImports.forEach(i => { _%>
   <%= i %>,
 <%_ }) _%>
-<%_ if (typeof clpHasFk !== 'undefined' && clpHasFk) { _%>
+<%_ if (clpHasFk) { _%>
   type AnyPgColumn,
 <%_ } _%>
 } from 'drizzle-orm/pg-core';
@@ -19,10 +20,10 @@ import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
 <%_ } _%>
 <%_ }) _%>
 <%_ /* #354: field-level foreign_key target table imports */ _%>
-<%_ if (typeof clpFieldFkImports !== 'undefined') { clpFieldFkImports.forEach(imp => { _%>
+<%_ clpFieldFkImports.forEach(imp => { _%>
 import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
-<%_ }) } _%>
-<%_ if (typeof clpEnumFields !== 'undefined' && clpEnumFields.length > 0) { _%>
+<%_ }) _%>
+<%_ if (clpEnumFields.length > 0) { _%>
 
 <%_ clpEnumFields.forEach(ef => { _%>
 export const <%= ef.enumName %> = pgEnum('<%= ef.dbName %>', [<%- ef.choices.map(c => `'${c}'`).join(', ') %>]);
@@ -60,7 +61,7 @@ export const <%= entityNamePlural %> = pgTable(
 <%_ } _%>
   },
 <%_ /* #355/#356: pgTable extra-config — indexes + composite unique indexes + external_id unique index */ _%>
-<%_ if (typeof clpTableConstraints !== 'undefined' && clpTableConstraints.length > 0) { _%>
+<%_ if (clpTableConstraints.length > 0) { _%>
   (t) => [
 <%_ clpTableConstraints.forEach(c => { _%>
 <%_ if (c.comment) { _%>
@@ -74,3 +75,4 @@ export const <%= entityNamePlural %> = pgTable(
 
 export type <%= classNames.entity %> = InferSelectModel<typeof <%= entityNamePlural %>>;
 export type <%= classNames.entity %>Insert = typeof <%= entityNamePlural %>.$inferInsert;
+<%_ } -%>

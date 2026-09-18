@@ -80,3 +80,52 @@ export function rewriteSharedImport(mode, specifier) {
   }
   return runtimeImport(mode, specifier.slice("@shared/".length));
 }
+
+/**
+ * Every mode-resolved runtime import specifier the entity templates emit, as
+ * the `*Import` locals `templates/entity/new/prompt.js` passes to them. One
+ * table, so the unit tests that render clean-lite-ps bodies use the prompt's
+ * values rather than a fallback of their own (#638).
+ * @param {'package' | 'vendored'} mode
+ */
+export function runtimeImportLocals(mode) {
+  return {
+    // TypedEventBus token + DrizzleClient token/type. In `vendored` mode the
+    // consumer wires `@shared/*` to the vendored runtime under `src/shared/…`
+    // (subsystem barrel at `<subsystems_root>/events/index.ts`).
+    eventsTokenImport: subsystemsImport(mode, "events"),
+    typedEventBusImport: subsystemsImport(mode, "events"),
+    drizzleTokenImport: runtimeImport(mode, "constants/tokens"),
+    drizzleTypeImport: runtimeImport(mode, "types/drizzle"),
+    // ADR-043 §5: use-cases read the acting principal from the ambient
+    // RequesterContext (ALS), never from self-asserted request headers.
+    tenantContextImport: runtimeImport(mode, "base-classes/tenant-context"),
+    // Pagination contract (pagination-by-default). ASYMMETRIC by mode:
+    //   - package  → `@pattern-stack/codegen/runtime/http/pagination` (Page<T>,
+    //     ListQuerySchema, resolveListQuery, buildPage, cursor codec).
+    //   - vendored → `@shared/http/page` (vendored to `src/shared/http/page.ts`
+    //     by project init's VENDORED_RUNTIME_FILES). DISTINCT from the consumer's
+    //     OPTIONAL `@shared/http/pagination` search contract ({items,total,limit,
+    //     offset}) — vendoring the Page<T> envelope to `/pagination` would
+    //     clobber it, so the list envelope lives at `/page`.
+    // Unlike most @shared/http/* files (which the package never owns), THIS one
+    // IS package-published — the list endpoint is unconditional, so its contract
+    // must ship with codegen (package mode) and be vendored (vendored mode).
+    paginationImport:
+      mode === "vendored" ? "@shared/http/page" : runtimeImport(mode, "http/pagination"),
+    // Integration subsystem barrel (ADR-033.1 inline-sync `integration-source`
+    // module — emitted only for entities with an inline `detection:` block).
+    integrationSubsystemImport: subsystemsImport(mode, "integration"),
+    withAnalyticsImport: runtimeImport(mode, "base-classes/with-analytics"),
+    integrationUpsertConfigImport: runtimeImport(mode, "base-classes/integration-upsert-config"),
+    baseRepositoryImport: runtimeImport(mode, "base-classes/base-repository"),
+    eavHelpersImport: runtimeImport(mode, "eav-helpers"),
+    zodValidationPipeImport: runtimeImport(mode, "pipes/zod-validation.pipe"),
+    // OpenAPI barrel: the runtime source lives at `runtime/shared/openapi`, but
+    // the VENDORED target drops the leading `shared/` (vendored alias is
+    // `@shared/openapi`, NOT `@shared/shared/openapi`). Package mode keeps the
+    // full runtime relpath.
+    openApiImport:
+      mode === "vendored" ? "@shared/openapi" : runtimeImport(mode, "shared/openapi"),
+  };
+}

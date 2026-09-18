@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const ENTITY_TEMPLATE = readFileSync(
   resolve(import.meta.dir, '../../../templates/entity/new/clean-lite-ps/entity.ejs.t'),
@@ -37,7 +38,7 @@ function render(locals: Record<string, unknown>): string {
   return ejs.render(extractBody(ENTITY_TEMPLATE), locals, { rmWhitespace: false });
 }
 
-const EMPTY_BASE_LOCALS = {};
+const EMPTY_BASE_LOCALS = withEntities();
 
 const integrationDefinition = {
   entity: { name: 'integration', plural: 'integrations', table: 'integrations', pattern: 'Base' },

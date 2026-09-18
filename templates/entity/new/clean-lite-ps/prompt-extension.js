@@ -1939,36 +1939,14 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     );
   }
 
-  // EVT-7: emits locals flow through from baseLocals (prompt.js computed them
-  // against the full events registry). When this helper is called in isolation
-  // (e.g. from unit tests) baseLocals.hasEmits may be undefined — provide
-  // null-safe defaults so the CLP templates emits guards evaluate to false
-  // cleanly.
-  const hasEmits = Boolean(baseLocals?.hasEmits);
-  const emitsEvents = baseLocals?.emitsEvents ?? [];
-  const createEventType = baseLocals?.createEventType ?? null;
-  const updateEventType = baseLocals?.updateEventType ?? null;
-  const deleteEventType = baseLocals?.deleteEventType ?? null;
-  const eventsTokenImport =
-    baseLocals?.eventsTokenImport ?? '@shared/subsystems/events';
-  const typedEventBusImport =
-    baseLocals?.typedEventBusImport ?? '@shared/subsystems/events';
-  const drizzleTokenImport =
-    baseLocals?.drizzleTokenImport ?? '@shared/constants/tokens';
-  const drizzleTypeImport =
-    baseLocals?.drizzleTypeImport ?? '@shared/types/drizzle';
-  // ADR-043 §5: use-cases read the acting principal from the ambient
-  // RequesterContext (ALS), never from self-asserted request headers.
-  const tenantContextImport =
-    baseLocals?.tenantContextImport ?? '@shared/base-classes/tenant-context';
-  // Pagination contract (pagination-by-default). Package mode → the runtime
-  // module `@pattern-stack/codegen/runtime/http/pagination`; vendored / default
-  // → the consumer-owned `@shared/http/pagination`. Threaded from prompt.js;
-  // unit tests that call buildCleanLitePsLocals directly get the @shared default.
-  const paginationImport =
-    baseLocals?.paginationImport ?? '@shared/http/pagination';
+  // The complete local set the clean-lite-ps templates render with: the
+  // prompt's own locals (banner, runtime import specifiers, EVT-7 emits, …)
+  // plus the clean-lite-ps ones. No prompt-owned local is defaulted here — a
+  // missing one is a ReferenceError in the template, and one set to
+  // `undefined` fails `assertNoUndefinedLocals` below (#638).
+  const locals = {
+    ...baseLocals,
 
-  return {
     // Clean-Lite-PS identity
     entityName,
     entityNamePascal,
@@ -1977,19 +1955,6 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // ADR-043 §6: HTTP surface gate (controller + search controller + wiring)
     clpApiEnabled,
-
-    // EVT-7 emits locals (null-safe defaults if baseLocals didn't provide them)
-    hasEmits,
-    emitsEvents,
-    createEventType,
-    updateEventType,
-    deleteEventType,
-    eventsTokenImport,
-    typedEventBusImport,
-    drizzleTokenImport,
-    drizzleTypeImport,
-    tenantContextImport,
-    paginationImport,
 
     // Pattern — registry-driven (ADR-031)
     patternName,
@@ -2104,4 +2069,20 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     eavDefinitionRepositoryImported: eavDefinitionDep != null,
     eavDefinitionRepoProperty: eavDefinitionDep ? eavDefinitionDep.property : 'definitionRepo',
   };
+  assertNoUndefinedLocals(locals, entity.name);
+  return locals;
+}
+
+/**
+ * A clean-lite-ps local set to `undefined` is a prompt bug: the template would
+ * treat it as falsy and silently emit nothing. `null` is a real value (e.g. no
+ * composed base) and passes (#638).
+ */
+function assertNoUndefinedLocals(locals, entityName) {
+  const missing = Object.keys(locals).filter((k) => locals[k] === undefined);
+  if (missing.length > 0) {
+    throw new Error(
+      `clean-lite-ps locals for '${entityName}' are undefined: ${missing.sort().join(', ')}`,
+    );
+  }
 }

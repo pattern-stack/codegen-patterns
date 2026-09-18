@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -60,7 +61,7 @@ const eavEntity = { ...baseEntity, eav: true };
 
 describe('clean-lite-ps controller 404 semantics on :id routes', () => {
   it('imports NotFoundException from @nestjs/common', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain('NotFoundException');
@@ -69,7 +70,7 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
   });
 
   it('GET /:id returns Promise<Entity> — use case throws 404 when null (D2)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // D3 + D2 combined: ParseUUIDPipe guards the id; find-by-id use case
@@ -82,7 +83,7 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
   });
 
   it('PATCH /:id throws 404 when the row does not exist', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // ADR-043 §5: no header-threaded actor — use-case reads the principal from ALS.
@@ -95,7 +96,7 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
   });
 
   it('DELETE /:id stays void (idempotent, no 404)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // Per PR #52 dogfooding fix, delete is void. Double-check the 404
@@ -109,7 +110,7 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
   });
 
   it('EAV paired read /:id/with-fields also throws 404 on null', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain('const entity = await this.findByIdWithFieldsUseCase.execute(id);');
@@ -120,7 +121,7 @@ describe('clean-lite-ps controller 404 semantics on :id routes', () => {
   });
 
   it('list route (no :id) returns a Page<T> envelope, not a bare array (no 404 logic)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // pagination-by-default: @Get() returns Page<Contact>, binds the ListQuery,

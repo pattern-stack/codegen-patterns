@@ -16,6 +16,7 @@ import path from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
 import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATES = path.resolve(import.meta.dir, '../../../templates/entity/new/clean-lite-ps');
 
@@ -49,7 +50,7 @@ function localsFor(
 			behaviors: ['timestamps'],
 			...extra,
 		},
-		{ srcRoot: 'src', entityLookup: lookup, ...base },
+		{ ...withEntities(), srcRoot: 'src', entityLookup: lookup, ...base },
 	) as Locals;
 }
 

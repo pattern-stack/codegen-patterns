@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATES_DIR = resolve(
   import.meta.dir,
@@ -67,7 +68,7 @@ const agentDefinition = {
 describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
   describe('decimal field → z.coerce.string()', () => {
     it('create DTO emits z.coerce.string() for decimal', () => {
-      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const locals = buildCleanLitePsLocals(agentDefinition, withEntities());
       const output = render(CREATE_TEMPLATE, locals);
 
       expect(output).toContain('temperature: z.coerce.string()');
@@ -78,7 +79,7 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
     });
 
     it('output DTO emits z.coerce.string() for decimal', () => {
-      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const locals = buildCleanLitePsLocals(agentDefinition, withEntities());
       const output = render(OUTPUT_TEMPLATE, locals);
 
       expect(output).toContain('temperature: z.coerce.string()');
@@ -86,7 +87,7 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
     });
 
     it('update DTO inherits coerced decimal via createSchema.partial()', () => {
-      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const locals = buildCleanLitePsLocals(agentDefinition, withEntities());
       const output = render(UPDATE_TEMPLATE, locals);
 
       // The update schema is derived from the create schema, so the
@@ -98,7 +99,7 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
 
   describe('json field → z.unknown()', () => {
     it('create DTO emits z.unknown() for json (not z.record)', () => {
-      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const locals = buildCleanLitePsLocals(agentDefinition, withEntities());
       const output = render(CREATE_TEMPLATE, locals);
 
       // Required json field
@@ -110,7 +111,7 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
     });
 
     it('output DTO emits z.unknown() for json (not z.record)', () => {
-      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const locals = buildCleanLitePsLocals(agentDefinition, withEntities());
       const output = render(OUTPUT_TEMPLATE, locals);
 
       expect(output).toMatch(/config:\s*z\.unknown\(\)/);
@@ -138,7 +139,7 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
     };
 
     it('Integrated entity exposes externalId read-only on the output DTO', () => {
-      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const locals = buildCleanLitePsLocals(agentDefinition, withEntities());
       const output = render(OUTPUT_TEMPLATE, locals);
 
       // external_id is the public cross-entity join key — it must ride the output.
@@ -146,14 +147,14 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
     });
 
     it('external_id_tracking behavior alone (no pattern) still exposes externalId', () => {
-      const locals = buildCleanLitePsLocals(baseSynced, {});
+      const locals = buildCleanLitePsLocals(baseSynced, withEntities());
       const output = render(OUTPUT_TEMPLATE, locals);
 
       expect(output).toMatch(/externalId:\s*z\.string\(\)\.nullable\(\)/);
     });
 
     it('provider / provider_metadata stay internal — never on the output DTO', () => {
-      const locals = buildCleanLitePsLocals(agentDefinition, {});
+      const locals = buildCleanLitePsLocals(agentDefinition, withEntities());
       const output = render(OUTPUT_TEMPLATE, locals);
 
       expect(output).not.toContain('provider:');
@@ -161,7 +162,7 @@ describe('clean-lite-ps DTO templates — Zod type leaks (issue #35)', () => {
     });
 
     it('a plain Base entity emits no externalId on the output DTO', () => {
-      const locals = buildCleanLitePsLocals(plainBase, {});
+      const locals = buildCleanLitePsLocals(plainBase, withEntities());
       const output = render(OUTPUT_TEMPLATE, locals);
 
       expect(output).not.toContain('externalId');

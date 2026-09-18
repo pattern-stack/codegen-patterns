@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -62,7 +63,7 @@ const baseEntity = {
 
 describe('clean-lite-ps find-by-id use case — throws NotFoundException (D2)', () => {
   it('imports NotFoundException and throws when the service returns null', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/find-by-id.ejs.t', locals);
 
     expect(output).toContain(
@@ -73,7 +74,7 @@ describe('clean-lite-ps find-by-id use case — throws NotFoundException (D2)', 
   });
 
   it('return type is non-nullable (Promise<Entity>, not Promise<Entity | null>)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/find-by-id.ejs.t', locals);
 
     expect(output).toContain('async execute(id: string): Promise<Contact>');
@@ -83,7 +84,7 @@ describe('clean-lite-ps find-by-id use case — throws NotFoundException (D2)', 
 
 describe('clean-lite-ps controller — ParseUUIDPipe on @Param (D3)', () => {
   it('applies ParseUUIDPipe to the getById @Param', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain('ParseUUIDPipe');
@@ -91,7 +92,7 @@ describe('clean-lite-ps controller — ParseUUIDPipe on @Param (D3)', () => {
   });
 
   it('applies ParseUUIDPipe to update and delete @Param as well', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // Count the uses — read (1) + update (1) + delete (1) = at least 3.
@@ -102,7 +103,7 @@ describe('clean-lite-ps controller — ParseUUIDPipe on @Param (D3)', () => {
   });
 
   it('imports ParseUUIDPipe from @nestjs/common', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // Grab the first import line from @nestjs/common and assert membership.
@@ -116,7 +117,7 @@ describe('clean-lite-ps controller — ParseUUIDPipe on @Param (D3)', () => {
 
 describe('clean-lite-ps controller — ZodValidationPipe on @Body (D4/D5)', () => {
   it('imports ZodValidationPipe + create/update schemas', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain(
@@ -131,7 +132,7 @@ describe('clean-lite-ps controller — ZodValidationPipe on @Body (D4/D5)', () =
   });
 
   it('wires ZodValidationPipe on POST and PATCH @Body parameters', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain(
@@ -146,7 +147,7 @@ describe('clean-lite-ps controller — ZodValidationPipe on @Body (D4/D5)', () =
 
   it('does not emit the write-side schemas when writes are disabled', () => {
     const def = { ...baseEntity, generate: { writes: false } };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // ZodValidationPipe is now UNCONDITIONAL — pagination-by-default validates the
@@ -164,14 +165,14 @@ describe('clean-lite-ps DTOs — schemas are exported as runtime values (D4/D5)'
   // The controller pipe instantiates `new ZodValidationPipe(CreateXSchema)`
   // at runtime, so the schema must be a regular (non-type-only) export.
   it('create DTO exports CreateXSchema as a value', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('dto/create.ejs.t', locals);
 
     expect(output).toContain('export const CreateContactSchema = z.object({');
   });
 
   it('update DTO exports UpdateXSchema as a value', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('dto/update.ejs.t', locals);
 
     expect(output).toContain('export const UpdateContactSchema');

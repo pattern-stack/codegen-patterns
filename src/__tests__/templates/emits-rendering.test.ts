@@ -17,6 +17,7 @@ import { describe, it, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
+import { withEntities } from '../clean-lite-ps/_entity-lookup';
 
 const BACKEND_ROOT = resolve(
   import.meta.dir,
@@ -337,7 +338,10 @@ describe('EVT-7 Clean Architecture — repository-interface template', () => {
 // ---------------------------------------------------------------------------
 
 function clpBase() {
+  // The prompt-owned locals (banner, `@shared/*` runtime import specifiers,
+  // EVT-7 defaults) come from the shared test base (#638).
   return {
+    ...withEntities(),
     entityName: 'contact',
     entityNamePlural: 'contacts',
     classNames: {
@@ -355,15 +359,6 @@ function clpBase() {
       deleteUseCase: 'src/modules/contacts/use-cases/delete-contact.use-case.ts',
     },
     eavEnabled: false,
-    // EVT-7 locals
-    hasEmits: false,
-    createEventType: null,
-    updateEventType: null,
-    deleteEventType: null,
-    eventsTokenImport: '@shared/subsystems/events',
-    drizzleTokenImport: '@shared/constants/tokens',
-    drizzleTypeImport: '@shared/types/drizzle',
-    tenantContextImport: '@shared/base-classes/tenant-context',
   };
 }
 
