@@ -1,8 +1,22 @@
-# Semantic golden fixture: the junction. Emits its own registry entry with
-# meta.kind 'junction' plus an inverse has_many on each endpoint.
+# Semantic golden fixture: the junction.
+#
+# Aligned with the canonical `test/fixtures/junctions/opportunity_contact.yaml`
+# — temporal, sourced, the inline five-value `role` enum — so the golden model
+# locks the real junction shape rather than a reduced one.
+#
+# Emits its own registry entry with `meta.kind: 'junction'` and two belongs_to
+# descriptors, plus an inverse has_many on each endpoint.
 pattern: Junction
 between: [opportunity, contact]
+temporal: true
+sourced: true
+
 fields:
   role:
     type: enum
-    values: [champion, decision_maker, influencer]
+    values: [champion, decision_maker, influencer, blocker, end_user]
+    nullable: false
+
+queries:
+  - by: [opportunity_id]
+  - by: [contact_id]

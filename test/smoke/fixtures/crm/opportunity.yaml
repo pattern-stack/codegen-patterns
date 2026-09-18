@@ -30,7 +30,7 @@ fields:
     # SEM-1/SEM-2: an additive money measure with an allowed-agg SET, so the
     # emitted catalog keys are `amount.sum` / `amount.avg`.
     role: measure
-    aggs: [sum, avg]
+    aggs: [sum, avg, min, max]
     additivity: additive
 
   won_amount:
@@ -39,6 +39,17 @@ fields:
     role: measure
     aggs: [sum]
     additivity: additive
+
+  win_probability:
+    type: decimal
+    required: false
+    # SEM-3: the NON-ADDITIVE measure. A percentage cannot be summed across
+    # anything — averaging is the only aggregation that means something — and
+    # that is not inferable from `decimal`, which is why `additivity` is
+    # required per field (ADR-045).
+    role: measure
+    agg: avg
+    additivity: non
 
   stage:
     type: enum
