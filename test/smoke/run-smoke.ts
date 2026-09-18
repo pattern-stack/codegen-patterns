@@ -98,10 +98,9 @@ const RUNTIME_DEPS = [
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',
-	// OPENAPI-4: main.ts bootstrap reads codegen.config.yaml to pick up
-	// the `openapi:` block. The jobs pool loader already imports from
-	// yaml, so this isn't new infra — just a pin for consumer installs.
-	'yaml@2',
+	// No `yaml`: the generated app never parses codegen.config.yaml — its boot
+	// values are emitted into <generated>/app-config.ts (CFG-1). Leaving the
+	// pin out proves it.
 ];
 const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
 

@@ -52,7 +52,6 @@ const RUNTIME_DEPS = [
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',
-	'yaml@2',
 ];
 const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
 
@@ -453,6 +452,14 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 			path.join(srcDir, 'app.module.ts'),
 			"import { Module } from '@nestjs/common';\n@Module({})\nexport class AppModule {}\n",
 			'utf-8',
+		);
+		// CFG-1: the worker imports `jobPools` from the generated
+		// `./generated/app-config` — the real one, so its literal is checked
+		// against `JobWorkerModule`'s `domainModulePools` type.
+		fs.mkdirSync(path.join(srcDir, 'generated'), { recursive: true });
+		fs.copyFileSync(
+			path.join(tmpDir, 'src', 'generated', 'app-config.ts'),
+			path.join(srcDir, 'generated', 'app-config.ts'),
 		);
 		// Reuse the consumer's deps (NestJS, reflect-metadata) by pointing
 		// node_modules resolution at the tmpDir install.

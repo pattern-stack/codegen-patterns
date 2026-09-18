@@ -33,6 +33,7 @@ machine-readable output and `--cwd <path>` to target another project root.
 - **Codegen owns** (don't hand-edit — regenerated every run):
   - `src/generated/modules.ts` — the `GENERATED_MODULES` barrel
   - `src/generated/schema.ts` — the Drizzle schema barrel
+  - `src/generated/app-config.ts` — the config values your app reads at boot
   - the per-entity module tree (`src/modules/<plural>/…` in clean-lite-ps)
 - **Where the runtime comes from** depends on `runtime:` in
   `codegen.config.yaml` (ADR-037):
@@ -64,8 +65,8 @@ The generated data plane is **closed by default**:
   requester.
 - `main.ts` calls `installRequesterContext(app)` and **refuses to start** when
   no `IUserContext` is bound under `AUTH_USER_CONTEXT`.
-  `auth.devAllowAnonymous: true` in `codegen.config.yaml` bypasses this. It is
-  for localhost only; never ship it.
+  `auth.devAllowAnonymous: true` in `codegen.config.yaml` bypasses this — after
+  you regenerate (see below). It is for localhost only; never ship it.
 - Generated controllers do **not** read `x-user-id` / `x-tenant-id` headers.
   Use cases get the actor from the request context (`tryGetRequester()`).
   Don't add header-sourced identity back.
@@ -159,6 +160,12 @@ codegen skills list
   command with an error naming the key and the keys expected there. Fix the
   key; there is no flag to skip validation. Block reference: `docs/CONSUMER-SETUP.md`
   › `codegen.config.yaml`.
+- **Your app never reads `codegen.config.yaml`.** The keys it needs at boot —
+  `openapi.*`, `auth.devAllowAnonymous`, `jobs.pools` — are validated and
+  written into `src/generated/app-config.ts` (`openapiConfig`, `authConfig`,
+  `jobPools`), which `main.ts`, the subsystem barrel and `worker.ts` import.
+  After editing one, regenerate (`codegen entity new --all` or any
+  `codegen subsystem install`); a bad value fails there, naming the key.
 - **YAML is `snake_case`; generated TS properties are `camelCase`.** The
   templates derive `accountId` from `account_id`. Entity names are singular
   `snake_case` (`opportunity`).

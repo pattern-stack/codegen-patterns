@@ -25,11 +25,13 @@ Your installed `jobs:` config ships five pools:
 | `interactive` | 20 | no | User-waiting work: exports, renders, ad-hoc one-offs |
 | `batch` | 5 | no | Background work: onboarding, ingest, long jobs. **Default for your handlers.** |
 
-You may override `concurrency` (and `description`) on the non-reserved pools, and you may add your own.
+You may override `concurrency` (and `description`) on any of these pools, and you may add your own. A framework pool's `queue` and `reserved` are fixed; setting either is an error when you run `codegen`, naming the key.
+
+**Pool config is fixed at generation — a decision, with an escape route (CFG-1).** `concurrency`, like every other pool knob and every `jobs.*` knob, takes effect when you regenerate, not when a deployment restarts: the app never reads `codegen.config.yaml`. If a deployment genuinely needs to tune a pool per environment, `JobsDomainModule.forRoot({ pools })` is the seam — pass the generated `jobPools` with an env-derived override merged on (e.g. `{ ...jobPools, batch: { concurrency: Number(process.env.BATCH_CONCURRENCY ?? 5) } }`) in your own wiring. `resolvePoolConfig` applies the same pool rules to it at boot.
 
 ### Reserved pools are off-limits to your handlers
 
-The three `events_*` pools exist only to carry event/bridge traffic, one lane per event direction. A `@JobHandler({ pool: 'events_change' })` (or any reserved pool) throws `ReservedPoolViolationError` at app boot — the error names the offending class. You cannot flip `reserved` off in config, and you cannot mark your own pools `reserved`.
+The three `events_*` pools exist only to carry event/bridge traffic, one lane per event direction. A `@JobHandler({ pool: 'events_change' })` (or any reserved pool) throws `ReservedPoolViolationError` at app boot — the error names the offending class. Setting `reserved` in config — to flip a framework pool off, or to mark your own pool — is a `codegen` error naming the key.
 
 To run a job *when an event fires*, declare `@JobHandler.triggers` and let the bridge enqueue it into your chosen (non-reserved) pool. See the `bridge` skill.
 
@@ -50,12 +52,12 @@ jobs:
 
   worker_mode: embedded            # embedded | standalone (operational hint; see below)
 
-  pools:
-    events_inbound:  { queue: jobs-events-inbound,  concurrency: 20, reserved: true }
-    events_change:   { queue: jobs-events-change,   concurrency: 30, reserved: true }
-    events_outbound: { queue: jobs-events-outbound, concurrency: 10, reserved: true }
-    interactive:     { queue: jobs-interactive,     concurrency: 20 }
-    batch:           { queue: jobs-batch,           concurrency: 5 }
+  # pools:                         # the five pools above exist without this;
+  #   batch:                       # add overrides / your own pools here
+  #     concurrency: 10
+  #   reports:
+  #     queue: jobs-reports
+  #     concurrency: 2
 ```
 
 Field notes:
@@ -66,12 +68,13 @@ Field notes:
 | `extensions.<backend>.*` | Backend-specific knobs. Each backend reads only its own key. An undeclared key (a typo, a removed knob) is a `codegen.config.yaml` error naming the key — the file is validated strictly on every `codegen` command. |
 | `multi_tenant` | When `true`, service methods require a `tenantId` (explicit `null` allowed for cross-tenant work). The `tenant_id` column exists regardless, so flipping this later needs no migration. |
 | `worker_mode` | Informational hint only — both worker entrypoints are always scaffolded. See "Worker topology". |
-| `pools.<name>.queue` | The queue identifier written into `job_run.pool`. Must be unique. |
-| `pools.<name>.concurrency` | Per-process max in-flight for that pool. Running more processes multiplies it. |
+| `pools` | Written by `codegen` into `src/generated/app-config.ts` as `jobPools` and passed to `JobsDomainModule.forRoot({ pools })`. Edit, then regenerate (`codegen entity new --all`). |
+| `pools.<name>.queue` | The queue identifier written into `job_run.pool`. Required on your own pool; fixed on a framework pool. |
+| `pools.<name>.concurrency` | Per-process max in-flight for that pool. Running more processes multiplies it. Required on your own pool. |
 
 ## Adding a custom pool
 
-Pure config change — no code edits:
+A config change and a regeneration (`codegen entity new --all`) — no hand-written code edits:
 
 ```yaml
 jobs:
@@ -132,7 +135,7 @@ import { JobWorkerModule } from '@shared/subsystems/jobs';
 export class AppModule {}
 ```
 
-`JobWorkerModule.forRoot({ mode, backend?, pools?, multiTenant?, shutdownTimeoutMs? })` imports `JobsDomainModule` internally and starts a worker per active pool. The protocol tokens (`JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`) become available project-wide.
+`JobWorkerModule.forRoot({ mode, backend?, pools?, allPools?, domainModulePools?, multiTenant?, shutdownTimeoutMs? })` (`domainModulePools` is the generated `jobPools`; the generated wiring passes it) imports `JobsDomainModule` internally and starts a worker per active pool. The protocol tokens (`JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`) become available project-wide.
 
 - Pass `pools: ['batch', 'agents']` to restrict which pools *this* process services — useful for heterogeneous standalone deploys. Pools omitted from the list are not claimed by this process.
 - A process that only needs to *start* jobs (not run them) can import `JobsDomainModule.forRoot({ backend })` alone — services available, no worker loop.

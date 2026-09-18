@@ -411,34 +411,40 @@ additive, not exclusive. See
 [ADR-017](./adrs/ADR-017-barrel-files-over-injects.md) for why codegen
 writes a barrel instead of mutating this file.
 
-`codegen project init` also drops a default `src/main.ts` that loads
-`codegen.config.yaml`, awaits `registry.build(...)`, and calls
-`SwaggerModule.setup(openapi.path, app, document)` when `openapi.enabled`
-is true. If your project already owns `main.ts` (custom logging, Helmet,
-CORS, etc.), copy this block into your own bootstrap:
+`codegen project init` also drops a default `src/main.ts` that imports
+`openapiConfig` from the generated `src/generated/app-config.ts`, awaits
+`registry.build(...)`, and calls `SwaggerModule.setup(openapiConfig.path, app, document)`
+when `openapiConfig.enabled` is true. The app never parses `codegen.config.yaml`:
+the generator validates the `openapi:` block and writes it into that module
+(see `codegen.config.yaml` below). If your project already owns `main.ts` (custom
+logging, Helmet, CORS, etc.), run `codegen project upgrade-openapi`, or copy this
+block into your own bootstrap:
 
 ```ts
 // src/main.ts (excerpt — paste into your existing bootstrap)
-import { SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
+import { openapiConfig } from './generated/app-config';
 
 // inside async function bootstrap(), after `await NestFactory.create(AppModule)`:
-if (config.openapi?.enabled) {
+if (openapiConfig.enabled) {
   const registry = app.get<OpenApiRegistry>(OPENAPI_REGISTRY);
-  const document = await registry.build({
-    title: config.openapi.title,
-    version: config.openapi.version,
-    description: config.openapi.description,
+  const registryDocument = await registry.build({
+    title: openapiConfig.title,
+    version: openapiConfig.version,
+    description: openapiConfig.description,
   });
+  const docBuilder = new DocumentBuilder()
+    .setTitle(openapiConfig.title)
+    .setVersion(openapiConfig.version);
+  if (openapiConfig.description) docBuilder.setDescription(openapiConfig.description);
+  if (openapiConfig.auth === 'bearer') docBuilder.addBearerAuth();
+  const document = SwaggerModule.createDocument(app, docBuilder.build());
   document.components = {
     ...document.components,
-    securitySchemes: {
-      ...(document.components as any).securitySchemes,
-      bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-    },
+    schemas: { ...(document.components?.schemas ?? {}), ...registryDocument.components.schemas },
   };
-  (document as any).security = [{ bearer: [] }];
-  SwaggerModule.setup(config.openapi.path, app, document);
+  SwaggerModule.setup(openapiConfig.path, app, document);
 }
 ```
 
@@ -551,8 +557,16 @@ blocks are:
 | `subsystems` | `install:` — the installed-subsystem list in package mode |
 | `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`, `cache`, `storage` | written by `codegen subsystem install <name>`; see each subsystem's section |
 
-Two maps are open by design: `jobs.pools` (keyed by pool name; each pool's keys are still checked) and
-`frontend.parsers` (keyed by column type).
+Two maps are open by design: `jobs.pools` (keyed by pool name; each pool's keys are still checked, and so are the
+pool rules — a framework pool may set only `concurrency` / `description`; your own pool needs `queue` +
+`concurrency`) and `frontend.parsers` (keyed by column type).
+
+**Your app never reads this file.** The values it needs at boot — `openapi.*`, `auth.devAllowAnonymous`,
+`jobs.pools` — are written by the generator into `<paths.generated>/app-config.ts` (`openapiConfig`, `authConfig`,
+`jobPools`), which `main.ts`, `<generated>/subsystems.ts` and `worker.ts` import. Like every other generated file it
+is rewritten on regeneration (`codegen entity new --all`, any `codegen subsystem install`, `project upgrade-openapi` /
+`upgrade-auth`); editing `codegen.config.yaml` changes nothing until you regenerate, and a bad value fails the
+regeneration with the key named — never a silently-defaulted boot. The app has no `yaml` dependency.
 
 `codegen project init` defaults `generate.architecture` to `clean-lite-ps` — the lighter consumer-facing layout used by the scaffold-demo app. To opt into the full Clean Architecture pipeline (separate `domain/`, `application/`, `infrastructure/` directories, separate command/query classes), edit `codegen.config.yaml` and set `generate.architecture: clean`. The two pipelines are mutually exclusive and the scanner only overrides the default when it finds existing domain/application directories (see `docs/specs/TEST-SESSION-1.md` §3).
 

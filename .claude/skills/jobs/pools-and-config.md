@@ -1,8 +1,8 @@
 # Pools and Configuration
 
-How pools work, what lives in `codegen.config.yaml: jobs.*`, how the core/extension surface maps to backend-specific features, and how to add a new pool. Touch this file when you're editing the config schema, the pool loader, or the framework defaults.
+How pools work, what lives in `codegen.config.yaml: jobs.*`, how the core/extension surface maps to backend-specific features, and how to add a new pool. Touch this file when you're editing the config schema, the pool rules (`pool-config.ts`), or the framework defaults.
 
-Source of truth: `docs/specs/JOB-5.md` (module + pool loader), `docs/specs/JOB-6.md` (scaffold template that emits the config block), ADR-022 §"Pools" and §"Event lanes".
+Source of truth: `docs/specs/JOB-5.md` (module + pools), `docs/specs/JOB-6.md` (scaffold template that emits the config block), `docs/specs/CFG-1.md` (how `jobs.pools` reaches the app — generated, never read at boot), ADR-022 §"Pools" and §"Event lanes".
 
 ## What a pool is
 
@@ -15,7 +15,7 @@ A pool is a logical lane. Each pool maps to:
 
 ## Framework defaults (five pools)
 
-From `pool-config.loader.ts` (JOB-5 §1):
+From `pool-config.ts` › `FRAMEWORK_POOLS` (JOB-5 §1):
 
 | Pool | queue | concurrency | reserved | Purpose |
 |---|---|---|---|---|
@@ -25,21 +25,23 @@ From `pool-config.loader.ts` (JOB-5 §1):
 | `interactive` | `jobs-interactive` | 20 | no | User is waiting. Exports, renders, ad-hoc one-off work. |
 | `batch` | `jobs-batch` | 5 | no | Background. Onboarding, batch ingest, agent runs. **Default for user `@JobHandler`s.** |
 
-Concurrency values ship as defaults; consumers may override non-reserved pools' `concurrency` (and `description`) in config.
+Concurrency values ship as defaults; consumers may override any framework pool's `concurrency` (and `description`) in config. Its `queue` and `reserved` are fixed — setting either is a generation-time error.
+
+**Pool config is fixed at generation — a decision, with an escape route (CFG-1).** `concurrency`, like every other pool knob and every `jobs.*` knob, takes effect when you regenerate, not when a deployment restarts: the app never reads `codegen.config.yaml`. If a deployment genuinely needs to tune a pool per environment, `JobsDomainModule.forRoot({ pools })` is the seam — pass the generated `jobPools` with an env-derived override merged on (e.g. `{ ...jobPools, batch: { concurrency: Number(process.env.BATCH_CONCURRENCY ?? 5) } }`) in your own wiring. `resolvePoolConfig` applies the same pool rules to it at boot.
 
 ## Reserved pools are off-limits to user handlers
 
 The three `events_*` pools exist to carry the `IEventBus` outbox drain, routed by `DomainEvent.direction` (`inbound | change | outbound`). They are `reserved: true`. User code targeting them must fail loudly at module init:
 
 - A `@JobHandler({ pool: 'events_change' })` triggers `ReservedPoolViolationError` during `JobWorkerModule.onModuleInit`. Error lists the offending class names.
-- The loader silently preserves `reserved: true` on framework pools even if the user tries to flip it in config.
-- User-defined pools cannot set `reserved: true` — reserved is framework-only.
+- Setting `reserved` (or `queue`) on a framework pool in config is a `codegen.config.yaml` error at generation, naming the key (CFG-1).
+- User-defined pools cannot set `reserved` — reserved is framework-only.
 
 If a user task genuinely needs to participate in the event stream, it goes through the `IEventBus` + Phase 2 bridge (ADR-023), not directly as a handler on `events_*`. See `../events/SKILL.md`.
 
 ## The `jobs:` config block
 
-Emitted by `just gen-subsystem jobs` (JOB-6's `codegen-config-jobs-block.ejs.t`). Canonical shape:
+Emitted by `just gen-subsystem jobs` (JOB-6's `codegen-config-jobs-block.ejs.t`). Canonical shape (the `pools:` example ships commented — the five framework pools exist without it):
 
 ```yaml
 jobs:
@@ -67,26 +69,13 @@ jobs:
   # ── Worker topology ──
   worker_mode: embedded              # embedded | standalone
 
-  # ── Pools ──
-  pools:
-    events_inbound:
-      queue: jobs-events-inbound
-      concurrency: 20
-      reserved: true
-    events_change:
-      queue: jobs-events-change
-      concurrency: 30
-      reserved: true
-    events_outbound:
-      queue: jobs-events-outbound
-      concurrency: 10
-      reserved: true
-    interactive:
-      queue: jobs-interactive
-      concurrency: 20
-    batch:
-      queue: jobs-batch
-      concurrency: 5
+  # ── Pools ── (overrides + your own pools; framework pools always exist)
+  # pools:
+  #   batch:
+  #     concurrency: 10
+  #   reports:
+  #     queue: jobs-reports
+  #     concurrency: 2
 ```
 
 Field semantics:
@@ -97,9 +86,10 @@ Field semantics:
 | `extensions.<backend>.*` | Backend class during init | Each backend reads only its own key. Every declared key of every backend is accepted whichever backend is active (swap is non-destructive); an undeclared key is a `codegen.config.yaml` error at generate time (`JobsConfigSchema`, CFG-0). |
 | `multi_tenant` | `JobsDomainModule.forRoot` | Threads `JOBS_MULTI_TENANT` token through. Default `false`. When `true`, service methods require `tenantId` (see JOB-8). |
 | `worker_mode` | Informational + scaffold hint | `embedded` means `JobWorkerModule` imported by `AppModule`; `standalone` means run `src/worker.ts` (`bun src/worker.ts`) separately. Switching does not change generated code — both entrypoints are always emitted. |
-| `pools.<name>.queue` | `JobWorker` | Identifier written into `job_run.pool`. Must be unique across pools. |
-| `pools.<name>.concurrency` | `JobWorker` | Per-process max in-flight. Horizontal scale multiplies. |
-| `pools.<name>.reserved` | `PoolConfigLoader` | Framework-only. User configs cannot enable. Framework pools cannot have it disabled. |
+| `pools` | the generator → `<generated>/app-config.ts` (`jobPools`) → `JobsDomainModule.forRoot({ pools })` → `JOB_POOL_CONFIG` | CFG-1: validated at generation (`poolOverrideIssues`, run by the schema) and emitted; the app never reads the YAML. Edit, then regenerate. |
+| `pools.<name>.queue` | `JobWorker`, BullMQ queue naming | Required on a user pool; fixed on a framework pool. |
+| `pools.<name>.concurrency` | `JobWorker` | Per-process max in-flight. Horizontal scale multiplies. Required on a user pool. |
+| `pools.<name>.reserved` | — | Framework-only: setting it anywhere is an error. |
 
 ## Core contract vs. extensions — the rule
 
@@ -121,7 +111,7 @@ Examples of core-shaped features (NOT extensions):
 
 ## Adding a custom pool
 
-Pure config change. To add an `agents` pool for long-running LLM work:
+A config change plus a regeneration (`codegen entity new --all`, or any `subsystem install`) — the generator writes `jobPools` into `<generated>/app-config.ts`. To add an `agents` pool for long-running LLM work:
 
 ```yaml
 jobs:
@@ -133,7 +123,7 @@ jobs:
       description: "Long-running LLM/agent work"
 ```
 
-Then any `@JobHandler({ pool: 'agents', … })` targets it. No code changes required. `JobWorkerModule` discovers the pool at boot, spins up a `JobWorker(pool='agents')`, starts its claim loop.
+Then any `@JobHandler({ pool: 'agents', … })` targets it. No hand-written code changes. `JobWorkerModule` finds the pool in `JOB_POOL_CONFIG` at boot, spins up a `JobWorker(pool='agents')`, starts its claim loop. The standalone `worker.ts` imports `jobPools` from the generated module, so it sees the pool too although it is emit-once.
 
 If you want to restrict which pools a process services (useful for heterogeneous deploys), pass `opts.pools`:
 
@@ -143,14 +133,11 @@ JobWorkerModule.forRoot({ mode: 'standalone', pools: ['batch', 'agents'] })
 
 Pools omitted from the list are not claimed by this process.
 
-## Pool config loader rules (JOB-5 §1)
+## Pool rules (`pool-config.ts`, JOB-5 §1 as revised by CFG-1)
 
-- Reads `${process.cwd()}/codegen.config.yaml` (or `configPath` argument in tests).
-- Always merges `FRAMEWORK_POOLS` first, then user-defined pools.
-- Users may override `concurrency` and `description` on non-reserved defaults.
-- Users cannot set `reserved: true` on their own pools.
-- Users cannot flip `reserved: true` → `false` on framework pools.
-- Cached in module scope after first call.
+- Nothing reads `codegen.config.yaml` at boot. `jobs.pools` is emitted as `jobPools` into `<generated>/app-config.ts`; the generated barrel passes it to `JobsDomainModule.forRoot({ pools })` and (embedded) `JobWorkerModule.forRoot({ domainModulePools })`; `worker.ts` passes `domainModulePools: jobPools`.
+- `resolvePoolConfig(overrides)` merges onto `FRAMEWORK_POOLS` and is bound under `JOB_POOL_CONFIG` — the one map the worker (activation, concurrency) and the BullMQ orchestrator (queue names) read.
+- `poolOverrideIssues(overrides)` is the rule set, stated once: a framework pool may set only `concurrency` / `description`; a user pool needs `queue` + positive `concurrency` and cannot set `reserved`. The config schema runs it (`jobs.pools` `superRefine`), so a violation is a `CodegenConfigError` naming `jobs.pools.<name>.<key>` at generation; `resolvePoolConfig` throws on the same issues for a hand-written call.
 
 ## `JobsDomainModule.forRoot` — options shape
 
@@ -171,12 +158,13 @@ interface JobsDomainModuleOptions {
     // bullmq?: ...  // Phase 6+
   };
   multiTenant?: boolean;
+  pools?: PoolOverrides;   // CFG-1 — the generated `jobPools`
 }
 ```
 
-Module is `global: true`, provides `JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`, and (JOB-8) `JOBS_MULTI_TENANT`.
+Module is `global: true`, provides `JOB_ORCHESTRATOR`, `JOB_RUN_SERVICE`, `JOB_STEP_SERVICE`, (JOB-8) `JOBS_MULTI_TENANT`, and (CFG-1) `JOB_POOL_CONFIG`.
 
-`JobWorkerModule.forRoot` separately takes `{ mode, backend?, pools?, shutdownTimeoutMs? }` and imports `JobsDomainModule` internally. A process can import `JobsDomainModule` alone (read-only — services available, no worker running) or `JobWorkerModule` (which brings the domain module with it plus the claim loop).
+`JobWorkerModule.forRoot` separately takes `{ mode, backend?, pools?, allPools?, domainModulePools?, shutdownTimeoutMs? }` (`pools` = the activation list; `domainModulePools` = the pool definitions, forwarded to its inner domain module) and imports `JobsDomainModule` internally. A process can import `JobsDomainModule` alone (read-only — services available, no worker running) or `JobWorkerModule` (which brings the domain module with it plus the claim loop).
 
 ## Worker topology — embedded vs. standalone
 

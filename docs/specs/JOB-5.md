@@ -6,6 +6,14 @@
 **Depends on:** JOB-2, JOB-3, JOB-4
 **Unblocks:** JOB-6 (templates), JOB-8 (multi-tenancy + upgrade + docs)
 
+> **Revision 2026-09-18 — CFG-1 (#643).** The pool config is no longer *loaded*. `pool-config.loader.ts` →
+> `pool-config.ts`: `loadPoolConfig`, its cache and `JobWorkerModuleOptions.configPath` are deleted. The generator
+> validates `codegen.config.yaml: jobs.pools` and emits it as `jobPools` in `<generated>/app-config.ts`;
+> `JobsDomainModule.forRoot({ pools })` binds `resolvePoolConfig(pools)` under `JOB_POOL_CONFIG`, and
+> `JobWorkerModule.forRoot({ domainModulePools })` forwards it. The pool rules are `poolOverrideIssues`, run by the
+> config schema at generation — a framework pool's `queue` / `reserved` are now an error rather than silently
+> preserved. Below, read "load the pool config" as "inject `JOB_POOL_CONFIG`". See `docs/specs/CFG-1.md`.
+
 ## Overview
 
 Two NestJS `DynamicModule` factories plus a shared pool config loader. `JobsDomainModule` is the service module (any app process imports it to access the three protocol tokens). `JobWorkerModule` additionally boots worker claim loops, scans the `@JobHandler` registry, upserts `Job` rows from decorator metadata, and runs the boot-time validator. The pool config loader parses `codegen.config.yaml: jobs.pools`, applies framework defaults, validates reserved-pool assignment.

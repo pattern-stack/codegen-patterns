@@ -69,7 +69,7 @@ The decorator registers the class into a module-local `JOB_HANDLER_REGISTRY` at 
 
 ## Decorator metadata reference
 
-All fields optional except `type` (the string positional arg). Defaults come from `FRAMEWORK_DEFAULTS` in `pool-config.loader.ts` or from the `job` table columns.
+All fields optional except `type` (the string positional arg). Defaults come from `FRAMEWORK_POOLS` in `pool-config.ts` (merged with the generated `jobPools`, CFG-1) or from the `job` table columns.
 
 | Field | Shape | Notes |
 |---|---|---|

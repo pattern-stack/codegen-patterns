@@ -44,3 +44,12 @@ export const JOBS_MULTI_TENANT = Symbol.for(tokenKey('jobs', 'multi-tenant'));
  * and by the bridge outbox drain hook (its wrapper `job_run` inserts notify too).
  */
 export const JOBS_LISTEN_NOTIFY = Symbol.for(tokenKey('jobs', 'listen-notify'));
+
+/**
+ * The resolved pool map (`PoolConfig`, CFG-1). Bound by
+ * `JobsDomainModule.forRoot({ pools })` to `resolvePoolConfig(pools)` — the
+ * five framework pools with the generated `jobPools` overrides merged on. Read
+ * by `JobWorkerOrchestrator` (activation, per-pool concurrency) and the BullMQ
+ * orchestrator (queue names), so producer and worker agree by construction.
+ */
+export const JOB_POOL_CONFIG = Symbol.for(tokenKey('jobs', 'pool-config'));

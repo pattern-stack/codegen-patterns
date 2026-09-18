@@ -9,14 +9,12 @@
  *   5. boot validator (Drizzle only)  ← throws BootValidationError
  *   6. spawn workers via workerFactory stub
  *
- * Plus pool-config.loader behaviour: defaults, user merge, reserved
- * preservation, user-cannot-flip-reserved.
+ * Plus pool-config behaviour (CFG-1): defaults, override merge, and the
+ * pool rules (framework `queue`/`reserved` fixed, user pools need `queue` +
+ * `concurrency`, `reserved` is framework-only).
  */
 import 'reflect-metadata';
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { Test } from '@nestjs/testing';
 import {
   JobHandler,
@@ -42,11 +40,11 @@ import {
 import {
   FRAMEWORK_POOLS,
   RESERVED_POOL_NAMES,
-  _resetPoolConfigCacheForTests,
   allNonReservedPoolNames,
   allPoolNames,
-  loadPoolConfig,
-} from '../../../../runtime/subsystems/jobs/pool-config.loader';
+  poolOverrideIssues,
+  resolvePoolConfig,
+} from '../../../../runtime/subsystems/jobs/pool-config';
 import type {
   IJobOrchestrator,
   JobUpsertEntry,
@@ -76,26 +74,17 @@ function registerTestType(type: string): string {
 afterEach(() => {
   for (const t of TEST_TYPES) JOB_HANDLER_REGISTRY.delete(t);
   TEST_TYPES.clear();
-  _resetPoolConfigCacheForTests();
 });
 
-// ─── pool-config.loader ─────────────────────────────────────────────────────
+// ─── pool-config ────────────────────────────────────────────────────────────
 
-describe('loadPoolConfig', () => {
-  it('returns the five framework defaults when no file exists', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
-    try {
-      const config = loadPoolConfig(join(tmp, 'codegen.config.yaml'));
-      expect(config.size).toBe(5);
-      for (const name of Object.keys(FRAMEWORK_POOLS)) {
-        const def = config.get(name);
-        expect(def).toBeDefined();
-        expect(def?.queue).toBe(FRAMEWORK_POOLS[name]!.queue);
-        expect(def?.concurrency).toBe(FRAMEWORK_POOLS[name]!.concurrency);
-        expect(def?.reserved).toBe(FRAMEWORK_POOLS[name]!.reserved);
-      }
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
+describe('resolvePoolConfig (CFG-1)', () => {
+  it('returns the five framework defaults with no overrides', () => {
+    const config = resolvePoolConfig();
+    expect(config.size).toBe(5);
+    for (const name of Object.keys(FRAMEWORK_POOLS)) {
+      const def = config.get(name);
+      expect(def).toEqual({ ...FRAMEWORK_POOLS[name]! });
     }
   });
 
@@ -108,116 +97,65 @@ describe('loadPoolConfig', () => {
   });
 
   it('merges a user-defined pool with the framework defaults preserved', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
-    try {
-      const path = join(tmp, 'codegen.config.yaml');
-      writeFileSync(
-        path,
-        `jobs:\n  pools:\n    agents:\n      queue: jobs-agents\n      concurrency: 3\n      description: agent loops\n`,
-        'utf8',
-      );
-      const config = loadPoolConfig(path);
-      expect(config.size).toBe(6);
-      expect(config.get('agents')?.queue).toBe('jobs-agents');
-      expect(config.get('agents')?.concurrency).toBe(3);
-      expect(config.get('agents')?.reserved).toBe(false);
-      // Framework defaults still present, untouched.
-      expect(config.get('batch')?.queue).toBe('jobs-batch');
-      expect(config.get('events_inbound')?.reserved).toBe(true);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+    const config = resolvePoolConfig({
+      agents: { queue: 'jobs-agents', concurrency: 3, description: 'agent loops' },
+    });
+    expect(config.size).toBe(6);
+    expect(config.get('agents')).toEqual({
+      queue: 'jobs-agents',
+      concurrency: 3,
+      reserved: false,
+      description: 'agent loops',
+    });
+    expect(config.get('batch')?.queue).toBe('jobs-batch');
+    expect(config.get('events_inbound')?.reserved).toBe(true);
   });
 
-  it('silently preserves reserved=true on framework pools when user tries to flip it', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
-    try {
-      const path = join(tmp, 'codegen.config.yaml');
-      writeFileSync(
-        path,
-        `jobs:\n  pools:\n    events_change:\n      concurrency: 99\n      reserved: false\n`,
-        'utf8',
-      );
-      const config = loadPoolConfig(path);
-      expect(config.get('events_change')?.reserved).toBe(true);
-      // Concurrency override accepted.
-      expect(config.get('events_change')?.concurrency).toBe(99);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+  it('tunes a framework pool\'s concurrency + description only', () => {
+    const config = resolvePoolConfig({ events_change: { concurrency: 99, description: 'tuned' } });
+    expect(config.get('events_change')).toEqual({
+      queue: 'jobs-events-change',
+      concurrency: 99,
+      reserved: true,
+      description: 'tuned',
+    });
   });
 
-  it('rejects a user-defined pool with reserved=true', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
-    try {
-      const path = join(tmp, 'codegen.config.yaml');
-      writeFileSync(
-        path,
-        `jobs:\n  pools:\n    forbidden:\n      queue: jobs-forbidden\n      concurrency: 1\n      reserved: true\n`,
-        'utf8',
-      );
-      expect(() => loadPoolConfig(path)).toThrow(/reserved is framework-only/);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  it('caches by absolute path — second call returns the same map instance', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
-    try {
-      const path = join(tmp, 'codegen.config.yaml');
-      const first = loadPoolConfig(path);
-      const second = loadPoolConfig(path);
-      expect(first).toBe(second);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+  it('names every broken rule (poolOverrideIssues) and throws on them', () => {
+    const overrides = {
+      events_change: { reserved: false },
+      batch: { queue: 'elsewhere' },
+      forbidden: { queue: 'jobs-forbidden', concurrency: 1, reserved: true },
+      bare: {},
+    };
+    expect(poolOverrideIssues(overrides).map((i) => i.path.join('.'))).toEqual([
+      'events_change.reserved',
+      'batch.queue',
+      'forbidden.reserved',
+      'bare.queue',
+      'bare.concurrency',
+    ]);
+    expect(() => resolvePoolConfig(overrides)).toThrow(/jobs\.pools\.forbidden\.reserved: .*framework-only/);
   });
 
   it('allNonReservedPoolNames excludes the three events_* pools', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
-    try {
-      const config = loadPoolConfig(join(tmp, 'codegen.config.yaml'));
-      const names = allNonReservedPoolNames(config);
-      expect(names.sort()).toEqual(['batch', 'interactive']);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+    expect(allNonReservedPoolNames(resolvePoolConfig()).sort()).toEqual(['batch', 'interactive']);
   });
 
   it('allPoolNames includes the three reserved events_* pools (BULLMQ-1)', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'jobs-loader-'));
-    try {
-      const config = loadPoolConfig(join(tmp, 'codegen.config.yaml'));
-      const names = allPoolNames(config);
-      expect(names.sort()).toEqual([
-        'batch',
-        'events_change',
-        'events_inbound',
-        'events_outbound',
-        'interactive',
-      ]);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+    expect(allPoolNames(resolvePoolConfig()).sort()).toEqual([
+      'batch',
+      'events_change',
+      'events_inbound',
+      'events_outbound',
+      'interactive',
+    ]);
   });
 });
 
 // ─── JobWorkerModule — boot lifecycle ───────────────────────────────────────
 
 describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
-  let tmpDir: string;
-  let configPath: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'jobs-worker-mod-'));
-    configPath = join(tmpDir, 'codegen.config.yaml');
-  });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
   it('boots clean with a well-formed handler registry; spawns one worker per non-reserved pool', async () => {
     const TYPE = registerTestType('worker-mod-test.clean-boot');
 
@@ -235,7 +173,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
         JobWorkerModule.forRoot({
           mode: 'embedded',
           backend: 'memory',
-          configPath,
           workerFactory: () => {
             const w = new StubWorker();
             stubs.push(w);
@@ -246,13 +183,41 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
     }).compile();
     await moduleRef.init();
 
-    // Default active pools in a fresh tmp dir = the two non-reserved
-    // framework pools (interactive + batch).
+    // Default active pools with no `domainModulePools` = the two
+    // non-reserved framework pools (interactive + batch).
     expect(stubs.length).toBe(2);
     expect(stubs.every((s) => s.initCalled === 1)).toBe(true);
 
     await moduleRef.close();
     expect(stubs.every((s) => s.destroyCalled === 1)).toBe(true);
+  });
+
+  it('spawns workers from the domainModulePools it is given (CFG-1)', async () => {
+    const spawned: Array<{ pool: string; concurrency: number }> = [];
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        JobWorkerModule.forRoot({
+          mode: 'embedded',
+          backend: 'memory',
+          domainModulePools: {
+            batch: { concurrency: 7 },
+            reports: { queue: 'jobs-reports', concurrency: 2 },
+          },
+          workerFactory: (opts) => {
+            spawned.push({ pool: opts.pool, concurrency: opts.concurrency });
+            return new StubWorker();
+          },
+        }),
+      ],
+    }).compile();
+    await moduleRef.init();
+
+    expect(spawned.sort((a, b) => a.pool.localeCompare(b.pool))).toEqual([
+      { pool: 'batch', concurrency: 7 },
+      { pool: 'interactive', concurrency: 20 },
+      { pool: 'reports', concurrency: 2 },
+    ]);
+    await moduleRef.close();
   });
 
   it('throws ReservedPoolViolationError for a handler targeting events_change', async () => {
@@ -271,7 +236,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
         JobWorkerModule.forRoot({
           mode: 'embedded',
           backend: 'memory',
-          configPath,
           workerFactory: () => new StubWorker(),
         }),
       ],
@@ -309,7 +273,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
         JobWorkerModule.forRoot({
           mode: 'embedded',
           backend: 'memory',
-          configPath,
           pools: ['batch'],
           workerFactory: () => {
             const w = new StubWorker();
@@ -342,7 +305,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
         JobWorkerModule.forRoot({
           mode: 'standalone',
           backend: 'memory',
-          configPath,
           allPools: true,
           workerFactory: () => {
             const w = new StubWorker();
@@ -367,7 +329,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
         JobWorkerModule.forRoot({
           mode: 'standalone',
           backend: 'memory',
-          configPath,
           allPools: true,
           pools: ['batch'],
           workerFactory: () => {
@@ -390,7 +351,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
         JobWorkerModule.forRoot({
           mode: 'embedded',
           backend: 'memory',
-          configPath,
           pools: ['nonexistent'],
           workerFactory: () => new StubWorker(),
         }),
@@ -435,7 +395,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
         JobWorkerModule.forRoot({
           mode: 'embedded',
           backend: 'memory',
-          configPath,
           workerFactory: () => new StubWorker(),
         }),
       ],
@@ -455,18 +414,6 @@ describe('JobWorkerModule.forRoot — memory backend, boot lifecycle', () => {
 // ─── JobWorkerModule — Drizzle-mode boot validator ─────────────────────────
 
 describe('JobWorkerModule.forRoot — Drizzle mode boot validator', () => {
-  let tmpDir: string;
-  let configPath: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'jobs-worker-mod-drizzle-'));
-    configPath = join(tmpDir, 'codegen.config.yaml');
-  });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
   /**
    * The test below exercises the validator without a real DB by overriding
    * `JOB_ORCHESTRATOR` with a mock and importing only `JobsDomainModule`'s
@@ -491,7 +438,6 @@ describe('JobWorkerModule.forRoot — Drizzle mode boot validator', () => {
         JobWorkerModule.forRoot({
           mode: 'embedded',
           backend: 'drizzle',
-          configPath,
           workerFactory: () => new StubWorker(),
         }),
       ],
@@ -548,7 +494,6 @@ describe('JobWorkerModule.forRoot — Drizzle mode boot validator', () => {
         JobWorkerModule.forRoot({
           mode: 'embedded',
           backend: 'drizzle',
-          configPath,
           workerFactory: () => new StubWorker(),
         }),
       ],

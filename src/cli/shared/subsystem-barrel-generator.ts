@@ -30,6 +30,7 @@ import {
 	type InstalledSubsystem,
 	type SubsystemName,
 } from './subsystem-detect.js';
+import { writeAppConfig } from './app-config-generator.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 import {
@@ -221,6 +222,13 @@ function quoteBullmqDomainOpts(input: {
 }
 
 /**
+ * Append `<key>: jobPools` to a rendered `{ … }` options literal (CFG-1).
+ */
+function withPools(optsLiteral: string, key: string): string {
+	return optsLiteral.replace(/\s*\}$/, `, ${key}: jobPools }`);
+}
+
+/**
  * JOB-7 / BRIDGE-8 — resolve the embedded worker's pool clause as a TS object
  * fragment (e.g. `pools: ['interactive', 'batch']` or `allPools: true`), or
  * `''` when none applies. Precedence (mirrors `JobWorkerOrchestrator`'s own
@@ -338,7 +346,13 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 		// LISTEN-NOTIFY-1: drizzle extension knobs (`listen_notify`,
 		// `poll_interval_ms`) → camelCase runtime shape; `undefined` when unset.
 		const drizzleExt = drizzleJobsExtensions(backend, cfg);
-		const domainOpts = quoteBullmqDomainOpts({ backend, multiTenant, bullExt, drizzleExt });
+		// CFG-1: `jobs.pools` reaches the runtime as the generated `jobPools`
+		// (`./app-config`, written next to this barrel) — never a boot-time read.
+		imports.push(`import { jobPools } from './app-config';`);
+		const domainOpts = withPools(
+			quoteBullmqDomainOpts({ backend, multiTenant, bullExt, drizzleExt }),
+			'pools',
+		);
 		const calls = [`\tJobsDomainModule.forRoot(${domainOpts}),`];
 		// JOB-7: `worker_mode: 'embedded'` runs the worker in-process alongside the
 		// HTTP app. `'standalone'` (default) means the user runs `bun src/worker.ts`
@@ -370,6 +384,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 				);
 				if (workerExtClause) parts.push(workerExtClause);
 			}
+			parts.push('domainModulePools: jobPools');
 			const poolsClause = workerPoolsClause(cfg, bridgeInstalled);
 			if (poolsClause) parts.push(poolsClause);
 			calls.push(`\tJobWorkerModule.forRoot({ ${parts.join(', ')} }),`);
@@ -679,6 +694,10 @@ export async function regenerateSubsystemBarrel(
 		fs.mkdirSync(path.dirname(barrelAbs), { recursive: true });
 		fs.writeFileSync(barrelAbs, content);
 		written = true;
+
+		// CFG-1: the jobs composer imports `jobPools` from `./app-config`, and
+		// main.ts imports the rest of it — regenerated from the same config.
+		writeAppConfig(generatedDir, ctx.config);
 
 		// Package mode: the bridge composer imports `./bridge-registry`. The real
 		// registry is emitted by `entity new --all` (which scans handlers); but

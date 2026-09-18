@@ -111,7 +111,7 @@ codegen project graph [--output graph.json]
 ```
 
 `init` (package mode, the default) writes: `codegen.config.yaml`,
-`src/shared/database/database.module.ts`, `src/generated/{modules,schema}.ts`,
+`src/shared/database/database.module.ts`, `src/generated/{modules,schema,app-config}.ts`,
 `src/app.module.ts`, `src/main.ts`, `src/schema.ts`, `entities/example.yaml`
 (`tsconfig.json` only with `--with-tsconfig`). It picks `clean-lite-ps` unless the
 scanner finds real clean-architecture dirs. In `--runtime vendored` it also copies
@@ -227,7 +227,14 @@ Top-level keys: `runtime`, `paths`, `generate`, `patterns`, `naming`, `locations
 
 **Adding a key:** declare it in the schema with a comment naming its reader, and read it off the parsed config —
 never `yaml.parse` the file. `src/__tests__/config/config-census.test.ts` greps every `paths.<key>` and top-level
-read and fails on an undeclared one, and fails on a second loader.
+read and fails on an undeclared one, and fails on any second loader — with no exceptions.
+
+**The consumer's app never reads the file (CFG-1, #643).** Keys the app needs at boot — `openapi.*`,
+`auth.devAllowAnonymous`, `jobs.pools` — are validated at generation and written into `<paths.generated>/app-config.ts`
+(`openapiConfig`, `authConfig`, `jobPools`; `@generated`, rewritten by `project init`, every `entity new` /
+`subsystem install`/`remove`, `subsystem install openapi-config`, `project upgrade-openapi` / `upgrade-auth`).
+`main.ts`, the subsystem barrel and `worker.ts` import it. Edit the YAML, then regenerate. A new boot-time key goes
+into that module (`src/cli/shared/app-config-generator.ts`), never a runtime YAML read.
 
 ```yaml
 runtime: package
@@ -282,7 +289,10 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
   `RequesterContext` returns 401.
 - The generated `main.ts` calls `installRequesterContext(app)` and refuses to
   `listen()` when no `IUserContext` is bound under `AUTH_USER_CONTEXT`, unless
-  `auth.devAllowAnonymous: true`. `worker.ts` never gets this check.
+  `auth.devAllowAnonymous: true` (read as the generated `authConfig`, CFG-1).
+  The probe is the runtime's `resolveUserContext(app)`, on an app created with
+  `abortOnError: false` — Nest's default turns the unbound lookup into
+  `process.exit(1)` (#651). `worker.ts` never gets this check.
 - Controllers take **no** `x-user-id` / `x-tenant-id` headers. Use cases get the
   actor from `tryGetRequester()` (ALS). Don't reintroduce header-sourced identity.
 - Upgrading an existing app: `codegen project upgrade-auth` (idempotent AST
