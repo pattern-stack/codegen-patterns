@@ -219,7 +219,7 @@ export const ShadowIntegratedPattern = { name: 'Integrated', repositoryClass: 'M
 		expect(result.loaded).toEqual([]);
 		expect(result.errors).toHaveLength(2);
 		for (const name of ['Actor', 'Integrated']) {
-			expect(result.errors.some((e) => e.startsWith(`Pattern '${name}' in src/patterns/shadow.pattern.ts reuses the name of a library pattern`))).toBe(true);
+			expect(result.errors.some((e) => e.message.startsWith(`Pattern '${name}' in src/patterns/shadow.pattern.ts reuses the name of a library pattern`))).toBe(true);
 		}
 		// The library definitions are what resolve.
 		expect(getAppPatternNames()).toEqual([]);
@@ -238,7 +238,7 @@ export const ShadowIntegratedPattern = { name: 'Integrated', repositoryClass: 'M
 		);
 		expect(result.loaded).toEqual([]);
 		expect(result.errors.length).toBeGreaterThan(0);
-		expect(result.errors[0]).toMatch(/Failed to load pattern file/);
+		expect(result.errors[0]!.message).toMatch(/Failed to load pattern file/);
 	});
 
 	test('reports an invalid pattern (no contributions) as an error', async () => {
@@ -261,7 +261,7 @@ export const EmptyPattern = definePattern({ name: 'Empty' });
 
 		expect(result.loaded).toEqual([]);
 		expect(result.errors.length).toBe(1);
-		expect(result.errors[0]).toMatch(/contributes nothing/);
+		expect(result.errors[0]!.message).toMatch(/contributes nothing/);
 	});
 
 	test('dedupes a file matched by two overlapping globs', async () => {

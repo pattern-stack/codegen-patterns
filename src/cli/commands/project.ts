@@ -594,7 +594,7 @@ export class ProjectInspectCommand extends Command {
 		// load them first, or an app-declared `Actor` capability is invisible
 		// and every role targeting it is reported as a non-actor.
 		for (const err of await loadAppPatternsForCli(ctx)) {
-			if (!isJsonMode()) printWarning(err);
+			if (!isJsonMode()) printWarning(err.message);
 		}
 		const result = await analyzeDomain(entitiesDir, {
 			junctionsDir: junctionsDirFor(ctx.cwd),
@@ -663,7 +663,7 @@ export class ProjectInspectCommand extends Command {
 		// load them first, or an app-declared `Actor` capability is invisible
 		// and every role targeting it is reported as a non-actor.
 		for (const err of await loadAppPatternsForCli(ctx)) {
-			if (!isJsonMode()) printWarning(err);
+			if (!isJsonMode()) printWarning(err.message);
 		}
 		const analysis = await analyzeDomain(entitiesDir, {
 			junctionsDir: junctionsDirFor(ctx.cwd),
@@ -854,7 +854,7 @@ export class ProjectGraphCommand extends Command {
 		// load them first, or an app-declared `Actor` capability is invisible
 		// and every role targeting it is reported as a non-actor.
 		for (const err of await loadAppPatternsForCli(ctx)) {
-			if (!isJsonMode()) printWarning(err);
+			if (!isJsonMode()) printWarning(err.message);
 		}
 		const result = await analyzeDomain(entitiesDir, {
 			relationshipsDir,

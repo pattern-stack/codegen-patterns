@@ -16,8 +16,9 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { generating } from "../../utils/generated-file";
+import type { AnalysisIssue } from "../../analyzer/types";
 import type { RuntimeMode } from "./runtime-import";
 import type { JobDefinition } from "../../schema/job-definition.schema";
 import {
@@ -57,6 +58,47 @@ function writeFresh(outPath: string, content: string): void {
 	generating(outPath, () => {
 		mkdirSync(dirname(outPath), { recursive: true });
 		writeFileSync(outPath, content);
+	});
+}
+
+/** One job YAML `entity new` rejects, in the CLI-0 rejection-list shape. */
+export interface JobLoadRejection {
+	file: string;
+	message: string;
+	details: string[];
+}
+
+/**
+ * `loadJobs` error issues → one rejection per job YAML (JOBS-2, #664): the
+ * file, its first error as the message, the rest as details. A job YAML that
+ * no longer loads contributes nothing to this run, but a
+ * `<type>.job.generated.ts` a previous run emitted from it stays on disk (no
+ * rollback — an author may be mid-edit, and the subclass beside it is theirs);
+ * the rejection names that file so the author knows it is stale.
+ */
+export function jobLoadRejections(
+	issues: AnalysisIssue[],
+	jobsHandlersDir: string,
+): JobLoadRejection[] {
+	const byFile = new Map<string, string[]>();
+	for (const issue of issues) {
+		if (issue.severity !== "error") continue;
+		const file = issue.path ?? "(jobs)";
+		const reasons = byFile.get(file) ?? [];
+		reasons.push(issue.message);
+		byFile.set(file, reasons);
+	}
+	return [...byFile].map(([file, [message, ...details]]) => {
+		const staleBase = join(
+			jobsHandlersDir,
+			`${basename(file, extname(file))}.job.generated.ts`,
+		);
+		if (existsSync(staleBase)) {
+			details.push(
+				`${staleBase} is stale: emitted from this job's last valid definition, it is left on disk until the YAML loads again`,
+			);
+		}
+		return { file, message: message!, details };
 	});
 }
 

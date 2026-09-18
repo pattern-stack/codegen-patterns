@@ -53,6 +53,11 @@ codegen junction list
 `entity new` pre-flights each target (schema, `emits:`, `roles:`) and prints every rejection with its reasons in every
 mode; `--json` carries them in `failed[].details`. Continue-on-error is the default: rejected entities are skipped
 and the run exits 1. With `--no-continue-on-error` a pre-flight rejection stops the run before anything is generated (#627).
+Two pre-flight rejections are **run-level** and stop the run before hygen whatever the flag says (JOBS-2): an invalid
+`<paths.jobs_dir>/*.yaml` (#664 — its handler, scheduled events and bridge triggers feed registries every entity
+imports) and an app-pattern file the loader cannot register (a partial set would rewrite the orchestration barrel
+without its module). Same list, same printing, same `failed[]` entries; a stale `<type>.job.generated.ts` is left on
+disk and named in the rejection's details.
 
 **Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
 `eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +
@@ -250,9 +255,9 @@ post-step — scope-entity-type, event codegen (an error-severity issue included
 (a rejected trigger set included), orchestration, frontend, provider / adapter / assembly / job-handler emitters. Each
 emitter's write helper wraps its own file; the CLI wraps each step in `generating(<step output root>, …)` so a failure
 before any write names the step's output. Declared skips (bridge not installed, no entities, a surface with no port
-package) stay informational. The dry-run orchestration *plan* still warns (it writes nothing). Still soft, for
-JOBS-2: invalid *input* that yields a partial set — pattern-file import errors (a partial orchestration barrel),
-provider blocking issues under the default `--continue-on-error`, invalid job YAML (#664).
+package) stay informational. The dry-run orchestration *plan* still warns (it writes nothing). Invalid job YAML and
+unloadable pattern files are pre-flight rejections now (JOBS-2, above). Still soft: provider blocking issues under the
+default `--continue-on-error` (#666).
 
 ```yaml
 runtime: package

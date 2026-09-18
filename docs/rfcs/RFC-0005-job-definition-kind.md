@@ -1,6 +1,9 @@
 # RFC-0005 — Jobs definition kind: `JobDefinitionSchema` + emitter (Part B)
 
 **Status:** Draft — schema (#5) + loader (#6) landed; emitter/validator (#7–#8) pending
+*Revision 2026-09-18 (JOBS-2, #664):* the emitter has since landed (`src/cli/shared/emit-jobs.ts`, run by `entity new`).
+An error-severity `loadJobs` issue is a run-level `entity new` pre-flight rejection — exit 1 before anything is
+generated, regardless of `--continue-on-error`; a stale `<type>.job.generated.ts` is left and named.
 **Date:** 2026-06-14
 **Owner:** Doug
 **Related:** swe-brain **ADR-0018** (the A→B decision record + the three shapes — *this RFC is the codegen-side byte contract for it*); ADR-039 (time as an event source — the `schedule` arm desugars to a generated scheduled event); ADR-033/033.1 (`detection:` config + `DetectionConfigSchema`, embedded here verbatim); ADR-023 (event→job bridge — the `event` trigger arm); RFC-0003 (`historyId`/`syncToken` cursors); `runtime/subsystems/jobs/job-handler.base.ts` (`JobHandlerMeta` — the 8 fields surfaced); codegen #458/#414/#457 (the soft-ordered registry follow-ups). Grounding: `.ai-docs/research/jobs-kind-design-brief.md` (the 10-agent grounding brief; §3 is the schema this RFC freezes).
