@@ -175,13 +175,11 @@ _%>
 
   async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.isUnique) { -%>
-    const rows = await this.baseQuery()
-      .where(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)
+    const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)
       .limit(1);
     return (rows[0] as <%= classNames.entity %>) ?? null;
 <% } else { -%>
-    const rows = await this.baseQuery()
-      .where(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)<%- q.hasOrder ? `.orderBy(${q.orderDirection}(this.table['${q.orderBy}']))` : '' %>;
+    const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)<%- q.hasOrder ? `.orderBy(${q.orderDirection}(this.table['${q.orderBy}']))` : '' %>;
     return rows as <%= classNames.entity %>[];
 <% } -%>
   }
@@ -203,8 +201,8 @@ _%>
 <%_ _emittedFkMethods.forEach(rel => { _%>
 
   async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= classNames.entity %>[]> {
-    let q = this.baseQuery().where(eq(this.table['<%= rel.camelField %>'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['<%= rel.camelField %>'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as <%= classNames.entity %>[];
   }
 <%_ }) _%>

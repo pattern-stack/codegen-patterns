@@ -32,8 +32,7 @@ export abstract class IntegratedEntityRepository<
    * Find a single entity by its external CRM identifier.
    */
   async findByExternalId(externalId: string): Promise<TEntity | null> {
-    const rows = await this.baseQuery()
-      .where(eq(this.col('externalId'), externalId))
+    const rows = await this.baseQuery(eq(this.col('externalId'), externalId))
       .limit(1);
     return (rows[0] as TEntity) ?? null;
   }
@@ -43,8 +42,7 @@ export abstract class IntegratedEntityRepository<
    */
   async findManyByExternalIds(externalIds: string[]): Promise<TEntity[]> {
     if (externalIds.length === 0) return [];
-    const rows = await this.baseQuery()
-      .where(inArray(this.col('externalId'), externalIds));
+    const rows = await this.baseQuery(inArray(this.col('externalId'), externalIds));
     return rows as TEntity[];
   }
 
@@ -52,8 +50,7 @@ export abstract class IntegratedEntityRepository<
    * Find all entities owned by a specific user.
    */
   async findAllByUserId(userId: string): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.col('userId'), userId));
+    const rows = await this.baseQuery(eq(this.col('userId'), userId));
     return rows as TEntity[];
   }
 

@@ -1,7 +1,7 @@
 # SCOPE-0 — generated and family finders discard the repository scope guards
 
-**Status:** Proposed
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #616 · **Epic:** #580 · **Project:** #578
 **Depends on:** REL-0 (#603) · **Blocks:** TEN-1 (#585)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · `docs/specs/REL-0.md` ·
@@ -32,8 +32,12 @@ the thing it warns about, including the ones this repository generates.
 soft-deleted rows; a family `findAllByUserId()` on a `userTracking` repository returns every user's rows once a
 requester context is active. Pre-existing on `main`, independent of the Drizzle 1.0 bump.
 
-`count()` is a second instance of the same class: it hand-assembles the soft-delete + scope conditions instead of
-calling `scopeAnd()` (`base-repository.ts:237-262`), so it can — and did — drift.
+`count()` is the same class of defect one step earlier: it hand-assembles the soft-delete + scope conditions
+instead of calling `scopeAnd()` (`base-repository.ts:237-262`). **Correction to the issue text:** that duplication
+was not *leaking* — the conditions it listed were, today, exactly the ones `scopeAnd()` assembles, and the control
+run below confirms `count()` passes every isolation assertion on the pre-fix tree. It is a **latent** defect: a
+second declaration of the guard set that would silently miss any guard added to `scopeAnd()` later — which is
+precisely what TEN-1 (#585) does. Fixed here so that cannot happen, not because it was wrong today.
 
 This lands ahead of TEN-1 (#585) because TEN-1's tenant predicate rides the *same* slot: without this fix, a
 tenant-scoped `findByX()` would read every tenant, and TEN-1's central claim would be false. TEN-1 is human-gated;
@@ -102,44 +106,98 @@ single-purpose exclusion the charter permits, not a predicate that drops an erro
 measured generated bodies depend on. The shape test is airtight for every site codegen owns, which is the set that
 matters.
 
-### 3. Integration proof — real Postgres (`just test-integration`)
+### 3. Proof — three parts, because no single harness spans them
 
 `test/scaffold/tests/scope-guards.test.ts`, run against Docker Postgres like the other scaffold suites.
 
-**Generated finder.** `test/scaffold/contact-scaffold.yaml` gains `queries: - by: [email]` (→ a generated
-`findByEmail`), an explicit nullable `user_id` field, and the `user_tracking` behavior. The test asserts a
-soft-deleted contact and another user's contact are both invisible to `findByEmail()` under an active requester
-context — the assertion that fails on `main`.
-
-> The explicit `user_id:` field is deliberate. The `user_tracking` behavior definition declares `created_by` /
-> `updated_by` (`src/behaviors/user-tracking.ts:15-52`), those behavior fields are **not** merged into
-> `clean-lite-ps`'s `processedFields` (`prompt-extension.js:1185`), and `scopePredicate()` filters on
-> `col('userId')` (`base-repository.ts:387`). So a `clean-lite-ps` entity cannot today get a scope column from the
-> behavior alone — declaring the field is what a consumer must do. Noted as a follow-up; **not** fixed here (it is
-> an emission gap, not this bug).
-
-**Family finder + `count()`.** Over the scaffold's `crm_entities` table (real `user_id` + `deleted_at`,
+**Semantics (real Postgres).** Over the scaffold's `crm_entities` table (real `user_id` + `deleted_at`,
 `test/scaffold/schema.ts:42-52`) with an `IntegratedEntityRepository` declaring
-`{ timestamps, softDelete, userTracking }`: `findByExternalId`, `findManyByExternalIds`, `findAllByUserId` and
-`count()` each see neither the soft-deleted row nor the other user's row, while the owner's live row is returned.
-`count()` is asserted separately because it is the site that bypassed `scopeAnd()` entirely.
+`{ timestamps: true, softDelete: true, userTracking: true }` — both guards live at once — three rows are seeded:
+one live row owned by user A, one soft-deleted row owned by user A, one live row owned by user B. Every assertion
+is "only the first one". `findByExternalId`, `findManyByExternalIds`, `findAllByUserId` and `count()` each see
+neither the soft-deleted row nor the other user's, including when the *leaf predicate itself* names the other user
+(`findAllByUserId(USER_B)` as user A → `[]`). Ten of the 17 sites are these base classes, and every generated
+finder compiles to the same `baseQuery(leaf)` call, so the semantics are proven once, here.
 
-The repositories under test extend the **real** runtime base classes. `@shared/base-classes/base-repository`
-resolves scaffold-first to the hand-written stub (#608, REL-0 §7), so the direct base is imported via
-`@gen/runtime/base-classes/…`; the family bases already resolve to the real source.
+The repositories under test extend the **real** runtime base classes; the ALS is imported through `@gen/`
+(→ repo root) so the test cannot accidentally feed a different module's `AsyncLocalStorage`.
+
+**Emission.** That the generated bodies *are* `baseQuery(<leaf>)` — for a unique query, a non-unique query, a
+multi-column `and(...)` query and an FK-traversal method — is asserted in
+`src/__tests__/clean-lite-ps/repository-template.test.ts`, plus a per-template negative on `baseQuery().where(`
+and the repo-wide shape guard of §2.
+
+**Compilation.** That those bodies type-check against the **real** base class is already gated by `just test-smoke`
+and `just test-smoke-junction`, whose fixtures carry `queries:` blocks and whose generated projects are compiled
+under a consumer tsconfig.
+
+> **Why not simply run a generated finder?** No harness in this repo can. Generated code imports
+> `@shared/base-classes/base-repository`, which `test/scaffold/tsconfig.json` resolves **scaffold-first** to
+> `test/scaffold/shared/base-classes/base-repository.ts` — a hand-written stub with **no `baseQuery`, no
+> `scopeAnd`, no `behaviors`**. A generated finder there would call a method its base class does not have. That is
+> #608, a contract decision REL-0 deliberately deferred (the stub's `delete()` returns the row where the runtime
+> returns `void`; its `findById` does not apply the soft-delete guard; its `upsertMany` updates by id where the
+> runtime's inserts). Collapsing it is what would let one test span all three parts. The scaffold fixture is
+> therefore left **unchanged** — see Found #2.
 
 ### 4. Snapshot churn — by class
 
-Every changed snapshot falls into one of two classes, and nothing else moves:
+**One class, two files, four bodies.** Nothing else moves.
 
-1. **Junction repository snapshots** (`test/junction/__snapshots__/`) — the two `findBy<Left>` / `findBy<Right>`
-   bodies lose `.where(...)` and gain the predicate as `baseQuery(...)`'s argument. Two lines per snapshot.
-2. **Scaffold-generated contact module** — not snapshotted; it is emitted into a throwaway tree by
-   `just test-integration` and deleted at teardown. The fixture change (a `queries:` block + one field) adds the
-   `findByEmail` finder, its use-case, and the module registration.
+1. **Junction repository snapshots** (`test/junction/__snapshots__/opportunity-{activity,contact}.test.ts.snap`) —
+   the `findBy<Left>` / `findBy<Right>` bodies lose their `.where(...)` line and take the predicate as
+   `baseQuery(...)`'s argument. Net `-8 / +4` lines across both files; the `.limit(opts?.limit ?? 100)` line and
+   everything else is byte-identical.
 
-`test/baseline/` does **not** move: it is generated with `architecture: clean`
-(`test/fixtures/codegen.config.yaml:54`), and the `clean` pipeline is untouched.
+**`test/baseline/` does not move at all** — it is generated with `architecture: clean`
+(`test/fixtures/codegen.config.yaml:54`), and the `clean` pipeline is untouched (I11).
+
+**No scaffold churn** — the fixture is unchanged (§3).
+
+## Found during implementation
+
+1. **The control run proves the finder tests are load-bearing; the `count()` tests are not (and why that is right).**
+   With `runtime/base-classes/` reverted to the pre-fix state and everything else held constant,
+   `just test-integration` reports **5 fail / 67 pass / 2 skip** — all five failures in the new file, with the leak
+   printed as data:
+
+   | Assertion | Pre-fix result |
+   |---|---|
+   | `findByExternalId` after a soft-delete | returned the deleted row |
+   | `findByExternalId` on another user's row | returned **`{ userId: "user-scope-b", … }`** to user A |
+   | `findManyByExternalIds([live, deleted, other])` | returned **3 of 3** |
+   | `findAllByUserId(USER_A)` with one soft-deleted | returned **2** |
+   | `findAllByUserId(USER_B)` as user A | returned **1** — the leaf predicate reached straight across the scope |
+
+   The three `count()` tests **pass on the pre-fix tree**. That is the §Why correction above, stated as evidence
+   rather than assertion: `count()`'s hand-assembled conditions were correct today and would have gone stale the
+   moment TEN-1 added a predicate to `scopeAnd()`. The tests stay — they are what pins the refactor.
+
+2. **The generated finders cannot be executed by any harness in this repo.** Generated code imports
+   `@shared/base-classes/base-repository`, which `test/scaffold/tsconfig.json` resolves **scaffold-first** to
+   `test/scaffold/shared/base-classes/base-repository.ts` — a hand-written stub with no `baseQuery`, no `scopeAnd`,
+   no `behaviors` (zero occurrences of all three). So adding a `queries:` block to the scaffold fixture would emit a
+   `findByEmail` that calls a method its base class does not have. The design's plan to prove the generated half at
+   runtime there was **dropped**; §3 now records the three-part proof that replaces it, and the test file says so at
+   the top. Closing that gap is **#608** (collapse the stub) — a contract decision, not a type change: the stub's
+   `delete()` returns the row where the runtime returns `void`, its `findById` does not apply the soft-delete guard,
+   and its `upsertMany` updates by id where the runtime's inserts. REL-0 deliberately deferred it and this PR does
+   not pre-empt it.
+
+3. **`user_tracking` emits no scope column in `clean-lite-ps`** — filed as **#617**. The behavior declares
+   `created_by` / `updated_by` (`src/behaviors/user-tracking.ts:15-52`); `scopePredicate()` filters on
+   `col('userId')`; and clean-lite-ps merges no behavior fields into the emitted table at all
+   (`prompt-extension.js:1185` — `entity.ejs.t` has blocks for timestamps / soft-delete / external-id and none for
+   user-tracking). No fixture in the repo declares `user_tracking`, which is why nothing had caught it. Out of scope
+   here (an emission gap, not this bug), and the reason the scaffold fixture was left untouched.
+
+4. **An existing test asserted the leaky emission.**
+   `src/__tests__/clean-lite-ps/repository-template.test.ts` asserted `toContain('await this.baseQuery()')` —
+   literally the broken shape — and so passed throughout. It now asserts the **argument**
+   (`baseQuery(eq(this.table['email'], email))`), plus a negative on `baseQuery().where(`. This is the §Risks row
+   "a test somewhere asserted the leaky result", materialised exactly once.
+
+5. **Snapshot churn was as predicted: two files, four bodies, one class.** See §4 below; the baseline did not move.
 
 ## Out of scope
 
@@ -148,27 +206,60 @@ Every changed snapshot falls into one of two classes, and nothing else moves:
 - **Tenant scoping** (TEN-1, #585) — this PR only ensures the guard slot is not overwritten; TEN-1 adds a predicate
   to it.
 - **`user_tracking` emitting no scope column in `clean-lite-ps`** — a real emission gap found while writing the
-  test (§3). Filed separately; working around it with an explicit `user_id:` field is what the fixture does.
+  test. Filed as **#617**; it is why the scaffold fixture was left unchanged (Found #3).
+- **Collapsing the scaffold's second `BaseRepository`** (**#608**) — the reason a generated finder cannot be
+  executed anywhere (Found #2). A contract decision, not a type change; not pre-empted here.
 - **`upsertMany` / `integrationUpsertOne` / other raw statement paths** — they never called `baseQuery()`, so they
   are a different hole (TEN-1 §5).
 
-## Acceptance
+## What downstream must know
 
-Gate output must come from the run made **after** the last edit (charter I9).
+- **`this.baseQuery().where(X)` is a build failure.** The form is `this.baseQuery(X)`; the guards are then assembled
+  in exactly one place, `scopeAnd()`. `src/__tests__/templates/no-basequery-where.test.ts` scans `templates/` and
+  `runtime/` on every `just test-unit`. **If your unit adds a tree that emits or ships repository code, add it to
+  that test's `SCAN_ROOTS`.**
+- **`count()` routes through `scopeAnd(where, { softDelete })`.** Any guard added to `scopeAnd()` now reaches
+  `findById` / `findByIds` / `list` / `exists` / every finder / `update` / `delete` **and** `count()`. **TEN-1
+  (#585) no longer needs a separate `count()` edit** — its §M1 finding is resolved here.
+- **`baseQuery(leaf)` is the only read path with guards.** The raw-statement paths never called it and are still
+  uncovered: `integrationUpsertOne`, `findByExternalIdProjected`, `softDeleteByExternalId`, `integrationUpsert`'s
+  re-read, `metadata.upsertMany(conflictTarget)` and the FK resolvers. That is TEN-1 §5's territory, unchanged.
+- **The FK-traversal template body no longer casts.** `let q = this.baseQuery(eq(this.table['<fk>'], id));` then
+  `q = q.limit(opts.limit) as typeof q;` — REL-2/REL-3 rewrite these bodies and should keep the no-`any` property.
+- **Two new follow-ups, both pre-existing:** **#617** (`user_tracking` emits no scope column in `clean-lite-ps`, so
+  the behavior's declared columns and `scopePredicate()`'s column disagree — adjacent to TEN-1, which adds a second
+  axis through the same assembly) and the existing **#608** (the scaffold's second `BaseRepository`, which is why no
+  harness can execute a generated finder).
 
-| Gate | Requirement |
+## Acceptance — all met
+
+Output from the run made **after** the last edit (charter I9).
+
+| Gate | Result |
 |---|---|
-| `bun run typecheck` · `bun run build` · `bun run test` | exit 0 |
-| `just test-all` | exit 0, including the new guard test |
-| `just test-integration` | exit 0, including the new isolation suite |
-| `just test-smoke` | exit 0 — mandatory: `runtime/base-classes/**` changed |
-| `just test-post-publish` | exit 0 |
-| `just test-smoke-junction-clean` | still exactly **118** (#602) — not repaired, not filtered |
+| `bun run typecheck` | **exit 0** |
+| `bun run build` | **exit 0** |
+| `bun run test` | **exit 0** |
+| `just test-all` | **exit 0** — typecheck · unit **3182/3182** (was 3176; +6) · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
+| `just test-integration` | **exit 0** — **72 pass · 2 skip · 0 fail** (was 64 pass; +8, the new suite). Pre-fix control: **5 fail** |
+| `just test-smoke` | **exit 0** — run as part of `test-all`; mandatory because `runtime/base-classes/**` changed |
+| `just test-post-publish` | **exit 0** |
+| `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, still exactly **118**; not repaired, not filtered |
 
-## Risks
+- No filtered error classes, no scope carve-outs in any gate's output. The one **path** exclusion in the new guard
+  test is named, reasoned, carries #602, and is itself asserted to still be necessary.
+- No new `any`, no `as unknown as`. One pre-existing `(q as any)` removed from the FK-traversal template body.
 
-| Risk | Signal | Response |
+## Risks — outcome
+
+| Risk | Outcome |
+|---|---|
+| A test somewhere asserted the leaky result | **Happened, once.** `repository-template.test.ts` asserted `toContain('await this.baseQuery()')` — the broken shape. Rewritten to assert the argument (Found #4). |
+| The FK-traversal `as any` removal does not type-check under the consumer tsconfig | **Did not happen.** `q.limit(opts.limit) as typeof q` compiles in every smoke, including the junction and integration ones. |
+| The scaffold fixture change breaks the existing suites | **Moot** — the fixture was not changed (Found #2). |
+
+| Live risk | Signal | Response |
 |---|---|---|
-| A test somewhere asserted the leaky result | an existing suite fails after the fix | that assertion encoded the bug — fix the test and say so in the PR |
-| The FK-traversal `as any` removal does not type-check under the consumer tsconfig | `just test-smoke` reports TS in a generated repository | use `list({ where, limit })` instead; do **not** restore the `any` |
-| The scaffold fixture change breaks the existing HTTP / repository suites | `just test-integration` fails outside the new file | the added field is nullable and the finder is additive; if a create DTO assertion moves, update it |
+| A new repository method reintroduces the shape in a place the guard does not scan | a leak with a green build | the guard scans `templates/` + `runtime/`; **add your directory to `SCAN_ROOTS`** if it emits or ships repository code |
+| #602 is repaired or retired and the named exclusion goes stale | the guard's third test fails (`clean` no longer has the shape) | delete the exclusion — that test exists to force exactly this |
+| A consumer hand-writes `baseQuery().where(...)` in their own repository | no signal; outside both scanned trees | documented loudly in `baseQuery()`'s docblock. A type-level guard was rejected (§2); revisit if it recurs |
