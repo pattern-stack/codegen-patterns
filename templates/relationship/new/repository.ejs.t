@@ -13,7 +13,7 @@ import { BaseRepository } from '@shared/base-classes/base-repository';
 import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= name %>.entity';
 
 @Injectable()
-export class <%= classNames.repository %> extends BaseRepository<<%= classNames.entity %>> {
+export class <%= classNames.repository %> extends BaseRepository<<%= classNames.entity %>, typeof <%= tableVarName %>> {
   readonly table = <%= tableVarName %>;
 
   // Behaviors: timestamps always enabled for relationships

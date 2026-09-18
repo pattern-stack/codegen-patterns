@@ -15,8 +15,7 @@
  *   - copy-through  (`writeColumns`)   — in both `values` and `set`
  *   - resolved FK   (`fkResolvers`)    — conditional in `set` (no-clobber)
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
+import type { PgTable } from 'drizzle-orm/pg-core';
 
 /**
  * Resolves a local FK column from a parent's external id, provider-scoped.
@@ -33,8 +32,7 @@ export interface IntegrationFkResolver {
   /** Key on `TIntegrationWrite` carrying the parent external id (see Decision 4). */
   writeKey: string;
   /** Parent table to resolve against; `'self'` → `this.table`. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  refTable: PgTableWithColumns<any> | 'self';
+  refTable: PgTable | 'self';
   /** true = throw on unresolved (junction); falsy = opportunistic null (entity). */
   strict?: boolean;
 }

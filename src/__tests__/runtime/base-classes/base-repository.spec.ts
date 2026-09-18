@@ -13,13 +13,7 @@ import {
   withSuperuserScope,
 } from '../../../../runtime/base-classes/tenant-context';
 import type { DrizzleClient } from '../../../../runtime/types/drizzle';
-import {
-  pgTable,
-  text,
-  timestamp,
-  QueryBuilder,
-  type PgTableWithColumns,
-} from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, QueryBuilder } from 'drizzle-orm/pg-core';
 import { eq, type SQL } from 'drizzle-orm';
 
 // ============================================================================
@@ -34,29 +28,37 @@ interface TestEntity {
   deletedAt?: Date | null;
 }
 
-/** Minimal table mock that mirrors what Drizzle exposes */
-function makeTable(extraColumns: Record<string, unknown> = {}) {
-  return {
-    id: { name: 'id' },
-    name: { name: 'name' },
-    createdAt: { name: 'created_at' },
-    updatedAt: { name: 'updated_at' },
-    deletedAt: { name: 'deleted_at' },
-    ...extraColumns,
-  } as unknown as PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+/**
+ * A REAL Drizzle table. REL-0 reads columns through `getColumns(table)`, which
+ * resolves `table[Table.Symbol.Columns]` — a plain object literal cast to the
+ * table type has no such symbol. Casting a fake to the table type is also
+ * exactly what let DRZ-2's narrowing look correct (DRZ-2 Found #1), so the
+ * fixture is the real thing.
+ */
+const testTable = pgTable('test_entity', {
+  id: text('id').primaryKey(),
+  name: text('name'),
+  userId: text('user_id'),
+  createdAt: timestamp('created_at'),
+  updatedAt: timestamp('updated_at'),
+  deletedAt: timestamp('deleted_at'),
+});
+
+function makeTable() {
+  return testTable;
 }
 
 // ============================================================================
 // Concrete repository for tests
 // ============================================================================
 
-class TestRepository extends BaseRepository<TestEntity> {
-  readonly table: PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+class TestRepository extends BaseRepository<TestEntity, typeof testTable> {
+  readonly table: typeof testTable;
   readonly behaviors: BehaviorConfig;
 
   constructor(
     db: DrizzleClient,
-    table: PgTableWithColumns<any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    table: typeof testTable,
     behaviors?: Partial<BehaviorConfig>,
   ) {
     super(db);
@@ -415,8 +417,8 @@ const widgets = pgTable('widget', {
   deletedAt: timestamp('deleted_at'),
 });
 
-class ScopingTestRepo extends BaseRepository<{ id: string; userId: string }> {
-  readonly table = widgets as unknown as PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+class ScopingTestRepo extends BaseRepository<{ id: string; userId: string }, typeof widgets> {
+  readonly table = widgets;
   protected readonly behaviors: BehaviorConfig;
   constructor(behaviors: Partial<BehaviorConfig> = {}) {
     // A QueryBuilder is enough to render .toSQL() for SELECTs (no driver needed).

@@ -4,10 +4,11 @@
  * Provides the service layer that generated services inherit.
  * Delegates all operations to the repository.
  */
+import type { PgTable } from 'drizzle-orm/pg-core';
 import type { BaseRepository } from './base-repository';
 
 export abstract class BaseService<
-  TRepository extends BaseRepository<TEntity>,
+  TRepository extends BaseRepository<TEntity, PgTable>,
   TEntity extends { id: string },
 > {
   protected abstract readonly repository: TRepository;

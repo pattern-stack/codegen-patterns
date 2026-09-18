@@ -1,5 +1,5 @@
 /**
- * JunctionIntegrationRepository<TEntity, TIntegrationWrite, TIntegrationProjection>
+ * JunctionIntegrationRepository<TEntity, TTable, TIntegrationWrite, TIntegrationProjection>
  *
  * Base for junction repos that participate in inbound integration (#374). A junction's
  * integration identity is the tuple `(leftId, rightId[, role])` — there is no native
@@ -14,27 +14,25 @@
  * Role-less junctions conflict on `(left, right)`.
  */
 import { and, eq } from 'drizzle-orm';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import type { DrizzleTx } from '../types/drizzle';
-import { BaseRepository } from './base-repository';
+import { BaseRepository, column } from './base-repository';
 
 export interface JunctionIntegrationConfig {
   /** Left endpoint: local FK column (camel) + strict parent table. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  left: { column: string; refTable: PgTableWithColumns<any> };
+  left: { column: string; refTable: PgTable };
   /** Right endpoint: local FK column (camel) + strict parent table. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  right: { column: string; refTable: PgTableWithColumns<any> };
+  right: { column: string; refTable: PgTable };
   /** Role column (camel), or null for a role-less (2-part composite) junction. */
   roleColumn: string | null;
 }
 
 export abstract class JunctionIntegrationRepository<
   TEntity,
+  TTable extends PgTable,
   TIntegrationWrite,
   TIntegrationProjection,
-> extends BaseRepository<TEntity> {
+> extends BaseRepository<TEntity, TTable> {
   /**
    * Declarative junction integration surface. Concrete repos declare this — the
    * template emits it with live parent-table handles.
@@ -81,20 +79,17 @@ export abstract class JunctionIntegrationRepository<
         ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
       };
       const target = cfg.roleColumn
-        ? [this.table[cfg.left.column], this.table[cfg.right.column], this.table[cfg.roleColumn]]
-        : [this.table[cfg.left.column], this.table[cfg.right.column]];
+        ? [this.col(cfg.left.column), this.col(cfg.right.column), this.col(cfg.roleColumn)]
+        : [this.col(cfg.left.column), this.col(cfg.right.column)];
 
-      // `as Record<string, unknown>[]` — see BaseRepository.create: 1.0 types
-      // an insert's `.returning()` off `table['$inferSelect']`, which is `any`
-      // here, so the result is a union whose non-array arm is unreachable (#603).
-      const rows = (await db
-        .insert(this.table)
-        .values(values as never)
+      const rows = await db
+        .insert(this.tableRef)
+        .values(values)
         .onConflictDoUpdate({
           target,
-          set: { ...(this.behaviors.timestamps ? { updatedAt: now } : {}) } as never,
+          set: { ...(this.behaviors.timestamps ? { updatedAt: now } : {}) },
         })
-        .returning()) as Record<string, unknown>[];
+        .returning();
 
       const saved = rows[0] as Record<string, unknown>;
       return this.toProjection(saved as TEntity, w, provider);
@@ -124,7 +119,7 @@ export abstract class JunctionIntegrationRepository<
 
     const rows = await this.db
       .select()
-      .from(this.table)
+      .from(this.tableRef)
       .where(this.identityWhere(leftId, rightId, parsed.role))
       .limit(1);
     const row = rows[0] as TEntity | undefined;
@@ -161,9 +156,9 @@ export abstract class JunctionIntegrationRepository<
     if (rightId === null) return null;
 
     const rows = await db
-      .delete(this.table)
+      .delete(this.tableRef)
       .where(this.identityWhere(leftId, rightId, parsed.role))
-      .returning({ id: this.table[cfg.left.column] });
+      .returning({ id: this.col(cfg.left.column) });
     return rows[0] ? { id: externalId } : null;
   }
 
@@ -200,11 +195,11 @@ export abstract class JunctionIntegrationRepository<
   private identityWhere(leftId: string, rightId: string, role: string | undefined) {
     const cfg = this.integrationConfig;
     const conds = [
-      eq(this.table[cfg.left.column], leftId),
-      eq(this.table[cfg.right.column], rightId),
+      eq(this.col(cfg.left.column), leftId),
+      eq(this.col(cfg.right.column), rightId),
     ];
     if (cfg.roleColumn && role !== undefined) {
-      conds.push(eq(this.table[cfg.roleColumn], role));
+      conds.push(eq(this.col(cfg.roleColumn), role));
     }
     return and(...conds);
   }
@@ -212,8 +207,7 @@ export abstract class JunctionIntegrationRepository<
   /** Resolve a parent id (provider-scoped), throwing when unresolved. */
   private async resolveStrict(
     db: DrizzleTx,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    refTable: PgTableWithColumns<any>,
+    refTable: PgTable,
     parentExternalId: string,
     provider: string,
     column: string,
@@ -232,19 +226,19 @@ export abstract class JunctionIntegrationRepository<
   /** Resolve a parent id (provider-scoped), returning null when unresolved. */
   private async resolveLoose(
     db: DrizzleTx,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    refTable: PgTableWithColumns<any>,
+    refTable: PgTable,
     parentExternalId: string | null | undefined,
     provider: string,
   ): Promise<string | null> {
     if (!parentExternalId) return null;
+    const owner = `${this.constructor.name}.integrationConfig`;
     const rows = await db
-      .select({ id: refTable['id'] })
+      .select({ id: column(refTable, 'id', owner) })
       .from(refTable)
       .where(
         and(
-          eq(refTable['provider'], provider),
-          eq(refTable['externalId'], parentExternalId),
+          eq(column(refTable, 'provider', owner), provider),
+          eq(column(refTable, 'externalId', owner), parentExternalId),
         ),
       )
       .limit(1);

@@ -1,5 +1,5 @@
 /**
- * MetadataEntityRepository<TEntity>
+ * MetadataEntityRepository<TEntity, TTable>
  *
  * Family-specific base for metadata entities (field values, field history, tags).
  * Adds entity-scoped lookups, type filtering, history ordering, and bulk upsert.
@@ -7,11 +7,14 @@
  * Concrete repos extend this and declare their table + behaviors.
  */
 import { eq, and, desc } from 'drizzle-orm';
-import type { PgTableWithColumns } from 'drizzle-orm/pg-core';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import { BaseRepository } from './base-repository';
 import type { DrizzleTx } from '../types/drizzle';
 
-export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<TEntity> {
+export abstract class MetadataEntityRepository<
+  TEntity,
+  TTable extends PgTable,
+> extends BaseRepository<TEntity, TTable> {
   /**
    * Bulk upsert with a caller-specified conflict target.
    * Uses Drizzle's onConflictDoUpdate to merge records.
@@ -19,7 +22,7 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
   override async upsertMany(
     inputs: Array<Partial<TEntity>>,
     tx?: DrizzleTx,
-    options?: { conflictTarget?: keyof PgTableWithColumns<any>['_']['columns'] }, // eslint-disable-line @typescript-eslint/no-explicit-any
+    options?: { conflictTarget?: keyof TTable['_']['columns'] & string },
   ): Promise<TEntity[]> {
     if (inputs.length === 0) return [];
     const conflictTarget = options?.conflictTarget;
@@ -34,11 +37,11 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
     );
 
     const rows = await this.runner(tx)
-      .insert(this.table)
-      .values(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+      .insert(this.tableRef)
+      .values(data)
       .onConflictDoUpdate({
-        target: this.table[conflictTarget as string],
-        set: data[0] as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        target: this.col(conflictTarget),
+        set: data[0] ?? {},
       })
       .returning();
 
@@ -52,8 +55,8 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
     const rows = await this.baseQuery()
       .where(
         and(
-          eq(this.table['entityId'], entityId),
-          eq(this.table['entityType'], entityType),
+          eq(this.col('entityId'), entityId),
+          eq(this.col('entityType'), entityType),
         ),
       );
     return rows as TEntity[];
@@ -64,7 +67,7 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
    */
   async listByEntityId(entityId: string): Promise<TEntity[]> {
     const rows = await this.baseQuery()
-      .where(eq(this.table['entityId'], entityId));
+      .where(eq(this.col('entityId'), entityId));
     return rows as TEntity[];
   }
 
@@ -73,8 +76,8 @@ export abstract class MetadataEntityRepository<TEntity> extends BaseRepository<T
    */
   async listHistoryByEntityId(entityId: string): Promise<TEntity[]> {
     const rows = await this.baseQuery()
-      .where(eq(this.table['entityId'], entityId))
-      .orderBy(desc(this.table['validFrom']));
+      .where(eq(this.col('entityId'), entityId))
+      .orderBy(desc(this.col('validFrom')));
     return rows as TEntity[];
   }
 }
