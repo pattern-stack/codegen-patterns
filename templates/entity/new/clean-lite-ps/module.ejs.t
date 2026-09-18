@@ -20,7 +20,7 @@ import { DatabaseModule } from '@shared/database/database.module';
 import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
 <%_ }) _%>
 <% if (eavEnabled) { -%>
-import { FieldValuesModule } from '../field_values/field_values.module';
+import { <%= eavFieldValueModulePascal %>Module } from '<%= eavFieldValueImportDir %>/<%= eavFieldValuePlural %>.module';
 <% } -%>
 <% if (eavValueTable) { -%>
 import { <%= eavDefinitionPluralPascal %>Module } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntityPlural %>.module';
@@ -60,7 +60,7 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
   imports: [
     DatabaseModule,
 <% if (eavEnabled) { -%>
-    FieldValuesModule,
+    <%= eavFieldValueModulePascal %>Module,
 <% } -%>
 <% if (eavValueTable) { -%>
     <%= eavDefinitionPluralPascal %>Module,

@@ -1445,6 +1445,15 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // EAV (ADR-13) — when true, emit paired reads + transactional compound
   // writes. Consumer must provide `@shared/eav-helpers` and `FieldValueService`.
   const eavEnabled = definition.eav === true;
+  // The field-value entity that owns `FieldValueService` / its module is named
+  // from ITS YAML (#647, NAME-0) — `plural:` and `context:` place its folder,
+  // never a hand-built '../field_values/'.
+  const eavFieldValueNaming = eavEnabled
+    ? resolveTargetNaming('field_value', targetNaming, { required: true })
+    : null;
+  const eavFieldValueImportDir = eavFieldValueNaming ? eavFieldValueNaming.importDir : null;
+  const eavFieldValuePlural = eavFieldValueNaming ? eavFieldValueNaming.plural : null;
+  const eavFieldValueModulePascal = eavFieldValuePlural ? pascalCase(eavFieldValuePlural) : null;
 
   // EAV value-table shape (task #23) — when true, this entity IS the value
   // table. Templates emit compound methods (upsertFieldsTransactional,
@@ -2092,6 +2101,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // EAV (ADR-13)
     eavEnabled,
+    eavFieldValueImportDir,
+    eavFieldValuePlural,
+    eavFieldValueModulePascal,
 
     // EAV value-table (task #23) — this entity IS the value table.
     eavValueTable,

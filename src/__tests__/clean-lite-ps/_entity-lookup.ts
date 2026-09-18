@@ -22,6 +22,7 @@ const TARGETS = [
 	{ name: 'contact', plural: 'contacts' },
 	{ name: 'conversation', plural: 'conversations' },
 	{ name: 'field_definition', plural: 'field_definitions' },
+	{ name: 'field_value', plural: 'field_values' },
 	{ name: 'lead', plural: 'leads' },
 	{ name: 'post', plural: 'posts' },
 	{ name: 'user', plural: 'users' },

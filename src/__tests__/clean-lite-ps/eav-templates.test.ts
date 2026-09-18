@@ -24,6 +24,7 @@ import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
 import { withEntities } from './_entity-lookup';
+import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -329,5 +330,55 @@ describe('clean-lite-ps eav templates — composition with generate.writes', () 
     expect(locals.clpOutputPaths.deleteUseCase).toBeNull();
     expect(locals.clpOutputPaths.findByIdWithFieldsUseCase).not.toBeNull();
     expect(locals.clpOutputPaths.listWithFieldsUseCase).not.toBeNull();
+  });
+});
+
+describe('clean-lite-ps eav templates — field-value entity named from its YAML (#647)', () => {
+  // Both sides carry a `context:` and the field-value entity declares its own
+  // `plural:` — a hand-built '../field_values/' resolves nowhere here.
+  const contextEav = {
+    ...eavEntity,
+    entity: { ...eavEntity.entity, context: 'sales' },
+  };
+  const locals = () => ({
+    ...buildCleanLitePsLocals(contextEav, {
+      ...withEntities(),
+      entityLookup: entityLookupFrom([
+        { name: 'field_value', plural: 'custom_field_values', context: 'eav' },
+      ]),
+    }),
+  });
+
+  it('service and repository import FieldValueService from the resolved folder', () => {
+    const l = locals();
+    for (const tpl of ['service.ejs.t', 'repository.ejs.t']) {
+      expect(render(tpl, l)).toContain(
+        "import { FieldValueService } from '../../eav/custom_field_values/field_value.service';",
+      );
+    }
+  });
+
+  it('create / update use cases import FieldValueService one level deeper', () => {
+    const l = locals();
+    for (const tpl of ['use-cases/create.ejs.t', 'use-cases/update.ejs.t']) {
+      expect(render(tpl, l)).toContain(
+        "import { FieldValueService } from '../../../eav/custom_field_values/field_value.service';",
+      );
+    }
+  });
+
+  it('module imports the field-value module by its plural', () => {
+    const output = render('module.ejs.t', locals());
+    expect(output).toContain(
+      "import { CustomFieldValuesModule } from '../../eav/custom_field_values/custom_field_values.module';",
+    );
+    expect(output).toContain('CustomFieldValuesModule,');
+    expect(output).not.toContain('field_values/field_values.module');
+  });
+
+  it('a missing field_value YAML is a generation error', () => {
+    expect(() =>
+      buildCleanLitePsLocals(contextEav, { ...withEntities(), entityLookup: entityLookupFrom([]) }),
+    ).toThrow(/references 'field_value', which has no entity YAML/);
   });
 });
