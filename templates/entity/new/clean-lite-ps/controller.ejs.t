@@ -3,11 +3,12 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.controller : nul
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || clpApiEnabled === false %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
-import { ZodValidationPipe } from '<%= typeof zodValidationPipeImport !== 'undefined' ? zodValidationPipeImport : '@shared/pipes/zod-validation.pipe' %>';
-import type { Page } from '<%= typeof paginationImport !== 'undefined' ? paginationImport : '@shared/http/pagination' %>';
+import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
+import type { Page } from '<%= paginationImport %>';
 import { <%= classNames.listQuerySchema %> } from './dto/list-<%= entityNamePlural %>.query';
 import type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityNamePlural %>.query';
 import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
@@ -160,3 +161,4 @@ export class <%= classNames.controller %> {
   }
 <% } %>
 }
+<%_ } -%>

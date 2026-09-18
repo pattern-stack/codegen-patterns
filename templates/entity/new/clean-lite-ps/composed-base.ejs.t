@@ -3,7 +3,8 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.composedBase : n
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.composedBase %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 <%_ /* ADR-041 §6 — emitted only when TWO OR MORE capabilities stack. One
       capability is wrapped inline in the repository's own `extends` clause;
       a three-deep inline clause is what this file exists to avoid. */ _%>
@@ -12,7 +13,7 @@ import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
 import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <%_ }) _%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
-<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
+<%_ if (hasIntegrationSurface) { _%>
 <%_ /* Type-only, and therefore erased: the repository module imports this file
       back for its `extends` clause. A value import here would be a real cycle;
       an `import type` is not. */ _%>
@@ -36,3 +37,4 @@ import type {
  * concrete <%= classNames.repository %>.
  */
 export abstract class <%= composedBaseClass %> extends <%- composedBaseExtendsClause %> {}
+<%_ } -%>

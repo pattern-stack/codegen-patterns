@@ -3,10 +3,11 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.service : null %
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 import { Injectable, Inject, Optional } from '@nestjs/common';
-import { WithAnalytics } from '<%= typeof withAnalyticsImport !== 'undefined' ? withAnalyticsImport : '@shared/base-classes/with-analytics' %>';
-import { EVENT_BUS } from '<%= typeof drizzleTokenImport !== 'undefined' ? drizzleTokenImport : '@shared/constants/tokens' %>';
+import { WithAnalytics } from '<%= withAnalyticsImport %>';
+import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
@@ -14,14 +15,14 @@ import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
 import { FieldValueService } from '../field_values/field_value.service';
 <% } -%>
 <% if (eavValueTable) { -%>
-import { toEavRows, mergeEavRows } from '<%= typeof eavHelpersImport !== 'undefined' ? eavHelpersImport : '@shared/eav-helpers' %>';
-import type { DrizzleTx } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
-<% if (typeof eavDefinitionRepositoryImported === 'undefined' || !eavDefinitionRepositoryImported) { -%>
+import { toEavRows, mergeEavRows } from '<%= eavHelpersImport %>';
+import type { DrizzleTx } from '<%= drizzleTypeImport %>';
+<% if (!eavDefinitionRepositoryImported) { -%>
 import { <%= eavDefinitionPascal %>Repository } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntity %>.repository';
 <% } -%>
 <% } -%>
 <%_ /* #632 — one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
-<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
+<%_ clpRepositoryDeps.forEach(dep => { _%>
 import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
 import type { <%= dep.entityClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.entity';
 <%_ }) _%>
@@ -52,7 +53,7 @@ export class <%= classNames.service %> extends WithAnalytics(
     private readonly definitionRepo: <%= eavDefinitionPascal %>Repository,
 <% } -%>
 <%_ /* #632 — one constructor parameter per composed repository */ _%>
-<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
+<%_ clpRepositoryDeps.forEach(dep => { _%>
     private readonly <%= dep.property %>: <%= dep.repositoryClass %>,
 <%_ }) _%>
   ) {
@@ -101,8 +102,8 @@ export class <%= classNames.service %> extends WithAnalytics(
 <%_ }) _%>
 <%_ } _%>
 <%_ /* CGP-358b — service-layer composition methods for relationships */ _%>
-<%_ const hasBelongsToComposition = typeof clpBelongsTo !== 'undefined' && clpBelongsTo.length > 0; _%>
-<%_ const hasHasManyComposition = typeof clpExistingHasMany !== 'undefined' && clpExistingHasMany.length > 0; _%>
+<%_ const hasBelongsToComposition = clpBelongsTo.length > 0; _%>
+<%_ const hasHasManyComposition = clpExistingHasMany.length > 0; _%>
 <%_ if (hasBelongsToComposition || hasHasManyComposition) { _%>
   // ═══════════════════════════════════════════════════════════════════════
   // Relationship composition methods (CGP-358b / CGP-62)
@@ -223,3 +224,4 @@ export class <%= classNames.service %> extends WithAnalytics(
   }
 <% } %>
 }
+<%_ } -%>

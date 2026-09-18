@@ -3,9 +3,10 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.listQueryDto : n
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 import { z } from 'zod';
-import { ListQuerySchema } from '<%= typeof paginationImport !== 'undefined' ? paginationImport : '@shared/http/pagination' %>';
+import { ListQuerySchema } from '<%= paginationImport %>';
 
 /**
  * List query DTO for `GET /<%= entityNamePlural %>` (pagination-by-default).
@@ -20,3 +21,4 @@ import { ListQuerySchema } from '<%= typeof paginationImport !== 'undefined' ? p
 export const <%= classNames.listQuerySchema %> = ListQuerySchema;
 
 export type <%= classNames.listQueryDto %> = z.infer<typeof <%= classNames.listQuerySchema %>>;
+<%_ } -%>

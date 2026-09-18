@@ -2,10 +2,11 @@
 to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.listUseCase : null %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 import { Injectable } from '@nestjs/common';
 import { asc, desc, sql, type SQL } from 'drizzle-orm';
-import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= typeof paginationImport !== 'undefined' ? paginationImport : '@shared/http/pagination' %>';
+import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= entityName %>.entity';
 
@@ -103,3 +104,4 @@ export class <%= classNames.listUseCase %> {
     return buildPage(items, total, resolved);
   }
 }
+<%_ } -%>

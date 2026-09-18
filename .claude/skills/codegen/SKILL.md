@@ -279,10 +279,16 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
   `templates/entity/new/clean-lite-ps/` = clean-lite-ps). Frontend and integration: TS emitters in `src/emitters/`.
 - Gates: `just test-unit`, `just test-baseline` (regenerate snapshots when output
   changes intentionally), `just test-smoke`, `just test-post-publish` (tarball).
-- The smoke harness filters tsc output. `filterConsumerErrors` drops any line
-  containing `../` or `node_modules/`, so a passing smoke does not rule out broken
-  relative imports (#576). To be sure, run `KEEP_SMOKE_DIR=1` and then an
-  unfiltered `bunx tsc --noEmit --skipLibCheck` in the kept directory.
+- Every smoke fails on any `tsc` diagnostic located in the project it generated.
+  `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** (outside
+  that project, or in `node_modules`), never by message or directory (GATE-2, #604).
+- clean-lite-ps bodies render under `architecture: clean` too (`skip_if` stops the
+  write, not the render). Each body opens with one guard,
+  `<%_ if (typeof clpOutputPaths !== 'undefined') { -%>`, and inside it every local is
+  referenced **unguarded**: never `typeof x !== 'undefined' ? x : <fallback>`. A missing
+  local must throw (#638, grep-asserted in `src/__tests__/clean-lite-ps/strict-locals.test.ts`).
+  A new runtime import specifier goes in `runtimeImportLocals` (`src/config/runtime-mode.mjs`);
+  unit tests get the prompt-owned locals from `withEntities()` (`src/__tests__/clean-lite-ps/_entity-lookup.ts`).
 - Releases: a version bump merged to main publishes. If the version is already on
   npm, the CI publish job is a **green no-op** — always bump alongside
   consumer-visible changes, and add a `CHANGELOG.md` entry.

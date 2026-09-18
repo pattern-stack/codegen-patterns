@@ -3,7 +3,8 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.findByIdWithFiel
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.findByIdWithFieldsUseCase %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 import { Injectable } from '@nestjs/common';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
 import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
@@ -18,3 +19,4 @@ export class <%= classNames.findByIdWithFieldsUseCase %> {
     return this.service.findByIdWithFields(id);
   }
 }
+<%_ } -%>

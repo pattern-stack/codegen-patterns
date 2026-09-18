@@ -3,12 +3,13 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.repository : nul
 skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 import { Injectable, Inject } from '@nestjs/common';
 <%_
 // CGP-358: FK methods with opts take priority over same-named declarative query impl.
 // Always emit FK methods; skip declarative body when FK covers same name.
-const _fkMethods = (typeof clpBelongsTo !== 'undefined') ? clpBelongsTo : [];
+const _fkMethods = clpBelongsTo;
 const _fkMethodNamesCLP = new Set(_fkMethods.map(rel => {
   const _p = rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1);
   return `findBy${_p}`;
@@ -24,7 +25,7 @@ const _fkMethodNamesCLP = new Set(_fkMethods.map(rel => {
 //     intent (single-row return, junction join, projection), so IT wins and the
 //     FK-traversal method is skipped here.
 const _emittedDqNamesCLP = new Set(
-  (typeof processedQueries !== 'undefined' ? processedQueries : [])
+  processedQueries
     .filter((q) => q.isUnique || q.hasVia || q.hasSelect)
     .map((q) => q.methodName),
 );
@@ -37,8 +38,8 @@ import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc
 <% if (eavValueTable) { -%>
 import { sql } from 'drizzle-orm';
 <% } -%>
-import { DRIZZLE } from '<%= typeof drizzleTokenImport !== 'undefined' ? drizzleTokenImport : '@shared/constants/tokens' %>';
-import type { DrizzleClient<% if (eavValueTable || (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface)) { %>, DrizzleTx<% } %> } from '<%= typeof drizzleTypeImport !== 'undefined' ? drizzleTypeImport : '@shared/types/drizzle' %>';
+import { DRIZZLE } from '<%= drizzleTokenImport %>';
+import type { DrizzleClient<% if (eavValueTable || hasIntegrationSurface) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
 <%_ if (composedBaseClass) { _%>
 import { <%= composedBaseClass %> } from '<%= composedBaseImport %>';
 <%_ } else { _%>
@@ -47,25 +48,25 @@ import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
 import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <%_ }) _%>
 <%_ } _%>
-<% if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { -%>
-import type { IntegrationUpsertConfig } from '<%= typeof integrationUpsertConfigImport !== 'undefined' ? integrationUpsertConfigImport : '@shared/base-classes/integration-upsert-config' %>';
+<% if (hasIntegrationSurface) { -%>
+import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
 <% } -%>
 <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { -%>
-import type { BehaviorConfig } from '<%= typeof baseRepositoryImport !== 'undefined' ? baseRepositoryImport : '@shared/base-classes/base-repository' %>';
+import type { BehaviorConfig } from '<%= baseRepositoryImport %>';
 <% } -%>
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '../field_values/field_value.service';
 <% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
-<%_ (typeof capabilityConfigImports !== 'undefined' ? capabilityConfigImports : []).forEach((imp) => { _%>
+<%_ capabilityConfigImports.forEach((imp) => { _%>
 import { <%= imp.name %> } from '<%= imp.importPath %>';
 <%_ }) _%>
-<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
+<%_ if (hasIntegrationSurface) { _%>
 <%_ clpIntegrationParentTableImports.forEach((imp) => { _%>
 import { <%= imp.table %> } from '<%= imp.importPath %>';
 <%_ }); _%>
 <%_ } _%>
-<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
+<%_ if (hasIntegrationSurface) { _%>
 
 /**
  * Canonical fields a integrated <%= entityName %> write carries (#374). Copy-through
@@ -142,7 +143,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   // ADR-041.1), and a public override also fills a protected declaration.
   override readonly <%= cap.configProperty %> = <%- renderPatternConfigLiteral(cap.config, '  ', '  ') %> as const;
 <%_ }) _%>
-<%_ if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { _%>
+<%_ if (hasIntegrationSurface) { _%>
 
   // Inbound-integration write surface (#374). Drives the generic integrationUpsertOne /
   // findByExternalIdProjected / softDeleteByExternalId on the base. FK
@@ -280,3 +281,4 @@ _%>
   //   <%= line %>
 <%_ }) _%>
 }
+<%_ } -%>

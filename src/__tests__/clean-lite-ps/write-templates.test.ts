@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -62,7 +63,7 @@ const baseEntity = {
 
 describe('clean-lite-ps write templates — prompt-extension wiring', () => {
   it('exposes create/update/delete use-case class names by default', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
 
     expect(locals.classNames.createUseCase).toBe('CreateContactUseCase');
     expect(locals.classNames.updateUseCase).toBe('UpdateContactUseCase');
@@ -70,7 +71,7 @@ describe('clean-lite-ps write templates — prompt-extension wiring', () => {
   });
 
   it('exposes create/update/delete use-case output paths by default', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
 
     expect(locals.clpOutputPaths.createUseCase).toBe(
       'src/modules/contacts/use-cases/create-contact.use-case.ts',
@@ -86,7 +87,7 @@ describe('clean-lite-ps write templates — prompt-extension wiring', () => {
 
   it('nulls write use-case output paths when generate.writes is false', () => {
     const def = { ...baseEntity, generate: { writes: false } };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
 
     expect(locals.generateWrites).toBe(false);
     expect(locals.clpOutputPaths.createUseCase).toBeNull();
@@ -99,7 +100,7 @@ describe('clean-lite-ps write templates — prompt-extension wiring', () => {
 
 describe('clean-lite-ps write templates — use-case rendering', () => {
   it('create.ejs.t emits a Create<Entity>UseCase with one-line service delegate', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/create.ejs.t', locals);
 
     expect(output).toContain('export class CreateContactUseCase');
@@ -118,7 +119,7 @@ describe('clean-lite-ps write templates — use-case rendering', () => {
   });
 
   it('update.ejs.t emits an Update<Entity>UseCase returning nullable entity', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/update.ejs.t', locals);
 
     expect(output).toContain('export class UpdateContactUseCase');
@@ -134,7 +135,7 @@ describe('clean-lite-ps write templates — use-case rendering', () => {
   });
 
   it('delete.ejs.t emits a Delete<Entity>UseCase returning void', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/delete.ejs.t', locals);
 
     expect(output).toContain('export class DeleteContactUseCase');
@@ -148,7 +149,7 @@ describe('clean-lite-ps write templates — use-case rendering', () => {
 
 describe('clean-lite-ps write templates — controller rendering', () => {
   it('wires POST/PATCH/DELETE routes and imports write use cases by default', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // Imports
@@ -221,7 +222,7 @@ describe('clean-lite-ps write templates — controller rendering', () => {
 
   it('omits write imports, injections, and routes when generate.writes is false', () => {
     const def = { ...baseEntity, generate: { writes: false } };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = render('controller.ejs.t', locals);
 
     // No write route imports or decorators
@@ -245,7 +246,7 @@ describe('clean-lite-ps write templates — controller rendering', () => {
 
 describe('clean-lite-ps write templates — module rendering', () => {
   it('registers write use cases as providers by default', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('module.ejs.t', locals);
 
     expect(output).toContain(
@@ -264,7 +265,7 @@ describe('clean-lite-ps write templates — module rendering', () => {
 
   it('omits write use-case providers when generate.writes is false', () => {
     const def = { ...baseEntity, generate: { writes: false } };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
     const output = render('module.ejs.t', locals);
 
     expect(output).not.toContain('CreateContactUseCase');
@@ -275,14 +276,14 @@ describe('clean-lite-ps write templates — module rendering', () => {
 
 describe('clean-lite-ps api:false HTTP-surface suppression (ADR-043 §6)', () => {
   it('clpApiEnabled defaults true and flips false when api: false', () => {
-    expect(buildCleanLitePsLocals(baseEntity, {}).clpApiEnabled).toBe(true);
+    expect(buildCleanLitePsLocals(baseEntity, withEntities()).clpApiEnabled).toBe(true);
     expect(
-      buildCleanLitePsLocals({ ...baseEntity, api: false }, {}).clpApiEnabled,
+      buildCleanLitePsLocals({ ...baseEntity, api: false }, withEntities()).clpApiEnabled,
     ).toBe(false);
   });
 
   it('module omits the controller import + registration when api: false', () => {
-    const locals = buildCleanLitePsLocals({ ...baseEntity, api: false }, {});
+    const locals = buildCleanLitePsLocals({ ...baseEntity, api: false }, withEntities());
     const output = render('module.ejs.t', locals);
     // No controller import, empty controllers array — but service + repository stay.
     expect(output).not.toContain("from './contact.controller'");
@@ -292,7 +293,7 @@ describe('clean-lite-ps api:false HTTP-surface suppression (ADR-043 §6)', () =>
   });
 
   it('module wires the controller normally when api is enabled (default)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('module.ejs.t', locals);
     expect(output).toContain("import { ContactController } from './contact.controller';");
     expect(output).toContain('controllers: [ContactController]');
