@@ -93,6 +93,7 @@ describe('jobWorkerOptions — the standalone worker (GEN-0, #652)', () => {
 	test('drizzle default: mode standalone, the pools, allPools', () => {
 		expect(exported(buildAppConfigContent(null), 'jobWorkerOptions')).toEqual({
 			mode: 'standalone',
+			backend: 'drizzle',
 			domainModulePools: JOB_POOLS,
 			allPools: true,
 		});
@@ -103,6 +104,7 @@ describe('jobWorkerOptions — the standalone worker (GEN-0, #652)', () => {
 			exported(jobs({ extensions: { drizzle: { listen_notify: true, poll_interval_ms: 500 } } }), 'jobWorkerOptions'),
 		).toEqual({
 			mode: 'standalone',
+			backend: 'drizzle',
 			domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } },
 			domainModulePools: JOB_POOLS,
 			allPools: true,
@@ -130,11 +132,45 @@ describe('jobWorkerOptions — the standalone worker (GEN-0, #652)', () => {
 			'./shared/subsystems',
 		);
 		expect(barrel.content).toContain(
-			"JobWorkerModule.forRoot({ mode: 'embedded', domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } }, domainModulePools: jobPools }),",
+			"JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } }, domainModulePools: jobPools }),",
 		);
 		expect(jobWorkerBackendOptions(block)).toEqual({
+			backend: 'drizzle',
 			domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } },
 		});
+	});
+});
+
+describe('the worker gets the configured backend, always (JOBS-0, #656)', () => {
+	test('jobWorkerBackendOptions states the backend for every value', () => {
+		expect(jobWorkerBackendOptions(undefined)).toEqual({ backend: 'drizzle' });
+		expect(jobWorkerBackendOptions({ backend: 'drizzle' })).toEqual({ backend: 'drizzle' });
+		expect(jobWorkerBackendOptions({ backend: 'memory' })).toEqual({ backend: 'memory' });
+		// Drizzle knobs are ignored under memory — only the drizzle backend reads them.
+		expect(
+			jobWorkerBackendOptions({ backend: 'memory', extensions: { drizzle: { listen_notify: true } } }),
+		).toEqual({ backend: 'memory' });
+		expect(jobWorkerBackendOptions({ backend: 'bullmq' })).toEqual({ backend: 'bullmq' });
+	});
+
+	test('memory + embedded: the domain module and the worker boot one backend in the process', () => {
+		const barrel = buildSubsystemBarrel(
+			[{ name: 'jobs', path: '/fake/jobs', backend: 'memory', status: 'installed' }],
+			{ jobs: { backend: 'memory', worker_mode: 'embedded' } },
+			'./shared/subsystems',
+		).content;
+		expect(barrel).toContain("\tJobsDomainModule.forRoot({ backend: 'memory', multiTenant: false, pools: jobPools }),");
+		expect(barrel).toContain(
+			"\tJobWorkerModule.forRoot({ mode: 'embedded', backend: 'memory', domainModulePools: jobPools }),",
+		);
+		expect(barrel).not.toContain('drizzle');
+	});
+
+	test('jobWorkerOptions (app-config.ts) carries memory too', () => {
+		const content = buildAppConfigContent(
+			parseCodegenConfig({ jobs: { backend: 'memory', worker_mode: 'embedded' } }, 'x.yaml'),
+		);
+		expect((exported(content, 'jobWorkerOptions') as { backend: string }).backend).toBe('memory');
 	});
 });
 

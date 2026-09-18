@@ -36,6 +36,7 @@ import {
 	jobWorkerBackendOptions,
 	type DrizzleJobsExt,
 } from './job-worker-options.js';
+import { DEFAULT_JOBS_WORKER_MODE } from '../../schema/codegen-config.schema.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 import {
@@ -291,7 +292,7 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 	jobs: ({ moduleImport, cfg, bridgeInstalled }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
-		const workerMode = ((cfg?.worker_mode as string | undefined) ?? 'standalone').trim();
+		const workerMode = ((cfg?.worker_mode as string | undefined) ?? DEFAULT_JOBS_WORKER_MODE).trim();
 		const imports = [
 			`import { JobsDomainModule } from '${moduleImport('jobs', 'jobs-domain.module')}';`,
 		];

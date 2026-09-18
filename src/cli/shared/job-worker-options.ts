@@ -52,13 +52,16 @@ export function drizzleJobsExtensions(
 }
 
 /**
- * The worker's `backend` + `domainModuleExtensions`, as a value:
+ * The worker's `backend` + `domainModuleExtensions`, as a value. `backend` is
+ * always emitted — the configured value, never the runtime's `forRoot` default
+ * (JOBS-0, #656: a `memory` config used to boot a drizzle worker):
  *
- *   - drizzle (default), no knobs → `{}`
- *   - drizzle + knobs             → `{ domainModuleExtensions: { drizzle: {…camelCase} } }`
+ *   - drizzle (default), no knobs → `{ backend: 'drizzle' }`
+ *   - drizzle + knobs             → `{ backend: 'drizzle', domainModuleExtensions: { drizzle: {…camelCase} } }`
  *     (`JobWorkerModule` threads `listenNotify` — the listener — and
  *     `pollIntervalMs` into each spawned `JobWorker`, and forwards them to its
  *     inner `JobsDomainModule`)
+ *   - memory                      → `{ backend: 'memory' }`
  *   - bullmq                      → `{ backend: 'bullmq', domainModuleExtensions?: { bullmq: {…} } }`
  *     (BULLMQ-1: snake_case keys, the runtime `BullMqExtensionsConfig` shape)
  */
@@ -68,10 +71,8 @@ export function jobWorkerBackendOptions(
 	const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 	if (backend === 'bullmq') {
 		const bullExt = (cfg?.extensions as { bullmq?: Record<string, unknown> } | undefined)?.bullmq;
-		return bullExt
-			? { backend: 'bullmq', domainModuleExtensions: { bullmq: bullExt } }
-			: { backend: 'bullmq' };
+		return bullExt ? { backend, domainModuleExtensions: { bullmq: bullExt } } : { backend };
 	}
 	const drizzle = drizzleJobsExtensions(backend, cfg);
-	return drizzle ? { domainModuleExtensions: { drizzle } } : {};
+	return drizzle ? { backend, domainModuleExtensions: { drizzle } } : { backend };
 }

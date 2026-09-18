@@ -56,6 +56,8 @@ async function main(): Promise<void> {
 	if (!opts) fail('JobWorkerModule.forRoot provided no JOB_WORKER_MODULE_OPTIONS value');
 
 	if (opts.mode !== 'standalone') fail(`mode: expected 'standalone', got ${JSON.stringify(opts.mode)}`);
+	// JOBS-0 (#656): the configured backend is stated, never left to forRoot's default.
+	if (opts.backend !== 'drizzle') fail(`backend: expected 'drizzle', got ${JSON.stringify(opts.backend)}`);
 	if (opts.allPools !== true) fail(`allPools: expected true, got ${JSON.stringify(opts.allPools)}`);
 	const drizzle = (opts.domainModuleExtensions as { drizzle?: unknown } | undefined)?.drizzle;
 	if (!same(drizzle, expected.drizzle)) {

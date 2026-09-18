@@ -108,6 +108,16 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
 
 ### Fixed
 
+- **`jobs.backend: memory` reaches the worker** (#656). The worker options
+  (the embedded `JobWorkerModule.forRoot` in `<generated>/subsystems.ts`,
+  `jobWorkerOptions` in `<generated>/app-config.ts`) carried `backend` only
+  for `bullmq`, so a `memory` config booted the embedded worker's own
+  orchestrator on drizzle — two backends in one process. The worker options
+  now always state `backend` (every jobs install regenerates with
+  `backend: 'drizzle'` in them). `jobs.backend: memory` with a standalone
+  worker — `jobs.worker_mode: standalone`, or no `worker_mode` — is now a
+  config error naming both keys: a separate process cannot share the
+  in-memory job store.
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
   `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
   and Nest's default `abortOnError` turns that into `process.exit(1)` — so

@@ -579,12 +579,23 @@ const JobsPoolSchema = z
   .strict();
 
 /**
+ * `jobs.worker_mode` when the key is absent: no `JobWorkerModule` in
+ * `AppModule`; the standalone `worker.ts` is the worker. Read by the jobs
+ * composer (`subsystem-barrel-generator.ts`) and the `JobsConfigSchema`
+ * refinement. (The jobs scaffold still reads absent as `embedded` — #659.)
+ */
+export const DEFAULT_JOBS_WORKER_MODE = 'standalone' as const;
+
+/**
  * `jobs:` — written by `templates/subsystem/jobs-config/`; read by
  * `subsystem-barrel-generator.ts` (`JobsDomainModule` / `JobWorkerModule`
  * options), `jobs-scaffold-locals.ts`, `subsystem-detect.ts` (`backend`) and
  * the jobs runtime (`pools`).
  *
  * `pools` is the one open map: keyed by pool name, each value strict.
+ *
+ * JOBS-0 (#656): `backend: memory` with a standalone worker is rejected — a
+ * separate worker process cannot share the in-memory job store.
  */
 export const JobsConfigSchema = z
   .object({
@@ -635,7 +646,20 @@ export const JobsConfigSchema = z
       .strict()
       .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((jobs, ctx) => {
+    const workerMode = jobs.worker_mode ?? DEFAULT_JOBS_WORKER_MODE;
+    if (jobs.backend === 'memory' && workerMode === 'standalone') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['worker_mode'],
+        message:
+          `\`jobs.backend: memory\` cannot run a standalone worker (\`jobs.worker_mode: standalone\`` +
+          `${jobs.worker_mode ? '' : ', the default'}) — a separate process cannot share the in-memory job ` +
+          `store. Set \`jobs.worker_mode: embedded\`, or use \`jobs.backend: drizzle\` / \`bullmq\`.`,
+      });
+    }
+  });
 
 /**
  * `bridge:` — written by `templates/subsystem/bridge-config/`; read by

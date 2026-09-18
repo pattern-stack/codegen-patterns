@@ -64,10 +64,10 @@ Field notes:
 
 | Key | What it controls |
 |---|---|
-| `backend` | Which orchestrator implementation runs. `drizzle` (Postgres) is the portable default. `memory` is for tests. `bullmq` is opt-in (see below). |
+| `backend` | Which orchestrator implementation runs — in the API and in the worker. `drizzle` (Postgres) is the portable default. `memory` is for tests, and only with `worker_mode: embedded`: a standalone worker is a separate process and cannot share an in-memory store, so `memory` with `worker_mode: standalone` (or no `worker_mode`) is a config error. `bullmq` is opt-in (see below). |
 | `extensions.<backend>.*` | Backend-specific knobs. Each backend reads only its own key. An undeclared key (a typo, a removed knob) is a `codegen.config.yaml` error naming the key — the file is validated strictly on every `codegen` command. |
 | `multi_tenant` | When `true`, service methods require a `tenantId` (explicit `null` allowed for cross-tenant work). The `tenant_id` column exists regardless, so flipping this later needs no migration. |
-| `worker_mode` | Informational hint only — both worker entrypoints are always scaffolded. See "Worker topology". |
+| `worker_mode` | `embedded` composes the worker into `AppModule` through the generated `SUBSYSTEM_MODULES`; `standalone` (the default when the key is absent) leaves it out and you run `worker.ts`. Both entrypoints are always scaffolded. See "Worker topology". |
 | `pools` | Written by `codegen` into `src/generated/app-config.ts` as `jobPools` and passed to `JobsDomainModule.forRoot({ pools })`. Edit, then regenerate (`codegen entity new --all`). |
 | `pools.<name>.queue` | The queue identifier written into `job_run.pool`. Required on your own pool; fixed on a framework pool. |
 | `pools.<name>.concurrency` | Per-process max in-flight for that pool. Running more processes multiplies it. Required on your own pool. |
@@ -111,9 +111,9 @@ If you think you need strict ordering *across different entities*, reconsider �
 
 ## Worker topology — embedded vs. standalone
 
-Both entrypoints are always scaffolded. The choice is operational; switching needs no regeneration.
+Both entrypoints are always scaffolded. Switching is the `worker_mode` toggle plus a regeneration (`codegen entity new --all`), which rewrites the generated barrel.
 
-**Embedded** — your `AppModule` imports `JobWorkerModule.forRoot({ mode: 'embedded' })`. The API process and the workers share the same process. Simplest; good default for dev and small deployments.
+**Embedded** — the generated `SUBSYSTEM_MODULES` in your `AppModule` carries `JobWorkerModule.forRoot({ mode: 'embedded', backend, … })`. The API process and the workers share the same process. Simplest; good default for dev and small deployments.
 
 **Standalone** — run the scaffolded `worker.ts` as its own process. `main.ts` does not import `JobWorkerModule`; the worker boots a Nest application context (no HTTP listener) around your `AppModule` plus `JobWorkerModule.forRoot(jobWorkerOptions)`. Lets you scale workers independently of the API.
 
