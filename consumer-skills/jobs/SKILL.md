@@ -48,7 +48,7 @@ For running a job *in response to a domain event*, that is the Event-to-Job Brid
 
 ## Non-obvious rules
 
-- **Jobs are TypeScript classes, not YAML.** There is no jobs-as-YAML codegen. You write a `@JobHandler` class; the package ships the orchestration around it.
+- **Jobs are TypeScript classes.** You write a `@JobHandler` class; the package ships the orchestration around it. The one YAML form is the integration-sync job definition (`definitions/jobs/<type>.yaml`, `paths.jobs_dir`): `codegen entity new` emits a `@generated` `<type>.job.generated.ts` base (never edit it) and an emit-once `<type>.job.ts` you own. If a job YAML is invalid, `entity new` stops before generating anything and exits 1, naming the file and the reason (in `--json`, under `failed[]`) — `--continue-on-error` does not skip it. The old `<type>.job.generated.ts` stays until the YAML loads again.
 - **A `@JobHandler` class must also be a registered NestJS provider.** The decorator registers the class with the job registry for orchestration; it does NOT register it in Nest's DI container. Add it to the `providers` of its owning module, or the worker throws an unresolvable-provider error when it tries to run it.
 - **`step_id` must be stable across replays.** Hardcode it (`'pull_emails'`) or derive it deterministically from input. Never `Date.now()`, never random. Memoization is keyed on `(job_run_id, step_id)`; an unstable id defeats it.
 - **The default pool is `batch`.** `interactive` exists but must be opted into explicitly.
@@ -63,4 +63,5 @@ For running a job *in response to a domain event*, that is the Event-to-Job Brid
 - Do not use `Date.now()` or randomness for a `step_id`.
 - Do not wrap `ctx.spawnChild` inside a `ctx.step` — a child run is its own memoization root.
 - Do not hand-edit anything under `<backend_src>/shared/subsystems/jobs/`. It is vendored from the package.
+- Do not register `JobsDomainModule` / `JobWorkerModule` in `app.module.ts` by hand. The generated `SUBSYSTEM_MODULES` composes them from the `jobs:` config block; a second `forRoot` double-registers.
 - Do not reach for a job when the caller is waiting synchronously on the result — that is a use case, not a job. Jobs are durable because they are asynchronous.

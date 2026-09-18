@@ -111,8 +111,8 @@ Every step after the barrels, what it writes, who imports it:
 | `generateProviderModules` | `<slug>.provider.module.ts` | surface / assembly modules | fail |
 | `emitAdapters` | adapter scaffolds, surface modules, typed views, assemblies, tokens, sinks, change emitters | the app's integration modules | fail |
 | `emitJobHandlers` | `@generated` handler bases + emit-once subclasses | the app's jobs module | fail |
-| `loadOrchestrationPatterns` → `loadAppPatterns` per-file import errors | (input to orchestration) | — | **still soft — JOBS-2.** An unimportable pattern file is collected, printed as a warning (`loadAppPatternsForCli`), the pattern set is partial, and `generateOrchestrationModules` rewrites the orchestration root barrel without that pattern's module — exit 0. The same stale-output-with-success class; folded into JOBS-2 with #664 (the structurally identical invalid-job-YAML case), not fixed here. Only a *throw* from the loader fails the step in this PR. |
-| `generateProviderModules` blocking issues (invalid / unloadable provider YAML, bad import, unknown surface) | nothing — emission is gated | — | **still soft by default — flagged for JOBS-2.** Exit 1 only under `--no-continue-on-error`; `--continue-on-error` defaults to `true`, so by default the issues print (text mode) and the provider modules stay stale, exit 0. The `--no-continue-on-error` path now emits the JSON error payload. |
+| `loadOrchestrationPatterns` → `loadAppPatterns` per-file import errors | (input to orchestration) | — | **Fixed in JOBS-2 (2026-09-18): a pre-flight run-level rejection, exit 1.** Before: **still soft — JOBS-2.** An unimportable pattern file is collected, printed as a warning (`loadAppPatternsForCli`), the pattern set is partial, and `generateOrchestrationModules` rewrites the orchestration root barrel without that pattern's module — exit 0. The same stale-output-with-success class; folded into JOBS-2 with #664 (the structurally identical invalid-job-YAML case), not fixed here. Only a *throw* from the loader fails the step in this PR. |
+| `generateProviderModules` blocking issues (invalid / unloadable provider YAML, bad import, unknown surface) | nothing — emission is gated | — | **still soft by default — flagged for JOBS-2; left out of its scope, now #666.** Exit 1 only under `--no-continue-on-error`; `--continue-on-error` defaults to `true`, so by default the issues print (text mode) and the provider modules stay stale, exit 0. The `--no-continue-on-error` path now emits the JSON error payload. |
 
 **Genuinely optional output: none.** What stays soft and is not a failure: declared skips (bridge not installed; no
 entities for the frontend; a provider surface with no registered port package; an assembly skipped with a reason) keep
@@ -169,6 +169,9 @@ JOBS-0 recorded for the barrels.
   `GeneratedFileError` naming exactly the blocked file.
 
 ## Out of scope
+
+*Revision 2026-09-18 (JOBS-2):* #663 and #664 shipped in JOBS-2 (`docs/specs/JOBS-2.md`), with the pattern-file row
+of the audit above; the provider row is #666.
 
 - The generic `Register <Name>Module.forRoot(...)` install hint names a module that does not exist and invites a
   second registration next to the barrel's → #663.

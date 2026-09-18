@@ -19,6 +19,7 @@ import {
 	getOrchestrationPatternNames,
 	loadAppPatterns,
 	_resetRegistryForTests,
+	type LoadAppPatternsResult,
 } from '../../patterns/registry.js';
 import { validateOrchestrationProject } from '../../patterns/validate-orchestration.js';
 import { getAllPatternNames } from '../../patterns/registry.js';
@@ -47,10 +48,7 @@ import { projectLayout } from '../shared/project-layout.js';
  * process (e.g. by Hygen subprocess hooks); we want a deterministic view
  * tied to the current `cwd`.
  */
-async function reloadRegistry(ctx: Context): Promise<{
-	loaded: string[];
-	errors: string[];
-}> {
+async function reloadRegistry(ctx: Context): Promise<LoadAppPatternsResult> {
 	_resetRegistryForTests({ includeLibrary: false });
 	return loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
 }
@@ -84,7 +82,7 @@ export class OrchestrationGenCommand extends Command {
 
 		const loadResult = await reloadRegistry(ctx);
 		if (loadResult.errors.length > 0 && !isJsonMode()) {
-			for (const err of loadResult.errors) printWarning(err);
+			for (const err of loadResult.errors) printWarning(err.message);
 		}
 
 		// Project-level validator (Phase 3-1) — surface name collisions etc.
@@ -275,7 +273,7 @@ export class OrchestrationValidateCommand extends Command {
 				issues,
 			});
 		} else {
-			for (const err of loadResult.errors) printError(err);
+			for (const err of loadResult.errors) printError(err.message);
 			for (const i of errors) printError(i.message);
 			for (const i of warnings) printWarning(i.message);
 			if (

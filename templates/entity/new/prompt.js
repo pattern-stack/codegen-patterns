@@ -313,7 +313,7 @@ async function ensurePatternsRegistryLoaded() {
       const result = await loadAppPatterns(getProjectConfig().patterns, process.cwd());
       for (const err of result.errors) {
         // eslint-disable-next-line no-console
-        console.warn(`[codegen] ${err}`);
+        console.warn(`[codegen] ${err.message}`);
       }
     })();
   }
