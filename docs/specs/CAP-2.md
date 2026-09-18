@@ -286,6 +286,7 @@ target-keyed derivation could not express when two roles share a target.
    directions — so a new TS4112 or TS2339 in those files fails the smoke too, instead of riding along. The first attempt — skip `junction new` in the package leg — does not work:
    the barrel generator references every junction YAML it finds, so the barrels then import files that do not
    exist.
+   **Revision 2026-09-17:** fixed by RT-0 (#624, `docs/specs/RT-0.md`): both templates resolve these imports by runtime mode, and the expectation is deleted.
 
 7. **FK-column collisions were reachable and are now load errors.** Two roles with the same `column:`, or a role
    whose derived FK is already a declared relationship's FK, would have emitted one pgTable key twice. The schema
@@ -345,7 +346,7 @@ Output from the run made **after the last edit** (charter I9).
 |---|---|---|
 | CAP-3 finds `ParsedRole` missing a field it needs | rework in CAP-3 | `ParsedRole` keeps the declaration verbatim plus the derived `foreignKey`; `clpBelongsTo` entries carry `role` |
 | REL-1 / SEM-2 count a one-role twice | duplicate edge or dimension | a one-role is in both `relationships` (with `role` set) and `roles`; #625 / #626 each name the rule |
-| The #624 expectation outlives its defect | "expectation is stale" from the smoke | delete `applyIssue624Expectation` and its CLAUDE.md row in the PR that fixes #624 |
+| The #624 expectation outlives its defect | "expectation is stale" from the smoke | delete `applyIssue624Expectation` and its CLAUDE.md row in the PR that fixes #624. **Closed 2026-09-17:** RT-0 deleted both. |
 
 ## What downstream must know
 
@@ -378,7 +379,7 @@ those. And the fixture's spine is `Activity`: `[Integrated, Activity, Communicat
 **For REL-1 (#625) and SEM-2 (#626).** The mappings are in "Downstream contracts" above and in the issues.
 
 **Junctions.** `via:` is validated against `junctions/` (`junctionsDirFor(cwd)`), so junction YAML must exist before
-`entity new`. Junction *emission* in package mode is broken (#624).
+`entity new`. Junction emission compiles in both runtime modes (fixed by RT-0, #624).
 
 **CLI behaviour change.** `entity new`, `entity validate`, `project inspect` and `project graph` now load app
 patterns (the `patterns:` globs) in the CLI process before validating, through `loadAppPatternsForCli`. A malformed app pattern file is now a printed warning in `entity new` too.

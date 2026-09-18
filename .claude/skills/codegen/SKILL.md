@@ -138,8 +138,12 @@ codegen dev up [--no-app] | status | logs [--docker] | restart | down [--volumes
   the runtime is copied into `src/shared/**`. Existing vendored projects must set
   `runtime: vendored` explicitly.
 
-Changes to emitted imports must work in both modes. The tarball smoke
-(`just test-post-publish`) covers package mode from the packed artifact.
+Changes to emitted imports must work in both modes. A template never hardcodes a
+package-owned `@shared/*` specifier: its prompt resolves it with `runtimeImport(loadRuntimeMode(cwd), '<relpath>')`
+from `src/config/runtime-mode.mjs` (entity, junction and relationship prompts all do; #624). Consumer-local files
+(`@shared/database/*`, …) stay `@shared/*` in both modes. Gates that compile
+both modes: `just test-smoke-capability` (entity + junction + relationship) and `just test-smoke-junction`. The
+tarball smoke (`just test-post-publish`) covers package mode from the packed artifact.
 
 ## Entity YAML
 

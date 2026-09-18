@@ -265,11 +265,9 @@ Gates that are red on `main` today, on purpose recorded here rather than hidden,
 **Named expectations inside green gates** — each one exact file, exact error code, issue number, asserted present
 *and* sole, so it fails the moment the defect is fixed and must then be deleted:
 
-| Gate | Expectation | Tracking |
-|---|---|---|
-| `just test-smoke-capability` (package leg only) | `applyIssue624Expectation`: the repository + service of each of the fixture set's two generated junctions (`meeting_contact`, CAP-2; `crew_person`, NAME-0) — 16 diagnostics per junction enumerated by file, code and named symbol with exact counts (7 × TS2307 for 5 package-owned `@shared/*` runtime modules, 4 × TS4112, 5 × TS2339) — plus the `crew_assignment` relationship's repository, service and two use-cases (NAME-1: 12 diagnostics, 6 × TS2307, 4 × TS4112, 2 × TS2339) — compared as a multiset both ways. `junction new` / `relationship new` hardcode `@shared/*` and do not compile under `runtime: package`; every junction harness pins vendored, so nothing saw it until CAP-2 generated a junction in both modes. | **#624** |
+None today. RT-0 (#624) deleted the last one (`applyIssue624Expectation`, capability smoke package leg).
 
-That is the whole list. No gate anywhere filters an error class or carves out a directory: every smoke scopes its
+No gate anywhere filters an error class or carves out a directory: every smoke scopes its
 `tsc` output through `test/smoke/_consumer-errors.ts`, by the diagnostic's **location** only (GATE-2, #604). If a
 future error genuinely cannot be fixed in the PR that surfaces it, give it a **named single-purpose expectation** —
 exact file, exact error code, the issue number in a comment, asserted present *and* sole — never a predicate in that
