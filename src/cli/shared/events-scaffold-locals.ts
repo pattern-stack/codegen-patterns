@@ -20,7 +20,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
+import { projectLayout } from './project-layout.js';
 
 export interface EventsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -75,7 +75,7 @@ export function resolveEventsScaffoldLocals(
 
 	const eventsBlock = (config?.events ?? {}) as Record<string, unknown>;
 
-	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
+	const subsystemsRoot = projectLayout(cwd, config).subsystems;
 
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const schemaPath = path.resolve(

@@ -24,7 +24,7 @@ import {
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
-import { loadProjectConfig } from "../../../src/config/project-config.js";
+import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -40,19 +40,9 @@ const kebabCase = (s) => s.replace(/_/g, "-");
 // Config Loading Helpers
 // ============================================================================
 
-function resolveArchitecture(config) {
-  // The parsed config (CFG-0) always carries `generate.architecture` (schema
-  // default `clean`). No config file at all ⇒ the clean-lite-ps layout — a
-  // different fallback from the entity prompt's, tracked in #642.
-  return config ? config.generate.architecture : "clean-lite-ps";
-}
-
-function resolveSrcRoot(config, architecture) {
-  // paths.backend_src from config; fallback by architecture
-  const fromConfig = config?.paths?.backend_src;
-  if (typeof fromConfig === "string" && fromConfig.length > 0) return fromConfig;
-  return architecture === "clean" ? "app/backend/src" : "src";
-}
+// The parsed config, or the schema's defaults with no file (PATH-0, #642):
+// `generate.architecture` and `paths.backend_src` each have ONE default,
+// declared in `codegen-config.schema.ts` — this prompt carries none of its own.
 
 // ============================================================================
 // Name Derivation
@@ -311,9 +301,9 @@ export default {
     // Architecture-aware output paths
     // ======================================================================
 
-    const config_ = loadProjectConfig(cwd);
-    const architecture = resolveArchitecture(config_);
-    const srcRoot = resolveSrcRoot(config_, architecture);
+    const config_ = configOrDefaults(loadProjectConfig(cwd));
+    const architecture = config_.generate.architecture;
+    const srcRoot = config_.paths.backend_src;
     const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, architecture, srcRoot);
 
     // ======================================================================

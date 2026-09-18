@@ -15,7 +15,7 @@
  */
 
 import path from 'node:path';
-import { projectConfig } from './config-loader.mjs';
+import { resolvedConfig } from './config-loader.mjs';
 import { getNamingConfig } from './naming-config.mjs';
 import { applyCase, toPascalCase, getCaseSeparator } from './case-converters.mjs';
 import { FILE_TYPE_SUFFIXES } from '../schema/naming-config.schema.mjs';
@@ -58,22 +58,14 @@ export const DEFAULT_LAYOUT = {
 // ============================================================================
 
 /**
- * Base paths relative to project root
- * Can be overridden by codegen.config.yaml
+ * Base paths relative to project root, from the resolved `paths` block — every
+ * default is declared once, in `PathsConfigSchema` (PATH-0, #642).
  */
 export const BASE_PATHS = {
-  // Backend base
-  backendSrc: projectConfig?.paths?.backend_src ?? "app/backend/src",
-
-  // Frontend base
-  frontendSrc: projectConfig?.paths?.frontend_src ?? "app/frontend/src",
-
-  // Orchestration emission root (ADR-032 Phase 3-2, O-6).
-  // Default sits under backendSrc so it co-locates with src/modules/ and
-  // src/subsystems/ in the consumer's tree; override via paths.orchestration_src.
-  orchestrationSrc:
-    projectConfig?.paths?.orchestration_src ??
-    `${projectConfig?.paths?.backend_src ?? "app/backend/src"}/orchestration`,
+  backendSrc: resolvedConfig.paths.backend_src,
+  // Orchestration emission root (ADR-032 Phase 3-2, O-6):
+  // `paths.orchestration_src`, default `<backend_src>/orchestration`.
+  orchestrationSrc: resolvedConfig.paths.orchestration_src,
 };
 
 const posixPath = path.posix;
@@ -134,26 +126,6 @@ export const BACKEND_LAYERS = {
 };
 
 /**
- * Frontend paths (relative to frontendSrc)
- */
-export const FRONTEND_LAYERS = {
-  lib: "lib",
-  collections: "lib/collections",
-  store: "lib/store",
-  entities: "lib/entities",
-  generated: "generated",
-  entityMetadata: "generated/entity-metadata",
-};
-
-/**
- * Shared package paths
- */
-export const PACKAGE_PATHS = {
-  db: "packages/db/src",
-  dbEntities: "packages/db/src/entities",
-};
-
-/**
  * Get full path from project root
  */
 export function getBackendPath(layer, subpath = "") {
@@ -172,11 +144,6 @@ export function getOrchestrationPath(slug = "") {
   return slug
     ? joinPath(BASE_PATHS.orchestrationSrc, slug)
     : BASE_PATHS.orchestrationSrc;
-}
-
-export function getFrontendPath(layer, subpath = "") {
-  const basePath = joinPath(BASE_PATHS.frontendSrc, FRONTEND_LAYERS[layer]);
-  return subpath ? joinPath(basePath, subpath) : basePath;
 }
 
 /**
@@ -541,38 +508,6 @@ export function getImportPaths({ isNested }) {
   };
 }
 
-/**
- * Test configuration - paths for test runner
- */
-export const TEST_OUTPUT_PATHS = [
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.domain}`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.application}`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.drizzle}`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.repositories}`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.modules}`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.controllers}`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.constants}/tokens.ts`,
-  `${BASE_PATHS.backendSrc}/app.module.ts`,
-  `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.collections}`,
-  `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.store}`,
-  `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.entityMetadata}`,
-  PACKAGE_PATHS.dbEntities,
-];
-
-export const INJECTABLE_FILES = [
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.domain}/index.ts`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.schemas}/index.ts`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.drizzle}/index.ts`,
-  `${BASE_PATHS.backendSrc}/${BACKEND_LAYERS.constants}/tokens.ts`,
-  `${BASE_PATHS.backendSrc}/app.module.ts`,
-  `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.collections}/index.ts`,
-  `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.collections}/collections.ts`,
-  `${BASE_PATHS.frontendSrc}/${FRONTEND_LAYERS.store}/index.ts`,
-  `${LOCATIONS.dbSchemaServer.path}`,
-  `${LOCATIONS.dbSchemaClient.path}`,
-  `${PACKAGE_PATHS.dbEntities}/index.ts`,
-];
-
 // ============================================================================
 // Database Configuration
 // ============================================================================
@@ -582,7 +517,7 @@ export const INJECTABLE_FILES = [
  * Default to postgres for backward compatibility
  */
 export const DATABASE_CONFIG = {
-  dialect: projectConfig?.database?.dialect ?? 'postgres',
+  dialect: resolvedConfig.database.dialect,
 };
 
 /**
@@ -593,44 +528,29 @@ export function getDatabaseDialect() {
 }
 
 /**
- * Get project configuration (useful for template access)
+ * The resolved project configuration (the schema's defaults when there is no
+ * file), for template access.
  */
 export function getProjectConfig() {
-  return projectConfig;
+  return resolvedConfig;
 }
 
 /**
- * Resolve the directory codegen writes barrel files to (modules.ts, schema.ts).
- *
- * Honors `paths.generated` from codegen.config.yaml; defaults to 'src/generated'.
- * Returns a relative path (from project root) — callers are responsible for
- * resolving against a cwd as needed.
+ * The directory codegen writes cross-entity barrels to (modules.ts, schema.ts):
+ * `paths.generated`, default `<backend_src>/generated`. Relative to the project
+ * root.
  */
 export function getGeneratedDir() {
-  const fromConfig = projectConfig?.paths?.generated;
-  return typeof fromConfig === 'string' && fromConfig.length > 0
-    ? fromConfig
-    : 'src/generated';
+  return resolvedConfig.paths.generated;
 }
 
 /**
- * The `generate` block, parsed and defaulted by `GenerateConfigSchema`
- * (`project-config.ts`, CFG-0). Without a config file, the schema's defaults.
+ * The `generate` block, parsed and defaulted by `GenerateConfigSchema` — the
+ * only source of its defaults (`generate.architecture` included, charter Q5).
  */
 export function getGenerateConfig() {
-  return projectConfig?.generate ?? GENERATE_DEFAULTS;
+  return resolvedConfig.generate;
 }
-
-/** `GenerateConfigSchema.parse({})` — kept in step by `config-census.test.ts`. */
-export const GENERATE_DEFAULTS = Object.freeze({
-  architecture: 'clean',
-  frontend: false,
-  analytics: 'none',
-  drizzleSchema: true,
-  commands: true,
-  queries: true,
-  dtos: true,
-});
 
 // Default export for convenience
 export default {
@@ -641,11 +561,7 @@ export default {
   // Path configuration
   BASE_PATHS,
   BACKEND_LAYERS,
-  FRONTEND_LAYERS,
-  PACKAGE_PATHS,
   FILE_NAMING,
-  TEST_OUTPUT_PATHS,
-  INJECTABLE_FILES,
   // NEW: Unified locations (path + import)
   LOCATIONS,
   // Database configuration
@@ -653,7 +569,6 @@ export default {
   // Helper functions
   getBackendPath,
   getOrchestrationPath,
-  getFrontendPath,
   getEntityPaths,
   getEntityFileNames,
   getImportPaths,

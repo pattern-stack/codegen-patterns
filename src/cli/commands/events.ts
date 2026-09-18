@@ -28,7 +28,7 @@ import {
 	scanHandlerFiles,
 	readKnownEventTypes,
 } from '../shared/bridge-registry-generator.js';
-import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
+import { projectLayout } from '../shared/project-layout.js';
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
@@ -339,7 +339,7 @@ export interface RunConsumersScanOptions {
 	cwd: string;
 	config: Context['config'];
 	eventType: string;
-	/** Override the default `<cwd>/src/` scan root (tests). */
+	/** Override the default `<backend_src>/` scan root (tests). */
 	scanRoot?: string;
 	/** Override the handler dir scanned for Tier 3 triggers (tests). */
 	handlersDir?: string;
@@ -354,7 +354,7 @@ export interface RunConsumersScanOptions {
 export function runConsumersScan(
 	opts: RunConsumersScanOptions,
 ): ConsumerScanResult {
-	const scanRoot = opts.scanRoot ?? path.join(opts.cwd, 'src');
+	const scanRoot = opts.scanRoot ?? projectLayout(opts.cwd, opts.config).backendSrc;
 	const handlersDir = opts.handlersDir ?? scanRoot;
 
 	// Tier 3 — re-scan handler decorators for full file:line info. (We could
@@ -378,11 +378,7 @@ export function runConsumersScan(
 	// Known-event validation — read events/generated/registry.ts.
 	const eventsGeneratedDir =
 		opts.eventsGeneratedDir ??
-		path.join(
-			resolveSubsystemsRootFromContext(opts.cwd, opts.config),
-			'events',
-			'generated',
-		);
+		path.join(projectLayout(opts.cwd, opts.config).subsystems, 'events', 'generated');
 	const knownEventTypes = readKnownEventTypes(eventsGeneratedDir);
 	const knownEventType = knownEventTypes.includes(opts.eventType);
 	const suggestions = knownEventType
@@ -398,22 +394,6 @@ export function runConsumersScan(
 		knownEventType,
 		suggestions,
 	};
-}
-
-function resolveSubsystemsRootFromContext(
-	cwd: string,
-	config: Context['config'],
-): string {
-	// Lazy import to avoid Context coupling in pure-test paths.
-	// Mirrors `subsystems-path.ts:resolveSubsystemsRootFromConfig` semantics.
-	const configured = config?.paths?.subsystems;
-	if (typeof configured === 'string' && configured.length > 0) {
-		return path.resolve(cwd, configured);
-	}
-	const backendSrc = config?.paths?.backend_src;
-	const base =
-		typeof backendSrc === 'string' && backendSrc.length > 0 ? backendSrc : 'src';
-	return path.resolve(cwd, base, 'shared', 'subsystems');
 }
 
 export class EventsConsumersCommand extends Command {

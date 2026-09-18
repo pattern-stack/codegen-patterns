@@ -19,6 +19,7 @@ import {
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
+import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -529,10 +530,10 @@ export default {
     }));
 
     // ======================================================================
-    // Source root — default to 'src'
+    // Source root — `paths.backend_src`, resolved (PATH-0, #642)
     // ======================================================================
 
-    const srcRoot = "src";
+    const srcRoot = configOrDefaults(loadProjectConfig(process.cwd())).paths.backend_src;
 
     // ======================================================================
     // Endpoint naming — from each endpoint's OWN YAML (NAME-1, #633)

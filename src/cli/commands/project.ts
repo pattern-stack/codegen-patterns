@@ -41,7 +41,12 @@ import { formatJson, formatStatsJson } from '../../formatters/json-formatter.js'
 import { formatMarkdown } from '../../formatters/markdown-formatter.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
 import type { ProposedConfig } from '../../scanner/config-generator.js';
-import { parseCodegenConfig } from '../../config/project-config.js';
+import {
+	configOrDefaults,
+	DEFAULT_CODEGEN_CONFIG,
+	parseCodegenConfig,
+} from '../../config/project-config.js';
+import { projectLayout } from '../shared/project-layout.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { buildInitPlan, writePlan, type InitPlan } from '../shared/init-scaffold.js';
@@ -84,12 +89,10 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 
 	const fw = ctx.framework?.framework?.detected ?? 'unknown';
 	const orm = ctx.framework?.orm?.detected ?? 'unknown';
-	const arch =
-		ctx.config?.generate.architecture ??
-		ctx.framework?.architecture?.detected ??
-		'clean';
-	const generated =
-		ctx.config?.paths?.generated ?? 'src/generated';
+	const arch = ctx.config
+		? ctx.config.generate.architecture
+		: (ctx.framework?.architecture?.detected ?? DEFAULT_CODEGEN_CONFIG.generate.architecture);
+	const generated = configOrDefaults(ctx.config).paths.generated;
 
 	body.push(`  framework:    ${fw}`);
 	body.push(`  orm:          ${orm}`);
@@ -575,7 +578,7 @@ export class ProjectInspectCommand extends Command {
 
 	private resolveEntitiesDir(ctx: Context): string | null {
 		if (this.dir) return path.resolve(ctx.cwd, this.dir);
-		return ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		return ctx.entitiesDir ?? projectLayout(ctx.cwd, ctx.config).entities;
 	}
 
 	private async runAnalysis(

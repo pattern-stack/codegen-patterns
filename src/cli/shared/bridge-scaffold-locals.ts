@@ -28,7 +28,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
+import { projectLayout } from './project-layout.js';
 
 export interface BridgeScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -77,7 +77,7 @@ export function resolveBridgeScaffoldLocals(
 
 	const bridgeBlock = (config?.bridge ?? {}) as Record<string, unknown>;
 
-	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
+	const subsystemsRoot = projectLayout(cwd, config).subsystems;
 
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 	const generatedKeepPath = path.resolve(

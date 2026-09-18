@@ -9,16 +9,16 @@
  * bun), so it may import only node built-ins and other shipped modules.
  *
  *   1. `codegen.config.yaml` is found walking upward from `cwd`.
- *   2. Candidates, in order: `paths.entities` (resolved against `cwd`), then
- *      `<cwd>/entities`.
- *   3. The first candidate that is an existing directory wins; none → null.
+ *   2. The directory is the resolved `paths.entities` (its one default,
+ *      `entities`, is declared in `PathsConfigSchema` — PATH-0), resolved
+ *      against `cwd`. There is no second candidate.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 export interface EntitiesDirPaths {
-	entities?: unknown;
+	entities: string;
 }
 
 /**
@@ -38,24 +38,13 @@ export function findConfigUpward(start: string): string | null {
 	}
 }
 
-/** The directories tried, in order (absolute). */
-export function entitiesDirCandidates(cwd: string, paths?: EntitiesDirPaths | null): string[] {
-	// `typeof` is load-bearing: callers hold raw `yaml.parse` output, so a blank
-	// `entities:` key is null at runtime however it is typed.
-	const configured = paths?.entities;
-	const candidates: string[] = [];
-	if (typeof configured === 'string' && configured.length > 0) {
-		candidates.push(path.resolve(cwd, configured));
-	}
-	const fallback = path.resolve(cwd, 'entities');
-	if (!candidates.includes(fallback)) candidates.push(fallback);
-	return candidates;
+/** The entities directory (absolute), whether or not it exists. */
+export function entitiesDirPath(cwd: string, paths: EntitiesDirPaths): string {
+	return path.resolve(cwd, paths.entities);
 }
 
-/** The first candidate that exists as a directory, else null. */
-export function resolveEntitiesDir(cwd: string, paths?: EntitiesDirPaths | null): string | null {
-	for (const c of entitiesDirCandidates(cwd, paths)) {
-		if (fs.existsSync(c) && fs.statSync(c).isDirectory()) return c;
-	}
-	return null;
+/** The entities directory when it exists as a directory, else null. */
+export function resolveEntitiesDir(cwd: string, paths: EntitiesDirPaths): string | null {
+	const dir = entitiesDirPath(cwd, paths);
+	return fs.existsSync(dir) && fs.statSync(dir).isDirectory() ? dir : null;
 }
