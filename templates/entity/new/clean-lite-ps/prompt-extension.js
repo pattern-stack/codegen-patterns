@@ -646,9 +646,10 @@ function resolveTargetNaming(target, naming, { required }) {
     const block = entityLookup ? entityLookup(target) : null;
     if (!block) {
       if (!required) return null;
+      const why = entityLookup ? entityLookup.missingEntity(target) : 'no entity lookup was supplied';
       throw new Error(
-        `[codegen] '${entityName}' references '${target}', which has no entity YAML in the ` +
-          `entities directory — its table and module folder are read from that YAML.`,
+        `[codegen] '${entityName}' references '${target}', which has no entity YAML — ${why}. ` +
+          `Its table and module folder are read from that YAML.`,
       );
     }
     targetNaming = entityModuleNaming(block, srcRoot);
@@ -832,9 +833,15 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
             ? naming.entityLookup.byPlural(relatedTable)
             : null;
           if (!owner) {
+            const why = naming.entityLookup?.missingPlural
+              ? naming.entityLookup.missingPlural(relatedTable)
+              : 'no entity lookup was supplied';
             throw new Error(
               `[codegen] '${naming.entityName}' field '${pf.name}' foreign_key: '${field.foreign_key}' — ` +
-                `no entity YAML in the entities directory declares the table '${relatedTable}'.`,
+                `the table '${relatedTable}' is not owned by any entity YAML (${why}). ` +
+                `Either declare that entity (a YAML with \`plural: ${relatedTable}\`), or drop the ` +
+                `column-level \`foreign_key:\` and keep '${pf.name}' a plain column; codegen ` +
+                `cannot import a table it does not generate.`,
             );
           }
           const resolved = resolveTargetNaming(owner.name, naming, { required: true });

@@ -109,7 +109,7 @@ describe('belongs_to', () => {
 				{ name: 'badge', plural: 'badges' },
 				{ relationships: { owner: { type: 'belongs_to', target: 'ghost', foreign_key: 'ghost_id' } } },
 			),
-		).toThrow("'badge' references 'ghost', which has no entity YAML");
+		).toThrow("'badge' references 'ghost', which has no entity YAML — no YAML under <in-memory> declares");
 	});
 
 	it('a self-reference needs no lookup', () => {
@@ -175,7 +175,10 @@ describe('field-level foreign_key: <table>.<column>', () => {
 				{ name: 'badge', plural: 'badges' },
 				{ fields: { holder_id: { type: 'uuid', foreign_key: 'people.id' } } },
 			),
-		).toThrow("no entity YAML in the entities directory declares the table 'people'");
+		).toThrow(
+			"the table 'people' is not owned by any entity YAML (no YAML under <in-memory> declares `plural: people`). " +
+				'Either declare that entity (a YAML with `plural: people`), or drop the column-level `foreign_key:`',
+		);
 	});
 });
 

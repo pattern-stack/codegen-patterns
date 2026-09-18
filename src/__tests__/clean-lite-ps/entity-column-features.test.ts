@@ -365,6 +365,8 @@ describe('field-level foreign_key to a host-owned table (#636)', () => {
     // here, and NAME-0's wins: the alternative is an import of a module codegen
     // never writes. `prompt.js` always passes the list, so real generation still
     // gets the host-owned plain column proved above.
-    expect(() => render(definition)).toThrow(/declares the table 'tenants'/);
+    expect(() => render(definition)).toThrow(
+      /the table 'tenants' is not owned by any entity YAML/,
+    );
   });
 });
