@@ -21,7 +21,7 @@ import {
 	type EmitSemanticResult,
 	type SemanticConfigInput,
 } from '../../emitters/semantic/index.js';
-import { resolveGeneratedDir } from './barrel-generator.js';
+import { projectLayout } from './project-layout.js';
 import type { Context } from './context.js';
 
 export interface SemanticGeneratorOptions {
@@ -53,7 +53,7 @@ export function regenerateSemanticModel(
 	opts: SemanticGeneratorOptions,
 ): SemanticGeneratorResult {
 	const { ctx, dryRun = false } = opts;
-	const generatedDir = opts.generatedDir ?? resolveGeneratedDir(ctx);
+	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
 
 	const loaded = loadSemanticEmitContext(
 		ctx.cwd,

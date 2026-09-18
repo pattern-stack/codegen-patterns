@@ -24,6 +24,7 @@
  */
 
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import { requiredPathArg } from "../../_shared/required-arg.mjs";
 
 function coerceBool(raw) {
   if (raw === true) return true;
@@ -39,7 +40,7 @@ export default {
       multiTenant: coerceBool(args.multiTenant),
       configPath: args.configPath ?? "codegen.config.yaml",
       schemaPath:
-        args.schemaPath ?? "shared/subsystems/integration/integration-audit.schema.ts",
+        requiredPathArg(args, "schemaPath", "subsystem integration"),
       // @generated DO-NOT-EDIT banner — the integration subsystem schema is
       // force-overwritten on every `subsystem install`.
       generatedBanner: renderGeneratedBanner({

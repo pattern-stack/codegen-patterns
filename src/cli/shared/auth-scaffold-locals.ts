@@ -42,10 +42,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-import { resolveSubsystemsRootFromConfig } from './subsystems-path.js';
-
-/** Default when `paths.backend_src` is unset. Matches `project init`. */
-const FALLBACK_BACKEND_SRC = 'src';
+import { projectLayout } from './project-layout.js';
 
 /** Default `redirectUriBase` when the consumer hasn't overridden via config. */
 const DEFAULT_REDIRECT_URI_BASE = 'http://localhost:3000';
@@ -106,13 +103,9 @@ export function resolveAuthScaffoldLocals(
 ): AuthScaffoldLocals {
 	const { cwd, config } = input;
 
-	const backendSrc =
-		typeof config?.paths?.backend_src === 'string' &&
-		config.paths.backend_src.length > 0
-			? config.paths.backend_src
-			: FALLBACK_BACKEND_SRC;
+	const layout = projectLayout(cwd, config);
 
-	const subsystemsRoot = resolveSubsystemsRootFromConfig(cwd, config);
+	const subsystemsRoot = layout.subsystems;
 
 	const authBlock = (config?.auth ?? {}) as Record<string, unknown>;
 	const redirectRaw = authBlock.redirect_uri_base;
@@ -131,7 +124,7 @@ export function resolveAuthScaffoldLocals(
 			'auth',
 			'auth-oauth-state.schema.ts',
 		),
-		appModulePath: path.resolve(cwd, backendSrc, 'app.module.ts'),
+		appModulePath: layout.appModule,
 		envConfigPath: path.resolve(cwd, '.env.config'),
 		redirectUriBase,
 		tokenEncryptionKey,

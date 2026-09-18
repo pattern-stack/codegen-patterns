@@ -16,6 +16,7 @@ import {
 	mergeFrontendDeps,
 } from '../../cli/shared/init-scaffold.js';
 import { loadContext } from '../../cli/shared/context.js';
+import { projectLayout } from '../../cli/shared/project-layout.js';
 import {
 	FRONTEND_DEP_OVERRIDES,
 	FRONTEND_EMITTED_DEPS,
@@ -92,10 +93,12 @@ describe('project NounModule', () => {
 // tsconfig merge
 // ---------------------------------------------------------------------------
 
+const DEFAULT_LAYOUT = projectLayout('/p', null);
+
 describe('mergeTsconfig', () => {
 	test('adds missing aliases to a minimal tsconfig', () => {
 		const raw = JSON.stringify({ compilerOptions: {} });
-		const res = mergeTsconfig(raw);
+		const res = mergeTsconfig(raw, DEFAULT_LAYOUT);
 		expect(res.unchanged).toBe(false);
 		expect(res.added).toContain('@shared/*');
 		expect(res.added).toContain('@modules/*');
@@ -106,8 +109,8 @@ describe('mergeTsconfig', () => {
 
 	test('is idempotent — second merge reports unchanged', () => {
 		const raw = JSON.stringify({ compilerOptions: {} });
-		const once = mergeTsconfig(raw);
-		const twice = mergeTsconfig(once.content);
+		const once = mergeTsconfig(raw, DEFAULT_LAYOUT);
+		const twice = mergeTsconfig(once.content, DEFAULT_LAYOUT);
 		// Decorator flags were just set, so the second pass adds nothing
 		// except the already-set ones that trigger unchanged=true.
 		expect(twice.added).toHaveLength(0);
@@ -120,12 +123,24 @@ describe('mergeTsconfig', () => {
 				paths: { '@shared/*': ['./custom/shared/*'] },
 			},
 		});
-		const res = mergeTsconfig(raw);
+		const res = mergeTsconfig(raw, DEFAULT_LAYOUT);
 		const parsed = JSON.parse(res.content);
 		// User's custom target is preserved
 		expect(parsed.compilerOptions.paths['@shared/*']).toEqual(['./custom/shared/*']);
 		// But missing ones are added
 		expect(parsed.compilerOptions.paths['@modules/*']).toEqual(['./src/modules/*']);
+	});
+
+	test('aliases follow paths.* (PATH-0, #566)', () => {
+		const layout = projectLayout('/p', {
+			paths: { backend_src: 'apps/backend/src', generated: 'apps/backend/codegen' },
+		} as never);
+		const parsed = JSON.parse(mergeTsconfig(JSON.stringify({ compilerOptions: {} }), layout).content);
+		expect(parsed.compilerOptions.paths).toEqual({
+			'@shared/*': ['./apps/backend/src/shared/*'],
+			'@modules/*': ['./apps/backend/src/modules/*'],
+			'@generated/*': ['./apps/backend/codegen/*'],
+		});
 	});
 
 	test('tolerates JSONC comments', () => {
@@ -136,7 +151,7 @@ describe('mergeTsconfig', () => {
 				"strict": true,
 			}
 		}`;
-		const res = mergeTsconfig(raw);
+		const res = mergeTsconfig(raw, DEFAULT_LAYOUT);
 		expect(res.unchanged).toBe(false);
 		expect(res.added).toContain('@shared/*');
 		const parsed = JSON.parse(res.content);
@@ -145,7 +160,7 @@ describe('mergeTsconfig', () => {
 
 	test('adds decorator flags when missing', () => {
 		const raw = JSON.stringify({ compilerOptions: {} });
-		const res = mergeTsconfig(raw);
+		const res = mergeTsconfig(raw, DEFAULT_LAYOUT);
 		const parsed = JSON.parse(res.content);
 		expect(parsed.compilerOptions.experimentalDecorators).toBe(true);
 		expect(parsed.compilerOptions.emitDecoratorMetadata).toBe(true);

@@ -435,8 +435,10 @@ export function buildTypesContent(
 			// bridge EventFlowService' `event.type`/`event.id`) fail to type-check
 			// in a no-events project. DomainEvent has the structural fields the
 			// subsystem code relies on; payloads are untyped (Record).
-			`export type EventOfType<T extends EventTypeName> = DomainEvent;\n` +
-			`export type PayloadOfType<T extends EventTypeName> = DomainEvent['payload'];\n`
+			// `T` is used (a distributive conditional that is DomainEvent for
+			// every T) so strict consumers stay clean (#566).
+			`export type EventOfType<T extends EventTypeName> = T extends EventTypeName ? DomainEvent : never;\n` +
+			`export type PayloadOfType<T extends EventTypeName> = EventOfType<T>['payload'];\n`
 		);
 	}
 

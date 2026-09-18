@@ -23,6 +23,15 @@ import { detectYamlType, loadJunctionFromYaml } from '../../utils/yaml-loader';
 import { junctionIdentity } from './build-model';
 import { sortEntities, type SemanticEmitContext } from './types';
 
+/**
+ * Directory names, not `paths.*` defaults: the caller resolves those from the
+ * schema (PATH-0, #642). These are the standalone-emitter fallback for a
+ * caller that passes no config at all.
+ */
+const ENTITIES_DIRNAME = 'entities';
+const JUNCTIONS_DIRNAME = 'junctions';
+const GENERATED_DIRNAME = 'src/generated';
+
 /** The slice of `codegen.config.yaml` this loader reads. */
 export interface SemanticConfigInput {
 	paths?: {
@@ -72,8 +81,8 @@ export function loadSemanticEmitContext(
 	opts: { entitiesDir?: string; junctionsDir?: string } = {},
 ): LoadSemanticEmitContextResult {
 	const entitiesDir =
-		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? 'entities');
-	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, 'junctions');
+		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? ENTITIES_DIRNAME);
+	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
 
 	const { registry } = loadEntityRegistry(entitiesDir);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
@@ -90,7 +99,7 @@ export function loadSemanticEmitContext(
 
 	const outDir = path.resolve(
 		cwd,
-		config?.paths?.generated ?? 'src/generated',
+		config?.paths?.generated ?? GENERATED_DIRNAME,
 		SEMANTIC_OUT_SUBDIR,
 	);
 

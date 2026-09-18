@@ -40,6 +40,7 @@ import {
 	runtimeRoot,
 } from '../shared/init-scaffold.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
+import { projectLayout } from '../shared/project-layout.js';
 import {
 	detectInstalledSubsystems,
 	type InstalledSubsystem,
@@ -73,10 +74,11 @@ interface FileChange {
  * Classify (and optionally write) every file in VENDORED_RUNTIME_FILES against
  * the consumer tree. Returns the per-file change list (relative paths).
  */
-function syncVendoredRuntime(cwd: string, write: boolean): FileChange[] {
+function syncVendoredRuntime(ctx: Context, write: boolean): FileChange[] {
 	const changes: FileChange[] = [];
+	const { shared } = projectLayout(ctx.cwd, ctx.config);
 	for (const v of VENDORED_RUNTIME_FILES) {
-		const dest = path.join(cwd, v.target);
+		const dest = path.join(shared, v.target);
 		const content = loadRuntimeFile(v.runtime);
 		const existing = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf-8') : null;
 
@@ -89,7 +91,7 @@ function syncVendoredRuntime(cwd: string, write: boolean): FileChange[] {
 			fs.mkdirSync(path.dirname(dest), { recursive: true });
 			fs.writeFileSync(dest, content, 'utf-8');
 		}
-		changes.push({ path: v.target, action });
+		changes.push({ path: rel(ctx.cwd, dest), action });
 	}
 	return changes;
 }
@@ -193,7 +195,7 @@ export class ProjectUpdateCommand extends Command {
 
 		// --- Git gate (classify dry first; never mix update writes with WIP) ---
 		if (!this.dryRun && !this.force) {
-			const vendoredDry = syncVendoredRuntime(ctx.cwd, false);
+			const vendoredDry = syncVendoredRuntime(ctx, false);
 			const vendoredDirtyCandidates = vendoredDry
 				.filter((c) => c.action === 'updated')
 				.map((c) => path.join(ctx.cwd, c.path));
@@ -231,7 +233,7 @@ export class ProjectUpdateCommand extends Command {
 		const write = !this.dryRun;
 
 		// --- 1. shared vendored runtime ---
-		const vendored = syncVendoredRuntime(ctx.cwd, write);
+		const vendored = syncVendoredRuntime(ctx, write);
 
 		// --- 2. installed subsystems ---
 		const subsystemResults: SubsystemSyncResult[] = [];
