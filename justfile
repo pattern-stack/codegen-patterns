@@ -99,6 +99,14 @@ refresh-integration-fixture repo="../integration-patterns":
 test-smoke-relationship:
     bun test/smoke/run-smoke.ts --scenario relationship
 
+# Frontend smoke (FE-0, #620): scaffold with `generate.frontend: true`, install
+# the version-pairing contract from live npm, and typecheck the emitted frontend
+# tree. The tree used to be type-checked nowhere — `test/frontend-golden`
+# compares bytes — so a dependency set that made the emitted collections
+# uncompilable shipped unnoticed. ~12s; in `test-all`.
+test-smoke-frontend:
+    bun test/smoke/run-smoke-frontend.ts
+
 # Subsystems smoke (#6 swe-brain-unblock criterion): events + jobs drizzle
 # install + full-tree tsc with NO subsystem excludes + no static
 # bullmq/ioredis imports in the vendored tree. Locks in the lazy-load +
@@ -194,7 +202,7 @@ typecheck:
 #
 # NOT included, and deliberately so: `just test-smoke-junction-clean`. It is a
 # known-red gate — see CLAUDE.md › Testing › Known-red gates.
-test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-junction test-integration-emit test-smoke-integration
+test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-frontend test-junction test-integration-emit test-smoke-integration
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

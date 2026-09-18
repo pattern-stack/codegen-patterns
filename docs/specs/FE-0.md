@@ -1,7 +1,7 @@
 # FE-0 — The emitted frontend tree must compile in a real install, and a gate that proves it
 
-**Status:** Awaiting strategy review
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #620 · **Epic:** #580 · **Project:** #578
 **Depends on:** REL-1 (#586, branch base only) · **Blocks:** FE-REL (#589)
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter I9) · ADR-038 ·
@@ -170,14 +170,45 @@ store: one `sync: electric` (the `electricCollectionOptions` path, which is wher
 - Bumping `@pattern-stack/frontend-patterns` to `1.0.0` (§Scope 1).
 - `pnpm` / `yarn` override syntax. `overrides` is verified for bun and npm; the notice names the others.
 
-## Acceptance
+## Found during implementation
 
-- `bun run typecheck`, `bun run build`, `bun run test` green.
-- `just test-all` green **including the new `test-smoke-frontend`**.
-- `just test-integration` green.
-- The new smoke is demonstrated to **fail** on the pre-fix ranges — a gate that has never been red has not been shown
-  to gate anything.
-- No filters, no carve-outs, no new `any`; `_consumer-errors.ts` unchanged.
+1. **`project init` cannot turn the frontend on.** `generate.frontend` is written from what the scanner detected,
+   which for a fresh directory is `false`, and there is no `--frontend` flag. The smoke edits the `generate:` block
+   in place through the `yaml` parser — appending a second `generate:` key produces a document whose second mapping
+   silently loses to the first, which is how the first run of this harness ended up generating the `clean` pipeline
+   and emitting no frontend at all. That failure mode is now guarded directly: the smoke asserts the emitter wrote
+   `index.ts`, both collections, `store/resolvers.ts` and `store/index.ts` before it type-checks anything, so a gate
+   that compiles nothing cannot pass.
+2. **The `api`-mode collection has its own mismatch.** The spike measured the `electric` branch
+   (`electricCollectionOptions`). With the copy assertion bypassed, `tsc` reports **two** errors, not one — the
+   `queryCollectionOptions` branch fails too, on `markError` missing between `query-db-collection`'s `@tanstack/db`
+   and `react-db`'s. Both fixture entities are therefore load-bearing; neither is decoration.
+3. **`mergeFrontendDeps` must not add an empty `overrides: {}`.** The first version assigned `parsed.overrides`
+   unconditionally, so a consumer whose package.json was merely missing a *dependency* also gained an empty
+   `overrides` key. Guarded.
+
+## Acceptance — all met
+
+Output from the run made after the last edit.
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck` / `bun run build` | exit 0 / exit 0 |
+| `bun run test` (`just test-unit`) | **3212 pass**, 3 skip, 0 fail |
+| `just test-all` | **exit 0** — now 7 smokes, `smoke-frontend PASS` among them |
+| `just test-integration` (Docker) | **exit 0** — 68 pass, 2 skip, 0 fail |
+
+**The new gate was demonstrated red before it was shown green**, both halves:
+
+- with the pre-fix caret ranges and no overrides, it fails at the copy assertion, printing all four copies
+  (`0.5.33` / `0.6.1` / `0.7.0` / `0.9.2`) and why that matters;
+- with that assertion temporarily bypassed, `tsc` reports the **2** real errors —
+  `apps/frontend/src/generated/collections/{account,contact}.ts` — and `_consumer-errors.ts` keeps both, with their
+  elaboration chains naming the two `node_modules/.../@tanstack/db` copies. So the location scoping does not swallow
+  the very class of error this gate exists for.
+
+No filters, no carve-outs, no new `any`, and **`test/smoke/_consumer-errors.ts` is unchanged** (`git diff` on it is
+empty).
 
 ## Risks
 
@@ -187,3 +218,12 @@ store: one `sync: electric` (the `electricCollectionOptions` path, which is wher
 | Exact pins go stale as TanStack releases | Deliberate. Caret drift across packages that pin `@tanstack/db` exactly is the defect. Moving the set forward is a one-line change with a gate that proves it still compiles — which is the thing that did not exist before |
 | The smoke installs from live npm and can fail because someone else published | True of every smoke here (they `bun add` live ranges too). With exact pins the only live-range packages left are `@pattern-stack/frontend-patterns`, `@electric-sql/client` and `@tanstack/react-query`. Surfacing that here rather than in a consumer is the point |
 | `overrides` is npm/bun syntax | Verified on both. pnpm (`pnpm.overrides`) and yarn (`resolutions`) are named in the notice rather than emitted blind |
+
+## Definition of done (charter §9) — done
+
+1. Gates green, output from the run after the last edit — §Acceptance.
+2. This spec corrected to post-implementation truth; `Status: Implemented`.
+3. `CLAUDE.md` › Testing lists the new smoke, its cost, and why its consumer fixtures are fixtures rather than stubs;
+   the smoke-scoping and CI bullets name it too.
+4. `CHANGELOG.md` 0.31.0 carries the fix.
+5. Epic #580 body + epic log entry.
