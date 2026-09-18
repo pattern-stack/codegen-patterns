@@ -296,8 +296,9 @@ describe('jobs.backend: memory cannot run a standalone worker (JOBS-0, #656)', (
 		);
 	});
 
-	it('memory with worker_mode absent is the default standalone worker — rejected', () => {
-		expect(parse({ backend: 'memory' })).toThrow(/`jobs\.worker_mode: standalone`, the default\)/);
+	it('memory with worker_mode absent is the default embedded worker — parses (JOBS-1, #659)', () => {
+		expect(parse({ backend: 'memory' })).not.toThrow();
+		expect(parseCodegenConfig({ jobs: { backend: 'memory' } }, 'x.yaml').jobs?.worker_mode).toBe('embedded');
 	});
 
 	it('memory + embedded, and every other backend + standalone, parse', () => {
