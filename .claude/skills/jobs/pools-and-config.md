@@ -94,7 +94,7 @@ Field semantics:
 | Key | Who reads it | Notes |
 |---|---|---|
 | `backend` | `JobsDomainModule.forRoot` | `'drizzle'` or `'memory'`. BullMQ is a reserved slot only. |
-| `extensions.<backend>.*` | Backend class during init | Each backend reads only its own key. Unknown keys for the active backend warn, don't error (core/extension principle — swap is non-destructive). |
+| `extensions.<backend>.*` | Backend class during init | Each backend reads only its own key. Every declared key of every backend is accepted whichever backend is active (swap is non-destructive); an undeclared key is a `codegen.config.yaml` error at generate time (`JobsConfigSchema`, CFG-0). |
 | `multi_tenant` | `JobsDomainModule.forRoot` | Threads `JOBS_MULTI_TENANT` token through. Default `false`. When `true`, service methods require `tenantId` (see JOB-8). |
 | `worker_mode` | Informational + scaffold hint | `embedded` means `JobWorkerModule` imported by `AppModule`; `standalone` means run `src/worker.ts` (`bun src/worker.ts`) separately. Switching does not change generated code — both entrypoints are always emitted. |
 | `pools.<name>.queue` | `JobWorker` | Identifier written into `job_run.pool`. Must be unique across pools. |

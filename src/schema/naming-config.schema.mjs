@@ -1,8 +1,9 @@
 /**
  * naming-config.schema.mjs
  *
- * Pure-JS mirror of naming-config.schema.ts for use in hygen (Node.js) context.
- * No Zod, no TypeScript — only plain-object constants and functions.
+ * Pure-JS mirror of naming-config.schema.ts's constants and resolver, for the
+ * hygen-side `.mjs` helpers. Validation is not mirrored: the `naming:` block is
+ * validated once, by the Zod schema, in `src/config/project-config.ts` (CFG-0).
  *
  * Keep in sync with naming-config.schema.ts.
  */
@@ -18,55 +19,6 @@ export const DEFAULT_BACKEND_NAMING = {
   terminology: {
     command: 'command',
     query: 'query',
-  },
-};
-
-// ============================================================================
-// Validation (plain JS — no Zod)
-// ============================================================================
-
-const VALID_FILE_CASES = ['kebab-case', 'camelCase', 'snake_case', 'PascalCase'];
-const VALID_SUFFIX_STYLES = ['dotted', 'suffixed', 'worded'];
-const VALID_ENTITY_INCLUSIONS = ['always', 'never', 'flat-only'];
-const VALID_COMMAND_TERMS = ['command', 'use-case'];
-const VALID_QUERY_TERMS = ['query', 'use-case'];
-
-/**
- * Validate and parse a backend naming config object.
- * Applies defaults for missing fields.
- * Throws on invalid values.
- */
-export const BackendNamingConfigSchema = {
-  parse(data) {
-    const fc = data?.fileCase ?? DEFAULT_BACKEND_NAMING.fileCase;
-    const ss = data?.suffixStyle ?? DEFAULT_BACKEND_NAMING.suffixStyle;
-    const ei = data?.entityInclusion ?? DEFAULT_BACKEND_NAMING.entityInclusion;
-    const tc = data?.terminology?.command ?? DEFAULT_BACKEND_NAMING.terminology.command;
-    const tq = data?.terminology?.query ?? DEFAULT_BACKEND_NAMING.terminology.query;
-
-    if (!VALID_FILE_CASES.includes(fc)) {
-      throw new Error(`Invalid fileCase: ${fc}. Must be one of: ${VALID_FILE_CASES.join(', ')}`);
-    }
-    if (!VALID_SUFFIX_STYLES.includes(ss)) {
-      throw new Error(`Invalid suffixStyle: ${ss}. Must be one of: ${VALID_SUFFIX_STYLES.join(', ')}`);
-    }
-    if (!VALID_ENTITY_INCLUSIONS.includes(ei)) {
-      throw new Error(`Invalid entityInclusion: ${ei}. Must be one of: ${VALID_ENTITY_INCLUSIONS.join(', ')}`);
-    }
-    if (!VALID_COMMAND_TERMS.includes(tc)) {
-      throw new Error(`Invalid terminology.command: ${tc}. Must be one of: ${VALID_COMMAND_TERMS.join(', ')}`);
-    }
-    if (!VALID_QUERY_TERMS.includes(tq)) {
-      throw new Error(`Invalid terminology.query: ${tq}. Must be one of: ${VALID_QUERY_TERMS.join(', ')}`);
-    }
-
-    return {
-      fileCase: fc,
-      suffixStyle: ss,
-      entityInclusion: ei,
-      terminology: { command: tc, query: tq },
-      layers: data?.layers ?? undefined,
-    };
   },
 };
 
@@ -113,7 +65,6 @@ export const FILE_TYPE_SUFFIXES = {
 
 export default {
   DEFAULT_BACKEND_NAMING,
-  BackendNamingConfigSchema,
   resolveLayerNaming,
   FILE_TYPE_SUFFIXES,
 };

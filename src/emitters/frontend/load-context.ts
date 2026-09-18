@@ -113,16 +113,16 @@ function resolveLocation(
  * Map the validated `frontend:` block + architecture + locations into the flat
  * {@link FrontendEmitConfig} the string builders consume.
  *
- * The raw `frontend` value is re-parsed through {@link FrontendConfigSchema} so
+ * The `frontend` value is parsed through {@link FrontendConfigSchema} so
  * defaults are applied uniformly whether the caller passed a fully-loaded config
- * (the CLI path — already defaulted) or a partial object (tests). Re-parsing is
- * idempotent on already-valid data. An explicit `auth.function: null` survives
+ * (the CLI path — already validated and defaulted by `project-config.ts`) or a
+ * partial object (tests). Parsing is idempotent on already-valid data, and an
+ * invalid block throws rather than falling back to the defaults (CFG-0). An explicit `auth.function: null` survives
  * (Zod `.default()` only fires on `undefined`), preserving the "present-but-null
  * disables" semantics; an absent block defaults to `'getAuthorizationHeader'`.
  */
 export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmitConfig {
-	const parsed = FrontendConfigSchema.safeParse(config.frontend ?? {});
-	const fe = parsed.success ? parsed.data : FrontendConfigSchema.parse({});
+	const fe = FrontendConfigSchema.parse(config.frontend ?? {});
 
 	const dbEntities = resolveLocation(config, 'dbEntities', DEFAULT_DB_ENTITIES);
 	const collectionsAuth = resolveLocation(

@@ -61,56 +61,14 @@ const DEFAULT_LOCATIONS = {
     import: '@repo/db/context-engine',
   },
 
-  /** tRPC client */
-  trpcClient: {
-    path: 'packages/trpc/src/client',
-    import: '@repo/trpc/client',
-  },
-
   // ===========================================================================
   // Frontend locations
   // ===========================================================================
-
-  /** Frontend source root */
-  frontendSrc: {
-    path: 'apps/frontend/src',
-    import: '@',
-  },
-
-  /** Electric SQL collections (directory containing collections.ts) */
-  frontendCollections: {
-    path: 'apps/frontend/src/lib',
-    import: '@/lib',
-  },
-
-  /** Frontend store (TanStack DB) */
-  frontendStore: {
-    path: 'apps/frontend/src/lib/store',
-    import: '@/lib/store',
-  },
-
-  /** Per-entity store hooks */
-  frontendStoreEntities: {
-    path: 'apps/frontend/src/lib/store/entities',
-    import: '@/lib/store/entities',
-  },
-
-  /** Unified entity definitions */
-  frontendEntities: {
-    path: 'apps/frontend/src/lib/entities',
-    import: '@/lib/entities',
-  },
 
   /** Generated entity files (metadata, collections, types) */
   frontendGenerated: {
     path: 'apps/frontend/src/generated',
     import: '@/generated',
-  },
-
-  /** Entity metadata generated files */
-  frontendEntityMetadata: {
-    path: 'apps/frontend/src/generated/entity-metadata',
-    import: '@/generated/entity-metadata',
   },
 
   /** Auth helpers (for collections) */
@@ -122,12 +80,6 @@ const DEFAULT_LOCATIONS = {
   // ===========================================================================
   // Backend locations
   // ===========================================================================
-
-  /** Backend source root */
-  backendSrc: {
-    path: backendSrcPath,
-    import: '@backend',
-  },
 
   /** Domain layer */
   backendDomain: {
@@ -219,26 +171,17 @@ const DEFAULT_LOCATIONS = {
 // ============================================================================
 
 /**
- * Merge default locations with project-specific overrides
+ * Merge default locations with project-specific overrides (shallow, per
+ * `path` / `import` half). The override names are closed: `LocationsConfigSchema`
+ * (`codegen-config.schema.ts`) accepts exactly the keys of `DEFAULT_LOCATIONS`,
+ * so an unknown name has already failed the parse (CFG-0).
  */
 function buildLocations(projectConfig) {
-  const overrides = projectConfig?.locations || {};
+  const overrides = projectConfig?.locations ?? {};
   const locations = { ...DEFAULT_LOCATIONS };
-
-  // Deep merge each location
   for (const [key, override] of Object.entries(overrides)) {
-    if (locations[key]) {
-      // Merge with existing defaults
-      locations[key] = {
-        ...locations[key],
-        ...override,
-      };
-    } else {
-      // New location defined in config
-      locations[key] = override;
-    }
+    if (override) locations[key] = { ...locations[key], ...override };
   }
-
   return locations;
 }
 

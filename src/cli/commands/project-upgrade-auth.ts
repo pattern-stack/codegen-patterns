@@ -37,6 +37,7 @@ import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { resolveRuntimeMode, subsystemsImport } from '../shared/runtime-import.js';
+import { loadCodegenConfig } from '../../config/project-config.js';
 import {
 	ensureImport,
 	ensureMainRequesterContextBlock,
@@ -110,18 +111,10 @@ function resolveProjectRoot(startDir: string): string {
 }
 
 function authBarrelImport(projectRoot: string): string {
-	let raw: unknown = undefined;
-	try {
-		const cfgPath = path.join(projectRoot, 'codegen.config.yaml');
-		if (fs.existsSync(cfgPath)) {
-			// Lazy parse just for the runtime mode — avoids a hard yaml dep at module load.
-			const text = fs.readFileSync(cfgPath, 'utf-8');
-			raw = /^\s*runtime:\s*vendored\s*$/m.test(text) ? { runtime: 'vendored' } : { runtime: 'package' };
-		}
-	} catch {
-		raw = undefined;
-	}
-	const mode = resolveRuntimeMode(raw as { runtime?: unknown });
+	// The parsed config (CFG-0) — an invalid file throws `CodegenConfigError`.
+	const cfgPath = path.join(projectRoot, 'codegen.config.yaml');
+	const config = fs.existsSync(cfgPath) ? loadCodegenConfig(cfgPath) : null;
+	const mode = resolveRuntimeMode(config);
 	return mode === 'vendored' ? './shared/subsystems/auth' : subsystemsImport(mode, 'auth');
 }
 

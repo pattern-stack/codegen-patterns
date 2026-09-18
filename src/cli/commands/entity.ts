@@ -772,7 +772,7 @@ export class EntityNewCommand extends Command {
 			if (!isJsonMode()) {
 				printInfo(`generating ${v.name}`);
 			}
-			const res = invokeEntityNew(v.file, ctx.cwd);
+			const res = invokeEntityNew(v.file, ctx.cwd, ctx.configPath);
 			if (res.ok) {
 				succeeded.push(v.name);
 				if (!isJsonMode()) printSuccess(`${v.name}`);
@@ -958,16 +958,10 @@ export class EntityNewCommand extends Command {
 		// for a given entity set (safe under re-run / baseline wipe-and-regenerate).
 		let frontendResult: { written: string[]; outDir: string } | null = null;
 		let frontendFailed = false;
-		const frontendEnabled =
-			(ctx.config as { generate?: { frontend?: unknown } } | null | undefined)
-				?.generate?.frontend === true;
-		if (frontendEnabled) {
+		const frontendConfig = ctx.config?.generate.frontend === true ? ctx.config : null;
+		if (frontendConfig) {
 			try {
-				const loaded = loadFrontendEmitContext(
-					ctx.cwd,
-					ctx.config as Parameters<typeof loadFrontendEmitContext>[1],
-					{ entitiesDir },
-				);
+				const loaded = loadFrontendEmitContext(ctx.cwd, frontendConfig, { entitiesDir });
 				if (loaded.skip !== undefined) {
 					if (!isJsonMode()) {
 						printInfo(`frontend emission skipped — ${loaded.skip}`);
