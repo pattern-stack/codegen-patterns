@@ -40,24 +40,18 @@ const kebabCase = (s) => s.replace(/_/g, "-");
 // ============================================================================
 
 /**
- * Find and load codegen.config.yaml from cwd upward. Returns null when absent
- * (safe fallback: assume clean-lite-ps layout with srcRoot = 'src').
+ * Load `codegen.config.yaml` at cwd — the one config filename every loader
+ * reads (`loadRuntimeMode` included). Returns null when absent (safe fallback:
+ * assume clean-lite-ps layout with srcRoot = 'src').
  */
 function loadCodegenConfig(cwd) {
-  const candidates = [
-    path.join(cwd, "codegen.config.yaml"),
-    path.join(cwd, "codegen.config.yml"),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      try {
-        return yaml.parse(fs.readFileSync(p, "utf-8"));
-      } catch {
-        // Fall through
-      }
-    }
+  const p = path.join(cwd, "codegen.config.yaml");
+  if (!fs.existsSync(p)) return null;
+  try {
+    return yaml.parse(fs.readFileSync(p, "utf-8"));
+  } catch {
+    return null;
   }
-  return null;
 }
 
 function resolveArchitecture(config) {
