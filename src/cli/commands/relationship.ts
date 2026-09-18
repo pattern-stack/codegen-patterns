@@ -26,6 +26,7 @@ import {
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
+import { regenerateRelationsManifest } from '../shared/relations-generator.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
@@ -276,6 +277,32 @@ export class RelationshipNewCommand extends Command {
 			}
 		}
 
+		// Relations manifest (REL-1, ADR-044). Whole-set, like the barrels above.
+		// NOT warn-but-don't-fail: the emitted `database.module.ts` imports the
+		// manifest, so continuing past a failure ships a project that does not
+		// compile (docs/specs/REL-1.md §3).
+		let relationsResult: ReturnType<typeof regenerateRelationsManifest> | null = null;
+		let relationsFailed = false;
+		try {
+			relationsResult = regenerateRelationsManifest({
+				ctx,
+				entitiesDir,
+				generatedDir,
+			});
+			if (!isJsonMode()) {
+				for (const warning of relationsResult.warnings) {
+					printWarning(`relations: ${warning}`);
+				}
+				printInfo(
+					`relations manifest regenerated → ${path.relative(ctx.cwd, relationsResult.file)}`,
+				);
+			}
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			relationsFailed = true;
+			printError(`relations manifest generation failed — ${msg}`);
+		}
+
 		if (isJsonMode()) {
 			printJson({
 				command: 'relationship new',
@@ -310,7 +337,7 @@ export class RelationshipNewCommand extends Command {
 			}
 		}
 
-		return failed.length === 0 ? 0 : 1;
+		return failed.length === 0 && !relationsFailed ? 0 : 1;
 	}
 }
 

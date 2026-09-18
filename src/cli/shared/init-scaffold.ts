@@ -17,6 +17,7 @@ import type { Context } from './context.js';
 import { scanProject, generateConfig } from '../../scanner/index.js';
 import { runtimeImport, subsystemsImport, type RuntimeMode } from './runtime-import.js';
 import { FRONTEND_EMITTED_DEPS } from '../../emitters/frontend/deps.js';
+import { emptyRelationsManifest } from '../../emitters/relations/index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -220,6 +221,7 @@ function databaseModuleContent(mode: RuntimeMode): string {
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { DRIZZLE } from '${drizzleTokenImport}';
+import { relations } from '../../generated/relations';
 
 export { DRIZZLE };
 
@@ -227,10 +229,13 @@ export { DRIZZLE };
  * The Drizzle client type this project injects under DRIZZLE.
  *
  * Drizzle 1.0's generic slot on NodePgDatabase is the relations manifest
- * (\`defineRelations()\`), not the table schema. No manifest is emitted yet,
- * so the default (\`EmptyRelations\`) is the accurate type.
+ * (\`defineRelations()\`), not the table schema — so this type carries the
+ * project's own relation graph, and \`db.query.<table>.findMany({ with: … })\`
+ * is typed end to end. Codegen owns \`src/generated/relations.ts\`; it is
+ * regenerated from the entity YAML on every \`codegen entity new\` (REL-1,
+ * ADR-044).
  */
-export type DrizzleDB = NodePgDatabase;
+export type DrizzleDB = NodePgDatabase<typeof relations>;
 
 /**
  * DatabaseModule — provides the DRIZZLE injection token globally.
@@ -246,8 +251,9 @@ export type DrizzleDB = NodePgDatabase;
           connectionString: process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev',
         });
         // Drizzle 1.0 takes a config object; \`schema\` was removed from it.
-        // The relations manifest belongs here as \`relations\` once emitted.
-        return drizzle({ client: pool });
+        // \`relations\` is the generated manifest — what makes RQBv2's nested
+        // \`with:\` includes resolvable (REL-1, ADR-044).
+        return drizzle({ client: pool, relations });
       },
     },
   ],
@@ -1010,6 +1016,19 @@ export async function buildInitPlan(
 			cwd,
 			path.join(cwd, 'src', 'generated', 'schema.ts'),
 			emptySchemaBarrel(),
+			{ force }
+		)
+	);
+	// The relations manifest (REL-1). Emitted here too, and not only by the
+	// `entity new` post-step, because `database.module.ts` imports it
+	// unconditionally — a freshly initialized project with zero entities must
+	// still compile. The content comes from the emitter's own builder, so there
+	// is no second hand-written shape to drift (charter I1/I2).
+	entries.push(
+		fileEntry(
+			cwd,
+			path.join(cwd, 'src', 'generated', 'relations.ts'),
+			emptyRelationsManifest(),
 			{ force }
 		)
 	);

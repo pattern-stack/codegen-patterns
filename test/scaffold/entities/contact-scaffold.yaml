@@ -4,11 +4,12 @@
 # Differences from contact-v2.yaml:
 #   - pattern: Base (instead of CrmEntity) — CrmEntityRepository does not exist yet
 #   - No external_id_tracking behavior — not yet supported in templates
-#   - No FK relationships to other entities — avoids circular import issues in scaffold
 #   - No queries/sync/events blocks — those are v2-only schema additions
 #
-# This is intentionally minimal. The scaffold exists only to prove the codegen
-# pipeline compiles and serves HTTP traffic, not to exercise every feature.
+# REL-1 (#586) added `account_id` + `belongs_to account` so the suite can prove
+# the emitted `defineRelations()` manifest round-trips against real Postgres.
+# The column is NULLABLE on purpose: every pre-existing contact fixture and test
+# creates contacts without an account, and must keep working.
 
 entity:
   name: contact
@@ -17,6 +18,12 @@ entity:
   pattern: Base
 
 fields:
+  account_id:
+    type: uuid
+    required: false
+    index: true
+    foreign_key: accounts.id
+
   first_name:
     type: string
     required: true
@@ -45,3 +52,9 @@ fields:
 behaviors:
   - timestamps
   - soft_delete
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id

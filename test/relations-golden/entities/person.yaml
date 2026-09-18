@@ -1,0 +1,34 @@
+# Golden relations fixture — explicit-plural entity (`persons`, which
+# `pluralize('person')` would render as "people"). Any edge pointing here must
+# name `persons`.
+#
+# Its own belongs_to declares `nullable: true` on the RELATIONSHIP while the
+# underlying field says `required: true` — locking the precedence: an explicit
+# relationship `nullable:` wins over the field declaration.
+entity:
+  name: person
+  plural: persons
+  table: persons
+  folder_structure: nested
+
+fields:
+  contact_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: contacts.id
+
+  full_name:
+    type: string
+    required: true
+    max_length: 200
+
+behaviors:
+  - timestamps
+
+relationships:
+  contact:
+    type: belongs_to
+    target: contact
+    foreign_key: contact_id
+    nullable: true

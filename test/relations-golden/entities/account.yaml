@@ -1,0 +1,39 @@
+# Golden relations fixture — account.
+#
+# Exercises: a SELF-REFERENTIAL belongs_to (parent_account_id → parentAccount),
+# two has_many inverses whose `foreign_key` lives on the TARGET table, and a
+# nullable FK (`required: false`) ⇒ `optional: true` on the emitted one().
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  parent_account_id:
+    type: uuid
+    required: false
+    index: true
+    foreign_key: accounts.id
+
+behaviors:
+  - timestamps
+
+relationships:
+  parent_account:
+    type: belongs_to
+    target: account
+    foreign_key: parent_account_id
+  contacts:
+    type: has_many
+    target: contact
+    foreign_key: account_id
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: account_id

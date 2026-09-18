@@ -1,7 +1,7 @@
 # REL-1 — `defineRelations()` manifest: the v2 relation graph, emitted from YAML
 
-**Status:** Planned
-**Date:** 2026-09-17
+**Status:** Implemented
+**Date:** 2026-09-17 · **Implemented:** 2026-09-17
 **Issue:** #586 · **Epic:** #580 · **Project:** #578
 **Depends on:** DRZ-2 (#584) · **Blocks:** REL-2 (typed includes), REL-3 (services + navigator), FE-REL
 **Governed by:** `.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md` (charter) · PLAN §5A.3, §4.5 · ADR-044
@@ -71,8 +71,12 @@ src/emitters/relations/
   build-graph.ts   YAML → RelationEdge[] (the only place relationship semantics live)
   emit-manifest.ts RelationEdge[] → the relations.ts source string
   load-context.ts  loadRelationsEmitContext(cwd, config, { entitiesDir, junctionsDir })
-  index.ts         emitRelationsManifest(ctx, outDir) → string[]; re-exports
+  index.ts         emitRelationsManifest(ctx, outDir) → EmitRelationsResult; re-exports
 ```
+
+plus one CLI-side wrapper, `src/cli/shared/relations-generator.ts`
+(`regenerateRelationsManifest({ ctx, entitiesDir, junctionsDir, generatedDir, dryRun })`), so the three commands share
+one call site instead of triplicating the loader wiring.
 
 **Context** (what the builders consume, constructible in tests without fs):
 
@@ -125,9 +129,10 @@ Per-relationship rules — the whole of the semantics:
 | junction `between: [A, B]` | on `A`: `r.many.<B.plural>({ from: r.<A.plural>.id.through(r.<J>.<camel(A)>Id), to: r.<B.plural>.id.through(r.<J>.<camel(B)>Id) })`, and the mirror on `B`; on the junction table itself, `r.one.<A.plural>` / `r.one.<B.plural>` from its two FK columns |
 
 - **`optional`** (belongs_to only; the other three are fixed): explicit relationship `nullable:` wins → else the FK
-  column's own `fields:` declaration (`required: true` ⇒ `optional: false`; `nullable:` as declared) → else `true`.
-  This is `processBelongsTo`'s precedence (`prompt-extension.js:468-482`), applied to the same YAML. It affects the
-  include's result type only; getting it wrong is a type inaccuracy, not a wrong row.
+  column's own `fields:` declaration (`nullable: true` ⇒ optional; `required: true` ⇒ not optional) → else `true`.
+  This targets `processBelongsTo`'s precedence (`prompt-extension.js:468-482`) on the same YAML, with **one
+  divergence forced by the schema** — see Found #1. It affects the include's result type only; getting it wrong is a
+  type inaccuracy, not a wrong row.
 - **Relation keys are the YAML relationship names**, camelCased (`parent_account` → `parentAccount`). This replaces
   the v1 derivation, which used the *target entity name* for non-self relations and ignored the author's key
   (`prompt-extension.js:492-505`). I1: the author named the edge; the manifest uses that name. I7: the old derivation
@@ -221,7 +226,7 @@ Written into the emitter as comments and into this spec, so the next agent does 
 - Repairing or gating the `clean` pipeline (#602). The manifest is emitted for both architectures because it derives
   from YAML, not from a pipeline; only `clean-lite-ps` is gated (I11).
 - Making `database.module.ts` / `app.module.ts` honor a `paths.generated` override. Pre-existing, unchanged by this
-  PR, and a fix belongs with whoever changes the init scaffold's layout contract. Filed as a follow-up (§Follow-ups).
+  PR, and a fix belongs with whoever changes the init scaffold's layout contract. Filed as #612.
 - A `project update` path that re-wires an already-initialized consumer's `database.module.ts`. I7: no migration shims.
 
 ## Gates
@@ -239,52 +244,123 @@ Written into the emitter as comments and into this spec, so the next agent does 
 
 ### The round-trip gate, concretely
 
-`test/scaffold/` today generates exactly one entity (`contact-scaffold.yaml`, no relationships) from a single
-`entity new <file>` invocation. REL-1 extends it:
+`test/scaffold/` generated exactly one entity (`contact-scaffold.yaml`, no relationships) from a single
+`entity new <file>` invocation. As built:
 
-- entity YAMLs move under `test/scaffold/entities/` and gain `account`, `opportunity`, and a `belongs_to account` on
-  `contact` (nullable, so every existing contact fixture and test keeps working); `test/scaffold/junctions/` gains
-  `opportunity_contact`;
-- `run-integration.ts` runs `entity new --all` + `junction new --all` against those dirs instead of the single-file
-  invocation, and its teardown already removes `modules/` + `generated/`;
-- `test/scaffold/shared/database/database.module.ts` and `tests/setup.ts` pass `relations` (they are hand-written
-  harness fixtures, deliberately mirroring what the scaffold emits);
-- `test/scaffold/tests/relations.test.ts` seeds an account → contact/opportunity → junction row graph and asserts the
-  nested result shape, including that a self-referencing parent account resolves and that the m2m hop returns the
-  joined rows. It runs under the existing `SCAFFOLD_INTEGRATION=1` skip-guard.
+- entity YAMLs moved under `test/scaffold/entities/` and gained `account` (self-referential `parent_account` plus two
+  has_many) and `opportunity`; `contact` gained a **nullable** `account_id` + `belongs_to account`, so every existing
+  contact fixture and test keeps working. `test/scaffold/junctions/opportunity_contact.yaml` is the m2m;
+- `run-integration.ts` sets `paths.entities_dir: test/scaffold/entities`, runs `entity new --all --force`, stages the
+  junction fixture into `<repo>/junctions` (the CLI reads junctions from that fixed path — there is no
+  `paths.junctions`), runs `junction new --all --force`, and its teardown removes `junctions/` alongside `modules/`,
+  `generated/` and `shared/`;
+- `test/scaffold/schema.ts` re-exports each generated entity file **wholesale** (Found #5);
+- `test/scaffold/shared/database/database.module.ts` and `tests/setup.ts` pass `relations` and parameterise their
+  handle — hand-written harness fixtures, deliberately mirroring what the scaffold emits;
+- `test/scaffold/tests/relations.test.ts` seeds parent-account → child-account → (contact, opportunity) → junction row
+  and runs four traversals: the full graph from one root, the m2m hop in the reverse direction, `optional: true`
+  yielding `null` (and an empty to-many yielding `[]`), and a depth-4 path
+  (`has_many → through → one → self-ref one`). It runs under the existing `SCAFFOLD_INTEGRATION=1` skip-guard.
 
-## Acceptance
+## Found during implementation
 
-- `bun run typecheck && bun run build && bun run test` green.
-- `just test-all` green (includes every smoke above, the golden suite, and the re-pointed DRZ-1 guard).
-- `just test-integration` green, with the new round-trip test asserting rows — not `toBeDefined`.
-- `just test-smoke` run after the last `runtime/**` edit (I9: repo typecheck does not validate `runtime/base-classes`
-  or `runtime/types` under the consumer tsconfig).
-- No new `any`, no `as unknown as`, no filtered error class, no directory carve-out. Net `any` count in
-  `runtime/types/drizzle.ts` goes 1 → 0.
-- `just test-smoke-junction-clean` stays red at its recorded number (#602) — not repaired, not filtered.
+### Found #1 — `nullable` cannot be recovered after parsing, so `optional` keys off `required`
 
-## Risks
+The design said the `optional` precedence "mirrors `processBelongsTo`". It cannot, exactly.
+`FieldDefinitionSchema` defaults **both** `required` and `nullable` to `false`
+(`entity-definition.schema.ts:172-173`), so a zod-parsed field that declared neither is indistinguishable from one
+that declared `nullable: false`. The hygen template sees the raw YAML and treats "declared neither" as nullable; the
+first draft of `belongsToOptional` read `field.nullable` and duly emitted `optional: false` for
+`parent_account_id: { required: false }` — a column that is in fact nullable. The golden snapshot caught it on its
+first generation.
 
-| Risk | Signal | Response |
-|---|---|---|
-| `DrizzleClient` generic breaks a consumer-tsconfig compile that `bun run typecheck` does not see | a smoke fails on `runtime/**` | R8 measured the repo side only; if the consumer side objects, keep the `any` and put the generic on a new alias rather than widening. Do not filter the error. |
-| Junction parent-table naming diverges from the registry | a junction fixture whose parent entity declares an irregular `plural` fails to compile | Pre-existing: `templates/junction/new/prompt.js:253` derives parent tables with `pluralize(entity)` instead of the registry. The manifest uses the registry (I1). If they disagree, the *junction template* is wrong — filed as a follow-up, not worked around here. |
-| A consumer's relation key collides with a column | `defineRelations` throws at boot | Drizzle's own error names both; the smoke boot verifier catches it. §3 explains why the emitter does not re-derive columns to pre-empt it. |
-| rc.4 → GA changes the builder | a gate fails after a pin move | The R1–R9 table is the REL-1 row of DRZ-2's A1–A10 discipline: re-verify it on every RC move. |
+What shipped keys off `required` (with an explicit `nullable: true` still winning), which matches the template for
+every declaration except `{ required: false, nullable: false }` — there the column is NOT NULL while the include's
+type stays `T | null`. Over-permissive, never a wrong row. The underlying default is a pre-existing inconsistency
+between the generator's TS and hygen halves (`ParsedField` collapses the same way), filed as #613 rather than
+changed under this PR.
 
-## Follow-ups to file
+### Found #2 — the DRZ-1 guard's file-wide rule had to be narrowed, not just widened
 
-1. `templates/junction/new/prompt.js` derives parent table names with `pluralize(entity)` rather than the entity's
-   declared `plural` — breaks any junction whose endpoint declares an irregular plural. (Pre-existing; surfaced while
-   verifying REL-1's table identifiers.)
-2. Emitted `app.module.ts` / `database.module.ts` hard-code `src/generated` and ignore `paths.generated`.
+The guard banned **any** import list containing `relations`. The v2 wiring legitimately carries
+`import { relations } from '../../generated/relations'`, so re-pointing meant naming the module the v1 symbol came
+from: the rule is now `import { … relations … } from 'drizzle-orm…'`. Nothing else was loosened, and the scan widened
+from `templates/` alone to the relations emitter, the init scaffold, the CLI wrapper and the golden snapshot — the
+surface that actually emits relation code now. The guard immediately earned it by failing on a doc comment in
+`relations-generator.ts` that spelled the banned call literally; the comment was reworded, the pattern was not.
+
+### Found #3 — a junction's `expose_on_parent` had to be exercised, not just asserted about
+
+The spec claimed `expose_on_parent` governs the parent service's fan-out, not the graph. Running the integration
+harness proved the claim load-bearing: with fan-out on, the generated `ContactService` injects
+`OpportunityContactService` and the hand-written `ScaffoldContactsModule` could not resolve it. The junction fixture
+turns fan-out **off**, and the manifest still carries both `.through()` edges — which the round-trip test then walks.
+A unit test pins the same property directly.
+
+### Found #4 — `belongs_to` on `contact` pulled a sibling repository into the harness module
+
+Adding `contact belongs_to account` made the generated `ContactService` inject `AccountRepository` for its CGP-358b
+`account(contactId)` composition method. `ScaffoldContactsModule` now provides it, with a comment pointing at REL-3 —
+that provider goes away with the composition it exists for. **Service composition itself was not touched** (out of
+scope, ADR-044 §2).
+
+### Found #5 — the scaffold schema barrel must re-export entity files wholesale
+
+Naming `opportunityContacts` alone made `drizzle-kit push` abort with `type "opportunity_contact_role" does not
+exist`: an entity file also declares the pgEnums its columns reference, and kit only creates enum types it can see.
+The barrel now `export *`s each generated entity file, for the same reason its subsystem schemas already did.
+
+### Found #6 — no new `paths.*` key was needed
+
+The design allowed for one. `paths.generated` already names the directory codegen owns for cross-entity barrels
+(`modules.ts`, `schema.ts`), and the manifest is a third one. Nothing was added to `PathsConfigSchema`.
+
+## Acceptance — all met
+
+Output from the run made after the last code edit.
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck` | exit 0 |
+| `bun run build` | exit 0 |
+| `bun run test` / `just test-unit` | **3204 pass**, 3 skip, 0 fail |
+| `just test-all` | exit 0 — typecheck + unit + baseline + `test-smoke` + `-subsystems` (vendored + package) + `-relationship` + `-junction` + `-junction-cross-domain` + `test-junction` + `test-integration-emit` + `test-smoke-integration`, every one PASS |
+| `just test-integration` (Docker) | **68 pass**, 2 skip, 0 fail — including the 4 new round-trip tests |
+| `just test-smoke` (the `runtime/**` gate, I9) | PASS, inside `test-all` |
+
+- The round-trip gate was **mutation-checked**: deleting the two `.through()` calls from the generated manifest turns
+  3 of its 4 tests red. It asserts rows and ids, never `toBeDefined`.
+- No new `any`, no `as unknown as`, no filtered error class, no directory carve-out. `runtime/types/drizzle.ts` goes
+  from one `any` (plus its eslint-disable) to zero.
+- `just test-smoke-junction-clean` was not run, not repaired and not filtered — it stays the documented known-red gate
+  (#602).
+
+## Risks — outcome
+
+| Risk | Outcome |
+|---|---|
+| `DrizzleClient` generic breaks a consumer-tsconfig compile that `bun run typecheck` does not see | **Did not happen.** All four smokes compile the generated project against the changed runtime; the fallback (a separate alias) was not needed. |
+| Junction parent-table naming diverges from the registry | **Open, pre-existing, filed** (#611). No fixture in the repo declares an irregular plural on a junction endpoint, so nothing is red today; the manifest uses the registry either way (I1). |
+| A consumer's relation key collides with a column | **Open by design.** Drizzle's own `processRelations` error names both, and the junction smoke's AppModule boot gate executes `defineRelations()`, so it surfaces there. §3 explains why the emitter does not re-derive columns to pre-empt it. |
+| rc.4 → GA changes the builder | **Open.** The R1–R9 table is the REL-1 row of DRZ-2's A1–A10 discipline: re-verify on every RC move. |
+
+## Follow-ups filed
+
+1. **#611** — `templates/junction/new/prompt.js:253-265` derives parent table names with `pluralize(entity)` rather than the
+   entity's declared `plural` — breaks any junction whose endpoint declares an irregular plural. (Pre-existing;
+   surfaced while verifying REL-1's table identifiers, which resolve through the registry instead.)
+2. **#612** — emitted `app.module.ts` / `database.module.ts` hard-code `src/generated` and ignore `paths.generated`.
    (Pre-existing; REL-1 adds a third import that inherits it.)
+3. **#613** — `FieldDefinitionSchema` defaults `nullable` to `false`, so the TS half of the generator cannot tell "undeclared"
+   from "declared NOT NULL" while the hygen half can — see Found #1. Affects `ParsedField` consumers too, not just
+   this emitter.
 
-## Definition of done (charter §9)
+## Definition of done (charter §9) — done
 
-1. Gates green, output from the run after the last edit.
+1. Gates green, output from the run after the last edit — §Acceptance.
 2. This spec corrected to post-implementation truth; `Status: Implemented`.
-3. ADR-044 carries a dated revision note recording the `alias` finding (R2) and the `roles:` seam.
-4. Epic #580 body row updated (state / spec / PR / "what downstream must know") and an epic log entry posted.
-5. PLAN §5A.3 corrected if anything here changes what REL-2 / REL-3 must do — in this PR, not later.
+3. ADR-044 carries a dated revision note recording the `alias` finding (R2) and the `roles:` seam; its `Related:` line
+   and REL-2 follow-up were corrected with it.
+4. `PLAN.md` §5A.3 rewritten as what was built plus what changes REL-0 / REL-2 / REL-3 / CAP-2.
+5. `CHANGELOG.md` 0.31.0 entry (the release note now says the v1 const is *replaced*, not merely removed).
+6. Epic #580 body row + epic log entry.

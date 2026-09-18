@@ -334,6 +334,71 @@ function assertBarrelIncludes(generatedSrc: string, pluralName: string, _archite
   log(`barrel assertions passed: ${pluralName}`);
 }
 
+/**
+ * REL-1 (#586) — the junction's four derived edges in the v2 manifest.
+ *
+ * A junction contributes more than the `.through()` hop: each parent also gets
+ * a row-level edge to the junction table (where role / temporal / provenance
+ * columns live), and the junction table gets its own two `belongs_to` edges.
+ * `tsc` above proves the manifest compiles and the boot gate below proves
+ * `defineRelations()` accepts it at runtime; these pin the SHAPE so a
+ * regression names itself.
+ */
+function assertJunctionRelations(
+  generatedSrc: string,
+  junctionName: string,
+  leftEnt: string,
+  rightEnt: string,
+): void {
+  const manifestPath = path.join(generatedSrc, 'src/generated/relations.ts');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`relations manifest not found: ${manifestPath}`);
+  }
+  const manifest = fs.readFileSync(manifestPath, 'utf8');
+
+  const leftPlural = pluralize(leftEnt);
+  const rightPlural = pluralize(rightEnt);
+  const junctionVar = camelCase(pluralize(junctionName));
+  const leftFk = camelCase(`${leftEnt}_id`);
+  const rightFk = camelCase(`${rightEnt}_id`);
+
+  // The many-to-many hop, on BOTH parents.
+  assertContains(
+    manifest,
+    new RegExp(
+      `${rightPlural}: r\\.many\\.${rightPlural}\\(\\{ from: r\\.${leftPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${leftFk}\\), to: r\\.${rightPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${rightFk}\\) \\}\\)`,
+    ),
+    `relations manifest: ${leftPlural}.${rightPlural} through ${junctionVar}`,
+  );
+  assertContains(
+    manifest,
+    new RegExp(
+      `${leftPlural}: r\\.many\\.${leftPlural}\\(\\{ from: r\\.${rightPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${rightFk}\\), to: r\\.${leftPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${leftFk}\\) \\}\\)`,
+    ),
+    `relations manifest: ${rightPlural}.${leftPlural} through ${junctionVar}`,
+  );
+
+  // The row-level edge from each parent to the junction table itself.
+  assertContains(
+    manifest,
+    new RegExp(
+      `${junctionVar}: r\\.many\\.${junctionVar}\\(\\{ from: r\\.${leftPlural}\\.id, to: r\\.${junctionVar}\\.${leftFk} \\}\\)`,
+    ),
+    `relations manifest: ${leftPlural}.${junctionVar} rows`,
+  );
+
+  // The junction's own belongs_to edges — NOT NULL FK columns, so not optional.
+  assertContains(
+    manifest,
+    new RegExp(
+      `${leftEnt}: r\\.one\\.${leftPlural}\\(\\{ from: r\\.${junctionVar}\\.${leftFk}, to: r\\.${leftPlural}\\.id, optional: false \\}\\)`,
+    ),
+    `relations manifest: ${junctionVar}.${leftEnt}`,
+  );
+
+  log(`relations manifest assertions passed: ${junctionVar}`);
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -372,6 +437,8 @@ async function main(): Promise<number> {
 
       assertJunctionEmission(result.projectDir, scenarioArg, architectureArg);
       assertBarrelIncludes(result.projectDir, pluralName, architectureArg);
+      const { leftEnt, rightEnt } = SCENARIO_META[scenarioArg];
+      assertJunctionRelations(result.projectDir, junctionName, leftEnt, rightEnt);
     }
 
     // 10. DI-resolution gate — boot the generated AppModule. `tsc` + grep
