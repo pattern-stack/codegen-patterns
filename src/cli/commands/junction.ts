@@ -17,7 +17,8 @@ import path from 'node:path';
 import { Command, Option } from 'clipanion';
 import type { CommandClass } from 'clipanion';
 
-import { loadJunctionFromYaml, detectYamlType } from '../../utils/yaml-loader.js';
+import { loadEntityFromYaml, loadJunctionFromYaml } from '../../utils/yaml-loader.js';
+import { deriveJunctionName } from '../../schema/junction-definition.schema.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeJunctionNew } from '../shared/hygen.js';
@@ -37,7 +38,17 @@ import { reportRegenerationFailure } from '../shared/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
-import { junctionsDirFor } from '../../parser/load-junctions.js';
+import { junctionsDirFor } from '../../config/junctions-dir.js';
+import {
+	listEntityYamls,
+	preflightEntityTargets,
+	renderEntityTargets,
+} from '../shared/entity-render.js';
+import {
+	printRejections,
+	reportPreflightStop,
+	type RunRejection,
+} from '../shared/run-rejections.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,7 +68,7 @@ function summarizeJunctionFile(filePath: string): JunctionSummaryRow | null {
 	const result = loadJunctionFromYaml(filePath);
 	if (!result.success) return null;
 	const def = result.definition;
-	const name = `${def.between[0]}_${def.between[1]}`;
+	const name = deriveJunctionName(def);
 	const roleChoices = def.fields?.role?.choices;
 	const hasRole = Array.isArray(roleChoices) && roleChoices.length > 0;
 	return {
@@ -183,14 +194,13 @@ export class JunctionNewCommand extends Command {
 		}
 
 		// Pre-flight: validate each YAML.
-		const validated: Array<{ file: string; name: string }> = [];
+		const validated: Array<{ file: string; name: string; between: [string, string] }> = [];
 		const invalid: Array<{ file: string; message: string }> = [];
 		for (const file of targets) {
 			const result = loadJunctionFromYaml(file);
 			if (result.success) {
 				const def = result.definition;
-				const name = `${def.between[0]}_${def.between[1]}`;
-				validated.push({ file, name });
+				validated.push({ file, name: deriveJunctionName(def), between: def.between });
 			} else {
 				invalid.push({ file, message: result.error });
 			}
@@ -215,12 +225,53 @@ export class JunctionNewCommand extends Command {
 			}
 		}
 
+		// The parents (JUNC-0, #678). Each junction is mirrored onto both of its
+		// endpoints' service + module, which their OWN templates render from the
+		// junction YAMLs — so a junction is wired by re-rendering both endpoints
+		// through `entity new`'s per-target path (its pre-flight, then hygen),
+		// never by injecting. Both endpoints, whatever `expose_on_parent` says: a
+		// side switched off must lose its fan-out. Pre-flighted before anything is
+		// written; a rejection stops the run as it would stop `entity new`.
+		const layout = projectLayout(ctx.cwd, ctx.config);
+		const entityFileByName = new Map<string, string>();
+		for (const file of listEntityYamls(layout.entities, layout.providers)) {
+			const result = loadEntityFromYaml(file);
+			if (result.success) entityFileByName.set(result.definition.entity.name, file);
+		}
+		const parentNames = [...new Set(validated.flatMap((v) => v.between))].sort();
+		const parentTargets: string[] = [];
+		const missingParents: RunRejection[] = [];
+		for (const name of parentNames) {
+			const file = entityFileByName.get(name);
+			if (file) {
+				parentTargets.push(file);
+			} else {
+				const junctions = validated.filter((v) => v.between.includes(name)).map((v) => v.name);
+				missingParents.push({
+					file: null,
+					message: `endpoint '${name}' of ${junctions.join(', ')} has no valid entity YAML under ${layout.entities}`,
+				});
+			}
+		}
+		const parents =
+			parentTargets.length > 0 ? await preflightEntityTargets(ctx, parentTargets) : null;
+		const parentRejections = [
+			...missingParents,
+			...(parents ? [...parents.invalid, ...parents.runRejections] : []),
+		];
+		if (parentRejections.length > 0) {
+			printRejections(parentRejections);
+			return reportPreflightStop('junction new', parentRejections);
+		}
+		const parentNamesToRender = parents ? parents.validated.map((p) => p.name) : [];
+
 		if (this.dryRun) {
 			if (isJsonMode()) {
 				printJson({
 					command: 'junction new',
 					dryRun: true,
 					junctions: validated.map((v) => ({ name: v.name, file: v.file })),
+					parents: parentNamesToRender,
 					totals: { planned: validated.length, invalid: invalid.length },
 				});
 			} else {
@@ -228,6 +279,7 @@ export class JunctionNewCommand extends Command {
 				for (const v of validated) {
 					console.log(`  ${theme.muted(icons.arrow)} ${v.name}  ${theme.muted(v.file)}`);
 				}
+				printInfo(`and ${parentNamesToRender.length} parent entities re-rendered: ${parentNamesToRender.join(', ')}`);
 			}
 			return invalid.length > 0 ? 1 : 0;
 		}
@@ -254,6 +306,12 @@ export class JunctionNewCommand extends Command {
 				if (!isJsonMode()) printError(`${v.name} — ${res.stderr ?? 'failed'}`);
 			}
 		}
+
+		// Re-render the parents: their service + module now carry the fan-out of
+		// every junction in the YAML set (JUNC-0).
+		const parentResult = parents
+			? renderEntityTargets(ctx, parents.validated, { continueOnError: true })
+			: { succeeded: [], failed: [] };
 
 		// Regenerate barrels so new junction modules land in GENERATED_MODULES
 		// and src/generated/schema.ts. Mirrors what `entity new` and `relationship new` do.
@@ -312,6 +370,7 @@ export class JunctionNewCommand extends Command {
 				},
 				succeeded,
 				failed,
+				parents: { succeeded: parentResult.succeeded, failed: parentResult.failed },
 				barrels: {
 					modules: barrelResult.modulesBarrel,
 					schema: barrelResult.schemaBarrel,
@@ -328,12 +387,21 @@ export class JunctionNewCommand extends Command {
 					`${total} junctions · ${succeeded.length} succeeded · ${failed.length} failed`
 				);
 			}
+			if (parentResult.failed.length === 0) {
+				printSuccess(`${parentResult.succeeded.length} parent entities re-rendered (junction fan-out)`);
+			} else {
+				printWarning(
+					`${parentResult.succeeded.length + parentResult.failed.length} parent entities · ${parentResult.failed.length} failed`,
+				);
+			}
 			printInfo(
 				`barrels regenerated (${barrelResult.entityCount} modules) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`,
 			);
 		}
 
-		return failed.length === 0 && !relationsFailed ? 0 : 1;
+		return failed.length === 0 && parentResult.failed.length === 0 && !relationsFailed
+			? 0
+			: 1;
 	}
 }
 

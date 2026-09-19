@@ -25,6 +25,7 @@ import { getNamingConfig } from "../../../src/config/naming-config.mjs";
 import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
+import { loadJunctionDefinitions } from "../../_shared/junction-fan-out.mjs";
 import {
   loadRuntimeMode,
   runtimeImportLocals,
@@ -1613,10 +1614,16 @@ export default {
     // Every cross-entity fact — a belongs_to / has_many / field foreign_key
     // target's table and module folder, an EAV definition entity, a group
     // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
-    // YAML, lazily, on the first reference that needs one.
+    // YAML, lazily, on the first reference that needs one. The junctions naming
+    // this entity are read from the junction YAMLs.
     Object.assign(
       locals,
-      buildCleanLitePsLocals(definition, { ...locals, entityLookup: projectEntityLookup(process.cwd()) }),
+      buildCleanLitePsLocals(definition, {
+        ...locals,
+        entityLookup: projectEntityLookup(process.cwd()),
+        // JUNC-0 (#678): the junction set this entity's fan-out renders from.
+        junctions: loadJunctionDefinitions(process.cwd()),
+      }),
     );
 
     return locals;

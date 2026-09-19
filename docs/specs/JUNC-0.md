@@ -1,7 +1,7 @@
 # JUNC-0 — a parent's junction fan-out is rendered by its own templates, never injected (#678)
 
-**Status:** Approved (design) — implementation pending
-**Date:** 2026-09-19
+**Status:** Implemented
+**Date:** 2026-09-19 · **Implemented:** 2026-09-19
 **Issue:** #678
 **Project:** #578 · epic #580 (relation graph)
 **Depends on:** ARCH-0 (#677 — deletes the `clean` pipeline; this spec assumes `clean-lite-ps` is the only backend
@@ -66,23 +66,25 @@ mechanism also means:
 
 New `templates/_shared/junction-fan-out.mjs` (ships under `templates/`, like `entity-naming.mjs`):
 
-- `junctionNaming(between, modulesDir)` → `{ name, plural, moduleDir, entityFile, serviceFile, moduleFile,
-  serviceClass, moduleClass, entityClass, linkInputType, serviceProperty }`. The single statement of the junction
-  naming rule. Consumers: `templates/junction/new/prompt.js` (its own output paths + class names),
+- `junctionName(between)` → `<left>_<right>`, and `junctionNaming(name, modulesDir)` → `{ name, plural, moduleDir,
+  entityFile, repositoryFile, serviceFile, moduleFile, tableVar, entityClass, serviceClass, moduleClass,
+  linkInputType, serviceProperty }` (it takes the *name*, because a Communication role's `via:` names the junction,
+  not its pairing). The single statement of the junction naming rule in the templates. Consumers: `templates/junction/new/prompt.js` (its own output paths + class names),
   `prompt-extension.js` › `resolveLibraryCapabilityConfig` (Communication `via:` table + import), and the fan-out
   below. `src/schema/junction-definition.schema.ts › deriveJunctionName` stays as the CLI-side statement of the name
   only; both are pinned against each other by a unit test (the CLI cannot import a `.mjs` template helper into its
-  zod graph without shipping it — same constraint NAME-0 documents for `loadEntityRegistry`).
+  zod graph without shipping it — same constraint NAME-0 documents for `loadEntityRegistry`). The pin lives in
+  `src/__tests__/templates/junction-fan-out.test.ts`.
 - `loadJunctionDefinitions(cwd)` → every junction YAML under the junctions directory, raw-parsed (the CLI has already
   schema-validated them — § 3), filtered to `pattern: Junction`, sorted by junction name. The directory rule
   (`<cwd>/junctions`, no config key) moves from `src/parser/load-junctions.ts › junctionsDirFor` to a new shipped
   `src/config/junctions-dir.ts` (added to `package.json` `files`), imported by both the CLI and this helper.
-- `junctionFanOutFor(entityName, { cwd, modulesDir, entityLookup, selfModuleDir })` → the ordered list of fan-out
+- `junctionFanOutFor(entityName, { junctions, modulesDir, entityLookup, selfModuleDir })` → the ordered list of fan-out
   blocks this entity carries: one per junction naming it in `between` whose side is exposed
   (`expose_on_parent.<side> !== false`). Each block carries everything the templates print — side, junction naming,
-  counterparty `{ pascal, camel, plural, entityImport }` (counterparty folder via `entityLookup` + `entityModuleNaming`,
-  NAME-0), junction service / entity / module import paths from `selfModuleDir` (`relativeModuleDir`), and the four
-  method names:
+  the four id parameter names, the counterparty's class and entity import (its folder via `entityLookup` +
+  `entityModuleNaming`, NAME-0; a counterparty with no entity YAML throws, naming the junction), the junction service
+  / entity / module import paths from `selfModuleDir` (`relativeModuleDir`), and the four method names:
 
   | Side | attach | detach | list | setPrimary |
   |---|---|---|---|---|
@@ -94,7 +96,10 @@ New `templates/_shared/junction-fan-out.mjs` (ships under `templates/`, like `en
 
 ### 2. The parent templates render the fan-out
 
-`prompt-extension.js` adds `clpJunctionFanOut` (from § 1) to the locals. Then:
+`templates/entity/new/prompt.js` passes `junctions: loadJunctionDefinitions(cwd)` into `buildCleanLitePsLocals` beside
+`entityLookup`; `prompt-extension.js` adds `clpJunctionFanOut` (from § 1), each block marked `importCounterparty`
+after the dedupe below. A hand-built locals call (unit tests) with no `junctions` gets `[]`, like `entityLookup`'s
+`null`. Then:
 
 **`clean-lite-ps/service.ejs.t`**
 - `forwardRef` joins the existing `@nestjs/common` import when `clpJunctionFanOut.length > 0` (no second import line).
@@ -102,10 +107,12 @@ New `templates/_shared/junction-fan-out.mjs` (ships under `templates/`, like `en
   '<junctionEntity>'`, and `import type { <Counterparty> } from '<counterpartyEntity>'` — the counterparty import is
   **deduped** against `clpRepositoryDeps` (a parent that already composes the counterparty via `belongs_to` /
   `has_many` imports the same type from the same path) and against other blocks.
-- A `Junction fan-out` section after the relationship composition methods (no longer splitting the
+- A `Junction fan-out (CGP-60)` section after the relationship composition methods, before the EAV methods (no
+  longer splitting the
   `// Inherited from` comment block, which today's inject anchors on). Per block: the
   `@Inject(forwardRef(() => <Svc>)) private readonly <serviceProperty>!: <Svc>;` property and the four methods, with
-  bodies **identical** to today's `_inject-parent-service-clp-{left,right}.ejs.t`.
+  bodies **identical** to today's `_inject-parent-service-clp-{left,right}.ejs.t`. One comment line per block
+  (`// <junction> — <side> side, fan-out to <Counterparty>`) replaces the marker.
 
 **`clean-lite-ps/module.ejs.t`**
 - `forwardRef` joins `import { Inject, Module, type OnModuleInit }` when fan-out is non-empty.
@@ -118,7 +125,9 @@ injected output. Layout is **not**, deliberately: today's bytes are an artifact 
 inside the lifecycle comment, marker comments that only existed for `skip_if`). Reproducing inject artifacts in a
 complete-file template would preserve the mechanism's scars for no consumer (CLAUDE.md: no backwards compat). The
 parent-service snapshots in `test/junction/__snapshots__` regenerate; the reviewed diff must show only import
-layout, comments and placement — any method-body change is a defect.
+layout, comments and placement — any method-body change is a defect. **Verified:** in both regenerated snapshots
+(`opportunity_contact`, `opportunity_activity`) the property + four-method block of each parent is byte-identical to
+the injected one.
 
 ### 3. `entity new` knows the junction set, and validates it
 
@@ -128,6 +137,9 @@ the schema. A skipped junction would now silently drop fan-out — the exact def
 - `entity new`'s pre-flight loads the junction set with errors (`loadJunctionSet` → `{ junctions, issues }`) and
   makes each issue a **run-level rejection** (the #666 posture — an input other entities' output depends on): a
   junction YAML that fails `JunctionDefinitionSchema`, or whose `between` names an entity with no entity YAML.
+- Implemented in `src/parser/load-junctions.ts` (`loadJunctionSet`, `junctionSetIssues`). Only files whose
+  top-level `pattern:` is `Junction` are junctions (`detectYamlType`, the rule `junction new --all` uses); any other
+  YAML in `junctions/` is ignored, as before.
 - The roles cross-check consumes the same loaded set (no second load).
 - The hygen prompt re-reads the raw YAMLs through § 1 — like every other cross-entity read in the prompts — trusting
   the CLI's validation, as `junction new`'s prompt already does.
@@ -147,6 +159,11 @@ Decision: **yes, `junction new` still updates the parents**, so a new junction i
 - `junction new` runs no entity post-step: none of them reads the junction set, so the per-entity files are exactly
   what `entity new` would write for those two entities. An endpoint rejected by the entity pre-flight fails
   `junction new` (named, per endpoint), same as `entity new` would.
+- The parents are **pre-flighted before anything is written**: `junction new` maps each endpoint to its entity YAML
+  and runs `preflightEntityTargets` on them first; an endpoint with no valid entity YAML, a per-target rejection or a
+  run-level rejection stops the run with the `stopped: 'pre-flight'` payload (`reportPreflightStop`), nothing
+  generated. The render itself runs after the junction hygen (`continueOnError: true`); a failed parent fails the
+  command.
 - `--dry-run` lists the parents it would re-render; `--json` adds `parents: { succeeded, failed }`.
 
 Rejected alternatives: (a) `junction new` leaves parents alone and tells the author to run `entity new` — correct but
@@ -160,9 +177,10 @@ For a fixed YAML set, the parent files are a pure function of that set:
 
 - `entity new` ↔ `junction new`, any order, any number of times → identical bytes on both parents.
 - Junction YAML present before the first `entity new` → the fan-out renders on that first run. Until `junction new`
-  emits the junction's own files the parent imports a missing module (`tsc` names it); `entity new` prints a hint
-  (`junction <name> is declared but not generated — run codegen junction new`) when the junction's module file is
-  absent. The hint reads the filesystem; the bytes never do.
+  emits the junction's own files the parent imports a missing module and `tsc` names it. (The design proposed an
+  `entity new` hint here; it was dropped: the modules barrel already imports every *declared* junction's module from
+  the YAML set — `barrel-generator.ts › collectJunctions` — so this intermediate state predates JUNC-0, and a hint
+  would need a fourth statement of the junction module path in the CLI.)
 - `junction new` on a fresh project (no parent files yet) now works — the anchor-ordering failure mode is gone.
 - Deleting a junction YAML → the next `entity new` removes its fan-out from both parents. (The junction's own
   generated folder is left on disk and dropped from the barrels, like any deleted entity YAML — out of scope.)
@@ -175,8 +193,14 @@ For a fixed YAML set, the parent files are a pure function of that set:
   other fan-out-only locals; naming comes from `junctionNaming`.
 - `test/smoke/run-smoke-junction.ts`: the "Ordering contract (CGP-60)" block, the `// Inherited from` anchor
   assertions and the per-junction marker assertions (they assert the inject mechanism).
-- `junctionsDirFor` moves; `loadJunctionSummaries` is replaced by the error-reporting loader (its one other caller,
-  `analyzeDomain`, reports the issues instead of skipping).
+- `junctionsDirFor` moves to `src/config/junctions-dir.ts` (shipped; every importer repointed, no re-export).
+  `loadJunctionSummaries` stays as the analyzer's view over `loadJunctionSet` (valid junctions only): the design
+  proposed that `analyzeDomain` report junction schema issues too, but that changes `entity validate`'s output and is
+  not needed for #678 — `entity new` and `junction new` are the reporters.
+- `EntityNewCommand`'s pre-flight block and hygen loop, and its local `listEntityYamls`, move to
+  `src/cli/shared/entity-render.ts`; `entity.ts` imports them.
+- `resolveLibraryCapabilityConfig` (Communication `via:`) no longer re-derives the junction table / file; it reads
+  `junctionNaming`.
 
 ## Gate
 
@@ -187,15 +211,20 @@ modes (`just test-smoke-junction` already runs `vendored` + `package`, default +
    `entity new --all --force`; assert byte-identical; run `junction new --all --force`; assert byte-identical.
 2. **Order swap.** A second project dir in the same leg: junction YAMLs copied **before** the first
    `entity new --all --force`, then `junction new --all --force`; assert the four parent files are byte-identical to
-   step 1's. (Needs `bootstrapJunctionProject({ junctionsFirst: true })` — a flag on the shared helper, not a second
+   step 1's. (`bootstrapJunctionProject({ junctionsFirst: true })` — a flag on the shared helper, not a second
    harness.)
 3. **Removal.** Delete the junction YAML, `entity new --all --force`: assert both parents carry no reference to the
-   junction service / module, then `tsc` is clean (the orphaned junction folder still compiles against its parents).
-4. The existing fan-out grep assertions and `tsc` run stay.
+   junction (`<Junction>` in any form) and no `forwardRef`, then `tsc` is clean (the orphaned junction folder still
+   compiles against its parents).
+4. The existing fan-out grep assertions, `tsc` and boot stay. Implemented as steps 12 (round trip + removal) and 13
+   (order swap) of `test/smoke/run-smoke-junction.ts`, in every leg of `just test-smoke-junction` and
+   `just test-smoke-junction-cross-domain`.
 
-Plus: unit tests for `junctionFanOutFor` (sides, `expose_on_parent`, counterparty-import dedupe, a context-nested
-endpoint) and for the `junctionNaming` ↔ `deriveJunctionName` pin; `entity new` pre-flight tests for the two new
-run-level rejections; junction snapshots regenerated and reviewed.
+Plus: `src/__tests__/templates/junction-fan-out.test.ts` (sides, `expose_on_parent`, counterparty-import dedupe, a
+context-nested endpoint, the `junctionNaming` ↔ `deriveJunctionName` pin, the rendered service + module, re-render
+byte-identity); `src/__tests__/cli/entity-run-rejections.test.ts` (schema-failing junction, junction naming a missing
+entity, `--json` payload, non-junction YAML ignored); `junction-endpoint-naming.test.ts` loses its parent-inject
+expectations; junction snapshots regenerated and reviewed.
 
 Gates after the last edit: `bun run typecheck && bun run build && bun run test`, `just test-all`,
 `just test-integration`, `just test-post-publish`.
@@ -218,9 +247,18 @@ hand-composed `listAssoc` with a `.through()` read without touching where the fa
 - **Pre-existing: mirrored junctions collide on the shared parent.** Junctions `a × b` and `b × a` both land on `a`
   with `<bPlural>List` / `<bPlural>SetPrimary` (left side of one, right side of the other) — duplicate members, a loud
   `tsc` error, not silent. Unchanged by this spec; filed as #681.
-- **CLAUDE.md** describes `_inject-` templates under § Template System; after ARCH-0 + this PR none exist — the line
-  is removed in the implementing PR.
+- **CLAUDE.md** described `_inject-` templates under § Template System; after ARCH-0 + this PR none exist — replaced
+  with the complete-file rule and this spec's pattern.
 
 ## Downstream must know
 
-_(filled in at implementation)_
+- **A parent's service + module are a function of the entity YAMLs *and* `junctions/*.yaml`.** Anything that emits
+  or reads a parent's members (REL-3 navigator, FE-REL accessors, the #679 convergence) reads the junction set through
+  `templates/_shared/junction-fan-out.mjs` (`junctionFanOutFor`) — never by re-deriving names.
+- **There are no `inject:` templates left.** A new cross-entity contribution to a file is rendered by the file's owner
+  from both inputs; if a second command must refresh it, it re-renders through `entity-render.ts`.
+- **`junction new` now touches the parents** (and runs `entity new`'s per-target pre-flight on them): an invalid
+  parent YAML, job YAML, provider YAML or app-pattern file stops `junction new` too.
+- **The junction set is a run-level `entity new` input.** A junction YAML that fails the schema or names a missing
+  entity stops `entity new --all`.
+- #681 (mirrored `a × b` / `b × a` junctions collide on `<plural>List`) is open and unchanged.

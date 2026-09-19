@@ -2,7 +2,8 @@
  * NAME-0 (#611) — `junction new` names both endpoints from their own entity
  * YAMLs (`plural:`, `context:`), the way the endpoints' own emission does and
  * the way the relations manifest resolves parent tables — never
- * `pluralize(endpoint)`.
+ * `pluralize(endpoint)`. (The parents' side — their fan-out onto the junction —
+ * is rendered by their own templates: `junction-fan-out.test.ts`, JUNC-0.)
  *
  * Runs the real prompt.js in a temp project whose `entities/` holds:
  *   - `crew` — `context: org`, so its folder is `src/modules/org/crews/`;
@@ -72,33 +73,15 @@ describe('junction endpoints resolve from their own YAML', () => {
 		expect(l.rightEntityImportFromJunction).toBe('../persons/person.entity');
 		expect(l.leftRepoImportFromJunction).toBe('../org/crews/crew.repository');
 		expect(l.rightModuleImportFromJunction).toBe('../persons/persons.module');
-		// endpoints → junction
-		expect(l.junctionServiceImportFromLeft).toBe('../../crew_people/crew_person.service');
-		expect(l.junctionEntityImportFromLeft).toBe('../../crew_people/crew_person.entity');
-		expect(l.junctionModuleImportFromRight).toBe('../crew_people/crew_people.module');
-		// parent → counterparty (the fan-out methods return its type)
-		expect(l.rightEntityImportFromLeft).toBe('../../persons/person.entity');
-		expect(l.leftEntityImportFromRight).toBe('../org/crews/crew.entity');
 	});
 
-	it('the parent inject targets are the endpoints’ own service/module files', async () => {
-		const l = await junctionLocals(['crew', 'person'], ENTITIES);
-		expect(l.parentServicePathLeft).toBe('src/modules/org/crews/crew.service.ts');
-		expect(l.parentModulePathLeft).toBe('src/modules/org/crews/crews.module.ts');
-		expect(l.parentServicePathRight).toBe('src/modules/persons/person.service.ts');
-		expect(l.parentModulePathRight).toBe('src/modules/persons/persons.module.ts');
-	});
-
-	it('renders the resolved names into the junction entity and the parent inject', async () => {
+	it('renders the resolved names into the junction entity', async () => {
 		const l = await junctionLocals(['crew', 'person'], ENTITIES);
 		const entity = render('entity.ejs.t', l);
 		expect(entity).toContain("import { crews } from '../org/crews/crew.entity';");
 		expect(entity).toContain("import { persons } from '../persons/person.entity';");
 		expect(entity).toContain('.references((): AnyPgColumn => persons.id');
 		expect(entity).not.toContain('people/person');
-		expect(render('_inject-parent-service-import-clp-left.ejs.t', l)).toContain(
-			"import type { CrewPerson } from '../../crew_people/crew_person.entity';",
-		);
 	});
 
 	it('flat regular endpoints keep the sibling form (byte-identical to before)', async () => {
@@ -107,8 +90,7 @@ describe('junction endpoints resolve from their own YAML', () => {
 			contact: 'entity:\n  name: contact\n  plural: contacts\n',
 		});
 		expect(l.leftEntityImportFromJunction).toBe('../opportunities/opportunity.entity');
-		expect(l.junctionServiceImportFromRight).toBe('../opportunity_contacts/opportunity_contact.service');
-		expect(l.parentServicePathLeft).toBe('src/modules/opportunities/opportunity.service.ts');
+		expect(l.outputPaths.service).toBe('src/modules/opportunity_contacts/opportunity_contact.service.ts');
 	});
 
 	it('clean-lite-ps output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
@@ -119,8 +101,6 @@ describe('junction endpoints resolve from their own YAML', () => {
 		);
 		expect(l.outputPaths.entity).toBe('apps/api/src/domain/crew_people/crew_person.entity.ts');
 		expect(l.outputPaths.module).toBe('apps/api/src/domain/crew_people/crew_people.module.ts');
-		expect(l.parentServicePathLeft).toBe('apps/api/src/domain/org/crews/crew.service.ts');
-		expect(l.parentServicePathRight).toBe('apps/api/src/domain/persons/person.service.ts');
 		// Imports are relative between folders of the one tree — unchanged.
 		expect(l.leftEntityImportFromJunction).toBe('../org/crews/crew.entity');
 	});

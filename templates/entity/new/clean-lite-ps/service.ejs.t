@@ -3,7 +3,7 @@ to: "<%= clpOutputPaths.service %>"
 force: true
 ---
 <%- generatedBanner %>
-import { Injectable, Inject, Optional } from '@nestjs/common';
+import { Injectable, Inject, Optional<% if (clpJunctionFanOut.length > 0) { %>, forwardRef<% } %> } from '@nestjs/common';
 import { WithAnalytics } from '<%= withAnalyticsImport %>';
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
@@ -23,6 +23,14 @@ import { <%= eavDefinitionPascal %>Repository } from '<%= eavDefinitionImportDir
 <%_ clpRepositoryDeps.forEach(dep => { _%>
 import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
 import type { <%= dep.entityClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.entity';
+<%_ }) _%>
+<%_ /* JUNC-0 — each junction this entity is mirrored onto: its service, link + row types, and the counterparty type */ _%>
+<%_ clpJunctionFanOut.forEach(fan => { _%>
+import { <%= fan.junction.serviceClass %>, <%= fan.junction.linkInputType %> } from '<%= fan.junctionServiceImport %>';
+import type { <%= fan.junction.entityClass %> } from '<%= fan.junctionEntityImport %>';
+<%_ if (fan.importCounterparty) { _%>
+import type { <%= fan.counterpartyPascal %> } from '<%= fan.counterpartyEntityImport %>';
+<%_ } _%>
 <%_ }) _%>
 
 @Injectable()
@@ -147,6 +155,59 @@ export class <%= classNames.service %> extends WithAnalytics(
   }
 <%_ }) _%>
 <%_ } _%>
+<%_ /* JUNC-0 (#678) — junction fan-out, mirrored on both parents (CGP-60;
+      docs/relationship-pattern-audit.md §1). Rendered here from the junction
+      YAML set, so re-running `entity new` or `junction new` in any order gives
+      the same file. `forwardRef` resolves the parent ↔ junction module cycle. */ _%>
+<%_ if (clpJunctionFanOut.length > 0) { _%>
+<%_ /* the queries block ends on a blank line; the forwarder / composition blocks do not */ _%>
+<%_ if (capabilityForwarders.length > 0 || hasBelongsToComposition || hasHasManyComposition) { _%>
+
+<%_ } _%>
+  // ═══════════════════════════════════════════════════════════════════════
+  // Junction fan-out (CGP-60)
+  // Delegates to each junction's service; the same association is mirrored
+  // on the other parent.
+  // ═══════════════════════════════════════════════════════════════════════
+<%_ } _%>
+<%_ clpJunctionFanOut.forEach(fan => { _%>
+<%_ const j = fan.junction; _%>
+
+  // <%= j.name %> — <%= fan.side %> side, fan-out to <%= fan.counterpartyPascal %>
+  @Inject(forwardRef(() => <%= j.serviceClass %>))
+  private readonly <%= j.serviceProperty %>!: <%= j.serviceClass %>;
+
+  async <%= fan.attachMethod %>(
+    <%= fan.selfIdParam %>: string,
+    <%= fan.counterpartyIdParam %>: string,
+    link?: <%= j.linkInputType %>,
+  ): Promise<<%= j.entityClass %>> {
+    return this.<%= j.serviceProperty %>.attach(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>, link);
+  }
+
+  async <%= fan.detachMethod %>(
+    <%= fan.selfIdParam %>: string,
+    <%= fan.counterpartyIdParam %>: string,
+  ): Promise<void> {
+    return this.<%= j.serviceProperty %>.detach(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>);
+  }
+
+  async <%= fan.listMethod %>(
+    <%= fan.selfIdParam %>: string,
+    opts?: { cursor?: string; limit?: number },
+  ): Promise<Array<{ entity: <%= fan.counterpartyPascal %>; link: <%= j.entityClass %> }>> {
+    return this.<%= j.serviceProperty %>.listAssoc('<%= fan.side %>', <%= fan.selfIdParam %>, opts) as Promise<
+      Array<{ entity: <%= fan.counterpartyPascal %>; link: <%= j.entityClass %> }>
+    >;
+  }
+
+  async <%= fan.setPrimaryMethod %>(
+    <%= fan.selfIdParam %>: string,
+    <%= fan.counterpartyIdParam %>: string,
+  ): Promise<void> {
+    return this.<%= j.serviceProperty %>.setPrimary(<%= fan.leftIdParam %>, <%= fan.rightIdParam %>);
+  }
+<%_ }) _%>
 <% if (eavEnabled) { %>
   /**
    * EAV paired read (ADR-13): fetch the entity and merge dynamic `field_values`

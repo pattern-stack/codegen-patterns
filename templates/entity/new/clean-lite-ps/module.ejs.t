@@ -10,12 +10,16 @@ force: true
  * root AppModule (global) so these tokens resolve at runtime.
  */
 <% } -%>
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Module,<% if (clpJunctionFanOut.length > 0) { %> forwardRef,<% } %> type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= openApiImport %>';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ /* #632: one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
 <%_ clpRepositoryDeps.forEach(dep => { _%>
 import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
+<%_ }) _%>
+<%_ /* JUNC-0 — the module of each junction this entity is mirrored onto */ _%>
+<%_ clpJunctionFanOut.forEach(fan => { _%>
+import { <%= fan.junction.moduleClass %> } from '<%= fan.junctionModuleImport %>';
 <%_ }) _%>
 <% if (eavEnabled) { -%>
 import { <%= eavFieldValueModulePascal %>Module } from '<%= eavFieldValueImportDir %>/<%= eavFieldValuePlural %>.module';
@@ -57,6 +61,10 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
 @Module({
   imports: [
     DatabaseModule,
+<%_ /* JUNC-0 — forwardRef breaks the parent ↔ junction module cycle (the junction module imports this one for its repository) */ _%>
+<%_ clpJunctionFanOut.forEach(fan => { _%>
+    forwardRef(() => <%= fan.junction.moduleClass %>),
+<%_ }) _%>
 <% if (eavEnabled) { -%>
     <%= eavFieldValueModulePascal %>Module,
 <% } -%>

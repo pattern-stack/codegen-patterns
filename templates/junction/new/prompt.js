@@ -5,7 +5,9 @@
  *
  * Mirrors templates/relationship/new/prompt.js but adapted for junction
  * definitions (two endpoints, role enum, BaseJunctionFields, composite PK,
- * no controller/DTOs/use-cases).
+ * no controller/DTOs/use-cases). The parents' fan-out onto this junction is
+ * rendered by their own templates (templates/_shared/junction-fan-out.mjs,
+ * JUNC-0 #678) — this generator writes only the junction's own files.
  *
  * Output paths are the clean-lite-ps module tree (`paths.modules_dir`) — the
  * only backend pipeline (ARCH-0, #677).
@@ -14,8 +16,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
-import pluralizePkg from "pluralize";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
+import { junctionName as deriveJunctionName, junctionNaming } from "../../_shared/junction-fan-out.mjs";
 import {
   entityModuleNaming,
   projectEntityLookup,
@@ -31,7 +33,6 @@ import { configOrDefaults, loadProjectConfig } from "../../../src/config/project
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
-const pluralize = (s) => pluralizePkg.plural(s);
 const kebabCase = (s) => s.replace(/_/g, "-");
 
 // ============================================================================
@@ -46,19 +47,12 @@ const kebabCase = (s) => s.replace(/_/g, "-");
 // Name Derivation
 // ============================================================================
 
-function deriveJunctionName(config) {
-  // Q8 resolution: insertion order — between: [opportunity, contact] → opportunity_contact
-  // No YAML override. This file parses raw YAML, but `codegen junction new`
-  // validates every file through the `.strict()` JunctionDefinitionSchema —
-  // which declares no `name` key — before handing it to hygen, so a YAML
-  // setting one never reaches here (GATE-1, #599).
-  return `${config.between[0]}_${config.between[1]}`;
-}
-
-function deriveTableName(config, junctionName) {
-  // Likewise no `table:` override — see deriveJunctionName.
-  return pluralize(junctionName);
-}
+// The junction's name and table / folder plural come from the one junction
+// naming rule (`junctionNaming`, templates/_shared/junction-fan-out.mjs,
+// JUNC-0) — the rule the parents' fan-out reads too. No YAML override: this
+// file parses raw YAML, but `codegen junction new` validates every file through
+// the `.strict()` JunctionDefinitionSchema — which declares neither `name` nor
+// `table` — before handing it to hygen (GATE-1, #599).
 
 // ============================================================================
 // On-Delete Action Mapping
@@ -141,31 +135,13 @@ function processCustomFields(fields, junctionName) {
 // Output Path Resolution
 // ============================================================================
 
-function resolveOutputPaths(name, plural, modulesDir) {
-  // The junction's own folder is flat under the module tree (a junction has
-  // no `context:`) — the module-tree rule (`entityModuleNaming`, GEN-0 #649)
-  // under `paths.modules_dir` (PATH-1, #645).
-  const naming = entityModuleNaming({ name, plural }, modulesDir);
-  const dir = path.posix.normalize(naming.moduleDir);
+function resolveOutputPaths(junction) {
   return {
-    entity:     path.posix.normalize(`${naming.entityFile}.ts`),
-    repository: path.posix.normalize(naming.repositoryFile),
-    service:    `${dir}/${name}.service.ts`,
-    module:     path.posix.normalize(naming.moduleFile),
-    index:      `${dir}/index.ts`,
-  };
-}
-
-/**
- * An endpoint's service / module file paths — the files the `_inject-parent-*`
- * templates modify: the endpoint's own module folder (`entityModuleNaming`, so
- * `context:` nesting is honoured).
- */
-function resolveParentPaths(name, naming) {
-  const dir = path.posix.normalize(naming.moduleDir);
-  return {
-    service: `${dir}/${name}.service.ts`,
-    module:  `${dir}/${naming.plural}.module.ts`,
+    entity:     `${junction.entityFile}.ts`,
+    repository: junction.repositoryFile,
+    service:    junction.serviceFile,
+    module:     junction.moduleFile,
+    index:      `${junction.moduleDir}/index.ts`,
   };
 }
 
@@ -214,8 +190,11 @@ export default {
     // Derive junction identity
     // ======================================================================
 
-    const junctionName = deriveJunctionName(config);
-    const tableName = deriveTableName(config, junctionName);
+    const config_ = configOrDefaults(loadProjectConfig(cwd));
+    const modulesDir = config_.paths.modules_dir;
+    const junctionName = deriveJunctionName(config.between);
+    const junction = junctionNaming(junctionName, modulesDir);
+    const tableName = junction.plural;
     const entityNamePascal = pascalCase(junctionName);
     const entityNameCamel = camelCase(junctionName);
     const entityNamePlural = tableName;
@@ -287,9 +266,7 @@ export default {
     // Output paths
     // ======================================================================
 
-    const config_ = configOrDefaults(loadProjectConfig(cwd));
-    const modulesDir = config_.paths.modules_dir;
-    const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, modulesDir);
+    const outputPaths = resolveOutputPaths(junction);
 
     // ======================================================================
     // Endpoint naming — from each endpoint's OWN YAML (NAME-0, #611)
@@ -318,50 +295,15 @@ export default {
     const rightTable = rightEntityPlural; // e.g. 'contacts'
 
     // The junction's own folder is flat (a junction has no `context:`).
-    const junctionModuleDir = `${modulesDir}/${entityNamePlural}`;
+    const junctionModuleDir = junction.moduleDir;
 
-    // ======================================================================
-    // CGP-60 — parent-side paths + fan-out locals
-    // ======================================================================
-    // Parent service / module file paths — anchored on each endpoint.
-    // The parent's own `entity new` pipeline previously wrote these files
-    // with `force: true`; the junction inject templates target them.
-    const leftParentPaths = resolveParentPaths(leftEntity, leftNaming);
-    const rightParentPaths = resolveParentPaths(rightEntity, rightNaming);
-    const parentServicePathLeft = leftParentPaths.service;
-    const parentServicePathRight = rightParentPaths.service;
-    const parentModulePathLeft = leftParentPaths.module;
-    const parentModulePathRight = rightParentPaths.module;
-
-    // Opt-out — defaults to { left: true, right: true }. Schema fills the
-    // defaults when omitted, but tolerate raw YAML that bypasses Zod
-    // (e.g. tests / direct Hygen invocation).
-    const exposeRaw = config.expose_on_parent ?? {};
-    const exposeOnParent = {
-      left: exposeRaw.left !== false,   // default true
-      right: exposeRaw.right !== false, // default true
-    };
-
-    // Per-junction unique inject markers (Risk (a) in spec — generic
-    // markers silently skip second-junction emission on the same parent).
-    const injectionMarkerLeft = `// junction:${junctionName}:left-fan-out`;
-    const injectionMarkerRight = `// junction:${junctionName}:right-fan-out`;
-
-    // Relative imports between the junction's folder and each endpoint's, in
-    // both directions — computed from the two module folders, so an endpoint
-    // nested under a `context:` gets the extra segment. Flat siblings give
-    // `../<plural>`.
-    const junctionDirFromLeft = relativeModuleDir(leftNaming.moduleDir, junctionModuleDir);
-    const junctionDirFromRight = relativeModuleDir(rightNaming.moduleDir, junctionModuleDir);
+    // Relative imports from the junction's folder to each endpoint's —
+    // computed from the two module folders, so an endpoint nested under a
+    // `context:` gets the extra segment. Flat siblings give `../<plural>`.
+    // (The parents' side — their fan-out onto this junction — is rendered by
+    // their own templates: templates/_shared/junction-fan-out.mjs, JUNC-0.)
     const leftDirFromJunction = relativeModuleDir(junctionModuleDir, leftNaming.moduleDir);
     const rightDirFromJunction = relativeModuleDir(junctionModuleDir, rightNaming.moduleDir);
-
-    const junctionServiceImportFromLeft = `${junctionDirFromLeft}/${junctionName}.service`;
-    const junctionServiceImportFromRight = `${junctionDirFromRight}/${junctionName}.service`;
-    const junctionModuleImportFromLeft = `${junctionDirFromLeft}/${entityNamePlural}.module`;
-    const junctionModuleImportFromRight = `${junctionDirFromRight}/${entityNamePlural}.module`;
-    const junctionEntityImportFromLeft = `${junctionDirFromLeft}/${junctionName}.entity`;
-    const junctionEntityImportFromRight = `${junctionDirFromRight}/${junctionName}.entity`;
 
     // Left/right repo + module import paths from the junction service's
     // perspective (used by service.ejs.t to import target repos and by
@@ -373,23 +315,14 @@ export default {
     const leftModuleImportFromJunction = `${leftDirFromJunction}/${leftEntityPlural}.module`;
     const rightModuleImportFromJunction = `${rightDirFromJunction}/${rightEntityPlural}.module`;
 
-    // Each parent's import of its counterparty's entity type (the fan-out
-    // methods return it) — from the parent's folder, not the junction's.
-    const rightEntityImportFromLeft =
-      `${relativeModuleDir(leftNaming.moduleDir, rightNaming.moduleDir)}/${rightEntity}.entity`;
-    const leftEntityImportFromRight =
-      `${relativeModuleDir(rightNaming.moduleDir, leftNaming.moduleDir)}/${leftEntity}.entity`;
-
-    // Parent module / service class names + repo class names.
+    // Parent module + repository class names.
     const leftRepositoryClass = `${leftEntityPascal}Repository`;
     const rightRepositoryClass = `${rightEntityPascal}Repository`;
     const leftModuleClass = `${pascalCase(leftEntityPlural)}Module`;
     const rightModuleClass = `${pascalCase(rightEntityPlural)}Module`;
-    const leftServiceClass = `${leftEntityPascal}Service`;
-    const rightServiceClass = `${rightEntityPascal}Service`;
 
     // Camel forms of left/right entity names for use in method signatures
-    // (e.g. attachContact -> opportunityId, contactId).
+    // (e.g. attach(opportunityId, contactId)).
     const leftEntityCamel = camelCase(leftEntity);
     const rightEntityCamel = camelCase(rightEntity);
 
@@ -568,28 +501,11 @@ export default {
       integrationParentImports,
 
       // ──────────────────────────────────────────────────────────────────
-      // CGP-60 — fan-out locals
+      // Endpoint locals for the junction's own service + module
       // ──────────────────────────────────────────────────────────────────
       // Camel-case forms of endpoint names (used in method param names).
       leftEntityCamel,
       rightEntityCamel,
-      // Parent service / module target paths for inject templates.
-      parentServicePathLeft,
-      parentServicePathRight,
-      parentModulePathLeft,
-      parentModulePathRight,
-      // Opt-out toggles (default { left: true, right: true }).
-      exposeOnParent,
-      // Per-junction unique inject markers (skip_if idempotency).
-      injectionMarkerLeft,
-      injectionMarkerRight,
-      // Junction service import paths from each parent's perspective.
-      junctionServiceImportFromLeft,
-      junctionServiceImportFromRight,
-      junctionModuleImportFromLeft,
-      junctionModuleImportFromRight,
-      junctionEntityImportFromLeft,
-      junctionEntityImportFromRight,
       // Parent-side repo + entity + module import paths from the junction's
       // perspective (used by junction service.ejs.t + module.ejs.t).
       leftRepoImportFromJunction,
@@ -598,16 +514,11 @@ export default {
       rightEntityImportFromJunction,
       leftModuleImportFromJunction,
       rightModuleImportFromJunction,
-      // Counterparty entity import paths from each parent's perspective.
-      rightEntityImportFromLeft,
-      leftEntityImportFromRight,
-      // Class names used by the inject + service + module templates.
+      // Class names used by the service + module templates.
       leftRepositoryClass,
       rightRepositoryClass,
       leftModuleClass,
       rightModuleClass,
-      leftServiceClass,
-      rightServiceClass,
     };
   },
 };
