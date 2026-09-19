@@ -7,8 +7,7 @@
  * apps/api/src/modules/integrations/facade/integrations.service.ts).
  *
  * Post-fix: enum fields emit a top-of-file `pgEnum` declaration plus a
- * column reference to that declaration, matching the backend pipeline at
- * templates/entity/new/backend/database/schema.ejs.t:66-104.
+ * column reference to that declaration.
  */
 
 import { describe, it, expect } from 'bun:test';
