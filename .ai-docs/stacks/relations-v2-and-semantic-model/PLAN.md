@@ -75,9 +75,9 @@ again before minting; two ADR-031s already exist).
 ## 3. Sequencing and proposed PR list
 
 ```
-DRZ-1 ──► DRZ-2 ──┬──► TEN-1 ──► REL-1 ──► REL-2 ──► REL-3 ──► FE-REL
-                  ├──► SEM-1 ──► SEM-2 ──► SEM-3        (+ QS-1 in the query-surface repo)
-                  └──► CAP-1 ──► CAP-2 ──► CAP-3        (roles: feed v2 `alias`; REL-1 reads them if landed)
+DRZ-1 ──► DRZ-2 ──┬──► REL-0 ──┬──► TEN-1 ──► REL-1 ──► REL-2 ──► REL-3 ──► FE-REL
+                  │            └──► CAP-1 ──► CAP-2 ──► CAP-3   (roles: feed v2 `alias`; REL-1 reads them if landed)
+                  └──► SEM-1 ──► SEM-2 ──► SEM-3        (+ QS-1 in the query-surface repo)
 ```
 
 | Key | Unit | PR title (proposed) | Size | Depends on |
@@ -94,7 +94,7 @@ DRZ-1 ──► DRZ-2 ──┬──► TEN-1 ──► REL-1 ──► REL-2 �
 | SEM-1 | 3 | `feat(schema): analytics vocabulary → field tags (role/agg/aggs/additivity/time) + catalog metrics` | M | DRZ-2 |
 | SEM-2 | 3 | `feat(emit): semantic model emitter — declared AggregateModel from the entity set` | L | SEM-1 |
 | SEM-3 | 3 | `test(smoke): CRM vertical slice with analytics tags — emitted model type-checks and answers a fan-out-trap measure` | M | SEM-2 |
-| CAP-1 | 4 | `feat(patterns): kind:'capability' + composed-base emission (ADR-041 implementation)` | L | DRZ-2 |
+| CAP-1 | 4 | `feat(patterns): kind:'capability' + composed-base emission (ADR-041 implementation)` | L | DRZ-2, REL-0 |
 | CAP-2 | 4 | `feat(schema): roles: block — role → (actor entity, cardinality) on communication entities` | M | CAP-1 |
 | CAP-3 | 4 | `feat(runtime+patterns): Actor + Communication capabilities (mixins, explicit scope)` | L | CAP-2 |
 
@@ -303,13 +303,17 @@ model); add `has_one` to the relationship kinds; publish. Its tenancy hook (`sco
 ## 5A. Unit 2 — relations graph as the core contract (ADR-044)
 
 ### 5A.0 REL-0 (#603) — `BaseRepository` generic over its concrete table
-Added at checkpoint 1. `BaseRepository<TEntity>` holds `table: PgTableWithColumns<any>`; that `any` is why 1.0's
-`.returning()` needs an array assertion and why column access is untyped. Make the class (and the family repositories
-and mixins) generic over the concrete `pgTable` type, derive `TEntity` from `$inferSelect`, read columns via
-`getColumns`. Generated repositories pass their table type. Must hold under the **consumer** tsconfig
-(`noUncheckedIndexedAccess`) — validate with `just test-smoke`, not `bun run typecheck` (charter I9). Lands before
-TEN-1 (same choke point, avoids a rebase fight) and is a hard prerequisite of REL-2's typed includes. `clean-lite-ps`
-generated repos + vendored runtime both covered; the `clean` pipeline is not (#602).
+Added at checkpoint 1. **As built, see `docs/specs/REL-0.md`** — that spec is the source of truth and supersedes this
+section. In one line: `BaseRepository<TEntity, TTable extends PgTable>` (and every family repository and mixin, with
+`TTable` always the second type parameter) holds `table: TTable` and reads columns through a typed `column()` helper,
+replacing the `PgTableWithColumns<any>` that forced the `.returning()` / write-payload assertions. `TEntity` stays an
+**independent, explicit** parameter: the checkpoint-1 wording here ("derive `TEntity` from `$inferSelect`, read columns
+via `getColumns`") was evaluated and rejected — generated code already defines the entity as
+`InferSelectModel<typeof table>`, and hand-written repositories legitimately pass a domain type that is not the row
+shape (REL-0.md §1). Validated under the **consumer** tsconfig (`noUncheckedIndexedAccess`) via `just test-smoke`, not
+`bun run typecheck` (charter I9). Prerequisite of TEN-1 (same choke point), REL-2 (typed includes) and CAP-1 (its
+capability mixins are typed over `BaseRepository<any, PgTable>`). `clean-lite-ps` generated repos + vendored runtime
+covered; the `clean` pipeline is not (#602).
 
 ### 5A.1 What "reads are generated" means
 RQBv2 resolves a nested include tree from one root in a single statement, typed end to end:
@@ -452,9 +456,13 @@ export function WithActor<TBase extends RepoCtor>(Base: TBase) { /* memberPredic
   `configSchema`, `forwarderMethods` for the service-side pass-throughs, `mixinImport` for the repo side.
 - Emission: `patternConfig.roles` literal on the concrete repo (the `renderPatternConfigLiteral` path
   `service.ejs.t:49`); a `Communication` entity's `roles` also drive FK columns via CAP-2.
-- Fixture: `meeting` (`patterns: [Integrated, Activity, Communication]`, roles host/attendees/about) over `contact`
+- Fixture: `meeting` (`patterns: [Activity, Communication]`, roles host/attendees/about) over `contact`
   (`Actor: individual`) and `account` (`Actor: group`, members via `contacts`); smoke tsc + `just test-integration`
-  round-trip of `findByRole('attendee', contactId, scope)`.
+  round-trip of `findByRole('attendees', contactId)` (scope is ALS-fed, never a parameter).
+  *Revised after checkpoint 1:* the originally proposed `[Integrated, Activity, Communication]` is a **hard error**
+  under CAP-1 — `Integrated` and `Activity` are both inheritable spine bases, and ADR-041 allows exactly one
+  (`pattern_multiple_spines`, `docs/specs/CAP-1.md`). Per ADR-041 §5, `Activity` is not dual-authored as a capability
+  until a consumer needs it; CAP-3's spec records the fixture it actually uses.
 
 ### 6.5 Out of scope for unit 4
 `to_shape` projections, selector/Find-target catalog, and shape registry from the subject-lattice research; any

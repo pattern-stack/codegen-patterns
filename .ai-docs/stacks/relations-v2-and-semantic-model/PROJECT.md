@@ -107,12 +107,14 @@ uphold the ones they touch.
 ## 6. Units, order, and what "done" means
 
 ```
-DRZ-1 ─► GATE-1 ─► DRZ-2 ─► GATE-2 ─┬─► REL-0 ─► TEN-1 ─┐
-        epic #579                   │      REL-1 ───────┴─► REL-2 ─► REL-3 ─► FE-REL   epic #580
-                                    ├─► SEM-1 ─► SEM-2 ─► SEM-3  (+ query-surface#40)  epic #581
-                                    └─► CAP-1 ─► CAP-2 ─► CAP-3                        epic #582
+DRZ-1 ─► GATE-1 ─► DRZ-2 ─► GATE-2 ─┬─► REL-0 ─┬─► TEN-1 ─┐
+        epic #579                   │          │  REL-1 ──┴─► REL-2 ─► REL-3 ─► FE-REL   epic #580
+                                    │          └─► CAP-1 ─► CAP-2 ─► CAP-3               epic #582
+                                    └─► SEM-1 ─► SEM-2 ─► SEM-3  (+ query-surface#40)   epic #581
 ```
-GATE-1 (#599), GATE-2 (#604) and REL-0 (#603) were added at checkpoint 1 — see §7.
+GATE-1 (#599), GATE-2 (#604) and REL-0 (#603) were added at checkpoint 1 — see §7. CAP-1 depends on REL-0 as well as
+DRZ-2: its capability mixins are typed over REL-0's `BaseRepository<any, PgTable>` and reach its `protected` column
+surface (`docs/specs/CAP-1.md`).
 
 | Epic | Exit criteria (the epic closes when all are true) |
 |---|---|

@@ -26,9 +26,9 @@ plan:
 
     ## Sequencing
     ```
-    DRZ-1 ─► DRZ-2 ─┬─► TEN-1 ─► REL-1 ─► REL-2 ─► REL-3 ─► FE-REL
-                    ├─► SEM-1 ─► SEM-2 ─► SEM-3      (+ QS-1 in the query-surface repo)
-                    └─► CAP-1 ─► CAP-2 ─► CAP-3
+    DRZ-1 ─► DRZ-2 ─┬─► REL-0 ─┬─► TEN-1 ─► REL-1 ─► REL-2 ─► REL-3 ─► FE-REL
+                    │          └─► CAP-1 ─► CAP-2 ─► CAP-3
+                    └─► SEM-1 ─► SEM-2 ─► SEM-3      (+ QS-1 in the query-surface repo)
     ```
     Checkpoint after DRZ-2: re-read the plan against what the 1.0 bump actually surfaced before starting the three tracks.
 
@@ -156,7 +156,7 @@ issues:
     size: L
     depends_on: ["584"]
     labels: [gate:auto, base-class, domain:codegen]
-    description: "Added at checkpoint 1. PLAN §5A.0. Prerequisite of TEN-1 (same choke point) and REL-2 (typed includes)."
+    description: "Added at checkpoint 1. PLAN §5A.0; as built: docs/specs/REL-0.md. Prerequisite of TEN-1 (same choke point), REL-2 (typed includes) and CAP-1 (capability mixins typed over BaseRepository<any, PgTable>)."
 
   - key: "585"
     key_original: ten-1
@@ -355,7 +355,7 @@ issues:
     key_original: cap-1
     title: "CAP-1: kind:'capability' + composed-base emission (ADR-041 implementation)"
     size: L
-    depends_on: ["584"]
+    depends_on: ["584", "603"]
     labels: [gate:auto, templates, domain:codegen]
     description: |
       ## Why
@@ -410,8 +410,9 @@ issues:
       - **Scope is ALS-fed** — methods take no scope parameter and compose through the repository's `scopeAnd()`
         (ADR-042).
       - Library definitions `src/patterns/library/{actor,communication}.pattern.ts` with `kind: 'capability'`.
-      - Fixture: `meeting` (`[Integrated, Activity, Communication]`, roles host/attendees/about) over `contact`
-        (`Actor: individual`) and `account` (`Actor: group`).
+      - Fixture: `meeting` (`[Activity, Communication]`, roles host/attendees/about) over `contact`
+        (`Actor: individual`) and `account` (`Actor: group`). Not `[Integrated, Activity, Communication]`: two
+        spine bases is a hard error under CAP-1 (PLAN §6.4).
       - ADR-041.1 (sub-ADR) for `roles:` + the two capabilities.
 
       ## Out of scope
