@@ -306,6 +306,9 @@ function typecheckBaseline() {
     const error = err as { stdout?: Buffer; stderr?: Buffer };
     output = [error.stdout?.toString(), error.stderr?.toString()].filter(Boolean).join('\n');
   }
+  // Every `error TS` line must parse as a located diagnostic: a global one
+  // (e.g. TS5083, a tsconfig error) has no file and fails the gate below.
+  const errorLines = output.split('\n').filter((line) => /error TS\d+:/.test(line)).length;
   const diagnostics = output
     .split('\n')
     .map((line) => /^(.+?)\(\d+,\d+\): error (TS\d+):/.exec(line))
@@ -315,7 +318,12 @@ function typecheckBaseline() {
   const others = diagnostics.filter((d) => d.file !== ISSUE_680_EXPECTATION.file);
   const expectedCodes = expected.map((d) => d.code).sort();
   const matches680 = JSON.stringify(expectedCodes) === JSON.stringify(ISSUE_680_EXPECTATION.codes);
-  if (others.length > 0 || !matches680 || (output !== '' && diagnostics.length === 0)) {
+  if (
+    others.length > 0 ||
+    !matches680 ||
+    errorLines !== diagnostics.length ||
+    (output !== '' && diagnostics.length === 0)
+  ) {
     console.error('Typecheck failed over generated clean-lite-ps output:\n' + output);
     if (!matches680) {
       console.error(

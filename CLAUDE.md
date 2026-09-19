@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Entity-driven code generation system for full-stack TypeScript applications (v0.2). Generates Clean Architecture scaffolding from YAML entity definitions, including domain entities, repositories, use cases, DTOs, Drizzle schemas, NestJS modules, controllers, and frontend collections. Also provides infrastructure subsystem scaffolding (events, jobs, cache, storage, auth).
+Entity-driven code generation system for full-stack TypeScript applications (v0.2). Generates one NestJS module folder per entity (clean-lite-ps) from YAML entity definitions — Drizzle table, repository, service, controller, module, DTOs, use cases — plus frontend collections. Also provides infrastructure subsystem scaffolding (events, jobs, cache, storage, auth).
 
 ## Operating Principles
 

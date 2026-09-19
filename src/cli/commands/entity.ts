@@ -260,7 +260,7 @@ export class EntityNewCommand extends Command {
 	static usage = Command.Usage({
 		description: 'Generate code for one or more entities from YAML',
 		details: `
-			Generates Clean Architecture code for the named entity (or all entities with \`--all\`), then runs the post-generation codegen steps that share this entrypoint:
+			Generates the clean-lite-ps backend module (entity, repository, service, controller, module, DTOs, use-cases) for the named entity (or all entities with \`--all\`), then runs the post-generation codegen steps that share this entrypoint:
 
 			- **Event codegen** — \`AppDomainEvent\` union + typed bus from \`events/*.yaml\`.
 			- **Bridge registry** — when the bridge subsystem is installed.
