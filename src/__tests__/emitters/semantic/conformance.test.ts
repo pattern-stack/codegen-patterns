@@ -24,6 +24,16 @@
  * pin different Drizzle majors, so comparing their member types would report
  * version skew rather than real drift.
  *
+ * WHICH PACKAGE REVISION IT PINS. The mirror matches query-surface `main` from
+ * before query-surface#41 (17/17 there). Against #41's head it fails 2 tests —
+ * the `has_one` tripwires below — and that is terminal, not a tripwire to
+ * delete: #41 also orders the kind union `belongs_to | has_one | has_many`
+ * where the mirror has `belongs_to | has_many | has_one`, and unions are
+ * compared verbatim. #41 is the change that publishes the package, so the only
+ * exit when this goes red is SEM-4: retire the mirror and delete this file
+ * (docs/specs/SEM-2.md §4). Editing the mirror to chase #41 would make it fail
+ * against `main` instead, for a mirror that exists only until #41 ships.
+ *
  * WHEN THERE IS NO CHECKOUT the suite SKIPS and PRINTS WHY, naming the env var.
  * That is a named, single-purpose skip with a stated reason — visible in
  * `just test-all` output — not a filter that hides a class of failure (I9).
@@ -91,8 +101,12 @@ const TOLERATED_TYPE_DIFFERENCES: Record<string, Record<string, string>> = {
 	},
 };
 
-/** Named single-purpose expectation — delete when query-surface#40 lands. */
-const HAS_ONE_ISSUE = 'pattern-stack/query-surface#40';
+/**
+ * Named single-purpose expectation. When it fires, the package has `has_one`
+ * — i.e. query-surface#41 is in the checkout — and the exit is SEM-4 retiring
+ * the mirror (this whole file goes), not deleting the expectation.
+ */
+const HAS_ONE_ISSUE = 'pattern-stack/query-surface#41';
 
 function findSibling(): string | null {
 	const fromEnv = process.env.QUERY_SURFACE_PATH;
@@ -205,10 +219,10 @@ describe.skipIf(siblingRoot === null)('semantic type mirror conformance', () => 
 					let expected = theirs!.replace(/EntityName/g, 'string');
 					let actual = ours!;
 					if (actual.includes("'has_one'")) {
-						// NAMED SINGLE-PURPOSE EXPECTATION — remove when
-						// ${HAS_ONE_ISSUE} lands. SEM-2 emits has_one faithfully
-						// (PLAN §5.3); the package does not know the kind yet.
-						expect(expected, `${name}: package already has has_one — delete the ${HAS_ONE_ISSUE} expectation`).not.toContain('has_one');
+						// NAMED SINGLE-PURPOSE EXPECTATION — SEM-2 emits has_one
+						// faithfully (PLAN §5.3); pre-${HAS_ONE_ISSUE} the package
+						// does not know the kind. See HAS_ONE_ISSUE for the exit.
+						expect(expected, `${name}: the package has has_one (${HAS_ONE_ISSUE}) — retire the mirror (SEM-4, docs/specs/SEM-2.md §4); do not edit this expectation`).not.toContain('has_one');
 						actual = normalise(
 							actual
 								.replace(/\s*\|\s*'has_one'/, '')
@@ -238,7 +252,7 @@ describe.skipIf(siblingRoot === null)('semantic type mirror conformance', () => 
 					if (bare === 'kind' && ourType.includes("'has_one'")) {
 						expect(
 							theirNormalised,
-							`${name}.kind already has has_one — delete the ${HAS_ONE_ISSUE} expectation`,
+							`${name}.kind has has_one (${HAS_ONE_ISSUE}) — retire the mirror (SEM-4, docs/specs/SEM-2.md §4); do not edit this expectation`,
 						).not.toContain('has_one');
 						ourType = normalise(ourType.replace(/\s*\|\s*'has_one'/, ''));
 					}

@@ -6,11 +6,17 @@ import { GENERATED_BANNER, TYPES_MODULE } from './emit-model';
 
 export const SEMANTIC_INDEX_FILE = 'index.ts';
 
-/** Render `<generated>/semantic/index.ts`. */
+/**
+ * Render `<generated>/semantic/index.ts`.
+ *
+ * The type re-export names {@link TYPES_MODULE} rather than `./types`, so the
+ * barrel keeps exporting the vocabulary when the mirror is retired for the
+ * published package (SEM-4) — consumers importing types from the barrel never
+ * notice the switch. Every name below is exported from the package root.
+ */
 export function buildSemanticIndex(): string {
-	const typeExport =
-		TYPES_MODULE === './types'
-			? `export type {
+	return `${GENERATED_BANNER}export { buildAggregateModel } from './model';
+export type {
 	Additivity,
 	Agg,
 	AggColType,
@@ -23,9 +29,6 @@ export function buildSemanticIndex(): string {
 	MeasureCatalog,
 	MeasureDef,
 	RelDescriptor,
-} from './types';
-`
-			: '';
-	return `${GENERATED_BANNER}export { buildAggregateModel } from './model';
-${typeExport}`;
+} from '${TYPES_MODULE}';
+`;
 }

@@ -11,11 +11,15 @@
  * declarations against the sibling checkout when one is present, and skips with
  * a printed reason when it is not.
  *
- * REMOVING THIS FILE when the package publishes is three edits, not one:
- *   1. `TYPES_MODULE` in `emit-model.ts` → '@pattern-stack/query-surface'
- *   2. drop `types.ts` from `SEMANTIC_FILES` in `index.ts`
- *   3. add the optional peer dependency + `peerDependenciesMeta` entry
- * See docs/specs/SEM-2.md §4.
+ * RETIRING THIS FILE (SEM-4) is not a one-line change. The list, measured by
+ * flipping `TYPES_MODULE` alone and recording what goes red, is in
+ * docs/specs/SEM-2.md §4 "Retiring the mirror". In short: the constant; the
+ * `types.ts` branch in `index.ts` (TS2367 once the constant changes); delete
+ * this file and `conformance.test.ts`; the `'./types'` pins in
+ * `emit-model.test.ts`; the golden `snapshot/types.ts` + regenerated
+ * `index.ts` / `model.ts`; the smoke's `types.ts` assertion and its
+ * `RUNTIME_DEPS` (TS2307 without the package); the peer + dev dependency.
+ * The emitted barrel needs nothing — it re-exports from `TYPES_MODULE`.
  */
 
 import { GENERATED_BANNER } from './emit-model';

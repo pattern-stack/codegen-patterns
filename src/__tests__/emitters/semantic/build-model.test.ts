@@ -167,6 +167,17 @@ describe('analytics tags', () => {
 		expect(model.entities[0]!.fields.other!.hasDeclaredDomain).toBeUndefined();
 	});
 
+	it('marks an enum with choices_from as having a declared value domain', () => {
+		const model = buildSemanticModel(
+			context([
+				parsedEntity('thing', 'things', [
+					field('stage', 'enum', { role: 'dimension' }, { choicesFrom: './stages.yaml' }),
+				]),
+			]),
+		);
+		expect(model.entities[0]!.fields.stage!.hasDeclaredDomain).toBe(true);
+	});
+
 	it('derives scope columns to dimensions, and never to measures', () => {
 		const model = buildSemanticModel(
 			context([
@@ -337,6 +348,82 @@ describe('junctions', () => {
 		expect(
 			model.entities.find((e) => e.name === 'contact')!.relationships.opportunity_contacts,
 		).toEqual({ kind: 'has_many', target: 'opportunity_contact', fk: 'contact_id' });
+	});
+
+	describe('fields — exactly the columns the junction template emits', () => {
+		const endpoints = [
+			parsedEntity('opportunity', 'opportunities', [field('name', 'string')]),
+			parsedEntity('contact', 'contacts', [field('name', 'string')]),
+		];
+		const junctionOf = (extra: Record<string, unknown>) =>
+			buildSemanticModel(
+				context(endpoints, [
+					{ pattern: 'Junction', between: ['opportunity', 'contact'], ...extra } as unknown as JunctionDefinition,
+				]),
+			).entities.find((e) => e.name === 'opportunity_contact')!;
+
+		it('emits the FKs, BaseJunctionFields and timestamps, and no phantom id', () => {
+			const j = junctionOf({});
+			expect(Object.keys(j.fields).sort()).toEqual([
+				'confidence',
+				'contact_id',
+				'created_at',
+				'ended_at',
+				'is_primary',
+				'matched_at',
+				'opportunity_id',
+				'sourced_from',
+				'started_at',
+				'updated_at',
+			]);
+			expect(j.fields.id).toBeUndefined();
+			expect(j.compositeKey).toEqual(['opportunity_id', 'contact_id']);
+		});
+
+		it('drops the temporal and provenance columns when opted out', () => {
+			const j = junctionOf({ temporal: false, sourced: false });
+			expect(Object.keys(j.fields).sort()).toEqual([
+				'contact_id',
+				'created_at',
+				'is_primary',
+				'opportunity_id',
+				'updated_at',
+			]);
+		});
+
+		it('emits a role with choices as a keyed dimension with a declared domain', () => {
+			const j = junctionOf({ fields: { role: { type: 'enum', choices: ['champion'] } } });
+			expect(j.fields.role).toEqual({
+				key: 'role',
+				type: 'enum',
+				column: 'role',
+				role: 'dimension',
+				hasDeclaredDomain: true,
+			});
+			expect(j.compositeKey).toEqual(['opportunity_id', 'contact_id', 'role']);
+		});
+
+		it('emits no role column for a role without choices — the template generates none (#690)', () => {
+			const j = junctionOf({ fields: { role: { type: 'enum', values: ['champion'] } } });
+			expect(j.fields.role).toBeUndefined();
+			expect(j.compositeKey).toEqual(['opportunity_id', 'contact_id']);
+		});
+
+		it('types payload fields the way the template types their columns', () => {
+			const j = junctionOf({
+				fields: {
+					score: { type: 'decimal' },
+					stage: { type: 'enum', choices: ['a'] },
+					loose: { type: 'enum' },
+					tags: { type: 'string_array' },
+				},
+			});
+			expect(j.fields.score!.type).toBe('number');
+			expect(j.fields.stage).toMatchObject({ type: 'enum', hasDeclaredDomain: true });
+			expect(j.fields.loose!.type).toBe('string');
+			expect(j.fields.tags!.type).toBe('string');
+			expect(j.fields.score!.role).toBeUndefined();
+		});
 	});
 
 	it('warns and omits a junction whose endpoint is not a declared entity', () => {

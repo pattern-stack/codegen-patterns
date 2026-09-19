@@ -23,8 +23,8 @@ const emptyModel: SemanticModel = { entities: [], metrics: [], warnings: [] };
 
 describe('TYPES_MODULE is the single name of the types module', () => {
 	it('is the vendored mirror until the package publishes', () => {
-		// When this flips to '@pattern-stack/query-surface' the other two edits
-		// in emit-types.ts's header go with it; the tests below hold either way.
+		// Flipping this is SEM-4's retirement, not a one-line change — the full
+		// list of edits is in emit-types.ts's header and docs/specs/SEM-2.md §4.
 		expect(TYPES_MODULE).toBe('./types');
 	});
 
@@ -40,13 +40,12 @@ describe('TYPES_MODULE is the single name of the types module', () => {
 		expect(typeSpecifiers).toEqual([TYPES_MODULE]);
 	});
 
-	it('the emitted barrel re-exports the mirror only while it is vendored', () => {
+	it('the emitted barrel re-exports the vocabulary from TYPES_MODULE, whichever it is', () => {
 		const index = buildSemanticIndex();
-		if (TYPES_MODULE === './types') {
-			expect(index).toContain("from './types'");
-		} else {
-			expect(index).not.toContain("from './types'");
-		}
+		// Consumers import types from the barrel; retiring the mirror must not
+		// take them away, so the re-export follows the constant.
+		expect(index).toContain(`} from '${TYPES_MODULE}';`);
+		expect(index).toContain('\tAggregateModel,');
 		expect(index).toContain("export { buildAggregateModel } from './model';");
 	});
 });

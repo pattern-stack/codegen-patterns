@@ -76,6 +76,8 @@ const registry: Record<string, EntityDescriptor> = {
 	opportunity_contact: {
 		name: 'opportunity_contact',
 		table: tables['opportunity_contact']!,
+		// Composite key (opportunity_id, contact_id, role); a junction has no `id` column.
+		// A single-column key cannot express it, so this fails loudly if read (#689).
 		primaryKey: 'id',
 		columns: columnsByProp['opportunity_contact']!,
 		relationships: {
@@ -139,15 +141,26 @@ const analytics: AggRegistry = {
 	},
 	opportunity_contact: {
 		table: 'opportunity_contacts',
+		// Composite key (opportunity_id, contact_id, role); a junction has no `id` column.
+		// A single-column key cannot express it, so this fails loudly if read (#689).
 		pk: 'id',
 		rels: {
 			contact: { kind: 'belongs_to', target: 'contact', fk: 'contact_id' },
 			opportunity: { kind: 'belongs_to', target: 'opportunity', fk: 'opportunity_id' },
 		},
 		fields: {
+			confidence: { type: 'number', column: 'confidence' },
 			contact_id: { type: 'uuid', column: 'contact_id' },
-			id: { type: 'uuid', column: 'id' },
+			created_at: { type: 'datetime', column: 'created_at' },
+			ended_at: { type: 'datetime', column: 'ended_at' },
+			influence_score: { type: 'number', column: 'influence_score' },
+			is_primary: { type: 'boolean', column: 'is_primary' },
+			matched_at: { type: 'datetime', column: 'matched_at' },
 			opportunity_id: { type: 'uuid', column: 'opportunity_id' },
+			role: { type: 'enum', role: 'dimension', column: 'role', hasDeclaredDomain: true },
+			sourced_from: { type: 'string', column: 'sourced_from' },
+			started_at: { type: 'datetime', column: 'started_at' },
+			updated_at: { type: 'datetime', column: 'updated_at' },
 		},
 	},
 };

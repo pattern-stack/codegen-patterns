@@ -10,7 +10,8 @@
  * to regress silently: both catalog key shapes (`aggs:` → `field.agg`, single
  * `agg:` → bare `field`), a non-additive measure, a `time: true` axis, an enum
  * dimension with a declared domain, a scope column derived to a dimension, a
- * `has_one`, a junction with its inverse edges, a `through:` relationship that
+ * `has_one`, a junction with its inverse edges and its real column set (a
+ * `choices:` role, a payload field, no phantom `id`), a `through:` relationship that
  * must NOT appear, and `string_array` / `entity_ref` fields that must not reach
  * `analytics.fields`. Focused assertions below name each one independently, so
  * a regression reports what broke rather than just "the snapshot moved".

@@ -41,6 +41,12 @@ export interface ParsedField {
 	index: boolean;
 	foreignKey?: { table: string; column: string };
 	choices?: string[];
+	/**
+	 * `choices_from:` — the path of the YAML file an enum loads its values from.
+	 * Carried (not resolved) so consumers that only need to know the domain is
+	 * DECLARED — the semantic emitter's `hasDeclaredDomain` — can see it.
+	 */
+	choicesFrom?: string;
 	constraints: {
 		minLength?: number;
 		maxLength?: number;

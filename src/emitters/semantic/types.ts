@@ -98,6 +98,13 @@ export interface SemanticEntity {
 	searchableColumns: string[];
 	/** `'junction'` for a junction table; `'entity'` otherwise. */
 	kind: 'entity' | 'junction';
+	/**
+	 * A junction's real primary key — composite, `(<a>_id, <b>_id[, role])`. The
+	 * package's descriptor holds a single key column, so `primaryKey` stays `'id'`
+	 * (a column that does not exist, failing loudly if read) and this is printed
+	 * beside it. Absent for entities. See #689.
+	 */
+	compositeKey?: string[];
 }
 
 /** A composite metric, mirroring the package's non-atomic `MeasureDef` kinds. */

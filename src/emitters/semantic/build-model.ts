@@ -57,6 +57,84 @@ const AGG_COL_TYPE: Record<string, AggColType> = {
  */
 const SCOPE_COLUMNS = new Set(['tenant_id', 'organization_id', 'user_id']);
 
+/**
+ * A junction payload field's YAML `type:` → `AggColType`, mirroring what
+ * `templates/junction/new/prompt.js` (`DRIZZLE_TYPE_MAP`) turns it into: an
+ * enum only when `choices:` is non-empty (otherwise a `text` column), and any
+ * type the template does not map becomes `text` too.
+ */
+function junctionFieldType(field: { type?: string; choices?: unknown }): AggColType {
+	const hasChoices = Array.isArray(field.choices) && field.choices.length > 0;
+	if (hasChoices) return 'enum';
+	const type = field.type ?? 'string';
+	if (type === 'enum') return 'string';
+	return AGG_COL_TYPE[type] ?? 'string';
+}
+
+/**
+ * Every column a junction table actually has, as `analytics.fields` — the
+ * exact set `templates/junction/new/entity.ejs.t` emits:
+ *
+ * - the two FK columns;
+ * - `role`, when `fields.role.choices` is non-empty (a pg enum that is part of
+ *   the composite key) — derived to a dimension with a declared domain, the
+ *   same way scope columns are derived: it is the junction's identity, so
+ *   grouping by it needs no tag;
+ * - the BaseJunctionFields: `is_primary` always, `started_at` / `ended_at`
+ *   when `temporal` (default true), `sourced_from` / `confidence` /
+ *   `matched_at` when `sourced` (default true);
+ * - every other `fields:` entry, typed as the template types it;
+ * - `created_at` / `updated_at`.
+ *
+ * There is no `id`: a junction's key is composite (see `compositeKey`). A
+ * `role` declared with anything but a non-empty `choices:` produces no column
+ * at all (the template drops it), so it is not emitted either. Junction YAML
+ * has no analytics tag vocabulary, so nothing here is a measure.
+ */
+function buildJunctionFields(def: JunctionDefinition): {
+	fields: Record<string, SemanticField>;
+	compositeKey: string[];
+} {
+	const [left, right] = def.between;
+	const payload = (def.fields ?? {}) as Record<string, { type?: string; choices?: unknown }>;
+	const fields: Record<string, SemanticField> = {};
+	const put = (key: string, type: AggColType, extra: Partial<SemanticField> = {}) => {
+		fields[key] = { key, type, column: key, ...extra };
+	};
+
+	put(`${left}_id`, 'uuid');
+	put(`${right}_id`, 'uuid');
+	const compositeKey = [`${left}_id`, `${right}_id`];
+
+	const role = payload.role;
+	if (role && Array.isArray(role.choices) && role.choices.length > 0) {
+		put('role', 'enum', { role: 'dimension', hasDeclaredDomain: true });
+		compositeKey.push('role');
+	}
+
+	put('is_primary', 'boolean');
+	if (def.temporal !== false) {
+		put('started_at', 'datetime');
+		put('ended_at', 'datetime');
+	}
+	if (def.sourced !== false) {
+		put('sourced_from', 'string');
+		put('confidence', 'number');
+		put('matched_at', 'datetime');
+	}
+
+	for (const [name, field] of Object.entries(payload)) {
+		if (name === 'role') continue;
+		const type = junctionFieldType(field ?? {});
+		put(name, type, type === 'enum' ? { hasDeclaredDomain: true } : {});
+	}
+
+	put('created_at', 'datetime');
+	put('updated_at', 'datetime');
+
+	return { fields, compositeKey };
+}
+
 /** Identifier columns that are never worth full-text matching. */
 const NEVER_SEARCHABLE = new Set(['id', 'external_id']);
 
@@ -142,10 +220,11 @@ function buildField(name: string, field: ParsedField): SemanticField | null {
 	if (tags.additivity !== undefined) out.additivity = tags.additivity;
 	if (tags.time !== undefined) out.time = tags.time;
 
-	// A dimension whose value domain is enumerated in the declaration. The
-	// package surfaces this as `valueDomain: 'declared'` so an agent knows the
-	// values are already known without a probe query.
-	if (field.type === 'enum' && (field.choices?.length ?? 0) > 0) {
+	// A dimension whose value domain is enumerated in the declaration — inline
+	// (`choices:`) or in a referenced file (`choices_from:`). The package
+	// surfaces this as `valueDomain: 'declared'` so an agent knows the values are
+	// already known without a probe query.
+	if (field.type === 'enum' && ((field.choices?.length ?? 0) > 0 || field.choicesFrom !== undefined)) {
 		out.hasDeclaredDomain = true;
 	}
 
@@ -296,19 +375,7 @@ export function buildSemanticModel(context: SemanticEmitContext): SemanticModel 
 			[right]: { kind: 'belongs_to', target: right, fk: `${right}_id` },
 		};
 
-		const fields: Record<string, SemanticField> = {
-			id: { key: 'id', type: 'uuid', column: 'id' },
-			[`${left}_id`]: {
-				key: `${left}_id`,
-				type: 'uuid',
-				column: `${left}_id`,
-			},
-			[`${right}_id`]: {
-				key: `${right}_id`,
-				type: 'uuid',
-				column: `${right}_id`,
-			},
-		};
+		const { fields, compositeKey } = buildJunctionFields(def);
 
 		entities.push({
 			name: identity.name,
@@ -319,6 +386,7 @@ export function buildSemanticModel(context: SemanticEmitContext): SemanticModel 
 			fields: sortedRecord(fields),
 			searchableColumns: [],
 			kind: 'junction',
+			compositeKey,
 		});
 
 		// Inverse edges on the endpoints, keyed by the junction's plural.

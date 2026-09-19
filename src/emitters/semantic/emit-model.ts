@@ -93,6 +93,18 @@ function renderTables(entities: SemanticEntity[]): string {
 	return `const tables: Record<string, PgTable> = {\n${lines.join('\n')}\n};\n`;
 }
 
+/**
+ * A junction's key is composite and the package's descriptor holds one column,
+ * so the emitted `'id'` names no column. Say so where it is printed (#689).
+ */
+function compositeKeyNote(entity: SemanticEntity): string[] {
+	if (!entity.compositeKey) return [];
+	return [
+		`\t\t// Composite key (${entity.compositeKey.join(', ')}); a junction has no \`id\` column.`,
+		`\t\t// A single-column key cannot express it, so this fails loudly if read (#689).`,
+	];
+}
+
 function renderRegistry(entities: SemanticEntity[]): string {
 	const blocks = entities.map((entity) => {
 		const rels = Object.entries(entity.relationships).map(
@@ -107,6 +119,7 @@ function renderRegistry(entities: SemanticEntity[]): string {
 			`\t${key(entity.name)}: {`,
 			`\t\tname: ${str(entity.name)},`,
 			`\t\ttable: tables[${str(entity.name)}]!,`,
+			...compositeKeyNote(entity),
 			`\t\tprimaryKey: ${str(entity.primaryKey)},`,
 			`\t\tcolumns: columnsByProp[${str(entity.name)}]!,`,
 			`\t\trelationships: ${relBody},`,
@@ -131,6 +144,7 @@ function renderAnalytics(entities: SemanticEntity[]): string {
 		return [
 			`\t${key(entity.name)}: {`,
 			`\t\ttable: ${str(entity.tableName)},`,
+			...compositeKeyNote(entity),
 			`\t\tpk: ${str(entity.primaryKey)},`,
 			`\t\trels: ${relBody},`,
 			`\t\tfields: ${fieldBody},`,
