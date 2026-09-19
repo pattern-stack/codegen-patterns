@@ -1,8 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.listUseCase : null %>"
+to: "<%= clpOutputPaths.listUseCase %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import { Injectable } from '@nestjs/common';
 import { asc, desc, sql, type SQL } from 'drizzle-orm';
@@ -104,4 +103,3 @@ export class <%= classNames.listUseCase %> {
     return buildPage(items, total, resolved);
   }
 }
-<%_ } -%>

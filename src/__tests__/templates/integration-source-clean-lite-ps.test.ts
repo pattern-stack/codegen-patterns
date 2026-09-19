@@ -1,8 +1,8 @@
 /**
  * Issue #267 + ADR-033.1 §8 — clean-lite-ps integration-source emission.
  *
- * The integration-source.ejs.t template's `to:` and entity-import paths must route
- * through clean-lite-ps overrides when the architecture is `clean-lite-ps`:
+ * The integration-source.ejs.t template's `to:` and entity-import paths come
+ * from the clean-lite-ps locals (the only backend pipeline, ARCH-0):
  *   - module emit path: src/modules/<plural>/<entity>-integration-source.module.ts
  *     (co-located with the entity file, NOT under infrastructure/modules/)
  *   - entity import: ./<entity>.entity (sibling import, matches the
@@ -22,7 +22,7 @@ import { withEntities } from '../clean-lite-ps/_entity-lookup';
 
 const MODULE_TEMPLATE = resolve(
   import.meta.dir,
-  '../../../templates/entity/new/backend/modules/core/integration-source.ejs.t',
+  '../../../templates/entity/new/clean-lite-ps/integration-source.ejs.t',
 );
 function readFrontmatter(source: string): { frontmatter: string; body: string } {
   const lines = source.split('\n');
@@ -67,53 +67,33 @@ describe('integration-source emission (clean-lite-ps) — #267', () => {
     expect(locals.clpImports.integrationSourceToEntity).toBe('./opportunity.entity');
   });
 
-  it('module template `to:` resolves to the CLP path when isCleanLitePs is true', () => {
+  it('module template `to:` resolves to the CLP path', () => {
     const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ modulesDir: 'src/modules' }));
     const { frontmatter } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
     // Render the frontmatter as EJS so the conditional ternary evaluates.
     const rendered = ejs.render(frontmatter, {
       hasDetection: true,
-      isCleanLitePs: true,
       clpOutputPaths: locals.clpOutputPaths,
-      basePaths: { backendSrc: 'unused' },
-      paths: { modules: 'unused' },
-      name: 'opportunity',
     });
     expect(rendered).toContain('src/modules/opportunities/opportunity-integration-source.module.ts');
-    expect(rendered).not.toContain('unused');
   });
 
   // ADR-033.2's per-entity provider-tuple template (integration-source.providers.ejs.t)
   // is deleted by RFC-0001 §8 (D4); its emission test is removed with it. The
   // surface-scoped typed view replaces it (adapter-emission-generator.test.ts).
 
-  it('module body imports the entity sibling-style under clean-lite-ps', () => {
+  it('module body imports the entity sibling-style', () => {
     const locals = buildCleanLitePsLocals(opportunityDefinition, withEntities({ modulesDir: 'src/modules' }));
     const { body } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
     const rendered = ejs.render(body, {
-      name: 'opportunity',
-      className: 'Opportunity',
+      entityName: 'opportunity',
+      classNames: { entity: 'Opportunity' },
       hasDetection: true,
       detectionConfigsLiteral: '{}',
-      isCleanLitePs: true,
       clpImports: locals.clpImports,
-      imports: { moduleToDomain: '../../domain' },
+      generatedBanner: '// @generated',
+      integrationSubsystemImport: '@shared/subsystems/integration',
     });
     expect(rendered).toContain("import type { Opportunity } from './opportunity.entity';");
-    expect(rendered).not.toContain("from '../../domain'");
-  });
-
-  it('clean-architecture path still uses imports.moduleToDomain (regression guard)', () => {
-    const { body } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
-    const rendered = ejs.render(body, {
-      name: 'opportunity',
-      className: 'Opportunity',
-      hasDetection: true,
-      detectionConfigsLiteral: '{}',
-      isCleanLitePs: false,
-      clpImports: undefined,
-      imports: { moduleToDomain: '../domain' },
-    });
-    expect(rendered).toContain("import type { Opportunity } from '../domain';");
   });
 });

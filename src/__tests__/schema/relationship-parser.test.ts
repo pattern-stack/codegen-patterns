@@ -146,11 +146,11 @@ describe('parsed relationship structure', () => {
 
 describe('resolveRelationshipReferences', () => {
 	const { relationships } = loadRelationships(REL_FIXTURES_DIR);
-	const { entities } = loadEntities(FIXTURES_DIR);
+	const { entities } = loadEntities(resolve(FIXTURES_DIR, 'entities'));
 
 	it('validates endpoints against entity names', () => {
 		const issues = resolveRelationshipReferences(relationships, entities);
-		// Some fixtures reference entities that exist in test/fixtures/
+		// Some fixtures reference entities that exist in test/fixtures/entities/
 		// (person, organization, opportunity), others may not (engagement)
 		// This test just confirms the function runs without crashing
 		expect(Array.isArray(issues)).toBe(true);
@@ -162,7 +162,7 @@ describe('resolveRelationshipReferences', () => {
 // ============================================================================
 
 describe('buildDomainGraph with relationships', () => {
-	const { entities } = loadEntities(FIXTURES_DIR);
+	const { entities } = loadEntities(resolve(FIXTURES_DIR, 'entities'));
 	resolveReferences(entities);
 	const { relationships } = loadRelationships(REL_FIXTURES_DIR);
 

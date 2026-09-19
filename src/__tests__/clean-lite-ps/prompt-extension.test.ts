@@ -18,7 +18,7 @@ import { withEntities } from './_entity-lookup';
 const EMPTY_BASE_LOCALS = withEntities({ runtimeMode: 'vendored' });
 
 // ============================================================================
-// Contact entity definition matching test/fixtures/contact-v2.yaml
+// Contact entity definition matching test/fixtures/entities/contact-v2.yaml
 // ============================================================================
 
 const contactDefinition = {

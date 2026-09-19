@@ -8,10 +8,7 @@
 import { loadEntities, loadRelationships, resolveReferences, resolveRelationshipReferences } from './parser';
 import { validateSemanticModel } from './parser/validate-semantic.js';
 import { buildDomainGraph, checkConsistency, computeStatistics } from './analyzer';
-import {
-	validatePatternComposition,
-	validatePatternProject,
-} from './patterns/validate-composition.js';
+import { validatePatternComposition } from './patterns/validate-composition.js';
 import { validateOrchestrationProject } from './patterns/validate-orchestration.js';
 import { validateRolesProject } from './roles/validate-roles.js';
 import { loadJunctionSummaries } from './parser/load-junctions.js';
@@ -32,13 +29,6 @@ export interface AnalyzeDomainOptions {
 	 */
 	relationshipsDir?: string;
 	/**
-	 * Selected backend architecture from `codegen.config.yaml
-	 * generate.architecture`. When provided, enables the PATTERN-4 project-level
-	 * check (plan Risk 4) that warns when `pattern:` is declared but the
-	 * selected architecture does not yet consume patterns (e.g. `clean`).
-	 */
-	architecture?: string;
-	/**
 	 * CAP-2: the project's `junctions/` directory. When given, a
 	 * `cardinality: many` role's `via:` must name a junction that exists there
 	 * and joins the right two entities. Without it, `via:` is still checked
@@ -51,10 +41,7 @@ export interface AnalyzeDomainOptions {
  * Analyze a domain from entity and relationship YAML files.
  *
  * The signature accepts either the legacy `(entitiesDir, relationshipsDir)`
- * shape or the newer `(entitiesDir, options)` object form. Existing callers
- * keep working unchanged; pattern-aware callers pass
- * `{ architecture, relationshipsDir }` to opt into the Risk-4 project-level
- * warning surface.
+ * shape or the `(entitiesDir, options)` object form.
  */
 export async function analyzeDomain(
 	entitiesDir: string,
@@ -93,14 +80,8 @@ export async function analyzeDomain(
 	// PATTERN-4 — pattern composition check. Runs AFTER resolveReferences()
 	// (per ADR-031 §3) so entity fields + behaviors are known; the
 	// per-entity validator detects column conflicts, unknown patterns, and
-	// config-schema failures, and the project-level validator covers plan
-	// Risk 4 (warn when `pattern:` is declared under an architecture that
-	// does not yet consume patterns).
+	// config-schema failures.
 	const patternIssues = entities.flatMap((e) => validatePatternComposition(e));
-	const patternProjectIssues = validatePatternProject({
-		entities,
-		architecture: opts.architecture,
-	});
 
 	// ADR-032 Phase 3-1 — orchestration pattern project-level validator.
 	// Compares orchestration names against the domain name set (cross-kind
@@ -136,7 +117,6 @@ export async function analyzeDomain(
 		...relResolveIssues,
 		...consistencyIssues,
 		...patternIssues,
-		...patternProjectIssues,
 		...orchestrationProjectIssues,
 		...semanticIssues,
 		...rolesProjectIssues,

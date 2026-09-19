@@ -79,13 +79,14 @@ describe('project NounModule', () => {
 		const cwd = mkTempDir('initialized');
 		fs.writeFileSync(
 			path.join(cwd, 'codegen.config.yaml'),
-			'generate:\n  architecture: clean-lite-ps\n'
+			'generate:\n  frontend: false\n'
 		);
 		const ctx = await loadContext({ cwd, skipDetection: true });
 		const pane = await projectNoun.summary(ctx);
 		const body = (pane.body as string[]).join('\n');
 		expect(body).toContain('initialized');
-		expect(body).toContain('clean-lite-ps');
+		// clean-lite-ps is the only backend pipeline — nothing to report (ARCH-0).
+		expect(body).not.toContain('architecture');
 	});
 });
 
@@ -373,8 +374,9 @@ describe('buildInitPlan', () => {
 		expect(paths).toContain('entities');
 		expect(paths).toContain('entities/example.yaml');
 
-		// Defaults to clean-lite-ps (matches the demo app + CONSUMER-SETUP).
-		expect(plan.summary.architecture).toBe('clean-lite-ps');
+		// No backend-architecture key: clean-lite-ps is the only pipeline (ARCH-0).
+		const config = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
+		expect(config?.content).not.toContain('architecture');
 	});
 
 	test('package mode (default): vendors NOTHING and writes runtime: package (ADR-037)', async () => {

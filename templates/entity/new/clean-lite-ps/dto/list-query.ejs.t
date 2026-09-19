@@ -1,9 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.listQueryDto : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
+to: "<%= clpOutputPaths.listQueryDto %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import { z } from 'zod';
 import { ListQuerySchema } from '<%= paginationImport %>';
@@ -21,4 +19,3 @@ import { ListQuerySchema } from '<%= paginationImport %>';
 export const <%= classNames.listQuerySchema %> = ListQuerySchema;
 
 export type <%= classNames.listQueryDto %> = z.infer<typeof <%= classNames.listQuerySchema %>>;
-<%_ } -%>

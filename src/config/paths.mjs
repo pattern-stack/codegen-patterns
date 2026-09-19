@@ -550,14 +550,6 @@ export function getGeneratedDir() {
   return resolvedConfig.paths.generated;
 }
 
-/**
- * The `generate` block, parsed and defaulted by `GenerateConfigSchema` — the
- * only source of its defaults (`generate.architecture` included, charter Q5).
- */
-export function getGenerateConfig() {
-  return resolvedConfig.generate;
-}
-
 // Default export for convenience
 export default {
   // Layout options
@@ -581,7 +573,6 @@ export default {
   getLayoutConfig,
   getDatabaseDialect,
   getProjectConfig,
-  getGenerateConfig,
   getGeneratedDir,
   // NEW: Config-driven naming functions
   computeFileName,

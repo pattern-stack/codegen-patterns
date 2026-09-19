@@ -1,9 +1,8 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.searchUseCase : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.searchUseCase %>"
+to: "<%= clpOutputPaths.searchUseCase %>"
+skip_if: "<%= !clpOutputPaths.searchUseCase %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 <% if (hasSearchQuery) { -%>
 import { Injectable } from '@nestjs/common';
@@ -69,4 +68,3 @@ export class <%= searchQuery.useCaseClassName %> {
   }
 }
 <% } -%>
-<%_ } -%>

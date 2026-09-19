@@ -7,7 +7,7 @@ export interface DetectionResult<T> {
 export interface ProjectProfile {
 	framework: DetectionResult<'nestjs' | 'fastify' | 'express' | 'plain'>;
 	orm: DetectionResult<'drizzle' | 'prisma' | 'typeorm' | 'none'>;
-	architecture: DetectionResult<'clean' | 'feature' | 'mvc' | 'flat'>;
+	architecture: DetectionResult<'layered' | 'feature' | 'mvc' | 'flat'>;
 	naming: {
 		fileCase: DetectionResult<'kebab-case' | 'camelCase' | 'PascalCase' | 'snake_case'>;
 		suffixes: string[]; // detected suffixes like .entity.ts, .service.ts

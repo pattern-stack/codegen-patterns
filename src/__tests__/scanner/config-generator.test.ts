@@ -24,7 +24,7 @@ function createMockProfile(
 			evidence: ['drizzle-orm in package.json'],
 		},
 		architecture: {
-			detected: 'clean',
+			detected: 'layered',
 			confidence: 80,
 			evidence: ['domain', 'application', 'infrastructure', 'presentation'],
 		},
@@ -97,7 +97,7 @@ describe('generateConfig', () => {
 		it('uses nested structure for clean architecture', () => {
 			const profile = createMockProfile({
 				architecture: {
-					detected: 'clean',
+					detected: 'layered',
 					confidence: 85,
 					evidence: ['domain', 'application', 'infrastructure'],
 				},
@@ -229,7 +229,7 @@ describe('generateConfig', () => {
 			it('maps standard clean architecture paths', () => {
 				const profile = createMockProfile({
 					architecture: {
-						detected: 'clean',
+						detected: 'layered',
 						confidence: 85,
 						evidence: ['domain', 'application', 'infrastructure', 'presentation'],
 					},
@@ -251,7 +251,7 @@ describe('generateConfig', () => {
 			it('handles applications plural variant', () => {
 				const profile = createMockProfile({
 					architecture: {
-						detected: 'clean',
+						detected: 'layered',
 						confidence: 80,
 						evidence: ['domain', 'applications', 'infrastructure'],
 					},
@@ -269,7 +269,7 @@ describe('generateConfig', () => {
 			it('handles use-cases variant for application layer', () => {
 				const profile = createMockProfile({
 					architecture: {
-						detected: 'clean',
+						detected: 'layered',
 						confidence: 75,
 						evidence: ['domain', 'use-cases', 'infrastructure'],
 					},
@@ -393,7 +393,7 @@ describe('generateConfig', () => {
 			it('uses fallback paths when evidence is minimal', () => {
 				const profile = createMockProfile({
 					architecture: {
-						detected: 'clean',
+						detected: 'layered',
 						confidence: 50,
 						evidence: ['infrastructure'], // Only one folder found
 					},
@@ -417,7 +417,7 @@ describe('generateConfig', () => {
 			const profile = createMockProfile({
 				framework: { detected: 'nestjs', confidence: 80, evidence: [] },
 				orm: { detected: 'drizzle', confidence: 90, evidence: [] },
-				architecture: { detected: 'clean', confidence: 70, evidence: [] },
+				architecture: { detected: 'layered', confidence: 70, evidence: [] },
 				naming: {
 					fileCase: { detected: 'kebab-case', confidence: 95, evidence: [] },
 					suffixes: [],
@@ -460,7 +460,7 @@ describe('generateConfig', () => {
 			const profile = createMockProfile({
 				framework: { detected: 'nestjs', confidence: 100, evidence: [] },
 				orm: { detected: 'drizzle', confidence: 100, evidence: [] },
-				architecture: { detected: 'clean', confidence: 100, evidence: [] },
+				architecture: { detected: 'layered', confidence: 100, evidence: [] },
 				naming: {
 					fileCase: { detected: 'kebab-case', confidence: 100, evidence: [] },
 					suffixes: [],
@@ -479,10 +479,10 @@ describe('generateConfig', () => {
 	});
 
 	describe('generate block', () => {
-		it('defaults architecture to "clean"', () => {
+		it('proposes no architecture key — clean-lite-ps is the only pipeline (ARCH-0)', () => {
 			const profile = createMockProfile();
 			const config = generateConfig(profile);
-			expect(config.generate.architecture).toBe('clean');
+			expect(Object.keys(config.generate)).toEqual(['frontend']);
 		});
 
 		it('defaults frontend to false when no frontend_src and no apps/frontend/', () => {
@@ -520,7 +520,7 @@ describe('generateConfig', () => {
 				framework: { detected: 'nestjs', confidence: 95, evidence: [] },
 				orm: { detected: 'drizzle', confidence: 90, evidence: [] },
 				architecture: {
-					detected: 'clean',
+					detected: 'layered',
 					confidence: 85,
 					evidence: ['domain', 'application', 'infrastructure', 'presentation'],
 				},

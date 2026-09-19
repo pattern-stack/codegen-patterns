@@ -316,24 +316,17 @@ describe('generate config', () => {
 		const result = GenerateConfigSchema.safeParse({});
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.architecture).toBe('clean');
-			expect(result.data.frontend).toBe(false);
+			expect(result.data).toEqual({ frontend: false, semantic: false });
 		}
 	});
 
-	it('accepts architecture: clean', () => {
-		const result = GenerateConfigSchema.safeParse({ architecture: 'clean' });
-		expect(result.success).toBe(true);
-	});
-
-	it('accepts architecture: clean-lite-ps', () => {
+	it('rejects architecture — clean-lite-ps is the only backend pipeline (ARCH-0)', () => {
 		const result = GenerateConfigSchema.safeParse({ architecture: 'clean-lite-ps' });
-		expect(result.success).toBe(true);
-	});
-
-	it('rejects unknown architecture values', () => {
-		const result = GenerateConfigSchema.safeParse({ architecture: 'vertical-slice' });
 		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
+			expect(JSON.stringify(result.error.issues)).toContain('architecture');
+		}
 	});
 
 	it('accepts frontend: true', () => {
@@ -353,9 +346,7 @@ describe('generate config', () => {
 
 	it('rejects unknown keys (CFG-0: the FE-3 frontend toggles are gone)', () => {
 		const result = GenerateConfigSchema.safeParse({
-			architecture: 'clean',
 			frontend: false,
-			drizzleSchema: false,
 			hooks: true,
 		});
 		expect(result.success).toBe(false);
@@ -587,7 +578,7 @@ describe('strict mode preserved', () => {
 
 describe('contact-v2.yaml integration', () => {
 	it('parses through YAML loader', () => {
-		const result = loadEntityFromYaml(resolve('test/fixtures/contact-v2.yaml'));
+		const result = loadEntityFromYaml(resolve('test/fixtures/entities/contact-v2.yaml'));
 		expect(result.success).toBe(true);
 		if (result.success) {
 			expect(result.definition.entity.pattern).toBe('Integrated');
@@ -598,7 +589,7 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('maps through parser with correct types', () => {
-		const result = loadEntities(resolve('test/fixtures'));
+		const result = loadEntities(resolve('test/fixtures/entities'));
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		expect(contact.pattern).toBe('Integrated');
@@ -611,7 +602,7 @@ describe('contact-v2.yaml integration', () => {
 	});
 
 	it('passes consistency checks', () => {
-		const result = loadEntities(resolve('test/fixtures'));
+		const result = loadEntities(resolve('test/fixtures/entities'));
 		const graph = buildDomainGraph(result.entities);
 		const issues = checkConsistency(graph);
 
@@ -628,7 +619,7 @@ describe('contact-v2.yaml integration', () => {
 
 describe('cross-block validation', () => {
 	it('catches query referencing unknown field', () => {
-		const result = loadEntities(resolve('test/fixtures'));
+		const result = loadEntities(resolve('test/fixtures/entities'));
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Inject a bad query
@@ -642,7 +633,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('skips by-field validation for via queries', () => {
-		const result = loadEntities(resolve('test/fixtures'));
+		const result = loadEntities(resolve('test/fixtures/entities'));
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Via query with cross-entity field should not error
@@ -657,7 +648,7 @@ describe('cross-block validation', () => {
 	// dogfood #9: belongs_to FK fields (not separately declared under `fields:`)
 	// must still count as available fields for query validation.
 	it('accepts query on belongs_to FK field even when not declared in fields', () => {
-		const result = loadEntities(resolve('test/fixtures'));
+		const result = loadEntities(resolve('test/fixtures/entities'));
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Simulate the buggy scenario: author relies on the belongs_to relationship
@@ -672,7 +663,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('still rejects query on truly nonexistent field when belongs_to is present', () => {
-		const result = loadEntities(resolve('test/fixtures'));
+		const result = loadEntities(resolve('test/fixtures/entities'));
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		contact.fields.delete('account_id');
@@ -686,7 +677,7 @@ describe('cross-block validation', () => {
 	});
 
 	it('accepts composite query mixing declared field and belongs_to FK', () => {
-		const result = loadEntities(resolve('test/fixtures'));
+		const result = loadEntities(resolve('test/fixtures/entities'));
 		const contact = result.entities.find((e) => e.name === 'contact')!;
 
 		// Drop the declared account_id so only the belongs_to relationship provides it.

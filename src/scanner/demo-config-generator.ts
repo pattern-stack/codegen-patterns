@@ -28,7 +28,7 @@ const nestJsProfile: ProjectProfile = {
 		evidence: ['drizzle-orm in package.json'],
 	},
 	architecture: {
-		detected: 'clean',
+		detected: 'layered',
 		confidence: 85,
 		evidence: ['domain', 'application', 'infrastructure', 'presentation'],
 	},

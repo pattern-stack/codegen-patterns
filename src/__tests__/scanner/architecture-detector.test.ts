@@ -32,7 +32,7 @@ describe('detectArchitecture', () => {
 
 			const result = await detectArchitecture(projectPath);
 
-			expect(result.detected).toBe('clean');
+			expect(result.detected).toBe('layered');
 			expect(result.confidence).toBeGreaterThan(50);
 			expect(result.evidence).toContain('domain');
 			expect(result.evidence).toContain('infrastructure');
@@ -49,7 +49,7 @@ describe('detectArchitecture', () => {
 
 			const result = await detectArchitecture(projectPath);
 
-			expect(result.detected).toBe('clean');
+			expect(result.detected).toBe('layered');
 			expect(result.confidence).toBeGreaterThan(50);
 			expect(result.evidence).toContain('domain');
 			expect(result.evidence).toContain('infrastructure');
@@ -64,7 +64,7 @@ describe('detectArchitecture', () => {
 
 			const result = await detectArchitecture(projectPath);
 
-			expect(result.detected).toBe('clean');
+			expect(result.detected).toBe('layered');
 			expect(result.evidence).toContain('domain');
 			expect(result.evidence).toContain('infrastructure');
 		});
@@ -77,7 +77,7 @@ describe('detectArchitecture', () => {
 
 			const result = await detectArchitecture(projectPath);
 
-			expect(result.detected).not.toBe('clean');
+			expect(result.detected).not.toBe('layered');
 		});
 	});
 
@@ -222,7 +222,7 @@ describe('detectArchitecture', () => {
 			const result = await detectArchitecture(projectPath);
 
 			// Clean should win if it has more matched core folders
-			expect(result.detected).toBe('clean');
+			expect(result.detected).toBe('layered');
 		});
 
 		it('handles real-world backend structure', async () => {
@@ -239,7 +239,7 @@ describe('detectArchitecture', () => {
 			// Should detect clean even without domain folder if we have enough signals
 			// But based on our algorithm, it needs domain + infrastructure
 			// So this would be flat or feature
-			expect(['clean', 'flat']).toContain(result.detected);
+			expect(['layered', 'flat']).toContain(result.detected);
 		});
 	});
 

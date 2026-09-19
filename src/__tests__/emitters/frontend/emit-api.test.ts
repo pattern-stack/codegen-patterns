@@ -103,17 +103,8 @@ describe('emit-api — <entity>.ts routes + verbs', () => {
 		);
 	});
 
-	it('clean architecture uses PUT for update', () => {
-		const out = buildEntityApiFile(entry('contact', 'contacts'), ctx([], { architecture: 'clean' }));
-		expect(out).toContain("request<Contact>('PUT', `/contacts/${id}`, data)");
-		expect(out).not.toContain("'PATCH'");
-	});
-
-	it('clean-lite-ps architecture uses PATCH for update', () => {
-		const out = buildEntityApiFile(
-			entry('contact', 'contacts'),
-			ctx([], { architecture: 'clean-lite-ps' }),
-		);
+	it('update is PATCH — the clean-lite-ps controller verb', () => {
+		const out = buildEntityApiFile(entry('contact', 'contacts'), ctx([]));
 		expect(out).toContain("request<Contact>('PATCH', `/contacts/${id}`, data)");
 		expect(out).not.toContain("'PUT'");
 	});

@@ -20,7 +20,7 @@ import { buildNounSummaryCommand } from '../../cli/noun-module.js';
 import { setJsonMode } from '../../cli/ui/json.js';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
-const CONTACT_FIXTURE = path.join(REPO_ROOT, 'test', 'fixtures', 'contact-v2.yaml');
+const CONTACT_FIXTURE = path.join(REPO_ROOT, 'test', 'fixtures', 'entities', 'contact-v2.yaml');
 
 function mkTempProject(): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-cli-'));

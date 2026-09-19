@@ -1,5 +1,5 @@
 ---
-to: "<%= architecture === 'clean-lite-ps' && exposeOnParent.left ? parentModulePathLeft : '' %>"
+to: "<%= exposeOnParent.left ? parentModulePathLeft : '' %>"
 inject: true
 after: "from '@nestjs/common';"
 skip_if: "import { forwardRef"

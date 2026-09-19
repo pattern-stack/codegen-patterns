@@ -1,8 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.findByIdUseCase : null %>"
+to: "<%= clpOutputPaths.findByIdUseCase %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { <%= classNames.service %> } from '../<%= entityName %>.service';
@@ -20,4 +19,3 @@ export class <%= classNames.findByIdUseCase %> {
     return entity;
   }
 }
-<%_ } -%>

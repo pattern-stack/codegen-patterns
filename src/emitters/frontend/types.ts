@@ -26,7 +26,7 @@ export type SyncMode = 'api' | 'electric';
 
 /**
  * Resolved frontend emit configuration. Derived from `codegen.config.yaml`
- * (`frontend.*`, `generate.architecture`, `locations.*`) by the caller (FE-4
+ * (`frontend.*`, `locations.*`) by the caller (FE-4
  * wires the config loader). FE-2 consumes a plain object so tests can construct
  * it directly without fs.
  */
@@ -51,8 +51,6 @@ export interface FrontendEmitConfig {
 	apiBaseUrlImport: string | null;
 	/** `frontend.parsers` — Electric parser block: column type → parser fn source. */
 	parsers: Record<string, string>;
-	/** `generate.architecture` — drives the REST update verb (clean → PUT, clean-lite-ps → PATCH). */
-	architecture: 'clean' | 'clean-lite-ps';
 	/** `locations.dbEntities.import` — module the Zod schema + entity type are imported from. */
 	dbEntitiesImport: string;
 	/** `frontend.catalog.categories` — ordered display groups for the providers catalog. */

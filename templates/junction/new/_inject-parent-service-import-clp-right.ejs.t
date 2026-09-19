@@ -1,5 +1,5 @@
 ---
-to: "<%= architecture === 'clean-lite-ps' && exposeOnParent.right ? parentServicePathRight : '' %>"
+to: "<%= exposeOnParent.right ? parentServicePathRight : '' %>"
 inject: true
 after: "from '@nestjs/common';"
 skip_if: "<%= classNames.service %> }"

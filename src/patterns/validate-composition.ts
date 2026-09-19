@@ -28,11 +28,6 @@
  * builder computes — that check lives there (charter I1: one declaration of the
  * naming rules), and generation time is ADR-041 §4's authoritative gate anyway.
  *
- * Project-level validation (`validatePatternProject`) covers plan Risk 4:
- * entities declaring `pattern:` while `generate.architecture: clean` is
- * selected get a warning since the `clean` pipeline does not yet consume
- * patterns. Additive Phase 3+ work per ADR.
- *
  * The shape mirrors `src/behaviors/index.ts:81–124` (`validateBehaviors`):
  * a single pass that returns structured issues for `analyzeDomain()` to
  * aggregate.
@@ -225,57 +220,6 @@ export function validatePatternComposition(
 						`add the pattern.`,
 				});
 			}
-		}
-	}
-
-	return issues;
-}
-
-// ============================================================================
-// Project-level validation — plan Risk 4
-// ============================================================================
-
-export interface PatternProjectContext {
-	entities: ReadonlyArray<ParsedEntity>;
-	/**
-	 * Selected backend architecture from `codegen.config.yaml
-	 * generate.architecture`. `undefined` when the consumer is using the
-	 * library purely as an analyzer (no generation config loaded).
-	 */
-	architecture?: string;
-}
-
-/**
- * Validate project-level invariants for patterns. Runs after
- * `validatePatternComposition` has visited every entity, so we can
- * assume per-entity errors have been surfaced.
- *
- * Today this only covers plan Risk 4: warn when patterns are declared
- * but the selected architecture is `clean`, which does not yet consume
- * them. A `clean` consumer with `pattern: Integrated` is not broken — the
- * `clean` pipeline ignores the key — but they see no effect, which is
- * confusing without the warning.
- */
-export function validatePatternProject(
-	ctx: PatternProjectContext,
-): AnalysisIssue[] {
-	const issues: AnalysisIssue[] = [];
-
-	if (ctx.architecture === 'clean') {
-		const withPatterns = ctx.entities.filter(
-			(e) => (e.patterns && e.patterns.length > 0) || !!e.pattern,
-		);
-		for (const e of withPatterns) {
-			issues.push({
-				severity: 'warning',
-				type: 'pattern_clean_pipeline_noop',
-				entity: e.name,
-				message:
-					`'pattern:' is declared but 'generate.architecture: clean' does not ` +
-					`yet consume patterns. This declaration is a no-op. Patterns are ` +
-					`consumed by 'clean-lite-ps' today; 'clean' integration is Phase 3+ ` +
-					`additive work (ADR-031).`,
-			});
 		}
 	}
 

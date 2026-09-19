@@ -23,7 +23,7 @@ import ejs from 'ejs';
 
 const TEMPLATE_PATH = resolve(
   import.meta.dir,
-  '../../../templates/entity/new/backend/modules/core/integration-source.ejs.t',
+  '../../../templates/entity/new/clean-lite-ps/integration-source.ejs.t',
 );
 const RUNTIME_INTEGRATION_DIR = resolve(import.meta.dir, '../../../runtime/subsystems/integration');
 
@@ -44,14 +44,13 @@ function extractBody(source: string): string {
 function renderModule(detectionBlock: Record<string, unknown>): string {
   const body = extractBody(readFileSync(TEMPLATE_PATH, 'utf8'));
   return ejs.render(body, {
-    name: 'opportunity',
-    className: 'Opportunity',
+    entityName: 'opportunity',
+    classNames: { entity: 'Opportunity' },
     hasDetection: Object.keys(detectionBlock).length > 0,
     detectionConfigsLiteral: JSON.stringify(detectionBlock, null, 2),
-    imports: { moduleToDomain: '../domain' },
-    isCleanLitePs: false,
-    clpOutputPaths: undefined,
-    clpImports: undefined,
+    clpImports: { integrationSourceToEntity: './opportunity.entity' },
+    generatedBanner: '// @generated',
+    integrationSubsystemImport: '@shared/subsystems/integration',
   });
 }
 
@@ -133,11 +132,9 @@ describe('integration-source.ejs.t (ADR-033.1 c)', () => {
 
       // Stub @shared/openapi (transitively imported via base-classes)? Not
       // needed — this slice only imports from @shared/subsystems/integration and
-      // @nestjs/common. Provide a minimal Opportunity domain stub.
-      const domainDir = join(dir, 'domain');
-      mkdirSync(domainDir, { recursive: true });
+      // @nestjs/common. Provide a minimal sibling Opportunity entity stub.
       writeFileSync(
-        join(domainDir, 'index.ts'),
+        join(dir, 'opportunity.entity.ts'),
         'export interface Opportunity { id: string; }\n',
         'utf8',
       );
@@ -169,7 +166,7 @@ describe('integration-source.ejs.t (ADR-033.1 c)', () => {
                 '@shared/subsystems/integration': ['./integration/index.ts'],
               },
             },
-            include: ['*.ts', 'integration/**/*.ts', 'nest/**/*.ts', 'domain/**/*.ts'],
+            include: ['*.ts', 'integration/**/*.ts', 'nest/**/*.ts'],
           },
           null,
           2,

@@ -44,7 +44,7 @@ export const userApi = {
 		request<User>('POST', '/users', data),
 
 	update: (id: string, data: Partial<User>): Promise<User> =>
-		request<User>('PUT', `/users/${id}`, data),
+		request<User>('PATCH', `/users/${id}`, data),
 
 	delete: (id: string): Promise<void> =>
 		request<void>('DELETE', `/users/${id}`),

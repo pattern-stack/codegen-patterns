@@ -20,7 +20,6 @@ import {
   getLayoutConfig,
   getDatabaseDialect,
   getProjectConfig,
-  getGenerateConfig,
 } from "../../../src/config/paths.mjs";
 import { getNamingConfig } from "../../../src/config/naming-config.mjs";
 import { deriveRoleRelationships } from "../../../src/roles/derive.js";
@@ -143,6 +142,9 @@ const behaviorRegistry = {
 };
 
 /**
+ * Normalize behavior config (string or object with name/options)
+ */
+/**
  * The set of Drizzle table names codegen OWNS — i.e. that some entity YAML in
  * the project's entities directory generates.
  *
@@ -199,34 +201,6 @@ export function loadOwnedTableNames(cwd, entitiesDir = BASE_PATHS.entitiesDir) {
   return owned;
 }
 
-/**
- * ADR-042 / TEN-1 §4.2 — refuse `tenant_scoped: true` outside `clean-lite-ps`.
- *
- * The `clean` pipeline emits no `tenant_id` column and routes its reads through
- * its own private `baseQuery()` that never reaches `scopeAnd()`, so a
- * tenant-scoped entity generated there would produce a repository whose YAML
- * claims isolation its code does not deliver. There is no partial version of
- * that to ship: refuse, naming the entity and the reason (#602, charter I11).
- *
- * Exported so the guard is gated by a unit test rather than only by running a
- * whole generation.
- */
-export function assertTenantScopingSupported(definition, architectureTarget) {
-  if (definition?.tenant_scoped !== true) return;
-  if (architectureTarget === 'clean-lite-ps') return;
-  throw new Error(
-    `Entity '${definition?.entity?.name}': tenant_scoped: true requires ` +
-      "generate.architecture: 'clean-lite-ps' (this project is " +
-      `'${architectureTarget}'). The '${architectureTarget}' backend ` +
-      'pipeline emits no tenant_id column and does not route its reads ' +
-      'through the scoped choke point, so it cannot honour the flag. ' +
-      'See ADR-042 and docs/specs/TEN-1.md §4.2.',
-  );
-}
-
-/**
- * Normalize behavior config (string or object with name/options)
- */
 function normalizeBehaviorConfig(config) {
   if (typeof config === "string") {
     return { name: config, options: {} };
@@ -1071,30 +1045,6 @@ export default {
     }
 
     // ============================================================================
-    // Architecture Target + pipeline gates (from generate config)
-    //
-    // `generate.architecture` is the single source of truth for which backend
-    // template set runs. Values:
-    //   - 'clean'         → templates/entity/new/backend/ (Clean Architecture)
-    //   - 'clean-lite-ps' → templates/entity/new/clean-lite-ps/ (modules/ layout)
-    //
-    // `generate.frontend` gates the frontend pipeline entirely.
-    // ============================================================================
-
-    const generateConfig = getGenerateConfig();
-    const architectureTarget = generateConfig.architecture;
-    const isCleanArchitecture = architectureTarget === 'clean';
-    const isCleanLitePs = architectureTarget === 'clean-lite-ps';
-
-    // ADR-042 / TEN-1 §4.2 — tenant scoping is emitted by the clean-lite-ps
-    // pipeline only. The `clean` pipeline emits no tenant column and has its
-    // own private `baseQuery()` that never reaches `scopeAnd()`, so a
-    // `tenant_scoped: true` entity generated there would produce a repository
-    // that reads every tenant while its YAML says otherwise. Refuse, loudly,
-    // rather than emit the appearance of isolation (#602, charter I11).
-    assertTenantScopingSupported(definition, architectureTarget);
-
-    // ============================================================================
     // v2: Queries
     // ============================================================================
 
@@ -1455,20 +1405,25 @@ export default {
 
     // @generated banner — single line stamped at the top of every
     // force-overwritten output. `yamlPath` is the consumer-relative source
-    // (e.g. `entities/opportunity.yaml`). Extension seam differs by
-    // architecture: clean-lite-ps customises via patterns, clean via the
-    // base-class behavior config / repository subclass.
+    // (e.g. `entities/opportunity.yaml`). The extension seam is a pattern or
+    // the YAML itself.
     const generatedBanner = renderGeneratedBanner({
       // Relative to cwd so the banner is portable across machines (an absolute
       // path would bake a developer's checkout root into every output).
       source: path.relative(process.cwd(), fullPath),
       generator: 'entity',
-      seam: isCleanLitePs
-        ? 'a pattern (src/patterns/*.pattern.ts) or the entity YAML'
-        : 'the entity YAML or a base-class behavior config',
+      seam: 'a pattern (src/patterns/*.pattern.ts) or the entity YAML',
     });
 
+    // Many locals below (layout, paths, fileNames, imports, *CommandClass,
+    // behaviorStrategy, expose*, …) were read only by the deleted `clean`
+    // pipeline's templates (ARCH-0). ARCH-1 (#682) deletes them together with
+    // the config surface that feeds them.
     const locals = {
+      // #636 — the Drizzle tables codegen OWNS. A field-level `foreign_key:`
+      // to a table outside this set is host-owned: a plain column, no
+      // `.references()` and no import. See loadOwnedTableNames().
+      ownedTableNames: Array.from(loadOwnedTableNames(process.cwd())),
       // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
       generatedBanner,
 
@@ -1542,12 +1497,6 @@ export default {
 
       // Base paths for templates (from centralized config)
       basePaths: BASE_PATHS,
-
-      // Drizzle table names codegen OWNS (#636). A field-level
-      // `foreign_key: <table>.<column>` naming a table NOT in this set belongs
-      // to the host application: the column is emitted plain, with no
-      // `.references()` and no import. See loadOwnedTableNames().
-      ownedTableNames: Array.from(loadOwnedTableNames(process.cwd())),
       backendLayers: BACKEND_LAYERS,
 
       // Unified locations (path + import alias)
@@ -1571,20 +1520,6 @@ export default {
       deleteCommandClass,
       getByIdQueryClass,
       listQueryClass,
-
-      // Generation toggles (backend only — what to generate).
-      //
-      // The frontend toggles (fieldMetadata/collections/collectionsIndex/hooks/
-      // mutations/hookStyle/structure/typeNaming/fkResolution/collectionNaming/
-      // fileNaming/hookReturnStyle) were deleted with the hygen frontend
-      // templates (FE-3). The frontend tree is now emitted by
-      // src/emitters/frontend/ and gated solely by `generate.frontend`.
-      generate: {
-        drizzleSchema: generateConfig.drizzleSchema,
-        commands: generateConfig.commands,
-        queries: generateConfig.queries,
-        dtos: generateConfig.dtos,
-      },
 
       // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
       outputPaths,
@@ -1626,11 +1561,6 @@ export default {
       // v2 variables
       // ======================================================================
 
-      // Architecture target (from generate.architecture config)
-      architectureTarget,
-      isCleanArchitecture,
-      isCleanLitePs,
-
       // Queries
       hasQueries,
       processedQueries,
@@ -1666,34 +1596,28 @@ export default {
     // ========================================================================
     // Clean-Lite-PS template locals
     //
-    // Populated only when `generate.architecture === 'clean-lite-ps'`. Under
-    // 'clean', hygen still walks the CLP template bodies (`skip_if` suppresses
-    // the write, not the render); each body is wrapped in one
-    // `typeof clpOutputPaths` guard, so it renders empty without any CLP
-    // locals. Inside the guard every local is referenced unguarded, and a
-    // missing one throws (#638).
+    // clean-lite-ps is the only backend pipeline (ARCH-0, #677). Every body
+    // references its locals unguarded, so a missing one throws (#638).
     // ========================================================================
     // EVT-7 note: hasEmits / emitsEvents / *EventType / *Import locals are
-    // already in `locals` above and are architecture-neutral — CLP templates
-    // read the same locals to render typed publish blocks in their use-cases.
+    // already in `locals` above — CLP templates read the same locals to render
+    // typed publish blocks in their use-cases.
 
-    if (isCleanLitePs) {
-      // Load app-defined patterns (if any) into the registry before the
-      // clean-lite-ps extension reads it. `loadAppPatterns` is idempotent
-      // and deterministic — calling it every run is cheap (one dynamic
-      // import per pattern file) and matches the two-process load story
-      // the registry tests pin down.
-      await ensurePatternsRegistryLoaded();
-      const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
-      // Every cross-entity fact — a belongs_to / has_many / field foreign_key
-      // target's table and module folder, an EAV definition entity, a group
-      // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
-      // YAML, lazily, on the first reference that needs one.
-      Object.assign(
-        locals,
-        buildCleanLitePsLocals(definition, { ...locals, entityLookup: projectEntityLookup(process.cwd()) }),
-      );
-    }
+    // Load app-defined patterns (if any) into the registry before the
+    // clean-lite-ps extension reads it. `loadAppPatterns` is idempotent
+    // and deterministic — calling it every run is cheap (one dynamic
+    // import per pattern file) and matches the two-process load story
+    // the registry tests pin down.
+    await ensurePatternsRegistryLoaded();
+    const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
+    // Every cross-entity fact — a belongs_to / has_many / field foreign_key
+    // target's table and module folder, an EAV definition entity, a group
+    // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
+    // YAML, lazily, on the first reference that needs one.
+    Object.assign(
+      locals,
+      buildCleanLitePsLocals(definition, { ...locals, entityLookup: projectEntityLookup(process.cwd()) }),
+    );
 
     return locals;
   },

@@ -73,12 +73,26 @@ describe('the defaults table', () => {
 		expect(() => parseCodegenConfig({ paths: { backend_src: '' } }, 't')).toThrow(/paths\.backend_src/);
 	});
 
-	// THE pin for charter Q5. Changing the no-config architecture is this
-	// assertion plus the one `.default()` in `GenerateConfigSchema`; no reader
-	// carries its own fallback (the junction prompt's and `barrel-generator`'s
-	// were deleted in PATH-0).
-	it('generate.architecture defaults to the schema value, clean (charter Q5)', () => {
-		expect(DEFAULT_CODEGEN_CONFIG.generate.architecture).toBe('clean');
+	// Charter Q5, resolved by ARCH-0 (#677): clean-lite-ps is the only backend
+	// pipeline, so there is no architecture key to default — using it is the
+	// CFG-0 unknown-key error, naming the key and the file.
+	it('generate.architecture is an unknown key naming the file (ARCH-0)', () => {
+		for (const value of ['clean', 'clean-lite-ps']) {
+			expect(() =>
+				parseCodegenConfig({ generate: { architecture: value } }, 'apps/api/codegen.config.yaml'),
+			).toThrow(
+				/apps\/api\/codegen\.config\.yaml is not a valid codegen\.config\.yaml:\n {2}- generate\.architecture: unknown key/,
+			);
+		}
+		expect(DEFAULT_CODEGEN_CONFIG.generate).toEqual({ frontend: false, semantic: false });
+	});
+
+	it('the clean pipeline toggles are unknown keys too (ARCH-0)', () => {
+		for (const key of ['drizzleSchema', 'commands', 'queries', 'dtos']) {
+			expect(() => parseCodegenConfig({ generate: { [key]: true } }, 't')).toThrow(
+				new RegExp(`generate\\.${key}: unknown key`),
+			);
+		}
 	});
 
 	it('the naming defaults are the schema defaults (#644 review)', () => {

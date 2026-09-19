@@ -38,6 +38,8 @@ export function withEntities<T extends Record<string, unknown>>(
 		runtimeMode,
 		...runtimeImportLocals(runtimeMode),
 		processedQueries: [],
+		hasDetection: false,
+		detectionConfigsLiteral: '{}',
 		hasEmits: false,
 		emitsEvents: [],
 		createEventType: null,

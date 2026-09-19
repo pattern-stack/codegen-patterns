@@ -1,9 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.service : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
+to: "<%= clpOutputPaths.service %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import { Injectable, Inject, Optional } from '@nestjs/common';
 import { WithAnalytics } from '<%= withAnalyticsImport %>';
@@ -224,4 +222,3 @@ export class <%= classNames.service %> extends WithAnalytics(
   }
 <% } %>
 }
-<%_ } -%>

@@ -1,9 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.repository : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
+to: "<%= clpOutputPaths.repository %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import { Injectable, Inject } from '@nestjs/common';
 <%_
@@ -281,4 +279,3 @@ _%>
   //   <%= line %>
 <%_ }) _%>
 }
-<%_ } -%>

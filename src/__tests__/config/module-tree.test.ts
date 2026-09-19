@@ -46,7 +46,7 @@ describe('entityModuleNaming (src/config/module-tree.ts)', () => {
 	it('the barrels and the assemblies read it', () => {
 		const entity = { name: 'transcript', plural: 'transcripts', context: 'integration' };
 		const n = entityModuleNaming(entity, MODULES_DIR);
-		const files = entityFilePaths(entity, 'clean-lite-ps', { backend_src: 'apps/backend/src', modules_dir: MODULES_DIR });
+		const files = entityFilePaths(entity, { modules_dir: MODULES_DIR });
 		expect(files.moduleFile).toBe(n.moduleFile);
 		expect(files.schemaFile).toBe(`${n.entityFile}.ts`);
 		const loc = resolveEntityModuleImports({

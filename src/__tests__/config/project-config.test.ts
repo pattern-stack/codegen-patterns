@@ -165,22 +165,22 @@ describe('loadProjectConfig', () => {
 		const config = loadProjectConfig(dir);
 		expect(config?.runtime).toBe('package');
 		expect(config?.paths.generated).toBe('src/generated');
-		expect(config?.generate.architecture).toBe('clean');
+		expect(config?.generate).toEqual({ frontend: false, semantic: false });
 	});
 
 	it('walks upward from cwd, like the CLI', () => {
-		const dir = tmpProject('generate:\n  architecture: clean-lite-ps\n');
+		const dir = tmpProject('generate:\n  frontend: true\n');
 		const nested = path.join(dir, 'a', 'b');
 		fs.mkdirSync(nested, { recursive: true });
-		expect(loadProjectConfig(nested)?.generate.architecture).toBe('clean-lite-ps');
+		expect(loadProjectConfig(nested)?.generate.frontend).toBe(true);
 	});
 
 	it('$CODEGEN_CONFIG_PATH (set by the CLI for hygen) wins over the upward walk', () => {
-		const a = tmpProject('generate:\n  architecture: clean-lite-ps\n');
-		const b = tmpProject('generate:\n  architecture: clean\n');
+		const a = tmpProject('generate:\n  frontend: false\n');
+		const b = tmpProject('generate:\n  frontend: true\n');
 		process.env[CONFIG_PATH_ENV] = path.join(b, 'codegen.config.yaml');
 		try {
-			expect(loadProjectConfig(a)?.generate.architecture).toBe('clean');
+			expect(loadProjectConfig(a)?.generate.frontend).toBe(true);
 		} finally {
 			delete process.env[CONFIG_PATH_ENV];
 		}

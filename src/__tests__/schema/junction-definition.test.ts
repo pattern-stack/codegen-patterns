@@ -232,7 +232,7 @@ describe('detectYamlType', () => {
 	it('returns "entity" for an entity fixture (unaffected by junction routing)', () => {
 		const entityFixture = resolve(
 			__dirname,
-			'../../../test/fixtures/opportunity.yaml',
+			'../../../test/fixtures/entities/opportunity.yaml',
 		);
 		expect(detectYamlType(entityFixture)).toBe('entity');
 	});

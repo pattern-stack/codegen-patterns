@@ -16,11 +16,6 @@ import { withBanner, writeFile } from './emit-utils';
 
 const SOURCE_DESC_SET = 'the entity set';
 
-/** Update verb: clean → PUT, clean-lite-ps → PATCH. */
-function updateVerb(architecture: 'clean' | 'clean-lite-ps'): 'PUT' | 'PATCH' {
-	return architecture === 'clean-lite-ps' ? 'PATCH' : 'PUT';
-}
-
 /**
  * `api/client.ts` — the base fetch transport. baseURL resolves to `API_BASE_URL`
  * (imported) when `apiBaseUrlImport` is set, else the literal `apiUrl`. When an
@@ -137,8 +132,9 @@ ${authHeaderBlock}
 
 /**
  * `api/<entity>.ts` — per-entity REST methods over the generated controller
- * routes. The entity type is imported plain (`<Class>`) from `dbEntities`
- * (typeNaming knob is dead; packages/db exports plain names — see FE-2 report).
+ * routes (update is `PATCH`, the clean-lite-ps controller's verb). The entity
+ * type is imported plain (`<Class>`) from `dbEntities` (typeNaming knob is dead;
+ * packages/db exports plain names — see FE-2 report).
  */
 export function buildEntityApiFile(
 	entity: EntityRegistryEntry,
@@ -146,7 +142,6 @@ export function buildEntityApiFile(
 ): string {
 	const { config } = ctx;
 	const { camelName, plural, className, name } = entity;
-	const verb = updateVerb(config.architecture);
 
 	const body = `import { MAX_PAGE_SIZE, type ListQuery, type Page, request, toListQueryString } from './client';
 import type { ${className} } from '${config.dbEntitiesImport}/${name}';
@@ -191,7 +186,7 @@ export const ${camelName}Api = {
 \t\trequest<${className}>('POST', '/${plural}', data),
 
 \tupdate: (id: string, data: Partial<${className}>): Promise<${className}> =>
-\t\trequest<${className}>('${verb}', \`/${plural}/\${id}\`, data),
+\t\trequest<${className}>('PATCH', \`/${plural}/\${id}\`, data),
 
 \tdelete: (id: string): Promise<void> =>
 \t\trequest<void>('DELETE', \`/${plural}/\${id}\`),

@@ -1,9 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.entity : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
+to: "<%= clpOutputPaths.entity %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import {
 <%_ clpDrizzleImports.forEach(i => { _%>
@@ -83,4 +81,3 @@ export const <%= entityNamePlural %> = pgTable(
 
 export type <%= classNames.entity %> = InferSelectModel<typeof <%= entityNamePlural %>>;
 export type <%= classNames.entity %>Insert = typeof <%= entityNamePlural %>.$inferInsert;
-<%_ } -%>

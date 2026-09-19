@@ -23,7 +23,3 @@ naming:
 paths:
   backend_src: packages/api/src
   frontend_src: apps/frontend/src
-
-# Standard generation settings
-generate:
-  architecture: clean

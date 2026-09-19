@@ -1,8 +1,7 @@
 ---
-to: "<%= (typeof clpOutputPaths !== 'undefined' && hasDeclarativeQueries) ? clpOutputPaths.declarativeQueries : null %>"
+to: "<%= hasDeclarativeQueries ? clpOutputPaths.declarativeQueries : null %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 <% if (hasDeclarativeQueries) { -%>
 /**
@@ -34,4 +33,3 @@ export const declarativeQueryClasses = [
 <% }) -%>
 ];
 <% } -%>
-<%_ } -%>

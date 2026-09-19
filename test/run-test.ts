@@ -36,6 +36,9 @@ if (!existsSync(join(ROOT, 'justfile')) || !existsSync(join(ROOT, 'templates')))
 const CODEGEN_DIR = resolve(import.meta.dir, '..');
 const TEST_DIR = import.meta.dir;
 const FIXTURES_DIR = join(TEST_DIR, 'fixtures');
+// The baseline entity set — closed: every cross-entity reference resolves from
+// its target's own YAML here (`paths.entities` in the fixture config, NAME-0).
+const ENTITY_FIXTURES_DIR = join(FIXTURES_DIR, 'entities');
 const BASELINE_DIR = join(TEST_DIR, 'baseline');
 const GEN_DIR = join(TEST_DIR, 'gen');
 const TEST_CONFIG = join(FIXTURES_DIR, 'codegen.config.yaml');
@@ -44,16 +47,8 @@ const ROOT_CONFIG = join(ROOT, 'codegen.config.yaml');
 // Test-specific output paths (must match test/fixtures/codegen.config.yaml)
 // These are hardcoded here to avoid circular dependency with config loading
 const OUTPUT_PATHS = [
-  // Backend paths (packages/api structure from test config)
-  'packages/api/src/domain',
-  'packages/api/src/application',
-  'packages/api/src/infrastructure/persistence',
+  // The clean-lite-ps module tree (paths.modules_dir, default <backend_src>/modules)
   'packages/api/src/modules',
-  'packages/api/src/presentation',
-  // Generated injection tokens (accumulated across entities by the inject template)
-  'packages/api/src/constants',
-  // Shared packages
-  'packages/db/src/entities',
   // JOB-7: generated scope-entity-type union (post-Hygen step)
   'runtime/subsystems/jobs/generated',
   // EVT-3: generated event-codegen artifacts (types, schemas, registry, bus, index)
@@ -142,26 +137,13 @@ function runCodegen() {
     }
   }
 
-  // Seed the constants/tokens.ts anchor file before running codegen.
-  // Hygen's inject+append templates cannot create new files — they require
-  // the target to already exist. Without this seed, the `_inject-token.ejs.t`
-  // template prints "Cannot inject to …/constants/tokens.ts: doesn't exist"
-  // and the baseline snapshot omits the file entirely. Seeding it here mirrors
-  // what happens in a real project where `project init` creates the file first.
-  const constantsDir = join(ROOT, 'packages/api/src/constants');
-  mkdirSync(constantsDir, { recursive: true });
-  writeFileSync(
-    join(constantsDir, 'tokens.ts'),
-    '// Generated entity repository tokens\n',
-  );
-
   // Sort fixtures alphabetically so run order is deterministic regardless of
   // the underlying filesystem's `readdir` semantics. Without this, Linux
   // (ext4 insertion-order) and macOS (APFS effectively stable-but-implementation-defined)
   // can process the same fixture set in different orders, producing different
   // output when templates check `targetExists` for cross-entity references.
-  const fixtures = readdirSync(FIXTURES_DIR)
-    .filter(f => f.endsWith('.yaml') && !f.startsWith('codegen.config'))
+  const fixtures = readdirSync(ENTITY_FIXTURES_DIR)
+    .filter(f => f.endsWith('.yaml'))
     .sort();
 
   // Use env var or compute from script location (works when running from any directory)
@@ -169,27 +151,18 @@ function runCodegen() {
 
   // Two-pass generation.
   //
-  // The entity `repository.ejs.t` template checks `targetExists` for each
-  // relationship — it calls `fs.existsSync('packages/api/src/domain/<target>/<target>.entity.ts')`.
-  // When a relationship's target hasn't been generated yet (first pass), the
-  // template emits a "Related entities not yet generated" fallback; when it
-  // has (second pass), the template emits the full `switch` mapping cases.
-  //
-  // Users running `codegen entity new --all` iteratively hit the steady state
-  // (second-pass shape) quickly in practice. Baselining steady-state output
-  // matches the documented contract and avoids baking filesystem-order
-  // dependency into the snapshot.
-  //
-  // The alternative — baselining first-pass output — would require no second
-  // pass but would make every generated repository carry the "not yet generated"
-  // fallback, which is a less useful documentation artifact. See
-  // issue: baseline was previously passing by accident because the buggy ROOT
-  // resolution wrote into `/Users/.../Projects/packages/api/` and picked up
-  // entity files left over from prior runs.
+  // The clean-lite-ps prompt includes a belongs_to / has_many target in the
+  // repository's imports only when the target's `<entity>.entity.ts` is already
+  // on disk (`targetExists` in prompt-extension.js — deliberately a file check,
+  // so a single `entity new x.yaml` never imports a sibling that was never
+  // generated). The first pass seeds every entity file; the second pass emits
+  // the steady state that `entity new --all` reaches, which is what the
+  // snapshot documents. Fixtures run sorted, so the output does not depend on
+  // the filesystem's readdir order.
   const runPass = (label: string) => {
     console.log(`   Pass ${label}:`);
     for (const fixture of fixtures) {
-      const yamlPath = join(FIXTURES_DIR, fixture);
+      const yamlPath = join(ENTITY_FIXTURES_DIR, fixture);
       console.log(`     Generating: ${fixture}`);
 
       try {
@@ -299,37 +272,60 @@ function runCodegen() {
 }
 
 /**
+ * Named expectation for #680 — clean-lite-ps ignores a declarative query's
+ * `via:` / `select:` options, so contact-v2's two `via: opportunity_contact_link`
+ * queries emit repository methods that do not compile. Exact file, exact codes,
+ * exact count; asserted present AND sole. Delete this (and its call below) when
+ * #680 is fixed — the assertion fails the moment the defect goes away.
+ */
+const ISSUE_680_EXPECTATION = {
+  file: 'packages/api/src/modules/contacts/contact.repository.ts',
+  codes: ['TS2322', 'TS7053', 'TS7053'],
+};
+
+/**
  * Run TypeScript typecheck over the generated packages/api/src output.
  *
- * Uses test/tsconfig.baseline.json which maps @shared/* aliases to the
- * runtime/ subsystem sources so the check runs without a full bun install.
- * The node_modules for NestJS decorators are resolved via test/scaffold/.
+ * Uses test/tsconfig.baseline.json, which maps the vendored-mode `@shared/*`
+ * specifiers onto the in-repo runtime/ sources, so it compiles the generated
+ * clean-lite-ps module tree (`packages/api/src/modules/**`) without a vendor
+ * step. Runs over the live output (not the snapshot), so it must be called
+ * after runCodegen().
  *
- * Runs over the live packages/api/src generated output (not the snapshot),
- * so it must be called after runCodegen() has produced fresh output.
- *
- * This gate catches template regressions (e.g., stale <Class>With imports
- * or missing type exports) that snapshot comparison alone cannot catch —
- * snapshot tests verify the *shape* of generated text; typecheck verifies
- * that the shape actually compiles. CGP-358 validator report surfaced this
- * gap: controller + grouped-index templates emitted <Class>With after the
- * domain type was removed, but no typecheck gate caught it until CI.
+ * Snapshot comparison verifies the shape of the generated text; this verifies
+ * that the shape compiles. Every diagnostic fails the gate except the named
+ * #680 expectation above.
  */
 function typecheckBaseline() {
   const tsconfig = join(TEST_DIR, 'tsconfig.baseline.json');
-  console.log('Typechecking generated clean-pipeline output (packages/api/src)...');
+  console.log('Typechecking generated clean-lite-ps output (packages/api/src/modules)...');
+  let output = '';
   try {
-    execSync(
-      `bunx tsc --noEmit --project "${tsconfig}"`,
-      { cwd: ROOT, stdio: 'pipe' },
-    );
-    console.log('Typecheck passed');
+    execSync(`bunx tsc --noEmit --pretty false --project "${tsconfig}"`, { cwd: ROOT, stdio: 'pipe' });
   } catch (err: unknown) {
     const error = err as { stdout?: Buffer; stderr?: Buffer };
-    const output = [error.stdout?.toString(), error.stderr?.toString()].filter(Boolean).join('\n');
-    console.error('Typecheck failed over generated clean-pipeline output:\n' + output);
+    output = [error.stdout?.toString(), error.stderr?.toString()].filter(Boolean).join('\n');
+  }
+  const diagnostics = output
+    .split('\n')
+    .map((line) => /^(.+?)\(\d+,\d+\): error (TS\d+):/.exec(line))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ file: m[1], code: m[2] }));
+  const expected = diagnostics.filter((d) => d.file === ISSUE_680_EXPECTATION.file);
+  const others = diagnostics.filter((d) => d.file !== ISSUE_680_EXPECTATION.file);
+  const expectedCodes = expected.map((d) => d.code).sort();
+  const matches680 = JSON.stringify(expectedCodes) === JSON.stringify(ISSUE_680_EXPECTATION.codes);
+  if (others.length > 0 || !matches680 || (output !== '' && diagnostics.length === 0)) {
+    console.error('Typecheck failed over generated clean-lite-ps output:\n' + output);
+    if (!matches680) {
+      console.error(
+        `#680 expectation not met: expected exactly ${ISSUE_680_EXPECTATION.codes.join(', ')} in ` +
+          `${ISSUE_680_EXPECTATION.file}, got [${expectedCodes.join(', ')}]. If #680 is fixed, delete the expectation.`,
+      );
+    }
     process.exit(1);
   }
+  console.log(`Typecheck passed (only the named #680 expectation: ${ISSUE_680_EXPECTATION.codes.join(', ')})`);
 }
 
 function compareFiles(file1: string, file2: string): { match: boolean; diff?: string } {

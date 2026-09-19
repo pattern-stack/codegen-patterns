@@ -25,9 +25,6 @@ const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
 export const VALID_SCENARIOS = ['junction', 'junction-cross-domain'] as const;
 export type Scenario = (typeof VALID_SCENARIOS)[number];
 
-export const VALID_ARCHITECTURES = ['clean-lite-ps', 'clean'] as const;
-export type Architecture = (typeof VALID_ARCHITECTURES)[number];
-
 export const VALID_RUNTIMES = ['vendored', 'package'] as const;
 export type RuntimeMode = (typeof VALID_RUNTIMES)[number];
 
@@ -213,7 +210,6 @@ const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
 
 export interface BootstrapOptions {
   scenario: Scenario;
-  architecture: Architecture;
   /**
    * ADR-037 runtime mode. Defaults to `vendored`: the junction snapshots lock
    * the `@shared/*` specifiers. The junction smoke also runs a `package` leg
@@ -228,7 +224,6 @@ export interface BootstrapOptions {
 export interface BootstrapResult {
   projectDir: string;
   scenario: Scenario;
-  architecture: Architecture;
   /** The project-relative paths the run used. */
   paths: LayoutPaths;
   /** Reads the contents of a file emitted into the tmp project (relative to projectDir). */
@@ -239,7 +234,6 @@ export interface BootstrapResult {
 
 function writeCodegenConfig(
   tmpDir: string,
-  architecture: Architecture,
   runtime: RuntimeMode,
   paths: LayoutPaths,
 ): void {
@@ -248,8 +242,6 @@ function writeCodegenConfig(
     // ADR-037 runtime mode (init wrote this too, but this overwrite would
     // otherwise drop it).
     `runtime: ${runtime}`,
-    'generate:',
-    `  architecture: ${architecture}`,
     'paths:',
     `  backend_src: ${paths.backendSrc}`,
     `  entities: ${paths.entities}`,
@@ -261,7 +253,7 @@ function writeCodegenConfig(
 }
 
 export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<BootstrapResult> {
-  const { scenario, architecture } = opts;
+  const { scenario } = opts;
   const runtime = opts.runtime ?? 'vendored';
   const layout = opts.layout ?? 'default';
   const paths = LAYOUT_PATHS[layout];
@@ -292,7 +284,7 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   //    The custom layout writes its config FIRST: init must place every file
   //    it scaffolds from that config's `paths.*` (#566).
   if (layout === 'custom') {
-    writeCodegenConfig(tmpDir, architecture, runtime, paths);
+    writeCodegenConfig(tmpDir, runtime, paths);
     log(`wrote codegen.config.yaml before init (layout: custom — ${JSON.stringify(paths)})`);
   }
   run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime ${runtime}`);
@@ -302,9 +294,8 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   }
 
   if (layout === 'default') {
-    // override architecture
-    writeCodegenConfig(tmpDir, architecture, runtime, paths);
-    log(`wrote codegen.config.yaml (architecture: ${architecture}, runtime: ${runtime})`);
+    writeCodegenConfig(tmpDir, runtime, paths);
+    log(`wrote codegen.config.yaml (runtime: ${runtime})`);
   } else {
     // Subsystem installs against the non-default layout (#566): events, and
     // jobs — #566's repro (`worker.ts` + the `main.ts` hook under backend_src).
@@ -353,7 +344,6 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   return {
     projectDir: tmpDir,
     scenario,
-    architecture,
     paths,
     emittedFile(relPath: string): string {
       const fullPath = path.join(tmpDir, relPath);
