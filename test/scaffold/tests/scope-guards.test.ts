@@ -44,8 +44,14 @@ let getTestDb: any;
 let truncateAll: any;
 let closeDb: any;
 let IntegratedEntityRepository: any;
+let ActivityEntityRepository: any;
+let MetadataEntityRepository: any;
 let crmEntities: any;
+let activityEntities: any;
+let metadataEntities: any;
 let repo: any;
+let activityRepo: any;
+let metadataRepo: any;
 let eq: any;
 
 let counter = 0;
@@ -63,7 +69,13 @@ beforeAll(async () => {
   ({ IntegratedEntityRepository } = await import(
     '@shared/base-classes/integrated-entity-repository'
   ));
-  ({ crmEntities } = await import('../schema'));
+  ({ ActivityEntityRepository } = await import(
+    '@shared/base-classes/activity-entity-repository'
+  ));
+  ({ MetadataEntityRepository } = await import(
+    '@shared/base-classes/metadata-entity-repository'
+  ));
+  ({ crmEntities, activityEntities, metadataEntities } = await import('../schema'));
   ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
   ({ eq } = await import('drizzle-orm'));
 
@@ -86,6 +98,22 @@ beforeAll(async () => {
   }
 
   repo = new ScopedCrmRepository(getTestDb() as any);
+
+  // BOTH guards on for every family — a finder must survive both, not one.
+  const bothGuards = { timestamps: true, softDelete: true, userTracking: true };
+
+  class ScopedActivityRepository extends ActivityEntityRepository<any> {
+    readonly table = activityEntities;
+    protected readonly behaviors = bothGuards;
+    protected readonly patternConfig = { subject: 'opportunity' };
+  }
+  activityRepo = new ScopedActivityRepository(getTestDb() as any);
+
+  class ScopedMetadataRepository extends MetadataEntityRepository<any> {
+    readonly table = metadataEntities;
+    protected readonly behaviors = bothGuards;
+  }
+  metadataRepo = new ScopedMetadataRepository(getTestDb() as any);
 });
 
 beforeEach(async () => {
@@ -215,5 +243,98 @@ d('finders built on baseQuery(leaf)', () => {
     const found = await asUserA(() => repo.findAllByUserId(USER_B));
     expect(found).toHaveLength(0);
     expect(otherUser.id).toBeDefined();
+  });
+});
+
+// ============================================================================
+// Per-family finders — every finder on every family base, each proven against
+// BOTH guards: a soft-deleted row and another user's row must be excluded.
+// ============================================================================
+
+const SUBJECT = 'opp-scope-1';
+const OCCURRED_AT = new Date('2025-01-15T12:00:00Z');
+
+/**
+ * Three activities that ALL match every finder's leaf predicate (same subject,
+ * same date, userId filter aside): live + owned, soft-deleted + owned, live +
+ * another user's. Only the first may come back.
+ */
+async function seedActivities() {
+  const base = { opportunityId: SUBJECT, occurredAt: OCCURRED_AT };
+  const live = await activityRepo.create({ ...base, name: 'live', userId: USER_A });
+  const deleted = await activityRepo.create({ ...base, name: 'deleted', userId: USER_A });
+  await activityRepo.delete(deleted.id);
+  const otherUser = await activityRepo.create({ ...base, name: 'other', userId: USER_B });
+  return { live, deleted, otherUser };
+}
+
+d('ActivityEntityRepository finders keep both guards', () => {
+  test('findByDateRange', async () => {
+    const { live } = await seedActivities();
+    const found = await asUserA(() =>
+      activityRepo.findByDateRange(
+        new Date('2025-01-01T00:00:00Z'),
+        new Date('2025-01-31T00:00:00Z'),
+      ),
+    );
+    expect(found.map((r: any) => r.id)).toEqual([live.id]);
+  });
+
+  test('findByUserId — soft-deleted row excluded', async () => {
+    const { live } = await seedActivities();
+    const found = await asUserA(() => activityRepo.findByUserId(USER_A));
+    expect(found.map((r: any) => r.id)).toEqual([live.id]);
+  });
+
+  test('findByUserId — another user\'s rows unreachable by predicate', async () => {
+    await seedActivities();
+    expect(await asUserA(() => activityRepo.findByUserId(USER_B))).toHaveLength(0);
+  });
+
+  test('findBySubjectId', async () => {
+    const { live } = await seedActivities();
+    const found = await asUserA(() => activityRepo.findBySubjectId(SUBJECT));
+    expect(found.map((r: any) => r.id)).toEqual([live.id]);
+  });
+
+  test('findRecentBySubjectId', async () => {
+    const { live } = await seedActivities();
+    const found = await asUserA(() => activityRepo.findRecentBySubjectId(SUBJECT, 10));
+    expect(found.map((r: any) => r.id)).toEqual([live.id]);
+  });
+});
+
+const ENTITY_ID = 'entity-scope-1';
+const ENTITY_TYPE = 'contact';
+
+/** Same shape as `seedActivities`, for the metadata family. */
+async function seedMetadata() {
+  const base = { entityId: ENTITY_ID, entityType: ENTITY_TYPE, fieldValue: 'v' };
+  const live = await metadataRepo.create({ ...base, fieldName: 'live', userId: USER_A });
+  const deleted = await metadataRepo.create({ ...base, fieldName: 'deleted', userId: USER_A });
+  await metadataRepo.delete(deleted.id);
+  const otherUser = await metadataRepo.create({ ...base, fieldName: 'other', userId: USER_B });
+  return { live, deleted, otherUser };
+}
+
+d('MetadataEntityRepository finders keep both guards', () => {
+  test('findByEntityIdAndType', async () => {
+    const { live } = await seedMetadata();
+    const found = await asUserA(() =>
+      metadataRepo.findByEntityIdAndType(ENTITY_ID, ENTITY_TYPE),
+    );
+    expect(found.map((r: any) => r.id)).toEqual([live.id]);
+  });
+
+  test('listByEntityId', async () => {
+    const { live } = await seedMetadata();
+    const found = await asUserA(() => metadataRepo.listByEntityId(ENTITY_ID));
+    expect(found.map((r: any) => r.id)).toEqual([live.id]);
+  });
+
+  test('listHistoryByEntityId', async () => {
+    const { live } = await seedMetadata();
+    const found = await asUserA(() => metadataRepo.listHistoryByEntityId(ENTITY_ID));
+    expect(found.map((r: any) => r.id)).toEqual([live.id]);
   });
 });

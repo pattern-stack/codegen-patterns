@@ -93,7 +93,13 @@ line this PR is already editing. Same idiom as `BaseRepository.list()` (`:222-22
 ### 2. The guard test
 
 `src/__tests__/templates/no-basequery-where.test.ts` walks `templates/**` and `runtime/**` and fails on any
-occurrence of `baseQuery()` followed by `.where(` (whitespace/newline tolerant). Same shape as DRZ-1's
+`.where(` that lands on a builder `baseQuery(...)` returned. The detector (`findBaseQueryWhere`) balances
+parentheses rather than matching a regex, so it catches the call **with any arguments** (`baseQuery(x).where(`,
+`baseQuery(and(a, b)).where(`), **after other chain links** (`baseQuery(x).orderBy(y).where(`), across newlines,
+and the **assigned** form (`const q = this.baseQuery(…); … q.where(` / `q = q.where(`), bounded to the enclosing
+block so a same-named variable in another method is not read as the binding. The detector is itself unit-tested:
+each forbidden form is asserted caught and each safe form asserted clean. *(Post-review correction: the first
+version was the regex `baseQuery\(\s*\)\s*\.where\s*\(`, which saw only the zero-argument form.)* Same shape as DRZ-1's
 `no-v1-relations-emission.test.ts`. It runs in `just test-unit`, therefore in `just test-all`, therefore in CI
 (charter: *a gate that runs nowhere in CI rots*).
 
@@ -116,7 +122,15 @@ matters.
 one live row owned by user A, one soft-deleted row owned by user A, one live row owned by user B. Every assertion
 is "only the first one". `findByExternalId`, `findManyByExternalIds`, `findAllByUserId` and `count()` each see
 neither the soft-deleted row nor the other user's, including when the *leaf predicate itself* names the other user
-(`findAllByUserId(USER_B)` as user A → `[]`). Ten of the 17 sites are these base classes, and every generated
+(`findAllByUserId(USER_B)` as user A → `[]`).
+
+**Per family.** The same three-row seed, with both guards on, is run against **every** finder of the other two
+family bases — `ActivityEntityRepository` (`findByDateRange`, `findByUserId` ×2 including `findByUserId(USER_B)`,
+`findBySubjectId`, `findRecentBySubjectId`) and `MetadataEntityRepository` (`findByEntityIdAndType`,
+`listByEntityId`, `listHistoryByEntityId`); each returns only the live, owned row. To make that possible the
+scaffold's `activity_entities` gains a nullable `deleted_at` and `metadata_entities` a nullable `user_id` +
+`deleted_at` (`test/scaffold/schema.ts`); the families' own suites keep both guards off and are unaffected.
+*(Added in review follow-up; the first version covered `IntegratedEntityRepository` only.)* Ten of the 17 sites are these base classes, and every generated
 finder compiles to the same `baseQuery(leaf)` call, so the semantics are proven once, here.
 
 The repositories under test extend the **real** runtime base classes; the ALS is imported through `@gen/`
@@ -168,6 +182,10 @@ under a consumer tsconfig.
    | `findManyByExternalIds([live, deleted, other])` | returned **3 of 3** |
    | `findAllByUserId(USER_A)` with one soft-deleted | returned **2** |
    | `findAllByUserId(USER_B)` as user A | returned **1** — the leaf predicate reached straight across the scope |
+
+   The per-family suite added in review follow-up has its own control: with only
+   `activity-entity-repository.ts` + `metadata-entity-repository.ts` reverted to the pre-fix state, **all 8** of
+   its tests fail (Activity ×5, Metadata ×3) and the rest of the suite passes (72 / 8 fail).
 
    The three `count()` tests **pass on the pre-fix tree**. That is the §Why correction above, stated as evidence
    rather than assertion: `count()`'s hand-assembled conditions were correct today and would have gone stale the
@@ -240,8 +258,8 @@ Output from the run made **after** the last edit (charter I9).
 | `bun run typecheck` | **exit 0** |
 | `bun run build` | **exit 0** |
 | `bun run test` | **exit 0** |
-| `just test-all` | **exit 0** — typecheck · unit **3182/3182** (was 3176; +6) · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
-| `just test-integration` | **exit 0** — **72 pass · 2 skip · 0 fail** (was 64 pass; +8, the new suite). Pre-fix control: **5 fail** |
+| `just test-all` | **exit 0** — typecheck · unit **3195/3195** (was 3176; +6 in the PR, +13 in review follow-up — the detector's own caught/clean cases) · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
+| `just test-integration` | **exit 0** — **80 pass · 2 skip · 0 fail** (was 64 pass; +8 the new suite, +8 per-family in review follow-up). Pre-fix controls: **5 fail** (Integrated) and **8 fail** (Activity + Metadata) |
 | `just test-smoke` | **exit 0** — run as part of `test-all`; mandatory because `runtime/base-classes/**` changed |
 | `just test-post-publish` | **exit 0** |
 | `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, still exactly **118**; not repaired, not filtered |
