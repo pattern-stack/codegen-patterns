@@ -18,7 +18,7 @@ user-invocable: false
 
 This project generates its backend (domain entities, repositories, services,
 controllers, DTOs, use cases, Drizzle schemas, NestJS modules) from YAML entity
-definitions, following Clean Architecture. You author small YAML files and run
+definitions — one NestJS module folder per entity. You author small YAML files and run
 the `codegen` CLI; the generator owns a few directories and never touches the
 rest of your app.
 
@@ -34,7 +34,7 @@ machine-readable output and `--cwd <path>` to target another project root.
   - `src/generated/modules.ts` — the `GENERATED_MODULES` barrel
   - `src/generated/schema.ts` — the Drizzle schema barrel
   - `src/generated/app-config.ts` — the config values your app reads at boot
-  - the per-entity module tree (`src/modules/<plural>/…` in clean-lite-ps)
+  - the per-entity module tree (`src/modules/<plural>/…`)
 
   If one of the generated barrels (including `subsystems.ts` /
   `subsystems-schema.ts`) cannot be written, the command exits 1 and names the
@@ -186,9 +186,9 @@ codegen skills list
 - **YAML is `snake_case`; generated TS properties are `camelCase`.** The
   templates derive `accountId` from `account_id`. Entity names are singular
   `snake_case` (`opportunity`).
-- **Two architectures, mutually exclusive.** `generate.architecture` in
-  `codegen.config.yaml` is either `clean-lite-ps` (the supported consumer
-  default — lighter per-entity module layout) or `clean` (full split). Don't mix.
+- **One backend layout.** Every entity is a module folder under
+  `paths.modules_dir` (`src/modules/[<context>/]<plural>/`). There is no
+  `generate.architecture` key; a config that sets it is rejected.
 - **Barrels are wired once.** After the first `entity new`, add
   `...GENERATED_MODULES` to `app.module.ts` and `export * from
   './generated/schema'` to your schema root. Codegen keeps the barrel contents
@@ -214,6 +214,3 @@ codegen skills list
   a different identity, and DI won't resolve it.
 - **Do not add tables directly to `src/generated/schema.ts`.** Hand-authored
   tables go in your own file and are combined in the schema root re-export.
-- **Do not reach for `clean` vs `clean-lite-ps` arbitrarily.** Match the
-  project's existing `generate.architecture`; switching mid-project rewrites the
-  whole module layout.

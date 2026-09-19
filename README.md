@@ -6,7 +6,7 @@ Define entities in YAML. Generate a full NestJS + Drizzle backend — repositori
 codegen entity new entities/contact.yaml
 ```
 
-Built for teams that want consistent architecture without hand-writing the same CRUD scaffolding for every entity. Works with two backend layouts (full Clean Architecture or Clean-Lite-PS) and generates infrastructure subsystems (events, jobs, cache, storage) following Protocol → Backend → Factory patterns.
+Built for teams that want consistent architecture without hand-writing the same CRUD scaffolding for every entity. Generates one backend layout (Clean-Lite-PS: a NestJS module folder per entity) and infrastructure subsystems (events, jobs, cache, storage) following Protocol → Backend → Factory patterns.
 
 ## Install
 
@@ -116,19 +116,10 @@ codegen project config           # view resolved config
 
 ## What Gets Generated
 
-**Clean Architecture** (default, `generate.architecture: clean`):
+**Backend** — one layout, Clean-Lite-PS, under `paths.modules_dir` (default
+`<backend_src>/modules`; an entity's `context:` adds a folder):
 ```
-domain/{entity}/                   Entity class + repository interface
-application/commands/{entity}/     Create, Update, Delete use cases
-application/queries/{entity}/      GetById, List, declarative queries
-infrastructure/persistence/        Drizzle schema + repository impl
-presentation/rest/                 REST controller
-modules/                           NestJS module wiring
-```
-
-**Clean-Lite-PS** (`generate.architecture: clean-lite-ps`):
-```
-modules/{plural}/
+modules/[{context}/]{plural}/
   {entity}.entity.ts               Drizzle table + types
   {entity}.repository.ts           Extends pattern base class
   {entity}.service.ts              Extends pattern base service
@@ -496,11 +487,8 @@ paths:
   generated: src/generated
 
 generate:
-  architecture: clean-lite-ps    # clean | clean-lite-ps
   frontend: false                # default false; scanner detects apps/frontend/
   semantic: false                # default false; emit src/generated/semantic/ (declared AggregateModel)
-  commands: true
-  queries: true
 
 naming:
   fileCase: kebab-case
@@ -518,7 +506,7 @@ The `frontend:` block (auth, parsers, sync) is documented under
 conventions with `codegen project scan`.
 
 The file is validated strictly on every command: an unknown or removed key
-(`paths.entitis`, the deleted `paths.entities_dir`) is an error naming the key,
+(`paths.entitis`, the deleted `paths.entities_dir` or `generate.architecture`) is an error naming the key,
 never a silently applied default. Every `paths.*` key has one default, declared
 in the schema (`backend_src: src`; `generated`, `modules_dir` and
 `orchestration_src` derive from `backend_src`, as does the `patterns:` glob), and

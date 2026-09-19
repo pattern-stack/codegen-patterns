@@ -88,10 +88,10 @@ YAML Entity Definition → Parser → Analyzer → Hygen Templates / TS Emitters
 The backend uses **hygen templates**; the frontend and integration layers use
 **TypeScript emitters** (`src/emitters/`). Both consume the same parsed entity set.
 
-### Backend Template Pipelines (hygen)
+### Backend Template Pipeline (hygen)
 
-- **`templates/entity/new/backend/`** — Full Clean Architecture: separate command/query classes, repository interfaces, NestJS modules. Selected via `generate.architecture: clean` (default).
-- **`templates/entity/new/clean-lite-ps/`** — Clean-Lite-PS: lighter layout with entity, service, repository, controller, module, DTOs, use-cases. Selected via `generate.architecture: clean-lite-ps`. Has its own `prompt-extension.js`. The two backend template pipelines are mutually exclusive — `generate.architecture` picks exactly one.
+- **`templates/entity/new/clean-lite-ps/`** — the one backend pipeline: per entity, a module folder under `paths.modules_dir` (`<modules_dir>[/<context>]/<plural>/`) holding the entity (Drizzle table), repository, service, controller, module, DTOs and use-cases. `prompt.js` builds the base locals; `clean-lite-ps/prompt-extension.js` builds the rest. Every template references its locals unguarded, so a missing local throws (#638).
+- There is no architecture choice. The `clean` pipeline (`templates/entity/new/backend/`) and `generate.architecture` were deleted by ARCH-0 (#677, `docs/specs/ARCH-0.md`); writing the key is an unknown-key error. ARCH-1 (#682) deletes the config surface only `clean` read (`naming:`, `locations.backend*`, `database:`, `behaviors:`, entity layout keys) and the `prompt.js` locals that fed it.
 
 ### Frontend Relation Graph (`src/emitters/frontend/graph-model.ts` + `emit-graph.ts`, FE-REL)
 
@@ -244,7 +244,7 @@ Auto-detect: `just scan` generates a config from project conventions.
   `test/smoke/fixtures-frontend/consumer/`; no template writes to either location, so they are fixtures, not stubs.
 - **Smoke tsc scoping**: every smoke (`test-smoke`, `-subsystems`, `-junction`, `-frontend`, `test-smoke-integration`) fails on **any** `tsc` diagnostic located in the project it generated. The shared `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** — outside the generated project, or in `node_modules` — never by message and never by directory. It is unit-tested (`src/__tests__/smoke/consumer-errors.test.ts`); do not add a predicate to it (charter I9).
 - **Tarball smoke**: `just test-post-publish` — pack all publishable packages, install into a fresh tmp project via npm, verify the consumer contract (files manifest, exports, bins, peer ranges), then re-run the smoke harness with the CLI/templates/runtime coming from the installed tarball (`SMOKE_TARBALL` mode). Gates every CI publish via `just publish-ci`. Catches the works-from-checkout-broken-from-tarball class (#190)
-- **Baseline tests**: `just test-baseline` — generate from `test/fixtures/` into repo-root `packages/api/` and compare to `test/baseline/` snapshots. Two-pass generation (first pass seeds `packages/api/src/domain/*.entity.ts` files so second-pass `targetExists` checks resolve cross-entity references). Start from pristine state — the runner wipes the generated directories on each run.
+- **Baseline tests**: `just test-baseline` — generate the closed entity set in `test/fixtures/entities/` (config `test/fixtures/codegen.config.yaml`) into repo-root `packages/api/src/modules/`, typecheck it against the in-repo runtime (`test/tsconfig.baseline.json`), and compare to `test/baseline/` snapshots. Two-pass generation (the first pass seeds every `<entity>.entity.ts` so the second pass's `targetExists` checks resolve cross-entity imports). Start from pristine state — the runner wipes the generated directories on each run.
 - **CI** (`.github/workflows/ci.yml`), on every PR to `main` and every push to `main`:
   - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-smoke-frontend` + `test-junction` + `test-integration-emit` + `test-smoke-integration`
   - job `test-integration` → `just test-integration` (needs Docker, hence its own job)
@@ -258,14 +258,15 @@ Auto-detect: `just scan` generates a config from project conventions.
 Gates that are red on `main` today, on purpose recorded here rather than hidden, filtered or quietly dropped
 (charter I9). Do not add one to CI, and do not "fix" it by loosening its assertions.
 
-| Gate | Status | Tracking |
-|---|---|---|
-| `just test-smoke-junction-clean` | Red, and now reports its real number: **118** errors (110 × TS2307 unresolved module + 8 × TS7006). GATE-1 measured 120 raw behind a filter that reported 21; DRZ-2 deleted the filter (#576) and fixed 2 of the 120 (the vendored events siblings, #575). Only ~15 are the junction pipeline; the rest are the `clean` entity pipeline's missing `domain/` + `constants/` barrels, DTO `schemas` barrel, `database.module`, `zod-validation.pipe`, the generated schema barrel's singular/plural filename mismatch, and the `@repo/db/server/schema` location contract. The `clean` backend pipeline has never been typechecked anywhere — the baseline gate compiles `packages/api/src/domain/**/*` only. | **#602** (diagnosis in `docs/specs/GATE-1.md` §Failure 2); deferred by charter §5 non-goals |
+None today. ARCH-0 (#677) deleted the last one, `just test-smoke-junction-clean`, together with the `clean`
+pipeline it exercised (#602 closed as obsolete).
 
 **Named expectations inside green gates** — each one exact file, exact error code, issue number, asserted present
 *and* sole, so it fails the moment the defect is fixed and must then be deleted:
 
-None today. RT-0 (#624) deleted the last one (`applyIssue624Expectation`, capability smoke package leg).
+| Gate | File | Codes | Issue |
+|---|---|---|---|
+| `just test-baseline` (typecheck step, `ISSUE_680_EXPECTATION` in `test/run-test.ts`) | `packages/api/src/modules/contacts/contact.repository.ts` | TS7053 ×2, TS2322 ×1 — the `via:` / `select:` declarative queries on `contact-v2.yaml` | **#680** |
 
 No gate anywhere filters an error class or carves out a directory: every smoke scopes its
 `tsc` output through `test/smoke/_consumer-errors.ts`, by the diagnostic's **location** only (GATE-2, #604). If a
@@ -279,7 +280,7 @@ Templates use Hygen. Two types:
 - Regular templates (e.g., `entity.ejs.t`) create new files
 - Inject templates (prefixed `_inject-`) modify existing files
 
-Entry point: `templates/entity/new/prompt.js`. Clean-Lite-PS extends via `prompt-extension.js`.
+Entry point: `templates/entity/new/prompt.js`. The clean-lite-ps locals come from `prompt-extension.js`.
 
 Cross-entity names in the hygen prompts (a `belongs_to` / `has_many` / field `foreign_key:` target, an EAV
 definition entity, a junction or `relationship new` endpoint, a group Actor's members) come from `templates/_shared/entity-naming.mjs`:

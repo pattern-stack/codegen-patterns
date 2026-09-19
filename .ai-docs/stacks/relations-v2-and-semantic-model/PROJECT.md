@@ -94,14 +94,14 @@ uphold the ones they touch.
 | **I8** | **Core contract + opt-in extensions.** | Where a backend-specific capability is exposed, it is an extension on top of a portable core — not a uniform interface that hides features. |
 | **I9** | **Gates are honest.** | No filtered or ignored error classes, no scope carve-outs. Report gate output from the run made *after* the last edit. A real residual error class gets its own issue and a named single-purpose expectation, not a filter. **`bun run typecheck` does not validate a `runtime/base-classes/**` type change** — consumer tsconfigs are stricter (`noUncheckedIndexedAccess`); run `just test-smoke` before believing a runtime type change. A gate that is not in CI rots: new gates go into `just test-all` or their own CI job. |
 | **I10** | **This repository is public.** | No consumer, customer, product-strategy, infrastructure or security-defect detail in any file, commit, issue or PR. Refer to "a host application". |
-| **I11** | **Scope discipline.** | `clean-lite-ps` is the backend pipeline in scope. Cross-entity files are whole-set TS emitters (ADR-038 precedent); per-entity backend files stay hygen. No consumer-application changes; no consumer production pin to the Drizzle RC. |
+| **I11** | **Scope discipline.** | `clean-lite-ps` is the only backend pipeline (`clean` deleted by ARCH-0, #677). Cross-entity files are whole-set TS emitters (ADR-038 precedent); per-entity backend files stay hygen. No consumer-application changes; no consumer production pin to the Drizzle RC. |
 
 ## 5. Non-goals
 
 - A metric engine in codegen (query-surface is the engine).
 - An OpenAPI path or client generator (shipped / downstream).
 - Consumer migration-history continuity across the drizzle-kit format change.
-- The full `clean` backend pipeline (ADR-041 defers it; follow-up after this project).
+- Repairing the full `clean` backend pipeline — it was deleted instead (Q5, ARCH-0 #677).
 - EAV in the semantic model; `to_shape` projections / selector catalog from the subject-lattice research.
 - Merging stale PRs #550, #556, #271 — rebase-and-reassess only if one becomes relevant.
 
@@ -153,6 +153,7 @@ Append-only. A decision that changes an invariant or the target picture also get
 | 2026-09-17 · checkpoint 1 | **The `clean` backend pipeline is out of the project and known-red (#602)** — 118 raw tsc errors, never typechecked. Not repaired, not filtered, not in CI. Repair-or-retire is an owner decision (Q5). | #602 |
 | 2026-09-20 | **Q1 closed: the frontend include mechanism is FULLY GENERATED**, not hosted in `@pattern-stack/frontend-patterns`. This reverses the recommendation recorded when Q1 was opened. Measured reasons, not preference: the package publishes zero relation surface at any version; its `1.0.0` dropped `dist/sync` entirely; its collections are typed `any` by its own admission because it bundles `@tanstack/db`, so a package-hosted traversal would be untyped traversal; and the one relation-shaped name it derives it re-pluralizes at runtime, which ADR-038 forbids. `emit-store.ts` had already made the same call for FK resolvers. FE-REL is therefore a one-repo unit whose gate does not block on another repo's release. The three package defects are filed against `pattern-stack/frontend-patterns` regardless, because they are live for every consumer today. | FE-REL §2, PLAN §6A.3 |
 | 2026-09-20 | **Cross-mode client hops (an `electric` root reaching an `api` target) are a generation error in v1**, naming both entities and the relation — not an id-set bridge and not a degraded fetch loop. The bridge needs a list-filter contract REL-2's include allowlist does not define. | FE-REL §4.4 |
+| 2026-09-19 | **Owner decision 2026-09-19: delete `clean`** (Q5). clean-lite-ps is the only backend pipeline; `generate.architecture` is removed from the schema (an unknown-key error), not kept as a one-value enum. No alias, no shim. The config surface only `clean` read is ARCH-1 (#682). | #677, `docs/specs/ARCH-0.md` |
 
 ### Open questions
 
@@ -164,6 +165,7 @@ Append-only. A decision that changes an invariant or the target picture also get
 | Q5 | The `clean` backend pipeline (#602): repair it and gate it, or retire it? | nothing in this project; CAP/REL are `clean-lite-ps`-only | retire — no users, "no backwards compat", and every REL/CAP unit already skips it | Doug |
 | Q6 | Cut 0.31.0 when unit 1 merges, or hold until REL-1 refills the relations slot? | release only | cut it: the peer-dependency change and honest gates are worth shipping; note the empty relations slot in the changelog | Doug |
 | Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | **Decided by default at SEM-1 (#590)** per this recommendation — YAML for atomic tags + pure composites, adapter for data-driven — and built. Recorded in ADR-045 §Decision 7. Reversing it now means moving the composite metric schema out of the entity YAML. | Doug (confirm) |
+| Q5 | The `clean` backend pipeline (#602): repair it and gate it, or retire it? | — | **Resolved 2026-09-19: delete** (owner decision; ARCH-0, #677). #602 closed as obsolete. | Doug |
 
 ## 8. Risks
 
