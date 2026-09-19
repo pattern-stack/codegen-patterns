@@ -261,6 +261,12 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
  *
  * Exported for unit-testing; consumers import `buildCleanLitePsLocals`.
  */
+export function splitMethodList(lines) {
+  return (lines ?? []).flatMap((line) =>
+    line.split(',').map((m) => m.trim()).filter(Boolean),
+  );
+}
+
 export function resolvePatternComposition(entity) {
   const names = declaredPatternNames(entity);
   const composed = composePatterns(names, getPattern, { entity: entity.name });
@@ -2086,12 +2092,19 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
       ),
       capability: false,
     },
+    // The two spine sides stay SEPARATE vocabularies so the error names the one
+    // that actually clashes (#688 review nit 1). A capability's
+    // `forwarderMethods` reach both: the service emits the forwarder, and the
+    // mixin has to carry the method it forwards to, so either side is a real
+    // collision.
     {
-      source: `the spine '${patternBase.patternName}'`,
-      methods: [
-        ...patternBase.repositoryInheritedMethods,
-        ...patternBase.serviceInheritedMethods,
-      ].flatMap((line) => line.split(',').map((m) => m.trim()).filter(Boolean)),
+      source: `the spine '${patternBase.patternName}' (repository)`,
+      methods: splitMethodList(patternBase.repositoryInheritedMethods),
+      capability: false,
+    },
+    {
+      source: `the spine '${patternBase.patternName}' (service)`,
+      methods: splitMethodList(patternBase.serviceInheritedMethods),
       capability: false,
     },
   ]);

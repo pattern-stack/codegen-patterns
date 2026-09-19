@@ -904,6 +904,22 @@ describe('capability composition emission (ADR-041)', () => {
     ).toThrow(/capability 'CeSchemaless' declares no `configSchema`/);
   });
 
+  // #688 review nit 1: the repository and service sides are separate
+  // vocabularies, so the message names the side that actually clashes.
+  // `upsertMany` is on Integrated's repository side only.
+  it('names the spine side a capability method collides with', () => {
+    registerLibraryPattern({
+      name: 'CeRepoColliding',
+      kind: 'capability',
+      mixin: 'WithCeRepoColliding',
+      mixinImport: '@shared/base-classes/with-ce-repo-colliding',
+      forwarderMethods: ['upsertMany'],
+    });
+    expect(() =>
+      buildCleanLitePsLocals(entityWith(['CeRepoColliding', 'Integrated']), EMPTY_BASE_LOCALS),
+    ).toThrow(/the spine 'Integrated' \(repository\)/);
+  });
+
   it('a capability method colliding with a `queries:` method throws at generation', () => {
     registerLibraryPattern({
       name: 'CeColliding',

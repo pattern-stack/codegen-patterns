@@ -197,17 +197,23 @@ export function validatePatternComposition(
 			capability: true,
 		}));
 	// The spine's declared inherited methods (#688) — a capability forwarder
-	// redeclaring one would override the base with an unrelated signature.
+	// redeclaring one would override the base with an unrelated signature. The
+	// repository and service sides are separate vocabularies so the message
+	// names the side that clashes (#688 review nit 1).
+	const splitMethods = (lines: string[] | undefined): string[] =>
+		(lines ?? []).flatMap((line) =>
+			line.split(',').map((m) => m.trim()).filter(Boolean),
+		);
 	const spineVocab = composed.spine
 		? [
 				{
-					source: `the spine '${composed.spineName}'`,
-					methods: [
-						...(composed.spine.repositoryInheritedMethods ?? []),
-						...(composed.spine.serviceInheritedMethods ?? []),
-					].flatMap((line) =>
-						line.split(',').map((m) => m.trim()).filter(Boolean),
-					),
+					source: `the spine '${composed.spineName}' (repository)`,
+					methods: splitMethods(composed.spine.repositoryInheritedMethods),
+					capability: false,
+				},
+				{
+					source: `the spine '${composed.spineName}' (service)`,
+					methods: splitMethods(composed.spine.serviceInheritedMethods),
 					capability: false,
 				},
 			]

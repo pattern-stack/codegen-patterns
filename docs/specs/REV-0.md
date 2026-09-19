@@ -42,11 +42,45 @@ located again on the chain tip before it was fixed.
 Also: `ADR-041` gets a dated revision note for findings 1, 2, 4 and 5. `CHANGELOG.md` records the consumer-visible
 changes (finding 1 under Fixed; 2, 4, 5 and 8 under Changed).
 
+## Review follow-up (#692 review, PASS_WITH_NOTES)
+
+| Nit | Fix |
+|---|---|
+| 1. The repository and service inherited-method lists were flattened into one vocabulary, so a clash could name the wrong side. | Split into two vocabularies, `the spine 'X' (repository)` and `the spine 'X' (service)`, in both the generation check and the analyzer. Both sides stay in scope for a capability's `forwarderMethods`: the service emits the forwarder and the mixin must carry the method it forwards to, so a name on either side is a real collision — only the message changes. Test: `prompt-extension.test.ts` › "names the spine side a capability method collides with" (`upsertMany`, repository-only on `Integrated`). A capability method that is *not* declared in `forwarderMethods` (e.g. `Actor`'s `memberPredicate`) is invisible to codegen either way, as ADR-041 §4 already says. |
+| 2. `run-integration.ts` called Bun `$` inside `finally`; a throw there would mask `exitCode` and skip `process.exit`. | `.nothrow()`, with the non-zero git exit handled explicitly: the directory is kept and the run fails. |
+| 3. `bunx --no-install` is a consumer behaviour change; the review recommended pinning `drizzle-kit` in the scaffold's devDependencies plus a smoke assertion that `codegen dev up` can push on a fresh scaffold. | **Measured; the recommendation does not apply, so the skip/warning path is asserted instead.** See below. |
+
+### Nit 3 — why there is no scaffold pin
+
+Measured by running `project init --yes` into an empty project:
+
+- **`project init` writes no `package.json` and edits none** (except a *frontend* one, via `mergeFrontendDeps`). Backend
+  peer deps are the consumer's own `bun add`, per `docs/CONSUMER-SETUP.md`. There is no scaffold devDependencies list
+  to add an exact `drizzle-kit` pin to.
+- **`project init` emits no `drizzle.config.ts`.** `codegen dev up` pushes only when that file exists, so on a fresh
+  scaffold it attempts **no push at all** — with or without a kit installed. drizzle-kit becomes relevant only once the
+  consumer authors the config, which is exactly where `docs/consumer/drizzle.md` tells them to
+  `bun add -D drizzle-kit@1.0.0-rc.4` (exact, matching the ORM line).
+
+Adding a pin would therefore mean `project init` taking ownership of the consumer's `package.json`, which is a
+different decision from this review nit, and it would still not make `dev up` push (no config file).
+
+What is asserted instead, in `src/__tests__/cli/dev-drizzle-push.test.ts` against two small exported helpers
+(`drizzlePushPlan` / `drizzlePushWarning` in `dev.ts`): a fresh scaffold plans **no** push; with a config file the
+command is exactly `bunx --no-install drizzle-kit push --config <file>` and names no `@latest`; a `.js` config is
+accepted; and the warning names drizzle-kit as the likely cause while keeping the underlying stderr. A real push needs
+Docker and a live Postgres, so it stays out of `test-all` (which is Docker-free).
+
 ## Found while implementing
 
 - `test/smoke-integration/run.ts` read `tsc.out + tsc.err`, but its `runSilent` returns no `err` field; stderr is
   already folded into `out`. So the gate appended the string `"undefined"` to the output. The mistake was harmless,
   and nothing typechecked it: `tsconfig.build.json` excludes `test/`. Fixed in place with finding 6.
+
+- `codegen dev up`'s push branch computed a `DATABASE_URL` string and never used it: unlike the app start beside it,
+  the push runs with the ambient environment only, though the documented `drizzle.config.ts` reads that variable.
+  The dead line is gone and the gap is filed as **#693**; fixing it needs `runCmd` to take an `env`, which is a
+  behaviour change beyond this PR.
 
 ## Out of scope
 
