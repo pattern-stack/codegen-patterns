@@ -56,7 +56,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { consumerErrors as scopeToConsumer } from './_consumer-errors';
+import { tscGateErrors } from './_consumer-errors';
 import { aliasPackageRuntime } from './_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -667,7 +667,10 @@ async function leg(mode: Mode): Promise<number> {
 			cwd: tmpDir,
 			encoding: 'utf-8',
 		});
-		const scoped = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
+		const scoped = tscGateErrors(
+			{ code: tsc.status, output: `${tsc.stdout ?? ''}${tsc.stderr ?? ''}` },
+			tmpDir,
+		);
 		// Both legs, zero expectations: the junction and the relationship resolve
 		// their package-owned runtime imports by mode (#624).
 		const errors = scoped;

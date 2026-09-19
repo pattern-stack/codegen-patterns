@@ -328,10 +328,14 @@ function typecheckBaseline() {
   const tsconfig = join(TEST_DIR, 'tsconfig.baseline.json');
   console.log('Typechecking generated clean-lite-ps output (packages/api/src)...');
   let output = '';
+  // A non-zero (or missing) exit status fails the gate on its own, even with no
+  // output — a tsc that dies silently compiled nothing (#688).
+  let exitedNonZero = false;
   try {
     execSync(`bunx tsc --noEmit --pretty false --project "${tsconfig}"`, { cwd: ROOT, stdio: 'pipe' });
   } catch (err: unknown) {
     const error = err as { stdout?: Buffer; stderr?: Buffer };
+    exitedNonZero = true;
     output = [error.stdout?.toString(), error.stderr?.toString()].filter(Boolean).join('\n');
   }
   // Every `error TS` line must parse as a located diagnostic: a global one
@@ -350,9 +354,13 @@ function typecheckBaseline() {
     others.length > 0 ||
     !matches680 ||
     errorLines !== diagnostics.length ||
-    (output !== '' && diagnostics.length === 0)
+    (output !== '' && diagnostics.length === 0) ||
+    (exitedNonZero && diagnostics.length === 0)
   ) {
-    console.error('Typecheck failed over generated clean-lite-ps output:\n' + output);
+    console.error(
+      'Typecheck failed over generated clean-lite-ps output:\n' +
+        (output || '(tsc exited non-zero without printing anything)'),
+    );
     if (!matches680) {
       console.error(
         `#680 expectation not met: expected exactly ${ISSUE_680_EXPECTATION.codes.join(', ')} in ` +

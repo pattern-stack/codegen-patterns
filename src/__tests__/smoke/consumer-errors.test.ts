@@ -8,7 +8,7 @@
  * message-scoped — so the defect cannot come back.
  */
 import { describe, it, expect } from 'bun:test';
-import { consumerErrors } from '../../../test/smoke/_consumer-errors';
+import { consumerErrors, tscGateErrors } from '../../../test/smoke/_consumer-errors';
 
 const E = (s: string) => s;
 
@@ -143,5 +143,36 @@ describe('consumerErrors — absolute locations and the optional projectDir', ()
 			'../../runtime/x.ts(1,1): error TS2769: No overload matches this call.',
 		].join('\n');
 		expect(consumerErrors(out, project)).toEqual([]);
+	});
+});
+
+describe('tscGateErrors — fails closed on the exit status (#688)', () => {
+	it('fails a non-zero exit that printed no `error TS` line', () => {
+		const errors = tscGateErrors({ code: 1, output: 'error: could not resolve "tsc"\n' });
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('tsc failed (exit 1) without printing a diagnostic');
+		expect(errors[0]).toContain('could not resolve "tsc"');
+	});
+
+	it('fails a null exit status (killed / never started), even with no output', () => {
+		const errors = tscGateErrors({ code: null, output: '' });
+		expect(errors).toHaveLength(1);
+		expect(errors[0]).toContain('no exit status');
+	});
+
+	it('passes a clean exit 0 with no output', () => {
+		expect(tscGateErrors({ code: 0, output: '' })).toEqual([]);
+	});
+
+	it('passes a non-zero exit whose diagnostics are all scoped out by location', () => {
+		const output =
+			"../../repo/runtime/x.ts(1,1): error TS2322: Type 'a' is not assignable to type 'b'.\n" +
+			"node_modules/pkg/index.d.ts(3,3): error TS2304: Cannot find name 'Foo'.\n";
+		expect(tscGateErrors({ code: 2, output })).toEqual([]);
+	});
+
+	it('reports located consumer diagnostics exactly as consumerErrors does', () => {
+		const output = "src/a.ts(1,1): error TS2304: Cannot find name 'Foo'.\n";
+		expect(tscGateErrors({ code: 2, output })).toEqual(consumerErrors(output));
 	});
 });

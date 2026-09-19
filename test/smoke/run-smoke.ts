@@ -24,7 +24,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { consumerErrors as scopeToConsumer } from './_consumer-errors';
+import { tscGateErrors } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -133,11 +133,12 @@ function run(cmd: string, cwd: string, env: NodeJS.ProcessEnv = {}): void {
 	});
 }
 
-function runSilent(cmd: string, cwd: string): { code: number; out: string; err: string } {
+function runSilent(cmd: string, cwd: string): { code: number | null; out: string; err: string } {
 	const parts = cmd.split(' ');
 	const r = spawnSync(parts[0], parts.slice(1), { cwd, encoding: 'utf-8' });
 	return {
-		code: r.status ?? 0,
+		// `null` (killed / never started) is kept, never mapped to success (#688).
+		code: r.status,
 		out: r.stdout ?? '',
 		err: r.stderr ?? '',
 	};
@@ -739,7 +740,7 @@ async function main(): Promise<number> {
 		// there are no error-class exclusions, and none may be added (I9).
 		log('running bunx tsc --noEmit --skipLibCheck');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
-		const consumerErrors = scopeToConsumer(tsc.out + tsc.err, tmpDir);
+		const consumerErrors = tscGateErrors({ code: tsc.code, output: tsc.out + tsc.err }, tmpDir);
 		if (consumerErrors.length > 0) {
 			for (const line of consumerErrors) console.error(line);
 			logError(
