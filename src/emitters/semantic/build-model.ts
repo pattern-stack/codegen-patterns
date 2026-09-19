@@ -85,7 +85,7 @@ function junctionFieldType(field: { type?: string; choices?: unknown }): AggColT
  *   when `temporal` (default true), `sourced_from` / `confidence` /
  *   `matched_at` when `sourced` (default true);
  * - every other `fields:` entry, typed as the template types it;
- * - `created_at` / `updated_at`.
+ * - `created_at` / `updated_at`, as dimensions (SEM-3's lifecycle rule).
  *
  * There is no `id`: a junction's key is composite (see `compositeKey`). A
  * `role` declared with anything but a non-empty `choices:` produces no column
@@ -130,8 +130,11 @@ function buildJunctionFields(def: JunctionDefinition): {
 		put(name, type, type === 'enum' ? { hasDeclaredDomain: true } : {});
 	}
 
-	put('created_at', 'datetime');
-	put('updated_at', 'datetime');
+	// The junction's own lifecycle columns, given the same dimension role as an
+	// entity's behavior-contributed ones (BEHAVIOR_DIMENSION_COLUMNS).
+	for (const column of ['created_at', 'updated_at']) {
+		put(column, 'datetime', BEHAVIOR_DIMENSION_COLUMNS.has(column) ? { role: 'dimension' } : {});
+	}
 
 	return { fields, compositeKey };
 }

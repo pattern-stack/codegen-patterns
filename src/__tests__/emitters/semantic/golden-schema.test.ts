@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import { getColumns } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
+import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 
 import { buildAggregateModel } from '../../../../test/semantic-golden/snapshot/model';
 
@@ -47,10 +47,26 @@ describe('the emitted golden model resolves against the fixture barrel', () => {
 		}
 	});
 
-	it('every primary key is a real column', () => {
+	it('every entity primary key is a real column', () => {
 		for (const [entity, agg] of Object.entries(model.analytics)) {
+			if (model.registry[entity]!.meta?.kind === 'junction') continue;
 			expect(dbColumns(model.tables[entity]!), `${entity}.pk`).toContain(agg.pk);
 		}
+	});
+
+	it("a junction's pk names no column — its key is composite (#689)", () => {
+		// NAMED SINGLE-PURPOSE EXPECTATION for #689: the package's pk is one
+		// column name, a junction's key is not. Asserted present AND exact so the
+		// day #689 lands this fails and names itself.
+		const junctions = Object.keys(model.registry).filter(
+			(name) => model.registry[name]!.meta?.kind === 'junction',
+		);
+		expect(junctions).toEqual(['opportunity_contact']);
+		const table = model.tables.opportunity_contact!;
+		expect(model.analytics.opportunity_contact!.pk).toBe('id');
+		expect(dbColumns(table).has('id')).toBe(false);
+		const pk = getTableConfig(table).primaryKeys[0]!.columns.map((c) => c.name);
+		expect(pk).toEqual(['opportunity_id', 'contact_id', 'role']);
 	});
 
 	it('every relationship FK is a real column on the side that holds it', () => {

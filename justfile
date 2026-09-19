@@ -169,9 +169,11 @@ test-integration-quick:
 test-obs-integration:
     bun test "{{justfile_directory()}}/test/integration/observability-list-reads.drizzle.integration.test.ts"
 
-# Skips WITH A PRINTED REASON when the package checkout is absent, when Docker
-# is absent, or while the package cannot load against drizzle-orm 1.0
-# (query-surface#40). Point it at a checkout with QUERY_SURFACE_PATH=<path>.
+# Engine: QUERY_SURFACE_PATH (explicit checkout — fails, never skips, on any
+# load error), else an installed @pattern-stack/query-surface, else a sibling
+# ../query-surface checkout. Skips WITH A PRINTED REASON when there is no
+# engine, no Docker, or an auto-discovered engine is the pre-drizzle-1.0
+# package. 9/9 against query-surface#41.
 #
 # SEM-3 demonstration gate: the EMITTED model answers a fan-out-trap measure
 test-semantic-integration:

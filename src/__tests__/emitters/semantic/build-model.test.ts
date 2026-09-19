@@ -436,6 +436,10 @@ describe('junctions', () => {
 			]);
 			expect(j.fields.id).toBeUndefined();
 			expect(j.compositeKey).toEqual(['opportunity_id', 'contact_id']);
+			// SEM-3's lifecycle rule applies to a junction's timestamps too.
+			expect(j.fields.created_at!.role).toBe('dimension');
+			expect(j.fields.updated_at!.role).toBe('dimension');
+			expect(j.fields.started_at!.role).toBeUndefined();
 		});
 
 		it('drops the temporal and provenance columns when opted out', () => {

@@ -16,18 +16,25 @@
  * answer and the wrong answer a naive join gives — so it demonstrates the trap
  * rather than assuming it.
  *
+ * WHERE THE ENGINE COMES FROM, in order:
+ *   1. `QUERY_SURFACE_PATH` — an explicit checkout. Setting it is a demand to
+ *      run: a missing path, or ANY load error, FAILS the suite; it never skips.
+ *   2. an installed `@pattern-stack/query-surface` (resolved from this repo).
+ *      Unpublished today (query-surface#40/#41), so nothing is installed; once
+ *      SEM-4 adds it as a devDependency this is what CI uses, with no edit here.
+ *   3. a sibling checkout (`../query-surface`), for local runs.
+ *
  * SKIPS, each named and printed (charter I9 — a skip with a stated reason is
  * not a filter):
- *   - no `@pattern-stack/query-surface` checkout → set QUERY_SURFACE_PATH;
+ *   - no engine from any of the three sources;
  *   - no Docker → the `obs-list-reads` precedent;
- *   - THE PACKAGE DOES NOT LOAD UNDER drizzle-orm 1.0 — its introspection path
- *     value-imports `createMany` / `createOne` / `Relations`, which 1.0 removed
- *     from the root export, and `src/index.ts` reaches it transitively. This is
- *     the state today and it is what pattern-stack/query-surface#40 fixes. The
- *     probe below reports the exact missing export, so the day #40 lands this
- *     suite starts running with no edit here.
+ *   - an AUTO-DISCOVERED engine (2 or 3) that is the pre-1.0 package: its
+ *     introspection path value-imports `createOne` / `createMany` /
+ *     `Relations`, which drizzle-orm 1.0 removed from the root export. The skip
+ *     matches THAT SyntaxError and nothing else — any other load error fails.
+ *     query-surface#41 is the fix; against its head this suite is 9/9.
  *
- * WHY THE PACKAGE SOURCE IS STAGED INTO THIS REPO. The checkout has no
+ * WHY A CHECKOUT IS STAGED INTO THIS REPO. The checkout has no
  * `node_modules`, and nothing between it and `/` does either, so a bare
  * `drizzle-orm` specifier inside it resolves differently under `bun test` than
  * under `bun <script>` — it failed outright in the former. That is the charter's
@@ -38,14 +45,18 @@
  * shared by the engine, the table objects and the db handle. A cross-copy
  * mismatch would fail loudly anyway: the package's `is(x, PgTable)` checks are
  * identity-based (the dual-type-identity hazard `init-scaffold.ts` documents).
+ * An INSTALLED package needs no staging: it resolves drizzle-orm as a peer from
+ * this repo's `node_modules`.
  *
- * Runs via `just test-semantic-integration` and the CI `integration` job. The
- * package is unpublished (query-surface#40), so in CI this currently skips,
- * loudly, and starts gating the day the package is installable there.
+ * Runs via `just test-semantic-integration` and the CI `integration` job. In CI
+ * today there is no engine (the package is unpublished and no checkout is
+ * present), so it SKIPS, loudly. It starts gating in CI when SEM-4 installs the
+ * package — adding the devDependency is the one edit, and it is on SEM-4's list
+ * (docs/specs/SEM-2.md §4, item 8).
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { sql } from 'drizzle-orm';
@@ -57,13 +68,25 @@ import { buildAggregateModel } from '../semantic-golden/snapshot/model';
 // Preconditions — each skip names itself and prints why.
 // ────────────────────────────────────────────────────────────────────────────
 
-function findSibling(): string | null {
+const PACKAGE = '@pattern-stack/query-surface';
+
+type EngineSource =
+	| { kind: 'explicit'; root: string }
+	| { kind: 'installed'; entry: string }
+	| { kind: 'sibling'; root: string };
+
+function findEngine(): EngineSource | null {
 	const fromEnv = process.env.QUERY_SURFACE_PATH;
-	if (fromEnv) return existsSync(resolve(fromEnv, 'src/index.ts')) ? fromEnv : null;
+	if (fromEnv) return { kind: 'explicit', root: fromEnv };
+	try {
+		return { kind: 'installed', entry: Bun.resolveSync(PACKAGE, import.meta.dir) };
+	} catch {
+		// not installed — fall through to a sibling checkout
+	}
 	const repoRoot = resolve(import.meta.dir, '../..');
 	for (const candidate of ['../query-surface', '../../query-surface']) {
 		const dir = resolve(repoRoot, candidate);
-		if (existsSync(resolve(dir, 'src/index.ts'))) return dir;
+		if (existsSync(resolve(dir, 'src/index.ts'))) return { kind: 'sibling', root: dir };
 	}
 	return null;
 }
@@ -77,51 +100,113 @@ async function dockerIsAvailable(): Promise<boolean> {
 	}
 }
 
-const SIBLING = findSibling();
-const DOCKER_OK = await dockerIsAvailable();
+/** Where a staged checkout lives — gitignored, and created on demand (a fresh
+ *  clone has no `test/tmp/`, and `mkdtemp` does not create parents). */
+const STAGE_ROOT = resolve(import.meta.dir, '../tmp');
 
 /**
- * Can the package be loaded against THIS repo's drizzle-orm (1.0.0-rc.4)?
- *
- * Staged first so the answer is about 1.0 and nothing else — see the header.
+ * Copy a checkout's `src/` under this repo so its bare imports resolve against
+ * this repo's `node_modules` (drizzle-orm 1.0.0-rc.4) — see the header.
+ * `__tests__` is skipped: it is a third of the tree and none of it is imported.
  */
-async function packageLoads(siblingRoot: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-	let dir: string | null = null;
+function stagePackage(root: string): string {
+	mkdirSync(STAGE_ROOT, { recursive: true });
+	const dir = mkdtempSync(resolve(STAGE_ROOT, 'query-surface-'));
+	cpSync(resolve(root, 'src'), resolve(dir, 'src'), {
+		recursive: true,
+		filter: (src) => !src.endsWith('/__tests__'),
+	});
+	return dir;
+}
+
+/**
+ * THE ONE ERROR THAT SKIPS: the pre-1.0 package value-importing a v1 relations
+ * export drizzle-orm 1.0 removed from its root. Bun reports it as
+ *   SyntaxError: Export named 'createOne' not found in module '…/drizzle-orm/index.js'.
+ */
+const PRE_1_0_PACKAGE =
+	/^Export named '(createOne|createMany|Relations)' not found in module '[^']*\/drizzle-orm\/index\.js'/;
+
+function isPre10Package(err: unknown): boolean {
+	return err instanceof SyntaxError && PRE_1_0_PACKAGE.test(err.message);
+}
+
+type Engine = Record<string, (...args: never[]) => never> & Record<string, unknown>;
+
+/** Load the engine, staging a checkout first. Returns the staged dir to clean up. */
+async function loadEngine(source: EngineSource): Promise<{ qs: Engine; staged: string | null }> {
+	if (source.kind === 'installed') {
+		return { qs: (await import(PACKAGE)) as unknown as Engine, staged: null };
+	}
+	if (!existsSync(resolve(source.root, 'src/index.ts'))) {
+		throw new Error(`QUERY_SURFACE_PATH=${source.root} has no src/index.ts`);
+	}
+	const staged = stagePackage(source.root);
 	try {
-		dir = stagePackage(siblingRoot);
-		await import(resolve(dir, 'src/index.ts'));
-		return { ok: true };
+		return { qs: (await import(resolve(staged, 'src/index.ts'))) as unknown as Engine, staged };
 	} catch (err) {
-		return { ok: false, reason: err instanceof Error ? err.message : String(err) };
-	} finally {
-		if (dir) rmSync(dir, { recursive: true, force: true });
+		rmSync(staged, { recursive: true, force: true });
+		throw err;
 	}
 }
 
-const LOADS = SIBLING === null ? { ok: false as const, reason: 'no checkout' } : await packageLoads(SIBLING);
+const SOURCE = findEngine();
+const DOCKER_OK = await dockerIsAvailable();
 
-if (SIBLING === null) {
+/**
+ * Load once, up front, so the skip decision is made on the real error. An
+ * explicit checkout rethrows everything (the suite then FAILS in `beforeAll`);
+ * an auto-discovered one skips only on {@link isPre10Package}.
+ */
+let loaded: { qs: Engine; staged: string | null } | null = null;
+let loadError: unknown = null;
+if (SOURCE !== null) {
+	try {
+		loaded = await loadEngine(SOURCE);
+	} catch (err) {
+		loadError = err;
+	}
+}
+const SKIP_PRE_1_0 = SOURCE !== null && SOURCE.kind !== 'explicit' && isPre10Package(loadError);
+
+if (SOURCE === null) {
 	console.warn(
-		'[SEM-3 fan-out] SKIPPED — no @pattern-stack/query-surface checkout found. ' +
-			'Set QUERY_SURFACE_PATH=<path> to run it. The emitted model is NOT verified ' +
-			'against the semantic engine in this run.',
+		`[SEM-3 fan-out] SKIPPED — no ${PACKAGE} engine: not installed, no sibling checkout, ` +
+			'QUERY_SURFACE_PATH unset. The emitted model is NOT verified against the semantic ' +
+			'engine in this run.',
 	);
 }
 if (!DOCKER_OK) {
 	console.warn('[SEM-3 fan-out] SKIPPED — Docker not available; no Postgres to query.');
 }
-if (SIBLING !== null && !LOADS.ok) {
+if (SKIP_PRE_1_0) {
 	console.warn(
-		'[SEM-3 fan-out] SKIPPED — @pattern-stack/query-surface does not load against ' +
-			'drizzle-orm@1.0.0-rc.4: ' +
-			LOADS.reason +
-			'\n  Its introspection path still uses the v1 relations API that 1.0 removed. ' +
-			'pattern-stack/query-surface#40 (1.0 peer + has_one + publish) unblocks this suite; ' +
-			'until then the demonstration is the MANUAL gate in docs/specs/SEM-3.md.',
+		`[SEM-3 fan-out] SKIPPED — the ${SOURCE!.kind} ${PACKAGE} is the pre-drizzle-1.0 package: ` +
+			(loadError as Error).message +
+			'\n  pattern-stack/query-surface#41 (1.0 peer + has_one + publish) is the fix; ' +
+			'point QUERY_SURFACE_PATH at a checkout of it to run the demonstration.',
 	);
 }
+if (SOURCE !== null) {
+	const where = SOURCE.kind === 'installed' ? SOURCE.entry : SOURCE.root;
+	console.log(`[SEM-3 fan-out] engine: ${SOURCE.kind} (${where})`);
+}
 
-const RUN = SIBLING !== null && DOCKER_OK && LOADS.ok;
+/** Run unless a named skip applies. A load error that is NOT a named skip
+ *  leaves this true, so `beforeAll` rethrows it and the suite fails. */
+const RUN = SOURCE !== null && DOCKER_OK && !SKIP_PRE_1_0;
+
+/**
+ * Runs ALWAYS — even without Docker — so a load error that is not the named
+ * pre-1.0 skip fails the run instead of hiding behind another skip.
+ */
+describe('SEM-3 — the semantic engine loads, or skips for the one named reason', () => {
+	it(SOURCE === null ? 'no engine present (skip printed above)' : `the ${SOURCE.kind} engine loads`, () => {
+		if (SOURCE === null || loadError === null) return;
+		if (SKIP_PRE_1_0) return;
+		throw loadError;
+	});
+});
 
 // ────────────────────────────────────────────────────────────────────────────
 // The slice. DDL mirrors `test/semantic-golden/schema.ts`, which is the
@@ -148,39 +233,30 @@ const DDL = [
 		amount numeric, won_amount numeric, win_probability numeric, stage text,
 		closed_at timestamp, account_id uuid not null references accounts(id))`,
 	`create table opportunity_contacts (
-		id uuid primary key default gen_random_uuid(),
 		opportunity_id uuid not null references opportunities(id),
-		contact_id uuid not null references contacts(id), role text not null)`,
+		contact_id uuid not null references contacts(id), role text not null,
+		is_primary boolean not null default false, started_at timestamp,
+		ended_at timestamp, sourced_from text, confidence numeric(5,4),
+		matched_at timestamp, influence_score numeric,
+		created_at timestamp not null default now(),
+		updated_at timestamp not null default now(),
+		primary key (opportunity_id, contact_id, role))`,
 ];
 
 /** The engine is schema-agnostic and the checkout is untyped from here, so the
  *  two handles below are intentionally loose. Everything asserted about them is
  *  checked at runtime against real rows. */
-type Loose = Record<string, (...args: never[]) => never> & Record<string, unknown>;
 
 let container: import('@testcontainers/postgresql').StartedPostgreSqlContainer;
 let pool: Pool;
 let db: ReturnType<typeof drizzle>;
-let qs: Loose;
+let qs: Engine;
 let model: ReturnType<typeof buildAggregateModel>;
-let staged: string | null = null;
-
-/**
- * Copy the package's `src/` under this repo so its bare imports resolve against
- * this repo's `node_modules` (drizzle-orm 1.0.0-rc.4) — see the header.
- * `__tests__` is skipped: it is a third of the tree and none of it is imported.
- */
-function stagePackage(siblingRoot: string): string {
-	const dir = mkdtempSync(resolve(import.meta.dir, '../tmp/query-surface-'));
-	cpSync(resolve(siblingRoot, 'src'), resolve(dir, 'src'), {
-		recursive: true,
-		filter: (src) => !src.endsWith('/__tests__'),
-	});
-	return dir;
-}
 
 beforeAll(async () => {
 	if (!RUN) return;
+	if (loadError !== null) throw loadError;
+	qs = loaded!.qs;
 	const { PostgreSqlContainer } = await import('@testcontainers/postgresql');
 	container = await new PostgreSqlContainer('postgres:16').start();
 	pool = new Pool({ connectionString: container.getConnectionUri() });
@@ -199,13 +275,11 @@ beforeAll(async () => {
 		('A2', 250,   0, 0.50, 'negotiation', '2026-02-20', '${ACME}'),
 		('G1',  75,  75, 0.70, 'closed_won', '2026-01-31', '${GLOBEX}')`));
 
-	staged = stagePackage(SIBLING!);
-	qs = (await import(resolve(staged, 'src/index.ts'))) as unknown as Loose;
 	model = buildAggregateModel();
 }, 120_000);
 
 afterAll(async () => {
-	if (staged) rmSync(staged, { recursive: true, force: true });
+	if (loaded?.staged) rmSync(loaded.staged, { recursive: true, force: true });
 	if (!RUN) return;
 	await pool?.end();
 	await container?.stop();

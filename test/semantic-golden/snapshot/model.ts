@@ -103,7 +103,7 @@ const analytics: AggRegistry = {
 			created_at: { type: 'datetime', role: 'dimension', column: 'created_at' },
 			external_id: { type: 'string', column: 'external_id' },
 			health_score: { type: 'number', role: 'measure', agg: 'avg', additivity: 'non', column: 'health_score' },
-			name: { type: 'string', column: 'name' },
+			name: { type: 'string', role: 'dimension', column: 'name' },
 			tenant_id: { type: 'uuid', role: 'dimension', column: 'tenant_id' },
 			tier: { type: 'enum', role: 'dimension', column: 'tier', hasDeclaredDomain: true },
 			updated_at: { type: 'datetime', role: 'dimension', column: 'updated_at' },
@@ -154,7 +154,7 @@ const analytics: AggRegistry = {
 		fields: {
 			confidence: { type: 'number', column: 'confidence' },
 			contact_id: { type: 'uuid', column: 'contact_id' },
-			created_at: { type: 'datetime', column: 'created_at' },
+			created_at: { type: 'datetime', role: 'dimension', column: 'created_at' },
 			ended_at: { type: 'datetime', column: 'ended_at' },
 			influence_score: { type: 'number', column: 'influence_score' },
 			is_primary: { type: 'boolean', column: 'is_primary' },
@@ -163,7 +163,7 @@ const analytics: AggRegistry = {
 			role: { type: 'enum', role: 'dimension', column: 'role', hasDeclaredDomain: true },
 			sourced_from: { type: 'string', column: 'sourced_from' },
 			started_at: { type: 'datetime', column: 'started_at' },
-			updated_at: { type: 'datetime', column: 'updated_at' },
+			updated_at: { type: 'datetime', role: 'dimension', column: 'updated_at' },
 		},
 	},
 };

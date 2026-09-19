@@ -24,7 +24,16 @@
  * under `camelCase(plural)` (SEM-2 Found #1).
  */
 
-import { pgEnum, pgTable, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+	boolean,
+	numeric,
+	pgEnum,
+	pgTable,
+	primaryKey,
+	text,
+	timestamp,
+	uuid,
+} from 'drizzle-orm/pg-core';
 
 export const accountTierEnum = pgEnum('account_tier', ['bronze', 'silver', 'gold']);
 export const opportunityStageEnum = pgEnum('opportunity_stage', [
@@ -76,9 +85,24 @@ export const opportunities = pgTable('opportunities', {
 	accountId: uuid('account_id').notNull(),
 });
 
-export const opportunityContacts = pgTable('opportunity_contacts', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	opportunityId: uuid('opportunity_id').notNull(),
-	contactId: uuid('contact_id').notNull(),
-	role: opportunityContactRoleEnum('role').notNull(),
-});
+// Mirrors `templates/junction/new/entity.ejs.t` for `junctions/opportunity_contact.yaml`:
+// a COMPOSITE key (no surrogate `id`), the role enum inside it, the
+// BaseJunctionFields (`temporal` + `sourced`), the payload field, timestamps.
+export const opportunityContacts = pgTable(
+	'opportunity_contacts',
+	{
+		opportunityId: uuid('opportunity_id').notNull(),
+		contactId: uuid('contact_id').notNull(),
+		role: opportunityContactRoleEnum('role').notNull(),
+		isPrimary: boolean('is_primary').notNull().default(false),
+		startedAt: timestamp('started_at'),
+		endedAt: timestamp('ended_at'),
+		sourcedFrom: text('sourced_from'),
+		confidence: numeric('confidence', { precision: 5, scale: 4 }),
+		matchedAt: timestamp('matched_at'),
+		influenceScore: numeric('influence_score'),
+		createdAt: timestamp('created_at').notNull().defaultNow(),
+		updatedAt: timestamp('updated_at').notNull().defaultNow(),
+	},
+	(table) => [primaryKey({ columns: [table.opportunityId, table.contactId, table.role] })],
+);

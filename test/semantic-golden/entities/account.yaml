@@ -5,6 +5,8 @@
 #    `health_score`) — the two catalog key shapes in one fixture
 #  - `tier` is an enum dimension with a declared value domain
 #  - `tenant_id` is a scope column: dimension by derivation, never a measure
+#  - `name` is tagged `role: dimension` — the fan-out-trap query groups by
+#    `account.name`, and an untagged column is registered but NOT groupable
 entity:
   name: account
   plural: accounts
@@ -14,6 +16,7 @@ fields:
   name:
     type: string
     required: true
+    role: dimension
   tenant_id:
     type: uuid
     required: true

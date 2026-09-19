@@ -259,6 +259,13 @@ function assertSemanticEmission(tmpDir: string): void {
 		/health_score: \{ type: 'number', role: 'measure', agg: 'avg', additivity: 'non'/,
 		'account.health_score measure tags',
 	);
+	// SEM-3: the fan-out-trap query groups by `account.name`, which is only
+	// groupable when tagged — untagged, the engine refuses it.
+	assertContains(
+		model,
+		/name: \{ type: 'string', role: 'dimension', column: 'name' \}/,
+		'account.name tagged as a dimension (the fan-out group key)',
+	);
 	// SEM-3: the non-additive percentage — a rate is never summable, and that is
 	// not inferable from `decimal`.
 	assertContains(
