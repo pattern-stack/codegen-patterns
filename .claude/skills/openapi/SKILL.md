@@ -58,7 +58,7 @@ Controllers reference registered schemas by **string name** via
 ## Four locked decisions (epic-level)
 
 1. **Library: `@anatine/zod-openapi`** (de facto standard). Lazy-imported as an
-   optional peer — see `CubeAnalyticsBackend` precedent. Consumers that don't
+   optional peer (a lazy `import()` inside `build()`). Consumers that don't
    install the peer still boot; `build()` throws `OpenApiPeerDepMissingError`
    on first call.
 2. **Swagger UI default path: `/docs`** (configurable via `openapi.path`).

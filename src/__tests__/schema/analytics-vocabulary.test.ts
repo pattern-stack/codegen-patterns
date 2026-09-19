@@ -137,13 +137,17 @@ describe('SEM-1 field tags — validation rules', () => {
       withField({ role: 'dimension', agg: 'sum', additivity: 'additive' }),
     );
     expect(r.success).toBe(false);
-    expect(firstMessage(r)).toContain("require 'role: measure'");
+    expect(firstMessage(r)).toContain("requires 'role: measure'");
+    // Each dangling key is reported at its own path, not at `role`.
+    const paths = r.error!.issues.map((i) => i.path.at(-1));
+    expect(paths).toEqual(['agg', 'additivity']);
   });
 
   it('F5: additivity without a role is rejected', () => {
     const r = EntityDefinitionSchema.safeParse(withField({ additivity: 'additive' }));
     expect(r.success).toBe(false);
-    expect(firstMessage(r)).toContain("require 'role: measure'");
+    expect(firstMessage(r)).toContain("'additivity' is measure configuration");
+    expect(r.error!.issues[0].path.at(-1)).toBe('additivity');
   });
 
   it('F6: time: true requires a temporal field type', () => {

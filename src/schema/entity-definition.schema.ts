@@ -365,16 +365,19 @@ const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
     message: "'aggs' must not repeat an aggregation",
     path: ['aggs'],
   })
-  .refine(
-    (data) =>
-      data.role === 'measure' || (!data.agg && !data.aggs && !data.additivity),
-    {
-      // F5
-      message:
-        "'agg' / 'aggs' / 'additivity' are measure configuration — they require 'role: measure'",
-      path: ['role'],
-    },
-  )
+  .superRefine((data, ctx) => {
+    // F5 — reported at each dangling key, not at `role`, so the author is
+    // pointed at the configuration that has nothing to configure.
+    if (data.role === 'measure') return;
+    for (const key of ['agg', 'aggs', 'additivity'] as const) {
+      if (data[key] === undefined) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `'${key}' is measure configuration — it requires 'role: measure'`,
+        path: [key],
+      });
+    }
+  })
   .refine(
     (data) => data.time !== true || data.type === 'date' || data.type === 'datetime',
     {

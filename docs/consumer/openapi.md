@@ -155,8 +155,7 @@ Reference the registered name from a controller decorator:
   `/docs-json`.
 
 - **`registry.build()` is async.** The `@anatine/zod-openapi` peer
-  is lazy-imported on first call (matches the analytics/cube-backend
-  precedent — see ADR notes for OPENAPI-1). `main.ts` awaits once at
+  is lazy-imported on first call (see OPENAPI-1). `main.ts` awaits once at
   bootstrap; nothing else should call `build()` in a hot path.
 
 - **Programmatic smoke tests must call `app.init()`.** `NestFactory.

@@ -57,10 +57,10 @@ export type BridgeDeliveryInsert = InferInsertModel<typeof bridgeDelivery>;
  * can render a fixed 4-row chart without branching.
  *
  * PHASE 1: plain counts only. The time-bucketed variant (per-interval series
- * for a sparkline / timeline chart) is reserved for the Cube.js analytics
- * layer (see epic-195-architecture-decisions.md §6) and must NOT be added to
- * this protocol. If a consumer needs buckets, that's a signal to route the
- * query through Cube, not to grow the core contract.
+ * for a sparkline / timeline chart) belongs to the semantic query layer
+ * (query-surface over the generated semantic model, ADR-045) and must NOT be
+ * added to this protocol. If a consumer needs buckets, that's a signal to
+ * route the query through the semantic layer, not to grow the core contract.
  */
 export type StatusHistogram = {
   pending: number;

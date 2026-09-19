@@ -38,7 +38,8 @@ import { z } from "zod";
  *
  * Additional untyped keys are permitted (passthrough) so the many template
  * toggles already read directly off `generate.*` in `prompt.js` keep working
- * without each needing a schema entry here.
+ * without each needing a schema entry here. The one exception is the removed
+ * `analytics` key, which is rejected by name.
  */
 export const GenerateConfigSchema = z
   .object({
@@ -66,7 +67,20 @@ export const GenerateConfigSchema = z
      */
     semantic: z.boolean().default(false),
   })
-  .passthrough();
+  .passthrough()
+  // The pre-SEM-1 `analytics: none | cube` switch is gone (ADR-045). Passthrough
+  // would otherwise carry it through silently — the same "stripped silently"
+  // class SEM-1 closed for field tags with `.strict()` — so reject it by name.
+  .superRefine((data, ctx) => {
+    if ('analytics' in data) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['analytics'],
+        message:
+          "'generate.analytics' was removed by SEM-1 (ADR-045) — use 'generate.semantic: true' to emit the semantic model",
+      });
+    }
+  });
 
 export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
 

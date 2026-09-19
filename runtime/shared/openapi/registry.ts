@@ -2,10 +2,9 @@
  * OpenApiRegistry — collects Zod schemas and path specs, emits a
  * complete `OpenAPIObject` on `build()` (OPENAPI-1).
  *
- * Wraps `@anatine/zod-openapi` as an **optional peer dependency** using
- * the lazy-import pattern from `runtime/subsystems/analytics/cube-backend.ts`
- * — consumer apps that never call `build()` still boot even if
- * `@anatine/zod-openapi` isn't installed.
+ * Wraps `@anatine/zod-openapi` as an **optional peer dependency** via a
+ * lazy `import()` inside `build()` — consumer apps that never call `build()`
+ * still boot even if `@anatine/zod-openapi` isn't installed.
  *
  * The registry is the single source of truth consumed by OPENAPI-2
  * (generated DTOs register their Zod schemas at module init), OPENAPI-3
@@ -91,8 +90,7 @@ export class OpenApiRegistry {
 
   /**
    * Emit the full OpenAPI document. Lazy-imports `@anatine/zod-openapi`
-   * on first call; failure to resolve raises `OpenApiPeerDepMissingError`
-   * (matches the `CubeAnalyticsBackend.onModuleInit` precedent).
+   * on first call; failure to resolve raises `OpenApiPeerDepMissingError`.
    *
    * OpenAPI version is pinned to `3.0.3` — Swagger UI tooling is most
    * stable on 3.0.x (see OPENAPI-PHASE-1-PLAN §Four locked decisions).

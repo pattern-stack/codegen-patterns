@@ -228,6 +228,12 @@ Both call sites already hold the full entity set, so no extra load.
 mirroring `generate.frontend` (the ADR-038 single-gate precedent). SEM-2 gates its emitter on it; SEM-1 only declares
 it, and the doc comment says so rather than describing an emitter that does not exist yet.
 
+`GenerateConfigSchema` is `.passthrough()` (template toggles are read straight off `generate.*`), so a leftover
+`generate.analytics` would otherwise parse silently — the same "stripped silently" class §1 closes for field tags. The
+schema rejects that one key by name, pointing at `generate.semantic`. **Today that surfaces as the config loader's
+existing `invalid "generate" block` warning, not a hard error:** `loadProjectConfig` warns on any invalid block.
+CFG-0 (#644) makes config validation fatal; once it lands the key is an error with no change here.
+
 ### 6. The cube runtime island
 
 `@cubejs-client/core` is an optional peer solely for `runtime/subsystems/analytics/cube-backend.ts`. Dropping the peer
@@ -320,6 +326,8 @@ Gates (charter §7, output reported from the run after the last edit):
 - **Temporal means `date | datetime`.** If a `timestamp` field type is ever added, F6 must learn it.
 - **`generate.semantic` exists and defaults to `false`.** SEM-2 gates on it; nothing reads it yet.
 - **The cube island is gone**, including the `@cubejs-client/core` peer. `WithAnalytics` stays.
+- **`generate.analytics` is rejected by name** (a warning until CFG-0 #644 makes config validation fatal).
+- **F5 reports each dangling key at its own path** (`['agg']`, `['aggs']`, `['additivity']`), one issue per key.
 
 ## Found during implementation
 
@@ -354,6 +362,15 @@ conclusion (delete the key) is unchanged; PLAN is corrected in this PR.
 while `EntityDefinitionSchema` and `RelationshipSchema` were already `.strict()`. Measured across 61 YAML definition
 files before changing it: the only unknown field key anywhere is `values:` in junction fixtures, which parse against
 `JunctionDefinitionSchema`. The strictness landed with no fixture change.
+
+**Found #7 — review follow-up (PR #609, retroactive review).** Three stragglers the first pass missed:
+the observability skill (and the bridge / observability protocol comments) still routed cross-table and time-bucketed
+analytics to a "future Cube.js layer" — now the semantic query layer (query-surface, ADR-045); the OpenAPI registry,
+its skill and its consumer doc cited the deleted `cube-backend.ts` as their lazy-import precedent — now described
+directly; `generate: { analytics: cube }` still parsed through the passthrough — now rejected (§5). And F5 reported
+`path: ['role']` where this spec says `path: [<the key>]` — it is a `superRefine` now, one issue per dangling key. The
+shipped `OPENAPI-*` specs still name the cube precedent; they are historical plans of a delivered epic and were left
+as written.
 
 **Not found, worth recording:** `src/schema/generate-json-schema.ts` holds a second, hand-written
 `FieldDefinitionSchema` for editor autocomplete. It never mirrored the analytics keys (nor `queries:`, `events:`,

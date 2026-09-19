@@ -7,7 +7,7 @@ user-invocable: false
 
 # Observability Domain Skill
 
-**Phase status:** In-flight via epic #195 (OBS-1..OBS-8). ADR-025 is `Draft`. Phase 1 ships the composer, per-sibling read additions, `BridgeMetricsReporter` relocation, and the CLI scaffold. Phase 2 (Drizzle extensions, Prometheus/OTel exporters, Cube.js cross-table analytics) is deferred.
+**Phase status:** In-flight via epic #195 (OBS-1..OBS-8). ADR-025 is `Draft`. Phase 1 ships the composer, per-sibling read additions, `BridgeMetricsReporter` relocation, and the CLI scaffold. Phase 2 (Drizzle extensions, Prometheus/OTel exporters) is deferred. Cross-table and time-bucketed analytics are not an observability concern at all — they belong to the semantic query layer (query-surface over the generated semantic model, ADR-045; `generate.semantic`, SEM-1..SEM-3). The Cube.js path the original plan named was deleted by SEM-1.
 
 Observability is the **combiner subsystem** that composes read-side reporting across jobs, bridge, integration, and the cursor store. Its job is to turn "how is the system doing?" into a single typed port — multi-tenant-safe, backend-inherited, dashboard-grade.
 
@@ -47,13 +47,13 @@ Every `IObservability` method accepts optional `tenantId` and passes it through 
 
 If a consumer needs a new read, the extension goes on the owning port (`IJobRunService`, etc.), implemented in both backends, accepting optional `tenantId`. Then observability composes it. Do not add tabular SQL to `ObservabilityService` that duplicates semantic knowledge the owning subsystem already encodes.
 
-### 5. Cross-table JOIN analytics defer to Cube.js
+### 5. Cross-table JOIN analytics belong to the semantic layer
 
-Observability reads are scoped to a single owning subsystem per method. Cross-subsystem JOINs belong in a future Cube.js layer.
+Observability reads are scoped to a single owning subsystem per method. Cross-table JOINs and aggregations route through query-surface over the generated semantic model (ADR-045) — never through `ObservabilityService`.
 
 ### 6. Histograms are plain counts in phase 1
 
-`getBridgeDeliveryHistogram` returns `{ pending, delivered, skipped, failed }`. No time bucketing — that's Cube.js territory.
+`getBridgeDeliveryHistogram` returns `{ pending, delivered, skipped, failed }`. No time bucketing — that's semantic-layer territory (query-surface's time grains).
 
 ### 7. Reporters consume the facade, never sibling tables
 
@@ -67,7 +67,7 @@ Observability reads are scoped to a single owning subsystem per method. Cross-su
 
 In: OBS-1..OBS-8 (see `ai-docs/specs/epic-195-plan.md`).
 
-Out (phase 2+): Drizzle extensions, Prom/OTel exporters, StackStatusService wiring, Cube.js, time-bucketed histograms, events reads.
+Out (phase 2+): Drizzle extensions, Prom/OTel exporters, StackStatusService wiring, time-bucketed histograms, events reads. (Cross-table analytics are out permanently — semantic layer, rule 5.)
 
 ## Do not
 
@@ -75,7 +75,7 @@ Out (phase 2+): Drizzle extensions, Prom/OTel exporters, StackStatusService wiri
 - Do not add a `backend` key to `ObservabilityModule.forRoot()`
 - Do not re-implement tenant filtering in `ObservabilityService`
 - Do not reach into sibling tables from `ObservabilityService` or reporters
-- Do not add cross-subsystem JOIN queries (Cube.js territory)
+- Do not add cross-subsystem JOIN queries (semantic-layer territory — query-surface, ADR-045)
 - Do not extend the protocol surface from inside `reporters/`
 - Do not land `pg_stat_*` or `LISTEN/NOTIFY` in phase 1
 - Do not grow the histogram signature to bucket widths or time series
