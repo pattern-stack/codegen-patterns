@@ -137,8 +137,12 @@ compare:
 
 # Run family repo integration tests (requires Docker + db-up + db-push)
 test-family:
-    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
-        bun test "{{justfile_directory()}}/test/scaffold/tests/integrated-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env="$(bun test/scaffold/harness-env.ts env)" || exit 1
+    set -a; eval "$env"; set +a
+    : "${SCAFFOLD_COMPOSE_PROJECT:?harness-env produced no compose project}"
+    bun test "{{justfile_directory()}}/test/scaffold/tests/integrated-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/activity-entity-repository.test.ts" "{{justfile_directory()}}/test/scaffold/tests/metadata-entity-repository.test.ts"
 
 # Tarball smoke (#190): build + pack every publishable package, install the
 # tarballs into a fresh tmp project via npm, verify the consumer contract
@@ -412,22 +416,41 @@ update:
 # test/scaffold/harness-env.ts — so sibling worktrees never share a container
 # or tear each other's down (see CLAUDE.md > Testing).
 #
+# They fail CLOSED: if the helper exits non-zero (e.g. an invalid
+# SCAFFOLD_PG_PORT) the recipe stops before calling docker. `eval "$(…)"` alone
+# would succeed on empty output, leave the project name empty, and
+# `docker compose -p ""` would fall back to the directory name — `scaffold`, the
+# old shared project — so `db-down` would `down -v` a sibling's database.
+#
 # Print this checkout's scaffold Postgres identity
 db-env:
     @bun test/scaffold/harness-env.ts env
 
 # Start scaffold Postgres (for local dev/testing)
 db-up:
-    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
-        docker compose -p "$COMPOSE_PROJECT_NAME" -f test/scaffold/docker-compose.yml up -d --wait && \
-        echo "scaffold postgres: $DATABASE_URL"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env="$(bun test/scaffold/harness-env.ts env)" || exit 1
+    set -a; eval "$env"; set +a
+    : "${SCAFFOLD_COMPOSE_PROJECT:?harness-env produced no compose project}"
+    docker compose -p "$SCAFFOLD_COMPOSE_PROJECT" -f test/scaffold/docker-compose.yml up -d --wait
+    echo "scaffold postgres: $SCAFFOLD_DATABASE_URL"
 
 # Stop scaffold Postgres — only this checkout's project
 db-down:
-    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
-        docker compose -p "$COMPOSE_PROJECT_NAME" -f test/scaffold/docker-compose.yml down -v
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env="$(bun test/scaffold/harness-env.ts env)" || exit 1
+    set -a; eval "$env"; set +a
+    : "${SCAFFOLD_COMPOSE_PROJECT:?harness-env produced no compose project}"
+    docker compose -p "$SCAFFOLD_COMPOSE_PROJECT" -f test/scaffold/docker-compose.yml down -v
 
 # Push schema to scaffold Postgres
 db-push:
-    @set -a && eval "$(bun test/scaffold/harness-env.ts env)" && set +a && \
-        cd test/scaffold && bun run drizzle-kit push --config drizzle.config.ts
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env="$(bun test/scaffold/harness-env.ts env)" || exit 1
+    set -a; eval "$env"; set +a
+    : "${SCAFFOLD_COMPOSE_PROJECT:?harness-env produced no compose project}"
+    cd test/scaffold
+    bun run drizzle-kit push --config drizzle.config.ts

@@ -18,7 +18,12 @@ import { describe, test, expect } from 'bun:test';
 import { existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { invokeHygen, invokeEntityNew, invokeRelationshipNew } from '../../cli/shared/hygen.js';
+import {
+	hygenChildEnv,
+	invokeHygen,
+	invokeEntityNew,
+	invokeRelationshipNew,
+} from '../../cli/shared/hygen.js';
 
 function captureCommand(fn: () => { command: string }): string {
 	// invokeHygen returns its composed command string regardless of subprocess
@@ -114,18 +119,31 @@ describe('invokeHygen temp isolation', () => {
 		expect(existsSync(`${tmpdir()}/${matches[0]}`)).toBe(true);
 	});
 
+	test('the child gets the per-installation dir as TMPDIR / TMP / TEMP', () => {
+		const env = hygenChildEnv('/templates');
+		expect(env.TMPDIR).toMatch(/codegen-hygen-[0-9a-f]{8}$/);
+		expect(env.TMP).toBe(env.TMPDIR);
+		expect(env.TEMP).toBe(env.TMPDIR);
+		expect(env.HYGEN_TMPLS).toBe('/templates');
+	});
+
 	test('a caller-supplied TMPDIR still wins', () => {
-		// `opts.env` is spread last, so a caller that deliberately pins the
-		// child's temp dir is not overridden.
-		const result = invokeHygen({
-			generator: 'entity',
-			action: 'new',
-			templateRoot: '/nonexistent',
-			inherit: false,
-			env: { TMPDIR: '/nonexistent-tmpdir-for-this-test' },
-		});
-		// The subprocess fails either way (nonexistent templateRoot); what this
-		// pins is that passing the var is allowed and does not throw.
-		expect(typeof result.ok).toBe('boolean');
+		// The caller's env is spread last, so a caller that deliberately pins
+		// the child's temp dir is not overridden by the derived cache dir.
+		const env = hygenChildEnv('/templates', { TMPDIR: '/caller/tmp' });
+		expect(env.TMPDIR).toBe('/caller/tmp');
+	});
+
+	test('CODEGEN_HYGEN_CACHE_DIR pins the cache dir', () => {
+		const prev = process.env.CODEGEN_HYGEN_CACHE_DIR;
+		const pinned = `${tmpdir()}/codegen-hygen-pinned-test`;
+		process.env.CODEGEN_HYGEN_CACHE_DIR = pinned;
+		try {
+			expect(hygenChildEnv('/templates').TMPDIR).toBe(pinned);
+			expect(existsSync(pinned)).toBe(true);
+		} finally {
+			if (prev === undefined) delete process.env.CODEGEN_HYGEN_CACHE_DIR;
+			else process.env.CODEGEN_HYGEN_CACHE_DIR = prev;
+		}
 	});
 });

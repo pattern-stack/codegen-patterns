@@ -83,6 +83,36 @@ function hygenCacheDir(): string {
 	return join(tmpdir(), `codegen-hygen-${id}`);
 }
 
+/**
+ * The environment the Hygen subprocess runs with.
+ *
+ * Points the child's temp dir — and therefore `bunx`'s package cache — at a
+ * directory only this installation uses (`hygenCacheDir()`). A caller-supplied
+ * `TMPDIR` still wins: `callerEnv` is spread last. Exported so the precedence
+ * is unit-testable without spawning a child.
+ */
+export function hygenChildEnv(
+	templateRoot: string,
+	callerEnv: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+	const cacheDir = hygenCacheDir();
+	try {
+		mkdirSync(cacheDir, { recursive: true });
+	} catch {
+		// If the cache dir cannot be created, fall through: the child inherits
+		// the ambient temp dir and behaves exactly as it did before. A
+		// generation failure here would be far worse than a shared cache.
+	}
+	return {
+		...process.env,
+		TMPDIR: cacheDir,
+		TMP: cacheDir,
+		TEMP: cacheDir,
+		HYGEN_TMPLS: templateRoot,
+		...callerEnv,
+	};
+}
+
 function quoteArg(a: string): string {
 	if (a === '' || /[\s"'$`\\]/.test(a)) {
 		return `"${a.replace(/(["$`\\])/g, '\\$1')}"`;
@@ -99,28 +129,9 @@ export function invokeHygen(opts: HygenInvocation): HygenResult {
 	const extra = (opts.args ?? []).map(quoteArg).join(' ');
 	const command = `bunx --bun hygen ${opts.generator} ${opts.action}${extra ? ' ' + extra : ''}`;
 
-	// Point the child's temp dir — and therefore `bunx`'s package cache — at a
-	// directory only this installation uses. A caller-supplied TMPDIR still
-	// wins, via the `opts.env` spread below.
-	const cacheDir = hygenCacheDir();
-	try {
-		mkdirSync(cacheDir, { recursive: true });
-	} catch {
-		// If the cache dir cannot be created, fall through: the child inherits
-		// the ambient temp dir and behaves exactly as it did before. A
-		// generation failure here would be far worse than a shared cache.
-	}
-
 	const execOpts: ExecSyncOptions = {
 		cwd: opts.cwd ?? process.cwd(),
-		env: {
-			...process.env,
-			TMPDIR: cacheDir,
-			TMP: cacheDir,
-			TEMP: cacheDir,
-			HYGEN_TMPLS: templateRoot,
-			...(opts.env ?? {}),
-		},
+		env: hygenChildEnv(templateRoot, opts.env),
 		stdio: opts.inherit === false ? 'pipe' : 'inherit',
 	};
 

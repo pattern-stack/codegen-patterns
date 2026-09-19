@@ -24,8 +24,9 @@ const SCAFFOLD_DIR = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
 const COMPOSE_PROJECT = composeProjectName();
 const ENV = scaffoldEnv();
 
-// Every child — drizzle-kit, the codegen CLI, the test runner — reads
-// DATABASE_URL, and the compose file reads SCAFFOLD_PG_PORT.
+// Every child — drizzle-kit, the codegen CLI, the test runner — resolves its
+// URL through `scaffoldDatabaseUrl()` (SCAFFOLD_DATABASE_URL), and the compose
+// file reads SCAFFOLD_PG_PORT. An ambient DATABASE_URL is never consulted.
 Object.assign(process.env, ENV);
 
 const args = new Set(process.argv.slice(2));
@@ -47,7 +48,7 @@ async function run() {
 
     // 2. Start Postgres
     console.log('==> Starting Postgres...');
-    console.log(`    project ${COMPOSE_PROJECT} · ${ENV.DATABASE_URL}`);
+    console.log(`    project ${COMPOSE_PROJECT} · ${ENV.SCAFFOLD_DATABASE_URL}`);
     await $`docker compose -p ${COMPOSE_PROJECT} -f ${SCAFFOLD_DIR}/docker-compose.yml up -d --wait`.quiet();
     console.log('    Postgres ready');
 
