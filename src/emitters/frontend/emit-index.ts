@@ -26,12 +26,11 @@ const SOURCE_DESC_SET = 'the entity set';
  * imports target these package ranges; the consumer's frontend `package.json`
  * must install them (see `deps.ts`).
  *
- * The `overrides` stanza is part of the contract, not a suggestion: three of
- * the pinned packages declare `@tanstack/db` exactly and
- * `@pattern-stack/frontend-patterns` bundles a fourth, so without it the
- * emitted collections do not type-check (FE-0, #620). `project init` merges it
- * into the frontend `package.json`; it is restated here because this comment is
- * the only place the contract is visible from inside a consumer's tree.
+ * The exact pins are what keep one `@tanstack/db` (and so one type identity)
+ * in the tree; the `overrides` stanza is belt-and-braces on top of them (FE-0,
+ * #620 — see `deps.ts`). `project init` merges both into the frontend
+ * `package.json`; they are restated here because this comment is the only
+ * place the contract is visible from inside a consumer's tree.
  */
 export function buildVersionPairingComment(): string {
 	const entries = Object.entries(FRONTEND_EMITTED_DEPS);
@@ -47,10 +46,11 @@ export function buildVersionPairingComment(): string {
  *
 ${rows}
  *
- * …and this "overrides" entry, which collapses the duplicate @tanstack/db the
- * pinned packages would otherwise resolve to (npm/bun; "pnpm.overrides" for
- * pnpm, "resolutions" for yarn). Without it the emitted collections do not
- * type-check — see docs/specs/FE-0.md.
+ * The four @tanstack/*db* pins move together or not at all: any other version
+ * splits @tanstack/db into several copies and the emitted collections stop
+ * type-checking — see docs/specs/FE-0.md. This "overrides" entry (npm/bun;
+ * "pnpm.overrides" for pnpm, "resolutions" for yarn) keeps a single copy even
+ * if a transitive range ever disagrees with the pin:
  *
 ${overrideRows}`;
 }

@@ -19,6 +19,7 @@ import { runtimeImport, subsystemsImport, type RuntimeMode } from './runtime-imp
 import {
 	FRONTEND_DEP_OVERRIDES,
 	FRONTEND_EMITTED_DEPS,
+	FRONTEND_LOCKSTEP_DEPS,
 } from '../../emitters/frontend/deps.js';
 import { emptyRelationsManifest } from '../../emitters/relations/index.js';
 
@@ -749,6 +750,11 @@ export function mergeTsconfig(raw: string): TsconfigMergeResult & { parseError?:
 interface PackageJsonMergeResult {
 	content: string;
 	added: string[];
+	/**
+	 * Lockstep entries rewritten to the pinned version, as
+	 * `<pkg> <old> → <pinned>`. Empty when nothing was corrected.
+	 */
+	corrected: string[];
 	unchanged: boolean;
 	parseError?: string;
 }
@@ -756,21 +762,29 @@ interface PackageJsonMergeResult {
 /**
  * Idempotent merge of {@link FRONTEND_EMITTED_DEPS} into a consumer frontend
  * `package.json`'s `dependencies`, and of {@link FRONTEND_DEP_OVERRIDES} into
- * its `overrides`. Mirrors the {@link mergeTsconfig} precedent: only ADDS
- * missing keys — an existing entry is preserved verbatim (the consumer's choice
- * wins; we never clobber or downgrade). The emitted frontend imports against
- * these packages (ADR-038 version-pairing contract); the deps comment in
- * `generated/index.ts` keeps drift visible.
+ * its `overrides`. The emitted frontend imports against these packages
+ * (ADR-038 version-pairing contract); the deps comment in `generated/index.ts`
+ * keeps drift visible.
  *
- * `overrides` is not decoration. Three of the pinned packages declare
- * `@tanstack/db` exactly and `@pattern-stack/frontend-patterns` bundles a
- * fourth copy; without the override the emitted collections do not type-check
- * at all (FE-0, #620 — `docs/specs/FE-0.md`). It is merged here rather than
- * documented so a consumer who runs `project init` gets a tree that compiles.
+ * Two rules, by what the entry is:
+ *
+ * - **The lockstep set ({@link FRONTEND_LOCKSTEP_DEPS}) is corrected.** Those
+ *   four pin `@tanstack/db` exactly and release together; any other value —
+ *   the caret ranges `project init` wrote before FE-0, or one package moved
+ *   without the other three — splits the tree into several `@tanstack/db`
+ *   type identities and the emitted collections stop compiling (FE-0, #620).
+ *   A pre-FE-0 project re-running init would otherwise keep the broken ranges
+ *   forever. Each rewrite is reported in `corrected` so init can say so. There
+ *   is no "consumer's choice" to preserve here: the set is the one
+ *   `just test-smoke-frontend` proves, and moving it is a codegen change.
+ * - **Everything else only ADDS missing keys** — an existing entry is
+ *   preserved verbatim (the consumer's choice wins; mirrors
+ *   {@link mergeTsconfig}). That includes `overrides`: a consumer's own
+ *   `@tanstack/db` override is theirs.
  *
  * Re-running init never duplicates or reorders existing entries — when every
- * required key in BOTH maps is already present, `unchanged: true` and the raw
- * content is returned untouched.
+ * required key in BOTH maps is already present and the lockstep set already
+ * matches, `unchanged: true` and the raw content is returned untouched.
  */
 export function mergeFrontendDeps(raw: string): PackageJsonMergeResult {
 	let parsed: Record<string, unknown>;
@@ -780,17 +794,23 @@ export function mergeFrontendDeps(raw: string): PackageJsonMergeResult {
 		return {
 			content: raw,
 			added: [],
+			corrected: [],
 			unchanged: true,
 			parseError: err instanceof Error ? err.message : String(err),
 		};
 	}
 
 	const deps = (parsed.dependencies ?? {}) as Record<string, unknown>;
+	const lockstep: Record<string, string> = FRONTEND_LOCKSTEP_DEPS;
 	const added: string[] = [];
+	const corrected: string[] = [];
 	for (const [pkg, range] of Object.entries(FRONTEND_EMITTED_DEPS)) {
 		if (!(pkg in deps)) {
 			deps[pkg] = range;
 			added.push(pkg);
+		} else if (pkg in lockstep && deps[pkg] !== range) {
+			corrected.push(`${pkg} ${String(deps[pkg])} → ${range}`);
+			deps[pkg] = range;
 		}
 	}
 
@@ -803,8 +823,8 @@ export function mergeFrontendDeps(raw: string): PackageJsonMergeResult {
 		}
 	}
 
-	if (added.length === 0 && addedOverrides.length === 0) {
-		return { content: raw, added: [], unchanged: true };
+	if (added.length === 0 && addedOverrides.length === 0 && corrected.length === 0) {
+		return { content: raw, added: [], corrected: [], unchanged: true };
 	}
 
 	parsed.dependencies = deps;
@@ -814,6 +834,7 @@ export function mergeFrontendDeps(raw: string): PackageJsonMergeResult {
 	return {
 		content: JSON.stringify(parsed, null, 2) + '\n',
 		added: [...added, ...addedOverrides],
+		corrected,
 		unchanged: false,
 	};
 }
@@ -1171,15 +1192,15 @@ export async function buildInitPlan(
 		const depsList = Object.entries(FRONTEND_EMITTED_DEPS)
 			.map(([p, r]) => `${p}@${r}`)
 			.join(', ');
-		// FE-0 (#620): the override is load-bearing, not advice — without it the
-		// emitted collections do not type-check. Named for every manager, since a
+		// FE-0 (#620): the override is belt-and-braces — the lockstep pins are
+		// what keep one `@tanstack/db` (deps.ts). Named for every manager, since a
 		// consumer doing this by hand may not be on bun or npm.
 		const overridesList = Object.entries(FRONTEND_DEP_OVERRIDES)
 			.map(([p, spec]) => `"${p}": "${spec}"`)
 			.join(', ');
 		const overridesNote =
 			` — and add {${overridesList}} under "overrides" (npm/bun), "pnpm.overrides" (pnpm)` +
-			` or "resolutions" (yarn); without it the emitted collections do not type-check`;
+			` or "resolutions" (yarn) — it keeps a single @tanstack/db if a transitive range ever disagrees with the pin`;
 		if (fs.existsSync(pkgPath)) {
 			const raw = fs.readFileSync(pkgPath, 'utf-8');
 			const merged = mergeFrontendDeps(raw);
@@ -1203,7 +1224,14 @@ export async function buildInitPlan(
 					relPath: relOf(cwd, pkgPath),
 					action: 'merge',
 					content: merged.content,
-					reason: `add frontend deps: ${merged.added.join(', ')}`,
+					reason: [
+						merged.added.length > 0 ? `add frontend deps: ${merged.added.join(', ')}` : null,
+						merged.corrected.length > 0
+							? `correct the @tanstack lockstep set (FE-0 — any other version splits @tanstack/db): ${merged.corrected.join(', ')}`
+							: null,
+					]
+						.filter(Boolean)
+						.join('; '),
 				});
 			}
 		} else {

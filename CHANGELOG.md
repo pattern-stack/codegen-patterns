@@ -21,11 +21,14 @@ resolve against.
   frontend analogue of the dual-`drizzle-orm` hazard the 1.0 bump fixed.
   - `@tanstack/db`, `@tanstack/react-db`, `@tanstack/electric-db-collection` and
     `@tanstack/query-db-collection` are now pinned **exactly** to the set that agrees
-    (`0.5.33` / `0.1.77` / `0.2.41` / `1.0.30`), and `project init` merges an
-    `overrides: { "@tanstack/db": "$@tanstack/db" }` entry into the frontend `package.json` to
-    collapse the copy `@pattern-stack/frontend-patterns` bundles. That version is inside its own
-    `^0.5.11`, so the override deduplicates rather than upgrades. Existing entries are never
-    clobbered — the merge only adds what is missing, as it already did for dependencies.
+    (`0.5.33` / `0.1.77` / `0.2.41` / `1.0.30`). The pins alone collapse the tree to one copy on
+    bun and npm. `project init` also merges a belt-and-braces
+    `overrides: { "@tanstack/db": "$@tanstack/db" }` entry, which keeps one copy should a
+    transitive range ever disagree with the pin.
+  - **Re-running `project init` corrects the lockstep set.** An existing frontend `package.json`
+    whose entry for any of those four is not the pin — the caret ranges earlier `project init`
+    wrote, or one package moved without the others — is rewritten to the pin, and init names
+    each rewrite. Every other entry, overrides included, is still only added when missing.
   - `@electric-sql/client` joins the contract: the emitted electric collections import
     `snakeCamelMapper` from it, and it previously resolved only by hoisting.
   - `@pattern-stack/frontend-patterns` deliberately **stays** on the `0.2.0-alpha` line — the

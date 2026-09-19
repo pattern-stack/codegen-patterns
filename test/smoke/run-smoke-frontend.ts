@@ -146,9 +146,9 @@ async function main(): Promise<number> {
 				`expected exactly 1 installed @tanstack/db, found ${dbCopies.length}:\n  ` +
 					`${dbCopies.join('\n  ')}\n` +
 					'Every copy is a separate type identity, so the emitted collections stop ' +
-					'compiling. See docs/specs/FE-0.md — the lockstep pins in ' +
-					'src/emitters/frontend/deps.ts plus its FRONTEND_DEP_OVERRIDES are what ' +
-					'keep this at one.',
+					'compiling. See docs/specs/FE-0.md — the lockstep pins ' +
+					'(FRONTEND_LOCKSTEP_DEPS in src/emitters/frontend/deps.ts) are what keep ' +
+					'this at one; FRONTEND_DEP_OVERRIDES is belt-and-braces on top.',
 			);
 		}
 

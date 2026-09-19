@@ -75,17 +75,34 @@ Every `@tanstack/db` version has exactly one matching release of each. On the li
 `0.5.33` also **satisfies** `@pattern-stack/frontend-patterns`' own `^0.5.11`, and is the copy it resolves to today —
 so collapsing onto it forces nothing on the package; it deduplicates onto what the package already ships.
 
-### 4. Pinning alone is not enough; one `overrides` entry closes it
+### 4. The pins collapse the tree; the `overrides` entry is belt-and-braces
 
-Exact pins still leave `frontend-patterns`' bundled copy, because a package manager satisfies its `^0.5.11`
-independently. Adding `@tanstack/db` as a direct dependency plus
+*(Corrected in review follow-up. This section originally claimed "pinning alone is not enough" because
+`frontend-patterns` "bundles" a copy. Re-measured, that is wrong: `frontend-patterns` declares `@tanstack/db@^0.5.11`
+as an ordinary dependency — nothing is bundled — and `0.5.33` satisfies it, so both managers dedupe it onto the
+pin.)*
+
+With the §3 set pinned exactly, `@tanstack/db` installed as a direct dependency, and `frontend-patterns` resolving to
+`0.2.0-alpha.20`, measured on 2026-09-19 against live npm:
+
+| Manager | with `overrides` | without `overrides` |
+|---|---|---|
+| **bun** | 1 copy (`0.5.33`) | 1 copy (`0.5.33`) |
+| **npm** | 1 copy (`0.5.33`) | 1 copy (`0.5.33`) |
+
+So **the pins are what the gate proves**: `just test-smoke-frontend` with the caret ranges restored fails with four
+copies; with the override removed and the pins kept it passes with one. No install leg can make the override
+load-bearing today, because no published version of anything in the set asks for a second copy.
+
+It is kept anyway, as belt-and-braces:
 
 ```jsonc
 "overrides": { "@tanstack/db": "$@tanstack/db" }   // resolve every copy to the direct dependency
 ```
 
-collapses the tree to **one** copy — verified with **bun** (`node_modules/@tanstack/db -> 0.5.33`, sole) and **npm**
-(`@tanstack/db@0.5.33 overridden` + three `deduped`). The `$name` form avoids hard-coding the version twice.
+It costs nothing, the `$name` form keeps the version in one place, and it closes the two cases the pins cannot: a
+future `frontend-patterns` whose `@tanstack/db` range excludes the pin, and a consumer lockfile still holding a
+nested copy from before the pins. Neither is a reason to describe it as required.
 
 ### 5. With the fix, the real emitted tree compiles clean
 
@@ -116,18 +133,28 @@ that declares them.
 
 ### 2. `src/cli/shared/init-scaffold.ts` — `mergeFrontendDeps`
 
-Merges `overrides` the same way it merges `dependencies`: **add only what is missing, never clobber**. An existing
-`overrides['@tanstack/db']` is the consumer's choice and is left alone. `unchanged` stays true only when both maps
-already have every key, so re-running init is still a no-op.
+Two rules, by what the entry is *(the first added in review follow-up)*:
+
+- **The lockstep set is corrected.** The four `@tanstack/db`-bearing packages are split out of
+  `FRONTEND_EMITTED_DEPS` as `FRONTEND_LOCKSTEP_DEPS` (spread back in, so the version lives once). An existing entry
+  for any of the four that is not the pin — the caret ranges `project init` wrote before FE-0, or one package moved
+  without the other three — is rewritten to the pin and reported in a new `corrected` field
+  (`<pkg> <old> → <pin>`), which init prints as part of the merge reason. Preserving them verbatim, as the first
+  version did, meant a pre-FE-0 project re-running init kept the broken ranges forever. There is no consumer choice
+  to protect here: the set is the one the gate proves, and moving it is a codegen change (I7).
+- **Everything else only adds what is missing** — other dependencies and `overrides` alike. An existing
+  `overrides['@tanstack/db']` is the consumer's choice and is left alone.
+
+`unchanged` stays true only when both maps already have every key *and* the lockstep set matches, so re-running init
+on a correct project is still a no-op.
 
 The no-`package.json` notice gains the overrides line, so a consumer who has to do it by hand is told the whole
 contract rather than half of it.
 
 ### 3. `src/emitters/frontend/emit-index.ts`
 
-The version-pairing comment block in `generated/index.ts` gains the overrides stanza. That comment is the only place
-the contract is visible from inside a consumer's tree; omitting the half that makes the other half work would be
-misleading.
+The version-pairing comment block in `generated/index.ts` gains the overrides stanza, and says the four pins move
+together or not at all. That comment is the only place the contract is visible from inside a consumer's tree.
 
 ### 4. The gate — `test/smoke/run-smoke-frontend.ts` + `just test-smoke-frontend`
 
@@ -165,7 +192,7 @@ store: one `sync: electric` (the `electricCollectionOptions` path, which is wher
 
 - Any change to `pattern-stack/frontend-patterns`. Its `@tanstack/*` should become peer dependencies — that is the
   real fix and it belongs in that repo (`FE-REL.md` §2.5 items 1–3, for the owner to file). This PR works around it
-  with one `overrides` line, and says so.
+  with exact pins (plus a belt-and-braces `overrides` line), and says so.
 - Relation accessors — FE-REL (#589).
 - Bumping `@pattern-stack/frontend-patterns` to `1.0.0` (§Scope 1).
 - `pnpm` / `yarn` override syntax. `overrides` is verified for bun and npm; the notice names the others.
@@ -194,9 +221,13 @@ Output from the run made after the last edit.
 | Gate | Result |
 |---|---|
 | `bun run typecheck` / `bun run build` | exit 0 / exit 0 |
-| `bun run test` (`just test-unit`) | **3212 pass**, 3 skip, 0 fail |
+| `bun run test` (`just test-unit`) | **3219 pass**, 0 fail (incl. REL-1 follow-up +4, FE-0 follow-up +3) |
 | `just test-all` | **exit 0** — now 7 smokes, `smoke-frontend PASS` among them |
 | `just test-integration` (Docker) | **exit 0** — 68 pass, 2 skip, 0 fail |
+
+Review-follow-up controls: • `test-smoke-frontend` with `FRONTEND_DEP_OVERRIDES` emptied and the pins kept —
+**PASS**, one `@tanstack/db` (0.5.33), which is what §4 rests on. • `mergeFrontendDeps` on a package.json carrying
+the pre-FE-0 caret ranges rewrites all four and reports them (unit test).
 
 **The new gate was demonstrated red before it was shown green**, both halves:
 
@@ -214,7 +245,8 @@ empty).
 
 | Risk | Response |
 |---|---|
-| Forcing `frontend-patterns` onto a `@tanstack/db` it did not resolve itself | It did: `0.5.33` is both the version it resolves to today and inside its declared `^0.5.11`. The override deduplicates rather than upgrades |
+| Forcing `frontend-patterns` onto a `@tanstack/db` it did not resolve itself | It did: `0.5.33` is both the version it resolves to today and inside its declared `^0.5.11`. Today the override is a no-op (§4); it would only bite if a future `frontend-patterns` asked for another version |
+| `project init` rewrites a consumer's lockstep entries | Deliberate (§Scope 2): any other value is the defect this spec fixes. Each rewrite is named in init's output |
 | Exact pins go stale as TanStack releases | Deliberate. Caret drift across packages that pin `@tanstack/db` exactly is the defect. Moving the set forward is a one-line change with a gate that proves it still compiles — which is the thing that did not exist before |
 | The smoke installs from live npm and can fail because someone else published | True of every smoke here (they `bun add` live ranges too). With exact pins the only live-range packages left are `@pattern-stack/frontend-patterns`, `@electric-sql/client` and `@tanstack/react-query`. Surfacing that here rather than in a consumer is the point |
 | `overrides` is npm/bun syntax | Verified on both. pnpm (`pnpm.overrides`) and yarn (`resolutions`) are named in the notice rather than emitted blind |

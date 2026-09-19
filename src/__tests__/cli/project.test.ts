@@ -19,6 +19,7 @@ import { loadContext } from '../../cli/shared/context.js';
 import {
 	FRONTEND_DEP_OVERRIDES,
 	FRONTEND_EMITTED_DEPS,
+	FRONTEND_LOCKSTEP_DEPS,
 } from '../../emitters/frontend/deps.js';
 
 // ---------------------------------------------------------------------------
@@ -168,13 +169,66 @@ describe('mergeFrontendDeps', () => {
 		expect(deps.react).toBe('^19.0.0');
 	});
 
+	// ── FE-0 review follow-up: the lockstep set is corrected, not preserved ──
+
+	test('corrects pre-FE-0 caret ranges on the lockstep set, and says so', () => {
+		// What `project init` wrote before FE-0 — the ranges that split the tree
+		// into four @tanstack/db copies. Re-running init must not keep them.
+		const raw = JSON.stringify({
+			dependencies: {
+				'@tanstack/db': '^0.5.11',
+				'@tanstack/react-db': '^0.1.55',
+				'@tanstack/electric-db-collection': '^0.2.11',
+				'@tanstack/query-db-collection': '^1.0.6',
+			},
+		});
+		const res = mergeFrontendDeps(raw);
+		const deps = JSON.parse(res.content).dependencies;
+		for (const [pkg, pin] of Object.entries(FRONTEND_LOCKSTEP_DEPS)) {
+			expect(deps[pkg]).toBe(pin);
+		}
+		expect(res.corrected).toEqual([
+			`@tanstack/db ^0.5.11 → ${FRONTEND_LOCKSTEP_DEPS['@tanstack/db']}`,
+			`@tanstack/react-db ^0.1.55 → ${FRONTEND_LOCKSTEP_DEPS['@tanstack/react-db']}`,
+			`@tanstack/electric-db-collection ^0.2.11 → ${FRONTEND_LOCKSTEP_DEPS['@tanstack/electric-db-collection']}`,
+			`@tanstack/query-db-collection ^1.0.6 → ${FRONTEND_LOCKSTEP_DEPS['@tanstack/query-db-collection']}`,
+		]);
+		expect(res.added).not.toContain('@tanstack/db');
+	});
+
+	test('corrects one lockstep package moved without the other three', () => {
+		const raw = JSON.stringify({
+			dependencies: { ...FRONTEND_EMITTED_DEPS, '@tanstack/react-db': '0.1.80' },
+			overrides: { ...FRONTEND_DEP_OVERRIDES },
+		});
+		const res = mergeFrontendDeps(raw);
+		expect(res.unchanged).toBe(false);
+		expect(res.added).toEqual([]);
+		expect(res.corrected).toEqual([
+			`@tanstack/react-db 0.1.80 → ${FRONTEND_LOCKSTEP_DEPS['@tanstack/react-db']}`,
+		]);
+		expect(mergeFrontendDeps(res.content).unchanged).toBe(true);
+	});
+
+	test('the lockstep set is exactly the four @tanstack/db-bearing packages', () => {
+		expect(Object.keys(FRONTEND_LOCKSTEP_DEPS).sort()).toEqual([
+			'@tanstack/db',
+			'@tanstack/electric-db-collection',
+			'@tanstack/query-db-collection',
+			'@tanstack/react-db',
+		]);
+		for (const [pkg, pin] of Object.entries(FRONTEND_LOCKSTEP_DEPS)) {
+			expect((FRONTEND_EMITTED_DEPS as Record<string, string>)[pkg]).toBe(pin);
+		}
+	});
+
 	test('preserves an existing dep version — only adds missing keys', () => {
 		const raw = JSON.stringify({
 			dependencies: { '@tanstack/react-query': '^5.99.0' },
 		});
 		const res = mergeFrontendDeps(raw);
 		const deps = JSON.parse(res.content).dependencies;
-		// the consumer's chosen range wins — never clobbered/downgraded
+		// outside the lockstep set, the consumer's chosen range wins
 		expect(deps['@tanstack/react-query']).toBe('^5.99.0');
 		expect(res.added).not.toContain('@tanstack/react-query');
 		expect(res.added).toContain('@pattern-stack/frontend-patterns');
@@ -196,7 +250,7 @@ describe('mergeFrontendDeps', () => {
 
 	// ── FE-0 (#620): the overrides half of the contract ──────────────────────
 
-	test('adds the @tanstack/db override — without it the emitted collections do not compile', () => {
+	test('adds the @tanstack/db override (belt-and-braces on the pins)', () => {
 		const res = mergeFrontendDeps(JSON.stringify({ dependencies: {} }));
 		const parsed = JSON.parse(res.content);
 		for (const [pkg, spec] of Object.entries(FRONTEND_DEP_OVERRIDES)) {

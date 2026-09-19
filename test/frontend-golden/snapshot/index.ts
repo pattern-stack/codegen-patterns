@@ -19,10 +19,11 @@
  *   @tanstack/query-db-collection     1.0.30
  *   @tanstack/react-query             ^5.0.0
  *
- * …and this "overrides" entry, which collapses the duplicate @tanstack/db the
- * pinned packages would otherwise resolve to (npm/bun; "pnpm.overrides" for
- * pnpm, "resolutions" for yarn). Without it the emitted collections do not
- * type-check — see docs/specs/FE-0.md.
+ * The four @tanstack/*db* pins move together or not at all: any other version
+ * splits @tanstack/db into several copies and the emitted collections stop
+ * type-checking — see docs/specs/FE-0.md. This "overrides" entry (npm/bun;
+ * "pnpm.overrides" for pnpm, "resolutions" for yarn) keeps a single copy even
+ * if a transitive range ever disagrees with the pin:
  *
  *   "@tanstack/db": "$@tanstack/db"
  */
