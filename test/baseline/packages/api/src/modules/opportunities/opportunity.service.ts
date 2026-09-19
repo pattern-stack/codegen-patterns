@@ -71,6 +71,4 @@ export class OpportunityService extends WithAnalytics(
     if (!entity) return null;
     return entity.stateId ? this.dealStateRepo.findById(entity.stateId) : null;
   }
-
-
 }

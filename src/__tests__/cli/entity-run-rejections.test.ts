@@ -309,9 +309,10 @@ describe('entity new rejects the run on a provider YAML with a blocking issue (C
 // ---------------------------------------------------------------------------
 // Every junction is mirrored onto both parents' service + module, rendered by
 // the parents' own templates from the junction YAMLs. A junction file the
-// pre-flight skipped would silently drop that fan-out, so it is rejected
-// instead — and so is a junction naming an entity with no YAML (its fan-out
-// would import a module that is never generated).
+// pre-flight skipped would silently drop that fan-out, so every YAML under
+// junctions/ is a junction or a rejection (unparseable, or not
+// `pattern: Junction`) — and so is a junction naming an entity with no YAML
+// (its fan-out would import a module that is never generated).
 
 function writeJunction(root: string, name: string, body: string): string {
 	const file = path.join(root, 'junctions', name);
@@ -350,11 +351,17 @@ describe('entity new rejects the run on a bad junction YAML (JUNC-0, #678)', () 
 		expect(payload.failed.map((f: { name: string }) => f.name)).toContain('note_ghost.yaml');
 	});
 
-	test('a non-junction YAML in junctions/ is not a junction and is ignored', async () => {
+	test.each([
+		['unparseable YAML', 'broken.yaml', 'pattern: Junction\nbetween: [note, \n', 'Invalid YAML syntax'],
+		['lowercase pattern', 'typo.yaml', 'pattern: junction\nbetween: [note, user]\n', 'not a junction definition'],
+		['some other YAML', 'README.yaml', 'notes: [this is not a junction]\n', 'not a junction definition'],
+	])('every YAML under junctions/ is a junction or a rejection — %s', async (_label, name, body, reason) => {
 		const root = mkProject();
-		writeJunction(root, 'README.yaml', 'notes: [this is not a junction]\n');
-		const { code } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
-		expect(code).toBe(0);
-		expect(fs.existsSync(noteEntity(root))).toBe(true);
+		writeJunction(root, name, body);
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`${name} — `);
+		expect(out).toContain(reason);
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
 	});
 });

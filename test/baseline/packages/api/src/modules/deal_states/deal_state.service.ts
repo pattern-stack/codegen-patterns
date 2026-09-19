@@ -43,6 +43,4 @@ export class DealStateService extends WithAnalytics(
   async opportunities(dealStateId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByStateId(dealStateId, opts);
   }
-
-
 }

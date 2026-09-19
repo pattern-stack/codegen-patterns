@@ -58,9 +58,9 @@ Three pre-flight rejections are **run-level** and stop the run before hygen what
 entity imports), an app-pattern file the loader cannot register (a partial set would rewrite the orchestration barrel
 without its module), and a `<paths.providers>/*.yaml` with a blocking issue — it does not load, names an unknown
 surface, reuses a slug, or its auth / client import does not resolve (CLI-1, #666 — its module, change sources and
-assemblies feed every integrated entity's wiring). A fourth is the **junction set** (JUNC-0, #678): a `junctions/*.yaml`
-(`pattern: Junction`) that fails the schema, or whose `between:` names an entity with no YAML — both parents render its
-fan-out, so a skipped junction would silently drop it. Same list, same printing, same `failed[]` entries (`stopped:
+assemblies feed every integrated entity's wiring). A fourth is the **junction set** (JUNC-0, #678): every YAML under `junctions/` must be a valid junction — one that does
+not parse, is not `pattern: Junction`, fails the schema, or whose `between:` names an entity with no YAML stops the run
+— both parents render its fan-out, so a skipped junction would silently drop it. Same list, same printing, same `failed[]` entries (`stopped:
 'pre-flight'`); a stale `<type>.job.generated.ts` is left on disk and named in the rejection's details. The provider
 set is loaded and validated once, in the pre-flight (`loadProviderSet`), and emitted from in the post-step
 (`emitProviderModules`); the rejection helpers are `src/cli/shared/run-rejections.ts`. Every other stop before a
@@ -77,7 +77,9 @@ out). The parent's **own** clean-lite-ps `service.ejs.t` / `module.ejs.t` render
 both endpoints through `entity new`'s per-target path (`src/cli/shared/entity-render.ts`: `preflightEntityTargets` +
 `renderEntityTargets`, no post-steps). So `entity new` ↔ `junction new` in any order, any number of times, give the
 same bytes; deleting a junction YAML drops its fan-out on the next `entity new`. The junctions directory is
-`<cwd>/junctions` (`src/config/junctions-dir.ts`, shipped — no config key). There are no `_inject-` templates left.
+`<cwd>/junctions` (`src/config/junctions-dir.ts`, shipped — no config key); `junction new` rejects a target outside it
+(the parents would never see it). The name + plural rule is `src/config/junction-naming.ts` (shipped; schema, roles,
+barrels and the template helper all read it). There are no `_inject-` templates left.
 
 An app-pattern loader error is never a warning (CLI-1, #667). `orchestration gen` writes from the set, so it stops
 before the validator and before writing, with the same rejection and payload (`patternLoadRejections`,

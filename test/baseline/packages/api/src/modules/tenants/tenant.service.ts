@@ -28,6 +28,4 @@ export class TenantService extends WithAnalytics(
   // Inherited from BaseService:
   //   findById, findByIds, list, count, exists, create, update, delete
 
-
-
 }

@@ -437,8 +437,6 @@ export class OpportunityService extends WithAnalytics(
   ): Promise<void> {
     return this.opportunityContactService.setPrimary(opportunityId, contactId);
   }
-
-
 }
 "
 `;
@@ -536,8 +534,6 @@ export class ContactService extends WithAnalytics(
   ): Promise<void> {
     return this.opportunityContactService.setPrimary(opportunityId, contactId);
   }
-
-
 }
 "
 `;

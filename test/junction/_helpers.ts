@@ -225,6 +225,11 @@ export interface BootstrapOptions {
    * start. Defaults to false (entity new → junction YAMLs → junction new).
    */
   junctionsFirst?: boolean;
+  /**
+   * Called with the project dir right after the first `entity new`, before
+   * `junction new` — the order-swap leg asserts the parents there too.
+   */
+  afterEntityNew?: (projectDir: string) => void;
   log?: (msg: string) => void;
 }
 
@@ -344,6 +349,12 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   };
   if (opts.junctionsFirst) copyJunctionFixtures();
   run(`bun ${CLI_PATH} entity new --all --force`);
+  try {
+    opts.afterEntityNew?.(tmpDir);
+  } catch (err) {
+    if (process.env.KEEP_SMOKE_DIR !== '1') fs.rmSync(tmpDir, { recursive: true, force: true });
+    throw err;
+  }
   if (!opts.junctionsFirst) copyJunctionFixtures();
 
   // 7. codegen junction new --all

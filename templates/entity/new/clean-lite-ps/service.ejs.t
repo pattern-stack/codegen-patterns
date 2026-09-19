@@ -239,7 +239,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       }),
     );
   }
-<% } %>
+<% } -%>
 <% if (eavValueTable) { %>
   /**
    * EAV compound write (task #23) — upserts a bag of dynamic fields onto
@@ -281,5 +281,5 @@ export class <%= classNames.service %> extends WithAnalytics(
     const defsById = new Map(defs.map((d) => [d.id, { key: d.key }]));
     return mergeEavRows(rows as any, defsById);
   }
-<% } %>
+<% } -%>
 }

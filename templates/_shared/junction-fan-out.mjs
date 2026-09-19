@@ -11,9 +11,8 @@
  * Readers: `templates/junction/new/prompt.js` (the junction's own files) and
  * `templates/entity/new/clean-lite-ps/prompt-extension.js` (the parents' fan-out
  * and the Communication capability's `via:` junction). One naming rule for all
- * of them (charter I1). `src/schema/junction-definition.schema.ts ›
- * deriveJunctionName` is the CLI-side statement of the name; a unit test pins
- * the two together.
+ * of them (charter I1). The name + plural rule itself is
+ * `src/config/junction-naming.ts`, shared with the CLI (schema, roles, barrels).
  *
  * The CLI validates every junction YAML before hygen runs (`entity new` and
  * `junction new` pre-flights), so this module reads the raw YAML.
@@ -22,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
-import pluralizePkg from 'pluralize';
+import { junctionName, junctionPlural } from '../../src/config/junction-naming.js';
 import { junctionsDirFor } from '../../src/config/junctions-dir.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
@@ -31,10 +30,8 @@ const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
 
-/** A junction's name: its endpoints in `between:` order (no YAML override). */
-export function junctionName(between) {
-  return `${between[0]}_${between[1]}`;
-}
+/** A junction's name: its endpoints in `between:` order (`src/config/junction-naming.ts`). */
+export { junctionName };
 
 /**
  * Everything a junction is called, from its name: table / folder `plural`
@@ -43,7 +40,7 @@ export function junctionName(between) {
  * property a parent service holds it under.
  */
 export function junctionNaming(name, modulesDir) {
-  const plural = pluralizePkg.plural(name);
+  const plural = junctionPlural(name);
   const tree = entityModuleNaming({ name, plural }, modulesDir);
   const moduleDir = path.posix.normalize(tree.moduleDir);
   const pascal = pascalCase(name);
@@ -78,7 +75,9 @@ export function loadJunctionDefinitions(cwd) {
     try {
       doc = yaml.parse(fs.readFileSync(file, 'utf-8'));
     } catch {
-      // The CLI pre-flight rejects an unparseable junction YAML.
+      // Unreachable through the CLI: `entity new` / `junction new` reject any
+      // file under junctions/ that does not parse or is not `pattern: Junction`
+      // (src/parser/load-junctions.ts › loadJunctionSet) before hygen runs.
       continue;
     }
     if (doc && doc.pattern === 'Junction' && Array.isArray(doc.between)) defs.push(doc);

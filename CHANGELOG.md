@@ -318,8 +318,9 @@ backend pipeline (ARCH-0, #677).
   `entity new` to have run first. The generated methods are unchanged; the
   parents' import layout and comments are not (one `@nestjs/common` import, no
   `// junction:<name>:<side>-fan-out` markers). `entity new` now rejects the run
-  on a junction YAML that fails the schema or names an entity with no YAML —
-  previously such a file was skipped.
+  on any YAML under `junctions/` that does not parse, is not `pattern: Junction`,
+  fails the schema, or names an entity with no YAML — previously such a file was
+  skipped. `junction new` rejects a target outside `junctions/`.
 
 - **`jobs.backend: memory` reaches the worker** (#656). The worker options
   (the embedded `JobWorkerModule.forRoot` in `<generated>/subsystems.ts`,

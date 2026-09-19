@@ -81,6 +81,4 @@ export class DealService extends WithAnalytics(
     if (!entity) return null;
     return entity.accountId ? this.accountRepo.findById(entity.accountId) : null;
   }
-
-
 }

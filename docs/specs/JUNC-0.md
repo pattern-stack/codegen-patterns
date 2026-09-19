@@ -69,12 +69,13 @@ New `templates/_shared/junction-fan-out.mjs` (ships under `templates/`, like `en
 - `junctionName(between)` → `<left>_<right>`, and `junctionNaming(name, modulesDir)` → `{ name, plural, moduleDir,
   entityFile, repositoryFile, serviceFile, moduleFile, tableVar, entityClass, serviceClass, moduleClass,
   linkInputType, serviceProperty }` (it takes the *name*, because a Communication role's `via:` names the junction,
-  not its pairing). The single statement of the junction naming rule in the templates. Consumers: `templates/junction/new/prompt.js` (its own output paths + class names),
+  not its pairing). Consumers: `templates/junction/new/prompt.js` (its own output paths + class names),
   `prompt-extension.js` › `resolveLibraryCapabilityConfig` (Communication `via:` table + import), and the fan-out
-  below. `src/schema/junction-definition.schema.ts › deriveJunctionName` stays as the CLI-side statement of the name
-  only; both are pinned against each other by a unit test (the CLI cannot import a `.mjs` template helper into its
-  zod graph without shipping it — same constraint NAME-0 documents for `loadEntityRegistry`). The pin lives in
-  `src/__tests__/templates/junction-fan-out.test.ts`.
+  below. The name + plural rule underneath is the shipped `src/config/junction-naming.ts` (`junctionName`,
+  `junctionPlural`), which the CLI side reads too — schema `deriveJunctionName`, roles `junctionNamesFor`, the barrel
+  generator — so there is one statement of it. (The design had the `.mjs` restate the name and pinned it to
+  `deriveJunctionName` by a test; review of #685 asked for one rule, and a shipped `.ts` in `src/config/` is
+  importable from both sides, like `entities-dir.ts`.)
 - `loadJunctionDefinitions(cwd)` → every junction YAML under the junctions directory, raw-parsed (the CLI has already
   schema-validated them — § 3), filtered to `pattern: Junction`, sorted by junction name. The directory rule
   (`<cwd>/junctions`, no config key) moves from `src/parser/load-junctions.ts › junctionsDirFor` to a new shipped
@@ -137,9 +138,11 @@ the schema. A skipped junction would now silently drop fan-out — the exact def
 - `entity new`'s pre-flight loads the junction set with errors (`loadJunctionSet` → `{ junctions, issues }`) and
   makes each issue a **run-level rejection** (the #666 posture — an input other entities' output depends on): a
   junction YAML that fails `JunctionDefinitionSchema`, or whose `between` names an entity with no entity YAML.
-- Implemented in `src/parser/load-junctions.ts` (`loadJunctionSet`, `junctionSetIssues`). Only files whose
-  top-level `pattern:` is `Junction` are junctions (`detectYamlType`, the rule `junction new --all` uses); any other
-  YAML in `junctions/` is ignored, as before.
+- Implemented in `src/parser/load-junctions.ts` (`loadJunctionSet`, `junctionSetIssues`). **Every** YAML under
+  `junctions/` is a valid junction or an issue: a file that does not parse, or is not `pattern: Junction` (a
+  lowercase `pattern: junction` typo included), is reported — never skipped, since the template side would skip it
+  too and drop its fan-out. (Review of #685: the first cut kept `detectYamlType`'s filter, which silently passed over
+  both.)
 - The roles cross-check consumes the same loaded set (no second load).
 - The hygen prompt re-reads the raw YAMLs through § 1 — like every other cross-entity read in the prompts — trusting
   the CLI's validation, as `junction new`'s prompt already does.
@@ -159,10 +162,15 @@ Decision: **yes, `junction new` still updates the parents**, so a new junction i
 - `junction new` runs no entity post-step: none of them reads the junction set, so the per-entity files are exactly
   what `entity new` would write for those two entities. An endpoint rejected by the entity pre-flight fails
   `junction new` (named, per endpoint), same as `entity new` would.
+- **A target must live under `junctions/`.** The parents render the fan-out from the YAMLs there only, so a
+  `junction new path/elsewhere/x.yaml` would have emitted the junction's own files and no fan-out, silently, exit 0.
+  It is a pre-flight rejection instead.
 - The parents are **pre-flighted before anything is written**: `junction new` maps each endpoint to its entity YAML
-  and runs `preflightEntityTargets` on them first; an endpoint with no valid entity YAML, a per-target rejection or a
-  run-level rejection stops the run with the `stopped: 'pre-flight'` payload (`reportPreflightStop`), nothing
-  generated. The render itself runs after the junction hygen (`continueOnError: true`); a failed parent fails the
+  and always runs `preflightEntityTargets` on them first; a target rejection, a parent rejection or a run-level
+  rejection stops the run in every mode (text and `--json`) with the `stopped: 'pre-flight'` payload
+  (`reportPreflightStop`), nothing generated. Each problem is reported once: an endpoint with no entity YAML only by
+  the junction-set check, and a target that fails its own load only by its per-target entry (the junction-set
+  check's entry for the same file is dropped). The render itself runs after the junction hygen (`continueOnError: true`); a failed parent fails the
   command.
 - `--dry-run` lists the parents it would re-render; `--json` adds `parents: { succeeded, failed }`.
 
@@ -193,7 +201,15 @@ For a fixed YAML set, the parent files are a pure function of that set:
   other fan-out-only locals; naming comes from `junctionNaming`.
 - `test/smoke/run-smoke-junction.ts`: the "Ordering contract (CGP-60)" block, the `// Inherited from` anchor
   assertions and the per-junction marker assertions (they assert the inject mechanism).
-- `junctionsDirFor` moves to `src/config/junctions-dir.ts` (shipped; every importer repointed, no re-export).
+- `junctionsDirFor` moves to `src/config/junctions-dir.ts` (shipped; every importer repointed, no re-export —
+  including the barrel generator's fallback).
+- The name + plural rule moves to a shipped `src/config/junction-naming.ts` (`junctionName`, `junctionPlural`):
+  `deriveJunctionName` (schema), `junctionNamesFor` (roles), the barrel generator's `collectJunctions` and
+  `templates/_shared/junction-fan-out.mjs` all read it — one statement instead of the pinned pair the design
+  proposed.
+- `service.ejs.t`: the two EAV blocks' closing tags (`<% } -%>`) no longer print a newline when the block is off, so
+  a service no longer ends `}\n\n\n}` (anchor-layout residue). The baseline (9 services, 18 blank lines) and junction
+  snapshots (8 blank lines) regenerate; nothing else changes.
   `loadJunctionSummaries` stays as the analyzer's view over `loadJunctionSet` (valid junctions only): the design
   proposed that `analyzeDomain` report junction schema issues too, but that changes `entity validate`'s output and is
   not needed for #678 — `entity new` and `junction new` are the reporters.
@@ -218,12 +234,16 @@ modes (`just test-smoke-junction` already runs `vendored` + `package`, default +
    compiles against its parents).
 4. The existing fan-out grep assertions, `tsc` and boot stay. Implemented as steps 12 (round trip + removal) and 13
    (order swap) of `test/smoke/run-smoke-junction.ts`, in every leg of `just test-smoke-junction` and
-   `just test-smoke-junction-cross-domain`.
+   `just test-smoke-junction-cross-domain`. The order-swap leg asserts the parents twice: right after the first
+   `entity new` (the `afterEntityNew` bootstrap hook — before any `junction new`, the order-independence claim) and
+   after `junction new`.
 
 Plus: `src/__tests__/templates/junction-fan-out.test.ts` (sides, `expose_on_parent`, counterparty-import dedupe, a
 context-nested endpoint, the `junctionNaming` ↔ `deriveJunctionName` pin, the rendered service + module, re-render
 byte-identity); `src/__tests__/cli/entity-run-rejections.test.ts` (schema-failing junction, junction naming a missing
-entity, `--json` payload, non-junction YAML ignored); `junction-endpoint-naming.test.ts` loses its parent-inject
+entity, `--json` payload, and an unparseable / lowercase-pattern / non-junction YAML each rejected);
+`src/__tests__/cli/junction-new-preflight.test.ts` (target outside `junctions/`, missing endpoint reported once,
+invalid target reported once); `junction-endpoint-naming.test.ts` loses its parent-inject
 expectations; junction snapshots regenerated and reviewed.
 
 Gates after the last edit: `bun run typecheck && bun run build && bun run test`, `just test-all`,
@@ -259,6 +279,7 @@ hand-composed `listAssoc` with a `.through()` read without touching where the fa
   from both inputs; if a second command must refresh it, it re-renders through `entity-render.ts`.
 - **`junction new` now touches the parents** (and runs `entity new`'s per-target pre-flight on them): an invalid
   parent YAML, job YAML, provider YAML or app-pattern file stops `junction new` too.
-- **The junction set is a run-level `entity new` input.** A junction YAML that fails the schema or names a missing
-  entity stops `entity new --all`.
+- **The junction set is a run-level `entity new` input.** Any YAML under `junctions/` that does not parse, is not
+  `pattern: Junction`, fails the schema or names a missing entity stops `entity new --all`. `junctions/` holds
+  junctions only, and a junction lives nowhere else.
 - #681 (mirrored `a × b` / `b × a` junctions collide on `<plural>List`) is open and unchanged.

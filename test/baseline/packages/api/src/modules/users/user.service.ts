@@ -56,6 +56,4 @@ export class UserService extends WithAnalytics(
   async owned_opportunities(userId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByOwnerId(userId, opts);
   }
-
-
 }

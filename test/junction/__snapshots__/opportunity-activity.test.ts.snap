@@ -419,8 +419,6 @@ export class OpportunityService extends WithAnalytics(
   ): Promise<void> {
     return this.opportunityActivityService.setPrimary(opportunityId, activityId);
   }
-
-
 }
 "
 `;
@@ -500,8 +498,6 @@ export class ActivityService extends WithAnalytics(
   ): Promise<void> {
     return this.opportunityActivityService.setPrimary(opportunityId, activityId);
   }
-
-
 }
 "
 `;

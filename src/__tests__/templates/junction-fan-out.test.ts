@@ -45,7 +45,7 @@ const fanOut = (entity: string, junctions: unknown[], selfModuleDir: string) =>
 const CREW_PERSON = { pattern: 'Junction', between: ['crew', 'person'] };
 
 describe('junctionNaming — the one junction naming rule', () => {
-	it('agrees with the CLI-side deriveJunctionName', () => {
+	it('is the CLI-side rule (deriveJunctionName reads src/config/junction-naming.ts too)', () => {
 		for (const between of [
 			['opportunity', 'contact'],
 			['crew', 'person'],

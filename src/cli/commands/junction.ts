@@ -193,24 +193,29 @@ export class JunctionNewCommand extends Command {
 			return 2;
 		}
 
-		// Pre-flight: validate each YAML.
+		// Pre-flight: every target lives under junctions/ and validates. A junction
+		// outside that directory would get its own files but no fan-out: both
+		// parents render the fan-out from the junction YAMLs under junctions/
+		// (JUNC-0, #678), so such a target is rejected, not silently half-wired.
+		const junctionsDir = junctionsDirFor(ctx.cwd);
 		const validated: Array<{ file: string; name: string; between: [string, string] }> = [];
-		const invalid: Array<{ file: string; message: string }> = [];
+		const invalid: RunRejection[] = [];
 		for (const file of targets) {
+			const rel = path.relative(junctionsDir, file);
+			if (rel.startsWith('..') || path.isAbsolute(rel)) {
+				invalid.push({
+					file,
+					message: `not under ${path.relative(ctx.cwd, junctionsDir) || junctionsDir}/ — both parents render a junction's fan-out from that directory; move the file there`,
+				});
+				continue;
+			}
 			const result = loadJunctionFromYaml(file);
 			if (result.success) {
 				const def = result.definition;
 				validated.push({ file, name: deriveJunctionName(def), between: def.between });
 			} else {
-				invalid.push({ file, message: result.error });
+				invalid.push({ file, message: result.error, details: result.details });
 			}
-		}
-
-		if (invalid.length > 0) {
-			for (const i of invalid) {
-				printError(`${path.basename(i.file)} — ${i.message}`);
-			}
-			if (!isJsonMode()) return 1;
 		}
 
 		// Git safety
@@ -238,32 +243,25 @@ export class JunctionNewCommand extends Command {
 			const result = loadEntityFromYaml(file);
 			if (result.success) entityFileByName.set(result.definition.entity.name, file);
 		}
-		const parentNames = [...new Set(validated.flatMap((v) => v.between))].sort();
-		const parentTargets: string[] = [];
-		const missingParents: RunRejection[] = [];
-		for (const name of parentNames) {
-			const file = entityFileByName.get(name);
-			if (file) {
-				parentTargets.push(file);
-			} else {
-				const junctions = validated.filter((v) => v.between.includes(name)).map((v) => v.name);
-				missingParents.push({
-					file: null,
-					message: `endpoint '${name}' of ${junctions.join(', ')} has no valid entity YAML under ${layout.entities}`,
-				});
-			}
-		}
-		const parents =
-			parentTargets.length > 0 ? await preflightEntityTargets(ctx, parentTargets) : null;
-		const parentRejections = [
-			...missingParents,
-			...(parents ? [...parents.invalid, ...parents.runRejections] : []),
+		// An endpoint with no entity YAML is not looked up here: the entity
+		// pre-flight's junction-set check reports it (run-level), once.
+		const parentTargets = [...new Set(validated.flatMap((v) => v.between))]
+			.sort()
+			.flatMap((name) => entityFileByName.get(name) ?? []);
+		const parents = await preflightEntityTargets(ctx, parentTargets);
+		// The junction-set check re-reports a target that already failed its own
+		// load (same file): each file is reported once, by its per-target entry.
+		const invalidFiles = new Set(invalid.map((i) => i.file));
+		const rejections = [
+			...invalid,
+			...parents.invalid,
+			...parents.runRejections.filter((r) => r.file === null || !invalidFiles.has(r.file)),
 		];
-		if (parentRejections.length > 0) {
-			printRejections(parentRejections);
-			return reportPreflightStop('junction new', parentRejections);
+		if (rejections.length > 0) {
+			printRejections(rejections);
+			return reportPreflightStop('junction new', rejections);
 		}
-		const parentNamesToRender = parents ? parents.validated.map((p) => p.name) : [];
+		const parentNamesToRender = parents.validated.map((p) => p.name);
 
 		if (this.dryRun) {
 			if (isJsonMode()) {
@@ -272,7 +270,7 @@ export class JunctionNewCommand extends Command {
 					dryRun: true,
 					junctions: validated.map((v) => ({ name: v.name, file: v.file })),
 					parents: parentNamesToRender,
-					totals: { planned: validated.length, invalid: invalid.length },
+					totals: { planned: validated.length },
 				});
 			} else {
 				printInfo(`Dry run — ${validated.length} junctions would be generated:`);
@@ -281,14 +279,12 @@ export class JunctionNewCommand extends Command {
 				}
 				printInfo(`and ${parentNamesToRender.length} parent entities re-rendered: ${parentNamesToRender.join(', ')}`);
 			}
-			return invalid.length > 0 ? 1 : 0;
+			return 0;
 		}
 
 		// Invoke Hygen for each validated target.
 		const succeeded: string[] = [];
-		const failed: Array<{ name: string; file: string; message: string }> = [
-			...invalid.map((i) => ({ name: path.basename(i.file), file: i.file, message: i.message })),
-		];
+		const failed: Array<{ name: string; file: string; message: string }> = [];
 		for (const v of validated) {
 			if (!isJsonMode()) {
 				printInfo(`generating ${v.name}`);
@@ -309,15 +305,12 @@ export class JunctionNewCommand extends Command {
 
 		// Re-render the parents: their service + module now carry the fan-out of
 		// every junction in the YAML set (JUNC-0).
-		const parentResult = parents
-			? renderEntityTargets(ctx, parents.validated, { continueOnError: true })
-			: { succeeded: [], failed: [] };
+		const parentResult = renderEntityTargets(ctx, parents.validated, { continueOnError: true });
 
 		// Regenerate barrels so new junction modules land in GENERATED_MODULES
 		// and src/generated/schema.ts. Mirrors what `entity new` and `relationship new` do.
 		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
-		const junctionsDir = junctionsDirFor(ctx.cwd);
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
 		// The app imports both barrels: a failed regeneration fails the command,
 		// naming the file (JOBS-0, #655).
@@ -378,7 +371,7 @@ export class JunctionNewCommand extends Command {
 				},
 			});
 		} else {
-			const total = validated.length + invalid.length;
+			const total = validated.length;
 			console.log('');
 			if (failed.length === 0) {
 				printSuccess(`${total} junctions · ${succeeded.length} succeeded`);

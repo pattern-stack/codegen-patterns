@@ -695,8 +695,9 @@ async function main(): Promise<number> {
     }
 
     // 13. JUNC-0 order swap — a second project with the junction YAMLs present
-    // before the first `entity new`, then `junction new`: the parents must be
-    // byte-identical to step 12's reference.
+    // before the first `entity new`. The parents must already equal step 12's
+    // reference after that first `entity new` (no `junction new` yet — the
+    // order-independence claim), and still after `junction new`.
     if (exitCode === 0 && reference) {
       log('JUNC-0: order swap — bootstrapping with junction YAMLs before entity new');
       const swapped = await bootstrapJunctionProject({
@@ -704,6 +705,8 @@ async function main(): Promise<number> {
         runtime: runtimeArg,
         layout: layoutArg,
         junctionsFirst: true,
+        afterEntityNew: (dir) =>
+          assertParentsIdentical(dir, scenarioArg, reference!, 'junction YAMLs → entity (before junction new)'),
         log,
       });
       try {

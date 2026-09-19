@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { junctionName } from '../config/junction-naming.js';
 import { BASE_JUNCTION_FIELD_NAMES } from '../patterns/library/base-junction-fields.js';
 
 /**
@@ -165,5 +166,5 @@ export function safeValidateJunctionDefinition(data: unknown): {
  * CAP-2's role validator (which resolves a `many` role's `via:`).
  */
 export function deriveJunctionName(def: { between: [string, string] }): string {
-	return `${def.between[0]}_${def.between[1]}`;
+	return junctionName(def.between);
 }

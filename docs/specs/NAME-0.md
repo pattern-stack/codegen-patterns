@@ -73,6 +73,8 @@ Every one of these also assumed the target's folder is a sibling (`../<plural>/`
    paths the `_inject-parent-*` templates target, the parent module class names, and every relative import (both
    directions) come from the resolved naming. Under `architecture: clean` the endpoint folder ignores `context:` (the
    clean pipeline has none) but the plural is the declared one.
+   > **2026-09-19 — JUNC-0 (#678):** the `_inject-parent-*` templates are deleted; the parents render their own
+   > fan-out through `templates/_shared/junction-fan-out.mjs` (same NAME-0 lookup). See `docs/specs/JUNC-0.md`.
 
 ## Acceptance
 
@@ -95,6 +97,8 @@ Every one of these also assumed the target's folder is a sibling (`../<plural>/`
    identifier (TS2300). New locals `rightEntityImportFromLeft` / `leftEntityImportFromRight`. The
    `_inject-parent-service-import-clp-*` and `entity.ejs.t` hand-built paths are gone too
    (`junctionEntityImportFromLeft/Right`, `left/rightEntityImportFromJunction`).
+   > **2026-09-19 — JUNC-0 (#678):** the counterparty import now comes from `junctionFanOutFor` and is deduped against
+   > the parent's composed-repository imports by path in the prompt, not by `skip_if`. See `docs/specs/JUNC-0.md`.
 3. **Field-level `foreign_key: <table>.<col>` had the mirror-image defect.** It named the entity file
    `singularize(table)` in a flat folder. The lookup now also resolves **by plural** (`lookup.byPlural`), so the
    import comes from the entity whose YAML declares that table.

@@ -61,6 +61,4 @@ export class OrganizationService extends WithAnalytics(
   async opportunities(organizationId: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
     return this.opportunityRepo.findByOrganizationId(organizationId, opts);
   }
-
-
 }

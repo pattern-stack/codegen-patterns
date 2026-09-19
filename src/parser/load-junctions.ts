@@ -29,25 +29,34 @@ export interface JunctionLoadIssue {
 export interface JunctionSet {
 	/** Every valid junction, sorted by name, with the file that declares it. */
 	junctions: Array<JunctionSummary & { file: string }>;
-	/** Every junction file (`pattern: Junction`) that failed the schema. */
+	/** Every file under the directory that is not a valid junction. */
 	issues: JunctionLoadIssue[];
 }
 
 /**
- * Every junction YAML under `dir` — a file whose top-level `pattern:` is
- * `Junction` — validated against `JunctionDefinitionSchema`. A missing
- * directory is an empty set: most projects have no junctions. Other YAML files
- * in the directory are not junctions and are ignored.
+ * Every YAML under `dir`, validated against `JunctionDefinitionSchema`. The
+ * directory holds junctions only: a file that does not parse, or is not
+ * `pattern: Junction`, is an issue — never skipped. A missing directory is an
+ * empty set: most projects have no junctions.
  */
 export function loadJunctionSet(dir: string): JunctionSet {
 	if (!fs.existsSync(dir)) return { junctions: [], issues: [] };
 	const junctions: JunctionSet['junctions'] = [];
 	const issues: JunctionLoadIssue[] = [];
 	for (const file of findYamlFiles(dir)) {
-		if (detectYamlType(file) !== 'junction') continue;
 		const result = loadJunctionFromYaml(file);
 		if (!result.success) {
-			issues.push({ file, message: result.error, details: result.details });
+			// Unparseable, or parsed but not `pattern: Junction` (a typo such as
+			// `pattern: junction` included): skipping it would silently drop the
+			// junction's fan-out from both parents — the #678 defect class.
+			const notAJunction = detectYamlType(file) !== 'junction' && !result.error.startsWith('Invalid YAML');
+			issues.push({
+				file,
+				message: notAJunction
+					? 'not a junction definition — every YAML under junctions/ must declare top-level `pattern: Junction`'
+					: result.error,
+				details: result.details,
+			});
 			continue;
 		}
 		junctions.push({
