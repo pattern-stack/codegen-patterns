@@ -161,6 +161,14 @@ resolve against.
 **Breaking:** the `clean` backend architecture is deleted. clean-lite-ps is the only
 backend pipeline (ARCH-0, #677).
 
+**Breaking:** `BaseRepository` and every family repository take a **second, required
+type parameter** — the concrete Drizzle table (REL-0, #603). Hand-written
+repositories must change `extends BaseRepository<Contact>` to
+`extends BaseRepository<Contact, typeof contacts>` (likewise
+`IntegratedEntityRepository`, `ActivityEntityRepository`, `MetadataEntityRepository`,
+`KnowledgeEntityRepository`, `JunctionIntegrationRepository`). There is no default
+and no one-argument form. Generated repositories already emit it — regenerate.
+
 ### Removed
 
 - **The `clean` backend pipeline and `generate.architecture`** (#677). The full
@@ -198,6 +206,16 @@ backend pipeline (ARCH-0, #677).
   `NodePgDatabase<typeof relations>` widens to it, and generated code reaches
   the typed handle through the generated `DrizzleDB`. Existing uses that wrote
   `DrizzleClient` unparameterised are unaffected.
+- **Capability patterns are checked more strictly at generation** (#688). A
+  `kind: 'capability'` pattern must declare a `mixin` or `forwarderMethods` —
+  `columns` alone is rejected (pattern columns are collision-checked, never
+  emitted). A `config: { <Capability>: … }` block for a capability with no
+  `configSchema` is an error instead of an unvalidated `<cap>Config` property.
+  A capability method named like an FK-traversal `findBy<Fk>` method or one of
+  the spine's inherited methods fails `entity new` instead of consumer `tsc`.
+- **`codegen dev` pushes the schema with the project's own drizzle-kit**
+  (`bunx --no-install`), never a globally fetched `@latest` (#688).
+
 - **`codegen.config.yaml` is validated, strictly, on every command** (#640).
   One schema (`CodegenConfigSchema`) is parsed once for the CLI and every
   generator it runs. An unknown or removed key, or a wrong value, stops the
@@ -305,6 +323,11 @@ backend pipeline (ARCH-0, #677).
   place the filters are assembled, and a shape test forbids `.where()` on a
   `baseQuery()` builder in `templates/` and `runtime/`. Regenerate to pick up
   the fixed finder bodies.
+- **The integration assembly picks the spine by composition** (#688). An entity
+  with `patterns: [Actor, Integrated]` + `surface:` now gets its integration
+  assembly module and default sink; the emitter used to read `patterns[0]` and
+  skip them, while the repository inherited the Integrated write surface.
+
 - **Re-running `entity new` no longer deletes junction wiring from the parents**
   (#678, JUNC-0). A junction's fan-out onto its two parents (`attach<X>` /
   `detach<X>` / `<xs>List` / `<xs>SetPrimary`, the `forwardRef` service property

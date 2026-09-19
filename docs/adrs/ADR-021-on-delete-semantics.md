@@ -156,6 +156,10 @@ The following were confirmed during implementation of issue #34:
 - **Warning comment surface (issue #41)**: the entity template emits the warning comment for every `belongs_to` column on any entity with `soft_delete` behavior, regardless of the `on_delete` value. This ensures developers see the caveat even for `restrict` (which is harmless but still surprising for soft-delete parents).
 - **Snapshot tests**: template-level (no codegen pipeline needed). Tests in `src/__tests__/clean-lite-ps/entity-fk-template.test.ts`.
 
+> **Revision 2026-09-19 (REL-0 #603, noted by REV-0 #688):** `activeParentFilter()` now takes
+> `(parentTable: PgTable, parentFkColumn: PgColumn): SQL` — the `PgTableWithColumns<any>` above went with the `any`
+> REL-0 removed from `BaseRepository`, which is now `BaseRepository<TEntity, TTable extends PgTable>`.
+
 ## References
 
 - `templates/entity/new/clean-lite-ps/entity.ejs.t` — FK column emission with `.references()`.
