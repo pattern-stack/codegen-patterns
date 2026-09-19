@@ -1539,6 +1539,16 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
       capConfigBlock != null &&
       typeof capConfigBlock === 'object' &&
       Object.keys(capConfigBlock).length > 0;
+    // A `config:` block is only meaningful against a `configSchema` — without
+    // one the mixin declares no `<cap>Config` property for the emitted
+    // `override` to fill, and nothing validates the block (#688).
+    if (hasCapConfig && !cap.configSchema) {
+      throw new Error(
+        `[codegen] entity '${entityName}' supplies a \`config: { ${cap.name}: ... }\` block, but ` +
+        `capability '${cap.name}' declares no \`configSchema\` — it takes no config. ` +
+        `Remove the block, or give the capability a configSchema (and its mixin the config property).`,
+      );
+    }
     if (cap.mixin) {
       capabilityMixins.push({
         name: cap.name,
@@ -2038,9 +2048,11 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const repositoryExtendsClause = composedBaseClass ?? capabilityChain;
 
   // Generation-time collision check (ADR-041 §4). Codegen can only see the
-  // vocabularies it generates or that a capability declares; a clash against an
-  // opaque spine base still surfaces as a consumer compile error, which ADR-041
-  // §4 accepts as irreducible.
+  // vocabularies it generates or that a pattern declares — including the
+  // spine's declared `repositoryInheritedMethods` / `serviceInheritedMethods`
+  // (#688); a clash against an undeclared method of an opaque spine base still
+  // surfaces as a consumer compile error, which ADR-041 §4 accepts as
+  // irreducible.
   //
   // Only collisions INVOLVING a capability are errors here — the `queries:` ×
   // FK-traversal overlap is pre-existing and resolved by the precedence rule
@@ -2064,6 +2076,22 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
         ...belongsTo.map((rel) => rel.relationKey),
         ...hasMany.filter((rel) => rel.targetExists).map((rel) => rel.name),
       ],
+      capability: false,
+    },
+    {
+      // repository.ejs.t's FK-traversal methods, one per belongs_to.
+      source: 'an FK-traversal method',
+      methods: belongsTo.map(
+        (rel) => `findBy${rel.camelField.charAt(0).toUpperCase()}${rel.camelField.slice(1)}`,
+      ),
+      capability: false,
+    },
+    {
+      source: `the spine '${patternBase.patternName}'`,
+      methods: [
+        ...patternBase.repositoryInheritedMethods,
+        ...patternBase.serviceInheritedMethods,
+      ].flatMap((line) => line.split(',').map((m) => m.trim()).filter(Boolean)),
       capability: false,
     },
   ]);

@@ -183,3 +183,17 @@ Revision note #6 above ("no library capability ships yet") no longer holds. The 
   because a runtime-shipped mixin must declare its surface with an interface (TS4094 under declaration emit).
 - **Registry:** a name is unique across library and app patterns. An app pattern can no longer shadow a library
   pattern.
+
+## Revision note — 2026-09-19 (REV-0, #688)
+
+Retroactive review of CAP-1 found three places where the implementation fell short of this ADR:
+
+- **§2 in the integration emitter.** The hygen locals chose the spine by composition, but the integration assembly
+  gate (`src/cli/shared/adapter-emission-generator.ts`) still read `patterns[0]`, so `patterns: [Actor, Integrated]`
+  + `surface:` inherited the Integrated repository but got no assembly or default sink. It now calls
+  `composePatterns(...).spineName`, the one spine rule.
+- **§4's "codegen-known vocabs"** now also include the FK-traversal `findBy<Fk>` methods and the spine's declared
+  `repositoryInheritedMethods` / `serviceInheritedMethods`. Only undeclared spine-base methods are left to `tsc`.
+- **§3's contribution rule.** A capability must declare a `mixin` or `forwarderMethods`; `columns` alone is rejected,
+  because pattern columns are collision-checked and never emitted. A `config:` block for a capability with no
+  `configSchema` is a generation error.

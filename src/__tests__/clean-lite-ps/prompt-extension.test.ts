@@ -862,6 +862,7 @@ describe('capability composition emission (ADR-041)', () => {
       kind: 'capability',
       mixin: 'WithCeConfigured',
       mixinImport: '@shared/base-classes/with-ce-configured',
+      configSchema: z.object({ membersColumn: z.string() }),
     });
     const locals = buildCleanLitePsLocals(
       entityWith(['CeConfigured'], { config: { CeConfigured: { membersColumn: 'status' } } }),
@@ -886,6 +887,23 @@ describe('capability composition emission (ADR-041)', () => {
     expect(locals.capabilityMixins[0].hasConfig).toBe(false);
   });
 
+  // #688: without a configSchema the mixin declares no config property, so the
+  // emitted `override <cap>Config` would not compile and nothing validates it.
+  it('a `config:` block for a capability with no configSchema throws at generation', () => {
+    registerLibraryPattern({
+      name: 'CeSchemaless',
+      kind: 'capability',
+      mixin: 'WithCeSchemaless',
+      mixinImport: '@shared/base-classes/with-ce-schemaless',
+    });
+    expect(() =>
+      buildCleanLitePsLocals(
+        entityWith(['CeSchemaless'], { config: { CeSchemaless: { anything: true } } }),
+        EMPTY_BASE_LOCALS,
+      ),
+    ).toThrow(/capability 'CeSchemaless' declares no `configSchema`/);
+  });
+
   it('a capability method colliding with a `queries:` method throws at generation', () => {
     registerLibraryPattern({
       name: 'CeColliding',
@@ -901,6 +919,42 @@ describe('capability composition emission (ADR-041)', () => {
     expect(() => buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS)).toThrow(
       /Method 'findByName' is contributed by capability 'CeColliding'/,
     );
+  });
+
+  // #688: the FK-traversal `findBy<Fk>` methods repository.ejs.t emits for every
+  // belongs_to are part of the vocabulary — a clash used to reach consumer tsc.
+  it('a capability method colliding with an FK-traversal method throws at generation', () => {
+    registerLibraryPattern({
+      name: 'CeFkColliding',
+      kind: 'capability',
+      mixin: 'WithCeFkColliding',
+      mixinImport: '@shared/base-classes/with-ce-fk-colliding',
+      forwarderMethods: ['findByOwnerId'],
+    });
+    const def = {
+      ...entityWith(['CeFkColliding']),
+      relationships: {
+        owner: { type: 'belongs_to', target: 'user', foreign_key: 'owner_id', nullable: true },
+      },
+    };
+    expect(() => buildCleanLitePsLocals(def, EMPTY_BASE_LOCALS)).toThrow(
+      /Method 'findByOwnerId' is contributed by capability 'CeFkColliding' and an FK-traversal method/,
+    );
+  });
+
+  // #688: the spine's declared inherited methods are part of the vocabulary —
+  // redeclaring one would override the base with an unrelated signature.
+  it('a capability method colliding with a spine-inherited method throws at generation', () => {
+    registerLibraryPattern({
+      name: 'CeSpineColliding',
+      kind: 'capability',
+      mixin: 'WithCeSpineColliding',
+      mixinImport: '@shared/base-classes/with-ce-spine-colliding',
+      forwarderMethods: ['findByExternalId'],
+    });
+    expect(() =>
+      buildCleanLitePsLocals(entityWith(['CeSpineColliding', 'Integrated']), EMPTY_BASE_LOCALS),
+    ).toThrow(/Method 'findByExternalId' is contributed by capability 'CeSpineColliding' and the spine 'Integrated'/);
   });
 });
 

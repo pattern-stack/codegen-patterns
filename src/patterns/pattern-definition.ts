@@ -233,8 +233,11 @@ export interface CapabilityPatternDefinition<TConfig = unknown> {
 	configProperty?: string;
 
 	/**
-	 * Columns this capability adds to every entity that declares it. Same
-	 * conflict rules as a domain pattern's columns.
+	 * Columns the capability's mixin relies on. Declarative only: the
+	 * composition validator checks them for name collisions (same rules as a
+	 * domain pattern's columns), but codegen never emits them — so they never
+	 * count as the capability's contribution; a `mixin` or `forwarderMethods`
+	 * is required.
 	 */
 	columns?: PatternColumnContribution[];
 

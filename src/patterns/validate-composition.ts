@@ -196,7 +196,23 @@ export function validatePatternComposition(
 			methods: c.forwarderMethods ?? [],
 			capability: true,
 		}));
-	for (const err of detectMethodCollisions(capabilityVocabs)) {
+	// The spine's declared inherited methods (#688) — a capability forwarder
+	// redeclaring one would override the base with an unrelated signature.
+	const spineVocab = composed.spine
+		? [
+				{
+					source: `the spine '${composed.spineName}'`,
+					methods: [
+						...(composed.spine.repositoryInheritedMethods ?? []),
+						...(composed.spine.serviceInheritedMethods ?? []),
+					].flatMap((line) =>
+						line.split(',').map((m) => m.trim()).filter(Boolean),
+					),
+					capability: false,
+				},
+			]
+		: [];
+	for (const err of detectMethodCollisions([...capabilityVocabs, ...spineVocab])) {
 		issues.push({
 			severity: 'error',
 			type: err.code,

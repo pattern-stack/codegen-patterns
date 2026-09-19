@@ -469,6 +469,14 @@ describe('ADR-041 composition rules', () => {
 			// Same vocabulary as VcGroup — the composed class can only declare it once.
 			forwarderMethods: ['members'],
 		});
+		registerLibraryPattern({
+			name: 'VcShadow',
+			kind: 'capability',
+			mixin: 'WithVcShadow',
+			mixinImport: '@shared/base-classes/with-vc-shadow',
+			// Redeclares a method every spine inherits (#688).
+			forwarderMethods: ['findById'],
+		});
 	});
 
 	test('two config-bearing bases is an error — ADR-041 §2 worked example', () => {
@@ -510,6 +518,15 @@ describe('ADR-041 composition rules', () => {
 		const collisions = issues.filter((i) => i.type === 'pattern_method_collision');
 		expect(collisions).toHaveLength(1);
 		expect(collisions[0]?.message).toContain("'members'");
+	});
+
+	test('a capability method shadowing a spine-inherited method is an error (#688)', () => {
+		const entity = makeEntity({ name: 'account', patterns: ['VcShadow', 'Integrated'] });
+		const collisions = errors(validatePatternComposition(entity)).filter(
+			(i) => i.type === 'pattern_method_collision',
+		);
+		expect(collisions).toHaveLength(1);
+		expect(collisions[0]?.message).toContain("the spine 'Integrated'");
 	});
 
 	test('a capability is never reported as an unknown pattern', () => {
