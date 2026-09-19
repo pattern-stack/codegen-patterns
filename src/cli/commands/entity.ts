@@ -547,12 +547,21 @@ export class EntityNewCommand extends Command {
 			const semanticPlan = isSemanticEnabled(ctx)
 				? regenerateSemanticModel({ ctx, entitiesDir, generatedDir, dryRun: true })
 				: null;
-			const relationsPlan = regenerateRelationsManifest({
-				ctx,
-				entitiesDir,
-				generatedDir,
-				dryRun: true,
-			});
+			// Same failure contract as the real run below: a relation-key
+			// collision is reported as an error and fails the command — never an
+			// uncaught stack trace (docs/specs/REL-1.md §3).
+			let relationsPlan: ReturnType<typeof regenerateRelationsManifest> | null = null;
+			let relationsError: string | null = null;
+			try {
+				relationsPlan = regenerateRelationsManifest({
+					ctx,
+					entitiesDir,
+					generatedDir,
+					dryRun: true,
+				});
+			} catch (err: unknown) {
+				relationsError = err instanceof Error ? err.message : String(err);
+			}
 
 			const scopePlan = await generateScopeEntityType({
 				entitiesDir,
@@ -608,6 +617,11 @@ export class EntityNewCommand extends Command {
 						entityCount: barrelPlan.entityCount,
 						modulesContent: barrelPlan.modulesContent,
 						schemaContent: barrelPlan.schemaContent,
+					},
+					relations: {
+						file: relationsPlan?.file ?? null,
+						warnings: relationsPlan?.warnings ?? [],
+						error: relationsError,
 					},
 					scopeEntityType: {
 						outputPath: scopePlan.outputPath,
@@ -682,7 +696,14 @@ export class EntityNewCommand extends Command {
 							: `semantic model (${Object.keys(semanticPlan.result.contents).length} files): ${semanticPlan.result.outDir}`,
 					);
 				}
-				printInfo(`relations manifest: ${relationsPlan.file}`);
+				if (relationsPlan) {
+					printInfo(`relations manifest: ${relationsPlan.file}`);
+					for (const warning of relationsPlan.warnings) {
+						printWarning(`relations: ${warning}`);
+					}
+				} else {
+					printError(`relations manifest generation failed — ${relationsError}`);
+				}
 				printInfo(
 					`ScopeEntityType (${scopePlan.scopeableNames.length} scopeable): ${scopePlan.outputPath}`,
 				);
@@ -690,6 +711,7 @@ export class EntityNewCommand extends Command {
 					`event codegen (${eventCodegenPlan.eventCount} events) → ${eventCodegenPlan.outputDir}`,
 				);
 			}
+			if (relationsError !== null) return 1;
 			return invalid.length > 0 && !this.continueOnError ? 1 : 0;
 		}
 

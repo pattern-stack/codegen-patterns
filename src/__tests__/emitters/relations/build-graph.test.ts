@@ -239,6 +239,57 @@ describe('buildRelationGraph — naming comes from the registry', () => {
 	});
 });
 
+describe('buildRelationGraph — transitive (`through`) relationships', () => {
+	// `foreign_key` on a transitive relationship names a column at the FAR end
+	// of the path. A direct `accounts.id → updates.opportunity_id` edge would
+	// join an account id against an opportunity FK — wrong rows, silently.
+	const ctx = context([
+		{
+			entry: registryEntry('account', 'accounts'),
+			def: definition(
+				'account',
+				'accounts',
+				{},
+				{
+					owned_opportunities: {
+						type: 'has_many',
+						target: 'opportunity',
+						foreign_key: 'account_id',
+					},
+					opportunity_updates: {
+						type: 'has_many',
+						target: 'update',
+						foreign_key: 'opportunity_id',
+						through: 'owned_opportunities.updates',
+					},
+				},
+			),
+		},
+		{ entry: registryEntry('opportunity', 'opportunities'), def: definition('opportunity', 'opportunities') },
+		{ entry: registryEntry('update', 'updates'), def: definition('update', 'updates') },
+	]);
+	const graph = buildRelationGraph(ctx);
+
+	it('emits no edge for the transitive relationship', () => {
+		const keys = graph.tables.flatMap((t) => t.edges.map((e) => `${t.table}.${e.key}`));
+		expect(keys).not.toContain('accounts.opportunityUpdates');
+		expect(graph.tables.flatMap((t) => t.edges).some((e) => e.targetTable === 'updates')).toBe(false);
+	});
+
+	it('still emits the direct relationship beside it', () => {
+		expect(edge(ctx, 'accounts', 'ownedOpportunities').to).toEqual({
+			table: 'opportunities',
+			column: 'accountId',
+		});
+	});
+
+	it('warns, naming the relationship and its path', () => {
+		expect(graph.warnings).toHaveLength(1);
+		expect(graph.warnings[0]).toContain('account.relationships.opportunity_updates');
+		expect(graph.warnings[0]).toContain("through 'owned_opportunities.updates'");
+	});
+});
+
 describe('buildRelationGraph — junctions', () => {
 	const ctx = context(
 		[

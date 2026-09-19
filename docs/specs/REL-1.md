@@ -144,6 +144,14 @@ Per-relationship rules — the whole of the semantics:
   `camelCase(pluralize(<a>_<b>))` for a junction (`templates/junction/new/prompt.js:236-240`). Junction FK columns are
   `camelCase(<endpoint>_id)` (`:258-261`).
 - **No `alias`, no `where`, no `optional` on `many`.** Per-hop predicates are REL-2's problem (§Out of scope).
+- **A transitive relationship (`through:`) is skipped, with a warning.** `through: 'owned_opportunities.updates'`
+  declares a *path*; its `foreign_key` names a column at the far end of that path, not on a table adjacent to the
+  source. The table rule above would turn it into a direct `r.many.<T>({ from: r.<self>.id, to: r.<T>.<camel(f)> })`
+  that joins the wrong columns and returns wrong rows. The graph builder emits no edge for it and adds a warning
+  naming the relationship and its path (printed by the post-step like the other skip warnings); the direct
+  relationships beside it are unaffected. **Real support is REL-2's to decide** (a nested include over the declared
+  path, or a v2 multi-hop relation). *(Added in review follow-up: REL-1 as first merged-for-review ignored `through`
+  and emitted the wrong direct edge.)*
 
 ### 3. Collision handling — loud, not silent
 
@@ -151,7 +159,10 @@ Two relation keys on the same table is a broken manifest: Drizzle would take the
 and the graph would be wrong. The emitter detects duplicates across the three sources (declared `relationships:`,
 junction-derived m2m, junction-derived row edges) and **throws** with both contributors named. The `entity new` /
 `junction new` / `relationship new` post-step catches it, prints an **error** (not the sibling post-steps' warning),
-skips the write, and makes the command exit non-zero.
+skips the write, and makes the command exit non-zero. `entity new --dry-run` follows the same contract: the planned
+manifest is built inside a `try`, a collision is printed as an error (and reported as `relations.error` under
+`--json`, with `relations.file: null`), and the dry run exits 1 — never an uncaught stack trace. *(Added in review
+follow-up; the dry-run call was originally outside any `try`.)*
 
 This is a deliberate departure from the warn-but-don't-fail convention of the other post-steps, and the reason is
 concrete: after this PR the manifest is load-bearing for compilation — `database.module.ts` imports it — so a project
@@ -211,10 +222,15 @@ Written into the emitter as comments and into this spec, so the next agent does 
   emits no `where`, so either path is open. Note for that spike: a `where` on a relation that omits `from`/`to` flips
   `isReversed` (`relations.js:60`), which re-targets the filter — irrelevant here only because REL-1 always emits
   `from`/`to`.
+- **Transitive (`through:`) relationships (REL-2).** Skipped with a warning (§2). REL-2 decides whether they become a
+  nested include over the declared path or a v2 multi-hop relation; until then no edge exists for them, so nothing can
+  traverse them with wrong join columns. `build-graph.test.ts` pins the skip.
 - **`relationship:` YAML entities** (the older first-class relationship tables, `from:`/`to:` + a `types:` enum) get
   **no** edges in REL-1. Their typed-edge semantics need a per-type `where`, which is REL-2's surface; emitting an
-  untyped m2m over them now would conflate distinct relationship types into one traversal. Their tables simply carry
-  `{}` in the manifest, which `buildRelations` handles natively.
+  untyped m2m over them now would conflate distinct relationship types into one traversal. Their tables are simply
+  **absent** from the manifest object — the emitter only writes a key for a table that has at least one edge — and
+  `defineRelations` treats an absent table as one with no relations. *(Corrected in review follow-up: this line
+  previously said they "carry `{}`".)*
 
 ## Out of scope
 
@@ -326,7 +342,7 @@ Output from the run made after the last code edit.
 |---|---|
 | `bun run typecheck` | exit 0 |
 | `bun run build` | exit 0 |
-| `bun run test` / `just test-unit` | **3205 pass**, 3 skip, 0 fail |
+| `bun run test` / `just test-unit` | **3209 pass**, 0 fail (+4 in review follow-up) |
 | `just test-all` | exit 0 — typecheck + unit + baseline + `test-smoke` + `-subsystems` (vendored + package) + `-relationship` + `-junction` + `-junction-cross-domain` + `test-junction` + `test-integration-emit` + `test-smoke-integration`, every one PASS |
 | `just test-integration` (Docker) | **68 pass**, 2 skip, 0 fail — including the 4 new round-trip tests |
 | `just test-smoke` (the `runtime/**` gate, I9) | PASS, inside `test-all` |

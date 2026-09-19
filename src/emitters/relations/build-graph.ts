@@ -131,6 +131,21 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 
 		for (const [relName, rel] of Object.entries(def.relationships)) {
 			const origin = `${entity.name}.relationships.${relName}`;
+
+			// A transitive relationship (`through: 'owned_opportunities.updates'`)
+			// is a PATH, not an edge: its `foreign_key` lives on the far end of the
+			// path, not on a table adjacent to this one. Emitting it as a direct
+			// edge `source.id → target.<foreign_key>` would join the wrong columns
+			// and return wrong rows. Skipped until REL-2 decides real support
+			// (docs/specs/REL-1.md §2).
+			if (rel.through) {
+				warnings.push(
+					`${origin}: transitive relationship (through '${rel.through}') is not a direct edge — ` +
+						`relation skipped (traversal through a path is REL-2's to design)`,
+				);
+				continue;
+			}
+
 			const target = registry.get(rel.target);
 			if (!target) {
 				warnings.push(

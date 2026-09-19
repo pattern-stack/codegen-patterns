@@ -42,7 +42,7 @@ export interface EmitRelationsResult {
 	file: string;
 	/** Planned content — always populated, useful for dry-run reports. */
 	content: string;
-	/** Non-fatal problems (unresolvable targets / junction endpoints). */
+	/** Non-fatal problems (unresolvable targets / junction endpoints, skipped transitive relationships). */
 	warnings: string[];
 	/** True when the manifest was actually written to disk. */
 	written: boolean;
