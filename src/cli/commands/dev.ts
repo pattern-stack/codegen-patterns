@@ -280,9 +280,14 @@ export class DevUpCommand extends Command {
 		if (drizzleConfig) {
 			if (!isJsonMode()) printInfo('pushing database schema...');
 			const dbUrl = `postgres://postgres:postgres@localhost:${pgPort}/codegen_dev`;
-			const push = runCmd(`bunx drizzle-kit push --config ${drizzleConfig}`, ctx.cwd);
+			// `--no-install`: use the project's own drizzle-kit. A plain `bunx`
+			// fetches `@latest` into a global cache when the project has none,
+			// which pairs a kit with an ORM line it was never built for (#688).
+			const push = runCmd(`bunx --no-install drizzle-kit push --config ${drizzleConfig}`, ctx.cwd);
 			if (!push.ok) {
-				printWarning(`schema push may have failed: ${push.stderr.slice(0, 200)}`);
+				printWarning(
+					`schema push may have failed (is drizzle-kit installed in this project?): ${push.stderr.slice(0, 200)}`,
+				);
 			} else {
 				if (!isJsonMode()) printSuccess('schema pushed');
 			}
