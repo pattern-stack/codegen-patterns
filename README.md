@@ -114,6 +114,29 @@ codegen project scan             # detect conventions → propose config
 codegen project config           # view resolved config
 ```
 
+### Studio
+
+```bash
+codegen studio                   # serve the project in the current directory
+codegen studio ../demo-app       # serve a specific project
+codegen studio --port 5200       # pick a port (default 5178)
+```
+
+Studio is a local web UI over the generator: the entity graph, a YAML editor
+that validates before it writes, a relationship form, and Generate with live
+output and a diff of what changed. It binds **127.0.0.1 only** and has no auth
+— the bind address is the security boundary.
+
+The server never reimplements generation. Every operation shells the real CLI
+with `--json` and parses its payload, so what Studio shows is what the CLI
+does. Every client-supplied path is resolved inside the project directory:
+absolute paths, `..` traversals and symlinks pointing outside are all rejected.
+
+From a checkout, `just studio` runs the server and the UI's Vite dev server
+together, and `just studio-demo` builds a real generated demo project (3
+entities, a git baseline so the diff pane has something to diff against) for it
+to operate on.
+
 ## What Gets Generated
 
 **Backend** — one layout, backend, under `paths.modules_dir` (default

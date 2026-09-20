@@ -159,6 +159,32 @@ test/                   # Cross-cutting: baseline snapshots, fixtures, scaffold 
 docs/                   # ADRs
 ```
 
+### Studio (STUDIO-0, #698)
+
+`codegen studio [projectDir]` serves a local web UI over the generator on
+`127.0.0.1:5178`. Three halves: `src/studio/server/**` (this repo), the
+contract in `src/studio/shared/api.ts`, and the UI in `tools/studio/**`.
+
+Three rules the server holds to, and that any change here must preserve:
+
+- **It never reimplements generation.** Every generator operation shells the
+  real CLI with `--json` and parses the payload, through the single helper in
+  `src/studio/server/cli-runner.ts`. Nothing else under `src/studio/server/**`
+  spawns a process. `parseCliJson` returns `null`, never `{}`, when a non-zero
+  exit printed no payload — a failed generate must not report success.
+- **Every client path is checked before it touches disk.** `resolveProjectPath`
+  (`src/studio/server/paths.ts`) rejects absolute paths, `..` traversals, and a
+  symlink whose target leaves the project — resolving the nearest *existing*
+  ancestor, so a write to a new file under a symlinked directory is checked too.
+- **A write is validated before it lands.** `PUT /api/files/:path` runs the
+  schema for the file's *location* and narrows `error.issues` to
+  `{path, message, code}`. It does not go through `loadEntityFromYaml`, which
+  flattens issues to strings and loses the path the editor needs.
+
+`just studio` runs server + Vite together; `just studio-demo` builds the demo
+project (`src/studio/demo/`), whose Postgres derives from
+`test/scaffold/harness-env.ts` — never a second derivation.
+
 ### Infrastructure Subsystems (ADR-008)
 
 Five subsystems following Protocol → Backend → Factory pattern:

@@ -163,7 +163,7 @@ function relationshipDefinitionFile(
 		// `contact_opportunitys` — and the table name drives the emitted module
 		// folder, so the default would put a misspelled directory in the diff.
 		// Every checked-in relationship fixture in this repo writes `table:` for
-		// the same reason (#698; the default itself is tracked separately).
+		// the same reason (#698). The default itself is tracked in #700.
 		table: pluralize(name),
 		from: req.from,
 		to: req.to,
