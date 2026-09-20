@@ -6,7 +6,6 @@ entity:
   name: opportunity
   plural: opportunities
   table: opportunities
-  folder_structure: nested
 
 fields:
   account_id:

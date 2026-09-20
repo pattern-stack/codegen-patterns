@@ -10,7 +10,6 @@ entity:
   plural: crews
   table: crews
   context: org
-  folder_structure: nested
 
 fields:
   name:

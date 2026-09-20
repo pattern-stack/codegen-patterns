@@ -4,7 +4,6 @@ entity:
   name: shift
   plural: shifts
   table: shifts
-  folder_structure: nested
 
 fields:
   starts_at:

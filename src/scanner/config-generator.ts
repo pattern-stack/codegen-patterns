@@ -8,24 +8,6 @@ export interface ProposedConfig {
 	framework: 'nestjs' | 'fastify' | 'express' | 'plain';
 	orm: 'drizzle' | 'prisma' | 'typeorm' | 'none';
 
-	// Layout settings — detected and reported by `project scan`; not written to
-	// codegen.config.yaml (no reader; `proposedConfigYaml` in project.ts, CFG-0)
-	folder_structure: 'nested' | 'flat';
-	file_grouping: 'separate' | 'grouped';
-
-	// Naming conventions (extended to match naming-config.schema.ts)
-	naming: {
-		fileCase: 'kebab-case' | 'camelCase' | 'PascalCase' | 'snake_case';
-		suffixes: string[];
-		// Derived from suffixes analysis
-		suffixStyle?: 'dotted' | 'suffixed' | 'worded';
-		entityInclusion?: 'always' | 'never' | 'flat-only';
-		terminology?: {
-			command?: 'command' | 'use-case';
-			query?: 'query' | 'use-case';
-		};
-	};
-
 	// Paths (inferred from architecture)
 	paths: {
 		backend_src: string;
@@ -69,33 +51,21 @@ export function generateConfig(profile: ProjectProfile): ProposedConfig {
 	const framework = profile.framework.detected;
 	const orm = profile.orm.detected;
 
-	// 2. Folder Structure: Based on architecture
-	const folder_structure = inferFolderStructure(profile.architecture.detected);
-
-	// 3. File Grouping: Direct from naming detection
-	const file_grouping = profile.naming.fileGrouping.detected;
-
-	// 4. Paths: Map from architecture detection
+	// 2. Paths: Map from architecture detection
 	const paths = inferPaths(profile);
 
-	// 5. Naming conventions (with derived fields)
-	const naming = buildNamingConfig(profile);
-
-	// 6. Generate toggles — frontend is true iff either the profile exposed an
+	// 3. Generate toggles — frontend is true iff either the profile exposed an
 	//    explicit frontend_src or an `apps/frontend/` directory exists under the
 	//    project root. There is no backend-architecture toggle: clean-lite-ps is
 	//    the only backend pipeline (ARCH-0, #677).
 	const generate = buildGenerateConfig(profile, paths);
 
-	// 7. Confidence: Calculate overall confidence
+	// 4. Confidence: Calculate overall confidence
 	const confidence = calculateConfidence(profile);
 
 	return {
 		framework,
 		orm,
-		folder_structure,
-		file_grouping,
-		naming,
 		paths,
 		generate,
 		confidence,
@@ -123,129 +93,9 @@ function buildGenerateConfig(
 	};
 }
 
-/**
- * Build naming configuration from detected patterns.
- *
- * Derives additional fields from the base detection:
- * - suffixStyle: inferred from suffix patterns (dotted, suffixed, worded)
- * - terminology: inferred from command/use-case patterns
- * - entityInclusion: defaults to flat-only (most common)
- */
-function buildNamingConfig(profile: ProjectProfile): ProposedConfig['naming'] {
-	const fileCase = profile.naming.fileCase.detected;
-	const suffixes = profile.naming.suffixes;
 
-	const result: ProposedConfig['naming'] = {
-		fileCase,
-		suffixes,
-	};
 
-	// Derive suffixStyle from suffix patterns
-	const suffixStyle = deriveSuffixStyle(suffixes);
-	if (suffixStyle) {
-		result.suffixStyle = suffixStyle;
-	}
 
-	// Derive terminology from suffix patterns
-	const terminology = deriveTerminology(suffixes);
-	if (terminology) {
-		result.terminology = terminology;
-	}
-
-	// Default entityInclusion to flat-only (most common pattern)
-	result.entityInclusion = 'flat-only';
-
-	return result;
-}
-
-/**
- * Derive suffix style from detected suffixes.
- *
- * Analyzes suffix patterns to determine:
- * - dotted: .entity.ts, .service.ts (starts with .)
- * - suffixed: Entity.ts, Service.ts (PascalCase suffix)
- * - worded: -entity.ts, -service.ts (hyphenated)
- *
- * Minimum confidence: 50% of suffixes must match a pattern.
- */
-function deriveSuffixStyle(suffixes: string[]): 'dotted' | 'suffixed' | 'worded' | undefined {
-	if (suffixes.length === 0) return undefined;
-
-	let dottedCount = 0;
-	let wordedCount = 0;
-	let suffixedCount = 0;
-
-	for (const suffix of suffixes) {
-		if (suffix.startsWith('.')) {
-			dottedCount++;
-		} else if (suffix.startsWith('-')) {
-			wordedCount++;
-		} else if (/^[A-Z]/.test(suffix)) {
-			suffixedCount++;
-		}
-	}
-
-	const total = suffixes.length;
-	const threshold = total * 0.5;
-
-	if (dottedCount >= threshold) return 'dotted';
-	if (wordedCount >= threshold) return 'worded';
-	if (suffixedCount >= threshold) return 'suffixed';
-
-	return undefined;
-}
-
-/**
- * Derive terminology from detected suffixes.
- *
- * Checks for use-case vs command/query patterns:
- * - .use-case.ts → { command: 'use-case', query: 'use-case' }
- * - .command.ts → { command: 'command' }
- * - .query.ts → { query: 'query' }
- */
-function deriveTerminology(
-	suffixes: string[]
-): { command?: 'command' | 'use-case'; query?: 'query' | 'use-case' } | undefined {
-	const hasUseCase = suffixes.some(
-		(s) => s.includes('use-case') || s.includes('usecase') || s.includes('UseCase')
-	);
-	const hasCommand = suffixes.some((s) => s.includes('command') || s.includes('Command'));
-	const hasQuery = suffixes.some((s) => s.includes('query') || s.includes('Query'));
-
-	if (!hasUseCase && !hasCommand && !hasQuery) {
-		return undefined;
-	}
-
-	const result: { command?: 'command' | 'use-case'; query?: 'query' | 'use-case' } = {};
-
-	if (hasUseCase) {
-		result.command = 'use-case';
-		result.query = 'use-case';
-	} else {
-		if (hasCommand) result.command = 'command';
-		if (hasQuery) result.query = 'query';
-	}
-
-	return Object.keys(result).length > 0 ? result : undefined;
-}
-
-/**
- * Infer folder structure preference from architecture type.
- *
- * Layered and feature architectures benefit from nested structures.
- * MVC and flat architectures typically use flat layouts.
- */
-function inferFolderStructure(architecture: 'layered' | 'feature' | 'mvc' | 'flat'): 'nested' | 'flat' {
-	switch (architecture) {
-		case 'layered':
-		case 'feature':
-			return 'nested';
-		case 'mvc':
-		case 'flat':
-		default:
-			return 'flat';
-	}
-}
 
 /**
  * Infer project paths from architecture detection and project structure.

@@ -311,6 +311,44 @@ describe('entity.sync — per-entity frontend sync mode', () => {
 // Generate Config
 // ============================================================================
 
+describe('entity layout keys — deleted by ARCH-1 (#682)', () => {
+	// `folder_structure` / `file_grouping` chose between the deleted `clean`
+	// pipeline's directory layouts; `behavior_strategy` chose between its
+	// base-class and inline repository bodies. clean-lite-ps emits one module
+	// folder per entity and always extends a base class, so each is now an
+	// unrecognized key rather than an accepted no-op.
+	const base = {
+		entity: { name: 'test', plural: 'tests', table: 'tests' },
+		fields: { id: { type: 'uuid', required: true } },
+	};
+
+	for (const [key, value] of [
+		['folder_structure', 'nested'],
+		['file_grouping', 'separate'],
+		['behavior_strategy', 'base_class'],
+	] as const) {
+		it(`entity.${key} is an unrecognized key`, () => {
+			const result = EntityDefinitionSchema.safeParse({
+				...base,
+				entity: { ...base.entity, [key]: value },
+			});
+			expect(result.success).toBe(false);
+			if (!result.success) {
+				expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
+				expect(JSON.stringify(result.error.issues)).toContain(key);
+			}
+		});
+	}
+
+	it('entity.expose survives — the frontend emitter reads it', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			entity: { ...base.entity, expose: ['repository', 'rest'] },
+		});
+		expect(result.success).toBe(true);
+	});
+});
+
 describe('generate config', () => {
 	it('applies defaults when block is empty', () => {
 		const result = GenerateConfigSchema.safeParse({});
@@ -341,6 +379,16 @@ describe('generate config', () => {
 		if (!result.success) {
 			expect(result.error.issues[0].path).toEqual(['analytics']);
 			expect(result.error.issues[0].message).toContain('generate.semantic');
+		}
+	});
+
+	it('rejects the deleted clean-only knobs (ARCH-1)', () => {
+		// naming / database / behaviors were top-level blocks; only the deleted
+		// `clean` templates read them. See path-defaults.test.ts for the
+		// file-naming form of each error.
+		for (const key of ['naming', 'database', 'behaviors']) {
+			const result = GenerateConfigSchema.safeParse({ [key]: {} });
+			expect(result.success).toBe(false);
 		}
 	});
 

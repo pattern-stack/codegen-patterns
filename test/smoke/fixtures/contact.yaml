@@ -7,7 +7,6 @@ entity:
   plural: contacts
   table: contacts
   pattern: Integrated
-  folder_structure: nested
 
 fields:
   account_id:

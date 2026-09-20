@@ -6,7 +6,6 @@ entity:
   name: memo
   plural: memos
   table: memos
-  folder_structure: nested
 
 fields:
   body:

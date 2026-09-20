@@ -592,40 +592,9 @@ const BehaviorConfigSchema = z.union([
 
 export type BehaviorConfig = z.infer<typeof BehaviorConfigSchema>;
 
-/**
- * Behavior strategy for repository code generation
- * - base_class: Extend BaseRepository (DRY, recommended)
- * - inline: Generate all code directly (WET, full transparency)
- */
-const BehaviorStrategySchema = z.enum(["base_class", "inline"]);
-
-export type BehaviorStrategy = z.infer<typeof BehaviorStrategySchema>;
-
 // ============================================================================
 // Entity Configuration
 // ============================================================================
-
-/**
- * Layout: Folder structure - controls directory nesting
- * - nested: domain/opportunity/opportunity.entity.ts
- * - flat: domain/opportunity.entity.ts
- */
-const FolderStructureSchema = z.enum(["nested", "flat"]).default("nested");
-
-/**
- * Layout: File grouping - controls how related code is organized
- * - separate: Each concern in its own file (entity.ts, repository.interface.ts)
- * - grouped: Related concerns combined into index.ts
- *
- * This is orthogonal to folder_structure:
- * | folder_structure | file_grouping | Result |
- * |-----------------|---------------|--------|
- * | nested | separate | domain/opportunity/opportunity.entity.ts |
- * | nested | grouped  | domain/opportunity/index.ts (combined) |
- * | flat   | separate | domain/opportunity.entity.ts |
- * | flat   | grouped  | domain/opportunity.ts (combined) |
- */
-const FileGroupingSchema = z.enum(["separate", "grouped"]).default("separate");
 
 /**
  * Expose configuration - which layers to generate for this entity
@@ -650,14 +619,6 @@ const EntityConfigSchema = z
     plural: z.string().regex(/^[a-z][a-z0-9_]*$/, "Plural must be lowercase"),
     table: z.string().regex(/^[a-z][a-z0-9_]*$/, "Table must be lowercase"),
 
-    // Layout options (orthogonal concerns)
-    // folder_structure: controls directory nesting
-    // file_grouping: controls file organization
-    folder_structure: FolderStructureSchema.optional(),
-    file_grouping: FileGroupingSchema.optional(),
-
-    // Per-entity behavior strategy override (overrides codegen.config.yaml)
-    behavior_strategy: BehaviorStrategySchema.optional(),
     // Which layers to generate (default: all)
     expose: z
       .array(ExposeLayerSchema)

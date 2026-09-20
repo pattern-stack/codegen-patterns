@@ -5,7 +5,6 @@ entity:
   name: opportunity
   plural: opportunities
   table: opportunities
-  folder_structure: nested
   scopeable: true
 
 fields:

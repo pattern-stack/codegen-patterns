@@ -25,7 +25,6 @@ function serializeEntity(entity: ParsedEntity): Record<string, unknown> {
 		name: entity.name,
 		plural: entity.plural,
 		table: entity.table,
-		folderStructure: entity.folderStructure,
 		fields: mapToObject(entity.fields),
 		relationships: mapToObject(entity.relationships),
 		behaviors: entity.behaviors,

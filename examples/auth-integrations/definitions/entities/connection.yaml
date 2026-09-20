@@ -13,7 +13,6 @@ entity:
   plural: connections
   table: connections
   pattern: Base
-  folder_structure: nested
 
 fields:
   user_id:

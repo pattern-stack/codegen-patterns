@@ -1,7 +1,6 @@
 /**
  * The project's parsed `codegen.config.yaml`, for the hygen-side helpers
- * (`paths.mjs`, `locations.mjs`, `naming-config.mjs`) and the prompts that read
- * them.
+ * (`paths.mjs`) and the prompts that read them.
  *
  * Parsed and validated once by `project-config.ts` (CFG-0, #640) — the same
  * loader the CLI uses. An invalid file throws `CodegenConfigError` here, at

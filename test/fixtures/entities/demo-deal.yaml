@@ -4,7 +4,6 @@ entity:
   plural: deals
   table: deals
   pattern: Integrated
-  folder_structure: nested
 
 fields:
   name:

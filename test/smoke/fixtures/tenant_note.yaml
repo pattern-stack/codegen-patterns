@@ -30,7 +30,6 @@ entity:
   plural: tenant_notes
   table: tenant_notes
   pattern: Base
-  folder_structure: nested
 
 tenant_scoped: true
 

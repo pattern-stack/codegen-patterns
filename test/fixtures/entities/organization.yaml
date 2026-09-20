@@ -5,7 +5,6 @@ entity:
   name: organization
   plural: organizations
   table: organizations
-  folder_structure: nested
   expose:
     - repository
     - electric

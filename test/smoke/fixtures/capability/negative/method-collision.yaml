@@ -9,7 +9,6 @@ entity:
   plural: colliders
   table: colliders
   patterns: [Colliding]
-  folder_structure: nested
 
 fields:
   email:

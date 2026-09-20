@@ -5,7 +5,6 @@ entity:
   name: squad
   plural: squads
   table: squads
-  folder_structure: nested
 
 fields:
   name:

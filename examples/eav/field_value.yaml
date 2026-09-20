@@ -12,7 +12,6 @@ entity:
   plural: field_values
   table: field_values
   pattern: Metadata
-  folder_structure: nested
 
 fields:
   # Must match the enum in field_definition.yaml.

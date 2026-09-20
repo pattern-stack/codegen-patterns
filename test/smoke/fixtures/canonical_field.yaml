@@ -8,7 +8,6 @@ entity:
   plural: canonical_fields
   table: canonical_fields
   pattern: Base
-  folder_structure: nested
 
 fields:
   name:

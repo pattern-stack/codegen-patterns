@@ -144,12 +144,6 @@ console.log('-'.repeat(60));
 console.log(`# codegen.config.yaml
 framework: ${nestJsConfig.framework}
 orm: ${nestJsConfig.orm}
-folder_structure: ${nestJsConfig.folder_structure}
-file_grouping: ${nestJsConfig.file_grouping}
-
-naming:
-  fileCase: ${nestJsConfig.naming.fileCase}
-  suffixes:${nestJsConfig.naming.suffixes.map(s => `\n    - ${s}`).join('')}
 
 paths:
   backend_src: ${nestJsConfig.paths.backend_src}

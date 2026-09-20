@@ -11,7 +11,6 @@ entity:
   plural: field_definitions
   table: field_definitions
   pattern: Metadata
-  folder_structure: nested
 
 fields:
   # Customize this enum for the entity types in your app that support EAV.
