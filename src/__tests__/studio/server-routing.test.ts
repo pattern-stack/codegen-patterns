@@ -49,7 +49,10 @@ async function fakeUpstream(): Promise<{ origin: string; close: () => Promise<vo
 
 describe('serving the built UI', () => {
 	it('answers /api even with no UI to serve, and 404s the UI with a build hint', async () => {
-		const s = await createStudioServer({ projectDir, port: 0, uiDir: '/nonexistent' });
+		// No `uiDir` asked for at all. An EXPLICIT one that is missing is a
+		// startup error instead — see server-static.test.ts; asking for a UI
+		// and silently getting none is a different thing from not asking.
+		const s = await createStudioServer({ projectDir, port: 0 });
 		try {
 			const health = await fetch(`${s.url}/api/health`);
 			expect(health.status).toBe(200);

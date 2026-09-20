@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createStudioServer } from '../../studio/server/index';
+import { UiDirError, createStudioServer } from '../../studio/server/index';
 
 let root: string;
 let projectDir: string;
@@ -212,5 +212,51 @@ describe('containment', () => {
 			const res = await fetch(`${url}/${encodeURIComponent('../dist-secret/leak.js')}`);
 			expect(res.status).toBe(403);
 		});
+	});
+});
+
+describe('an explicit --ui-dir that is not a built UI fails at startup', () => {
+	/**
+	 * `tools/studio/dist` is gitignored and built on demand, so pointing at a
+	 * checkout where nobody ran the build used to start fine and then serve
+	 * 404s naming no cause — the #716 shape again: the browser gets something
+	 * that is not the app, and the error does not say why.
+	 */
+	it('refuses a --ui-dir that does not exist, naming the path and the fix', async () => {
+		const missing = path.join(root, 'no-such-dist');
+		await expect(createStudioServer({ projectDir, port: 0, uiDir: missing })).rejects.toThrow(
+			UiDirError,
+		);
+		await expect(
+			createStudioServer({ projectDir, port: 0, uiDir: missing }),
+		).rejects.toThrow('bun run build');
+	});
+
+	it('refuses a directory with no index.html — an unbuilt or half-built tree', async () => {
+		const empty = path.join(root, 'empty-dist');
+		fs.mkdirSync(empty, { recursive: true });
+		await expect(createStudioServer({ projectDir, port: 0, uiDir: empty })).rejects.toThrow(
+			'no index.html',
+		);
+	});
+
+	it('refuses a --ui-dir that is a file rather than a directory', async () => {
+		const file = path.join(root, 'not-a-dir.txt');
+		fs.writeFileSync(file, 'hi');
+		await expect(createStudioServer({ projectDir, port: 0, uiDir: file })).rejects.toThrow(
+			'not a directory',
+		);
+	});
+
+	it('still starts API-only when NO --ui-dir was asked for', async () => {
+		// Not asking for a UI is a different thing from asking and getting
+		// none: `just studio` relies on this when tools/studio is absent.
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const res = await fetch(`${s.url}/api/health`);
+			expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+		} finally {
+			await s.close();
+		}
 	});
 });

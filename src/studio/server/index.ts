@@ -243,23 +243,64 @@ class BadRequestError extends Error {
 }
 
 /** Resolve the built UI directory, or null when there is nothing to serve. */
-function resolveUiDir(explicit?: string): string | null {
-	// ABSOLUTE and symlink-resolved, always. Returning the path as given meant
-	// a relative `--ui-dir tools/studio/dist` was compared against an absolute
-	// candidate in the containment check below, which then failed for EVERY
-	// request — so every asset fell through to index.html and the UI was a
-	// black screen with "Failed to load module script" (#716). The dev proxy
-	// path has no such check, which is why only the built-UI path broke.
-	const candidate = explicit
-		? path.resolve(explicit)
-		: // `src/studio/server` → repo root → tools/studio/dist
-			path.resolve(import.meta.dirname, '..', '..', '..', 'tools', 'studio', 'dist');
-	if (!fs.existsSync(candidate)) return null;
-	try {
-		return fs.realpathSync(candidate);
-	} catch {
-		return candidate;
+/** Thrown when `--ui-dir` names something that is not a built UI. */
+export class UiDirError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'UiDirError';
 	}
+}
+
+/**
+ * The built UI to serve, or null when there is none to serve.
+ *
+ * ABSOLUTE and symlink-resolved, always. Returning the path as given meant a
+ * relative `--ui-dir tools/studio/dist` was compared against an absolute
+ * candidate in the containment check below, which then failed for EVERY
+ * request — so every asset fell through to index.html and the UI was a black
+ * screen with "Failed to load module script" (#716). The dev proxy path has no
+ * such check, which is why only the built-UI path broke.
+ *
+ * An EXPLICIT `--ui-dir` that is missing or unbuilt throws rather than
+ * starting: `tools/studio/dist` is gitignored and built on demand, so pointing
+ * at a checkout where nobody ran the build would otherwise serve 404s and name
+ * no cause — the same failure shape as #716. Asking for a UI and silently
+ * getting none is a different thing from not asking.
+ */
+function resolveUiDir(explicit?: string): string | null {
+	const real = (p: string) => {
+		try {
+			return fs.realpathSync(p);
+		} catch {
+			return p;
+		}
+	};
+
+	if (explicit) {
+		const candidate = path.resolve(explicit);
+		if (!fs.existsSync(candidate)) {
+			throw new UiDirError(
+				`no built UI at ${candidate} — run \`bun run build\` in tools/studio, or omit --ui-dir`,
+			);
+		}
+		if (!fs.statSync(candidate).isDirectory()) {
+			throw new UiDirError(`--ui-dir is not a directory: ${candidate}`);
+		}
+		if (!fs.existsSync(path.join(candidate, 'index.html'))) {
+			throw new UiDirError(
+				`${candidate} has no index.html — it is not a built UI. Run \`bun run build\` in tools/studio.`,
+			);
+		}
+		return real(candidate);
+	}
+
+	// `src/studio/server` → repo root → tools/studio/dist. Absent is fine here:
+	// nobody asked for a UI, and the API alone is useful (`just studio` relies
+	// on this when tools/studio is not in the checkout).
+	const candidate = path.resolve(import.meta.dirname, '..', '..', '..', 'tools', 'studio', 'dist');
+	if (!fs.existsSync(candidate)) return null;
+	if (!fs.existsSync(path.join(candidate, 'index.html'))) return null;
+	return real(candidate);
 }
 
 /**
@@ -324,7 +365,12 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 		return Promise.reject(new Error(`Project directory does not exist: ${options.projectDir}`));
 	}
 
-	const uiDir = resolveUiDir(options.uiDir);
+	let uiDir: string | null;
+	try {
+		uiDir = resolveUiDir(options.uiDir);
+	} catch (err: unknown) {
+		return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+	}
 	const viteOrigin = options.viteOrigin;
 	const cliVersion = options.cliVersion ?? 'unknown';
 	const registry = new RunRegistry();
