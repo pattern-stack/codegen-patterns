@@ -188,21 +188,20 @@ paths:
 
 generate:
   frontend: false              # Emit frontend pipeline? (default: false)
-
-naming:
-  fileCase: kebab-case       # kebab-case | PascalCase | camelCase | snake_case
-  suffixStyle: dotted        # dotted (.entity.ts) | suffixed (Entity.ts)
-  terminology:
-    command: use-case         # command | use-case
-    query: query              # query | use-case
 ```
 
 Key config sections:
 - **paths** — where generated backend/frontend code lands
 - **generate** — toggle which outputs are produced
-- **naming** — control file casing, suffix style, class naming
-- **locations** — override output paths and import aliases
+- **locations** — override the frontend emitter's output paths and import aliases
+  (`dbEntities`, `frontendGenerated`, `frontendCollectionsAuth`)
 - **frontend.sync** — configure Electric SQL shape URLs and column mapping
+
+The file is validated strictly: an unknown or removed key stops every `codegen` command
+with an error naming the key and the file. `naming:`, `database:` and `behaviors:` were
+deleted with the `clean` pipeline (ARCH-1, #682), so a config that still sets one fails
+to load — delete the block. The full reference is `docs/CONSUMER-SETUP.md`
+› `codegen.config.yaml`.
 
 ## Run Tests
 

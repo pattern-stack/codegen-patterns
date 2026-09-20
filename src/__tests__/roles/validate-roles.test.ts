@@ -40,7 +40,6 @@ function entity(
 		table: `${name}s`,
 		patterns: opts.patterns,
 		expose: ['repository', 'rest', 'trpc'],
-		folderStructure: 'nested',
 		fields: new Map(),
 		relationships: new Map(),
 		roles: opts.roles ? new Map(opts.roles.map((r) => [r.name, r])) : undefined,

@@ -13,7 +13,6 @@ function makeEntity(partial: Partial<ParsedEntity>): ParsedEntity {
 		plural: 'contacts',
 		table: 'contacts',
 		expose: ['repository', 'rest', 'trpc'],
-		folderStructure: 'nested',
 		fields: new Map(),
 		relationships: new Map(),
 		behaviors: [],
