@@ -181,11 +181,18 @@ export interface RelationshipOptions {
 	name?: string;
 	/** Inverse accessor name on the target entity. */
 	inverse?: string;
-	/** Junction table name for `many_to_many`. */
+	/** Junction / relationship definition name for `many_to_many`. */
 	through?: string;
-	/** Whether the foreign key is required. */
+	/** Whether the foreign key is required. `belongs_to` only. */
 	required?: boolean;
-	onDelete?: 'cascade' | 'set null' | 'restrict';
+	/** FK cascade action. `belongs_to` only; spelled as `OnDeleteSchema`. */
+	onDelete?: 'restrict' | 'cascade' | 'set_null' | 'no_action';
+	/** `many_to_many` only — relationship subtypes (`types:` in the YAML). */
+	types?: string[];
+	/** `many_to_many` only — emit temporal columns. Schema default true. */
+	temporal?: boolean;
+	/** `many_to_many` only — emit sourcing columns. Schema default true. */
+	sourced?: boolean;
 }
 
 export interface RelationshipPreviewFile {
