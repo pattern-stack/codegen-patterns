@@ -169,6 +169,19 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'constants/tokens.ts', target: 'src/shared/constants/tokens.ts' },
 	// Events protocol — imported transitively by base-service + lifecycle-events
 	{ runtime: 'subsystems/events/event-bus.protocol.ts', target: 'src/shared/subsystems/events/event-bus.protocol.ts' },
+	// The generated typed bus facade (`subsystems/events/generated/bus.ts`,
+	// emitted by the event codegen post-step) imports exactly three vendored
+	// siblings — `eventsRuntimeImports()` in event-codegen-generator.ts:114-118
+	// is the closed list: `../event-bus.protocol` (above), `../events.tokens`
+	// and `../events-errors`. Only the protocol was vendored, so every
+	// vendored-runtime project shipped a `generated/bus.ts` that could not
+	// compile (#575 for the errors module; the tokens module had the same gap).
+	// `events-errors.ts` has no relative imports; `events.tokens.ts` imports
+	// `../token-key`, which is why that file is here too. If the generated bus
+	// ever grows a fourth `../` import, it belongs in this block.
+	{ runtime: 'subsystems/events/events-errors.ts', target: 'src/shared/subsystems/events/events-errors.ts' },
+	{ runtime: 'subsystems/events/events.tokens.ts', target: 'src/shared/subsystems/events/events.tokens.ts' },
+	{ runtime: 'subsystems/token-key.ts', target: 'src/shared/subsystems/token-key.ts' },
 	// Pipes — ZodValidationPipe is wired on every generated controller
 	// @Body() to give runtime Zod validation at the controller boundary.
 	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'src/shared/pipes/zod-validation.pipe.ts' },
@@ -204,13 +217,20 @@ function databaseModuleContent(mode: RuntimeMode): string {
 	const drizzleTokenImport =
 		mode === 'vendored' ? '../constants/tokens' : runtimeImport(mode, 'constants/tokens');
 	return `import { Module, Global } from '@nestjs/common';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import * as schema from '../../schema';
 import { DRIZZLE } from '${drizzleTokenImport}';
 
 export { DRIZZLE };
-export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
+
+/**
+ * The Drizzle client type this project injects under DRIZZLE.
+ *
+ * Drizzle 1.0's generic slot on NodePgDatabase is the relations manifest
+ * (\`defineRelations()\`), not the table schema. No manifest is emitted yet,
+ * so the default (\`EmptyRelations\`) is the accurate type.
+ */
+export type DrizzleDB = NodePgDatabase;
 
 /**
  * DatabaseModule — provides the DRIZZLE injection token globally.
@@ -225,7 +245,9 @@ export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
         const pool = new Pool({
           connectionString: process.env.DATABASE_URL ?? 'postgresql://localhost:5432/app_dev',
         });
-        return drizzle(pool, { schema });
+        // Drizzle 1.0 takes a config object; \`schema\` was removed from it.
+        // The relations manifest belongs here as \`relations\` once emitted.
+        return drizzle({ client: pool });
       },
     },
   ],

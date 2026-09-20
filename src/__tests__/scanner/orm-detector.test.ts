@@ -68,7 +68,7 @@ export const users = pgTable('users', {
 				join(srcDir, 'db.ts'),
 				`import { drizzle } from 'drizzle-orm/node-postgres';
 
-export const db = drizzle(pool);`
+export const db = drizzle({ client: pool });`
 			);
 
 			const result = await detectORM(TEST_DIR);

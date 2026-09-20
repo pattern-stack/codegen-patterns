@@ -12,7 +12,7 @@ You are running `@pattern-stack/codegen` (installed as a sibling repo, workspace
 
 - **Bun** 1.0+ or **Node** 20+
 - **NestJS** 10+
-- **Drizzle ORM** (currently `drizzle-orm@^0.30`; see [Troubleshooting](#troubleshooting) for the 0.45 caveat)
+- **Drizzle ORM** on the 1.0 line — `drizzle-orm@^1.0.0-rc.4`, installed by you as a peer (see [Drizzle in a generated project](./consumer/drizzle.md))
 - **TypeScript** 5+ with `"strict": true` and decorator metadata enabled
 - A running Postgres you can point at with a `DATABASE_URL`
 
@@ -85,13 +85,12 @@ Every generated repository expects the `DRIZZLE` injection token to resolve to a
 ```ts
 // shared/database/database.module.ts
 import { Module, Global } from '@nestjs/common';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import * as schema from '../../schema';
 import { DRIZZLE } from '../constants/tokens';
 
 export { DRIZZLE };
-export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
+export type DrizzleDB = NodePgDatabase;
 
 /**
  * DatabaseModule — provides the DRIZZLE injection token globally.
@@ -106,7 +105,7 @@ export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
         const pool = new Pool({
           connectionString: process.env.DATABASE_URL,
         });
-        return drizzle(pool, { schema });
+        return drizzle({ client: pool });
       },
     },
   ],
@@ -120,7 +119,7 @@ Requirements the generator relies on:
 1. **`@Global()`** — generated repositories don't import `DatabaseModule` themselves; they inject `DRIZZLE` directly. Only a global provider satisfies that.
 2. **Provides `DRIZZLE`** — must use the exact token re-exported from `@shared/constants/tokens`.
 3. **Exports `DRIZZLE`** — so other modules can consume it.
-4. **Client constructed with full schema** — `drizzle(pool, { schema })` where `schema` is `export * from './generated/schema'`. Passing the schema object enables typed relational queries.
+4. **Client constructed with the 1.0 config object** — `drizzle({ client: pool })`. Drizzle 1.0 **removed** `schema` from the pg config (`DrizzlePgConfig = Omit<DrizzleConfig, 'schema'>`); the generic slot is now the `defineRelations()` manifest, which codegen does not emit yet. Generated repositories import their table directly, so nothing needs the schema object — `src/generated/schema.ts` exists for drizzle-kit. See [Drizzle in a generated project](./consumer/drizzle.md).
 
 ## `DRIZZLE` injection token
 
@@ -761,12 +760,13 @@ The CLI can't locate its templates dir. Default path resolves relative to the CL
 export CODEGEN_TEMPLATES_DIR=/path/to/codegen-patterns/templates
 ```
 
-### Type errors referencing `shouldInlineParams` or `PgColumn`
+### Type errors referencing private Drizzle internals, or `Property 'table' … is not assignable`
 
-Two incompatible `drizzle-orm` versions in the resolved module graph. The generator's runtime base classes must typecheck against the same `drizzle-orm` version your generated entities do. Options:
+Two incompatible `drizzle-orm` copies in the resolved module graph. The runtime base classes must typecheck against the same `drizzle-orm` your generated entities do — `drizzle-orm` is a **peer dependency** of `@pattern-stack/codegen` precisely so that there is only one. Fix the resolution, in this order:
 
-1. Pin `drizzle-orm` to one version across consumer + runtime (workspace dedupe, or matching versions in two sibling repos).
-2. Use `drizzle-orm@^0.30.x` for now — the runtime base classes aren't yet on the 0.45 API (tracked in `DOGFOOD-LOG.md`).
+1. Make sure your project declares `drizzle-orm` on the 1.0 line (`^1.0.0-rc.4`) and that nothing else in the tree pins an older major. `bun pm ls drizzle-orm` / `npm ls drizzle-orm` should show exactly one version.
+2. In a monorepo, dedupe it at the workspace root rather than per package.
+3. **If you `bun link` / `npm link` the generator**, its own dev copy of `drizzle-orm` is still on disk next to it, and a linked package resolves its own `node_modules` first — so you get two copies even with a correct declaration. Either install the generator from a tarball (`npm pack` → `bun add ./pattern-stack-codegen-*.tgz`, which is what `just test-post-publish` exercises), or force resolution with a tsconfig `paths` entry mapping `drizzle-orm` (and `drizzle-orm/*`) at your own copy. `preserveSymlinks` also works, with the usual caveats.
 
 ### `Types have separate declarations of a private property 'shouldInlineParams'`
 
@@ -787,4 +787,5 @@ It shouldn't — that's a bug. File an issue. The only files codegen writes are 
 - [ADR-017 — Barrel Files over Hygen Injects](./adrs/ADR-017-barrel-files-over-injects.md) — why `@shared/*` exists and why codegen never mutates your files
 - [ADR-015 — CLI Command Architecture](./adrs/ADR-015-cli-command-architecture.md) — install forms and the noun-verb interface
 - [ADR-031 — App-Defined Patterns](./adrs/ADR-031-app-defined-patterns.md) — `pattern:` / `patterns:` / `config:` surface; supersedes the legacy ADR-005 `family:` enum
+- [consumer/drizzle.md](./consumer/drizzle.md) — the Drizzle 1.0 peer range, the `drizzle({ client })` constructor, and drizzle-kit's 1.0 migration-folder layout
 - [GETTING-STARTED.md](./GETTING-STARTED.md) — entity YAML authoring and the generator lifecycle

@@ -3,6 +3,13 @@
  *
  * Pure bun:test with `drizzle-orm/pg-proxy` — no Postgres, no Docker.
  *
+ * Param shapes under Drizzle 1.0: the pg codec system hands `jsonb` bind
+ * params to the driver callback as the **raw JS object** (0.45 pre-stringified
+ * them via the column's `mapToDriverValue`). `pg` does that serialization
+ * itself, so the object is the real wire contract — assert on the value, not
+ * on a substring of a string. `Date` params are still stringified to ISO by
+ * pg-proxy. See docs/specs/DRZ-2.md §A6.
+ *
  * Covers:
  *   - `startRun` INSERTs integration_runs row and returns the generated id
  *   - `recordItem` runs FieldDiffSchema.parse BEFORE the DB call — a
@@ -80,10 +87,8 @@ describe('DrizzleIntegrationRunRecorder — single-tenant', () => {
         cursorBefore: { systemModstamp: '2026-04-21' },
       });
       const [{ params }] = captures;
-      const cursorParam = params.find(
-        (p) => typeof p === 'string' && p.includes('systemModstamp'),
-      );
-      expect(cursorParam).toBeDefined();
+      // cursor_before is jsonb: bound as the object itself under 1.0.
+      expect(params).toContainEqual({ systemModstamp: '2026-04-21' });
     });
 
     it('throws when INSERT RETURNING produces no rows (driver misbehavior)', async () => {
@@ -126,11 +131,8 @@ describe('DrizzleIntegrationRunRecorder — single-tenant', () => {
       expect(params).toContain('ext-1');
       expect(params).toContain('updated');
       expect(params).toContain('success');
-      // changedFields serialized as JSON string containing the key.
-      const diffParam = params.find(
-        (p) => typeof p === 'string' && p.includes('amount'),
-      );
-      expect(diffParam).toBeDefined();
+      // changed_fields is jsonb: bound as the FieldDiff object itself.
+      expect(params).toContainEqual({ amount: { from: 100, to: 120 } });
     });
 
     it('rejects malformed changedFields BEFORE the DB call (ADR-0003)', async () => {

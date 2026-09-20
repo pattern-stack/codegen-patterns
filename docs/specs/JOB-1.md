@@ -234,8 +234,11 @@ export {
 **Unit (no Docker, no Postgres).** `src/__tests__/runtime/subsystems/job-orchestration.schema.spec.ts` (co-located with other subsystem unit tests; `just test-unit` only discovers tests under `src/__tests__/`):
 
 - Import smoke: `import { jobs, jobRuns, jobSteps }` does not throw and each is a non-null object.
-- Column presence on `job_run`: use Drizzle's `getTableColumns(jobRuns)` to enumerate columns, then assert keys `id`, `jobType`, `status`, `pool`, `runAt`, `tenantId`, `waitKind`, `resumeToken`, `waitDeadline`, `rootRunId`, `parentRunId`, `concurrencyKey`, `dedupeKey` are all present. (The `_.columns` internal-API access from the original draft is not reliable across Drizzle versions; `getTableColumns` is the documented helper.)
-- Column presence on `job_step`: use `getTableColumns(jobSteps)` and assert `id`, `jobRunId`, `stepId`, `seq`, `kind`, `status`, `output`.
+- Column presence on `job_run`: use Drizzle's column-enumeration helper to list columns, then assert keys `id`, `jobType`, `status`, `pool`, `runAt`, `tenantId`, `waitKind`, `resumeToken`, `waitDeadline`, `rootRunId`, `parentRunId`, `concurrencyKey`, `dedupeKey` are all present. (The `_.columns` internal-API access from the original draft is not reliable across Drizzle versions; the documented helper is.)
+- Column presence on `job_step`: same helper, asserting `id`, `jobRunId`, `stepId`, `seq`, `kind`, `status`, `output`.
+
+> **2026-09-17 (DRZ-2, #584):** the helper named here was `getTableColumns`. Drizzle 1.0 deprecates it in favour of
+> `getColumns`, and these specs' tests were migrated. The assertions are unchanged.
 - Enum values: assert `jobRunStatusEnum.enumValues` includes `'waiting'` and `'timed_out'`.
 - Type check (compile-time only): assign a full literal row to `JobRunRow` — verifies `InferSelectModel` resolved without `any` widening.
 

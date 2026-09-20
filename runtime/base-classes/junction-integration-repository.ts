@@ -84,14 +84,17 @@ export abstract class JunctionIntegrationRepository<
         ? [this.table[cfg.left.column], this.table[cfg.right.column], this.table[cfg.roleColumn]]
         : [this.table[cfg.left.column], this.table[cfg.right.column]];
 
-      const rows = await db
+      // `as Record<string, unknown>[]` — see BaseRepository.create: 1.0 types
+      // an insert's `.returning()` off `table['$inferSelect']`, which is `any`
+      // here, so the result is a union whose non-array arm is unreachable (#603).
+      const rows = (await db
         .insert(this.table)
         .values(values as never)
         .onConflictDoUpdate({
           target,
           set: { ...(this.behaviors.timestamps ? { updatedAt: now } : {}) } as never,
         })
-        .returning();
+        .returning()) as Record<string, unknown>[];
 
       const saved = rows[0] as Record<string, unknown>;
       return this.toProjection(saved as TEntity, w, provider);

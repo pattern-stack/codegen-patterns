@@ -32,6 +32,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { consumerErrors as scopeToConsumer } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -40,14 +41,14 @@ const FIXTURES_DIR = path.join(REPO_ROOT, 'test', 'smoke', 'fixtures');
 const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 
 // Same pinned set as the main smoke — must stay in sync if the main smoke's
-// list moves.
+// list moves. drizzle-orm is pinned exactly to the repo's devDep prerelease.
 const RUNTIME_DEPS = [
 	'@nestjs/common@10',
 	'@nestjs/core@10',
 	'@nestjs/platform-express@10',
 	'@nestjs/swagger@7',
 	'@anatine/zod-openapi@2',
-	'drizzle-orm@0.45',
+	'drizzle-orm@1.0.0-rc.4',
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',
@@ -77,38 +78,6 @@ function runSilent(cmd: string, cwd: string): { code: number; out: string; err: 
 	const parts = cmd.split(' ');
 	const r = spawnSync(parts[0], parts.slice(1), { cwd, encoding: 'utf-8' });
 	return { code: r.status ?? 0, out: r.stdout ?? '', err: r.stderr ?? '' };
-}
-
-/**
- * Mirror of `filterConsumerErrors` in run-smoke.ts (kept narrow + duplicated
- * intentionally — extracting to a shared module would add cross-script
- * coupling for two tiny consumers). Filters out the documented pre-existing
- * runtime-tree noise (drizzle 0.30↔0.45 mismatch, mixin-erasure on
- * declarative queries) so any NEW tsc error in the consumer tree fails the
- * smoke loudly.
- */
-function filterConsumerErrors(output: string): string[] {
-	const lines = output.split('\n').filter((l) => l.trim());
-	const errors: string[] = [];
-	for (const line of lines) {
-		if (line.includes('../') || line.includes('/codegen-patterns/runtime/')) continue;
-		if (line.includes('node_modules/')) continue;
-		if (line.includes('TS5101')) continue;
-		if (!/error TS\d+:/.test(line)) continue;
-		if (/\.schema\.ts\(\d+,\d+\): error/.test(line)) continue;
-		if (line.includes("Property 'table' in type") && line.includes('not assignable')) continue;
-		if (line.includes('Cannot assign an abstract constructor')) continue;
-		if (/Argument of type .* is not assignable to parameter of type 'Constructor<\{\}>'/.test(line)) {
-			continue;
-		}
-		if (
-			/Property '(findBy[A-Z]\w*|findById|findAll|list|findWithDeleted|findOnlyDeleted)'/.test(line)
-		) {
-			continue;
-		}
-		errors.push(line);
-	}
-	return errors;
 }
 
 function cleanup(dir: string): void {
@@ -386,7 +355,7 @@ async function vendoredLeg(): Promise<number> {
 		//    generation + full-tree typecheck, zero errors, no excludes.
 		log('running bunx tsc --noEmit --skipLibCheck (full consumer tree, no subsystem excludes)');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
-		const errs = filterConsumerErrors(tsc.out + tsc.err);
+		const errs = scopeToConsumer(tsc.out + tsc.err);
 		if (errs.length > 0) {
 			for (const line of errs) console.error(line);
 			logError(`${errs.length} typecheck error(s) in consumer-emitted code`);
@@ -515,7 +484,31 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 						// NO `baseUrl` — TS7 removed it (TS5102). The `paths`
 						// value below is an ABSOLUTE path, so baseUrl was inert
 						// here anyway.
-						paths: { '*': [path.join(tmpDir, 'node_modules', '*')] },
+						paths: {
+							// The package is not installed in checkout mode, so
+							// `@pattern-stack/codegen/...` specifiers in emitted
+							// files cannot resolve through node_modules. Map them
+							// onto this checkout's own source instead.
+							//
+							// This used to be handled by DROPPING every tsc line
+							// mentioning `'@pattern-stack/codegen/`, which accepted
+							// any unresolved package specifier — including a wrong
+							// one (#576). Mapping it means the gate now proves the
+							// specifier resolves to a file that exists. It resolves
+							// against `runtime/` SOURCE rather than the published
+							// `dist/`; the export-map/dist contract is what
+							// `just test-post-publish` gates.
+							'@pattern-stack/codegen/runtime/*': [
+								path.join(REPO_ROOT, 'runtime', '*'),
+							],
+							'@pattern-stack/codegen/subsystems': [
+								path.join(REPO_ROOT, 'runtime', 'subsystems', 'index.ts'),
+							],
+							'@pattern-stack/codegen': [
+								path.join(REPO_ROOT, 'src', 'index.ts'),
+							],
+							'*': [path.join(tmpDir, 'node_modules', '*')],
+						},
 					},
 					include: ['src/**/*'],
 				},
@@ -525,12 +518,7 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 			'utf-8',
 		);
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', checkDir);
-		// Tolerate ONLY the unresolvable `@pattern-stack/codegen/` JobWorkerModule
-		// import (the package isn't installed in checkout mode) — same precedent as
-		// run-smoke.ts. Any OTHER error in the worker is a real bug.
-		return filterConsumerErrors(tsc.out + tsc.err).filter(
-			(line) => !line.includes("'@pattern-stack/codegen/"),
-		);
+		return scopeToConsumer(tsc.out + tsc.err);
 	} finally {
 		try {
 			fs.rmSync(checkDir, { recursive: true, force: true });

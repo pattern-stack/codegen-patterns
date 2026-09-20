@@ -49,7 +49,7 @@ const RUNTIME_DEPS = [
   '@nestjs/platform-express@10',
   '@nestjs/swagger@7',
   '@anatine/zod-openapi@2',
-  'drizzle-orm@0.45',
+  'drizzle-orm@1.0.0-rc.4',
   'reflect-metadata@0.2',
   'pg@8',
   'zod@3',

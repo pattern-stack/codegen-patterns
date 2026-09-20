@@ -273,7 +273,7 @@ maybe('LISTEN-NOTIFY-2 — app.close() releases every wake listener', () => {
       // listeners came up → close → assert zero survive.
       for (let cycle = 0; cycle < 5; cycle++) {
         const pool = new Pool({ connectionString });
-        const db = drizzle(pool) as unknown as DrizzleClient;
+        const db = drizzle({ client: pool }) as unknown as DrizzleClient;
 
         const app = await NestFactory.createApplicationContext(
           makeAppModule(db),
@@ -304,7 +304,7 @@ maybe('LISTEN-NOTIFY-2 — app.close() releases every wake listener', () => {
     try {
       for (let cycle = 0; cycle < 5; cycle++) {
         const pool = new Pool({ connectionString });
-        const db = drizzle(pool) as unknown as DrizzleClient;
+        const db = drizzle({ client: pool }) as unknown as DrizzleClient;
         const app = await NestFactory.createApplicationContext(
           makeAppModule(db),
           { logger: false },
