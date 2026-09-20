@@ -39,6 +39,7 @@ import {
 	generateEventCodegen,
 } from '../shared/event-codegen-generator.js';
 import { validateEntityEmits } from '../../parser/validate-emits.js';
+import { validateSemanticModel } from '../../parser/validate-semantic.js';
 import {
 	generateProviderModules,
 	resolveTsconfigAliases,
@@ -376,6 +377,26 @@ export class EntityNewCommand extends Command {
 			).length;
 			if (noEmitsCount > 0) {
 				printInfo(`${noEmitsCount} entities missing emits:`);
+			}
+		}
+
+		// SEM-1: pre-flight cross-validate the declared semantic model. The
+		// catalog the emitter will build is one flat namespace across entities,
+		// so an unresolvable metric leg or a duplicate measure key can only be
+		// caught with the whole set in hand — which the emits pre-flight above
+		// already loaded. Same continue-on-error contract as emits:.
+		const semanticIssues: AnalysisIssue[] = validateSemanticModel(
+			allEntitiesForEmits,
+			emitsTargetEntities,
+		);
+		const semanticErrors = semanticIssues.filter((i) => i.severity === 'error');
+
+		if (semanticErrors.length > 0 && !this.continueOnError) {
+			if (!isJsonMode()) {
+				for (const e of semanticErrors) {
+					printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
+				}
+				return 1;
 			}
 		}
 

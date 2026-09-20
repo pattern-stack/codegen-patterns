@@ -15,8 +15,8 @@
  *     degradation instead of a boot failure.
  *
  * Phase-1 scope (epic #195): five reads composed from four sibling ports.
- * Cross-subsystem JOIN analytics are deferred to the Cube.js layer
- * (ADR-025 §Phase-1 scope note; skill §5).
+ * Cross-subsystem JOIN analytics belong to the semantic query layer
+ * (query-surface over the generated semantic model, ADR-045; skill §5).
  */
 
 import type {

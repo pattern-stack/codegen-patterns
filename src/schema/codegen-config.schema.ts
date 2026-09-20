@@ -32,10 +32,14 @@ import { z } from "zod";
  *   was the v0.2 dogfood bug).
  * - `frontend`: whether to emit the frontend pipeline at all. Defaults to
  *   `false` so backend-only projects don't get a half-built frontend tree.
+ * - `semantic`: whether to emit the semantic model. Same shape and default as
+ *   `frontend`; replaces the pre-SEM-1 `analytics: none | cube` enum, whose
+ *   cube branch never had an emitter.
  *
  * Additional untyped keys are permitted (passthrough) so the many template
  * toggles already read directly off `generate.*` in `prompt.js` keep working
- * without each needing a schema entry here.
+ * without each needing a schema entry here. The one exception is the removed
+ * `analytics` key, which is rejected by name.
  */
 export const GenerateConfigSchema = z
   .object({
@@ -53,13 +57,30 @@ export const GenerateConfigSchema = z
      */
     frontend: z.boolean().default(false),
     /**
-     * Analytics backend to generate.
-     * - 'none': no analytics layer (default)
-     * - 'cube': generate cube.js semantic layer and analytics providers
+     * Whether to emit the semantic model — the declared `AggregateModel` the
+     * semantic-query layer runs against, built from the `role` / `agg` /
+     * `aggs` / `additivity` / `time` field tags and the entity `analytics:`
+     * block (SEM-1, ADR-045). Default false, mirroring `frontend`.
+     *
+     * Declared here by SEM-1; the emitter it gates lands in SEM-2, so nothing
+     * reads it yet.
      */
-    analytics: z.enum(['none', 'cube']).default('none'),
+    semantic: z.boolean().default(false),
   })
-  .passthrough();
+  .passthrough()
+  // The pre-SEM-1 `analytics: none | cube` switch is gone (ADR-045). Passthrough
+  // would otherwise carry it through silently — the same "stripped silently"
+  // class SEM-1 closed for field tags with `.strict()` — so reject it by name.
+  .superRefine((data, ctx) => {
+    if ('analytics' in data) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['analytics'],
+        message:
+          "'generate.analytics' was removed by SEM-1 (ADR-045) — use 'generate.semantic: true' to emit the semantic model",
+      });
+    }
+  });
 
 export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
 

@@ -342,6 +342,15 @@ describe('generate config', () => {
 		if (result.success) expect(result.data.frontend).toBe(true);
 	});
 
+	it('rejects the removed analytics key by name (SEM-1)', () => {
+		const result = GenerateConfigSchema.safeParse({ analytics: 'cube' });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0].path).toEqual(['analytics']);
+			expect(result.error.issues[0].message).toContain('generate.semantic');
+		}
+	});
+
 	it('passes through unknown keys (legacy toggles)', () => {
 		const result = GenerateConfigSchema.safeParse({
 			architecture: 'clean',

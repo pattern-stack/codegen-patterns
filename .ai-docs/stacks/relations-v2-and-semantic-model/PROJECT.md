@@ -159,6 +159,7 @@ Append-only. A decision that changes an invariant or the target picture also get
 | Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | YAML for atomic tags + pure composites; adapter for data-driven | Doug (confirm at SEM-1) |
 | Q5 | The `clean` backend pipeline (#602): repair it and gate it, or retire it? | nothing in this project; CAP/REL are `clean-lite-ps`-only | retire — no users, "no backwards compat", and every REL/CAP unit already skips it | Doug |
 | Q6 | Cut 0.31.0 when unit 1 merges, or hold until REL-1 refills the relations slot? | release only | cut it: the peer-dependency change and honest gates are worth shipping; note the empty relations slot in the changelog | Doug |
+| Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | **Decided by default at SEM-1 (#590)** per this recommendation — YAML for atomic tags + pure composites, adapter for data-driven — and built. Recorded in ADR-045 §Decision 7. Reversing it now means moving the composite metric schema out of the entity YAML. | Doug (confirm) |
 
 ## 8. Risks
 

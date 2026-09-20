@@ -6,6 +6,7 @@
  */
 
 import { loadEntities, loadRelationships, resolveReferences, resolveRelationshipReferences } from './parser';
+import { validateSemanticModel } from './parser/validate-semantic.js';
 import { buildDomainGraph, checkConsistency, computeStatistics } from './analyzer';
 import {
 	validatePatternComposition,
@@ -102,6 +103,11 @@ export async function analyzeDomain(
 		domainPatternNames: getAllPatternNames(),
 	});
 
+	// SEM-1 — semantic model cross-check. Runs over the whole set because the
+	// measure catalog is one flat namespace: metric legs may name measures on
+	// another entity, and both names must be unique across entities.
+	const semanticIssues = validateSemanticModel(entities);
+
 	// Compute statistics
 	const statistics = computeStatistics(graph);
 
@@ -115,6 +121,7 @@ export async function analyzeDomain(
 		...patternIssues,
 		...patternProjectIssues,
 		...orchestrationProjectIssues,
+		...semanticIssues,
 	];
 
 	// Determine validity (only errors make it invalid)

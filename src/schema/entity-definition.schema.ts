@@ -72,59 +72,70 @@ export type UiImportance = z.infer<typeof UiImportanceSchema>;
  * if not explicitly specified in the YAML definition.
  */
 // ============================================================================
-// Semantic / Analytics Metadata Types
+// Analytics / Semantic Metadata Types (SEM-1)
 // ============================================================================
 
-const AnalyticsAggregationSchema = z.enum([
-  'sum',
-  'min',
-  'max',
+/**
+ * The aggregation vocabulary. Deliberately identical to the semantic-query
+ * package's `Agg` union — emitting an aggregation it does not know produces a
+ * model it refuses at load. `average`/`median`/`percentile`/`sum_boolean` from
+ * the pre-SEM-1 cube vocabulary have no equivalent and are gone (ADR-045).
+ */
+const AggSchema = z.enum([
   'count',
   'count_distinct',
-  'average',
-  'median',
-  'percentile',
-  'sum_boolean',
+  'sum',
+  'avg',
+  'min',
+  'max',
 ]);
 
-const AnalyticsDimensionTypeSchema = z.enum(['categorical', 'time']);
-
-const AnalyticsEntityTypeSchema = z.enum(['primary', 'unique', 'foreign', 'natural']);
-
-const AnalyticsTimeGranularitySchema = z.enum(['day', 'week', 'month', 'quarter', 'year']);
-
-const AnalyticsVisibilitySchema = z.enum(['internal', 'agent', 'public']);
-
-const NonAdditiveDimensionSchema = z.union([
-  z.string(),
-  z.object({
-    name: z.string(),
-    window_choice: z.string().optional(),
-    window_groupings: z.array(z.string()).optional(),
-  }),
-]);
+export type Agg = z.infer<typeof AggSchema>;
 
 /**
- * Semantic Metadata Schema - Optional field-level analytics properties
+ * Whether a measure may be summed.
  *
- * Controls how a field is exposed to the cube.js semantic layer:
- * measures, dimensions, entities, and their configuration.
+ * - `additive` — summable across every dimension.
+ * - `semi`     — summable across some dimensions but not the time axis
+ *                (a balance: summing it across `time: true` double-counts).
+ * - `non`      — never summable (a rate, a percentage, an average).
+ *
+ * Required on every `role: measure` field. It is not inferable from
+ * `type: decimal`, and the consuming package treats the field as the
+ * authority — a catalog measure may tighten a field's additivity but never
+ * loosen it.
  */
-const SemanticMetadataSchema = z.object({
-  measure: z.boolean().optional(),
-  analytics_aggregation: AnalyticsAggregationSchema.optional(),
-  agg_time_dimension: z.string().optional(),
-  non_additive_dimension: NonAdditiveDimensionSchema.optional(),
-  dimension: z.boolean().optional(),
-  dimension_type: AnalyticsDimensionTypeSchema.optional(),
-  time_granularity: AnalyticsTimeGranularitySchema.optional(),
-  is_partition: z.boolean().optional(),
-  entity: z.boolean().optional(),
-  entity_type: AnalyticsEntityTypeSchema.optional(),
-  entity_role: z.string().optional(),
-  analytics_visibility: AnalyticsVisibilitySchema.optional(),
-  semantic_expr: z.string().optional(),
-  semantic_label: z.string().optional(),
+const AdditivitySchema = z.enum(['additive', 'semi', 'non']);
+
+export type Additivity = z.infer<typeof AdditivitySchema>;
+
+/**
+ * Field-level analytics tags (SEM-1, ADR-045).
+ *
+ * The field IS the measure or dimension; aggregation is config on it. These
+ * five keys are the whole declared surface — `type`, the physical `column` and
+ * `hasDeclaredDomain` are DERIVED at emit time from `type:`, the naming config
+ * and `choices` / `choices_from`, and declaring them here would be a second
+ * declaration of what the YAML already says.
+ */
+const AnalyticsFieldSchema = z.object({
+  /** `measure` = something you aggregate; `dimension` = something you group or filter by. */
+  role: z.enum(['measure', 'dimension']).optional(),
+  /** The single aggregation for this measure. Mutually exclusive with `aggs`. */
+  agg: AggSchema.optional(),
+  /**
+   * The allowed aggregations for this measure. Yields one catalog entry per
+   * agg, keyed `<field>.<agg>` (`amount.sum`, `amount.avg`). A field declaring
+   * the single `agg` instead is keyed by its bare name.
+   */
+  aggs: z.array(AggSchema).optional(),
+  /** Required on measures. See `AdditivitySchema`. */
+  additivity: AdditivitySchema.optional(),
+  /**
+   * Marks the time axis. A semi-additive measure may not be summed across it.
+   * Only `date` / `datetime` fields may carry it; grains are query-time.
+   */
+  time: z.boolean().optional(),
 });
 
 const UiMetadataSchema = z.object({
@@ -205,7 +216,13 @@ const BaseFieldSchema = z.object({
 /**
  * Field Definition Schema - Combines base fields with optional UI metadata
  */
-const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema).merge(SemanticMetadataSchema)
+const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
+  .merge(AnalyticsFieldSchema)
+  // Strict since SEM-1: a field key we do not declare is an author error, not
+  // something to strip silently. Without this, YAML still carrying a removed
+  // key (`measure: true`, `dimension_type: time`) parses to a field with no
+  // tags at all and the author never learns the key is gone.
+  .strict()
   .refine((data) => !(data.required === true && data.nullable === true), {
     message:
       "'required: true' and 'nullable: true' cannot both be set. A required field cannot be null.",
@@ -317,20 +334,65 @@ const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema).merge(Sema
       path: ["choices"],
     },
   )
+  // --------------------------------------------------------------------------
+  // Analytics field tags (SEM-1). Rules F1-F7 of docs/specs/SEM-1.md.
+  // --------------------------------------------------------------------------
+  .refine((data) => !(data.role === 'measure' && !data.agg && !data.aggs), {
+    // F1
+    message:
+      "'role: measure' requires an aggregation — declare 'agg' (one) or 'aggs' (an allowed set)",
+    path: ['agg'],
+  })
+  .refine((data) => !(data.role === 'measure' && !data.additivity), {
+    // F2
+    message:
+      "'role: measure' requires 'additivity' (additive | semi | non). It cannot be inferred from the field type, and the semantic layer reads the field as the authority on whether the measure may be summed.",
+    path: ['additivity'],
+  })
+  .refine((data) => !(data.agg && data.aggs), {
+    // F3
+    message:
+      "'agg' and 'aggs' are mutually exclusive — declare one aggregation or an allowed set, not both. They produce different catalog keys ('amount' vs 'amount.sum').",
+    path: ['aggs'],
+  })
+  .refine((data) => !data.aggs || data.aggs.length > 0, {
+    // F4a
+    message: "'aggs' must list at least one aggregation",
+    path: ['aggs'],
+  })
+  .refine((data) => !data.aggs || new Set(data.aggs).size === data.aggs.length, {
+    // F4b
+    message: "'aggs' must not repeat an aggregation",
+    path: ['aggs'],
+  })
+  .superRefine((data, ctx) => {
+    // F5 — reported at each dangling key, not at `role`, so the author is
+    // pointed at the configuration that has nothing to configure.
+    if (data.role === 'measure') return;
+    for (const key of ['agg', 'aggs', 'additivity'] as const) {
+      if (data[key] === undefined) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `'${key}' is measure configuration — it requires 'role: measure'`,
+        path: [key],
+      });
+    }
+  })
   .refine(
-    (data) => {
-      // If measure is true, analytics_aggregation must be present
-      if (data.measure === true && !data.analytics_aggregation) {
-        return false;
-      }
-      return true;
-    },
+    (data) => data.time !== true || data.type === 'date' || data.type === 'datetime',
     {
+      // F6
       message:
-        "When 'measure' is true, 'analytics_aggregation' must be specified",
-      path: ["analytics_aggregation"],
+        "'time: true' marks the time axis and requires a temporal field type ('date' or 'datetime')",
+      path: ['time'],
     },
-  );
+  )
+  .refine((data) => !(data.time === true && data.role === 'measure'), {
+    // F7
+    message:
+      "'time: true' is the axis a semi-additive measure may not be summed across — a measure is not that axis. Use 'role: dimension'.",
+    path: ['time'],
+  });
 
 export type FieldDefinition = z.infer<typeof FieldDefinitionSchema>;
 
@@ -730,78 +792,132 @@ const EventDeclarationSchema = z.object({
 export type EventDeclaration = z.infer<typeof EventDeclarationSchema>;
 
 // ============================================================================
-// Analytics Block (entity-level)
+// Analytics Block (entity-level) — the composite metric catalog (SEM-1)
 // ============================================================================
 
 /**
- * Simple metric in a YAML metric definition
+ * One node of a derived metric's expression tree.
+ *
+ * `{ ref }` names an ATOMIC measure (a `role: measure` field's catalog key);
+ * `{ lit }` is a finite numeric weight; `{ op, left, right }` is one of the
+ * closed four arithmetic operators. The tree is authored directly rather than
+ * parsed from a string: this is the exact shape the semantic layer validates
+ * and lowers, so a string form would mean maintaining a parser whose only job
+ * is to rebuild it.
  */
-const SimpleMetricSchema = z.object({
-  type: z.literal('simple'),
-  measure: z.string(),
-  agg: AnalyticsAggregationSchema.optional(),
-  filter: z.string().optional(),
-  description: z.string().optional(),
-  label: z.string().optional(),
-});
+export type DerivedExpr =
+  | { ref: string }
+  | { lit: number }
+  | { op: '+' | '-' | '*' | '/'; left: DerivedExpr; right: DerivedExpr };
+
+const DerivedExprSchema: z.ZodType<DerivedExpr> = z.lazy(() =>
+  z.union([
+    z.object({ ref: z.string().min(1) }).strict(),
+    z
+      .object({
+        lit: z
+          .number()
+          .refine(Number.isFinite, { message: "'lit' must be a finite number" }),
+      })
+      .strict(),
+    z
+      .object({
+        op: z.enum(['+', '-', '*', '/']),
+        left: DerivedExprSchema,
+        right: DerivedExprSchema,
+      })
+      .strict(),
+  ]),
+);
+
+/** Does this expression tree reference at least one atomic measure? (Rule E1.) */
+function derivedExprHasRef(node: DerivedExpr): boolean {
+  if ('ref' in node) return true;
+  if ('op' in node) return derivedExprHasRef(node.left) || derivedExprHasRef(node.right);
+  return false;
+}
 
 /**
- * Derived metric — expression combining other metrics
+ * Ratio metric — numerator / denominator, each naming an atomic measure.
+ * Computed as arithmetic over the two collapsed legs, so it inherits
+ * fan-out safety from them. Always non-additive.
  */
-const DerivedMetricSchema = z.object({
-  type: z.literal('derived'),
-  expr: z.string(),
-  metrics: z.array(z.string()),
-  description: z.string().optional(),
-  label: z.string().optional(),
-});
+const RatioMetricSchema = z
+  .object({
+    type: z.literal('ratio'),
+    numerator: z.string().min(1),
+    denominator: z.string().min(1),
+    label: z.string().optional(),
+  })
+  .strict();
 
 /**
- * Ratio metric — numerator / denominator
+ * Derived metric — an arithmetic expression over atomic measure legs
+ * (`gross_profit = revenue - cost`). Always non-additive.
  */
-const RatioMetricSchema = z.object({
-  type: z.literal('ratio'),
-  numerator: z.union([z.string(), SimpleMetricSchema]),
-  denominator: z.union([z.string(), SimpleMetricSchema]),
-  filter: z.string().optional(),
-  description: z.string().optional(),
-  label: z.string().optional(),
-});
+const DerivedMetricSchema = z
+  .object({
+    type: z.literal('derived'),
+    expr: DerivedExprSchema,
+    label: z.string().optional(),
+  })
+  .strict();
 
 /**
- * Cumulative metric — time-series accumulation
+ * Cumulative metric — a running total over an atomic measure, ordered by a
+ * time or sequence column and optionally restarting per partition. It
+ * preserves rows rather than collapsing them, so the semantic layer enumerates
+ * it but routes it to its windowed query path.
  */
-const CumulativeMetricSchema = z.object({
-  type: z.literal('cumulative'),
-  measure: z.string(),
-  window: z.string().optional(),
-  grain_to_date: AnalyticsTimeGranularitySchema.optional(),
-  description: z.string().optional(),
-  label: z.string().optional(),
-});
+const CumulativeMetricSchema = z
+  .object({
+    type: z.literal('cumulative'),
+    measure: z.string().min(1),
+    order_by: z.string().min(1),
+    partition_by: z.string().min(1).optional(),
+    label: z.string().optional(),
+  })
+  .strict();
 
 /**
- * Discriminated union of all four metric types
+ * A composite metric. There is no `simple` kind: a simple metric IS a
+ * `role: measure` field, and the atomic catalog is derived from those tags.
  */
 const MetricDefinitionSchema = z.discriminatedUnion('type', [
-  SimpleMetricSchema,
-  DerivedMetricSchema,
   RatioMetricSchema,
+  DerivedMetricSchema,
   CumulativeMetricSchema,
 ]);
 
 export type MetricDefinition = z.infer<typeof MetricDefinitionSchema>;
 
 /**
- * Entity-level analytics block
+ * Entity-level `analytics:` block — the composite half of the measure catalog.
  *
- * Declared in the YAML under `analytics:` alongside fields and relationships.
+ * The block is an AUTHORING HOME, not a scope: the emitted catalog is one flat
+ * namespace, so a metric declared here may name legs that live on another
+ * entity. That is why metric-name uniqueness and leg resolution are
+ * cross-entity checks (`src/parser/validate-semantic.ts`), not Zod rules.
  */
-const AnalyticsBlockSchema = z.object({
-  measure_packs: z.array(z.string()).optional(),
-  cube_name: z.string().optional(),
-  metrics: z.record(z.string(), MetricDefinitionSchema).optional(),
-});
+const AnalyticsBlockSchema = z
+  .object({
+    metrics: z.record(z.string(), MetricDefinitionSchema).optional(),
+  })
+  .strict()
+  .superRefine((block, ctx) => {
+    // E1 — lives here rather than on DerivedMetricSchema because a Zod
+    // discriminated union may not hold a refined (ZodEffects) member, and
+    // because the metric NAME is only in scope at this level.
+    for (const [name, metric] of Object.entries(block.metrics ?? {})) {
+      if (metric.type === 'derived' && !derivedExprHasRef(metric.expr)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['metrics', name, 'expr'],
+          message: `derived metric '${name}': the expression must reference at least one measure — a pure-literal metric is meaningless`,
+        });
+      }
+    }
+  });
 
 export type AnalyticsBlock = z.infer<typeof AnalyticsBlockSchema>;
 
@@ -939,8 +1055,9 @@ export const EntityDefinitionSchema = z
       )
       .optional(),
 
-    // v2: Analytics / semantic layer configuration
-    // Cube.js measure packs, custom cube name, and metric definitions
+    // Analytics / semantic layer (SEM-1, ADR-045): the composite metric
+    // catalog. Atomic measures are the `role: measure` field tags, not
+    // entries here.
     analytics: AnalyticsBlockSchema.optional(),
 
     // Composite (multi-column) unique indexes (#356). Single-column uniqueness

@@ -226,13 +226,20 @@ of the cardinality graph; introspection was the package's workaround for hosts w
 
 ### 5.2 SEM-1 — vocabulary
 
+> **Shipped 2026-09-17 (#590). `docs/specs/SEM-1.md` and ADR-045 are the post-implementation truth**; this section is
+> the pre-implementation plan, corrected below where it was wrong. Three things later units need: (1) an atomic measure
+> key is `<field>.<agg>` when the field declares `aggs:` and the bare `<field>` when it declares a single `agg:` —
+> `deriveAtomicMeasureKeys` in `src/parser/validate-semantic.ts` is the one derivation, and SEM-2 must NOT emit atomic
+> catalog entries because the package derives them; (2) `FieldDefinitionSchema` is now `.strict()`, so any later unit
+> adding a field key must declare it; (3) the cube runtime island and the `@cubejs-client/core` peer are deleted.
+
 Replace, do not extend (nothing consumes the current keys; see §1):
 
 | Today (`SemanticMetadataSchema`, field level) | After | Notes |
 |---|---|---|
-| `measure: true` + `analytics_aggregation` | `role: measure` + `agg` (default) and/or `aggs` (allowed set) | the field IS the measure; aggregation is config on it |
+| `measure: true` + `analytics_aggregation` | `role: measure` + `agg` (one) **or** `aggs` (allowed set) | the field IS the measure; aggregation is config on it. Built as mutually exclusive, not "and/or": the package's `meta.aggs ?? [meta.agg]` would silently drop `agg`, and the two produce different catalog keys |
 | `dimension: true`, `dimension_type: categorical` | `role: dimension` | `hasDeclaredDomain` derives from `choices`/pg-enum at emit time |
-| `dimension_type: time`, `time_granularity`, `agg_time_dimension`, `is_partition` | `time: true` | grains are query-time in the package; validate `time` only on date/datetime/timestamp fields |
+| `dimension_type: time`, `time_granularity`, `agg_time_dimension`, `is_partition` | `time: true` | grains are query-time in the package; validated on `date` / `datetime` only — those are the repo's only temporal field types, there is no `timestamp` — and rejected on a measure |
 | `non_additive_dimension` (MetricFlow shape) | `additivity: additive \| semi \| non` | **required** when `role: measure` — additivity cannot be inferred from `number` |
 | `entity`, `entity_type`, `entity_role`, `semantic_expr`, `semantic_label`, `analytics_visibility` | dropped | keys/roles come from `relationships:`; label/visibility already ride `ui_*` (ADR-040) |
 | `AnalyticsAggregationSchema`: `average, median, percentile, sum_boolean` | `avg`; the other three dropped | package `Agg` = `count \| count_distinct \| sum \| avg \| min \| max` |
@@ -244,12 +251,22 @@ author it as a tree in YAML or add a tiny parser; recommend the tree, it is what
 { measure, order_by, partition_by }`. `simple` metrics disappear: they are the field tags.
 
 Config: `generate.analytics: none | cube` → `generate.semantic: boolean` (default false), mirroring
-`generate.frontend`. `@cubejs-client/core` leaves `peerDependenciesMeta`.
+`generate.frontend`. `@cubejs-client/core` leaves `peerDependenciesMeta` — **and `peerDependencies` and
+`devDependencies`**: its only consumer was `runtime/subsystems/analytics/cube-backend.ts`, so dropping the peer while
+keeping the lazy import would ship an undeclared dependency. SEM-1 deleted the whole cube island
+(`runtime/analytics/**`, `runtime/subsystems/analytics/**`, its spec). `runtime/base-classes/with-analytics.ts` —
+the unrelated `analytics?: any` DI slot on every generated service — stays.
 
-Parser: mirror `mapUi()` in `src/parser/load-entities.ts:41-58` with `mapAnalytics()` → `ParsedField.analytics`;
-`ParsedEntity.analytics` for the catalog block. Validation (in the Zod refine, like `queries:`): `role: measure`
-requires `agg`/`aggs` and `additivity`; `time` requires a temporal type; a `ratio` leg must name an atomic measure that
-exists on some entity; a `derived` leaf likewise.
+Parser: mirror `parseUiMetadata()` in `src/parser/load-entities.ts` with `parseAnalyticsMetadata()` →
+`ParsedField.analytics` (always present, every key optional, like `ParsedField.ui`); `ParsedEntity.analytics` for the
+composite block. Validation splits in two, and the split is not optional: per-file rules (`role: measure` requires
+`agg`/`aggs` and `additivity`; `time` requires a temporal type and not a measure; expression-tree structure) are Zod
+refinements, while **leg resolution is cross-entity** — the catalog is one flat namespace, so a metric may name legs on
+another entity, and measure keys and metric names must be unique across the whole set. That half lives in
+`src/parser/validate-semantic.ts`, a pure `ParsedEntity[] → AnalysisIssue[]` function mirroring `validate-emits.ts`,
+wired into both `analyzeDomain()` (so `entity validate` reports it) and the `entity new` pre-flight (so it gates).
+Note also: the E1 "a derived expression must reference a measure" rule sits on the entity-level block, not on the
+metric — a Zod discriminated union may not hold a refined (`ZodEffects`) member.
 
 ### 5.3 SEM-2 — emitter
 
@@ -295,8 +312,13 @@ step as a manual gate in the spec.
   for anything data-driven** (declared domains harvested from live data, EAV overlays). The catalog is then emitted,
   and the adapter's `catalog` merge is additive on top.
 - **Additivity per measure, per pack, or both?** **Per field.** The package's registration rule ("a def may tighten
-  additivity but never loosen it", `measure-catalog.ts:99-115`) only works when the field carries the truth. Packs
-  have no definition anywhere in the repo; delete the key.
+  additivity but never loosen it", `measure-catalog.ts:99-115`) only works when the field carries the truth.
+  *Corrected at SEM-1:* the packs **were** defined — `runtime/analytics/packs/{crm-entity-measures,monetary-measures}.ts`
+  are the `crm_entity` / `monetary` referents. Same conclusion (delete the key), different reason: packs are a
+  cube-era indirection, not an undefined one. They were deleted with the rest of the cube island.
+
+*Q4 was decided by default at SEM-1 per the recommendation above, and is recorded in ADR-045 §Decision 7. It is
+flagged for owner confirmation: reversing it means moving the composite metric schema out of the entity YAML.*
 
 ---
 
