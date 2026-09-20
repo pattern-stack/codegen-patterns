@@ -116,6 +116,11 @@ export function materializeDemoProject(options: MaterializeOptions): Materialize
 	// directory is, rather than assuming `entities/`.
 	const entitiesDir = path.join(projectDir, 'entities');
 	fs.mkdirSync(entitiesDir, { recursive: true });
+	// `project init` seeds an `example.yaml`. The demo set is closed — and the
+	// e2e asserts an entity count — so the placeholder goes.
+	for (const stale of ['example.yaml', 'example.yml']) {
+		fs.rmSync(path.join(entitiesDir, stale), { force: true });
+	}
 	const entityFiles: string[] = [];
 	for (const name of fs.readdirSync(demoEntitiesDir()).sort()) {
 		if (!/\.ya?ml$/.test(name)) continue;

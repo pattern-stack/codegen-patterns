@@ -22,6 +22,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import pluralize from 'pluralize';
 import { Document, parseDocument, stringify as stringifyYaml } from 'yaml';
 
 import type {
@@ -157,6 +158,13 @@ function relationshipDefinitionFile(
 
 	const relationship: Record<string, unknown> = {
 		name,
+		// `table:` is written explicitly, never left to the schema default.
+		// That default is `${name}s`, which for `contact_opportunity` yields
+		// `contact_opportunitys` — and the table name drives the emitted module
+		// folder, so the default would put a misspelled directory in the diff.
+		// Every checked-in relationship fixture in this repo writes `table:` for
+		// the same reason (#698; the default itself is tracked separately).
+		table: pluralize(name),
 		from: req.from,
 		to: req.to,
 	};
