@@ -36,6 +36,12 @@ export const SchemaEdge = memo(function SchemaEdge({
   const dimmed = edge?.dimmed === true;
   const label = edge?.roleName ?? edge?.label;
 
+  // A `belongs_to` and its inverse `has_many` run between the same two cards in
+  // opposite directions, so `getSmoothStepPath` hands both the same midpoint
+  // and the two labels land on top of each other. Offsetting by the direction
+  // of travel separates them without needing to know about the other edge.
+  const labelOffset = sourceX <= targetX ? -11 : 11;
+
   return (
     <>
       <BaseEdge
@@ -55,7 +61,7 @@ export const SchemaEdge = memo(function SchemaEdge({
           <div
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY + labelOffset}px)`,
               fontFamily: 'var(--font-mono)',
               fontSize: 9.5,
               padding: '1px 5px',

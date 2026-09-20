@@ -207,17 +207,39 @@ export function App() {
           }}
         >
           <Dot color={healthError != null ? 'var(--danger)' : health != null ? 'var(--ok)' : 'var(--warn)'} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl' }}>
-            {health?.projectDir ?? healthError ?? 'connecting…'}
-          </span>
-          {health != null && <span style={{ flex: '0 0 auto' }}>v{health.cliVersion}</span>}
+          {health != null ? (
+            <>
+              {/* A project path is truncated from the left, so the directory
+                  that identifies it survives. `direction: rtl` does that, and
+                  is only ever applied to a path — on a sentence it would move
+                  the trailing punctuation to the front. */}
+              <span
+                title={health.projectDir}
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  direction: 'rtl',
+                }}
+              >
+                {health.projectDir}
+              </span>
+              <span style={{ flex: '0 0 auto' }}>v{health.cliVersion}</span>
+            </>
+          ) : (
+            // The full message is already stated in the pane below; the header
+            // only has to say which of the two states this is.
+            <span style={{ flex: '0 0 auto', color: healthError != null ? 'var(--danger)' : undefined }}>
+              {healthError != null ? 'disconnected' : 'connecting…'}
+            </span>
+          )}
         </span>
 
         {graph.counts != null && (
           <span style={{ display: 'flex', gap: 'var(--sp-3)', fontSize: 11.5, color: 'var(--t-muted)' }}>
-            <span>{graph.counts.entities} entities</span>
-            <span>{graph.counts.junctions} junctions</span>
-            <span>{graph.counts.relationships} relationships</span>
+            <span>{count(graph.counts.entities, 'entity', 'entities')}</span>
+            <span>{count(graph.counts.junctions, 'junction')}</span>
+            <span>{count(graph.counts.relationships, 'relationship')}</span>
           </span>
         )}
 
@@ -290,6 +312,11 @@ export function App() {
       />
     </div>
   );
+}
+
+/** `1 relationship`, `2 relationships` — the header reads as prose, not a table. */
+function count(n: number, singular: string, plural = `${singular}s`): string {
+  return `${n} ${n === 1 ? singular : plural}`;
 }
 
 function describe(err: unknown, fallback: string): { title: string; detail?: string } {

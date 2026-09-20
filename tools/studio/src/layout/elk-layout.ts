@@ -6,15 +6,20 @@ import type { StudioEdgeData } from '../graph/edge-kinds';
 const elk = new ELK();
 
 /**
- * Card geometry. These numbers are the contract between the layout and
- * `SchemaNode`: elk reserves exactly what the card renders, so nodes never
- * overlap after the first paint.
+ * Card geometry, for elk only.
+ *
+ * The card itself is *not* given this height — ReactFlow measures the real DOM
+ * and the card renders at its natural size. An estimate that came up short
+ * would otherwise clip the last field row behind the behaviour badges, and no
+ * arithmetic here can stay exact as the card's type and padding change. So the
+ * estimate errs high: elk reserves a little more room than the card needs,
+ * which costs some whitespace and cannot cost a clipped card.
  */
-const HEADER = 30;
-const JUNCTION_BAR = 21;
-const FIELD_ROW = 17;
-const BADGE_ROW = 22;
-const FIELD_PAD = 8;
+const HEADER = 38;
+const JUNCTION_BAR = 24;
+const FIELD_ROW = 18;
+const BADGE_ROW = 30;
+const FIELD_PAD = 12;
 /** Mirrors `VISIBLE_FIELDS` in `../graph/SchemaNode`. */
 const VISIBLE_FIELDS = 7;
 
@@ -72,7 +77,9 @@ export async function elkLayout(
       position: { x, y },
       data: n as unknown as Record<string, unknown>,
       type: 'schemaNode',
-      style: { width: size.width, height: size.height },
+      // Width only. Height is left to the card so its content is never clipped
+      // by an estimate that drifted from the markup.
+      style: { width: size.width },
     };
   };
 

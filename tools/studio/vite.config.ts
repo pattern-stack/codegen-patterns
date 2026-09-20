@@ -27,6 +27,10 @@ export default defineConfig({
     },
   },
   server: {
+    // Explicitly IPv4. Vite's default host resolves `localhost`, which binds
+    // ::1 only on this platform, and the Studio server proxies the UI at
+    // 127.0.0.1 — so the default bind makes `just studio` serve 502s.
+    host: '127.0.0.1',
     port: 5179,
     strictPort: true,
     open: false,

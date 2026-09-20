@@ -167,3 +167,69 @@ describe('the entity: wrapper', () => {
     expect(located!.location?.line).toBe(2);
   });
 });
+
+describe('a YAML parse failure', () => {
+  // The commonest 422 on a hand-edited file is not a schema violation: it is a
+  // parse error, reported with an empty path and the position in the message.
+  // Resolving the empty path would land on line 1, twenty lines from the fault.
+  const BROKEN = 'entity:\n  name: contact\n  fields:\n      email:\n    type: string\n';
+  const parseIssue = issue(
+    [],
+    'All mapping items must start at the same column at line 5, column 5:\n\n    type: string\n    ^\n',
+    'custom',
+  );
+
+  test('uses the position carried in the message', () => {
+    const [located] = locateIssues(BROKEN, [parseIssue]);
+    expect(located!.location?.line).toBe(5);
+    expect(located!.location?.column).toBe(5);
+    expect(located!.exact).toBe(true);
+  });
+
+  test('the range covers the rest of the offending line', () => {
+    const [located] = locateIssues(BROKEN, [parseIssue]);
+    expect(BROKEN.slice(located!.location!.from, located!.location!.to)).toBe('type: string');
+  });
+
+  test('a position past the end of the document falls back to the root', () => {
+    // The marker still has to render somewhere; dropping it would leave the
+    // author with a message and nowhere to look.
+    const [located] = locateIssues('a: 1\n', [issue([], 'bad at line 99, column 3')]);
+    expect(located!.location?.line).toBe(1);
+  });
+
+  test('a schema issue with a path ignores any position in its message', () => {
+    // A real schema message could mention a line; the path is the better signal.
+    const [located] = locateIssues(DOC, [
+      issue(['entity', 'name'], 'see the note at line 99, column 1'),
+    ]);
+    expect(located!.location?.line).toBe(2);
+  });
+
+  test('a path-less issue with no position still falls back to the root', () => {
+    const [located] = locateIssues(DOC, [issue([], 'Unrecognized key')]);
+    expect(located!.location?.line).toBe(1);
+  });
+});
+
+describe('issueMessage collapses a multi-line message', () => {
+  // A parse error's message embeds the offending snippet and a caret. The
+  // issue list is one row per issue, so it has to read on one line.
+  const MULTILINE =
+    'All mapping items must start at the same column at line 5, column 5:\n\n    type: string\n    ^\n';
+
+  test('newlines and the caret line are gone', () => {
+    const [located] = locateIssues('a: 1\n', [issue([], MULTILINE)]);
+    const text = issueMessage(located!);
+    expect(text).not.toContain('\n');
+    expect(text).not.toMatch(/\s\^/);
+    expect(text).toBe(
+      'All mapping items must start at the same column at line 5, column 5: type: string',
+    );
+  });
+
+  test('a single-line message is unchanged', () => {
+    const [located] = locateIssues(DOC, [issue(['entity', 'name'], 'Expected string')]);
+    expect(issueMessage(located!)).toBe('entity.name: Expected string');
+  });
+});

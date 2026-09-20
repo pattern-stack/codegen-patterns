@@ -21,6 +21,9 @@ import { elkLayout } from '../layout/elk-layout';
 import { LoadingState } from '../ui/primitives';
 
 const nodeTypes: NodeTypes = { schemaNode: SchemaNode };
+
+/** Above this many nodes, the minimap is worth the corner it occupies. */
+const MINIMAP_THRESHOLD = 12;
 const edgeTypes: EdgeTypes = { schemaEdge: SchemaEdge };
 
 export interface SchemaCanvasProps {
@@ -148,18 +151,21 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
         maxZoom={2}
         nodesDraggable
         nodesConnectable={false}
-        proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1c2942" />
         <Controls position="top-left" showInteractive={false} />
-        <MiniMap
-          nodeColor={miniMapColor}
-          maskColor="rgba(11, 17, 32, 0.75)"
-          nodeStrokeWidth={0}
-          position="bottom-right"
-          pannable
-          zoomable
-        />
+        {/* Only once the graph is too big to take in at once — below that the
+            minimap is an overlay sitting on top of a card it duplicates. */}
+        {graphNodes.length > MINIMAP_THRESHOLD && (
+          <MiniMap
+            nodeColor={miniMapColor}
+            maskColor="rgba(11, 17, 32, 0.75)"
+            nodeStrokeWidth={0}
+            position="bottom-right"
+            pannable
+            zoomable
+          />
+        )}
       </ReactFlow>
 
       <Legend />

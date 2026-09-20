@@ -56,7 +56,10 @@ export function Button({
         height: size === 'sm' ? 24 : 30,
         padding: size === 'sm' ? '0 var(--sp-2)' : '0 var(--sp-3)',
         borderRadius: 'var(--r-md)',
-        border: '1px solid',
+        // Longhand: the tone below supplies `borderColor`, and mixing it with
+        // the `border` shorthand lets the two disagree across a rerender.
+        borderWidth: 1,
+        borderStyle: 'solid',
         fontFamily: 'inherit',
         fontSize: size === 'sm' ? 11.5 : 12.5,
         fontWeight: 500,

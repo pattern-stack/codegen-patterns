@@ -187,7 +187,15 @@ body {
 }
 
 .react-flow__attribution {
-  display: none;
+  /* Kept, not hidden: hiding it is for React Flow Pro subscribers. Toned down
+     to sit in the surface scale instead. */
+  background: transparent;
+}
+
+.react-flow__attribution a {
+  color: var(--t-muted);
+  font-size: 9px;
+  opacity: 0.55;
 }
 
 /* ── CodeMirror ───────────────────────────────────────────────────────── */

@@ -26,12 +26,21 @@ export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps
       <Handle type="target" position={Position.Left} />
       <div
         style={{
-          height: '100%',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--s-panel)',
-          border: `1px solid ${selected ? accent : 'var(--s-line)'}`,
-          borderLeft: `3px solid ${accent}`,
+          // Longhand on every side. Mixing `border` with `borderLeft` — or
+          // `borderColor` with `borderLeftColor` — lets the two disagree across
+          // a rerender, which is what React warns about.
+          borderStyle: 'solid',
+          borderTopWidth: 1,
+          borderRightWidth: 1,
+          borderBottomWidth: 1,
+          borderLeftWidth: 3,
+          borderTopColor: selected ? accent : 'var(--s-line)',
+          borderRightColor: selected ? accent : 'var(--s-line)',
+          borderBottomColor: selected ? accent : 'var(--s-line)',
+          borderLeftColor: accent,
           borderRadius: 'var(--r-lg)',
           // Selection is a ring, never a width change — a card must not resize
           // under the cursor and shove its neighbours.
@@ -87,7 +96,7 @@ export const SchemaNode = memo(function SchemaNode({ data, selected }: NodeProps
         )}
 
         {node.fields != null && node.fields.length > 0 && (
-          <div style={{ padding: 'var(--sp-1) var(--sp-3)', flex: 1, minHeight: 0 }}>
+          <div style={{ padding: 'var(--sp-1) var(--sp-3)' }}>
             {node.fields.slice(0, VISIBLE_FIELDS).map((f) => (
               <div
                 key={f.name}

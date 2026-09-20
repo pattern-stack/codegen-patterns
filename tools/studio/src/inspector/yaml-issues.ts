@@ -172,6 +172,35 @@ function resolveWithWrapper(root: Node, path: (string | number)[]): Resolved {
 }
 
 /**
+ * A position carried in the message text rather than in `path`.
+ *
+ * The most common 422 on a hand-edited file is not a schema violation at all —
+ * it is a YAML parse failure, which the server reports with an empty `path` and
+ * the position inside the message ("… at line 21, column 1"). Resolving an
+ * empty path lands on the document root, which points at line 1 and is
+ * actively misleading when the real problem is twenty lines down.
+ */
+const POSITION_IN_MESSAGE = /\bat line (\d+), column (\d+)/;
+
+function positionFromMessage(
+  message: string,
+  starts: number[],
+  source: string,
+): IssueLocation | undefined {
+  const match = POSITION_IN_MESSAGE.exec(message);
+  if (!match) return undefined;
+
+  const line = Number(match[1]);
+  const column = Number(match[2]);
+  const start = starts[line - 1];
+  if (start === undefined) return undefined;
+
+  const from = Math.min(start + column - 1, source.length);
+  const lineEnd = starts[line] !== undefined ? starts[line]! - 1 : source.length;
+  return { line, column, from, to: Math.max(lineEnd, from + 1) };
+}
+
+/**
  * Resolve each issue to a range in `source`.
  *
  * Issues whose path does not exist — a missing required key is the common
@@ -186,6 +215,13 @@ export function locateIssues(source: string, issues: ZodIssueLike[]): LocatedIss
   const starts = lineStarts(source);
 
   return issues.map((issue) => {
+    // A parse failure has no path to resolve and a document that may not have
+    // parsed at all, so its own reported position is the only thing to go on.
+    if (issue.path.length === 0) {
+      const fromMessage = positionFromMessage(issue.message, starts, source);
+      if (fromMessage) return { issue, location: fromMessage, resolvedPath: [], exact: true };
+    }
+
     if (root == null || !hasRange(root)) {
       return { issue, resolvedPath: [], exact: issue.path.length === 0 };
     }
@@ -219,10 +255,28 @@ export function formatIssuePath(path: (string | number)[]): string {
   }, '');
 }
 
+/**
+ * Collapse a message to one line.
+ *
+ * A YAML parse error's message embeds the offending snippet and a caret across
+ * several lines. That reads well in a terminal and badly in a one-row list, so
+ * the runs of whitespace become single spaces and the caret line goes.
+ */
+function oneLine(message: string): string {
+  return message
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !/^\^+$/.test(line))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** The message to show on the marker, phrased by how well the path resolved. */
 export function issueMessage(located: LocatedIssue): string {
+  const message = oneLine(located.issue.message);
   const where = formatIssuePath(located.issue.path);
-  if (!where) return located.issue.message;
-  if (located.exact) return `${where}: ${located.issue.message}`;
-  return `${where}: ${located.issue.message} (expected here)`;
+  if (!where) return message;
+  if (located.exact) return `${where}: ${message}`;
+  return `${where}: ${message} (expected here)`;
 }

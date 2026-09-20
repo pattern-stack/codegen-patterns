@@ -150,7 +150,17 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ flex: '0 0 auto', padding: 'var(--sp-3)', overflowY: 'auto', maxHeight: '55%' }}>
+      <div
+        style={{
+          flex: '0 0 auto',
+          padding: 'var(--sp-3)',
+          // Extra room at the bottom so the last control scrolls clear of the
+          // preview header rather than ending flush against it.
+          paddingBottom: 'var(--sp-5)',
+          overflowY: 'auto',
+          maxHeight: '55%',
+        }}
+      >
         <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Field label="From">
