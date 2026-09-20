@@ -1,8 +1,17 @@
-# Frontend smoke fixture — the `sync: electric` branch.
+# Frontend smoke fixture — the `sync: electric` branch, and the graph root.
 #
 # Drives `electricCollectionOptions(...)`, which is where FE-0's dual-copy
 # failure landed (`gen/collections/*.ts` TS2769). Also the target of contact's
 # `belongs_to`, so the whole-set store (resolvers, lookups, <Class>Refs) emits.
+#
+# FE-REL adds two shapes the graph emitter has branches for:
+#   - a SELF-REFERENTIAL to-one (`parent_account`), joined into the root query;
+#   - a `has_many` inverse (`opportunities`) whose foreign_key lives on the
+#     TARGET table, which becomes its own live query.
+#
+# Deliberately NO relation to `contact`: contact is `sync: api`, and an
+# electric→api hop is a generation error (FE-REL §4.4). The api side is
+# exercised as a DEFERRAL instead — contact keeps its own belongs_to.
 entity:
   name: account
   plural: accounts
@@ -22,5 +31,21 @@ fields:
     required: true
     default: active
 
+  parent_account_id:
+    type: uuid
+    required: false
+    index: true
+    foreign_key: accounts.id
+
 behaviors:
   - timestamps
+
+relationships:
+  parent_account:
+    type: belongs_to
+    target: account
+    foreign_key: parent_account_id
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: account_id

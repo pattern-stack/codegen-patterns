@@ -59,7 +59,10 @@ ${overrideRows}`;
  * `index.ts` — the root barrel. Section comments + `export *` of each sub-barrel,
  * prefixed by the version-pairing comment.
  */
-export function buildRootIndexFile(ctx: FrontendEmitContext): string {
+export function buildRootIndexFile(
+	ctx: FrontendEmitContext,
+	withGraph = false,
+): string {
 	const entities = sortEntities(ctx.entities);
 	const entityList = entities
 		.map((e) => ` * - ${e.className}`)
@@ -101,13 +104,30 @@ export * from './providers';
 }
 // Unified store (entities + collections + resolvers + lookups)
 export * from './store/module-index';
-`;
+${
+	withGraph
+		? `
+// The client relation graph + typed traversal accessors (ADR-044 §5)
+export * from './graph/index';
+`
+		: ''
+}`;
 	return withBanner(SOURCE_DESC_SET, body);
 }
 
-/** Emit the root `index.ts` into `<outDir>`. Returns the written path. */
-export function emitIndex(ctx: FrontendEmitContext, outDir: string): string[] {
+/**
+ * Emit the root `index.ts` into `<outDir>`. Returns the written path.
+ *
+ * `withGraph` adds the graph exports — passed by `emitFrontendSet` from what
+ * the graph step actually wrote, so the barrel never exports a module that was
+ * not emitted.
+ */
+export function emitIndex(
+	ctx: FrontendEmitContext,
+	outDir: string,
+	withGraph = false,
+): string[] {
 	const indexPath = join(outDir, 'index.ts');
-	writeFile(indexPath, buildRootIndexFile(ctx));
+	writeFile(indexPath, buildRootIndexFile(ctx, withGraph));
 	return [indexPath];
 }

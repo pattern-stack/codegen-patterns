@@ -2,6 +2,7 @@
 
 **Stack:** `relations-v2-and-semantic-model` · **Tracker:** project #578 · **Board:** https://github.com/orgs/pattern-stack/projects/3
 **Owner:** Doug · **Opened:** 2026-09-16 · **Last revised:** 2026-09-17 (checkpoint 1, after unit 1)
+**Owner:** Doug · **Opened:** 2026-09-16 · **Last revised:** 2026-09-20
 
 This is the document every agent and every spec on this project starts from. It says what we are building, why, the
 rules no PR may break, and how the project's state is kept current. It is deliberately short on *how* — that lives in
@@ -150,12 +151,13 @@ Append-only. A decision that changes an invariant or the target picture also get
 | 2026-09-17 · checkpoint 1 | **GATE-1 (#599) and GATE-2 (#604) added to unit 1.** Three gates were red on `main` and outside CI; a fourth printed errors it did not gate on. Unit 1 closes only when every gate is honest. | PLAN §4.5 |
 | 2026-09-17 · checkpoint 1 | **REL-0 (#603) added, ahead of TEN-1 and REL-2:** `BaseRepository` becomes generic over its concrete table. The typed include/navigator needs the concrete table type, TEN-1 edits the same choke point, and the 1.0 bump showed the `PgTableWithColumns<any>` is what forces casts. | PLAN §5A.0 |
 | 2026-09-17 · checkpoint 1 | **The `clean` backend pipeline is out of the project and known-red (#602)** — 118 raw tsc errors, never typechecked. Not repaired, not filtered, not in CI. Repair-or-retire is an owner decision (Q5). | #602 |
+| 2026-09-20 | **Q1 closed: the frontend include mechanism is FULLY GENERATED**, not hosted in `@pattern-stack/frontend-patterns`. This reverses the recommendation recorded when Q1 was opened. Measured reasons, not preference: the package publishes zero relation surface at any version; its `1.0.0` dropped `dist/sync` entirely; its collections are typed `any` by its own admission because it bundles `@tanstack/db`, so a package-hosted traversal would be untyped traversal; and the one relation-shaped name it derives it re-pluralizes at runtime, which ADR-038 forbids. `emit-store.ts` had already made the same call for FK resolvers. FE-REL is therefore a one-repo unit whose gate does not block on another repo's release. The three package defects are filed against `pattern-stack/frontend-patterns` regardless, because they are live for every consumer today. | FE-REL §2, PLAN §6A.3 |
+| 2026-09-20 | **Cross-mode client hops (an `electric` root reaching an `api` target) are a generation error in v1**, naming both entities and the relation — not an id-set bridge and not a degraded fetch loop. The bridge needs a list-filter contract REL-2's include allowlist does not define. | FE-REL §4.4 |
 
 ### Open questions
 
 | # | Question | Blocks | Recommendation | Owner |
 |---|---|---|---|---|
-| Q1 | Frontend include mechanism: in `@pattern-stack/frontend-patterns` with thin generated wiring, or fully generated? | FE-REL design | `frontend-patterns` (the `createEntityHooks` precedent) | Doug |
 | Q2 | Per-hop scoping mechanism: v2 predefined relation `where` filters vs repository rewriting the include tree | REL-2 | decide by spike in REL-2's spec | REL-2 specifier |
 | Q3 | YAML shape of the HTTP include allowlist | REL-2 | design in REL-2's spec | REL-2 specifier |
 | Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | YAML for atomic tags + pure composites; adapter for data-driven | Doug (confirm at SEM-1) |

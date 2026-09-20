@@ -12,6 +12,8 @@
 
 import type { EntityRegistryEntry } from '../../parser/entity-registry';
 import type { ParsedEntity } from '../../analyzer/types';
+import type { EntityDefinition } from '../../schema/entity-definition.schema';
+import type { JunctionDefinition } from '../../schema/junction-definition.schema';
 
 export type { EntityRegistryEntry } from '../../parser/entity-registry';
 export type { ParsedEntity } from '../../analyzer/types';
@@ -106,6 +108,22 @@ export interface FrontendEmitContext {
 	 * catalog is emitted and the root barrel omits the export.
 	 */
 	providers?: ProviderCatalogInput[];
+	/**
+	 * RAW, zod-parsed entity definitions keyed by entity name, and the junction
+	 * set — the two inputs REL-1's `buildRelationGraph` consumes (FE-REL §3).
+	 *
+	 * The graph emitter calls **that builder**, not a second traversal of the
+	 * YAML, so the client descriptor and the Drizzle manifest are the same
+	 * declaration projected twice (charter I1). The raw definition is required
+	 * rather than `parsed` for the reason REL-1 records: `ParsedRelationship`
+	 * drops `nullable:` and `ParsedField` collapses "undeclared" into `false`,
+	 * so the `optional` precedence cannot be reproduced from the parsed model.
+	 *
+	 * Absent ⇒ no graph is emitted (a context built without them — an older
+	 * test fixture — keeps its previous output exactly).
+	 */
+	definitions?: Map<string, EntityDefinition>;
+	junctions?: JunctionDefinition[];
 }
 
 /**

@@ -1,0 +1,35 @@
+# Frontend smoke fixture — an electric entity on both sides of a hop.
+#
+# Inbound: `account.opportunities` (has_many) makes this a branch target.
+# Outbound: `account` (belongs_to) is a to-one that nests INTO that branch's
+# own query (`{ opportunities: { with: { account: true } } }`) — the depth-2
+# case, still one query.
+# Junction: `junctions/opportunity_tag.yaml` adds the `through` hop and the
+# row-level hop to the link table.
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+  folder_structure: nested
+  sync: electric
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id

@@ -27,6 +27,10 @@ import path from 'node:path';
 
 import { loadEntityRegistry } from '../../parser/entity-registry';
 import { loadEntities } from '../../parser/load-entities';
+import {
+	loadEntityDefinitions,
+	loadJunctionDefinitions,
+} from '../relations/load-context';
 import type { ParsedEntity } from '../../analyzer/types';
 import { FrontendConfigSchema } from '../../schema/codegen-config.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
@@ -189,17 +193,20 @@ export function loadProviderCatalogInputs(
  *                defaulted by the config loader).
  * @param opts.entitiesDir  Override the entities directory (default
  *                `<cwd>/<paths.entities_dir | 'entities'>`).
+ * @param opts.junctionsDir Override the junctions directory (default
+ *                `<cwd>/junctions`) — the graph emitter's second input.
  * @returns `{ ctx, outDir }` ready for `emitFrontendSet`, or `{ skip }` when
  *          there are no entities to emit.
  */
 export function loadFrontendEmitContext(
 	cwd: string,
 	config: FrontendConfigInput,
-	opts: { entitiesDir?: string } = {},
+	opts: { entitiesDir?: string; junctionsDir?: string } = {},
 ): LoadFrontendEmitContextResult {
 	const entitiesDir =
 		opts.entitiesDir ??
 		path.resolve(cwd, config.paths?.entities_dir ?? 'entities');
+	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, 'junctions');
 
 	const { registry } = loadEntityRegistry(entitiesDir);
 	const entities: EntityRegistryEntry[] = sortEntities([...registry.values()]);
@@ -224,9 +231,16 @@ export function loadFrontendEmitContext(
 	);
 	const outDir = path.resolve(cwd, generated.path);
 
+	// The graph emitter's inputs (FE-REL §3): the RAW definitions + the junction
+	// set, fed to REL-1's own builder. Loaded through the relations emitter's
+	// loaders — the same functions `relations.ts` is built from — so the client
+	// descriptor and the Drizzle manifest cannot read the YAML differently.
+	const definitions = loadEntityDefinitions(entitiesDir);
+	const junctions = loadJunctionDefinitions(junctionsDir);
+
 	return {
 		skip: undefined,
-		ctx: { entities, parsed, config: emitConfig, providers },
+		ctx: { entities, parsed, config: emitConfig, providers, definitions, junctions },
 		outDir,
 	};
 }

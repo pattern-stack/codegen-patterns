@@ -14,6 +14,7 @@ export const accountSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	status: z.enum(['active', 'churned']),
+	parentAccountId: z.string().nullable(),
 	createdAt: z.date(),
 	updatedAt: z.date(),
 });

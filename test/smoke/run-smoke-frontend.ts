@@ -19,7 +19,8 @@
  *  3. Assert exactly ONE `@tanstack/db` is installed. A future range change
  *     that re-splits the tree then names itself instead of surfacing as an
  *     opaque TS2769 three steps later.
- *  4. `codegen project init` + `entity new --all` with `generate.frontend: true`.
+ *  4. `codegen project init` + `entity new --all` + `junction new --all` with
+ *     `generate.frontend: true`.
  *  5. Supply the CONSUMER-OWNED modules the contract requires
  *     (`@repo/db/entities/*`, `@/lib/collections/auth`) from
  *     `test/smoke/fixtures-frontend/consumer/`, mapped by tsconfig paths.
@@ -28,6 +29,14 @@
  *     `_consumer-errors.ts` BY LOCATION ONLY. No message filters, no directory
  *     carve-outs, no predicate added to that helper (charter I9, GATE-2).
  *  7. Clean up unless KEEP_SMOKE_DIR=1.
+ *
+ * FE-REL (#589) added the second half of step 6. Compiling the emitted tree
+ * proves it is VALID TypeScript; it does not prove the graph accessors are
+ * typed usefully — accessors typed `any` would compile perfectly. So
+ * `fixtures-frontend/usage/` is compiled alongside it: consumer-shaped code in
+ * which every property FE-REL §5 promises is a real assignment, and every
+ * error it promises is a real `@ts-expect-error`. `tsc` fails if one of those
+ * stops being an error, so the gate cannot rot into a no-op.
  *
  * Installs from live npm like every other smoke here (~12 s, ~110 packages on
  * a warm bun cache). Nothing is vendored or stubbed: a pinned local copy would
@@ -175,7 +184,18 @@ async function main(): Promise<number> {
 			log(`copied fixture: ${f}`);
 		}
 
+		// Junctions live in their own directory, and the entity pipeline must run
+		// FIRST: the junction templates inject fan-out methods into parent
+		// services that do not exist until `entity new` has written them.
+		const junctionsDir = path.join(tmpDir, 'junctions');
+		fs.mkdirSync(junctionsDir, { recursive: true });
+		for (const f of fs.readdirSync(path.join(FIXTURES, 'junctions'))) {
+			fs.copyFileSync(path.join(FIXTURES, 'junctions', f), path.join(junctionsDir, f));
+			log(`copied junction fixture: ${f}`);
+		}
+
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+		run(`bun ${CLI_PATH} junction new --all --force`, tmpDir);
 
 		// The emitter is opt-in; if it silently did not run, this gate would pass
 		// without compiling anything it is supposed to gate.
@@ -189,12 +209,35 @@ async function main(): Promise<number> {
 		for (const required of [
 			'collections/account.ts', // electric branch — where FE-0's failure was
 			'collections/contact.ts', // api branch
+			'collections/opportunity_tag.ts', // the junction's link rows (FE-REL)
 			'store/resolvers.ts', // belongs_to FK resolver
 			'store/index.ts', // createStore wiring
+			'graph/descriptor.ts', // the client relation graph (FE-REL §3)
+			'graph/account.ts', // self-ref to-one + has_many branch
+			'graph/opportunity.ts', // the junction `through` hop
+			'graph/tag.ts', // the junction's other parent
+			'graph/index.ts',
 		]) {
 			if (!fs.existsSync(path.join(frontendDir, required))) {
 				throw new Error(`frontend emitter did not write ${required}`);
 			}
+		}
+
+		// `contact` is `sync: api`, so FE-REL §4.3 defers its accessors to REL-2.
+		// That is a DEFERRAL, and a deferral that is not visible is a silent drop
+		// (charter I9) — so assert both halves: no module, and the descriptor
+		// says why.
+		if (fs.existsSync(path.join(frontendDir, 'graph', 'contact.ts'))) {
+			throw new Error(
+				'graph/contact.ts was emitted for a `sync: api` entity — §4.3 defers those to REL-2',
+			);
+		}
+		const descriptor = fs.readFileSync(
+			path.join(frontendDir, 'graph', 'descriptor.ts'),
+			'utf8',
+		);
+		if (!descriptor.includes('Accessors deliberately NOT emitted')) {
+			throw new Error('graph/descriptor.ts does not record the api-mode deferral');
 		}
 
 		// 5. The consumer-owned modules the contract requires. Not stubs of
@@ -203,6 +246,14 @@ async function main(): Promise<number> {
 		fs.mkdirSync(consumerDir, { recursive: true });
 		for (const f of fs.readdirSync(path.join(FIXTURES, 'consumer'))) {
 			fs.copyFileSync(path.join(FIXTURES, 'consumer', f), path.join(consumerDir, f));
+		}
+
+		// The FE-REL type gate (see the header): consumer-shaped code asserting
+		// what the emitted accessors are typed AS, not merely that they compile.
+		const usageDir = path.join(tmpDir, 'usage');
+		fs.mkdirSync(usageDir, { recursive: true });
+		for (const f of fs.readdirSync(path.join(FIXTURES, 'usage'))) {
+			fs.copyFileSync(path.join(FIXTURES, 'usage', f), path.join(usageDir, f));
 		}
 
 		fs.writeFileSync(
@@ -226,7 +277,11 @@ async function main(): Promise<number> {
 							'@/lib/collections/auth': ['./consumer/auth'],
 						},
 					},
-					include: ['apps/frontend/src/generated/**/*', 'consumer/**/*'],
+					include: [
+						'apps/frontend/src/generated/**/*',
+						'consumer/**/*',
+						'usage/**/*',
+					],
 				},
 				null,
 				2,
