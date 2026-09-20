@@ -1,10 +1,16 @@
 name: CI
 
 on:
+  # Every pull request, whatever its base. Stacked PRs target their parent
+  # branch, not `main`, so a `branches: [main]` filter left every PR in a
+  # stack without the required `test-all` check — which blocks an atomic
+  # stack merge, since GitHub needs the check on every member.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
+  # Lets a run be started for a branch whose PR predates this change (a
+  # retarget alone does not fire `pull_request`).
+  workflow_dispatch:
 
 # PR runs cancel stale siblings; main pushes QUEUE instead — cancelling a
 # main run could kill the publish job mid-upload. The publish job's
