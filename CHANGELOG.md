@@ -161,6 +161,16 @@ resolve against.
 **Breaking:** the `clean` backend architecture is deleted. clean-lite-ps is the only
 backend pipeline (ARCH-0, #677).
 
+**Breaking:** the config surface only the deleted `clean` pipeline read is gone (ARCH-1,
+#682). `naming:`, `database:` and `behaviors:` are no longer config blocks; the 14
+`locations.backend*` names and `locations.dbSchemaServer` / `dbSchemaClient` /
+`dbMigrations` / `dbContextEngine` are no longer location names; and `folder_structure:`,
+`file_grouping:` and `behavior_strategy:` are no longer entity-YAML keys. Each is now an
+unknown-key error naming the key and the file — **delete those lines**. clean-lite-ps
+emits one module folder per entity with fixed file names and always extends a pattern
+base, so none of them had a meaning left. `expose:` is unaffected (the frontend emitter
+reads it), and the entity-level `behaviors:` list is a different, untouched key.
+
 **Breaking:** `BaseRepository` and every family repository take a **second, required
 type parameter** — the concrete Drizzle table (REL-0, #603). Hand-written
 repositories must change `extends BaseRepository<Contact>` to
@@ -171,6 +181,14 @@ and no one-argument form. Generated repositories already emit it — regenerate.
 
 ### Removed
 
+- **The clean-only config surface** (#682). With the keys above went
+  `src/schema/naming-config.schema.ts`, `src/config/naming-config.mjs` and
+  `src/config/locations.mjs`; `src/config/paths.mjs` keeps only `BASE_PATHS`,
+  `getOrchestrationPath`, `getProjectConfig` and `getGeneratedDir`. `project init` no
+  longer writes `naming:` / `database:`, and `project scan` no longer proposes `naming:`.
+  `templates/entity/new/prompt.js` drops the 69 locals no template read (1570 → 377
+  lines); the clean-lite-ps extension already built everything else. Generated output is
+  byte-identical — the baseline snapshot is unchanged.
 - **The `clean` backend pipeline and `generate.architecture`** (#677). The full
   Clean Architecture templates (`templates/entity/new/backend/`: separate
   command/query classes, repository interfaces, `domain/` / `application/` /

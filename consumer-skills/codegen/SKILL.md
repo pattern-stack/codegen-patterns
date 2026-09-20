@@ -165,6 +165,13 @@ codegen skills list
   command with an error naming the key and the keys expected there. Fix the
   key; there is no flag to skip validation. Block reference: `docs/CONSUMER-SETUP.md`
   › `codegen.config.yaml`.
+- **Keys deleted with the `clean` pipeline fail that way too.** `generate.architecture`
+  and its four toggles (ARCH-0), then `naming:`, `database:`, `behaviors:`, the 14
+  `locations.backend*` names and `locations.dbSchemaServer` / `dbSchemaClient` /
+  `dbMigrations` / `dbContextEngine` (ARCH-1). In **entity YAML**: `folder_structure:`,
+  `file_grouping:`, `behavior_strategy:`. Delete the lines — clean-lite-ps emits one
+  module folder per entity with fixed file names, so none of them had a meaning left.
+  `expose:` is unaffected.
 - **Your app never reads `codegen.config.yaml`.** The keys it needs at boot —
   `openapi.*`, `auth.devAllowAnonymous`, `jobs.pools`, the worker's
   `jobs.backend` / `jobs.extensions.*` — are validated and written into

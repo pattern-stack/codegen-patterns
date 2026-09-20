@@ -490,13 +490,6 @@ generate:
   frontend: false                # default false; scanner detects apps/frontend/
   semantic: false                # default false; emit src/generated/semantic/ (declared AggregateModel)
 
-naming:
-  fileCase: kebab-case
-  suffixStyle: dotted            # .entity.ts vs Entity.ts
-  terminology:
-    command: use-case
-    query: use-case
-
 # frontend:                      # inert unless generate.frontend: true
 #   ...                          # see "Frontend generation" above for the full block
 ```
