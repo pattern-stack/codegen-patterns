@@ -243,6 +243,42 @@ describe('cross-site request forgery', () => {
 		}
 	});
 
+	it('ALLOWS the localhost alias of its own origin', async () => {
+		// Someone who types `localhost:5178` rather than `127.0.0.1:5178` gets
+		// an Origin the loopback-IP comparison alone would refuse — and only
+		// writes would break, while every read kept working.
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const port = new URL(s.url).port;
+			const res = await fetch(`${s.url}/api/relationships`, {
+				method: 'POST',
+				headers: { origin: `http://localhost:${port}`, 'content-type': 'application/json' },
+				body: JSON.stringify({ from: 'nope', to: 'nope', kind: 'belongs_to' }),
+			});
+			// Rejected on its merits, NOT by the Origin check.
+			expect(res.status).toBe(400);
+		} finally {
+			await s.close();
+		}
+	});
+
+	it('refuses the right port but the wrong host, and the right host but the wrong port', async () => {
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const port = new URL(s.url).port;
+			for (const origin of [`http://evil.example:${port}`, `http://127.0.0.1:${Number(port) + 1}`]) {
+				const res = await fetch(`${s.url}/api/generate`, {
+					method: 'POST',
+					headers: { origin, 'content-type': 'application/json' },
+					body: JSON.stringify({ steps: ['generate'] }),
+				});
+				expect(res.status).toBe(403);
+			}
+		} finally {
+			await s.close();
+		}
+	});
+
 	it('ALLOWS the configured dev Vite origin', async () => {
 		const up = await fakeUpstream();
 		const s = await createStudioServer({ projectDir, port: 0, viteOrigin: up.origin });
