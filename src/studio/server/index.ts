@@ -195,6 +195,16 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 	res.end(payload);
 }
 
+/** Send a file with the content type its extension implies. */
+function sendFile(res: http.ServerResponse, file: string): void {
+	const body = fs.readFileSync(file);
+	res.writeHead(200, {
+		'content-type': MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
+		'content-length': body.length,
+	});
+	res.end(body);
+}
+
 function sendError(res: http.ServerResponse, status: number, error: string, detail?: string): void {
 	const body: ApiErrorResponse = detail ? { error, detail } : { error };
 	sendJson(res, status, body);
@@ -234,26 +244,79 @@ class BadRequestError extends Error {
 
 /** Resolve the built UI directory, or null when there is nothing to serve. */
 function resolveUiDir(explicit?: string): string | null {
-	if (explicit) return fs.existsSync(explicit) ? explicit : null;
-	// `src/studio/server` → repo root → tools/studio/dist
-	const candidate = path.resolve(import.meta.dirname, '..', '..', '..', 'tools', 'studio', 'dist');
-	return fs.existsSync(candidate) ? candidate : null;
+	// ABSOLUTE and symlink-resolved, always. Returning the path as given meant
+	// a relative `--ui-dir tools/studio/dist` was compared against an absolute
+	// candidate in the containment check below, which then failed for EVERY
+	// request — so every asset fell through to index.html and the UI was a
+	// black screen with "Failed to load module script" (#716). The dev proxy
+	// path has no such check, which is why only the built-UI path broke.
+	const candidate = explicit
+		? path.resolve(explicit)
+		: // `src/studio/server` → repo root → tools/studio/dist
+			path.resolve(import.meta.dirname, '..', '..', '..', 'tools', 'studio', 'dist');
+	if (!fs.existsSync(candidate)) return null;
+	try {
+		return fs.realpathSync(candidate);
+	} catch {
+		return candidate;
+	}
 }
 
+/**
+ * Content types for a built Vite tree. A wrong type here is fatal rather than
+ * cosmetic: a browser refuses a module script that does not arrive as
+ * JavaScript, so `text/html` on an `.js` request is a blank page (#716).
+ */
 const MIME: Record<string, string> = {
 	'.html': 'text/html; charset=utf-8',
 	'.js': 'text/javascript; charset=utf-8',
 	'.mjs': 'text/javascript; charset=utf-8',
+	'.cjs': 'text/javascript; charset=utf-8',
 	'.css': 'text/css; charset=utf-8',
 	'.json': 'application/json; charset=utf-8',
+	'.map': 'application/json; charset=utf-8',
+	'.txt': 'text/plain; charset=utf-8',
+	'.wasm': 'application/wasm',
 	'.svg': 'image/svg+xml',
 	'.png': 'image/png',
 	'.jpg': 'image/jpeg',
+	'.jpeg': 'image/jpeg',
+	'.gif': 'image/gif',
+	'.webp': 'image/webp',
+	'.avif': 'image/avif',
 	'.ico': 'image/x-icon',
 	'.woff': 'font/woff',
 	'.woff2': 'font/woff2',
-	'.map': 'application/json; charset=utf-8',
+	'.ttf': 'font/ttf',
+	'.otf': 'font/otf',
+	'.eot': 'application/vnd.ms-fontobject',
 };
+
+/**
+ * Whether a request that matched no file should get the SPA shell.
+ *
+ * A missing asset must NOT fall back to index.html — HTML arriving where
+ * JavaScript was expected is how #716 presented, and a 404 says what is
+ * actually wrong. But the extension cannot decide this: Studio routes on
+ * `/files/entities/contact.yaml`, which is a navigation, not a YAML asset.
+ *
+ * What distinguishes them is what the CLIENT says it wants. A navigation sends
+ * `Sec-Fetch-Dest: document` (and `Accept: text/html,…`); a module script or a
+ * stylesheet sends its own dest and `Accept: *​/*`. The extension is consulted
+ * only for a client that sends neither, i.e. not a browser.
+ */
+function wantsHtmlShell(req: http.IncomingMessage, pathname: string): boolean {
+	const dest = req.headers['sec-fetch-dest'];
+	if (typeof dest === 'string' && dest.length > 0) return dest === 'document';
+
+	const accept = req.headers.accept ?? '';
+	if (accept.includes('text/html')) return true;
+	if (accept !== '' && accept !== '*/*') return false;
+
+	// No browser signals at all — fall back to the shape of the path.
+	const ext = path.extname(pathname);
+	return ext === '' || ext === '.html';
+}
 
 export function createStudioServer(options: StudioServerOptions): Promise<StudioServer> {
 	const projectDir = realProjectDir(options.projectDir);
@@ -523,26 +586,44 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 		}
 
 		// The static root is its own containment boundary, same rule as the
-		// project surface: nothing may be served from outside `uiDir`.
-		const rel = pathname.replace(/^\/+/, '');
-		const candidate = path.resolve(uiDir, rel === '' ? 'index.html' : rel);
-		const withinUi =
-			candidate === uiDir || candidate.startsWith(uiDir + path.sep);
-		const file =
-			withinUi && fs.existsSync(candidate) && fs.statSync(candidate).isFile()
-				? candidate
-				: path.join(uiDir, 'index.html'); // SPA fallback
-
-		if (!fs.existsSync(file)) {
-			sendError(res, 404, 'not found');
+		// project surface: nothing may be served from outside `uiDir`. Both
+		// sides of this comparison are absolute and symlink-resolved
+		// (`resolveUiDir`), or it silently rejects everything (#716).
+		let decoded: string;
+		try {
+			decoded = decodeURIComponent(pathname);
+		} catch {
+			sendError(res, 400, `malformed path: ${pathname}`);
 			return;
 		}
-		const body = fs.readFileSync(file);
-		res.writeHead(200, {
-			'content-type': MIME[path.extname(file)] ?? 'application/octet-stream',
-			'content-length': body.length,
-		});
-		res.end(body);
+		const rel = decoded.replace(/^\/+/, '');
+		const candidate = path.resolve(uiDir, rel === '' ? 'index.html' : rel);
+		const withinUi = candidate === uiDir || candidate.startsWith(uiDir + path.sep);
+
+		if (!withinUi) {
+			sendError(res, 403, 'path escapes the UI directory');
+			return;
+		}
+
+		// A real file under the UI root wins — always, and before any fallback.
+		if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+			sendFile(res, candidate);
+			return;
+		}
+
+		// No file matched. A navigation falls back to the SPA shell so
+		// client-side routing works; a subresource request gets a 404.
+		if (!wantsHtmlShell(req, decoded)) {
+			sendError(res, 404, `no such file in the Studio UI: ${rel}`);
+			return;
+		}
+
+		const shell = path.join(uiDir, 'index.html');
+		if (!fs.existsSync(shell)) {
+			sendError(res, 404, `the Studio UI at ${uiDir} has no index.html`);
+			return;
+		}
+		sendFile(res, shell);
 	}
 
 	async function proxyToVite(
