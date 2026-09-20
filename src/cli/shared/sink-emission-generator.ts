@@ -83,6 +83,7 @@
  */
 
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { emittedStem } from '../../config/file-naming.js';
 
 // ============================================================================
 // Input
@@ -479,7 +480,7 @@ import {
   ${n.sinkBaseClass},
   ${n.defaultToCanonicalView},
   ${n.defaultBuildWrite},
-} from './${input.entityName}.sink.generated';
+} from './${emittedStem(input.entityName)}.sink.generated';
 import type {
   ${n.projectionType},
   ${n.writeType},

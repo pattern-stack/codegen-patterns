@@ -4,12 +4,22 @@
  *   The filesystem is kebab-case. The database is snake_case.
  *   TypeScript identifiers follow TypeScript convention.
  *
- * Every emitted directory name and every emitted file stem goes through this
- * module. A name stays snake_case only where it *is* a database identifier:
- * the `pgTable('…')` / `pgEnum('…')` argument, a column name, and the Drizzle
- * table export whose whole job is to mirror the SQL name. Those are built from
- * `EntityModuleNaming.plural`, which `module-tree.ts` deliberately leaves
- * untouched.
+ * Every directory and file stem THIS GENERATOR EMITS goes through this module —
+ * the backend module tree, the junction and relationship trees, the frontend
+ * tree (`api/`, `collections/`, `entities/`, `fields/`) and the integration
+ * sinks and assemblies.
+ *
+ * Two kinds of name deliberately do NOT:
+ *
+ *  1. **Database identifiers.** The `pgTable('…')` / `pgEnum('…')` argument, a
+ *     column name, and the Drizzle table export whose whole job is to mirror
+ *     the SQL name. They are built from `EntityModuleNaming.plural`, which
+ *     `module-tree.ts` leaves untouched — kebabbing it would rename the table.
+ *  2. **Paths into code this generator does not emit.** The frontend imports
+ *     entity types from the consumer's own db package
+ *     (`frontend.dbEntitiesImport`, e.g. `@repo/db/entities/deal_state`). That
+ *     file is named by its owner, not by this rule, so the specifier keeps the
+ *     entity's YAML name.
  *
  * Before this module the hyphens in `find-<entity>-by-id.use-case.ts` were
  * typed characters in ~18 template literals, so a multi-word entity emitted

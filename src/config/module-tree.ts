@@ -1,6 +1,7 @@
 /**
  * The backend module tree — the ONE rule for where an entity's module
- * lives: `<modules_dir>[/<context>]/<plural>` (PATH-1, #645; GEN-0, #649).
+ * lives: `<modules_dir>[/<context>]/<plural>`, each segment kebab-cased by
+ * `file-naming.ts` (PATH-1, #645; GEN-0, #649; NAME-2, #695).
  *
  * Read by the hygen emission (`templates/_shared/entity-naming.mjs` re-exports
  * it), the barrels (`src/cli/shared/barrel-generator.ts` › `entityFilePaths`)
@@ -34,7 +35,7 @@ export interface EntityModuleNaming {
 	 * this.
 	 */
 	plural: string;
-	/** `<modules_dir>[/<context>]/<plural>` — the folder holding the entity's files. */
+	/** `<modules_dir>[/<context>]/<plural>`, kebab-cased — the folder holding the entity's files. */
 	moduleDir: string;
 	/** The entity (+ Drizzle table) module, without extension. */
 	entityFile: string;

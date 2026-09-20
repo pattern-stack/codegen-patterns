@@ -368,7 +368,13 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 One rule, one module: `src/config/file-naming.ts` — `kebab(name)`, `emittedDir(name)`,
 `emittedStem(...parts)`. `entityModuleNaming` (`src/config/module-tree.ts`) applies it, so module
 directories and the entity / module / repository files are decided at the single choke point the hygen
-prompts, the barrel generator and the assembly emitter all already read.
+prompts, the barrel generator and the assembly emitter all already read. The **frontend** and
+**integration** emitters name their per-entity files from `EntityRegistryEntry.fileStem` /
+`pluralFileStem` — the registry carries the emitted spelling beside `className` and `camelName`.
+
+Two kinds of name deliberately stay snake: **database identifiers** (above), and **paths into code this
+generator does not emit** — the frontend imports entity types from the consumer's own db package
+(`@repo/db/entities/deal_state`), named by its owner, not by this rule.
 
 | Kind | `entity: { name: deal_state, plural: deal_states }` |
 |---|---|
@@ -390,7 +396,12 @@ Rules when you touch emission:
 - **Test harnesses import the rule, they do not restate it.** `test/smoke/run-smoke-junction.ts` derives its
   expected paths with `emittedDir` / `emittedStem` so the harness and the generator cannot disagree.
 - **The pin is a property, not a list.** `src/__tests__/config/file-naming.test.ts` asserts that for a
-  multi-word entity no path segment contains `_`. Add a stem shape there, not a filename.
+  multi-word entity no path segment contains `_`, across the backend, frontend and integration stem shapes.
+  Add a stem shape there, not a filename.
+- **A fixture set with only single-word entities cannot test this.** `kebab(x) === x` for `contact` /
+  `person` / `user`, so such a fixture passes whether the rule is applied or not. `deal_state` is the
+  multi-word entity in the backend baseline and in `test/frontend-golden/entities/` — keep one wherever a
+  new tree gets snapshot coverage.
 - Identifier casing is a **separate, still-open axis** — see #697.
 
 ## Working on the generator

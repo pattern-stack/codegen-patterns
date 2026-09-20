@@ -96,9 +96,11 @@ export interface EntityInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Case helpers — intentionally local to avoid a dependency on case-converters.mjs
-// from a TS module. Identical semantics for the snake/kebab → Pascal case path
-// we actually exercise here.
+// Case helpers — local. `src/config/file-naming.ts` owns the FILE-NAME rule
+// (NAME-2) and is imported wherever a path is built; this is identifier casing
+// for a class name, a different question, so it stays here rather than growing
+// that module a second responsibility. (The old justification named
+// `case-converters.mjs`, which NAME-2 deleted once it had no importers.)
 // ---------------------------------------------------------------------------
 
 function toPascalCase(input: string): string {

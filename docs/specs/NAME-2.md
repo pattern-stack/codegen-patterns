@@ -61,9 +61,16 @@ willing to import.
 > **The filesystem is kebab-case. The database is snake_case. TypeScript identifiers follow TypeScript
 > convention.**
 >
-> Every emitted directory name and every emitted file stem is kebab-case, derived by one function. A name stays
-> snake_case only where it *is* a database identifier: the `pgTable('…')` / `pgEnum('…')` argument, a column name,
-> and the Drizzle table export whose entire job is to mirror the SQL name.
+> Every directory and file stem **this generator emits** is kebab-case, derived by one function — the backend
+> module tree, the junction and relationship trees, the frontend tree and the integration sinks and assemblies.
+>
+> Two kinds of name deliberately do not go through it:
+>
+> 1. **Database identifiers** — the `pgTable('…')` / `pgEnum('…')` argument, a column name, and the Drizzle table
+>    export whose entire job is to mirror the SQL name.
+> 2. **Paths into code this generator does not emit** — the frontend imports entity types from the consumer's own
+>    db package (`frontend.dbEntitiesImport`, e.g. `@repo/db/entities/deal_state`). That file is named by its
+>    owner, so the specifier keeps the entity's YAML name.
 
 Applied to `entity: { name: deal_state, plural: deal_states }`:
 
@@ -325,7 +332,27 @@ or drizzle-kit `unresolved decisions` is re-run isolated before it counts as a f
    it. Deleted (I7) rather than extended, and `orchestration-generator.ts` — whose pattern slugs name emitted
    files — now re-exports the shared rule instead of keeping a private copy.
 
-7. **Environment, not code: a fresh worktree has no `node_modules`.** Worktrees live *inside* the main checkout,
+7. **The rule's universal claim was false in two more pipelines — found in review.** The first implementation
+   routed the hygen pipelines and stopped there, while `file-naming.ts` and this spec claimed *every* emitted stem
+   went through the rule. The frontend emitter (`emit-api` / `emit-collections` / `emit-entities` / `emit-fields`
+   and the barrels and store imports that reference them) and the integration emitter (sink base, sink subclass,
+   change emitter, assembly module and the three specifiers that import them) still built raw `${entity.name}`
+   stems, so `deal_state` would have emitted `api/deal_state.ts` beside `modules/deal-states/deal-state.entity.ts`
+   — internally consistent, and exactly the extra spelling #684 exists to kill. **Twenty sites routed**, not the
+   eight the review counted: the file writes are the visible half, the barrels and cross-file imports that must
+   move with them are the other.
+
+   The fix is the registry, not the call sites: `EntityRegistryEntry` now carries `fileStem` / `pluralFileStem`
+   beside `className` / `camelName`, so every generator reading the registry gets the emitted spelling the same
+   way it already gets the class name (I1). The frontend had **no multi-word entity in its golden fixture**, so
+   `kebab(x) === x` made the whole tree pass either way — `test/frontend-golden/entities/deal_state.yaml` is now
+   the one fixture there that can fail, and the golden test asserts no emitted path contains `_`.
+
+   It also forced the rule's second boundary into the open: the frontend imports entity types from the
+   *consumer's* db package (`@repo/db/entities/deal_state`). That file is named by its owner, not by this rule, so
+   the specifier keeps the YAML name — the claim in §The rule is narrowed to say so rather than left overstated.
+
+8. **Environment, not code: a fresh worktree has no `node_modules`.** Worktrees live *inside* the main checkout,
    so resolution walks up and silently finds the parent's — which tracks another branch. The baseline typecheck
    failed on `@nestjs/swagger` and a drizzle version mismatch **before any edit**, and the control run on a clean
    base branch failed identically, which is what identified it. `bun install` in the worktree fixed it. Worth

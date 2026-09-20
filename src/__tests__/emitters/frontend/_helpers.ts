@@ -7,6 +7,7 @@
  */
 
 import type { EntityRegistryEntry } from '../../../parser/entity-registry';
+import { emittedStem } from '../../../config/file-naming.js';
 import type {
 	ParsedEntity,
 	ParsedField,
@@ -35,6 +36,8 @@ export function entry(
 		classNamePlural: pascalCase(plural),
 		camelName: camelCase(name),
 		pluralCamelName: camelCase(plural),
+		fileStem: emittedStem(name),
+		pluralFileStem: emittedStem(plural),
 		sync,
 	};
 }

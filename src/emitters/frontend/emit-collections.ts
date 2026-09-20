@@ -14,6 +14,7 @@
  */
 
 import { join } from 'node:path';
+import { emittedStem } from '../../config/file-naming.js';
 import type { EntityRegistryEntry, FrontendEmitContext } from './types';
 import { resolveSyncMode, sortEntities } from './types';
 import { withBanner, writeFile } from './emit-utils';
@@ -38,7 +39,7 @@ function buildElectricCollection(
 	ctx: FrontendEmitContext,
 ): string {
 	const { config } = ctx;
-	const { camelName, plural, name } = entity;
+	const { camelName, plural, name, fileStem } = entity;
 
 	const imports: string[] = [
 		"import { electricCollectionOptions } from '@tanstack/electric-db-collection';",
@@ -117,13 +118,13 @@ function buildApiCollection(
 	ctx: FrontendEmitContext,
 ): string {
 	const { config } = ctx;
-	const { camelName, plural, name } = entity;
+	const { camelName, plural, name, fileStem } = entity;
 
 	const imports = [
 		"import { queryCollectionOptions } from '@tanstack/query-db-collection';",
 		"import { createCollection } from '@tanstack/react-db';",
 		"import { queryClient } from '../query-client';",
-		`import { ${camelName}Api } from '../api/${name}';`,
+		`import { ${camelName}Api } from '../api/${fileStem}';`,
 		`import { ${camelName}Schema } from '${config.dbEntitiesImport}/${name}';`,
 	];
 
@@ -267,17 +268,17 @@ export function buildCollectionFile(
 }
 
 /**
- * `collections/index.ts` — `export * from './<name>'` per entity and per
+ * `collections/index.ts` — `export * from './<stem>'` per entity and per
  * emitted junction, sorted by file name so entities and junctions interleave
- * deterministically.
+ * deterministically. Stems come from the one naming rule (#695/#684).
  */
 export function buildCollectionsIndexFile(
 	ctx: FrontendEmitContext,
 	junctions: JunctionCollectionEntry[] = [],
 ): string {
 	const names = [
-		...sortEntities(ctx.entities).map((e) => e.name),
-		...junctions.map((j) => j.name),
+		...sortEntities(ctx.entities).map((e) => e.fileStem),
+		...junctions.map((j) => emittedStem(j.name)),
 	].sort((a, b) => a.localeCompare(b));
 	const lines = names.map((n) => `export * from './${n}';`);
 	return withBanner(SOURCE_DESC_SET, `${lines.join('\n')}\n`);
@@ -298,7 +299,7 @@ export function emitCollections(
 	const written: string[] = [];
 
 	for (const entity of entities) {
-		const filePath = join(collectionsDir, `${entity.name}.ts`);
+		const filePath = join(collectionsDir, `${entity.fileStem}.ts`);
 		writeFile(filePath, buildCollectionFile(entity, ctx));
 		written.push(filePath);
 	}

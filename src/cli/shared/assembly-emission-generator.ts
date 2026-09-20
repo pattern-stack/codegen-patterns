@@ -32,6 +32,7 @@
  */
 
 import { relative, resolve, sep } from "node:path";
+import { emittedStem } from '../../config/file-naming.js';
 import { entityModuleNaming } from "../../config/module-tree.js";
 import { changeEmitterClass } from "./change-emitter-emission-generator";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
@@ -166,7 +167,7 @@ export function generateAssemblyModule(input: AssemblyEmitInput): string {
 
   const sinkClass = `${input.entityClass}Sink`;
   // The sink scaffold lives at `../../sinks/<entity>.sink` relative to the module.
-  const sinkImport = `../../sinks/${input.entityName}.sink`;
+  const sinkImport = `../../sinks/${emittedStem(input.entityName)}.sink`;
 
   const token = integrationUseCaseToken(input.entityName, input.provider);
   const moduleClass = assemblyModuleClass(input.entityName, input.provider);
@@ -180,7 +181,7 @@ export function generateAssemblyModule(input: AssemblyEmitInput): string {
   const emitChanges = input.emitChanges === true;
   const emitterClass = changeEmitterClass(input.entityClass);
   // The change-emitter lives next to the sink: `../../sinks/<entity>.change-emitter`.
-  const emitterImport = `../../sinks/${input.entityName}.change-emitter`;
+  const emitterImport = `../../sinks/${emittedStem(input.entityName)}.change-emitter`;
   const integrationTokenImports = emitChanges
     ? `  INTEGRATION_CHANGE_EMITTER,\n  INTEGRATION_CHANGE_SOURCE,\n  INTEGRATION_SINK,`
     : `  INTEGRATION_CHANGE_SOURCE,\n  INTEGRATION_SINK,`;
@@ -329,7 +330,7 @@ export function generateIntegrationAggregator(
     .map((e) => {
       const cls = assemblyModuleClass(e.entityName, e.provider);
       // Each assembly lives at `./modules/<provider>/<entity>-integration.module`.
-      const path = `./modules/${e.provider}/${e.entityName}-integration.module`;
+      const path = `./modules/${e.provider}/${emittedStem(e.entityName)}-integration.module`;
       return `import { ${cls} } from '${path}';`;
     })
     .join("\n");

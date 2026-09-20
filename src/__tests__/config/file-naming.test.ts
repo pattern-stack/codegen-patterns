@@ -121,6 +121,26 @@ describe('the property: no emitted path segment carries an underscore', () => {
 		assertNoUnderscore([n.moduleDir, `${n.entityFile}.ts`, n.moduleFile, n.repositoryFile], 'junction');
 	});
 
+	it('holds for every stem shape the frontend and integration emitters build', () => {
+		// The frontend names four per-entity files from the registry's `fileStem`;
+		// the integration emitter names four more from `emittedStem(entityName)`.
+		// Both were raw `${entity.name}` until NAME-2 — the "fourth spelling"
+		// #684 exists to kill — so they are pinned here by the same property.
+		const { name } = DEAL_STATE;
+		const frontend = ['api', 'collections', 'entities', 'fields'].map(
+			(dir) => `${dir}/${emittedStem(name)}.ts`,
+		);
+		const integration = [
+			`${emittedStem(name)}.sink.generated.ts`,
+			`${emittedStem(name)}.sink.ts`,
+			`${emittedStem(name)}.change-emitter.ts`,
+			`${emittedStem(name)}-integration.module.ts`,
+		];
+		for (const p of [...frontend, ...integration]) expect(p).not.toContain('_');
+		expect(frontend[0]).toBe('api/deal-state.ts');
+		expect(integration[3]).toBe('deal-state-integration.module.ts');
+	});
+
 	it('holds for every stem shape the backend pipeline builds', () => {
 		const { name, plural } = DEAL_STATE;
 		const stems = [

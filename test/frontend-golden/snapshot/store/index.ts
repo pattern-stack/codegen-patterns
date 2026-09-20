@@ -3,12 +3,15 @@
 
 import { createStore } from '@pattern-stack/frontend-patterns';
 
+import { dealStateHooks } from '../entities/deal-state';
 import { personHooks } from '../entities/person';
 import { userHooks } from '../entities/user';
 
+import { dealStateCollection } from '../collections/deal-state';
 import { personCollection } from '../collections/person';
 import { userCollection } from '../collections/user';
 
+import { dealStateFields } from '../fields/deal-state';
 import { personFields } from '../fields/person';
 import { userFields } from '../fields/user';
 
@@ -18,8 +21,8 @@ import { createLookups } from './lookups';
  * The application store — unified access to every entity.
  *
  * Entities, collections, and field metadata are keyed by their plural name:
- *   store.persons.useData()   // useList + fields[plural] meta + hydrated lookups
- *   store.persons.useList()
+ *   store.deal_states.useData()   // useList + fields[plural] meta + hydrated lookups
+ *   store.deal_states.useList()
  *   store.resolve.<entity>(id)
  *   store.lookups.current
  *
@@ -30,14 +33,17 @@ import { createLookups } from './lookups';
  */
 export const store = createStore({
 	entities: {
+		deal_states: dealStateHooks,
 		persons: personHooks,
 		users: userHooks,
 	},
 	collections: {
+		deal_states: dealStateCollection,
 		persons: personCollection,
 		users: userCollection,
 	},
 	fields: {
+		deal_states: dealStateFields,
 		persons: personFields,
 		users: userFields,
 	},

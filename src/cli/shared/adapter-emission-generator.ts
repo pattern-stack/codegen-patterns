@@ -62,6 +62,7 @@ import {
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { emittedStem } from '../../config/file-naming.js';
 import { composePatterns, declaredPatternNames, getPattern } from "../../patterns/index.js";
 import pluralize from "pluralize";
 
@@ -1122,12 +1123,12 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           aliases,
         );
         const sinkInput = buildSinkInput(def!, surface, slugs[0], sinkRepoImportSpecifier);
-        const basePath = join(sinksDir, `${entityName}.sink.generated.ts`);
+        const basePath = join(sinksDir, `${emittedStem(entityName)}.sink.generated.ts`);
         const baseContent = generateSinkBase({ ...sinkInput, mode });
         if (!opts.dryRun) writeIfChanged(basePath, baseContent);
         result.written.push(basePath);
 
-        const subclassPath = join(sinksDir, `${entityName}.sink.ts`);
+        const subclassPath = join(sinksDir, `${emittedStem(entityName)}.sink.ts`);
         if (existsSync(subclassPath)) {
           result.scaffoldsSkipped.push(subclassPath);
         } else {
@@ -1144,7 +1145,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
         // mapping is mechanical, so re-emit byte-identically with writeIfChanged.
         const emitChanges = def?.integration?.sink?.emit_changes === true;
         if (emitChanges) {
-          const emitterPath = join(sinksDir, `${entityName}.change-emitter.ts`);
+          const emitterPath = join(sinksDir, `${emittedStem(entityName)}.change-emitter.ts`);
           const emitterContent = generateChangeEmitter({
             entityName,
             entityClass: loc.entityClass,
@@ -1161,7 +1162,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           const assemblyPath = join(
             modulesDir,
             slug,
-            `${entityName}-integration.module.ts`,
+            `${emittedStem(entityName)}-integration.module.ts`,
           );
           const assemblyContent = generateAssemblyModule({
             surface,
