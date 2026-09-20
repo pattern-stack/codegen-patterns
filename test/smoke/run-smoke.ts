@@ -53,7 +53,9 @@ function cli(tmpDir: string): string {
 // `default` (no flag) preserves the historical behavior. `relationship`
 // swaps in `test/smoke/fixtures/crm/` (account self-ref + cross-entity
 // belongs_to + has_many) and runs `assertRelationshipEmission()` after
-// entity generation to verify the clean-lite-ps `relations()` emission.
+// entity generation to verify the clean-lite-ps relationship emission:
+// FK columns + service composition, and the ABSENCE of the v1 Drizzle
+// `relations()` const (DRZ-1, #583).
 type Scenario = 'default' | 'relationship';
 
 const SCENARIO: Scenario = ((): Scenario => {
@@ -259,41 +261,57 @@ function assertContains(haystack: string, needle: RegExp, source: string): void 
 function assertNotContains(haystack: string, needle: RegExp, source: string): void {
 	if (needle.test(haystack)) {
 		throw new Error(
-			`Smoke assertion failed (${source}): did not expect ${needle} — see cgp-62 empirical-state + codegen-patterns#358.`,
+			`Smoke assertion failed (${source}): did not expect to match ${needle} in generated output.`,
 		);
 	}
 }
 
 /**
- * Verify the clean-lite-ps Drizzle `relations()` emission for the CRM
- * fixture set. Asserts the *extension path table-metadata that today's
- * templates actually ship* — the `belongs_to` side of `relations()`.
+ * DRZ-1 (#583) — assert an emitted entity file carries no v1 Drizzle
+ * `relations()` surface: neither the const nor the `drizzle-orm` root import
+ * that Drizzle 1.0 removes. The only drizzle-orm root import left is the
+ * type-only `InferSelectModel`.
+ */
+function assertNoV1Relations(source: string, label: string): void {
+	// NB: `\w+Relations`, not `\bRelations` — the emitted name is
+	// `<plural>Relations` (e.g. `accountsRelations`), so there is no word
+	// boundary before the capital R and `\b` would never match.
+	assertNotContains(
+		source,
+		/\w+Relations\s*=\s*relations\(/,
+		`${label} must not emit a v1 relations() const (DRZ-1)`,
+	);
+	assertNotContains(
+		source,
+		/import\s*\{[^}]*\brelations\b[^}]*\}\s*from\s*'drizzle-orm'/,
+		`${label} must not import relations from drizzle-orm (DRZ-1)`,
+	);
+	assertContains(
+		source,
+		/import \{ type InferSelectModel \} from 'drizzle-orm';/,
+		`${label} type-only drizzle-orm root import`,
+	);
+}
+
+/**
+ * Verify the clean-lite-ps relationship emission for the CRM fixture set.
  *
- * Layout: `clean-lite-ps/prompt-extension.js:822-829` emits each entity at
+ * Layout: `clean-lite-ps/prompt-extension.js` emits each entity at
  * `${srcRoot}/modules/${plural}/${name}.entity.ts`. The smoke project's
  * `srcRoot` is `<tmpDir>/src` (per `codegen project init --yes`).
  *
  * Coverage:
- *   - Self-ref `belongs_to`        (regression of `269ab3f`)
- *   - Cross-entity `belongs_to`    (account FK on contact + opportunity)
- *   - `relations()` const presence (emission gate `hasRelationsBlock`)
- *   - **Negative `many(` assertion** — clean-lite-ps's entity template
- *     iterates `belongs_to` only; `has_many` declarations are silently
- *     dropped. The negative assertion names this gap in the test surface
- *     itself. Flip to positive once codegen-patterns#358 lands.
- */
-/**
- * Verify the clean-lite-ps relationship emission for the CRM fixture set.
- * CGP-358b: asserts service-layer composition methods + full relations() emission.
- *
- * Coverage (CGP-358b):
- *   - Self-ref `belongs_to`        (regression of `269ab3f`)
- *   - Cross-entity `belongs_to`    (account FK on contact + opportunity)
- *   - `relations()` const presence (emission gate `hasRelationsBlock`)
- *   - `many()` calls for `has_many` declarations (POSITIVE — was negative before CGP-358b landed)
+ *   - Self-ref `belongs_to`     → FK column with a self-referencing
+ *                                 `.references()` (regression of `269ab3f`)
+ *   - Cross-entity `belongs_to` → account FK column on contact + opportunity
  *   - Service composition methods: `contacts(accountId, opts)` on AccountService
  *   - Service composition methods: `account(contactId)` on ContactService
  *   - Absence of `include?`, `With`, `findByIdWithRelations` (CGP-358 destructive cleanup)
+ *   - **Absence of the v1 Drizzle `relations()` const and its `drizzle-orm`
+ *     root import** (DRZ-1, #583). Drizzle 1.0 removes the v1 API; the slot is
+ *     deliberately empty until REL-1 (#586) emits a v2 `defineRelations()`
+ *     manifest. These assertions were the CGP-62/CGP-358b presence checks,
+ *     inverted rather than deleted so the harness still names the contract.
  */
 function assertRelationshipEmission(tmpDir: string): void {
 	const reads = (rel: string): string =>
@@ -301,26 +319,20 @@ function assertRelationshipEmission(tmpDir: string): void {
 
 	// ── account.entity.ts ───────────────────────────────────────────────────
 	const accountSchema = reads('modules/accounts/account.entity.ts');
+	// Self-ref belongs_to still drives a self-referencing FK column.
 	assertContains(
 		accountSchema,
-		/parentAccount:\s*one\(accounts,/,
-		'accounts.entity.ts self-ref belongs_to',
+		/parentAccountId:\s*uuid\('parent_account_id'\)[^\n]*?\.references\(\(\): AnyPgColumn => accounts\.id/,
+		'accounts.entity.ts self-ref belongs_to FK column',
 	);
-	assertContains(
-		accountSchema,
-		/export const accountsRelations\s*=\s*relations\(accounts/,
-		'accounts.entity.ts relations() const',
-	);
-	// CGP-358b: has_many now emits many() calls — flip was negative, now positive
-	assertContains(
+	// DRZ-1 (#583): no v1 relations() const, no drizzle-orm root `relations` import.
+	assertNoV1Relations(accountSchema, 'accounts.entity.ts');
+	// has_many contributes no entity-file emission any more — only the
+	// service-layer composition method below.
+	assertNotContains(
 		accountSchema,
 		/\bmany\(/,
-		'accounts.entity.ts has_many emits many() (CGP-358b)',
-	);
-	assertContains(
-		accountSchema,
-		/contacts:\s*many\(contacts\)/,
-		'accounts.entity.ts contacts: many(contacts)',
+		'accounts.entity.ts must not emit many() (DRZ-1)',
 	);
 
 	// ── account.service.ts ──────────────────────────────────────────────────
@@ -342,14 +354,10 @@ function assertRelationshipEmission(tmpDir: string): void {
 	const contactSchema = reads('modules/contacts/contact.entity.ts');
 	assertContains(
 		contactSchema,
-		/account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[contacts\.accountId\]/,
-		'contacts.entity.ts belongs_to account',
+		/accountId:\s*uuid\('account_id'\)[^\n]*?\.references\(\(\) => accounts\.id/,
+		'contacts.entity.ts belongs_to account FK column',
 	);
-	assertContains(
-		contactSchema,
-		/export const contactsRelations\s*=\s*relations\(contacts/,
-		'contacts.entity.ts relations() const',
-	);
+	assertNoV1Relations(contactSchema, 'contacts.entity.ts');
 
 	// ── contact.service.ts ──────────────────────────────────────────────────
 	const contactService = reads('modules/contacts/contact.service.ts');
@@ -364,14 +372,10 @@ function assertRelationshipEmission(tmpDir: string): void {
 	const opportunitySchema = reads('modules/opportunities/opportunity.entity.ts');
 	assertContains(
 		opportunitySchema,
-		/account:\s*one\(accounts,\s*\{[\s\S]*fields:\s*\[opportunities\.accountId\]/,
-		'opportunities.entity.ts belongs_to account',
+		/accountId:\s*uuid\('account_id'\)[^\n]*?\.references\(\(\) => accounts\.id/,
+		'opportunities.entity.ts belongs_to account FK column',
 	);
-	assertContains(
-		opportunitySchema,
-		/export const opportunitiesRelations\s*=\s*relations\(opportunities/,
-		'opportunities.entity.ts relations() const',
-	);
+	assertNoV1Relations(opportunitySchema, 'opportunities.entity.ts');
 }
 
 // ---------------------------------------------------------------------------
@@ -430,9 +434,11 @@ async function main(): Promise<number> {
 		// 5. Run `codegen entity new --all`.
 		//
 		// For the relationship scenario, run TWICE (two-pass) so cross-entity
-		// `has_many` targets are on disk for the second pass — this seeds the
-		// `clpExistingHasMany` check and ensures many() calls are emitted for
-		// all targets, not just those that happen to be generated first.
+		// `has_many` targets are on disk for the second pass — this seeds
+		// `clpExistingHasMany`, which drives the service-layer composition
+		// methods for all targets, not just those generated first. (It no
+		// longer drives any entity-file emission — DRZ-1 deleted the many()
+		// const.)
 		// (Mirrors the baseline test's two-pass strategy in test/run-test.ts.)
 		run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
 		if (SCENARIO === 'relationship') {
@@ -441,11 +447,13 @@ async function main(): Promise<number> {
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the
-		// clean-lite-ps Drizzle `relations()` emission shape on the CRM
-		// fixtures. Runs before subsystem installs so a failure shortcuts
-		// the slower steps; the install steps don't rewrite entity files.
+		// clean-lite-ps relationship emission shape on the CRM fixtures:
+		// FK columns + service composition present, v1 relations() const
+		// absent (DRZ-1). Runs before subsystem installs so a failure
+		// shortcuts the slower steps; the install steps don't rewrite
+		// entity files.
 		if (SCENARIO === 'relationship') {
-			log('asserting clean-lite-ps relations() emission for CRM fixtures');
+			log('asserting clean-lite-ps relationship emission for CRM fixtures');
 			assertRelationshipEmission(tmpDir);
 			log('relationship emission OK');
 		}

@@ -1480,9 +1480,13 @@ export default {
 
       // Relationships - separated by type
       relationships: allRelationships,
+      // `hasManyRelations` / `hasOneRelations` are deliberately NOT exported:
+      // their only template reader was the v1 Drizzle relation const that
+      // DRZ-1 (#583) deleted. The derived `existingHasMany` / `hasHasMany` /
+      // index and composition locals below still carry everything templates
+      // need. (Spelling the deleted call literally here would trip the guard
+      // in src/__tests__/templates/no-v1-relations-emission.test.ts.)
       belongsToRelations,
-      hasManyRelations,
-      hasOneRelations,
 
       // Relationship flags
       hasRelationships,
@@ -1688,7 +1692,6 @@ export default {
         clpOutputDtoFields: [],
         clpBelongsTo: [],
         clpBelongsToFkFields: [],
-        clpHasRelationsBlock: false,
         repositoryBaseClass: '',
         serviceBaseClass: '',
         repositoryBaseImport: '',
