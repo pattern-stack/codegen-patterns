@@ -43,6 +43,10 @@ fields:
     type: datetime
     role: dimension
     time: true
+  source:
+    type: enum
+    choices_from: ./sources.yaml
+    role: dimension
   note:
     type: string
 
@@ -91,6 +95,11 @@ describe('ParsedField.analytics', () => {
 		expect(a.agg).toBe('avg');
 		expect(a.aggs).toBeUndefined();
 		expect(a.additivity).toBe('non');
+	});
+
+	it('carries choices_from unresolved, so the declared domain is visible (SEM-2)', () => {
+		expect(opportunity.fields.get('source')!.choicesFrom).toBe('./sources.yaml');
+		expect(opportunity.fields.get('stage')!.choicesFrom).toBeUndefined();
 	});
 
 	it('carries a dimension and a time axis', () => {

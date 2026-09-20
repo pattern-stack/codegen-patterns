@@ -200,3 +200,24 @@ namespace across the whole domain, so a metric may name legs that live on
 another entity. In exchange, measure keys and metric names must be unique across
 every entity — `codegen entity new` and `codegen entity validate` both refuse a
 duplicate or an unresolvable leg.
+
+### What gets emitted
+
+With `generate.semantic: true`, `codegen entity new` writes
+`<paths.generated>/semantic/`:
+
+- `model.ts` — `buildAggregateModel()`, returning the registry (tables, keys,
+  columns, relationships, searchable columns), the per-field analytics tags, the
+  Drizzle table + column references, and the composite catalog.
+- `types.ts` — the model's types, vendored until the semantic-query package
+  publishes.
+- `index.ts` — the barrel.
+
+Everything in it is **declared** from your YAML. Two consequences worth knowing:
+
+- **Atomic measures are not in the emitted catalog.** The semantic layer derives
+  them from the `role: measure` tags; the catalog carries only your `ratio` /
+  `derived` / `cumulative` entries.
+- **Registry keys are your entity names** (singular snake), junctions are keyed
+  by `<a>_<b>`, and relationship keys are your YAML relationship names verbatim.
+  Those are the names a query uses.

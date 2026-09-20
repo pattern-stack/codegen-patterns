@@ -92,9 +92,31 @@ vocabulary is replaced outright.**
 - **Additivity per measure pack.** Rejected: packs are a cube-era indirection, and the consuming layer's
   no-loosening rule is defined against the field.
 
+## Revision — 2026-09-17, SEM-2 (#591): the emitter
+
+SEM-2 implemented the emission half. Decisions made there, recorded here because they bind SEM-3 and anything that
+later consumes the model:
+
+1. **Keys are the host's entity handles.** `registry`, `analytics`, `tables` and `colByDbName` are keyed by the
+   entity name (singular snake); a junction by its derived junction name (`opportunity_contact`). Relationship keys
+   are the YAML relationship names **verbatim snake_case** — the query language is snake throughout, and field keys
+   already are. (The relations manifest camelCases its keys only because Drizzle needs JS identifiers.)
+2. **Atomic catalog entries are never emitted.** The consuming layer derives them from the `role: measure` tags.
+   The emitter writes only the composites from `analytics.metrics:`. This is §Consequences' "one rule, one emitter
+   of the result", made concrete.
+3. **The vocabulary is vendored, with a removal path.** The package is unpublished, so `types.ts` is emitted as a
+   mirror (PLAN §5.3's fallback). The types module is named once in the emitter; a conformance test asserts the
+   mirror is a **sound narrowing** of the package's vocabulary — same types for shared members, documented reasons
+   for omissions — rather than identical to it, because an emitted model must be *assignable to* those types.
+4. **`has_one` is emitted faithfully** even though the package does not know the kind yet (measured: query-surface#40
+   has not started). A named single-purpose expectation in the conformance test fails the day it does.
+5. **Not analytically addressable:** `string_array` and `entity_ref` fields have no `AggColType` — and `entity_ref`
+   emits two columns from one YAML field — so they stay real columns in `registry.columns` and are absent from
+   `analytics.fields`. `through:` relationships are not emitted; the consuming layer resolves multi-hop paths from
+   the one-hop graph.
+
 ## Follow-ups
 
-- **SEM-2** implements the emitter (`AggregateModel`, the composite catalog, `generate.semantic`'s gate) and appends
-  its decisions to this ADR as a dated revision note rather than minting a second one.
 - **SEM-3** demonstrates the model end to end against a fan-out trap.
 - EAV field tags (`AggFieldMeta.eav`) are deliberately unaddressed here; PLAN §5.3 defers them.
+- **query-surface#40** (Drizzle 1.0 peer, `has_one`, publish) retires the vendored mirror and the named expectation.

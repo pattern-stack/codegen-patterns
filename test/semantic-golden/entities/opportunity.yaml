@@ -1,0 +1,65 @@
+# Semantic golden fixture: the metric-bearing entity.
+#  - two additive money measures whose catalog keys feed a ratio and a
+#    derived tree that crosses entities (`annual_revenue.sum` lives on account)
+#  - a `time: true` axis
+#  - a `through:` relationship, which is NOT emitted
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+
+fields:
+  name:
+    type: string
+    required: true
+  amount:
+    type: decimal
+    role: measure
+    aggs: [sum, avg]
+    additivity: additive
+  won_amount:
+    type: decimal
+    role: measure
+    aggs: [sum]
+    additivity: additive
+  stage:
+    type: enum
+    choices: [prospecting, negotiation, closed_won]
+    role: dimension
+  closed_at:
+    type: datetime
+    role: dimension
+    time: true
+  account_id:
+    type: uuid
+    required: true
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+  account_contacts:
+    type: has_many
+    target: contact
+    foreign_key: account_id
+    through: account.contacts
+
+analytics:
+  metrics:
+    win_rate:
+      type: ratio
+      numerator: won_amount.sum
+      denominator: amount.sum
+      label: Win rate
+    revenue_gap:
+      type: derived
+      expr:
+        op: '-'
+        left: { ref: annual_revenue.sum }
+        right: { ref: amount.sum }
+    running_pipeline:
+      type: cumulative
+      measure: amount.sum
+      order_by: closed_at
+      partition_by: account_id

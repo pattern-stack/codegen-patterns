@@ -1,0 +1,29 @@
+# Semantic golden fixture: the dimension-only endpoint of the junction.
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+
+fields:
+  first_name:
+    type: string
+  last_name:
+    type: string
+  email:
+    type: string
+  account_id:
+    type: uuid
+    required: true
+  primary_for_account_id:
+    type: uuid
+  tags:
+    type: string_array
+  linked_to:
+    type: entity_ref
+    allowed_types: [account, opportunity]
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id

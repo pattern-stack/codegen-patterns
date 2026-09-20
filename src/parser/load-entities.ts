@@ -133,6 +133,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 			index: fieldDef.index ?? false,
 			foreignKey: fieldDef.foreign_key ? parseForeignKey(fieldDef.foreign_key) : undefined,
 			choices: fieldDef.choices,
+			choicesFrom: fieldDef.choices_from,
 			constraints: {
 				minLength: fieldDef.min_length,
 				maxLength: fieldDef.max_length,
@@ -409,6 +410,7 @@ function transformToRelationshipDefinition(
 					? parseForeignKey(fieldDef.foreign_key)
 					: undefined,
 				choices: fieldDef.choices,
+				choicesFrom: fieldDef.choices_from,
 				constraints: {
 					minLength: fieldDef.min_length,
 					maxLength: fieldDef.max_length,
