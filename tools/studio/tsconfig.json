@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    // `@studio-shared` re-exports the analyzer's types, whose own import chain
+    // reaches the decorated NestJS runtime. The program therefore contains
+    // generator source, and these must match `tsconfig.build.json` or the
+    // shared files would typecheck differently on each side of the contract.
+    // For the same reason `noUnusedLocals` / `noUnusedParameters` are off:
+    // they are not set at the root, and switching them on here would fail this
+    // gate on unused imports in files this app does not own.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["vite/client", "bun", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@pattern-stack/graph-components": ["../../packages/graph-components/src"],
+      "@studio-shared": ["../../src/studio/shared/api.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

@@ -62,7 +62,7 @@ just test-family                     # Family repo integration tests (needs Dock
 just test-baseline                   # Baseline snapshot test (generate + compare)
 just test-smoke                      # End-to-end smoke: scaffold + generate + typecheck fresh project (~60-120s)
 just test-smoke-frontend             # Frontend smoke: generate.frontend + real npm install + typecheck the emitted tree
-just test-all                        # typecheck + unit + baseline + 7 smokes + junction + integration-emit (CI)
+just test-all                        # typecheck + unit + baseline + 7 smokes + junction + integration-emit + studio (CI)
 just test-integration                # Scaffold integration suite (Docker + codegen + NestJS + CRUD) — own CI job
 
 # Database (scaffold testing)
@@ -185,6 +185,36 @@ Three rules the server holds to, and that any change here must preserve:
 project (`src/studio/demo/`), whose Postgres derives from
 `test/scaffold/harness-env.ts` — never a second derivation.
 
+The UI (`tools/studio/`, Vite + React 19 + `@xyflow/react` + `elkjs` + CodeMirror
+6) grew out of `tools/schema-graph-viewer/`, which stays as it is for `codegen
+project graph`. It renders entities from the component library in
+`packages/graph-components` rather than duplicating them, and imports every wire
+shape from `@studio-shared` (the `src/studio/shared/api.ts` alias) rather than
+mirroring it — the viewer's hand-copied `SerializedDomainGraph` is exactly the
+drift the contract exists to stop.
+
+Two vocabularies are single tables, and every surface renders *from* them rather
+than branching on a literal:
+
+- `src/inspector/relationship-kinds.ts` — the `RelationshipKind` descriptors
+  (label, cardinality, which `RelationshipOptions` apply, where the YAML lands).
+  The form, the option panel and the preview header all read it. **#679 collapses
+  `pattern: Junction` and `relationship:` into one concept; when it lands, that
+  is an edit to these descriptors, not a four-way conditional in ten files.**
+- `src/graph/edge-kinds.ts` — colour, dash, width, arrowhead and legend copy per
+  edge kind. The legend is generated from it, so it cannot drift from what the
+  canvas draws.
+
+`tools/` is outside the root workspace, so the app resolves its own deps;
+`just test-studio` installs them if absent and runs the pure-logic unit tests
+(graph adapter, YAML-issue line mapping, diff parser, run reducer).
+
+`tools/studio/tsconfig.json` deliberately leaves `noUnusedLocals` /
+`noUnusedParameters` off and sets `experimentalDecorators`: importing
+`@studio-shared` pulls the analyzer's types, whose own chain reaches the
+decorated NestJS runtime, so the program contains generator source and must
+check it the way `tsconfig.build.json` does.
+
 ### Infrastructure Subsystems (ADR-008)
 
 Five subsystems following Protocol → Backend → Factory pattern:
@@ -280,7 +310,7 @@ Auto-detect: `just scan` generates a config from project conventions.
 - **Tarball smoke**: `just test-post-publish` — pack all publishable packages, install into a fresh tmp project via npm, verify the consumer contract (files manifest, exports, bins, peer ranges), then re-run the smoke harness with the CLI/templates/runtime coming from the installed tarball (`SMOKE_TARBALL` mode). Gates every CI publish via `just publish-ci`. Catches the works-from-checkout-broken-from-tarball class (#190)
 - **Baseline tests**: `just test-baseline` — generate the closed entity set in `test/fixtures/entities/` (config `test/fixtures/codegen.config.yaml`) into repo-root `packages/api/src/` — the clean-lite-ps module tree plus the two cross-entity post-steps the CLI runs (the ADR-017 `modules.ts` / `schema.ts` barrels and REL-1's `relations.ts` manifest) — typecheck it against the in-repo runtime (`test/tsconfig.baseline.json`, which maps `@shared/*` onto `runtime/` and `@gen/*` onto the generated backend root so the scaffold's `database.module.ts` resolves its manifest import), and compare to `test/baseline/` snapshots. Two-pass generation (the first pass seeds every `<entity>.entity.ts` so the second pass's `targetExists` checks resolve cross-entity imports). Start from pristine state — the runner wipes the generated directories on each run.
 - **CI** (`.github/workflows/ci.yml`), on every PR to `main` and every push to `main`:
-  - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-smoke-frontend` + `test-junction` + `test-integration-emit` + `test-smoke-integration`
+  - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-smoke-frontend` + `test-junction` + `test-integration-emit` + `test-smoke-integration` + `test-studio`
   - job `test-integration` → `just test-integration` (needs Docker, hence its own job)
   - `publish` requires both.
 - **Adding a gate:** put it in `just test-all`, or give it a CI job. A gate that runs nowhere in CI rots — all three gates in #599 were red on `main` for exactly that reason.
