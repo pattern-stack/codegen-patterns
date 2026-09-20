@@ -75,25 +75,26 @@ again before minting; two ADR-031s already exist).
 ## 3. Sequencing and proposed PR list
 
 ```
-DRZ-1 ──► DRZ-2 ──┬──► TEN-1 ──► REL-1 ──► REL-2 ──► REL-3 ──► FE-REL
-                  ├──► SEM-1 ──► SEM-2 ──► SEM-3        (+ QS-1 in the query-surface repo)
-                  └──► CAP-1 ──► CAP-2 ──► CAP-3        (roles: feed v2 `alias`; REL-1 reads them if landed)
+DRZ-1 ──► DRZ-2 ──┬──► REL-0 ──┬──► TEN-1 ──► REL-1 ──► REL-2 ──► REL-3 ──► FE-REL
+                  │            └──► CAP-1 ──► CAP-2 ──► CAP-3   (roles: feed v2 `alias`; REL-1 reads them if landed)
+                  └──► SEM-1 ──► SEM-2 ──► SEM-3        (+ QS-1 in the query-surface repo)
 ```
 
 | Key | Unit | PR title (proposed) | Size | Depends on |
 |---|---|---|---|---|
 | DRZ-1 | 1 | `feat(emit): drop v1 relations() const emission — the slot Drizzle 1.0 removes` | S | — |
 | DRZ-2 | 1 | `chore(drizzle): 1.0.0-rc.4 — generator, runtime, scaffold, smoke` | M | DRZ-1 |
-| TEN-1 | 2-pre | `feat(runtime): ADR-042 — ALS-fed repository tenant scoping (tenant_scoped: true, strict enforcement)` | M | DRZ-2 |
+| REL-0 | 2-pre | `refactor(runtime): BaseRepository generic over its concrete table (#603)` | L | DRZ-2 |
+| TEN-1 | 2-pre | `feat(runtime): ADR-042 — ALS-fed repository tenant scoping (tenant_scoped: true, strict enforcement)` | M | REL-0 |
 | REL-1 | 2 | `feat(emit): defineRelations() manifest from relationships: + Junction; wire drizzle({ client, relations })` | M | DRZ-2 |
-| REL-2 | 2 | `feat(repo): typed with-includes on generated repositories — scoped + soft-delete-filtered at every hop` | L | REL-1, TEN-1 |
+| REL-2 | 2 | `feat(repo): typed with-includes on generated repositories — scoped + soft-delete-filtered at every hop` | L | REL-0, REL-1, TEN-1 |
 | REL-3 | 2 | `refactor(clean-lite-ps): relationship methods + typed navigator delegate to graph traversal; delete CGP-358b cross-repo injection` | L | REL-2 |
 | FE-REL | 5 | `feat(frontend): graph accessors — has_many / junction traversal + typed include over TanStack DB collections` | L | REL-1 |
 | QS-1 | 3-ext | *(query-surface repo)* `drizzle 1.0 peer; has_one; publish; introspection off v1 Relations` | M | — |
 | SEM-1 | 3 | `feat(schema): analytics vocabulary → field tags (role/agg/aggs/additivity/time) + catalog metrics` | M | DRZ-2 |
 | SEM-2 | 3 | `feat(emit): semantic model emitter — declared AggregateModel from the entity set` | L | SEM-1 |
 | SEM-3 | 3 | `test(smoke): CRM vertical slice with analytics tags — emitted model type-checks and answers a fan-out-trap measure` | M | SEM-2 |
-| CAP-1 | 4 | `feat(patterns): kind:'capability' + composed-base emission (ADR-041 implementation)` | L | DRZ-2 |
+| CAP-1 | 4 | `feat(patterns): kind:'capability' + composed-base emission (ADR-041 implementation)` | L | DRZ-2, REL-0 |
 | CAP-2 | 4 | `feat(schema): roles: block — role → (actor entity, cardinality) on communication entities` | M | CAP-1 |
 | CAP-3 | 4 | `feat(runtime+patterns): Actor + Communication capabilities (mixins, explicit scope)` | L | CAP-2 |
 
@@ -167,6 +168,29 @@ CGP-358b service composition, `queries:` forwarders.
 - `just test-post-publish` green (tarball peer range resolves).
 
 ---
+
+### 4.5 Checkpoint 1 — what unit 1 actually surfaced (2026-09-17)
+
+Specs `DRZ-1.md`, `GATE-1.md`, `DRZ-2.md`, `GATE-2.md` are the post-implementation truth; this is the digest that
+changes later units. Full list: epic #579 › "What downstream must know".
+
+- **The bump itself was small** (3 type errors, 4 specs) — the cost was in gates that had rotted. Three were red on
+  `main` and outside CI (GATE-1, #599); the smoke `tsc` filters matched on error *message* and hid real generated-code
+  errors (#575, #576); `test-smoke-integration` printed errors it did not gate on (GATE-2, #604). All now fail loudly.
+  Consequence for every later unit: **new emission that does not compile fails a gate immediately.**
+- **The relations slot is a named seam.** Emitted `database.module.ts` is `drizzle({ client: pool })` with
+  `export type DrizzleDB = NodePgDatabase`; 1.0 removed `schema` from the pg config. REL-1 passes `relations` and
+  parameterises `DrizzleDB` and `runtime/types/drizzle.ts` with the manifest's type (`TRelations`).
+- **`BaseRepository.table` is `PgTableWithColumns<any>` and cannot be narrowed in place** (#603): the obvious narrowing
+  passes `bun run typecheck` and breaks generated code under consumer tsconfigs. → REL-0 (§5A.0).
+- **jsonb mapping changed in 1.0:** Drizzle no longer serializes `jsonb`; the driver does. Specs asserting captured
+  params assert the object. Relevant to TEN-1/REL-2 tests that capture SQL, and to any non-`pg` driver path.
+- **`getColumns`** replaces `getTableColumns` — SEM-2 and REL-0 use it.
+- **`paths.*` config keys are declared once**, in `PathsConfigSchema`; the CLI type derives from it. SEM-2 / REL-1 add
+  output paths there.
+- **`drizzle-orm` is pinned in exactly one place** (root `package.json`); fixtures resolve by walking up. Do not add a
+  second declaration in any harness.
+- **The `clean` pipeline is known-red (#602)** and out of scope; do not mistake its failures for regressions.
 
 ## 5. Unit 3 — semantic / aggregate model emitter
 
@@ -277,6 +301,19 @@ model); add `has_one` to the relationship kinds; publish. Its tenancy hook (`sco
 ---
 
 ## 5A. Unit 2 — relations graph as the core contract (ADR-044)
+
+### 5A.0 REL-0 (#603) — `BaseRepository` generic over its concrete table
+Added at checkpoint 1. **As built, see `docs/specs/REL-0.md`** — that spec is the source of truth and supersedes this
+section. In one line: `BaseRepository<TEntity, TTable extends PgTable>` (and every family repository and mixin, with
+`TTable` always the second type parameter) holds `table: TTable` and reads columns through a typed `column()` helper,
+replacing the `PgTableWithColumns<any>` that forced the `.returning()` / write-payload assertions. `TEntity` stays an
+**independent, explicit** parameter: the checkpoint-1 wording here ("derive `TEntity` from `$inferSelect`, read columns
+via `getColumns`") was evaluated and rejected — generated code already defines the entity as
+`InferSelectModel<typeof table>`, and hand-written repositories legitimately pass a domain type that is not the row
+shape (REL-0.md §1). Validated under the **consumer** tsconfig (`noUncheckedIndexedAccess`) via `just test-smoke`, not
+`bun run typecheck` (charter I9). Prerequisite of TEN-1 (same choke point), REL-2 (typed includes) and CAP-1 (its
+capability mixins are typed over `BaseRepository<any, PgTable>`). `clean-lite-ps` generated repos + vendored runtime
+covered; the `clean` pipeline is not (#602).
 
 ### 5A.1 What "reads are generated" means
 RQBv2 resolves a nested include tree from one root in a single statement, typed end to end:
@@ -419,9 +456,13 @@ export function WithActor<TBase extends RepoCtor>(Base: TBase) { /* memberPredic
   `configSchema`, `forwarderMethods` for the service-side pass-throughs, `mixinImport` for the repo side.
 - Emission: `patternConfig.roles` literal on the concrete repo (the `renderPatternConfigLiteral` path
   `service.ejs.t:49`); a `Communication` entity's `roles` also drive FK columns via CAP-2.
-- Fixture: `meeting` (`patterns: [Integrated, Activity, Communication]`, roles host/attendees/about) over `contact`
+- Fixture: `meeting` (`patterns: [Activity, Communication]`, roles host/attendees/about) over `contact`
   (`Actor: individual`) and `account` (`Actor: group`, members via `contacts`); smoke tsc + `just test-integration`
-  round-trip of `findByRole('attendee', contactId, scope)`.
+  round-trip of `findByRole('attendees', contactId)` (scope is ALS-fed, never a parameter).
+  *Revised after checkpoint 1:* the originally proposed `[Integrated, Activity, Communication]` is a **hard error**
+  under CAP-1 — `Integrated` and `Activity` are both inheritable spine bases, and ADR-041 allows exactly one
+  (`pattern_multiple_spines`, `docs/specs/CAP-1.md`). Per ADR-041 §5, `Activity` is not dual-authored as a capability
+  until a consumer needs it; CAP-3's spec records the fixture it actually uses.
 
 ### 6.5 Out of scope for unit 4
 `to_shape` projections, selector/Find-target catalog, and shape registry from the subject-lattice research; any
