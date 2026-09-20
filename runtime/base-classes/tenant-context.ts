@@ -118,10 +118,12 @@ export interface RequesterContext {
    *
    *   - `'tenant'` (default) → apply the tenant predicate.
    *   - `'all'`              → drop it. Cross-tenant tooling: tenant
-   *     resolution at signup, super-admin reads, migrations. Reads see every
-   *     tenant; WRITES must supply `tenantId` explicitly or `stampTenant()`
-   *     throws — reading across tenants is a choice, writing without naming
-   *     the owner is a bug.
+   *     resolution at signup, super-admin reads, migrations. A READ hatch:
+   *     reads see every tenant, an INSERT must name its owner via an explicit
+   *     `tenantId` (`stampTenant()` throws otherwise), and a by-id UPDATE or
+   *     DELETE is refused outright (`CrossTenantWriteError`) — with the filter
+   *     dropped it would match whichever tenant owns that id. Narrow to one
+   *     tenant with `withTenantScope(tenantId, fn)` to write.
    *
    * Set via `withAllTenants(fn)`, never hand-assembled at a boundary.
    */
