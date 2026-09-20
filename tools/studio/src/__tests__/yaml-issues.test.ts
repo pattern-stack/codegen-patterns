@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { ZodIssueLike } from '@studio-shared';
-import { formatIssuePath, issueMessage, locateIssues } from '../inspector/yaml-issues';
+import { formatIssuePath, issueMessage, issuePosition, locateIssues } from '../inspector/yaml-issues';
 
 function issue(path: (string | number)[], message = 'Invalid input', code = 'invalid_type'): ZodIssueLike {
   return { path, message, code };
@@ -72,10 +72,13 @@ describe('locateIssues', () => {
     expect(located!.resolvedPath).toEqual(['entity', 'queries']);
   });
 
-  test('an empty path resolves to the document root', () => {
-    const [located] = locateIssues(DOC, [issue([], 'Unrecognized key')]);
-    expect(located!.exact).toBe(true);
-    expect(located!.location?.line).toBe(1);
+  test('an empty path with nothing to place it is file-level, not line 1', () => {
+    // Pointing at line 1 because that is where the root node starts claims a
+    // precision the issue does not have, and sends the reader to the wrong
+    // place — the defect the review caught at `6:1`.
+    const [located] = locateIssues(DOC, [issue([], 'Something is wrong with this file')]);
+    expect(located!.fileLevel).toBe(true);
+    expect(located!.location).toBeUndefined();
   });
 
   test('columns are 1-based', () => {
@@ -191,11 +194,10 @@ describe('a YAML parse failure', () => {
     expect(BROKEN.slice(located!.location!.from, located!.location!.to)).toBe('type: string');
   });
 
-  test('a position past the end of the document falls back to the root', () => {
-    // The marker still has to render somewhere; dropping it would leave the
-    // author with a message and nowhere to look.
+  test('a position past the end of the document is file-level', () => {
     const [located] = locateIssues('a: 1\n', [issue([], 'bad at line 99, column 3')]);
-    expect(located!.location?.line).toBe(1);
+    expect(located!.fileLevel).toBe(true);
+    expect(located!.location).toBeUndefined();
   });
 
   test('a schema issue with a path ignores any position in its message', () => {
@@ -206,9 +208,10 @@ describe('a YAML parse failure', () => {
     expect(located!.location?.line).toBe(2);
   });
 
-  test('a path-less issue with no position still falls back to the root', () => {
-    const [located] = locateIssues(DOC, [issue([], 'Unrecognized key')]);
-    expect(located!.location?.line).toBe(1);
+  test('a path-less issue with no position and no named key is file-level', () => {
+    const [located] = locateIssues(DOC, [issue([], 'Something is wrong with this file')]);
+    expect(located!.fileLevel).toBe(true);
+    expect(located!.location).toBeUndefined();
   });
 });
 
@@ -231,5 +234,90 @@ describe('issueMessage collapses a multi-line message', () => {
   test('a single-line message is unchanged', () => {
     const [located] = locateIssues(DOC, [issue(['entity', 'name'], 'Expected string')]);
     expect(issueMessage(located!)).toBe('entity.name: Expected string');
+  });
+});
+
+describe('an unrecognized key lands on the key, not on line 1', () => {
+  // Zod reports the offending keys in `ZodIssue.keys`, which the wire contract
+  // does not carry, and puts `path` at the *object* — empty for a top-level
+  // key. Before this, such an issue rendered at the root's first line while
+  // the key it names sat fifty lines down.
+  const WITH_BAD_KEY = [
+    '# a comment',           // 1
+    '#',                     // 2
+    'entity:',               // 3
+    '  name: contact',       // 4
+    '  fields:',             // 5
+    '    email:',            // 6
+    '      type: string',    // 7
+    'not_a_real_key: 1',     // 8
+    '',
+  ].join('\n');
+
+  test('the marker sits on the key the message names', () => {
+    const [located] = locateIssues(WITH_BAD_KEY, [
+      issue([], "Unrecognized key(s) in object: 'not_a_real_key'", 'unrecognized_keys'),
+    ]);
+    expect(located!.location?.line).toBe(8);
+    expect(located!.fileLevel).toBe(false);
+    expect(located!.exact).toBe(true);
+    expect(WITH_BAD_KEY.slice(located!.location!.from, located!.location!.to)).toBe('not_a_real_key');
+  });
+
+  test('a key nested under a path resolves beneath that path', () => {
+    const [located] = locateIssues(WITH_BAD_KEY, [
+      issue(['entity', 'fields'], "Unrecognized key(s) in object: 'email'", 'unrecognized_keys'),
+    ]);
+    expect(located!.location?.line).toBe(6);
+  });
+
+  test('the first key that exists wins when several are named', () => {
+    const [located] = locateIssues(WITH_BAD_KEY, [
+      issue([], "Unrecognized key(s) in object: 'absent', 'not_a_real_key'", 'unrecognized_keys'),
+    ]);
+    expect(located!.location?.line).toBe(8);
+  });
+
+  test('double-quoted key names are read too', () => {
+    const [located] = locateIssues(WITH_BAD_KEY, [
+      issue([], 'Unrecognized key(s) in object: "not_a_real_key"', 'unrecognized_keys'),
+    ]);
+    expect(located!.location?.line).toBe(8);
+  });
+
+  test('a named key that is not in the document is file-level', () => {
+    const [located] = locateIssues(WITH_BAD_KEY, [
+      issue([], "Unrecognized key(s) in object: 'gone_already'", 'unrecognized_keys'),
+    ]);
+    expect(located!.fileLevel).toBe(true);
+    expect(located!.location).toBeUndefined();
+  });
+
+  test('only `unrecognized_keys` is read this way', () => {
+    // Another code whose message happens to quote a name must not be dragged
+    // onto that key.
+    const [located] = locateIssues(WITH_BAD_KEY, [
+      issue([], "Unrecognized key(s) in object: 'not_a_real_key'", 'custom'),
+    ]);
+    expect(located!.fileLevel).toBe(true);
+  });
+
+  test('the message still names the key', () => {
+    const [located] = locateIssues(WITH_BAD_KEY, [
+      issue([], "Unrecognized key(s) in object: 'not_a_real_key'", 'unrecognized_keys'),
+    ]);
+    expect(issueMessage(located!)).toContain('not_a_real_key');
+  });
+});
+
+describe('issuePosition', () => {
+  test('a placed issue reads line:column', () => {
+    const [located] = locateIssues(DOC, [issue(['entity', 'name'])]);
+    expect(issuePosition(located!)).toBe('2:9');
+  });
+
+  test('a file-level issue says so rather than naming a line', () => {
+    const [located] = locateIssues(DOC, [issue([], 'Something is wrong with this file')]);
+    expect(issuePosition(located!)).toBe('file');
   });
 });

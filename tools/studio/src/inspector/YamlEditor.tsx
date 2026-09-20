@@ -11,7 +11,7 @@ import { yaml as yamlLanguage } from '@codemirror/lang-yaml';
 import type { ZodIssueLike } from '@studio-shared';
 
 import { studioEditorTheme } from './editor-theme';
-import { issueMessage, locateIssues } from './yaml-issues';
+import { issueMessage, issuePosition, locateIssues } from './yaml-issues';
 import type { LocatedIssue } from './yaml-issues';
 
 export interface YamlEditorProps {
@@ -155,6 +155,8 @@ export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }
     instance.focus();
   }, []);
 
+  // A file-level issue has no line to sit on, so the list says so rather than
+  // naming a position it does not have.
   const unlocated = useMemo(() => located.filter((i) => !i.location), [located]);
 
   return (
@@ -186,7 +188,7 @@ export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }
             {unlocated.length > 0 && (
               <span style={{ color: 'var(--t-muted)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
                 {' '}
-                · {unlocated.length} could not be placed
+                · {unlocated.length} file-level
               </span>
             )}
           </div>
@@ -217,7 +219,7 @@ export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }
                   textAlign: 'right',
                 }}
               >
-                {item.location ? `${item.location.line}:${item.location.column}` : '—'}
+                {issuePosition(item)}
               </span>
               <span style={{ flex: 1 }}>{issueMessage(item)}</span>
             </button>

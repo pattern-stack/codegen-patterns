@@ -6,10 +6,20 @@ import path from 'node:path';
 /**
  * Studio dev server.
  *
- * `/api` is proxied to the Studio server (`codegen studio`, default port 5178 —
- * `STUDIO_DEFAULT_PORT` in the shared contract) so the UI fetches same-origin
- * and nothing needs CORS. `STUDIO_SERVER_PORT` overrides the target when the
- * server was started on another port.
+ * Two ways the UI reaches the API, and they are not the same path:
+ *
+ * - `just studio` — the browser loads the page from the **Studio server**,
+ *   which proxies non-`/api` requests here. Requests are same-origin and the
+ *   proxy below is never used.
+ * - `bun run dev` on its own — the browser loads the page from Vite, and the
+ *   proxy below forwards `/api` to the server. The `Origin` header stays
+ *   `127.0.0.1:5179`, which the server allows only when it was told about the
+ *   Vite origin (`--vite`, which the recipe passes). A state-changing request
+ *   from anywhere else is a 403 — that is the CSRF control working, not a bug.
+ *
+ * `STUDIO_SERVER_PORT` retargets this proxy. It is needed whenever the server
+ * is not on `STUDIO_DEFAULT_PORT` (5178) — `just studio <dir> <port>` takes a
+ * port but cannot reach in here to set it, so pass the env var alongside.
  */
 const serverPort = Number(process.env.STUDIO_SERVER_PORT ?? 5178);
 

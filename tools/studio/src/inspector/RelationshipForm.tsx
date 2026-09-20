@@ -58,9 +58,27 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
   const [kind, setKind] = useState<RelationshipKind>(RELATIONSHIP_KINDS[0]!.id);
   const [draft, setDraft] = useState<Draft>(() => defaultsFor(RELATIONSHIP_KINDS[0]!.id));
 
-  const [preview, setPreview] = useState<RelationshipPreviewFile[] | null>(null);
+  /**
+   * The preview, together with the request that produced it.
+   *
+   * Keeping the request means Save can tell a preview of *this* form from one
+   * left over from the previous keystroke — during the debounce the old preview
+   * is still on screen, and Save must not write something the reader has not
+   * been shown.
+   */
+  const [preview, setPreview] = useState<{
+    request: RelationshipRequest;
+    files: RelationshipPreviewFile[];
+  } | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [error, setError] = useState<{ message: string; detail?: string } | null>(null);
+  /**
+   * Preview and write failures are kept apart. A failed preview means the form
+   * describes something the server will not accept, so Save is off until it is
+   * fixed. A failed write leaves a good preview standing, so Save stays on and
+   * the reader can retry.
+   */
+  const [previewError, setPreviewError] = useState<{ message: string; detail?: string } | null>(null);
+  const [writeError, setWriteError] = useState<{ message: string; detail?: string } | null>(null);
   const [writing, setWriting] = useState(false);
   const [written, setWritten] = useState<string[] | null>(null);
 
@@ -88,6 +106,7 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
     setDraft(defaultsFor(next));
     setPreview(null);
     setWritten(null);
+    setWriteError(null);
   };
 
   // Preview is debounced against the draft so typing a name does not fire a
@@ -98,19 +117,20 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
       return;
     }
     setWritten(null);
+    setWriteError(null);
     let cancelled = false;
     const timer = setTimeout(() => {
       setPreviewing(true);
-      setError(null);
+      setPreviewError(null);
       api
         .previewRelationship(request)
         .then((res) => {
-          if (!cancelled) setPreview(res.preview);
+          if (!cancelled) setPreview({ request, files: res.preview });
         })
         .catch((err: unknown) => {
           if (cancelled) return;
           setPreview(null);
-          setError(describe(err));
+          setPreviewError(describe(err));
         })
         .finally(() => {
           if (!cancelled) setPreviewing(false);
@@ -126,19 +146,31 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
   const save = useCallback(() => {
     if (!request) return;
     setWriting(true);
-    setError(null);
+    setWriteError(null);
     api
       .writeRelationship(request)
       .then((res) => {
         setWritten(res.written);
         onWritten(res.written);
       })
-      .catch((err: unknown) => setError(describe(err)))
+      .catch((err: unknown) => setWriteError(describe(err)))
       .finally(() => setWriting(false));
   }, [request, onWritten]);
 
   const sameEntity = from !== '' && from === to;
-  const canSave = request != null && preview != null && !previewing && !writing;
+  /**
+   * Save writes exactly what the preview shows, so it is only on when the
+   * preview on screen was produced by the form as it now stands: no request in
+   * flight, no preview failure, and the shown preview's own request is this one
+   * rather than the previous keystroke's.
+   */
+  const canSave =
+    request != null &&
+    preview != null &&
+    preview.request === request &&
+    previewError == null &&
+    !previewing &&
+    !writing;
 
   if (entities.length === 0) {
     return (
@@ -289,22 +321,25 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'var(--s-canvas)' }}>
-          {error != null ? (
+          {previewError != null ? (
             <div style={{ padding: 'var(--sp-3)' }}>
               <div style={{ color: 'var(--danger)', fontSize: 12, marginBottom: 'var(--sp-2)' }}>
-                {error.message}
+                {previewError.message}
               </div>
-              {error.detail != null && (
+              <div style={{ fontSize: 11, color: 'var(--t-muted)' }}>
+                Nothing will be written until this is resolved.
+              </div>
+              {previewError.detail != null && (
                 <pre
                   style={{
-                    margin: 0,
+                    margin: 'var(--sp-2) 0 0',
                     fontFamily: 'var(--font-mono)',
                     fontSize: 11,
                     color: 'var(--t-muted)',
                     whiteSpace: 'pre-wrap',
                   }}
                 >
-                  {error.detail}
+                  {previewError.detail}
                 </pre>
               )}
             </div>
@@ -312,12 +347,12 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
             <div style={{ padding: 'var(--sp-3)', fontSize: 12, color: 'var(--t-muted)' }}>
               {previewing ? 'Asking the server what this would write…' : 'Pick two entities to see the YAML.'}
             </div>
-          ) : preview.length === 0 ? (
+          ) : preview.files.length === 0 ? (
             <div style={{ padding: 'var(--sp-3)', fontSize: 12, color: 'var(--t-muted)' }}>
               The server reported nothing to write for this combination.
             </div>
           ) : (
-            preview.map((file) => (
+            preview.files.map((file) => (
               <div key={file.path}>
                 <div
                   style={{
@@ -349,7 +384,7 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
           )}
         </div>
 
-        {written != null && (
+        {(written != null || writeError != null) && (
           <div
             style={{
               flex: '0 0 auto',
@@ -357,10 +392,12 @@ export function RelationshipForm({ entities, initialFrom, onWritten }: Relations
               borderTop: '1px solid var(--s-line)',
               background: 'var(--s-panel)',
               fontSize: 11.5,
-              color: 'var(--ok)',
+              color: writeError != null ? 'var(--danger)' : 'var(--ok)',
             }}
           >
-            Wrote {written.length} {written.length === 1 ? 'file' : 'files'}. Run Generate to build it.
+            {writeError != null
+              ? `Could not write: ${writeError.message}`
+              : `Wrote ${written!.length} ${written!.length === 1 ? 'file' : 'files'}. Run Generate to build it.`}
           </div>
         )}
       </div>

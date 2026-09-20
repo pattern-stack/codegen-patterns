@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EDGE_KIND_ORDER, EDGE_KIND_STYLES } from './edge-kinds';
 
 const NODE_KINDS = [
@@ -14,9 +14,21 @@ const NODE_KINDS = [
  * It collapses to a chip, because expanded it covers the bottom-left of the
  * canvas — on a short viewport that is a node the reader wanted to see. The
  * swatches stay visible while collapsed, so the chip is still a key.
+ *
+ * `roomy` decides the default. On a laptop canvas the expanded panel took a
+ * third of the height and sat on top of the junction card, which is the node a
+ * relations demo exists to show — so there it starts collapsed. Once the reader
+ * has toggled it themselves that choice sticks, including across resizes:
+ * a panel that re-opened every time the window changed would be worse than one
+ * that opened in the wrong place once.
  */
-export function Legend() {
-  const [open, setOpen] = useState(true);
+export function Legend({ roomy }: { roomy: boolean }) {
+  const [open, setOpen] = useState(roomy);
+  const touched = useRef(false);
+
+  useEffect(() => {
+    if (!touched.current) setOpen(roomy);
+  }, [roomy]);
 
   return (
     <div
@@ -36,7 +48,10 @@ export function Legend() {
     >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          touched.current = true;
+          setOpen((v) => !v);
+        }}
         aria-expanded={open}
         style={{
           display: 'flex',

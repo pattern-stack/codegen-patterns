@@ -36,6 +36,13 @@ export interface LocatedIssue {
   resolvedPath: (string | number)[];
   /** True when `resolvedPath` is the whole of `issue.path`. */
   exact: boolean;
+  /**
+   * The issue is about the file rather than a place in it — nothing in the
+   * document corresponds to it. Such an issue has no `location`: pointing at
+   * line 1 because that is where the root node starts would claim a precision
+   * this does not have, and the reader would go looking there.
+   */
+  fileLevel: boolean;
 }
 
 /** Offsets of the first character of each line, ascending. */
@@ -172,6 +179,98 @@ function resolveWithWrapper(root: Node, path: (string | number)[]): Resolved {
 }
 
 /**
+ * Descend `path` through map *values* only, returning the container it names.
+ *
+ * `resolvePath` prefers the key when a path lands on a map entry, which is what
+ * a schema issue wants. Locating an unrecognized key wants the opposite: the
+ * map the key sits in, so the key's own node can be taken from it.
+ */
+function containerFor(root: Node, path: (string | number)[]): Node | undefined {
+  let current: Node = root;
+
+  for (const segment of path) {
+    if (isSeq(current) && typeof segment === 'number') {
+      const item = current.items[segment];
+      if (item == null || typeof item !== 'object') return undefined;
+      current = item as Node;
+      continue;
+    }
+    const pair = pairFor(current, segment);
+    const value = pair?.value as Node | null | undefined;
+    if (value == null || typeof value !== 'object') return undefined;
+    current = value;
+  }
+
+  return current;
+}
+
+/**
+ * The node of `key` inside the map at `path` — the key, not its value.
+ *
+ * Tries the path as given, then inside each top-level block, for the same
+ * reason `resolveWithWrapper` does: a 422 may or may not include the file's
+ * `entity:` wrapper in its path.
+ */
+function keyNodeAt(root: Node, path: (string | number)[], key: string): Node | undefined {
+  const candidates: (Node | undefined)[] = [containerFor(root, path)];
+
+  if (isMap(root)) {
+    for (const pair of root.items) {
+      const value = pair.value as Node | null;
+      if (value != null && typeof value === 'object') candidates.push(containerFor(value, path));
+    }
+  }
+
+  for (const container of candidates) {
+    if (container == null) continue;
+    const node = pairFor(container, key)?.key as Node | null | undefined;
+    if (node != null && hasRange(node)) return node;
+  }
+
+  return undefined;
+}
+
+/**
+ * A node's range as an editor location.
+ *
+ * `range` is [start, value-end, node-end]; the third includes trailing comments
+ * and whitespace, so the second is the one to underline.
+ */
+function locationOf(
+  range: [number, number, number],
+  starts: number[],
+  source: string,
+): IssueLocation {
+  const from = Math.min(range[0], source.length);
+  const to = Math.max(Math.min(range[1], source.length), from + 1);
+  const { line, column } = positionAt(starts, from);
+  return { line, column, from, to };
+}
+
+/** The document root's own location, for an issue that resolved nowhere else. */
+function rootLocation(node: Node, starts: number[], source: string): IssueLocation | undefined {
+  return hasRange(node) ? locationOf(node.range, starts, source) : undefined;
+}
+
+/**
+ * The keys named by an `unrecognized_keys` issue.
+ *
+ * Zod reports the offending keys in `ZodIssue.keys`, which the contract's
+ * `ZodIssueLike` does not carry, and puts `path` at the *object* — empty for a
+ * key at the top level. The names survive in the message, so read them from
+ * there: an author who typed a key that is not in the schema wants the marker
+ * on that key, not on the first line of the file.
+ */
+const UNRECOGNIZED_KEYS = /Unrecognized key(?:\(s\))? in object:\s*(.+)$/;
+
+function unrecognizedKeys(issue: ZodIssueLike): string[] {
+  if (issue.code !== 'unrecognized_keys') return [];
+  const match = UNRECOGNIZED_KEYS.exec(issue.message.trim());
+  if (!match) return [];
+  return [...match[1]!.matchAll(/'([^']+)'|"([^"]+)"/g)].map((m) => m[1] ?? m[2]!);
+}
+
+/**
  * A position carried in the message text rather than in `path`.
  *
  * The most common 422 on a hand-edited file is not a schema violation at all —
@@ -219,30 +318,57 @@ export function locateIssues(source: string, issues: ZodIssueLike[]): LocatedIss
     // parsed at all, so its own reported position is the only thing to go on.
     if (issue.path.length === 0) {
       const fromMessage = positionFromMessage(issue.message, starts, source);
-      if (fromMessage) return { issue, location: fromMessage, resolvedPath: [], exact: true };
+      if (fromMessage) {
+        return { issue, location: fromMessage, resolvedPath: [], exact: true, fileLevel: false };
+      }
     }
 
     if (root == null || !hasRange(root)) {
-      return { issue, resolvedPath: [], exact: issue.path.length === 0 };
+      return { issue, resolvedPath: [], exact: issue.path.length === 0, fileLevel: true };
+    }
+
+    // An unrecognized key is named in the message, not in the path, and it is
+    // the key rather than its value that is wrong.
+    for (const key of unrecognizedKeys(issue)) {
+      const node = keyNodeAt(root, issue.path, key);
+      if (node != null && hasRange(node)) {
+        return {
+          issue,
+          location: locationOf(node.range, starts, source),
+          resolvedPath: [...issue.path, key],
+          exact: true,
+          fileLevel: false,
+        };
+      }
     }
 
     const { node, depth } = resolveWithWrapper(root, issue.path);
-    const range = hasRange(node) ? node.range : undefined;
-    if (!range) {
-      return { issue, resolvedPath: issue.path.slice(0, depth), exact: depth === issue.path.length };
+
+    // Nothing in the document answers to this issue. Say so, rather than
+    // pointing at the root node's first line as though it were the place.
+    if (depth === 0 && issue.path.length > 0) {
+      return { issue, resolvedPath: [], exact: false, fileLevel: false, location: rootLocation(node, starts, source) };
+    }
+    if (issue.path.length === 0) {
+      return { issue, resolvedPath: [], exact: false, fileLevel: true };
     }
 
-    // `range` is [start, value-end, node-end]; the third includes trailing
-    // comments and whitespace, so the second is the one to underline.
-    const from = Math.min(range[0], source.length);
-    const to = Math.max(Math.min(range[1], source.length), from + 1);
-    const { line, column } = positionAt(starts, from);
+    const range = hasRange(node) ? node.range : undefined;
+    if (!range) {
+      return {
+        issue,
+        resolvedPath: issue.path.slice(0, depth),
+        exact: depth === issue.path.length,
+        fileLevel: false,
+      };
+    }
 
     return {
       issue,
-      location: { line, column, from, to },
+      location: locationOf(range, starts, source),
       resolvedPath: issue.path.slice(0, depth),
       exact: depth === issue.path.length,
+      fileLevel: false,
     };
   });
 }
@@ -275,8 +401,19 @@ function oneLine(message: string): string {
 /** The message to show on the marker, phrased by how well the path resolved. */
 export function issueMessage(located: LocatedIssue): string {
   const message = oneLine(located.issue.message);
+  // The issue's own path, not the resolved prefix: when a required key is
+  // missing, its name is the thing the author needs, and the prefix has
+  // dropped it. `resolvedPath` describes where the marker sits, not what is
+  // wrong.
   const where = formatIssuePath(located.issue.path);
   if (!where) return message;
   if (located.exact) return `${where}: ${message}`;
   return `${where}: ${message} (expected here)`;
+}
+
+/** What the issue list shows in its position column. */
+export function issuePosition(located: LocatedIssue): string {
+  if (located.fileLevel) return 'file';
+  if (!located.location) return '—';
+  return `${located.location.line}:${located.location.column}`;
 }

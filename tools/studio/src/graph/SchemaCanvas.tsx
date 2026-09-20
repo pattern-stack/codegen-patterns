@@ -24,6 +24,16 @@ const nodeTypes: NodeTypes = { schemaNode: SchemaNode };
 
 /** Above this many nodes, the minimap is worth the corner it occupies. */
 const MINIMAP_THRESHOLD = 12;
+
+/**
+ * The canvas a fully expanded legend can sit on without covering a card.
+ *
+ * The panel is roughly 355×180 CSS px in the bottom-left. Below these bounds it
+ * takes a third of the canvas and lands on the node area — at 1280×720 it half
+ * covered the junction card, which is the one node a relations demo is about.
+ */
+const LEGEND_MIN_WIDTH = 760;
+const LEGEND_MIN_HEIGHT = 520;
 const edgeTypes: EdgeTypes = { schemaEdge: SchemaEdge };
 
 export interface SchemaCanvasProps {
@@ -64,6 +74,23 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
       setLaidOut(true);
     });
   }, [graphNodes, graphEdges, setNodes, setEdges]);
+
+  // Measured, not derived from the window: the inspector and the drawer both
+  // take from the canvas, so the viewport says nothing about the room here.
+  const host = useRef<HTMLDivElement>(null);
+  const [roomy, setRoomy] = useState(true);
+
+  useEffect(() => {
+    const el = host.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry?.contentRect;
+      if (!box) return;
+      setRoomy(box.width >= LEGEND_MIN_WIDTH && box.height >= LEGEND_MIN_HEIGHT);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const { connectedNodeIds, connectedEdgeIds } = useGraphSelection(selectedId, graphNodes, graphEdges);
 
@@ -110,7 +137,10 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
   );
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--s-canvas)' }}>
+    <div
+      ref={host}
+      style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--s-canvas)' }}
+    >
       <svg style={{ position: 'absolute', width: 0, height: 0 }} aria-hidden>
         <defs>
           {EDGE_MARKERS.map((marker) => (
@@ -168,7 +198,7 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
         )}
       </ReactFlow>
 
-      <Legend />
+      <Legend roomy={roomy} />
     </div>
   );
 }
