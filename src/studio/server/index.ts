@@ -5,8 +5,13 @@
  * `codegen studio` under either runtime, and the server has no dependency of
  * its own to add to the package.
  *
- * Bound to 127.0.0.1 only, which keeps the socket unreachable from off the
- * machine. That is necessary but NOT sufficient: the attacker who matters is a
+ * Bound to 127.0.0.1 by default, which keeps the socket unreachable from off
+ * the machine. `host` can widen that for a remote owner, and then the bind is
+ * the ONLY thing that was protecting an unauthenticated API — hence the
+ * startup warning and the SSH-tunnel recommendation in it.
+ *
+ * The loopback bind is necessary but NOT sufficient even on its own: the
+ * attacker who matters is a
  * malicious page open in a browser ON this machine, which can post to
  * localhost without ever reading the response. `readJsonBody` accepts any
  * content-type, so such a post is a CORS "simple request" and is never
@@ -25,6 +30,7 @@
 
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 
@@ -60,8 +66,25 @@ import {
 export interface StudioServerOptions {
 	/** The project Studio operates on. Every path is resolved inside it. */
 	projectDir: string;
-	/** Port to bind on 127.0.0.1. 0 picks a free one (tests). */
+	/** Port to bind. 0 picks a free one (tests). */
 	port?: number;
+	/**
+	 * Address to bind. Defaults to 127.0.0.1 — the safe posture, and the one
+	 * you keep unless you deliberately need to reach Studio from another
+	 * machine. A non-loopback bind exposes an UNAUTHENTICATED API that can run
+	 * generate / dbPush / restart, so it emits a warning through {@link warn}.
+	 */
+	host?: string;
+	/**
+	 * Extra origins accepted on state-changing requests, in addition to the
+	 * server's own and the dev Vite origin. Exact string match only — no
+	 * wildcards, no patterns, no `*`. Needed when the browser reaches a
+	 * non-loopback bind by a NAME rather than the bound address, since the
+	 * Origin header then carries the name.
+	 */
+	allowOrigins?: string[];
+	/** Where startup warnings go. Defaults to stderr. */
+	warn?: (message: string) => void;
 	/**
 	 * Built UI to serve. Defaults to the repo's `tools/studio/dist` when it
 	 * exists; a missing directory is not an error — the API still serves.
@@ -75,11 +98,92 @@ export interface StudioServerOptions {
 
 export interface StudioServer {
 	port: number;
+	/** The address actually bound. */
+	host: string;
 	url: string;
+	/** False when the bind is reachable from off this machine. */
+	loopback: boolean;
+	/** Every origin accepted on a state-changing request, for display. */
+	allowedOrigins: string[];
 	close(): Promise<void>;
 }
 
-const HOST = '127.0.0.1';
+const DEFAULT_HOST = '127.0.0.1';
+/** Binds that mean "every interface" — the browser's origin cannot be predicted. */
+const WILDCARD_HOSTS = new Set(['0.0.0.0', '::', '']);
+
+/** True for an address only this machine can reach. */
+export function isLoopbackHost(host: string): boolean {
+	return host === 'localhost' || host === '::1' || /^127\./.test(host);
+}
+
+/** `http://host:port`, bracketing a bare IPv6 literal. */
+export function originFor(host: string, port: number): string {
+	return `http://${host.includes(':') ? `[${host}]` : host}:${port}`;
+}
+
+/**
+ * The origins that are "this server", by the address it bound.
+ *
+ * A wildcard bind is reachable at every local address, so each one is
+ * enumerated rather than waved through: the rule stays exact-match, and an
+ * origin that is not one of this machine's addresses is still refused.
+ */
+export function selfOrigins(host: string, port: number): string[] {
+	const loopback = [
+		originFor('127.0.0.1', port),
+		originFor('localhost', port),
+		originFor('::1', port),
+	];
+	if (WILDCARD_HOSTS.has(host)) {
+		const local: string[] = [];
+		for (const addrs of Object.values(os.networkInterfaces())) {
+			for (const a of addrs ?? []) {
+				if (!a.internal) local.push(originFor(a.address, port));
+			}
+		}
+		return [...loopback, ...local];
+	}
+	if (isLoopbackHost(host)) return loopback;
+	return [originFor(host, port)];
+}
+
+/**
+ * Validate an `--allow-origin` value. An origin and nothing else: a scheme, a
+ * host, an optional port. No path, no wildcard, no `*` — a pattern language
+ * here is how an allowlist quietly becomes "allow anything".
+ */
+export function validateAllowedOrigin(value: string): string {
+	if (value === '*' || value.includes('*')) {
+		throw new Error(`--allow-origin does not accept wildcards: ${value}`);
+	}
+	let parsed: URL;
+	try {
+		parsed = new URL(value);
+	} catch {
+		throw new Error(`--allow-origin must be a full origin like http://host:port, got: ${value}`);
+	}
+	if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+		throw new Error(`--allow-origin must be http or https, got: ${value}`);
+	}
+	if (parsed.origin !== value.replace(/\/$/, '')) {
+		throw new Error(
+			`--allow-origin must be an origin with no path or query, got: ${value} (did you mean ${parsed.origin}?)`,
+		);
+	}
+	return parsed.origin;
+}
+
+/** The warning a non-loopback bind prints. Exported so the CLI renders the same text. */
+export function nonLoopbackWarning(host: string, port: number): string {
+	return [
+		`Studio is bound to ${host}:${port}, which is reachable from other machines.`,
+		'The API is UNAUTHENTICATED: anyone who can reach this address can read and',
+		'write this project\u2019s YAML and run generate / dbPush / restart in it.',
+		'Prefer an SSH tunnel (ssh -L 5178:127.0.0.1:5178 <host>) and the default',
+		'loopback bind, or restrict who can reach this address.',
+	].join('\n');
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
 	const payload = JSON.stringify(body);
@@ -161,9 +265,18 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 	const viteOrigin = options.viteOrigin;
 	const cliVersion = options.cliVersion ?? 'unknown';
 	const registry = new RunRegistry();
+	const host = options.host ?? DEFAULT_HOST;
+	const warn = options.warn ?? ((m: string) => process.stderr.write(`${m}\n`));
+	let extraOrigins: string[];
+	try {
+		extraOrigins = (options.allowOrigins ?? []).map(validateAllowedOrigin);
+	} catch (err: unknown) {
+		return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+	}
 	// Known only after listen(), and needed to recognise the UI's own
 	// same-origin requests when the server serves the built UI itself.
 	let boundPort = 0;
+	let ownOrigins: string[] = [];
 
 	function isStateChanging(method: string | undefined): boolean {
 		return method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH';
@@ -180,11 +293,8 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 	function isOriginAllowed(origin: string | undefined): boolean {
 		if (!origin) return true;
 		if (viteOrigin && origin === viteOrigin) return true;
-		return [
-			`http://${HOST}:${boundPort}`,
-			`http://localhost:${boundPort}`,
-			`http://[::1]:${boundPort}`,
-		].includes(origin);
+		if (extraOrigins.includes(origin)) return true;
+		return ownOrigins.includes(origin);
 	}
 
 	const server = http.createServer((req, res) => {
@@ -198,7 +308,8 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 	});
 
 	async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-		const url = new URL(req.url ?? '/', `http://${HOST}`);
+		// Base is a parsing placeholder — only pathname and search are read.
+		const url = new URL(req.url ?? '/', 'http://studio.invalid');
 		const pathname = url.pathname;
 
 		// The dev Vite origin is the only cross-origin caller there is.
@@ -464,13 +575,21 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 
 	return new Promise<StudioServer>((resolve, reject) => {
 		server.once('error', reject);
-		server.listen(options.port ?? STUDIO_DEFAULT_PORT, HOST, () => {
+		server.listen(options.port ?? STUDIO_DEFAULT_PORT, host, () => {
 			server.removeListener('error', reject);
 			const port = (server.address() as AddressInfo).port;
 			boundPort = port;
+			ownOrigins = selfOrigins(host, port);
+			const loopback = isLoopbackHost(host);
+			// Emitted here rather than in the CLI so a programmatic caller
+			// cannot bind the world and skip the notice.
+			if (!loopback) warn(nonLoopbackWarning(host, port));
 			resolve({
 				port,
-				url: `http://${HOST}:${port}`,
+				host,
+				loopback,
+				allowedOrigins: [...ownOrigins, ...extraOrigins, ...(viteOrigin ? [viteOrigin] : [])],
+				url: originFor(isLoopbackHost(host) ? DEFAULT_HOST : host, port),
 				close: () =>
 					new Promise<void>((done, fail) => {
 						server.close((err) => (err ? fail(err) : done()));

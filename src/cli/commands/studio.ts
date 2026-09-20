@@ -12,7 +12,7 @@ import { Command, Option } from 'clipanion';
 
 import { STUDIO_DEFAULT_PORT } from '../../studio/shared/api.js';
 import { createStudioServer } from '../../studio/server/index.js';
-import { printError, printInfo, printSuccess } from '../ui/output.js';
+import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 
 function readCliVersion(): string {
@@ -34,11 +34,17 @@ export class StudioCommand extends Command {
 			['Serve a specific project', 'codegen studio ../demo-app'],
 			['Pick a port', 'codegen studio --port 5200'],
 			['Proxy to a Vite dev server', 'codegen studio --vite http://127.0.0.1:5179'],
+			['Reach it from another machine (see the warning it prints)', 'codegen studio --host 10.0.0.5'],
+			['Allow a browser that reaches it by name', 'codegen studio --host 10.0.0.5 --allow-origin http://box.tailnet.ts.net:5178'],
 		],
 	});
 
 	dir = Option.String({ required: false });
 	port = Option.String('--port', String(STUDIO_DEFAULT_PORT));
+	// Default unchanged: loopback, no extra origins. Widening it is a choice
+	// the operator makes explicitly and is warned about.
+	host = Option.String('--host', '127.0.0.1');
+	allowOrigin = Option.Array('--allow-origin', []);
 	vite = Option.String('--vite', { required: false });
 	uiDir = Option.String('--ui-dir', { required: false });
 	json = Option.Boolean('--json', false);
@@ -63,9 +69,16 @@ export class StudioCommand extends Command {
 			server = await createStudioServer({
 				projectDir,
 				port,
+				host: this.host,
+				allowOrigins: this.allowOrigin,
 				viteOrigin: this.vite,
 				uiDir: this.uiDir,
 				cliVersion: readCliVersion(),
+				// Rendered through the CLI's own warning style rather than raw
+				// stderr, but emitted by the server either way.
+				warn: (message) => {
+					if (!isJsonMode()) for (const line of message.split('\n')) printWarning(line);
+				},
 			});
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -78,10 +91,22 @@ export class StudioCommand extends Command {
 		}
 
 		if (isJsonMode()) {
-			printJson({ command: 'studio', url: server.url, port: server.port, projectDir });
+			printJson({
+				command: 'studio',
+				url: server.url,
+				host: server.host,
+				port: server.port,
+				loopback: server.loopback,
+				allowedOrigins: server.allowedOrigins,
+				projectDir,
+			});
 		} else {
 			printSuccess(`Studio listening on ${server.url}`);
 			printInfo(`project: ${projectDir}`);
+			if (!server.loopback) {
+				printInfo(`accepted origins: ${server.allowedOrigins.join(', ')}`);
+				printInfo('a browser reaching this by NAME needs --allow-origin http://<name>:<port>');
+			}
 			if (this.vite) printInfo(`proxying the UI to ${this.vite}`);
 			printInfo('press Ctrl-C to stop');
 		}
