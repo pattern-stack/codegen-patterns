@@ -6,7 +6,7 @@
  *
  * REL-2 (#587) deleted `test/scaffold/shared/base-classes/base-repository.ts`,
  * the stub that used to SHADOW the runtime base for this suite (REL-0 flagged it;
- * a generated repository now calls `baseQuery` / `rootScopeRaw`, which the stub
+ * a generated repository now calls `baseQuery` / `rootScopeRawOn`, which the stub
  * never had). So these tests now exercise the REAL contract, and four assertions
  * below changed because they were pinning the stub's drift, not a contract:
  *

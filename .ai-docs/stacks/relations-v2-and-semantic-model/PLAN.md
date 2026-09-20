@@ -438,7 +438,7 @@ changes later units:
   construction, including from a hand-written `db.query.*`; REL-3's navigator and FE-REL inherit it for free and must
   not add scoping of their own.
 - **One predicate builder, three call sites** — `runtime/base-classes/scope-filters.ts`. `scopeFilter(table, cfg,
-  owner)` is the root's guard (via `scopeAnd`), the RQBv2 root filter's guard (via `rootScopeRaw`) and each hop's guard
+  owner)` is the root's guard (via `scopeAnd`), the RQBv2 root filter's guard (via `rootScopeRawOn`) and each hop's guard
   (via `hopScope`). TEN-1's `scopePredicate()` / `tenantPredicate()` are now one-line handles over the same functions,
   and `column()` moved to `runtime/base-classes/table-columns.ts` to break the cycle (both re-exported from
   `base-repository.ts`, so no import path changed).
@@ -471,7 +471,7 @@ changes later units:
   controller can carry an allowlisted include. REL-3 still owns the navigator and the deletion of the CGP-358b
   composition methods beside them.
 - **The scaffold's shadow `BaseRepository`/`BaseService` stubs are gone.** They shadowed the real runtime bases for
-  `just test-integration` (REL-0 flagged it), and a generated repository now calls `baseQuery` / `rootScopeRaw`, which
+  `just test-integration` (REL-0 flagged it), and a generated repository now calls `baseQuery` / `rootScopeRawOn`, which
   the stubs never had. The integration suite runs against the real contract; four assertions that had encoded the
   stubs' drift were corrected.
 - **The scoped leak graph** is `test/scaffold/entities/{region,site,sensor}-scaffold.yaml` +

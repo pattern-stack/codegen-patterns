@@ -98,7 +98,7 @@ resolve against.
     all carry it. A graph that declares no scope anywhere emits neither the
     import nor the constants, so its manifest is byte-identical to before.
   - **One predicate builder** — `runtime/base-classes/scope-filters.ts` —
-    behind the root (`scopeAnd`), the RQBv2 root filter (`rootScopeRaw`) and
+    behind the root (`scopeAnd`), the RQBv2 root filter (`rootScopeRawOn`) and
     each hop (`hopScope`). `BaseRepository.scopePredicate()` /
     `tenantPredicate()` are one-line handles over it. `column()` moved to
     `runtime/base-classes/table-columns.ts`; both it and `tenantPredicateFor`

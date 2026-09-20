@@ -394,9 +394,14 @@ Three call sites, one implementation:
    AND-ed with the caller's `extra`. TEN-1's `scopePredicate()` and `tenantPredicate()` survive as one-line handles over
    `userScopePredicateFor` / `tenantAxisPredicate`, so nothing that called them changed and there is still exactly one
    implementation per axis.
-2. The generated repository's RQBv2 root filter — `{ RAW: () => this.rootScopeRaw({ softDelete }) }`, which is
-   `scopeFilter(...) ?? sql\`true\``.
+2. The generated repository's RQBv2 root filter — `{ RAW: (t) => this.rootScopeRawOn(t, { softDelete }) }`, which is
+   `scopeFilter(t, …) ?? sql\`true\``. **The `t` is the table RQBv2 hands the callback, not `this.tableRef`** — the
+   builder aliases the root, so the other form names a table that is not in scope (§2.4, §10 Found #9).
 3. The emitted manifest's relation `where` — `{ RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'contacts.account') }`.
+
+Two and three are the same rule, and so is `orderByOn`: **render against the table the callback is handed.** Call site
+one is the exception only because it is not a callback — the core `select().from()` builder never aliases, so
+`this.tableRef` is the table.
 
 `column()` moved to `runtime/base-classes/table-columns.ts` in the same change: `scope-filters.ts` needs it and
 `base-repository.ts` imports `scope-filters.ts`, so leaving it where TEN-1 put it is a cycle. Both `column` and
@@ -745,7 +750,7 @@ by a unit test. This is also what makes §5.1's "declaring both is a generation 
 `test/scaffold/shared/base-classes/base-repository.ts` was a second, drifted implementation that SHADOWED the runtime
 base for `just test-integration` (`@shared/base-classes/*` resolves scaffold-first). REL-0 flagged it and deferred the
 collapse as "a contract decision". REL-2 made it wrong rather than merely redundant: a generated repository now calls
-`baseQuery` and `rootScopeRaw`, which the stub never had, so every generated read through it threw
+`baseQuery` and `rootScopeRawOn`, which the stub never had, so every generated read through it threw
 `this.baseQuery is not a function`.
 
 Both stubs (`base-repository.ts`, `base-service.ts`) are deleted; the suite runs against the real bases. Four
@@ -801,8 +806,9 @@ REL-2 does not prove an allowlisted include over a tenant-scoped entity end-to-e
 
 ### Found #9 — the ROOT filter shipped against the un-aliased table, and no gate caught it
 
-The first cut emitted `{ RAW: () => this.rootScopeRaw({ softDelete }) }` — a callback that ignored the table RQBv2
-hands it and built the predicate from `this.tableRef`. RQBv2 aliases the root, so the emitted statement was
+The first cut emitted `{ RAW: () => this.rootScopeRaw({ softDelete }) }` — **the broken form, quoted here only as the
+historical record; the shipped one is `{ RAW: (t) => this.rootScopeRawOn(t, …) }` (§3)** — a callback that ignored the
+table RQBv2 hands it and built the predicate from `this.tableRef`. RQBv2 aliases the root, so the emitted statement was
 `… from "regions" as "d0" … where ("regions"."deleted_at" is null)`: `invalid reference to FROM-clause entry for table
 "regions"`. **Every** generated `findById` / `list` / finder with an include, on any entity declaring `soft_delete`,
 `tenant_scoped` or `user_tracking`, could not execute. Found in review of #713, reproduced, then fixed.
@@ -810,7 +816,8 @@ hands it and built the predicate from `this.tableRef`. RQBv2 aliases the root, s
 Worth recording is *why nothing caught it*, because that is the more useful finding:
 
 - the **HTTP suite** mounts deliberately UNSCOPED entities (§6.2) — their root config is all-false, so
-  `rootScopeRaw` returned `sql\`true\``, which names no column and runs fine. The H1 tests passed for the wrong reason;
+  the first cut's `rootScopeRaw` returned `sql\`true\``, which names no column and runs fine even un-threaded. The H1
+  tests passed for the wrong reason;
 - the **leak tests** drove the scoped graph through raw `db.query.*`, which never builds a root filter at all;
 - the **smoke** regex-matches emitted text and type-checks it — and the broken form type-checks perfectly;
 - `hop-scope-sql.spec.ts` covered the hops, which were right, and not the root.
@@ -859,11 +866,16 @@ That rebase does **not** change how REL-2 resolves the per-hop predicate. TEN-1'
 |---|---|
 | `bun run typecheck` | exit 0 |
 | `bun run build` | exit 0 |
-| `just test-unit` | **3439 pass**, 0 fail |
+| `just test-unit` | **3440 pass**, 0 fail, 0 skip — see the note below on the skip count |
 | `just test-all` | **exit 0** — typecheck + unit + baseline + `test-smoke` + `-subsystems` (vendored + package) + `-relationship` + `-junction` + `-junction-cross-domain` + `test-junction` (10 pass) + `test-integration-emit` (56 pass) + `test-smoke-integration`, every one PASS |
 | `just test-integration` (Docker) | **150 pass**, 2 skip, 0 fail — including the 13 leak tests and the 10 HTTP allowlist tests |
 | `just test-post-publish` | exit 0 — tarball smoke, consumer contract verified |
 | `just test-smoke-junction-clean` | **143** — unchanged by this PR; see Found #6 |
+
+> **On the unit count.** `src/__tests__/runtime/subsystems/dist-singleton-dedup.spec.ts` gates its `describe` on
+> `existsSync(dist/)`, so its 3 tests RUN after `bun run build` and SKIP without it. The same tree therefore reports
+> **3440 pass / 0 skip** in a built checkout and **3437 pass / 3 skip** in a clean one — a real difference in what was
+> exercised, not a flake. The row above is the built number, because `bun run build` is a gate in this table.
 
 **Mutation-checked, twice.** Removing the `where` from the manifest emission turns **8 of the 10** hop leak tests red;
 the two that stay green are the two that assert *unchanged* behaviour (L3b: the root is TEN-1's to guard, not REL-2's;

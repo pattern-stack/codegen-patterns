@@ -28,6 +28,24 @@
  * way, and this one did on its first run: the only hit was a doc comment in
  * `scope-filters.ts` still showing the broken form. Prose that teaches the bug is
  * how the bug comes back.
+ *
+ * `docs/` is deliberately NOT scanned, and the review that asked the question
+ * deserves the reasoning rather than a default:
+ *
+ *  - the subject of this gate is code that is EMITTED or SHIPPED. A spec is a
+ *    design record, where quoting the broken form is the point — `REL-2.md`
+ *    §10 Found #9 does exactly that, as does this file's own regex fixture
+ *    below. Scanning docs would force an opt-out marker onto both, and a
+ *    tripwire with an escape hatch is weaker than one with a crisp boundary;
+ *  - more to the point, a grep cannot tell a counter-example from a contract.
+ *    What actually drifted (REL-2.md §3 stating the un-threaded form as the
+ *    current call site) reads identically to Found #9 quoting it as history, so
+ *    a docs-wide scan would not have been the right instrument even pointed at
+ *    the right file.
+ *
+ * So the one paragraph that STATES the contract gets a named, single-purpose
+ * expectation instead — the last `it` below. Exact file, exact claim, no
+ * predicate and no carve-out.
  */
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -95,8 +113,34 @@ describe('a RAW callback must take the table it renders against', () => {
 		expect(repositoryTemplate).toContain('RAW: (t) => this.rootScopeRawOn(t,');
 	});
 
+	// The spec paragraph that states the contract, pinned by name. Not a docs-wide
+	// scan — see the header for why — just the one place a reader looks up what the
+	// call site is, which is the place it drifted.
+	it('REL-2 §3 states the THREADED form as call site 2', () => {
+		const spec = readFileSync(join(REPO_ROOT, 'docs/specs/REL-2.md'), 'utf8');
+		const heading = '## §3 One predicate builder, three call sites';
+		expect(spec, 'REL-2.md lost the §3 heading this expectation is anchored to').toContain(
+			heading,
+		);
+
+		const section = spec.slice(spec.indexOf(heading), spec.indexOf('## §4'));
+		const callSiteTwo = section
+			.split('\n')
+			.find((line) => line.startsWith('2. The generated repository'));
+		expect(callSiteTwo, 'REL-2.md §3 lost its numbered call site 2').toBeDefined();
+		expect(callSiteTwo!).toContain('RAW: (t) => this.rootScopeRawOn(t,');
+		expect(callSiteTwo!).not.toMatch(UNTETHERED);
+	});
+
 	it('catches the shape it is for', () => {
+		// The exact line REL-2 §3 carried before the re-review caught it — kept as the
+		// regex's positive fixture so the ban is pinned to a real string.
 		expect(UNTETHERED.test('{ RAW: () => this.rootScopeRaw({ softDelete: true }) },')).toBe(true);
+		expect(
+			UNTETHERED.test(
+				'2. The generated repository\'s RQBv2 root filter — `{ RAW: () => this.rootScopeRaw({ softDelete }) }`',
+			),
+		).toBe(true);
 		expect(UNTETHERED.test('{ RAW: ()=>x },')).toBe(true);
 		// …and leaves the legitimate forms alone.
 		expect(UNTETHERED.test('{ RAW: (t) => hopScope(t, CFG, "a.b") },')).toBe(false);

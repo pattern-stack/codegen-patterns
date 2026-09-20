@@ -54,6 +54,12 @@ let sensors: typeof Sensors;
 let siteSensors: typeof SiteSensors;
 let withRequester: typeof import('@shared/base-classes/tenant-context').withRequester;
 // The GENERATED repository for the scoped root — the real consumer path.
+//
+// `any` because it does not exist until the CLI has run: this suite imports it
+// dynamically from `@gen/…`, which is codegen OUTPUT, so there is no type to
+// name at authoring time. Same reason every other `@gen/…` handle in this
+// harness is untyped (`http.test.ts`, `repository.test.ts`). What the shape has
+// to be is asserted by the smoke's `tsc` over a real consumer project, not here.
 let RegionRepository: any;
 
 /** Tenant A reads; tenant B's rows are the poison. */
