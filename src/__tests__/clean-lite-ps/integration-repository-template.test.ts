@@ -242,8 +242,8 @@ describe('non-Integrated repository emission', () => {
     expect(out).not.toContain('IntegrationUpsertConfig');
   });
 
-  it('keeps the single-param extends', () => {
-    expect(out).toContain('extends BaseRepository<Widget> {');
+  it('extends BaseRepository with the entity + its concrete table type (REL-0)', () => {
+    expect(out).toContain('extends BaseRepository<Widget, typeof widgets> {');
   });
 });
 

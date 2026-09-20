@@ -1,8 +1,8 @@
 /**
  * Base classes barrel export
  */
-export { BaseRepository } from './base-repository';
-export type { BehaviorConfig, ListOptions } from './base-repository';
+export { BaseRepository, column } from './base-repository';
+export type { BehaviorConfig, ListOptions, RowsOf } from './base-repository';
 
 // Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
 // set at request/worker boundaries via withRequester/withUserScope/etc.

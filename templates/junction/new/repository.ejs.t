@@ -40,6 +40,7 @@ export interface <%= classNames.entity %>IntegrationProjection {
 @Injectable()
 export class <%= classNames.repository %> extends JunctionIntegrationRepository<
   <%= classNames.entity %>,
+  typeof <%= tableVarName %>,
   <%= classNames.entity %>IntegrationWrite,
   <%= classNames.entity %>IntegrationProjection
 > {

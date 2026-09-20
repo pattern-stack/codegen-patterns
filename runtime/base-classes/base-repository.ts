@@ -1,5 +1,5 @@
 /**
- * BaseRepository<TEntity>
+ * BaseRepository<TEntity, TTable>
  *
  * Abstract base class providing standard CRUD operations via Drizzle ORM.
  * Every generated repository extends this class.
@@ -9,15 +9,72 @@
  *
  * NOT @Injectable — concrete repositories are @Injectable and inject DRIZZLE.
  */
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { PgTableWithColumns, PgColumn } from 'drizzle-orm/pg-core';
-import type { SQL } from 'drizzle-orm';
+import { and, eq, getColumns, inArray, isNull, sql } from 'drizzle-orm';
+import type {
+  AnyPgSelectQueryBuilder,
+  PgColumn,
+  PgSelectKind,
+  PgTable,
+} from 'drizzle-orm/pg-core';
+import type { InferSelectModel, SQL } from 'drizzle-orm';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
 import {
   requireRequester,
   tryGetRequester,
   type RequesterScope,
 } from './tenant-context';
+
+// ============================================================================
+// Column access
+// ============================================================================
+
+/**
+ * Resolve a column by its camelCase key on any Drizzle table.
+ *
+ * Reads the table's column map via `getColumns` (1.0's replacement for the
+ * deprecated `getTableColumns`) rather than string-indexing the table type:
+ * under a consumer tsconfig's `noUncheckedIndexedAccess` the lookup is
+ * `PgColumn | undefined`, so a missing column is a checked case rather than an
+ * `undefined` handed to `eq()` / `isNull()` that renders wrong SQL or fails
+ * later with an opaque error.
+ *
+ * `owner` names the repository (or config) in the error so the throw points at
+ * the declaration that is wrong.
+ */
+export function column(table: PgTable, name: string, owner: string): PgColumn {
+  const col: PgColumn | undefined = getColumns(table)[name];
+  if (!col) {
+    throw new Error(`${owner}: table has no column '${name}'`);
+  }
+  return col;
+}
+
+// ============================================================================
+// Typed reads
+// ============================================================================
+
+/**
+ * A `$dynamic()` Drizzle SELECT builder with its row type replaced by `TRow`.
+ *
+ * `PgSelectDynamic<T>` is `PgSelectKind<…, T['_']['result'], …>`
+ * (`pg-core/query-builders/select.types.d.ts`), so substituting the result slot
+ * retypes the builder while every chained `.where()` / `.orderBy()` / `.limit()`
+ * keeps working. `baseQuery()` needs this because the statement builders are
+ * fed the WIDENED table (see `BaseRepository.tableRef`), whose rows are an
+ * index signature; the rows actually selected are the concrete table's select
+ * model. See `docs/specs/REL-0.md` §M2/§M4.
+ */
+export type RowsOf<Q extends AnyPgSelectQueryBuilder, TRow> = PgSelectKind<
+  Q['_']['hkt'],
+  Q['_']['tableName'],
+  Q['_']['selection'],
+  Q['_']['selectMode'],
+  Q['_']['nullabilityMap'],
+  true,
+  never,
+  TRow[],
+  Q['_']['selectedFields']
+>;
 
 // ============================================================================
 // Interfaces
@@ -47,21 +104,38 @@ export interface ListOptions {
 // BaseRepository
 // ============================================================================
 
-export abstract class BaseRepository<TEntity> {
+export abstract class BaseRepository<TEntity, TTable extends PgTable> {
   /**
-   * The Drizzle table schema for this entity.
-   * Concrete repositories declare this as a class property.
-   *
-   * The `any` is load-bearing and cannot be narrowed here — see
-   * `docs/specs/DRZ-2.md` §A4 and issue #603. `PgTableWithColumns<TableConfig>`
-   * is NOT a supertype of a concrete `pgTable(...)` (`TableConfig['columns']`
-   * is an index signature that a concrete column map does not satisfy), and it
-   * makes `this.table['id']` `PgColumn | undefined` under the consumer
-   * tsconfig's `noUncheckedIndexedAccess`. Typing the table properly means
-   * making this class generic over it; that lands with the typed navigator
-   * (REL-2/REL-3), which needs the concrete table type anyway.
+   * The Drizzle table schema for this entity, at its CONCRETE type.
+   * Concrete repositories declare this as a class property; generated ones
+   * pass `typeof <tablePlural>` as `TTable` and initialise it with the table
+   * itself, so `this.table['someColumn']` is checked in generated code and the
+   * relation graph (REL-2) has a real type to hang a typed `with` include on.
    */
-  protected abstract readonly table: PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  protected abstract readonly table: TTable;
+
+  /**
+   * This repository's table widened to the non-generic `PgTable` that the
+   * Drizzle statement builders can resolve.
+   *
+   * Measured on 1.0.0-rc.4 (`docs/specs/REL-0.md` §M1/§M2): a NAKED type
+   * parameter defers every builder conditional — `TableLikeHasEmptySelection<T>`
+   * on `.from()` and `TReturning extends undefined ? … : TReturning[]` on
+   * `.returning()` — so `select().from(this.table)` and
+   * `insert(this.table).…returning()` do not type-check inside this class. The
+   * same expressions resolve completely for a value of declared type `PgTable`.
+   *
+   * This is a plain widening assignment, NOT an assertion: `PgTable` is
+   * declared covariant (`PgTable<out T extends TableConfig>`) and a concrete
+   * `pgTable(...)` is assignable to it. (`PgTableWithColumns<TableConfig>` is
+   * NOT — that is what DRZ-2 measured and why the in-place narrowing failed.)
+   *
+   * Every statement in this class and the family bases goes through here; the
+   * concrete `this.table` is what subclasses read.
+   */
+  protected get tableRef(): PgTable {
+    return this.table;
+  }
 
   /**
    * Behavior flags controlling automatic behavior injection.
@@ -105,6 +179,14 @@ export abstract class BaseRepository<TEntity> {
     return tx ?? this.db;
   }
 
+  /**
+   * Resolve one of this table's columns by its camelCase key. Throws (naming
+   * the repository) when the table has no such column — see `column()`.
+   */
+  protected col(name: string): PgColumn {
+    return column(this.tableRef, name, this.constructor.name);
+  }
+
   // ============================================================================
   // Read Operations
   // ============================================================================
@@ -114,7 +196,7 @@ export abstract class BaseRepository<TEntity> {
    * Returns null if not found (or soft-deleted when softDelete=true).
    */
   async findById(id: string): Promise<TEntity | null> {
-    const rows = await this.baseQuery(eq(this.table['id'], id)).limit(1);
+    const rows = await this.baseQuery(eq(this.col('id'), id)).limit(1);
     return (rows[0] as TEntity) ?? null;
   }
 
@@ -124,7 +206,7 @@ export abstract class BaseRepository<TEntity> {
    */
   async findByIds(ids: string[]): Promise<TEntity[]> {
     if (ids.length === 0) return [];
-    const rows = await this.baseQuery(inArray(this.table['id'], ids));
+    const rows = await this.baseQuery(inArray(this.col('id'), ids));
     return rows as TEntity[];
   }
 
@@ -155,11 +237,11 @@ export abstract class BaseRepository<TEntity> {
   async count(where?: SQL): Promise<number> {
     let query = this.db
       .select({ count: sql<number>`cast(count(*) as integer)` })
-      .from(this.table);
+      .from(this.tableRef);
 
     const conditions: SQL[] = [];
     if (this.behaviors.softDelete) {
-      conditions.push(isNull(this.table['deletedAt']));
+      conditions.push(isNull(this.col('deletedAt')));
     }
     const scope = this.scopePredicate();
     if (scope) {
@@ -196,17 +278,10 @@ export abstract class BaseRepository<TEntity> {
    */
   async create(input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
     const data = this.withTimestamps(input as Record<string, unknown>, 'create');
-    // `as TEntity[]`, not `rows[0] as TEntity`: Drizzle 1.0 derives an insert's
-    // `.returning()` row type from `table['$inferSelect']`, which is `any`
-    // while `table` is (see the `table` declaration and #603). The conditional
-    // `TReturning extends undefined ? QueryResult<never> : TReturning[]` then
-    // distributes into a union whose non-array arm is unreachable — we called
-    // `.returning()`. Asserting the array states that; it is the same
-    // assertion the element-level cast always made.
-    const rows = (await this.runner(tx)
-      .insert(this.table)
-      .values(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .returning()) as TEntity[];
+    const rows = await this.runner(tx)
+      .insert(this.tableRef)
+      .values(data)
+      .returning();
     return rows[0] as TEntity;
   }
 
@@ -217,9 +292,9 @@ export abstract class BaseRepository<TEntity> {
   async update(id: string, input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
     const data = this.withTimestamps(input as Record<string, unknown>, 'update');
     const rows = await this.runner(tx)
-      .update(this.table)
-      .set(data as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-      .where(this.scopeAnd(eq(this.table['id'], id)))
+      .update(this.tableRef)
+      .set(data)
+      .where(this.scopeAnd(eq(this.col('id'), id)))
       .returning();
     return rows[0] as TEntity;
   }
@@ -233,13 +308,13 @@ export abstract class BaseRepository<TEntity> {
     const runner = this.runner(tx);
     if (this.behaviors.softDelete) {
       await runner
-        .update(this.table)
-        .set({ deletedAt: new Date() } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-        .where(this.scopeAnd(eq(this.table['id'], id)));
+        .update(this.tableRef)
+        .set({ deletedAt: new Date() })
+        .where(this.scopeAnd(eq(this.col('id'), id)));
     } else {
       await runner
-        .delete(this.table)
-        .where(this.scopeAnd(eq(this.table['id'], id)));
+        .delete(this.tableRef)
+        .where(this.scopeAnd(eq(this.col('id'), id)));
     }
   }
 
@@ -268,9 +343,15 @@ export abstract class BaseRepository<TEntity> {
    * the soft-delete and scope guards. `baseQuery(extra)` is the safe form.
    */
   protected baseQuery(extra?: SQL) {
-    const query = this.db.select().from(this.table).$dynamic();
+    const query = this.db.select().from(this.tableRef).$dynamic();
     const where = this.scopeAnd(extra, { softDelete: this.behaviors.softDelete });
-    return where ? query.where(where) : query;
+    const scoped = where ? query.where(where) : query;
+    // The builder was fed the WIDENED table (`tableRef`), so Drizzle types its
+    // rows as an index signature; what it actually selects is this table's
+    // select model. `RowsOf` restores that — which is also what keeps a
+    // generated `rows as <Entity>[]` an identity assertion, since the emitted
+    // entity type IS `InferSelectModel<typeof <table>>`.
+    return scoped as RowsOf<typeof query, InferSelectModel<TTable>>;
   }
 
   /**
@@ -299,11 +380,11 @@ export abstract class BaseRepository<TEntity> {
         return undefined;
       case 'org':
         return ctx.orgUserIds && ctx.orgUserIds.length > 0
-          ? inArray(this.table['userId'], ctx.orgUserIds as string[])
+          ? inArray(this.col('userId'), ctx.orgUserIds as string[])
           : sql`false`;
       case 'user':
       default:
-        return eq(this.table['userId'], ctx.userId);
+        return eq(this.col('userId'), ctx.userId);
     }
   }
 
@@ -318,7 +399,7 @@ export abstract class BaseRepository<TEntity> {
     opts?: { softDelete?: boolean },
   ): SQL | undefined {
     const conditions: SQL[] = [];
-    if (opts?.softDelete) conditions.push(isNull(this.table['deletedAt']));
+    if (opts?.softDelete) conditions.push(isNull(this.col('deletedAt')));
     const scope = this.scopePredicate();
     if (scope) conditions.push(scope);
     if (extra) conditions.push(extra);
@@ -361,7 +442,7 @@ export abstract class BaseRepository<TEntity> {
    * Example:
    *   async listActiveMessages(): Promise<Message[]> {
    *     return this.list({
-   *       where: this.activeParentFilter(conversations, this.table['conversationId']),
+   *       where: this.activeParentFilter(conversations, this.col('conversationId')),
    *     });
    *   }
    *
@@ -369,7 +450,7 @@ export abstract class BaseRepository<TEntity> {
    * @param parentFkColumn  The FK column on this (child) table that references parent.id.
    */
   protected activeParentFilter(
-    parentTable: PgTableWithColumns<any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    parentTable: PgTable,
     parentFkColumn: PgColumn,
   ): SQL {
     return sql`EXISTS (
