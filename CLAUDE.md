@@ -215,6 +215,14 @@ queries:
 - YAML fields: `snake_case` (matches database columns)
 - TypeScript properties: `camelCase` (derived from snake_case in templates)
 - Entity names in YAML: singular snake_case (`opportunity`)
+- **Emitted files and folders: `kebab-case`** — one rule, `src/config/file-naming.ts`
+  (`kebab` / `emittedDir` / `emittedStem`), applied by `entityModuleNaming`. The
+  database keeps `snake_case`: the `pgTable('…')` / `pgEnum('…')` arguments, column
+  names and the Drizzle table export (`export const deal_states`) are identifiers, not
+  paths, and never go through the rule. So `deal_state` emits
+  `modules/deal-states/deal-state.entity.ts` declaring `export const deal_states =
+  pgTable('deal_states', …)`. Never build a stem by hand — `emittedStem('find', name,
+  'by-id')`, not a template literal with typed hyphens (NAME-2, #695/#684).
 
 ### Configuration
 

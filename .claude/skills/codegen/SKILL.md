@@ -360,6 +360,39 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 - **Use case** — workflow. Composes services, owns the transaction for cross-domain writes, emits events.
 - **Controller** — thin; calls use cases only.
 
+## Emitted names (NAME-2, #695/#684)
+
+> **The filesystem is kebab-case. The database is snake_case. TypeScript identifiers follow TypeScript
+> convention.**
+
+One rule, one module: `src/config/file-naming.ts` — `kebab(name)`, `emittedDir(name)`,
+`emittedStem(...parts)`. `entityModuleNaming` (`src/config/module-tree.ts`) applies it, so module
+directories and the entity / module / repository files are decided at the single choke point the hygen
+prompts, the barrel generator and the assembly emitter all already read.
+
+| Kind | `entity: { name: deal_state, plural: deal_states }` |
+|---|---|
+| module folder | `src/modules/deal-states/` |
+| file stems | `deal-state.entity.ts`, `deal-states.module.ts`, `find-deal-state-by-id.use-case.ts`, `list-deal-states.query.ts` |
+| **SQL table + Drizzle export** | `export const deal_states = pgTable('deal_states', …)` — **snake, unchanged** |
+| **columns, `pgEnum` names** | snake, unchanged |
+
+Rules when you touch emission:
+
+- **Never build a stem by hand.** `emittedStem('find', entityName, 'by-id')`, not
+  `` `find-${entityName}-by-id` ``. Typed hyphens are what #684 was: they look correct for every
+  single-word entity and break on the first multi-word one.
+- **`EntityModuleNaming.plural` is not a filesystem name.** It is the `pgTable` argument and the exported
+  table identifier. Do not kebab it; that renames the SQL table.
+- **Do not add a fifth kebab.** `file-naming.ts` is the only one. `case-converters.mjs` was deleted when it
+  went to zero importers; the dead `s.replace(/_/g,'-')` copies in the junction and relationship prompts went
+  with it.
+- **Test harnesses import the rule, they do not restate it.** `test/smoke/run-smoke-junction.ts` derives its
+  expected paths with `emittedDir` / `emittedStem` so the harness and the generator cannot disagree.
+- **The pin is a property, not a list.** `src/__tests__/config/file-naming.test.ts` asserts that for a
+  multi-word entity no path segment contains `_`. Add a stem shape there, not a filename.
+- Identifier casing is a **separate, still-open axis** — see #697.
+
 ## Working on the generator
 
 - Backend: hygen templates, one pipeline — `templates/entity/new/backend/` (the

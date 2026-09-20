@@ -157,19 +157,42 @@ resolve against.
   **required** field, not optional-with-a-default. Every `behaviors` literal must
   state its posture — a repository that silently defaulted to `false` is the
   failure this guards against. Generated repositories are regenerated.
+(entity, backend entity, junction); hand-written `db.query.*` code that
+relied on it must wait for the v2 manifest (REL-1) or declare its own.
 
-**Breaking:** the `clean` backend architecture is deleted. clean-lite-ps is the only
-backend pipeline (ARCH-0, #677).
+**Breaking:** the `clean` backend architecture is deleted. There is one backend
+pipeline (ARCH-0, #677) — named `clean-lite-ps` at the time, renamed to `backend` by
+NAME-2 (#695) later in this same unreleased cycle.
 
 **Breaking:** the config surface only the deleted `clean` pipeline read is gone (ARCH-1,
 #682). `naming:`, `database:` and `behaviors:` are no longer config blocks; the 14
 `locations.backend*` names and `locations.dbSchemaServer` / `dbSchemaClient` /
 `dbMigrations` / `dbContextEngine` are no longer location names; and `folder_structure:`,
 `file_grouping:` and `behavior_strategy:` are no longer entity-YAML keys. Each is now an
-unknown-key error naming the key and the file — **delete those lines**. clean-lite-ps
-emits one module folder per entity with fixed file names and always extends a pattern
+unknown-key error naming the key and the file — **delete those lines**. The backend
+pipeline emits one module folder per entity with fixed file names and always extends a pattern
 base, so none of them had a meaning left. `expose:` is unaffected (the frontend emitter
 reads it), and the entity-level `behaviors:` list is a different, untouched key.
+
+**Breaking:** every emitted file and folder is now **kebab-case** (NAME-2, #695/#684).
+One rule, `src/config/file-naming.ts`: *the filesystem is kebab-case, the database is
+snake_case*. A multi-word entity that emitted
+`modules/deal_states/use-cases/find-deal_state-by-id.use-case.ts` now emits
+`modules/deal-states/use-cases/find-deal-state-by-id.use-case.ts`. **Single-word
+entities are unaffected** — they were already kebab, by accident. The SQL table name,
+the `pgTable('…')` / `pgEnum('…')` arguments, column names and the Drizzle table export
+(`export const deal_states`) are **unchanged**: they are database identifiers, not
+paths. Consumers with a multi-word entity regenerate; anything that referenced an
+emitted path by hand — an import in hand-written code, a path in a script or tsconfig —
+must be updated. Hygen's inject guards key on import specifiers, so a project generated
+across this change and not regenerated can double-inject.
+
+**Breaking:** the `clean-lite-ps` name is retired (NAME-2, #695). The one backend
+pipeline is `templates/entity/new/backend/`; `prompt-extension.js` is
+`backend/entity-locals.js` and exports `buildBackendLocals`; the `clp*` template locals
+lose the prefix. This matters only to a consumer that reached into the package's
+template tree — the CLI surface is unchanged. `src/config/case-converters.mjs` is
+deleted (it had no importers after ARCH-1).
 
 **Breaking:** `BaseRepository` and every family repository take a **second, required
 type parameter** — the concrete Drizzle table (REL-0, #603). Hand-written

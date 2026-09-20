@@ -1,7 +1,7 @@
 # NAME-2 — one emitted-file naming rule; the `clean-lite-ps` name retires
 
-**Status:** Designed
-**Date:** 2026-09-20
+**Status:** Implemented
+**Date:** 2026-09-20 · **Implemented:** 2026-09-20
 **Issues:** #695 (retire the name + settle the rule) · #684 (mixed snake/kebab stems) · **Project:** #578
 **Depends on:** ARCH-0 (#677 — frees `templates/entity/new/backend/`) · ARCH-1 (#682 — deletes the clean-only
 config surface; this PR bases on it)
@@ -196,13 +196,11 @@ prompts) are deleted — a wrong-by-construction kebab sitting next to the new c
 | the prompt's second half | `clean-lite-ps/prompt-extension.js` | `backend/entity-locals.js` |
 | its export | `buildCleanLitePsLocals` | `buildBackendLocals` |
 | ~28 locals | `clpOutputPaths`, `clpApiEnabled`, … | `outputPaths`, `apiEnabled`, … — bare, there is no second pipeline to disambiguate from |
-| junction injects (14) | `_inject-parent-{module,service}-…-clp-{left,right}.ejs.t` | the `-clp-` segment drops |
+| ~~junction injects (14)~~ | — | **Already gone.** JUNC-0 (#678) replaced the parent injects with a fan-out rendered by the parent's own templates, so the 14 `-clp-` files #695 lists do not exist on this base. |
 | unit tests (21 files) | `src/__tests__/clean-lite-ps/` | `src/__tests__/backend/` |
 | one test file | `templates/integration-source-clean-lite-ps.test.ts` | `…-backend.test.ts` |
 
-All moves use `git mv`. The `-clp-` filename segment is decorative — hygen enumerates the directory and no code
-matches the string; exactly one source line names such a file
-(`src/__tests__/templates/junction-endpoint-naming.test.ts`).
+All moves use `git mv`.
 
 **Historical text keeps the old name.** CHANGELOG entries, `docs/adrs/**`, `docs/specs/**` (including ARCH-0
 §Decision 5, the record of why this PR exists), the self-labelled-historical `docs/relationship-pattern-audit.md`,
@@ -292,8 +290,43 @@ or drizzle-kit `unresolved decisions` is re-run isolated before it counts as a f
 
 ## Found during implementation
 
-*(filled in as the work lands)*
+1. **The 14 `-clp-` junction inject templates were already gone.** #695 lists them; JUNC-0 (#678) had already
+   replaced the parent injects with a fan-out rendered by the parent's own service/module templates. Nothing to
+   rename. The `-clp-` part of (a) was a no-op on this base.
 
-- **#697 filed** — `templates/junction/new/_inject-parent-service-clp-{left,right}.ejs.t` interpolate the
-  endpoint's snake_case **plural** into a TypeScript **method name** (`async deal_statesList(`). The
-  identifier-casing sibling of #684; out of scope for a filename rule.
+2. **#697's cited paths were stale, and the defect had moved.** The snake_case *method* name was filed against
+   `_inject-parent-service-clp-left.ejs.t:36`, which no longer exists. The same code now lives at
+   `templates/_shared/junction-fan-out.mjs:136-137` (`listMethod: \`${counterpartyPlural}List\``), where the two
+   neighbouring methods **do** case their names (`attach${counterpartyPascal}`), so one generated service gets
+   `attachDealState()` beside `deal_statesList()`. The issue was corrected in place rather than left pointing at
+   deleted files.
+
+3. **A churn class the design did not predict: importers of a multi-word entity move too.** The spec said only
+   `deal_states` would change. Three files under `modules/opportunities/` also changed — `opportunity` is
+   single-word, but it `belongs_to` `deal_state`, so its import specifiers carry the renamed path. Obvious in
+   hindsight, invisible when reasoning about "which entity's own files move". It is still one class (path churn,
+   no behavior), and it is why the churn is 19 files rather than 15.
+
+4. **Three cross-entity `importPath` sites and the EAV field-value stem were missed on the first pass, and the
+   gates caught both.** `entity-locals.js` builds a target's specifier as `${resolved.importDir}/${target}.entity`
+   in three places, and four templates hardcoded `/field_value.service`. The first produced
+   `'../deal-states/deal_state.entity'` — kebab directory, snake stem — in the regenerated baseline; the second
+   failed the EAV unit tests. Both are the reason the baseline regeneration is the gate for (b) rather than a
+   formality: a rule applied at *most* call sites reads as working right up until a multi-word name reaches the
+   one that was missed.
+
+5. **The smoke harness recomputed the naming rule instead of importing it.** `run-smoke-junction.ts` derived
+   `<modules>/<plural>/<name>.entity.ts` with its own pluralizer, so it asserted the pre-rule paths. It now
+   imports `emittedDir` / `emittedStem` from `src/config/file-naming.ts`, so the harness and the generator cannot
+   disagree about the rule — the same I1 argument that put the rule in `module-tree.ts` rather than in each prompt.
+
+6. **`case-converters.mjs` was dead, not just duplicated.** ARCH-1 removed its last importer along with
+   `naming.fileCase`; only its own docstring and two comments explaining why TS modules avoid it still referred to
+   it. Deleted (I7) rather than extended, and `orchestration-generator.ts` — whose pattern slugs name emitted
+   files — now re-exports the shared rule instead of keeping a private copy.
+
+7. **Environment, not code: a fresh worktree has no `node_modules`.** Worktrees live *inside* the main checkout,
+   so resolution walks up and silently finds the parent's — which tracks another branch. The baseline typecheck
+   failed on `@nestjs/swagger` and a drizzle version mismatch **before any edit**, and the control run on a clean
+   base branch failed identically, which is what identified it. `bun install` in the worktree fixed it. Worth
+   knowing because it reads exactly like a real regression.
