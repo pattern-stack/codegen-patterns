@@ -5,10 +5,19 @@
  * `codegen studio` under either runtime, and the server has no dependency of
  * its own to add to the package.
  *
- * Bound to 127.0.0.1 only. There is no auth and no CORS beyond the dev Vite
- * origin, which is safe exactly because the socket is not reachable from off
- * the machine — so the bind address is a security property, not a default to
- * loosen later.
+ * Bound to 127.0.0.1 only, which keeps the socket unreachable from off the
+ * machine. That is necessary but NOT sufficient: the attacker who matters is a
+ * malicious page open in a browser ON this machine, which can post to
+ * localhost without ever reading the response. `readJsonBody` accepts any
+ * content-type, so such a post is a CORS "simple request" and is never
+ * preflighted — the browser sends it, the side effect happens, and only the
+ * response is withheld.
+ *
+ * So state-changing requests are checked against {@link isOriginAllowed}: an
+ * `Origin` header that is present and foreign is rejected 403 before any
+ * handler runs. A request with no `Origin` (curl, the test harness, a non-
+ * browser client) is allowed — a browser always sends one on a cross-origin
+ * POST/PUT, so absence cannot be forged by the attack this defends against.
  *
  * Routing order is `/api/*` first, then the static UI, so a UI route can never
  * shadow an endpoint.
@@ -152,6 +161,31 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 	const viteOrigin = options.viteOrigin;
 	const cliVersion = options.cliVersion ?? 'unknown';
 	const registry = new RunRegistry();
+	// Known only after listen(), and needed to recognise the UI's own
+	// same-origin requests when the server serves the built UI itself.
+	let boundPort = 0;
+
+	function isStateChanging(method: string | undefined): boolean {
+		return method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH';
+	}
+
+	/**
+	 * Whether a state-changing request carrying this `Origin` may proceed.
+	 *
+	 * Allowed: no Origin at all (curl, the test harness — a browser always
+	 * sends one cross-origin, so its absence is not something the attack can
+	 * arrange), this server's own origin (the UI it serves, same-origin), and
+	 * the dev Vite origin when one is configured. Everything else is refused.
+	 */
+	function isOriginAllowed(origin: string | undefined): boolean {
+		if (!origin) return true;
+		if (viteOrigin && origin === viteOrigin) return true;
+		return [
+			`http://${HOST}:${boundPort}`,
+			`http://localhost:${boundPort}`,
+			`http://[::1]:${boundPort}`,
+		].includes(origin);
+	}
 
 	const server = http.createServer((req, res) => {
 		handle(req, res).catch((err: unknown) => {
@@ -172,11 +206,24 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 			res.setHeader('access-control-allow-origin', viteOrigin);
 			res.setHeader('access-control-allow-methods', 'GET,PUT,POST,OPTIONS');
 			res.setHeader('access-control-allow-headers', 'content-type');
+			res.setHeader('vary', 'origin');
 			if (req.method === 'OPTIONS') {
 				res.writeHead(204);
 				res.end();
 				return;
 			}
+		}
+
+		// Cross-site request forgery: a page on any origin can POST here
+		// without a preflight, and the bind address does not stop it because
+		// the browser making the request is already on this machine.
+		if (isStateChanging(req.method) && !isOriginAllowed(req.headers.origin)) {
+			sendError(
+				res,
+				403,
+				`cross-origin ${req.method} from ${req.headers.origin} is refused`,
+			);
+			return;
 		}
 
 		if (pathname.startsWith('/api/')) {
@@ -420,6 +467,7 @@ export function createStudioServer(options: StudioServerOptions): Promise<Studio
 		server.listen(options.port ?? STUDIO_DEFAULT_PORT, HOST, () => {
 			server.removeListener('error', reject);
 			const port = (server.address() as AddressInfo).port;
+			boundPort = port;
 			resolve({
 				port,
 				url: `http://${HOST}:${port}`,

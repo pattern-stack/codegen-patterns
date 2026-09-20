@@ -155,6 +155,123 @@ describe('dev proxy', () => {
 	});
 });
 
+describe('cross-site request forgery', () => {
+	/**
+	 * The bind address does not defend against this: the browser making the
+	 * request is already on this machine. `readJsonBody` accepts any
+	 * content-type, so a form POST from any page is a CORS "simple request" —
+	 * never preflighted, sent regardless, side effect performed, only the
+	 * response withheld. Before the Origin check, `Origin: https://evil.example`
+	 * on `POST /api/generate` returned 202 and really generated.
+	 */
+	it('REFUSES a state-changing request from a foreign Origin', async () => {
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const res = await fetch(`${s.url}/api/generate`, {
+				method: 'POST',
+				headers: { origin: 'https://evil.example', 'content-type': 'application/json' },
+				body: JSON.stringify({ steps: ['generate'] }),
+			});
+			expect(res.status).toBe(403);
+			expect(((await res.json()) as { error: string }).error).toContain('evil.example');
+		} finally {
+			await s.close();
+		}
+	});
+
+	it('refuses a foreign Origin on a form-encoded POST — the unpreflighted case', async () => {
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const res = await fetch(`${s.url}/api/generate`, {
+				method: 'POST',
+				// text/plain is CORS-safelisted: no preflight, so the browser's
+				// own checks never run and only this one stands between the page
+				// and a real generate.
+				headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
+				body: JSON.stringify({ steps: ['generate'] }),
+			});
+			expect(res.status).toBe(403);
+		} finally {
+			await s.close();
+		}
+	});
+
+	it('refuses a foreign Origin on PUT /api/files too, not just generate', async () => {
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const res = await fetch(`${s.url}/api/files/${encodeURIComponent('entities/x.yaml')}`, {
+				method: 'PUT',
+				headers: { origin: 'https://evil.example', 'content-type': 'application/json' },
+				body: JSON.stringify({ content: 'entity:\n  name: x\n' }),
+			});
+			expect(res.status).toBe(403);
+			expect(fs.existsSync(path.join(projectDir, 'entities', 'x.yaml'))).toBe(false);
+		} finally {
+			await s.close();
+		}
+	});
+
+	it('ALLOWS a request with no Origin — curl, the harness, any non-browser client', async () => {
+		// A browser always sends Origin on a cross-origin POST, so its absence
+		// is not something the attack can arrange.
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const res = await fetch(`${s.url}/api/relationships`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ from: 'nope', to: 'nope', kind: 'belongs_to' }),
+			});
+			// Rejected on its merits (no such entity), NOT by the Origin check.
+			expect(res.status).toBe(400);
+			expect(((await res.json()) as { error: string }).error).not.toContain('cross-origin');
+		} finally {
+			await s.close();
+		}
+	});
+
+	it("ALLOWS the server's own origin — the UI it serves is same-origin", async () => {
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const res = await fetch(`${s.url}/api/relationships`, {
+				method: 'POST',
+				headers: { origin: s.url, 'content-type': 'application/json' },
+				body: JSON.stringify({ from: 'nope', to: 'nope', kind: 'belongs_to' }),
+			});
+			expect(res.status).toBe(400);
+		} finally {
+			await s.close();
+		}
+	});
+
+	it('ALLOWS the configured dev Vite origin', async () => {
+		const up = await fakeUpstream();
+		const s = await createStudioServer({ projectDir, port: 0, viteOrigin: up.origin });
+		try {
+			const res = await fetch(`${s.url}/api/relationships`, {
+				method: 'POST',
+				headers: { origin: up.origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ from: 'nope', to: 'nope', kind: 'belongs_to' }),
+			});
+			expect(res.status).toBe(400);
+		} finally {
+			await s.close();
+			await up.close();
+		}
+	});
+
+	it('leaves GET alone — a cross-origin read cannot see the response anyway', async () => {
+		const s = await createStudioServer({ projectDir, port: 0 });
+		try {
+			const res = await fetch(`${s.url}/api/health`, {
+				headers: { origin: 'https://evil.example' },
+			});
+			expect(res.status).toBe(200);
+		} finally {
+			await s.close();
+		}
+	});
+});
+
 describe('bind address', () => {
 	it('binds 127.0.0.1 only — the bind address IS the security boundary', async () => {
 		const s = await createStudioServer({ projectDir, port: 0 });

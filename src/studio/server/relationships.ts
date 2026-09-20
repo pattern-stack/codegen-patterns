@@ -49,6 +49,17 @@ export function parseRelationshipRequest(body: unknown): RelationshipRequest {
 		throw new RelationshipRequestError('body must be a JSON object');
 	}
 	const b = body as Record<string, unknown>;
+	// Reject unknown top-level keys rather than ignoring them: a misspelled
+	// `kinds:` or `options` nested one level too deep would otherwise be
+	// silently dropped and the caller would get a preview of something it did
+	// not ask for.
+	const KNOWN = ['from', 'to', 'kind', 'options'];
+	const unknown = Object.keys(b).filter((k) => !KNOWN.includes(k));
+	if (unknown.length > 0) {
+		throw new RelationshipRequestError(
+			`unknown key${unknown.length > 1 ? 's' : ''} ${unknown.map((k) => `'${k}'`).join(', ')} — expected ${KNOWN.join(', ')}`,
+		);
+	}
 	const from = b.from;
 	const to = b.to;
 	const kind = b.kind;

@@ -508,14 +508,31 @@ studio dir=".studio-demo" port="5178" vite_port="5179":
 # `project init`, the demo entities, a full generate, and a git repo with one
 # commit so /api/diff has a baseline to diff against.
 #
+# NO Docker and no network: everything Studio demonstrates except the `dbPush`
+# run step works against a project built this way. Use `just studio-demo-db`
+# when you want that step too.
+#
+# Create or refresh the Studio demo project
+studio-demo dir=".studio-demo":
+    bun "{{justfile_directory()}}/src/studio/demo/cli.ts" "{{dir}}" --clean
+
+# As `studio-demo`, plus the Postgres and the pinned drizzle-kit that Studio's
+# `dbPush` run step needs. Requires Docker and a package install, which is why
+# it is a separate recipe rather than a branch inside the one above.
+#
 # Postgres comes from the scaffold compose helpers through this checkout's
 # derived harness identity (`just db-env`) — never a second derivation, and
 # never a fixed project name a sibling worktree's `down -v` could destroy.
 #
-# Create or refresh the Studio demo project
-studio-demo dir=".studio-demo":
+# Create or refresh the Studio demo project, with a database
+studio-demo-db dir=".studio-demo":
     #!/usr/bin/env bash
     set -euo pipefail
+    if ! docker info >/dev/null 2>&1; then
+        echo "Docker is not running. \`just studio-demo\` needs neither Docker nor"
+        echo "the network — use it unless you specifically want the dbPush step."
+        exit 1
+    fi
     env="$(bun test/scaffold/harness-env.ts env)" || exit 1
     set -a; eval "$env"; set +a
     : "${SCAFFOLD_COMPOSE_PROJECT:?harness-env produced no compose project}"

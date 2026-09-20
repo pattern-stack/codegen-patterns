@@ -14,7 +14,6 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import path from 'node:path';
 
 import type { DiffFile, DiffResponse, DiffStatus } from '../shared/api.js';
 
@@ -67,16 +66,15 @@ export function parsePorcelainZ(out: string): Array<{ code: string; file: string
 	return entries;
 }
 
-/** A unified patch presenting `file` as entirely new. */
+/**
+ * A unified patch presenting `file` as entirely new.
+ *
+ * The path stays RELATIVE and `git` runs with `cwd: projectDir`. Passing an
+ * absolute path put the host's directory layout into the patch header — and
+ * therefore into the diff pane in the browser — for every untracked file.
+ */
 function untrackedPatch(projectDir: string, file: string): string {
-	const res = git(projectDir, [
-		'diff',
-		'--no-index',
-		'--no-color',
-		'--',
-		'/dev/null',
-		path.join(projectDir, file),
-	]);
+	const res = git(projectDir, ['diff', '--no-index', '--no-color', '--', '/dev/null', file]);
 	// --no-index exits 1 on a difference, which is the expected case.
 	return res.stdout;
 }

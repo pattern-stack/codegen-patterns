@@ -131,7 +131,22 @@ export function materializeDemoProject(options: MaterializeOptions): Materialize
 	log?.(`copied ${entityFiles.length} demo entities into ${entitiesDir}`);
 
 	if (doGenerate) {
-		run(cli.command, [...cli.args, 'entity', 'new', '--all', '--force'], projectDir, log);
+		// TWO passes, as `just test-baseline` does and for the same reason: a
+		// `has_many` composition method is emitted only when its target entity
+		// already exists on disk (`targetExists`, CGP-358b). On a fresh project
+		// the first pass writes `account` before `contact` / `opportunity`
+		// exist, so `AccountService.contacts()` / `.opportunities()` and their
+		// injected repositories are omitted.
+		//
+		// Generating once would leave those missing from the BASELINE COMMIT,
+		// so the owner's first Generate click in Studio would show two changed
+		// files under `accounts/` that have nothing to do with what they just
+		// did — at the climax of the demo, in the diff pane, on an entity they
+		// never touched. The second pass settles them before the commit.
+		for (const pass of [1, 2]) {
+			log?.(`# generation pass ${pass} of 2`);
+			run(cli.command, [...cli.args, 'entity', 'new', '--all', '--force'], projectDir, log);
+		}
 	}
 
 	let dbConfigured = false;
