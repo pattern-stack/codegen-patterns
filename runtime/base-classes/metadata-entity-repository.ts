@@ -52,13 +52,12 @@ export abstract class MetadataEntityRepository<
    * Find metadata by entity ID and entity type (compound lookup).
    */
   async findByEntityIdAndType(entityId: string, entityType: string): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(
-        and(
-          eq(this.col('entityId'), entityId),
-          eq(this.col('entityType'), entityType),
-        ),
-      );
+    const rows = await this.baseQuery(
+      and(
+        eq(this.col('entityId'), entityId),
+        eq(this.col('entityType'), entityType),
+      ),
+    );
     return rows as TEntity[];
   }
 
@@ -66,8 +65,7 @@ export abstract class MetadataEntityRepository<
    * List all metadata records for an entity.
    */
   async listByEntityId(entityId: string): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.col('entityId'), entityId));
+    const rows = await this.baseQuery(eq(this.col('entityId'), entityId));
     return rows as TEntity[];
   }
 
@@ -75,8 +73,7 @@ export abstract class MetadataEntityRepository<
    * List metadata history for an entity, ordered by validFrom descending.
    */
   async listHistoryByEntityId(entityId: string): Promise<TEntity[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.col('entityId'), entityId))
+    const rows = await this.baseQuery(eq(this.col('entityId'), entityId))
       .orderBy(desc(this.col('validFrom')));
     return rows as TEntity[];
   }

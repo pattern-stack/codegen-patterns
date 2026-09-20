@@ -81,8 +81,7 @@ export class <%= classNames.repository %> extends JunctionIntegrationRepository<
     <%= leftColumnCamel %>: string,
     opts?: { cursor?: string; limit?: number },
   ): Promise<<%= classNames.entity %>[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table.<%= leftColumnCamel %>, <%= leftColumnCamel %>))
+    const rows = await this.baseQuery(eq(this.table.<%= leftColumnCamel %>, <%= leftColumnCamel %>))
       .limit(opts?.limit ?? 100);
     return rows as <%= classNames.entity %>[];
   }
@@ -97,8 +96,7 @@ export class <%= classNames.repository %> extends JunctionIntegrationRepository<
     <%= rightColumnCamel %>: string,
     opts?: { cursor?: string; limit?: number },
   ): Promise<<%= classNames.entity %>[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table.<%= rightColumnCamel %>, <%= rightColumnCamel %>))
+    const rows = await this.baseQuery(eq(this.table.<%= rightColumnCamel %>, <%= rightColumnCamel %>))
       .limit(opts?.limit ?? 100);
     return rows as <%= classNames.entity %>[];
   }

@@ -61,6 +61,8 @@ export const activityEntities = pgTable('activity_entities', {
   name: text('name').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  // softDelete target for the per-family scope-guard tests (SCOPE-0, #616).
+  deletedAt: timestamp('deleted_at'),
 });
 
 export type ActivityEntity = InferSelectModel<typeof activityEntities>;
@@ -73,6 +75,10 @@ export const metadataEntities = pgTable('metadata_entities', {
   fieldName: text('field_name').notNull(),
   fieldValue: text('field_value'),
   validFrom: timestamp('valid_from').notNull().defaultNow(),
+  // userTracking + softDelete targets for the per-family scope-guard tests
+  // (SCOPE-0, #616). Nullable, so the family's own tests are unaffected.
+  userId: text('user_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at'),
 });
