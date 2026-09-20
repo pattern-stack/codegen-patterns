@@ -20,6 +20,16 @@ import path from 'node:path';
  * `STUDIO_SERVER_PORT` retargets this proxy. It is needed whenever the server
  * is not on `STUDIO_DEFAULT_PORT` (5178) — `just studio <dir> <port>` takes a
  * port but cannot reach in here to set it, so pass the env var alongside.
+ *
+ * **A remote browser reaches Studio through the server, never through Vite.**
+ * `codegen studio --host <addr>` serves the UI itself and rebuilds its allowed
+ * origins from the address it bound, so the page's own origin is the one that
+ * passes the CSRF check — verified against a non-loopback bind with both the
+ * built UI and this dev server behind it. Vite stays on loopback on purpose:
+ * it is an unauthenticated dev server with filesystem access, and binding it
+ * to a LAN address to save a hop would be a worse hole than the one the origin
+ * check just closed. Nothing under `src/` names a host — every request is
+ * relative, so the client follows `window.location` wherever it is served.
  */
 const serverPort = Number(process.env.STUDIO_SERVER_PORT ?? 5178);
 
