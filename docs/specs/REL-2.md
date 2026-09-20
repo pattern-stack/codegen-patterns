@@ -847,15 +847,21 @@ template, pinned by a parity test over five shapes, and an `api.includes` block 
 
 ## §11 Acceptance
 
-Gate output from the run made **after** the last code edit (charter I9).
+Gate output from the run made **after** the last code edit (charter I9), rebased onto TEN-1's
+`d9b66b8 fix(#585)!: the write side must not let a payload name another tenant`.
+
+That rebase does **not** change how REL-2 resolves the per-hop predicate. TEN-1's write-side fix adds
+`CrossTenantWriteError` and tightens `stampTenant` / `update` / `delete`; it touches no read-side primitive —
+`getTenantId`, `tenantPredicateFor` and the `RequesterContext` tenant fields are unchanged, so `scopeFilter` /
+`hopScope` compose exactly what they did before. The only merge was an import list.
 
 | Gate | Result |
 |---|---|
 | `bun run typecheck` | exit 0 |
 | `bun run build` | exit 0 |
-| `just test-unit` | **3428 pass**, 0 fail |
+| `just test-unit` | **3439 pass**, 0 fail |
 | `just test-all` | **exit 0** — typecheck + unit + baseline + `test-smoke` + `-subsystems` (vendored + package) + `-relationship` + `-junction` + `-junction-cross-domain` + `test-junction` (10 pass) + `test-integration-emit` (56 pass) + `test-smoke-integration`, every one PASS |
-| `just test-integration` (Docker) | **144 pass**, 2 skip, 0 fail — including the 13 leak tests and the 10 HTTP allowlist tests |
+| `just test-integration` (Docker) | **150 pass**, 2 skip, 0 fail — including the 13 leak tests and the 10 HTTP allowlist tests |
 | `just test-post-publish` | exit 0 — tarball smoke, consumer contract verified |
 | `just test-smoke-junction-clean` | **143** — unchanged by this PR; see Found #6 |
 
