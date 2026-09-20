@@ -480,3 +480,42 @@ db-push:
     : "${SCAFFOLD_COMPOSE_PROJECT:?harness-env produced no compose project}"
     cd test/scaffold
     bun run drizzle-kit push --config drizzle.config.ts
+
+# ─── Studio (STUDIO-0, #698) ──────────────────────────────────────────────────
+
+# The server owns the port the browser talks to and proxies non-/api requests to
+# the Vite dev server, so there is one origin and no CORS. Ctrl-C stops both.
+#
+# Studio: server + Vite dev server, one command
+studio dir=".studio-demo" port="5178" vite_port="5179":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ui="{{justfile_directory()}}/tools/studio"
+    cli="{{justfile_directory()}}/src/cli/index.ts"
+    if [ ! -d "$ui" ]; then
+        echo "tools/studio is not in this checkout — serving the API only."
+        exec bun "$cli" studio "{{dir}}" --port {{port}}
+    fi
+    [ -d "$ui/node_modules" ] || (cd "$ui" && bun install)
+    (cd "$ui" && bun run dev --port {{vite_port}} --strictPort) &
+    vite_pid=$!
+    trap 'kill "$vite_pid" 2>/dev/null || true' EXIT INT TERM
+    bun "$cli" studio "{{dir}}" --port {{port}} --vite "http://127.0.0.1:{{vite_port}}"
+
+# `project init`, the demo entities, a full generate, and a git repo with one
+# commit so /api/diff has a baseline to diff against.
+#
+# Postgres comes from the scaffold compose helpers through this checkout's
+# derived harness identity (`just db-env`) — never a second derivation, and
+# never a fixed project name a sibling worktree's `down -v` could destroy.
+#
+# Create or refresh the Studio demo project
+studio-demo dir=".studio-demo":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env="$(bun test/scaffold/harness-env.ts env)" || exit 1
+    set -a; eval "$env"; set +a
+    : "${SCAFFOLD_COMPOSE_PROJECT:?harness-env produced no compose project}"
+    docker compose -p "$SCAFFOLD_COMPOSE_PROJECT" -f test/scaffold/docker-compose.yml up -d --wait
+    bun "{{justfile_directory()}}/src/studio/demo/cli.ts" "{{dir}}" --clean \
+        --database-url "$SCAFFOLD_DATABASE_URL"

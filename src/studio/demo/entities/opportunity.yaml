@@ -1,0 +1,49 @@
+# Studio demo entity: opportunity — a deal against an account.
+#
+# Carries an enum (`stage`) and a decimal (`amount`) so the generated DTOs in
+# the diff pane are worth looking at, and so the graph has more than uuid
+# columns to render.
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+  pattern: Integrated
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  amount:
+    type: decimal
+    required: false
+
+  stage:
+    type: enum
+    choices: [prospect, qualified, proposal, negotiation, closed_won, closed_lost]
+    required: true
+    default: prospect
+
+  close_date:
+    type: date
+    required: false
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+queries:
+  - by: [account_id]
+  - by: [stage]
