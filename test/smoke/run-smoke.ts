@@ -525,10 +525,19 @@ function assertRelationshipEmission(tmpDir: string): void {
 		/override async findById<TWith extends AccountInclude = AccountNoInclude>/,
 		'account.repository.ts findById takes a typed include',
 	);
+	// The `(t)` is the whole assertion: RQBv2 ALIASES the root, so a predicate built
+	// from the repository's own handle names a table that is not in scope and the
+	// statement cannot run. Matched as the THREADED form, and the un-threaded one is
+	// asserted absent — a regression here is invisible to `tsc` (REL-2 §10 Found #9).
 	assertContains(
 		accountRepository,
-		/\{ RAW: \(\) => this\.rootScopeRaw\(\{ softDelete: true \}\) \}/,
+		/\{ RAW: \(t\) => this\.rootScopeRawOn\(t, \{ softDelete: true \}\) \}/,
 		'account.repository.ts scopes the RQBv2 root with the same predicate as baseQuery',
+	);
+	assertNotContains(
+		accountRepository,
+		/RAW: \(\s*\) =>/,
+		'account.repository.ts must not build a RAW predicate from a table it was not handed',
 	);
 	// R2: explicit from/to on every relation is why no alias is ever emitted.
 	assertNotContains(
