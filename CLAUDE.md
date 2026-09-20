@@ -193,6 +193,13 @@ shape from `@studio-shared` (the `src/studio/shared/api.ts` alias) rather than
 mirroring it — the viewer's hand-copied `SerializedDomainGraph` is exactly the
 drift the contract exists to stop.
 
+The canvas counts differently from `/api/graph`, deliberately: a first-class
+relationship is one `N:M` entry in `graph.edges` but a **node plus two edges**
+on screen, because it carries its own fields, types and temporal/sourced flags
+and a line has nowhere to put them. Three entities and five API edges draw as
+four nodes and six edges. `buildEdges` says so at the skip that causes it — the
+difference is not drift, and neither half is wrong.
+
 Two vocabularies are single tables, and every surface renders *from* them rather
 than branching on a literal:
 

@@ -315,3 +315,86 @@ describe('adaptDomainGraph', () => {
     expect(adaptDomainGraph(graph())).toEqual({ nodes: [], edges: [] });
   });
 });
+
+describe('the canvas counts differently from the API, on purpose', () => {
+  // A first-class relationship is ONE `N:M` entry in `graph.edges`, but a node
+  // plus two edges on the canvas — it carries its own fields, types and
+  // temporal/sourced flags, and a line has nowhere to put them. Comparing the
+  // two numbers and "fixing" the difference would break the canvas, so the
+  // exact counts are pinned here rather than left to be rediscovered.
+  const SHAPE = graph({
+    entities: {
+      account: entity('account'),
+      contact: entity('contact'),
+      opportunity: entity('opportunity'),
+    },
+    relationshipDefinitions: {
+      contact_opportunity: relDef('contact_opportunity', 'contact', 'opportunity'),
+    },
+    edges: [
+      {
+        from: 'contact',
+        to: 'account',
+        relationship: relationship({ name: 'account' }),
+        cardinality: 'N:1',
+        bidirectional: false,
+      },
+      {
+        from: 'account',
+        to: 'contact',
+        relationship: relationship({ name: 'contacts', type: 'has_many' }),
+        cardinality: '1:N',
+        bidirectional: false,
+      },
+      {
+        from: 'opportunity',
+        to: 'account',
+        relationship: relationship({ name: 'account' }),
+        cardinality: 'N:1',
+        bidirectional: false,
+      },
+      {
+        from: 'account',
+        to: 'opportunity',
+        relationship: relationship({ name: 'opportunities', type: 'has_many' }),
+        cardinality: '1:N',
+        bidirectional: false,
+      },
+      // The API's single entry for the junction.
+      {
+        from: 'contact',
+        to: 'opportunity',
+        relationship: relationship({ name: 'contact_opportunity', type: 'has_many' }),
+        cardinality: 'N:M',
+        bidirectional: true,
+      },
+    ],
+  });
+
+  test('3 entities and 5 API edges draw as 4 nodes and 6 edges', () => {
+    const { nodes, edges } = adaptDomainGraph(SHAPE);
+    expect(Object.keys(SHAPE.entities)).toHaveLength(3);
+    expect(SHAPE.edges).toHaveLength(5);
+    expect(nodes).toHaveLength(4);
+    expect(edges).toHaveLength(6);
+  });
+
+  test('the extra node is the relationship, and it is not an entity', () => {
+    const { nodes } = adaptDomainGraph(SHAPE);
+    const junction = nodes.find((n) => n.kind === 'relationship');
+    expect(junction?.id).toBe('contact_opportunity');
+    expect(nodes.filter((n) => n.kind === 'entity')).toHaveLength(3);
+  });
+
+  test('the junction is reached by two edges, not one', () => {
+    const { edges } = adaptDomainGraph(SHAPE);
+    const touching = edges.filter(
+      (e) => e.source === 'contact_opportunity' || e.target === 'contact_opportunity',
+    );
+    expect(touching).toHaveLength(2);
+    expect(touching.every((e) => e.studioKind === 'junction')).toBe(true);
+    // …and the API's own N:M entry is not additionally drawn between the two
+    // endpoints, which would show the same association twice.
+    expect(edges.some((e) => e.source === 'contact' && e.target === 'opportunity')).toBe(false);
+  });
+});

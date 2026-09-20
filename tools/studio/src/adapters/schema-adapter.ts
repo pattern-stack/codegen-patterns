@@ -155,6 +155,14 @@ function libraryType(kind: StudioEdgeKind): StudioEdgeData['type'] {
  *
  * An `N:M` edge whose relationship names a junction is skipped: the junction
  * node pair already expresses it, and keeping both draws the edge twice.
+ *
+ * **The canvas therefore counts differently from the API, on purpose.** One
+ * first-class relationship is a single `N:M` entry in `graph.edges`, but a node
+ * plus two edges here — because the relationship carries its own fields, types
+ * and temporal/sourced flags, and a line has nowhere to put them. A graph the
+ * API reports as 3 entities and 5 edges draws as 4 nodes and 6 edges. That is
+ * not drift between the two; do not "fix" it by keeping the skipped edge or by
+ * dropping the junction node.
  */
 export function buildEdges(graph: SerializedDomainGraph): StudioEdgeData[] {
   const edges: StudioEdgeData[] = [];
