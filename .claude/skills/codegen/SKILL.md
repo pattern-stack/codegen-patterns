@@ -31,6 +31,7 @@ If this file disagrees with those, they win — fix this file.
 | Observability facade | `observability` skill |
 | `/docs`, Swagger decorators, `openapi:` config | `openapi` skill |
 | ADR / spec / RFC placement | `project-documentation` skill |
+| Studio — `codegen studio`, `src/studio/**`, `tools/studio/**`, the HTTP contract, the demo project | `docs/specs/STUDIO-0.md` (architecture + API contract); `.ai-docs/studio/README.md` (running it) |
 
 ## CLI reference
 
@@ -143,6 +144,7 @@ codegen project upgrade-auth [--dry-run] [--path <dir>]      # ADR-043 wiring (s
 codegen project upgrade-openapi [--dry-run] [--force] [--path <dir>]
 codegen project inspect --kind analyze|stats|doc|manifest|suggestions
 codegen project graph [--output graph.json]
+codegen studio [projectDir] [--port N] [--vite <origin>]   # local Studio UI (default 5178) — STUDIO-0, #698
 ```
 
 `init` (package mode, the default) writes: `codegen.config.yaml`,
