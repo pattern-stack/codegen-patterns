@@ -169,6 +169,16 @@ test-integration-quick:
 test-obs-integration:
     bun test "{{justfile_directory()}}/test/integration/observability-list-reads.drizzle.integration.test.ts"
 
+# Engine: QUERY_SURFACE_PATH (explicit checkout — fails, never skips, on any
+# load error), else an installed @pattern-stack/query-surface, else a sibling
+# ../query-surface checkout. Skips WITH A PRINTED REASON when there is no
+# engine, no Docker, or an auto-discovered engine is the pre-drizzle-1.0
+# package. 9/9 against query-surface#41.
+#
+# SEM-3 demonstration gate: the EMITTED model answers a fan-out-trap measure
+test-semantic-integration:
+    bun test "{{justfile_directory()}}/test/integration/semantic-fanout.drizzle.integration.test.ts"
+
 # JOB-FN-KEY (0.17.1) — function-form concurrency keys serialize at the DB
 # level against a real Postgres (testcontainers). Spins its own ephemeral
 # postgres:16; skips gracefully when Docker is unavailable. NOT in test-unit/CI

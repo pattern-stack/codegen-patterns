@@ -81,6 +81,17 @@ jobs:
       - name: Run scaffold integration suite
         run: just test-integration
 
+      # SEM-3's demonstration gate. It shares this job's Docker rather than
+      # getting one of its own, because it is one testcontainers suite. Today it
+      # SKIPS here, loudly: no @pattern-stack/query-surface is installed (it is
+      # unpublished; the 1.0-capable version is query-surface#41, against which
+      # the suite is 9/9 locally). It starts gating when SEM-4 adds the package as
+      # a devDependency — the suite resolves an installed package first. Wired in
+      # now so the skip is visible, not a local-only check nobody remembers
+      # (CLAUDE.md: a gate outside CI rots).
+      - name: Run the semantic demonstration gate
+        run: just test-semantic-integration
+
   # Publish to npm on every merge to main, gated on green tests. Runs the
   # tarball smoke (#190), then publishes the root + each opted-in workspace
   # package IFF its version isn't already on npm — so merges without a

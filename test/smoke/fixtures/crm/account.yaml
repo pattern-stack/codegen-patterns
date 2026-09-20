@@ -20,6 +20,9 @@ fields:
     type: string
     required: true
     max_length: 255
+    # SEM-3: the group key of the fan-out-trap query (`account.name`). An
+    # untagged column is registered but not groupable.
+    role: dimension
 
   parent_account_id:
     type: uuid

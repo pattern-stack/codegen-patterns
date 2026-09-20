@@ -1,16 +1,30 @@
-# Semantic golden fixture: the junction. Emits its own registry entry with
-# meta.kind 'junction' plus an inverse has_many on each endpoint, and every
-# column the junction table really has: the FKs, the `role` enum (a dimension
-# with a declared domain, part of the composite key), the BaseJunctionFields,
-# the payload field below, and the timestamps. No `id` — the key is composite.
+# Semantic golden fixture: the junction.
 #
-# `choices:`, not `values:` — the junction template reads `choices:` and
-# silently drops `values:` (#690).
+# Shaped like the canonical `test/fixtures/junctions/opportunity_contact.yaml`
+# — temporal, sourced, the five-value `role` enum — so the golden model locks
+# the real junction shape rather than a reduced one. One deliberate difference:
+# `choices:`, not `values:`. The junction template reads `choices:` and
+# silently generates NO role column for `values:` (#690), so the canonical
+# fixture's role never reaches its table — or this model.
+#
+# Emits its own registry entry with `meta.kind: 'junction'` and two belongs_to
+# descriptors, an inverse has_many on each endpoint, and every column the
+# junction table really has: the FKs, `role` (a dimension with a declared
+# domain, part of the composite key), the BaseJunctionFields, the payload field
+# below, and the timestamps. No `id` — the key is composite (#689).
 pattern: Junction
 between: [opportunity, contact]
+temporal: true
+sourced: true
+
 fields:
   role:
     type: enum
-    choices: [champion, decision_maker, influencer]
+    choices: [champion, decision_maker, influencer, blocker, end_user]
+    nullable: false
   influence_score:
     type: decimal
+
+queries:
+  - by: [opportunity_id]
+  - by: [contact_id]

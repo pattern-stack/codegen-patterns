@@ -312,6 +312,19 @@ Mapping rules that need a decision (recommendation first):
 
 ### 5.4 SEM-3 — the demonstration gate
 
+> **Shipped 2026-09-17 (#592). `docs/specs/SEM-3.md` is the post-implementation truth.** The plan's optimistic branch
+> ("If the sibling package is linkable in CI, run its `describe` and one `measure`…") does **not** hold: the package
+> cannot be loaded against drizzle-orm 1.0 at all — `src/index.ts` transitively value-imports `createMany`/`createOne`,
+> which 1.0 removed. The suite is written in full and **skips with a printed reason** naming the missing export; it is
+> in `just test-semantic-integration` and the CI `integration` job so the skip is visible.
+> **Review fix (2026-09-19, PR #622):** against query-surface#41 (the 1.0 fix) the emitted model first went 5/4 —
+> `account.name` was untagged and so not groupable; tagged, it is **9/9**. CI still skips: no engine is installed
+> there. The suite resolves an installed `@pattern-stack/query-surface` first, so SEM-4 turns it on by adding the
+> devDependency — one item of the measured nine-item retirement list in `docs/specs/SEM-2.md` §4.
+> Two further things every later unit needs: (1) `needsCte` is `sources.length > 1`, so the fan-out trap needs a
+> measure at the PARENT grain beside the one over the `has_many`; (2) never probe the sibling checkout without
+> staging it — it has no `node_modules`, so `bun <script>` auto-installs 0.45 and hands you a 0.45 answer.
+
 Fixture: extend the existing CRM smoke fixtures under `test/smoke/fixtures/crm/` (account, contact, opportunity) with
 the junction shapes already in `test/fixtures/junctions/`, then add analytics tags: an additive money measure with
 `aggs: [sum, avg, min, max]`, a non-additive percentage (`additivity: non`), a `time: true` axis, and one ratio in
