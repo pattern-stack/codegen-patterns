@@ -7,7 +7,7 @@
  *   --scenario junction              (default) intra-domain: opportunity × contact
  *   --scenario junction-cross-domain cross-domain: opportunity × activity
  *
- * clean-lite-ps is the only backend pipeline (ARCH-0, #677), so there is no
+ * backend is the only backend pipeline (ARCH-0, #677), so there is no
  * architecture axis.
  *
  * `--runtime vendored|package` (default vendored) picks the ADR-037 runtime
@@ -452,7 +452,7 @@ function assertCustomLayout(projectDir: string): void {
     throw new Error(`layout custom: the jobs main.ts hook did not land in ${P.backendSrc}/main.ts`);
   }
 
-  // PATH-1 (#645): every clean-lite-ps module lives under `paths.modules_dir`,
+  // PATH-1 (#645): every backend module lives under `paths.modules_dir`,
   // and nothing under the default `<backend_src>/modules`.
   if (fs.existsSync(path.join(projectDir, P.backendSrc, 'modules'))) {
     throw new Error(`layout custom: '${P.backendSrc}/modules/' was created — an emitter ignored paths.modules_dir`);

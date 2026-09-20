@@ -6,7 +6,7 @@ Define entities in YAML. Generate a full NestJS + Drizzle backend — repositori
 codegen entity new entities/contact.yaml
 ```
 
-Built for teams that want consistent architecture without hand-writing the same CRUD scaffolding for every entity. Generates one backend layout (Clean-Lite-PS: a NestJS module folder per entity) and infrastructure subsystems (events, jobs, cache, storage) following Protocol → Backend → Factory patterns.
+Built for teams that want consistent architecture without hand-writing the same CRUD scaffolding for every entity. Generates one backend layout (backend: a NestJS module folder per entity) and infrastructure subsystems (events, jobs, cache, storage) following Protocol → Backend → Factory patterns.
 
 ## Install
 
@@ -116,7 +116,7 @@ codegen project config           # view resolved config
 
 ## What Gets Generated
 
-**Backend** — one layout, Clean-Lite-PS, under `paths.modules_dir` (default
+**Backend** — one layout, backend, under `paths.modules_dir` (default
 `<backend_src>/modules`; an entity's `context:` adds a folder):
 ```
 modules/[{context}/]{plural}/

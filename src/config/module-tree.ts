@@ -1,5 +1,5 @@
 /**
- * The clean-lite-ps module tree — the ONE rule for where an entity's module
+ * The backend module tree — the ONE rule for where an entity's module
  * lives: `<modules_dir>[/<context>]/<plural>` (PATH-1, #645; GEN-0, #649).
  *
  * Read by the hygen emission (`templates/_shared/entity-naming.mjs` re-exports

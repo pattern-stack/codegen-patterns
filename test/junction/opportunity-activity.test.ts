@@ -1,5 +1,5 @@
 /**
- * Snapshot test: cross-domain junction (opportunity × activity, clean-lite-ps).
+ * Snapshot test: cross-domain junction (opportunity × activity, backend).
  *
  * Locks the emitted output of the junction codegen pipeline against drift.
  * The smoke harness covers compile + grep; this covers full-file shape.
@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { bootstrapJunctionProject, type BootstrapResult } from './_helpers';
 
-describe('junction emission snapshot — opportunity_activity (clean-lite-ps)', () => {
+describe('junction emission snapshot — opportunity_activity (backend)', () => {
   let project: BootstrapResult;
 
   beforeAll(async () => {

@@ -110,7 +110,7 @@ Non-obvious bits:
 
 - **The dbEntities contract**: generated files import the plain `<Class>` type
   AND a `<camel>Schema` Zod schema from `locations.dbEntities` per entity. If
-  the backend doesn't emit such a package (clean-lite-ps doesn't), the consumer
+  the backend doesn't emit such a package (backend doesn't), the consumer
   provides a shim barrel re-exporting each module's Output DTO.
 - **The consumer mounts two providers** in the app root, both from generated
   code: `QueryClientProvider(queryClient)` ▸ `EntityStoreProvider(store)`
@@ -169,7 +169,7 @@ codegen skills list
   and its four toggles (ARCH-0), then `naming:`, `database:`, `behaviors:`, the 14
   `locations.backend*` names and `locations.dbSchemaServer` / `dbSchemaClient` /
   `dbMigrations` / `dbContextEngine` (ARCH-1). In **entity YAML**: `folder_structure:`,
-  `file_grouping:`, `behavior_strategy:`. Delete the lines — clean-lite-ps emits one
+  `file_grouping:`, `behavior_strategy:`. Delete the lines — backend emits one
   module folder per entity with fixed file names, so none of them had a meaning left.
   `expose:` is unaffected.
 - **Your app never reads `codegen.config.yaml`.** The keys it needs at boot —

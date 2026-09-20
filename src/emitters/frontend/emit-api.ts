@@ -132,7 +132,7 @@ ${authHeaderBlock}
 
 /**
  * `api/<entity>.ts` — per-entity REST methods over the generated controller
- * routes (update is `PATCH`, the clean-lite-ps controller's verb). The entity
+ * routes (update is `PATCH`, the backend controller's verb). The entity
  * type is imported plain (`<Class>`) from `dbEntities` (typeNaming knob is dead;
  * packages/db exports plain names — see FE-2 report).
  */

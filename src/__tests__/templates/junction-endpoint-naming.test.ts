@@ -93,7 +93,7 @@ describe('junction endpoints resolve from their own YAML', () => {
 		expect(l.outputPaths.service).toBe('src/modules/opportunity_contacts/opportunity_contact.service.ts');
 	});
 
-	it('clean-lite-ps output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
+	it('backend output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
 		const l = await junctionLocals(
 			['crew', 'person'],
 			ENTITIES,

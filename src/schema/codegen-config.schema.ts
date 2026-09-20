@@ -40,7 +40,7 @@ import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js
  * - `semantic`: whether to emit the semantic model (SEM-1, ADR-045). It
  *   replaced `analytics: none | cube`, which is now rejected by name.
  *
- * There is no backend-architecture key: clean-lite-ps is the only backend
+ * There is no backend-architecture key: backend is the only backend
  * pipeline (ARCH-0, #677). `architecture` and the `clean` pipeline's
  * `drizzleSchema` / `commands` / `queries` / `dtos` toggles were deleted with
  * it, so each is an unknown-key error.
@@ -114,7 +114,7 @@ export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
  * Derived from the resolved `backend_src` by {@link resolvePathDefaults} when
  * absent:
  * - `generated` = `<backend_src>/generated`: codegen-owned cross-entity barrels.
- * - `modules_dir` = `<backend_src>/modules`: the clean-lite-ps entity module
+ * - `modules_dir` = `<backend_src>/modules`: the backend entity module
  *   tree (every emitter that locates an entity module reads it, PATH-1) and the
  *   `auth-integrations` vendor target; the `@modules/*` alias points at it.
  * - `orchestration_src` = `<backend_src>/orchestration` (ADR-032 / O-6).

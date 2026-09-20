@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Entity-driven code generation system for full-stack TypeScript applications (v0.2). Generates one NestJS module folder per entity (clean-lite-ps) from YAML entity definitions — Drizzle table, repository, service, controller, module, DTOs, use cases — plus frontend collections. Also provides infrastructure subsystem scaffolding (events, jobs, cache, storage, auth).
+Entity-driven code generation system for full-stack TypeScript applications (v0.2). Generates one NestJS module folder per entity (backend) from YAML entity definitions — Drizzle table, repository, service, controller, module, DTOs, use cases — plus frontend collections. Also provides infrastructure subsystem scaffolding (events, jobs, cache, storage, auth).
 
 ## Operating Principles
 
@@ -90,7 +90,7 @@ The backend uses **hygen templates**; the frontend and integration layers use
 
 ### Backend Template Pipeline (hygen)
 
-- **`templates/entity/new/clean-lite-ps/`** — the one backend pipeline: per entity, a module folder under `paths.modules_dir` (`<modules_dir>[/<context>]/<plural>/`) holding the entity (Drizzle table), repository, service, controller, module, DTOs and use-cases. `clean-lite-ps/prompt-extension.js` builds almost every local; `prompt.js` builds only the four it does not (the `@generated` banner, the runtime-import specifiers, the `detection:` literal and the EVT-7 `emits:` descriptors) and spreads the extension's over them. Every template references its locals unguarded, so a missing local throws (#638).
+- **`templates/entity/new/backend/`** — the one backend pipeline: per entity, a module folder under `paths.modules_dir` (`<modules_dir>[/<context>]/<plural>/`) holding the entity (Drizzle table), repository, service, controller, module, DTOs and use-cases. `backend/entity-locals.js` builds almost every local; `prompt.js` builds only the four it does not (the `@generated` banner, the runtime-import specifiers, the `detection:` literal and the EVT-7 `emits:` descriptors) and spreads the extension's over them. Every template references its locals unguarded, so a missing local throws (#638).
 - There is no architecture choice. The `clean` pipeline (`templates/entity/new/backend/`) and `generate.architecture` were deleted by ARCH-0 (#677, `docs/specs/ARCH-0.md`); writing the key is an unknown-key error. ARCH-1 (#682, `docs/specs/ARCH-1.md`) deleted the rest of the surface only `clean` read — `naming:`, `database:`, `behaviors:`, the 14 `locations.backend*` names (plus four dead `db*` ones), the entity layout keys (`folder_structure:`, `file_grouping:`, `behavior_strategy:`) and the 69 dead `prompt.js` locals behind them, with `src/config/naming-config.mjs`, `src/config/locations.mjs` and `src/schema/naming-config.schema.ts`. Each deleted key is now an unknown-key error naming the key and the file. `expose:` stays — the frontend emitter reads it.
 
 ### Frontend Relation Graph (`src/emitters/frontend/graph-model.ts` + `emit-graph.ts`, FE-REL)
@@ -284,7 +284,7 @@ onto its parents is rendered by the parents' own service + module templates from
 (`templates/_shared/junction-fan-out.mjs`, JUNC-0 #678), and `junction new` re-renders the parents through
 `entity new`'s per-target path (`src/cli/shared/entity-render.ts`).
 
-Entry point: `templates/entity/new/prompt.js`. The clean-lite-ps locals come from `prompt-extension.js`.
+Entry point: `templates/entity/new/prompt.js`. The backend locals come from `prompt-extension.js`.
 
 Cross-entity names in the hygen prompts (a `belongs_to` / `has_many` / field `foreign_key:` target, an EAV
 definition entity, a junction or `relationship new` endpoint, a group Actor's members) come from `templates/_shared/entity-naming.mjs`:

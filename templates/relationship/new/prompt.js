@@ -210,7 +210,7 @@ function processFields(fields) {
 function zodChainForCreate(field) {
   const { type, nullable, required, hasDefault, hasChoices, choices } = field;
 
-  // Nullability and optionality are independent — see the clean-lite-ps copy of
+  // Nullability and optionality are independent — see the backend copy of
   // this function for the rationale (nullable-and-optional fields must get both
   // `.nullable()` and `.optional()`, not just `.nullable()`).
   if (hasChoices) {
@@ -563,7 +563,7 @@ export default {
     const toEntityImport = `${relativeModuleDir(relationshipModuleDir, toNaming.moduleDir)}/${config.to}.entity`;
 
     // ======================================================================
-    // Output paths (mirrors clean-lite-ps layout)
+    // Output paths (mirrors backend layout)
     // ======================================================================
 
     const outputPaths = {

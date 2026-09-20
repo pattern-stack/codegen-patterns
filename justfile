@@ -140,7 +140,7 @@ test-smoke-integration:
 test-baseline:
     bun test/run-test.ts full
 
-# Typecheck the clean-lite-ps generated output in packages/api/src
+# Typecheck the backend generated output in packages/api/src
 # Uses test/tsconfig.baseline.json with runtime/ @shared/* aliases
 # (no regeneration — run after test-baseline or just gen-all)
 typecheck-baseline:

@@ -907,7 +907,7 @@ type EmitAdaptersModuleTree =
   | {
       /** Absolute `<backend_src>` root on disk (locates `<backend_src>/integrations`). */
       backendSrcAbs: string;
-      /** Absolute `paths.modules_dir` on disk — the clean-lite-ps module tree
+      /** Absolute `paths.modules_dir` on disk — the backend module tree
        *  the entity repo/module imports resolve into. */
       modulesAbs: string;
     }
@@ -1220,7 +1220,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
 /**
  * Derive the FK external-key write-surface name for a `belongs_to` relationship,
  * mirroring `processBelongsTo`'s `relationKey` branches in
- * `templates/entity/new/clean-lite-ps/prompt-extension.js:447-460`, then
+ * `templates/entity/new/backend/entity-locals.js:447-460`, then
  * appending `ExternalId`.
  *
  * Three shapes (see spec #487 anti-drift table):
@@ -1251,7 +1251,7 @@ export function fkWriteKey(
 
 /**
  * Build the {@link SinkEmitInput} for a `pattern: Integrated` entity — mirrors
- * `buildIntegrationSurface().writeFields`/`writeFkFields` (clean-lite-ps
+ * `buildIntegrationSurface().writeFields`/`writeFkFields` (backend
  * prompt-extension): copy-through scalars are the non-FK `fields:` (camelCased,
  * nullable-aware tsType); FK external keys are one `<relationKey>ExternalId` per
  * `belongs_to`. Uses {@link fkWriteKey} for the derivation so the write-key

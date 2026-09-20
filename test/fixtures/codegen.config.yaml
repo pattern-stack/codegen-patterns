@@ -1,6 +1,6 @@
 # Test configuration for codegen baseline tests (`just test-baseline`).
 #
-# ADR-037: the baseline compiles the generated clean-lite-ps module tree against
+# ADR-037: the baseline compiles the generated backend module tree against
 # the in-repo runtime via `@shared/*` tsconfig aliases (test/tsconfig.baseline.json),
 # so it is a VENDORED-mode test — pin the mode so the `package` default does not
 # flip the emitted imports to `@pattern-stack/codegen/*` (which the baseline

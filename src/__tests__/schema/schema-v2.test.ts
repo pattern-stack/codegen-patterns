@@ -314,7 +314,7 @@ describe('entity.sync — per-entity frontend sync mode', () => {
 describe('entity layout keys — deleted by ARCH-1 (#682)', () => {
 	// `folder_structure` / `file_grouping` chose between the deleted `clean`
 	// pipeline's directory layouts; `behavior_strategy` chose between its
-	// base-class and inline repository bodies. clean-lite-ps emits one module
+	// base-class and inline repository bodies. The backend pipeline emits one module
 	// folder per entity and always extends a base class, so each is now an
 	// unrecognized key rather than an accepted no-op.
 	const base = {
@@ -358,7 +358,7 @@ describe('generate config', () => {
 		}
 	});
 
-	it('rejects architecture — clean-lite-ps is the only backend pipeline (ARCH-0)', () => {
+	it('rejects architecture — there is exactly one backend pipeline (ARCH-0)', () => {
 		const result = GenerateConfigSchema.safeParse({ architecture: 'clean-lite-ps' });
 		expect(result.success).toBe(false);
 		if (!result.success) {

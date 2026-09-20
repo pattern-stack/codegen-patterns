@@ -85,7 +85,7 @@ describe('project NounModule', () => {
 		const pane = await projectNoun.summary(ctx);
 		const body = (pane.body as string[]).join('\n');
 		expect(body).toContain('initialized');
-		// clean-lite-ps is the only backend pipeline — nothing to report (ARCH-0).
+		// backend is the only backend pipeline — nothing to report (ARCH-0).
 		expect(body).not.toContain('architecture');
 	});
 });
@@ -374,7 +374,7 @@ describe('buildInitPlan', () => {
 		expect(paths).toContain('entities');
 		expect(paths).toContain('entities/example.yaml');
 
-		// No backend-architecture key: clean-lite-ps is the only pipeline (ARCH-0).
+		// No backend-architecture key: backend is the only pipeline (ARCH-0).
 		const config = plan.entries.find((e) => e.relPath === 'codegen.config.yaml');
 		expect(config?.content).not.toContain('architecture');
 	});

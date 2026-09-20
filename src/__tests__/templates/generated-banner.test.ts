@@ -11,9 +11,9 @@
  *      wording, interpolates the source path, and supports the SQL leader.
  *   2. Every `force: true` `.ejs.t` template emits the banner as its first
  *      output line when a `generatedBanner` local is supplied. Outside
- *      clean-lite-ps the banner line is
+ *      backend the banner line is
  *      `<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>`
- *      and degrades to nothing when the local is absent. A clean-lite-ps body
+ *      and degrades to nothing when the local is absent. A backend body
  *      opens with `<%- generatedBanner %>` unguarded: a missing banner there is
  *      a ReferenceError (#638).
  */
@@ -108,9 +108,9 @@ describe('force templates carry the @generated banner', () => {
 
 	const BANNER_LINE =
 		"<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>";
-	const CLP_BANNER_LINE = '<%- generatedBanner %>';
-	const isClp = (rel: string) => rel.startsWith('entity/new/clean-lite-ps/');
-	const bannerLine = (rel: string) => (isClp(rel) ? CLP_BANNER_LINE : BANNER_LINE);
+	const BACKEND_BANNER_LINE = '<%- generatedBanner %>';
+	const isBackend = (rel: string) => rel.startsWith('entity/new/backend/');
+	const bannerLine = (rel: string) => (isBackend(rel) ? BACKEND_BANNER_LINE : BANNER_LINE);
 
 	it.each(templates)('%s — banner is the first output line', (rel) => {
 		const { body } = frontmatterAndBody(readFileSync(join(TEMPLATES_ROOT, rel), 'utf8'));
@@ -137,7 +137,7 @@ describe('force templates carry the @generated banner', () => {
 		expect(rendered).toContain(GENERATED_BANNER_MARKER);
 	});
 
-	it.each(templates.filter((rel) => !isClp(rel)))(
+	it.each(templates.filter((rel) => !isBackend(rel)))(
 		'%s — renders without the local (graceful degradation)',
 		(rel) => {
 			const { body } = frontmatterAndBody(readFileSync(join(TEMPLATES_ROOT, rel), 'utf8'));
@@ -153,8 +153,8 @@ describe('force templates carry the @generated banner', () => {
 		},
 	);
 
-	it.each(templates.filter(isClp))('%s — a missing banner throws (#638)', (rel) => {
-		expect(() => ejs.render(CLP_BANNER_LINE, {}, { rmWhitespace: false })).toThrow(
+	it.each(templates.filter(isBackend))('%s — a missing banner throws (#638)', (rel) => {
+		expect(() => ejs.render(BACKEND_BANNER_LINE, {}, { rmWhitespace: false })).toThrow(
 			/generatedBanner is not defined/,
 		);
 	});

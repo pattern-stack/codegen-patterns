@@ -8,7 +8,7 @@
  *
  *   - `validatePatternComposition()` reports the errors as `AnalysisIssue`s at
  *     `analyze` / `entity validate` time;
- *   - the clean-lite-ps locals builder throws them at generation time, which is
+ *   - the backend locals builder throws them at generation time, which is
  *     the authoritative gate (ADR-041 §4).
  *
  * Nothing here touches the registry — the lookup is injected — so the hygen
@@ -172,7 +172,7 @@ export interface MethodVocabulary {
  * Only collisions **involving a capability** are reported. The `queries:` ×
  * FK-traversal overlap is pre-existing, intentional and already resolved by a
  * documented precedence rule with its own emission logic
- * (`clean-lite-ps/repository.ejs.t`) — it is a resolved overlap, not an
+ * (`backend/repository.ejs.t`) — it is a resolved overlap, not an
  * undetected clash, and reporting it would break working entities.
  *
  * Callers also pass the FK-traversal `findBy<Fk>` names and the spine's

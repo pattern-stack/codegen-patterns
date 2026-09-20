@@ -6,7 +6,7 @@
  * the DTO type aligns with the Drizzle runtime value and prevents silent
  * precision loss on large decimal values.
  *
- * The clean-lite-ps DTO templates read this map (fixed in PR #42, commit e1729e5).
+ * The backend DTO templates read this map (fixed in PR #42, commit e1729e5).
  */
 
 import { describe, it, expect } from 'bun:test';

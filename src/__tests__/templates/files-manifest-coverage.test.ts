@@ -165,7 +165,7 @@ describe('package.json:files covers all cross-package template imports (#266)', 
 
   it('finds at least the known #266 cross-package imports', () => {
     // Sanity: if we ever get to zero, the regex broke. The known offenders
-    // from #266 (prompt.js + clean-lite-ps prompt-extension.js) ensure a
+    // from #266 (prompt.js + backend prompt-extension.js) ensure a
     // non-zero floor today.
     expect(imports.length).toBeGreaterThan(0);
   });

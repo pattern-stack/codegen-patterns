@@ -24,7 +24,7 @@
  * the capability vocabulary: a `kind: 'capability'` pattern declares
  * `forwarderMethods`, so collisions between two capabilities are detected here.
  * Collisions between a capability and the emitted `queries:` / relationship
- * methods need the generated method names, which only the clean-lite-ps locals
+ * methods need the generated method names, which only the backend locals
  * builder computes — that check lives there (charter I1: one declaration of the
  * naming rules), and generation time is ADR-041 §4's authoritative gate anyway.
  *
@@ -251,7 +251,7 @@ export function validatePatternComposition(
 /**
  * ADR-041.1: a group `Actor`'s `members:` names one of the entity's own
  * `has_many` relationships — codegen reads the member table and FK from it.
- * The same rule is enforced at generation (the clean-lite-ps
+ * The same rule is enforced at generation (the backend
  * `resolveLibraryCapabilityConfig`); this reports it at validation.
  */
 function validateActorMembers(entity: ParsedEntity, config: unknown): AnalysisIssue[] {

@@ -34,7 +34,7 @@ export type RuntimeMode = (typeof VALID_RUNTIMES)[number];
  * `src/generated/`, `src/modules/`). `custom` — every path non-default
  * (PATH-0, #566/#612; PATH-1, #645): `codegen.config.yaml` is written BEFORE
  * `project init`, which must honour it; the events + jobs installs run against
- * it; the clean-lite-ps module tree is `paths.modules_dir`; and an app
+ * it; the backend module tree is `paths.modules_dir`; and an app
  * capability pattern under `<backend_src>/patterns/` is found by the derived
  * default `patterns:` glob (the config declares none).
  */
@@ -46,7 +46,7 @@ export interface LayoutPaths {
   backendSrc: string;
   generated: string;
   entities: string;
-  /** `paths.modules_dir` — the clean-lite-ps module tree. */
+  /** `paths.modules_dir` — the backend module tree. */
   modules: string;
 }
 

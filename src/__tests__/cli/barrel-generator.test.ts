@@ -103,7 +103,7 @@ describe('buildModulesBarrel — content shape', () => {
 	});
 });
 
-describe('paths.modules_dir places clean-lite-ps modules (PATH-1)', () => {
+describe('paths.modules_dir places backend modules (PATH-1)', () => {
 	test('a non-default modules_dir is where the barrel imports from', () => {
 		const entities = [
 			{ name: 'transcript', plural: 'transcripts', context: 'integration' },
@@ -121,7 +121,7 @@ describe('paths.modules_dir places clean-lite-ps modules (PATH-1)', () => {
 });
 
 describe('#403 — context: nests the module folder', () => {
-	test('clean-lite-ps: context entity imports from modules/<context>/<plural>/', () => {
+	test('backend: context entity imports from modules/<context>/<plural>/', () => {
 		const entities = [
 			{ name: 'transcript', plural: 'transcripts', context: 'integration' },
 			{ name: 'account', plural: 'accounts' }, // untagged → flat
@@ -138,7 +138,7 @@ describe('#403 — context: nests the module folder', () => {
 		);
 	});
 
-	test('clean-lite-ps schema barrel nests the context entity too', () => {
+	test('backend schema barrel nests the context entity too', () => {
 		const entities = [
 			{ name: 'transcript', plural: 'transcripts', context: 'integration' },
 			{ name: 'account', plural: 'accounts' },

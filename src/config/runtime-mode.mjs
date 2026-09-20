@@ -76,7 +76,7 @@ export function rewriteSharedImport(mode, specifier) {
 /**
  * Every mode-resolved runtime import specifier the entity templates emit, as
  * the `*Import` locals `templates/entity/new/prompt.js` passes to them. One
- * table, so the unit tests that render clean-lite-ps bodies use the prompt's
+ * table, so the unit tests that render backend bodies use the prompt's
  * values rather than a fallback of their own (#638).
  * @param {'package' | 'vendored'} mode
  */

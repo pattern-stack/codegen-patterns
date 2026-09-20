@@ -9,7 +9,7 @@
  * rendered by their own templates (templates/_shared/junction-fan-out.mjs,
  * JUNC-0 #678) — this generator writes only the junction's own files.
  *
- * Output paths are the clean-lite-ps module tree (`paths.modules_dir`) — the
+ * Output paths are the backend module tree (`paths.modules_dir`) — the
  * only backend pipeline (ARCH-0, #677).
  */
 

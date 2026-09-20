@@ -1,7 +1,7 @@
 /**
  * Resolved project paths for the hygen side.
  *
- * What is left here is what clean-lite-ps reads: the `paths` block's roots
+ * What is left here is what backend reads: the `paths` block's roots
  * (`BASE_PATHS`), the orchestration directory, the generated-barrel directory,
  * and the resolved config itself. Everything else this module used to export —
  * `BACKEND_LAYERS` and the `backend*` layer dirs, `getEntityPaths`,
@@ -33,7 +33,7 @@ export const BASE_PATHS = {
   // Where entity YAMLs live: `paths.entities` (#634 — one key, one reader).
   // Read by `loadOwnedTableNames` (#636), which runs inside the hygen prompt.
   entitiesDir: resolvedConfig.paths.entities,
-  // The clean-lite-ps module tree (PATH-1, #645): `paths.modules_dir`,
+  // The backend module tree (PATH-1, #645): `paths.modules_dir`,
   // default `<backend_src>/modules`.
   modulesDir: resolvedConfig.paths.modules_dir,
   // Orchestration emission root (ADR-032 Phase 3-2, O-6):

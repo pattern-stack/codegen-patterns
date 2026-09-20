@@ -47,7 +47,7 @@ const ROOT_CONFIG = join(ROOT, 'codegen.config.yaml');
 // Test-specific output paths (must match test/fixtures/codegen.config.yaml)
 // These are hardcoded here to avoid circular dependency with config loading
 const OUTPUT_PATHS = [
-  // The clean-lite-ps module tree (paths.modules_dir, default <backend_src>/modules)
+  // The backend module tree (paths.modules_dir, default <backend_src>/modules)
   'packages/api/src/modules',
   // ADR-017 barrels (modules.ts, schema.ts) + the REL-1 relation manifest
   // (relations.ts) — paths.generated, default <backend_src>/generated
@@ -154,7 +154,7 @@ function runCodegen() {
 
   // Two-pass generation.
   //
-  // The clean-lite-ps prompt includes a belongs_to / has_many target in the
+  // The backend prompt includes a belongs_to / has_many target in the
   // repository's imports only when the target's `<entity>.entity.ts` is already
   // on disk (`targetExists` in prompt-extension.js — deliberately a file check,
   // so a single `entity new x.yaml` never imports a sibling that was never
@@ -299,7 +299,7 @@ function runCodegen() {
 }
 
 /**
- * Named expectation for #680 — clean-lite-ps ignores a declarative query's
+ * Named expectation for #680 — backend ignores a declarative query's
  * `via:` / `select:` options, so contact-v2's two `via: opportunity_contact_link`
  * queries emit repository methods that do not compile. Exact file, exact codes,
  * exact count; asserted present AND sole. Delete this (and its call below) when
@@ -315,10 +315,10 @@ const ISSUE_680_EXPECTATION = {
  *
  * Uses test/tsconfig.baseline.json, which maps the vendored-mode `@shared/*`
  * specifiers onto the in-repo runtime/ sources and `@gen/*` onto the generated
- * backend root, so it compiles the whole emitted tree — the clean-lite-ps
- * modules and the `<generated>/` barrels + REL-1 relation manifest — without a
- * vendor step. Runs over the live output (not the snapshot), so it must be
- * called after runCodegen().
+ * backend root, so it compiles the whole emitted tree — the backend modules
+ * and the `<generated>/` barrels + REL-1 relation manifest — without a vendor
+ * step. Runs over the live output (not the snapshot), so it must be called
+ * after runCodegen().
  *
  * Snapshot comparison verifies the shape of the generated text; this verifies
  * that the shape compiles. Every diagnostic fails the gate except the named
@@ -326,7 +326,7 @@ const ISSUE_680_EXPECTATION = {
  */
 function typecheckBaseline() {
   const tsconfig = join(TEST_DIR, 'tsconfig.baseline.json');
-  console.log('Typechecking generated clean-lite-ps output (packages/api/src)...');
+  console.log('Typechecking generated backend output (packages/api/src)...');
   let output = '';
   // A non-zero (or missing) exit status fails the gate on its own, even with no
   // output — a tsc that dies silently compiled nothing (#688).
@@ -358,7 +358,7 @@ function typecheckBaseline() {
     (exitedNonZero && diagnostics.length === 0)
   ) {
     console.error(
-      'Typecheck failed over generated clean-lite-ps output:\n' +
+      'Typecheck failed over generated backend output:\n' +
         (output || '(tsc exited non-zero without printing anything)'),
     );
     if (!matches680) {

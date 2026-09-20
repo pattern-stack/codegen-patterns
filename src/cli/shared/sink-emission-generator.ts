@@ -89,7 +89,7 @@ import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 // ============================================================================
 
 /** One copy-through scalar column on the integration write/projection surface.
- *  Mirrors `buildIntegrationSurface().writeFields` in the clean-lite-ps
+ *  Mirrors `buildIntegrationSurface().writeFields` in the backend
  *  prompt-extension: `camelName` + nullable-aware `tsType`. */
 export interface SinkCopyThroughField {
   /** camelCase column name (e.g. `email`, `userId`). */

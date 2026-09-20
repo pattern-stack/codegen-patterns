@@ -342,7 +342,7 @@ Files that ship to the consumer app (not templates):
 
 Generator pieces:
 
-- `templates/entity/new/clean-lite-ps/integration-source.ejs.t` —
+- `templates/entity/new/backend/integration-source.ejs.t` —
   per-entity Phase 2 factory module emission (ADR-033.1 c, #251), for an
   entity with a `detection:` block. One `<entity>-integration-source.module.ts`
   per entity in its module folder, regardless of provider count; exports

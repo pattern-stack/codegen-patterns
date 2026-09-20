@@ -657,7 +657,7 @@ const EntityConfigSchema = z
     // bounded-context slug, NOT a folder knob. Different features consume it:
     //
     //   - #403 (the FIRST consumer): drives the generated code's
-    //     module output folder. clean-lite-ps nests the entity's module under
+    //     module output folder. backend nests the entity's module under
     //     `<modules>/<context>/<entity>/` so same-context entities group
     //     together; untagged entities stay flat (`<modules>/<entity>/`).
     //   - ADR-0004 (deferred): a later `naming: prefix | schema` knob reads
@@ -1378,7 +1378,7 @@ export const fieldTypeToZod: Record<FieldType, string> = {
   integer: "z.number().int()",
   // Drizzle maps PG `numeric` to a JS string to preserve precision.
   // Using z.coerce.string() — not z.coerce.number() — prevents silent
-  // precision loss on large decimal values. Matches clean-lite-ps (PR #42).
+  // precision loss on large decimal values. Matches backend (PR #42).
   decimal: "z.coerce.string()",
   boolean: "z.boolean()",
   uuid: "z.string().uuid()",

@@ -28,7 +28,7 @@ Minimum layout the generator writes into and reads from:
 ├── drizzle.config.ts              # Drizzle Kit config (migrations)
 ├── entities/                      # your YAML entity definitions (input)
 │   └── account.yaml
-├── modules/                       # clean-lite-ps output lands here
+├── modules/                       # backend output lands here
 │   └── accounts/
 ├── shared/                        # thin re-export shims (authored once)
 │   ├── base-classes/
@@ -43,7 +43,7 @@ Minimum layout the generator writes into and reads from:
         └── schema.ts              # Drizzle schema barrel
 ```
 
-Only three paths are codegen-owned: `<paths.generated>/*` (default `src/generated/`), the per-entity `modules/<plural>/` tree (clean-lite-ps), and whatever lands under `backend_src/` (full clean). Everything else is yours.
+Only three paths are codegen-owned: `<paths.generated>/*` (default `src/generated/`), the per-entity `modules/<plural>/` tree (backend), and whatever lands under `backend_src/` (full clean). Everything else is yours.
 
 ## tsconfig path aliases
 
@@ -507,13 +507,13 @@ const logger = createAppLogger('warn'); // ignores LOG_LEVEL
 
 ## `codegen.config.yaml`
 
-Minimum viable config for a backend-only clean-lite-ps project:
+Minimum viable config for a backend-only backend project:
 
 ```yaml
 # codegen.config.yaml
 
 paths:
-  backend_src: src                  # clean-lite-ps writes to <backend_src>/modules/<plural>/
+  backend_src: src                  # backend writes to <backend_src>/modules/<plural>/
   entities: entities
   events_dir: events                # top-level events/*.yaml source for event codegen
   generated: src/generated          # ADR-017 barrels land here
@@ -571,10 +571,10 @@ integrated entity's wiring). Each is listed like a rejected entity YAML — file
 with `stopped: 'pre-flight'` — and the command exits 1. A `<type>.job.generated.ts` emitted from a job YAML that no
 longer loads is left on disk and named as stale in the rejection. The app has no `yaml` dependency.
 
-The backend layout is clean-lite-ps — a module folder per entity under `paths.modules_dir` — and there is no other. The `clean` pipeline and its `generate.architecture` key were deleted (ARCH-0, #677): a config that still sets the key fails with `generate.architecture: unknown key`, naming the file. Delete the line.
+The backend layout is backend — a module folder per entity under `paths.modules_dir` — and there is no other. The `clean` pipeline and its `generate.architecture` key were deleted (ARCH-0, #677): a config that still sets the key fails with `generate.architecture: unknown key`, naming the file. Delete the line.
 
 ARCH-1 (#682) deleted the rest of the surface only `clean` read, so these fail the same way — delete them too:
-`naming:` (file-case / suffix-style / terminology: clean-lite-ps file names are fixed), `database:` (`dialect`),
+`naming:` (file-case / suffix-style / terminology: backend file names are fixed), `database:` (`dialect`),
 `behaviors:` (`strategy`), the 14 `locations.backend*` names plus `locations.dbSchemaServer` / `dbSchemaClient` /
 `dbMigrations` / `dbContextEngine`, and, in **entity YAML**, `folder_structure:`, `file_grouping:` and
 `behavior_strategy:`. `expose:` is unaffected — the frontend emitter reads it.
@@ -591,7 +591,7 @@ scaffold reads the same resolved value (PATH-0). Three keys default relative to 
 | `jobs_dir` | `definitions/jobs` |
 | `providers` | `definitions/providers` |
 | `generated` | `<backend_src>/generated` |
-| `modules_dir` | `<backend_src>/modules` — the clean-lite-ps module tree (every entity, relationship and junction module, the barrels' and integration assemblies' imports, the `@modules/*` alias) and the `auth-integrations` vendor root |
+| `modules_dir` | `<backend_src>/modules` — the backend module tree (every entity, relationship and junction module, the barrels' and integration assemblies' imports, the `@modules/*` alias) and the `auth-integrations` vendor root |
 | `orchestration_src` | `<backend_src>/orchestration` |
 
 `project init` and every `subsystem install` honour them. In a monorepo, write `codegen.config.yaml` with e.g.

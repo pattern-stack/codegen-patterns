@@ -94,7 +94,7 @@ uphold the ones they touch.
 | **I8** | **Core contract + opt-in extensions.** | Where a backend-specific capability is exposed, it is an extension on top of a portable core — not a uniform interface that hides features. |
 | **I9** | **Gates are honest.** | No filtered or ignored error classes, no scope carve-outs. Report gate output from the run made *after* the last edit. A real residual error class gets its own issue and a named single-purpose expectation, not a filter. **`bun run typecheck` does not validate a `runtime/base-classes/**` type change** — consumer tsconfigs are stricter (`noUncheckedIndexedAccess`); run `just test-smoke` before believing a runtime type change. A gate that is not in CI rots: new gates go into `just test-all` or their own CI job. |
 | **I10** | **This repository is public.** | No consumer, customer, product-strategy, infrastructure or security-defect detail in any file, commit, issue or PR. Refer to "a host application". |
-| **I11** | **Scope discipline.** | `clean-lite-ps` is the only backend pipeline (`clean` deleted by ARCH-0, #677). Cross-entity files are whole-set TS emitters (ADR-038 precedent); per-entity backend files stay hygen. No consumer-application changes; no consumer production pin to the Drizzle RC. |
+| **I11** | **Scope discipline.** | `templates/entity/new/backend/` is the only backend pipeline (`clean` deleted by ARCH-0, #677; the `clean-lite-ps` name retired by NAME-2, #695). Cross-entity files are whole-set TS emitters (ADR-038 precedent); per-entity backend files stay hygen. No consumer-application changes; no consumer production pin to the Drizzle RC. |
 
 ## 5. Non-goals
 

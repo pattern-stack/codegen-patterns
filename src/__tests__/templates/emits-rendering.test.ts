@@ -2,7 +2,7 @@
  * EVT-7 — Template rendering tests for the typed-emits path.
  *
  * Verifies:
- * - The CLP create/delete use-case templates emit TYPED_EVENT_BUS wiring and
+ * - The backend create/delete use-case templates emit TYPED_EVENT_BUS wiring and
  *   publish() inside a transaction when hasEmits + <op>EventType are set.
  * - The non-emits path still renders the original (non-transactional)
  *   body — this is the byte-stability guardrail enforced in unit form.
@@ -12,11 +12,11 @@ import { describe, it, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
-import { withEntities } from '../clean-lite-ps/_entity-lookup';
+import { withEntities } from '../backend/_entity-lookup';
 
-const CLP_ROOT = resolve(
+const BACKEND_ROOT = resolve(
   import.meta.dir,
-  '../../../templates/entity/new/clean-lite-ps',
+  '../../../templates/entity/new/backend',
 );
 
 function extractBody(source: string): string {
@@ -39,10 +39,10 @@ function renderFrom(root: string, rel: string, locals: Record<string, unknown>):
 }
 
 // ---------------------------------------------------------------------------
-// CLP — non-EAV create/update/delete use cases
+// backend — non-EAV create/update/delete use cases
 // ---------------------------------------------------------------------------
 
-function clpBase() {
+function base() {
   // The prompt-owned locals (banner, `@shared/*` runtime import specifiers,
   // EVT-7 defaults) come from the shared test base (#638).
   return {
@@ -58,7 +58,7 @@ function clpBase() {
       updateUseCase: 'UpdateContactUseCase',
       deleteUseCase: 'DeleteContactUseCase',
     },
-    clpOutputPaths: {
+    outputPaths: {
       createUseCase: 'src/modules/contacts/use-cases/create-contact.use-case.ts',
       updateUseCase: 'src/modules/contacts/use-cases/update-contact.use-case.ts',
       deleteUseCase: 'src/modules/contacts/use-cases/delete-contact.use-case.ts',
@@ -67,9 +67,9 @@ function clpBase() {
   };
 }
 
-describe('EVT-7 CLP — non-EAV use-case templates', () => {
+describe('EVT-7 backend — non-EAV use-case templates', () => {
   it('create.ejs.t: non-emits path is unchanged (one-line service delegate)', () => {
-    const output = renderFrom(CLP_ROOT, 'use-cases/create.ejs.t', clpBase());
+    const output = renderFrom(BACKEND_ROOT, 'use-cases/create.ejs.t', base());
     expect(output).toContain('export class CreateContactUseCase');
     expect(output).toContain('return this.service.create(dto);');
     expect(output).not.toContain('TYPED_EVENT_BUS');
@@ -77,7 +77,7 @@ describe('EVT-7 CLP — non-EAV use-case templates', () => {
 
   it('create.ejs.t: emits-path wraps the service call in a db.transaction and publishes', () => {
     const locals = {
-      ...clpBase(),
+      ...base(),
       hasEmits: true,
       createEventType: {
         type: 'contact_created',
@@ -87,7 +87,7 @@ describe('EVT-7 CLP — non-EAV use-case templates', () => {
         ],
       },
     };
-    const output = renderFrom(CLP_ROOT, 'use-cases/create.ejs.t', locals);
+    const output = renderFrom(BACKEND_ROOT, 'use-cases/create.ejs.t', locals);
     expect(output).toContain(
       "import { TYPED_EVENT_BUS, TypedEventBus } from '@shared/subsystems/events';",
     );
@@ -103,7 +103,7 @@ describe('EVT-7 CLP — non-EAV use-case templates', () => {
 
   it('delete.ejs.t: emits-path fetches, deletes, then publishes inside a transaction', () => {
     const locals = {
-      ...clpBase(),
+      ...base(),
       hasEmits: true,
       deleteEventType: {
         type: 'contact_deleted',
@@ -113,7 +113,7 @@ describe('EVT-7 CLP — non-EAV use-case templates', () => {
         ],
       },
     };
-    const output = renderFrom(CLP_ROOT, 'use-cases/delete.ejs.t', locals);
+    const output = renderFrom(BACKEND_ROOT, 'use-cases/delete.ejs.t', locals);
     expect(output).toContain('export class DeleteContactUseCase');
     expect(output).toContain('NotFoundException');
     expect(output).toContain('const entity = await this.service.findById(id);');

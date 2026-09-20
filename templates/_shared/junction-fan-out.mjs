@@ -4,12 +4,12 @@
  * A junction (`pattern: Junction`, `between: [left, right]`) is mirrored onto
  * both parent services: attach / detach / list / setPrimary, delegating to the
  * one junction service (`docs/relationship-pattern-audit.md` §1). The parent's
- * OWN clean-lite-ps service + module templates render that fan-out from the
+ * OWN backend service + module templates render that fan-out from the
  * junction YAML set — never an inject into a file another command owns, so
  * `entity new` and `junction new` in any order give the same bytes (charter I2).
  *
  * Readers: `templates/junction/new/prompt.js` (the junction's own files) and
- * `templates/entity/new/clean-lite-ps/prompt-extension.js` (the parents' fan-out
+ * `templates/entity/new/backend/entity-locals.js` (the parents' fan-out
  * and the Communication capability's `via:` junction). One naming rule for all
  * of them (charter I1). The name + plural rule itself is
  * `src/config/junction-naming.ts`, shared with the CLI (schema, roles, barrels).

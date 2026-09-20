@@ -23,7 +23,7 @@ import ejs from 'ejs';
 
 const TEMPLATE_PATH = resolve(
   import.meta.dir,
-  '../../../templates/entity/new/clean-lite-ps/integration-source.ejs.t',
+  '../../../templates/entity/new/backend/integration-source.ejs.t',
 );
 const RUNTIME_INTEGRATION_DIR = resolve(import.meta.dir, '../../../runtime/subsystems/integration');
 
@@ -48,7 +48,7 @@ function renderModule(detectionBlock: Record<string, unknown>): string {
     classNames: { entity: 'Opportunity' },
     hasDetection: Object.keys(detectionBlock).length > 0,
     detectionConfigsLiteral: JSON.stringify(detectionBlock, null, 2),
-    clpImports: { integrationSourceToEntity: './opportunity.entity' },
+    imports: { integrationSourceToEntity: './opportunity.entity' },
     generatedBanner: '// @generated',
     integrationSubsystemImport: '@shared/subsystems/integration',
   });

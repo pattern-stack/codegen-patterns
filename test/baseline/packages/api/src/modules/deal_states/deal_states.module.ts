@@ -53,9 +53,9 @@ export class DealStatesModule implements OnModuleInit {
   onModuleInit(): void {
     this.openApi.registerSchema('CreateDealStateDto', CreateDealStateSchema);
     this.openApi.registerSchema('UpdateDealStateDto', UpdateDealStateSchema);
-    // CLP pipeline names the response schema <Entity>OutputDto (matches
+    // The response schema is named <Entity>OutputDto (matches
     // classNames.outputDto); the OPENAPI-2 spec sketch uses "ResponseDto"
-    // but existing CLP code already publishes OutputDto everywhere, so we
+    // but the generated code publishes OutputDto everywhere, so we
     // keep consistency. OPENAPI-3 decorators reference the same name.
     this.openApi.registerSchema('DealStateOutputDto', DealStateOutputSchema);
   }
