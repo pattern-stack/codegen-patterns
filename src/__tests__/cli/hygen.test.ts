@@ -15,8 +15,15 @@
  */
 
 import { describe, test, expect } from 'bun:test';
+import { existsSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
-import { invokeHygen, invokeEntityNew, invokeRelationshipNew } from '../../cli/shared/hygen.js';
+import {
+	hygenChildEnv,
+	invokeHygen,
+	invokeEntityNew,
+	invokeRelationshipNew,
+} from '../../cli/shared/hygen.js';
 
 function captureCommand(fn: () => { command: string }): string {
 	// invokeHygen returns its composed command string regardless of subprocess
@@ -82,5 +89,61 @@ describe('invokeHygen command composition', () => {
 		);
 		expect(command).toContain('bunx --bun hygen relationship new');
 		expect(command).toContain('--yaml');
+	});
+});
+
+/**
+ * `bunx` caches a fetched package at a fixed path under the temp dir, shared
+ * by every process on the machine. Hygen usually runs with `cwd` set to a
+ * throwaway generated project (no `node_modules`), so it is fetched rather
+ * than resolved locally — and two checkouts generating at once then read a
+ * half-written cache. The child therefore gets a temp dir keyed on this
+ * installation. Symptom if this regresses: a rotating
+ * `ENOENT reading ".../hygen/dist/..."` in `src/__tests__/cli/subsystem*.test.ts`
+ * that passes when the file is run alone.
+ */
+describe('invokeHygen temp isolation', () => {
+	test('creates a per-installation cache dir under the temp root', () => {
+		invokeHygen({
+			generator: 'entity',
+			action: 'new',
+			templateRoot: '/nonexistent',
+			inherit: false,
+		});
+
+		const matches = readdirSync(tmpdir()).filter((e) => e.startsWith('codegen-hygen-'));
+		expect(matches.length).toBeGreaterThan(0);
+		// Keyed, not random: the name must be reproducible so repeated runs
+		// reuse one cache instead of filling the temp dir.
+		expect(matches.some((e) => /^codegen-hygen-[0-9a-f]{8}$/.test(e))).toBe(true);
+		expect(existsSync(`${tmpdir()}/${matches[0]}`)).toBe(true);
+	});
+
+	test('the child gets the per-installation dir as TMPDIR / TMP / TEMP', () => {
+		const env = hygenChildEnv('/templates');
+		expect(env.TMPDIR).toMatch(/codegen-hygen-[0-9a-f]{8}$/);
+		expect(env.TMP).toBe(env.TMPDIR);
+		expect(env.TEMP).toBe(env.TMPDIR);
+		expect(env.HYGEN_TMPLS).toBe('/templates');
+	});
+
+	test('a caller-supplied TMPDIR still wins', () => {
+		// The caller's env is spread last, so a caller that deliberately pins
+		// the child's temp dir is not overridden by the derived cache dir.
+		const env = hygenChildEnv('/templates', { TMPDIR: '/caller/tmp' });
+		expect(env.TMPDIR).toBe('/caller/tmp');
+	});
+
+	test('CODEGEN_HYGEN_CACHE_DIR pins the cache dir', () => {
+		const prev = process.env.CODEGEN_HYGEN_CACHE_DIR;
+		const pinned = `${tmpdir()}/codegen-hygen-pinned-test`;
+		process.env.CODEGEN_HYGEN_CACHE_DIR = pinned;
+		try {
+			expect(hygenChildEnv('/templates').TMPDIR).toBe(pinned);
+			expect(existsSync(pinned)).toBe(true);
+		} finally {
+			if (prev === undefined) delete process.env.CODEGEN_HYGEN_CACHE_DIR;
+			else process.env.CODEGEN_HYGEN_CACHE_DIR = prev;
+		}
 	});
 });

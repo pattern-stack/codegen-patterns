@@ -15,6 +15,7 @@ import { Module, Global } from '@nestjs/common';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { DRIZZLE } from '@shared/constants/tokens';
+import { scaffoldDatabaseUrl } from '../../harness-env';
 
 export { DRIZZLE };
 export type DrizzleDB = NodePgDatabase;
@@ -25,11 +26,10 @@ export type DrizzleDB = NodePgDatabase;
     {
       provide: DRIZZLE,
       useFactory: () => {
-        const pool = new Pool({
-          connectionString:
-            process.env.DATABASE_URL ??
-            'postgresql://postgres:postgres@localhost:5432/scaffold_test',
-        });
+        // This checkout's scaffold Postgres (`harness-env.ts`), never an
+        // ambient DATABASE_URL or a fixed 5432 — either can be another
+        // worktree's or a dev database.
+        const pool = new Pool({ connectionString: scaffoldDatabaseUrl() });
         // Drizzle 1.0: config object, `schema` removed (DRZ-2, #584).
         return drizzle({ client: pool });
       },

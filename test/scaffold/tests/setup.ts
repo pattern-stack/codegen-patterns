@@ -7,10 +7,11 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { sql } from 'drizzle-orm';
+import { scaffoldDatabaseUrl } from '../harness-env';
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ??
-  'postgresql://postgres:postgres@localhost:5432/scaffold_test';
+// Falls back to this checkout's derived port, not a fixed 5432 — sibling
+// worktrees each publish their own (`harness-env.ts`).
+const DATABASE_URL = scaffoldDatabaseUrl();
 
 let pool: Pool | null = null;
 let db: NodePgDatabase | null = null;
