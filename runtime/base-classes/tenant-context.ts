@@ -260,6 +260,37 @@ export class MissingTenantIdError extends Error {
 }
 
 /**
+ * Raised when a write would put a row in, or move a row to, a tenant other than
+ * the ambient one — or when a by-id write is attempted while the tenant filter
+ * is deliberately dropped.
+ *
+ * Distinct from `MissingTenantIdError`, which means "no tenant was established".
+ * Here a tenant IS established; the write disagrees with it. Conflating the two
+ * would make the error lie about its cause.
+ *
+ * The whole point of an ambient scope is that ordinary request-scope code
+ * cannot name a tenant. A payload that carries its own `tenant_id` is code
+ * naming one, so it is only honoured when it agrees with the ambient tenant, or
+ * inside `withAllTenants(...)` — where naming the owner is mandatory precisely
+ * because nothing else can supply it.
+ */
+export class CrossTenantWriteError extends Error {
+  override readonly name = 'CrossTenantWriteError';
+
+  constructor(
+    public readonly owner: string,
+    reason: string,
+  ) {
+    super(
+      `${owner}: refusing a cross-tenant write — ${reason}. A tenant-scoped ` +
+        'repository writes within the ambient tenant only. To act on another ' +
+        "tenant deliberately, wrap the call in withTenantScope(tenantId, fn), " +
+        'which makes the choice explicit and auditable. See tenant-context.ts.',
+    );
+  }
+}
+
+/**
  * Read the ambient tenant for a repository enforcing at `enforcement`.
  *
  *   - `'lenient'` → `undefined` when there is no context OR the context
@@ -305,10 +336,18 @@ export function withTenantScope<T>(
  * that cannot be expressed any other way: resolving which tenant a signup
  * belongs to, when the tenant lookup itself cannot be tenant-scoped.
  *
- * Reads drop the tenant predicate entirely. WRITES still require an explicit
- * `tenantId` on the input — `stampTenant()` throws otherwise. Reading across
- * tenants is a deliberate choice; writing a row without naming its owner is a
- * bug in every case.
+ * **This is a READ hatch.** The tenant predicate is dropped, so reads see every
+ * tenant. Writes are deliberately narrower, because there is no ambient tenant
+ * left for a write to mean:
+ *
+ *   - an **insert** must name its owner. `tenantId` on the input is mandatory
+ *     here and may be any tenant; without it `stampTenant()` throws
+ *     `MissingTenantIdError`.
+ *   - a **by-id update or delete** is REFUSED outright
+ *     (`CrossTenantWriteError`). With the filter dropped, `scopeAnd()` would
+ *     match any tenant's row by id, so the statement's blast radius is every
+ *     tenant at once. Narrow to one tenant with `withTenantScope(tenantId, fn)`
+ *     first — an admin that means to write should have to say whose row it is.
  *
  * Requires an outer context, for the same reason `withTenantScope` does.
  */

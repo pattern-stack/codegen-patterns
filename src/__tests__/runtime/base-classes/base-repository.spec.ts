@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { BaseRepository, type BehaviorConfig, type ListOptions } from '../../../../runtime/base-classes/base-repository';
 import {
+  CrossTenantWriteError,
   MissingTenantIdError,
   withAllTenants,
   withRequester,
@@ -581,6 +582,12 @@ class TenantTestRepo extends BaseRepository<
   stamp(input: Record<string, unknown>): Record<string, unknown> {
     return this.stampTenant(input);
   }
+  guardUpdate(input: Record<string, unknown>): Record<string, unknown> {
+    return this.guardTenantOnUpdate(input);
+  }
+  assertWrite(op: string): void {
+    this.assertTenantWritable(op);
+  }
   renderFindById(id: string): string {
     return this.baseQuery(eq(this.table['id'], id)).toSQL().sql;
   }
@@ -785,23 +792,53 @@ describe('BaseRepository.stampTenant', () => {
     });
   });
 
-  it('an explicit tenantId wins over the ambient one', async () => {
+  it('REJECTS an explicit tenantId that disagrees with the ambient one', async () => {
+    // The whole point of an ambient scope is that request-scope code cannot
+    // name a tenant. "Explicit wins" would have handed that back.
     const repo = new TenantTestRepo();
     await asTenant('t-a', async () => {
-      expect(repo.stamp({ name: 'w', tenantId: 't-b' })).toEqual({
+      expect(() => repo.stamp({ name: 'w', tenantId: 't-b' })).toThrow(
+        CrossTenantWriteError,
+      );
+    });
+  });
+
+  it('ACCEPTS an explicit tenantId that agrees with the ambient one', async () => {
+    const repo = new TenantTestRepo();
+    await asTenant('t-a', async () => {
+      expect(repo.stamp({ name: 'w', tenantId: 't-a' })).toEqual({
         name: 'w',
-        tenantId: 't-b',
+        tenantId: 't-a',
       });
     });
   });
 
-  it('an explicit null is preserved (writing the null partition deliberately)', async () => {
+  it('REJECTS an explicit null under a real tenant — the partition is a tenant too', async () => {
     const repo = new TenantTestRepo();
     await asTenant('t-a', async () => {
+      expect(() => repo.stamp({ name: 'w', tenantId: null })).toThrow(
+        CrossTenantWriteError,
+      );
+    });
+  });
+
+  it('ACCEPTS an explicit null inside the null partition', async () => {
+    const repo = new TenantTestRepo();
+    await asTenant(null, async () => {
       expect(repo.stamp({ name: 'w', tenantId: null })).toEqual({
         name: 'w',
         tenantId: null,
       });
+    });
+  });
+
+  it('lenient + no tenant established → an explicit value is the only source', async () => {
+    // Nothing is scoped in this mode, so there is no ambient value to disagree
+    // with. Forbidding the explicit one would make the repo unwritable.
+    const repo = new TenantTestRepo({}, 'lenient');
+    expect(repo.stamp({ name: 'w', tenantId: 't-b' })).toEqual({
+      name: 'w',
+      tenantId: 't-b',
     });
   });
 
@@ -828,7 +865,7 @@ describe('BaseRepository.stampTenant', () => {
     });
   });
 
-  it('withAllTenants permits a write that names its owner', async () => {
+  it('withAllTenants permits an insert that names its owner', async () => {
     const repo = new TenantTestRepo();
     await asTenant('t-a', async () => {
       await withAllTenants(async () => {
@@ -836,6 +873,85 @@ describe('BaseRepository.stampTenant', () => {
           name: 'w',
           tenantId: 't-b',
         });
+      });
+    });
+  });
+});
+
+describe('BaseRepository — the UPDATE payload is guarded too', () => {
+  it('rejects a tenantId that disagrees with the ambient one', async () => {
+    // `scopeAnd()` decides WHICH row an UPDATE touches. It says nothing about
+    // what is written into it, so a caller could re-parent their own row.
+    const repo = new TenantTestRepo();
+    await asTenant('t-a', async () => {
+      expect(() => repo.guardUpdate({ name: 'x', tenantId: 't-b' })).toThrow(
+        CrossTenantWriteError,
+      );
+    });
+  });
+
+  it('accepts a payload that does not mention the tenant at all', async () => {
+    const repo = new TenantTestRepo();
+    await asTenant('t-a', async () => {
+      expect(repo.guardUpdate({ name: 'x' })).toEqual({ name: 'x' });
+    });
+  });
+
+  it('accepts a tenantId that agrees — round-tripping a row still works', async () => {
+    const repo = new TenantTestRepo();
+    await asTenant('t-a', async () => {
+      expect(repo.guardUpdate({ name: 'x', tenantId: 't-a' })).toEqual({
+        name: 'x',
+        tenantId: 't-a',
+      });
+    });
+  });
+
+  it('is a no-op on a repository that is not tenant-scoped', async () => {
+    const repo = new TenantTestRepo({ tenantScoped: false });
+    await asTenant('t-a', async () => {
+      expect(repo.guardUpdate({ name: 'x', tenantId: 't-b' })).toEqual({
+        name: 'x',
+        tenantId: 't-b',
+      });
+    });
+  });
+});
+
+describe('BaseRepository — by-id writes are refused while the filter is dropped', () => {
+  it('withAllTenants refuses a by-id write', async () => {
+    // Inside this block the tenant predicate is gone, so `scopeAnd()` would
+    // match any tenant's row by id. Reading across tenants is a choice; writing
+    // without naming the tenant is not.
+    const repo = new TenantTestRepo();
+    await asTenant('t-a', async () => {
+      await withAllTenants(async () => {
+        expect(() => repo.assertWrite('update')).toThrow(CrossTenantWriteError);
+      });
+    });
+  });
+
+  it('an ordinary tenant context permits by-id writes', async () => {
+    const repo = new TenantTestRepo();
+    await asTenant('t-a', async () => {
+      expect(() => repo.assertWrite('update')).not.toThrow();
+    });
+  });
+
+  it('withTenantScope permits them — the refusal redirects, it does not dead-end', async () => {
+    const repo = new TenantTestRepo();
+    await asTenant('t-a', async () => {
+      await withTenantScope('t-b', async () => {
+        expect(() => repo.assertWrite('update')).not.toThrow();
+      });
+    });
+  });
+
+  it('is a no-op on a repository that is not tenant-scoped', async () => {
+    const repo = new TenantTestRepo({ tenantScoped: false });
+    await asTenant('t-a', async () => {
+      await withAllTenants(async () => {
+        expect(() => repo.assertWrite('update')).not.toThrow();
       });
     });
   });

@@ -19,6 +19,7 @@ import type {
 import type { InferSelectModel, SQL } from 'drizzle-orm';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
 import {
+  CrossTenantWriteError,
   MissingTenantIdError,
   getTenantId,
   requireRequester,
@@ -76,6 +77,17 @@ export function tenantPredicateFor(
   if (tenantId === undefined) return undefined;
   const col = column(table, 'tenantId', owner);
   return tenantId === null ? isNull(col) : eq(col, tenantId);
+}
+
+/**
+ * Render a tenant value for an error message. `null` is a real partition, not
+ * an absence, so it must not print as "none" — the two mean different things
+ * and an operator reading the error needs to tell them apart.
+ */
+function describeTenant(value: unknown): string {
+  if (value === null) return 'the null-tenant partition';
+  if (value === undefined) return 'no tenant';
+  return `'${String(value)}'`;
 }
 
 // ============================================================================
@@ -326,11 +338,17 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
   }
 
   /**
-   * Update an existing entity by id. updatedAt is auto-injected when timestamps=true.
+   * Update an existing entity by id. updatedAt is auto-injected when
+   * timestamps=true. On a tenant-scoped repository the SET payload may not
+   * re-parent the row (`guardTenantOnUpdate`), and the call is refused inside
+   * `withAllTenants()` (`assertTenantWritable`).
    * Returns the updated entity.
    */
   async update(id: string, input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
-    const data = this.withTimestamps(input as Record<string, unknown>, 'update');
+    this.assertTenantWritable('update');
+    const data = this.guardTenantOnUpdate(
+      this.withTimestamps(input as Record<string, unknown>, 'update'),
+    );
     const rows = await this.runner(tx)
       .update(this.tableRef)
       .set(data)
@@ -345,6 +363,7 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
    * - softDelete=false: hard-deletes the row
    */
   async delete(id: string, tx?: DrizzleTx): Promise<void> {
+    this.assertTenantWritable('delete');
     const runner = this.runner(tx);
     if (this.behaviors.softDelete) {
       await runner
@@ -468,24 +487,109 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
    * Stamp `tenant_id` onto an insert from the ambient tenant. No-op unless
    * `behaviors.tenantScoped`.
    *
-   * An explicitly-supplied `tenantId` always wins — that is how cross-tenant
-   * tooling writes on a tenant's behalf, and how a test seeds both tenants.
-   * Under `withAllTenants(...)` an explicit value is the ONLY way through:
-   * reading every tenant is a choice a caller can make, but writing a row
-   * without naming its owner is a bug in every case, so it throws.
+   * An explicitly-supplied `tenantId` does NOT win. The point of an ambient
+   * scope is that ordinary request-scope code cannot name a tenant, and a
+   * payload carrying its own `tenant_id` is exactly code naming one — a DTO
+   * field that slipped through, a spread of an untrusted body. `scopeAnd()`
+   * guards which rows a statement can SEE; nothing but this guards what an
+   * insert WRITES. So an explicit value is honoured only when it AGREES with
+   * the ambient tenant, and otherwise throws `CrossTenantWriteError`.
+   *
+   * The two deliberate ways across the boundary both stay open:
+   *   - `withTenantScope(tenantId, fn)` moves the ambient tenant, so the write
+   *     agrees with it and is auditable at the call site;
+   *   - `withAllTenants(fn)` drops the tenant entirely, and there an explicit
+   *     `tenantId` is MANDATORY and may name any tenant — nothing else can
+   *     supply one. Omitting it throws `MissingTenantIdError`.
    *
    * Named `stampTenant`, not `withTenant`, to leave `withTenantScope` (the ALS
    * hatch) unambiguous.
    */
   protected stampTenant(input: Record<string, unknown>): Record<string, unknown> {
     if (!this.behaviors.tenantScoped) return input;
-    if (input['tenantId'] !== undefined) return input;
     const owner = this.constructor.name;
+    const explicit = input['tenantId'];
+
+    // Cross-tenant tooling: no ambient tenant to agree with, so the caller must
+    // name the owner — and may name any of them.
     if (tryGetRequester()?.tenantScope === 'all') {
-      throw new MissingTenantIdError(owner);
+      if (explicit === undefined) throw new MissingTenantIdError(owner);
+      return input;
     }
+
+    // Resolved BEFORE the explicit check, so a strict repository still demands
+    // a boundary even when the payload carries a tenant.
     const tenantId = getTenantId(this.scopeEnforcement, owner);
+
+    if (explicit !== undefined) {
+      // `tenantId === undefined` is lenient-with-no-tenant-established: nothing
+      // is scoped in that mode, so there is no ambient value to disagree with
+      // and the explicit one is the only source there is.
+      if (tenantId !== undefined && explicit !== tenantId) {
+        throw new CrossTenantWriteError(
+          owner,
+          `create() was given tenant_id ${describeTenant(explicit)} while ` +
+            `acting within ${describeTenant(tenantId)}`,
+        );
+      }
+      return input;
+    }
+
     return { ...input, tenantId: tenantId ?? null };
+  }
+
+  /**
+   * Reject a `tenant_id` in an UPDATE payload that disagrees with the ambient
+   * tenant. No-op unless `behaviors.tenantScoped`.
+   *
+   * `scopeAnd()` guards WHICH row an update touches; it says nothing about what
+   * is written into it. Without this, a caller could re-parent their own row
+   * into another tenant — `update(myRowId, { tenantId: other })` — which is a
+   * cross-tenant write dressed as an ordinary edit, and one that leaves no
+   * trace in the WHERE clause to notice.
+   *
+   * An agreeing value is allowed so that round-tripping a row keeps working.
+   */
+  protected guardTenantOnUpdate(
+    input: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!this.behaviors.tenantScoped) return input;
+    const explicit = input['tenantId'];
+    if (explicit === undefined) return input;
+
+    const owner = this.constructor.name;
+    const tenantId = getTenantId(this.scopeEnforcement, owner);
+    if (tenantId !== undefined && explicit !== tenantId) {
+      throw new CrossTenantWriteError(
+        owner,
+        `update() was given tenant_id ${describeTenant(explicit)} while ` +
+          `acting within ${describeTenant(tenantId)}`,
+      );
+    }
+    return input;
+  }
+
+  /**
+   * Refuse a by-id write while the tenant filter is deliberately dropped.
+   *
+   * Inside `withAllTenants(...)` the tenant predicate is gone, so
+   * `scopeAnd(eq(id, …))` matches whichever tenant owns that id — the
+   * statement's blast radius is every tenant at once. Reading across tenants is
+   * a choice a caller can reasonably make; updating or deleting a row without
+   * naming whose it is never is. `withTenantScope(tenantId, fn)` is the way to
+   * do it deliberately, and it keeps working.
+   *
+   * Inserts are handled separately, by `stampTenant()` — there the caller CAN
+   * name the owner, and must.
+   */
+  protected assertTenantWritable(operation: string): void {
+    if (!this.behaviors.tenantScoped) return;
+    if (tryGetRequester()?.tenantScope !== 'all') return;
+    throw new CrossTenantWriteError(
+      this.constructor.name,
+      `${operation} by id is not available inside withAllTenants() — with the ` +
+        'tenant filter dropped it would match whichever tenant owns that id',
+    );
   }
 
   /**

@@ -149,9 +149,10 @@ export interface RequesterContext {
   /**
    * Tenant-axis visibility, the counterpart of `scope` on the user axis.
    *   'tenant' (default) → apply the tenant predicate.
-   *   'all'              → drop it (cross-tenant tooling). Reads see every
-   *                        tenant; WRITES must supply `tenantId` explicitly or
-   *                        `stampTenant()` throws (§3.3).
+   *   'all'              → drop it (cross-tenant tooling). A READ hatch:
+   *                        reads see every tenant, an INSERT must name its
+   *                        owner explicitly, and a by-id UPDATE/DELETE is
+   *                        refused outright (§3.3).
    */
   readonly tenantScope?: 'tenant' | 'all';
 }
@@ -276,27 +277,74 @@ include that needs `TTable`, not the predicate.
 calls `this.scopeAnd(where, { softDelete: this.behaviors.softDelete })` — identical semantics today, and it can no
 longer drift from `scopeAnd` tomorrow.
 
-#### 3.3 `create()` stamps
+#### 3.3 The write side — three guards, because `scopeAnd()` covers only row *selection*
+
+**Corrected after review.** The first draft of this section said an explicit `tenantId` "always wins" and that
+`update()` / `delete()` "need no change". Both are wrong, in the same way: `scopeAnd()` guards **which rows a
+statement can reach**, and says nothing about **what is written into them** or about the case where the filter has
+been deliberately dropped. Three guards close that, and all three now ship.
+
+**(a) `stampTenant()` — an explicit `tenantId` must AGREE, not win.**
 
 ```ts
 protected stampTenant(input: Record<string, unknown>): Record<string, unknown> {
   if (!this.behaviors.tenantScoped) return input;
-  if (input['tenantId'] !== undefined) return input;          // explicit wins
-  const ctx = tryGetRequester();
-  if (ctx?.tenantScope === 'all') throw new MissingTenantIdError(this.constructor.name);
-  const tenantId = getTenantId(this.scopeEnforcement, this.constructor.name);
+  const owner = this.constructor.name;
+  const explicit = input['tenantId'];
+
+  if (tryGetRequester()?.tenantScope === 'all') {
+    if (explicit === undefined) throw new MissingTenantIdError(owner);
+    return input;                                   // must name its owner; may name any
+  }
+
+  const tenantId = getTenantId(this.scopeEnforcement, owner);   // BEFORE the explicit check
+  if (explicit !== undefined) {
+    if (tenantId !== undefined && explicit !== tenantId) {
+      throw new CrossTenantWriteError(owner, /* … */);
+    }
+    return input;
+  }
   return { ...input, tenantId: tenantId ?? null };
 }
 ```
 
-Called from `create()` (`base-repository.ts:279-286`), wrapping `withTimestamps` exactly as ADR-042 §3 shows. Named
-`stampTenant`, not `withTenant`, to leave `withTenantScope` unambiguous (§1). The `tenantScope: 'all'` throw is the
-fail-closed half of the escape hatch: cross-tenant tooling may *read* every tenant, but it may not *write* a row
-without saying which tenant owns it.
+The whole point of an ambient scope is that ordinary request-scope code **cannot name a tenant**. A payload carrying
+its own `tenant_id` is precisely code naming one — a field that slipped through a DTO, a spread of an untrusted
+body — so `create({ …, tenantId: B })` under tenant A wrote silently into B. It now throws.
 
-`update()` / `delete()` need no change: they already route through `scopeAnd(eq(id))`, so a cross-tenant write matches
-zero rows — the same "returns null/[] — identical to truly doesn't exist" semantics the ALS doc already documents
-(`tenant-context.ts:33-37`). No existence oracle leaks.
+Three details that are not incidental:
+
+- The ambient tenant is resolved **before** the explicit check, so a strict repository still demands a boundary even
+  when the payload carries a tenant. The old early-return skipped that entirely.
+- `tenantId === undefined` means lenient-with-no-tenant-established. Nothing is scoped in that mode, so there is no
+  ambient value to disagree with and the explicit one is the only source there is — forbidding it would make such a
+  repository unwritable.
+- An explicit `null` under a real tenant is a **disagreement**, not a convenience: the null partition is a partition,
+  not an absence. It throws, and agrees only inside the null partition itself.
+
+**(b) `guardTenantOnUpdate()` — the SET payload may not re-parent the row.**
+
+`update(myOwnRowId, { tenantId: other })` passes every selection guard: the row *is* mine, so `scopeAnd()` matches
+it. The statement then moves it into another tenant, and nothing in the WHERE clause records that it happened.
+`update()` now routes its payload through the same agree-or-throw rule as `create()`. An agreeing value is allowed,
+so round-tripping a row keeps working.
+
+**(c) `assertTenantWritable()` — no by-id write while the filter is dropped.**
+
+Inside `withAllTenants(...)` the tenant predicate is gone, so `scopeAnd(eq(id, …))` matches whichever tenant owns
+that id: an admin block could delete any tenant's row by id. `update()`, `delete()` and the Integrated family's
+`softDeleteByExternalId()` refuse outright there. **The hatches are therefore not symmetric**, which is the part
+ADR-042 did not anticipate: `withAllTenants` is a READ hatch, and `withTenantScope(tenantId, fn)` is how you write
+across the boundary deliberately — it moves the ambient tenant, so the write agrees with it and the choice is
+visible at the call site.
+
+The errors are distinct on purpose. `MissingTenantIdError` means *no tenant was established*;
+`CrossTenantWriteError` means *a tenant is established and this write disagrees with it*. Reusing the first for the
+second would make the error lie about its cause.
+
+What is still true from the first draft: a cross-tenant write **by row selection** matches zero rows and is a
+no-op — the same "returns null/[] — identical to truly doesn't exist" semantics the ALS doc documents
+(`tenant-context.ts:33-37`). No existence oracle leaks. That was never the hole; the payload was.
 
 #### 3.4 `scopeEnforcement: 'strict'` is the default for tenant-scoped entities
 
@@ -651,7 +699,9 @@ Matrix — two tenants A and B, each with rows, all under `withRequester({ …, 
 | 6 | `update(bRowId, …)` as A → no row changed; B still reads its original |
 | 7 | `delete(bRowId)` as A → no-op; B's row survives (both soft and hard delete) |
 | 8 | `create()` as A stamps `tenant_id = A` with no `tenantId` in the input |
-| 9 | `create({ tenantId: B })` as A → the explicit value wins (documented behavior) |
+| 9 | `create({ tenantId: B })` as A → **throws**, and nothing lands in either tenant; `create({ tenantId: A })` as A is allowed |
+| 9b | `update(ownRow, { tenantId: B })` as A → **throws**; the row is still A's and still un-renamed |
+| 9c | a by-id `update` / `delete` inside `withAllTenants()` → **throws**; `withTenantScope(B, …)` does it deliberately |
 | 10 | a declarative finder (`findByName`) as A → only A's — **the M2 regression**, the test that fails today |
 | 11 | strict + **no** ambient context → every one of the above throws; nothing returns rows |
 | 12 | strict + a context with **no** `tenantId` → `MissingTenantIdError` (read *and* write) |
@@ -791,17 +841,24 @@ shared `bunx` hygen cache races between concurrent worktrees).
 
 | Gate | Result |
 |---|---|
-| `bun run typecheck` | **exit 0** |
-| `just test-all` | **exit 0** — typecheck · unit **3303/3303, 0 skipped** (was 3195; +108). The 3 tests SCOPE-0 recorded as skipped are `dist-singleton-dedup.spec.ts`, which runs only when `dist/` exists — `just test-post-publish` had built it before this run, so they executed here. Nothing was un-skipped by this PR. · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
-| `just test-integration` | **exit 0** — **117 pass · 2 skip · 0 fail** (was 80 pass; +37 the new suite) |
+| `bun run typecheck` · `bun run build` | **exit 0** |
+| `just test-all` | **exit 0** — typecheck · unit **3314/3314, 0 skipped** (was 3195; +119). The 3 tests SCOPE-0 recorded as skipped are `dist-singleton-dedup.spec.ts`, which runs only when `dist/` exists — `bun run build` had created it before this run, so they executed here. Nothing was un-skipped by this PR. · baseline · smoke · smoke-subsystems (vendored + package) · smoke-relationship · smoke-junction · smoke-junction-cross-domain · junction snapshots 10/10 · integration-emit 56/56 · smoke-integration |
+| `just test-integration` | **exit 0** — **123 pass · 2 skip · 0 fail** (was 80 pass; +43 the new suite, 6 of them the review's write-side guards) |
 | `just test-smoke` | **exit 0** — run inside `test-all`; mandatory because `runtime/base-classes/**` changed and `bun run typecheck` does not compile that tree under a consumer tsconfig |
 | `just test-post-publish` | **exit 0** — tarball smoke, because `runtime/` ships |
 | `just test-smoke-junction-clean` | exit 1 — **known-red, #602**, still exactly **118**; not repaired, not filtered |
 
-**The control run.** 117/117 passing proves nothing on its own — a tenant test that never had a tenant to exclude
-would pass too. So the tenant predicate and the create stamp were neutered (`tenantPredicate()` → `undefined`,
-`stampTenant()` → identity) and the suite re-run against real Postgres: **90 pass · 27 fail**. Twenty-seven of the
-new assertions detect the absence of the fix. The isolation claims are measurements, not restatements.
+**Two control runs.** A passing suite proves nothing on its own — a tenant test that never had a tenant to exclude
+would pass too. So each claim was measured by removing the thing that makes it true:
+
+- **The read/stamp side.** `tenantPredicate()` → `undefined` and `stampTenant()` → identity: **90 pass · 27 fail**.
+  Twenty-seven of the new assertions detect the absence of the predicate.
+- **The write side** (the three guards added in review). Restoring "explicit wins", dropping the update-payload
+  guard and dropping the by-id refusal: **119 pass · 4 fail** — exactly the four assertions that cover them, and
+  nothing else. A narrow control that moves exactly the tests it should is the point; one that moves more would
+  mean the guards are entangled with something they should not be.
+
+The isolation claims are measurements, not restatements.
 
 No filtered error classes, no scope carve-outs. No new `any` or `as unknown as` in `runtime/**`.
 

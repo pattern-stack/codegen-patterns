@@ -323,10 +323,50 @@ These are the irreducible remainder. The ADR's claim is "isolation-by-default fo
 
 **Why repository-level + ALS wins:** it is a single choke point (already the case for `userTracking`), codegen-owned end to end, and a structural mirror of a mechanism already shipped, tested, and trusted in this exact pipeline — the lowest-risk way to make isolation the default.
 
-## Open follow-ups (implementation-time; not blocking this decision)
+## Follow-ups — closed 2026-09-20 by TEN-1 (#585)
 
-1. Name and ship the two escape hatches — `withTenant(tenantId, fn)` and `runUnscoped(fn)` — as thin `withRequester` wrappers in `tenant-context.ts`, next to `withUserScope` / `withSuperuserScope` (`:147-175`).
-2. Decide the `userId` source for tenant-scoped *system* jobs (sentinel vs. nullable) when wrapping `processRun`'s handler call (`job-worker.ts:684`) — the run's `userId` may be absent for purely system-triggered runs.
-3. Confirm the composite-unique rewrite in `processUniqueIndexes` (`prompt-extension.js:601-609`) correctly suppresses the per-field `.unique()` when `tenant_scoped`, so an entity doesn't emit both a bare and a composite unique on the same column.
-4. A tenant-isolation smoke fixture: two tenants, one entity, assert tenant A's `findById` returns `null` for tenant B's row under strict mode (the regression guard that this didn't silently regress to cross-tenant reads).
-5. Worked adoption checklist for a host application: install the boundary that seeds `withRequester({ userId, tenantId })` from the access token's tenant claim → flip `tenant_scoped: true` per entity and regen → backfill existing rows to the seed tenant → flip NOT NULL. (Revised order — see the 2026-09-20 note; `scopeEnforcement` is no longer a step, because a tenant-scoped entity is emitted strict.)
+These were written as implementation-time questions. All five are answered; kept here with their answers rather
+than deleted, because the answers are the decisions.
+
+1. **The escape hatches shipped as `withTenantScope(tenantId, fn)` and `withAllTenants(fn)`** — not the working
+   names `withTenant` / `runUnscoped`. They match the existing `withUserScope` / `withOrgScope` /
+   `withSuperuserScope` family, and `withTenant` would have collided with the repository's stamp helper.
+   `runUnscoped` also could not be a thin `withRequester` wrapper as proposed: under strict, clearing `tenantId`
+   *throws* rather than unscoping, so dropping the filter needs its own context field —
+   `tenantScope: 'tenant' | 'all'`.
+
+   **And the hatches are not symmetric, which this ADR did not anticipate.** `withAllTenants` is a READ hatch:
+   inserts inside it must name their owner explicitly, and by-id **updates and deletes are refused outright**. With
+   the tenant filter dropped, `scopeAnd(eq(id, …))` matches whichever tenant owns that id, so the statement's blast
+   radius is every tenant at once. `withTenantScope` is the way to write across the boundary deliberately.
+
+2. **`userId` for system jobs: a sentinel.** `job_run` has no `user_id` column at all, so there was nothing to read
+   and no "nullable" option. `SYSTEM_ACTOR_ID` ships in `tenant-context.ts`, paired at every use with
+   `scope: 'superuser'` — without which entering the ALS would newly scope every `userTracking` repository inside
+   every job to a user that does not exist.
+
+3. **There is nothing to suppress.** `clean-lite-ps` emits **no** single-column uniqueness — not for a field-level
+   `unique: true`, not for `queries: { unique: true }`. The premise of §5(c) does not hold for the pipeline in
+   scope, so the question is void rather than answered. What the pipeline *does* emit — top-level
+   `unique_indexes:` and the `external_id_tracking` constraint — both gained the `tenant_id` prefix, and a unit
+   test asserts no bare unique appears.
+
+4. **Done, and it is an integration fixture rather than a smoke one.** Isolation is a property of the SQL that
+   reaches the database, and a smoke typecheck cannot observe it. `test/scaffold/tests/tenant-scoping.test.ts`
+   runs the matrix against real Postgres; `test/smoke/fixtures/tenant_note.yaml` covers the emission's
+   *compilation* in both runtime modes, which is the separate thing a smoke is good for.
+
+5. **The adoption checklist stands, in this order:** install the boundary that seeds
+   `withRequester({ userId, tenantId })` from the access token's tenant claim → flip `tenant_scoped: true` per
+   entity and regen → backfill existing rows to the seed tenant → flip `NOT NULL`. The boundary comes first now
+   (see the 2026-09-20 note), and `scopeEnforcement` is no longer a step, because a tenant-scoped entity is emitted
+   strict.
+
+## Open follow-ups (tracked as issues)
+
+- **#702** — cross-table integration FK resolution is still unscoped. The `refTable: 'self'` case is scoped; a
+  cross-table resolver needs the per-entity `tenantScoped` fact that must travel as generated data.
+- **#703** — tenant-scoped upsert on a caller-supplied conflict target (`MetadataEntityRepository.upsertMany`, EAV
+  value tables). Both fail closed today.
+- **#704** — junction repositories are not tenant-scopable; the residual is bounded but real.
+- RLS (§7 step 4) remains optional and consumer-authored. Codegen emits no policies.

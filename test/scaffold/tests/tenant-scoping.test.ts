@@ -35,6 +35,7 @@ let withRequester: any;
 let withAllTenants: any;
 let withTenantScope: any;
 let MissingTenantIdError: any;
+let CrossTenantWriteError: any;
 let SYSTEM_ACTOR_ID: any;
 let BaseRepository: any;
 let IntegratedEntityRepository: any;
@@ -67,6 +68,7 @@ beforeAll(async () => {
     withAllTenants,
     withTenantScope,
     MissingTenantIdError,
+    CrossTenantWriteError,
     SYSTEM_ACTOR_ID,
   } = await import('@gen/runtime/base-classes/tenant-context'));
 
@@ -256,11 +258,49 @@ d('writes are tenant-scoped', () => {
     expect(row.tenantId).toBe(TENANT_A);
   });
 
-  test('an explicit tenantId on the input wins — documented behaviour', async () => {
+  test('create REJECTS an explicit tenantId naming another tenant', async () => {
+    // Request-scope code must not be able to name a tenant. `scopeAnd()` guards
+    // which rows a statement can SEE; nothing guarded what an insert WRITES, so
+    // `create({ tenantId: B })` under tenant A silently wrote into B.
+    await expect(
+      asTenant(TENANT_A, () => repo.create({ name: 'x', tenantId: TENANT_B })),
+    ).rejects.toThrow(CrossTenantWriteError);
+
+    // Row-level, not message-level: nothing may have landed in B.
+    expect(await asTenant(TENANT_B, () => repo.count())).toBe(0);
+    expect(await asTenant(TENANT_A, () => repo.count())).toBe(0);
+  });
+
+  test('create ACCEPTS an explicit tenantId that agrees with the ambient one', async () => {
+    // Round-tripping a row must keep working; only disagreement is an error.
     const row = await asTenant(TENANT_A, () =>
-      repo.create({ name: 'x', tenantId: TENANT_B }),
+      repo.create({ name: 'x', tenantId: TENANT_A }),
     );
-    expect(row.tenantId).toBe(TENANT_B);
+    expect(row.tenantId).toBe(TENANT_A);
+  });
+
+  test('update REJECTS a tenantId in the SET payload', async () => {
+    // `scopeAnd()` guards WHICH row is updated, not WHAT is written to it, so
+    // a caller could re-parent their own row into another tenant.
+    const { a } = await seed();
+    await expect(
+      asTenant(TENANT_A, () => repo.update(a.id, { name: 'moved', tenantId: TENANT_B })),
+    ).rejects.toThrow(CrossTenantWriteError);
+
+    // The row is still A's, and still un-renamed.
+    const stillA = await asTenant(TENANT_A, () => repo.findById(a.id));
+    expect(stillA?.tenantId).toBe(TENANT_A);
+    expect(stillA?.name).toBe('a-row');
+    expect(await asTenant(TENANT_B, () => repo.findById(a.id))).toBeNull();
+  });
+
+  test('update ACCEPTS a tenantId that agrees with the ambient one', async () => {
+    const { a } = await seed();
+    const updated = await asTenant(TENANT_A, () =>
+      repo.update(a.id, { name: 'renamed', tenantId: TENANT_A }),
+    );
+    expect(updated.name).toBe('renamed');
+    expect(updated.tenantId).toBe(TENANT_A);
   });
 
   test('update on another tenant\'s row changes nothing', async () => {
@@ -502,11 +542,44 @@ d('escape hatches', () => {
     ).rejects.toThrow(MissingTenantIdError);
   });
 
-  test('withAllTenants permits a write that names its owner', async () => {
+  test('withAllTenants permits an insert that names its owner', async () => {
     const row = await asTenant(TENANT_A, () =>
       withAllTenants(() => repo.create({ name: 'x', tenantId: TENANT_B })),
     );
     expect(row.tenantId).toBe(TENANT_B);
+  });
+
+  test('withAllTenants REFUSES a by-id update — there is no tenant to write within', async () => {
+    // The tenant predicate is dropped inside this block, so `scopeAnd()` would
+    // have matched ANY tenant's row by id. An admin that means to write must
+    // narrow to one tenant first, with withTenantScope.
+    const { b } = await seed();
+    await expect(
+      asTenant(TENANT_A, () => withAllTenants(() => repo.update(b.id, { name: 'hijacked' }))),
+    ).rejects.toThrow(CrossTenantWriteError);
+
+    const stillB = await asTenant(TENANT_B, () => repo.findById(b.id));
+    expect(stillB?.name).toBe('b-row');
+  });
+
+  test('withAllTenants REFUSES a by-id delete', async () => {
+    const { b } = await seed();
+    await expect(
+      asTenant(TENANT_A, () => withAllTenants(() => repo.delete(b.id))),
+    ).rejects.toThrow(CrossTenantWriteError);
+
+    expect(await asTenant(TENANT_B, () => repo.findById(b.id))).not.toBeNull();
+  });
+
+  test('withTenantScope is the way to write across the boundary deliberately', async () => {
+    // The hatch that NAMES its tenant works, so the refusal above is a
+    // redirection rather than a dead end.
+    const { b } = await seed();
+    const updated = await asTenant(TENANT_A, () =>
+      withTenantScope(TENANT_B, () => repo.update(b.id, { name: 'by-admin' })),
+    );
+    expect(updated.name).toBe('by-admin');
+    expect(updated.tenantId).toBe(TENANT_B);
   });
 
   test('withTenantScope acts within another tenant', async () => {

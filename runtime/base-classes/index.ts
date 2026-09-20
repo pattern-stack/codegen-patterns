@@ -19,6 +19,7 @@ export {
   withTenantScope,
   withAllTenants,
   MissingTenantIdError,
+  CrossTenantWriteError,
   SYSTEM_ACTOR_ID,
 } from './tenant-context';
 export type { RequesterContext, RequesterScope } from './tenant-context';

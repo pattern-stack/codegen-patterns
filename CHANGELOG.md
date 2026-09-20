@@ -29,11 +29,19 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   tenant-scoped entity and there is no opt-down. A missing boundary throws
   rather than quietly reading the union of every tenant.
 
+  A payload cannot name a tenant. `scopeAnd()` guards which rows a statement
+  can reach, not what is written into them, so `create()` and `update()` also
+  reject a `tenant_id` that disagrees with the ambient one
+  (`CrossTenantWriteError`) — an agreeing value is fine, so round-tripping a row
+  still works.
+
   `withTenantScope(tenantId, fn)` and `withAllTenants(fn)` are the escape
   hatches, next to the existing `withUserScope` / `withOrgScope` /
-  `withSuperuserScope`. `withAllTenants` drops the read filter but still
-  **refuses a write** that does not name its owner: reading across tenants is a
-  choice, writing a row without saying whose it is never is.
+  `withSuperuserScope`. They are deliberately **not** symmetric:
+  `withAllTenants` is a *read* hatch — reads see every tenant, an insert must
+  name its owner, and a by-id update or delete is refused outright, because with
+  the filter dropped it would match whichever tenant owns that id.
+  `withTenantScope` is how you write across the boundary deliberately.
 
   Background work enters the scope by itself — `JobWorker` wraps each handler in
   the run's own persisted tenant, with `scope: 'superuser'` on the user axis

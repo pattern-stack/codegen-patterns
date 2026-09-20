@@ -186,6 +186,11 @@ export abstract class IntegratedEntityRepository<
     provider: string,
     tx?: DrizzleTx,
   ): Promise<{ id: string } | null> {
+    // Same class as `delete()` by id: inside `withAllTenants()` the tenant
+    // predicate is dropped, so this would tombstone whichever tenant owns that
+    // `(provider, external_id)`. A sync that means to act on a tenant must say
+    // which one, with `withTenantScope`.
+    this.assertTenantWritable('softDeleteByExternalId');
     const db = this.runner(tx);
     const set = this.integrationConfig.softDelete
       ? { deletedAt: new Date(), updatedAt: new Date() }
