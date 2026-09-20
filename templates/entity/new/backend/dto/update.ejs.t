@@ -4,7 +4,7 @@ force: true
 ---
 <%- generatedBanner %>
 import { z } from 'zod';
-import { <%= classNames.createSchema %> } from './create-<%= entityName %>.dto';
+import { <%= classNames.createSchema %> } from './create-<%= entityFileStem %>.dto';
 
 export const <%= classNames.updateSchema %> = <%= classNames.createSchema %>.partial();
 

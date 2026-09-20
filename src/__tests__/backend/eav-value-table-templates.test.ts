@@ -195,7 +195,7 @@ describe('backend eav_value_table — service emission', () => {
     expect(output).toContain("import { toEavRows, mergeEavRows } from '@shared/eav-helpers';");
     expect(output).toContain("import type { DrizzleTx } from '@shared/types/drizzle';");
     expect(output).toContain(
-      "import { FieldDefinitionRepository } from '../field_definitions/field_definition.repository';",
+      "import { FieldDefinitionRepository } from '../field-definitions/field-definition.repository';",
     );
 
     // Constructor injection of the definition repo.
@@ -232,7 +232,7 @@ describe('backend eav_value_table — module emission', () => {
     const output = render('module.ejs.t', locals);
 
     expect(output).toContain(
-      "import { FieldDefinitionsModule } from '../field_definitions/field_definitions.module';",
+      "import { FieldDefinitionsModule } from '../field-definitions/field-definitions.module';",
     );
     expect(output).toContain('FieldDefinitionsModule,');
   });

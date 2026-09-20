@@ -6,8 +6,8 @@ force: true
 import { Module, forwardRef } from '@nestjs/common';
 import { DatabaseModule } from '@shared/database/database.module';
 
-import { <%= classNames.repository %> } from './<%= name %>.repository';
-import { <%= classNames.service %> } from './<%= name %>.service';
+import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
+import { <%= classNames.service %> } from './<%= entityFileStem %>.service';
 import { <%= leftModuleClass %> } from '<%= leftModuleImportFromJunction %>';
 import { <%= rightModuleClass %> } from '<%= rightModuleImportFromJunction %>';
 

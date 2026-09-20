@@ -2,8 +2,8 @@
 import { Injectable } from '@nestjs/common';
 import { asc, desc, sql, type SQL } from 'drizzle-orm';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '@shared/http/page';
-import { DealStateService } from '../deal_state.service';
-import { deal_states, type DealState } from '../deal_state.entity';
+import { DealStateService } from '../deal-state.service';
+import { deal_states, type DealState } from '../deal-state.entity';
 
 /**
  * Paginated list use-case for deal_states (pagination-by-default).

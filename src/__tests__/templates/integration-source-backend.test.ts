@@ -87,6 +87,7 @@ describe('integration-source emission (backend) — #267', () => {
     const { body } = readFrontmatter(readFileSync(MODULE_TEMPLATE, 'utf8'));
     const rendered = ejs.render(body, {
       entityName: 'opportunity',
+      entityFileStem: 'opportunity',
       classNames: { entity: 'Opportunity' },
       hasDetection: true,
       detectionConfigsLiteral: '{}',

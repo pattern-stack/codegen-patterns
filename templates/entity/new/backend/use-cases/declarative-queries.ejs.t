@@ -13,8 +13,8 @@ force: true
  */
 
 import { Injectable } from '@nestjs/common';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
-import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
 <% processedQueries.forEach((q) => { -%>
 @Injectable()

@@ -3,7 +3,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '@shared/constants/tokens';
 import type { DrizzleClient } from '@shared/types/drizzle';
 import { BaseRepository } from '@shared/base-classes/base-repository';
-import { deal_states, type DealState } from './deal_state.entity';
+import { deal_states, type DealState } from './deal-state.entity';
 
 @Injectable()
 export class DealStateRepository extends BaseRepository<DealState, typeof deal_states> {

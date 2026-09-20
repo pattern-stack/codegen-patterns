@@ -222,7 +222,7 @@ describe('integrated repository emission — non-self FK + eav (contact)', () =>
 
   it('emits eav: true + FieldValueService injection + writeCustomFields override', () => {
     expect(out).toContain('eav: true');
-    expect(out).toContain("import { FieldValueService } from '../field_values/field_value.service';");
+    expect(out).toContain("import { FieldValueService } from '../field-values/field-value.service';");
     expect(out).toContain('private readonly fieldValues: FieldValueService,');
     expect(out).toContain('protected override async writeCustomFields(');
     expect(out).toContain("this.fieldValues.upsertFieldsTransactional('contact', entityId, userId, fields, db)");

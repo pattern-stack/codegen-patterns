@@ -45,6 +45,7 @@ function renderModule(detectionBlock: Record<string, unknown>): string {
   const body = extractBody(readFileSync(TEMPLATE_PATH, 'utf8'));
   return ejs.render(body, {
     entityName: 'opportunity',
+    entityFileStem: 'opportunity',
     classNames: { entity: 'Opportunity' },
     hasDetection: Object.keys(detectionBlock).length > 0,
     detectionConfigsLiteral: JSON.stringify(detectionBlock, null, 2),

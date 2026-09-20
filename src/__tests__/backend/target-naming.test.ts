@@ -234,6 +234,8 @@ describe('a service that composes the same target twice (#632)', () => {
 		expect(both().repositoryDeps).toEqual([
 			{
 				entity: 'crew',
+				// NAME-2: the emitted file stem, kebab; `entity` stays the YAML name.
+				fileStem: 'crew',
 				entityClass: 'Crew',
 				repositoryClass: 'CrewRepository',
 				property: 'crewRepo',

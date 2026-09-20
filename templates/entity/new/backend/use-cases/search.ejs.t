@@ -8,8 +8,8 @@ force: true
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq<% if (searchQuery.searchField) { %>, ilike<% } %>, type SQL } from 'drizzle-orm';
 import type { Page } from '@shared/http/pagination';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
-import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= entityName %>.entity';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
 export interface <%= searchQuery.inputTypeName %> {
 <% searchQuery.filters.forEach((f) => { -%>

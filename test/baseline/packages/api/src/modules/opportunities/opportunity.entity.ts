@@ -12,7 +12,7 @@ import {
 import { type InferSelectModel } from 'drizzle-orm';
 import { organizations } from '../organizations/organization.entity';
 import { users } from '../users/user.entity';
-import { deal_states } from '../deal_states/deal_state.entity';
+import { deal_states } from '../deal-states/deal-state.entity';
 import { tenants } from '../tenants/tenant.entity';
 
 export const opportunities = pgTable(

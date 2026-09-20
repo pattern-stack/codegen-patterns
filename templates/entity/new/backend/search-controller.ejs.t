@@ -8,7 +8,7 @@ force: true
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { PaginationSchema } from '@shared/http/pagination';
-import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityNamePlural %>.use-case';
+import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityPluralFileStem %>.use-case';
 
 const <%= searchQuery.filtersSchemaName %> = z.object({
 <% searchQuery.filters.forEach((f) => { -%>

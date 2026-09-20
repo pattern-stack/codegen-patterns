@@ -48,7 +48,9 @@ function base() {
   return {
     ...withEntities(),
     entityName: 'contact',
+    entityFileStem: 'contact',
     entityNamePlural: 'contacts',
+    entityPluralFileStem: 'contacts',
     classNames: {
       entity: 'Contact',
       service: 'ContactService',

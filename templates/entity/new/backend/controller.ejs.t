@@ -8,24 +8,24 @@ import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<%
 import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
 import type { Page } from '<%= paginationImport %>';
-import { <%= classNames.listQuerySchema %> } from './dto/list-<%= entityNamePlural %>.query';
-import type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityNamePlural %>.query';
-import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
-import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
+import { <%= classNames.listQuerySchema %> } from './dto/list-<%= entityPluralFileStem %>.query';
+import type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityPluralFileStem %>.query';
+import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id.use-case';
+import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>.use-case';
 <% if (eavEnabled) { -%>
-import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%= entityName %>-by-id-with-fields.use-case';
-import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityNamePlural %>-with-fields.use-case';
+import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id-with-fields.use-case';
+import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>-with-fields.use-case';
 <% } -%>
 <% if (generateWrites) { -%>
-import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityName %>.use-case';
-import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityName %>.use-case';
-import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityName %>.use-case';
-import { <%= classNames.createSchema %> } from './dto/create-<%= entityName %>.dto';
-import type { <%= classNames.createDto %> } from './dto/create-<%= entityName %>.dto';
-import { <%= classNames.updateSchema %> } from './dto/update-<%= entityName %>.dto';
-import type { <%= classNames.updateDto %> } from './dto/update-<%= entityName %>.dto';
+import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityFileStem %>.use-case';
+import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityFileStem %>.use-case';
+import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityFileStem %>.use-case';
+import { <%= classNames.createSchema %> } from './dto/create-<%= entityFileStem %>.dto';
+import type { <%= classNames.createDto %> } from './dto/create-<%= entityFileStem %>.dto';
+import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem %>.dto';
+import type { <%= classNames.updateDto %> } from './dto/update-<%= entityFileStem %>.dto';
 <% } -%>
-import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
+import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 
 // OPENAPI-3: decorators reference registered schemas by `$ref` because
 // the DTOs are Zod-derived types (OPENAPI-2 registers them by name at

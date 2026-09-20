@@ -27,18 +27,18 @@ describe('junction emission snapshot — opportunity_activity (backend)', () => 
     project?.cleanup();
   });
 
-  test('emits opportunity_activity.entity.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_activities/opportunity_activity.entity.ts'))
+  test('emits opportunity-activity.entity.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-activities/opportunity-activity.entity.ts'))
       .toMatchSnapshot();
   });
 
-  test('emits opportunity_activity.repository.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_activities/opportunity_activity.repository.ts'))
+  test('emits opportunity-activity.repository.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-activities/opportunity-activity.repository.ts'))
       .toMatchSnapshot();
   });
 
-  test('emits opportunity_activity.service.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_activities/opportunity_activity.service.ts'))
+  test('emits opportunity-activity.service.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-activities/opportunity-activity.service.ts'))
       .toMatchSnapshot();
   });
 

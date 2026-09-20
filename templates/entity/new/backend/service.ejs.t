@@ -7,22 +7,22 @@ import { Injectable, Inject, Optional<% if (junctionFanOut.length > 0) { %>, for
 import { WithAnalytics } from '<%= withAnalyticsImport %>';
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
-import { <%= classNames.repository %> } from './<%= entityName %>.repository';
-import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
+import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
+import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% if (eavEnabled) { -%>
-import { FieldValueService } from '<%= eavFieldValueImportDir %>/field_value.service';
+import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
 <% if (eavValueTable) { -%>
 import { toEavRows, mergeEavRows } from '<%= eavHelpersImport %>';
 import type { DrizzleTx } from '<%= drizzleTypeImport %>';
 <% if (!eavDefinitionRepositoryImported) { -%>
-import { <%= eavDefinitionPascal %>Repository } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntity %>.repository';
+import { <%= eavDefinitionPascal %>Repository } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntityStem %>.repository';
 <% } -%>
 <% } -%>
 <%_ /* #632 — one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
 <%_ repositoryDeps.forEach(dep => { _%>
-import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
-import type { <%= dep.entityClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.entity';
+import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.repository';
+import type { <%= dep.entityClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.entity';
 <%_ }) _%>
 <%_ /* JUNC-0 — each junction this entity is mirrored onto: its service, link + row types, and the counterparty type */ _%>
 <%_ junctionFanOut.forEach(fan => { _%>

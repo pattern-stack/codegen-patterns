@@ -59,11 +59,11 @@ describe('junctionNaming — the one junction naming rule', () => {
 		expect(junctionNaming('crew_person', MODULES)).toEqual({
 			name: 'crew_person',
 			plural: 'crew_people',
-			moduleDir: 'src/modules/crew_people',
-			entityFile: 'src/modules/crew_people/crew_person.entity',
-			repositoryFile: 'src/modules/crew_people/crew_person.repository.ts',
-			serviceFile: 'src/modules/crew_people/crew_person.service.ts',
-			moduleFile: 'src/modules/crew_people/crew_people.module.ts',
+			moduleDir: 'src/modules/crew-people',
+			entityFile: 'src/modules/crew-people/crew-person.entity',
+			repositoryFile: 'src/modules/crew-people/crew-person.repository.ts',
+			serviceFile: 'src/modules/crew-people/crew-person.service.ts',
+			moduleFile: 'src/modules/crew-people/crew-people.module.ts',
 			tableVar: 'crewPeople',
 			entityClass: 'CrewPerson',
 			serviceClass: 'CrewPersonService',
@@ -102,12 +102,12 @@ describe('junctionFanOutFor', () => {
 
 	it('imports reach the junction and the counterparty at their own folders', () => {
 		const [left] = fanOut('crew', [CREW_PERSON], 'src/modules/org/crews');
-		expect(left.junctionServiceImport).toBe('../../crew_people/crew_person.service');
-		expect(left.junctionEntityImport).toBe('../../crew_people/crew_person.entity');
-		expect(left.junctionModuleImport).toBe('../../crew_people/crew_people.module');
+		expect(left.junctionServiceImport).toBe('../../crew-people/crew-person.service');
+		expect(left.junctionEntityImport).toBe('../../crew-people/crew-person.entity');
+		expect(left.junctionModuleImport).toBe('../../crew-people/crew-people.module');
 		expect(left.counterpartyEntityImport).toBe('../../persons/person.entity');
 		const [right] = fanOut('person', [CREW_PERSON], 'src/modules/persons');
-		expect(right.junctionModuleImport).toBe('../crew_people/crew_people.module');
+		expect(right.junctionModuleImport).toBe('../crew-people/crew-people.module');
 		expect(right.counterpartyEntityImport).toBe('../org/crews/crew.entity');
 	});
 
@@ -188,9 +188,9 @@ describe('the parent templates render the fan-out', () => {
 		expect(svc).toContain("import { Injectable, Inject, Optional, forwardRef } from '@nestjs/common';");
 		expect(svc.match(/from '@nestjs\/common'/g)).toHaveLength(1);
 		expect(svc).toContain(
-			"import { CrewPersonService, CrewPersonLinkInput } from '../../crew_people/crew_person.service';",
+			"import { CrewPersonService, CrewPersonLinkInput } from '../../crew-people/crew-person.service';",
 		);
-		expect(svc).toContain("import type { CrewPerson } from '../../crew_people/crew_person.entity';");
+		expect(svc).toContain("import type { CrewPerson } from '../../crew-people/crew-person.entity';");
 		expect(svc).toContain("import type { Person } from '../../persons/person.entity';");
 		expect(svc).toContain('@Inject(forwardRef(() => CrewPersonService))');
 		expect(svc).toContain('private readonly crewPersonService!: CrewPersonService;');
@@ -206,7 +206,7 @@ describe('the parent templates render the fan-out', () => {
 	it('module: forwardRef joins the one import; the junction module is imported via forwardRef', () => {
 		const mod = render('module.ejs.t', localsFor(PERSON, [CREW_PERSON]));
 		expect(mod).toContain("import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';");
-		expect(mod).toContain("import { CrewPeopleModule } from '../crew_people/crew_people.module';");
+		expect(mod).toContain("import { CrewPeopleModule } from '../crew-people/crew-people.module';");
 		expect(mod).toContain('    DatabaseModule,\n    forwardRef(() => CrewPeopleModule),\n');
 	});
 

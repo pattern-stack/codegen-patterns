@@ -76,7 +76,7 @@ describe('relationship endpoints resolve from their own YAML', () => {
 			ENTITIES,
 			'paths:\n  backend_src: apps/api/src\n  modules_dir: apps/api/src/domain\n',
 		);
-		expect(locals.outputPaths.entity).toBe('apps/api/src/domain/person_crews/person_crew.entity.ts');
+		expect(locals.outputPaths.entity).toBe('apps/api/src/domain/person-crews/person-crew.entity.ts');
 		expect(locals.toEntityImport).toBe('../org/crews/crew.entity');
 	});
 

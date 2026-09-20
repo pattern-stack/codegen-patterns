@@ -6,8 +6,8 @@ force: true
 import { Injectable } from '@nestjs/common';
 import { asc, desc, sql, type SQL } from 'drizzle-orm';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
-import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= entityName %>.entity';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
 /**
  * Paginated list use-case for <%= entityNamePlural %> (pagination-by-default).

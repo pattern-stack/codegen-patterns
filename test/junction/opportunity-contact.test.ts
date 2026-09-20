@@ -27,18 +27,18 @@ describe('junction emission snapshot — opportunity_contact (backend)', () => {
     project?.cleanup();
   });
 
-  test('emits opportunity_contact.entity.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_contacts/opportunity_contact.entity.ts'))
+  test('emits opportunity-contact.entity.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-contacts/opportunity-contact.entity.ts'))
       .toMatchSnapshot();
   });
 
-  test('emits opportunity_contact.repository.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_contacts/opportunity_contact.repository.ts'))
+  test('emits opportunity-contact.repository.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-contacts/opportunity-contact.repository.ts'))
       .toMatchSnapshot();
   });
 
-  test('emits opportunity_contact.service.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_contacts/opportunity_contact.service.ts'))
+  test('emits opportunity-contact.service.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-contacts/opportunity-contact.service.ts'))
       .toMatchSnapshot();
   });
 

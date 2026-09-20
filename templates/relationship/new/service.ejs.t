@@ -7,8 +7,8 @@ import { Injectable, Inject, Optional } from '@nestjs/common';
 import { WithAnalytics } from '<%= withAnalyticsImport %>';
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 import { BaseService } from '<%= baseServiceImport %>';
-import { <%= classNames.repository %> } from './<%= name %>.repository';
-import type { <%= classNames.entity %> } from './<%= name %>.entity';
+import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
+import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 
 @Injectable()
 export class <%= classNames.service %> extends WithAnalytics(

@@ -3,18 +3,18 @@ import { Controller, Get, Post, Patch, Delete, Body, NotFoundException, Param, P
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '@shared/pipes/zod-validation.pipe';
 import type { Page } from '@shared/http/page';
-import { ListDealStatesQuerySchema } from './dto/list-deal_states.query';
-import type { ListDealStatesQueryDto } from './dto/list-deal_states.query';
-import { FindDealStateByIdUseCase } from './use-cases/find-deal_state-by-id.use-case';
-import { ListDealStatesUseCase } from './use-cases/list-deal_states.use-case';
-import { CreateDealStateUseCase } from './use-cases/create-deal_state.use-case';
-import { UpdateDealStateUseCase } from './use-cases/update-deal_state.use-case';
-import { DeleteDealStateUseCase } from './use-cases/delete-deal_state.use-case';
-import { CreateDealStateSchema } from './dto/create-deal_state.dto';
-import type { CreateDealStateDto } from './dto/create-deal_state.dto';
-import { UpdateDealStateSchema } from './dto/update-deal_state.dto';
-import type { UpdateDealStateDto } from './dto/update-deal_state.dto';
-import type { DealState } from './deal_state.entity';
+import { ListDealStatesQuerySchema } from './dto/list-deal-states.query';
+import type { ListDealStatesQueryDto } from './dto/list-deal-states.query';
+import { FindDealStateByIdUseCase } from './use-cases/find-deal-state-by-id.use-case';
+import { ListDealStatesUseCase } from './use-cases/list-deal-states.use-case';
+import { CreateDealStateUseCase } from './use-cases/create-deal-state.use-case';
+import { UpdateDealStateUseCase } from './use-cases/update-deal-state.use-case';
+import { DeleteDealStateUseCase } from './use-cases/delete-deal-state.use-case';
+import { CreateDealStateSchema } from './dto/create-deal-state.dto';
+import type { CreateDealStateDto } from './dto/create-deal-state.dto';
+import { UpdateDealStateSchema } from './dto/update-deal-state.dto';
+import type { UpdateDealStateDto } from './dto/update-deal-state.dto';
+import type { DealState } from './deal-state.entity';
 
 // OPENAPI-3: decorators reference registered schemas by `$ref` because
 // the DTOs are Zod-derived types (OPENAPI-2 registers them by name at

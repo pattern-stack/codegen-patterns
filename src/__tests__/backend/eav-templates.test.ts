@@ -140,7 +140,7 @@ describe('backend eav templates — compound-write use cases', () => {
     expect(output).toContain("import { DRIZZLE } from '@shared/constants/tokens';");
     expect(output).toContain("import type { DrizzleClient } from '@shared/types/drizzle';");
     expect(output).toContain(
-      "import { FieldValueService } from '../../field_values/field_value.service';",
+      "import { FieldValueService } from '../../field-values/field-value.service';",
     );
 
     // Constructor composes entity service + FieldValueService + DRIZZLE_DB.
@@ -216,7 +216,7 @@ describe('backend eav templates — service rendering', () => {
     const output = render('service.ejs.t', locals);
 
     expect(output).toContain(
-      "import { FieldValueService } from '../field_values/field_value.service';",
+      "import { FieldValueService } from '../field-values/field-value.service';",
     );
     expect(output).toContain('private readonly fieldValues: FieldValueService,');
     expect(output).toContain('async findByIdWithFields(');
@@ -296,7 +296,7 @@ describe('backend eav templates — module rendering', () => {
     const output = render('module.ejs.t', locals);
 
     expect(output).toContain(
-      "import { FieldValuesModule } from '../field_values/field_values.module';",
+      "import { FieldValuesModule } from '../field-values/field-values.module';",
     );
     expect(output).toContain(
       "import { FindOpportunityByIdWithFieldsUseCase } from './use-cases/find-opportunity-by-id-with-fields.use-case';",
@@ -353,7 +353,7 @@ describe('backend eav templates — field-value entity named from its YAML (#647
     const l = locals();
     for (const tpl of ['service.ejs.t', 'repository.ejs.t']) {
       expect(render(tpl, l)).toContain(
-        "import { FieldValueService } from '../../eav/custom_field_values/field_value.service';",
+        "import { FieldValueService } from '../../eav/custom-field-values/field-value.service';",
       );
     }
   });
@@ -362,7 +362,7 @@ describe('backend eav templates — field-value entity named from its YAML (#647
     const l = locals();
     for (const tpl of ['use-cases/create.ejs.t', 'use-cases/update.ejs.t']) {
       expect(render(tpl, l)).toContain(
-        "import { FieldValueService } from '../../../eav/custom_field_values/field_value.service';",
+        "import { FieldValueService } from '../../../eav/custom-field-values/field-value.service';",
       );
     }
   });
@@ -370,10 +370,10 @@ describe('backend eav templates — field-value entity named from its YAML (#647
   it('module imports the field-value module by its plural', () => {
     const output = render('module.ejs.t', locals());
     expect(output).toContain(
-      "import { CustomFieldValuesModule } from '../../eav/custom_field_values/custom_field_values.module';",
+      "import { CustomFieldValuesModule } from '../../eav/custom-field-values/custom-field-values.module';",
     );
     expect(output).toContain('CustomFieldValuesModule,');
-    expect(output).not.toContain('field_values/field_values.module');
+    expect(output).not.toContain('field-values/field-values.module');
   });
 
   it('a missing field_value YAML is a generation error', () => {

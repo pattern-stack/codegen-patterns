@@ -3,8 +3,8 @@ import { Injectable, Inject, Optional } from '@nestjs/common';
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
-import { DealStateRepository } from './deal_state.repository';
-import type { DealState } from './deal_state.entity';
+import { DealStateRepository } from './deal-state.repository';
+import type { DealState } from './deal-state.entity';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';
 import type { Opportunity } from '../opportunities/opportunity.entity';
 

@@ -9,13 +9,13 @@ force: true
  */
 
 // Value exports (module, service, controller)
-export { <%= classNames.module %> } from './<%= entityNamePlural %>.module';
-export { <%= classNames.service %> } from './<%= entityName %>.service';
-export { <%= classNames.controller %> } from './<%= entityName %>.controller';
+export { <%= classNames.module %> } from './<%= entityPluralFileStem %>.module';
+export { <%= classNames.service %> } from './<%= entityFileStem %>.service';
+export { <%= classNames.controller %> } from './<%= entityFileStem %>.controller';
 
 // Type-only exports (entity, DTOs)
-export type { <%= classNames.entity %> } from './<%= entityName %>.entity';
-export type { <%= classNames.createDto %> } from './dto/create-<%= entityName %>.dto';
-export type { <%= classNames.updateDto %> } from './dto/update-<%= entityName %>.dto';
-export type { <%= classNames.outputDto %> } from './dto/<%= entityName %>-output.dto';
-export type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityNamePlural %>.query';
+export type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+export type { <%= classNames.createDto %> } from './dto/create-<%= entityFileStem %>.dto';
+export type { <%= classNames.updateDto %> } from './dto/update-<%= entityFileStem %>.dto';
+export type { <%= classNames.outputDto %> } from './dto/<%= entityFileStem %>-output.dto';
+export type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityPluralFileStem %>.query';

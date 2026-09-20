@@ -4,18 +4,18 @@ import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';
 
-import { DealStateRepository } from './deal_state.repository';
-import { DealStateService } from './deal_state.service';
-import { DealStateController } from './deal_state.controller';
+import { DealStateRepository } from './deal-state.repository';
+import { DealStateService } from './deal-state.service';
+import { DealStateController } from './deal-state.controller';
 // OPENAPI-2: Zod schemas registered with OpenApiRegistry at module init.
-import { CreateDealStateSchema } from './dto/create-deal_state.dto';
-import { UpdateDealStateSchema } from './dto/update-deal_state.dto';
-import { DealStateOutputSchema } from './dto/deal_state-output.dto';
-import { FindDealStateByIdUseCase } from './use-cases/find-deal_state-by-id.use-case';
-import { ListDealStatesUseCase } from './use-cases/list-deal_states.use-case';
-import { CreateDealStateUseCase } from './use-cases/create-deal_state.use-case';
-import { UpdateDealStateUseCase } from './use-cases/update-deal_state.use-case';
-import { DeleteDealStateUseCase } from './use-cases/delete-deal_state.use-case';
+import { CreateDealStateSchema } from './dto/create-deal-state.dto';
+import { UpdateDealStateSchema } from './dto/update-deal-state.dto';
+import { DealStateOutputSchema } from './dto/deal-state-output.dto';
+import { FindDealStateByIdUseCase } from './use-cases/find-deal-state-by-id.use-case';
+import { ListDealStatesUseCase } from './use-cases/list-deal-states.use-case';
+import { CreateDealStateUseCase } from './use-cases/create-deal-state.use-case';
+import { UpdateDealStateUseCase } from './use-cases/update-deal-state.use-case';
+import { DeleteDealStateUseCase } from './use-cases/delete-deal-state.use-case';
 
 @Module({
   imports: [

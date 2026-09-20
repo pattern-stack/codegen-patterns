@@ -25,6 +25,7 @@ import {
   detectMethodCollisions,
 } from '../../../../src/patterns/compose.js';
 import '../../../../src/patterns/library/index.js';
+import { emittedStem } from '../../../../src/config/file-naming.js';
 import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
@@ -627,7 +628,7 @@ function processHasMany(relationships, naming) {
       inverseForeignKeyPascal: pascalCase(inverseForeignKey),
       isSelfRef,
       targetExists,
-      importPath: resolved ? `${resolved.importDir}/${target}.repository` : null,
+      importPath: resolved ? `${resolved.importDir}/${emittedStem(target)}.repository` : null,
     });
   }
 
@@ -754,7 +755,7 @@ function processBelongsTo(relationships, naming, fields = {}) {
       relatedImportDir: resolved.importDir,
       nullable,
       hasIndex,
-      importPath: `${resolved.importDir}/${target}.entity`,
+      importPath: `${resolved.importDir}/${emittedStem(target)}.entity`,
       relationKey,
       isSelfFk,
       onDelete,
@@ -784,6 +785,9 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
     const className = pascalCase(entity);
     deps.set(entity, {
       entity,
+      // The emitted file stem for the target's files (NAME-2): kebab-case,
+      // while `entity` stays the YAML/snake name used for lookups + classes.
+      fileStem: emittedStem(entity),
       entityClass: className,
       repositoryClass: `${className}Repository`,
       property: `${camelCase(entity)}Repo`,
@@ -883,7 +887,7 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
           const resolved = resolveTargetNaming(owner.name, naming, { required: true });
           fkImports.push({
             relatedTable,
-            importPath: `${resolved.importDir}/${owner.name}.entity`,
+            importPath: `${resolved.importDir}/${emittedStem(owner.name)}.entity`,
           });
         }
       }
@@ -1430,6 +1434,10 @@ export function buildBackendLocals(definition, baseLocals) {
   const entityLookup = baseLocals?.entityLookup ?? null;
   const targetNaming = { entityName, ownNaming, modulesDir, entityLookup };
   const entityNamePlural = ownNaming.plural;
+  // NAME-2: the emitted file stems. `entityName` / `entityNamePlural` stay the
+  // YAML snake_case names — they are the class-name and DB-identifier source.
+  const entityFileStem = emittedStem(entityName);
+  const entityPluralFileStem = emittedStem(entityNamePlural);
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
   // #403: bounded-context folder grouping. `entity.context:` nests this
@@ -1467,6 +1475,11 @@ export function buildBackendLocals(definition, baseLocals) {
     : null;
   const eavFieldValuePlural = eavFieldValueNaming ? eavFieldValueNaming.plural : null;
   const eavFieldValueModulePascal = eavFieldValuePlural ? pascalCase(eavFieldValuePlural) : null;
+  // NAME-2: the emitted file stem for the EAV value-table module.
+  const eavFieldValuePluralStem = eavFieldValuePlural ? emittedStem(eavFieldValuePlural) : null;
+  // NAME-2: the field-value entity's own file stem. Its name is the fixed
+  // `field_value`; only its FOLDER comes from its YAML (#647).
+  const eavFieldValueStem = eavEnabled ? emittedStem('field_value') : null;
 
   // EAV value-table shape (task #23) — when true, this entity IS the value
   // table. Templates emit compound methods (upsertFieldsTransactional,
@@ -1483,6 +1496,11 @@ export function buildBackendLocals(definition, baseLocals) {
   const eavDefinitionImportDir = eavDefinitionNaming ? eavDefinitionNaming.importDir : null;
   const eavDefinitionPascal = eavDefinitionEntity
     ? pascalCase(eavDefinitionEntity)
+    : null;
+  // NAME-2: emitted file stems for the EAV definition entity's files.
+  const eavDefinitionEntityStem = eavDefinitionEntity ? emittedStem(eavDefinitionEntity) : null;
+  const eavDefinitionEntityPluralStem = eavDefinitionEntityPlural
+    ? emittedStem(eavDefinitionEntityPlural)
     : null;
   const eavDefinitionPluralPascal = eavDefinitionEntityPlural
     ? pascalCase(eavDefinitionEntityPlural)
@@ -1676,7 +1694,7 @@ export function buildBackendLocals(definition, baseLocals) {
     selfModuleDir: moduleDir,
   });
   const importedEntityTypes = new Set(
-    repositoryDeps.map((dep) => `${dep.importDir}/${dep.entity}.entity`),
+    repositoryDeps.map((dep) => `${dep.importDir}/${dep.fileStem}.entity`),
   );
   for (const block of junctionFanOut) {
     block.importCounterparty = !importedEntityTypes.has(block.counterpartyEntityImport);
@@ -1857,38 +1875,38 @@ export function buildBackendLocals(definition, baseLocals) {
   const outputPaths = {
     entity: `${ownNaming.entityFile}.ts`,
     repository: ownNaming.repositoryFile,
-    service: `${moduleDir}/${entityName}.service.ts`,
-    controller: `${moduleDir}/${entityName}.controller.ts`,
+    service: `${moduleDir}/${emittedStem(entityName)}.service.ts`,
+    controller: `${moduleDir}/${emittedStem(entityName)}.controller.ts`,
     module: ownNaming.moduleFile,
     index: `${moduleDir}/index.ts`,
-    findByIdUseCase: `${moduleDir}/use-cases/find-${entityName}-by-id.use-case.ts`,
-    listUseCase: `${moduleDir}/use-cases/list-${entityNamePlural}.use-case.ts`,
+    findByIdUseCase: `${moduleDir}/use-cases/${emittedStem('find', entityName, 'by-id')}.use-case.ts`,
+    listUseCase: `${moduleDir}/use-cases/${emittedStem('list', entityNamePlural)}.use-case.ts`,
     findByIdWithFieldsUseCase: eavEnabled
-      ? `${moduleDir}/use-cases/find-${entityName}-by-id-with-fields.use-case.ts`
+      ? `${moduleDir}/use-cases/${emittedStem('find', entityName, 'by-id-with-fields')}.use-case.ts`
       : null,
     listWithFieldsUseCase: eavEnabled
-      ? `${moduleDir}/use-cases/list-${entityNamePlural}-with-fields.use-case.ts`
+      ? `${moduleDir}/use-cases/${emittedStem('list', entityNamePlural, 'with-fields')}.use-case.ts`
       : null,
     createUseCase: generateWrites
-      ? `${moduleDir}/use-cases/create-${entityName}.use-case.ts`
+      ? `${moduleDir}/use-cases/${emittedStem('create', entityName)}.use-case.ts`
       : null,
     updateUseCase: generateWrites
-      ? `${moduleDir}/use-cases/update-${entityName}.use-case.ts`
+      ? `${moduleDir}/use-cases/${emittedStem('update', entityName)}.use-case.ts`
       : null,
     deleteUseCase: generateWrites
-      ? `${moduleDir}/use-cases/delete-${entityName}.use-case.ts`
+      ? `${moduleDir}/use-cases/${emittedStem('delete', entityName)}.use-case.ts`
       : null,
-    createDto: `${moduleDir}/dto/create-${entityName}.dto.ts`,
-    updateDto: `${moduleDir}/dto/update-${entityName}.dto.ts`,
-    outputDto: `${moduleDir}/dto/${entityName}-output.dto.ts`,
+    createDto: `${moduleDir}/dto/${emittedStem('create', entityName)}.dto.ts`,
+    updateDto: `${moduleDir}/dto/${emittedStem('update', entityName)}.dto.ts`,
+    outputDto: `${moduleDir}/dto/${emittedStem(entityName, 'output')}.dto.ts`,
     // Pagination-by-default: the universal list query DTO (page/cursor/pageSize
     // + sort). Always emitted — the list endpoint is unconditional.
-    listQueryDto: `${moduleDir}/dto/list-${entityNamePlural}.query.ts`,
+    listQueryDto: `${moduleDir}/dto/${emittedStem('list', entityNamePlural)}.query.ts`,
     searchUseCase: searchQueryResolved
-      ? `${moduleDir}/use-cases/search-${entityNamePlural}.use-case.ts`
+      ? `${moduleDir}/use-cases/${emittedStem('search', entityNamePlural)}.use-case.ts`
       : null,
     searchController: searchQueryResolved
-      ? `${moduleDir}/${entityName}-search.controller.ts`
+      ? `${moduleDir}/${emittedStem(entityName, 'search')}.controller.ts`
       : null,
     declarativeQueries: hasDeclarativeQueries
       ? `${moduleDir}/use-cases/declarative-queries.ts`
@@ -1898,14 +1916,14 @@ export function buildBackendLocals(definition, baseLocals) {
     // is wrapped inline in the repository's `extends` clause, and none leaves
     // the repository byte-identical to its pre-CAP-1 shape.
     composedBase: capabilityMixins.length >= 2
-      ? `${moduleDir}/${entityName}.composed-base.ts`
+      ? `${moduleDir}/${emittedStem(entityName)}.composed-base.ts`
       : null,
     // ADR-033.1 §8 — integration-source module emission for backend. Co-located
     // with the entity feature module under <modules_dir>/<plural>/. Closes #267.
     // #403: routed through moduleDir so a `context:`-tagged entity nests the
     // integration-source module under its context segment (untagged → flat,
     // `<modules_dir>/<plural>/…`).
-    integrationSourceModule: `${moduleDir}/${entityName}-integration-source.module.ts`,
+    integrationSourceModule: `${moduleDir}/${emittedStem(entityName, 'integration-source')}.module.ts`,
     // ADR-033.2's per-entity provider tuples (`<entity>-integration-source.providers.ts`)
     // are removed by RFC-0001 §8 (D4). The surface-scoped typed view
     // (`src/integrations/<surface>/types.generated.ts`) is the single source of
@@ -1916,7 +1934,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // imports the entity type sibling-style (`./<entity>.entity`) since the
   // module file lives next to the entity file in the same feature folder.
   const imports = {
-    integrationSourceToEntity: `./${entityName}.entity`,
+    integrationSourceToEntity: `./${entityFileStem}.entity`,
   };
 
   // Class names
@@ -2116,6 +2134,15 @@ export function buildBackendLocals(definition, baseLocals) {
   }
 
   const backendLocals = {
+    // NAME-2 — emitted file stems (kebab-case). The `*Name*` locals beside
+    // them stay snake_case: they are the class-name and DB-identifier source.
+    entityFileStem,
+    entityPluralFileStem,
+    eavDefinitionEntityStem,
+    eavDefinitionEntityPluralStem,
+    eavFieldValuePluralStem,
+    eavFieldValueStem,
+
     // backend identity
     entityName,
     entityNamePascal,

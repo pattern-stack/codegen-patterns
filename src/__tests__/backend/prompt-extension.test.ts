@@ -1159,7 +1159,7 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
     });
     expect(locals.capabilityMixins[0].hasConfig).toBe(true);
     expect(locals.capabilityConfigImports).toEqual([
-      { name: 'meetingContacts', importPath: '../meeting_contacts/meeting_contact.entity' },
+      { name: 'meetingContacts', importPath: '../meeting-contacts/meeting-contact.entity' },
     ]);
   });
 
@@ -1167,7 +1167,7 @@ describe('library capability configs (CAP-3, ADR-041.1)', () => {
     restoreLibrary();
     const locals = buildBackendLocals(await meeting({ context: 'engagement' }), EMPTY_BASE_LOCALS);
     expect(locals.capabilityConfigImports).toEqual([
-      { name: 'meetingContacts', importPath: '../../meeting_contacts/meeting_contact.entity' },
+      { name: 'meetingContacts', importPath: '../../meeting-contacts/meeting-contact.entity' },
     ]);
   });
 

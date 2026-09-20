@@ -4,7 +4,7 @@ import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { OrganizationRepository } from '../organizations/organization.repository';
 import { UserRepository } from '../users/user.repository';
-import { DealStateRepository } from '../deal_states/deal_state.repository';
+import { DealStateRepository } from '../deal-states/deal-state.repository';
 
 import { OpportunityRepository } from './opportunity.repository';
 import { OpportunityService } from './opportunity.service';

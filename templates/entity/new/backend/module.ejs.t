@@ -15,46 +15,46 @@ import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= openApiImport %>';
 import { DatabaseModule } from '@shared/database/database.module';
 <%_ /* #632: one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
 <%_ repositoryDeps.forEach(dep => { _%>
-import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
+import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.fileStem %>.repository';
 <%_ }) _%>
 <%_ /* JUNC-0 — the module of each junction this entity is mirrored onto */ _%>
 <%_ junctionFanOut.forEach(fan => { _%>
 import { <%= fan.junction.moduleClass %> } from '<%= fan.junctionModuleImport %>';
 <%_ }) _%>
 <% if (eavEnabled) { -%>
-import { <%= eavFieldValueModulePascal %>Module } from '<%= eavFieldValueImportDir %>/<%= eavFieldValuePlural %>.module';
+import { <%= eavFieldValueModulePascal %>Module } from '<%= eavFieldValueImportDir %>/<%= eavFieldValuePluralStem %>.module';
 <% } -%>
 <% if (eavValueTable) { -%>
-import { <%= eavDefinitionPluralPascal %>Module } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntityPlural %>.module';
+import { <%= eavDefinitionPluralPascal %>Module } from '<%= eavDefinitionImportDir %>/<%= eavDefinitionEntityPluralStem %>.module';
 <% } -%>
 
-import { <%= classNames.repository %> } from './<%= entityName %>.repository';
-import { <%= classNames.service %> } from './<%= entityName %>.service';
+import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
+import { <%= classNames.service %> } from './<%= entityFileStem %>.service';
 <% if (apiEnabled) { -%>
-import { <%= classNames.controller %> } from './<%= entityName %>.controller';
+import { <%= classNames.controller %> } from './<%= entityFileStem %>.controller';
 <% } -%>
 // OPENAPI-2: Zod schemas registered with OpenApiRegistry at module init.
-import { <%= classNames.createSchema %> } from './dto/create-<%= entityName %>.dto';
-import { <%= classNames.updateSchema %> } from './dto/update-<%= entityName %>.dto';
-import { <%= classNames.outputSchema %> } from './dto/<%= entityName %>-output.dto';
-import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityName %>-by-id.use-case';
-import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
+import { <%= classNames.createSchema %> } from './dto/create-<%= entityFileStem %>.dto';
+import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem %>.dto';
+import { <%= classNames.outputSchema %> } from './dto/<%= entityFileStem %>-output.dto';
+import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id.use-case';
+import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>.use-case';
 <% if (eavEnabled) { -%>
-import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%= entityName %>-by-id-with-fields.use-case';
-import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityNamePlural %>-with-fields.use-case';
+import { <%= classNames.findByIdWithFieldsUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id-with-fields.use-case';
+import { <%= classNames.listWithFieldsUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>-with-fields.use-case';
 <% } -%>
 <% if (generateWrites) { -%>
-import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityName %>.use-case';
-import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityName %>.use-case';
-import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityName %>.use-case';
+import { <%= classNames.createUseCase %> } from './use-cases/create-<%= entityFileStem %>.use-case';
+import { <%= classNames.updateUseCase %> } from './use-cases/update-<%= entityFileStem %>.use-case';
+import { <%= classNames.deleteUseCase %> } from './use-cases/delete-<%= entityFileStem %>.use-case';
 <% } -%>
 <% if (hasDeclarativeQueries) { -%>
 import { declarativeQueryClasses } from './use-cases/declarative-queries';
 <% } -%>
 <% if (hasSearchQuery) { -%>
-import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityNamePlural %>.use-case';
+import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityPluralFileStem %>.use-case';
 <% if (apiEnabled) { -%>
-import { <%= classNames.searchController %> } from './<%= entityName %>-search.controller';
+import { <%= classNames.searchController %> } from './<%= entityFileStem %>-search.controller';
 <% } -%>
 <% } -%>
 

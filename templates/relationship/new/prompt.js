@@ -18,6 +18,7 @@ import {
   projectEntityLookup,
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
+import { emittedStem } from "../../../src/config/file-naming.js";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
 
@@ -29,7 +30,6 @@ const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
 const pluralize = (s) => pluralizePkg.plural(s);
-const kebabCase = (s) => s.replace(/_/g, "-");
 
 // ============================================================================
 // Relationship FK Derivation (mirrors relationship-definition.schema.ts)
@@ -398,9 +398,10 @@ export default {
     const entityNameCamel = camelCase(name); // personOrganization
     const entityNamePlural = tableName; // person_organizations
     const tableVarName = camelCase(entityNamePlural); // personOrganizations
-    const entityNamePluralPascal = pascalCase(entityNamePlural); // PersonOrganizations
-    const entityNameKebab = kebabCase(name); // person-organization
-    const entityNamePluralKebab = kebabCase(entityNamePlural); // person-organizations
+    const entityNamePluralPascal = pascalCase(entityNamePlural);
+    // NAME-2 — emitted file stems (kebab); `name` / `entityNamePlural` stay snake.
+    const entityFileStem = emittedStem(name);
+    const entityPluralFileStem = emittedStem(entityNamePlural); // person-organizations
 
     // From/to entity name variations
     const fromEntityPascal = pascalCase(config.from);
@@ -557,27 +558,30 @@ export default {
     const fromEntityPlural = fromNaming.plural;
     const toEntityPlural = toNaming.plural;
 
-    // The relationship's own folder is flat (a relationship has no `context:`).
-    const relationshipModuleDir = `${modulesDir}/${entityNamePlural}`;
-    const fromEntityImport = `${relativeModuleDir(relationshipModuleDir, fromNaming.moduleDir)}/${config.from}.entity`;
-    const toEntityImport = `${relativeModuleDir(relationshipModuleDir, toNaming.moduleDir)}/${config.to}.entity`;
+    // The relationship's own folder is flat (a relationship has no `context:`),
+    // but it still goes through the module tree — NAME-0's rule, which this one
+    // site used to hand-roll (NAME-2).
+    const ownNaming = entityModuleNaming({ name, plural: entityNamePlural }, modulesDir);
+    const relationshipModuleDir = ownNaming.moduleDir;
+    const fromEntityImport = `${relativeModuleDir(relationshipModuleDir, fromNaming.moduleDir)}/${emittedStem(config.from)}.entity`;
+    const toEntityImport = `${relativeModuleDir(relationshipModuleDir, toNaming.moduleDir)}/${emittedStem(config.to)}.entity`;
 
     // ======================================================================
     // Output paths (mirrors backend layout)
     // ======================================================================
 
     const outputPaths = {
-      entity: `${relationshipModuleDir}/${name}.entity.ts`,
-      repository: `${relationshipModuleDir}/${name}.repository.ts`,
-      service: `${relationshipModuleDir}/${name}.service.ts`,
-      controller: `${relationshipModuleDir}/${name}.controller.ts`,
-      module: `${relationshipModuleDir}/${entityNamePlural}.module.ts`,
-      createDto: `${relationshipModuleDir}/dto/create-${name}.dto.ts`,
-      updateDto: `${relationshipModuleDir}/dto/update-${name}.dto.ts`,
-      outputDto: `${relationshipModuleDir}/dto/${name}-output.dto.ts`,
+      entity: `${ownNaming.entityFile}.ts`,
+      repository: ownNaming.repositoryFile,
+      service: `${relationshipModuleDir}/${emittedStem(name)}.service.ts`,
+      controller: `${relationshipModuleDir}/${emittedStem(name)}.controller.ts`,
+      module: ownNaming.moduleFile,
+      createDto: `${relationshipModuleDir}/dto/${emittedStem('create', name)}.dto.ts`,
+      updateDto: `${relationshipModuleDir}/dto/${emittedStem('update', name)}.dto.ts`,
+      outputDto: `${relationshipModuleDir}/dto/${emittedStem(name, 'output')}.dto.ts`,
       index: `${relationshipModuleDir}/index.ts`,
-      findByIdUseCase: `${relationshipModuleDir}/use-cases/find-${name}-by-id.use-case.ts`,
-      listUseCase: `${relationshipModuleDir}/use-cases/list-${entityNamePlural}.use-case.ts`,
+      findByIdUseCase: `${relationshipModuleDir}/use-cases/${emittedStem('find', name, 'by-id')}.use-case.ts`,
+      listUseCase: `${relationshipModuleDir}/use-cases/${emittedStem('list', entityNamePlural)}.use-case.ts`,
       declarativeQueries: hasDeclarativeQueries
         ? `${relationshipModuleDir}/use-cases/declarative-queries.ts`
         : null,
@@ -665,8 +669,8 @@ export default {
       entityNameCamel,
       entityNamePlural,
       entityNamePluralPascal,
-      entityNameKebab,
-      entityNamePluralKebab,
+      entityFileStem,
+      entityPluralFileStem,
       tableName,
       tableVarName,
 

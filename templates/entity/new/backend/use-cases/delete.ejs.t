@@ -10,7 +10,7 @@ import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 import { tryGetRequester } from '<%= tenantContextImport %>';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 
 /**
  * EXTENSION POINT (EVT-7): verify payload mapping against
@@ -54,7 +54,7 @@ export class <%= classNames.deleteUseCase %> {
 }
 <% } else { -%>
 import { Injectable } from '@nestjs/common';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 
 @Injectable()
 export class <%= classNames.deleteUseCase %> {

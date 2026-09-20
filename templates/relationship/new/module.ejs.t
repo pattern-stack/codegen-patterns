@@ -6,11 +6,11 @@ force: true
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '@shared/database/database.module';
 
-import { <%= classNames.repository %> } from './<%= name %>.repository';
-import { <%= classNames.service %> } from './<%= name %>.service';
-import { <%= classNames.controller %> } from './<%= name %>.controller';
-import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= name %>-by-id.use-case';
-import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
+import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
+import { <%= classNames.service %> } from './<%= entityFileStem %>.service';
+import { <%= classNames.controller %> } from './<%= entityFileStem %>.controller';
+import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id.use-case';
+import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>.use-case';
 <% if (hasDeclarativeQueries) { -%>
 import { declarativeQueryClasses } from './use-cases/declarative-queries';
 <% } -%>

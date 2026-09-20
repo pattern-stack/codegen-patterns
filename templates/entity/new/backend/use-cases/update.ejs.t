@@ -12,10 +12,10 @@ import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
-import { FieldValueService } from '<%= eavFieldValueUseCaseImportDir %>/field_value.service';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
-import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityName %>.dto';
-import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
+import { FieldValueService } from '<%= eavFieldValueUseCaseImportDir %>/<%= eavFieldValueStem %>.service';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityFileStem %>.dto';
+import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
 /**
  * EAV compound-write use case (ADR-13).
@@ -89,9 +89,9 @@ import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
 import { tryGetRequester } from '<%= tenantContextImport %>';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
-import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityName %>.dto';
-import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityFileStem %>.dto';
+import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
 /**
  * EXTENSION POINT (EVT-7): verify payload mapping against
@@ -134,9 +134,9 @@ export class <%= classNames.updateUseCase %> {
 }
 <% } else { -%>
 import { Injectable } from '@nestjs/common';
-import { <%= classNames.service %> } from '../<%= entityName %>.service';
-import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityName %>.dto';
-import type { <%= classNames.entity %> } from '../<%= entityName %>.entity';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityFileStem %>.dto';
+import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
 @Injectable()
 export class <%= classNames.updateUseCase %> {

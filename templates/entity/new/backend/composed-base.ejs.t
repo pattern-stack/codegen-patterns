@@ -11,7 +11,7 @@ import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
 <%_ capabilityMixins.forEach((cap) => { _%>
 import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <%_ }) _%>
-import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
+import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <%_ if (hasIntegrationSurface) { _%>
 <%_ /* Type-only, and therefore erased: the repository module imports this file
       back for its `extends` clause. A value import here would be a real cycle;
@@ -19,7 +19,7 @@ import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= en
 import type {
   <%= classNames.entity %>IntegrationWrite,
   <%= classNames.entity %>IntegrationProjection,
-} from './<%= entityName %>.repository';
+} from './<%= entityFileStem %>.repository';
 <%_ } _%>
 
 /**
