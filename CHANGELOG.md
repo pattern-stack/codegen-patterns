@@ -132,6 +132,13 @@ resolve against.
   - Services gained a `findById` / `list` pass-through so an allowlisted include
     reaches the repository. The typed navigator and the deletion of the
     CGP-358b composition methods are still REL-3's.
+  - **Every `RAW` predicate renders against the table the relational query
+    builder hands its callback**, never one closed over from the enclosing
+    scope. RQBv2 aliases the root (`from "regions" as "d0"`), so the other form
+    emits an invalid FROM-clause reference and no include on a scoped entity can
+    execute. Banned by shape in `no-untethered-raw-callback.test.ts`, pinned in
+    SQL, and executed end-to-end through a generated repository against real
+    Postgres.
 
 - **`<generated>/relations.ts` — the v2 relation manifest** (#586, ADR-044). A
   whole-set TS emitter (`src/emitters/relations/`) writes one

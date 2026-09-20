@@ -23,6 +23,7 @@ import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import {
 	hopScope,
+	scopeFilter,
 	type ScopeConfig,
 } from '../../../../runtime/base-classes/scope-filters';
 import { withRequester } from '../../../../runtime/base-classes/tenant-context';
@@ -249,5 +250,80 @@ describe('REL-2 §1.4 — the relational-filter form is scoped too (the finding)
 				.findMany({ where: { contacts: { email: { like: 'leak-%' } } } })
 				.toSQL(),
 		).toThrow(/No requester context active/);
+	});
+});
+
+describe('REL-2 §2.4 — the ROOT filter renders against the ALIASED table', () => {
+	// The regression: RQBv2 aliases the root (`from "accounts" as "d0"`), so a
+	// predicate built against the repository's own table handle renders
+	// `where "accounts"."deleted_at" is null` — `invalid reference to FROM-clause
+	// entry for table "accounts"`, and EVERY include on a scoped entity fails to
+	// execute. Caught in review, not by a gate: the HTTP scaffold mounts unscoped
+	// entities (whose root predicate is `true` and names no column at all) and the
+	// smoke only regex-matches emitted text.
+	const SCOPED: ScopeConfig = {
+		tenantScoped: true,
+		softDelete: true,
+		userTracking: false,
+		enforcement: 'strict',
+	};
+
+	it('a RAW callback that USES its table argument renders the alias', async () => {
+		await withRequester(AS_T1, async () => {
+			const { sql } = db.query.accounts
+				.findMany({
+					where: { AND: [{ RAW: (t) => scopeFilter(t, SCOPED, 'AccountRepository')! }] },
+					with: { contacts: true },
+				})
+				.toSQL();
+
+			// The root's own guards, on the alias — and NOT on the base table name,
+			// which is the whole difference between a query that runs and a 42P01.
+			const root = sql.slice(sql.lastIndexOf('where ('));
+			expect(root).toContain('"d0"."deleted_at" is null');
+			expect(root).toMatch(/"d0"\."tenant_id" = \$\d+/);
+			expect(root).not.toContain('"accounts".');
+		});
+	});
+
+	it('a RAW callback that IGNORES its table renders an unresolvable reference', async () => {
+		await withRequester(AS_T1, async () => {
+			const { sql } = db.query.accounts
+				.findMany({
+					// The shipped-and-broken shape, kept here as the counter-example so
+					// the assertion above is pinned to a real difference rather than a
+					// pattern that happens to hold.
+					where: { AND: [{ RAW: () => scopeFilter(accounts, SCOPED, 'AccountRepository')! }] },
+					with: { contacts: true },
+				})
+				.toSQL();
+
+			expect(sql).toContain('from "accounts" as "d0"');
+			// …and the WHERE names the base table, which is not in scope.
+			expect(sql).toContain('"accounts"."deleted_at" is null');
+		});
+	});
+
+	it('the include-free and include-carrying roots agree once both are threaded', async () => {
+		await withRequester(AS_T1, async () => {
+			const withInclude = db.query.accounts
+				.findMany({
+					where: { AND: [{ RAW: (t) => scopeFilter(t, SCOPED, 'AccountRepository')! }] },
+					with: { contacts: true },
+				})
+				.toSQL();
+			const withoutInclude = db.query.accounts
+				.findMany({
+					where: { AND: [{ RAW: (t) => scopeFilter(t, SCOPED, 'AccountRepository')! }] },
+				})
+				.toSQL();
+
+			// Same root predicate either way — one function, two builders. Bind
+			// ORDINALS differ (the include contributes its own params first), so
+			// compare the shape rather than the rendered `$n`.
+			const rootOf = (q: string): string =>
+				q.slice(q.lastIndexOf('where (')).replace(/\$\d+/g, '$?');
+			expect(rootOf(withInclude.sql)).toBe(rootOf(withoutInclude.sql));
+		});
 	});
 });

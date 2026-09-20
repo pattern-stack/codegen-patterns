@@ -72,6 +72,19 @@ export function readRouteKeys(def: EntityDefinition): string[] {
   return ['find_by_id', 'list', ...finders];
 }
 
+/**
+ * Does this entity declare a relationship that becomes an edge ON ITS OWN TABLE?
+ *
+ * MUST stay identical to the `clpIncludes` local in
+ * `templates/entity/new/clean-lite-ps/prompt-extension.js`, which is what decides
+ * whether a typed include surface is emitted at all. A unit test pins the pair.
+ * Transitive (`through:`) relationships are excluded because REL-1 emits no edge
+ * for them (#614).
+ */
+export function declaresOwnRelation(def: EntityDefinition): boolean {
+  return Object.values(def.relationships ?? {}).some((rel) => !rel.through);
+}
+
 /** `{ a: { with: { b: true } } }` from `['a', 'b']`. */
 function renderFragment(keys: string[]): string {
   const [head, ...rest] = keys;
@@ -120,6 +133,27 @@ export function buildIncludeAllowlists(
         `${entity.name}: 'api.includes' is declared together with 'api: false' — ` +
           `an entity with no HTTP data plane has no route to expose an include on. ` +
           `Remove one of them (ADR-043 §6, ADR-044 §7 revision 2026-09-20).`,
+      );
+    }
+
+    // The two halves of the allowlist have to agree, and they are derived
+    // differently: THIS one resolves dot paths against the whole relation graph
+    // (junction-derived edges included), while the controller only wires the
+    // emitted map when the entity carries a typed include at all — which is
+    // gated on the entity's OWN `relationships:`, because `DBQueryConfig` has no
+    // `with` slot for a table whose edges all come from elsewhere (REL-2 §2.5).
+    //
+    // Left unchecked, an entity whose every edge comes from a junction YAML
+    // compiles a perfectly valid allowlist that the controller never reads, and
+    // every allowlisted path 400s with nothing to explain it. Fail here instead,
+    // where the message can say why. Same asymmetry #679 settles.
+    if (!declaresOwnRelation(def)) {
+      throw new IncludeAllowlistError(
+        `${entity.name}.api.includes: this entity declares no direct relationship of its own, ` +
+          `so no typed include is emitted for it and the allowlist would never be reached — ` +
+          `every path would be a silent 400. Its edges come from a junction (or from a ` +
+          `transitive 'through:' relationship, which emits no edge at all). Remove the block ` +
+          `until #679 settles junction-derived includes.`,
       );
     }
 

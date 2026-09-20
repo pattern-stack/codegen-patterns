@@ -27,6 +27,7 @@ export { buildRelationGraph, entityScope, junctionIdentity } from './build-graph
 export type { RelationGraph } from './build-graph';
 export {
 	buildIncludeAllowlists,
+	declaresOwnRelation,
 	IncludeAllowlistError,
 	readRouteKeys,
 } from './build-includes';

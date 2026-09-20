@@ -20,9 +20,17 @@
  * does — so what these tests exercise is the same code path a real app takes,
  * including a hand-written `db.query.*` that never goes through a repository.
  *
+ * `L9`–`L11` close the gap that left: they go through a GENERATED repository on a
+ * scoped entity, which is the path every consumer actually takes and the one
+ * nothing else here covered. The HTTP suite mounts deliberately UNSCOPED entities
+ * (a scoped one is emitted `strict` and this harness has no auth boundary), and
+ * the smoke only regex-matches emitted text — so a root predicate that renders
+ * against the wrong table name was invisible to every gate until these.
+ *
  * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
 import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { SHOULD_RUN_SCAFFOLD, d } from './_skip-guard';
 
 import type {
@@ -45,6 +53,8 @@ let sites: typeof Sites;
 let sensors: typeof Sensors;
 let siteSensors: typeof SiteSensors;
 let withRequester: typeof import('@shared/base-classes/tenant-context').withRequester;
+// The GENERATED repository for the scoped root — the real consumer path.
+let RegionRepository: any;
 
 /** Tenant A reads; tenant B's rows are the poison. */
 const TENANT_A = '11111111-1111-4111-8111-111111111111';
@@ -65,6 +75,7 @@ beforeAll(async () => {
 	({ getTestDb, truncateAll, closeDb } = await import('./setup'));
 	({ regions, sites, sensors, siteSensors } = await import('../schema'));
 	({ withRequester } = await import('@shared/base-classes/tenant-context'));
+	({ RegionRepository } = await import('@gen/modules/regions/region.repository'));
 });
 
 beforeEach(async () => {
@@ -396,6 +407,76 @@ d('REL-2 leak tests — every hop of an include tree is scoped', () => {
 				.findMany({ with: { parentRegion: true } })
 				.toSQL(),
 		).toThrow(/No requester context active/);
+	});
+
+	// ── L9–L11 · through a GENERATED repository, which is the consumer path ──
+	test('L9 — a generated repository EXECUTES an include on a scoped entity', async () => {
+		const ids = await seed();
+		const repo = new RegionRepository(getTestDb());
+
+		await asA(async () => {
+			// The regression this exists for: the RQBv2 root filter has to be built
+			// against the table the query builder hands the closure, not against the
+			// repository's own handle. RQBv2 aliases the root (`from "regions" as
+			// "d0"`), so a predicate naming `regions` is a missing-FROM-clause error
+			// and EVERY include on a scoped entity fails to execute. Nothing else in
+			// the suite caught it: the HTTP entities are unscoped, so their root
+			// predicate renders `true` and references no column at all.
+			const row = await repo.findById(ids.childRegionId, {
+				with: { parentRegion: { with: { sites: true } } },
+			});
+
+			expect(row).not.toBeNull();
+			expect(row.id).toBe(ids.childRegionId);
+			expect(row.parentRegion.id).toBe(ids.parentRegionId);
+			// …and the hops are still scoped through this path.
+			expect(row.parentRegion.sites.map((s: { name: string }) => s.name)).toEqual([
+				'A Site',
+			]);
+		});
+	});
+
+	test('L10 — the ROOT predicate applies through the repository, not just the hops', async () => {
+		const ids = await seed();
+		const db = getTestDb();
+		const repo = new RegionRepository(db);
+
+		// Soft-delete the root itself. `region` declares `soft_delete`, so the root
+		// filter must exclude it — through the include path exactly as through
+		// `baseQuery()`.
+		await db
+			.update(regions)
+			.set({ deletedAt: new Date() })
+			.where(eq(regions.id, ids.childRegionId));
+
+		await asA(async () => {
+			expect(await repo.findById(ids.childRegionId, { with: { parentRegion: true } })).toBeNull();
+			// The include-free path agrees — one predicate, two builders.
+			expect(await repo.findById(ids.childRegionId)).toBeNull();
+		});
+	});
+
+	test('L11 — list() with an include paginates and sorts through the same path', async () => {
+		await seed();
+		const repo = new RegionRepository(getTestDb());
+
+		await asA(async () => {
+			const rows = await repo.list({
+				limit: 2,
+				offset: 0,
+				sort: [{ column: 'name', direction: 'asc' }],
+				with: { sites: true },
+			});
+
+			expect(rows).toHaveLength(2);
+			// Sorted by the ALIASED root table — a pre-rendered `orderBy` would name
+			// `regions` and fail the same way the root predicate did.
+			expect(rows.map((r: { name: string }) => r.name)).toEqual([
+				'A Child',
+				'A Child of B Parent',
+			]);
+			for (const row of rows) expect(Array.isArray(row.sites)).toBe(true);
+		});
 	});
 
 	test('L8 — a read with NO include is untouched: the hop predicate never runs', async () => {

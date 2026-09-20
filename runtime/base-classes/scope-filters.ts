@@ -10,9 +10,11 @@
  *
  *  1. `BaseRepository.scopePredicate()` — the root of the core
  *     `select().from()` builder, folded into the single `WHERE` by `scopeAnd()`.
- *  2. The generated repository's RQBv2 root filter — `{ RAW: () => … }` on
+ *  2. The generated repository's RQBv2 root filter — `{ RAW: (t) => … }` on
  *     `db.query.<table>.findFirst/findMany`, which is the path a `with` include
- *     takes (`baseQuery()` cannot carry a `with`).
+ *     takes (`baseQuery()` cannot carry a `with`). Note the `t`: the relational
+ *     query builder ALIASES the root, so the predicate must render against the
+ *     handle it passes the callback, never against the repository's own.
  *  3. The emitted relations manifest — `where: { RAW: (t) => hopScope(t, …) }`
  *     on every relation whose target declares a scope, so the predicate travels
  *     with the RELATION rather than with the call site.

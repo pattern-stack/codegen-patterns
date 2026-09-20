@@ -510,16 +510,26 @@ export abstract class BaseRepository<
    * The root scope predicate shaped for the RQBv2 relational query builder — the
    * path a `with` include takes, because `baseQuery()` cannot carry one.
    *
-   * Generated repositories fold this into the root filter as
-   * `where: { AND: [ …caller…, { RAW: () => this.rootScopeRaw(…) } ] }`, so the
-   * RQBv2 root and the `select().from()` root are guarded by the SAME function
-   * (REL-2 §2.4). Returns `sql`true`` when nothing applies, because a `RAW` slot
-   * takes a `SQL`, not `SQL | undefined`.
+   * Generated repositories fold it into the root filter as
+   * `where: { AND: [ …caller…, { RAW: (t) => this.rootScopeRawOn(t, …) } ] }`, so
+   * the RQBv2 root and the `select().from()` root are guarded by the SAME
+   * function (REL-2 §2.4). Returns `sql`true`` when nothing applies, because a
+   * `RAW` slot takes a `SQL`, not `SQL | undefined`.
+   *
+   * **`table` is the handle RQBv2 passes the closure, and it is not
+   * `this.tableRef`.** The relational query builder ALIASES the root
+   * (`from "regions" as "d0"`), so a predicate built against this repository's
+   * own handle renders `where "regions"."deleted_at" is null` — an invalid
+   * reference to a FROM-clause entry, and every include on a scoped entity fails
+   * to execute. Same trap as `orderByOn` below, and as the hop predicates in the
+   * manifest: in all three, the table to render against is the one the callback
+   * is handed, never the one the caller happens to hold. There is deliberately no
+   * un-threaded overload — its only call site is this one, and it is always
+   * wrong here.
    */
-  protected rootScopeRaw(opts?: { softDelete?: boolean }): SQL {
+  protected rootScopeRawOn(table: PgTable, opts?: { softDelete?: boolean }): SQL {
     return (
-      scopeFilter(this.tableRef, this.scopeConfigFor(opts), this.constructor.name) ??
-      sql`true`
+      scopeFilter(table, this.scopeConfigFor(opts), this.constructor.name) ?? sql`true`
     );
   }
 

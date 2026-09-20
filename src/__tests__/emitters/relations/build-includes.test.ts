@@ -16,6 +16,7 @@ import { describe, expect, it } from 'bun:test';
 import { buildRelationGraph } from '../../../emitters/relations/build-graph';
 import {
 	buildIncludeAllowlists,
+	declaresOwnRelation,
 	IncludeAllowlistError,
 	readRouteKeys,
 } from '../../../emitters/relations/build-includes';
@@ -274,6 +275,52 @@ describe('buildIncludeAllowlists — what fails the build', () => {
 		).toThrow(/traverses 'opportunity'/);
 	});
 
+	// The two halves of the allowlist are derived differently — this one from the
+	// whole graph, the controller's from the entity's own `relationships:` — and a
+	// silent disagreement is an allowlist that 400s every path with no explanation.
+	it('an entity with no relationship of its OWN cannot carry an allowlist', () => {
+		const TAG = {
+			entity: { name: 'tag', plural: 'tags', table: 'tags' },
+			fields: { label: { type: 'string', required: true } },
+			// No `relationships:` — in a real project its edges would come from a
+			// junction YAML, which this emitter sees and the hygen half does not.
+			api: { includes: { list: { max_depth: 1, paths: ['whatever'] } } },
+		};
+		let message = '';
+		try {
+			compile([TAG, ACCOUNT, CONTACT, OPPORTUNITY]);
+		} catch (err: unknown) {
+			expect(err).toBeInstanceOf(IncludeAllowlistError);
+			message = err instanceof Error ? err.message : '';
+		}
+		expect(message).toContain('tag.api.includes');
+		expect(message).toContain('declares no direct relationship of its own');
+		expect(message).toContain('#679');
+	});
+
+	it('an entity whose only relationship is transitive cannot either', () => {
+		expect(() =>
+			compile([
+				{
+					entity: { name: 'tag', plural: 'tags', table: 'tags' },
+					fields: { label: { type: 'string', required: true } },
+					relationships: {
+						deep: {
+							type: 'has_many',
+							target: 'contact',
+							foreign_key: 'account_id',
+							through: 'a.b',
+						},
+					},
+					api: { includes: { list: { max_depth: 1, paths: ['deep'] } } },
+				},
+				ACCOUNT,
+				CONTACT,
+				OPPORTUNITY,
+			]),
+		).toThrow(/declares no direct relationship of its own/);
+	});
+
 	it('a transitive relationship is not routable — REL-1 emits no edge for it', () => {
 		expect(() =>
 			compile([
@@ -341,4 +388,56 @@ describe('buildApiIncludes — the emitted file', () => {
 		);
 		expect(out).toContain('// list — max_depth 1');
 	});
+});
+
+// The rule `declaresOwnRelation` encodes has a twin in the hygen half
+// (`clpIncludes`). They decide the same thing from the same YAML and must not
+// drift: if the emitter says "allowlist is fine" and the template says "no
+// include surface", every allowlisted path is a silent 400.
+describe('declaresOwnRelation matches the template’s clpIncludes', () => {
+	const cases: Array<{ name: string; relationships: unknown; expected: boolean }> = [
+		{ name: 'none declared', relationships: undefined, expected: false },
+		{ name: 'empty block', relationships: {}, expected: false },
+		{
+			name: 'one belongs_to',
+			relationships: {
+				account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
+			},
+			expected: true,
+		},
+		{
+			name: 'only a transitive one',
+			relationships: {
+				deep: { type: 'has_many', target: 'contact', foreign_key: 'account_id', through: 'a.b' },
+			},
+			expected: false,
+		},
+		{
+			name: 'a transitive one BESIDE a direct one',
+			relationships: {
+				deep: { type: 'has_many', target: 'contact', foreign_key: 'account_id', through: 'a.b' },
+				account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
+			},
+			expected: true,
+		},
+	];
+
+	for (const { name, relationships, expected } of cases) {
+		it(`${name} → ${expected}`, async () => {
+			const raw = {
+				entity: { name: 'thing', plural: 'things', table: 'things' },
+				fields: { account_id: { type: 'uuid' } },
+				...(relationships === undefined ? {} : { relationships }),
+			};
+			expect(declaresOwnRelation(parse(raw))).toBe(expected);
+
+			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+			// @ts-ignore -- plain-ESM hygen extension, no types
+			const { buildCleanLitePsLocals } = await import(
+				'../../../../templates/entity/new/clean-lite-ps/prompt-extension.js'
+			);
+			const locals = buildCleanLitePsLocals(raw, {}) as { clpIncludes: boolean };
+			expect(locals.clpIncludes).toBe(expected);
+		});
+	}
 });

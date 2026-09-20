@@ -315,11 +315,22 @@ by every smoke.
 | Call | Path | Root scope |
 |---|---|---|
 | no `with` | `baseQuery()` → `scopeAnd()` — **unchanged** | `scopeAnd()` |
-| with `with` | `db.query.<key>.findFirst/findMany` (RQBv2) | `where: { AND: [ …caller…, { RAW: scopeSql } ] }` |
+| with `with` | `db.query.<key>.findFirst/findMany` (RQBv2) | `where: { AND: [ …caller…, { RAW: (t) => this.rootScopeRawOn(t, …) } ] }` |
 
-Measured: a repository-injected `RAW` on the RQBv2 root filter renders
-`where (("d0"."tenant_id" = $2 and "d0"."deleted_at" is null) and ("d0"."name" = $3))` and composes with caller
-conditions. **The root predicate must be the same function in both paths** — §3.
+**The `(t)` is load-bearing, and this spec got it wrong once.** RQBv2 ALIASES the root (`from "regions" as "d0"`) and
+hands that alias to the `RAW` callback. A predicate built against the repository's own `this.tableRef` renders
+`where "regions"."deleted_at" is null` — `invalid reference to FROM-clause entry for table "regions"` — so **every**
+include on a soft-delete / tenant-scoped / user-tracked entity fails to execute. That is what shipped in the first cut
+of this PR; §10 Found #9 records how it got past every gate and what closes it. The correct form renders
+`where (("d0"."deleted_at" is null) and ("d0"."tenant_id" = $1))` and composes with caller conditions, which is what
+the earlier "measured" line above described — the spike had threaded the table; the emitter did not.
+
+It is the same trap as the `orderBy` one below and as the hop predicates in the manifest, and the rule is the same in
+all three: **render against the table the callback is handed, never the one the caller happens to hold.**
+`src/__tests__/templates/no-untethered-raw-callback.test.ts` bans the `RAW: () =>` shape outright, across the
+templates, the emitters, the runtime and the golden snapshot.
+
+**The root predicate must be the same function in both paths** — §3.
 
 `ListOptions`' `page`/`pageSize`/`sort_by`/`sort_order` map onto RQBv2's `limit`/`offset`/`orderBy` — but **not** as a
 pre-rendered expression. RQBv2 aliases the root table, so the list use-case's `sql\`${desc(accounts.createdAt)}, …\``
@@ -568,6 +579,9 @@ last hop. `test/scaffold/tests/relation-scope.test.ts`, 10 tests:
 | L6 | **the §1.5 residual, pinned** | a second junction row linking two tenant-A rows | the fabricated edge **is** honoured and every returned row is A's; the junction table is asserted to carry neither `tenantId` nor `deletedAt`, which is the fact that makes this a write-path property |
 | L7 | `strict`, no ambient context, traversing query | — | throws at `.toSQL()` — before any SQL is sent |
 | L8 | no `with:`, no context | — | works, on BOTH graphs: the scoped one root-only, and the unscoped account graph with a full include |
+| L9 | a **GENERATED repository** executes a depth-2 include on a scoped entity | — | it runs at all, and the hops are still scoped. This is the consumer path, and nothing covered it until review found the root filter broken (§10 Found #9) |
+| L10 | the ROOT's own guard through the repository | the root soft-deleted | `findById` returns null with AND without an include — one predicate, two builders |
+| L11 | `list()` with an include, sorted + paginated | — | ordered by the ALIASED root table; a pre-rendered `orderBy` would fail the same way the root predicate did |
 
 **Mutation-checked**: removing the `where` from the manifest emission turns 8 of the 10 red. The two that stay green are
 L3b and L8 — the two that assert *unchanged* behaviour.
@@ -599,7 +613,8 @@ entity, end-to-end through HTTP* waits for a harness with a boundary (§10 Found
 
 ### 6.3 Unit / golden — `just test-unit` → `just test-all`
 
-- **`src/__tests__/runtime/base-classes/hop-scope-sql.spec.ts`** — the spike's measurements, promoted. Eight tests
+- **`src/__tests__/runtime/base-classes/hop-scope-sql.spec.ts`** — the spike's measurements, promoted, plus three that
+  pin the ROOT filter against the alias (§10 Found #9). Eight tests
   rendering real statements with `.toSQL()` (no Docker) over a manifest built the way the emitter builds one: the §1.1
   laterals at depth 3, the `.through()` hop scoping the target and not the junction, §1.2's per-request binding (the same
   query under a different tenant binds a different value) and its converse (a query with no include never invokes a hop
@@ -697,7 +712,9 @@ different answers:
 The gate is deliberately answered from the entity's OWN YAML rather than by re-deriving the graph in the hygen half
 (charter I1). The cost is recorded: **a junction-ONLY entity gets no typed include from the entity pipeline.** That
 loses a feature rather than breaking a build, and #679's junction/relationship convergence is where it is decided — this
-PR does not prejudge it. The residual risk in the other direction is narrow: an entity all of whose declared
+PR does not prejudge it. What it does do is make the limitation LOUD rather than silent: the allowlist compiler shares
+the rule (`declaresOwnRelation`) and refuses an `api.includes` block on such an entity, because otherwise the compiled
+map is emitted and never read (§10 Found #10). The residual risk in the other direction is narrow: an entity all of whose declared
 relationships are skipped by REL-1 (every `target:` missing from the entity set) would emit a repository that does not
 compile. REL-1 warns on that today; nothing in the repo is in that state.
 
@@ -782,6 +799,50 @@ graph's leak tests drive `db.query` directly, where a context is trivial to esta
 REL-2 does not prove an allowlisted include over a tenant-scoped entity end-to-end through HTTP. The hops are proven
 (leak tests); the allowlist is proven (HTTP tests); the combination waits for a harness with a boundary.
 
+### Found #9 — the ROOT filter shipped against the un-aliased table, and no gate caught it
+
+The first cut emitted `{ RAW: () => this.rootScopeRaw({ softDelete }) }` — a callback that ignored the table RQBv2
+hands it and built the predicate from `this.tableRef`. RQBv2 aliases the root, so the emitted statement was
+`… from "regions" as "d0" … where ("regions"."deleted_at" is null)`: `invalid reference to FROM-clause entry for table
+"regions"`. **Every** generated `findById` / `list` / finder with an include, on any entity declaring `soft_delete`,
+`tenant_scoped` or `user_tracking`, could not execute. Found in review of #713, reproduced, then fixed.
+
+Worth recording is *why nothing caught it*, because that is the more useful finding:
+
+- the **HTTP suite** mounts deliberately UNSCOPED entities (§6.2) — their root config is all-false, so
+  `rootScopeRaw` returned `sql\`true\``, which names no column and runs fine. The H1 tests passed for the wrong reason;
+- the **leak tests** drove the scoped graph through raw `db.query.*`, which never builds a root filter at all;
+- the **smoke** regex-matches emitted text and type-checks it — and the broken form type-checks perfectly;
+- `hop-scope-sql.spec.ts` covered the hops, which were right, and not the root.
+
+So the scoped graph and the repository path had never met. Three gates now close it, at three levels:
+
+1. **`relation-scope.test.ts` L9–L11** — a GENERATED repository, on a scoped entity, with an include, against real
+   Postgres: an executing depth-2 read, the root's own soft-delete guard applying through the include path, and a
+   sorted+paginated `list` with an include. Confirmed RED before the fix, with the exact Postgres error.
+2. **`hop-scope-sql.spec.ts`** — three tests rendering the root filter: the threaded form produces `"d0"."deleted_at"`
+   and never `"accounts".`, the un-threaded form is kept as the counter-example, and the include-carrying and
+   include-free roots render the same predicate modulo bind ordinals.
+3. **`no-untethered-raw-callback.test.ts`** — a grep gate on the SHAPE (`RAW: () =>`), the same form as
+   `no-basequery-where.test.ts`. It earned its keep on the first run: the only hit was a doc comment in
+   `scope-filters.ts` still showing the broken form.
+
+`rootScopeRaw()` was **replaced**, not supplemented: its only call site is the RQBv2 root filter, where the
+un-threaded form is always wrong, so there is no overload to pick wrongly (charter I7).
+
+### Found #10 — a compiled allowlist could be unreachable
+
+`buildIncludeAllowlists` resolves dot paths against the WHOLE relation graph, junction-derived edges included. The
+controller only wires the emitted map when the entity carries a typed include at all — which is gated on the entity's
+OWN `relationships:` (Found #1). For an entity whose every edge comes from a junction YAML the two disagreed: a
+perfectly valid allowlist was compiled and emitted, the controller never read it, and every allowlisted path was a
+`400` with nothing to explain it.
+
+The two halves now have to agree. `declaresOwnRelation(def)` in the emitter is the same rule as `clpIncludes` in the
+template, pinned by a parity test over five shapes, and an `api.includes` block on an entity that fails it is a
+**generation error** naming the entity and pointing at #679 — rather than a silent 400 at runtime. Same asymmetry
+#679 settles; until it does, the limitation is loud.
+
 ---
 
 ## §11 Acceptance
@@ -792,15 +853,16 @@ Gate output from the run made **after** the last code edit (charter I9).
 |---|---|
 | `bun run typecheck` | exit 0 |
 | `bun run build` | exit 0 |
-| `just test-unit` | **3415 pass**, 0 fail |
+| `just test-unit` | **3428 pass**, 0 fail |
 | `just test-all` | **exit 0** — typecheck + unit + baseline + `test-smoke` + `-subsystems` (vendored + package) + `-relationship` + `-junction` + `-junction-cross-domain` + `test-junction` (10 pass) + `test-integration-emit` (56 pass) + `test-smoke-integration`, every one PASS |
-| `just test-integration` (Docker) | **141 pass**, 2 skip, 0 fail — including the 10 leak tests and the 10 HTTP allowlist tests |
+| `just test-integration` (Docker) | **144 pass**, 2 skip, 0 fail — including the 13 leak tests and the 10 HTTP allowlist tests |
 | `just test-post-publish` | exit 0 — tarball smoke, consumer contract verified |
 | `just test-smoke-junction-clean` | **143** — unchanged by this PR; see Found #6 |
 
-**Mutation-checked.** Removing the `where` from the manifest emission turns **8 of the 10** leak tests red. The two that
-stay green are the two that assert *unchanged* behaviour (L3b: the root is TEN-1's to guard, not REL-2's; L8: a read with
-no include never invokes a hop predicate) — which is what they are for.
+**Mutation-checked, twice.** Removing the `where` from the manifest emission turns **8 of the 10** hop leak tests red;
+the two that stay green are the two that assert *unchanged* behaviour (L3b: the root is TEN-1's to guard, not REL-2's;
+L8: a read with no include never invokes a hop predicate). And L9–L11 were confirmed **red before** the Found #9 fix,
+with the exact Postgres error (`invalid reference to FROM-clause entry for table "regions"`).
 
 No new `any`, no `as unknown as`, no eslint disable in `runtime/**`. No filtered error class, no directory carve-out; the
 one gate that is red is the documented `clean` one, reported at its real number with its provenance.

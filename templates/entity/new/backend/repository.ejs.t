@@ -237,8 +237,11 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
   // `baseQuery()`, whose single `WHERE` carries the guards. With a `with` it
   // goes through RQBv2 (`db.query.<%= entityNamePlural %>`), because `baseQuery()`
   // cannot carry an include — and the root filter injects the SAME predicate via
-  // `rootScopeRaw()`. Every HOP is scoped by the relations manifest itself, so a
-  // caller cannot reach an unscoped level (REL-2 §1.4/§3).
+  // `rootScopeRawOn(t, …)`. Every HOP is scoped by the relations manifest itself,
+  // so a caller cannot reach an unscoped level (REL-2 §1.4/§3).
+  //
+  // The `t` matters: RQBv2 ALIASES the root table, so the predicate must render
+  // against the handle it hands the closure, not against the repository's own.
   //
   // Depth is uncapped here: charter I4 asks for ONE statement, not a shallow
   // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
@@ -256,7 +259,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       where: {
         AND: [
           { id: { eq: id } },
-          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
         ],
       },
       with: opts.with,
@@ -286,7 +289,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
       where: {
         AND: [
           ...(callerWhere === undefined ? [] : [{ RAW: callerWhere }]),
-          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
         ],
       },
       with: query.with,
@@ -347,7 +350,7 @@ _%>
       where: {
         AND: [
 <%- q.params.map(p => `          { ${p.camelName}: { eq: ${p.camelName} } },`).join('\n') %>
-          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
         ],
       },
       with: opts.with,
@@ -358,7 +361,7 @@ _%>
       where: {
         AND: [
 <%- q.params.map(p => `          { ${p.camelName}: { eq: ${p.camelName} } },`).join('\n') %>
-          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
         ],
       },
       with: opts.with,
@@ -404,7 +407,7 @@ _%>
       where: {
         AND: [
           { <%= rel.camelField %>: { eq: id } },
-          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: <%= !!hasSoftDelete %> }) },
         ],
       },
       with: opts.with,
