@@ -21,6 +21,17 @@
  *   - `BaseRepository.scopePredicate()` reads it (via `tryGetRequester` in
  *     lenient mode, `requireRequester` in strict mode) and filters every read
  *     by the ambient scope when the repo declares `userTracking: true`.
+ *   - `BaseRepository.tenantPredicate()` reads `tenantId` the same way when the
+ *     repo declares `tenantScoped: true` (ADR-042 / TEN-1), and `create()`
+ *     stamps `tenant_id` from it. The two axes are independent: a repo may
+ *     carry either, both, or neither.
+ *
+ * ## Two axes, one context
+ *
+ * `userId`/`scope` is the USER axis; `tenantId`/`tenantScope` is the TENANT
+ * axis. They are assembled into one WHERE by `scopeAnd()` and never substitute
+ * for each other — `scope: 'superuser'` drops the user filter and leaves the
+ * tenant filter standing, which is exactly what a background job wants.
  *
  * ## Why AsyncLocalStorage over an explicit parameter
  *
@@ -41,6 +52,8 @@
  * Tests that exercise scoped repos must wrap the call in `withRequester(...)`.
  * In strict mode an unwrapped call hitting `requireRequester()` throws — by
  * design. In lenient mode (the default) an unwrapped call is simply unscoped.
+ * A tenant-scoped entity is emitted strict, so its tests MUST supply a
+ * `tenantId` (or use `withAllTenants`) — there is no lenient opt-down.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -85,6 +98,34 @@ export interface RequesterContext {
    * JOIN to `users` themselves. Required when `scope === 'org'`.
    */
   readonly orgUserIds?: readonly string[];
+  /**
+   * The tenant this request acts within (ADR-042 / TEN-1). Read by
+   * `BaseRepository.tenantPredicate()` when the repo declares
+   * `tenantScoped: true`. Three states, all meaningful:
+   *
+   *   - `string`  → scope every read/write to this tenant.
+   *   - `null`    → the null-tenant PARTITION (system / cross-tenant rows):
+   *                 filters `IS NULL`, stamps NULL on create. NOT a wildcard.
+   *   - absent    → no tenant established. `'lenient'` → unscoped;
+   *                 `'strict'` → throws `MissingTenantIdError`.
+   *
+   * Seeded at the SAME boundary that seeds `userId` (see "Where to set it").
+   * A tenant-scoped entity is emitted `'strict'`, so absent is a loud failure.
+   */
+  readonly tenantId?: string | null;
+  /**
+   * Tenant-axis visibility — the counterpart of `scope` on the user axis.
+   *
+   *   - `'tenant'` (default) → apply the tenant predicate.
+   *   - `'all'`              → drop it. Cross-tenant tooling: tenant
+   *     resolution at signup, super-admin reads, migrations. Reads see every
+   *     tenant; WRITES must supply `tenantId` explicitly or `stampTenant()`
+   *     throws — reading across tenants is a choice, writing without naming
+   *     the owner is a bug.
+   *
+   * Set via `withAllTenants(fn)`, never hand-assembled at a boundary.
+   */
+  readonly tenantScope?: 'tenant' | 'all';
 }
 
 const als = new AsyncLocalStorage<RequesterContext>();
@@ -172,4 +213,105 @@ export function withSuperuserScope<T>(
     { userId, organizationId: null, scope: 'superuser' },
     fn,
   );
+}
+
+// ============================================================================
+// Tenant axis (ADR-042 / TEN-1)
+// ============================================================================
+
+/**
+ * Sentinel actor for work that no user initiated — the background worker
+ * entering the ALS from a job run's own tenant (see the jobs subsystem's
+ * `JobWorker.processRun`). `job_run` carries a tenant but no user, so the
+ * audit-trail `userId` field needs a value that is obviously not a person.
+ *
+ * It is paired with `scope: 'superuser'` at every site that uses it: a job is a
+ * TENANT-level actor, not a user-level one. Entering the ALS with this id under
+ * the default `'user'` scope would filter every `userTracking` repository to a
+ * user that does not exist, silently returning nothing.
+ */
+export const SYSTEM_ACTOR_ID = '__system__';
+
+/**
+ * Raised when a tenant-scoped repository cannot resolve a tenant under
+ * `scopeEnforcement: 'strict'` — i.e. a context is active but carries no
+ * `tenantId`, or `withAllTenants` is in effect on a WRITE.
+ *
+ * Mirrors the jobs subsystem's error of the same name (`jobs-errors.ts`) in
+ * shape and three-state contract, but is deliberately a SEPARATE class:
+ * `base-classes` must not depend on a subsystem (the arrow points the other
+ * way — `auth` imports this file), and the two carry different payloads.
+ *
+ * `owner` names the repository, so the throw points at the declaration.
+ */
+export class MissingTenantIdError extends Error {
+  override readonly name = 'MissingTenantIdError';
+
+  constructor(public readonly owner: string) {
+    super(
+      `${owner}: no tenant in the ambient requester context. This repository ` +
+        'is tenant-scoped and enforcing strictly, so it will not read or write ' +
+        'unscoped. Install a boundary that calls ' +
+        'withRequester({ userId, organizationId, tenantId }, fn) — or, for ' +
+        'deliberate cross-tenant work, withAllTenants(fn) / ' +
+        'withTenantScope(tenantId, fn). See tenant-context.ts.',
+    );
+  }
+}
+
+/**
+ * Read the ambient tenant for a repository enforcing at `enforcement`.
+ *
+ *   - `'lenient'` → `undefined` when there is no context OR the context
+ *     carries no tenant. The caller (the tenant predicate) then applies no
+ *     filter, which preserves pre-scoping behaviour.
+ *   - `'strict'`  → NEVER returns `undefined`. Two distinct throw sites:
+ *     `requireRequester()` for "no context at all", and `MissingTenantIdError`
+ *     for "a context that forgot the tenant". The second matters: without it an
+ *     absent tenant would return `undefined` and read UNSCOPED under strict,
+ *     which is the exact failure tenant scoping exists to prevent.
+ *
+ * An explicit `null` is a value, not an absence: it selects the null-tenant
+ * partition (system / cross-tenant rows) and passes in both modes.
+ */
+export function getTenantId(
+  enforcement: 'lenient' | 'strict',
+  owner: string,
+): string | null | undefined {
+  if (enforcement !== 'strict') return tryGetRequester()?.tenantId;
+  const ctx = requireRequester();
+  if (ctx.tenantId === undefined) throw new MissingTenantIdError(owner);
+  return ctx.tenantId;
+}
+
+/**
+ * Run `fn` acting within `tenantId` — or, with `null`, within the null-tenant
+ * partition. The escape hatch for deliberate cross-tenant work that still has
+ * ONE owner: an admin acting on a named tenant, a migration walking tenants.
+ *
+ * Requires an outer context (it inherits `userId` / `scope` from it) — a
+ * boundary is still a boundary. To act with no tenant filter at all, use
+ * `withAllTenants`.
+ */
+export function withTenantScope<T>(
+  tenantId: string | null,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return withRequester({ ...requireRequester(), tenantId, tenantScope: 'tenant' }, fn);
+}
+
+/**
+ * Run `fn` across EVERY tenant — super-admin tooling, and the bootstrap case
+ * that cannot be expressed any other way: resolving which tenant a signup
+ * belongs to, when the tenant lookup itself cannot be tenant-scoped.
+ *
+ * Reads drop the tenant predicate entirely. WRITES still require an explicit
+ * `tenantId` on the input — `stampTenant()` throws otherwise. Reading across
+ * tenants is a deliberate choice; writing a row without naming its owner is a
+ * bug in every case.
+ *
+ * Requires an outer context, for the same reason `withTenantScope` does.
+ */
+export function withAllTenants<T>(fn: () => Promise<T>): Promise<T> {
+  return withRequester({ ...requireRequester(), tenantScope: 'all' }, fn);
 }

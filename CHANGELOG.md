@@ -10,7 +10,64 @@ install it yourself. The v1 Drizzle `relations()` const is no longer emitted
 (entity, clean-lite-ps entity, junction); hand-written `db.query.*` code that
 relied on it must wait for the v2 manifest (REL-1) or declare its own.
 
+### Added
+
+- **Repository-level tenant isolation: `tenant_scoped: true`** (#585, ADR-042).
+  An entity YAML flag that makes every generated read and every by-id write
+  filter by the ambient tenant, and every `create()` stamp it. One declaration
+  drives five emissions: a nullable `tenant_id uuid` column, an index on it,
+  `tenantScoped: true` in the generated `BehaviorConfig`,
+  `scopeEnforcement = 'strict'` on the repository, and a `tenant_id` prefix on
+  every uniqueness constraint the entity declares — so two tenants may hold the
+  same natural key.
+
+  The tenant travels on the existing `RequesterContext` ALS as
+  `tenantId?: string | null`, alongside the `userId` the `userTracking` scope
+  already rides. Three states, all meaningful: a string scopes to that tenant,
+  an explicit `null` selects the null-tenant partition (system / cross-tenant
+  rows), and an **absent** tenant is an error — `strict` is the default for a
+  tenant-scoped entity and there is no opt-down. A missing boundary throws
+  rather than quietly reading the union of every tenant.
+
+  `withTenantScope(tenantId, fn)` and `withAllTenants(fn)` are the escape
+  hatches, next to the existing `withUserScope` / `withOrgScope` /
+  `withSuperuserScope`. `withAllTenants` drops the read filter but still
+  **refuses a write** that does not name its owner: reading across tenants is a
+  choice, writing a row without saying whose it is never is.
+
+  Background work enters the scope by itself — `JobWorker` wraps each handler in
+  the run's own persisted tenant, with `scope: 'superuser'` on the user axis
+  (a job is a tenant-level actor, not a user), so a repository read inside a
+  handler is scoped with no plumbing in the handler.
+
+  `ON CONFLICT` upserts, which no `WHERE` can reach, are covered too: the
+  Integrated conflict target becomes `(tenant_id, provider, external_id)`,
+  backed by a `unique(...).nullsNotDistinct()` constraint. The two paths that
+  cannot be made safe fail closed instead — `MetadataEntityRepository.upsertMany`
+  with a caller-supplied conflict target throws, and
+  `tenant_scoped` + `eav_value_table` is a generation-time error (#703). So is
+  `tenant_scoped` under `generate.architecture: clean`, which cannot honour the
+  flag (#602).
+
+  Proven by a cross-tenant integration suite against real Postgres: a read, a
+  write, an upsert and a delete from tenant A cannot see or touch tenant B's
+  rows, a missing tenant throws, and a job runs inside its own tenant. Neutering
+  the predicate fails 27 of those assertions.
+
+  **Breaking for hand-written repositories:** `BehaviorConfig.tenantScoped` is a
+  **required** field, not optional-with-a-default. Every `behaviors` literal must
+  state its posture — a repository that silently defaulted to `false` is the
+  failure this guards against. Generated repositories are regenerated.
+
 ### Changed
+
+- **A field FK to a host-owned table emits a plain column** (#636). A field-level
+  `foreign_key: <table>.<column>` naming a table that no entity YAML generates —
+  a tenants table, a users table from an auth provider — now emits the column
+  with no `.references()` and no import, instead of an import of a module
+  codegen never writes. Codegen emits a DB-level FK only for tables it
+  generates; referential integrity for a host-owned table is the host's. The
+  `tenant_id` column above is exactly this shape.
 
 - **Drizzle 1.0 (`drizzle-orm@^1.0.0-rc.4`)** (#584). `drizzle-orm` moves from
   `dependencies` to `peerDependencies` so a consumer resolves exactly one copy —

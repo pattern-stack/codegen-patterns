@@ -31,9 +31,11 @@ export * from '@shared/subsystems/cache/cache.schema';
 // ============================================================================
 
 import {
+  index,
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';
@@ -82,3 +84,82 @@ export const metadataEntities = pgTable('metadata_entities', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   deletedAt: timestamp('deleted_at'),
 });
+
+/**
+ * Tenant-scoped test table (TEN-1, #585 / ADR-042).
+ *
+ * Carries BOTH scope axes plus the soft-delete guard, so the isolation suite
+ * can prove the three predicates AND together rather than replacing one
+ * another. `tenantId` is `uuid` — the same type `tenant_scoped: true` emits —
+ * and nullable, so the null-tenant partition is reachable.
+ */
+export const tenantEntities = pgTable('tenant_entities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'),
+  userId: text('user_id'),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at'),
+});
+
+export type TenantEntity = InferSelectModel<typeof tenantEntities>;
+
+/**
+ * Tenant-scoped INTEGRATED test table (TEN-1 §5.1).
+ *
+ * Carries the exact constraint `tenant_scoped: true` + `external_id_tracking`
+ * emits, because the property under test is a property of that constraint:
+ *
+ *   - the conflict target is `(tenant_id, provider, external_id)`, so two
+ *     tenants may hold the same vendor id as two rows rather than one tenant's
+ *     sync UPDATING the other's row;
+ *   - `.nullsNotDistinct()` is load-bearing and nullable-tenant-specific.
+ *     Postgres treats NULLs in a unique constraint as DISTINCT by default, so
+ *     without it a null-tenant `ON CONFLICT` never fires and the upsert inserts
+ *     a duplicate instead of updating. Asserted directly, not inferred.
+ *
+ * `unique(...)`, not `uniqueIndex(...)`: only the table-constraint builder
+ * carries `.nullsNotDistinct()` on drizzle 1.0.0-rc.4.
+ */
+export const tenantCrmEntities = pgTable(
+  'tenant_crm_entities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id'),
+    externalId: text('external_id'),
+    provider: text('provider'),
+    userId: text('user_id'),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at'),
+  },
+  (t) => [
+    index('tenant_crm_entities_tenant_id_idx').on(t.tenantId),
+    unique('uq_tenant_crm_entities_tenant_provider_external_id')
+      .on(t.tenantId, t.provider, t.externalId)
+      .nullsNotDistinct(),
+  ],
+);
+
+export type TenantCrmEntity = InferSelectModel<typeof tenantCrmEntities>;
+
+/**
+ * Tenant-scoped METADATA test table (TEN-1 §5.2) — the caller-supplied
+ * conflict-target path that must fail CLOSED rather than upsert across tenants.
+ */
+export const tenantMetadataEntities = pgTable('tenant_metadata_entities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id'),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id').notNull(),
+  fieldName: text('field_name').notNull(),
+  fieldValue: text('field_value'),
+  validFrom: timestamp('valid_from').notNull().defaultNow(),
+  userId: text('user_id'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type TenantMetadataEntity = InferSelectModel<typeof tenantMetadataEntities>;

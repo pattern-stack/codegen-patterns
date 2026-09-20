@@ -1,9 +1,9 @@
 # ADR-042 — Automatic Repository-Level Tenant Scoping (ALS-fed, opt-in, a mirror of `userTracking`)
 
-**Status:** Accepted (2026-09-17; unimplemented — tracked as TEN-1 in the relations-v2 stack plan)
+**Status:** Accepted (2026-09-17); **implemented 2026-09-20** as TEN-1 (#585) — see the revision note below for the seven corrections and the one changed decision
 **Date:** 2026-06-21
 **Owner:** Doug
-**Related:** ADR-001 (DDD + hexagonal — the repository/service/use-case layering this decision exploits), ADR-005 (entity-family base classes — `BaseRepository` is the choke point), ADR-022 (job orchestration domain — the `MissingTenantIdError` + per-run `tenantId` precedent this extends to entity repos), ADR-037 (runtime mode — package-mode emission constraints), swe-brain `ADR-0031` (tenant registration under single-trusted-tenancy — the driving consumer whose deferred "hardened multi-tenant flip" this ADR mechanizes)
+**Related:** ADR-001 (DDD + hexagonal — the repository/service/use-case layering this decision exploits), ADR-005 (entity-family base classes — `BaseRepository` is the choke point), ADR-022 (job orchestration domain — the `MissingTenantIdError` + per-run `tenantId` precedent this extends to entity repos), ADR-037 (runtime mode — package-mode emission constraints)
 
 > **Revision note — 2026-09-17 (accepted; rationale corrected).** Accepted alongside ADR-044, which makes relation
 > traversal the core read contract: every hop of a nested include must be tenant-scoped, which an explicit scope
@@ -14,7 +14,58 @@
 > is where a scope parameter would be forgotten, and a use-case may inject a repository directly, so the repository
 > remains the only layer every path must traverse.
 
-> **Sequencing note.** This ADR settles the *mechanism* for automatic data isolation. It is opt-in and additive: nothing changes for an entity until it carries `tenant_scoped: true`, and the new ALS field is ignored by every existing `userTracking`-only repo. The driving consumer (swe-brain) shipped tenant registration trusting a single tenant (its ADR-0031) and pre-loaded a `tenantId` claim into its access JWT *in anticipation of this seam* — so adoption is a config change plus a boundary interceptor, not a hand-port across N repositories.
+> **Revision note — 2026-09-20 (implemented as TEN-1, #585; seven corrections).** The decision stands; these are
+> facts the implementation measured that the text above gets wrong. Full detail in `docs/specs/TEN-1.md`.
+>
+> 1. **`count()` was never covered by the choke point.** §"Insufficient injection points" lists it as covered "via
+>    `baseQuery`". It was not — it hand-assembled its own conditions. Fixed ahead of TEN-1, in SCOPE-0 (#616).
+> 2. **The finders discarded every guard.** §5(c) asserts the tenant predicate is AND-ed into `findByX` "with no
+>    template change", because the finder already calls `baseQuery()`. It called `baseQuery().where(leaf)`, and
+>    Drizzle's `.where()` **replaces** rather than ANDs, so the guards were thrown away at 17 sites. Also fixed in
+>    SCOPE-0, which is why the predicate below is safe to add at all.
+> 3. **§5(c)'s composite-unique rewrite has nothing to rewrite.** `clean-lite-ps` emits no single-column uniqueness
+>    at all — not for a field-level `unique: true`, not for `queries: { unique: true }`. What it does emit is
+>    top-level `unique_indexes:` and the `external_id_tracking` constraint, and TEN-1 prefixes `tenant_id` onto both.
+>    There is no "suppress the bare `.unique()`" step.
+> 4. **§6's `claimed.userId` does not exist.** `job_run` has no `user_id` column. A `SYSTEM_ACTOR_ID` sentinel ships
+>    in `tenant-context.ts` instead. Separately, `jobRuns.tenantId` is `text` while the entity column is `uuid` — a
+>    non-UUID tenant identifier fails loudly at Postgres inside a job rather than leaking.
+> 5. **§6's ALS entry needs `scope: 'superuser'`.** Taken literally it would newly scope every `userTracking`
+>    repository inside every job to the sentinel user — i.e. reads that return everything today would silently
+>    return nothing. A job is a tenant-level actor: the tenant axis scopes, the user axis does not.
+> 6. **§2's `getTenantId` sketch reads unscoped under strict.** It returns `ctx.tenantId`, which is `undefined` for a
+>    context that carries no tenant — and `undefined` means "no filter". That is the single most dangerous line in
+>    this ADR. The shipped version throws `MissingTenantIdError` for exactly that case, so strict has two throw
+>    sites: no context at all, and a context that forgot the tenant.
+> 7. **The escape hatches are `withTenantScope(tenantId, fn)` / `withAllTenants(fn)`**, not the working names
+>    `withTenant` / `runUnscoped` (follow-up 1 delegated naming to implementation). They match the existing
+>    `withUserScope` / `withOrgScope` / `withSuperuserScope` family, and `withTenant` would have collided with the
+>    repository's stamp helper. `runUnscoped` also could not be expressed by clearing `tenantId`, because under
+>    strict an absent tenant throws — hence the separate `tenantScope: 'tenant' | 'all'` context field.
+>
+> **And one decision changed: `scopeEnforcement: 'strict'` is now the DEFAULT for a `tenant_scoped: true` entity,
+> with no opt-down.** §4 keeps `'lenient'` as the default so that flipping the flag is non-breaking. Charter I3
+> overrides that — *"a missing context throws; it never reads unscoped"* — and a lenient tenant-scoped entity is
+> precisely "reads the union of every tenant when the boundary is missing", silently. The generated repository
+> emits `scopeEnforcement = 'strict' as const`, and there is no knob to turn it down (charter I7: an opt-down is a
+> backwards-compat shim for consumers that do not exist).
+>
+> **This reverses §7's rollout order.** The old sequence ran steps 1–2 under lenient, which no longer exists. The
+> boundary now comes first:
+>
+> 1. **Install the boundary** that supplies `tenantId` to `withRequester(...)`. Nothing else changes yet.
+> 2. **Flip `tenant_scoped: true`** and regen — an additive, nullable `ADD COLUMN tenant_id uuid`. Reads and writes
+>    are scoped from this point, and a path that reaches the repository without the boundary throws.
+> 3. **Backfill** existing rows to their tenant.
+> 4. **`SET NOT NULL`.**
+> 5. **(Optional) RLS**, unchanged — consumer-authored, codegen emits no policies.
+>
+> Steps 1 and 3 are non-breaking; step 2 is the flip, and it is deliberately loud. One consequence to state plainly:
+> the same knob governs the user axis, so a tenant-scoped entity that also declares `user_tracking` becomes strict
+> for that too. A second `tenantEnforcement` knob was considered and rejected — two knobs over one ambient context
+> is a distinction without a difference, and a missing boundary is a missing boundary whichever filter it owed.
+
+> **Sequencing note.** This ADR settles the *mechanism* for automatic data isolation. It is opt-in and additive: nothing changes for an entity until it carries `tenant_scoped: true`, and the new ALS field is ignored by every existing `userTracking`-only repo. A host application that already carries a `tenantId` claim through its access token adopts this as a config change plus a boundary interceptor, not a hand-port across N repositories.
 
 ## Context
 
@@ -224,7 +275,7 @@ This makes every entity-repository read/write performed *inside* a job handler a
 Codegen emits schema and code; it **cannot backfill a consumer's existing rows**. So the column ships nullable and the consumer tightens it in their own migration sequence:
 
 1. **Emit `tenant_id` NULLABLE.** Flipping `tenant_scoped: true` + regen + `db-diff` produces an additive, non-destructive `ADD COLUMN tenant_id uuid` (every existing row gets `NULL`). Under `scopeEnforcement: 'lenient'` nothing breaks yet.
-2. **Backfill.** The consumer writes a one-time migration/script setting `tenant_id` to the correct tenant for existing rows (for swe-brain: the single seed tenant — see below).
+2. **Backfill.** The consumer writes a one-time migration/script setting `tenant_id` to the correct tenant for existing rows (for a host that trusted a single tenant until now, that is one seed tenant).
 3. **Flip NOT NULL.** Once backfilled, the consumer adds `ALTER COLUMN tenant_id SET NOT NULL` and flips the repo to `scopeEnforcement: 'strict'`. From here, a missing-tenant boundary fails loud.
 4. **(Optional) Add RLS.** For defense-in-depth, the consumer authors `ENABLE ROW LEVEL SECURITY` + a `CREATE POLICY USING (tenant_id = current_setting('app.tenant_id')::uuid)` per tenant-scoped table, and a boundary that issues `SET LOCAL app.tenant_id` per transaction. This is the §1 "optional second layer" and is purely consumer-authored migration SQL; codegen does not emit it in v1.
 
@@ -236,7 +287,7 @@ The repository choke point covers `findById` / `findByIds` / `list` / `count` / 
 
 - **Raw `this.db.select()` outside `baseQuery()`.** Any hand-authored repository method that builds its own select bypasses the guard. The base already warns about this for the soft-delete/scope case (`base-repository.ts:243-253` — "Pass the leaf predicate as `extra` rather than chaining a second `.where(...)`"); the same rule now also protects tenant isolation. Hand-rolled selects MUST pass through `baseQuery(extra)` or AND in `this.tenantPredicate()` themselves.
 - **`upsertMany()` overrides with raw `.onConflict()`.** The base `upsertMany` delegates to `create()` (`base-repository.ts:235-237`) and is therefore covered — but family bases override it with a real conflict-target upsert (the docblock at `:230-234` calls this out; the integration sink's `integrationUpsert` and EAV's `upsertCurrentValues` are live overrides). Those overrides build their own `INSERT ... ON CONFLICT` and must stamp + filter `tenant_id` by hand.
-- **Future query-surface / aggregation read paths.** swe-brain's `@pattern-stack/query-surface` reads do not go through `BaseRepository` at all. Tenant scoping there is a separate seam (a scope fold in the query builder) and is explicitly out of scope for this ADR — flagged so no one assumes the repo fix covers analytics.
+- **Future query-surface / aggregation read paths.** `@pattern-stack/query-surface` reads do not go through `BaseRepository` at all. Tenant scoping there is a separate seam (a scope fold in the query builder) and is explicitly out of scope for this ADR — flagged so no one assumes the repo fix covers analytics.
 - **Multi-write transactions.** Inside a `db.transaction(...)`, only writes that go through the repository's `create()`/`scopeAnd()` honor the tenant; a raw `tx.insert(...)`/`tx.update(...)` in the same transaction does not. Compound writes must route every statement through the repo or stamp/filter by hand.
 
 These are the irreducible remainder. The ADR's claim is "isolation-by-default for the generated path," not "isolation no hand-authored code can defeat."
@@ -248,7 +299,7 @@ These are the irreducible remainder. The ADR's claim is "isolation-by-default fo
 - **Isolation-by-default once opted in.** A `tenant_scoped: true` entity reads and writes its own tenant with zero hand-authored filtering on the generated path — the gap between "presence-enforced" and "isolated" closes.
 - **One mechanism, one choke point.** Reads, by-id writes, and creates are all covered by a single `tenantPredicate()` + `withTenant()` addition to `BaseRepository`, because every path already funnels through `scopeAnd()`/`create()`.
 - **It is a mirror, not an invention.** `tenantScoped` is structurally `userTracking` with `tenant_id` instead of `user_id`; it reuses the ALS, the `scopeEnforcement` knob, the not-found semantics, the additive-adoption story, the jobs `MissingTenantIdError` shape, and the existing composite-index emitter. Minimal new surface, maximal reuse of proven code.
-- **Mechanizes a deferred consumer decision.** swe-brain's "hardened multi-tenant flip" becomes a config + boundary-interceptor change rather than an N-repository hand-port.
+- **Mechanizes a deferred host decision.** A host application's "hardened multi-tenant flip" becomes a config + boundary-interceptor change rather than an N-repository hand-port.
 
 **Cost / negative.**
 
@@ -259,7 +310,7 @@ These are the irreducible remainder. The ADR's claim is "isolation-by-default fo
 
 **Neutral.**
 
-- The `tenant_id` column is `uuid` to match the consumer's tenant PK convention (and `defaultRandom()` id shape); a consumer with a non-uuid tenant key adjusts the emitted type the same way they would any FK.
+- The `tenant_id` column is `uuid` to match the generated `defaultRandom()` id shape; a host with a non-uuid tenant key adjusts the emitted type the same way they would any FK.
 - RLS remains entirely optional and consumer-authored — codegen's posture is unchanged unless a future ADR opts to emit policies.
 - The `null` tenant partition (system/cross-tenant rows) is a first-class value, mirroring the jobs `tenant_id = NULL` cross-tenant-work semantics (`jobs-errors.ts:96-102`), not a second-class hack.
 
@@ -278,4 +329,4 @@ These are the irreducible remainder. The ADR's claim is "isolation-by-default fo
 2. Decide the `userId` source for tenant-scoped *system* jobs (sentinel vs. nullable) when wrapping `processRun`'s handler call (`job-worker.ts:684`) — the run's `userId` may be absent for purely system-triggered runs.
 3. Confirm the composite-unique rewrite in `processUniqueIndexes` (`prompt-extension.js:601-609`) correctly suppresses the per-field `.unique()` when `tenant_scoped`, so an entity doesn't emit both a bare and a composite unique on the same column.
 4. A tenant-isolation smoke fixture: two tenants, one entity, assert tenant A's `findById` returns `null` for tenant B's row under strict mode (the regression guard that this didn't silently regress to cross-tenant reads).
-5. Worked adoption checklist for swe-brain (the driving consumer): flip `tenant_scoped: true` per entity → add an HTTP interceptor that seeds `withRequester({ userId, tenantId })` from the existing access-JWT `tenantId` claim → backfill existing rows to the seed tenant → flip NOT NULL + `scopeEnforcement: 'strict'`. This sequence turns ADR-0031's deferred hardened-tenancy into a config change, validating the mechanism against a real consumer.
+5. Worked adoption checklist for a host application: install the boundary that seeds `withRequester({ userId, tenantId })` from the access token's tenant claim → flip `tenant_scoped: true` per entity and regen → backfill existing rows to the seed tenant → flip NOT NULL. (Revised order — see the 2026-09-20 note; `scopeEnforcement` is no longer a step, because a tenant-scoped entity is emitted strict.)

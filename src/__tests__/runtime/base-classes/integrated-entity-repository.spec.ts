@@ -117,7 +117,7 @@ class AccountRepository extends IntegratedEntityRepository<
 > {
   readonly table = accountsTable;
   protected readonly integrationConfig: IntegrationUpsertConfig;
-  protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+  protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false, tenantScoped: false };
 
   constructor(db: DrizzleClient, config: IntegrationUpsertConfig = baseConfig) {
     super(db);

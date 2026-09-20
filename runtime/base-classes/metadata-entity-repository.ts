@@ -18,6 +18,19 @@ export abstract class MetadataEntityRepository<
   /**
    * Bulk upsert with a caller-specified conflict target.
    * Uses Drizzle's onConflictDoUpdate to merge records.
+   *
+   * **Not available on a tenant-scoped repository** (ADR-042 / TEN-1 §5.2).
+   * The conflict target here is a SINGLE caller-supplied column, backed by an
+   * author-declared unique index. Prepending `tenant_id` would break `ON
+   * CONFLICT` inference against that index, and NOT prepending it means tenant
+   * B's batch updates tenant A's row — an active cross-tenant write. Neither is
+   * acceptable, so the combination throws instead. The `conflictTarget`-less
+   * path delegates to `create()` and is covered.
+   *
+   * Known, separate defect on this method (#687): with a conflict target, every
+   * conflicting row in the batch is overwritten with `data[0]`'s values rather
+   * than its own. Untouched here — it is orthogonal to tenancy, and the path a
+   * tenant-scoped repo would take now throws before reaching it.
    */
   override async upsertMany(
     inputs: Array<Partial<TEntity>>,
@@ -30,6 +43,19 @@ export abstract class MetadataEntityRepository<
     // Fall back to base class naive upsert when no conflict target provided.
     if (!conflictTarget) {
       return super.upsertMany(inputs, tx);
+    }
+
+    if (this.behaviors.tenantScoped) {
+      throw new Error(
+        `${this.constructor.name}.upsertMany: a conflict target ` +
+          `('${conflictTarget}') is not supported on a tenant-scoped ` +
+          'repository. The ON CONFLICT target decides which row is updated ' +
+          'before any WHERE applies, so this upsert would cross the tenant ' +
+          'boundary. Call upsertMany without `conflictTarget` (it delegates ' +
+          'to create(), which stamps and scopes), or declare a composite ' +
+          '(tenant_id, …) unique index and upsert through it. See ADR-042, ' +
+          'TEN-1 §5.2 and #703.',
+      );
     }
 
     const data = inputs.map((input) =>

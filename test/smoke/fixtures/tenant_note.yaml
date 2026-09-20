@@ -1,0 +1,67 @@
+# Smoke fixture: tenant_note (TEN-1 #585 / ADR-042, and #636)
+#
+# The only fixture in this set that carries `tenant_scoped: true`, so it is what
+# type-checks the tenant emission under a CONSUMER's stricter tsconfig — which,
+# per charter I9, is the only gate that validates a `runtime/base-classes/**`
+# type change at all (`bun run typecheck` does not compile that tree against a
+# consumer's settings). It runs in both runtime modes: `run-smoke.ts` (vendored)
+# and `run-smoke-subsystems.ts` (vendored + package legs) read this directory.
+#
+# Exercises, together:
+#   - the nullable `tenant_id uuid` column + its index,
+#   - `tenantScoped: true` in the generated BehaviorConfig (a REQUIRED field —
+#     an entity that stopped emitting it would not compile),
+#   - `scopeEnforcement: 'strict' as const` on the generated repository,
+#   - the tenant prefix on a composite `unique_indexes:` entry,
+#   - `user_tracking` alongside tenancy, so both axes COMPILE on one repo. Note
+#     that clean-lite-ps emits no `user_id` column for that behavior (#617, a
+#     pre-existing defect SCOPE-0 recorded), so this entity's user axis would
+#     throw `table has no column 'userId'` if it were EXECUTED. The smoke is a
+#     compile gate and does not execute it; the runtime proof of both axes in
+#     one statement is `test/scaffold/tests/tenant-scoping.test.ts`, whose
+#     table does carry `user_id`.
+#   - a declarative finder, whose body must be `baseQuery(<leaf>)` (SCOPE-0),
+#   - #636: `owner_workspace_id` references a table NO entity YAML generates.
+#     It must emit a plain column with no import — an import of
+#     `../workspaces/workspace.entity` would not resolve and the smoke's tsc
+#     would fail on it.
+entity:
+  name: tenant_note
+  plural: tenant_notes
+  table: tenant_notes
+  pattern: Base
+  folder_structure: nested
+
+tenant_scoped: true
+
+fields:
+  title:
+    type: string
+    required: true
+    max_length: 200
+
+  slug:
+    type: string
+    required: true
+    max_length: 200
+    index: true
+
+  # #636 — host-owned target: `workspaces` is not declared by any entity YAML.
+  owner_workspace_id:
+    type: uuid
+    required: false
+    index: true
+    foreign_key: workspaces.id
+
+behaviors:
+  - timestamps
+  - soft_delete
+  - user_tracking
+
+# Per-tenant uniqueness: two tenants may each hold a note with the same slug.
+# The emitted index must be `(tenant_id, title, slug)`.
+unique_indexes:
+  - fields: [title, slug]
+
+queries:
+  - by: [slug]

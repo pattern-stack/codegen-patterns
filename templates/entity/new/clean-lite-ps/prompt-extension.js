@@ -536,6 +536,16 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
  *     and record the cross-module import. The table segment is the Drizzle table
  *     export name (plural, e.g. `conversations`); the import path singularizes it
  *     to the entity file (`../conversations/conversation.entity`).
+ *
+ *     **Host-owned tables (#636).** A `<table>` that no entity YAML generates
+ *     belongs to the host application — a tenants table, a users table from an
+ *     auth provider. That is a legitimate declaration, not an error: the
+ *     reference is real, it is simply not codegen's to enforce. The column is
+ *     emitted PLAIN — no `.references()`, no import — because the alternative
+ *     is an import of a module codegen never writes. Referential integrity for
+ *     a host-owned table is the host's, in its own migration. This is the same
+ *     shape as the `tenant_id` column `tenant_scoped: true` emits (ADR-042):
+ *     a bare `uuid`, pointing at a table codegen does not own.
  *   - `index: true` → emit a named single-column index in the pgTable
  *     extra-config callback (`<table>_<column>_idx`).
  *
@@ -547,8 +557,15 @@ function processBelongsTo(relationships, parentEntityNamePlural, fields = {}) {
  *                                   (nonFkFields — belongs_to FK columns excluded)
  * @param {object}   fields          raw field map keyed by snake_case name
  * @param {string}   entityNamePlural Drizzle table export name for self-FK detection
+ * @param {Set<string>|string[]} [ownedTables] table names codegen generates; a
+ *   `foreign_key` outside this set is host-owned and emits no DB-level FK.
+ *   Absent → every target is treated as owned (the pre-#636 behaviour), which
+ *   only happens when a caller builds locals without prompt.js.
  */
-function processFieldFeatures(renderedFields, fields, entityNamePlural) {
+function processFieldFeatures(renderedFields, fields, entityNamePlural, ownedTables) {
+  const owned = ownedTables === undefined
+    ? null
+    : (ownedTables instanceof Set ? ownedTables : new Set(ownedTables));
   const fkImports = [];
   const indexExpressions = [];
   const seenImports = new Set();
@@ -562,19 +579,27 @@ function processFieldFeatures(renderedFields, fields, entityNamePlural) {
     if (typeof field.foreign_key === 'string' && field.foreign_key.includes('.')) {
       const [relatedTable, fkColumn] = field.foreign_key.split('.');
       const isSelfFk = relatedTable === entityNamePlural;
-      pf.drizzleChain += isSelfFk
-        ? `.references((): AnyPgColumn => ${relatedTable}.${fkColumn})`
-        : `.references(() => ${relatedTable}.${fkColumn})`;
+      // #636 — a target codegen does not generate is host-owned: emit the
+      // column with no DB-level FK and no import rather than an import that
+      // cannot resolve. Self-FKs are owned by definition.
+      const isOwned = isSelfFk || owned === null || owned.has(relatedTable);
+      if (isOwned) {
+        pf.drizzleChain += isSelfFk
+          ? `.references((): AnyPgColumn => ${relatedTable}.${fkColumn})`
+          : `.references(() => ${relatedTable}.${fkColumn})`;
 
-      if (isSelfFk) {
-        hasSelfFieldFk = true;
-      } else if (!seenImports.has(relatedTable)) {
-        seenImports.add(relatedTable);
-        fkImports.push({
-          relatedTable,
-          importPath: `../${relatedTable}/${singularize(relatedTable)}.entity`,
-        });
+        if (isSelfFk) {
+          hasSelfFieldFk = true;
+        } else if (!seenImports.has(relatedTable)) {
+          seenImports.add(relatedTable);
+          fkImports.push({
+            relatedTable,
+            importPath: `../${relatedTable}/${singularize(relatedTable)}.entity`,
+          });
+        }
       }
+      // else: host-owned target — plain column, no FK, no import. `index: true`
+      // below still applies; a host-owned reference is usually worth indexing.
     }
 
     // --- index: true (#355) ---
@@ -598,14 +623,24 @@ function processFieldFeatures(renderedFields, fields, entityNamePlural) {
  * (belongs_to) or ordinary fields. Index name defaults to
  * `<table>_<col1>_<col2>_..._uniq`.
  */
-function processUniqueIndexes(uniqueIndexes, entityNamePlural) {
+function processUniqueIndexes(uniqueIndexes, entityNamePlural, tenantScoped = false) {
   if (!Array.isArray(uniqueIndexes)) return [];
 
   return uniqueIndexes.map((ui) => {
-    const cols = ui.fields;
+    // A tenant-scoped entity's natural keys are unique WITHIN a tenant, not
+    // globally: tenant A and tenant B may each hold a row with the same
+    // `(conversation_id, sequence)`. A bare composite would forbid that, which
+    // is the exact failure ADR-042 §5(c) is about. An author-supplied `name` is
+    // preserved verbatim — they asked for that constraint name.
+    const cols = tenantScoped ? ['tenant_id', ...ui.fields] : ui.fields;
     const name = ui.name || `${entityNamePlural}_${cols.join('_')}_uniq`;
     const onCols = cols.map((c) => `t.${camelCase(c)}`).join(', ');
-    return { comment: null, expr: `uniqueIndex('${name}').on(${onCols})` };
+    return {
+      comment: tenantScoped
+        ? 'tenant_scoped — uniqueness is per tenant (ADR-042)'
+        : null,
+      expr: `uniqueIndex('${name}').on(${onCols})`,
+    };
   });
 }
 
@@ -933,8 +968,10 @@ export function resolveSoftDeleteBoolean(deleteKnob, hasSoftDelete) {
  * @param {boolean} hasSoftDelete
  * @param {object} [fields]           raw entity fields (for FK strict detection)
  * @param {object} [sinkPolicy]       integration.sink knobs {delete?, exclude_fields?}
+ * @param {boolean} [tenantScoped]    entity `tenant_scoped: true` (ADR-042) —
+ *   prefixes the ON CONFLICT target with tenant_id
  */
-export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields, sinkPolicy) {
+export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields, sinkPolicy, tenantScoped = false) {
   if (patternName !== 'Integrated') return null;
 
   // Per-field exclusion (#490): drop declared-excluded fields from copy-through.
@@ -993,7 +1030,13 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
   // softDelete: use resolveSoftDeleteBoolean (delete knob takes precedence over
   // !!hasSoftDelete default; noop/absent both preserve !!hasSoftDelete, spec §Delete).
   const integrationConfig = {
-    conflictTarget: ['provider', 'externalId'],
+    // A tenant-scoped entity upserts on (tenant_id, provider, external_id) —
+    // the generated config states it, so the runtime never has to introspect
+    // the table to find out (charter I1). Matches the emitted `unique(...)`
+    // constraint above.
+    conflictTarget: tenantScoped
+      ? ['tenantId', 'provider', 'externalId']
+      : ['provider', 'externalId'],
     writeColumns,
     projectionColumns,
     eav: !!eavEnabled,
@@ -1203,6 +1246,30 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   const hasUserTracking = behaviorNames.includes('user_tracking');
   const hasExternalIdTracking = behaviorNames.includes('external_id_tracking');
 
+  // ==========================================================================
+  // Tenant scoping (ADR-042 / TEN-1). One YAML flag drives the column, the
+  // index, the uniqueness prefix, the BehaviorConfig field and the repository's
+  // strict enforcement — one declaration, five emissions (charter I1).
+  // ==========================================================================
+  const tenantScoped = definition.tenant_scoped === true;
+
+  // A tenant-scoped entity whose repository would upsert on a caller-supplied
+  // conflict target is a cross-tenant WRITE waiting to happen: the ON CONFLICT
+  // target selects the row before any WHERE applies. The EAV value-table
+  // repository emits exactly that (`upsertCurrentValues`), and its conflict
+  // target is author-declared, so it cannot be prefixed with `tenant_id`
+  // without breaking index inference. Refuse the combination rather than emit a
+  // repository that claims an isolation it does not have (TEN-1 §5.2).
+  if (tenantScoped && eavValueTable) {
+    throw new Error(
+      `Entity '${entityName}': tenant_scoped: true is not supported with ` +
+        'eav_value_table: true. The generated upsertCurrentValues() upserts on ' +
+        'an author-declared conflict target, which cannot carry tenant_id, so ' +
+        "one tenant's batch would update another tenant's rows. Drop one of " +
+        'the two flags. See ADR-042 and docs/specs/TEN-1.md §5.2.',
+    );
+  }
+
   // Process declarative queries
   // Filter out search-named entries — they're handled by
   // processSearchQueries below. processQueries only understands the
@@ -1273,14 +1340,23 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // drizzleChain of the rendered (non-belongs_to) columns in place. Skip FK
   // imports for tables belongs_to already imports to avoid duplicate import
   // lines.
-  const fieldFeatures = processFieldFeatures(nonFkFields, fields, entityNamePlural);
+  const fieldFeatures = processFieldFeatures(
+    nonFkFields,
+    fields,
+    entityNamePlural,
+    baseLocals?.ownedTableNames,
+  );
   const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
   const clpFieldFkImports = fieldFeatures.fkImports.filter(
     (imp) => !belongsToTables.has(imp.relatedTable),
   );
 
   // Composite unique indexes (#356).
-  const uniqueIndexExpressions = processUniqueIndexes(definition.unique_indexes, entityNamePlural);
+  const uniqueIndexExpressions = processUniqueIndexes(
+    definition.unique_indexes,
+    entityNamePlural,
+    tenantScoped,
+  );
 
   // belongs_to FK columns that declared `index: true` on their underlying
   // field. The FK column lives in clpBelongsTo (not clpProcessedFields), so
@@ -1302,11 +1378,34 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     ...fieldFeatures.indexExpressions,
     ...uniqueIndexExpressions,
   ];
-  if (hasExternalIdTracking) {
-    clpTableConstraints.push({
-      comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
-      expr: `uniqueIndex('uq_${entityNamePlural}_provider_external_id').on(t.provider, t.externalId)`,
+  if (tenantScoped) {
+    // Every scoped read filters on this column, so it is indexed unconditionally.
+    clpTableConstraints.unshift({
+      comment: 'tenant_scoped behavior (ADR-042) — every scoped read filters on tenant_id',
+      expr: `index('${entityNamePlural}_tenant_id_idx').on(t.tenantId)`,
     });
+  }
+  if (hasExternalIdTracking) {
+    clpTableConstraints.push(
+      tenantScoped
+        ? {
+            // `unique(...)`, not `uniqueIndex(...)`: only the table-constraint
+            // builder carries `.nullsNotDistinct()` on drizzle 1.0.0-rc.4, and
+            // the tenant column is nullable-first. Postgres treats NULLs in a
+            // unique index as DISTINCT, so a `(NULL, provider, external_id)`
+            // conflict target would never fire and the integration upsert would
+            // insert a duplicate row for null-tenant work instead of updating.
+            comment:
+              'external_id_tracking + tenant_scoped — per-tenant ON CONFLICT target for integrationUpsert',
+            expr:
+              `unique('uq_${entityNamePlural}_tenant_provider_external_id')` +
+              '.on(t.tenantId, t.provider, t.externalId).nullsNotDistinct()',
+          }
+        : {
+            comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
+            expr: `uniqueIndex('uq_${entityNamePlural}_provider_external_id').on(t.provider, t.externalId)`,
+          },
+    );
   }
 
   // Enum field declarations — surface a separate collection so the entity
@@ -1331,10 +1430,17 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // field declares `index: true` or the entity declares `unique_indexes:`
   // (external_id_tracking adds `uniqueIndex` on its own flag below).
   const extraDrizzleImports = [];
-  if (fieldFeatures.indexExpressions.length > 0 || belongsToIndexExpressions.length > 0) {
+  if (
+    fieldFeatures.indexExpressions.length > 0 ||
+    belongsToIndexExpressions.length > 0 ||
+    tenantScoped
+  ) {
     extraDrizzleImports.push('index');
   }
   if (uniqueIndexExpressions.length > 0) extraDrizzleImports.push('uniqueIndex');
+  // The per-tenant external-id constraint is a `unique(...)` table constraint,
+  // not a `uniqueIndex(...)` — see clpTableConstraints above.
+  if (tenantScoped && hasExternalIdTracking) extraDrizzleImports.push('unique');
   const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // Output paths
@@ -1469,6 +1575,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     hasSoftDelete,
     fields,
     sinkPolicy,
+    tenantScoped,
   );
 
   // EVT-7: emits locals flow through from baseLocals (prompt.js computed them
@@ -1546,6 +1653,9 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     hasSoftDelete,
     hasUserTracking,
     hasExternalIdTracking,
+
+    // Tenant scoping (ADR-042 / TEN-1)
+    tenantScoped,
 
     // Generation toggles
     generateWrites,

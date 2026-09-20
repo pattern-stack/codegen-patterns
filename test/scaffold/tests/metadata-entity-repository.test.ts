@@ -29,7 +29,7 @@ beforeAll(async () => {
 
   class TestMetadataRepository extends MetadataEntityRepository<MetadataEntity> {
     readonly table = metadataEntities;
-    protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+    protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false, tenantScoped: false };
   }
 
   repo = new TestMetadataRepository(getTestDb() as any);

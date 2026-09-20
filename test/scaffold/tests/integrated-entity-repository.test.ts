@@ -29,7 +29,7 @@ beforeAll(async () => {
 
   class TestCrmRepository extends IntegratedEntityRepository<CrmEntity> {
     readonly table = crmEntities;
-    protected readonly behaviors = { timestamps: true, softDelete: true, userTracking: false };
+    protected readonly behaviors = { timestamps: true, softDelete: true, userTracking: false, tenantScoped: false };
     // #374: integrationConfig is now abstract on the base. A minimal config keeps this
     // hand-written test repo compiling; the generic integration surface is unit-tested
     // separately in src/__tests__/runtime/base-classes/.

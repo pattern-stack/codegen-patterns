@@ -21,6 +21,8 @@ export class <%= classNames.repository %> extends BaseRepository<<%= classNames.
     timestamps: true,
     softDelete: false,
     userTracking: false,
+    // Relationship tables are not tenant-scopable in v1 (ADR-042 / TEN-1 §11).
+    tenantScoped: false,
   };
 
   constructor(@Inject(DRIZZLE) db: DrizzleClient) {

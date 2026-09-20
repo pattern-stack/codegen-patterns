@@ -19,6 +19,8 @@ import type {
 import type { InferSelectModel, SQL } from 'drizzle-orm';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
 import {
+  MissingTenantIdError,
+  getTenantId,
   requireRequester,
   tryGetRequester,
   type RequesterScope,
@@ -47,6 +49,33 @@ export function column(table: PgTable, name: string, owner: string): PgColumn {
     throw new Error(`${owner}: table has no column '${name}'`);
   }
   return col;
+}
+
+/**
+ * The tenant predicate for ANY table (ADR-042 / TEN-1).
+ *
+ * A FREE FUNCTION, not a method, on purpose: REL-2 (#587) applies the same
+ * predicate at every hop of an include tree, where the tables are not this
+ * repository's. The root resolves the tenant ONCE per statement (one ALS read)
+ * and passes the VALUE down; each hop calls this with its own table.
+ *
+ *   - `undefined` tenant → `undefined` (lenient, no tenant established). The
+ *     caller decides what that means; under strict it never reaches here,
+ *     because `getTenantId` has already thrown.
+ *   - `null`             → `IS NULL`, the null-tenant partition.
+ *   - `string`           → `= tenantId`.
+ *
+ * A table with no `tenant_id` throws (via `column()`) rather than rendering a
+ * filterless query — the runtime backstop behind the generation-time guards.
+ */
+export function tenantPredicateFor(
+  table: PgTable,
+  tenantId: string | null | undefined,
+  owner: string,
+): SQL | undefined {
+  if (tenantId === undefined) return undefined;
+  const col = column(table, 'tenantId', owner);
+  return tenantId === null ? isNull(col) : eq(col, tenantId);
 }
 
 // ============================================================================
@@ -81,13 +110,21 @@ export type RowsOf<Q extends AnyPgSelectQueryBuilder, TRow> = PgSelectKind<
 // ============================================================================
 
 /**
- * Behavior flags for the repository. Controls automatic timestamp injection
- * and soft-delete filtering.
+ * Behavior flags for the repository. Controls automatic timestamp injection,
+ * soft-delete filtering, and the two ambient scope axes.
+ *
+ * Every field is REQUIRED. `tenantScoped` is not optional-with-a-default
+ * precisely because a silent `false` is the failure mode it guards against:
+ * a repository that forgot to state its posture would read every tenant.
+ * Stating it is one line per literal, and the compiler asks for it.
  */
 export interface BehaviorConfig {
   timestamps: boolean;
   softDelete: boolean;
   userTracking: boolean;
+  /** ADR-042 — filter every read/by-id write by the ambient tenant, and stamp
+   *  `tenant_id` on create. Emitted from the entity's `tenant_scoped: true`. */
+  tenantScoped: boolean;
 }
 
 /**
@@ -145,20 +182,28 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
     timestamps: false,
     softDelete: false,
     userTracking: false,
+    tenantScoped: false,
   };
 
   /**
-   * Ambient tenant-scope enforcement for `userTracking` repos (see
-   * `scopePredicate`). Only has effect when `behaviors.userTracking === true`.
+   * Ambient scope enforcement, governing BOTH axes — `userTracking` (see
+   * `scopePredicate`) and `tenantScoped` (see `tenantPredicate`). It has effect
+   * only for the axes the repo actually declares.
    *
    * - `'lenient'` (default): when no ambient requester context is active,
    *   reads/writes are NOT scoped — preserves pre-scoping behavior, so adopting
    *   ambient scoping is additive. Scoping kicks in automatically once a
    *   boundary installs `withRequester(...)`.
-   * - `'strict'`: a missing ambient context throws (`requireRequester`),
-   *   making a forgotten boundary fail loud instead of silently returning
-   *   cross-tenant rows. Recommended for new multi-tenant consumers — override
-   *   in a concrete repo or a family base class.
+   * - `'strict'`: a missing ambient context throws (`requireRequester`), and a
+   *   context that carries no `tenantId` throws `MissingTenantIdError`, so a
+   *   forgotten boundary fails loud instead of silently returning the union of
+   *   every tenant.
+   *
+   * A `tenant_scoped: true` entity is EMITTED strict, with no opt-down
+   * (ADR-042's 2026-09-20 revision note; charter I3 — "a missing context
+   * throws; it never reads unscoped"). One knob over one context governs both
+   * axes deliberately: a missing boundary is a missing boundary, whichever
+   * filter it was meant to supply.
    */
   protected readonly scopeEnforcement: 'lenient' | 'strict' = 'lenient';
 
@@ -266,10 +311,13 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
   // ============================================================================
 
   /**
-   * Insert a new entity. Timestamps are auto-injected when timestamps=true.
+   * Insert a new entity. Timestamps are auto-injected when timestamps=true;
+   * `tenant_id` is stamped from the ambient tenant when tenantScoped=true.
    */
   async create(input: Partial<TEntity>, tx?: DrizzleTx): Promise<TEntity> {
-    const data = this.withTimestamps(input as Record<string, unknown>, 'create');
+    const data = this.stampTenant(
+      this.withTimestamps(input as Record<string, unknown>, 'create'),
+    );
     const rows = await this.runner(tx)
       .insert(this.tableRef)
       .values(data)
@@ -314,6 +362,12 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
    * Insert or update multiple entities.
    * Default naive implementation — family repositories override with
    * proper conflict-target upsert (e.g., CrmEntityRepository).
+   *
+   * This default delegates to `create()`, so it inherits the tenant stamp.
+   * An override that builds its own `INSERT … ON CONFLICT` does NOT: the
+   * conflict target must include `tenant_id` or tenant B's write will update
+   * tenant A's row. See `IntegratedEntityRepository.integrationUpsertOne` and
+   * `MetadataEntityRepository.upsertMany` for how each one rules on that.
    */
   async upsertMany(inputs: Array<Partial<TEntity>>, tx?: DrizzleTx): Promise<TEntity[]> {
     return Promise.all(inputs.map((input) => this.create(input, tx)));
@@ -325,9 +379,9 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
 
   /**
    * Base SELECT query that automatically applies the ambient guards —
-   * soft-delete exclusion (when `softDelete`) and tenant scope (when
-   * `userTracking` + an active requester context) — combined with an optional
-   * caller `extra` predicate into a SINGLE `WHERE`.
+   * soft-delete exclusion (when `softDelete`), the user-axis scope (when
+   * `userTracking`) and the tenant-axis scope (when `tenantScoped`) —
+   * combined with an optional caller `extra` predicate into a SINGLE `WHERE`.
    *
    * Pass the leaf predicate as `extra` rather than chaining a second
    * `.where(...)`: Drizzle's `.where()` OVERRIDES (does not AND) a prior
@@ -387,10 +441,62 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
   }
 
   /**
-   * Combine the ambient scope predicate (and, optionally, the soft-delete
-   * guard) with a caller `extra` predicate into one `SQL`. Returns `undefined`
-   * when nothing applies. Used by read + by-id write paths so a single
-   * `.where(...)` carries every guard.
+   * Build the ambient TENANT predicate for this repo's table (ADR-042).
+   *
+   * Returns `undefined` (no tenant filter) when:
+   *   - `behaviors.tenantScoped` is false, or
+   *   - `withAllTenants(...)` is in effect (deliberate cross-tenant read), or
+   *   - `scopeEnforcement` is `'lenient'` and no tenant is established.
+   *
+   * Under `'strict'` — which is what a `tenant_scoped: true` entity is emitted
+   * with — there is no third case: `getTenantId` throws rather than returning
+   * `undefined`, so this method either filters or raises. It never quietly
+   * reads across tenants.
+   */
+  protected tenantPredicate(): SQL | undefined {
+    if (!this.behaviors.tenantScoped) return undefined;
+    if (tryGetRequester()?.tenantScope === 'all') return undefined;
+    const owner = this.constructor.name;
+    return tenantPredicateFor(
+      this.tableRef,
+      getTenantId(this.scopeEnforcement, owner),
+      owner,
+    );
+  }
+
+  /**
+   * Stamp `tenant_id` onto an insert from the ambient tenant. No-op unless
+   * `behaviors.tenantScoped`.
+   *
+   * An explicitly-supplied `tenantId` always wins — that is how cross-tenant
+   * tooling writes on a tenant's behalf, and how a test seeds both tenants.
+   * Under `withAllTenants(...)` an explicit value is the ONLY way through:
+   * reading every tenant is a choice a caller can make, but writing a row
+   * without naming its owner is a bug in every case, so it throws.
+   *
+   * Named `stampTenant`, not `withTenant`, to leave `withTenantScope` (the ALS
+   * hatch) unambiguous.
+   */
+  protected stampTenant(input: Record<string, unknown>): Record<string, unknown> {
+    if (!this.behaviors.tenantScoped) return input;
+    if (input['tenantId'] !== undefined) return input;
+    const owner = this.constructor.name;
+    if (tryGetRequester()?.tenantScope === 'all') {
+      throw new MissingTenantIdError(owner);
+    }
+    const tenantId = getTenantId(this.scopeEnforcement, owner);
+    return { ...input, tenantId: tenantId ?? null };
+  }
+
+  /**
+   * Combine every ambient guard — soft-delete, the user-axis scope, the
+   * tenant-axis scope — with a caller `extra` predicate into one `SQL`.
+   * Returns `undefined` when nothing applies. Used by read + by-id write paths
+   * so a single `.where(...)` carries all of them.
+   *
+   * This is the ONLY place a guard is added. `baseQuery()`, `count()`,
+   * `update()` and `delete()` all route through here, which is why one line
+   * above covers every generated read and every by-id write.
    */
   protected scopeAnd(
     extra?: SQL,
@@ -400,6 +506,8 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
     if (opts?.softDelete) conditions.push(isNull(this.col('deletedAt')));
     const scope = this.scopePredicate();
     if (scope) conditions.push(scope);
+    const tenant = this.tenantPredicate();
+    if (tenant) conditions.push(tenant);
     if (extra) conditions.push(extra);
     if (conditions.length === 0) return undefined;
     if (conditions.length === 1) return conditions[0];

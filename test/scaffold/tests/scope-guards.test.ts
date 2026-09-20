@@ -86,6 +86,7 @@ beforeAll(async () => {
       timestamps: true,
       softDelete: true,
       userTracking: true,
+      tenantScoped: false,
     };
     protected readonly integrationConfig = {
       conflictTarget: ['provider', 'externalId'],
@@ -100,7 +101,12 @@ beforeAll(async () => {
   repo = new ScopedCrmRepository(getTestDb() as any);
 
   // BOTH guards on for every family — a finder must survive both, not one.
-  const bothGuards = { timestamps: true, softDelete: true, userTracking: true };
+  const bothGuards = {
+    timestamps: true,
+    softDelete: true,
+    userTracking: true,
+    tenantScoped: false,
+  };
 
   class ScopedActivityRepository extends ActivityEntityRepository<any> {
     readonly table = activityEntities;

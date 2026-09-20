@@ -11,7 +11,7 @@
  * first two. `pattern: Integrated` repos declare all four plus `integrationConfig`.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import type { PgTable } from 'drizzle-orm/pg-core';
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { DrizzleTx } from '../types/drizzle';
 import { BaseRepository, column } from './base-repository';
 import type { IntegrationUpsertConfig, IntegrationFkResolver } from './integration-upsert-config';
@@ -98,17 +98,19 @@ export abstract class IntegratedEntityRepository<
       const copyThrough: Record<string, unknown> = {};
       for (const col of cfg.writeColumns) copyThrough[col] = w[col];
 
-      const values: Record<string, unknown> = {
+      const values: Record<string, unknown> = this.stampTenant({
         externalId: w['externalId'],
         provider,
         ...copyThrough,
         ...resolvedFks,
         ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
-      };
+      });
 
-      // `set` excludes the identity (externalId/provider). Resolved FKs are
-      // only written when non-null this run — never clobber a previously
-      // resolved parent with null on a later run that dropped the ref.
+      // `set` excludes the identity (externalId/provider) AND `tenantId`, which
+      // is never in `writeColumns` — a conflicting row's owning tenant is never
+      // rewritten. Resolved FKs are only written when non-null this run — never
+      // clobber a previously resolved parent with null on a later run that
+      // dropped the ref.
       const set: Record<string, unknown> = {
         ...copyThrough,
         ...(this.behaviors.timestamps ? { updatedAt: now } : {}),
@@ -121,7 +123,7 @@ export abstract class IntegratedEntityRepository<
         .insert(this.tableRef)
         .values(values)
         .onConflictDoUpdate({
-          target: cfg.conflictTarget.map((c: string) => this.col(c)),
+          target: this.conflictTarget(cfg.conflictTarget),
           set,
         })
         .returning();
@@ -157,10 +159,15 @@ export abstract class IntegratedEntityRepository<
     const rows = await this.db
       .select()
       .from(this.tableRef)
+      // `scopeAnd` WITHOUT `{ softDelete }` — the differ must still see a
+      // soft-deleted row to decide what changed — but WITH the user and tenant
+      // guards, which a raw statement would otherwise skip entirely.
       .where(
-        and(
-          eq(this.col('provider'), provider),
-          eq(this.col('externalId'), externalId),
+        this.scopeAnd(
+          and(
+            eq(this.col('provider'), provider),
+            eq(this.col('externalId'), externalId),
+          ),
         ),
       )
       .limit(1);
@@ -187,9 +194,11 @@ export abstract class IntegratedEntityRepository<
       .update(this.tableRef)
       .set(set)
       .where(
-        and(
-          eq(this.col('provider'), provider),
-          eq(this.col('externalId'), externalId),
+        this.scopeAnd(
+          and(
+            eq(this.col('provider'), provider),
+            eq(this.col('externalId'), externalId),
+          ),
         ),
       )
       .returning({ id: this.col('id') });
@@ -218,12 +227,40 @@ export abstract class IntegratedEntityRepository<
         const row = await tx
           .select()
           .from(this.tableRef)
-          .where(eq(this.col('id'), id))
+          .where(this.scopeAnd(eq(this.col('id'), id)))
           .limit(1);
         out.push(row[0] as TEntity);
       }
       return out;
     });
+  }
+
+  /**
+   * Resolve the `ON CONFLICT` target columns, prefixing `tenant_id` when this
+   * repository is tenant-scoped (ADR-042 / TEN-1 §5.1).
+   *
+   * This is the write-side half of isolation, and the one `scopeAnd()` cannot
+   * reach: an upsert's conflict target decides WHICH ROW gets updated before
+   * any WHERE is considered. Without the prefix, tenant B's sync would UPDATE
+   * tenant A's row whenever the two share an `external_id` — a cross-tenant
+   * write, strictly worse than a read leak.
+   *
+   * The generated `integrationConfig.conflictTarget` already carries
+   * `'tenantId'` for a tenant-scoped entity (one declaration, per charter I1);
+   * this method is the runtime backstop that makes a hand-written config safe
+   * too, and it never double-prefixes.
+   *
+   * The matching unique constraint is emitted as
+   * `unique(...).on(tenantId, provider, externalId).nullsNotDistinct()` — the
+   * `NULLS NOT DISTINCT` matters because the tenant column is nullable, and
+   * Postgres otherwise treats every null-tenant row as distinct, so the
+   * conflict would never fire and the upsert would insert duplicates.
+   */
+  protected conflictTarget(declared: readonly string[]): PgColumn[] {
+    const names = this.behaviors.tenantScoped && !declared.includes('tenantId')
+      ? ['tenantId', ...declared]
+      : [...declared];
+    return names.map((c) => this.col(c));
   }
 
   /**
@@ -277,16 +314,27 @@ export abstract class IntegratedEntityRepository<
     }
     const refTable: PgTable =
       fk.refTable === 'self' ? this.tableRef : fk.refTable;
+    const isSelf = fk.refTable === 'self';
     const owner = `${this.constructor.name}.integrationConfig.fkResolvers['${fk.column}']`;
+    const identity = and(
+      eq(column(refTable, 'provider', owner), provider),
+      eq(column(refTable, 'externalId', owner), parentExternalId),
+    );
+    // A SELF resolver reads THIS table, so the repository's own guards apply and
+    // a tenant-scoped hierarchy cannot resolve a parent in another tenant.
+    //
+    // A CROSS-TABLE resolver cannot be scoped here: whether the PARENT entity is
+    // tenant-scoped is a fact about the parent's YAML, and recovering it by
+    // inspecting the parent table's columns would be introspecting generated
+    // output to learn what a declaration already says (charter I1). It travels
+    // as generated data in REL-1's manifest — see TEN-1 §8 and #702. Until then
+    // a cross-tenant parent external id resolves to that parent's local id: the
+    // CHILD row is still written in the caller's tenant and still reads back
+    // scoped, but the FK it carries can point across the boundary.
     const rows = await db
       .select({ id: column(refTable, 'id', owner) })
       .from(refTable)
-      .where(
-        and(
-          eq(column(refTable, 'provider', owner), provider),
-          eq(column(refTable, 'externalId', owner), parentExternalId),
-        ),
-      )
+      .where(isSelf ? this.scopeAnd(identity) : identity)
       .limit(1);
     const id = (rows[0]?.id as string | undefined) ?? null;
     if (id === null && fk.strict) {

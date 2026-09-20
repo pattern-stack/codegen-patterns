@@ -100,7 +100,7 @@ class OppContactRepository extends JunctionIntegrationRepository<
 > {
   readonly table = junctionTable;
   protected readonly integrationConfig: JunctionIntegrationConfig;
-  protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+  protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false, tenantScoped: false };
   constructor(db: DrizzleClient, config: JunctionIntegrationConfig = roleConfig) {
     super(db);
     this.integrationConfig = config;
