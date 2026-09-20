@@ -155,6 +155,11 @@ Append-only. A decision that changes an invariant or the target picture also get
 | 2026-09-20 | **Cross-mode client hops (an `electric` root reaching an `api` target) are a generation error in v1**, naming both entities and the relation — not an id-set bridge and not a degraded fetch loop. The bridge needs a list-filter contract REL-2's include allowlist does not define. | FE-REL §4.4 |
 | 2026-09-19 | **Owner decision 2026-09-19: delete `clean`** (Q5). clean-lite-ps is the only backend pipeline; `generate.architecture` is removed from the schema (an unknown-key error), not kept as a one-value enum. No alias, no shim. The config surface only `clean` read is ARCH-1 (#682). | #677, `docs/specs/ARCH-0.md` |
 | 2026-09-20 | ARCH-1 finished that deletion: `naming:`, `database:`, `behaviors:`, 18 `locations.*` names, the entity layout keys and 69 dead `prompt.js` locals are gone, each now an unknown-key error. `expose:` was measured **live** (the frontend emitter reads it) and kept. | #682, `docs/specs/ARCH-1.md` |
+| 2026-09-20 | **Q2 closed.** The per-hop predicate is emitted into the `defineRelations()` manifest, not injected by the repository. Both candidates produce equivalent SQL for an include; RQBv2 also traverses a relation through the `where: { <relation>: … }` EXISTS form, which an include-tree rewriter cannot see, and that form was **measured leaking rows** against real Postgres. On the relation, the guard travels with every consumer — including a hand-written `db.query.*`. | `docs/specs/REL-2.md` §1; ADR-044 follow-up closed |
+| 2026-09-20 | **Q3 closed.** The HTTP include allowlist is `api: { includes: { <route>: { max_depth, paths: [<dot path>] } } }`, keyed by generated read route, compiled to literal include fragments at generation time. `api:` becomes a boolean OR that object, with one reader (`apiEnabled`) for both forms. | `docs/specs/REL-2.md` §5.1 |
+| 2026-09-20 | **`api: false` admits no allowlist override.** A path traversing an entity with `api: false` is a generation error naming both entities. ADR-044 §7's "unless the allowlist names it" is withdrawn; ADR-043 §6 has no exception. | ADR-044 2026-09-20 revision note; ADR-043 §6 note |
+| 2026-09-20 | **`TRelations` is a third REQUIRED type parameter** on every repository base (after REL-0's `TTable`), with no default — a default would let a repository that forgot its manifest compile and silently accept no includes. Second and last breaking arity change in epic #580. | `docs/specs/REL-2.md` §2.2 |
+| 2026-09-20 | The scaffold's shadow `BaseRepository` / `BaseService` stubs are **deleted**; `just test-integration` runs against the real runtime bases. REL-0 flagged the shadow; REL-2 made it wrong (a generated repository now calls `baseQuery` / `rootScopeRaw`). | `docs/specs/REL-2.md` §Found 4 |
 
 ### Open questions
 
@@ -162,6 +167,9 @@ Append-only. A decision that changes an invariant or the target picture also get
 |---|---|---|---|---|
 | Q2 | Per-hop scoping mechanism: v2 predefined relation `where` filters vs repository rewriting the include tree | REL-2 | decide by spike in REL-2's spec | REL-2 specifier |
 | Q3 | YAML shape of the HTTP include allowlist | REL-2 | design in REL-2's spec | REL-2 specifier |
+| Q1 | Frontend include mechanism: in `@pattern-stack/frontend-patterns` with thin generated wiring, or fully generated? | FE-REL design | `frontend-patterns` (the `createEntityHooks` precedent) | Doug |
+| ~~Q2~~ | ~~Per-hop scoping mechanism~~ | — | **Closed 2026-09-20 (REL-2, #587): the manifest carries it.** See §7. | — |
+| ~~Q3~~ | ~~YAML shape of the HTTP include allowlist~~ | — | **Closed 2026-09-20 (REL-2, #587):** `api.includes`. See §7. | — |
 | Q4 | Metric catalog home: YAML vs consuming adapter | SEM-1 | YAML for atomic tags + pure composites; adapter for data-driven | Doug (confirm at SEM-1) |
 | Q5 | The `clean` backend pipeline (#602): repair it and gate it, or retire it? | nothing in this project; CAP/REL are `clean-lite-ps`-only | retire — no users, "no backwards compat", and every REL/CAP unit already skips it | Doug |
 | Q6 | Cut 0.31.0 when unit 1 merges, or hold until REL-1 refills the relations slot? | release only | cut it: the peer-dependency change and honest gates are worth shipping; note the empty relations slot in the changelog | Doug |
@@ -176,6 +184,9 @@ Append-only. A decision that changes an invariant or the target picture also get
 | Probing Drizzle behaviour against the wrong copy | a scratch script behaves differently from the repo | probe from **inside** the repo — outside it, resolution can pick up a transitive 0.45 copy |
 | Per-hop scoping cannot be expressed cleanly in RQBv2 | REL-2 spike | fall back to include-tree rewriting in the repository; if neither is sound, traversal stays internal-only until it is — never ship unscoped hops (I3) |
 | A scope leak through traversal | — | leak tests at depth ≥ 3 are exit criteria for #580; `gate:human` on TEN-1 and REL-2 |
+| Drizzle 1.0 changes between rc.4 and GA | a gate fails after a pin move | pins are exact in harnesses; re-run gates on each RC; DRZ-2's spec records the API surface we depend on |
+| ~~Per-hop scoping cannot be expressed cleanly in RQBv2~~ | — | **Retired 2026-09-20.** It can: `RelationsFilter.RAW` accepts a callback that Drizzle invokes while BUILDING the statement, once per traversed relation, so a module-level manifest carries a per-request predicate. The fallback (include-tree rewriting) was rejected on a measured leak, not on capability. |
+| A scope leak through traversal | — | **Covered for the hops (REL-2, #587):** 10 leak tests at depth 3 in `just test-integration`, mutation-checked (8 of 10 go red when the hop `where` is removed). The remaining exposure is a NEW traversal source that does not go through a relation — there is none today, because the guard is on the relation. |
 | query-surface not published when SEM-2 is ready | query-surface#40 still open | documented fallback: vendored type mirror + conformance test (PLAN §5.3) |
 | Snapshot churn hides real regressions | large baseline diffs | DRZ-1 isolates the mechanical churn; every later PR explains each snapshot class it changes |
 | Plan drift — docs stop matching reality | a spec contradicts this charter | §9 protocol; the checkpoint after DRZ-2; any agent that finds drift fixes it in the same PR |
