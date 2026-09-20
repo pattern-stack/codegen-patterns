@@ -523,11 +523,14 @@ Output from the run made after the last edit (charter I9).
 
 | Gate | Result |
 |---|---|
-| `bun run typecheck` | *(filled in below from the final run)* |
-| `bun run build` | *(filled in below from the final run)* |
-| `bun test src` (unit) | *(filled in below from the final run)* |
-| `just test-all` (incl. `test-smoke-frontend`) | *(filled in below from the final run)* |
-| `just test-integration` (Docker) | *(filled in below from the final run)* |
+| `bun run typecheck` | exit 0 |
+| `bun run build` | exit 0 |
+| `bun test src` (unit) | **3270 pass**, 0 fail (FE-REL adds 27: 21 rules + 6 golden) |
+| `just test-all` (incl. `test-smoke-frontend`) | **exit 0** — 7 smokes, `smoke-frontend PASS` in 4.5 s |
+| `just test-integration` (Docker) | **exit 0** — 68 pass, 2 skip, 0 fail |
+
+Run on a private `TMPDIR` throughout (#691), and the integration suite on this worktree's own compose project
+(`codegen-scaffold-5c1a7911`, port 26089) — see the PR body's harness note.
 
 **Both new gates were demonstrated red before they were shown green:**
 
