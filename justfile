@@ -497,7 +497,10 @@ studio dir=".studio-demo" port="5178" vite_port="5179":
         exec bun "$cli" studio "{{dir}}" --port {{port}}
     fi
     [ -d "$ui/node_modules" ] || (cd "$ui" && bun install)
-    (cd "$ui" && bun run dev --port {{vite_port}} --strictPort) &
+    # --host pins Vite to the SAME address the server proxies to. Without it
+    # Vite binds [::1] while the server dials 127.0.0.1, and every UI request
+    # comes back as a 502 JSON body instead of the app.
+    (cd "$ui" && bun run dev --host 127.0.0.1 --port {{vite_port}} --strictPort) &
     vite_pid=$!
     trap 'kill "$vite_pid" 2>/dev/null || true' EXIT INT TERM
     bun "$cli" studio "{{dir}}" --port {{port}} --vite "http://127.0.0.1:{{vite_port}}"
