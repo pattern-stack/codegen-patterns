@@ -203,6 +203,7 @@ Auto-detect: `just scan` generates a config from project conventions.
 - **Unit tests**: `just test-unit` — base classes, subsystems, scanner, schema (~200ms)
 - **Integration tests**: `just test-family` / `just test-integration` — real Postgres via Docker. `test-integration` generates the scaffold consumer into the **repo root** (the scaffold's `@gen/*` alias maps there) and runs the 7 scaffold test files against it; it is **not** in `test-all` (which stays Docker-free) and has its own CI job. It requires `just install` and nothing else — the scaffold fixture declares no dependencies of its own, on purpose: two physical copies of a package break `instanceof` across the boundary (a duplicate `drizzle-orm` broke table construction; a duplicate `@nestjs/common` turned every `NotFoundException` into a 500).
 - **Smoke test**: `just test-smoke` — end-to-end scaffold + generate + typecheck on a fresh tmp project (~60-120s)
+- **Smoke tsc scoping**: every smoke (`test-smoke`, `-subsystems`, `-junction`, `test-smoke-integration`) fails on **any** `tsc` diagnostic located in the project it generated. The shared `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** — outside the generated project, or in `node_modules` — never by message and never by directory. It is unit-tested (`src/__tests__/smoke/consumer-errors.test.ts`); do not add a predicate to it (charter I9).
 - **Tarball smoke**: `just test-post-publish` — pack all publishable packages, install into a fresh tmp project via npm, verify the consumer contract (files manifest, exports, bins, peer ranges), then re-run the smoke harness with the CLI/templates/runtime coming from the installed tarball (`SMOKE_TARBALL` mode). Gates every CI publish via `just publish-ci`. Catches the works-from-checkout-broken-from-tarball class (#190)
 - **Baseline tests**: `just test-baseline` — generate from `test/fixtures/` into repo-root `packages/api/` and compare to `test/baseline/` snapshots. Two-pass generation (first pass seeds `packages/api/src/domain/*.entity.ts` files so second-pass `targetExists` checks resolve cross-entity references). Start from pristine state — the runner wipes the generated directories on each run.
 - **CI** (`.github/workflows/ci.yml`), on every PR to `main` and every push to `main`:
@@ -221,11 +222,11 @@ Gates that are red on `main` today, on purpose recorded here rather than hidden,
 |---|---|---|
 | `just test-smoke-junction-clean` | Red, and now reports its real number: **118** errors (110 × TS2307 unresolved module + 8 × TS7006). GATE-1 measured 120 raw behind a filter that reported 21; DRZ-2 deleted the filter (#576) and fixed 2 of the 120 (the vendored events siblings, #575). Only ~15 are the junction pipeline; the rest are the `clean` entity pipeline's missing `domain/` + `constants/` barrels, DTO `schemas` barrel, `database.module`, `zod-validation.pipe`, the generated schema barrel's singular/plural filename mismatch, and the `@repo/db/server/schema` location contract. The `clean` backend pipeline has never been typechecked anywhere — the baseline gate compiles `packages/api/src/domain/**/*` only. | **#602** (diagnosis in `docs/specs/GATE-1.md` §Failure 2); deferred by charter §5 non-goals |
 
-One more error class is **visible but not gating**, recorded for the same reason: `just test-smoke-integration` scopes
-its pass/fail to `src/integrations/**` and prints everything else as `N tsc error(s) OUTSIDE src/integrations/**`.
-Today that is 7 — 6 × the list use-case emitting `desc(<table>.createdAt)` for entities with no `timestamps` behavior
-(**#604**, pre-existing, proven identical at `drizzle-orm@0.45.2`) plus one duplicate-`@nestjs/common` artifact of the
-harness itself. Do not silence the print; fix #604.
+That is the whole list. No gate anywhere filters an error class or carves out a directory: every smoke scopes its
+`tsc` output through `test/smoke/_consumer-errors.ts`, by the diagnostic's **location** only (GATE-2, #604). If a
+future error genuinely cannot be fixed in the PR that surfaces it, give it a **named single-purpose expectation** —
+exact file, exact error code, the issue number in a comment, asserted present *and* sole — never a predicate in that
+helper and never a directory carve-out.
 
 ### Template System
 
