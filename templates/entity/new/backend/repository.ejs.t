@@ -30,14 +30,18 @@ const _emittedDqNames = new Set(
 const _skipFkMethod = (name) => _emittedDqNames.has(name);
 const _needsEq = hasDeclarativeQueries || _fkMethods.length > 0;
 _%>
-<% if (_needsEq) { -%>
+<%# REL-2: `eq` is now unconditional — the typed `findById` override uses it. %>
 import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc, asc' : '' %> } from 'drizzle-orm';
-<% } -%>
 <% if (eavValueTable) { -%>
 import { sql } from 'drizzle-orm';
 <% } -%>
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient<% if (eavValueTable || hasIntegrationSurface) { %>, DrizzleTx<% } %> } from '<%= drizzleTypeImport %>';
+// REL-2 (#587): the generated relation graph. `Relations` binds the repository's
+// third type parameter; `IncludeOf`/`ResultOf` are what make a `with` include
+// typed. Generated code reaching a generated manifest — the runtime package never
+// sees it (REL-1 §4).
+import type { IncludeOf, Relations, ResultOf } from '<%= relationsImport %>';
 <%_ if (composedBaseClass) { _%>
 import { <%= composedBaseClass %> } from '<%= composedBaseImport %>';
 <%_ } else { _%>
@@ -49,9 +53,7 @@ import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <% if (hasIntegrationSurface) { -%>
 import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport %>';
 <% } -%>
-<% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { -%>
-import type { BehaviorConfig } from '<%= baseRepositoryImport %>';
-<% } -%>
+import type { <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { %>BehaviorConfig, <% } %>ListOptions } from '<%= baseRepositoryImport %>';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
 <% } -%>
@@ -96,10 +98,45 @@ export interface <%= classNames.entity %>IntegrationProjection {
 }
 <%_ } _%>
 
+/**
+ * The relation keys a <%= entityName %> read may include — the `with` surface of
+ * `<%= entityNamePlural %>` in this project's graph.
+ *
+ * `TWith` is inferred AT THE CALL SITE. Annotating an include literal with this
+ * type widens it and loses the exact result shape, so hoist an include into a
+ * `const` WITHOUT a type annotation (or with `as const`) if you need to reuse it.
+ */
+export type <%= classNames.entity %>Include = IncludeOf<'<%= entityNamePlural %>'>;
+
+/** The row shape a given <%= entityName %> include tree resolves to, nested exactly as asked. */
+export type <%= classNames.entity %>Result<TWith extends <%= classNames.entity %>Include> =
+  ResultOf<'<%= entityNamePlural %>', TWith>;
+
+/** The default `TWith` — no include, so the plain row. */
+export type <%= classNames.entity %>NoInclude = Record<string, never>;
+
+/**
+ * The shape an HTTP read returns: the row, plus any allowlisted relation.
+ *
+ * The controller merges allowlisted fragments at REQUEST time, so which relations
+ * are present is not statically known — one of finitely many literals, but not a
+ * single one. So the handler's result type is the widened form: every relation
+ * OPTIONAL, the row's own columns required. `<%= classNames.entity %>Result<<%= classNames.entity %>Include>`
+ * (the fully-included shape) would be wrong here — it claims every relation is
+ * always present, which no single request produces.
+ *
+ * Internal callers keep the exact inferred type, because `TWith` is inferred at
+ * the call site (REL-2 §2.3/§5.2).
+ */
+export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
+  Partial<<%= classNames.entity %>Result<<%= classNames.entity %>Include>>;
+
 @Injectable()
 <%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
       the generated `<Entity>ComposedBase` when two or more stack. Built in
-      prompt-extension.js so both shapes live in one place. */ _%>
+      entity-locals.js so both shapes live in one place. REL-2 (#587) threads
+      `Relations` as the spine's THIRD type argument there, so a composed base
+      carries the manifest exactly as a bare spine does. */ _%>
 export class <%= classNames.repository %> extends <%- repositoryExtendsClause %> {
   readonly table = <%= entityNamePlural %>;
 <% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { -%>
@@ -162,7 +199,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 
 <%_ if (eavEnabled) { -%>
   constructor(
-    @Inject(DRIZZLE) db: DrizzleClient,
+    @Inject(DRIZZLE) db: DrizzleClient<Relations>,
     private readonly fieldValues: FieldValueService,
   ) {
     super(db);
@@ -181,10 +218,86 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     await this.fieldValues.upsertFieldsTransactional('<%= entityName %>', entityId, userId, fields, db);
   }
 <%_ } else { -%>
-  constructor(@Inject(DRIZZLE) db: DrizzleClient) {
+  constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
   }
 <%_ } -%>
+
+<% if (includes) { -%>
+  // ═══════════════════════════════════════════════════════════════════════
+  // Typed `with` includes (REL-2, #587)
+  //
+  // The include surface is emitted HERE, not on the base class: with
+  // `TRelations` and the relation key as naked type parameters,
+  // `DBQueryConfig<…>['with']` is a TS2536, so a generic
+  // `BaseRepository.findById<TWith>` cannot be written (REL-2 §2.1). Where both
+  // are concrete — this subclass — everything resolves.
+  //
+  // Two execution paths, one scope. Without a `with` the call goes through
+  // `baseQuery()`, whose single `WHERE` carries the guards. With a `with` it
+  // goes through RQBv2 (`db.query.<%= entityNamePlural %>`), because `baseQuery()`
+  // cannot carry an include — and the root filter injects the SAME predicate via
+  // `rootScopeRaw()`. Every HOP is scoped by the relations manifest itself, so a
+  // caller cannot reach an unscoped level (REL-2 §1.4/§3).
+  //
+  // Depth is uncapped here: charter I4 asks for ONE statement, not a shallow
+  // one. The depth cap is an HTTP concern (`api.includes.max_depth`).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override async findById<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+    id: string,
+    opts?: { with?: TWith },
+  ): Promise<<%= classNames.entity %>Result<TWith> | null> {
+    if (opts?.with === undefined) {
+      const rows = await this.baseQuery(eq(this.table['id'], id)).limit(1);
+      return (rows[0] as <%= classNames.entity %>Result<TWith>) ?? null;
+    }
+    const row = await this.db.query.<%= entityNamePlural %>.findFirst({
+      where: {
+        AND: [
+          { id: { eq: id } },
+          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+        ],
+      },
+      with: opts.with,
+    });
+    return (row as <%= classNames.entity %>Result<TWith> | undefined) ?? null;
+  }
+
+  override async list<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+    query?: ListOptions & { with?: TWith },
+  ): Promise<Array<<%= classNames.entity %>Result<TWith>>> {
+    if (query?.with === undefined) {
+      return (await super.list(query)) as Array<<%= classNames.entity %>Result<TWith>>;
+    }
+    if (query.orderBy !== undefined) {
+      // A pre-rendered `orderBy` names the table by its REAL name, and RQBv2
+      // aliases the root — so the fragment would reference a table that is not in
+      // scope and Postgres would reject the statement. Fail loud rather than issue
+      // it; pass `sort` instead, which both paths can render (REL-2 §2.4).
+      throw new Error(
+        '<%= classNames.repository %>.list: `orderBy` cannot be combined with `with` — ' +
+          'pass `sort: [{ column, direction }]` instead.',
+      );
+    }
+    const callerWhere = query.where;
+    const callerSort = query.sort;
+    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
+      where: {
+        AND: [
+          ...(callerWhere === undefined ? [] : [{ RAW: callerWhere }]),
+          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+        ],
+      },
+      with: query.with,
+      // The ALIASED table RQBv2 hands the callback, not this repo's own handle.
+      ...(callerSort === undefined ? {} : { orderBy: (t) => this.orderByOn(t, callerSort) ?? [] }),
+      ...(query.limit === undefined ? {} : { limit: query.limit }),
+      ...(query.offset === undefined ? {} : { offset: query.offset }),
+    });
+    return rows as Array<<%= classNames.entity %>Result<TWith>>;
+  }
+<% } -%>
 <% if (hasDeclarativeQueries) { -%>
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -197,6 +310,11 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
 const _skipClpDq = _fkMethodNames.has(q.methodName) && !q.isUnique && !q.hasVia && !q.hasSelect;
 _%>
 <%_ if (!_skipClpDq) { _%>
+<%_ /* REL-2: a plain by-column finder takes a typed `with` (spec §4). A `select:`
+      projection returns picked fields and a `via:` finder joins a junction with
+      its own query, so neither carries an include — §5.4: the include surface
+      exposes SHAPES, not queries. */ _%>
+<%_ if (q.hasVia || q.hasSelect || !includes) { _%>
 
   async <%= q.methodName %>(<%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>): Promise<<%- q.returnType %>> {
 <% if (q.isUnique) { -%>
@@ -208,6 +326,47 @@ _%>
     return rows as <%= classNames.entity %>[];
 <% } -%>
   }
+<%_ } else { _%>
+
+  async <%= q.methodName %><TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+    <%- q.params.map(p => `${p.camelName}: ${p.tsType}`).join(', ') %>,
+    opts?: { with?: TWith },
+  ): Promise<<%- q.isUnique ? `${classNames.entity}Result<TWith> | null` : `Array<${classNames.entity}Result<TWith>>` %>> {
+    if (opts?.with === undefined) {
+<% if (q.isUnique) { -%>
+      const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)
+        .limit(1);
+      return (rows[0] as <%= classNames.entity %>Result<TWith>) ?? null;
+<% } else { -%>
+      const rows = await this.baseQuery(<%- q.hasMultipleParams ? 'and(' : '' %><%- q.params.map(p => `eq(this.table['${p.camelName}'], ${p.camelName})`).join(', ') %><%- q.hasMultipleParams ? ')' : '' %>)<%- q.hasOrder ? `.orderBy(${q.orderDirection}(this.table['${q.orderBy}']))` : '' %>;
+      return rows as Array<<%= classNames.entity %>Result<TWith>>;
+<% } -%>
+    }
+<% if (q.isUnique) { -%>
+    const row = await this.db.query.<%= entityNamePlural %>.findFirst({
+      where: {
+        AND: [
+<%- q.params.map(p => `          { ${p.camelName}: { eq: ${p.camelName} } },`).join('\n') %>
+          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+        ],
+      },
+      with: opts.with,
+    });
+    return (row as <%= classNames.entity %>Result<TWith> | undefined) ?? null;
+<% } else { -%>
+    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
+      where: {
+        AND: [
+<%- q.params.map(p => `          { ${p.camelName}: { eq: ${p.camelName} } },`).join('\n') %>
+          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+        ],
+      },
+      with: opts.with,
+<%- q.hasOrder ? `      orderBy: { ${q.orderBy}: '${q.orderDirection}' },\n` : '' %>    });
+    return rows as Array<<%= classNames.entity %>Result<TWith>>;
+<% } -%>
+  }
+<%_ } _%>
 <%_ } _%>
 <%_ }) _%>
 <% } else { -%>
@@ -225,11 +384,35 @@ _%>
   // ═══════════════════════════════════════════════════════════════════════
 <%_ _emittedFkMethods.forEach(rel => { _%>
 
+<%_ if (!includes) { _%>
   async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %>(id: string, opts?: { cursor?: string; limit?: number }): Promise<<%= classNames.entity %>[]> {
     let q = this.baseQuery(eq(this.table['<%= rel.camelField %>'], id));
     if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as <%= classNames.entity %>[];
   }
+<%_ } else { _%>
+  async findBy<%= rel.camelField.charAt(0).toUpperCase() + rel.camelField.slice(1) %><TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+    id: string,
+    opts?: { cursor?: string; limit?: number; with?: TWith },
+  ): Promise<Array<<%= classNames.entity %>Result<TWith>>> {
+    if (opts?.with === undefined) {
+      let q = this.baseQuery(eq(this.table['<%= rel.camelField %>'], id));
+      if (opts?.limit) q = q.limit(opts.limit) as typeof q;
+      return (await q) as Array<<%= classNames.entity %>Result<TWith>>;
+    }
+    const rows = await this.db.query.<%= entityNamePlural %>.findMany({
+      where: {
+        AND: [
+          { <%= rel.camelField %>: { eq: id } },
+          { RAW: () => this.rootScopeRaw({ softDelete: <%= !!hasSoftDelete %> }) },
+        ],
+      },
+      with: opts.with,
+      ...(opts.limit === undefined ? {} : { limit: opts.limit }),
+    });
+    return rows as Array<<%= classNames.entity %>Result<TWith>>;
+  }
+<%_ } _%>
 <%_ }) _%>
 <%_ } _%>
 <% if (eavValueTable) { -%>

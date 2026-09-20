@@ -14,9 +14,11 @@
  * Role-less junctions conflict on `(left, right)`.
  */
 import { and, eq } from 'drizzle-orm';
+import type { AnyRelations } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { DrizzleTx } from '../types/drizzle';
-import { BaseRepository, column } from './base-repository';
+import { BaseRepository } from './base-repository';
+import { column } from './table-columns';
 
 export interface JunctionIntegrationConfig {
   /** Left endpoint: local FK column (camel) + strict parent table. */
@@ -30,9 +32,10 @@ export interface JunctionIntegrationConfig {
 export abstract class JunctionIntegrationRepository<
   TEntity,
   TTable extends PgTable,
+  TRelations extends AnyRelations,
   TIntegrationWrite,
   TIntegrationProjection,
-> extends BaseRepository<TEntity, TTable> {
+> extends BaseRepository<TEntity, TTable, TRelations> {
   /**
    * Declarative junction integration surface. Concrete repos declare this — the
    * template emits it with live parent-table handles.

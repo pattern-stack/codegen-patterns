@@ -14,18 +14,35 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { buildRelationsManifestFromContext, RELATIONS_MANIFEST_FILE } from './emit-manifest';
+import { buildRelationGraph } from './build-graph';
+import { buildIncludeAllowlists } from './build-includes';
+import { API_INCLUDES_FILE, buildApiIncludes } from './emit-includes';
+import { buildRelationsManifest, RELATIONS_MANIFEST_FILE } from './emit-manifest';
+import { DEFAULT_SCOPE_FILTERS_IMPORT } from './emit-manifest';
 import type { RelationsEmitContext } from './types';
 
 export type { ColumnRef, RelationEdge, RelationsEmitContext } from './types';
 export { camelCase, RelationKeyCollisionError, sortEntities } from './types';
-export { buildRelationGraph, junctionIdentity } from './build-graph';
+export { buildRelationGraph, entityScope, junctionIdentity } from './build-graph';
 export type { RelationGraph } from './build-graph';
+export {
+	buildIncludeAllowlists,
+	IncludeAllowlistError,
+	readRouteKeys,
+} from './build-includes';
+export type {
+	CompiledEntityIncludes,
+	CompiledIncludePath,
+	CompiledIncludeRoute,
+} from './build-includes';
+export { API_INCLUDES_FILE, buildApiIncludes, includesConstName } from './emit-includes';
 export {
 	buildRelationsManifest,
 	buildRelationsManifestFromContext,
+	DEFAULT_SCOPE_FILTERS_IMPORT,
 	emptyRelationsManifest,
 	RELATIONS_MANIFEST_FILE,
+	scopeConstName,
 } from './emit-manifest';
 export {
 	loadEntityDefinitions,
@@ -42,9 +59,13 @@ export interface EmitRelationsResult {
 	file: string;
 	/** Planned content — always populated, useful for dry-run reports. */
 	content: string;
+	/** Absolute path of the written HTTP include allowlist (REL-2 §5). */
+	includesFile: string;
+	/** Planned allowlist content. Always populated; whole-set, like the manifest. */
+	includesContent: string;
 	/** Non-fatal problems (unresolvable targets / junction endpoints, skipped transitive relationships). */
 	warnings: string[];
-	/** True when the manifest was actually written to disk. */
+	/** True when both files were actually written to disk. */
 	written: boolean;
 }
 
@@ -61,12 +82,40 @@ export function emitRelationsManifest(
 	outDir: string,
 	opts: { dryRun?: boolean } = {},
 ): EmitRelationsResult {
-	const { content, warnings } = buildRelationsManifestFromContext(ctx);
-	const file = path.resolve(outDir, RELATIONS_MANIFEST_FILE);
+	// One graph, two files. The allowlist resolves dot paths against the SAME
+	// edges the manifest emits, so an allowlist can never name a relation the
+	// manifest does not carry (charter I1 — one derivation, not two).
+	const graph = buildRelationGraph(ctx);
+	const content = buildRelationsManifest(
+		graph,
+		'./schema',
+		ctx.scopeFiltersImport ?? DEFAULT_SCOPE_FILTERS_IMPORT,
+	);
+	const includesContent = buildApiIncludes(buildIncludeAllowlists(ctx, graph));
 
-	if (opts.dryRun) return { file, content, warnings, written: false };
+	const file = path.resolve(outDir, RELATIONS_MANIFEST_FILE);
+	const includesFile = path.resolve(outDir, API_INCLUDES_FILE);
+
+	if (opts.dryRun) {
+		return {
+			file,
+			content,
+			includesFile,
+			includesContent,
+			warnings: graph.warnings,
+			written: false,
+		};
+	}
 
 	fs.mkdirSync(outDir, { recursive: true });
 	fs.writeFileSync(file, content);
-	return { file, content, warnings, written: true };
+	fs.writeFileSync(includesFile, includesContent);
+	return {
+		file,
+		content,
+		includesFile,
+		includesContent,
+		warnings: graph.warnings,
+		written: true,
+	};
 }

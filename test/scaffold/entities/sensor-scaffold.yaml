@@ -1,0 +1,32 @@
+# Sensor — REL-2 (#587) leak-test fixture, depth 3 of the scoped graph, reached
+# THROUGH the `site × sensor` junction. It declares no `relationships:` of its
+# own; the junction contributes its edges.
+entity:
+  name: sensor
+  plural: sensors
+  table: sensors
+  pattern: Base
+
+tenant_scoped: true
+
+fields:
+  label:
+    type: string
+    required: true
+    max_length: 255
+
+  # `tenant_id` is NOT declared here — TEN-1 (#585) emits it from
+  # `tenant_scoped: true`, with its index. `user_id` IS, because the
+  # `user_tracking` behavior emits `created_by`/`updated_by` while the
+  # repository's user-axis predicate filters `user_id` — a pre-existing mismatch
+  # (#712), which the scaffold's hand-written family test tables work around the
+  # same way.
+  user_id:
+    type: uuid
+    required: false
+    index: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+  - user_tracking

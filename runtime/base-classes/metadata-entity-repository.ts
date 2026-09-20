@@ -7,6 +7,7 @@
  * Concrete repos extend this and declare their table + behaviors.
  */
 import { eq, and, desc } from 'drizzle-orm';
+import type { AnyRelations } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import { BaseRepository } from './base-repository';
 import type { DrizzleTx } from '../types/drizzle';
@@ -14,7 +15,8 @@ import type { DrizzleTx } from '../types/drizzle';
 export abstract class MetadataEntityRepository<
   TEntity,
   TTable extends PgTable,
-> extends BaseRepository<TEntity, TTable> {
+  TRelations extends AnyRelations,
+> extends BaseRepository<TEntity, TTable, TRelations> {
   /**
    * Bulk upsert with a caller-specified conflict target.
    * Uses Drizzle's onConflictDoUpdate to merge records.

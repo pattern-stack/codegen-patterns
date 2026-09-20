@@ -25,6 +25,24 @@ fields:
 behaviors:
   - timestamps
 
+# REL-2 (#587): the HTTP include allowlist. `account` is deliberately the
+# UNSCOPED entity that carries it: an allowlisted include over a tenant-scoped
+# graph would need an ambient requester context, and this harness's Nest app
+# installs no auth boundary (the scoped graph's leak tests drive `db.query`
+# directly, where a context is easy to establish). `opportunities` is a REAL
+# relation that is deliberately NOT named here — that is what makes the 400 test
+# meaningful rather than a typo check.
+api:
+  includes:
+    find_by_id:
+      max_depth: 1
+      paths:
+        - contacts
+    list:
+      max_depth: 1
+      paths:
+        - contacts
+
 relationships:
   parent_account:
     type: belongs_to

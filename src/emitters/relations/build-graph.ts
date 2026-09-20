@@ -18,6 +18,7 @@ import {
 	type EntityRegistryEntry,
 	type RelationEdge,
 	type RelationsEmitContext,
+	type ScopeConfigLiteral,
 } from './types';
 
 export interface RelationGraph {
@@ -47,6 +48,42 @@ export function junctionIdentity(def: JunctionDefinition): {
 /** `account_id` → `accountId`; the junction FK column property for an endpoint. */
 function junctionFkColumn(entityName: string): string {
 	return camelCase(`${entityName}_id`);
+}
+
+/** The behavior names an entity declares, in either YAML form. */
+function behaviorNames(def: EntityDefinition): Set<string> {
+	return new Set(
+		def.behaviors.map((b) => (typeof b === 'string' ? b : b.name)),
+	);
+}
+
+/**
+ * One entity's declared scope posture (REL-2 §3.1).
+ *
+ * Every field is read from the entity's own YAML — the `tenant_scoped:` flag and
+ * the `soft_delete` / `user_tracking` behaviors. Nothing is recovered by looking
+ * at the emitted table's columns: that would be re-deriving what the declaration
+ * already says, which is the I1 violation this project exists to remove (and the
+ * exact thing TEN-1 §8 asks REL-2 not to do).
+ *
+ * `enforcement` follows TEN-1 §3.4: a tenant-scoped entity is `strict`, so a
+ * traversal into it with no ambient boundary throws at query BUILD rather than
+ * reading the union of every tenant. A `user_tracking`-only entity stays
+ * `lenient`, which is the posture it has today.
+ *
+ * Returns `null` when nothing is declared, so the manifest for an unscoped graph
+ * is byte-identical to REL-1's.
+ */
+export function entityScope(def: EntityDefinition): ScopeConfigLiteral | null {
+	const names = behaviorNames(def);
+	const cfg: ScopeConfigLiteral = {
+		tenantScoped: def.tenant_scoped === true,
+		softDelete: names.has('soft_delete'),
+		userTracking: names.has('user_tracking'),
+		enforcement: def.tenant_scoped === true ? 'strict' : 'lenient',
+	};
+	if (!cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking) return null;
+	return cfg;
 }
 
 /**
@@ -124,6 +161,14 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 		ctx.entities.map((e) => [e.name, e]),
 	);
 
+	// Every edge carries its TARGET's declared scope, because `relationToSQL`
+	// applies a relation's `where` to the target table (REL-2 §1.6). Resolved once
+	// here, from the target's own YAML — the same registry-first rule naming uses.
+	const scopeOf = (entityName: string): ScopeConfigLiteral | null => {
+		const def = ctx.definitions.get(entityName);
+		return def ? entityScope(def) : null;
+	};
+
 	// ── declared `relationships:` ────────────────────────────────────────────
 	for (const entity of ctx.entities) {
 		const def = ctx.definitions.get(entity.name);
@@ -167,6 +212,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 					from: { table: entity.plural, column: fkColumn },
 					to: { table: target.plural, column: 'id' },
 					optional: belongsToOptional(def, rel.foreign_key, rel.nullable),
+					targetScope: scopeOf(rel.target),
 					origin,
 				});
 				continue;
@@ -183,6 +229,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 				to: { table: target.plural, column: fkColumn },
 				// An inverse `has_one` row may simply not exist.
 				...(rel.type === 'has_one' ? { optional: true } : {}),
+				targetScope: scopeOf(rel.target),
 				origin,
 			});
 		}
@@ -226,6 +273,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: right.plural,
 			from: { table: left.plural, column: 'id', through: through(leftFk) },
 			to: { table: right.plural, column: 'id', through: through(rightFk) },
+			targetScope: scopeOf(rightName),
 			origin,
 		});
 		push(byTable, {
@@ -235,6 +283,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: left.plural,
 			from: { table: right.plural, column: 'id', through: through(rightFk) },
 			to: { table: left.plural, column: 'id', through: through(leftFk) },
+			targetScope: scopeOf(leftName),
 			origin,
 		});
 
@@ -247,6 +296,12 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: tableVar,
 			from: { table: left.plural, column: 'id' },
 			to: { table: tableVar, column: leftFk },
+			// A junction table declares no scope of its own — `JunctionDefinitionSchema`
+			// is `.strict()` and has no scoping flag, so it has no `tenant_id` and no
+			// `deleted_at`. REL-2 §1.5 measures what that means (a foreign junction row
+			// can fabricate an EDGE between two of the reader's rows, never leak a row)
+			// and pins it with a characterisation test.
+			targetScope: null,
 			origin,
 		});
 		push(byTable, {
@@ -256,6 +311,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			targetTable: tableVar,
 			from: { table: right.plural, column: 'id' },
 			to: { table: tableVar, column: rightFk },
+			targetScope: null,
 			origin,
 		});
 
@@ -268,6 +324,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			from: { table: tableVar, column: leftFk },
 			to: { table: left.plural, column: 'id' },
 			optional: false,
+			targetScope: scopeOf(leftName),
 			origin,
 		});
 		push(byTable, {
@@ -278,6 +335,7 @@ export function buildRelationGraph(ctx: RelationsEmitContext): RelationGraph {
 			from: { table: tableVar, column: rightFk },
 			to: { table: right.plural, column: 'id' },
 			optional: false,
+			targetScope: scopeOf(rightName),
 			origin,
 		});
 	}

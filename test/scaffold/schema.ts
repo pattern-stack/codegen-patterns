@@ -20,6 +20,13 @@ export * from '@gen/modules/contacts/contact.entity';
 export * from '@gen/modules/accounts/account.entity';
 export * from '@gen/modules/opportunities/opportunity.entity';
 export * from '@gen/modules/opportunity-contacts/opportunity-contact.entity';
+// REL-2 (#587): the SCOPED graph the leak tests traverse (tenant + soft-delete +
+// user-tracking on every entity, a junction at depth 3). NAME-2 (#695) emits
+// kebab module paths; the TABLES stay snake (`site_sensors`).
+export * from '@gen/modules/regions/region.entity';
+export * from '@gen/modules/sites/site.entity';
+export * from '@gen/modules/sensors/sensor.entity';
+export * from '@gen/modules/site-sensors/site-sensor.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

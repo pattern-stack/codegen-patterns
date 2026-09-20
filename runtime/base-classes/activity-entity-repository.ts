@@ -14,6 +14,7 @@
  * entity's `config: { Activity: {...} }` block. See ACTIVITY-SUBJECT-1.
  */
 import { eq, between, desc } from 'drizzle-orm';
+import type { AnyRelations } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import { BaseRepository } from './base-repository';
 
@@ -37,7 +38,8 @@ const toCamel = (snake: string): string =>
 export abstract class ActivityEntityRepository<
   TEntity,
   TTable extends PgTable,
-> extends BaseRepository<TEntity, TTable> {
+  TRelations extends AnyRelations,
+> extends BaseRepository<TEntity, TTable, TRelations> {
   /**
    * Per-entity Activity config. The template emits this from `config:
    * { Activity: {...} }`; entities that only use date-range / user scoping omit

@@ -23,6 +23,7 @@ import {
 	loadEntityFromYaml,
 	loadJunctionFromYaml,
 } from '../../utils/yaml-loader';
+import { runtimeImport, type RuntimeMode } from '../../cli/shared/runtime-import';
 import { junctionIdentity } from './build-graph';
 import { sortEntities, type RelationsEmitContext } from './types';
 
@@ -43,6 +44,8 @@ export interface RelationsConfigInput {
 		generated?: string;
 		[key: string]: unknown;
 	};
+	/** ADR-037 runtime mode — decides the manifest's `hopScope` import specifier. */
+	runtime?: unknown;
 	[key: string]: unknown;
 }
 
@@ -98,12 +101,14 @@ export function loadRelationsEmitContext(
 	const outDir = path.resolve(cwd, config?.paths?.generated ?? GENERATED_DIRNAME);
 
 	const { registry } = loadEntityRegistry(entitiesDir);
+	const mode: RuntimeMode = config?.runtime === 'vendored' ? 'vendored' : 'package';
 
 	return {
 		ctx: {
 			entities: sortEntities([...registry.values()]),
 			definitions: loadEntityDefinitions(entitiesDir),
 			junctions: loadJunctionDefinitions(junctionsDir),
+			scopeFiltersImport: runtimeImport(mode, 'base-classes/scope-filters'),
 		},
 		outDir,
 	};

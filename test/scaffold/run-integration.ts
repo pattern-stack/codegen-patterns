@@ -112,6 +112,9 @@ async function run() {
         // in the teardown below alongside `modules/` and `generated/`.
         await $`mkdir -p ${REPO_ROOT}/junctions`.quiet();
         await $`cp ${SCAFFOLD_DIR}/junctions/opportunity_contact.yaml ${REPO_ROOT}/junctions/`.quiet();
+        // REL-2 (#587): the scoped graph's junction — the depth-3 hop the leak
+        // tests traverse.
+        await $`cp ${SCAFFOLD_DIR}/junctions/site_sensor.yaml ${REPO_ROOT}/junctions/`.quiet();
         await $`cd ${REPO_ROOT} && bun src/cli/index.ts junction new --all --force`.quiet();
         console.log('    Codegen complete');
 

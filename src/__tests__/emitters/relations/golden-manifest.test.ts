@@ -106,11 +106,71 @@ describe('relations golden manifest', () => {
 	});
 
 	it('emits the junction many-to-many as a .through() hop on both parents', () => {
+		// `contact` declares soft_delete, so the hop INTO contacts carries the REL-2
+		// per-hop predicate; `opportunity` declares no scope, so the reverse hop does
+		// not. Both are `.through()` the junction either way.
 		expect(emitted).toContain(
-			'contacts: r.many.contacts({ from: r.opportunities.id.through(r.opportunityContacts.opportunityId), to: r.contacts.id.through(r.opportunityContacts.contactId) }),',
+			"contacts: r.many.contacts({ from: r.opportunities.id.through(r.opportunityContacts.opportunityId), to: r.contacts.id.through(r.opportunityContacts.contactId), where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'opportunities.contacts') } }),",
 		);
 		expect(emitted).toContain(
 			'opportunities: r.many.opportunities({ from: r.contacts.id.through(r.opportunityContacts.contactId), to: r.opportunities.id.through(r.opportunityContacts.opportunityId) }),',
+		);
+	});
+
+	// ── REL-2 (#587): the per-hop scope predicate ───────────────────────────
+	it('imports hopScope and emits one scope constant per SCOPED table', () => {
+		expect(emitted).toContain(
+			"import { hopScope, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';",
+		);
+		// account: tenant_scoped + soft_delete + user_tracking ⇒ strict.
+		expect(emitted).toContain(
+			"const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, softDelete: true, userTracking: true, enforcement: 'strict' };",
+		);
+		// contact: soft_delete only ⇒ lenient, one conjunct.
+		expect(emitted).toContain(
+			"const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };",
+		);
+		// note / opportunity / person / the junction declare nothing, so no constant.
+		expect(emitted).not.toContain('NOTES_SCOPE');
+		expect(emitted).not.toContain('OPPORTUNITIES_SCOPE');
+		expect(emitted).not.toContain('PERSONS_SCOPE');
+		expect(emitted).not.toContain('OPPORTUNITY_CONTACTS_SCOPE');
+	});
+
+	it('every relation whose target is scoped carries a where — and no other does', () => {
+		const relationLines = emitted
+			.split('\n')
+			.filter((l) => /^\t\t\w+: r\.(one|many)\./.test(l));
+		expect(relationLines.length).toBeGreaterThan(0);
+		for (const line of relationLines) {
+			// The target table is the one named right after `r.one.` / `r.many.`.
+			const target = /r\.(?:one|many)\.(\w+)\(/.exec(line)?.[1];
+			const scoped = target === 'accounts' || target === 'contacts';
+			if (scoped) {
+				expect(line, `scoped hop without a predicate: ${line.trim()}`).toContain(
+					'where: { RAW: (t) => hopScope(t,',
+				);
+			} else {
+				expect(line, `unscoped hop with a predicate: ${line.trim()}`).not.toContain(
+					'hopScope(',
+				);
+			}
+		}
+	});
+
+	it('names the relation in the hop predicate so a throw points at the declaration', () => {
+		expect(emitted).toContain("hopScope(t, ACCOUNTS_SCOPE, 'contacts.account')");
+		expect(emitted).toContain("hopScope(t, CONTACTS_SCOPE, 'persons.contact')");
+	});
+
+	it('exports the typed-include helpers the generated repositories hang on', () => {
+		expect(emitted).toContain('export type Relations = typeof relations;');
+		expect(emitted).toContain('export type IncludeOf<TTable extends keyof Relations>');
+		expect(emitted).toContain('export type ResultOf<');
+		// `IncludeOf` reaches `with` through a CONDITIONAL indexed access, so a
+		// relation-less table's repository still compiles (REL-2 §2.5).
+		expect(emitted).toContain(
+			"'with' extends keyof DBQueryConfig<'one', Relations, Relations[TTable]>",
 		);
 	});
 });

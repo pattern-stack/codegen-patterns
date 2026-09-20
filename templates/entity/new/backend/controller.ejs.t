@@ -4,7 +4,7 @@ skip_if: "<%= apiEnabled === false %>"
 force: true
 ---
 <%- generatedBanner %>
-import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
 import type { Page } from '<%= paginationImport %>';
@@ -26,6 +26,18 @@ import { <%= classNames.updateSchema %> } from './dto/update-<%= entityFileStem 
 import type { <%= classNames.updateDto %> } from './dto/update-<%= entityFileStem %>.dto';
 <% } -%>
 import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+// REL-2 (#587): the HTTP include allowlist (charter I6). A client sends dot
+// PATHS; this controller looks each one up in a compile-time literal map and
+// merges the fragments. It never builds an include tree from client input, and a
+// path the allowlist does not name is a 400.
+import {
+  IncludeNotAllowedError,
+  resolveAllowedInclude,
+} from '<%= includesImport %>';
+import type { <%= classNames.entity %>ApiResult } from './<%= entityFileStem %>.repository';
+<%_ if (includes && apiIncludeRoutes.length > 0) { _%>
+import { <%= apiIncludesConst %> } from '<%= apiIncludesImport %>';
+<%_ } _%>
 
 // OPENAPI-3: decorators reference registered schemas by `$ref` because
 // the DTOs are Zod-derived types (OPENAPI-2 registers them by name at
@@ -49,12 +61,45 @@ export class <%= classNames.controller %> {
 <% } -%>
   ) {}
 
+  /**
+   * Resolve `?include=` against ONE route's allowlist, or reject.
+   *
+   * `allow === undefined` means the route declares no `api.includes` entry, and
+   * that is not "allow everything" — it is "allow nothing". Every entity that
+   * exists today is in exactly that state, which is what makes REL-2 change no
+   * HTTP behaviour until a consumer opts in (charter I6).
+   */
+  private resolveInclude<TFragment>(
+    raw: string | undefined,
+    allow: Readonly<Record<string, TFragment>> | undefined,
+  ): TFragment | undefined {
+    try {
+      return resolveAllowedInclude(raw, allow);
+    } catch (err: unknown) {
+      if (err instanceof IncludeNotAllowedError) {
+        throw new BadRequestException({ code: err.code, path: err.path, message: err.message });
+      }
+      throw err;
+    }
+  }
+
   @ApiOperation({ summary: 'List <%= entityNamePlural %>', operationId: 'list<%= classNames.entity %>s' })
   @ApiQuery({ name: 'page', required: false, type: 'integer', description: '1-based page number (default 1).' })
   @ApiQuery({ name: 'pageSize', required: false, type: 'integer', description: 'Page size (default 50, max 200).' })
   @ApiQuery({ name: 'cursor', required: false, type: 'string', description: 'Opaque keyset cursor (accepted; v1 paginates by offset).' })
   @ApiQuery({ name: 'sort_by', required: false, type: 'string', description: "Sort column (default 'created_at')." })
   @ApiQuery({ name: 'sort_order', required: false, enum: ['asc', 'desc'], description: "Sort direction (default 'desc')." })
+  @ApiQuery({
+    name: 'include',
+    required: false,
+    type: 'string',
+    description:
+<%_ if (apiIncludeRoutes.includes('list')) { _%>
+      'Comma-separated allowlisted include paths (see api.includes.list in the entity YAML). Anything else is a 400.',
+<%_ } else { _%>
+      'No include is exposed on this route (no api.includes.list in the entity YAML), so any value is a 400.',
+<%_ } _%>
+  })
   @ApiResponse({
     status: 200,
     schema: {
@@ -74,8 +119,20 @@ export class <%= classNames.controller %> {
   @Get()
   async getAll(
     @Query(new ZodValidationPipe(<%= classNames.listQuerySchema %>)) query: <%= classNames.listQueryDto %>,
-  ): Promise<Page<<%= classNames.entity %>>> {
+    @Query('include') include?: string,
+  ): Promise<Page<<%= classNames.entity %>ApiResult>> {
+<% if (includes) { -%>
+    return this.listUseCase.execute(
+      query,
+      this.resolveInclude(include, <%- apiIncludeRoutes.includes('list') ? `${apiIncludesConst}.list` : 'undefined' %>),
+    );
+<% } else { -%>
+    // <%= entityName %> has no relations in the generated graph, so there is no
+    // include to expose — but the parameter is still VALIDATED, so `?include=`
+    // is a 400 here exactly as it is on an un-allowlisted route (charter I6).
+    this.resolveInclude(include, undefined);
     return this.listUseCase.execute(query);
+<% } -%>
   }
 <% if (eavEnabled) { %>
   @ApiOperation({
@@ -94,10 +151,32 @@ export class <%= classNames.controller %> {
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiResponse({ status: 404, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiQuery({
+    name: 'include',
+    required: false,
+    type: 'string',
+    description:
+<%_ if (apiIncludeRoutes.includes('find_by_id')) { _%>
+      'Comma-separated allowlisted include paths (see api.includes.find_by_id in the entity YAML). Anything else is a 400.',
+<%_ } else { _%>
+      'No include is exposed on this route (no `api.includes.find_by_id` in the entity YAML), so any value is a 400.',
+<%_ } _%>
+  })
   @Get(':id')
-  async getById(@Param('id', ParseUUIDPipe) id: string): Promise<<%= classNames.entity %>> {
+  async getById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('include') include?: string,
+  ): Promise<<%= classNames.entity %>ApiResult> {
     // Use case throws NotFoundException on null/undefined (D2)
+<% if (includes) { -%>
+    return this.findByIdUseCase.execute(
+      id,
+      this.resolveInclude(include, <%- apiIncludeRoutes.includes('find_by_id') ? `${apiIncludesConst}.find_by_id` : 'undefined' %>),
+    );
+<% } else { -%>
+    this.resolveInclude(include, undefined);
     return this.findByIdUseCase.execute(id);
+<% } -%>
   }
 <% if (eavEnabled) { %>
   @ApiOperation({

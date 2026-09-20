@@ -6,7 +6,11 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
+import {
+	apiEnabled,
+	apiIncludes,
+	EntityDefinitionSchema,
+} from '../../schema/entity-definition.schema';
 import { GenerateConfigSchema } from '../../schema/codegen-config.schema';
 import { loadEntityFromYaml } from '../../utils/yaml-loader';
 import { loadEntities } from '../../parser/load-entities';
@@ -45,6 +49,69 @@ describe('pattern / patterns / config', () => {
 		const off = EntityDefinitionSchema.safeParse({ ...base, api: false });
 		expect(off.success).toBe(true);
 		if (off.success) expect(off.data.api).toBe(false);
+	});
+
+	// REL-2 (#587) §5: `api:` gains an OBJECT form carrying the include allowlist.
+	// The boolean form is unchanged, and one reader (`apiEnabled`) serves both so
+	// `api: false` and `api: { enabled: false }` cannot diverge.
+	it('accepts the object form of `api:` with an include allowlist', () => {
+		const result = EntityDefinitionSchema.safeParse({
+			...base,
+			api: {
+				includes: {
+					find_by_id: { max_depth: 2, paths: ['contacts', 'opportunities.account'] },
+					list: { max_depth: 1, paths: ['contacts'] },
+				},
+			},
+		});
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(apiEnabled(result.data)).toBe(true);
+			expect(Object.keys(apiIncludes(result.data) ?? {})).toEqual(['find_by_id', 'list']);
+			expect(apiIncludes(result.data)?.find_by_id?.max_depth).toBe(2);
+		}
+	});
+
+	it('one reader serves both forms of `api:`', () => {
+		const boolOff = EntityDefinitionSchema.parse({ ...base, api: false });
+		const objOff = EntityDefinitionSchema.parse({ ...base, api: { enabled: false } });
+		const dflt = EntityDefinitionSchema.parse({ ...base });
+		expect(apiEnabled(boolOff)).toBe(false);
+		expect(apiEnabled(objOff)).toBe(false);
+		expect(apiEnabled(dflt)).toBe(true);
+		// A boolean `api:` carries no allowlist — absent means nothing is exposed.
+		expect(apiIncludes(boolOff)).toBeUndefined();
+		expect(apiIncludes(dflt)).toBeUndefined();
+	});
+
+	it('rejects an include route with no cap or no paths — both are required', () => {
+		expect(
+			EntityDefinitionSchema.safeParse({
+				...base,
+				api: { includes: { list: { paths: ['contacts'] } } },
+			}).success,
+		).toBe(false);
+		expect(
+			EntityDefinitionSchema.safeParse({
+				...base,
+				api: { includes: { list: { max_depth: 1, paths: [] } } },
+			}).success,
+		).toBe(false);
+		expect(
+			EntityDefinitionSchema.safeParse({
+				...base,
+				api: { includes: { list: { max_depth: 0, paths: ['contacts'] } } },
+			}).success,
+		).toBe(false);
+	});
+
+	// TEN-1 (#585) §4.1's flag, which REL-2 consumes: it is what tells the relation
+	// graph that a hop into this entity must carry the tenant predicate.
+	it('defaults `tenant_scoped` to false and accepts an explicit true', () => {
+		expect(EntityDefinitionSchema.parse({ ...base }).tenant_scoped).toBe(false);
+		expect(
+			EntityDefinitionSchema.parse({ ...base, tenant_scoped: true }).tenant_scoped,
+		).toBe(true);
 	});
 
 	it('accepts a `patterns:` array for multi-pattern composition', () => {

@@ -1,0 +1,56 @@
+# Region — REL-2 (#587) leak-test fixture, the SCOPED graph's root.
+#
+# The existing account/contact/opportunity set declares no scope, on purpose: it
+# is what proves the other half of REL-2 (`L8` — a graph with no scope anywhere
+# emits no hop predicates and behaves exactly as it did before). This set is its
+# mirror: every entity is tenant-scoped, soft-deletable and user-tracked, so every
+# hop between them carries all three guards.
+#
+# The shape is chosen for ONE reason: it gives a depth-3 path whose last hop is a
+# junction — `region { parentRegion { sites { sensors } } }` — which is the shape
+# epic #580's exit criteria name (leak tests at depth >= 3).
+entity:
+  name: region
+  plural: regions
+  table: regions
+  pattern: Base
+
+tenant_scoped: true
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  # `tenant_id` is NOT declared here — TEN-1 (#585) emits it from
+  # `tenant_scoped: true`, with its index. `user_id` IS, because the
+  # `user_tracking` behavior emits `created_by`/`updated_by` while the
+  # repository's user-axis predicate filters `user_id` — a pre-existing mismatch
+  # (#712), which the scaffold's hand-written family test tables work around the
+  # same way.
+  user_id:
+    type: uuid
+    required: false
+    index: true
+
+  parent_region_id:
+    type: uuid
+    required: false
+    index: true
+    foreign_key: regions.id
+
+behaviors:
+  - timestamps
+  - soft_delete
+  - user_tracking
+
+relationships:
+  parent_region:
+    type: belongs_to
+    target: region
+    foreign_key: parent_region_id
+  sites:
+    type: has_many
+    target: site
+    foreign_key: region_id

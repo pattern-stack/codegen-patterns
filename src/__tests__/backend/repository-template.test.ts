@@ -66,7 +66,7 @@ describe('backend repository template — behaviors config (issue #33)', () => {
     expect(output).toContain('softDelete: true');
     expect(output).toContain('userTracking: false');
     expect(output).toContain(
-      "import type { BehaviorConfig } from '@shared/base-classes/base-repository';",
+      "import type { BehaviorConfig, ListOptions } from '@shared/base-classes/base-repository';",
     );
   });
 
@@ -116,7 +116,7 @@ describe('backend repository template — behaviors config (issue #33)', () => {
     expect(output).toContain('softDelete: false');
     expect(output).toContain('userTracking: true');
     expect(output).toContain(
-      "import type { BehaviorConfig } from '@shared/base-classes/base-repository';",
+      "import type { BehaviorConfig, ListOptions } from '@shared/base-classes/base-repository';",
     );
   });
 
@@ -290,8 +290,10 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     behaviors: [],
   };
 
+  // REL-2 (#587): a finder is now generic over its include (`async findByX<TWith
+  // extends …>(`), so the definition marker is the name followed by `<` or `(`.
   const countMethodDefs = (out: string, method: string): number =>
-    (out.match(new RegExp(`async ${method}\\(`, 'g')) ?? []).length;
+    (out.match(new RegExp(`async ${method}[<(]`, 'g')) ?? []).length;
 
   it('emits findByFieldDefinitionId exactly ONCE when belongs_to + unique query collide', () => {
     const locals = buildBackendLocals(collisionEntity, withEntities());
@@ -305,12 +307,17 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     const output = renderRepository(locals);
 
     // The surviving method is the unique declarative one — single-row return.
+    // REL-2 (#587): it is now generic over its include, and the single-row shape
+    // shows in the return type rather than in the parameter list.
     expect(output).toContain(
-      'async findByFieldDefinitionId(fieldDefinitionId: string): Promise<FieldConfig | null>',
+      'async findByFieldDefinitionId<TWith extends FieldConfigInclude = FieldConfigNoInclude>(\n' +
+        '    fieldDefinitionId: string,\n' +
+        '    opts?: { with?: TWith },\n' +
+        '  ): Promise<FieldConfigResult<TWith> | null>',
     );
     // The FK-traversal array variant must NOT also be emitted.
     expect(output).not.toContain(
-      'async findByFieldDefinitionId(id: string, opts?: { cursor?: string; limit?: number })',
+      'opts?: { cursor?: string; limit?: number; with?: TWith },',
     );
   });
 
@@ -323,9 +330,10 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     };
     const output = renderRepository(buildBackendLocals(nonUnique, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
-    // The FK-traversal (opts) variant is the survivor here.
+    // The FK-traversal (cursor/limit) variant is the survivor here, now carrying
+    // the include as a third option (REL-2 §4).
     expect(output).toContain(
-      'async findByFieldDefinitionId(id: string, opts?: { cursor?: string; limit?: number })',
+      'opts?: { cursor?: string; limit?: number; with?: TWith },',
     );
   });
 
@@ -334,7 +342,7 @@ describe('backend repository template — belongs_to + explicit FK query collisi
     const output = renderRepository(buildBackendLocals(noQueries, withEntities()));
     expect(countMethodDefs(output, 'findByFieldDefinitionId')).toBe(1);
     expect(output).toContain(
-      'async findByFieldDefinitionId(id: string, opts?: { cursor?: string; limit?: number })',
+      'opts?: { cursor?: string; limit?: number; with?: TWith },',
     );
   });
 });

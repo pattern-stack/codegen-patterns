@@ -483,6 +483,7 @@ export class EntityNewCommand extends Command {
 					},
 					relations: {
 						file: relationsPlan?.file ?? null,
+						apiIncludesFile: relationsPlan?.includesFile ?? null,
 						warnings: relationsPlan?.warnings ?? [],
 						error: relationsError,
 					},
@@ -556,6 +557,7 @@ export class EntityNewCommand extends Command {
 				}
 				if (relationsPlan) {
 					printInfo(`relations manifest: ${relationsPlan.file}`);
+					printInfo(`api include allowlist: ${relationsPlan.includesFile}`);
 					for (const warning of relationsPlan.warnings) {
 						printWarning(`relations: ${warning}`);
 					}

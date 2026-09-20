@@ -1417,7 +1417,37 @@ export function buildBackendLocals(definition, baseLocals) {
   // ADR-043 §6: `api: false` suppresses the HTTP surface (controller + search
   // controller + their module wiring) while keeping the entity/repository/
   // service/use-cases in-process reachable. Defaults to true.
-  const apiEnabled = definition.api !== false;
+  // ADR-043 §6 + REL-2 §5: `api:` is either a boolean or a block. One reader for
+  // both forms, so `api: false` and `api: { enabled: false }` cannot diverge.
+  const apiBlock = definition.api;
+  const apiIsBlock = typeof apiBlock === 'object' && apiBlock !== null;
+  const apiEnabled = apiBlock === false
+    ? false
+    : apiIsBlock
+      ? apiBlock.enabled !== false
+      : true;
+  // Which read routes this entity exposes an include allowlist on. Read from
+  // THIS entity's YAML only — resolving the paths needs the whole relation graph,
+  // which is the TS emitter's job (`src/emitters/relations/build-includes.ts`).
+  const apiIncludeRoutes = apiIsBlock && apiBlock.includes
+    ? Object.keys(apiBlock.includes)
+    : [];
+
+  // REL-2 (#587): does this entity's table carry at least one relation in the
+  // generated manifest? Only then can its repository name a `with` at all —
+  // `DBQueryConfig` has no `with` slot for a relation-less table, so mentioning
+  // one is a compile error in the consumer project (measured; see REL-2 §2.5).
+  //
+  // Answered from THIS entity's own `relationships:` block, minus transitive
+  // ones, which REL-1 emits no edge for (#614). It deliberately does NOT try to
+  // re-derive the graph: a junction-only entity (edges contributed by a junction
+  // YAML) gets no typed include from this pipeline, which loses a feature rather
+  // than breaking a build. #679's junction/relationship convergence is where that
+  // is decided, and this PR does not prejudge it.
+  const includableRelations = Object.entries(relationships || {}).filter(
+    ([, rel]) => !rel.through,
+  );
+  const includes = includableRelations.length > 0;
 
   // The module tree's root: the resolved `paths.modules_dir` (PATH-1, #645) —
   // prompt.js threads BASE_PATHS.modulesDir here. Callers that build locals by
@@ -1449,6 +1479,26 @@ export function buildBackendLocals(definition, baseLocals) {
   // below. The module-folder base used by every outputPaths entry:
   const entityContext = entity.context || null;
   const moduleDir = ownNaming.moduleDir;
+
+  // REL-2 (#587): import specifiers for the two whole-set generated files the
+  // emitted repository and controller depend on — the relation manifest and the
+  // HTTP include allowlist. Both are relative to this entity's module folder
+  // (`<modules>/[<context>/]<plural>/`), so a `context:`-tagged entity gets one
+  // more `../` without anything else changing.
+  //
+  // The generated directory comes from `paths.generated` via prompt.js, the same
+  // value the emitters write into. A hard-coded `src/generated` here would break
+  // every project that moves it (#612 is the equivalent bug in the init scaffold).
+  const generatedDirRel = baseLocals.generatedDir || 'src/generated';
+  const relativeFromModule = (target) => {
+    const spec = path.posix.relative(
+      path.posix.normalize(moduleDir),
+      path.posix.normalize(target),
+    );
+    return spec.startsWith('.') ? spec : `./${spec}`;
+  };
+  const relationsImport = relativeFromModule(`${generatedDirRel}/relations`);
+  const apiIncludesImport = relativeFromModule(`${generatedDirRel}/api-includes`);
 
   // Generation toggles — `generate.writes` defaults to true so consumers who
   // regenerate pick up create/update/delete use cases without YAML changes.
@@ -2023,14 +2073,18 @@ export function buildBackendLocals(definition, baseLocals) {
   // The spine expression is built here rather than in the template because the
   // integrated form carries four type arguments over five lines; keeping both
   // forms in one place is what makes "no capability ⇒ no diff" checkable.
+  // REL-2 (#587): `Relations` is the THIRD type argument of every spine base.
+  // Threading it here rather than in the template is what makes a composed base
+  // (ADR-041 §6) carry the relation manifest exactly as a bare spine does.
   const spineTypeArgs = integrationSurface !== null
     ? [
         classNames.entity,
         `typeof ${entityNamePlural}`,
+        'Relations',
         `${classNames.entity}IntegrationWrite`,
         `${classNames.entity}IntegrationProjection`,
       ]
-    : [classNames.entity, `typeof ${entityNamePlural}`];
+    : [classNames.entity, `typeof ${entityNamePlural}`, 'Relations'];
   // The integrated spine's four arguments have always been emitted one per
   // line; the two-argument form has always been inline. Both are reproduced
   // byte-for-byte so an entity with no capability sees no diff.
@@ -2215,6 +2269,19 @@ export function buildBackendLocals(definition, baseLocals) {
     // #403: bounded-context segment (null when untagged). Drives the
     // module-folder nesting reflected in outputPaths above.
     context: entityContext,
+
+    // REL-2 (#587): the two whole-set generated files the emitted repository and
+    // controller import, relative to this entity's module folder.
+    relationsImport,
+    apiIncludesImport,
+    // The read routes with an allowlist, and the name of the emitted map. The
+    // name is derived exactly as `emit-includes.ts#includesConstName` derives it;
+    // a unit test pins the two together.
+    apiIncludeRoutes,
+    includes,
+    apiIncludesConst: `${entityNamePlural
+      .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+      .toUpperCase()}_API_INCLUDES`,
 
     // Output paths
     outputPaths: outputPaths,

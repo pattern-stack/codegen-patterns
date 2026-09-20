@@ -8,6 +8,14 @@ import { WithAnalytics } from '<%= withAnalyticsImport %>';
 import { EVENT_BUS } from '<%= drizzleTokenImport %>';
 import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityFileStem %>.repository';
+<% if (includes) { -%>
+import type {
+  <%= classNames.entity %>Include,
+  <%= classNames.entity %>NoInclude,
+  <%= classNames.entity %>Result,
+} from './<%= entityFileStem %>.repository';
+import type { ListOptions } from '<%= baseRepositoryImport %>';
+<% } -%>
 import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 <% if (eavEnabled) { -%>
 import { FieldValueService } from '<%= eavFieldValueImportDir %>/<%= eavFieldValueStem %>.service';
@@ -65,6 +73,30 @@ export class <%= classNames.service %> extends WithAnalytics(
   ) {
     super(repository);
   }
+<% if (includes) { -%>
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  //
+  // These two overrides exist so the HTTP layer can carry an allowlisted include
+  // from the controller to the repository. They are DELEGATION ONLY: no join
+  // logic, no sibling-repository calls, no navigator. The typed navigator and the
+  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override findById<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+    id: string,
+    opts?: { with?: TWith },
+  ): Promise<<%= classNames.entity %>Result<TWith> | null> {
+    return this.repository.findById<TWith>(id, opts);
+  }
+
+  override list<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+    options?: ListOptions & { with?: TWith },
+  ): Promise<Array<<%= classNames.entity %>Result<TWith>>> {
+    return this.repository.list<TWith>(options);
+  }
+<% } -%>
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
   // automatically by BaseService when the events subsystem is installed.

@@ -22,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
 import pluralizePkg from "pluralize";
-import { BASE_PATHS, getProjectConfig } from "../../../src/config/paths.mjs";
+import { BASE_PATHS, getGeneratedDir, getProjectConfig } from "../../../src/config/paths.mjs";
 import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
@@ -608,6 +608,12 @@ export default {
       // Project layout — the backend prompt-extension places every
       // module under the configured module tree (paths.modules_dir, PATH-1).
       modulesDir: BASE_PATHS.modulesDir,
+
+      // REL-2 (#587): where the whole-set emitters put the relation manifest and
+      // the HTTP include allowlist. The generated repository and controller
+      // import them by a path relative to their own module folder, computed in
+      // the backend prompt-extension.
+      generatedDir: getGeneratedDir(),
 
       // Detection (ADR-033.1 / ADR-033.2 typed provider artifacts)
       hasDetection,

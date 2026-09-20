@@ -1,0 +1,42 @@
+# Site — REL-2 (#587) leak-test fixture, depth 2 of the scoped graph.
+entity:
+  name: site
+  plural: sites
+  table: sites
+  pattern: Base
+
+tenant_scoped: true
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  # `tenant_id` is NOT declared here — TEN-1 (#585) emits it from
+  # `tenant_scoped: true`, with its index. `user_id` IS, because the
+  # `user_tracking` behavior emits `created_by`/`updated_by` while the
+  # repository's user-axis predicate filters `user_id` — a pre-existing mismatch
+  # (#712), which the scaffold's hand-written family test tables work around the
+  # same way.
+  user_id:
+    type: uuid
+    required: false
+    index: true
+
+  region_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: regions.id
+
+behaviors:
+  - timestamps
+  - soft_delete
+  - user_tracking
+
+relationships:
+  region:
+    type: belongs_to
+    target: region
+    foreign_key: region_id

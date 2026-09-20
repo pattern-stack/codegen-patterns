@@ -244,7 +244,7 @@ describe('non-Integrated repository emission', () => {
   });
 
   it('extends BaseRepository with the entity + its concrete table type (REL-0)', () => {
-    expect(out).toContain('extends BaseRepository<Widget, typeof widgets> {');
+    expect(out).toContain('extends BaseRepository<Widget, typeof widgets, Relations> {');
   });
 });
 

@@ -3,6 +3,11 @@
 # Exercises: a SELF-REFERENTIAL belongs_to (parent_account_id → parentAccount),
 # two has_many inverses whose `foreign_key` lives on the TARGET table, and a
 # nullable FK (`required: false`) ⇒ `optional: true` on the emitted one().
+#
+# REL-2: the FULLY scoped entity of the set — tenant + soft-delete + user
+# tracking, so every relation whose target is this table carries a `where` built
+# from `ACCOUNTS_SCOPE` with `enforcement: 'strict'`. It also carries the HTTP
+# include allowlist, so the golden covers `api-includes.ts` too.
 entity:
   name: account
   plural: accounts
@@ -20,8 +25,26 @@ fields:
     index: true
     foreign_key: accounts.id
 
+tenant_scoped: true
+
 behaviors:
   - timestamps
+  - soft_delete
+  - user_tracking
+
+api:
+  includes:
+    find_by_id:
+      max_depth: 2
+      # `opportunities.account` implies `opportunities`, so the emitted map
+      # carries three keys for two declarations.
+      paths:
+        - contacts
+        - opportunities.account
+    list:
+      max_depth: 1
+      paths:
+        - contacts
 
 relationships:
   parent_account:

@@ -570,6 +570,12 @@ export default {
     // Output paths (mirrors backend layout)
     // ======================================================================
 
+    // REL-2 (#587): the generated relation manifest, imported by the emitted
+    // repository to bind `BaseRepository`'s third type parameter. This pipeline
+    // hard-codes `srcRoot = 'src'` (above) and therefore the generated dir too;
+    // #612 tracks honouring `paths.generated` across the emitted imports.
+    const relationsImport = `../../generated/relations`;
+
     const outputPaths = {
       entity: `${ownNaming.entityFile}.ts`,
       repository: ownNaming.repositoryFile,
@@ -734,6 +740,9 @@ export default {
 
       // Output paths
       outputPaths,
+
+      // REL-2 (#587): the relation manifest specifier for the repository file.
+      relationsImport,
 
       // Class names
       classNames,
