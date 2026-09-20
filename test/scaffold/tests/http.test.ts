@@ -67,7 +67,11 @@ d('POST /contacts', () => {
 d('GET /contacts', () => {
   test('returns empty array when no contacts', async () => {
     const res = await request.get('/contacts').expect(200);
-    expect(res.body).toEqual([]);
+    // Pagination-by-default: the list endpoint returns a Page<T> envelope
+    // ({ items, total, page, pageSize, pageCount, nextCursor }), not a bare
+    // array. This suite asserted the pre-pagination shape (GATE-1, #599).
+    expect(res.body.items).toEqual([]);
+    expect(res.body.total).toBe(0);
   });
 
   test('returns all non-deleted contacts', async () => {
@@ -79,7 +83,8 @@ d('GET /contacts', () => {
       .send({ firstName: 'Bob', lastName: 'B', email: 'bob@example.com' });
 
     const res = await request.get('/contacts').expect(200);
-    expect(res.body).toHaveLength(2);
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.total).toBe(2);
   });
 });
 
@@ -94,10 +99,12 @@ d('GET /contacts/:id', () => {
     expect(res.body.firstName).toBe('Ada');
   });
 
-  test('returns empty body for nonexistent ID', async () => {
+  test('returns 404 for a nonexistent ID', async () => {
+    // The generated FindContactByIdUseCase throws NotFoundException; this suite
+    // asserted the older "200 with empty body" behaviour (GATE-1, #599).
     const res = await request
       .get('/contacts/00000000-0000-0000-0000-000000000000')
-      .expect(200);
+      .expect(404);
     expect(res.body.id).toBeUndefined();
   });
 });
@@ -144,7 +151,7 @@ d('DELETE /contacts/:id', () => {
     await request.delete(`/contacts/${created.body.id}`);
 
     const res = await request.get('/contacts').expect(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.items).toEqual([]);
   });
 });
 
@@ -166,13 +173,13 @@ d('full CRUD lifecycle', () => {
     expect(putRes.body.title).toBe('Pioneer');
 
     const listRes = await request.get('/contacts').expect(200);
-    expect(listRes.body).toHaveLength(1);
-    expect(listRes.body[0].title).toBe('Pioneer');
+    expect(listRes.body.items).toHaveLength(1);
+    expect(listRes.body.items[0].title).toBe('Pioneer');
 
     const delRes = await request.delete(`/contacts/${id}`).expect(200);
     expect(delRes.body.deletedAt).not.toBeNull();
 
     const listAfter = await request.get('/contacts').expect(200);
-    expect(listAfter.body).toEqual([]);
+    expect(listAfter.body.items).toEqual([]);
   });
 });

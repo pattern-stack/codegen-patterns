@@ -121,12 +121,10 @@ export function resolveAuthIntegrationsScaffoldLocals(
 			? config.paths.backend_src
 			: FALLBACK_BACKEND_SRC;
 
-	const pathsAny = config?.paths as Record<string, unknown> | undefined;
-
 	// #303 fix #5: vendor target lives next to the codegen-emitted
 	// connection entity module, NOT under shared/. Default mirrors the
 	// clean-lite-ps emit path (`<backendSrc>/modules/`).
-	const modulesConfigured = pathsAny?.modules_dir;
+	const modulesConfigured = config?.paths?.modules_dir;
 	const vendorRoot =
 		typeof modulesConfigured === 'string' && modulesConfigured.length > 0
 			? path.resolve(cwd, modulesConfigured)
@@ -136,12 +134,17 @@ export function resolveAuthIntegrationsScaffoldLocals(
 	// `Context.entitiesDir` resolution: `paths.entities` first, then legacy
 	// `paths.entities_dir`. (Older `paths.definitions` is NOT a real key and
 	// was a hotfix-fixed bug — #303.)
+	// `typeof === 'string'` is load-bearing, not redundant with the type: the CLI
+	// holds raw `yaml.parse` output, so a blank `entities:` key is null at runtime
+	// however it is typed.
+	const configuredPaths = config?.paths;
 	const entitiesConfigured =
-		typeof pathsAny?.entities === 'string' && pathsAny.entities.length > 0
-			? pathsAny.entities
-			: typeof pathsAny?.entities_dir === 'string' &&
-				  pathsAny.entities_dir.length > 0
-				? pathsAny.entities_dir
+		typeof configuredPaths?.entities === 'string' &&
+		configuredPaths.entities.length > 0
+			? configuredPaths.entities
+			: typeof configuredPaths?.entities_dir === 'string' &&
+				  configuredPaths.entities_dir.length > 0
+				? configuredPaths.entities_dir
 				: null;
 	const definitionsPath =
 		entitiesConfigured !== null

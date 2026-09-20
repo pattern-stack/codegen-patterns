@@ -195,10 +195,11 @@ export function listJunctionYamls(junctionsDir: string): string[] {
 /**
  * Derive the junction name from a JunctionDefinition.
  * Q8 resolution: insertion order — between: [opportunity, contact] → 'opportunity_contact'.
- * Explicit `name:` on the YAML overrides the derivation.
+ * There is no YAML override: `JunctionDefinitionSchema` is `.strict()` and declares
+ * no `name` key, so the pairing is the only source (GATE-1, #599).
  */
-function deriveJunctionName(def: { name?: string; between: [string, string] }): string {
-	return def.name ?? `${def.between[0]}_${def.between[1]}`;
+function deriveJunctionName(def: { between: [string, string] }): string {
+	return `${def.between[0]}_${def.between[1]}`;
 }
 
 function collectJunctions(junctionsDir: string): EntityInfo[] {
@@ -209,7 +210,7 @@ function collectJunctions(junctionsDir: string): EntityInfo[] {
 		if (!result.success) continue;
 		const def = result.definition;
 		const name = deriveJunctionName(def);
-		const plural = def.table ?? pluralize(name);
+		const plural = pluralize(name);
 		junctions.push({ name, plural });
 	}
 	junctions.sort((a, b) => a.name.localeCompare(b.name));
@@ -425,8 +426,7 @@ export function resolveArchitecture(ctx: Context): Architecture {
  * Honors `paths.generated`, falling back to `<cwd>/src/generated`.
  */
 export function resolveGeneratedDir(ctx: Context): string {
-	const fromConfig = (ctx.config as { paths?: { generated?: string } } | null | undefined)
-		?.paths?.generated;
+	const fromConfig = ctx.config?.paths?.generated;
 	const rel = typeof fromConfig === 'string' && fromConfig.length > 0
 		? fromConfig
 		: 'src/generated';
@@ -445,8 +445,7 @@ export function resolveGeneratedDir(ctx: Context): string {
  * 'src' (or whatever paths.backend_src declares) explicitly.
  */
 export function resolveBackendSrc(ctx: Context): string {
-	const fromConfig = (ctx.config as { paths?: { backend_src?: string } } | null | undefined)
-		?.paths?.backend_src;
+	const fromConfig = ctx.config?.paths?.backend_src;
 	return typeof fromConfig === 'string' && fromConfig.length > 0
 		? fromConfig
 		: 'app/backend/src';

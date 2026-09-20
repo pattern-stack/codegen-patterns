@@ -55,7 +55,7 @@ function summarizeJunctionFile(filePath: string): JunctionSummaryRow | null {
 	const result = loadJunctionFromYaml(filePath);
 	if (!result.success) return null;
 	const def = result.definition;
-	const name = def.name ?? `${def.between[0]}_${def.between[1]}`;
+	const name = `${def.between[0]}_${def.between[1]}`;
 	const roleChoices = def.fields?.role?.choices;
 	const hasRole = Array.isArray(roleChoices) && roleChoices.length > 0;
 	return {
@@ -187,7 +187,7 @@ export class JunctionNewCommand extends Command {
 			const result = loadJunctionFromYaml(file);
 			if (result.success) {
 				const def = result.definition;
-				const name = def.name ?? `${def.between[0]}_${def.between[1]}`;
+				const name = `${def.between[0]}_${def.between[1]}`;
 				validated.push({ file, name });
 			} else {
 				invalid.push({ file, message: result.error });

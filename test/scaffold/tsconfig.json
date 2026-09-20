@@ -12,9 +12,42 @@
       "@gen/*": [
         "../../*"
       ],
+      // `@shared/*` resolves scaffold-specific files first (database.module,
+      // the hand-written base-class stubs), then the REAL runtime tree — which
+      // is split: base-classes / subsystems / constants / types / http sit at
+      // runtime/<x>, while logging / openapi sit at runtime/shared/<x>.
+      // Mirrors test/tsconfig.baseline.json. Before GATE-1 (#599) this pointed
+      // only at the scaffold's own copy plus a repo-root `shared/` that holds
+      // vendored subsystems and no base classes, so the family-repository
+      // suites and the generated use-cases could not resolve their imports.
+      // Vendored mode renames the Page<T> envelope: project init copies
+      // runtime/http/pagination.ts to src/shared/http/page.ts, and generated
+      // use-cases import `@shared/http/page`. The scaffold never runs that
+      // vendor step, so the rename is expressed here (an exact mapping wins
+      // over the wildcards below).
+      "@shared/http/page": [
+        "../../runtime/http/pagination"
+      ],
+      "@shared/subsystems/*": [
+        "../../runtime/subsystems/*"
+      ],
+      // Runtime only: the scaffold's hand-vendored constants/ copy had drifted
+      // (no EVENT_BUS), and a second copy of a token file is exactly the thing
+      // that rots. Same for types/ below (GATE-1, #599).
+      "@shared/constants/*": [
+        "../../runtime/constants/*"
+      ],
+      "@shared/types/*": [
+        "../../runtime/types/*"
+      ],
+      "@shared/base-classes/*": [
+        "./shared/base-classes/*",
+        "../../runtime/base-classes/*"
+      ],
       "@shared/*": [
         "./shared/*",
-        "../../shared/*"
+        "../../runtime/shared/*",
+        "../../runtime/*"
       ]
     }
   },

@@ -85,7 +85,7 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 		ctx.framework?.architecture?.detected ??
 		'clean';
 	const generated =
-		(ctx.config?.paths as { generated?: string } | undefined)?.generated ?? 'src/generated';
+		ctx.config?.paths?.generated ?? 'src/generated';
 
 	body.push(`  framework:    ${fw}`);
 	body.push(`  orm:          ${orm}`);
