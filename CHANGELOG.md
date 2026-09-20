@@ -29,9 +29,10 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
 - **Repository finders keep the soft-delete and `userTracking` filters** (#616).
   Finders built on `BaseRepository.baseQuery()` — the clean-lite-ps, junction
   and relationship `queries:` finders and the Integrated / Activity / Metadata
-  family finders — chained `.where(<predicate>)` onto a builder that already
-  carried those filters, and Drizzle's `.where()` replaces the condition rather
-  than adding to it. `count()` assembled its own conditions. Every leaf
+  family finders — passed their leaf predicate to `.where()`, which replaces the
+  scoped builder's condition rather than adding to it, so the soft-delete
+  exclusion and the `userTracking` scope were dropped. `count()` assembled its
+  own copy of those conditions rather than sharing one. Every leaf
   predicate now goes through `baseQuery(<predicate>)` / `scopeAnd()`, the one
   place the filters are assembled, and a shape test forbids `.where()` on a
   `baseQuery()` builder in `templates/` and `runtime/`. Regenerate to pick up

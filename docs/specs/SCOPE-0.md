@@ -28,13 +28,15 @@ So every call of the shape `this.baseQuery().where(<leaf>)` throws the guards aw
 *"Pass the leaf predicate as `extra` rather than chaining a second `.where(...)`"*) — and then 17 call sites do
 the thing it warns about, including the ones this repository generates.
 
-**Effect today, with no tenancy involved:** a generated `findByEmail()` on a `soft_delete` entity returns
-soft-deleted rows; a family `findAllByUserId()` on a `userTracking` repository returns every user's rows once a
-requester context is active. Pre-existing on `main`, independent of the Drizzle 1.0 bump.
+**Effect today, with no tenancy involved:** the generated and family finders passed their leaf predicate to
+`.where()`, which replaces the scoped builder's condition, so the soft-delete exclusion and the `userTracking`
+scope were dropped — a generated `findByEmail()` on a `soft_delete` entity returns soft-deleted rows, and a family
+`findAllByUserId()` on a `userTracking` repository returns rows owned by other users once a requester context is
+active. Pre-existing on `main`, independent of the Drizzle 1.0 bump.
 
 `count()` is the same class of defect one step earlier: it hand-assembles the soft-delete + scope conditions
 instead of calling `scopeAnd()` (`base-repository.ts:237-262`). **Correction to the issue text:** that duplication
-was not *leaking* — the conditions it listed were, today, exactly the ones `scopeAnd()` assembles, and the control
+was not dropping a guard — the conditions it listed were, today, exactly the ones `scopeAnd()` assembles, and the control
 run below confirms `count()` passes every isolation assertion on the pre-fix tree. It is a **latent** defect: a
 second declaration of the guard set that would silently miss any guard added to `scopeAnd()` later — which is
 precisely what TEN-1 (#585) does. Fixed here so that cannot happen, not because it was wrong today.
@@ -172,16 +174,16 @@ under a consumer tsconfig.
 
 1. **The control run proves the finder tests are load-bearing; the `count()` tests are not (and why that is right).**
    With `runtime/base-classes/` reverted to the pre-fix state and everything else held constant,
-   `just test-integration` reports **5 fail / 67 pass / 2 skip** — all five failures in the new file, with the leak
-   printed as data:
+   `just test-integration` reports **5 fail / 67 pass / 2 skip** — all five failures in the new file, with the
+   pre-fix behaviour recorded as data:
 
    | Assertion | Pre-fix result |
    |---|---|
-   | `findByExternalId` after a soft-delete | returned the deleted row |
-   | `findByExternalId` on another user's row | returned **`{ userId: "user-scope-b", … }`** to user A |
+   | `findByExternalId` after a soft-delete | returned the soft-deleted row |
+   | `findByExternalId` on a row owned by another user | returned that row |
    | `findManyByExternalIds([live, deleted, other])` | returned **3 of 3** |
    | `findAllByUserId(USER_A)` with one soft-deleted | returned **2** |
-   | `findAllByUserId(USER_B)` as user A | returned **1** — the leaf predicate reached straight across the scope |
+   | `findAllByUserId(USER_B)` | returned **1** — the leaf predicate replaced the scope condition |
 
    The per-family suite added in review follow-up has its own control: with only
    `activity-entity-repository.ts` + `metadata-entity-repository.ts` reverted to the pre-fix state, **all 8** of
@@ -209,11 +211,11 @@ under a consumer tsconfig.
    user-tracking). No fixture in the repo declares `user_tracking`, which is why nothing had caught it. Out of scope
    here (an emission gap, not this bug), and the reason the scaffold fixture was left untouched.
 
-4. **An existing test asserted the leaky emission.**
+4. **An existing test asserted the pre-fix emission.**
    `src/__tests__/clean-lite-ps/repository-template.test.ts` asserted `toContain('await this.baseQuery()')` —
    literally the broken shape — and so passed throughout. It now asserts the **argument**
    (`baseQuery(eq(this.table['email'], email))`), plus a negative on `baseQuery().where(`. This is the §Risks row
-   "a test somewhere asserted the leaky result", materialised exactly once.
+   "a test somewhere asserted the pre-fix result", materialised exactly once.
 
 5. **Snapshot churn was as predicted: two files, four bodies, one class.** See §4 below; the baseline did not move.
 
@@ -272,12 +274,12 @@ Output from the run made **after** the last edit (charter I9).
 
 | Risk | Outcome |
 |---|---|
-| A test somewhere asserted the leaky result | **Happened, once.** `repository-template.test.ts` asserted `toContain('await this.baseQuery()')` — the broken shape. Rewritten to assert the argument (Found #4). |
+| A test somewhere asserted the pre-fix result | **Happened, once.** `repository-template.test.ts` asserted `toContain('await this.baseQuery()')` — the broken shape. Rewritten to assert the argument (Found #4). |
 | The FK-traversal `as any` removal does not type-check under the consumer tsconfig | **Did not happen.** `q.limit(opts.limit) as typeof q` compiles in every smoke, including the junction and integration ones. |
 | The scaffold fixture change breaks the existing suites | **Moot** — the fixture was not changed (Found #2). |
 
 | Live risk | Signal | Response |
 |---|---|---|
-| A new repository method reintroduces the shape in a place the guard does not scan | a leak with a green build | the guard scans `templates/` + `runtime/`; **add your directory to `SCAN_ROOTS`** if it emits or ships repository code |
+| A new repository method reintroduces the shape in a place the guard does not scan | a dropped guard with a green build | the guard scans `templates/` + `runtime/`; **add your directory to `SCAN_ROOTS`** if it emits or ships repository code |
 | #602 is repaired or retired and the named exclusion goes stale | the guard's third test fails (`clean` no longer has the shape) | delete the exclusion — that test exists to force exactly this |
 | A consumer hand-writes `baseQuery().where(...)` in their own repository | no signal; outside both scanned trees | documented loudly in `baseQuery()`'s docblock. A type-level guard was rejected (§2); revisit if it recurs |
