@@ -21,7 +21,7 @@ import {
 	FRONTEND_EMITTED_DEPS,
 	FRONTEND_LOCKSTEP_DEPS,
 } from '../../emitters/frontend/deps.js';
-import { emptyRelationsManifest } from '../../emitters/relations/index.js';
+import { emptyRelationsManifest, RELATIONS_MANIFEST_FILE } from '../../emitters/relations/index.js';
 import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
 import {
 	importSpecifier,
@@ -236,7 +236,7 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'shared/openapi/index.ts', target: 'openapi/index.ts' },
 ];
 
-function databaseModuleContent(mode: RuntimeMode): string {
+function databaseModuleContent(mode: RuntimeMode, relationsImport: string): string {
 	// In vendored mode DRIZZLE comes from the vendored shim (`../constants/tokens`);
 	// in package mode from the package runtime (ADR-037).
 	const drizzleTokenImport =
@@ -245,7 +245,7 @@ function databaseModuleContent(mode: RuntimeMode): string {
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { DRIZZLE } from '${drizzleTokenImport}';
-import { relations } from '../../generated/relations';
+import { relations } from '${relationsImport}';
 
 export { DRIZZLE };
 
@@ -1057,7 +1057,10 @@ export async function buildInitPlan(
 		fileEntry(
 			cwd,
 			layout.databaseModule,
-			databaseModuleContent(runtimeMode),
+			databaseModuleContent(
+				runtimeMode,
+				importSpecifier(layout.databaseModule, path.join(layout.generated, RELATIONS_MANIFEST_FILE)),
+			),
 			{ force }
 		)
 	);

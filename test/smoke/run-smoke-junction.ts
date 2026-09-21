@@ -416,7 +416,7 @@ function assertJunctionRelations(
   leftEnt: string,
   rightEnt: string,
 ): void {
-  const manifestPath = path.join(generatedSrc, 'src/generated/relations.ts');
+  const manifestPath = path.join(generatedSrc, P.generated, 'relations.ts');
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`relations manifest not found: ${manifestPath}`);
   }
@@ -463,6 +463,9 @@ function assertJunctionRelations(
   );
 
   log(`relations manifest assertions passed: ${junctionVar}`);
+}
+
+/**
  * PATH-0 (#566 / #612): with every path non-default, nothing may land at a
  * default location — init, the subsystem installs, entity and junction codegen
  * all resolve from `paths.*`.
