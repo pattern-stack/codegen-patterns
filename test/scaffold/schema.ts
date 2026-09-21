@@ -167,6 +167,12 @@ export const tenantMetadataEntities = pgTable('tenant_metadata_entities', {
   fieldValue: text('field_value'),
   validFrom: timestamp('valid_from').notNull().defaultNow(),
   userId: text('user_id'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type TenantMetadataEntity = InferSelectModel<typeof tenantMetadataEntities>;
+
 // ============================================================================
 // CAP-3 — Actor / Communication capability test tables
 // ============================================================================
@@ -197,7 +203,6 @@ export const capMeetings = pgTable('cap_meetings', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-export type TenantMetadataEntity = InferSelectModel<typeof tenantMetadataEntities>;
 export const capMeetingContacts = pgTable(
   'cap_meeting_contacts',
   {
