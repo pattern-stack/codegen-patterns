@@ -12,10 +12,20 @@
  * consumer's frontend package.json:
  *
  *   @pattern-stack/frontend-patterns  ^0.2.0-alpha.18
- *   @tanstack/react-db                ^0.1.55
- *   @tanstack/electric-db-collection  ^0.2.11
- *   @tanstack/query-db-collection     ^1.0.6
+ *   @electric-sql/client              ^1.5.12
+ *   @tanstack/db                      0.5.33
+ *   @tanstack/react-db                0.1.77
+ *   @tanstack/electric-db-collection  0.2.41
+ *   @tanstack/query-db-collection     1.0.30
  *   @tanstack/react-query             ^5.0.0
+ *
+ * The four @tanstack/*db* pins move together or not at all: any other version
+ * splits @tanstack/db into several copies and the emitted collections stop
+ * type-checking — see docs/specs/FE-0.md. This "overrides" entry (npm/bun;
+ * "pnpm.overrides" for pnpm, "resolutions" for yarn) keeps a single copy even
+ * if a transitive range ever disagrees with the pin:
+ *
+ *   "@tanstack/db": "$@tanstack/db"
  */
 
 // Per-entity sync configuration + runtime overrides

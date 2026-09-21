@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import type { FrontendEmitContext } from './types';
 import { sortEntities } from './types';
 import { withBanner, writeFile } from './emit-utils';
-import { FRONTEND_EMITTED_DEPS } from './deps';
+import { FRONTEND_DEP_OVERRIDES, FRONTEND_EMITTED_DEPS } from './deps';
 
 const SOURCE_DESC_SET = 'the entity set';
 
@@ -25,6 +25,12 @@ const SOURCE_DESC_SET = 'the entity set';
  * Render the version-pairing block as an aligned comment table. The emitted
  * imports target these package ranges; the consumer's frontend `package.json`
  * must install them (see `deps.ts`).
+ *
+ * The exact pins are what keep one `@tanstack/db` (and so one type identity)
+ * in the tree; the `overrides` stanza is belt-and-braces on top of them (FE-0,
+ * #620 — see `deps.ts`). `project init` merges both into the frontend
+ * `package.json`; they are restated here because this comment is the only
+ * place the contract is visible from inside a consumer's tree.
  */
 export function buildVersionPairingComment(): string {
 	const entries = Object.entries(FRONTEND_EMITTED_DEPS);
@@ -32,10 +38,21 @@ export function buildVersionPairingComment(): string {
 	const rows = entries
 		.map(([name, range]) => ` *   ${name.padEnd(nameWidth)}  ${range}`)
 		.join('\n');
+	const overrideRows = Object.entries(FRONTEND_DEP_OVERRIDES)
+		.map(([name, spec]) => ` *   "${name}": "${spec}"`)
+		.join('\n');
 	return ` * Version pairing — the emitted imports require these package ranges in the
  * consumer's frontend package.json:
  *
-${rows}`;
+${rows}
+ *
+ * The four @tanstack/*db* pins move together or not at all: any other version
+ * splits @tanstack/db into several copies and the emitted collections stop
+ * type-checking — see docs/specs/FE-0.md. This "overrides" entry (npm/bun;
+ * "pnpm.overrides" for pnpm, "resolutions" for yarn) keeps a single copy even
+ * if a transitive range ever disagrees with the pin:
+ *
+${overrideRows}`;
 }
 
 /**

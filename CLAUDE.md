@@ -61,7 +61,8 @@ just test-unit                       # Unit tests (base classes + subsystems, ~2
 just test-family                     # Family repo integration tests (needs Docker)
 just test-baseline                   # Baseline snapshot test (generate + compare)
 just test-smoke                      # End-to-end smoke: scaffold + generate + typecheck fresh project (~60-120s)
-just test-all                        # typecheck + unit + baseline + 6 smokes + junction + integration-emit (CI)
+just test-smoke-frontend             # Frontend smoke: generate.frontend + real npm install + typecheck the emitted tree
+just test-all                        # typecheck + unit + baseline + 7 smokes + junction + integration-emit (CI)
 just test-integration                # Scaffold integration suite (Docker + codegen + NestJS + CRUD) — own CI job
 
 # Database (scaffold testing)
@@ -203,11 +204,20 @@ Auto-detect: `just scan` generates a config from project conventions.
 - **Unit tests**: `just test-unit` — base classes, subsystems, scanner, schema (~200ms)
 - **Integration tests**: `just test-family` / `just test-integration` — real Postgres via Docker. `test-integration` generates the scaffold consumer into the **repo root** (the scaffold's `@gen/*` alias maps there) and runs the 7 scaffold test files against it; it is **not** in `test-all` (which stays Docker-free) and has its own CI job. It requires `just install` and nothing else — the scaffold fixture declares no dependencies of its own, on purpose: two physical copies of a package break `instanceof` across the boundary (a duplicate `drizzle-orm` broke table construction; a duplicate `@nestjs/common` turned every `NotFoundException` into a 500).
 - **Smoke test**: `just test-smoke` — end-to-end scaffold + generate + typecheck on a fresh tmp project (~60-120s)
-- **Smoke tsc scoping**: every smoke (`test-smoke`, `-subsystems`, `-junction`, `test-smoke-integration`) fails on **any** `tsc` diagnostic located in the project it generated. The shared `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** — outside the generated project, or in `node_modules` — never by message and never by directory. It is unit-tested (`src/__tests__/smoke/consumer-errors.test.ts`); do not add a predicate to it (charter I9).
+- **Frontend smoke**: `just test-smoke-frontend` — the only gate that compiles the **emitted frontend tree**
+  (`test/frontend-golden` compares bytes and cannot resolve `@repo/db/entities` or
+  `@pattern-stack/frontend-patterns`). Scaffolds with `generate.frontend: true`, installs the version-pairing contract
+  from live npm via the CLI's own `mergeFrontendDeps`, asserts exactly **one** `@tanstack/db` is installed, then runs
+  `tsc` over the emitted tree. ~12s. The four `@tanstack/*` packages pin `@tanstack/db` exactly and release in
+  lockstep, so `src/emitters/frontend/deps.ts` pins them exactly and ships an `overrides` entry — caret ranges there
+  split the tree into four type identities and the emitted collections stop compiling (FE-0, #620,
+  `docs/specs/FE-0.md`). The consumer-owned `@repo/db/entities/*` and `@/lib/collections/auth` modules come from
+  `test/smoke/fixtures-frontend/consumer/`; no template writes to either location, so they are fixtures, not stubs.
+- **Smoke tsc scoping**: every smoke (`test-smoke`, `-subsystems`, `-junction`, `-frontend`, `test-smoke-integration`) fails on **any** `tsc` diagnostic located in the project it generated. The shared `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** — outside the generated project, or in `node_modules` — never by message and never by directory. It is unit-tested (`src/__tests__/smoke/consumer-errors.test.ts`); do not add a predicate to it (charter I9).
 - **Tarball smoke**: `just test-post-publish` — pack all publishable packages, install into a fresh tmp project via npm, verify the consumer contract (files manifest, exports, bins, peer ranges), then re-run the smoke harness with the CLI/templates/runtime coming from the installed tarball (`SMOKE_TARBALL` mode). Gates every CI publish via `just publish-ci`. Catches the works-from-checkout-broken-from-tarball class (#190)
 - **Baseline tests**: `just test-baseline` — generate from `test/fixtures/` into repo-root `packages/api/` and compare to `test/baseline/` snapshots. Two-pass generation (first pass seeds `packages/api/src/domain/*.entity.ts` files so second-pass `targetExists` checks resolve cross-entity references). Start from pristine state — the runner wipes the generated directories on each run.
 - **CI** (`.github/workflows/ci.yml`), on every PR to `main` and every push to `main`:
-  - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-junction` + `test-integration-emit` + `test-smoke-integration`
+  - job `test-all` → `just test-all` = `typecheck` + `test-unit` + `test-baseline` + `test-smoke` + `test-smoke-subsystems` + `test-smoke-relationship` + `test-smoke-junction` + `test-smoke-junction-cross-domain` + `test-smoke-frontend` + `test-junction` + `test-integration-emit` + `test-smoke-integration`
   - job `test-integration` → `just test-integration` (needs Docker, hence its own job)
   - `publish` requires both.
 - **Adding a gate:** put it in `just test-all`, or give it a CI job. A gate that runs nowhere in CI rots — all three gates in #599 were red on `main` for exactly that reason.
