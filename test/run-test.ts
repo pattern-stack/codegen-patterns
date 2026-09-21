@@ -49,6 +49,9 @@ const ROOT_CONFIG = join(ROOT, 'codegen.config.yaml');
 const OUTPUT_PATHS = [
   // The clean-lite-ps module tree (paths.modules_dir, default <backend_src>/modules)
   'packages/api/src/modules',
+  // ADR-017 barrels (modules.ts, schema.ts) + the REL-1 relation manifest
+  // (relations.ts) — paths.generated, default <backend_src>/generated
+  'packages/api/src/generated',
   // JOB-7: generated scope-entity-type union (post-Hygen step)
   'runtime/subsystems/jobs/generated',
   // EVT-3: generated event-codegen artifacts (types, schemas, registry, bus, index)
@@ -187,6 +190,30 @@ function runCodegen() {
 
   console.log('✅ Codegen complete');
 
+  // ADR-017 barrels + the REL-1 (#586) relation manifest — the cross-entity
+  // files `entity new` writes into `<generated>/` as post-steps. The baseline
+  // drives hygen directly, so it has to mirror them here.
+  //
+  // They are not decoration: the consumer-owned `database.module.ts` the
+  // generated modules import (`@shared/database/database.module`, resolved to
+  // the scaffold's copy by the baseline tsconfig) types `DrizzleDB` off
+  // `@gen/generated/relations`. Without the manifest the baseline typecheck
+  // cannot resolve that import, and with it the generated repositories are
+  // checked against a relation-typed Drizzle client rather than a bare one.
+  console.log('   Generating: generated/ (modules + schema barrels, relations manifest)');
+  const generatedDir = join(ROOT, 'packages/api/src/generated');
+  execSync(
+    `bun -e "` +
+      `import { regenerateBarrels } from './src/cli/shared/barrel-generator.js'; ` +
+      `import { regenerateRelationsManifest } from './src/cli/shared/relations-generator.js'; ` +
+      `import { loadCodegenConfig } from './src/config/project-config.js'; ` +
+      `const ctx = { cwd: '${ROOT}', configPath: '${TEST_CONFIG}', config: loadCodegenConfig('${TEST_CONFIG}'), isInitialized: true, framework: null, installedSubsystems: [], entityCount: 0, json: false, verbose: false }; ` +
+      `await regenerateBarrels({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' }); ` +
+      `regenerateRelationsManifest({ ctx, entitiesDir: '${ENTITY_FIXTURES_DIR}', generatedDir: '${generatedDir}' });` +
+      `"`,
+    { cwd: CODEGEN_DIR, stdio: 'pipe' },
+  );
+
   // JOB-7: generate ScopeEntityType union from fixtures (mirrors EntityNewCommand post-step).
   console.log('   Generating: scope-entity-type.ts');
   execSync(
@@ -287,10 +314,11 @@ const ISSUE_680_EXPECTATION = {
  * Run TypeScript typecheck over the generated packages/api/src output.
  *
  * Uses test/tsconfig.baseline.json, which maps the vendored-mode `@shared/*`
- * specifiers onto the in-repo runtime/ sources, so it compiles the generated
- * clean-lite-ps module tree (`packages/api/src/modules/**`) without a vendor
- * step. Runs over the live output (not the snapshot), so it must be called
- * after runCodegen().
+ * specifiers onto the in-repo runtime/ sources and `@gen/*` onto the generated
+ * backend root, so it compiles the whole emitted tree — the clean-lite-ps
+ * modules and the `<generated>/` barrels + REL-1 relation manifest — without a
+ * vendor step. Runs over the live output (not the snapshot), so it must be
+ * called after runCodegen().
  *
  * Snapshot comparison verifies the shape of the generated text; this verifies
  * that the shape compiles. Every diagnostic fails the gate except the named
@@ -298,7 +326,7 @@ const ISSUE_680_EXPECTATION = {
  */
 function typecheckBaseline() {
   const tsconfig = join(TEST_DIR, 'tsconfig.baseline.json');
-  console.log('Typechecking generated clean-lite-ps output (packages/api/src/modules)...');
+  console.log('Typechecking generated clean-lite-ps output (packages/api/src)...');
   let output = '';
   try {
     execSync(`bunx tsc --noEmit --pretty false --project "${tsconfig}"`, { cwd: ROOT, stdio: 'pipe' });

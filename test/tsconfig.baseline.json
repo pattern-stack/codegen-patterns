@@ -9,6 +9,9 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
+      "@gen/*": [
+        "../packages/api/src/*"
+      ],
       "@shared/http/page": [
         "../runtime/http/pagination"
       ],
@@ -38,6 +41,6 @@
     }
   },
   "include": [
-    "../packages/api/src/modules/**/*"
+    "../packages/api/src/**/*"
   ]
 }

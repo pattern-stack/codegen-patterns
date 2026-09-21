@@ -24,8 +24,8 @@ export class OrganizationRepository extends BaseRepository<Organization, typeof 
   // ═══════════════════════════════════════════════════════════════════════
 
   async findByParentId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Organization[]> {
-    let q = this.baseQuery().where(eq(this.table['parentId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['parentId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Organization[];
   }
 

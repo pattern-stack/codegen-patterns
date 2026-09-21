@@ -64,6 +64,7 @@ export class ContactRepository extends IntegratedEntityRepository<
     timestamps: true,
     softDelete: true,
     userTracking: false,
+    tenantScoped: false,
   };
 
   // Inbound-integration write surface (#374). Drives the generic integrationUpsertOne /
@@ -90,27 +91,23 @@ export class ContactRepository extends IntegratedEntityRepository<
   // ═══════════════════════════════════════════════════════════════════════
 
   async findByEmail(email: string): Promise<Contact | null> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table['email'], email))
+    const rows = await this.baseQuery(eq(this.table['email'], email))
       .limit(1);
     return (rows[0] as Contact) ?? null;
   }
 
   async findByUserIdAndAccountId(userId: string, accountId: string): Promise<Contact[]> {
-    const rows = await this.baseQuery()
-      .where(and(eq(this.table['userId'], userId), eq(this.table['accountId'], accountId)));
+    const rows = await this.baseQuery(and(eq(this.table['userId'], userId), eq(this.table['accountId'], accountId)));
     return rows as Contact[];
   }
 
   async findByOpportunityId(opportunityId: string): Promise<Contact[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table['opportunityId'], opportunityId));
+    const rows = await this.baseQuery(eq(this.table['opportunityId'], opportunityId));
     return rows as Contact[];
   }
 
   async findEmailsByOpportunityId(opportunityId: string): Promise<string[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table['opportunityId'], opportunityId));
+    const rows = await this.baseQuery(eq(this.table['opportunityId'], opportunityId));
     return rows as Contact[];
   }
 
@@ -122,14 +119,14 @@ export class ContactRepository extends IntegratedEntityRepository<
   // ═══════════════════════════════════════════════════════════════════════
 
   async findByAccountId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Contact[]> {
-    let q = this.baseQuery().where(eq(this.table['accountId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['accountId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Contact[];
   }
 
   async findByUserId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Contact[]> {
-    let q = this.baseQuery().where(eq(this.table['userId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['userId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Contact[];
   }
 

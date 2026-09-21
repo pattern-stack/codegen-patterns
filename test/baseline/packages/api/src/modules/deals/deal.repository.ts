@@ -62,6 +62,7 @@ export class DealRepository extends IntegratedEntityRepository<
     timestamps: true,
     softDelete: true,
     userTracking: false,
+    tenantScoped: false,
   };
 
   // Inbound-integration write surface (#374). Drives the generic integrationUpsertOne /
@@ -88,14 +89,12 @@ export class DealRepository extends IntegratedEntityRepository<
   // ═══════════════════════════════════════════════════════════════════════
 
   async findByStage(stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost'): Promise<Deal[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table['stage'], stage));
+    const rows = await this.baseQuery(eq(this.table['stage'], stage));
     return rows as Deal[];
   }
 
   async findByOwnerIdAndStage(ownerId: string, stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost'): Promise<Deal[]> {
-    const rows = await this.baseQuery()
-      .where(and(eq(this.table['ownerId'], ownerId), eq(this.table['stage'], stage)));
+    const rows = await this.baseQuery(and(eq(this.table['ownerId'], ownerId), eq(this.table['stage'], stage)));
     return rows as Deal[];
   }
 
@@ -107,14 +106,14 @@ export class DealRepository extends IntegratedEntityRepository<
   // ═══════════════════════════════════════════════════════════════════════
 
   async findByOwnerId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Deal[]> {
-    let q = this.baseQuery().where(eq(this.table['ownerId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['ownerId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Deal[];
   }
 
   async findByAccountId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Deal[]> {
-    let q = this.baseQuery().where(eq(this.table['accountId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['accountId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Deal[];
   }
 

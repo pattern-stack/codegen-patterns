@@ -103,9 +103,17 @@ backend pipeline.
   `architecture` and the `clean` `locations:` block and sets `paths.entities: test/fixtures/entities`. The runner's
   output paths become `packages/api/src/modules` (+ the two runtime `generated/` dirs), the `constants/tokens.ts`
   seed (a `clean` inject anchor) is deleted, and the two-pass generation stays: clean-lite-ps has its own
-  file-existence `targetExists` check. `test/tsconfig.baseline.json` compiles `packages/api/src/modules/**` with the
+  file-existence `targetExists` check. `test/tsconfig.baseline.json` compiles `packages/api/src/**` with the
   same `@shared/*` → `runtime/` mapping as the scaffold. The snapshot is regenerated: 150 clean-lite-ps files replace
-  the `clean` tree. The events / jobs snapshots are unchanged, because the event and scope-type generators still read
+  the `clean` tree.
+
+  Revised 2026-09-21 (#724): clean-lite-ps `<entity>.module.ts` imports the consumer-owned
+  `@shared/database/database.module`, which the baseline tsconfig resolves to the scaffold's copy — and since REL-1
+  (#586) that module types `DrizzleDB` off `@gen/generated/relations`. The runner therefore also mirrors the two
+  `entity new` cross-entity post-steps it had skipped: `regenerateBarrels` (`<generated>/modules.ts`,
+  `<generated>/schema.ts`) and `regenerateRelationsManifest` (`<generated>/relations.ts`). `packages/api/src/generated`
+  joins the output paths, `@gen/*` → `../packages/api/src/*` joins the tsconfig, and the include widens from
+  `modules/**` to `src/**`. The generated repositories are now typechecked against a relation-typed Drizzle client. The events / jobs snapshots are unchanged, because the event and scope-type generators still read
   the whole `test/fixtures/` tree.
 - **Named expectation (#680).** The typecheck surfaced that clean-lite-ps ignores `via:` / `select:` on declarative
   queries. `contact.repository.ts` gets TS7053 ×2 + TS2322. `ISSUE_680_EXPECTATION` in `test/run-test.ts` asserts

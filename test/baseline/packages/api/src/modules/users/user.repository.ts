@@ -24,8 +24,8 @@ export class UserRepository extends BaseRepository<User, typeof users> {
   // ═══════════════════════════════════════════════════════════════════════
 
   async findByPersonId(id: string, opts?: { cursor?: string; limit?: number }): Promise<User[]> {
-    let q = this.baseQuery().where(eq(this.table['personId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['personId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as User[];
   }
 

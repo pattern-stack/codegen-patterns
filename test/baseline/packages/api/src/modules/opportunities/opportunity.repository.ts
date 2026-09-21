@@ -24,20 +24,20 @@ export class OpportunityRepository extends BaseRepository<Opportunity, typeof op
   // ═══════════════════════════════════════════════════════════════════════
 
   async findByOrganizationId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
-    let q = this.baseQuery().where(eq(this.table['organizationId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['organizationId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Opportunity[];
   }
 
   async findByOwnerId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
-    let q = this.baseQuery().where(eq(this.table['ownerId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['ownerId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Opportunity[];
   }
 
   async findByStateId(id: string, opts?: { cursor?: string; limit?: number }): Promise<Opportunity[]> {
-    let q = this.baseQuery().where(eq(this.table['stateId'], id));
-    if (opts?.limit) q = (q as any).limit(opts.limit);
+    let q = this.baseQuery(eq(this.table['stateId'], id));
+    if (opts?.limit) q = q.limit(opts.limit) as typeof q;
     return (await q) as Opportunity[];
   }
 
