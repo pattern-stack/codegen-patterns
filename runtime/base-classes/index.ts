@@ -1,7 +1,7 @@
 /**
  * Base classes barrel export
  */
-export { BaseRepository, column } from './base-repository';
+export { BaseRepository, column, tenantPredicateFor } from './base-repository';
 export type { BehaviorConfig, ListOptions, RowsOf } from './base-repository';
 
 // Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
@@ -14,6 +14,13 @@ export {
   withUserScope,
   withOrgScope,
   withSuperuserScope,
+  // Tenant axis (ADR-042 / TEN-1)
+  getTenantId,
+  withTenantScope,
+  withAllTenants,
+  MissingTenantIdError,
+  CrossTenantWriteError,
+  SYSTEM_ACTOR_ID,
 } from './tenant-context';
 export type { RequesterContext, RequesterScope } from './tenant-context';
 

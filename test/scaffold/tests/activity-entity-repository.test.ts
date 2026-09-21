@@ -32,7 +32,7 @@ beforeAll(async () => {
 
   class TestActivityRepository extends ActivityEntityRepository<ActivityEntity> {
     readonly table = activityEntities;
-    protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+    protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false, tenantScoped: false };
     // Config-driven subject scoping: subject 'opportunity' → opportunityId column.
     protected readonly patternConfig = { subject: 'opportunity' };
   }
@@ -113,7 +113,7 @@ d('findBySubjectId (config-driven → opportunityId)', () => {
   test('resolves the same column via an explicit subjectColumn override', async () => {
     class OverrideRepo extends ActivityEntityRepository<ActivityEntity> {
       readonly table = activityEntities;
-      protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+      protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false, tenantScoped: false };
       protected readonly patternConfig = { subjectColumn: 'opportunity_id' };
     }
     const overrideRepo = new OverrideRepo(getTestDb() as any);
@@ -125,7 +125,7 @@ d('findBySubjectId (config-driven → opportunityId)', () => {
   test('throws when no subject is configured', async () => {
     class NoSubjectRepo extends ActivityEntityRepository<ActivityEntity> {
       readonly table = activityEntities;
-      protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false };
+      protected readonly behaviors = { timestamps: true, softDelete: false, userTracking: false, tenantScoped: false };
       // no patternConfig — subject finders are unusable
     }
     const noSubjectRepo = new NoSubjectRepo(getTestDb() as any);

@@ -41,6 +41,12 @@ export class <%= className %>Repository
 		timestamps: <%= repositoryBehaviorConfig.timestamps %>,
 		softDelete: <%= repositoryBehaviorConfig.softDelete %>,
 		userTracking: <%= repositoryBehaviorConfig.userTracking %>,
+		// The `clean` pipeline emits no tenant_id column and does not route its
+		// reads through `scopeAnd()`, so it cannot honour `tenant_scoped`.
+		// `prompt.js` refuses the combination outright (ADR-042 / TEN-1 §4.2);
+		// this literal states the resulting posture rather than leaving it
+		// unstated (#602, charter I11).
+		tenantScoped: false,
 	};
 
 	protected toEntity(record: typeof <%= plural %>.$inferSelect): <%= className %> {

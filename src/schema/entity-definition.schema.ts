@@ -1060,6 +1060,29 @@ export const EntityDefinitionSchema = z
     // entries here.
     analytics: AnalyticsBlockSchema.optional(),
 
+    // Repository-level tenant isolation (ADR-042 / TEN-1). When `true`, codegen:
+    //   (a) emits a nullable `tenant_id uuid` column + a `<table>_tenant_id_idx`
+    //       index on this entity's table,
+    //   (b) sets `tenantScoped: true` in the generated `BehaviorConfig` AND
+    //       `scopeEnforcement: 'strict'` on the generated repository, so a
+    //       missing ambient tenant THROWS rather than reading the union of
+    //       every tenant (charter I3 — there is no lenient opt-down),
+    //   (c) prefixes `tenant_id` onto every `unique_indexes:` entry and onto
+    //       the `external_id_tracking` conflict target, so two tenants may hold
+    //       the same natural key.
+    //
+    // The unit of opt-in is the entity; there is no project-wide default, and
+    // therefore no per-entity override of one. `clean-lite-ps` only — a
+    // `tenant_scoped: true` entity under `generate.architecture: clean` is a
+    // generation-time error rather than a repository that claims an isolation
+    // it does not have (#602, charter I11).
+    //
+    // The column is NULLABLE so flipping the flag on an existing table is an
+    // additive `ADD COLUMN`; the host tightens it to NOT NULL after backfilling.
+    // It carries no `.references()`: the tenants table is host-owned, and
+    // codegen emits a DB-level FK only for tables it generates (#636).
+    tenant_scoped: z.boolean().optional().default(false),
+
     // Composite (multi-column) unique indexes (#356). Single-column uniqueness
     // is `unique: true` on the field itself; this declares constraints that
     // span 2+ columns, e.g. UNIQUE (conversation_id, sequence). Emitted as a

@@ -139,6 +139,8 @@ Append-only. A decision that changes an invariant or the target picture also get
 | 2026-09-17 | Relations are the **core contract** for cross-entity reads (option 1); CGP-358b composition is replaced, not paralleled. | ADR-044 |
 | 2026-09-17 | Services are generated and atomic; consumers hand-write use-cases/queries on top. Reads may be arbitrarily deep traversals; writes/workflows are use-cases. | ADR-044 §2–3 |
 | 2026-09-17 | Tenant scope is ALS-fed at the repository, `strict` for tenant-scoped entities. ADR-042 → Accepted; precondition for traversal. | ADR-042 note |
+| 2026-09-20 | ADR-042 implemented (TEN-1, #585). `scopeEnforcement: 'strict'` is the **default** for `tenant_scoped: true` with **no opt-down**, which reverses the ADR's rollout order (boundary first, flag second). Hatches are `withTenantScope` / `withAllTenants`. | ADR-042 2026-09-20 revision note; `docs/specs/TEN-1.md` §Decisions |
+| 2026-09-20 | Codegen emits a DB-level FK only for tables it generates. A field-level `foreign_key:` to a host-owned table is **allowed** and emits a plain column — no `.references()`, no import (#636). | `docs/specs/TEN-1.md` §Decisions 4 |
 | 2026-09-17 | Metric layer = `@pattern-stack/query-surface`. Codegen emits the declared `AggregateModel`. The package is changed (1.0 peer, `has_one`, publish), not worked around. | PLAN §5.6, query-surface#40 |
 | 2026-09-17 | Typed **navigator** on the generated service; every declared relationship navigable internally by default; HTTP exposure separately allowlisted. | ADR-044 §2, §7 |
 | 2026-09-17 | DRZ-1 leaves the relations slot empty; REL-1 fills it. | PLAN §4.2 |

@@ -142,6 +142,88 @@ const behaviorRegistry = {
 };
 
 /**
+ * The set of Drizzle table names codegen OWNS — i.e. that some entity YAML in
+ * the project's entities directory generates.
+ *
+ * Used to decide whether a field-level `foreign_key: <table>.<column>` gets a
+ * DB-level `.references()` + a cross-module import, or is emitted as a plain
+ * column (#636). A host application owns tables codegen never sees — a tenants
+ * table, a users table from an auth provider — and a YAML that references one
+ * is legitimate, not an error: the reference is real, it simply is not
+ * codegen's to enforce or to import from. Emitting
+ * `import { tenants } from '../tenants/tenant.entity'` for such a table
+ * produces a module that cannot resolve.
+ *
+ * Read straight from the YAML `entity.table` (falling back to `entity.plural`,
+ * then the pluralized name), never from generated output: a two-pass run must
+ * give the same answer on both passes, and introspecting emitted files would
+ * make pass 1 disagree with pass 2 (charter I1).
+ *
+ * Cached per process — `entity new` runs one entity per process, but the
+ * cross-entity emitters call in repeatedly.
+ */
+const __ownedTablesCache = new Map();
+export function loadOwnedTableNames(cwd, entitiesDir = BASE_PATHS.entitiesDir) {
+  const dir = path.resolve(cwd, entitiesDir);
+  const cached = __ownedTablesCache.get(dir);
+  if (cached) return cached;
+  const owned = new Set();
+  const walk = (d) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return; // no entities dir in this project — nothing is owned
+    }
+    for (const e of entries) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.ya?ml$/i.test(e.name)) continue;
+      let parsed;
+      try {
+        parsed = yaml.parse(fs.readFileSync(full, "utf-8"));
+      } catch {
+        continue; // a malformed YAML is reported by the validator, not here
+      }
+      const ent = parsed?.entity;
+      if (!ent?.name) continue;
+      owned.add(ent.table || ent.plural || pluralizePkg.plural(ent.name));
+    }
+  };
+  walk(dir);
+  __ownedTablesCache.set(dir, owned);
+  return owned;
+}
+
+/**
+ * ADR-042 / TEN-1 §4.2 — refuse `tenant_scoped: true` outside `clean-lite-ps`.
+ *
+ * The `clean` pipeline emits no `tenant_id` column and routes its reads through
+ * its own private `baseQuery()` that never reaches `scopeAnd()`, so a
+ * tenant-scoped entity generated there would produce a repository whose YAML
+ * claims isolation its code does not deliver. There is no partial version of
+ * that to ship: refuse, naming the entity and the reason (#602, charter I11).
+ *
+ * Exported so the guard is gated by a unit test rather than only by running a
+ * whole generation.
+ */
+export function assertTenantScopingSupported(definition, architectureTarget) {
+  if (definition?.tenant_scoped !== true) return;
+  if (architectureTarget === 'clean-lite-ps') return;
+  throw new Error(
+    `Entity '${definition?.entity?.name}': tenant_scoped: true requires ` +
+      "generate.architecture: 'clean-lite-ps' (this project is " +
+      `'${architectureTarget}'). The '${architectureTarget}' backend ` +
+      'pipeline emits no tenant_id column and does not route its reads ' +
+      'through the scoped choke point, so it cannot honour the flag. ' +
+      'See ADR-042 and docs/specs/TEN-1.md §4.2.',
+  );
+}
+
+/**
  * Load codegen config from codegen.config.yaml
  */
 function loadCodegenConfig(cwd) {
@@ -1025,6 +1107,14 @@ export default {
     const isCleanArchitecture = architectureTarget === 'clean';
     const isCleanLitePs = architectureTarget === 'clean-lite-ps';
 
+    // ADR-042 / TEN-1 §4.2 — tenant scoping is emitted by the clean-lite-ps
+    // pipeline only. The `clean` pipeline emits no tenant column and has its
+    // own private `baseQuery()` that never reaches `scopeAnd()`, so a
+    // `tenant_scoped: true` entity generated there would produce a repository
+    // that reads every tenant while its YAML says otherwise. Refuse, loudly,
+    // rather than emit the appearance of isolation (#602, charter I11).
+    assertTenantScopingSupported(definition, architectureTarget);
+
     // ============================================================================
     // v2: Queries
     // ============================================================================
@@ -1518,6 +1608,12 @@ export default {
 
       // Base paths for templates (from centralized config)
       basePaths: BASE_PATHS,
+
+      // Drizzle table names codegen OWNS (#636). A field-level
+      // `foreign_key: <table>.<column>` naming a table NOT in this set belongs
+      // to the host application: the column is emitted plain, with no
+      // `.references()` and no import. See loadOwnedTableNames().
+      ownedTableNames: Array.from(loadOwnedTableNames(process.cwd())),
       backendLayers: BACKEND_LAYERS,
 
       // Unified locations (path + import alias)
@@ -1718,6 +1814,10 @@ export default {
         hasPatternConfig: false,
         patternConfig: null,
         renderPatternConfigLiteral: () => '{}',
+        // ADR-042 — `clean` cannot honour tenant scoping and is refused
+        // outright by assertTenantScopingSupported, so this is always false.
+        // It is defined anyway because EJS still walks the CLP template bodies.
+        tenantScoped: false,
       });
     }
 

@@ -43,7 +43,7 @@ import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
 <% if (typeof hasIntegrationSurface !== 'undefined' && hasIntegrationSurface) { -%>
 import type { IntegrationUpsertConfig } from '<%= typeof integrationUpsertConfigImport !== 'undefined' ? integrationUpsertConfigImport : '@shared/base-classes/integration-upsert-config' %>';
 <% } -%>
-<% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
+<% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { -%>
 import type { BehaviorConfig } from '<%= typeof baseRepositoryImport !== 'undefined' ? baseRepositoryImport : '@shared/base-classes/base-repository' %>';
 <% } -%>
 <% if (eavEnabled) { -%>
@@ -99,14 +99,27 @@ export class <%= classNames.repository %> extends <%= repositoryBaseClass %><
 export class <%= classNames.repository %> extends <%= repositoryBaseClass %><<%= classNames.entity %>, typeof <%= entityNamePlural %>> {
 <%_ } _%>
   readonly table = <%= entityNamePlural %>;
-<% if (hasTimestamps || hasSoftDelete || hasUserTracking) { -%>
+<% if (hasTimestamps || hasSoftDelete || hasUserTracking || tenantScoped) { -%>
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {
     timestamps: <%= !!hasTimestamps %>,
     softDelete: <%= !!hasSoftDelete %>,
     userTracking: <%= !!hasUserTracking %>,
+    tenantScoped: <%= !!tenantScoped %>,
   };
+<% } -%>
+<% if (tenantScoped) { -%>
+
+  // ADR-042 / TEN-1 — a tenant-scoped entity enforces STRICTLY, with no
+  // opt-down: a missing ambient tenant throws rather than reading the union of
+  // every tenant (charter I3). Install the boundary that supplies `tenantId`
+  // BEFORE flipping `tenant_scoped: true`; see the ADR's rollout section.
+  //
+  // The same knob governs the user axis, so a tenant-scoped entity that also
+  // declares `user_tracking` is strict for that too. Both axes read the same
+  // ambient context, and a missing boundary is a missing boundary.
+  protected override readonly scopeEnforcement = 'strict' as const;
 <% } -%>
 <% if (hasPatternConfig) { -%>
 

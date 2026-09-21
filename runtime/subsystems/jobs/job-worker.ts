@@ -39,6 +39,10 @@ import {
   type StepOptions,
 } from './job-handler.base';
 import { JOBS_WAKE_CHANNEL, PgNotifyListener } from './pg-notify';
+import {
+  SYSTEM_ACTOR_ID,
+  withRequester,
+} from '../../base-classes/tenant-context';
 
 /**
  * Options accepted by `JobWorker`. JOB-5 threads these through module
@@ -681,7 +685,34 @@ export class JobWorker implements OnModuleInit, OnModuleDestroy {
     const attemptsBefore = claimed.attempts ?? 0;
     try {
       // (d) Run the handler.
-      const output = (await handler.run(ctx)) as Record<string, unknown> | undefined;
+      // (d.1) Enter the repository scope ALS from the run's OWN tenant
+      //       (ADR-042 §6 / TEN-1 §6). A job has no request, so the worker is
+      //       the boundary: every entity-repository read and write inside the
+      //       handler is then scoped to the tenant that owns the run.
+      //
+      //       `claimed.tenantId` is `string | null` and BOTH states are
+      //       present, not absent — a tenant's job scopes to that tenant, a
+      //       cross-tenant housekeeping job (`tenant_id IS NULL`) scopes to the
+      //       null partition. So a strict tenant-scoped repository inside a job
+      //       never throws for want of a boundary.
+      //
+      //       `scope: 'superuser'` on the USER axis is load-bearing. `job_run`
+      //       carries no `user_id`, so there is no user to act as; entering
+      //       with the sentinel under the default `'user'` scope would filter
+      //       every `userTracking` repository to a user that does not exist and
+      //       silently return nothing where today it returns everything. A job
+      //       is a tenant-level actor: the tenant axis scopes, the user axis
+      //       does not. A handler acting for a specific user carries that user
+      //       in its own input and installs a narrower context itself.
+      const output = (await withRequester(
+        {
+          userId: SYSTEM_ACTOR_ID,
+          organizationId: null,
+          scope: 'superuser',
+          tenantId: claimed.tenantId,
+        },
+        () => handler.run(ctx) as Promise<unknown>,
+      )) as Record<string, unknown> | undefined;
       // (e) Success.
       await this.db
         .update(jobRuns)

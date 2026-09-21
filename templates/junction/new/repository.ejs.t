@@ -52,6 +52,9 @@ export class <%= classNames.repository %> extends JunctionIntegrationRepository<
     timestamps: true,
     softDelete: false,
     userTracking: false,
+    // Junction tables are not tenant-scopable in v1 (ADR-042 / TEN-1 §11):
+    // `JunctionDefinitionSchema` is `.strict()` and declares no such key.
+    tenantScoped: false,
   };
 
   // Inbound-integration write surface (#374). Both endpoints resolve strictly against
