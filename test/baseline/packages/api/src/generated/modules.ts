@@ -4,7 +4,7 @@
 import { AccountsModule } from '../modules/accounts/accounts.module';
 import { ContactsModule } from '../modules/contacts/contacts.module';
 import { DealsModule } from '../modules/deals/deals.module';
-import { DealStatesModule } from '../modules/deal_states/deal_states.module';
+import { DealStatesModule } from '../modules/deal-states/deal-states.module';
 import { OpportunitiesModule } from '../modules/opportunities/opportunities.module';
 import { OrganizationsModule } from '../modules/organizations/organizations.module';
 import { PersonsModule } from '../modules/persons/persons.module';
