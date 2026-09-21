@@ -1,0 +1,14 @@
+# Frontend smoke fixture — the many-to-many pairing.
+#
+# Contributes the `through` hop on each parent (opportunities.tags /
+# tags.opportunities) AND the row-level hop to the link table itself
+# (opportunities.opportunityTags), where `role` and the temporal/provenance
+# columns live. Both are compiled by the smoke; the link table's own two
+# belongs_to edges are NOT client-navigable (a junction has no store entry to
+# root a traversal on) and the emitter says so in a warning.
+pattern: Junction
+between: [opportunity, tag]
+fields:
+  role:
+    type: enum
+    choices: [primary, secondary]

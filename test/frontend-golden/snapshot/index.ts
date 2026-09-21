@@ -48,3 +48,6 @@ export * from './fields/index';
 
 // Unified store (entities + collections + resolvers + lookups)
 export * from './store/module-index';
+
+// The client relation graph + typed traversal accessors (ADR-044 §5)
+export * from './graph/index';

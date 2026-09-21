@@ -1,0 +1,20 @@
+# Frontend smoke fixture — the far side of the junction.
+#
+# Declares no relationships of its own: everything it is reachable by comes
+# from the junction, which is the point — a junction contributes edges to BOTH
+# parents without either YAML naming the other.
+entity:
+  name: tag
+  plural: tags
+  table: tags
+  folder_structure: nested
+  sync: electric
+
+fields:
+  label:
+    type: string
+    required: true
+    max_length: 64
+
+behaviors:
+  - timestamps

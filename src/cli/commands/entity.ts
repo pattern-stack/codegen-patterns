@@ -54,7 +54,9 @@ import { emitAdapters } from '../shared/adapter-emission-generator.js';
 import { resolveRuntimeMode } from '../shared/runtime-import.js';
 import {
 	loadFrontendEmitContext,
-	emitFrontendSet,
+	emitFrontendSetWithGraph,
+	CrossSyncModeHopError,
+	ReservedRelationAliasError,
 } from '../../emitters/frontend/index.js';
 import { configuredSubsystemNames } from '../shared/subsystem-detect.js';
 import { loadProvidersFromYaml } from '../../utils/yaml-loader.js';
@@ -908,6 +910,7 @@ export class EntityNewCommand extends Command {
 		// but NOT silent — failures and skips print. The output is deterministic
 		// for a given entity set (safe under re-run / baseline wipe-and-regenerate).
 		let frontendResult: { written: string[]; outDir: string } | null = null;
+		let frontendFailed = false;
 		const frontendEnabled =
 			(ctx.config as { generate?: { frontend?: unknown } } | null | undefined)
 				?.generate?.frontend === true;
@@ -924,17 +927,41 @@ export class EntityNewCommand extends Command {
 					}
 				} else {
 					const { ctx: frontendCtx, outDir: frontendOutDir } = loaded;
-					const written = emitFrontendSet(frontendCtx, frontendOutDir);
+					const { written, graph } = emitFrontendSetWithGraph(
+						frontendCtx,
+						frontendOutDir,
+					);
 					frontendResult = { written, outDir: frontendOutDir };
 					if (!isJsonMode()) {
 						printInfo(
 							`frontend emitted (${written.length} files) → ${path.relative(ctx.cwd, frontendOutDir)}`,
 						);
+						// The graph step's drops and deferrals are printed, never silently
+						// swallowed: a relation that is declared but not navigable on the
+						// client is something the author has to be able to see (charter I9).
+						for (const warning of graph?.warnings ?? []) {
+							printWarning(`frontend graph: ${warning}`);
+						}
+						for (const deferral of graph?.deferred ?? []) {
+							printInfo(
+								`frontend graph: no accessors for '${deferral.entity}' — ${deferral.reason}`,
+							);
+						}
 					}
 				}
 			} catch (err: unknown) {
 				const msg = err instanceof Error ? err.message : String(err);
-				if (!isJsonMode()) {
+				// A GENERATION error — a cross-mode hop (FE-REL §4.4) or a relation key
+				// that collides with a generated query alias — is the author's YAML to
+				// fix and fails the command, like REL-1's key collision. Everything else
+				// keeps the sibling post-steps' warn-but-don't-fail contract.
+				if (
+					err instanceof CrossSyncModeHopError ||
+					err instanceof ReservedRelationAliasError
+				) {
+					frontendFailed = true;
+					printError(`frontend graph emission failed — ${msg}`);
+				} else if (!isJsonMode()) {
 					printWarning(`frontend emission failed — ${msg}`);
 				}
 			}
@@ -1254,7 +1281,7 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
-		return failed.length === 0 && !relationsFailed ? 0 : 1;
+		return failed.length === 0 && !relationsFailed && !frontendFailed ? 0 : 1;
 	}
 }
 

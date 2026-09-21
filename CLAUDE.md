@@ -93,6 +93,29 @@ The backend uses **hygen templates**; the frontend and integration layers use
 - **`templates/entity/new/backend/`** — Full Clean Architecture: separate command/query classes, repository interfaces, NestJS modules. Selected via `generate.architecture: clean` (default).
 - **`templates/entity/new/clean-lite-ps/`** — Clean-Lite-PS: lighter layout with entity, service, repository, controller, module, DTOs, use-cases. Selected via `generate.architecture: clean-lite-ps`. Has its own `prompt-extension.js`. The two backend template pipelines are mutually exclusive — `generate.architecture` picks exactly one.
 
+### Frontend Relation Graph (`src/emitters/frontend/graph-model.ts` + `emit-graph.ts`, FE-REL)
+
+The client half of ADR-044 §5's "both sides project from the same declared graph". It calls **REL-1's own**
+`buildRelationGraph` a second time and projects its edges onto the browser's collections — there is no second
+traversal of the YAML (charter I1), and `test/frontend-graph-golden/` asserts the two edge-for-edge.
+
+Emitted into `<frontendGenerated>/graph/`: `descriptor.ts` (the `graph` const, keyed by `entity.plural` with the YAML
+relationship names camelCased — the same keys `relations.ts` uses), one `<entity>.ts` per `electric` entity with
+edges (`<Entity>Include`, `<Entity>Graph<I>`, `use<Entity>Graph(id, include)`), and `index.ts`. A junction gets a
+**collection** (electric-only, composite `getKey`, consumer-owned row type) so a `through` hop has link rows to join.
+
+Four rules, each with a test that names it:
+- **one live query per to-many relation of the root**, never one per row; a branch that was not included returns
+  `undefined` from its query function and does not run (charter I4);
+- an **`electric` root reaching a non-`electric` target is a generation error** that fails the command, naming both
+  entities and the relation;
+- an **`api` root is a deferral, not an error** — its edges stay in the descriptor, its accessors wait for REL-2's
+  include allowlist, and the deferral is printed by the CLI *and* written into the descriptor;
+- **junction rows are not traversal roots** (no store entry); they are reached as a to-many hop from either parent,
+  and REL-1's junction-rooted edges are dropped with a warning.
+
+Include depth is 2 (a to-one of a branch target joins into that branch's query). See docs/specs/FE-REL.md.
+
 ### Frontend Emitter (`src/emitters/frontend/`, ADR-038)
 
 The frontend pipeline is a **whole-set TypeScript emitter**, not hygen templates
@@ -204,7 +227,13 @@ Auto-detect: `just scan` generates a config from project conventions.
 - **Unit tests**: `just test-unit` — base classes, subsystems, scanner, schema (~200ms)
 - **Integration tests**: `just test-family` / `just test-integration` — real Postgres via Docker. `test-integration` generates the scaffold consumer into the **repo root** (the scaffold's `@gen/*` alias maps there) and runs the 7 scaffold test files against it; it is **not** in `test-all` (which stays Docker-free) and has its own CI job. It requires `just install` and nothing else — the scaffold fixture declares no dependencies of its own, on purpose: two physical copies of a package break `instanceof` across the boundary (a duplicate `drizzle-orm` broke table construction; a duplicate `@nestjs/common` turned every `NotFoundException` into a 500).
 - **Smoke test**: `just test-smoke` — end-to-end scaffold + generate + typecheck on a fresh tmp project (~60-120s)
-- **Frontend smoke**: `just test-smoke-frontend` — the only gate that compiles the **emitted frontend tree**
+- **Frontend smoke**: `just test-smoke-frontend` — the only gate that compiles the **emitted frontend tree**, and the
+  only one that checks what the emitted types *are* rather than merely that they parse:
+  `test/smoke/fixtures-frontend/usage/` is consumer-shaped code compiled alongside the generated tree, in which every
+  property the graph accessors promise is a real assignment and every error they promise is a real
+  `@ts-expect-error`. `tsc` reports an unused `@ts-expect-error` (TS2578), so that gate cannot rot into a no-op
+  (FE-REL, #589). The fixture set runs `entity new --all` **and** `junction new --all` so the junction collection and
+  the `through` hop are real generator output, not a hand-written YAML.
   (`test/frontend-golden` compares bytes and cannot resolve `@repo/db/entities` or
   `@pattern-stack/frontend-patterns`). Scaffolds with `generate.frontend: true`, installs the version-pairing contract
   from live npm via the CLI's own `mergeFrontendDeps`, asserts exactly **one** `@tanstack/db` is installed, then runs

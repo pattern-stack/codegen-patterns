@@ -475,9 +475,39 @@ Add `has_many` and junction traversal and a typed include API over live queries,
 graph as REL-1, so `electric` entities traverse client-side and `api` entities can request the allowlisted include from
 REL-2. This is what replaces the old "compose identically on both sides" parity rationale.
 
-### 6A.3 Open — where the include API lives
-Recommend `@pattern-stack/frontend-patterns` owns the mechanism (the `createEntityHooks` / `createStore` precedent) and
-the emitter emits thin typed wiring. Alternative: fully generated. Operator to confirm; it makes FE-REL a two-repo unit.
+### 6A.3 Settled (2026-09-20) — the include API is FULLY GENERATED
+Charter Q1 is closed: **fully generated**, reversing this section's original recommendation. The recommendation assumed
+`@pattern-stack/frontend-patterns` could host the mechanism the way it hosts `createEntityHooks` / `createStore`. It
+cannot, and the reasons were measured rather than argued (`docs/specs/FE-REL.md` §2.1):
+
+- the package publishes **zero** relation surface at any version, and its `1.0.0` line dropped `dist/sync` entirely;
+- `EntityHookConfig.collection`, `EntityHooks.collection` and `StoreConfig.collections` are `any`, by the package's own
+  admission, because it bundles its own `@tanstack/db` — so a package-hosted traversal would be *untyped* traversal,
+  which is precisely the part worth generating;
+- the one place it derives a relation-shaped name it re-pluralizes at runtime (`addresses → addresse`), which ADR-038
+  forbids;
+- `emit-store.ts` already reached this conclusion once, for FK resolvers, for the same reason.
+
+FE-REL is therefore a **one-repo unit**, and its gate does not block on an unpublished release elsewhere. The three
+package defects above are filed against `pattern-stack/frontend-patterns` (FE-REL §2.5 items 1–3) because they are live
+defects for every consumer regardless of this answer; nothing in this repo waits on them.
+
+### 6A.4 What FE-REL actually shipped, and what it left
+Shipped: the client descriptor (`generated/graph/descriptor.ts`, built by calling REL-1's own `buildRelationGraph`), a
+per-entity typed accessor for every `electric` entity with edges, junction collections so a `through` hop has link rows
+to join, and the frontend smoke's type gate.
+
+Left, with the reason, for whoever picks up the next frontend unit:
+
+- **`api`-mode roots have no accessors.** They compile to REL-2's allowlisted `?include=` request, so they cannot be
+  built before REL-2 (#587) defines the allowlist. The edges ARE in the descriptor; only the accessors wait. Every
+  deferred entity is named in the emitted file and printed by the CLI.
+- **Include depth is 2**: a to-one hop of a branch target nests into that branch's single query. A to-many inside a
+  branch needs client-side grouping of a cartesian fan-out and is its own unit.
+- **Junction rows are not navigator roots.** They have no store entry; they are reached as a to-many hop from either
+  parent. REL-1's junction-rooted edges are dropped from the client projection with a warning.
+- **Cross-mode hops are a generation error**, not a degraded fetch loop (charter I4). The v2 id-set bridge needs a
+  list-filter contract REL-2's allowlist does not define.
 
 ---
 

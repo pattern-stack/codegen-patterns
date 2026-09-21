@@ -41,6 +41,44 @@ resolve against.
 
 ### Added
 
+- **Frontend relation graph + typed traversal accessors** (#589, ADR-044 §5, FE-REL). The
+  frontend emitter now writes a `graph/` tree beside the collections: `graph/descriptor.ts` (the
+  client relation graph, a runtime value keyed by `entity.plural` with the YAML relationship names
+  camelCased — **the same keys `relations.ts` uses**, so one name works on both sides of the wire),
+  one `graph/<entity>.ts` per `electric` entity with edges, and `graph/index.ts`. Each accessor
+  module is fully generated and carries `<Entity>Include`, `<Entity>Graph<I>` and
+  `use<Entity>Graph(id, include)`: a to-one hop types as `T | undefined`, a to-many as `T[]`, a
+  relation that was not included is not on the result type, and a misspelled relation name is a
+  compile error — nested or not. Include depth is 2 (a to-one of a branch target joins into that
+  branch's own query).
+
+  The descriptor is built by calling **REL-1's own** `buildRelationGraph`, not by re-reading the
+  YAML, and `test/frontend-graph-golden/` asserts the two agree edge-for-edge (charter I1).
+
+  Query count is `1 + <to-many relations of the root>`, fixed when the file is written and visible
+  at the top level of the hook; a branch that was not included returns `undefined` from its query
+  function, which `useLiveQuery` treats as disabled, so it does not run. There is no loop in the
+  generated module that could produce an N+1 (charter I4).
+
+  **Junctions get a collection.** A `through` hop joins the link rows, so they have to be in the
+  browser: one `collections/<junction>.ts` per junction, electric-only (`junction new` emits no
+  controller, so junction rows have no REST surface), with a composite `getKey` because a junction
+  table has no surrogate `id`. Its row type is consumer-owned in `locations.dbEntities` like every
+  other. Junction rows are reachable as a to-many hop from either parent, **not** as a traversal
+  root — the client store has no entry for a junction, so REL-1's junction-rooted edges are dropped
+  from the client projection with a warning naming the hop that does work.
+
+  Two bounded cases, both loud rather than silent: an `electric` root reaching a non-`electric`
+  target is a **generation error** that fails `entity new` naming both entities and the relation
+  (no id-set bridge in v1 — it needs a list-filter contract REL-2's allowlist does not define); and
+  an `api` root is a **deferral**, its edges still declared, its accessors waiting on REL-2's
+  include allowlist, reported by the CLI and written into the descriptor's own header.
+
+  `just test-smoke-frontend` gains the relation fixtures (self-reference, `has_many`, a real
+  `junction new` run) and a **type gate**: consumer-shaped code compiled against the generated tree
+  in which every promised property is a real assignment and every promised error is a real
+  `@ts-expect-error`, so a change that loosened the types fails the gate instead of passing it.
+
 - **`<generated>/relations.ts` — the v2 relation manifest** (#586, ADR-044). A
   whole-set TS emitter (`src/emitters/relations/`) writes one
   `defineRelations()` over the generated schema barrel, derived from the entity

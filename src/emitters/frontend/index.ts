@@ -12,6 +12,8 @@
  */
 
 import type { FrontendEmitContext } from './types';
+import { buildClientGraph, type ClientGraph } from './graph-model';
+import { emitGraph } from './emit-graph';
 import { emitBase } from './emit-base';
 import { emitApi } from './emit-api';
 import { emitCollections } from './emit-collections';
@@ -87,6 +89,29 @@ export {
 	emitIndex,
 } from './emit-index';
 export {
+	buildClientGraph,
+	junctionCollectionEntry,
+	accessorNodes,
+	CrossSyncModeHopError,
+} from './graph-model';
+export type {
+	ClientGraph,
+	ClientGraphNode,
+	ClientRelation,
+	JunctionCollectionEntry,
+} from './graph-model';
+export {
+	buildGraphFile,
+	buildEntityGraphFile,
+	buildGraphIndexFile,
+	emitGraph,
+	graphJunctions,
+	GRAPH_DIR,
+	GRAPH_FILE,
+	ReservedRelationAliasError,
+} from './emit-graph';
+export type { EmitGraphResult } from './emit-graph';
+export {
 	DEFAULT_TEXTAREA_THRESHOLD,
 	deriveFieldMeta,
 	formatLabel,
@@ -107,14 +132,48 @@ export type {
  * output.
  */
 export function emitFrontendSet(ctx: FrontendEmitContext, outDir: string): string[] {
+	// The client relation graph is built ONCE, before anything is written, and
+	// threaded through every step that needs it. Two reasons it has to be first:
+	// the cross-mode check throws (FE-REL §4.4), so a set with an unbuildable hop
+	// must fail before a partial tree lands on disk; and the junction collections
+	// `emit-collections` writes are the ones `graph/` imports, so both steps have
+	// to be looking at the same projection.
+	const graph: ClientGraph | null = ctx.definitions ? buildClientGraph(ctx) : null;
+	const graphResult = emitGraph(ctx, outDir, graph);
+
 	return [
 		...emitBase(ctx, outDir),
 		...emitApi(ctx, outDir),
-		...emitCollections(ctx, outDir),
+		...emitCollections(ctx, outDir, graph),
 		...emitEntities(ctx, outDir),
 		...emitStore(ctx, outDir),
 		...emitFields(ctx, outDir),
 		...emitProviders(ctx, outDir),
-		...emitIndex(ctx, outDir),
+		...graphResult.written,
+		...emitIndex(ctx, outDir, graphResult.written.length > 0),
 	];
+}
+
+/**
+ * Emit the full set and return what the graph step produced alongside the
+ * written paths — the CLI surfaces the graph's warnings and deferrals.
+ */
+export function emitFrontendSetWithGraph(
+	ctx: FrontendEmitContext,
+	outDir: string,
+): { written: string[]; graph: ClientGraph | null } {
+	const graph: ClientGraph | null = ctx.definitions ? buildClientGraph(ctx) : null;
+	const graphResult = emitGraph(ctx, outDir, graph);
+	const written = [
+		...emitBase(ctx, outDir),
+		...emitApi(ctx, outDir),
+		...emitCollections(ctx, outDir, graph),
+		...emitEntities(ctx, outDir),
+		...emitStore(ctx, outDir),
+		...emitFields(ctx, outDir),
+		...emitProviders(ctx, outDir),
+		...graphResult.written,
+		...emitIndex(ctx, outDir, graphResult.written.length > 0),
+	];
+	return { written, graph };
 }
