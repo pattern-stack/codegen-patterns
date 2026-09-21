@@ -29,7 +29,8 @@ import { sortEntities, type RelationsEmitContext } from './types';
 /** The slice of `codegen.config.yaml` this loader reads. */
 export interface RelationsConfigInput {
 	paths?: {
-		entities_dir?: string;
+		/** CFG-0 (#640) declares this as `paths.entities`. */
+		entities?: string;
 		generated?: string;
 		[key: string]: unknown;
 	};
@@ -83,7 +84,7 @@ export function loadRelationsEmitContext(
 	opts: { entitiesDir?: string; junctionsDir?: string } = {},
 ): LoadRelationsEmitContextResult {
 	const entitiesDir =
-		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities_dir ?? 'entities');
+		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? 'entities');
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, 'junctions');
 	const outDir = path.resolve(cwd, config?.paths?.generated ?? 'src/generated');
 

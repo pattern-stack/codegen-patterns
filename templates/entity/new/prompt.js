@@ -225,31 +225,6 @@ export function assertTenantScopingSupported(definition, architectureTarget) {
 }
 
 /**
- * Load codegen config from codegen.config.yaml
- */
-function loadCodegenConfig(cwd) {
-  const configPath = path.resolve(cwd, "codegen.config.yaml");
-  const defaultConfig = { behaviors: { strategy: "inline" } };
-
-  if (!fs.existsSync(configPath)) {
-    return defaultConfig;
-  }
-
-  try {
-    const content = fs.readFileSync(configPath, "utf-8");
-    const parsed = yaml.parse(content);
-
-    return {
-      behaviors: {
-        strategy: parsed?.behaviors?.strategy || "inline",
-      },
-    };
-  } catch {
-    return defaultConfig;
-  }
-}
-
-/**
  * Normalize behavior config (string or object with name/options)
  */
 function normalizeBehaviorConfig(config) {
