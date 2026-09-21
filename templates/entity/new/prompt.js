@@ -368,10 +368,21 @@ export default {
     // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
     // YAML, lazily, on the first reference that needs one. The junctions naming
     // this entity are read from the junction YAMLs.
+    // #636 — the Drizzle tables codegen OWNS. The clean-lite-ps extension needs
+    // this to tell a host-owned FK target (plain column, no import) from one it
+    // generates. ARCH-1 (#682) replaced a `...locals` spread at this call with an
+    // explicit key list and did not carry this one, which silently reverted #636:
+    // `processFieldFeatures` reads an absent set as "every target is owned", so a
+    // host-owned `foreign_key:` became a hard error instead of a plain column.
+    // Computed once here and reused in the returned locals below;
+    // `loadOwnedTableNames` caches per directory, so the second read is free.
+    const ownedTableNames = Array.from(loadOwnedTableNames(process.cwd()));
+
     const clpLocals = buildCleanLitePsLocals(definition, {
       // The clean-lite-ps module tree (PATH-1, #645).
       modulesDir: BASE_PATHS.modulesDir,
       runtimeMode,
+      ownedTableNames,
       entityLookup: projectEntityLookup(process.cwd()),
       // JUNC-0 (#678): the junction set this entity's fan-out renders from.
       junctions: loadJunctionDefinitions(process.cwd()),
@@ -586,7 +597,7 @@ export default {
       // #636 — the Drizzle tables codegen OWNS. A field-level `foreign_key:`
       // to a table outside this set is host-owned: a plain column, no
       // `.references()` and no import. See loadOwnedTableNames().
-      ownedTableNames: Array.from(loadOwnedTableNames(process.cwd())),
+      ownedTableNames,
       // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
       generatedBanner,
 
