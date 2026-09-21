@@ -8,20 +8,24 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { sql } from 'drizzle-orm';
 import { scaffoldDatabaseUrl } from '../harness-env';
+// REL-1 (#586): the generated v2 relation manifest, so `db.query.*` traversals
+// resolve in the integration suite exactly as they do in a real consumer.
+import { relations } from '@gen/generated/relations';
 
 // Falls back to this checkout's derived port, not a fixed 5432 — sibling
 // worktrees each publish their own (`harness-env.ts`).
 const DATABASE_URL = scaffoldDatabaseUrl();
 
 let pool: Pool | null = null;
-let db: NodePgDatabase | null = null;
+let db: NodePgDatabase<typeof relations> | null = null;
 
 /** Get or create the shared Drizzle client. */
 export function getTestDb() {
   if (!db) {
     pool = new Pool({ connectionString: DATABASE_URL });
-    // Drizzle 1.0: config object, `schema` removed (DRZ-2, #584).
-    db = drizzle({ client: pool });
+    // Drizzle 1.0: config object, `schema` removed (DRZ-2, #584);
+    // `relations` is the generated manifest (REL-1, #586).
+    db = drizzle({ client: pool, relations });
   }
   return db;
 }

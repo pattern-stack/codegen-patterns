@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-09-17
 **Owner:** Doug
-**Related:** ADR-001 (DDD + hexagonal layering), ADR-038 (frontend emitter), ADR-041 (capability composition — `roles:` feed `alias`), ADR-042 (ALS-fed repository tenant scoping — precondition), ADR-043 (closed-by-default data plane — constrains traversal over HTTP), `docs/relationship-pattern-audit.md` §1/§4 (the cgp-62 r4 position this supersedes), `.ai-docs/stacks/relations-v2-and-semantic-model/PLAN.md` §2 (the tradeoff table this chose from)
+**Related:** ADR-001 (DDD + hexagonal layering), ADR-038 (frontend emitter), ADR-041 (capability composition — `roles:` become named relations; see the 2026-09-17 revision note), ADR-042 (ALS-fed repository tenant scoping — precondition), ADR-043 (closed-by-default data plane — constrains traversal over HTTP), `docs/relationship-pattern-audit.md` §1/§4 (the cgp-62 r4 position this supersedes), `.ai-docs/stacks/relations-v2-and-semantic-model/PLAN.md` §2 (the tradeoff table this chose from)
 
 ## Context
 
@@ -55,8 +55,17 @@ replicated collections; `sync: api` entities request an allowlisted include.
 
 ### Naming and junctions
 
-`alias` comes from `inverse`; where an entity declares `roles:` (ADR-041 follow-on), role names are the alias for
-multiple relations to the same target. Many-to-many uses `.through()` over the `Junction` pattern entity.
+Relation keys are the YAML relationship names; where an entity declares `roles:` (ADR-041 follow-on), role names name
+the relations to the same target. Many-to-many uses `.through()` over the `Junction` pattern entity.
+
+> **Revision, 2026-09-17 (REL-1, #586) — `alias` is not used.** This section originally read "`alias` comes from
+> `inverse`; … role names are the alias for multiple relations to the same target." That was written before the v2
+> builder was measured. Drizzle reads `alias` in exactly one place — the reverse-inference branch of
+> `processRelations` (`drizzle-orm/relations.js:41-48`), which runs only when a relation omits `from`/`to`. A generator
+> always knows the FK column, so REL-1 emits explicit `from`/`to` on **both** sides of every relation; self-references
+> and multiple relations between the same pair of tables then need no `alias` at all, and none is emitted. `inverse:`
+> keeps its existing job (naming the other side's relation) without feeding a Drizzle field, and `roles:` (CAP-2) will
+> contribute additional explicitly-keyed edges the same way. Evidence: `docs/specs/REL-1.md` §R2.
 
 ## Consequences
 
@@ -82,6 +91,8 @@ multiple relations to the same target. Many-to-many uses `.through()` over the `
 ## Open follow-ups (implementation-time)
 
 - Whether v2 predefined relation `where` filters can carry the per-hop scope, or the repository rewrites the include
-  tree (REL-2 spike).
+  tree (REL-2 spike). REL-1 emits no `where`, so both paths stay open; note that a `where` on a relation that omits
+  `from`/`to` flips `isReversed` and re-targets the filter (`drizzle-orm/relations.js:60`) — irrelevant to the emitted
+  manifest only because it always carries `from`/`to`.
 - YAML shape of the include allowlist.
 - Whether the frontend include mechanism lives in `@pattern-stack/frontend-patterns` or is fully generated.

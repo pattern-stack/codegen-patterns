@@ -202,6 +202,64 @@ describe('entity noun — list', () => {
 });
 
 describe('entity noun — new --dry-run', () => {
+	test('a relation-key collision fails the dry run cleanly, not with a stack trace', async () => {
+		// REL-1 §3: a collision is an authoring error. The real run reports it
+		// and exits 1; the dry run must do the same instead of throwing out of
+		// the command.
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'entity-collide-'));
+		tempDirs.push(root);
+		fs.mkdirSync(path.join(root, 'entities'), { recursive: true });
+		fs.mkdirSync(path.join(root, 'junctions'), { recursive: true });
+		const entityYaml = (name: string, plural: string, extra: string[] = []) =>
+			[
+				'entity:',
+				`  name: ${name}`,
+				`  plural: ${plural}`,
+				`  table: ${plural}`,
+				'fields:',
+				'  title:',
+				'    type: string',
+				...extra,
+				'',
+			].join('\n');
+		fs.writeFileSync(
+			path.join(root, 'entities', 'opportunity.yaml'),
+			entityYaml('opportunity', 'opportunities', [
+				'relationships:',
+				// The key the junction below derives for its many-to-many hop.
+				'  contacts:',
+				'    type: has_many',
+				'    target: contact',
+				'    foreign_key: opportunity_id',
+			]),
+		);
+		fs.writeFileSync(path.join(root, 'entities', 'contact.yaml'), entityYaml('contact', 'contacts'));
+		fs.writeFileSync(
+			path.join(root, 'junctions', 'opportunity_contact.yaml'),
+			['pattern: Junction', 'between: [opportunity, contact]', ''].join('\n'),
+		);
+		fs.writeFileSync(path.join(root, 'codegen.config.yaml'), 'paths:\n  entities: entities\n');
+
+		setJsonMode(true);
+		const cli = buildCli();
+		const { result, out } = await captureStdoutWrite(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'contact.yaml'),
+				'--dry-run',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+		const json = JSON.parse(out.slice(out.indexOf('{')));
+		expect(json.relations.file).toBeNull();
+		expect(json.relations.error).toContain('contacts');
+	});
+
 	test('reports plan without invoking hygen', async () => {
 		const root = mkTempProject();
 		tempDirs.push(root);

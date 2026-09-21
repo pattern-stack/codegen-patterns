@@ -19,6 +19,7 @@ import {
 	isSemanticEnabled,
 	regenerateSemanticModel,
 } from '../shared/semantic-generator.js';
+import { regenerateRelationsManifest } from '../shared/relations-generator.js';
 import { checkGitSafety } from '../shared/git-safety.js';
 import {
 	regenerateBarrels,
@@ -546,6 +547,21 @@ export class EntityNewCommand extends Command {
 			const semanticPlan = isSemanticEnabled(ctx)
 				? regenerateSemanticModel({ ctx, entitiesDir, generatedDir, dryRun: true })
 				: null;
+			// Same failure contract as the real run below: a relation-key
+			// collision is reported as an error and fails the command — never an
+			// uncaught stack trace (docs/specs/REL-1.md §3).
+			let relationsPlan: ReturnType<typeof regenerateRelationsManifest> | null = null;
+			let relationsError: string | null = null;
+			try {
+				relationsPlan = regenerateRelationsManifest({
+					ctx,
+					entitiesDir,
+					generatedDir,
+					dryRun: true,
+				});
+			} catch (err: unknown) {
+				relationsError = err instanceof Error ? err.message : String(err);
+			}
 
 			const scopePlan = await generateScopeEntityType({
 				entitiesDir,
@@ -601,6 +617,11 @@ export class EntityNewCommand extends Command {
 						entityCount: barrelPlan.entityCount,
 						modulesContent: barrelPlan.modulesContent,
 						schemaContent: barrelPlan.schemaContent,
+					},
+					relations: {
+						file: relationsPlan?.file ?? null,
+						warnings: relationsPlan?.warnings ?? [],
+						error: relationsError,
 					},
 					scopeEntityType: {
 						outputPath: scopePlan.outputPath,
@@ -675,6 +696,14 @@ export class EntityNewCommand extends Command {
 							: `semantic model (${Object.keys(semanticPlan.result.contents).length} files): ${semanticPlan.result.outDir}`,
 					);
 				}
+				if (relationsPlan) {
+					printInfo(`relations manifest: ${relationsPlan.file}`);
+					for (const warning of relationsPlan.warnings) {
+						printWarning(`relations: ${warning}`);
+					}
+				} else {
+					printError(`relations manifest generation failed — ${relationsError}`);
+				}
 				printInfo(
 					`ScopeEntityType (${scopePlan.scopeableNames.length} scopeable): ${scopePlan.outputPath}`,
 				);
@@ -682,6 +711,7 @@ export class EntityNewCommand extends Command {
 					`event codegen (${eventCodegenPlan.eventCount} events) → ${eventCodegenPlan.outputDir}`,
 				);
 			}
+			if (relationsError !== null) return 1;
 			return invalid.length > 0 && !this.continueOnError ? 1 : 0;
 		}
 
@@ -726,6 +756,27 @@ export class EntityNewCommand extends Command {
 			if (!isJsonMode()) {
 				printWarning(`barrel regeneration failed — ${msg}`);
 			}
+		}
+
+		// Relations manifest (REL-1, ADR-044) — one `defineRelations()` over the
+		// generated schema barrel, from the full entity + junction set. Unlike the
+		// sibling post-steps this one is NOT warn-but-don't-fail: the emitted
+		// `database.module.ts` imports the manifest, so a project that continues
+		// past a failure here does not compile. A relation-key collision is a
+		// declaration the author has to fix (docs/specs/REL-1.md §3).
+		let relationsResult: ReturnType<typeof regenerateRelationsManifest> | null = null;
+		let relationsFailed = false;
+		try {
+			relationsResult = regenerateRelationsManifest({ ctx, entitiesDir, generatedDir });
+			if (!isJsonMode()) {
+				for (const warning of relationsResult.warnings) {
+					printWarning(`relations: ${warning}`);
+				}
+			}
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			relationsFailed = true;
+			printError(`relations manifest generation failed — ${msg}`);
 		}
 
 		// Regenerate the subsystem composition barrel (<generated>/subsystems.ts).
@@ -1196,9 +1247,14 @@ export class EntityNewCommand extends Command {
 					`semantic model regenerated (${semanticResult.written.length} files) → ${path.relative(ctx.cwd, semanticResult.outDir)}`,
 				);
 			}
+			if (relationsResult) {
+				printInfo(
+					`relations manifest regenerated → ${path.relative(ctx.cwd, relationsResult.file)}`,
+				);
+			}
 		}
 
-		return failed.length === 0 ? 0 : 1;
+		return failed.length === 0 && !relationsFailed ? 0 : 1;
 	}
 }
 

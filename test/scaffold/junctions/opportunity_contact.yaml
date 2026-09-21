@@ -1,0 +1,21 @@
+# opportunity × contact — scaffold integration fixture (REL-1, #586).
+#
+# The many-to-many the round-trip test traverses with `.through()`. `temporal`
+# and `sourced` are off so the junction carries only its two FK columns, the
+# role enum, `is_primary` and timestamps — the smallest shape that still proves
+# the hop.
+pattern: Junction
+between: [opportunity, contact]
+temporal: false
+sourced: false
+# `expose_on_parent` is a SERVICE knob (CGP-60 parent fan-out), not a graph
+# knob: turning it off keeps the hand-written ScaffoldContactsModule's DI graph
+# small while the relations manifest still carries both `.through()` edges —
+# which is exactly the REL-1 decision this fixture then proves at runtime.
+expose_on_parent:
+  left: false
+  right: false
+fields:
+  role:
+    type: enum
+    choices: [champion, decision_maker, influencer]

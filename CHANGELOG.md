@@ -7,8 +7,33 @@ All notable changes to this project will be documented in this file.
 **Breaking:** this release requires the **Drizzle 1.0 line**, and `drizzle-orm`
 is now a **peer dependency** (`^1.0.0-rc.4`) rather than a bundled dependency —
 install it yourself. The v1 Drizzle `relations()` const is no longer emitted
-(entity, clean-lite-ps entity, junction); hand-written `db.query.*` code that
-relied on it must wait for the v2 manifest (REL-1) or declare its own.
+(entity, clean-lite-ps entity, junction); it is replaced by the generated v2
+`defineRelations()` manifest (#586), which is what `db.query.*` traversals now
+resolve against.
+
+### Added
+
+- **`<generated>/relations.ts` — the v2 relation manifest** (#586, ADR-044). A
+  whole-set TS emitter (`src/emitters/relations/`) writes one
+  `defineRelations()` over the generated schema barrel, derived from the entity
+  YAML: `belongs_to` / `has_many` / `has_one` from `relationships:`, and the
+  many-to-many `.through()` hop plus the junction's own edges from each
+  `Junction` pairing. Relation keys are the YAML relationship names; target
+  tables resolve through the cross-entity registry (the target's own `plural`).
+  It regenerates on every `entity new` / `junction new` / `relationship new`,
+  and `project init` writes the empty shape so a zero-entity project compiles.
+  No `alias` is emitted: every relation carries an explicit `from`/`to`, which
+  is the only case Drizzle would consult one.
+  - The emitted `database.module.ts` now passes it —
+    `drizzle({ client: pool, relations })` — and
+    `export type DrizzleDB = NodePgDatabase<typeof relations>`, so
+    `db.query.<table>.findMany({ with: … })` is typed end to end.
+  - A **relation-key collision** (two declarations claiming one key on one
+    table) fails the command instead of warning: the manifest is imported by
+    `database.module.ts`, so continuing would emit a project that does not
+    compile.
+  - Repository `with` includes, per-hop scoping and the HTTP include allowlist
+    are **not** part of this change — see REL-2.
 
 ### Added
 
@@ -76,6 +101,13 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   codegen never writes. Codegen emits a DB-level FK only for tables it
   generates; referential integrity for a host-owned table is the host's. The
   `tenant_id` column above is exactly this shape.
+- **`DrizzleClient` is now generic over the relations manifest** (#586):
+  `DrizzleClient<TRelations extends AnyRelations = AnyRelations>`, replacing
+  `NodePgDatabase<any>`. The published runtime stays relations-agnostic (it can
+  never see a consumer's manifest); a concrete
+  `NodePgDatabase<typeof relations>` widens to it, and generated code reaches
+  the typed handle through the generated `DrizzleDB`. Existing uses that wrote
+  `DrizzleClient` unparameterised are unaffected.
 
 - **Drizzle 1.0 (`drizzle-orm@^1.0.0-rc.4`)** (#584). `drizzle-orm` moves from
   `dependencies` to `peerDependencies` so a consumer resolves exactly one copy —
@@ -84,7 +116,7 @@ relied on it must wait for the v2 manifest (REL-1) or declare its own.
   constructor: `drizzle({ client: pool })` (1.0 **removed** `schema` from the pg
   config) and `export type DrizzleDB = NodePgDatabase` in place of
   `ReturnType<typeof drizzle<typeof schema>>`. The generic slot on
-  `NodePgDatabase` is the `defineRelations()` manifest, which REL-1 will fill.
+  `NodePgDatabase` is the `defineRelations()` manifest, which #586 fills (above).
   New consumer doc: `docs/consumer/drizzle.md`, including drizzle-kit 1.0's
   changed `generate` layout (one directory per migration, no `meta/_journal.json`,
   snapshot `version: 8`).

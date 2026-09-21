@@ -89,6 +89,10 @@ async function run() {
           'paths:',
           '  backend_src: .',
           '  generated: generated',
+          // REL-1 (#586): the suite now generates a small related SET
+          // (account · contact · opportunity + the opportunity×contact
+          // junction) so the round-trip test has a graph to traverse.
+          '  entities_dir: test/scaffold/entities',
           '',
         ].join('\n'),
       );
@@ -102,7 +106,14 @@ async function run() {
         // output, and without it the CLI's uncommitted-changes guard (which
         // sees this repo's own working tree, since the emit root is the repo
         // root) refuses to write.
-        await $`cd ${REPO_ROOT} && bun src/cli/index.ts entity new test/scaffold/contact-scaffold.yaml --force`.quiet();
+        await $`cd ${REPO_ROOT} && bun src/cli/index.ts entity new --all --force`.quiet();
+
+        // Junctions are read from `<project>/junctions` — the CLI's contract,
+        // not a configurable path — so the fixtures are staged there and removed
+        // in the teardown below alongside `modules/` and `generated/`.
+        await $`mkdir -p ${REPO_ROOT}/junctions`.quiet();
+        await $`cp ${SCAFFOLD_DIR}/junctions/opportunity_contact.yaml ${REPO_ROOT}/junctions/`.quiet();
+        await $`cd ${REPO_ROOT} && bun src/cli/index.ts junction new --all --force`.quiet();
         console.log('    Codegen complete');
 
         // 5. Push schema
@@ -158,7 +169,7 @@ async function run() {
       // already-generated scaffold.
       if (!skipCodegen) {
         console.log('==> Removing generated scaffold from the repo root...');
-        for (const dir of ['modules', 'generated', 'shared']) {
+        for (const dir of ['modules', 'generated', 'shared', 'junctions']) {
           await $`rm -rf ${REPO_ROOT}/${dir}`.quiet();
         }
       }
