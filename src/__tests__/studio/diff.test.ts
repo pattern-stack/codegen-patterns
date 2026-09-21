@@ -53,14 +53,16 @@ describe('getDiff', () => {
 	it('lists each file under an untracked DIRECTORY, not the collapsed directory', () => {
 		// Plain `--porcelain` emits one `?? src/modules/` entry, which is
 		// exactly the case the demo is about: a newly generated module folder.
-		const dir = path.join(projectDir, 'src', 'modules', 'contact_opportunities');
+		// Named as the generator actually names it (kebab-case module folders,
+		// #695) so the fixture stays an honest picture of the real case.
+		const dir = path.join(projectDir, 'src', 'modules', 'contact-opportunities');
 		fs.mkdirSync(dir, { recursive: true });
 		fs.writeFileSync(path.join(dir, 'a.ts'), 'export const a = 1;\n');
 		fs.writeFileSync(path.join(dir, 'b.ts'), 'export const b = 2;\n');
 
 		const paths = getDiff(projectDir).files.map((f) => f.path);
-		expect(paths).toContain('src/modules/contact_opportunities/a.ts');
-		expect(paths).toContain('src/modules/contact_opportunities/b.ts');
+		expect(paths).toContain('src/modules/contact-opportunities/a.ts');
+		expect(paths).toContain('src/modules/contact-opportunities/b.ts');
 		expect(paths).not.toContain('src/modules/');
 	});
 
