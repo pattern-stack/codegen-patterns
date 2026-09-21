@@ -94,7 +94,7 @@ nothing connects a person to a deal. Filling that hole is the walkthrough.
    built the demo with `just studio-demo-db`, tick `DB push` too and the tables land in Postgres — `drizzle-kit`
    reports `Changes applied` at the end of the log.
 6. **Read the diff** ([6-generate-diff.png](6-generate-diff.png)). **14 files**: the new relationship YAML, the
-   **11** files of `src/modules/contact_opportunities/` (Drizzle table, repository, service, controller, module,
+   **11** files of `src/modules/contact-opportunities/` (Drizzle table, repository, service, controller, module,
    three DTOs, two use-cases, barrel), and the two regenerated barrels under `src/generated/`. Click a file to
    see its patch. Everything in that list is a consequence of the link you just added — nothing unrelated.
 
@@ -207,7 +207,7 @@ on both generate legs precisely so a dirty tree is fine. If you see this, the ru
 `--force`; that is a bug, not a state you need to clean up.
 
 **The diff shows a bare directory instead of files.** Same class: the diff must enumerate untracked files
-individually (`git status --porcelain -uall`). A collapsed `src/modules/contact_opportunities/` with no patch means it
+individually (`git status --porcelain -uall`). A collapsed `src/modules/contact-opportunities/` with no patch means it
 is not.
 
 **The demo project drifted.** Re-run `just studio-demo`. It resets the directory — **anything you left in there is

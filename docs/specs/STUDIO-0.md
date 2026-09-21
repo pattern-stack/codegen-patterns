@@ -180,8 +180,8 @@ Both were found by probing the real CLI during this build, and both would have s
   relationship YAMLs.
 - **`/api/diff` must enumerate untracked files with `-uall`.** `git status --porcelain` collapses an untracked
   *directory* to one entry. On the demo project immediately after the relationship is generated, plain `--porcelain`
-  reports 6 entries — two of them the bare directories `relationships/` and `src/modules/contact_opportunities/` —
-  while `--porcelain -uall` reports 16, one per file. Since the point of the demo is watching a new module appear,
+  reports 4 entries — two of them the bare directories `relationships/` and `src/modules/contact-opportunities/` —
+  while `--porcelain -uall` reports 14, one per file. Since the point of the demo is watching a new module appear,
   the collapsed form would show a directory name and no patch. Untracked files also produce no `git diff` patch at
   all, so their patch is synthesized as all-added.
 
@@ -283,10 +283,17 @@ cardinality. Nothing filters or loosely pattern-matches, so a regression surface
     timeout — a hung stream fails the gate rather than hanging CI), `ok: true`, with a `step` frame for `generate`
     at status `ok`.
 12. The run's diff carries `relationships/contact_opportunity.yaml` **and**
-    `src/modules/contact_opportunities/contact_opportunity.entity.ts`, each with a non-empty patch.
+    `src/modules/contact-opportunities/contact-opportunity.entity.ts`, each with a non-empty patch.
 13. `GET /api/graph` — 5 edges; the new one is exactly `contact → opportunity`, `cardinality: 'N:M'`, named
     `contact_opportunity`; and `graph.relationshipDefinitions.contact_opportunity` carries `table:
     'contact_opportunities'`, `fromColumn: 'contact_id'`, `toColumn: 'opportunity_id'`.
+
+**Kebab and snake in the same list is not an inconsistency** (#710, which now sits below this branch). The rule is
+*the filesystem is kebab-case, the database is snake_case, and a YAML name is neither* — so the emitted module is
+`src/modules/contact-opportunities/contact-opportunity.entity.ts`, while the relationship is still named
+`contact_opportunity`, its definition still lives at `relationships/contact_opportunity.yaml`, and its junction
+table is still `contact_opportunities`. The e2e asserts all four spellings, which is what makes it a check on the
+rule rather than on a string: a rename that over-applied kebab to the table or the YAML name would fail it.
 
 ### 6.3 What it does not prove
 

@@ -88,15 +88,15 @@ const RELATIONSHIP_NAME = 'contact_opportunity';
  * One of the 11 files `relationship new` emits — the Drizzle table is the
  * load-bearing one.
  *
- * This path is snake_case because Studio branches off **before** #710, which
- * makes every emitted file name kebab-case. `contact_opportunity` is
- * multi-word, so when #710 merges both halves move —
- * `src/modules/contact-opportunities/contact-opportunity.entity.ts` — and this
- * assertion goes red. That is the rename landing, not a regression: update the
- * constant, don't loosen the assertion.
+ * Kebab-case in both halves since #710: the filesystem is kebab, the database
+ * is snake. `contact_opportunity` is multi-word, so the folder and the stem
+ * both moved when #710 landed beneath this branch — note that the relationship
+ * YAML above is still `contact_opportunity.yaml` and the junction table is
+ * still `contact_opportunities`, because neither is a filename. If this
+ * assertion goes red, update the value; an exact path is the point of it.
  */
 const RELATIONSHIP_MODULE_FILE =
-	'src/modules/contact_opportunities/contact_opportunity.entity.ts';
+	'src/modules/contact-opportunities/contact-opportunity.entity.ts';
 
 /** The deliberate error: `contact.title.type` is a string; `strng` is not a field type. */
 const BAD_FIELD = 'title';
