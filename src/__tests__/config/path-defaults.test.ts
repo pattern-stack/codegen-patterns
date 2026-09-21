@@ -83,6 +83,18 @@ describe('no reader carries its own default literal', () => {
 	// Exact, asserted-present exceptions: a `?? path.…(` that derives from an
 	// already-resolved value and is not a `paths.*` default.
 	const NOT_A_PATHS_DEFAULT = [
+		// The junctions directory is not a `paths.*` key — PathsConfigSchema
+		// declares none, so there is no schema default to defer to.
+		"src/cli/shared/relations-generator.ts: junctionsDir: opts.junctionsDir ?? path.resolve(ctx.cwd, 'junctions'),",
+		"src/cli/shared/semantic-generator.ts: junctionsDir: opts.junctionsDir ?? path.resolve(ctx.cwd, 'junctions'),",
+		"src/emitters/frontend/load-context.ts: const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIR);",
+		"src/emitters/relations/load-context.ts: const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);",
+		"src/emitters/semantic/load-context.ts: const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);",
+		// The relations and semantic emitters are callable with no config at all
+		// (`config: … | null`). Their CLI callers resolve `entities` from the
+		// schema; these are the standalone fallbacks.
+		"src/emitters/relations/load-context.ts: opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? ENTITIES_DIRNAME);",
+		"src/emitters/semantic/load-context.ts: opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? ENTITIES_DIRNAME);",
 		// `copyRuntime`'s option: the parent of the install target it was handed.
 		"src/cli/shared/runtime-copier.ts: const depsTargetRoot = opts.depsTargetRoot ?? path.resolve(targetDir, '..');",
 	];
