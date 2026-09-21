@@ -225,8 +225,7 @@ typecheck:
 #
 # NOT included, and deliberately so: `just test-smoke-junction-clean`. It is a
 # known-red gate — see CLAUDE.md › Testing › Known-red gates.
-test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-frontend test-junction test-integration-emit test-smoke-integration
-test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-integration-emit test-smoke-integration
+test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-frontend test-junction test-integration-emit test-smoke-integration test-smoke-capability
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 
