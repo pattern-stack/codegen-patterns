@@ -69,7 +69,7 @@ import {
 	buildJobBridgeTriggers,
 	buildJobScheduledEvents,
 } from '../shared/job-emission-generator.js';
-import { emitJobHandlers } from '../shared/emit-jobs.js';
+import { emitJobHandlers, jobLoadRejections } from '../shared/emit-jobs.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -229,17 +229,20 @@ async function hints(ctx: Context): Promise<Hint[]> {
 // EntityNewCommand
 // ---------------------------------------------------------------------------
 
-/** One failed target, as the `--json` payload reports it. */
+/**
+ * One failed target, as the `--json` payload reports it. `file` / `name` are
+ * `null` only for a run-level rejection no file carries (JOBS-2).
+ */
 interface RejectionEntry {
-	name: string;
-	file: string;
+	name: string | null;
+	file: string | null;
 	message: string;
 	details: string[];
 }
 
-function rejectionEntry(i: { file: string; message: string; details?: string[] }): RejectionEntry {
+function rejectionEntry(i: { file: string | null; message: string; details?: string[] }): RejectionEntry {
 	return {
-		name: path.basename(i.file),
+		name: i.file === null ? null : path.basename(i.file),
 		file: i.file,
 		message: i.message,
 		details: i.details ?? [],
@@ -382,12 +385,40 @@ export class EntityNewCommand extends Command {
 				return 1;
 			}
 		}
+		// Run-level rejections (JOBS-2): an input every entity's output depends
+		// on, so it is not one target's problem and `--continue-on-error` does not
+		// apply — the run stops before hygen whatever the flag says.
+		const runRejections: Array<{ file: string | null; message: string; details?: string[] }> =
+			[];
 
 		// App patterns must be in THIS process's registry before the roles
 		// pre-flight: a role's target qualifies by declaring an `Actor`
 		// capability, which an app may define (and must, until the library ships
 		// one). The hygen subprocess loads them for itself; this is the CLI's copy.
-		for (const err of await loadAppPatternsForCli(ctx)) printWarning(err);
+		// A file the loader could not register leaves a partial pattern set: the
+		// orchestration step would rewrite its root barrel without that module,
+		// and a role or `patterns:` entry naming it would resolve against the
+		// wrong registry (#664, from the #660 audit).
+		for (const err of await loadAppPatternsForCli(ctx)) {
+			runRejections.push({
+				file: path.resolve(ctx.cwd, err.file),
+				message: 'app pattern file could not be loaded',
+				details: [err.message],
+			});
+		}
+
+		// Job definitions (RFC-0005 #7) — loaded ONCE, here, so their derived
+		// artifacts feed the event + bridge codegen in the SAME pass: each
+		// `schedule` arm desugars to a job-private scheduled event merged into the
+		// event registry, and every trigger becomes a declarative bridge mapping.
+		// The handler files themselves are emitted later (post-assembly). Opt-in:
+		// no `definitions/jobs/` ⇒ empty. An invalid job YAML is a run-level
+		// rejection (#664): its handler base, scheduled events and bridge triggers
+		// feed registries every entity imports, and a previously emitted
+		// `<type>.job.generated.ts` would outlive its dropped registrations.
+		const { jobsDir, jobHandlers } = projectLayout(ctx.cwd, ctx.config);
+		const jobLoad = loadJobs(jobsDir);
+		runRejections.push(...jobLoadRejections(jobLoad.issues, jobHandlers));
 
 		// Reuses the entity set the emits pre-flight already loaded. A bad role is
 		// a generation-time error (the ADR-041 §4 posture).
@@ -416,21 +447,22 @@ export class EntityNewCommand extends Command {
 			validated.splice(i, 1);
 		}
 
-		for (const i of invalid) {
-			printError(`${path.basename(i.file)} — ${i.message}`);
+		for (const i of [...invalid, ...runRejections]) {
+			printError(i.file === null ? i.message : `${path.basename(i.file)} — ${i.message}`);
 			for (const detail of i.details ?? []) {
 				printError(`   • ${detail}`);
 			}
 		}
 
-		if (invalid.length > 0 && !this.continueOnError) {
+		if (runRejections.length > 0 || (invalid.length > 0 && !this.continueOnError)) {
 			if (isJsonMode()) {
+				const rejected = [...invalid, ...runRejections];
 				printJson({
 					command: 'entity new',
 					stopped: 'pre-flight',
-					totals: { succeeded: 0, failed: invalid.length },
+					totals: { succeeded: 0, failed: rejected.length },
 					succeeded: [],
-					failed: invalid.map(rejectionEntry),
+					failed: rejected.map(rejectionEntry),
 				});
 			}
 			return 1;
@@ -510,34 +542,17 @@ export class EntityNewCommand extends Command {
 		const orchestrationGlobs = resolvePatternGlobs(ctx);
 
 		// Helper — reload registry + return orchestration patterns. A throw
-		// fails the orchestration step (JOBS-1, #660); per-file import errors are
-		// the loader's (collected, printed once at startup by
-		// `loadAppPatternsForCli`).
+		// fails the orchestration step (JOBS-1, #660); a per-file loader error
+		// already stopped the run in the pre-flight (JOBS-2).
 		const loadOrchestrationPatterns = async () => {
 			_resetRegistryForTests({ includeLibrary: false });
 			await loadAppPatterns(orchestrationGlobs, ctx.cwd);
 			return getAllOrchestrationPatterns();
 		};
 
-		// Job definitions (RFC-0005 #7) — loaded ONCE, early, so their derived
-		// artifacts feed the event + bridge codegen in the SAME pass: each
-		// `schedule` arm desugars to a job-private scheduled event merged into the
-		// event registry, and every trigger becomes a declarative bridge mapping.
-		// The handler files themselves are emitted later (post-assembly). Because
-		// the bridge/schedule contributions come from the LOADED defs (not the
-		// emitted files), there is no two-pass ordering hazard. Opt-in: no
-		// `definitions/jobs/` ⇒ empty (warn-only), exactly like providers.
-		const jobsDir = projectLayout(ctx.cwd, ctx.config).jobsDir;
-		const jobLoad = loadJobs(jobsDir);
-		if (!isJsonMode()) {
-			for (const issue of jobLoad.issues) {
-				if (issue.severity === 'error') {
-					printError(
-						`jobs: ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
-					);
-				}
-			}
-		}
+		// The pre-flight loaded the job definitions; because the bridge/schedule
+		// contributions come from the LOADED defs (not the emitted files), there is
+		// no two-pass ordering hazard.
 		const jobScheduledEvents = jobLoad.jobs.flatMap((j) =>
 			buildJobScheduledEvents(j),
 		);
@@ -1354,7 +1369,7 @@ export class EntityValidateCommand extends Command {
 		// first, or every app pattern is reported as unknown.
 		{
 			const errors = await loadAppPatternsForCli(ctx);
-			if (!isJsonMode()) for (const err of errors) printWarning(err);
+			if (!isJsonMode()) for (const err of errors) printWarning(err.message);
 		}
 
 		const quick = validateEntities(targetDir);

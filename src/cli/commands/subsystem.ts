@@ -53,7 +53,10 @@ import {
 	resolveAuthIntegrationsScaffoldLocals,
 } from '../shared/auth-integrations-scaffold-locals.js';
 import { copyRuntime } from '../shared/runtime-copier.js';
-import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
+import {
+	composesSubsystem,
+	regenerateSubsystemBarrel,
+} from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
 import {
 	SUBSYSTEMS,
@@ -743,14 +746,7 @@ export class SubsystemInstallCommand extends Command {
 		}
 		printSuccess(`${desc.name} subsystem installed with ${backend} backend.`);
 
-		// OBS-7: observability is a combiner (ADR-025) — no backend selection,
-		// and module order matters (composes siblings via @Optional() DI).
-		// Emit a targeted hint instead of the default `forRoot({ backend })` one.
-		if (desc.name === 'observability') {
-			printInfo(
-				'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration in app.module.ts',
-			);
-		} else if (desc.name === 'auth') {
+		if (desc.name === 'auth') {
 			// #287: auth's forRoot shape is richer than `{ backend }` —
 			// it takes encryptionKey, oauthStateStore, enableController,
 			// redirectUriBase. The TODO appended to app.module.ts has the
@@ -763,9 +759,7 @@ export class SubsystemInstallCommand extends Command {
 			printInfo('  3. Bind per-provider strategies into STRATEGY_REGISTRY (HubSpot, SFDC, Google, ...).');
 			printInfo('  4. Configure provider client_id/client_secret in secrets/secrets.yaml.');
 		} else {
-			printInfo(
-				`Register ${capitalize(desc.name)}Module.forRoot({ backend: '${backend}' }) in your app.module.ts`
-			);
+			printInfo(appModuleWiringHint(desc.name, backend));
 		}
 		if (desc.name === 'integration') {
 			printInfo(
@@ -987,6 +981,7 @@ export class SubsystemInstallCommand extends Command {
 		printInfo(
 			'Wire once (if not already): `import { SUBSYSTEM_MODULES } from \'./generated/subsystems\'` into AppModule, and `export * from \'./generated/subsystems-schema\'` into your drizzle-kit schema entrypoint.',
 		);
+		printInfo(appModuleWiringHint(desc.name, backend));
 		return 0;
 	}
 
@@ -2112,8 +2107,39 @@ function runAuthIntegrationsScaffold(
 	};
 }
 
-function capitalize(s: string): string {
-	return s.length === 0 ? s : s[0].toUpperCase() + s.slice(1);
+/**
+ * How a consumer registers, by hand, the subsystems `SUBSYSTEM_MODULES` does
+ * not compose (#663): the module the runtime actually exports and its real
+ * `forRoot` shape. Named, never synthesised from the subsystem name — there is
+ * no `JobsModule`. `openapi-config` and `auth-integrations` never reach it:
+ * install and remove short-circuit both first.
+ */
+export const HAND_REGISTERED: Partial<
+	Record<SubsystemName, { module: string; registration: (backend: SubsystemBackend) => string }>
+> = {
+	cache: { module: 'CacheModule', registration: (b) => `CacheModule.forRoot({ backend: '${b}' })` },
+	storage: { module: 'StorageModule', registration: (b) => `StorageModule.forRoot({ backend: '${b}' })` },
+	auth: {
+		module: 'AuthModule',
+		registration: () =>
+			'AuthModule.forRoot({ encryptionKey, oauthStateStore, enableController, redirectUriBase })',
+	},
+};
+
+/**
+ * What an install tells the consumer about `AppModule` (#663). A composed
+ * subsystem is wired by the regenerated barrel and configured by its config
+ * block; saying "register it" would invite a second `forRoot`.
+ */
+export function appModuleWiringHint(name: SubsystemName, backend: SubsystemBackend): string {
+	if (composesSubsystem(name)) {
+		return `${name} is composed into SUBSYSTEM_MODULES by the regenerated <generated>/subsystems.ts (spread once into AppModule) and configured by its \`${name}:\` block in codegen.config.yaml — do not register it in app.module.ts.`;
+	}
+	const hand = HAND_REGISTERED[name];
+	if (!hand) {
+		throw new Error(`appModuleWiringHint: '${name}' is neither composed nor hand-registered`);
+	}
+	return `Register ${hand.registration(backend)} in your app.module.ts — SUBSYSTEM_MODULES does not compose ${name}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -2344,12 +2370,15 @@ export class SubsystemRemoveCommand extends Command {
 		);
 		printInfo('Regenerated <generated>/subsystems.ts barrel.');
 		printInfo('Next steps (manual):');
-		printInfo(
-			`  1. Remove the \`${capitalize(desc.name)}Module.forRoot(...)\` registration from app.module.ts.`,
-		);
-		printInfo(
-			`  2. Remove the \`${desc.name}:\` block from codegen.config.yaml (if you no longer want it).`,
-		);
+		const hand = HAND_REGISTERED[desc.name];
+		const steps = [
+			...(hand ? [`Remove the \`${hand.module}\` registration from app.module.ts.`] : []),
+			...(composesSubsystem(desc.name)
+				? [`Nothing to remove from app.module.ts — SUBSYSTEM_MODULES no longer composes ${desc.name}.`]
+				: []),
+			`Remove the \`${desc.name}:\` block from codegen.config.yaml (if you no longer want it).`,
+		];
+		steps.forEach((step, i) => printInfo(`  ${i + 1}. ${step}`));
 		return 0;
 	}
 }

@@ -13,7 +13,7 @@
 // `Actor` / `Communication` capabilities by name.
 import '../../patterns/library/index.js';
 import { configOrDefaults } from '../../config/project-config.js';
-import { loadAppPatterns } from '../../patterns/registry.js';
+import { loadAppPatterns, type AppPatternLoadError } from '../../patterns/registry.js';
 import type { Context } from './context.js';
 
 /**
@@ -33,9 +33,10 @@ export function resolvePatternGlobs(ctx: Context): string[] {
  * and CAP-2's roles validators (a role's target qualifies by declaring an
  * `Actor` capability, which a project may define). Every CLI path that runs
  * those validators calls this, so it has one implementation. Returns the
- * loader's per-file errors for the caller to print.
+ * loader's per-file errors; what they mean is the caller's (`entity new`
+ * rejects the run on any — JOBS-2).
  */
-export async function loadAppPatternsForCli(ctx: Context): Promise<string[]> {
+export async function loadAppPatternsForCli(ctx: Context): Promise<AppPatternLoadError[]> {
 	const { errors } = await loadAppPatterns(resolvePatternGlobs(ctx), ctx.cwd);
 	return errors;
 }

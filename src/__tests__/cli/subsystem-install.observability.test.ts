@@ -8,7 +8,8 @@
  *     `observability:` config block.
  *   - Idempotent re-install is a no-op (both `skip_if` gates hold).
  *   - `--force-config` strips + re-injects the yaml block.
- *   - `printInfo` emits the combiner-specific hint (no `backend` arg).
+ *   - `printInfo` says observability is composed through `SUBSYSTEM_MODULES`
+ *     (#663) — no hand registration.
  */
 
 import { describe, test, expect, afterEach } from 'bun:test';
@@ -17,7 +18,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { Cli } from 'clipanion';
 
-import subsystemNoun from '../../cli/commands/subsystem.js';
+import subsystemNoun, { appModuleWiringHint } from '../../cli/commands/subsystem.js';
 import { setJsonMode } from '../../cli/ui/json.js';
 
 function mkTempProject(): string {
@@ -172,10 +173,9 @@ describe('subsystem install observability — real', () => {
 		expect(cfg).toContain('intervalMs: 60000');
 		expect(cfg).toContain('windowHours: 24');
 
-		// Combiner hint (not the default forRoot({ backend }) hint).
-		expect(out).toContain(
-			'Register `ObservabilityModule.forRoot()` AFTER Events/Jobs/Bridge/Integration',
-		);
+		// Composed by the barrel (last, after the siblings it reads) — #663.
+		expect(out).toContain(appModuleWiringHint('observability', 'combiner'));
+		expect(out).not.toContain('Register `ObservabilityModule');
 	});
 
 	test('re-run without flags is idempotent — already-installed short-circuit', async () => {
