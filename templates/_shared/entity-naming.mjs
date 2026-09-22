@@ -17,40 +17,26 @@
  * Readers: `templates/entity/new/prompt.js`, the clean-lite-ps extension, and
  * `templates/junction/new/prompt.js`. Where the YAMLs live, and how the tree
  * is walked, is the CLI's own rule — imported, not restated
- * (`src/config/entities-dir.ts`, `src/utils/find-yaml-files.ts`).
+ * (`src/config/entities-dir.ts`, `src/utils/find-yaml-files.ts`), as is the
+ * module tree (`src/config/module-tree.ts`).
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
-import pluralizePkg from 'pluralize';
 import yaml from 'yaml';
 import { entitiesDirPath, resolveEntitiesDir } from '../../src/config/entities-dir.js';
 import { configOrDefaults, loadProjectConfig } from '../../src/config/project-config.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
+import { entityModuleNaming } from '../../src/config/module-tree.js';
 
 /**
- * An entity's module naming, from its OWN `entity:` block: `plural:` (else
- * `pluralize(name)`, for raw YAML that bypassed the schema, which requires it)
- * is both the Drizzle table export and the module folder, nested under
- * `context:` when one is declared.
- *
- * `modulesDir` is the module tree's root — the resolved `paths.modules_dir`
- * (PATH-1, #645), project-relative. `moduleDir` is the folder holding the
- * entity's files; `entityFile` is its entity module path without extension.
+ * An entity's module naming — `plural`, `moduleDir`,
+ * `entityFile` (no extension), `moduleFile`, `repositoryFile` — from its OWN
+ * `entity:` block and the resolved `paths.modules_dir`. The module-tree rule is
+ * the CLI's own (`src/config/module-tree.ts`, GEN-0 #649): the barrels and the
+ * integration assemblies read the same function.
  */
-export function entityModuleNaming(entityBlock, modulesDir) {
-  const plural = entityBlock.plural || pluralizePkg.plural(entityBlock.name);
-  const moduleGroupDir = entityBlock.context
-    ? `${modulesDir}/${entityBlock.context}`
-    : modulesDir;
-  const moduleDir = `${moduleGroupDir}/${plural}`;
-  return {
-    plural,
-    moduleGroupDir,
-    moduleDir,
-    entityFile: `${moduleDir}/${entityBlock.name}.entity`,
-  };
-}
+export { entityModuleNaming };
 
 /**
  * The import directory of `toDir` as seen from a file in `fromDir` — both

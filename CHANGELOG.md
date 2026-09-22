@@ -234,6 +234,25 @@ resolve against.
   silently ignored). The `jobs:` block `subsystem install jobs` writes no
   longer restates the five framework pools — its `pools:` example is
   commented.
+- **The standalone `worker.ts` carries no config value** (#652). Its
+  `JobWorkerModule.forRoot` options — `jobs.backend`, `jobs.extensions.*`,
+  `jobs.pools` — are now `jobWorkerOptions` in the regenerated
+  `<paths.generated>/app-config.ts`, built by the same rule as the embedded
+  worker in `<generated>/subsystems.ts`. Editing `jobs.backend` or a
+  `jobs.extensions` knob used to reach the API on regeneration and never the
+  worker (they could run different backends). **One-time manual edit for an
+  existing `worker.ts`** (emit-once, so `codegen` never rewrites it; `subsystem
+  install jobs` prints this when it finds the old shape):
+
+  ```ts
+  import { jobWorkerOptions } from './generated/app-config'; // replaces `import { jobPools } …`
+  // …
+      JobWorkerModule.forRoot(jobWorkerOptions),                 // replaces forRoot({ mode: 'standalone', … })
+  ```
+- **One module-tree rule** (#649). `src/config/module-tree.ts` (shipped) is the
+  clean-lite-ps `<modules_dir>[/<context>]/<plural>` rule the entity templates,
+  the `modules.ts` / `schema.ts` barrels and the integration assemblies all
+  read. No output change.
 - **`project upgrade-auth` follows `paths.*`** (#643). It patched
   `src/app.module.ts` / `src/main.ts` regardless of `paths.backend_src`.
 

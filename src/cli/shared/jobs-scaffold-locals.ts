@@ -16,11 +16,6 @@ import path from 'node:path';
 import type { CodegenConfig } from './context.js';
 import { importSpecifier, projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, runtimeImport } from './runtime-import.js';
-import {
-	drizzleJobsExtensions,
-	drizzleExtensionsClause,
-	jsonToTs,
-} from './subsystem-barrel-generator.js';
 
 export interface JobsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -44,13 +39,9 @@ export interface JobsScaffoldLocals {
 	 * `@shared/subsystems/jobs/index`. The only mode-dependent import the worker
 	 * carries — `AppModule` is imported relatively. */
 	jobWorkerModuleImport: string;
-	/** Pre-serialised `JobWorkerModule.forRoot(<opts>)` options literal for the
-	 * standalone worker (#513). Mirrors the embedded composer's backend +
-	 * extension clauses, with `mode: 'standalone'` first and `allPools: true`
-	 * last (reserved-lane drain). */
-	workerForRootOpts: string;
-	/** CFG-1 — `<generated>/app-config` as imported from `worker.ts`, for the
-	 * `jobPools` the worker passes as `domainModulePools`. */
+	/** `<generated>/app-config` as imported from `worker.ts`, for the
+	 * `jobWorkerOptions` the worker passes to `JobWorkerModule.forRoot` (GEN-0,
+	 * #652 — the emit-once worker carries no config value). */
 	appConfigImport: string;
 	/** Where `job-orchestration.schema.ejs.t` writes the scaffolded schema. */
 	schemaPath: string;
@@ -138,7 +129,6 @@ export function resolveJobsScaffoldLocals(
 		workerExists: fileExists(workerPath),
 		workerPath,
 		jobWorkerModuleImport: resolveJobWorkerModuleImport(config),
-		workerForRootOpts: resolveWorkerForRootOpts(jobsBlock),
 		appConfigImport: importSpecifier(workerPath, path.join(layout.generated, 'app-config')),
 		schemaPath,
 		mainHookInjected,
@@ -160,49 +150,6 @@ function resolveJobWorkerModuleImport(config: CodegenConfig | null): string {
 	return runtimeImport(resolveRuntimeMode(config), 'subsystems/jobs/index');
 }
 
-/**
- * #513 — build the `JobWorkerModule.forRoot(<opts>)` options literal for the
- * standalone worker. Mirrors the embedded composer's backend + extension
- * clauses (`subsystem-barrel-generator.ts` jobs composer) so a standalone
- * worker doesn't silently lose `listen_notify` / `poll_interval_ms` (drizzle)
- * or `backend: 'bullmq'` + its extension block. Two invariants distinguish it
- * from the embedded branch: `mode: 'standalone'` is always first, and
- * `allPools: true` is always last — the standalone process is the sole worker,
- * so it MUST drain the reserved `events_*` lanes (the bridge fanout footgun).
- * `domainModulePools: jobPools` (CFG-1) precedes it: the pool map is imported
- * from the regenerated `<generated>/app-config`, so it stays current although
- * `worker.ts` is emit-once.
- *
- * Shapes:
- *   - drizzle default → `{ mode: 'standalone', domainModulePools: jobPools, allPools: true }`
- *   - drizzle + knobs → `{ mode: 'standalone', domainModuleExtensions: { drizzle: {...} }, domainModulePools: jobPools, allPools: true }`
- *   - bullmq          → `{ mode: 'standalone', backend: 'bullmq', domainModuleExtensions: { bullmq: {...} }, domainModulePools: jobPools, allPools: true }`
- */
-function resolveWorkerForRootOpts(
-	jobsBlock: Record<string, unknown>,
-): string {
-	const backend = (jobsBlock.backend as string | undefined) ?? 'drizzle';
-	const parts = [`mode: 'standalone'`];
-	if (backend === 'bullmq') {
-		parts.push(`backend: 'bullmq'`);
-		const bullExt = (
-			jobsBlock.extensions as { bullmq?: Record<string, unknown> } | undefined
-		)?.bullmq;
-		if (bullExt) {
-			parts.push(`domainModuleExtensions: { bullmq: ${jsonToTs(bullExt)} }`);
-		}
-	} else {
-		const workerExtClause = drizzleExtensionsClause(
-			drizzleJobsExtensions(backend, jobsBlock),
-			'domainModuleExtensions',
-		);
-		if (workerExtClause) parts.push(workerExtClause);
-	}
-	parts.push('domainModulePools: jobPools');
-	parts.push(`allPools: true`);
-	return `{ ${parts.join(', ')} }`;
-}
-
 function normaliseWorkerMode(raw: unknown): 'embedded' | 'standalone' {
 	if (raw === 'standalone') return 'standalone';
 	return 'embedded';
@@ -213,24 +160,10 @@ function normaliseMultiTenant(raw: unknown): boolean {
 }
 
 /**
- * #513 — `workerForRootOpts` is a TS object literal (`{ mode: 'standalone', … }`).
- * Hygen's yargs-based CLI parser interprets the `{ … : … }` syntax as nested
- * object/dot-notation and shreds it (the value reaches `prompt.js` as `{`).
- * Base64 over the arg boundary keeps the literal opaque to yargs; `prompt.js`
- * decodes it back to the source string before EJS interpolation. The resolver's
- * `workerForRootOpts` field stays the plain, unit-tested string — only the argv
- * crossing is encoded.
- */
-export function encodeWorkerForRootOpts(opts: string): string {
-	return Buffer.from(opts, 'utf-8').toString('base64');
-}
-
-/**
  * Serialise locals to the `--flag value` argv pairs Hygen consumes. Booleans
  * become `'true'` / `'false'`; numeric / string values pass through. Paths
  * are forwarded as absolute so Hygen's `to:` front-matter resolves relative
- * to them, not to Hygen's `cwd`. `workerForRootOpts` is base64-encoded — see
- * `encodeWorkerForRootOpts`.
+ * to them, not to Hygen's `cwd`.
  */
 export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 	return [
@@ -242,7 +175,6 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 		'--workerExists', workerSkipValue(locals.workerExists),
 		'--workerPath', locals.workerPath,
 		'--jobWorkerModuleImport', locals.jobWorkerModuleImport,
-		'--workerForRootOpts', encodeWorkerForRootOpts(locals.workerForRootOpts),
 		'--appConfigImport', locals.appConfigImport,
 		'--schemaPath', locals.schemaPath,
 		'--mainHookInjected', workerSkipValue(locals.mainHookInjected),
@@ -251,4 +183,29 @@ export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 		// template is skipped (the package ships the schema).
 		'--skipSchema', workerSkipValue(locals.skipSchema),
 	];
+}
+
+/** The call a current `worker.ts` makes (GEN-0, #652). */
+const CURRENT_WORKER_CALL = 'JobWorkerModule.forRoot(jobWorkerOptions)';
+/** That call as a line of code — the template's doc comment names it too. */
+const CURRENT_WORKER_CALL_LINE = /^\s*JobWorkerModule\.forRoot\(jobWorkerOptions\)/m;
+
+/**
+ * GEN-0 (#652) — a `worker.ts` emitted before GEN-0 bakes `jobs.backend` /
+ * `jobs.extensions.*` into its `JobWorkerModule.forRoot({ … })` literal, so
+ * later config edits never reach it. The file is emit-once and consumer-owned:
+ * no codemod rewrites it (I7). Returns the one-time manual edit when `content`
+ * lacks the current call, else null.
+ */
+export function staleWorkerNotice(
+	content: string,
+	workerPath: string,
+	appConfigImport: string,
+): string | null {
+	if (CURRENT_WORKER_CALL_LINE.test(content)) return null;
+	return [
+		`${workerPath} predates GEN-0 (#652): its JobWorkerModule.forRoot({ … }) options were fixed at install, so later jobs.backend / jobs.extensions edits never reach it. One-time edit:`,
+		`  import { jobWorkerOptions } from '${appConfigImport}';   // replaces any \`import { jobPools } …\``,
+		`  ${CURRENT_WORKER_CALL},   // replaces JobWorkerModule.forRoot({ mode: 'standalone', … })`,
+	].join('\n');
 }

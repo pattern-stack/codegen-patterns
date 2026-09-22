@@ -562,8 +562,12 @@ pool rules — a framework pool may set only `concurrency` / `description`; your
 `concurrency`) and `frontend.parsers` (keyed by column type).
 
 **Your app never reads this file.** The values it needs at boot — `openapi.*`, `auth.devAllowAnonymous`,
-`jobs.pools` — are written by the generator into `<paths.generated>/app-config.ts` (`openapiConfig`, `authConfig`,
-`jobPools`), which `main.ts`, `<generated>/subsystems.ts` and `worker.ts` import. Like every other generated file it
+`jobs.pools`, and the standalone worker's `jobs.backend` / `jobs.extensions.*` — are written by the generator into
+`<paths.generated>/app-config.ts` (`openapiConfig`, `authConfig`, `jobPools`, `jobWorkerOptions`), which `main.ts`,
+`<generated>/subsystems.ts` and `worker.ts` import. `worker.ts` is emit-once and holds no config value:
+`JobWorkerModule.forRoot(jobWorkerOptions)`. A `worker.ts` emitted before 0.31.0 bakes its options inline — replace
+them once with that call and `import { jobWorkerOptions } from './generated/app-config'` (`subsystem install jobs`
+prints the edit). Like every other generated file it
 is rewritten on regeneration (`codegen entity new --all`, any `codegen subsystem install`, `project upgrade-openapi` /
 `upgrade-auth`); editing `codegen.config.yaml` changes nothing until you regenerate, and a bad value fails the
 regeneration with the key named — never a silently-defaulted boot. The app has no `yaml` dependency.

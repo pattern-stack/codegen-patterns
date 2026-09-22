@@ -115,7 +115,9 @@ Both entrypoints are always scaffolded. The choice is operational; switching nee
 
 **Embedded** — your `AppModule` imports `JobWorkerModule.forRoot({ mode: 'embedded' })`. The API process and the workers share the same process. Simplest; good default for dev and small deployments.
 
-**Standalone** — run the scaffolded `worker.ts` as its own process. `main.ts` does not import `JobWorkerModule`; the worker boots a bare Nest application context (no HTTP listener) with the database module plus the jobs modules. Lets you scale workers independently of the API.
+**Standalone** — run the scaffolded `worker.ts` as its own process. `main.ts` does not import `JobWorkerModule`; the worker boots a Nest application context (no HTTP listener) around your `AppModule` plus `JobWorkerModule.forRoot(jobWorkerOptions)`. Lets you scale workers independently of the API.
+
+`jobWorkerOptions` lives in `src/generated/app-config.ts`, generated from `jobs.backend`, `jobs.extensions.*` and `jobs.pools` (with `allPools: true`, so the one standalone process also drains the reserved `events_*` lanes). Edit the YAML and regenerate; never put options into `worker.ts` — it is emit-once and would stop following the config. A `worker.ts` from before 0.31.0 has them inline: replace them once with `JobWorkerModule.forRoot(jobWorkerOptions)` and `import { jobWorkerOptions } from './generated/app-config'`.
 
 ## Wiring into your app
 

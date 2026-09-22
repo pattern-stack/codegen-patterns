@@ -1,21 +1,27 @@
 /**
  * CFG-1 (#643) — `<generated>/app-config.ts`: the boot-time config values the
  * generator writes so the consumer's app never parses `codegen.config.yaml`.
+ * GEN-0 (#652) — including the standalone worker's `jobWorkerOptions`.
  */
 import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildAppConfigContent, syncAppConfig } from '../../cli/shared/app-config-generator.js';
+import { jobWorkerBackendOptions } from '../../cli/shared/job-worker-options.js';
+import { buildSubsystemBarrel } from '../../cli/shared/subsystem-barrel-generator.js';
 import { mainTsContent } from '../../cli/shared/init-scaffold.js';
 import { projectLayout } from '../../cli/shared/project-layout.js';
 import { parseCodegenConfig } from '../../config/project-config.js';
+
+/** A stand-in for the module's own `jobPools`, which `jobWorkerOptions` references. */
+const JOB_POOLS = Symbol('jobPools');
 
 /** The object literal after `export const <name> =` (JSON plus bare `undefined`), evaluated. */
 function exported(content: string, name: string): unknown {
 	const m = content.match(new RegExp(`export const ${name} = ([\\s\\S]*?) as const;`));
 	if (!m) throw new Error(`no export ${name}`);
-	return new Function(`return (${m[1]!});`)();
+	return new Function('jobPools', `return (${m[1]!});`)(JOB_POOLS);
 }
 
 describe('buildAppConfigContent (CFG-1)', () => {
@@ -77,6 +83,58 @@ describe('buildAppConfigContent (CFG-1)', () => {
 		} finally {
 			fs.rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('jobWorkerOptions — the standalone worker (GEN-0, #652)', () => {
+	const jobs = (block: Record<string, unknown>) =>
+		buildAppConfigContent(parseCodegenConfig({ jobs: block }, 'x.yaml'));
+
+	test('drizzle default: mode standalone, the pools, allPools', () => {
+		expect(exported(buildAppConfigContent(null), 'jobWorkerOptions')).toEqual({
+			mode: 'standalone',
+			domainModulePools: JOB_POOLS,
+			allPools: true,
+		});
+	});
+
+	test('drizzle knobs flow into domainModuleExtensions (camelCase)', () => {
+		expect(
+			exported(jobs({ extensions: { drizzle: { listen_notify: true, poll_interval_ms: 500 } } }), 'jobWorkerOptions'),
+		).toEqual({
+			mode: 'standalone',
+			domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } },
+			domainModulePools: JOB_POOLS,
+			allPools: true,
+		});
+	});
+
+	test('bullmq threads backend + its extension block', () => {
+		const opts = exported(
+			jobs({ backend: 'bullmq', extensions: { bullmq: { redis_url: 'redis://localhost:6379' } } }),
+			'jobWorkerOptions',
+		) as Record<string, unknown>;
+		expect(opts.mode).toBe('standalone');
+		expect(opts.backend).toBe('bullmq');
+		expect((opts.domainModuleExtensions as { bullmq: { redis_url: string } }).bullmq.redis_url).toBe(
+			'redis://localhost:6379',
+		);
+		expect(opts.allPools).toBe(true);
+	});
+
+	test('the embedded worker in subsystems.ts carries the same backend/extension options (one builder)', () => {
+		const block = { worker_mode: 'embedded', extensions: { drizzle: { listen_notify: true, poll_interval_ms: 500 } } };
+		const barrel = buildSubsystemBarrel(
+			[{ name: 'jobs', path: '/fake/jobs', backend: 'drizzle', status: 'installed' }],
+			{ jobs: block },
+			'./shared/subsystems',
+		);
+		expect(barrel.content).toContain(
+			"JobWorkerModule.forRoot({ mode: 'embedded', domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } }, domainModulePools: jobPools }),",
+		);
+		expect(jobWorkerBackendOptions(block)).toEqual({
+			domainModuleExtensions: { drizzle: { listenNotify: true, pollIntervalMs: 500 } },
+		});
 	});
 });
 
