@@ -6,7 +6,14 @@ All notable changes to this project will be documented in this file.
 
 **Breaking:** this release requires the **Drizzle 1.0 line**, and `drizzle-orm`
 is now a **peer dependency** (`^1.0.0-rc.4`) rather than a bundled dependency —
-install it yourself. The v1 Drizzle `relations()` const is no longer emitted
+install it yourself. `BaseRepository` and every family base also take a third,
+**required** type parameter — the relation manifest's type
+(`BaseRepository<TEntity, TTable, TRelations>`, #587) — with no default, because
+a default would let a repository that forgot its manifest compile and then
+silently accept no includes. Generated repositories are regenerated; a
+hand-written one binds `typeof relations` from `<generated>/relations`.
+
+The v1 Drizzle `relations()` const is no longer emitted
 (entity, clean-lite-ps entity, junction); it is replaced by the generated v2
 `defineRelations()` manifest (#586), which is what `db.query.*` traversals now
 resolve against.
@@ -78,6 +85,60 @@ resolve against.
   `junction new` run) and a **type gate**: consumer-shaped code compiled against the generated tree
   in which every promised property is a real assignment and every promised error is a real
   `@ts-expect-error`, so a change that loosened the types fails the gate instead of passing it.
+- **Typed `with` includes, scoped at every hop** (#587, ADR-044 §1/§6/§7). A
+  nested read is now a generated read: `findById(id, { with })`,
+  `list({ …, with })`, the plain `queries:` finders and the FK-traversal methods
+  take a typed include, resolved as ONE statement from one root.
+  - **Every hop carries the guards.** `<generated>/relations.ts` emits
+    `where: { RAW: (t) => hopScope(t, <TARGET>_SCOPE, '<source>.<key>') }` on
+    every relation whose target declares a scope (`tenant_scoped` /
+    `soft_delete` / `user_tracking`), plus one `ScopeConfig` constant per scoped
+    table. The predicate is a property of the RELATION, so the `with:` lateral,
+    the `where: { <relation>: … }` EXISTS form and a hand-written `db.query.*`
+    all carry it. A graph that declares no scope anywhere emits neither the
+    import nor the constants, so its manifest is byte-identical to before.
+  - **One predicate builder** — `runtime/base-classes/scope-filters.ts` —
+    behind the root (`scopeAnd`), the RQBv2 root filter (`rootScopeRawOn`) and
+    each hop (`hopScope`). `BaseRepository.scopePredicate()` /
+    `tenantPredicate()` are one-line handles over it. `column()` moved to
+    `runtime/base-classes/table-columns.ts`; both it and `tenantPredicateFor`
+    are re-exported from `base-repository.ts`, so no import path changed.
+  - **The HTTP include allowlist** (charter I6). `api:` accepts an object form,
+    `api: { enabled?, includes? }`, where `includes` is keyed by generated read
+    route (`find_by_id`, `list`, finder names) and each route declares
+    `max_depth` + `paths` as dot paths over relation keys. The emitter compiles
+    them into `<generated>/api-includes.ts` as `as const satisfies` literals; a
+    client sends `?include=a,b.c` and the controller looks each path up and
+    merges the fragments — it never builds a tree from client input. A path the
+    allowlist does not name is `400 { code: 'include_not_allowed', path }`, and
+    a route with no entry exposes nothing. Absent `api.includes` is the state
+    every entity is in today, so no HTTP behaviour changes until a consumer
+    opts in.
+  - **Generation-time errors, not runtime ones:** a path naming a relation the
+    entity does not have, a path deeper than its route's `max_depth`, a route
+    key that is not a generated read route, an allowlist declared beside
+    `api: false`, and a path traversing an `api: false` entity all fail the
+    command. The last one withdraws ADR-044 §7's "unless the allowlist names
+    it" — see its 2026-09-20 revision note.
+  - `<generated>/relations.ts` also exports `Relations`, `IncludeOf<TTable>` and
+    `ResultOf<TTable, TWith>`; each generated repository exports
+    `<Entity>Include`, `<Entity>Result<TWith>`, `<Entity>NoInclude` and
+    `<Entity>ApiResult`. `TWith` is inferred at the CALL SITE — annotating an
+    include literal widens it and loses the exact result shape.
+  - `ListOptions` gained `sort?: SortTerm[]` (column keys + directions). The
+    generated list use-case emits that instead of a rendered `orderBy`: RQBv2
+    aliases the root table, so a pre-rendered fragment names a table that is not
+    in scope there. A raw `orderBy` combined with a `with` now throws.
+  - Services gained a `findById` / `list` pass-through so an allowlisted include
+    reaches the repository. The typed navigator and the deletion of the
+    CGP-358b composition methods are still REL-3's.
+  - **Every `RAW` predicate renders against the table the relational query
+    builder hands its callback**, never one closed over from the enclosing
+    scope. RQBv2 aliases the root (`from "regions" as "d0"`), so the other form
+    emits an invalid FROM-clause reference and no include on a scoped entity can
+    execute. Banned by shape in `no-untethered-raw-callback.test.ts`, pinned in
+    SQL, and executed end-to-end through a generated repository against real
+    Postgres.
 
 - **`<generated>/relations.ts` — the v2 relation manifest** (#586, ADR-044). A
   whole-set TS emitter (`src/emitters/relations/`) writes one

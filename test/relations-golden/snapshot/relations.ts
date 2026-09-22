@@ -7,17 +7,22 @@
 // only consults `alias` when it has to infer a relation's columns from the
 // reverse side. See docs/specs/REL-1.md.
 import { defineRelations } from 'drizzle-orm';
+import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
+import { hopScope, type ScopeConfig } from '@pattern-stack/codegen/runtime/base-classes/scope-filters';
 import * as schema from './schema';
+
+const ACCOUNTS_SCOPE: ScopeConfig = { tenantScoped: true, softDelete: true, userTracking: true, enforcement: 'strict' };
+const CONTACTS_SCOPE: ScopeConfig = { tenantScoped: false, softDelete: true, userTracking: false, enforcement: 'lenient' };
 
 export const relations = defineRelations(schema, (r) => ({
 	accounts: {
-		contacts: r.many.contacts({ from: r.accounts.id, to: r.contacts.accountId }),
+		contacts: r.many.contacts({ from: r.accounts.id, to: r.contacts.accountId, where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'accounts.contacts') } }),
 		opportunities: r.many.opportunities({ from: r.accounts.id, to: r.opportunities.accountId }),
-		parentAccount: r.one.accounts({ from: r.accounts.parentAccountId, to: r.accounts.id, optional: true }),
+		parentAccount: r.one.accounts({ from: r.accounts.parentAccountId, to: r.accounts.id, optional: true, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'accounts.parentAccount') } }),
 	},
 	contacts: {
-		account: r.one.accounts({ from: r.contacts.accountId, to: r.accounts.id, optional: false }),
+		account: r.one.accounts({ from: r.contacts.accountId, to: r.accounts.id, optional: false, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'contacts.account') } }),
 		opportunities: r.many.opportunities({ from: r.contacts.id.through(r.opportunityContacts.contactId), to: r.opportunities.id.through(r.opportunityContacts.opportunityId) }),
 		opportunityContacts: r.many.opportunityContacts({ from: r.contacts.id, to: r.opportunityContacts.contactId }),
 		people: r.many.persons({ from: r.contacts.id, to: r.persons.contactId }),
@@ -26,16 +31,31 @@ export const relations = defineRelations(schema, (r) => ({
 		opportunity: r.one.opportunities({ from: r.notes.opportunityId, to: r.opportunities.id, optional: false }),
 	},
 	opportunities: {
-		account: r.one.accounts({ from: r.opportunities.accountId, to: r.accounts.id, optional: false }),
-		contacts: r.many.contacts({ from: r.opportunities.id.through(r.opportunityContacts.opportunityId), to: r.contacts.id.through(r.opportunityContacts.contactId) }),
+		account: r.one.accounts({ from: r.opportunities.accountId, to: r.accounts.id, optional: false, where: { RAW: (t) => hopScope(t, ACCOUNTS_SCOPE, 'opportunities.account') } }),
+		contacts: r.many.contacts({ from: r.opportunities.id.through(r.opportunityContacts.opportunityId), to: r.contacts.id.through(r.opportunityContacts.contactId), where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'opportunities.contacts') } }),
 		opportunityContacts: r.many.opportunityContacts({ from: r.opportunities.id, to: r.opportunityContacts.opportunityId }),
 		primaryNote: r.one.notes({ from: r.opportunities.id, to: r.notes.opportunityId, optional: true }),
 	},
 	opportunityContacts: {
-		contact: r.one.contacts({ from: r.opportunityContacts.contactId, to: r.contacts.id, optional: false }),
+		contact: r.one.contacts({ from: r.opportunityContacts.contactId, to: r.contacts.id, optional: false, where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'opportunityContacts.contact') } }),
 		opportunity: r.one.opportunities({ from: r.opportunityContacts.opportunityId, to: r.opportunities.id, optional: false }),
 	},
 	persons: {
-		contact: r.one.contacts({ from: r.persons.contactId, to: r.contacts.id, optional: true }),
+		contact: r.one.contacts({ from: r.persons.contactId, to: r.contacts.id, optional: true, where: { RAW: (t) => hopScope(t, CONTACTS_SCOPE, 'persons.contact') } }),
 	},
 }));
+
+/** This project's relation graph, as a type. */
+export type Relations = typeof relations;
+
+/** The include surface of one table — the keys a `with` may name. */
+export type IncludeOf<TTable extends keyof Relations> =
+	'with' extends keyof DBQueryConfig<'one', Relations, Relations[TTable]>
+		? NonNullable<DBQueryConfig<'one', Relations, Relations[TTable]>['with']>
+		: Record<string, never>;
+
+/** The row shape a given include tree resolves to, nested exactly as asked. */
+export type ResultOf<
+	TTable extends keyof Relations,
+	TWith extends IncludeOf<TTable>,
+> = BuildQueryResult<Relations, Relations[TTable], { with: TWith }>;

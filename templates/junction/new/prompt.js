@@ -270,6 +270,19 @@ export default {
 
     const outputPaths = resolveOutputPaths(junction);
 
+    // REL-2 (#587): the generated relation manifest, imported by the junction
+    // repository to bind `BaseRepository`'s third type parameter. Relative to the
+    // repository's own directory, and resolved through `paths.generated` so a
+    // project that moves the generated dir still compiles.
+    const generatedDirRel = config_?.paths?.generated || 'src/generated';
+    const relationsImport = (() => {
+      const spec = path.posix.relative(
+        path.posix.dirname(path.posix.normalize(outputPaths.repository)),
+        path.posix.normalize(`${generatedDirRel}/relations`),
+      );
+      return spec.startsWith('.') ? spec : `./${spec}`;
+    })();
+
     // ======================================================================
     // Endpoint naming — from each endpoint's OWN YAML (NAME-0, #611)
     // ======================================================================
@@ -485,6 +498,9 @@ export default {
 
       // Class names
       classNames,
+
+      // REL-2 (#587): the relation manifest specifier for this repository file.
+      relationsImport,
 
       // Parent table Drizzle var names (for FK .references())
       leftTable,

@@ -9,6 +9,11 @@ import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { JunctionIntegrationRepository } from '<%= junctionIntegrationRepositoryImport %>';
 import type { JunctionIntegrationConfig } from '<%= junctionIntegrationRepositoryImport %>';
+// REL-2 (#587): the generated relation graph binds the repository's third type
+// parameter. A junction table declares no scope of its own, so no hop INTO it
+// carries a predicate — REL-2 §1.5 measures exactly what that does and does not
+// allow, and a characterisation test pins it.
+import type { Relations } from '<%= relationsImport %>';
 <%_ integrationParentImports.forEach((imp) => { _%>
 import { <%= imp.table %> } from '<%= imp.importPath %>';
 <%_ }); _%>
@@ -41,6 +46,7 @@ export interface <%= classNames.entity %>IntegrationProjection {
 export class <%= classNames.repository %> extends JunctionIntegrationRepository<
   <%= classNames.entity %>,
   typeof <%= tableVarName %>,
+  Relations,
   <%= classNames.entity %>IntegrationWrite,
   <%= classNames.entity %>IntegrationProjection
 > {
@@ -65,7 +71,7 @@ export class <%= classNames.repository %> extends JunctionIntegrationRepository<
     roleColumn: <%- junctionIntegrationConfig.roleColumn ? `'${junctionIntegrationConfig.roleColumn}'` : 'null' %>,
   };
 
-  constructor(@Inject(DRIZZLE) db: DrizzleClient) {
+  constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
   }
 

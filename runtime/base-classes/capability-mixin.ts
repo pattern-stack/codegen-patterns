@@ -56,6 +56,7 @@
  */
 
 import type { PgTable } from 'drizzle-orm/pg-core';
+import type { AnyRelations } from 'drizzle-orm';
 import type { BaseRepository } from './base-repository';
 
 /**
@@ -65,7 +66,7 @@ import type { BaseRepository } from './base-repository';
  * mandated by assignability — see the module doc.
  */
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export type RepositoryCtor = abstract new (...args: any[]) => BaseRepository<any, PgTable>;
+export type RepositoryCtor = abstract new (...args: any[]) => BaseRepository<any, PgTable, AnyRelations>;
 
 /** The repository instance type a mixin base constructs. */
 export type RepositoryOf<TBase extends RepositoryCtor> =
@@ -79,7 +80,7 @@ export type RepositoryOf<TBase extends RepositoryCtor> =
  * the generated `extends` clause type-checking; see the module doc.
  */
 export type EntityOf<TBase extends RepositoryCtor> =
-	RepositoryOf<TBase> extends BaseRepository<infer TEntity, infer _TTable> ? TEntity : unknown;
+	RepositoryOf<TBase> extends BaseRepository<infer TEntity, infer _TTable, infer _TRel> ? TEntity : unknown;
 
 /**
  * The concrete Drizzle table type of the repository being layered — falls back
@@ -87,7 +88,7 @@ export type EntityOf<TBase extends RepositoryCtor> =
  * `unknown`.
  */
 export type TableOf<TBase extends RepositoryCtor> =
-	RepositoryOf<TBase> extends BaseRepository<infer _TEntity, infer TTable> ? TTable : PgTable;
+	RepositoryOf<TBase> extends BaseRepository<infer _TEntity, infer TTable, infer _TRel> ? TTable : PgTable;
 
 /**
  * The constructor a capability mixin returns, typed by the surface it adds.

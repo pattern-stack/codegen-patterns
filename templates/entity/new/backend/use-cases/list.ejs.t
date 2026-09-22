@@ -4,15 +4,23 @@ force: true
 ---
 <%- generatedBanner %>
 import { Injectable } from '@nestjs/common';
-import { asc, desc, sql, type SQL } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { buildPage, resolveListQuery, type ListQuery, type Page } from '<%= paginationImport %>';
+import type { SortTerm } from '<%= baseRepositoryImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
-import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
+import { <%= entityNamePlural %><% if (!includes) { %>, type <%= classNames.entity %><% } %> } from '../<%= entityFileStem %>.entity';
+<% if (includes) { -%>
+import type {
+  <%= classNames.entity %>Include,
+  <%= classNames.entity %>NoInclude,
+  <%= classNames.entity %>Result,
+} from '../<%= entityFileStem %>.repository';
+<% } -%>
 
 /**
  * Paginated list use-case for <%= entityNamePlural %> (pagination-by-default).
  *
- * Composes `service.list({ where, limit, offset, orderBy })` + `service.count(where)`
+ * Composes `service.list({ where, limit, offset, sort })` + `service.count(where)`
  * into a `Page<<%- classNames.entity %>>` envelope. Defaults: page 1,
 <% if (hasTimestamps) { -%>
  * pageSize 50 (max 200), sort `created_at desc, id desc`. `total`/`pageCount`
@@ -41,15 +49,27 @@ import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= e
 export class <%= classNames.listUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
+<% if (includes) { -%>
+  /**
+   * `include` is a typed include tree the controller already resolved against the
+   * route's allowlist (REL-2 §5); an internal caller passes one directly. Every
+   * hop of it is scoped by the relations manifest, so pagination composes with a
+   * nested read without widening what the reader can see.
+   */
+  async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
+    query?: ListQuery,
+    include?: TWith,
+  ): Promise<Page<<%= classNames.entity %>Result<TWith>>> {
+<% } else { -%>
   async execute(query?: ListQuery): Promise<Page<<%= classNames.entity %>>> {
+<% } -%>
     const resolved = resolveListQuery(query);
 
 <% if (hasTimestamps) { -%>
     // Default sort: `created_at desc, id desc` (id is the stable keyset
     // tie-break). A caller `sort_by` that names a real column is honored in the
     // requested direction with the id tie-break appended; an unknown column
-    // falls back to the default. Composed as a single SQL fragment because the
-    // base repository's `orderBy` takes one expression.
+    // falls back to the default.
 <% } else { -%>
     // Default sort: `id desc`. This entity has no `timestamps` behavior, so
     // there is no `created_at` column to sort by — and none is needed: the uuid
@@ -57,21 +77,33 @@ export class <%= classNames.listUseCase %> {
     // exists for. `resolveListQuery` still defaults `sort_by` to `created_at`,
     // which simply does not resolve to a column here and falls through to this
     // branch. A caller `sort_by` that names a real column is honored in the
-    // requested direction with the id tie-break appended. Composed as a single
-    // SQL fragment because the base repository's `orderBy` takes one expression.
+    // requested direction with the id tie-break appended.
 <% } -%>
-    const dir = resolved.sortOrder === 'asc' ? asc : desc;
-    const col = (<%= entityNamePlural %> as unknown as Record<string, unknown>)[
-      resolved.sortBy.replace(/_([a-z])/g, (_m: string, c: string) => c.toUpperCase())
-    ];
-    const orderBy: SQL =
-      col === undefined
+    //
+    // Expressed as COLUMN KEYS, not a rendered SQL fragment: the repository
+    // renders it against whichever table handle the executing path holds, and the
+    // relational query builder (the `with`-include path) aliases the root table
+    // (REL-2 §2.4). A pre-rendered fragment would name `<%= entityNamePlural %>`,
+    // which is not in scope there.
+    const sortColumn = resolved.sortBy.replace(
+      /_([a-z])/g,
+      (_m: string, c: string) => c.toUpperCase(),
+    );
+    const known =
+      (<%= entityNamePlural %> as unknown as Record<string, unknown>)[sortColumn] !== undefined;
+    const sort: SortTerm[] = known
+      ? [
+          { column: sortColumn, direction: resolved.sortOrder },
+          { column: 'id', direction: 'desc' },
+        ]
 <% if (hasTimestamps) { -%>
-        ? sql`${desc(<%= entityNamePlural %>.createdAt)}, ${desc(<%= entityNamePlural %>.id)}`
+      : [
+          { column: 'createdAt', direction: 'desc' },
+          { column: 'id', direction: 'desc' },
+        ];
 <% } else { -%>
-        ? sql`${desc(<%= entityNamePlural %>.id)}`
+      : [{ column: 'id', direction: 'desc' }];
 <% } -%>
-        : sql`${dir(col as never)}, ${desc(<%= entityNamePlural %>.id)}`;
 
     // Arbitrary where-filters are NOT modeled in v1 (the ListQuery owns only
     // pagination + sort); `where` stays undefined so the list is unfiltered by
@@ -91,12 +123,22 @@ export class <%= classNames.listUseCase %> {
     // adds the `timestamps` behavior.
 <% } -%>
     const [items, total] = await Promise.all([
+<% if (includes) { -%>
+      this.service.list<TWith>({
+        where,
+        limit: resolved.pageSize,
+        offset: resolved.offset,
+        sort,
+        ...(include === undefined ? {} : { with: include }),
+      }),
+<% } else { -%>
       this.service.list({
         where,
         limit: resolved.pageSize,
         offset: resolved.offset,
-        orderBy,
+        sort,
       }),
+<% } -%>
       this.service.count(where),
     ]);
 

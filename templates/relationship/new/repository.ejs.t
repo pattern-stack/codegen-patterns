@@ -10,10 +10,15 @@ import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { BaseRepository } from '<%= baseRepositoryImport %>';
+// REL-2 (#587): the generated relation graph binds the repository's third type
+// parameter. A relationship table carries no typed `with` of its own yet — its
+// per-type edges need the `types:` enum threaded into the manifest, which REL-1
+// deliberately left out (REL-1 §5) and #679 will decide alongside junctions.
+import type { Relations } from '<%= relationsImport %>';
 import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 
 @Injectable()
-export class <%= classNames.repository %> extends BaseRepository<<%= classNames.entity %>, typeof <%= tableVarName %>> {
+export class <%= classNames.repository %> extends BaseRepository<<%= classNames.entity %>, typeof <%= tableVarName %>, Relations> {
   readonly table = <%= tableVarName %>;
 
   // Behaviors: timestamps always enabled for relationships
@@ -25,7 +30,7 @@ export class <%= classNames.repository %> extends BaseRepository<<%= classNames.
     tenantScoped: false,
   };
 
-  constructor(@Inject(DRIZZLE) db: DrizzleClient) {
+  constructor(@Inject(DRIZZLE) db: DrizzleClient<Relations>) {
     super(db);
   }
 <% if (hasDeclarativeQueries) { -%>

@@ -112,8 +112,10 @@ describe('tenant_scoped — the repository', () => {
     const out = renderRepository(localsFor(def));
     expect(out).toContain('protected override readonly behaviors: BehaviorConfig');
     expect(out).toContain('tenantScoped: true');
-    expect(out).toContain(
-      "import type { BehaviorConfig } from '@shared/base-classes/base-repository';",
+    // REL-2 (#587) added `ListOptions` to the same import — the typed `with`
+    // include's `list` override takes it — so match the NAME, not the whole line.
+    expect(out).toMatch(
+      /import type \{[^}]*BehaviorConfig[^}]*\} from '@shared\/base-classes\/base-repository';/,
     );
   });
 

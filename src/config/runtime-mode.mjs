@@ -105,6 +105,12 @@ export function runtimeImportLocals(mode) {
     // must ship with codegen (package mode) and be vendored (vendored mode).
     paginationImport:
       mode === "vendored" ? "@shared/http/page" : runtimeImport(mode, "http/pagination"),
+    // REL-2 (#587): the request-time include-allowlist resolver. Like pagination
+    // this one IS package-published (a generated controller always imports it),
+    // but unlike pagination the vendored alias matches the runtime filename, so
+    // no rename is needed.
+    includesImport:
+      mode === "vendored" ? "@shared/http/includes" : runtimeImport(mode, "http/includes"),
     // Integration subsystem barrel (ADR-033.1 inline-sync `integration-source`
     // module — emitted only for entities with an inline `detection:` block).
     integrationSubsystemImport: subsystemsImport(mode, "integration"),

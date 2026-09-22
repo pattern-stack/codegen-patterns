@@ -74,8 +74,14 @@ describe('backend controller 404 semantics on :id routes', () => {
     const output = render('controller.ejs.t', locals);
 
     // D3 + D2 combined: ParseUUIDPipe guards the id; find-by-id use case
-    // throws NotFoundException on null, so the controller is a one-liner.
-    expect(output).toContain("async getById(@Param('id', ParseUUIDPipe) id: string): Promise<Contact> {");
+    // throws NotFoundException on null, so the controller body is a one-liner.
+    // REL-2 (#587) adds the `?include=` parameter — VALIDATED on every read route
+    // whether or not the entity exposes an allowlist (charter I6) — and widens the
+    // return to the row plus any allowlisted relation.
+    expect(output).toMatch(
+      /async getById\(\n\s*@Param\('id', ParseUUIDPipe\) id: string,\n\s*@Query\('include'\) include\?: string,\n\s*\): Promise<ContactApiResult> \{/,
+    );
+    expect(output).toContain('this.resolveInclude(include, undefined);');
     expect(output).toContain('return this.findByIdUseCase.execute(id);');
 
     // And the nullable return type is gone from the :id signature.
@@ -127,7 +133,7 @@ describe('backend controller 404 semantics on :id routes', () => {
     // pagination-by-default: @Get() returns Page<Contact>, binds the ListQuery,
     // and carries no 404 logic (an empty page is a valid result).
     expect(output).toMatch(/@Get\(\)\s+async getAll\(/);
-    expect(output).toContain('): Promise<Page<Contact>> {');
+    expect(output).toContain('): Promise<Page<ContactApiResult>> {');
     expect(output).toContain('return this.listUseCase.execute(query);');
     expect(output).not.toContain('Promise<Contact[]>');
   });

@@ -47,6 +47,20 @@ Three options were weighed (PLAN §2): promote relations to core; keep both with
    supplies a raw include tree, and an entity with `api: false` (ADR-043) is not reachable through an exposed neighbour
    unless the allowlist names it.
 
+> **Revision, 2026-09-20 (REL-2, #587) — `api: false` is not overridable by an allowlist.** The last clause of §7
+> above ("…unless the allowlist names it") is withdrawn. An allowlist path that traverses an entity declaring
+> `api: false` is a **generation error naming both entities**, with no per-path override.
+>
+> It was in tension with ADR-043 §6, which says `api: false` means "no network data plane" for that entity, full stop.
+> REL-2 §5.3 put the choice to the gate and the gate chose strict, for three reasons: the entities people mark
+> `api: false` are credentials and internal join tables; an override declared on the *neighbour* is invisible at the
+> `api: false` declaration site, so the closed entity's own YAML stops telling the truth; and nothing is lost, because
+> an entity that should be reachable through a neighbour can simply not be `api: false`.
+>
+> Enforced at generation time (`src/emitters/relations/build-includes.ts`), so the property is a build error rather
+> than something a reviewer has to notice. Declaring `api.includes` together with `api: { enabled: false }` is the
+> same error for the same reason. Evidence + the rejected reading: `docs/specs/REL-2.md` §5.3, §9.1.
+
 ### Fate of the Electric-parity rationale
 
 Restated, not dropped. Parity no longer means "both sides compose by hand the same way"; it means **both sides project
@@ -90,9 +104,17 @@ the relations to the same target. Many-to-many uses `.through()` over the `Junct
 
 ## Open follow-ups (implementation-time)
 
-- Whether v2 predefined relation `where` filters can carry the per-hop scope, or the repository rewrites the include
-  tree (REL-2 spike). REL-1 emits no `where`, so both paths stay open; note that a `where` on a relation that omits
-  `from`/`to` flips `isReversed` and re-targets the filter (`drizzle-orm/relations.js:60`) — irrelevant to the emitted
-  manifest only because it always carries `from`/`to`.
-- YAML shape of the include allowlist.
+- ~~Whether v2 predefined relation `where` filters can carry the per-hop scope, or the repository rewrites the include
+  tree (REL-2 spike).~~ **Closed 2026-09-20 (REL-2, #587): the predicate is emitted into the manifest.** Both
+  candidates produce equivalent SQL for an include, so capability was not the deciding factor. What decided it is that
+  RQBv2 traverses a relation in *two* places — the `with:` lateral AND the `where: { <relation>: … }` EXISTS subquery —
+  and a repository that rewrites the caller's include tree only ever sees the first. The second was measured leaking,
+  with rows, against real Postgres: a caller learned that a row matching a filter existed when that row was another
+  tenant's. With the predicate on the relation, every consumer of it carries the guard — including a hand-written
+  `db.query.*` that never touches a repository. The `isReversed` caveat below is why this only works: REL-1 emits
+  explicit `from`/`to` on both sides, so a hop's `where` always describes the target table. Evidence:
+  `docs/specs/REL-2.md` §1.
+- ~~YAML shape of the include allowlist.~~ **Closed 2026-09-20 (REL-2, #587):** `api: { includes: { <route>: {
+  max_depth, paths: [<dot path>] } } }`, keyed by generated read route (`find_by_id` / `list` / finder names), compiled
+  to a literal include fragment per path at generation time. `docs/specs/REL-2.md` §5.1.
 - Whether the frontend include mechanism lives in `@pattern-stack/frontend-patterns` or is fully generated.

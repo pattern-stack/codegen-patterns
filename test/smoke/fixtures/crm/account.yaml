@@ -8,6 +8,12 @@
 #     composition method (`AccountService.contacts(...)`, CGP-358b) and nothing
 #     in the entity file: DRZ-1 (#583) deleted the v1 Drizzle `relations()`
 #     const, so smoke asserts `many(` does NOT appear in `account.entity.ts`.
+#   - REL-2 (#587): the HTTP include allowlist. This is the only fixture in the
+#     repo that declares one, so the smoke's `tsc` is what proves the emitted
+#     `as const satisfies` map type-checks against the generated manifest inside a
+#     real consumer project, and the generated controller compiles against it.
+#     Soft-delete + user-tracking here also put a `where` on every hop INTO
+#     accounts, so the emitted manifest's scope predicates are compiled too.
 entity:
   name: account
   plural: accounts
@@ -40,6 +46,22 @@ fields:
 
 behaviors:
   - timestamps
+  - soft_delete
+  - user_tracking
+
+api:
+  includes:
+    find_by_id:
+      max_depth: 2
+      # `opportunities.account` implies `opportunities`, so three keys are
+      # emitted for two declarations. `contacts` is depth 1.
+      paths:
+        - contacts
+        - opportunities.account
+    list:
+      max_depth: 1
+      paths:
+        - contacts
 
 relationships:
   parent_account:

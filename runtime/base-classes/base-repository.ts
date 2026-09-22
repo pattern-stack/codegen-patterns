@@ -1,5 +1,5 @@
 /**
- * BaseRepository<TEntity, TTable>
+ * BaseRepository<TEntity, TTable, TRelations>
  *
  * Abstract base class providing standard CRUD operations via Drizzle ORM.
  * Every generated repository extends this class.
@@ -9,75 +9,38 @@
  *
  * NOT @Injectable — concrete repositories are @Injectable and inject DRIZZLE.
  */
-import { and, eq, getColumns, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type {
   AnyPgSelectQueryBuilder,
   PgColumn,
   PgSelectKind,
   PgTable,
 } from 'drizzle-orm/pg-core';
-import type { InferSelectModel, SQL } from 'drizzle-orm';
+import type { AnyRelations, InferSelectModel, SQL } from 'drizzle-orm';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
+import { column } from './table-columns';
+import {
+  scopeFilter,
+  tenantAxisPredicate,
+  tenantPredicateFor,
+  userScopePredicateFor,
+  type ScopeConfig,
+} from './scope-filters';
 import {
   CrossTenantWriteError,
   MissingTenantIdError,
   getTenantId,
-  requireRequester,
   tryGetRequester,
-  type RequesterScope,
 } from './tenant-context';
 
-// ============================================================================
-// Column access
-// ============================================================================
-
-/**
- * Resolve a column by its camelCase key on any Drizzle table.
- *
- * Reads the table's column map via `getColumns` (1.0's replacement for the
- * deprecated `getTableColumns`) rather than string-indexing the table type:
- * under a consumer tsconfig's `noUncheckedIndexedAccess` the lookup is
- * `PgColumn | undefined`, so a missing column is a checked case rather than an
- * `undefined` handed to `eq()` / `isNull()` that renders wrong SQL or fails
- * later with an opaque error.
- *
- * `owner` names the repository (or config) in the error so the throw points at
- * the declaration that is wrong.
- */
-export function column(table: PgTable, name: string, owner: string): PgColumn {
-  const col: PgColumn | undefined = getColumns(table)[name];
-  if (!col) {
-    throw new Error(`${owner}: table has no column '${name}'`);
-  }
-  return col;
-}
-
-/**
- * The tenant predicate for ANY table (ADR-042 / TEN-1).
- *
- * A FREE FUNCTION, not a method, on purpose: REL-2 (#587) applies the same
- * predicate at every hop of an include tree, where the tables are not this
- * repository's. The root resolves the tenant ONCE per statement (one ALS read)
- * and passes the VALUE down; each hop calls this with its own table.
- *
- *   - `undefined` tenant → `undefined` (lenient, no tenant established). The
- *     caller decides what that means; under strict it never reaches here,
- *     because `getTenantId` has already thrown.
- *   - `null`             → `IS NULL`, the null-tenant partition.
- *   - `string`           → `= tenantId`.
- *
- * A table with no `tenant_id` throws (via `column()`) rather than rendering a
- * filterless query — the runtime backstop behind the generation-time guards.
- */
-export function tenantPredicateFor(
-  table: PgTable,
-  tenantId: string | null | undefined,
-  owner: string,
-): SQL | undefined {
-  if (tenantId === undefined) return undefined;
-  const col = column(table, 'tenantId', owner);
-  return tenantId === null ? isNull(col) : eq(col, tenantId);
-}
+// REL-2 (#587) moved these two out of this file and into the modules that own
+// them — `column()` to `./table-columns` and the tenant predicate to
+// `./scope-filters`, which needs both and which this file imports (a cycle
+// otherwise). Re-exported here because that is where every existing caller
+// reaches for them, and one definition with two import paths is not two
+// definitions.
+export { column } from './table-columns';
+export { tenantPredicateFor } from './scope-filters';
 
 /**
  * Render a tenant value for an error message. `null` is a real partition, not
@@ -139,6 +102,20 @@ export interface BehaviorConfig {
   tenantScoped: boolean;
 }
 
+/** One ordering term, as a COLUMN KEY rather than a rendered expression. */
+export interface SortTerm {
+  /** camelCase column key on this entity's table. */
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
+/** One ordering term, as a COLUMN KEY rather than a rendered expression. */
+export interface SortTerm {
+  /** camelCase column key on this entity's table. */
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
 /**
  * Options for the list() method.
  */
@@ -146,14 +123,35 @@ export interface ListOptions {
   where?: SQL;
   limit?: number;
   offset?: number;
+  /**
+   * A pre-rendered ordering expression. Usable only on the core
+   * `select().from()` path: it names the table by its REAL name, and the
+   * relational query builder aliases the root (`"accounts" as "d0"`), so the same
+   * fragment references a table that is not in scope there. A generated
+   * repository therefore REJECTS it when combined with a `with` include rather
+   * than issuing SQL that cannot run (measured — REL-2 §2.4).
+   *
+   * Prefer {@link ListOptions.sort}, which both paths can render.
+   */
   orderBy?: PgColumn | SQL;
+  /**
+   * The ordering as column KEYS + directions, renderable against whichever table
+   * handle the executing path holds — this repo's own table for `baseQuery()`, or
+   * the aliased one RQBv2 hands an `orderBy` callback. One description, two
+   * renderings; the generated list use-case emits this.
+   */
+  sort?: readonly SortTerm[];
 }
 
 // ============================================================================
 // BaseRepository
 // ============================================================================
 
-export abstract class BaseRepository<TEntity, TTable extends PgTable> {
+export abstract class BaseRepository<
+  TEntity,
+  TTable extends PgTable,
+  TRelations extends AnyRelations,
+> {
   /**
    * The Drizzle table schema for this entity, at its CONCRETE type.
    * Concrete repositories declare this as a class property; generated ones
@@ -219,9 +217,23 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
    */
   protected readonly scopeEnforcement: 'lenient' | 'strict' = 'lenient';
 
-  protected readonly db: DrizzleClient;
+  /**
+   * The Drizzle client, bound to THIS project's relation graph.
+   *
+   * `TRelations` is the generated `defineRelations()` manifest's type (REL-1),
+   * which is what makes `this.db.query.<table>.findFirst({ with: … })` resolve in
+   * a generated subclass. Third type parameter, NO default: `EmptyRelations`
+   * would let a repository that forgot to pass its manifest compile and then
+   * silently accept no includes (REL-2 §2.2, charter I7).
+   *
+   * The base cannot type the include itself — with `TRelations` and the relation
+   * key as naked type parameters, `DBQueryConfig<…>['with']` is a TS2536 (REL-2
+   * §2.1). So the base carries the handle; the generated subclass carries the
+   * signature.
+   */
+  protected readonly db: DrizzleClient<TRelations>;
 
-  constructor(db: DrizzleClient) {
+  constructor(db: DrizzleClient<TRelations>) {
     this.db = db;
   }
 
@@ -273,7 +285,10 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
   async list(options?: ListOptions): Promise<TEntity[]> {
     let query = this.baseQuery(options?.where);
 
-    if (options?.orderBy) {
+    const sorted = this.orderByOn(this.tableRef, options?.sort);
+    if (sorted) {
+      query = query.orderBy(...sorted) as typeof query;
+    } else if (options?.orderBy) {
       query = query.orderBy(options.orderBy as SQL) as typeof query;
     }
     if (options?.limit !== undefined) {
@@ -426,7 +441,26 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
   }
 
   /**
-   * Build the ambient tenant-scope predicate for this repo's table.
+   * This repository's declared scope posture, as ONE value — the same shape the
+   * emitted relations manifest carries for each hop (REL-2 §3). Both come from
+   * the entity's YAML declaration, which is what keeps the root and the hops from
+   * drifting apart (charter I1/I3).
+   *
+   * `softDelete` is per-CALL, not read from `behaviors`: the by-id write paths
+   * (`update` / `delete`) must still match a soft-deleted row. Everything else is
+   * a property of the entity.
+   */
+  protected scopeConfigFor(opts?: { softDelete?: boolean }): ScopeConfig {
+    return {
+      tenantScoped: this.behaviors.tenantScoped,
+      softDelete: opts?.softDelete === true,
+      userTracking: this.behaviors.userTracking,
+      enforcement: this.scopeEnforcement,
+    };
+  }
+
+  /**
+   * The ambient USER-axis predicate for this repo's table.
    *
    * Returns `undefined` (no scoping) when:
    *   - `behaviors.userTracking` is false (repo is not user-owned), or
@@ -437,30 +471,22 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
    * scope: `'user'` → `user_id = ctx.userId`; `'org'` → `user_id IN
    * ctx.orgUserIds` (empty list matches nothing — fail-closed); `'superuser'`
    * → no filter. See `tenant-context.ts` for the boundary-install contract.
+   *
+   * One line, because REL-2 (#587) lifted the axis into `scope-filters.ts`: the
+   * same function scopes every HOP of an include tree, and a second copy here is
+   * exactly the drift that makes a nested read leak (charter I1/I3).
    */
   protected scopePredicate(): SQL | undefined {
     if (!this.behaviors.userTracking) return undefined;
-    const ctx =
-      this.scopeEnforcement === 'strict'
-        ? requireRequester()
-        : tryGetRequester();
-    if (!ctx) return undefined;
-    const scope: RequesterScope = ctx.scope ?? 'user';
-    switch (scope) {
-      case 'superuser':
-        return undefined;
-      case 'org':
-        return ctx.orgUserIds && ctx.orgUserIds.length > 0
-          ? inArray(this.col('userId'), ctx.orgUserIds as string[])
-          : sql`false`;
-      case 'user':
-      default:
-        return eq(this.col('userId'), ctx.userId);
-    }
+    return userScopePredicateFor(
+      this.tableRef,
+      this.scopeEnforcement,
+      this.constructor.name,
+    );
   }
 
   /**
-   * Build the ambient TENANT predicate for this repo's table (ADR-042).
+   * The ambient TENANT predicate for this repo's table (ADR-042).
    *
    * Returns `undefined` (no tenant filter) when:
    *   - `behaviors.tenantScoped` is false, or
@@ -469,18 +495,62 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
    *
    * Under `'strict'` — which is what a `tenant_scoped: true` entity is emitted
    * with — there is no third case: `getTenantId` throws rather than returning
-   * `undefined`, so this method either filters or raises. It never quietly
-   * reads across tenants.
+   * `undefined`, so this either filters or raises. It never quietly reads across
+   * tenants. Same lift as `scopePredicate` above.
    */
   protected tenantPredicate(): SQL | undefined {
-    if (!this.behaviors.tenantScoped) return undefined;
-    if (tryGetRequester()?.tenantScope === 'all') return undefined;
-    const owner = this.constructor.name;
-    return tenantPredicateFor(
+    return tenantAxisPredicate(
       this.tableRef,
-      getTenantId(this.scopeEnforcement, owner),
-      owner,
+      this.scopeConfigFor(),
+      this.constructor.name,
     );
+  }
+
+  /**
+   * The root scope predicate shaped for the RQBv2 relational query builder — the
+   * path a `with` include takes, because `baseQuery()` cannot carry one.
+   *
+   * Generated repositories fold it into the root filter as
+   * `where: { AND: [ …caller…, { RAW: (t) => this.rootScopeRawOn(t, …) } ] }`, so
+   * the RQBv2 root and the `select().from()` root are guarded by the SAME
+   * function (REL-2 §2.4). Returns `sql`true`` when nothing applies, because a
+   * `RAW` slot takes a `SQL`, not `SQL | undefined`.
+   *
+   * **`table` is the handle RQBv2 passes the closure, and it is not
+   * `this.tableRef`.** The relational query builder ALIASES the root
+   * (`from "regions" as "d0"`), so a predicate built against this repository's
+   * own handle renders `where "regions"."deleted_at" is null` — an invalid
+   * reference to a FROM-clause entry, and every include on a scoped entity fails
+   * to execute. Same trap as `orderByOn` below, and as the hop predicates in the
+   * manifest: in all three, the table to render against is the one the callback
+   * is handed, never the one the caller happens to hold. There is deliberately no
+   * un-threaded overload — its only call site is this one, and it is always
+   * wrong here.
+   */
+  protected rootScopeRawOn(table: PgTable, opts?: { softDelete?: boolean }): SQL {
+    return (
+      scopeFilter(table, this.scopeConfigFor(opts), this.constructor.name) ?? sql`true`
+    );
+  }
+
+  /**
+   * Render a {@link ListOptions.sort} against a SPECIFIC table handle.
+   *
+   * The handle matters: the relational query builder aliases the root table and
+   * hands the alias to an `orderBy` callback, so an expression built against this
+   * repository's own table would reference a name that is not in scope there.
+   * Passing the table in is what lets one sort description serve both paths
+   * (REL-2 §2.4).
+   */
+  protected orderByOn(
+    table: PgTable,
+    sort?: readonly SortTerm[],
+  ): SQL[] | undefined {
+    if (!sort || sort.length === 0) return undefined;
+    return sort.map((term) => {
+      const col = column(table, term.column, this.constructor.name);
+      return (term.direction === 'asc' ? asc : desc)(col);
+    });
   }
 
   /**
@@ -606,16 +676,14 @@ export abstract class BaseRepository<TEntity, TTable extends PgTable> {
     extra?: SQL,
     opts?: { softDelete?: boolean },
   ): SQL | undefined {
-    const conditions: SQL[] = [];
-    if (opts?.softDelete) conditions.push(isNull(this.col('deletedAt')));
-    const scope = this.scopePredicate();
-    if (scope) conditions.push(scope);
-    const tenant = this.tenantPredicate();
-    if (tenant) conditions.push(tenant);
-    if (extra) conditions.push(extra);
-    if (conditions.length === 0) return undefined;
-    if (conditions.length === 1) return conditions[0];
-    return and(...conditions);
+    const scope = scopeFilter(
+      this.tableRef,
+      this.scopeConfigFor(opts),
+      this.constructor.name,
+    );
+    if (!scope) return extra;
+    if (!extra) return scope;
+    return and(scope, extra);
   }
 
   /**

@@ -22,7 +22,7 @@ import {
 	FRONTEND_EMITTED_DEPS,
 	FRONTEND_LOCKSTEP_DEPS,
 } from '../../emitters/frontend/deps.js';
-import { emptyRelationsManifest, RELATIONS_MANIFEST_FILE } from '../../emitters/relations/index.js';
+import { buildApiIncludes, emptyRelationsManifest, RELATIONS_MANIFEST_FILE } from '../../emitters/relations/index.js';
 import { DEFAULT_CODEGEN_CONFIG } from '../../config/project-config.js';
 import {
 	importSpecifier,
@@ -162,6 +162,13 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'base-classes/base-repository.ts', target: 'base-classes/base-repository.ts' },
 	// Ambient tenant scope — imported by base-repository.ts (scopePredicate)
 	{ runtime: 'base-classes/tenant-context.ts', target: 'base-classes/tenant-context.ts' },
+	// The scope predicate for ONE table (REL-2 §3) + its column accessor. Three
+	// consumers in a generated project: `base-repository.ts` (root), the generated
+	// repository's RQBv2 root filter, and `<generated>/relations.ts` — the emitted
+	// manifest imports `hopScope` so every hop of an include tree carries the same
+	// guards. Missing either file breaks the manifest, not just the base class.
+	{ runtime: 'base-classes/scope-filters.ts', target: 'base-classes/scope-filters.ts' },
+	{ runtime: 'base-classes/table-columns.ts', target: 'base-classes/table-columns.ts' },
 	{ runtime: 'base-classes/base-service.ts', target: 'base-classes/base-service.ts' },
 	{ runtime: 'base-classes/integrated-entity-repository.ts', target: 'base-classes/integrated-entity-repository.ts' },
 	{ runtime: 'base-classes/integrated-entity-service.ts', target: 'base-classes/integrated-entity-service.ts' },
@@ -217,6 +224,10 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	// pagination` search contract so the two never collide. Package mode resolves
 	// the same source via `@pattern-stack/codegen/runtime/http/pagination`.
 	{ runtime: 'http/pagination.ts', target: 'http/page.ts' },
+	// The HTTP include allowlist resolver (REL-2 §5) — imported by EVERY generated
+	// controller, because the `?include=` parameter is validated on every read
+	// route whether or not the entity exposes an allowlist (closed by default).
+	{ runtime: 'http/includes.ts', target: 'http/includes.ts' },
 	// EAV helpers — referenced by generated services on `eav_value_table` entities
 	{ runtime: 'eav-helpers.ts', target: 'eav-helpers.ts' },
 	// OpenAPI registry (OPENAPI-1/2) — generated modules register Zod DTOs
@@ -1034,6 +1045,17 @@ export async function buildInitPlan(
 			cwd,
 			path.join(layout.generated, 'relations.ts'),
 			emptyRelationsManifest(),
+			{ force }
+		)
+	);
+	// Its sibling, the HTTP include allowlist (REL-2 §5). Written here for the
+	// same reason and from the same builder — and empty means "nothing exposed",
+	// which is the posture every entity has until it declares `api.includes`.
+	entries.push(
+		fileEntry(
+			cwd,
+			path.join(layout.generated, 'api-includes.ts'),
+			buildApiIncludes([]),
 			{ force }
 		)
 	);

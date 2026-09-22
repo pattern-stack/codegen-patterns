@@ -1,8 +1,24 @@
 /**
  * Base classes barrel export
  */
-export { BaseRepository, column, tenantPredicateFor } from './base-repository';
-export type { BehaviorConfig, ListOptions, RowsOf } from './base-repository';
+export { BaseRepository } from './base-repository';
+export type { BehaviorConfig, ListOptions, RowsOf, SortTerm } from './base-repository';
+export { column } from './table-columns';
+
+// The scope predicate, for one table (REL-2 §3). `hopScope` is what the
+// generated relations manifest calls on every traversed relation, so an include
+// tree is scoped at every hop by construction (charter I3) — including through
+// the `where: { <relation>: … }` EXISTS form, which an include-tree rewriter
+// cannot see (REL-2 §1.4).
+export {
+  hopScope,
+  isUnscoped,
+  scopeFilter,
+  tenantAxisPredicate,
+  tenantPredicateFor,
+  userScopePredicateFor,
+} from './scope-filters';
+export type { ScopeConfig } from './scope-filters';
 
 // Ambient tenant scope (AsyncLocalStorage) — read by BaseRepository.scopePredicate,
 // set at request/worker boundaries via withRequester/withUserScope/etc.

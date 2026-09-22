@@ -11,17 +11,20 @@
  * first two. `pattern: Integrated` repos declare all four plus `integrationConfig`.
  */
 import { and, eq, inArray } from 'drizzle-orm';
+import type { AnyRelations } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { DrizzleTx } from '../types/drizzle';
-import { BaseRepository, column } from './base-repository';
+import { BaseRepository } from './base-repository';
+import { column } from './table-columns';
 import type { IntegrationUpsertConfig, IntegrationFkResolver } from './integration-upsert-config';
 
 export abstract class IntegratedEntityRepository<
   TEntity,
   TTable extends PgTable,
+  TRelations extends AnyRelations,
   TIntegrationWrite = Partial<TEntity>,
   TIntegrationProjection = TEntity,
-> extends BaseRepository<TEntity, TTable> {
+> extends BaseRepository<TEntity, TTable, TRelations> {
   /**
    * Declarative integration write surface. Concrete (`pattern: Integrated`) repositories
    * declare this — the template emits it from the entity's fields + FKs.

@@ -391,12 +391,16 @@ function assertRelationshipEmission(tmpDir: string): void {
 		'generated/relations.ts builds over the generated schema barrel',
 	);
 	// Self-ref one(), keyed by the YAML relationship name, nullable FK ⇒ optional.
+	// `account` declares soft_delete + user_tracking, so every hop INTO accounts
+	// also carries the REL-2 per-hop predicate.
 	assertContains(
 		manifest,
-		/parentAccount: r\.one\.accounts\(\{ from: r\.accounts\.parentAccountId, to: r\.accounts\.id, optional: true \}\)/,
-		'generated/relations.ts self-referential belongs_to',
+		/parentAccount: r\.one\.accounts\(\{ from: r\.accounts\.parentAccountId, to: r\.accounts\.id, optional: true, where: \{ RAW: \(t\) => hopScope\(t, ACCOUNTS_SCOPE, 'accounts\.parentAccount'\) \} \}\)/,
+		'generated/relations.ts self-referential belongs_to, scoped per hop',
 	);
 	// Both has_many inverses: the declared foreign_key lives on the TARGET table.
+	// contact/opportunity declare no scope, so those hops carry no `where` —
+	// the manifest does not grow for targets that are not scoped (REL-2 §3.1).
 	assertContains(
 		manifest,
 		/contacts: r\.many\.contacts\(\{ from: r\.accounts\.id, to: r\.contacts\.accountId \}\)/,
@@ -407,11 +411,133 @@ function assertRelationshipEmission(tmpDir: string): void {
 		/opportunities: r\.many\.opportunities\(\{ from: r\.accounts\.id, to: r\.opportunities\.accountId \}\)/,
 		'generated/relations.ts account has_many opportunities',
 	);
-	// Required FK ⇒ the include is not nullable.
+	// Required FK ⇒ the include is not nullable. Target IS scoped ⇒ hop predicate.
 	assertContains(
 		manifest,
-		/account: r\.one\.accounts\(\{ from: r\.contacts\.accountId, to: r\.accounts\.id, optional: false \}\)/,
-		'generated/relations.ts contact belongs_to account',
+		/account: r\.one\.accounts\(\{ from: r\.contacts\.accountId, to: r\.accounts\.id, optional: false, where: \{ RAW: \(t\) => hopScope\(t, ACCOUNTS_SCOPE, 'contacts\.account'\) \} \}\)/,
+		'generated/relations.ts contact belongs_to account, scoped per hop',
+	);
+	// ── REL-2 (#587): the per-hop scope predicate + the typed-include helpers ──
+	assertContains(
+		manifest,
+		/import \{ hopScope, type ScopeConfig \} from '@shared\/base-classes\/scope-filters';/,
+		'generated/relations.ts imports the hop predicate from the runtime',
+	);
+	assertContains(
+		manifest,
+		/const ACCOUNTS_SCOPE: ScopeConfig = \{ tenantScoped: false, softDelete: true, userTracking: true, enforcement: 'lenient' \};/,
+		"generated/relations.ts carries accounts' declared scope as a constant",
+	);
+	// EVERY relation whose target is scoped carries a `where`. A relation that
+	// lost its predicate is the regression this catches.
+	{
+		const hops = manifest
+			.split('\n')
+			.filter((line) => /r\.(?:one|many)\.accounts\(\{/.test(line));
+		if (hops.length === 0) {
+			throw new Error('generated/relations.ts has no relation targeting accounts to check');
+		}
+		for (const hop of hops) {
+			if (!hop.includes('hopScope(t, ACCOUNTS_SCOPE')) {
+				throw new Error(
+					`generated/relations.ts hop into the scoped accounts table carries no predicate: ${hop.trim()}`,
+				);
+			}
+		}
+	}
+	assertContains(
+		manifest,
+		/export type IncludeOf<TTable extends keyof Relations>/,
+		'generated/relations.ts exports the IncludeOf helper (REL-2 §2.3)',
+	);
+	assertContains(
+		manifest,
+		/export type ResultOf</,
+		'generated/relations.ts exports the ResultOf helper (REL-2 §2.3)',
+	);
+
+	// ── generated/api-includes.ts — the HTTP allowlist (REL-2 §5) ───────────
+	const apiIncludes = reads('generated/api-includes.ts');
+	assertContains(
+		apiIncludes,
+		/export const ACCOUNTS_API_INCLUDES = \{/,
+		'generated/api-includes.ts emits the account allowlist',
+	);
+	assertContains(
+		apiIncludes,
+		/'opportunities\.account': \{ opportunities: \{ with: \{ account: true \} \} \},/,
+		'generated/api-includes.ts compiles a depth-2 dot path into a literal fragment',
+	);
+	// A prefix of a declared path is allowed without a second declaration.
+	assertContains(
+		apiIncludes,
+		/\topportunities: \{ opportunities: true \},/,
+		'generated/api-includes.ts implies the prefix of a declared path',
+	);
+	assertContains(
+		apiIncludes,
+		/as const satisfies Readonly<Record<string, RouteIncludes<'accounts'>>>;/,
+		'generated/api-includes.ts re-checks every fragment against the manifest',
+	);
+	// `list` declares max_depth 1 and only `contacts`, so `opportunities` must NOT
+	// leak into it from find_by_id's declaration.
+	{
+		const listBlock = apiIncludes.slice(apiIncludes.indexOf('\tlist: {'));
+		if (listBlock.includes('opportunities')) {
+			throw new Error('generated/api-includes.ts leaked a find_by_id path into the list route');
+		}
+	}
+
+	// ── the emitted controller enforces the allowlist ───────────────────────
+	const accountController = reads('modules/accounts/account.controller.ts');
+	assertContains(
+		accountController,
+		/this\.resolveInclude\(include, ACCOUNTS_API_INCLUDES\.find_by_id\)/,
+		'account.controller.ts resolves ?include= against the find_by_id allowlist',
+	);
+	assertContains(
+		accountController,
+		/throw new BadRequestException\(\{ code: err\.code, path: err\.path, message: err\.message \}\)/,
+		'account.controller.ts turns a disallowed include into a 400',
+	);
+	// A route with NO allowlist still validates — closed by default (charter I6).
+	const contactController = reads('modules/contacts/contact.controller.ts');
+	assertContains(
+		contactController,
+		/this\.resolveInclude\(include, undefined\)/,
+		'contact.controller.ts rejects any ?include= (no api.includes block)',
+	);
+
+	// ── the repository carries the typed include (REL-2 §2.3) ──────────────
+	const accountRepository = reads('modules/accounts/account.repository.ts');
+	assertContains(
+		accountRepository,
+		/extends IntegratedEntityRepository<\n\s*Account,\n\s*typeof accounts,\n\s*Relations,/,
+		'account.repository.ts binds Relations as the third type parameter',
+	);
+	assertContains(
+		accountRepository,
+		/export type AccountInclude = IncludeOf<'accounts'>;/,
+		'account.repository.ts exports its include surface',
+	);
+	assertContains(
+		accountRepository,
+		/override async findById<TWith extends AccountInclude = AccountNoInclude>/,
+		'account.repository.ts findById takes a typed include',
+	);
+	// The `(t)` is the whole assertion: RQBv2 ALIASES the root, so a predicate built
+	// from the repository's own handle names a table that is not in scope and the
+	// statement cannot run. Matched as the THREADED form, and the un-threaded one is
+	// asserted absent — a regression here is invisible to `tsc` (REL-2 §10 Found #9).
+	assertContains(
+		accountRepository,
+		/\{ RAW: \(t\) => this\.rootScopeRawOn\(t, \{ softDelete: true \}\) \}/,
+		'account.repository.ts scopes the RQBv2 root with the same predicate as baseQuery',
+	);
+	assertNotContains(
+		accountRepository,
+		/RAW: \(\s*\) =>/,
+		'account.repository.ts must not build a RAW predicate from a table it was not handed',
 	);
 	// R2: explicit from/to on every relation is why no alias is ever emitted.
 	assertNotContains(

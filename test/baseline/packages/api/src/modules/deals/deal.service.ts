@@ -4,6 +4,12 @@ import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { IntegratedEntityService } from '@shared/base-classes/integrated-entity-service';
 import { DealRepository } from './deal.repository';
+import type {
+  DealInclude,
+  DealNoInclude,
+  DealResult,
+} from './deal.repository';
+import type { ListOptions } from '@shared/base-classes/base-repository';
 import type { Deal } from './deal.entity';
 import { UserRepository } from '../users/user.repository';
 import type { User } from '../users/user.entity';
@@ -26,6 +32,28 @@ export class DealService extends WithAnalytics(
     private readonly accountRepo: AccountRepository,
   ) {
     super(repository);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  //
+  // These two overrides exist so the HTTP layer can carry an allowlisted include
+  // from the controller to the repository. They are DELEGATION ONLY: no join
+  // logic, no sibling-repository calls, no navigator. The typed navigator and the
+  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override findById<TWith extends DealInclude = DealNoInclude>(
+    id: string,
+    opts?: { with?: TWith },
+  ): Promise<DealResult<TWith> | null> {
+    return this.repository.findById<TWith>(id, opts);
+  }
+
+  override list<TWith extends DealInclude = DealNoInclude>(
+    options?: ListOptions & { with?: TWith },
+  ): Promise<Array<DealResult<TWith>>> {
+    return this.repository.list<TWith>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

@@ -4,6 +4,20 @@
  * No NestJS, no HTTP — just Drizzle → Postgres.
  * Tests every inherited method from BaseRepository using ContactRepository.
  *
+ * REL-2 (#587) deleted `test/scaffold/shared/base-classes/base-repository.ts`,
+ * the stub that used to SHADOW the runtime base for this suite (REL-0 flagged it;
+ * a generated repository now calls `baseQuery` / `rootScopeRawOn`, which the stub
+ * never had). So these tests now exercise the REAL contract, and four assertions
+ * below changed because they were pinning the stub's drift, not a contract:
+ *
+ *   - `update()` returns the row, never null (a miss matches zero rows and the
+ *     row-0 read is `undefined`, which is why the old assertion read `toBeNull`);
+ *   - `delete()` returns `void`;
+ *   - `findById()` DOES exclude a soft-deleted row — the whole point of the
+ *     `softDelete` behavior, and the opposite of what the stub did;
+ *   - `upsertMany()` inserts rather than merging partials, so a partial update
+ *     through it hits the NOT NULL columns.
+ *
  * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
 import { test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
@@ -155,22 +169,32 @@ d('update', () => {
     expect(updated!.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
   });
 
-  test('returns null for nonexistent ID', async () => {
+  test('a nonexistent ID matches zero rows, so there is no row to return', async () => {
+    // `update()` routes through `scopeAnd(eq(id))` and returns `rows[0]`. A miss
+    // is `undefined`, not `null` — and it is a MISS rather than an error, which is
+    // the "returns nothing — identical to truly doesn't exist" semantics a scoped
+    // repository needs (no existence oracle).
     const result = await repo.update('00000000-0000-0000-0000-000000000000', {
       title: 'Ghost',
     });
-    expect(result).toBeNull();
+    expect(result).toBeUndefined();
   });
 });
 
 d('delete (soft)', () => {
   test('sets deletedAt timestamp', async () => {
     const created = await repo.create(contactFactory());
-    const deleted = await repo.delete(created.id);
+    // The real contract is `Promise<void>`; the row is read back to assert on it.
+    await repo.delete(created.id);
 
-    expect(deleted).not.toBeNull();
-    expect(deleted!.id).toBe(created.id);
-    expect(deleted!.deletedAt).toBeInstanceOf(Date);
+    const rows = await repo.findByIds([created.id]);
+    expect(rows).toHaveLength(0); // soft-deleted rows are filtered by findByIds
+    const raw = await getTestDb()
+      .select()
+      .from((await import('../schema')).contacts);
+    const row = raw.find((r: { id: string }) => r.id === created.id);
+    expect(row).toBeDefined();
+    expect(row.deletedAt).toBeInstanceOf(Date);
   });
 
   test('soft-deleted entities excluded from list()', async () => {
@@ -192,18 +216,21 @@ d('delete (soft)', () => {
     expect(await repo.count()).toBe(1);
   });
 
-  test('findById still returns soft-deleted entity', async () => {
+  test('findById EXCLUDES a soft-deleted entity', async () => {
     const created = await repo.create(contactFactory());
     await repo.delete(created.id);
 
-    const found = await repo.findById(created.id);
-    expect(found).not.toBeNull();
-    expect(found!.deletedAt).not.toBeNull();
+    // `baseQuery()` folds the soft-delete guard into its single WHERE, so a
+    // soft-deleted row is indistinguishable from one that never existed. The
+    // deleted stub did not do this, which is why the old assertion said the
+    // opposite.
+    expect(await repo.findById(created.id)).toBeNull();
   });
 
-  test('returns null for nonexistent ID', async () => {
-    const result = await repo.delete('00000000-0000-0000-0000-000000000000');
-    expect(result).toBeNull();
+  test('deleting a nonexistent ID is a no-op, not an error', async () => {
+    await expect(
+      repo.delete('00000000-0000-0000-0000-000000000000'),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -219,26 +246,32 @@ d('upsertMany', () => {
     expect(results[1].id).toBeDefined();
   });
 
-  test('updates existing entities when id provided', async () => {
+  test('upsertMany INSERTS every input — the base default does not merge', async () => {
+    // `BaseRepository.upsertMany` is `Promise.all(inputs.map(create))`; the
+    // conflict-target merge lives on the family bases (MetadataEntityRepository,
+    // IntegratedEntityRepository). A full row therefore inserts; a partial one
+    // hits the table's NOT NULL columns, which is the honest behaviour of this
+    // default rather than a silent update.
     const created = await repo.create(contactFactory({ firstName: 'Old' }));
 
     const results = await repo.upsertMany([
-      { id: created.id, firstName: 'New' } as Partial<Contact>,
+      contactFactory({ firstName: 'New' }) as Partial<Contact>,
     ]);
 
     expect(results).toHaveLength(1);
     expect(results[0].firstName).toBe('New');
-    expect(results[0].id).toBe(created.id);
+    expect(results[0].id).not.toBe(created.id);
   });
 
-  test('handles mix of creates and updates', async () => {
-    const existing = await repo.create(contactFactory({ firstName: 'Existing' }));
+  test('inserts every input in one pass', async () => {
+    await repo.create(contactFactory({ firstName: 'Existing' }));
 
     const results = await repo.upsertMany([
-      { id: existing.id, title: 'Updated' } as Partial<Contact>,
+      contactFactory({ firstName: 'Second' }) as Partial<Contact>,
       contactFactory({ firstName: 'Brand New' }) as Partial<Contact>,
     ]);
 
     expect(results).toHaveLength(2);
+    expect(await repo.count()).toBe(3);
   });
 });

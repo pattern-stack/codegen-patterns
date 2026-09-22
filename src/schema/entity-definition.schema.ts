@@ -1019,6 +1019,47 @@ const GenerateConfigSchema = z
 
 export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
 
+/**
+ * One HTTP read route's include allowlist (REL-2 §5, charter I6).
+ *
+ * `paths` are DOT PATHS over relation keys (`contacts`, `opportunities.account`).
+ * They are not queries: the allowlist exposes SHAPES. A client asks for a path by
+ * name and the generated controller looks up a compile-time literal fragment —
+ * it never constructs a tree from client input.
+ *
+ * `max_depth` is an explicit cap with no default. A declared path longer than it
+ * is a GENERATION error, so it can never be requested at runtime; a silent trim
+ * would make the cap a suggestion.
+ */
+const ApiIncludeRouteSchema = z
+  .object({
+    max_depth: z.number().int().positive(),
+    paths: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+
+export type ApiIncludeRoute = z.infer<typeof ApiIncludeRouteSchema>;
+
+/**
+ * The expanded form of the top-level `api:` key.
+ *
+ * `api: false` / `api: true` stay legal and mean exactly what ADR-043 §6 says.
+ * The object form adds the include allowlist, keyed by generated read route:
+ * `find_by_id`, `list`, and one entry per `queries:` finder name.
+ *
+ * `enabled: false` together with `includes:` is a GENERATION error — an entity
+ * with no data plane cannot expose includes over it, and quietly ignoring the
+ * block would hide the misunderstanding.
+ */
+const ApiConfigSchema = z
+  .object({
+    enabled: z.boolean().optional().default(true),
+    includes: z.record(z.string(), ApiIncludeRouteSchema).optional(),
+  })
+  .strict();
+
+export type ApiConfig = z.infer<typeof ApiConfigSchema>;
+
 export const EntityDefinitionSchema = z
   .object({
     entity: EntityConfigSchema,
@@ -1048,7 +1089,12 @@ export const EntityDefinitionSchema = z
     // internal join tables) that must never traverse HTTP, rather than emitting
     // a route that is merely guarded. The backend analogue of the frontend
     // exclude knob (#556). Defaults to `true`.
-    api: z.boolean().optional().default(true),
+    //
+    // REL-2 (#587) adds the OBJECT form — `api: { enabled?, includes? }` — which
+    // carries the per-route include allowlist (charter I6). `api: false` is
+    // `{ enabled: false }`; absent is `{ enabled: true }` with no includes, which
+    // is what makes every entity that exists today closed by default.
+    api: z.union([z.boolean(), ApiConfigSchema]).optional().default(true),
 
     // EAV (entity-attribute-value) dual-write + paired reads (ADR-13).
     // When `true`, codegen emits:
@@ -1166,6 +1212,12 @@ export const EntityDefinitionSchema = z
     // additive `ADD COLUMN`; the host tightens it to NOT NULL after backfilling.
     // It carries no `.references()`: the tenants table is host-owned, and
     // codegen emits a DB-level FK only for tables it generates (#636).
+    //
+    // REL-2 (#587) is the flag's second reader: it tells the RELATION GRAPH that a
+    // hop into this entity must carry the tenant predicate. Deciding that per hop
+    // by inspecting the table's columns would be re-deriving what this declaration
+    // already says (charter I1), so the answer travels as generated data — a
+    // per-entity constant in the emitted manifest.
     tenant_scoped: z.boolean().optional().default(false),
 
     // Composite (multi-column) unique indexes (#356). Single-column uniqueness
@@ -1389,3 +1441,28 @@ export const fieldTypeToZod: Record<FieldType, string> = {
   string_array: "z.array(z.string())",
   enum: "z.enum()", // Placeholder - templates add choices
 };
+
+// ============================================================================
+// `api:` accessors (REL-2 §5)
+// ============================================================================
+
+/**
+ * Is this entity's HTTP data plane emitted at all? (ADR-043 §6.)
+ *
+ * One reader for both forms of the key, so `api: false` and
+ * `api: { enabled: false }` can never diverge.
+ */
+export function apiEnabled(def: Pick<EntityDefinition, 'api'>): boolean {
+	const api = def.api;
+	if (typeof api === 'boolean') return api;
+	return api.enabled;
+}
+
+/** The declared include allowlist, keyed by route. Absent ⇒ nothing exposed. */
+export function apiIncludes(
+	def: Pick<EntityDefinition, 'api'>,
+): Record<string, ApiIncludeRoute> | undefined {
+	const api = def.api;
+	if (typeof api === 'boolean') return undefined;
+	return api.includes;
+}

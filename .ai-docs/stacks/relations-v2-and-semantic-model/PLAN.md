@@ -419,18 +419,66 @@ changes later units:
   `contacts: has_many` plus an `opportunity × contact` junction) throws; the post-step reports an error and
   `entity new` exits non-zero. Later units that add edge sources must keep that property.
 - **`relationship:` YAML entities contribute no edges yet.** Their typed edges need a per-type `where`, which is
-  REL-2's surface; their tables carry `{}` in the manifest today.
+  REL-2's surface; their tables are absent from the manifest object today. REL-2 shipped without adding them — its
+  `where` slot is spent on the per-hop scope, and a per-TYPE filter on the same slot is #679's question.
 - **The scaffold integration harness now generates a SET** — `test/scaffold/entities/` (account · contact ·
   opportunity) plus `test/scaffold/junctions/`, staged into `<repo>/junctions` because the CLI reads junctions from a
   fixed path. TEN-1 / REL-2 leak tests at depth ≥ 3 have a graph to traverse there already.
 
-### 5A.4 REL-2 — typed includes on repositories
-`findById` / `list` / declarative `queries:` accept a typed `with`. **Every hop** must carry: tenant predicate (ALS),
-soft-delete filter, `userTracking` scope — spike whether v2 predefined relation `where` filters can bake these in, or
-whether the repository rewrites the include tree before executing. Traversal must also respect ADR-043: an entity with
-`api: false` or a stricter guard must not become readable *through* an exposed neighbour — so the HTTP surface takes an
-**allowlisted, depth-capped** include (declared in YAML), never a raw client-supplied tree. Internal callers
-(use-cases) get the full typed include.
+### 5A.4 REL-2 — typed includes on repositories — **shipped 2026-09-20 (#587)**
+`findById` / `list` / the plain `queries:` finders / the FK-traversal methods accept a typed `with`.
+`docs/specs/REL-2.md` is the post-implementation truth. What changes later units:
+
+- **The per-hop predicate lives in the MANIFEST, not in the repository** (charter Q2, closed). Both candidates produce
+  equivalent SQL for an include; what decided it is that RQBv2 traverses a relation in **two** places — the `with:`
+  lateral and the `where: { <relation>: … }` EXISTS subquery — and an include-tree rewriter only ever sees the first.
+  The second was measured leaking, with rows, against real Postgres. So `<generated>/relations.ts` emits
+  `where: { RAW: (t) => hopScope(t, <TARGET>_SCOPE, '<source>.<key>') }` on every relation whose target declares a
+  scope, plus one `ScopeConfig` constant per scoped table. **Consequence for every later unit:** a hop is scoped by
+  construction, including from a hand-written `db.query.*`; REL-3's navigator and FE-REL inherit it for free and must
+  not add scoping of their own.
+- **One predicate builder, three call sites** — `runtime/base-classes/scope-filters.ts`. `scopeFilter(table, cfg,
+  owner)` is the root's guard (via `scopeAnd`), the RQBv2 root filter's guard (via `rootScopeRawOn`) and each hop's guard
+  (via `hopScope`). TEN-1's `scopePredicate()` / `tenantPredicate()` are now one-line handles over the same functions,
+  and `column()` moved to `runtime/base-classes/table-columns.ts` to break the cycle (both re-exported from
+  `base-repository.ts`, so no import path changed).
+- **One divergence from TEN-1 §8, deliberate.** TEN-1 anticipated the root resolving the tenant once and passing the
+  VALUE down to each hop. It cannot: the hop predicate lives in the manifest and has no call site to receive it from.
+  Each hop reads the ALS itself — measured to run once per *traversed* relation, at statement-build time, so the value
+  is the same and a root-only read never invokes one.
+- **`TRelations` is the third, REQUIRED type parameter** on `BaseRepository` and every family base. No default: an
+  `EmptyRelations` default would let a repository that forgot its manifest compile and silently accept no includes.
+  This is the second breaking arity change inside epic #580 (REL-0 was the first) and the last one planned.
+- **The include surface is emitted on the generated repository, never the base.** With `TRelations` and the relation
+  key as naked type parameters `DBQueryConfig<…>['with']` is a TS2536, so a generic `BaseRepository.findById<TWith>`
+  cannot be written. The manifest exports `IncludeOf<TTable>` / `ResultOf<TTable, TWith>` and each repository exports
+  `<Entity>Include` / `<Entity>Result<TWith>` / `<Entity>NoInclude` / `<Entity>ApiResult`. **REL-3's navigator consumes
+  exactly those** (spec §4) and must thread `TWith` through its own generic rather than annotating it.
+- **An entity with NO relation in the manifest gets no include surface.** `DBQueryConfig` has no `with` slot for a
+  relation-less table, so mentioning one is a compile error in the consumer. Gated on the entity's own
+  `relationships:` block minus transitive ones, which means a junction-ONLY entity currently gets no typed include from
+  the entity pipeline — a missing feature, not a broken build. #679's junction/relationship convergence decides it.
+- **`ListOptions` gained `sort: SortTerm[]`**, and the generated list use-case emits that instead of a rendered
+  `orderBy` fragment. RQBv2 aliases the root table, so a fragment naming `accounts` references a table not in scope
+  there. A raw `orderBy` combined with a `with` now throws rather than issuing SQL Postgres rejects. GATE-2's
+  default-sort rule is unchanged in substance.
+- **The HTTP allowlist is `api: { includes: { <route>: { max_depth, paths } } }`** (charter Q3, closed), compiled by
+  `src/emitters/relations/build-includes.ts` into `<generated>/api-includes.ts` as `as const satisfies` literals. The
+  `api:` key is now a boolean OR that object; `apiEnabled()` / `apiIncludes()` are the one reader for both forms.
+  **`api: false` is strict** — a path traversing a closed entity is a generation error naming both (ADR-044 §7 revised,
+  ADR-043 §6 noted).
+- **Services got a pass-through, not a navigator.** `findById` / `list` on the generated service forward `opts` so the
+  controller can carry an allowlisted include. REL-3 still owns the navigator and the deletion of the CGP-358b
+  composition methods beside them.
+- **The scaffold's shadow `BaseRepository`/`BaseService` stubs are gone.** They shadowed the real runtime bases for
+  `just test-integration` (REL-0 flagged it), and a generated repository now calls `baseQuery` / `rootScopeRawOn`, which
+  the stubs never had. The integration suite runs against the real contract; four assertions that had encoded the
+  stubs' drift were corrected.
+- **The scoped leak graph** is `test/scaffold/entities/{region,site,sensor}-scaffold.yaml` +
+  `junctions/site_sensor.yaml` — every entity tenant-scoped, soft-deletable and user-tracked, giving the depth-3 path
+  `region { parentRegion { sites { sensors } } }` with a junction at the last hop. The account/contact/opportunity set
+  stays unscoped on purpose: it is what proves the other half (no scope anywhere ⇒ no hop predicate emitted, behaviour
+  unchanged).
 
 ### 5A.5 REL-3 — services delegate
 Keep the public method names (`opportunityService.account(id)`, `accountService.contacts(id, page)`); bodies become one

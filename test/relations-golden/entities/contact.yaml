@@ -21,8 +21,11 @@ fields:
     required: true
     max_length: 255
 
+# REL-2: a PARTIALLY scoped entity — `soft_delete` alone, so its hop predicate
+# is one conjunct and its enforcement stays `lenient` (no tenant axis).
 behaviors:
   - timestamps
+  - soft_delete
 
 relationships:
   account:

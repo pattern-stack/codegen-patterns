@@ -1,0 +1,15 @@
+# site × sensor — REL-2 (#587) leak-test fixture.
+#
+# The junction itself declares NO scope: `JunctionDefinitionSchema` is `.strict()`
+# and has no scoping flag, so the table has no `tenant_id` and no `deleted_at`.
+# REL-2 §1.5 measures exactly what that does and does not allow — a junction row
+# can fabricate an EDGE between two of the reader's rows, but it can never surface
+# another tenant's row, because the hop INTO sensors is scoped. `L6` in
+# `relation-scope.test.ts` is the characterisation test that pins it.
+pattern: Junction
+between: [site, sensor]
+temporal: false
+sourced: false
+expose_on_parent:
+  left: false
+  right: false

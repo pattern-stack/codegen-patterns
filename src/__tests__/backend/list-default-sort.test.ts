@@ -14,6 +14,13 @@
  * entity actually declares.** Without `timestamps`, the uuid primary key alone
  * is the default — already a total order, which is the property the `id`
  * tie-break exists for.
+ *
+ * REL-2 (#587) changed the SHAPE, not the rule: the list use-case now emits the
+ * sort as column KEYS (`ListOptions.sort`) rather than a rendered SQL fragment,
+ * because the `with`-include path goes through the relational query builder,
+ * which ALIASES the root table — so a fragment naming `accounts` references a
+ * table that is not in scope there (measured; REL-2 §2.4). The assertions below
+ * follow the new shape and keep asserting the same property.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -87,20 +94,28 @@ describe('backend list use-case — default sort', () => {
   it('defaults to the primary key alone when there are no timestamps', () => {
     const out = render('use-cases/list.ejs.t', withoutTimestamps);
 
-    expect(out).toContain('? sql`${desc(accounts.id)}`');
+    expect(out).toContain(": [{ column: 'id', direction: 'desc' }];");
   });
 
   it('keeps created_at + id as the default when timestamps are declared', () => {
     const out = render('use-cases/list.ejs.t', withTimestamps);
 
-    expect(out).toContain('? sql`${desc(accounts.createdAt)}, ${desc(accounts.id)}`');
+    expect(out).toContain("{ column: 'createdAt', direction: 'desc' },");
+    expect(out).toContain("{ column: 'id', direction: 'desc' },");
   });
 
   it('keeps the id tie-break on the caller-supplied-sort branch either way', () => {
-    const tieBreak = ': sql`${dir(col as never)}, ${desc(accounts.id)}`';
+    const tieBreak = "{ column: sortColumn, direction: resolved.sortOrder },";
 
-    expect(render('use-cases/list.ejs.t', withoutTimestamps)).toContain(tieBreak);
-    expect(render('use-cases/list.ejs.t', withTimestamps)).toContain(tieBreak);
+    for (const definition of [withoutTimestamps, withTimestamps]) {
+      const out = render('use-cases/list.ejs.t', definition);
+      expect(out).toContain(tieBreak);
+      // The tie-break follows the caller's column in the SAME array literal.
+      const callerBranch = out.slice(out.indexOf(tieBreak));
+      expect(callerBranch).toStartWith(
+        `${tieBreak}\n          { column: 'id', direction: 'desc' },`,
+      );
+    }
   });
 
   it('documents the sort it actually emits, in both shapes', () => {
@@ -125,13 +140,15 @@ describe('backend list use-case — default sort', () => {
     );
   });
 
-  it('renders valid TypeScript in both shapes (balanced ternary, one orderBy)', () => {
+  it('renders valid TypeScript in both shapes (balanced ternary, one sort)', () => {
     for (const definition of [withoutTimestamps, withTimestamps]) {
       const out = render('use-cases/list.ejs.t', definition);
-      expect(out.match(/const orderBy: SQL =/g)).toHaveLength(1);
+      expect(out.match(/const sort: SortTerm\[\] = known/g)).toHaveLength(1);
       // Exactly one `?` branch and one `:` branch survive the EJS conditionals.
-      expect(out.match(/^\s+\? sql`/gm)).toHaveLength(1);
-      expect(out.match(/^\s+: sql`/gm)).toHaveLength(1);
+      expect(out.match(/^\s+\? \[/gm)).toHaveLength(1);
+      expect(out.match(/^\s+: \[/gm)).toHaveLength(1);
+      // …and exactly one call passes it down.
+      expect(out.match(/^\s+sort,$/gm)).toHaveLength(1);
     }
   });
 });

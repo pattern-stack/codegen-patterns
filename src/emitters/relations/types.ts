@@ -20,6 +20,27 @@ import type { JunctionDefinition } from '../../schema/junction-definition.schema
 
 export type { EntityRegistryEntry } from '../../parser/entity-registry';
 
+/**
+ * One table's declared scope posture, as the manifest carries it (REL-2 §3).
+ *
+ * Structurally the runtime's `ScopeConfig` — the emitter cannot import it (the
+ * generator does not depend on the shipped runtime's module graph), and the
+ * smoke's `tsc` over the generated project is what pins the two together: the
+ * emitted constant is annotated `ScopeConfig`, so a drift is a build error in
+ * every consumer project rather than a silent mismatch here.
+ */
+export interface ScopeConfigLiteral {
+	tenantScoped: boolean;
+	softDelete: boolean;
+	userTracking: boolean;
+	enforcement: 'lenient' | 'strict';
+}
+
+/** Nothing declared ⇒ no `where` is emitted for a hop into this table. */
+export function isUnscopedConfig(cfg: ScopeConfigLiteral): boolean {
+	return !cfg.tenantScoped && !cfg.softDelete && !cfg.userTracking;
+}
+
 /** One end of a relation, as a reference into the relations builder. */
 export interface ColumnRef {
 	/** Table identifier as exported from the generated schema barrel. */
@@ -45,6 +66,21 @@ export interface RelationEdge {
 	to: ColumnRef;
 	/** `one()` only — drives the include's result nullability. */
 	optional?: boolean;
+	/**
+	 * The TARGET entity's declared scope, or `null` when the target declares no
+	 * scope at all (a junction table, or a plain entity with no behaviors).
+	 *
+	 * This is what makes a traversal scoped by CONSTRUCTION: `relationToSQL`
+	 * applies a relation's `where` to the target table, so the predicate travels
+	 * with the relation and every consumer of it carries it — the `with:` lateral,
+	 * the `where: { <relation>: … }` EXISTS form that an include-tree rewriter
+	 * cannot see (REL-2 §1.4), and a hand-written `db.query.*` that never touches
+	 * a repository.
+	 *
+	 * `null` keeps the manifest byte-identical to REL-1's output for a graph that
+	 * declares no scope anywhere.
+	 */
+	targetScope: ScopeConfigLiteral | null;
 	/** Human-readable declaration site, used in collision messages. */
 	origin: string;
 }
@@ -58,6 +94,17 @@ export interface RelationsEmitContext {
 	entities: EntityRegistryEntry[];
 	definitions: Map<string, EntityDefinition>;
 	junctions: JunctionDefinition[];
+	/**
+	 * Import specifier for the runtime's `scope-filters` module, resolved for the
+	 * project's runtime mode (ADR-037). The manifest imports `hopScope` from it —
+	 * the one cost of putting the per-hop predicate in the manifest (REL-2 §1.5):
+	 * the file stops being a pure description of the graph. It is the same import
+	 * the generated repositories already carry.
+	 *
+	 * Omitted ⇒ `@shared/base-classes/scope-filters` (the vendored form), which is
+	 * what the emitter's own tests and `project init` use.
+	 */
+	scopeFiltersImport?: string;
 }
 
 /** Canonical entity order for deterministic emission: ascending by `name`. */
