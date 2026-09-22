@@ -222,10 +222,23 @@ test-listen-notify-leak-integration:
 typecheck:
     bun run typecheck
 
+# Studio UI unit tests — the pure bits of `tools/studio`: the graph → xyflow
+# adapter, the Zod-issue → editor-line mapping, the unified-diff parser and the
+# run reducer. No browser, no server, no Docker (~100ms).
+#
+# `bun install` is conditional because `tools/` is outside the root workspace:
+# the app resolves its own deps, so a fresh checkout has none.
+test-studio:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ui="{{justfile_directory()}}/tools/studio"
+    [ -d "$ui/node_modules" ] || (cd "$ui" && bun install)
+    cd "$ui" && bun test src/__tests__
+
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
 # cannot mask this suite.
-test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-integration-emit test-smoke-integration test-smoke-frontend
+test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-integration-emit test-smoke-integration test-smoke-frontend test-studio
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

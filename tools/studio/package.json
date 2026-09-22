@@ -1,0 +1,42 @@
+{
+  "name": "@pattern-stack/studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Studio \u2014 one browser window for the model graph, the YAML, generation and the diff (STUDIO-0, #698)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/__tests__"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.0",
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/lang-yaml": "^6.1.2",
+    "@codemirror/language": "^6.10.0",
+    "@codemirror/lint": "^6.8.4",
+    "@codemirror/search": "^6.5.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.35.0",
+    "@lezer/highlight": "^1.2.0",
+    "@pattern-stack/graph-components": "file:../../packages/graph-components",
+    "@xyflow/react": "^12.0.0",
+    "codemirror": "^6.0.1",
+    "elkjs": "^0.9.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/bun": "^1.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vite": "^6.0.0"
+  }
+}

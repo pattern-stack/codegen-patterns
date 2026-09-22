@@ -1,0 +1,241 @@
+/*
+ * Studio theme.
+ *
+ * Automatic source detection is off: this app lives under `tools/`, so
+ * scanning upward would sweep the whole generator repo. The two `@source`
+ * directives below are the only places Tailwind looks — this app, and the
+ * component library it renders (aliased into the bundle from `packages/`,
+ * which is outside this directory).
+ */
+@import "tailwindcss" source(none);
+@source "./";
+@source "../../../packages/graph-components/src/";
+
+/* By path, not by the package's `./theme.css` export: the Vite alias points
+   the bare package name at the library's `src/`, so the export subpath would
+   resolve to a file that does not exist there. */
+@import "../../../packages/graph-components/src/theme/graph-theme.css";
+
+/*
+ * Surface scale. Four steps, darkest at the back, so panes read as stacked
+ * rather than outlined: canvas < chrome < panel < raised.
+ */
+:root {
+  color-scheme: dark;
+
+  --s-canvas: #0b1120;
+  --s-chrome: #0f172a;
+  --s-panel: #131c2e;
+  --s-raised: #1b263c;
+  --s-hover: #22304a;
+
+  --s-line: #243352;
+  --s-line-strong: #33456b;
+
+  --t-primary: #e2e8f0;
+  --t-secondary: #94a3b8;
+  --t-muted: #64748b;
+
+  --accent: #60a5fa;
+  --accent-strong: #3b82f6;
+  --accent-soft: #1e3a5f;
+
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --danger-soft: #450a0a;
+
+  --add: #34d399;
+  --add-bg: rgba(52, 211, 153, 0.1);
+  --del: #f87171;
+  --del-bg: rgba(248, 113, 113, 0.1);
+
+  /* One spacing rhythm for every pane's padding and gaps. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* Chrome heights are fixed so streaming into the drawer cannot reflow the
+     panes above it. */
+  --h-header: 48px;
+  --h-tabbar: 36px;
+}
+
+/*
+ * The component library reads `--graph-*` off `[data-theme="dark"]`, which
+ * `index.html` sets on <html>. A handful of surfaces are re-pointed at the
+ * scale above so library panels sit in the same stack as Studio's own.
+ */
+[data-theme="dark"] {
+  --graph-panel-bg: var(--s-panel);
+  --graph-node-bg: var(--s-raised);
+  --graph-node-border: var(--s-line);
+  --graph-node-selected-border: var(--accent);
+  --graph-font-family: var(--font-ui);
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--s-canvas);
+  color: var(--t-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ── Focus ────────────────────────────────────────────────────────────────
+   Keyboard focus is always visible and never shifts layout: the ring is an
+   outline with an offset, not a border. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--s-line-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--s-line-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--t-muted);
+  background-clip: content-box;
+}
+
+/* ── ReactFlow ────────────────────────────────────────────────────────── */
+.react-flow__node {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--s-line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: var(--s-panel);
+  border-bottom: 1px solid var(--s-line);
+  color: var(--t-secondary);
+  width: 26px;
+  height: 26px;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--s-hover);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__minimap {
+  background: var(--s-chrome);
+  border: 1px solid var(--s-line);
+  border-radius: var(--r-md);
+}
+
+.react-flow__attribution {
+  /* Kept, not hidden: hiding it is for React Flow Pro subscribers. Toned down
+     to sit in the surface scale instead. */
+  background: transparent;
+}
+
+.react-flow__attribution a {
+  color: var(--t-muted);
+  font-size: 9px;
+  opacity: 0.55;
+}
+
+/* ── CodeMirror ───────────────────────────────────────────────────────── */
+.cm-editor {
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+.cm-scroller {
+  font-family: var(--font-mono);
+  line-height: 1.6;
+}
+
+/* Zod issues are underlined in place and repeated in a list below the editor;
+   the line itself is tinted so it is findable while scrolling. */
+.cm-line.studio-issue-line {
+  background: rgba(248, 113, 113, 0.09);
+}
+
+.studio-issue-mark {
+  text-decoration: underline wavy var(--danger);
+  text-underline-offset: 3px;
+}
+
+@keyframes studio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect a reduced-motion preference: the spinner is the only animation. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
