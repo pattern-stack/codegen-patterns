@@ -124,7 +124,10 @@ test-smoke-subsystems:
 
 # Integration-compile smoke — generate the integration tree against the
 # checked-in integration-patterns fixture (entities + providers) and run
-# `tsc --noEmit`, scoped to src/integrations/**. Closes the smoke-gap:
+# `tsc --noEmit` over the WHOLE generated project — no directory carve-out;
+# diagnostics are scoped by location only (test/smoke/_consumer-errors.ts,
+# GATE-2) and a tsc that exits non-zero without a diagnostic fails (#688).
+# Closes the smoke-gap:
 # integration-emit only asserts string content (never compiles), and the
 # default smoke has no provider surface — so nothing in CI ever `tsc`'d the
 # emitted src/integrations/** tree. Compiles against the IN-REPO runtime +

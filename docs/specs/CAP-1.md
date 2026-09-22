@@ -295,11 +295,20 @@ Fixtures:
 
 | Entity | `patterns:` | Proves |
 |---|---|---|
-| `account` | `[Integrated, Group, Individual, Audited]` | composed-base file · 3-deep chain · `Integrated` spine found out of position 0 · the type-only import cycle · abstract `integrationConfig` still enforced · per-capability config literal · forwarders |
-| `contact` | `[Group]` | inline `extends WithGroup(BaseRepository<…>)`, no composed-base file |
+| `account` | `[Group, Integrated, Individual, Audited, Actor]` | composed-base file · multi-layer chain · `Integrated` spine found out of position 0 · the type-only import cycle · abstract `integrationConfig` still enforced · per-capability config literal · forwarders |
+| `contact` | `[Actor]` | inline `extends WithActor(BaseRepository<…>)`, no composed-base file |
 | `note` | *(none)* | emission unchanged when no pattern is declared |
 
-Plus two **negative** gates run through the CLI: a two-spine entity (`[Integrated, Activity]`) and a
+The table is the fixture set as it stands on the chain tip (corrected by REV-0, #688): CAP-3 appended the library
+`Actor` to `account` and made it `contact`'s one capability; CAP-2/CAP-3 added `meeting`, `person`, `crew`, `squad`,
+`shift` and the junction/relationship fixtures, documented in their own specs.
+
+The positional spine rule this spec removed from the hygen locals also survived in the integration emitter
+(`adapter-emission-generator.ts`, the assembly/sink gate). REV-0 (#688) routes it through `composePatterns(...)
+.spineName`; the regression test is the `patterns: [Actor, Integrated]` + `surface:` case in
+`src/__tests__/cli/adapter-emission-generator.test.ts` (the smoke fixtures declare no `surface:`).
+
+Plus two **negative** gates (CAP-2 added `role-target-not-actor` and `roles-without-communication`) run through the CLI: a two-spine entity (`[Integrated, Activity]`) and a
 capability-vs-`queries:` method collision must each fail `entity new` with a non-zero exit and the expected message.
 
 ## Out of scope

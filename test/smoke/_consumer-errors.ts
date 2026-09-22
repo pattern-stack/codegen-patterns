@@ -105,3 +105,36 @@ export function consumerErrors(output: string, projectDir?: string): string[] {
 
 	return diagnostics.map((lines) => lines.join('\n'));
 }
+
+/** What a gate needs from a `tsc` run: its exit status and everything it printed. */
+export interface TscRun {
+	/** `spawnSync(...).status` — `null` when tsc was killed or never started. */
+	code: number | null;
+	/** stdout + stderr. */
+	output: string;
+}
+
+/**
+ * The gate decision for one `tsc` run: `consumerErrors` of its output, **plus**
+ * a failure when `tsc` exited non-zero (or with no status at all) without
+ * printing a single `error TS` line.
+ *
+ * Reading only the parsed diagnostics fails open: a `tsc` that cannot be
+ * resolved by `bunx`, crashes, or is OOM-killed prints no `error TS` line, and
+ * an empty diagnostic list would pass the gate on a program nobody compiled
+ * (#688, charter I9). A non-zero exit whose `error TS` lines are all scoped out
+ * by location is NOT a failure — that is the scoping this module exists for.
+ */
+export function tscGateErrors(run: TscRun, projectDir?: string): string[] {
+	const errors = consumerErrors(run.output, projectDir);
+	if (run.code !== 0 && !/error TS\d+:/.test(run.output)) {
+		const status =
+			run.code === null ? 'no exit status (killed, or never started)' : `exit ${run.code}`;
+		const tail = run.output.trim().split('\n').slice(-20).join('\n');
+		errors.push(
+			`tsc failed (${status}) without printing a diagnostic — the gate compiled nothing.` +
+				(tail ? `\n${tail}` : ' (no output)'),
+		);
+	}
+	return errors;
+}

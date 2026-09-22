@@ -485,6 +485,16 @@ describe('capability pattern registration', () => {
 		).toThrow(/contributes nothing/);
 	});
 
+	test('a columns-only capability is rejected — columns are never emitted (#688)', () => {
+		expect(() =>
+			registerLibraryPattern({
+				name: 'RegTestColumnsOnlyCapability',
+				kind: 'capability',
+				columns: [{ name: 'flag', type: 'boolean' }],
+			}),
+		).toThrow(/contributes nothing/);
+	});
+
 	test('a capability declaring an inheritable base class is rejected', () => {
 		expect(() =>
 			registerLibraryPattern({

@@ -36,6 +36,41 @@ const PID_FILE = '.dev-app.pid';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Config files `codegen dev up` will push from, in precedence order. */
+const DRIZZLE_CONFIG_FILES = ['drizzle.config.ts', 'drizzle.config.js'] as const;
+
+/**
+ * What `codegen dev up` will do about the schema push, or `null` when it will
+ * do nothing.
+ *
+ * `project init` emits no `drizzle.config.ts` and writes no `package.json`, so
+ * on a fresh scaffold this returns `null` and no push is attempted at all —
+ * drizzle-kit only becomes relevant once the consumer authors the config
+ * themselves, which is the point `docs/consumer/drizzle.md` tells them to
+ * install a kit matching the ORM line.
+ *
+ * `bunx --no-install` runs the project's OWN drizzle-kit. A bare `bunx` fetches
+ * `@latest` into a machine-global cache when the project has none, pairing a
+ * kit with an ORM line it was never built for (#688).
+ */
+export function drizzlePushPlan(
+	cwd: string,
+): { configFile: string; command: string } | null {
+	const configFile = DRIZZLE_CONFIG_FILES.find((f) =>
+		fs.existsSync(path.join(cwd, f)),
+	);
+	if (!configFile) return null;
+	return {
+		configFile,
+		command: `bunx --no-install drizzle-kit push --config ${configFile}`,
+	};
+}
+
+/** The warning `codegen dev up` prints when the push command fails. */
+export function drizzlePushWarning(stderr: string): string {
+	return `schema push may have failed (is drizzle-kit installed in this project?): ${stderr.slice(0, 200)}`;
+}
+
 function runCmd(cmd: string, cwd: string, opts?: { silent?: boolean }): {
 	ok: boolean;
 	stdout: string;
@@ -274,15 +309,15 @@ export class DevUpCommand extends Command {
 		if (!redisReady) printWarning('redis did not become healthy in time');
 
 		// 4. Run schema push/migration if drizzle config exists
-		const drizzleConfig = ['drizzle.config.ts', 'drizzle.config.js'].find((f) =>
-			fs.existsSync(path.join(ctx.cwd, f)),
-		);
-		if (drizzleConfig) {
+		const pushPlan = drizzlePushPlan(ctx.cwd);
+		if (pushPlan) {
 			if (!isJsonMode()) printInfo('pushing database schema...');
-			const dbUrl = `postgres://postgres:postgres@localhost:${pgPort}/codegen_dev`;
-			const push = runCmd(`bunx drizzle-kit push --config ${drizzleConfig}`, ctx.cwd);
+			// NOTE: the push inherits the ambient env — it is NOT given the dev
+			// stack's DATABASE_URL the way the app start below is. Tracked
+			// separately as #693.
+			const push = runCmd(pushPlan.command, ctx.cwd);
 			if (!push.ok) {
-				printWarning(`schema push may have failed: ${push.stderr.slice(0, 200)}`);
+				printWarning(drizzlePushWarning(push.stderr));
 			} else {
 				if (!isJsonMode()) printSuccess('schema pushed');
 			}

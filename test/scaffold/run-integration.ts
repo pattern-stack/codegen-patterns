@@ -169,6 +169,24 @@ async function run() {
       if (!skipCodegen) {
         console.log('==> Removing generated scaffold from the repo root...');
         for (const dir of ['modules', 'generated', 'shared', 'junctions']) {
+          // Never delete tracked sources: if a repo-root dir of this name ever
+          // holds a tracked file, it is not (only) the harness's output (#688).
+          // `.nothrow()`: a non-zero git (e.g. not a repo) must not throw out of
+          // this `finally` and mask exitCode / skip process.exit (#688 review).
+          const ls = await $`git -C ${REPO_ROOT} ls-files -- ${dir}`.quiet().nothrow();
+          if (ls.exitCode !== 0) {
+            console.error(
+              `==> NOT removing ${dir}/ — could not ask git what it tracks (exit ${ls.exitCode})`,
+            );
+            exitCode = 1;
+            continue;
+          }
+          const tracked = ls.text().trim();
+          if (tracked) {
+            console.error(`==> NOT removing ${dir}/ — git tracks files under it:\n${tracked}`);
+            exitCode = 1;
+            continue;
+          }
           await $`rm -rf ${REPO_ROOT}/${dir}`.quiet();
         }
       }

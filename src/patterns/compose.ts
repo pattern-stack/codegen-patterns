@@ -175,9 +175,12 @@ export interface MethodVocabulary {
  * (`clean-lite-ps/repository.ejs.t`) — it is a resolved overlap, not an
  * undetected clash, and reporting it would break working entities.
  *
- * Opaque spine-base methods stay invisible to codegen (ADR-041 Context #1), so
- * a clash against one still surfaces as a consumer compile error. That
- * remainder is irreducible and ADR-041 §4 leaves it to `tsc` on purpose.
+ * Callers also pass the FK-traversal `findBy<Fk>` names and the spine's
+ * declared `repositoryInheritedMethods` / `serviceInheritedMethods` (#688).
+ * Spine-base methods the pattern does not declare stay invisible to codegen
+ * (ADR-041 Context #1), so a clash against one still surfaces as a consumer
+ * compile error. That remainder is irreducible and ADR-041 §4 leaves it to
+ * `tsc` on purpose.
  */
 export function detectMethodCollisions(
 	vocabs: readonly MethodVocabulary[],

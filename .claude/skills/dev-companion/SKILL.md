@@ -80,7 +80,7 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/
 
 ## Schema Push
 
-If a `drizzle.config.ts` exists, `codegen dev up` runs `bunx drizzle-kit push` automatically after Postgres is healthy.
+If a `drizzle.config.ts` exists, `codegen dev up` runs `bunx --no-install drizzle-kit push` automatically after Postgres is healthy — the project's own drizzle-kit, never a globally fetched `@latest`. Without drizzle-kit in the project's dependencies the push fails with a warning.
 
 Manual push:
 ```bash

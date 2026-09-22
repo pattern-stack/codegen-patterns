@@ -28,7 +28,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { consumerErrors as scopeToConsumer } from './_consumer-errors';
+import { tscGateErrors } from './_consumer-errors';
 
 import {
   bootstrapJunctionProject,
@@ -105,11 +105,12 @@ function logError(msg: string): void { console.error(`${elapsed()} [FAIL] ${msg}
 // Helpers
 // ---------------------------------------------------------------------------
 
-function runSilent(cmd: string, cwd: string): { code: number; out: string; err: string } {
+function runSilent(cmd: string, cwd: string): { code: number | null; out: string; err: string } {
   const parts = cmd.split(' ');
   const r = spawnSync(parts[0], parts.slice(1), { cwd, encoding: 'utf-8' });
   return {
-    code: r.status ?? 0,
+    // `null` (killed / never started) is kept, never mapped to success (#688).
+    code: r.status,
     out: r.stdout ?? '',
     err: r.stderr ?? '',
   };
@@ -541,7 +542,7 @@ async function main(): Promise<number> {
     // 8. bunx tsc --noEmit --skipLibCheck
     log('running bunx tsc --noEmit --skipLibCheck');
     const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', result.projectDir);
-    const consumerErrors = scopeToConsumer(tsc.out + tsc.err, result.projectDir);
+    const consumerErrors = tscGateErrors({ code: tsc.code, output: tsc.out + tsc.err }, result.projectDir);
     if (consumerErrors.length > 0) {
       for (const line of consumerErrors) console.error(line);
       logError(`${consumerErrors.length} typecheck errors in consumer-emitted code`);
@@ -684,7 +685,7 @@ async function main(): Promise<number> {
         assertAbsent(src, /forwardRef/, `${rel}: no forwardRef after the junction YAML is removed`);
       }
       const tscAfter = runSilent('bunx tsc --noEmit --skipLibCheck', dir);
-      const afterErrors = scopeToConsumer(tscAfter.out + tscAfter.err, dir);
+      const afterErrors = tscGateErrors({ code: tscAfter.code, output: tscAfter.out + tscAfter.err }, dir);
       if (afterErrors.length > 0) {
         for (const line of afterErrors) console.error(line);
         logError(`${afterErrors.length} typecheck errors after removing the junction YAML`);

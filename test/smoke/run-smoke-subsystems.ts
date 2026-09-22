@@ -32,7 +32,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { consumerErrors as scopeToConsumer } from './_consumer-errors';
+import { tscGateErrors } from './_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -73,10 +73,11 @@ function run(cmd: string, cwd: string): void {
 	execSync(cmd, { cwd, stdio: 'inherit', env: process.env });
 }
 
-function runSilent(cmd: string, cwd: string): { code: number; out: string; err: string } {
+function runSilent(cmd: string, cwd: string): { code: number | null; out: string; err: string } {
 	const parts = cmd.split(' ');
 	const r = spawnSync(parts[0], parts.slice(1), { cwd, encoding: 'utf-8' });
-	return { code: r.status ?? 0, out: r.stdout ?? '', err: r.stderr ?? '' };
+	// `null` (killed / never started) is kept, never mapped to success (#688).
+	return { code: r.status, out: r.stdout ?? '', err: r.stderr ?? '' };
 }
 
 function cleanup(dir: string): void {
@@ -379,7 +380,7 @@ async function vendoredLeg(): Promise<number> {
 		//    generation + full-tree typecheck, zero errors, no excludes.
 		log('running bunx tsc --noEmit --skipLibCheck (full consumer tree, no subsystem excludes)');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
-		const errs = scopeToConsumer(tsc.out + tsc.err, tmpDir);
+		const errs = tscGateErrors({ code: tsc.code, output: tsc.out + tsc.err }, tmpDir);
 		if (errs.length > 0) {
 			for (const line of errs) console.error(line);
 			logError(`${errs.length} typecheck error(s) in consumer-emitted code`);
@@ -550,7 +551,7 @@ function typecheckWorkerInIsolation(tmpDir: string): string[] {
 			'utf-8',
 		);
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', checkDir);
-		return scopeToConsumer(tsc.out + tsc.err, checkDir);
+		return tscGateErrors({ code: tsc.code, output: tsc.out + tsc.err }, checkDir);
 	} finally {
 		try {
 			fs.rmSync(checkDir, { recursive: true, force: true });

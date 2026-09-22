@@ -62,6 +62,7 @@ import {
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { composePatterns, declaredPatternNames, getPattern } from "../../patterns/index.js";
 import pluralize from "pluralize";
 
 // ============================================================================
@@ -1063,17 +1064,19 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
 
       for (const entityName of surfaceEntities) {
         const def = entityByName.get(entityName);
-        const pattern =
-          def?.entity.pattern ??
-          (Array.isArray(def?.entity.patterns) ? def?.entity.patterns?.[0] : undefined);
-        if (pattern !== "Integrated") {
+        // The spine is the composed one (ADR-041 §2) — never `patterns[0]`, so
+        // `patterns: [Actor, Integrated]` assembles exactly like
+        // `pattern: Integrated`, matching what the repository inherits.
+        const declared = def ? declaredPatternNames(def.entity) : [];
+        const spine = composePatterns(declared, getPattern, { entity: entityName }).spineName;
+        if (spine !== "Integrated") {
           // Record once per surface entity (not per provider — the reason is
           // pattern-level, not provider-level).
           result.skippedAssemblies.push({
             surface,
             entity: entityName,
             reason: `entity '${entityName}' declares surface '${surface}' but is not 'pattern: Integrated'` +
-              `${pattern ? ` (got 'pattern: ${pattern}')` : " (no pattern declared)"} — ` +
+              `${declared.length > 0 ? ` (spine '${spine}')` : " (no pattern declared)"} — ` +
               `the integration assembly + default sink need the Integrated projection/upsert path. ` +
               `Add 'pattern: Integrated' (or provide a hand-authored sink + assembly).`,
           });

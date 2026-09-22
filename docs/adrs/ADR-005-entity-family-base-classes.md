@@ -32,6 +32,11 @@ If we are rebuilding anyway, we should extract the duplication into an entity-fa
 
 Establish four entity-family base classes at the repository layer and four parallel base classes at the service layer. Concrete repositories and services extend the appropriate family base. The base classes provide the shared patterns as inherited methods; concrete classes add entity-specific behavior only.
 
+> **Revision 2026-09-19 (REL-0 #603, noted by REV-0 #688):** every repository base class now takes a second,
+> required type parameter — the concrete Drizzle table: `BaseRepository<TEntity, TTable extends PgTable>`, and so on
+> for each family (e.g. `UserRepository extends BaseRepository<User, typeof users>`). The one-parameter forms below
+> are the original decision's shorthand; the family tree itself is unchanged. See `docs/specs/REL-0.md`.
+
 ### Repository Base Class Tree
 
 ```

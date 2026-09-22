@@ -83,10 +83,14 @@ function assertHasContribution(def: EntityPatternDefinition): void {
 		const hasMixin = typeof def.mixin === 'string' && def.mixin.length > 0;
 		const hasForwarders =
 			Array.isArray(def.forwarderMethods) && def.forwarderMethods.length > 0;
-		if (!hasColumns && !hasMixin && !hasForwarders) {
+		// `columns` alone does not count: codegen never emits a pattern's
+		// columns (they feed the collision check only), so a columns-only
+		// capability would layer nothing at all (#688).
+		if (!hasMixin && !hasForwarders) {
 			throw new Error(
 				`Capability pattern '${def.name}' contributes nothing — at least one of ` +
-					'`columns`, `mixin`, or `forwarderMethods` is required.',
+					'`mixin` or `forwarderMethods` is required (`columns` are collision-checked, ' +
+					'never emitted).',
 			);
 		}
 		return;

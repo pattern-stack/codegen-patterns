@@ -236,11 +236,11 @@ export {
 - Import smoke: `import { jobs, jobRuns, jobSteps }` does not throw and each is a non-null object.
 - Column presence on `job_run`: use Drizzle's column-enumeration helper to list columns, then assert keys `id`, `jobType`, `status`, `pool`, `runAt`, `tenantId`, `waitKind`, `resumeToken`, `waitDeadline`, `rootRunId`, `parentRunId`, `concurrencyKey`, `dedupeKey` are all present. (The `_.columns` internal-API access from the original draft is not reliable across Drizzle versions; the documented helper is.)
 - Column presence on `job_step`: same helper, asserting `id`, `jobRunId`, `stepId`, `seq`, `kind`, `status`, `output`.
+- Enum values: assert `jobRunStatusEnum.enumValues` includes `'waiting'` and `'timed_out'`.
+- Type check (compile-time only): assign a full literal row to `JobRunRow` — verifies `InferSelectModel` resolved without `any` widening.
 
 > **2026-09-17 (DRZ-2, #584):** the helper named here was `getTableColumns`. Drizzle 1.0 deprecates it in favour of
 > `getColumns`, and these specs' tests were migrated. The assertions are unchanged.
-- Enum values: assert `jobRunStatusEnum.enumValues` includes `'waiting'` and `'timed_out'`.
-- Type check (compile-time only): assign a full literal row to `JobRunRow` — verifies `InferSelectModel` resolved without `any` widening.
 
 **Single-tenant fixture check deferred to JOB-6.** The runtime schema file is always the multi-tenant variant (`tenantId` is present). The conditional live-emit is exercised by JOB-6's Hygen template golden tests, not here.
 

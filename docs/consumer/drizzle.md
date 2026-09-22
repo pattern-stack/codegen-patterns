@@ -53,7 +53,9 @@ drizzle-kit and for code that imports tables by name.
 ## drizzle-kit
 
 Codegen never runs drizzle-kit except `codegen dev`, which shells
-`drizzle-kit push` when a `drizzle.config.ts` is present. Migrations are yours.
+`drizzle-kit push` when a `drizzle.config.ts` is present. It runs the project's own
+drizzle-kit (`bunx --no-install`), so install a kit that matches the ORM line.
+Migrations are yours.
 
 `defineConfig` is unchanged:
 

@@ -522,6 +522,43 @@ describe('E2 — per-entity assembly + sink + integration tokens', () => {
     expect(res.assembliesWritten.some((p) => p.includes('meeting-integration.module.ts'))).toBe(true);
   });
 
+  it('picks the spine by composition, not position: patterns [Actor, Integrated] assembles (ADR-041 §2, #688)', () => {
+    // `Actor` is a capability; `Integrated` is the spine wherever it sits in the
+    // list. The positional rule (`patterns[0]`) read `Actor` and skipped the
+    // assembly while the repository still inherited the Integrated write surface.
+    const outRoot = mkdtempSync(join(tmpdir(), 'cgp-688-'));
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [
+        {
+          entity: { name: 'meeting', surface: 'calendar', patterns: ['Actor', 'Integrated'], plural: 'meetings' },
+          fields: { title: { type: 'string' } },
+        },
+      ],
+      outputRoot: outRoot,
+      backendSrcAbs: '/proj/src',
+      modulesAbs: '/proj/src/modules',
+      aliases: { '@modules': '/proj/src/modules' },
+      dryRun: true,
+    });
+    expect(res.skippedAssemblies).toEqual([]);
+    expect(res.assembliesWritten).toContain(join(outRoot, 'calendar/modules/google/meeting-integration.module.ts'));
+  });
+
+  it('names the composed spine when a patterns: list has no Integrated spine', () => {
+    const res = emitAdapters({
+      providers: [{ definition: loadDef('google.yaml'), filePath: resolve(FIX, 'google.yaml') }],
+      entities: [{ entity: { name: 'reminder', surface: 'calendar', patterns: ['Actor'], plural: 'reminders' } }],
+      outputRoot: '/unused',
+      backendSrcAbs: '/proj/src',
+      modulesAbs: '/proj/src/modules',
+      aliases: {},
+      dryRun: true,
+    });
+    expect(res.skippedAssemblies).toHaveLength(1);
+    expect(res.skippedAssemblies[0].reason).toContain("(spine 'Base')");
+  });
+
   it('skips the assembly loop entirely when no backend_src root is supplied', () => {
     const outRoot = mkdtempSync(join(tmpdir(), 'cgp-e2-'));
     const res = emitAdapters({

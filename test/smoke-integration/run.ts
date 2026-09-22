@@ -68,7 +68,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { consumerErrors as scopeToConsumer } from '../smoke/_consumer-errors';
+import { tscGateErrors } from '../smoke/_consumer-errors';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -129,10 +129,11 @@ function run(cmd: string, cwd: string): void {
 	execSync(cmd, { cwd, stdio: 'inherit', env: { ...process.env } });
 }
 
-function runSilent(cmd: string, cwd: string): { code: number; out: string } {
+function runSilent(cmd: string, cwd: string): { code: number | null; out: string } {
 	const parts = cmd.split(' ');
 	const r = spawnSync(parts[0], parts.slice(1), { cwd, encoding: 'utf-8' });
-	return { code: r.status ?? 0, out: (r.stdout ?? '') + (r.stderr ?? '') };
+	// `null` (killed / never started) is kept, never mapped to success (#688).
+	return { code: r.status, out: (r.stdout ?? '') + (r.stderr ?? '') };
 }
 
 function copyDir(src: string, dst: string): void {
@@ -339,10 +340,11 @@ async function main(): Promise<number> {
 		log('running bunx tsc --noEmit --skipLibCheck');
 		const tsc = runSilent('bunx tsc --noEmit --skipLibCheck', tmpDir);
 
-		// `tsc.err` as well as `tsc.out`: a config or crash diagnostic goes to
+		// `runSilent` folds stderr into `out`: a config or crash diagnostic goes to
 		// stderr, and reading only stdout would pass the gate on a tsc that never
-		// compiled anything.
-		const errors = scopeToConsumer(tsc.out + tsc.err, tmpDir);
+		// compiled anything. The exit status is read too, so a tsc that fails
+		// without printing `error TS` fails the gate (#688).
+		const errors = tscGateErrors({ code: tsc.code, output: tsc.out }, tmpDir);
 		if (errors.length > 0) {
 			logError(
 				`${errors.length} tsc error(s) in the generated project (it did NOT compile):`,
