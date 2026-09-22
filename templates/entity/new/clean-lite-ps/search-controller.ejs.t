@@ -1,9 +1,8 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.searchController : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.searchController || clpApiEnabled === false %>"
+to: "<%= clpOutputPaths.searchController %>"
+skip_if: "<%= !clpOutputPaths.searchController || clpApiEnabled === false %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 <% if (hasSearchQuery) { -%>
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
@@ -50,4 +49,3 @@ export class <%= classNames.searchController %> {
   }
 }
 <% } -%>
-<%_ } -%>

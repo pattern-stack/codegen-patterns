@@ -2,7 +2,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DetectionResult } from './types.js';
 
-export type ArchitectureType = 'clean' | 'feature' | 'mvc' | 'flat';
+export type ArchitectureType = 'layered' | 'feature' | 'mvc' | 'flat';
 
 interface ArchitectureScore {
 	type: ArchitectureType;
@@ -15,7 +15,7 @@ interface ArchitectureScore {
  * Detect project architecture by analyzing folder structure.
  *
  * Supports detection of:
- * - Clean Architecture (domain/application/infrastructure/presentation)
+ * - layered (Clean Architecture-style domain/application/infrastructure/presentation)
  * - Feature-based (features/* or modules/* with mixed concerns)
  * - MVC (models/views/controllers)
  * - Flat (fallback when no pattern detected)
@@ -24,7 +24,7 @@ export async function detectArchitecture(
 	projectPath: string
 ): Promise<DetectionResult<ArchitectureType>> {
 	const scores: ArchitectureScore[] = [
-		detectCleanArchitecture(projectPath),
+		detectLayeredArchitecture(projectPath),
 		detectFeatureArchitecture(projectPath),
 		detectMVCArchitecture(projectPath),
 	];
@@ -59,10 +59,10 @@ export async function detectArchitecture(
 }
 
 /**
- * Detect Clean Architecture pattern.
+ * Detect a layered (Clean Architecture-style) folder layout.
  * Looks for: domain/, application(s)/, infrastructure/, presentation/
  */
-function detectCleanArchitecture(projectPath: string): ArchitectureScore {
+function detectLayeredArchitecture(projectPath: string): ArchitectureScore {
 	const expectedFolders = [
 		'domain',
 		'application',
@@ -80,14 +80,14 @@ function detectCleanArchitecture(projectPath: string): ArchitectureScore {
 	// Count matches from core folders
 	const coreMatches = coreFolders.filter(folder => matchedFolders.includes(folder));
 
-	// Must have at least 2 clean architecture layers
+	// Must have at least 2 of the layers
 	// Common patterns: domain+infrastructure, application+infrastructure, infrastructure+presentation
-	const hasCleanPattern = coreMatches.length >= 2;
+	const hasLayeredPattern = coreMatches.length >= 2;
 
-	const score = hasCleanPattern ? matchedFolders.length : 0;
+	const score = hasLayeredPattern ? matchedFolders.length : 0;
 
 	return {
-		type: 'clean',
+		type: 'layered',
 		score,
 		matchedFolders,
 		expectedFolders: ['infrastructure', 'application'], // Minimum expected

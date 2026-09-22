@@ -1,6 +1,6 @@
 # Getting Started
 
-Generate Clean Architecture scaffolding for TypeScript/NestJS apps from YAML entity definitions.
+Generate NestJS + Drizzle backend modules for TypeScript apps from YAML entity definitions.
 
 > **Consuming codegen in your own project?** This guide walks through the generator's own repo. For wiring `@pattern-stack/codegen` into a separate NestJS app — path aliases, `DatabaseModule`, re-export shims — see [CONSUMER-SETUP.md](./CONSUMER-SETUP.md).
 
@@ -96,19 +96,17 @@ Each entry generates a typed repository method. `by: [assignee_id]` produces `fi
 just gen entities/task.yaml
 ```
 
-This produces Clean Architecture output under your configured `backend_src`:
+This produces a module folder under `paths.modules_dir` (default `<backend_src>/modules`):
 
 ```
-domain/task/              # Entity class + repository interface
-application/
-  commands/task/          # CreateTask, UpdateTask, DeleteTask
-  queries/task/           # GetTaskById, ListTasks, + declarative queries
-  schemas/                # Zod DTOs
-infrastructure/
-  persistence/drizzle/    # Drizzle schema
-  persistence/repositories/  # Repository implementation
-presentation/rest/        # REST controller
-modules/                  # NestJS module wiring
+modules/tasks/
+  task.entity.ts          # Drizzle table + types
+  task.repository.ts      # Repository (extends the pattern base class)
+  task.service.ts         # Service
+  task.controller.ts      # REST controller
+  tasks.module.ts         # NestJS module
+  dto/                    # Create, Update, Output, list-query DTOs
+  use-cases/              # Create, Update, Delete, FindById, List, + declarative queries
 ```
 
 Generate all entities at once with `just gen-all`.
@@ -189,10 +187,7 @@ paths:
   generated: src/generated       # where barrel files are written (modules.ts, schema.ts)
 
 generate:
-  architecture: clean-lite-ps  # clean | clean-lite-ps (mutually exclusive)
   frontend: false              # Emit frontend pipeline? (default: false)
-  commands: true
-  queries: true
 
 naming:
   fileCase: kebab-case       # kebab-case | PascalCase | camelCase | snake_case

@@ -2,8 +2,7 @@
  * Orchestration Pattern Validator (ADR-032)
  *
  * Project-level only — orchestration patterns are not entity-attached, so
- * there is no per-entity pass. Mirrors `validatePatternProject`'s shape:
- * one pure function consuming a context object and returning structured
+ * there is no per-entity pass. One pure function consuming a context object and returning structured
  * `AnalysisIssue[]` for `analyzeDomain()` to aggregate.
  *
  * Enforces ADR-032 §"Composition rules" to the extent statically checkable

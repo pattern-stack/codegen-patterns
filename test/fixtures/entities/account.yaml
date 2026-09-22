@@ -1,0 +1,14 @@
+# Account Entity Definition
+# The target of contact / deal `belongs_to: account` — present so every
+# cross-entity reference in the fixture set resolves from its own YAML (NAME-0).
+
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255

@@ -7,8 +7,8 @@
  *   --scenario junction              (default) intra-domain: opportunity × contact
  *   --scenario junction-cross-domain cross-domain: opportunity × activity
  *
- * Each scenario × both architectures (clean-lite-ps by default; pass
- * --architecture clean for the second pass) = four total code paths.
+ * clean-lite-ps is the only backend pipeline (ARCH-0, #677), so there is no
+ * architecture axis.
  *
  * `--runtime vendored|package` (default vendored) picks the ADR-037 runtime
  * mode. `just test-smoke-junction` runs both, so the `package` default — whose
@@ -36,11 +36,9 @@ import {
   CUSTOM_LAYOUT_BOOT_CONFIG,
   LAYOUT_PATHS,
   SCENARIO_META,
-  VALID_ARCHITECTURES,
   VALID_LAYOUTS,
   VALID_RUNTIMES,
   VALID_SCENARIOS,
-  type Architecture,
   type Layout,
   type LayoutPaths,
   type RuntimeMode,
@@ -85,12 +83,6 @@ function getArg(flag: string, fallback: string): string {
 const scenarioArg = getArg('--scenario', 'junction') as Scenario;
 if (!VALID_SCENARIOS.includes(scenarioArg)) {
   console.error(`Unknown --scenario: ${scenarioArg}. Valid: ${VALID_SCENARIOS.join(', ')}`);
-  process.exit(2);
-}
-
-const architectureArg = getArg('--architecture', 'clean-lite-ps') as Architecture;
-if (!VALID_ARCHITECTURES.includes(architectureArg)) {
-  console.error(`Unknown --architecture: ${architectureArg}. Valid: ${VALID_ARCHITECTURES.join(', ')}`);
   process.exit(2);
 }
 
@@ -172,7 +164,6 @@ function assertAbsent(haystack: string, needle: RegExp, label: string): void {
 function assertJunctionEmission(
   generatedSrc: string,
   scenario: Scenario,
-  architecture: Architecture,
 ): void {
   const reads = (p: string): string => {
     const fullPath = path.join(generatedSrc, p);
@@ -187,10 +178,7 @@ function assertJunctionEmission(
     ? junctionName.slice(0, -1) + 'ies'
     : junctionName + 's';
 
-  // Architecture-specific expected directory
-  const junctionDir = architecture === 'clean-lite-ps'
-    ? `${P.modules}/${pluralName}`
-    : `app/backend/src/domain/${pluralName}`;
+  const junctionDir = `${P.modules}/${pluralName}`;
 
   const leftPascal = pascalCase(leftEnt);
   const rightPascal = pascalCase(rightEnt);
@@ -247,11 +235,7 @@ function assertJunctionEmission(
   }
 
   // ── Repository file ──────────────────────────────────────────────────────
-  const repoFile = reads(
-    architecture === 'clean-lite-ps'
-      ? `${junctionDir}/${junctionName}.repository.ts`
-      : `app/backend/src/infrastructure/persistence/drizzle/${junctionName.replace(/_/g, '-')}.repository.ts`,
-  );
+  const repoFile = reads(`${junctionDir}/${junctionName}.repository.ts`);
 
   // #374: junctions now extend JunctionIntegrationRepository (which extends BaseRepository)
   // to inherit the inbound-integration write surface (integrationUpsertOne/etc.).
@@ -271,11 +255,7 @@ function assertJunctionEmission(
   assertContains(repoFile, /limit\?:\s*number/, 'repo: limit pagination param');
 
   // ── Service file ─────────────────────────────────────────────────────────
-  const svcFile = reads(
-    architecture === 'clean-lite-ps'
-      ? `${junctionDir}/${junctionName}.service.ts`
-      : `app/backend/src/application/${pluralName}/${junctionName}.service.ts`,
-  );
+  const svcFile = reads(`${junctionDir}/${junctionName}.service.ts`);
 
   assertContains(svcFile, /extends WithAnalytics\(\s*BaseService</, 'service: extends WithAnalytics(BaseService<');
   assertContains(svcFile, /protected override readonly entityName/, 'service: entityName override');
@@ -302,46 +282,44 @@ function assertJunctionEmission(
     'service: injects RightRepository',
   );
 
-  // ── CGP-60: parent service fan-out injection (clean-lite-ps only) ───────
-  if (architecture === 'clean-lite-ps') {
-    const leftParentSvc = reads(`${P.modules}/${pluralize(leftEnt)}/${leftEnt}.service.ts`);
-    const rightParentSvc = reads(`${P.modules}/${pluralize(rightEnt)}/${rightEnt}.service.ts`);
+  // ── CGP-60: parent service fan-out injection ───────────────────────────
+  const leftParentSvc = reads(`${P.modules}/${pluralize(leftEnt)}/${leftEnt}.service.ts`);
+  const rightParentSvc = reads(`${P.modules}/${pluralize(rightEnt)}/${rightEnt}.service.ts`);
 
-    // Anchor presence (Q4 anti-regression) — verifies #362's emission still
-    // emits the literal `// Inherited from` comment that #60's inject
-    // templates anchor against. If a future entity-template refactor
-    // deletes the marker, this assertion fires before the injection silently
-    // becomes a no-op.
-    assertContains(leftParentSvc, /\/\/ Inherited from /, 'left parent service: anchor present');
-    assertContains(rightParentSvc, /\/\/ Inherited from /, 'right parent service: anchor present');
+  // Anchor presence (Q4 anti-regression) — verifies #362's emission still
+  // emits the literal `// Inherited from` comment that #60's inject
+  // templates anchor against. If a future entity-template refactor
+  // deletes the marker, this assertion fires before the injection silently
+  // becomes a no-op.
+  assertContains(leftParentSvc, /\/\/ Inherited from /, 'left parent service: anchor present');
+  assertContains(rightParentSvc, /\/\/ Inherited from /, 'right parent service: anchor present');
 
-    // Left parent — verb-flat for attach/detach, flat-noun for list/setPrimary
-    assertContains(leftParentSvc, new RegExp(`attach${rightPascal}\\s*\\(`), `left parent: attach${rightPascal}`);
-    assertContains(leftParentSvc, new RegExp(`detach${rightPascal}\\s*\\(`), `left parent: detach${rightPascal}`);
-    assertContains(leftParentSvc, new RegExp(`${pluralize(rightEnt)}List\\s*\\(`), `left parent: ${pluralize(rightEnt)}List`);
-    assertContains(leftParentSvc, new RegExp(`${pluralize(rightEnt)}SetPrimary\\s*\\(`), `left parent: ${pluralize(rightEnt)}SetPrimary`);
+  // Left parent — verb-flat for attach/detach, flat-noun for list/setPrimary
+  assertContains(leftParentSvc, new RegExp(`attach${rightPascal}\\s*\\(`), `left parent: attach${rightPascal}`);
+  assertContains(leftParentSvc, new RegExp(`detach${rightPascal}\\s*\\(`), `left parent: detach${rightPascal}`);
+  assertContains(leftParentSvc, new RegExp(`${pluralize(rightEnt)}List\\s*\\(`), `left parent: ${pluralize(rightEnt)}List`);
+  assertContains(leftParentSvc, new RegExp(`${pluralize(rightEnt)}SetPrimary\\s*\\(`), `left parent: ${pluralize(rightEnt)}SetPrimary`);
 
-    // Right parent — verb-flip for addTo/removeFrom, flat-noun for list/setPrimary
-    assertContains(rightParentSvc, new RegExp(`addTo${leftPascal}\\s*\\(`), `right parent: addTo${leftPascal}`);
-    assertContains(rightParentSvc, new RegExp(`removeFrom${leftPascal}\\s*\\(`), `right parent: removeFrom${leftPascal}`);
-    assertContains(rightParentSvc, new RegExp(`${pluralize(leftEnt)}List\\s*\\(`), `right parent: ${pluralize(leftEnt)}List`);
-    assertContains(rightParentSvc, new RegExp(`${pluralize(leftEnt)}SetPrimary\\s*\\(`), `right parent: ${pluralize(leftEnt)}SetPrimary`);
+  // Right parent — verb-flip for addTo/removeFrom, flat-noun for list/setPrimary
+  assertContains(rightParentSvc, new RegExp(`addTo${leftPascal}\\s*\\(`), `right parent: addTo${leftPascal}`);
+  assertContains(rightParentSvc, new RegExp(`removeFrom${leftPascal}\\s*\\(`), `right parent: removeFrom${leftPascal}`);
+  assertContains(rightParentSvc, new RegExp(`${pluralize(leftEnt)}List\\s*\\(`), `right parent: ${pluralize(leftEnt)}List`);
+  assertContains(rightParentSvc, new RegExp(`${pluralize(leftEnt)}SetPrimary\\s*\\(`), `right parent: ${pluralize(leftEnt)}SetPrimary`);
 
-    // Per-junction unique marker (Risk (a)) — prevents silent skip when a
-    // second junction targets the same parent.
-    assertContains(leftParentSvc, new RegExp(`junction:${junctionName}:left-fan-out`), 'left parent: per-junction marker');
-    assertContains(rightParentSvc, new RegExp(`junction:${junctionName}:right-fan-out`), 'right parent: per-junction marker');
+  // Per-junction unique marker (Risk (a)) — prevents silent skip when a
+  // second junction targets the same parent.
+  assertContains(leftParentSvc, new RegExp(`junction:${junctionName}:left-fan-out`), 'left parent: per-junction marker');
+  assertContains(rightParentSvc, new RegExp(`junction:${junctionName}:right-fan-out`), 'right parent: per-junction marker');
 
-    // Coexistence: contact.service.ts (right parent in the `junction`
-    // scenario) carries #358's belongs_to `account()` method AND #60's
-    // junction fan-out methods. Both must be present after junction
-    // codegen — the implicit coexistence test for CGP-60.
-    if (scenario === 'junction' && rightEnt === 'contact') {
-      assertContains(rightParentSvc, /async\s+account\s*\(/, 'right parent: #358 account() coexists');
-    }
+  // Coexistence: contact.service.ts (right parent in the `junction`
+  // scenario) carries #358's belongs_to `account()` method AND #60's
+  // junction fan-out methods. Both must be present after junction
+  // codegen — the implicit coexistence test for CGP-60.
+  if (scenario === 'junction' && rightEnt === 'contact') {
+    assertContains(rightParentSvc, /async\s+account\s*\(/, 'right parent: #358 account() coexists');
   }
 
-  log(`assertions passed: ${scenario}/${architecture}`);
+  log(`assertions passed: ${scenario}`);
 }
 
 /**
@@ -352,20 +330,14 @@ function assertJunctionEmission(
 function assertRuntimeSpecifiers(
   generatedSrc: string,
   scenario: Scenario,
-  architecture: Architecture,
   runtime: RuntimeMode,
 ): void {
   const { junctionName } = SCENARIO_META[scenario];
   const pluralName = pluralize(junctionName);
-  const files = architecture === 'clean-lite-ps'
-    ? [
-        `${P.modules}/${pluralName}/${junctionName}.repository.ts`,
-        `${P.modules}/${pluralName}/${junctionName}.service.ts`,
-      ]
-    : [
-        `app/backend/src/infrastructure/persistence/drizzle/${junctionName.replace(/_/g, '-')}.repository.ts`,
-        `app/backend/src/application/${pluralName}/${junctionName}.service.ts`,
-      ];
+  const files = [
+    `${P.modules}/${pluralName}/${junctionName}.repository.ts`,
+    `${P.modules}/${pluralName}/${junctionName}.service.ts`,
+  ];
   const packageOwned = /'@shared\/(?:base-classes|constants|types)\//;
   const packageForm = /'@pattern-stack\/codegen\/runtime\/(?:base-classes|constants|types)\//;
   for (const rel of files) {
@@ -387,7 +359,7 @@ function pluralize(s: string): string {
   return s + 's';
 }
 
-function assertBarrelIncludes(generatedSrc: string, pluralName: string, _architecture: Architecture): void {
+function assertBarrelIncludes(generatedSrc: string, pluralName: string): void {
   const modulesBarrel = path.join(generatedSrc, P.generated, 'modules.ts');
   const schemaBarrel = path.join(generatedSrc, P.generated, 'schema.ts');
 
@@ -534,7 +506,7 @@ function assertCustomLayout(projectDir: string): void {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<number> {
-  log(`smoke-junction scenario=${scenarioArg} architecture=${architectureArg} runtime=${runtimeArg} layout=${layoutArg}`);
+  log(`smoke-junction scenario=${scenarioArg} runtime=${runtimeArg} layout=${layoutArg}`);
 
   let exitCode = 0;
   let result: Awaited<ReturnType<typeof bootstrapJunctionProject>> | null = null;
@@ -542,7 +514,6 @@ async function main(): Promise<number> {
   try {
     result = await bootstrapJunctionProject({
       scenario: scenarioArg,
-      architecture: architectureArg,
       runtime: runtimeArg,
       layout: layoutArg,
       log,
@@ -567,11 +538,11 @@ async function main(): Promise<number> {
         ? junctionName.slice(0, -1) + 'ies'
         : junctionName + 's';
 
-      assertJunctionEmission(result.projectDir, scenarioArg, architectureArg);
-      assertBarrelIncludes(result.projectDir, pluralName, architectureArg);
+      assertJunctionEmission(result.projectDir, scenarioArg);
+      assertBarrelIncludes(result.projectDir, pluralName);
       const { leftEnt, rightEnt } = SCENARIO_META[scenarioArg];
       assertJunctionRelations(result.projectDir, junctionName, leftEnt, rightEnt);
-      assertRuntimeSpecifiers(result.projectDir, scenarioArg, architectureArg, runtimeArg);
+      assertRuntimeSpecifiers(result.projectDir, scenarioArg, runtimeArg);
       if (layoutArg === 'custom') assertCustomLayout(result.projectDir);
     }
 
@@ -678,9 +649,9 @@ async function main(): Promise<number> {
   }
 
   if (exitCode === 0) {
-    log(`smoke-junction PASS (${scenarioArg}/${architectureArg}/${runtimeArg}/${layoutArg})`);
+    log(`smoke-junction PASS (${scenarioArg}/${runtimeArg}/${layoutArg})`);
   } else {
-    log(`smoke-junction FAIL (${scenarioArg}/${architectureArg}/${runtimeArg}/${layoutArg})`);
+    log(`smoke-junction FAIL (${scenarioArg}/${runtimeArg}/${layoutArg})`);
   }
   return exitCode;
 }

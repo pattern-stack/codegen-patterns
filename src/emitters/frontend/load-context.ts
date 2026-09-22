@@ -9,8 +9,8 @@
  *     NAMING source, so FK targets resolve against the target's own YAML;
  *  2. loads the parsed entity map (`loadEntities`, keyed by name) — fields,
  *     relationships, behaviors, `expose`;
- *  3. maps the validated `frontend:` block + `generate.architecture` + the
- *     `locations.*` path/import pairs into a {@link FrontendEmitConfig}.
+ *  3. maps the validated `frontend:` block + the `locations.*` path/import
+ *     pairs into a {@link FrontendEmitConfig}.
  *
  * Zero entities ⇒ `{ skip }` with a human-readable reason (nothing to emit). The
  * caller surfaces the reason like the sibling post-steps do.
@@ -34,7 +34,6 @@ import {
 import type { ParsedEntity } from '../../analyzer/types';
 import {
 	FrontendConfigSchema,
-	GenerateConfigSchema,
 	ResolvedPathsSchema,
 } from '../../schema/codegen-config.schema';
 import { findYamlFiles } from '../../utils/find-yaml-files';
@@ -82,7 +81,6 @@ const DEFAULT_FRONTEND_COLLECTIONS_AUTH = {
  * but typed optional here so callers can pass a partially-shaped config.
  */
 export interface FrontendConfigInput {
-	generate?: { architecture?: 'clean' | 'clean-lite-ps' } & Record<string, unknown>;
 	frontend?: unknown;
 	locations?: Record<string, { path?: string; import?: string } | undefined>;
 	paths?: { providers?: string } & Record<string, unknown>;
@@ -114,7 +112,7 @@ function resolveLocation(
 }
 
 /**
- * Map the validated `frontend:` block + architecture + locations into the flat
+ * Map the validated `frontend:` block + locations into the flat
  * {@link FrontendEmitConfig} the string builders consume.
  *
  * The `frontend` value is parsed through {@link FrontendConfigSchema} so
@@ -134,8 +132,6 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 		'frontendCollectionsAuth',
 		DEFAULT_FRONTEND_COLLECTIONS_AUTH,
 	);
-	// The schema's default when absent — declared once (PATH-0, charter Q5).
-	const architecture = GenerateConfigSchema.parse(config.generate ?? {}).architecture;
 
 	return {
 		globalSyncMode: fe.sync.mode,
@@ -150,7 +146,6 @@ export function mapFrontendEmitConfig(config: FrontendConfigInput): FrontendEmit
 		apiUrl: fe.sync.apiUrl,
 		apiBaseUrlImport: fe.sync.apiBaseUrlImport,
 		parsers: fe.parsers,
-		architecture,
 		dbEntitiesImport: dbEntities.import,
 		catalogCategories: fe.catalog.categories,
 		textareaThreshold: fe.fields.textareaThreshold,

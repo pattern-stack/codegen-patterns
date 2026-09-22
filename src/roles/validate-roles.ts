@@ -10,7 +10,7 @@
  *   - does a `many` role's `via:` name a junction between these two entities?
  *
  * Runs after `resolveReferences()` in `analyzeDomain`, next to
- * `validatePatternProject`.
+ * `validateOrchestrationProject`.
  *
  * See `docs/specs/CAP-2.md` §5.
  */

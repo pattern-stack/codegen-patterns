@@ -519,10 +519,7 @@ paths:
   generated: src/generated          # ADR-017 barrels land here
 
 generate:
-  architecture: clean-lite-ps       # clean | clean-lite-ps
   frontend: false                   # emit Electric-SQL frontend pipeline?
-  commands: true
-  queries: true
 
 naming:
   fileCase: kebab-case              # kebab-case | PascalCase | camelCase | snake_case
@@ -545,7 +542,7 @@ blocks are:
 |---|---|
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
-| `generate` | `architecture`, `frontend`, `analytics`, and the `clean`-pipeline toggles `drizzleSchema` / `commands` / `queries` / `dtos` |
+| `generate` | `frontend`, `analytics` |
 | `patterns` | glob list for app-defined patterns (below); default `<backend_src>/patterns/*.pattern.ts` |
 | `naming` | `fileCase`, `suffixStyle`, `entityInclusion`, `terminology`, `layers.<layer>.*` |
 | `locations` | `path` / `import` overrides for the generator's named locations (`dbEntities`, `backendDomain`, …) |
@@ -586,7 +583,7 @@ integrated entity's wiring). Each is listed like a rejected entity YAML — file
 with `stopped: 'pre-flight'` — and the command exits 1. A `<type>.job.generated.ts` emitted from a job YAML that no
 longer loads is left on disk and named as stale in the rejection. The app has no `yaml` dependency.
 
-`codegen project init` defaults `generate.architecture` to `clean-lite-ps` — the lighter consumer-facing layout used by the scaffold-demo app. To opt into the full Clean Architecture pipeline (separate `domain/`, `application/`, `infrastructure/` directories, separate command/query classes), edit `codegen.config.yaml` and set `generate.architecture: clean`. The two pipelines are mutually exclusive and the scanner only overrides the default when it finds existing domain/application directories (see `docs/specs/TEST-SESSION-1.md` §3).
+The backend layout is clean-lite-ps — a module folder per entity under `paths.modules_dir` — and there is no other. The `clean` pipeline and its `generate.architecture` key were deleted (ARCH-0, #677): a config that still sets the key fails with `generate.architecture: unknown key`, naming the file. Delete the line.
 
 **`paths.*` defaults.** Each key has exactly one default, declared in `PathsConfigSchema`; every command, generator and
 scaffold reads the same resolved value (PATH-0). Three keys default relative to `backend_src`:
@@ -719,12 +716,11 @@ entity:
       initial_state: qualifying
 ```
 
-The **first** pattern in the list wins the base-class selection. Subsequent patterns contribute columns + implied behaviors. Column-name conflicts, unknown pattern names, and invalid `config:` blocks are caught at codegen time with a hard error; `config:` keys for undeclared patterns and `pattern:` declarations under `generate.architecture: clean` produce warnings.
+The **first** pattern in the list wins the base-class selection. Subsequent patterns contribute columns + implied behaviors. Column-name conflicts, unknown pattern names, and invalid `config:` blocks are caught at codegen time with a hard error; `config:` keys for undeclared patterns produce warnings.
 
 ### Caveats (Phase 1)
 
 - **Single-depth `extends` chain only.** A pattern may `extends: ['Integrated']` but transitive resolution of `CrmEntity extends Integrated extends Base` is deferred.
-- **`clean` pipeline no-op.** The full Clean Architecture backend (`generate.architecture: clean`) does not yet consume `pattern:`. Use `generate.architecture: clean-lite-ps` for pattern-driven emission.
 - **Method-name conflicts are caught by TypeScript**, not codegen. Two patterns declaring methods with the same signature surface as a compile error at the consumer class, not a codegen validation error.
 
 ## EAV dual-write — opt-in per entity
@@ -862,7 +858,7 @@ EJS template escape bug, fixed upstream. Pull the latest `codegen-patterns` and 
 
 ### Generator emits files outside `paths.generated`
 
-It shouldn't — that's a bug. File an issue. The only files codegen writes are (a) per-entity module trees under your configured architecture and (b) the two barrels under `paths.generated`. If `app.module.ts` or a hand-authored file changed, something is wrong.
+It shouldn't — that's a bug. File an issue. The only files codegen writes are (a) per-entity module trees under `paths.modules_dir` and (b) the two barrels under `paths.generated`. If `app.module.ts` or a hand-authored file changed, something is wrong.
 
 ## References
 

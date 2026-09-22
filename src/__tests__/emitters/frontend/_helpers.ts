@@ -52,7 +52,6 @@ export function config(over: Partial<FrontendEmitConfig> = {}): FrontendEmitConf
 		apiUrl: '/api',
 		apiBaseUrlImport: null,
 		parsers: {},
-		architecture: 'clean',
 		dbEntitiesImport: '@repo/db/entities',
 		catalogCategories: [],
 		textareaThreshold: 500,

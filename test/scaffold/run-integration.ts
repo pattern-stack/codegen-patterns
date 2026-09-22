@@ -71,9 +71,9 @@ async function run() {
       // The scaffold's aliases pin the layout codegen must emit into:
       //   tsconfig.json  @gen/*   -> <repo root>/*
       //   schema.ts               -> @gen/modules/contacts/contact.entity
-      // so emit at the repo root (`backend_src: .`) in clean-lite-ps's flat
-      // `modules/<plural>/` layout. Writing only `generate.architecture` sent
-      // the output to `app/backend/src/…`, where no alias resolves (GATE-1, #599).
+      // so emit at the repo root (`backend_src: .`) in the flat
+      // `modules/<plural>/` layout; the default `backend_src` sent the output
+      // to `src/…`, where no alias resolves (GATE-1, #599).
       //
       // `runtime: vendored` selects the `@shared/*` import specifiers in the
       // emitted code, which the scaffold's tsconfig maps onto `runtime/` — the
@@ -84,7 +84,6 @@ async function run() {
         [
           'runtime: vendored',
           'generate:',
-          '  architecture: clean-lite-ps',
           '  frontend: false',
           'paths:',
           '  backend_src: .',

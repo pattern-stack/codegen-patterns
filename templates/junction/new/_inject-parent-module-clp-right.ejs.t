@@ -1,5 +1,5 @@
 ---
-to: "<%= architecture === 'clean-lite-ps' && exposeOnParent.right ? parentModulePathRight : '' %>"
+to: "<%= exposeOnParent.right ? parentModulePathRight : '' %>"
 inject: true
 after: "    DatabaseModule,"
 skip_if: "<%= classNames.module %>"

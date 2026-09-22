@@ -32,7 +32,6 @@ import { checkGitSafety } from '../shared/git-safety.js';
 import {
 	regenerateBarrels,
 } from '../shared/barrel-generator.js';
-import { configOrDefaults } from '../../config/project-config.js';
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
 import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
@@ -261,7 +260,7 @@ export class EntityNewCommand extends Command {
 	static usage = Command.Usage({
 		description: 'Generate code for one or more entities from YAML',
 		details: `
-			Generates Clean Architecture code for the named entity (or all entities with \`--all\`), then runs the post-generation codegen steps that share this entrypoint:
+			Generates the clean-lite-ps backend module (entity, repository, service, controller, module, DTOs, use-cases) for the named entity (or all entities with \`--all\`), then runs the post-generation codegen steps that share this entrypoint:
 
 			- **Event codegen** — \`AppDomainEvent\` union + typed bus from \`events/*.yaml\`.
 			- **Bridge registry** — when the bridge subsystem is installed.
@@ -493,7 +492,6 @@ export class EntityNewCommand extends Command {
 		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
-		const architecture = configOrDefaults(ctx.config).generate.architecture;
 
 		const subsystemsRoot = projectLayout(ctx.cwd, ctx.config).subsystems;
 		// Runtime mode (ADR-037) drives WHERE consumer-specific generated code
@@ -574,7 +572,6 @@ export class EntityNewCommand extends Command {
 				entitiesDir,
 				relationshipsDir,
 				generatedDir,
-				architecture,
 				dryRun: true,
 			});
 
@@ -788,7 +785,6 @@ export class EntityNewCommand extends Command {
 				entitiesDir,
 				relationshipsDir,
 				generatedDir,
-				architecture,
 			});
 		} catch (err: unknown) {
 			return reportRegenerationFailure('entity new', err);

@@ -1,9 +1,8 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.deleteUseCase : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.deleteUseCase %>"
+to: "<%= clpOutputPaths.deleteUseCase %>"
+skip_if: "<%= !clpOutputPaths.deleteUseCase %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 <% if (hasEmits && deleteEventType) { -%>
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
@@ -68,4 +67,3 @@ export class <%= classNames.deleteUseCase %> {
   }
 }
 <% } -%>
-<%_ } -%>

@@ -1,9 +1,8 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.updateUseCase : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.updateUseCase %>"
+to: "<%= clpOutputPaths.updateUseCase %>"
+skip_if: "<%= !clpOutputPaths.updateUseCase %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 <% if (eavEnabled) { -%>
 import { Injectable, Inject } from '@nestjs/common';
@@ -152,4 +151,3 @@ export class <%= classNames.updateUseCase %> {
 }
 <% } -%>
 <% } -%>
-<%_ } -%>

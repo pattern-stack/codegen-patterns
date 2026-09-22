@@ -172,7 +172,9 @@ async function main(): Promise<number> {
 		const config = parseYaml(fs.readFileSync(configPath, 'utf8')) as {
 			generate?: Record<string, unknown>;
 		};
-		config.generate = { ...config.generate, architecture: 'clean-lite-ps', frontend: true };
+		// ARCH-0 (#677) deleted `generate.architecture` — clean-lite-ps is the only
+		// backend pipeline and writing the key is now an unknown-key error.
+		config.generate = { ...config.generate, frontend: true };
 		fs.writeFileSync(configPath, stringifyYaml(config, { indent: 2 }));
 
 		const entitiesDir = path.join(tmpDir, 'entities');

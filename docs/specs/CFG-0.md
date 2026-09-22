@@ -132,6 +132,10 @@ reader and from every writer; the schema then rejects it.
 | `locations.{backendSrc,frontendSrc,frontendCollections,frontendStore,frontendStoreEntities,frontendEntities,frontendEntityMetadata,trpcClient}` | **delete** | defaults in `locations.mjs` read by nothing |
 | `database.dialect` | yes (`postgres` \| `sqlite`, default `postgres`) | `paths.mjs` → `backend/database/*.ejs.t` (`clean`) — #602 territory |
 | `behaviors.strategy` | yes (`base_class` \| `inline`, default `inline`) | `prompt.js` → `backend/database/repository.ejs.t` (`clean`) — #602 territory |
+
+> **Revision 2026-09-19 (ARCH-0, #677):** the `clean` pipeline is deleted. `generate.architecture` and the four
+> `generate.*` `clean` toggles are removed (unknown keys now). The other "#602 territory" rows (`database.*`,
+> `behaviors.*`, `naming.*`, `locations.backend*`) are ARCH-1 (#682).
 | `dev.port` | yes | `dev.ts` |
 | `subsystems.install` | yes (enum of subsystem names) | `subsystem-detect.ts`, `subsystems-install-config.ts` |
 | `events.{backend,multi_tenant}` | yes | `subsystem-barrel-generator.ts`, `subsystem-detect.ts`, `events-scaffold-locals.ts` |

@@ -81,7 +81,7 @@ Controllers reference registered schemas by **string name** via
 | `codegen subsystem install openapi-config` flow | `src/cli/commands/subsystem.ts` (`executeOpenApiConfig`) |
 | CONSUMER-SETUP §OpenAPI — install + knobs + gotchas | `docs/CONSUMER-SETUP.md` |
 | Smoke-test programmatic verification | `test/smoke/verify-openapi.ts` |
-| Generated DTO + controller + module templates | `templates/entity/new/backend/`, `templates/entity/new/clean-lite-ps/` |
+| Generated DTO + controller + module templates | `templates/entity/new/clean-lite-ps/` |
 
 ## Do not
 
@@ -155,12 +155,9 @@ VENDORED_RUNTIME_FILES` — they land in every new consumer project at
 Templates that emit OpenAPI-aware code:
 
 ```
-templates/entity/new/backend/dto.ejs.t       # exports Zod schemas + type aliases
-templates/entity/new/backend/module.ejs.t    # @Inject(OPENAPI_REGISTRY), registerSchema in onModuleInit
-templates/entity/new/backend/controller.ejs.t  # @Api* decorators on every method
-templates/entity/new/clean-lite-ps/dto.ejs.t
-templates/entity/new/clean-lite-ps/module.ejs.t
-templates/entity/new/clean-lite-ps/controller.ejs.t
+templates/entity/new/clean-lite-ps/dto/*.ejs.t     # exports Zod schemas + type aliases
+templates/entity/new/clean-lite-ps/module.ejs.t    # registers each DTO schema with the OpenApiRegistry
+templates/entity/new/clean-lite-ps/controller.ejs.t  # @Api* decorators on every method
 templates/subsystem/openapi-config/prompt.js
 templates/subsystem/openapi-config/codegen-config-openapi-block.ejs.t
 ```

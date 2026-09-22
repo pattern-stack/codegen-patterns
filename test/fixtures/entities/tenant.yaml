@@ -1,0 +1,14 @@
+# Tenant Entity Definition
+# The target of every fixture's `tenant_id` foreign key — present so every
+# cross-entity reference in the fixture set resolves from its own YAML (NAME-0).
+
+entity:
+  name: tenant
+  plural: tenants
+  table: tenants
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255

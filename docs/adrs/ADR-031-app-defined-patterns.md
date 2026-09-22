@@ -211,6 +211,7 @@ The 755-line implementation spec (`docs/specs/app-defined-patterns-implementatio
 
 - The four library-shipped runtime base classes (`runtime/base-classes/{synced,activity,knowledge,metadata}-entity-{repository,service}.ts`) are untouched. They are referenced by string name from the new `PatternDefinition` records.
 - The `clean` (full Clean Architecture) backend template pipeline does not consume `family` today and gains no pattern-derived behavior. Patterns are wired through the `clean-lite-ps` pipeline only in Phase 1; extending to `clean` would be an additive Phase 3+ change.
+  > **Revision 2026-09-19 (ARCH-0, #677):** the `clean` pipeline was deleted rather than extended. clean-lite-ps is the only backend pipeline, so the Phase 3+ `clean` work is void. The analyzer's `pattern_clean_pipeline_noop` warning (`validatePatternProject`) was deleted with it.
 
 ## Alternatives Considered
 

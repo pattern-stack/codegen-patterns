@@ -1,9 +1,8 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.composedBase : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.composedBase %>"
+to: "<%= clpOutputPaths.composedBase %>"
+skip_if: "<%= !clpOutputPaths.composedBase %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 <%_ /* ADR-041 §6 — emitted only when TWO OR MORE capabilities stack. One
       capability is wrapped inline in the repository's own `extends` clause;
@@ -37,4 +36,3 @@ import type {
  * concrete <%= classNames.repository %>.
  */
 export abstract class <%= composedBaseClass %> extends <%- composedBaseExtendsClause %> {}
-<%_ } -%>

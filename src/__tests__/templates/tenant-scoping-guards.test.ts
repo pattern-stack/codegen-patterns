@@ -1,12 +1,12 @@
 /**
- * TEN-1 (#585) / #636 — the two generation-time decisions that live in
+ * #636 — the generation-time decision that lives in
  * `templates/entity/new/prompt.js`, above the per-pipeline locals.
  *
- *   1. `assertTenantScopingSupported` — a `tenant_scoped: true` entity outside
- *      `clean-lite-ps` is refused, because that pipeline cannot honour the flag
- *      and emitting an unscoped repository that claims isolation is worse than
- *      failing (#602, charter I11).
- *   2. `loadOwnedTableNames` — which Drizzle tables codegen generates, read
+ * TEN-1's companion guard (`assertTenantScopingSupported`) went with ARCH-0
+ * (#677): it existed to refuse `tenant_scoped: true` under the `clean`
+ * pipeline, and that pipeline no longer exists.
+ *
+ *   `loadOwnedTableNames` — which Drizzle tables codegen generates, read
  *      from the entity YAMLs themselves. It decides whether a field-level
  *      `foreign_key:` gets a DB-level FK or is host-owned (#636). Reading it
  *      from the YAML rather than from emitted files is what makes a two-pass
@@ -18,7 +18,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  assertTenantScopingSupported,
   loadOwnedTableNames,
 } from '../../../templates/entity/new/prompt.js';
 
@@ -26,43 +25,6 @@ const tenantScopedNote = {
   entity: { name: 'note', plural: 'notes', table: 'notes' },
   tenant_scoped: true,
 };
-
-describe('assertTenantScopingSupported (TEN-1 §4.2)', () => {
-  it('permits tenant_scoped under clean-lite-ps', () => {
-    expect(() =>
-      assertTenantScopingSupported(tenantScopedNote, 'clean-lite-ps'),
-    ).not.toThrow();
-  });
-
-  it('refuses tenant_scoped under the clean pipeline', () => {
-    expect(() => assertTenantScopingSupported(tenantScopedNote, 'clean')).toThrow(
-      /tenant_scoped: true requires generate\.architecture: 'clean-lite-ps'/,
-    );
-  });
-
-  it('names the entity and the architecture in the message', () => {
-    try {
-      assertTenantScopingSupported(tenantScopedNote, 'clean');
-      throw new Error('expected a throw');
-    } catch (err) {
-      expect((err as Error).message).toContain("Entity 'note'");
-      expect((err as Error).message).toContain("this project is 'clean'");
-      expect((err as Error).message).toContain('ADR-042');
-    }
-  });
-
-  it('is silent for an entity that does not declare the flag', () => {
-    const plain = { entity: { name: 'note' } };
-    expect(() => assertTenantScopingSupported(plain, 'clean')).not.toThrow();
-    expect(() => assertTenantScopingSupported(plain, 'clean-lite-ps')).not.toThrow();
-  });
-
-  it('treats a non-true value as absent — only `true` opts in', () => {
-    expect(() =>
-      assertTenantScopingSupported({ entity: { name: 'n' }, tenant_scoped: false }, 'clean'),
-    ).not.toThrow();
-  });
-});
 
 describe('loadOwnedTableNames (#636)', () => {
   function project(files: Record<string, string>): string {

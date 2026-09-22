@@ -1,5 +1,5 @@
 /**
- * Unit tests for `validatePatternComposition` + `validatePatternProject`.
+ * Unit tests for `validatePatternComposition`.
  * Every row of the ADR-031 composition rules table has a dedicated case.
  */
 
@@ -17,7 +17,6 @@ import {
 } from '../../patterns/registry.ts';
 import {
 	validatePatternComposition,
-	validatePatternProject,
 } from '../../patterns/validate-composition.ts';
 
 // Ensure library patterns are pre-registered (side-effect on barrel import).
@@ -441,40 +440,6 @@ describe('validatePatternComposition — Activity + Integrated composition', () 
 		const errs = errors(validatePatternComposition(entity));
 		expect(errs.length).toBe(1);
 		expect(errs[0]!.type).toBe('pattern_config_invalid');
-	});
-});
-
-// ============================================================================
-// Project-level — plan Risk 4
-// ============================================================================
-
-describe('validatePatternProject — clean-pipeline no-op warning', () => {
-	test('architecture: clean + entities with patterns → warning per entity', () => {
-		const entities = [
-			makeEntity({ name: 'a', pattern: 'Integrated' }),
-			makeEntity({ name: 'b', patterns: ['Activity'] }),
-			makeEntity({ name: 'c' }), // no pattern — skipped
-		];
-		const issues = validatePatternProject({ entities, architecture: 'clean' });
-		expect(issues.length).toBe(2);
-		expect(issues.every((i) => i.severity === 'warning')).toBe(true);
-		expect(issues.every((i) => i.type === 'pattern_clean_pipeline_noop')).toBe(true);
-		expect(issues.map((i) => i.entity)).toEqual(['a', 'b']);
-	});
-
-	test('architecture: clean-lite-ps + entities with patterns → no warning', () => {
-		const entities = [makeEntity({ name: 'a', pattern: 'Integrated' })];
-		const issues = validatePatternProject({
-			entities,
-			architecture: 'clean-lite-ps',
-		});
-		expect(issues).toEqual([]);
-	});
-
-	test('architecture omitted → no warning (analyzer-only mode)', () => {
-		const entities = [makeEntity({ name: 'a', pattern: 'Integrated' })];
-		const issues = validatePatternProject({ entities });
-		expect(issues).toEqual([]);
 	});
 });
 

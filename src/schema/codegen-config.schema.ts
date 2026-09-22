@@ -35,19 +35,16 @@ import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js
  * frontend gate since ADR-038 FE-1 dropped the dead `pipelines:` block).
  *
  * Keys validated here:
- * - `architecture`: which backend architecture flavor to emit. Selects one of
- *   the two backend template sets and is mutually exclusive (emitting both
- *   was the v0.2 dogfood bug). Readers: `paths.mjs`, `templates/entity/new/prompt.js`,
- *   `templates/junction/new/prompt.js`, `barrel-generator.ts`, `project.ts`,
- *   the frontend emitter.
  * - `frontend`: whether to emit the frontend pipeline at all. Defaults to
  *   `false` so backend-only projects don't get a half-built frontend tree.
  *   Readers: `paths.mjs`, `entity.ts`.
- * - `analytics`: parsed, read by nothing yet — PLAN Unit 3 replaces it with
- *   `generate.semantic`.
- * - `drizzleSchema` / `commands` / `queries` / `dtos`: `clean` pipeline
- *   emission toggles, read by `prompt.js` into the `generate.*` locals of the
- *   `templates/entity/new/backend/` templates (#602 territory).
+ * - `semantic`: whether to emit the semantic model (SEM-1, ADR-045). It
+ *   replaced `analytics: none | cube`, which is now rejected by name.
+ *
+ * There is no backend-architecture key: clean-lite-ps is the only backend
+ * pipeline (ARCH-0, #677). `architecture` and the `clean` pipeline's
+ * `drizzleSchema` / `commands` / `queries` / `dtos` toggles were deleted with
+ * it, so each is an unknown-key error.
  *
  * `.strict()` (CFG-0) — the frontend toggles deleted in FE-3 and the
  * never-consumed `schemaServer` / `schemaClient` / `electricMigrations` are
@@ -55,14 +52,6 @@ import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js
  */
 export const GenerateConfigSchema = z
   .object({
-    /**
-     * Backend architecture to generate. One of:
-     * - 'clean'          — Full Clean Architecture (domain + application + infrastructure + presentation)
-     * - 'clean-lite-ps'  — Clean-Lite-PS modules/{plural}/ layout
-     *
-     * Default: 'clean'.
-     */
-    architecture: z.enum(["clean", "clean-lite-ps"]).default("clean"),
     /**
      * Whether to emit the frontend pipeline (collections, hooks, entity metadata).
      * Default: false — backend-only projects opt out by default.
@@ -89,14 +78,6 @@ export const GenerateConfigSchema = z
           "'generate.analytics' was removed by SEM-1 (ADR-045) — use 'generate.semantic: true' to emit the semantic model",
       })
       .optional(),
-    /** `clean` pipeline: emit the Drizzle schema files. Default true. */
-    drizzleSchema: z.boolean().default(true),
-    /** `clean` pipeline: emit the command classes. Default true. */
-    commands: z.boolean().default(true),
-    /** `clean` pipeline: emit the query classes. Default true. */
-    queries: z.boolean().default(true),
-    /** `clean` pipeline: emit the DTO schemas. Default true. */
-    dtos: z.boolean().default(true),
   })
   .strict();
 
@@ -429,7 +410,8 @@ const LocationSchema = z
 /**
  * Every location name the generator reads. `locations.mjs` holds the default for
  * each; a `locations.<name>` entry overrides it (shallow, per half). Readers:
- * `paths.mjs` (`BACKEND_LAYERS`, the `backend*` layer dirs), `prompt.js` /
+ * `paths.mjs` (`BACKEND_LAYERS`, the `backend*` layer dirs — only the deleted
+ * `clean` pipeline's templates consumed them; ARCH-1, #682), `prompt.js` /
  * `prompt-extension.js` and the entity templates (the rest), and the frontend
  * emitter (`dbEntities`, `frontendCollectionsAuth`, `frontendGenerated`).
  *
@@ -477,13 +459,13 @@ export const LocationsConfigSchema = z
 export type LocationsConfig = z.infer<typeof LocationsConfigSchema>;
 
 // ============================================================================
-// `clean` pipeline knobs (#602 territory)
+// Knobs only the deleted `clean` pipeline read — deleted by ARCH-1 (#682)
 // ============================================================================
 
 /**
  * `database.dialect` — read by `paths.mjs` › `getDatabaseDialect` into the
- * `databaseDialect` local of the `clean` pipeline's Drizzle templates
- * (`templates/entity/new/backend/database/`).
+ * `databaseDialect` local, which only the deleted `clean` pipeline's Drizzle
+ * templates read (ARCH-0). Read by no template since; #682.
  */
 export const DatabaseConfigSchema = z
   .object({
@@ -494,8 +476,8 @@ export const DatabaseConfigSchema = z
 
 /**
  * `behaviors.strategy` — read by `templates/entity/new/prompt.js` (an entity's
- * own `behavior_strategy:` wins) into the `behaviorStrategy` local of the
- * `clean` pipeline's repository template.
+ * own `behavior_strategy:` wins) into the `behaviorStrategy` local, which only
+ * the deleted `clean` pipeline's repository template read (ARCH-0); #682.
  */
 export const BehaviorsConfigSchema = z
   .object({

@@ -43,7 +43,6 @@ import { scanProject, generateConfig } from '../../scanner/index.js';
 import type { ProposedConfig } from '../../scanner/config-generator.js';
 import {
 	configOrDefaults,
-	DEFAULT_CODEGEN_CONFIG,
 	parseCodegenConfig,
 } from '../../config/project-config.js';
 import { projectLayout } from '../shared/project-layout.js';
@@ -89,14 +88,10 @@ async function summary(ctx: Context): Promise<PaneOutput> {
 
 	const fw = ctx.framework?.framework?.detected ?? 'unknown';
 	const orm = ctx.framework?.orm?.detected ?? 'unknown';
-	const arch = ctx.config
-		? ctx.config.generate.architecture
-		: (ctx.framework?.architecture?.detected ?? DEFAULT_CODEGEN_CONFIG.generate.architecture);
 	const generated = configOrDefaults(ctx.config).paths.generated;
 
 	body.push(`  framework:    ${fw}`);
 	body.push(`  orm:          ${orm}`);
-	body.push(`  architecture: ${arch}`);
 	body.push(`  entities:     ${ctx.entityCount}`);
 	body.push(`  subsystems:   ${ctx.installedSubsystems.length}/${SUBSYSTEMS.length} installed`);
 	body.push(`  generated:    ${generated}`);
@@ -237,7 +232,6 @@ export class ProjectInitCommand extends Command {
 		console.log('');
 		console.log(`  ${theme.muted('framework:')}    ${plan.summary.framework}`);
 		console.log(`  ${theme.muted('orm:')}          ${plan.summary.orm}`);
-		console.log(`  ${theme.muted('architecture:')} ${plan.summary.architecture}`);
 		console.log(`  ${theme.muted('frontend:')}     ${plan.summary.frontend}`);
 		console.log('');
 
@@ -320,7 +314,6 @@ function renderPlanOnly(plan: InitPlan, opts: { dryRun: boolean }): number {
 	console.log('');
 	console.log(`  ${theme.muted('framework:')}    ${plan.summary.framework}`);
 	console.log(`  ${theme.muted('orm:')}          ${plan.summary.orm}`);
-	console.log(`  ${theme.muted('architecture:')} ${plan.summary.architecture}`);
 	console.log('');
 	for (const e of plan.entries) {
 		const icon =

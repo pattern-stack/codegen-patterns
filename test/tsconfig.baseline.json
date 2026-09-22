@@ -9,6 +9,12 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
+      "@gen/*": [
+        "../packages/api/src/*"
+      ],
+      "@shared/http/page": [
+        "../runtime/http/pagination"
+      ],
       "@shared/subsystems/*": [
         "../runtime/subsystems/*"
       ],
@@ -18,6 +24,9 @@
       "@shared/types/*": [
         "../runtime/types/*"
       ],
+      "@shared/base-classes/*": [
+        "../runtime/base-classes/*"
+      ],
       "@shared/openapi": [
         "../runtime/shared/openapi/index.ts"
       ],
@@ -26,11 +35,12 @@
       ],
       "@shared/*": [
         "../runtime/shared/*",
+        "../runtime/*",
         "../test/scaffold/shared/*"
       ]
     }
   },
   "include": [
-    "../packages/api/src/domain/**/*"
+    "../packages/api/src/**/*"
   ]
 }

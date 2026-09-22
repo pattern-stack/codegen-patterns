@@ -111,6 +111,9 @@ Top-level `definitions/relationships/<name>.yaml` parsed by `loadRelationshipFro
 
 #### (B-clean) Clean architecture — partial composition surface, FULL `relations()`
 
+> **Revision 2026-09-19 (ARCH-0, #677):** the `clean` pipeline is deleted. The `templates/entity/new/backend/…:line`
+> citations below are history and point at no live code; the `prompt.js` line numbers have also drifted.
+
 ```
 templates/entity/new/prompt.js:838-883
     → buckets relationships into `belongsToRelations` / `hasManyRelations` / `hasOneRelations`

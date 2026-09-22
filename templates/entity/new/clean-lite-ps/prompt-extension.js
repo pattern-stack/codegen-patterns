@@ -511,8 +511,7 @@ function processFields(fields, entityName = '') {
     // Enum-typed fields (or any field with a `choices` list) emit a
     // Postgres-native pgEnum declaration + column reference, so the
     // generated `InferSelectModel` type narrows to the literal union
-    // instead of falling back to `string`. Matches the backend pipeline
-    // (templates/entity/new/backend/database/schema.ejs.t:66-104).
+    // instead of falling back to `string`.
     const drizzleType = hasChoices
       ? 'enum'
       : (DRIZZLE_TYPE_MAP[type] || 'text');

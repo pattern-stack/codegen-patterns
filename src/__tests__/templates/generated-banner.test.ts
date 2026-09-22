@@ -14,12 +14,8 @@
  *      clean-lite-ps the banner line is
  *      `<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>`
  *      and degrades to nothing when the local is absent. A clean-lite-ps body
- *      opens with its architecture guard, then `<%- generatedBanner %>`
- *      unguarded: a missing banner there is a ReferenceError (#638).
- *
- * The timestamped electric migration is the lone force template intentionally
- * excluded: its filename changes every emit, so it is never overwritten in
- * place and hand edits there are not at risk.
+ *      opens with `<%- generatedBanner %>` unguarded: a missing banner there is
+ *      a ReferenceError (#638).
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -32,11 +28,6 @@ import {
 } from '../../../templates/_shared/generated-banner.mjs';
 
 const TEMPLATES_ROOT = resolve(import.meta.dir, '../../../templates');
-
-const EXCLUDED = new Set([
-	// Timestamped filename — a fresh file each emit, never overwritten in place.
-	'entity/new/backend/database/electric-migration.ejs.t',
-]);
 
 function walk(dir: string, acc: string[] = []): string[] {
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -64,7 +55,7 @@ function frontmatterAndBody(source: string): { frontmatter: string; body: string
 	};
 }
 
-/** Force templates, relative to templates/, excluding the timestamped migration. */
+/** Force templates, relative to templates/. */
 function forceTemplates(): string[] {
 	return walk(TEMPLATES_ROOT)
 		.filter((abs) => {
@@ -72,7 +63,6 @@ function forceTemplates(): string[] {
 			return /(^|\n)force:\s*true/.test(frontmatter);
 		})
 		.map((abs) => relative(TEMPLATES_ROOT, abs))
-		.filter((rel) => !EXCLUDED.has(rel))
 		.sort();
 }
 
@@ -113,12 +103,11 @@ describe('force templates carry the @generated banner', () => {
 	it('enumerates a non-trivial set of force templates', () => {
 		// Guards against the walk silently matching nothing (e.g. a refactor
 		// that moves the templates dir) and the suite passing vacuously.
-		expect(templates.length).toBeGreaterThan(50);
+		expect(templates.length).toBeGreaterThan(40);
 	});
 
 	const BANNER_LINE =
 		"<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>";
-	const CLP_GUARD_LINE = "<%_ if (typeof clpOutputPaths !== 'undefined') { -%>";
 	const CLP_BANNER_LINE = '<%- generatedBanner %>';
 	const isClp = (rel: string) => rel.startsWith('entity/new/clean-lite-ps/');
 	const bannerLine = (rel: string) => (isClp(rel) ? CLP_BANNER_LINE : BANNER_LINE);
@@ -128,14 +117,8 @@ describe('force templates carry the @generated banner', () => {
 		const lines = body.split('\n');
 
 		// The banner is the first thing emitted into the generated file, ahead
-		// of any imports or doc comments. A clean-lite-ps body's guard line emits
-		// nothing (`-%>` slurps its newline), so the banner follows it.
-		if (isClp(rel)) {
-			expect(lines[0]).toBe(CLP_GUARD_LINE);
-			expect(lines[1]).toBe(CLP_BANNER_LINE);
-		} else {
-			expect(lines[0]).toBe(BANNER_LINE);
-		}
+		// of any imports or doc comments.
+		expect(lines[0]).toBe(bannerLine(rel));
 	});
 
 	it.each(templates)('%s — banner line renders to the contract wording', (rel) => {

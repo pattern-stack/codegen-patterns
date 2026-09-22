@@ -1,9 +1,8 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.controller : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' || clpApiEnabled === false %>"
+to: "<%= clpOutputPaths.controller %>"
+skip_if: "<%= clpApiEnabled === false %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import { Controller, Get<% if (generateWrites) { %>, Post, Patch, Delete, Body<% } %>, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, <% if (generateWrites) { %>ApiBody, <% } %>ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
@@ -161,4 +160,3 @@ export class <%= classNames.controller %> {
   }
 <% } %>
 }
-<%_ } -%>

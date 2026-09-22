@@ -147,6 +147,7 @@
     "@nestjs/core": "10",
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/schedule": "^4.0.0",
+    "@nestjs/swagger": "^8.0.0",
     "@nestjs/testing": "^10",
     "@pattern-stack/codegen-calendar": "workspace:*",
     "@pattern-stack/codegen-crm": "workspace:*",

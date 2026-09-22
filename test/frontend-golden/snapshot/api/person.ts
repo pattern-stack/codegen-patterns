@@ -44,7 +44,7 @@ export const personApi = {
 		request<Person>('POST', '/persons', data),
 
 	update: (id: string, data: Partial<Person>): Promise<Person> =>
-		request<Person>('PUT', `/persons/${id}`, data),
+		request<Person>('PATCH', `/persons/${id}`, data),
 
 	delete: (id: string): Promise<void> =>
 		request<void>('DELETE', `/persons/${id}`),

@@ -133,8 +133,7 @@ codegen project graph [--output graph.json]
 `init` (package mode, the default) writes: `codegen.config.yaml`,
 `src/shared/database/database.module.ts`, `src/generated/{modules,schema,app-config}.ts`,
 `src/app.module.ts`, `src/main.ts`, `src/schema.ts`, `entities/example.yaml`
-(`tsconfig.json` only with `--with-tsconfig`). It picks `clean-lite-ps` unless the
-scanner finds real clean-architecture dirs. In `--runtime vendored` it also copies
+(`tsconfig.json` only with `--with-tsconfig`). In `--runtime vendored` it also copies
 the runtime closure into `src/shared/**`.
 
 `update` re-syncs vendored runtime, installed subsystems, and consumer skills to the
@@ -282,8 +281,7 @@ paths:
   generated: src/generated        # default <backend_src>/generated
   events_dir: events              # default events
   jobs_dir: definitions/jobs      # default
-generate:
-  architecture: clean-lite-ps     # clean | clean-lite-ps — schema default is clean; init writes clean-lite-ps
+generate:                         # no architecture key — clean-lite-ps is the only backend (ARCH-0)
   frontend: false
   semantic: false                 # emit <generated>/semantic/ — the declared AggregateModel (SEM-2)
 patterns: [src/patterns/*.pattern.ts]   # default <backend_src>/patterns/*.pattern.ts
@@ -349,18 +347,22 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 
 ## Working on the generator
 
-- Backend: hygen templates (`templates/entity/new/backend/` = clean,
-  `templates/entity/new/clean-lite-ps/` = clean-lite-ps). Frontend and integration: TS emitters in `src/emitters/`.
-- Gates: `just test-unit`, `just test-baseline` (regenerate snapshots when output
-  changes intentionally), `just test-smoke`, `just test-post-publish` (tarball).
+- Backend: hygen templates, one pipeline — `templates/entity/new/clean-lite-ps/` (the
+  `clean` pipeline and `generate.architecture` were deleted, ARCH-0 #677; its leftover
+  config surface — `naming:`, `locations.backend*`, `database:`, `behaviors:`, entity
+  layout keys, dead `prompt.js` locals — is ARCH-1, #682). Frontend and integration: TS
+  emitters in `src/emitters/`.
+- Gates: `just test-unit`, `just test-baseline` (clean-lite-ps over the closed set in
+  `test/fixtures/entities/`, typechecked; `bun test/run-test.ts generate && bun test/run-test.ts baseline`
+  regenerates the snapshot when output changes intentionally), `just test-smoke`, `just test-post-publish` (tarball).
 - Every smoke fails on any `tsc` diagnostic located in the project it generated.
   `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** (outside
   that project, or in `node_modules`), never by message or directory (GATE-2, #604).
-- clean-lite-ps bodies render under `architecture: clean` too (`skip_if` stops the
-  write, not the render). Each body opens with one guard,
-  `<%_ if (typeof clpOutputPaths !== 'undefined') { -%>`, and inside it every local is
-  referenced **unguarded**: never `typeof x !== 'undefined' ? x : <fallback>`. A missing
-  local must throw (#638, grep-asserted in `src/__tests__/clean-lite-ps/strict-locals.test.ts`).
+- clean-lite-ps templates reference every local **unguarded** — no `typeof` test
+  anywhere in the body or frontmatter, not even a body guard (ARCH-0 deleted the one
+  `typeof clpOutputPaths` guard `clean` needed). A missing local must throw (#638,
+  grep-asserted in `src/__tests__/clean-lite-ps/strict-locals.test.ts`). `skip_if` stays
+  only for a real condition (`clpApiEnabled === false`, an optional output path).
   A new runtime import specifier goes in `runtimeImportLocals` (`src/config/runtime-mode.mjs`);
   unit tests get the prompt-owned locals from `withEntities()` (`src/__tests__/clean-lite-ps/_entity-lookup.ts`).
 - Releases: a version bump merged to main publishes. If the version is already on

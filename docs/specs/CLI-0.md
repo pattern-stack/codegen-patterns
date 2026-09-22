@@ -83,6 +83,10 @@ skill, `docs/specs/CAP-3.md` (describes live prompt behaviour), and a dated note
 Option 2 from the issue. Option 1 (split action directories per architecture) is moot if charter Q5 retires
 `clean`.
 
+> **Revision 2026-09-19 (ARCH-0, #677):** Q5 retired `clean`. hygen now renders only clean-lite-ps bodies, so the
+> body guard below and the `typeof clpOutputPaths` `skip_if` clauses are deleted as well. No `typeof` test is left in
+> any clean-lite-ps template (`strict-locals.test.ts`). See `docs/specs/ARCH-0.md`.
+
 - Each `templates/entity/new/clean-lite-ps/**/*.ejs.t` body is wrapped in one guard:
   `<%_ if (typeof clpOutputPaths !== 'undefined') { _%> … <%_ } _%>`. Under `clean` the body renders empty (the
   write was already skipped by `skip_if` / a null `to:`).

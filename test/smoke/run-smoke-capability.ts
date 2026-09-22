@@ -8,8 +8,8 @@
  * ---------------
  * ADR-041's decision rests on a hermetic `tsc` spike that *modelled* the
  * repository bases — it never imported the real, drizzle-bearing classes. The
- * baseline snapshots are clean-arch-only and consume no patterns, and no other
- * smoke declares one. So without this harness, nothing anywhere compiles a
+ * baseline fixtures declare only library patterns (no capability composition),
+ * and no other smoke declares one. So without this harness, nothing anywhere compiles a
  * composed entity, and the emission would be gated by string assertions alone.
  *
  * WHAT IT DOES, per leg

@@ -7,10 +7,8 @@
  * definitions (two endpoints, role enum, BaseJunctionFields, composite PK,
  * no controller/DTOs/use-cases).
  *
- * Architecture-aware output paths: reads `generate.architecture` from
- * codegen.config.yaml and computes output paths for both 'clean' and
- * 'clean-lite-ps' pipelines. Relationship's prompt.js hardcodes clean-lite-ps
- * paths — this prompt does NOT inherit that limitation.
+ * Output paths are the clean-lite-ps module tree (`paths.modules_dir`) — the
+ * only backend pipeline (ARCH-0, #677).
  */
 
 import fs from "node:fs";
@@ -41,8 +39,8 @@ const kebabCase = (s) => s.replace(/_/g, "-");
 // ============================================================================
 
 // The parsed config, or the schema's defaults with no file (PATH-0, #642):
-// `generate.architecture` and `paths.backend_src` each have ONE default,
-// declared in `codegen-config.schema.ts` — this prompt carries none of its own.
+// `paths.modules_dir` has ONE default, declared in `codegen-config.schema.ts` —
+// this prompt carries none of its own.
 
 // ============================================================================
 // Name Derivation
@@ -140,51 +138,35 @@ function processCustomFields(fields, junctionName) {
 }
 
 // ============================================================================
-// Output Path Resolution (architecture-aware)
+// Output Path Resolution
 // ============================================================================
 
-function resolveOutputPaths(name, plural, architecture, srcRoot, modulesDir) {
-  if (architecture === "clean-lite-ps") {
-    // The junction's own folder is flat under the module tree (a junction has
-    // no `context:`) — the module-tree rule (`entityModuleNaming`, GEN-0 #649)
-    // under `paths.modules_dir` (PATH-1, #645).
-    const naming = entityModuleNaming({ name, plural }, modulesDir);
-    const dir = path.posix.normalize(naming.moduleDir);
-    return {
-      entity:     path.posix.normalize(`${naming.entityFile}.ts`),
-      repository: path.posix.normalize(naming.repositoryFile),
-      service:    `${dir}/${name}.service.ts`,
-      module:     path.posix.normalize(naming.moduleFile),
-      index:      `${dir}/index.ts`,
-    };
-  }
-
-  // 'clean' — full Clean Architecture. Mirrors entityFilePaths() in barrel-generator.ts.
-  const pluralKebab = kebabCase(plural);
+function resolveOutputPaths(name, plural, modulesDir) {
+  // The junction's own folder is flat under the module tree (a junction has
+  // no `context:`) — the module-tree rule (`entityModuleNaming`, GEN-0 #649)
+  // under `paths.modules_dir` (PATH-1, #645).
+  const naming = entityModuleNaming({ name, plural }, modulesDir);
+  const dir = path.posix.normalize(naming.moduleDir);
   return {
-    entity:     `${srcRoot}/domain/${plural}/${name}.entity.ts`,
-    repository: `${srcRoot}/infrastructure/persistence/drizzle/${pluralKebab}.repository.ts`,
-    service:    `${srcRoot}/application/${plural}/${name}.service.ts`,
-    module:     `${srcRoot}/infrastructure/modules/${pluralKebab}.module.ts`,
-    index:      `${srcRoot}/domain/${plural}/index.ts`,
+    entity:     path.posix.normalize(`${naming.entityFile}.ts`),
+    repository: path.posix.normalize(naming.repositoryFile),
+    service:    `${dir}/${name}.service.ts`,
+    module:     path.posix.normalize(naming.moduleFile),
+    index:      `${dir}/index.ts`,
   };
 }
 
 /**
  * An endpoint's service / module file paths — the files the `_inject-parent-*`
- * templates modify. clean-lite-ps: the endpoint's own module folder
- * (`entityModuleNaming`, so `context:` nesting is honoured). 'clean': the
- * architecture's fixed layout, with the endpoint's declared plural.
+ * templates modify: the endpoint's own module folder (`entityModuleNaming`, so
+ * `context:` nesting is honoured).
  */
-function resolveParentPaths(name, naming, architecture, srcRoot) {
-  if (architecture === "clean-lite-ps") {
-    const dir = path.posix.normalize(naming.moduleDir);
-    return {
-      service: `${dir}/${name}.service.ts`,
-      module:  `${dir}/${naming.plural}.module.ts`,
-    };
-  }
-  return resolveOutputPaths(name, naming.plural, architecture, srcRoot);
+function resolveParentPaths(name, naming) {
+  const dir = path.posix.normalize(naming.moduleDir);
+  return {
+    service: `${dir}/${name}.service.ts`,
+    module:  `${dir}/${naming.plural}.module.ts`,
+  };
 }
 
 // ============================================================================
@@ -302,14 +284,12 @@ export default {
     );
 
     // ======================================================================
-    // Architecture-aware output paths
+    // Output paths
     // ======================================================================
 
     const config_ = configOrDefaults(loadProjectConfig(cwd));
-    const architecture = config_.generate.architecture;
-    const srcRoot = config_.paths.backend_src;
     const modulesDir = config_.paths.modules_dir;
-    const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, architecture, srcRoot, modulesDir);
+    const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, modulesDir);
 
     // ======================================================================
     // Endpoint naming — from each endpoint's OWN YAML (NAME-0, #611)
@@ -317,13 +297,6 @@ export default {
     // The table export and module folder of an endpoint are its `plural:` and
     // `context:`, read through the same function its own emission uses — never
     // `pluralize(name)` here.
-    //
-    // `architecture: clean` has no module tree and no `context:` folders — its
-    // layout is `locations:`, and `paths.modules_dir` never feeds it. Its
-    // junction and endpoints are siblings under one layer folder
-    // (`application/<plural>`), so only the sibling-relative form of the
-    // imports below matters: `.` is that neutral common root.
-    const namingRoot = architecture === "clean" ? "." : modulesDir;
     const entityLookup = projectEntityLookup(cwd);
     const endpointNaming = (endpoint) => {
       const block = entityLookup(endpoint);
@@ -333,10 +306,7 @@ export default {
           `${entityLookup.missingEntity(endpoint)}. The junction reads its table and module folder from that YAML.`
         );
       }
-      return entityModuleNaming(
-        architecture === "clean" ? { ...block, context: undefined } : block,
-        namingRoot,
-      );
+      return entityModuleNaming(block, modulesDir);
     };
     const leftNaming = endpointNaming(leftEntity);
     const rightNaming = endpointNaming(rightEntity);
@@ -348,7 +318,7 @@ export default {
     const rightTable = rightEntityPlural; // e.g. 'contacts'
 
     // The junction's own folder is flat (a junction has no `context:`).
-    const junctionModuleDir = `${namingRoot}/${entityNamePlural}`;
+    const junctionModuleDir = `${modulesDir}/${entityNamePlural}`;
 
     // ======================================================================
     // CGP-60 — parent-side paths + fan-out locals
@@ -356,8 +326,8 @@ export default {
     // Parent service / module file paths — anchored on each endpoint.
     // The parent's own `entity new` pipeline previously wrote these files
     // with `force: true`; the junction inject templates target them.
-    const leftParentPaths = resolveParentPaths(leftEntity, leftNaming, architecture, srcRoot);
-    const rightParentPaths = resolveParentPaths(rightEntity, rightNaming, architecture, srcRoot);
+    const leftParentPaths = resolveParentPaths(leftEntity, leftNaming);
+    const rightParentPaths = resolveParentPaths(rightEntity, rightNaming);
     const parentServicePathLeft = leftParentPaths.service;
     const parentServicePathRight = rightParentPaths.service;
     const parentModulePathLeft = leftParentPaths.module;
@@ -380,8 +350,7 @@ export default {
     // Relative imports between the junction's folder and each endpoint's, in
     // both directions — computed from the two module folders, so an endpoint
     // nested under a `context:` gets the extra segment. Flat siblings give
-    // `../<plural>`. ('clean' layout: parents under application/<plural>, the
-    // junction under application/<junctionPlural> — the same sibling form.)
+    // `../<plural>`.
     const junctionDirFromLeft = relativeModuleDir(leftNaming.moduleDir, junctionModuleDir);
     const junctionDirFromRight = relativeModuleDir(rightNaming.moduleDir, junctionModuleDir);
     const leftDirFromJunction = relativeModuleDir(junctionModuleDir, leftNaming.moduleDir);
@@ -581,10 +550,6 @@ export default {
 
       // Class names
       classNames,
-
-      // Source root + architecture
-      srcRoot,
-      architecture,
 
       // Parent table Drizzle var names (for FK .references())
       leftTable,

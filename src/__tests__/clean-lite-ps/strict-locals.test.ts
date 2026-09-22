@@ -1,9 +1,9 @@
 /**
- * #638: hygen renders every clean-lite-ps body under `architecture: clean` too
- * (`skip_if` suppresses the write, not the render). Each body is wrapped in one
- * `typeof clpOutputPaths` guard, so it renders empty without clean-lite-ps
- * locals. Inside the guard every local is referenced unguarded: under
- * clean-lite-ps a missing local throws instead of emitting nothing.
+ * #638: every clean-lite-ps local is referenced unguarded, so a missing one
+ * throws instead of emitting nothing. clean-lite-ps is the only backend
+ * pipeline (ARCH-0, #677), so hygen never renders these bodies without the
+ * clean-lite-ps locals and no template carries a `typeof` guard — not even the
+ * one `typeof clpOutputPaths` body guard the `clean` pipeline used to need.
  */
 import { describe, expect, it } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -51,13 +51,13 @@ function locals(): Record<string, unknown> {
 	return buildCleanLitePsLocals(definition, withEntities()) as Record<string, unknown>;
 }
 
-describe('clean-lite-ps bodies under architecture: clean', () => {
+describe('clean-lite-ps bodies', () => {
 	it('enumerates the templates', () => {
 		expect(TEMPLATES.length).toBeGreaterThan(15);
 	});
 
-	it.each(TEMPLATES)('%s renders empty with no clean-lite-ps locals', (rel) => {
-		expect(render(rel, {})).toBe('');
+	it.each(TEMPLATES)('%s throws with no clean-lite-ps locals', (rel) => {
+		expect(() => render(rel, {})).toThrow(/is not defined/);
 	});
 });
 
@@ -88,12 +88,9 @@ describe('clean-lite-ps bodies under clean-lite-ps', () => {
 
 });
 
-describe('no per-local typeof guards remain (#638)', () => {
+describe('no typeof guards remain (#638, ARCH-0)', () => {
 	it.each(TEMPLATES)('%s', (rel) => {
-		const guards = [...body(rel).matchAll(/typeof\s+(\w+)\s*[!=]==\s*'undefined'/g)].map(
-			(m) => m[1],
-		);
-		// The one body guard is the only typeof test left.
-		expect(guards).toEqual(['clpOutputPaths']);
+		const source = readFileSync(join(CLP_ROOT, rel), 'utf8');
+		expect(source).not.toMatch(/typeof\s+\w+\s*[!=]==\s*'undefined'/);
 	});
 });

@@ -29,17 +29,10 @@ afterEach(() => {
 	for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-/**
- * These cases exercise the clean-lite-ps layout, so they declare it: the
- * no-config default is the schema's (`clean`, charter Q5), pinned once in
- * `config/path-defaults.test.ts`.
- */
-const CLEAN_LITE_PS = 'generate:\n  architecture: clean-lite-ps\n';
-
 async function junctionLocals(
 	between: [string, string],
 	entities: Record<string, string>,
-	config: string = CLEAN_LITE_PS,
+	config = '',
 ): Promise<Record<string, any>> {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'junction-naming-'));
 	tmpDirs.push(dir);
@@ -118,22 +111,11 @@ describe('junction endpoints resolve from their own YAML', () => {
 		expect(l.parentServicePathLeft).toBe('src/modules/opportunities/opportunity.service.ts');
 	});
 
-	it("architecture: clean keeps its fixed layout but uses the declared plural", async () => {
-		const l = await junctionLocals(
-			['crew', 'person'],
-			ENTITIES,
-			'generate:\n  architecture: clean\npaths:\n  backend_src: app/src\n',
-		);
-		expect(l.rightTable).toBe('persons');
-		expect(l.leftEntityImportFromJunction).toBe('../crews/crew.entity');
-		expect(l.parentServicePathRight).toBe('app/src/application/persons/person.service.ts');
-	});
-
 	it('clean-lite-ps output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
 		const l = await junctionLocals(
 			['crew', 'person'],
 			ENTITIES,
-			`${CLEAN_LITE_PS}paths:\n  backend_src: apps/api/src\n  modules_dir: apps/api/src/domain\n`,
+			'paths:\n  backend_src: apps/api/src\n  modules_dir: apps/api/src/domain\n',
 		);
 		expect(l.outputPaths.entity).toBe('apps/api/src/domain/crew_people/crew_person.entity.ts');
 		expect(l.outputPaths.module).toBe('apps/api/src/domain/crew_people/crew_people.module.ts');
@@ -141,18 +123,6 @@ describe('junction endpoints resolve from their own YAML', () => {
 		expect(l.parentServicePathRight).toBe('apps/api/src/domain/persons/person.service.ts');
 		// Imports are relative between folders of the one tree — unchanged.
 		expect(l.leftEntityImportFromJunction).toBe('../org/crews/crew.entity');
-	});
-
-	it('architecture: clean is untouched by paths.modules_dir (PATH-1)', async () => {
-		const withModulesDir = await junctionLocals(
-			['crew', 'person'],
-			ENTITIES,
-			'generate:\n  architecture: clean\npaths:\n  backend_src: app/src\n  modules_dir: app/src/features\n',
-		);
-		expect(withModulesDir.leftEntityImportFromJunction).toBe('../crews/crew.entity');
-		expect(withModulesDir.rightEntityImportFromLeft).toBe('../persons/person.entity');
-		expect(withModulesDir.parentServicePathRight).toBe('app/src/application/persons/person.service.ts');
-		expect(withModulesDir.outputPaths.entity).toBe('app/src/domain/crew_people/crew_person.entity.ts');
 	});
 
 	it('an endpoint with no entity YAML is a named error, not a guess', async () => {

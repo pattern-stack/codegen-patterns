@@ -55,11 +55,7 @@ export {
 	type LoadAppPatternsResult,
 } from './registry.js';
 
-export {
-	validatePatternComposition,
-	validatePatternProject,
-	type PatternProjectContext,
-} from './validate-composition.js';
+export { validatePatternComposition } from './validate-composition.js';
 
 export {
 	validateOrchestrationProject,

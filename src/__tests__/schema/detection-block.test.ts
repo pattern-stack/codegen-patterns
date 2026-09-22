@@ -105,7 +105,7 @@ describe('detection block (ADR-033.1)', () => {
 	});
 
 	it('parses the opportunity fixture YAML with a multi-provider detection block', () => {
-		const yamlPath = resolve(__dirname, '../../../test/fixtures/opportunity.yaml');
+		const yamlPath = resolve(__dirname, '../../../test/fixtures/entities/opportunity.yaml');
 		const result = loadEntityFromYaml(yamlPath);
 		expect(result.success).toBe(true);
 		if (!result.success) return;

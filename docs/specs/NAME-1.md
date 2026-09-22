@@ -112,6 +112,9 @@ Sites:
 
   So `test/baseline/` does not move. The defect is recorded on #602.
 
+  > **Revision 2026-09-19 (ARCH-0, #677):** the `clean` pipeline was deleted, and this defect with it. #602 is closed
+  > as obsolete.
+
 The capability fixtures regain `person.crew → crew` next to `crew.lead → person`, which is the #631 cycle.
 `person` now both belongs_to and has_many `crew`, which is the #632 shape. The smoke also pins that
 `person.service.ts` / `persons.module.ts` contain exactly one `CrewRepository` import, one provider and one

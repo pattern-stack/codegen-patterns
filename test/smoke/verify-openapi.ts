@@ -158,22 +158,16 @@ async function main(): Promise<void> {
 		const requiredSchemas = [
 			'CreateContactDto',
 			'UpdateContactDto',
-			// The smoke fixture uses clean-lite-ps architecture (init
-			// default); CLP registers the response DTO as `OutputDto`
-			// (OPENAPI-2 implementation note 3). Accept either suffix
-			// so this verify step works across pipelines.
-			['ContactResponseDto', 'ContactOutputDto'],
+			// clean-lite-ps registers the response DTO as `OutputDto`
+			// (OPENAPI-2 implementation note 3).
+			'ContactOutputDto',
 			'ErrorResponseDto',
 		] as const;
 
 		const presentSchemas = Object.keys(document.components.schemas);
-		for (const entry of requiredSchemas) {
-			const names = Array.isArray(entry) ? entry : [entry];
-			const found = names.find((n) => presentSchemas.includes(n));
-			if (!found) {
-				fail(
-					`components.schemas missing ${names.join(' | ')} — present: ${presentSchemas.join(', ')}`,
-				);
+		for (const name of requiredSchemas) {
+			if (!presentSchemas.includes(name)) {
+				fail(`components.schemas missing ${name} — present: ${presentSchemas.join(', ')}`);
 			}
 		}
 

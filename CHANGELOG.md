@@ -158,6 +158,30 @@ resolve against.
   state its posture — a repository that silently defaulted to `false` is the
   failure this guards against. Generated repositories are regenerated.
 
+**Breaking:** the `clean` backend architecture is deleted. clean-lite-ps is the only
+backend pipeline (ARCH-0, #677).
+
+### Removed
+
+- **The `clean` backend pipeline and `generate.architecture`** (#677). The full
+  Clean Architecture templates (`templates/entity/new/backend/`: separate
+  command/query classes, repository interfaces, `domain/` / `application/` /
+  `infrastructure/` / `presentation/` layout) are gone. Every entity is emitted
+  as a clean-lite-ps module folder under `paths.modules_dir`. `generate.architecture`
+  and the `clean`-only toggles `generate.drizzleSchema`, `commands`, `queries` and
+  `dtos` are removed from the schema, so each is now an unknown-key error naming
+  the key and the file. **Delete those lines from `codegen.config.yaml`.** There
+  is no alias and no migration path. The schema default was `clean`, so **a
+  project whose config never set `architecture` was generating `clean` output
+  and now gets the clean-lite-ps module tree.** Regenerate, then delete the
+  old `domain/`, `application/`, `infrastructure/` and `presentation/` trees.
+  Other effects: the frontend emitter's generated `update` always uses
+  `PATCH` (the clean-lite-ps controller's verb; `clean` used `PUT`).
+  `project init`, `project scan` and the project status pane no longer write or
+  show an architecture. The analyzer's `pattern_clean_pipeline_noop` warning and
+  `validatePatternProject` are gone. The scanner reports an existing
+  domain/application folder layout as `layered` (was `clean`).
+
 ### Changed
 
 - **A field FK to a host-owned table emits a plain column** (#636). A field-level

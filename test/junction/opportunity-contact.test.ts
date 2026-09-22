@@ -20,7 +20,6 @@ describe('junction emission snapshot — opportunity_contact (clean-lite-ps)', (
   beforeAll(async () => {
     project = await bootstrapJunctionProject({
       scenario: 'junction',
-      architecture: 'clean-lite-ps',
     });
   }, 120_000);
 

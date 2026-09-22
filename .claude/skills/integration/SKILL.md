@@ -342,14 +342,14 @@ Files that ship to the consumer app (not templates):
 
 Generator pieces:
 
-- `templates/entity/new/backend/modules/core/integration-source.ejs.t` —
-  per-entity Phase 2 factory module emission (ADR-033.1 c, #251). One
-  `<entity>-integration-source.module.ts` per entity, regardless of provider
-  count; exports `<ENTITY>_POLL_FETCH_REGISTRY` +
-  `<ENTITY>_CHANGE_SOURCES: ReadonlyMap<string, IChangeSource<T>>`.
-- `templates/entity/new/backend/modules/core/integration-source.providers.ejs.t`
-  — sibling typed-provider artifact (ADR-033.2): const tuple +
-  literal-union type for compile-time consumer-registry checks.
+- `templates/entity/new/clean-lite-ps/integration-source.ejs.t` —
+  per-entity Phase 2 factory module emission (ADR-033.1 c, #251), for an
+  entity with a `detection:` block. One `<entity>-integration-source.module.ts`
+  per entity in its module folder, regardless of provider count; exports
+  `<ENTITY>_POLL_FETCH_REGISTRY` +
+  `<ENTITY>_CHANGE_SOURCES: ReadonlyMap<string, IChangeSource<T>>`. (It lived
+  under the deleted `backend/` tree until ARCH-0; the ADR-033.2 providers
+  sibling was deleted by RFC-0001 §8.)
 - `templates/subsystem/integration/` — main scaffold (`prompt.js`,
   `integration-audit.schema.ejs.t`) — emitted on `subsystem install integration`
 - `templates/subsystem/integration-config/` — config-block scaffold — emitted

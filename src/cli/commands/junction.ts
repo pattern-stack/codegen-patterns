@@ -26,7 +26,6 @@ import {
 	regenerateBarrels,
 	listJunctionYamls,
 } from '../shared/barrel-generator.js';
-import { configOrDefaults } from '../../config/project-config.js';
 import { projectLayout } from '../shared/project-layout.js';
 
 import { theme } from '../ui/theme.js';
@@ -262,7 +261,6 @@ export class JunctionNewCommand extends Command {
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
 		const junctionsDir = junctionsDirFor(ctx.cwd);
 		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
-		const architecture = configOrDefaults(ctx.config).generate.architecture;
 		// The app imports both barrels: a failed regeneration fails the command,
 		// naming the file (JOBS-0, #655).
 		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>>;
@@ -273,7 +271,6 @@ export class JunctionNewCommand extends Command {
 				relationshipsDir,
 				junctionsDir,
 				generatedDir,
-				architecture,
 			});
 		} catch (err: unknown) {
 			return reportRegenerationFailure('junction new', err);

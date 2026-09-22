@@ -44,29 +44,21 @@ test-unit:
 test-smoke:
     bun test/smoke/run-smoke.ts
 
-# Junction smoke: intra-domain pairing (opportunity × contact), clean-lite-ps,
-# both runtime modes (ADR-037) — the package leg guards #624. The `--layout
+# Junction smoke: intra-domain pairing (opportunity × contact), both runtime
+# modes (ADR-037) — the package leg guards #624. The `--layout
 # custom` legs set every paths.* key non-default before `project init` and run
 # `subsystem install events` + `jobs` — the PATH-0 gate (#566, #612).
 test-smoke-junction:
-    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime vendored
-    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime package
-    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime vendored --layout custom
-    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean-lite-ps --runtime package --layout custom
+    bun test/smoke/run-smoke-junction.ts --scenario junction --runtime vendored
+    bun test/smoke/run-smoke-junction.ts --scenario junction --runtime package
+    bun test/smoke/run-smoke-junction.ts --scenario junction --runtime vendored --layout custom
+    bun test/smoke/run-smoke-junction.ts --scenario junction --runtime package --layout custom
 
-# Junction smoke: intra-domain pairing, clean (full Clean Architecture)
-test-smoke-junction-clean:
-    bun test/smoke/run-smoke-junction.ts --scenario junction --architecture clean
-
-# Junction smoke: cross-domain pairing (opportunity × activity), clean-lite-ps,
-# both runtime modes (ADR-037)
+# Junction smoke: cross-domain pairing (opportunity × activity), both runtime
+# modes (ADR-037)
 test-smoke-junction-cross-domain:
-    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps --runtime vendored
-    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean-lite-ps --runtime package
-
-# Junction smoke: cross-domain pairing, clean
-test-smoke-junction-cross-domain-clean:
-    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --architecture clean
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --runtime vendored
+    bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --runtime package
 
 # Junction snapshot tests — locks emitted output of junction codegen against drift.
 # Regenerate after intentional template changes: bun test --update-snapshots test/junction/
@@ -103,7 +95,7 @@ refresh-integration-fixture repo="../integration-patterns":
 
 # Run the relationship-scenario smoke (CGP-62): self-ref + cross-entity
 # belongs_to + has_many against the CRM fixture set. Verifies the
-# clean-lite-ps Drizzle relations() emission shape. ~60-120s.
+# Drizzle relations() emission shape. ~60-120s.
 test-smoke-relationship:
     bun test/smoke/run-smoke.ts --scenario relationship
 
@@ -145,7 +137,7 @@ test-smoke-integration:
 test-baseline:
     bun test/run-test.ts full
 
-# Typecheck the clean-pipeline generated output in packages/api/src
+# Typecheck the clean-lite-ps generated output in packages/api/src
 # Uses test/tsconfig.baseline.json with runtime/ @shared/* aliases
 # (no regeneration — run after test-baseline or just gen-all)
 typecheck-baseline:
@@ -230,10 +222,7 @@ typecheck:
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
 # cannot mask this suite.
-#
-# NOT included, and deliberately so: `just test-smoke-junction-clean`. It is a
-# known-red gate — see CLAUDE.md › Testing › Known-red gates.
-test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-frontend test-junction test-integration-emit test-smoke-integration test-smoke-capability
+test-all: typecheck test-unit test-baseline test-smoke test-smoke-subsystems test-smoke-relationship test-smoke-junction test-smoke-junction-cross-domain test-smoke-capability test-junction test-integration-emit test-smoke-integration test-smoke-frontend
 
 # ─── Domain Analysis ──────────────────────────────────────────────────────────
 

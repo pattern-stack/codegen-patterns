@@ -60,7 +60,6 @@ export interface InitPlan {
 		cwd: string;
 		framework: string;
 		orm: string;
-		architecture: string;
 		frontend: boolean;
 		runtimePath: string;
 	};
@@ -887,15 +886,8 @@ export async function buildInitPlan(
 	const runtimeMode = options.runtimeMode === 'vendored' ? 'vendored' : 'package';
 
 	// Detection — drive config defaults.
-	//
-	// Architecture default: 'clean-lite-ps'. The CONSUMER-SETUP.md flow and
-	// the codegen-pattern-demo-app both use clean-lite-ps; it's the
-	// supported consumer path. The scanner only overrides when it finds
-	// high-confidence evidence of a different layout (e.g. existing
-	// domain/ + application/ directories).
 	let framework = 'nestjs';
 	let orm = 'drizzle';
-	let architecture: 'clean' | 'clean-lite-ps' = 'clean-lite-ps';
 	let frontend = false;
 
 	if (!options.skipScan) {
@@ -904,19 +896,6 @@ export async function buildInitPlan(
 			const proposed = generateConfig(profile);
 			framework = proposed.framework;
 			orm = proposed.orm;
-			// Only override architecture when the scanner detected actual
-			// clean-architecture evidence (domain/, application/ dirs). A
-			// fresh project that resolves to 'flat' with high confidence
-			// should stay at the clean-lite-ps default — otherwise init
-			// would emit a config that asks codegen to generate files into
-			// presentation/ and infrastructure/ directories that don't
-			// (and shouldn't) exist.
-			if (
-				profile.architecture.detected === 'clean' &&
-				profile.architecture.confidence >= 50
-			) {
-				architecture = proposed.generate.architecture;
-			}
 			frontend = proposed.generate.frontend;
 		} catch {
 			// Detection failed — keep defaults.
@@ -947,10 +926,7 @@ export async function buildInitPlan(
 				generated: DEFAULT_CODEGEN_CONFIG.paths.generated,
 			},
 			generate: {
-				architecture,
 				frontend,
-				commands: true,
-				queries: true,
 			},
 			naming: {
 				fileCase: 'kebab-case',
@@ -1258,7 +1234,6 @@ export async function buildInitPlan(
 			cwd,
 			framework,
 			orm,
-			architecture,
 			frontend,
 			runtimePath,
 		},

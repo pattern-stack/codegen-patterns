@@ -107,7 +107,7 @@ async function run(argv: string[]): Promise<{ code: number; out: string }> {
 
 const modulesBarrel = (root: string) => path.join(root, 'src/generated/modules.ts');
 /** A file hygen writes for the `note` entity — absent means hygen never ran. */
-const noteEntity = (root: string) => path.join(root, 'src/domain/note/note.entity.ts');
+const noteEntity = (root: string) => path.join(root, 'src/modules/notes/note.entity.ts');
 
 describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 	test('text mode — names the YAML and its reason, exit 1, nothing generated (default --continue-on-error)', async () => {

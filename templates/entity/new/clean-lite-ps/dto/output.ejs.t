@@ -1,9 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.outputDto : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
+to: "<%= clpOutputPaths.outputDto %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 import { z } from 'zod';
 
@@ -31,4 +29,3 @@ export const <%= classNames.outputSchema %> = z.object({
 });
 
 export type <%= classNames.outputDto %> = z.infer<typeof <%= classNames.outputSchema %>>;
-<%_ } -%>

@@ -1,9 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.index : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
+to: "<%= clpOutputPaths.index %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 /**
  * <%= classNames.entity %> module barrel export
@@ -21,4 +19,3 @@ export type { <%= classNames.createDto %> } from './dto/create-<%= entityName %>
 export type { <%= classNames.updateDto %> } from './dto/update-<%= entityName %>.dto';
 export type { <%= classNames.outputDto %> } from './dto/<%= entityName %>-output.dto';
 export type { <%= classNames.listQueryDto %> } from './dto/list-<%= entityNamePlural %>.query';
-<%_ } -%>

@@ -39,12 +39,7 @@ const SCAN_EXTENSIONS = ['.ts', '.ejs.t', '.js'] as const;
  * PATH, for a named reason, with the issue number — never a dropped error
  * class and never a directory carve-out in a gate's output filter.
  */
-const EXCLUDED_PATHS: ReadonlyArray<{ path: string; reason: string }> = [
-  {
-    path: 'templates/entity/new/backend/database/repository.ejs.t',
-    reason: "the `clean` pipeline's own private baseQuery() — #602, out of scope (I11)",
-  },
-];
+const EXCLUDED_PATHS: ReadonlyArray<{ path: string; reason: string }> = [];
 
 /** Index just past the `)` that closes the `(` at `open`, or -1 if unbalanced. */
 function closeParen(source: string, open: number): number {
@@ -214,13 +209,10 @@ describe('SCOPE-0 — no .where() on a baseQuery() builder', () => {
     ).toEqual([]);
   });
 
-  it('keeps the one excluded path honest', () => {
-    // The exclusion must name a file that EXISTS and that genuinely still has
-    // the shape — otherwise it is dead weight hiding nothing, and should go.
+  it('has no exclusions — a future one must name a live file with the shape', () => {
+    expect(EXCLUDED_PATHS).toEqual([]);
     for (const { path, reason } of EXCLUDED_PATHS) {
-      const source = stripCommentLines(
-        readFileSync(resolve(REPO_ROOT, path), 'utf8'),
-      );
+      const source = stripCommentLines(readFileSync(resolve(REPO_ROOT, path), 'utf8'));
       expect(findBaseQueryWhere(source).length, `${path} (${reason})`).toBeGreaterThan(0);
     }
   });

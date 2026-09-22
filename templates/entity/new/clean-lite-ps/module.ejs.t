@@ -1,9 +1,7 @@
 ---
-to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.module : null %>"
-skip_if: "<%= typeof clpOutputPaths === 'undefined' %>"
+to: "<%= clpOutputPaths.module %>"
 force: true
 ---
-<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
 <%- generatedBanner %>
 <% if (hasEmits) { -%>
 /**
@@ -123,4 +121,3 @@ export class <%= classNames.module %> implements OnModuleInit {
     this.openApi.registerSchema('<%= classNames.outputDto %>', <%= classNames.outputSchema %>);
   }
 }
-<%_ } -%>

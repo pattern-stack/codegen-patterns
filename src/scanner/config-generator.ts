@@ -39,8 +39,6 @@ export interface ProposedConfig {
 	// Generation toggles emitted into the `generate` block of codegen.config.yaml.
 	// A subset of GenerateConfigSchema.
 	generate: {
-		/** Which backend architecture to emit. Defaults to 'clean'. */
-		architecture: 'clean' | 'clean-lite-ps';
 		/** Whether to emit the frontend pipeline at all. Default is false unless
 		 *  detection found an `apps/frontend/` directory or the profile set an
 		 *  explicit `paths.frontend_src`. */
@@ -83,10 +81,10 @@ export function generateConfig(profile: ProjectProfile): ProposedConfig {
 	// 5. Naming conventions (with derived fields)
 	const naming = buildNamingConfig(profile);
 
-	// 6. Generate toggles — architecture is always 'clean' by default (the
-	//    auto-detected path for new projects); frontend is true iff either the
-	//    profile exposed an explicit frontend_src or an `apps/frontend/`
-	//    directory exists under the project root.
+	// 6. Generate toggles — frontend is true iff either the profile exposed an
+	//    explicit frontend_src or an `apps/frontend/` directory exists under the
+	//    project root. There is no backend-architecture toggle: clean-lite-ps is
+	//    the only backend pipeline (ARCH-0, #677).
 	const generate = buildGenerateConfig(profile, paths);
 
 	// 7. Confidence: Calculate overall confidence
@@ -121,7 +119,6 @@ function buildGenerateConfig(
 	const appsFrontendExists = existsSync(join(profile.paths.root, 'apps', 'frontend'));
 
 	return {
-		architecture: 'clean',
 		frontend: explicitFrontendSrc || appsFrontendExists,
 	};
 }
@@ -235,12 +232,12 @@ function deriveTerminology(
 /**
  * Infer folder structure preference from architecture type.
  *
- * Clean and feature architectures benefit from nested structures.
+ * Layered and feature architectures benefit from nested structures.
  * MVC and flat architectures typically use flat layouts.
  */
-function inferFolderStructure(architecture: 'clean' | 'feature' | 'mvc' | 'flat'): 'nested' | 'flat' {
+function inferFolderStructure(architecture: 'layered' | 'feature' | 'mvc' | 'flat'): 'nested' | 'flat' {
 	switch (architecture) {
-		case 'clean':
+		case 'layered':
 		case 'feature':
 			return 'nested';
 		case 'mvc':
@@ -254,7 +251,7 @@ function inferFolderStructure(architecture: 'clean' | 'feature' | 'mvc' | 'flat'
  * Infer project paths from architecture detection and project structure.
  *
  * Maps architecture patterns to expected directory structure:
- * - Clean: domain/, application/, infrastructure/, presentation/
+ * - layered: domain/, application/, infrastructure/, presentation/
  * - Feature: features/ or modules/
  * - MVC: models/, controllers/, services/
  * - Flat: src/ (fallback)
@@ -275,8 +272,8 @@ function inferPaths(profile: ProjectProfile): ProposedConfig['paths'] {
 
 	// Architecture-specific path overrides
 	switch (architecture) {
-		case 'clean': {
-			// Clean architecture: Check evidence for actual folder names
+		case 'layered': {
+			// Layered: check evidence for actual folder names
 			const evidence = profile.architecture.evidence;
 			return {
 				backend_src: srcBase,

@@ -4,7 +4,7 @@
  * Two surfaces:
  *  1. `mapFrontendEmitConfig` — the config → FrontendEmitConfig mapping, incl.
  *     defaults (absent block), the auth null-disables convention, per-knob
- *     overrides, architecture passthrough, and location resolution.
+ *     overrides, and location resolution.
  *  2. `loadFrontendEmitContext` — registry + parsed loading, the zero-entities
  *     skip, and the outDir resolution from `locations.frontendGenerated`.
  */
@@ -37,7 +37,6 @@ describe('mapFrontendEmitConfig — defaults (absent frontend block)', () => {
 		expect(c.apiUrl).toBe('/api');
 		expect(c.apiBaseUrlImport).toBeNull();
 		expect(c.parsers).toEqual({ timestamptz: '(date: string) => new Date(date)' });
-		expect(c.architecture).toBe('clean');
 	});
 
 	it('resolves location defaults (dbEntities + collections auth import)', () => {
@@ -94,19 +93,7 @@ describe('mapFrontendEmitConfig — sync overrides', () => {
 	});
 });
 
-describe('mapFrontendEmitConfig — architecture + locations', () => {
-	it('passes clean-lite-ps through from generate.architecture', () => {
-		const c = mapFrontendEmitConfig({ generate: { architecture: 'clean-lite-ps' } });
-		expect(c.architecture).toBe('clean-lite-ps');
-	});
-
-	it('defaults architecture to clean for any non-lite value', () => {
-		expect(mapFrontendEmitConfig({}).architecture).toBe('clean');
-		expect(
-			mapFrontendEmitConfig({ generate: { architecture: 'clean' } }).architecture,
-		).toBe('clean');
-	});
-
+describe('mapFrontendEmitConfig — locations', () => {
 	it('honors a dbEntities import override from locations', () => {
 		const c = mapFrontendEmitConfig({
 			locations: { dbEntities: { path: 'db/entities', import: '@db/entities' } },

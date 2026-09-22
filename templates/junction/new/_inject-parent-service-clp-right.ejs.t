@@ -1,5 +1,5 @@
 ---
-to: "<%= architecture === 'clean-lite-ps' && exposeOnParent.right ? parentServicePathRight : '' %>"
+to: "<%= exposeOnParent.right ? parentServicePathRight : '' %>"
 inject: true
 before: "// Inherited from"
 skip_if: "<%= injectionMarkerRight %>"
