@@ -22,6 +22,8 @@ import type { CommandClass } from 'clipanion';
 import { stringify as stringifyYaml } from 'yaml';
 
 import { analyzeDomain } from '../../index.js';
+import { junctionsDirFor } from '../../parser/load-junctions.js';
+import { loadAppPatternsForCli } from '../shared/pattern-globs.js';
 import { serializeDomainGraph } from '../../analyzer/serialize-graph.js';
 import {
 	suggestTransitiveRelationships,
@@ -577,7 +579,15 @@ export class ProjectInspectCommand extends Command {
 			return 1;
 		}
 
-		const result = await analyzeDomain(entitiesDir);
+		// App patterns resolve by name in the validators analyzeDomain runs —
+		// load them first, or an app-declared `Actor` capability is invisible
+		// and every role targeting it is reported as a non-actor.
+		for (const err of await loadAppPatternsForCli(ctx)) {
+			if (!isJsonMode()) printWarning(err);
+		}
+		const result = await analyzeDomain(entitiesDir, {
+			junctionsDir: junctionsDirFor(ctx.cwd),
+		});
 
 		let filtered = result;
 		if (this.entity) {
@@ -638,7 +648,15 @@ export class ProjectInspectCommand extends Command {
 			}
 		}
 
-		const analysis = await analyzeDomain(entitiesDir);
+		// App patterns resolve by name in the validators analyzeDomain runs —
+		// load them first, or an app-declared `Actor` capability is invisible
+		// and every role targeting it is reported as a non-actor.
+		for (const err of await loadAppPatternsForCli(ctx)) {
+			if (!isJsonMode()) printWarning(err);
+		}
+		const analysis = await analyzeDomain(entitiesDir, {
+			junctionsDir: junctionsDirFor(ctx.cwd),
+		});
 		const transitiveSuggestions = suggestTransitiveRelationships(analysis.graph);
 		const existing = readManifest(ctx.cwd);
 		const manifest = await buildManifest(
@@ -821,7 +839,16 @@ export class ProjectGraphCommand extends Command {
 		];
 		const relationshipsDir = relCandidates.find((d) => fs.existsSync(d));
 
-		const result = await analyzeDomain(entitiesDir, relationshipsDir);
+		// App patterns resolve by name in the validators analyzeDomain runs —
+		// load them first, or an app-declared `Actor` capability is invisible
+		// and every role targeting it is reported as a non-actor.
+		for (const err of await loadAppPatternsForCli(ctx)) {
+			if (!isJsonMode()) printWarning(err);
+		}
+		const result = await analyzeDomain(entitiesDir, {
+			relationshipsDir,
+			junctionsDir: junctionsDirFor(ctx.cwd),
+		});
 		const serialized = serializeDomainGraph(result.graph);
 
 		if (isJsonMode()) {

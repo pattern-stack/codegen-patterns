@@ -13,6 +13,8 @@ import {
 	validatePatternProject,
 } from './patterns/validate-composition.js';
 import { validateOrchestrationProject } from './patterns/validate-orchestration.js';
+import { validateRolesProject } from './roles/validate-roles.js';
+import { loadJunctionSummaries } from './parser/load-junctions.js';
 import {
 	getAllOrchestrationPatterns,
 	getAllPatternNames,
@@ -36,6 +38,13 @@ export interface AnalyzeDomainOptions {
 	 * selected architecture does not yet consume patterns (e.g. `clean`).
 	 */
 	architecture?: string;
+	/**
+	 * CAP-2: the project's `junctions/` directory. When given, a
+	 * `cardinality: many` role's `via:` must name a junction that exists there
+	 * and joins the right two entities. Without it, `via:` is still checked
+	 * against the junction naming rule.
+	 */
+	junctionsDir?: string;
 }
 
 /**
@@ -107,6 +116,14 @@ export async function analyzeDomain(
 	// measure catalog is one flat namespace: metric legs may name measures on
 	// another entity, and both names must be unique across entities.
 	const semanticIssues = validateSemanticModel(entities);
+	// CAP-2 — role targets must be Actors; many-roles must name a junction
+	// between the two entities.
+	const rolesProjectIssues = validateRolesProject({
+		entities,
+		junctions: opts.junctionsDir
+			? loadJunctionSummaries(opts.junctionsDir)
+			: undefined,
+	});
 
 	// Compute statistics
 	const statistics = computeStatistics(graph);
@@ -122,6 +139,7 @@ export async function analyzeDomain(
 		...patternProjectIssues,
 		...orchestrationProjectIssues,
 		...semanticIssues,
+		...rolesProjectIssues,
 	];
 
 	// Determine validity (only errors make it invalid)
@@ -193,6 +211,10 @@ export {
 // Importing this barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge / Metadata).
 export * from './patterns';
+
+// CAP-2 roles: surface — derivation, validator, and the capability names a
+// role's validation keys on.
+export * from './roles';
 
 // Re-export the field-metadata vocabulary contract (ADR-040): the EAV
 // `field_definitions.data_type` → frontend `FieldType` mapping. The same

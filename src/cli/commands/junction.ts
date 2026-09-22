@@ -37,6 +37,7 @@ import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
+import { junctionsDirFor } from '../../parser/load-junctions.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,7 +80,7 @@ function padRight(s: string, n: number): string {
 // ---------------------------------------------------------------------------
 
 async function summary(ctx: Context): Promise<PaneOutput> {
-	const junctionDir = path.resolve(ctx.cwd, 'junctions');
+	const junctionDir = junctionsDirFor(ctx.cwd);
 	const files = listJunctionYamls(junctionDir);
 
 	if (files.length === 0) {
@@ -168,7 +169,7 @@ export class JunctionNewCommand extends Command {
 
 		let targets: string[] = [];
 		if (this.all) {
-			const dir = path.resolve(ctx.cwd, 'junctions');
+			const dir = junctionsDirFor(ctx.cwd);
 			targets = listJunctionYamls(dir);
 			if (targets.length === 0) {
 				printError(`No junction YAML files found in ${dir}`);
@@ -257,7 +258,7 @@ export class JunctionNewCommand extends Command {
 		// and src/generated/schema.ts. Mirrors what `entity new` and `relationship new` do.
 		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
-		const junctionsDir = path.resolve(ctx.cwd, 'junctions');
+		const junctionsDir = junctionsDirFor(ctx.cwd);
 		const generatedDir = resolveGeneratedDir(ctx);
 		const architecture = resolveArchitecture(ctx);
 		let barrelResult: Awaited<ReturnType<typeof regenerateBarrels>> | null = null;
@@ -365,7 +366,7 @@ export class JunctionListCommand extends Command {
 			skipDetection: true,
 		});
 
-		const junctionDir = path.resolve(ctx.cwd, 'junctions');
+		const junctionDir = junctionsDirFor(ctx.cwd);
 		const files = listJunctionYamls(junctionDir);
 
 		if (files.length === 0) {

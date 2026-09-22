@@ -378,6 +378,35 @@ Write a capability mixin against `@pattern-stack/codegen/runtime/base-classes/ca
 and the `EntityOf` / `TableOf` helpers that keep a capability method's signature concrete through
 the chain.
 
+## Roles — named edges to actor entities (`roles:`)
+
+A communication-style entity (meeting, email, message) declares who participates, in what capacity, as a
+top-level `roles:` block — a sibling of `relationships:`:
+
+```yaml
+entity:
+  name: meeting
+  patterns: [Activity, Communication]          # roles: requires the Communication capability
+roles:
+  host:      { target: contact, cardinality: one,  column: host_contact_id }   # column optional
+  attendees: { target: contact, cardinality: many, via: meeting_contact }      # via: required for many
+  about:     { target: account, cardinality: one }                              # FK: about_account_id
+```
+
+- **`cardinality: one`** is a `belongs_to` with a name: it emits an FK column (`column:`, else
+  `<role>_<target>_id`), its `.references(..., { onDelete })` (`on_delete:`, default `restrict`) and an index by
+  default. Declare the FK column in `fields:` as well to control `required` / `index` explicitly. The relation key —
+  and the generated service method — is the **role name** (`host()`, `about()`), so two roles may point at the
+  same entity.
+- **`cardinality: many`** names the junction that owns the edge (`via:` must be `<entity>_<target>` or
+  `<target>_<entity>`, and exist in `junctions/`). It emits nothing itself.
+- Every `target` must declare the **`Actor`** capability in its `patterns:`; an entity with `roles:` must declare
+  **`Communication`**, and vice versa. These are `kind: 'capability'` patterns — declare your own until the library
+  ships them.
+
+Role errors fail `entity new` for the offending entity (a role's target lives in another file, so the CLI checks
+them before generating) and are reported by `entity validate`.
+
 ## Declarative Queries
 
 The `queries:` block generates typed repository methods, use case classes, and module registration:

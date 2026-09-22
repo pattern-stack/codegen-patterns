@@ -12,6 +12,9 @@ import type { CommandClass } from 'clipanion';
 
 import { loadEntityFromYaml, loadEntitiesFromYaml } from '../../utils/yaml-loader.js';
 import { analyzeDomain, validateEntities } from '../../index.js';
+import { junctionsDirFor, loadJunctionSummaries } from '../../parser/load-junctions.js';
+import { validateRolesForGeneration } from '../../roles/validate-roles.js';
+import { loadAppPatternsForCli, resolvePatternGlobs } from '../shared/pattern-globs.js';
 
 import { loadContext, type Context } from '../shared/context.js';
 import { invokeEntityNew } from '../shared/hygen.js';
@@ -405,6 +408,37 @@ export class EntityNewCommand extends Command {
 				}
 				return 1;
 			}
+		}
+
+		// App patterns must be in THIS process's registry before the roles
+		// pre-flight: a role's target qualifies by declaring an `Actor`
+		// capability, which an app may define (and must, until the library ships
+		// one). The hygen subprocess loads them for itself; this is the CLI's copy.
+		{
+			const errors = await loadAppPatternsForCli(ctx);
+			if (!isJsonMode()) for (const err of errors) printWarning(err);
+		}
+
+		// The roles pre-flight the comment above refers to. Whether a role's
+		// target declares `Actor` is a question only the whole entity set can
+		// answer — the one-entity-at-a-time hygen prompt cannot, and the CLI can,
+		// because the EVT-7 `emits:` pre-flight already loaded every entity.
+		// A bad role is a generation-time error (the ADR-041 §4 posture, stated
+		// in `validateRolesForGeneration`): a consumer is not required to run
+		// `entity validate` first, so generation is the gate that matters.
+		const roleErrors = validateRolesForGeneration({
+			targets: emitsTargetEntities,
+			entities: allEntitiesForEmits,
+			junctions: loadJunctionSummaries(junctionsDirFor(ctx.cwd)),
+		});
+
+		if (roleErrors.length > 0) {
+			if (!isJsonMode()) {
+				for (const e of roleErrors) {
+					printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
+				}
+			}
+			return 1;
 		}
 
 		// Git safety — we don't know specific output paths without running Hygen,
@@ -1394,6 +1428,14 @@ export class EntityValidateCommand extends Command {
 		if (!fs.existsSync(targetDir)) {
 			printError(`Directory not found: ${targetDir}`);
 			return 1;
+		}
+
+		// App patterns (ADR-031) and app capabilities (ADR-041) resolve by name
+		// in the validators below — load them into this process's registry
+		// first, or every app pattern is reported as unknown.
+		{
+			const errors = await loadAppPatternsForCli(ctx);
+			if (!isJsonMode()) for (const err of errors) printWarning(err);
 		}
 
 		const quick = validateEntities(targetDir);

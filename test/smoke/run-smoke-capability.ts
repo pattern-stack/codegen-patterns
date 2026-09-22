@@ -201,22 +201,22 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 			? '@shared/base-classes'
 			: '@pattern-stack/codegen/runtime/base-classes';
 
-	// ── account: THREE capabilities → a generated composed base ──────────────
+	// ── account: FOUR capabilities → a generated composed base ───────────────
 	const composedBasePath = path.join(
 		tmpDir,
 		'src/modules/accounts/account.composed-base.ts',
 	);
 	if (!fs.existsSync(composedBasePath)) {
 		throw new Error(
-			`expected a composed base at ${composedBasePath} — three capabilities stack on the account fixture (ADR-041 §6)`,
+			`expected a composed base at ${composedBasePath} — four capabilities stack on the account fixture (ADR-041 §6)`,
 		);
 	}
 	const composedBase = fs.readFileSync(composedBasePath, 'utf8');
-	// Declaration order is `[Group, Integrated, Individual, Audited]`, so the
-	// capability nesting is Group innermost → Audited outermost.
+	// Declaration order is `[Group, Integrated, Individual, Audited, Actor]`, so
+	// the capability nesting is Group innermost → Actor outermost.
 	assertContains(
 		composedBase,
-		/export abstract class AccountComposedBase extends WithAudited\(\n  WithIndividual\(\n    WithGroup\(\n      IntegratedEntityRepository<\n        Account,\n        typeof accounts,\n        AccountIntegrationWrite,\n        AccountIntegrationProjection\n      >,\n    \),\n  \),\n\) \{\}/,
+		/export abstract class AccountComposedBase extends WithActor\(\n  WithAudited\(\n    WithIndividual\(\n      WithGroup\(\n        IntegratedEntityRepository<\n          Account,\n          typeof accounts,\n          AccountIntegrationWrite,\n          AccountIntegrationProjection\n        >,\n      \),\n    \),\n  \),\n\) \{\}/,
 		'account.composed-base.ts mixin chain, rightmost capability outermost',
 	);
 	assertContains(
@@ -290,13 +290,64 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	const contactRepo = reads('modules/contacts/contact.repository.ts');
 	assertContains(
 		contactRepo,
-		/export class ContactRepository extends WithGroup\(BaseRepository<Contact, typeof contacts>\) \{/,
+		/export class ContactRepository extends WithActor\(BaseRepository<Contact, typeof contacts>\) \{/,
 		'contact.repository.ts inline capability wrap over the default Base spine',
 	);
 	assertContains(
 		contactRepo,
-		/import \{ WithGroup \} from '@modules\/capabilities\/with-group';/,
+		/import \{ WithActor \} from '@modules\/capabilities\/with-actor';/,
 		'contact.repository.ts mixin import',
+	);
+
+	// ── meeting: CAP-2 roles on an Activity spine ────────────────────────────
+	// `one` roles derive FK columns through the existing belongs_to path —
+	// `.references()` with the on-delete action, and an index by default.
+	const meetingEntity = reads('modules/meetings/meeting.entity.ts');
+	assertContains(
+		meetingEntity,
+		/hostContactId: uuid\('host_contact_id'\)\.references\(\(\) => contacts\.id, \{ onDelete: 'restrict' \}\),/,
+		'meeting.entity.ts host role FK column (explicit column:)',
+	);
+	assertContains(
+		meetingEntity,
+		/aboutAccountId: uuid\('about_account_id'\)\.references\(\(\) => accounts\.id, \{ onDelete: 'restrict' \}\),/,
+		'meeting.entity.ts about role FK column (<role>_<target>_id default)',
+	);
+	assertContains(
+		meetingEntity,
+		/index\('meetings_host_contact_id_idx'\)\.on\(t\.hostContactId\)/,
+		'meeting.entity.ts host role FK is indexed by default',
+	);
+	assertContains(
+		meetingEntity,
+		/index\('meetings_about_account_id_idx'\)\.on\(t\.aboutAccountId\)/,
+		'meeting.entity.ts about role FK is indexed by default',
+	);
+	// A `many` role names its junction; it contributes no column here.
+	assertNotContains(
+		meetingEntity,
+		/attendees/i,
+		'meeting.entity.ts has no column for the many-role',
+	);
+	// The relation key is the ROLE name, so two roles to one target stay two
+	// methods — `host`, not `contact`.
+	const meetingService = reads('modules/meetings/meeting.service.ts');
+	assertContains(
+		meetingService,
+		/async host\(meetingId: string\): Promise<Contact \| null>/,
+		'meeting.service.ts host(meetingId) — keyed by role',
+	);
+	assertContains(
+		meetingService,
+		/async about\(meetingId: string\): Promise<Account \| null>/,
+		'meeting.service.ts about(meetingId) — keyed by role',
+	);
+	// The spine is Activity; Communication layers inline.
+	const meetingRepo = reads('modules/meetings/meeting.repository.ts');
+	assertContains(
+		meetingRepo,
+		/export class MeetingRepository extends WithCommunication\(ActivityEntityRepository<Meeting, typeof meetings>\) \{/,
+		'meeting.repository.ts Activity spine + Communication capability',
 	);
 
 	// ── note: NO pattern → unchanged emission ────────────────────────────────
@@ -316,6 +367,129 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 }
 
 // ---------------------------------------------------------------------------
+// `project inspect` resolves app capabilities (CAP-2 review item 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The analyzer's roles validator resolves `Actor` / `Communication` by name in
+ * the pattern registry. Those are APP patterns in this fixture, so any CLI path
+ * that runs the analyzer without first loading app patterns reports a spurious
+ * `role_target_not_actor` (and `pattern_unknown`). `entity new` / `entity
+ * validate` load them; this pins `project inspect` to doing the same.
+ */
+function assertProjectInspectSeesAppCapabilities(tmpDir: string, mode: Mode): void {
+	const out = path.join(tmpDir, 'inspect.json');
+	const r = spawnSync(
+		'bun',
+		[CLI_PATH, 'project', 'inspect', '--kind', 'analyze', '--format', 'json', '--output', out],
+		{ cwd: tmpDir, encoding: 'utf-8' },
+	);
+	if (!fs.existsSync(out)) {
+		throw new Error(`project inspect wrote no report (exit ${r.status}):\n${r.stdout}${r.stderr}`);
+	}
+	const report = JSON.parse(fs.readFileSync(out, 'utf-8')) as {
+		issues: Array<{ severity: string; type: string; entity?: string; message: string }>;
+	};
+	fs.rmSync(out);
+	const errors = report.issues.filter((i) => i.severity === 'error');
+	if (errors.length > 0 || r.status !== 0) {
+		throw new Error(
+			`[${mode}] project inspect over the capability fixture must report zero errors (exit ${r.status}):\n` +
+				errors.map((e) => `  ${e.type} ${e.entity ?? ''}: ${e.message}`).join('\n'),
+		);
+	}
+	log(`[${mode}] project inspect OK — app capabilities resolved, zero errors`);
+}
+
+// ---------------------------------------------------------------------------
+// #624 — named single-purpose expectation (package leg only)
+// ---------------------------------------------------------------------------
+
+/**
+ * `junction new` hardcodes `@shared/*` imports for five package-owned runtime
+ * files, so under `runtime: package` the generated junction cannot resolve
+ * them. A pre-existing defect in the junction templates, surfaced by this
+ * smoke (CAP-2 is the first harness to generate a junction in package mode) and
+ * tracked as #624 — it is not fixable inside CAP-2's scope.
+ *
+ * Per CLAUDE.md › Known-red gates this is a NAMED, single-purpose expectation,
+ * not a filter: every one of the 16 diagnostics is enumerated below by file,
+ * code and the symbol it names, with an exact count. Asserted PRESENT and SOLE:
+ *
+ *   - any diagnostic not in the list — including a new TS4112/TS2339 in the
+ *     same two files naming a different symbol — fails the smoke (sole);
+ *   - any listed diagnostic that stops appearing ALSO fails it, telling whoever
+ *     fixed #624 to delete this expectation (present).
+ */
+const ISSUE_624_REPO = 'src/modules/meeting_contacts/meeting_contact.repository.ts';
+const ISSUE_624_SERVICE = 'src/modules/meeting_contacts/meeting_contact.service.ts';
+
+/**
+ * The exact #624 diagnostic set, keyed `file|code|symbol` → count. The symbol is
+ * what each message names — the missing module (TS2307), the class that cannot
+ * `override` with no base (TS4112), the inherited member that is absent
+ * (TS2339). No line numbers (template edits would churn them); no wildcards (a
+ * new TS2339 naming a different member must fail). Compared as a multiset in
+ * both directions: anything extra is a new error, anything missing means #624
+ * moved — both fail the smoke.
+ */
+const ISSUE_624_EXPECTED = new Map<string, number>([
+	// 5 package-owned runtime modules the junction templates hardcode as @shared/*
+	[`${ISSUE_624_REPO}|TS2307|@shared/constants/tokens`, 1],
+	[`${ISSUE_624_REPO}|TS2307|@shared/types/drizzle`, 1],
+	[`${ISSUE_624_REPO}|TS2307|@shared/base-classes/junction-integration-repository`, 2],
+	[`${ISSUE_624_SERVICE}|TS2307|@shared/base-classes/with-analytics`, 1],
+	[`${ISSUE_624_SERVICE}|TS2307|@shared/constants/tokens`, 1],
+	[`${ISSUE_624_SERVICE}|TS2307|@shared/base-classes/base-service`, 1],
+	// …and what an unresolved base class causes downstream
+	[`${ISSUE_624_REPO}|TS4112|MeetingContactRepository`, 1],
+	[`${ISSUE_624_REPO}|TS2339|baseQuery`, 2],
+	[`${ISSUE_624_SERVICE}|TS4112|MeetingContactService`, 3],
+	[`${ISSUE_624_SERVICE}|TS2339|create`, 1],
+	[`${ISSUE_624_SERVICE}|TS2339|delete`, 1],
+	[`${ISSUE_624_SERVICE}|TS2339|update`, 1],
+]);
+
+/** `file|code|symbol` for one tsc line, or null when it has no recognised shape. */
+function issue624Key(line: string): string | null {
+	const m = /^(.+?)\(\d+,\d+\): error (TS\d+): (.*)$/.exec(line);
+	if (!m) return null;
+	const [, file, code, text] = m;
+	const symbol =
+		code === 'TS2307'
+			? /Cannot find module '([^']+)'/.exec(text!)?.[1]
+			: code === 'TS4112'
+				? /containing class '([^']+)'/.exec(text!)?.[1]
+				: code === 'TS2339'
+					? /Property '([^']+)'/.exec(text!)?.[1]
+					: undefined;
+	return symbol ? `${file}|${code}|${symbol}` : null;
+}
+
+function applyIssue624Expectation(errors: string[]): string[] {
+	const unexpected: string[] = [];
+	const remaining = new Map(ISSUE_624_EXPECTED);
+	for (const line of errors) {
+		const key = issue624Key(line);
+		const left = key ? remaining.get(key) ?? 0 : 0;
+		if (key && left > 0) {
+			remaining.set(key, left - 1);
+		} else {
+			unexpected.push(line);
+		}
+	}
+	const missing = [...remaining].filter(([, n]) => n > 0);
+	if (missing.length > 0) {
+		unexpected.push(
+			`#624 expectation is stale — expected diagnostics no longer appear: ` +
+				missing.map(([k, n]) => `${k} ×${n}`).join('; ') +
+				`. If #624 is fixed, delete applyIssue624Expectation (and its CLAUDE.md row).`,
+		);
+	}
+	return unexpected;
+}
+
+// ---------------------------------------------------------------------------
 // Negative gates — ADR-041 §2 and §4 must FAIL generation, not warn
 // ---------------------------------------------------------------------------
 
@@ -325,6 +499,16 @@ function assertNegativeGates(tmpDir: string): void {
 			fixture: 'two-spines.yaml',
 			expect: /inheritable spine bases \(Integrated, Activity\)/,
 			label: 'two spine bases (ADR-041 §2)',
+		},
+		{
+			fixture: 'role-target-not-actor.yaml',
+			expect: /Role 'about' targets 'note', which does not declare the 'Actor' capability/,
+			label: 'role targeting a non-Actor entity (CAP-2)',
+		},
+		{
+			fixture: 'roles-without-communication.yaml',
+			expect: /declares 'roles:' but not the 'Communication' capability/,
+			label: 'roles: without the Communication capability (CAP-2)',
 		},
 		{
 			fixture: 'method-collision.yaml',
@@ -381,7 +565,21 @@ async function leg(mode: Mode): Promise<number> {
 			fs.copyFileSync(path.join(FIXTURES, f), path.join(entitiesDir, f));
 		}
 
+		// CAP-2: the `attendees` many-role names the `meeting_contact` junction.
+		// The junction YAML is AUTHORED before generation — `entity new`'s roles
+		// pre-flight resolves `via:` against `junctions/` — and generated by its
+		// own command afterwards. The role validates against the file; it never
+		// emits the junction.
+		const junctionsDir = path.join(tmpDir, 'junctions');
+		fs.mkdirSync(junctionsDir, { recursive: true });
+		for (const f of fs.readdirSync(path.join(FIXTURES, 'junctions'))) {
+			fs.copyFileSync(path.join(FIXTURES, 'junctions', f), path.join(junctionsDir, f));
+		}
+
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
+		run(`bun ${CLI_PATH} junction new --all --force`, tmpDir);
+
+		assertProjectInspectSeesAppCapabilities(tmpDir, mode);
 
 		log(`[${mode}] asserting ADR-041 emission shapes`);
 		assertEmission(tmpDir, mode);
@@ -392,13 +590,20 @@ async function leg(mode: Mode): Promise<number> {
 			cwd: tmpDir,
 			encoding: 'utf-8',
 		});
-		const errors = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
+		const scoped = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
+		// Package leg only: the #624 named expectation (see above). The vendored
+		// leg gets no expectation at all — there the junction compiles cleanly.
+		const errors = mode === 'package' ? applyIssue624Expectation(scoped) : scoped;
 		if (errors.length > 0) {
 			for (const line of errors) console.error(line);
 			logError(`[${mode}] ${errors.length} typecheck errors in consumer-emitted code`);
 			exitCode = 1;
 		} else {
-			log(`[${mode}] tsc OK — the composed tree compiles against the real bases`);
+			log(
+				mode === 'package'
+					? `[${mode}] tsc OK — the composed tree compiles against the real bases; the #624 named expectation (junction @shared imports) matched, present and sole`
+					: `[${mode}] tsc OK — the composed tree compiles against the real bases`,
+			);
 		}
 
 		if (exitCode === 0) {
