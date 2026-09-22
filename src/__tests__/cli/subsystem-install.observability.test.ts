@@ -28,7 +28,7 @@ function mkTempProject(): string {
 		// ADR-037: this suite exercises the vendored install path (app.module.ts
 		// TODO + comment-block injection). Opt into `vendored` — the default is
 		// now `package`, which skips the runtime-dependent scaffolds.
-		'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\n  backend_src: src\n',
+		'runtime: vendored\npaths:\n  backend_src: src\n',
 	);
 	fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
 	fs.writeFileSync(

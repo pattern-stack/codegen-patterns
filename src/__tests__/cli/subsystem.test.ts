@@ -32,7 +32,7 @@ function mkTempProject(): string {
 		// copied into src/shared/subsystems). The default runtime mode is now
 		// `package`, which vendors nothing — so the fixture must opt into
 		// `vendored` explicitly. Package-mode install has its own test block.
-		'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\n'
+		'runtime: vendored\npaths:\n  backend_src: src\n'
 	);
 	return dir;
 }
@@ -595,7 +595,7 @@ describe('subsystem — install (real)', () => {
 		const configPath = path.join(root, 'codegen.config.yaml');
 		fs.writeFileSync(
 			configPath,
-			'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\n  modules_dir: src/features\n',
+			'runtime: vendored\npaths:\n  modules_dir: src/features\n',
 		);
 		const cli = buildCli();
 		await capture(() =>
@@ -871,7 +871,7 @@ describe('subsystem — install F13 (config-block preservation)', () => {
 		const configPath = path.join(root, 'codegen.config.yaml');
 		fs.writeFileSync(
 			configPath,
-			'paths:\n  subsystems: "unterminated\n',
+			'paths:\n  backend_src: "unterminated\n',
 			'utf-8',
 		);
 
@@ -1019,7 +1019,7 @@ describe('subsystem — install integration (SYNC-7)', () => {
 		// Hand-write a config with integration.multi_tenant: true.
 		fs.writeFileSync(
 			path.join(root, 'codegen.config.yaml'),
-			'runtime: vendored\npaths:\n  subsystems: src/shared/subsystems\nintegration:\n  backend: drizzle\n  multi_tenant: true\n',
+			'runtime: vendored\npaths:\n  backend_src: src\nintegration:\n  backend: drizzle\n  multi_tenant: true\n',
 		);
 		const cli = buildCli();
 		const { result } = await capture(() =>
@@ -1081,7 +1081,7 @@ describe('subsystem — install (runtime: package)', () => {
 		tempDirs.push(dir);
 		fs.writeFileSync(
 			path.join(dir, 'codegen.config.yaml'),
-			'runtime: package\npaths:\n  subsystems: src/shared/subsystems\n  backend_src: src\n',
+			'runtime: package\npaths:\n  backend_src: src\n',
 		);
 		return dir;
 	}

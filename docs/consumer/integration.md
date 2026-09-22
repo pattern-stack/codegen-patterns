@@ -18,8 +18,8 @@ codegen subsystem install integration
 # or: bun /path/to/codegen-patterns/src/cli/index.ts subsystem install integration
 ```
 
-This copies the runtime files into `<paths.subsystems>/integration/` (defaulting
-to `shared/subsystems/integration/`) and additionally:
+This copies the runtime files into `<backend_src>/shared/subsystems/integration/` (default
+`src/shared/subsystems/integration/`) and additionally:
 
 - Injects an `integration:` block into `codegen.config.yaml`:
   ```yaml

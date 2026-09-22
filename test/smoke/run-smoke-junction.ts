@@ -32,6 +32,7 @@ import { consumerErrors as scopeToConsumer } from './_consumer-errors';
 
 import {
   bootstrapJunctionProject,
+  CUSTOM_LAYOUT_APP_PATTERN,
   LAYOUT_PATHS,
   SCENARIO_META,
   VALID_ARCHITECTURES,
@@ -181,7 +182,7 @@ function assertJunctionEmission(
 
   // Architecture-specific expected directory
   const junctionDir = architecture === 'clean-lite-ps'
-    ? `${P.backendSrc}/modules/${pluralName}`
+    ? `${P.modules}/${pluralName}`
     : `app/backend/src/domain/${pluralName}`;
 
   const leftPascal = pascalCase(leftEnt);
@@ -296,8 +297,8 @@ function assertJunctionEmission(
 
   // ── CGP-60: parent service fan-out injection (clean-lite-ps only) ───────
   if (architecture === 'clean-lite-ps') {
-    const leftParentSvc = reads(`${P.backendSrc}/modules/${pluralize(leftEnt)}/${leftEnt}.service.ts`);
-    const rightParentSvc = reads(`${P.backendSrc}/modules/${pluralize(rightEnt)}/${rightEnt}.service.ts`);
+    const leftParentSvc = reads(`${P.modules}/${pluralize(leftEnt)}/${leftEnt}.service.ts`);
+    const rightParentSvc = reads(`${P.modules}/${pluralize(rightEnt)}/${rightEnt}.service.ts`);
 
     // Anchor presence (Q4 anti-regression) — verifies #362's emission still
     // emits the literal `// Inherited from` comment that #60's inject
@@ -351,8 +352,8 @@ function assertRuntimeSpecifiers(
   const pluralName = pluralize(junctionName);
   const files = architecture === 'clean-lite-ps'
     ? [
-        `${P.backendSrc}/modules/${pluralName}/${junctionName}.repository.ts`,
-        `${P.backendSrc}/modules/${pluralName}/${junctionName}.service.ts`,
+        `${P.modules}/${pluralName}/${junctionName}.repository.ts`,
+        `${P.modules}/${pluralName}/${junctionName}.service.ts`,
       ]
     : [
         `app/backend/src/infrastructure/persistence/drizzle/${junctionName.replace(/_/g, '-')}.repository.ts`,
@@ -493,6 +494,31 @@ function assertCustomLayout(projectDir: string): void {
   if (!main.includes('JOBS — Embedded worker mode')) {
     throw new Error(`layout custom: the jobs main.ts hook did not land in ${P.backendSrc}/main.ts`);
   }
+
+  // PATH-1 (#645): every clean-lite-ps module lives under `paths.modules_dir`,
+  // and nothing under the default `<backend_src>/modules`.
+  if (fs.existsSync(path.join(projectDir, P.backendSrc, 'modules'))) {
+    throw new Error(`layout custom: '${P.backendSrc}/modules/' was created — an emitter ignored paths.modules_dir`);
+  }
+  const { entity, plural, mixin } = CUSTOM_LAYOUT_APP_PATTERN;
+  const barrel = fs.readFileSync(path.join(projectDir, P.generated, 'modules.ts'), 'utf8');
+  const fromBarrel = path.posix.relative(P.generated, P.modules);
+  for (const mod of ['opportunities', 'contacts', plural]) {
+    assertContains(
+      barrel,
+      new RegExp(`from '${fromBarrel.replace(/\./g, '\\.')}/${mod}/${mod}\\.module'`),
+      `modules barrel imports ${mod} from ${P.modules}`,
+    );
+  }
+  // PATH-1: the app pattern under `<backend_src>/patterns/` loaded through the
+  // derived default glob — the ledger repository applies its mixin.
+  const ledgerRepo = fs.readFileSync(path.join(projectDir, P.modules, plural, `${entity}.repository.ts`), 'utf8');
+  assertContains(ledgerRepo, new RegExp(`${mixin}\\(`), `${entity} repository applies ${mixin} (app pattern loaded)`);
+  assertContains(
+    ledgerRepo,
+    /from '@modules\/capabilities\/with-audited'/,
+    `${entity} repository imports the mixin through @modules/*`,
+  );
   log('layout assertions passed: custom');
 }
 

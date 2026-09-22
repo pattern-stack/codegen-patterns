@@ -52,7 +52,7 @@ The `auth-integrations` install:
   `<backend_src>/modules/connections/` (override via `paths.modules_dir`),
   rewriting bare `@pattern-stack/codegen/runtime/subsystems/auth` imports to
   relative paths that resolve against the vendored auth subsystem at
-  `<paths.subsystems>/auth`.
+  `<backend_src>/shared/subsystems/auth`.
 - appends a TODO to `<backend_src>/app.module.ts` reminding you to register
   `ConnectionsAuthModule` AFTER `AuthModule.forRoot(...)`.
 

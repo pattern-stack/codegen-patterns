@@ -286,6 +286,7 @@ describe("resolveEntityModuleImports — entity repo/module import resolution", 
     surface: "calendar",
     provider: "google",
     backendSrcAbs: "/proj/src",
+    modulesAbs: "/proj/src/modules",
   };
 
   test("prefers a tsconfig alias whose target dir contains the module folder", () => {
@@ -327,6 +328,24 @@ describe("resolveEntityModuleImports — entity repo/module import resolution", 
     );
   });
 
+  test("resolves the module folder under a non-default paths.modules_dir (PATH-1)", () => {
+    const loc = resolveEntityModuleImports({
+      ...base,
+      modulesAbs: "/proj/src/domain",
+      context: null,
+      aliases: {},
+    });
+    expect(loc.repoFileAbs).toBe("/proj/src/domain/meetings/meeting.repository.ts");
+    expect(loc.repoImportSpecifier).toBe("../../../../domain/meetings/meeting.repository");
+    const aliased = resolveEntityModuleImports({
+      ...base,
+      modulesAbs: "/proj/src/domain",
+      context: null,
+      aliases: { "@modules": "/proj/src/domain" },
+    });
+    expect(aliased.moduleImportSpecifier).toBe("@modules/meetings/meetings.module");
+  });
+
   test("snake_case entity names pascalize correctly for class names", () => {
     const loc = resolveEntityModuleImports({
       entityName: "call_recording",
@@ -335,6 +354,7 @@ describe("resolveEntityModuleImports — entity repo/module import resolution", 
       surface: "transcript",
       provider: "google",
       backendSrcAbs: "/proj/src",
+      modulesAbs: "/proj/src/modules",
       aliases: { "@modules": "/proj/src/modules" },
     });
     expect(loc.entityClass).toBe("CallRecording");

@@ -13,7 +13,7 @@ The bridge is the durable, typed, observable path from *"an event was
 published"* to *"a job was started"* in your app. It is its own subsystem —
 the combiner between the `events` and `jobs` subsystems, owned by neither. You
 opt into it by running `codegen subsystem install bridge`, which vendors the
-runtime into `<paths.subsystems>/bridge/` (imported as
+runtime into `<backend_src>/shared/subsystems/bridge/` (imported as
 `@shared/subsystems/bridge`) and adds a `bridge:` block to
 `codegen.config.yaml`.
 

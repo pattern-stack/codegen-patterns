@@ -1,7 +1,7 @@
 /**
  * App-pattern discovery globs for the CLI process.
  *
- * `codegen.config.yaml patterns:` when set, else the ADR-031 default. The hygen
+ * `codegen.config.yaml patterns:` (schema default derived from `paths.backend_src`). The hygen
  * subprocess reads the same key in `templates/entity/new/prompt.js`; the CLI
  * process needs it too, because it now validates things that depend on app
  * patterns before hygen ever runs (CAP-2's roles pre-flight, `entity validate`).
@@ -12,15 +12,17 @@
 // library name (ADR-041.1), and the roles validators resolve the library
 // `Actor` / `Communication` capabilities by name.
 import '../../patterns/library/index.js';
+import { configOrDefaults } from '../../config/project-config.js';
 import { loadAppPatterns } from '../../patterns/registry.js';
 import type { Context } from './context.js';
 
-export const DEFAULT_PATTERN_GLOBS = ['src/patterns/*.pattern.ts'];
-
+/**
+ * The resolved `patterns:` list — the schema fills an absent key with
+ * `<backend_src>/patterns/*.pattern.ts` (PATH-1, #645); an explicit `[]` is no
+ * app patterns. No reader carries its own default.
+ */
 export function resolvePatternGlobs(ctx: Context): string[] {
-	// Same rule as `templates/entity/new/prompt.js`: an empty list is the default.
-	const fromConfig = ctx.config?.patterns ?? [];
-	return fromConfig.length > 0 ? fromConfig : DEFAULT_PATTERN_GLOBS;
+	return configOrDefaults(ctx.config).patterns;
 }
 
 /**

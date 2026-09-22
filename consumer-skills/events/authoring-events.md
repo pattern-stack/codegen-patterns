@@ -182,7 +182,7 @@ async execute(input: CreateContactInput): Promise<Contact> {
 
 ## What gets generated
 
-Five files under `<paths.subsystems>/events/generated/`, all reproduced from your YAML — never hand-edited:
+Five files under `<backend_src>/shared/subsystems/events/generated/`, all reproduced from your YAML — never hand-edited:
 
 | File | Contents |
 |---|---|

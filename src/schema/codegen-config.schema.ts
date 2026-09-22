@@ -131,9 +131,15 @@ export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
  * Derived from the resolved `backend_src` by {@link resolvePathDefaults} when
  * absent:
  * - `generated` = `<backend_src>/generated`: codegen-owned cross-entity barrels.
- * - `subsystems` = `<backend_src>/shared/subsystems`: subsystem runtime root.
- * - `modules_dir` = `<backend_src>/modules`: `auth-integrations` vendor target.
+ * - `modules_dir` = `<backend_src>/modules`: the clean-lite-ps entity module
+ *   tree (every emitter that locates an entity module reads it, PATH-1) and the
+ *   `auth-integrations` vendor target; the `@modules/*` alias points at it.
  * - `orchestration_src` = `<backend_src>/orchestration` (ADR-032 / O-6).
+ *
+ * There is no `subsystems` key (PATH-1, #645): the vendored runtime is
+ * reachable only through `@shared/*` → `<backend_src>/shared`, so the
+ * subsystems root is `<backend_src>/shared/subsystems`, derived in
+ * `project-layout.ts`.
  */
 export const PathsConfigSchema = z
   .object({
@@ -143,7 +149,6 @@ export const PathsConfigSchema = z
     events_dir: z.string().min(1).default("events"),
     jobs_dir: z.string().min(1).default("definitions/jobs"),
     providers: z.string().min(1).default("definitions/providers"),
-    subsystems: z.string().min(1).optional(),
     modules_dir: z.string().min(1).optional(),
     orchestration_src: z.string().min(1).optional(),
     generated: z.string().min(1).optional(),
@@ -153,14 +158,18 @@ export const PathsConfigSchema = z
 /** The `paths` block as written. */
 export type PathsConfigInput = z.input<typeof PathsConfigSchema>;
 
+/** `<backend_src>/<child>`, with `.` / empty `backend_src` giving `<child>`. */
+function underBackendSrc(backendSrc: string, child: string): string {
+  const root = backendSrc.replace(/\/+$/, "");
+  return root === "" || root === "." ? child : `${root}/${child}`;
+}
+
 /** Fill the keys whose default is relative to `backend_src`. */
 export function resolvePathDefaults(paths: z.output<typeof PathsConfigSchema>) {
-  const root = paths.backend_src.replace(/\/+$/, "");
-  const under = (child: string) => (root === "" || root === "." ? child : `${root}/${child}`);
+  const under = (child: string) => underBackendSrc(paths.backend_src, child);
   return {
     ...paths,
     generated: paths.generated ?? under("generated"),
-    subsystems: paths.subsystems ?? under("shared/subsystems"),
     modules_dir: paths.modules_dir ?? under("modules"),
     orchestration_src: paths.orchestration_src ?? under("orchestration"),
   };
@@ -182,7 +191,9 @@ export type PathsConfig = z.output<typeof ResolvedPathsSchema>;
  * / Metadata) are pre-registered by the codegen package; consumers never
  * list them.
  *
- * Default (when the key is absent): `['src/patterns/*.pattern.ts']`.
+ * Default (when the key is absent): `['<backend_src>/patterns/*.pattern.ts']`,
+ * filled by {@link resolveConfigDefaults} from the resolved `paths.backend_src`
+ * (PATH-1, #645). An explicit `patterns: []` means "no app patterns".
  *
  * Example:
  * ```yaml
@@ -191,10 +202,7 @@ export type PathsConfig = z.output<typeof ResolvedPathsSchema>;
  *   - vendor/internal-patterns/*.pattern.ts
  * ```
  */
-export const PatternsConfigSchema = z
-  .array(z.string())
-  .optional()
-  .default(['src/patterns/*.pattern.ts']);
+export const PatternsConfigSchema = z.array(z.string()).optional();
 
 export type PatternsConfig = z.infer<typeof PatternsConfigSchema>;
 
@@ -724,8 +732,12 @@ export const StorageConfigSchema = z
  * `.strict()` at the top level: an unknown block is an error naming it.
  * Blocks with defaults are always populated after parse; the subsystem blocks
  * stay absent until their subsystem is installed.
+ *
+ * The object itself — its `.shape` is what the census and the loader's
+ * unknown-key hint read. {@link CodegenConfigSchema} adds the defaults that
+ * depend on another block.
  */
-export const CodegenConfigSchema = z
+export const CodegenConfigObjectSchema = z
   .object({
     runtime: RuntimeModeSchema,
     paths: ResolvedPathsSchema.default({}),
@@ -749,6 +761,20 @@ export const CodegenConfigSchema = z
     storage: StorageConfigSchema.optional(),
   })
   .strict();
+
+/**
+ * Fill the top-level defaults that derive from another block: `patterns`
+ * from the resolved `paths.backend_src` (PATH-1, #645).
+ */
+export function resolveConfigDefaults(config: z.output<typeof CodegenConfigObjectSchema>) {
+  return {
+    ...config,
+    patterns: config.patterns ?? [underBackendSrc(config.paths.backend_src, "patterns/*.pattern.ts")],
+  };
+}
+
+/** `codegen.config.yaml` as every reader sees it: every default resolved. */
+export const CodegenConfigSchema = CodegenConfigObjectSchema.transform(resolveConfigDefaults);
 
 /** The parsed file: defaults applied. */
 export type CodegenConfig = z.infer<typeof CodegenConfigSchema>;

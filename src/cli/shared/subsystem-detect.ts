@@ -219,8 +219,8 @@ function inferBackend(dir: string, name: SubsystemName): SubsystemBackend {
 async function detectSubsystemStatesImpl(
 	ctx: Context,
 ): Promise<InstalledSubsystem[]> {
-	// The one subsystems root (`paths.subsystems`, default
-	// `<backend_src>/shared/subsystems`) — where `subsystem install` writes.
+	// The one subsystems root, `<backend_src>/shared/subsystems` — where
+	// `subsystem install` writes.
 	const roots = [projectLayout(ctx.cwd, ctx.config).subsystems];
 
 	const found: InstalledSubsystem[] = [];

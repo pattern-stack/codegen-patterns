@@ -5,7 +5,6 @@
  *   - default locals on first install (no `events:` block in config)
  *   - multi_tenant: true honored
  *   - multi_tenant non-boolean values do not leak through
- *   - custom `paths.subsystems` flows into schemaPath + generatedKeepPath
  *   - localsToHygenArgs serialises all flags
  *   - localsToHygenArgs emits absolute paths
  */
@@ -32,7 +31,7 @@ describe('resolveEventsScaffoldLocals', () => {
 		expect(locals.appName).toBe('events-fixture');
 		expect(locals.configPath).toBe(path.resolve(CWD, 'codegen.config.yaml'));
 		// Default derives from `backend_src` (fallback 'src') when
-		// `paths.subsystems` is unset — matches `project init` layout.
+		// The subsystems root derives from `paths.backend_src` — the `project init` layout.
 		expect(locals.schemaPath).toBe(
 			path.resolve(CWD, 'src/shared/subsystems/events/domain-events.schema.ts'),
 		);
@@ -63,7 +62,7 @@ describe('resolveEventsScaffoldLocals', () => {
 		}
 	});
 
-	test('paths.backend_src derives default subsystems root when paths.subsystems is unset', () => {
+	test('the subsystems root derives from paths.backend_src (<backend_src>/shared/subsystems)', () => {
 		const locals = resolveEventsScaffoldLocals({
 			cwd: CWD,
 			config: { paths: { backend_src: 'packages/api/src' } } as any,
@@ -79,42 +78,6 @@ describe('resolveEventsScaffoldLocals', () => {
 			path.resolve(
 				CWD,
 				'packages/api/src/shared/subsystems/events/generated/.gitkeep',
-			),
-		);
-	});
-
-	test('paths.subsystems takes precedence over paths.backend_src', () => {
-		const locals = resolveEventsScaffoldLocals({
-			cwd: CWD,
-			config: {
-				paths: {
-					backend_src: 'packages/api/src',
-					subsystems: 'custom/subsystems',
-				},
-			} as any,
-			fileExists: () => false,
-		});
-		expect(locals.schemaPath).toBe(
-			path.resolve(CWD, 'custom/subsystems/events/domain-events.schema.ts'),
-		);
-	});
-
-	test('custom paths.subsystems flows into schemaPath + generatedKeepPath', () => {
-		const locals = resolveEventsScaffoldLocals({
-			cwd: CWD,
-			config: { paths: { subsystems: 'packages/api/src/subsystems' } } as any,
-			fileExists: () => false,
-		});
-		expect(locals.schemaPath).toBe(
-			path.resolve(
-				CWD,
-				'packages/api/src/subsystems/events/domain-events.schema.ts',
-			),
-		);
-		expect(locals.generatedKeepPath).toBe(
-			path.resolve(
-				CWD,
-				'packages/api/src/subsystems/events/generated/.gitkeep',
 			),
 		);
 	});

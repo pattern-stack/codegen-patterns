@@ -34,14 +34,15 @@ import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
  * is both the Drizzle table export and the module folder, nested under
  * `context:` when one is declared.
  *
- * `moduleDir` is the folder holding the entity's files;
- * `entityFile` is its entity module path without extension.
+ * `modulesDir` is the module tree's root — the resolved `paths.modules_dir`
+ * (PATH-1, #645), project-relative. `moduleDir` is the folder holding the
+ * entity's files; `entityFile` is its entity module path without extension.
  */
-export function entityModuleNaming(entityBlock, srcRoot) {
+export function entityModuleNaming(entityBlock, modulesDir) {
   const plural = entityBlock.plural || pluralizePkg.plural(entityBlock.name);
   const moduleGroupDir = entityBlock.context
-    ? `${srcRoot}/modules/${entityBlock.context}`
-    : `${srcRoot}/modules`;
+    ? `${modulesDir}/${entityBlock.context}`
+    : modulesDir;
   const moduleDir = `${moduleGroupDir}/${plural}`;
   return {
     plural,

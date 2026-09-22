@@ -440,7 +440,7 @@ export class EntityNewCommand extends Command {
 		// so scope the check to the cwd's generated source roots if we can.
 		if (!this.force) {
 			const outputRoots = projectLayout(ctx.cwd, ctx.config);
-			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.generated], ctx.cwd);
+			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.modules, outputRoots.generated], ctx.cwd);
 			if (gitCheck.inRepo && !gitCheck.clean) {
 				printWarning(
 					`Uncommitted changes in ${gitCheck.dirty.length} generated-output files. Pass --force to overwrite.`
@@ -505,16 +505,9 @@ export class EntityNewCommand extends Command {
 		// `paths.orchestration_src`, default `<backend_src>/orchestration`.
 		const orchestrationOutputRoot = layout.orchestration;
 
-		// Pattern globs used to discover orchestration patterns. Default
-		// matches the Phase 3-1 loader: `src/patterns/*.pattern.ts`.
-		const orchestrationGlobs: string[] = (() => {
-			const fromCfg = (ctx.config as { patterns?: unknown } | null | undefined)
-				?.patterns;
-			if (Array.isArray(fromCfg) && fromCfg.length > 0) {
-				return fromCfg.filter((g): g is string => typeof g === 'string');
-			}
-			return ['src/patterns/*.pattern.ts'];
-		})();
+		// Pattern globs used to discover orchestration patterns — the resolved
+		// `patterns:` list (default `<backend_src>/patterns/*.pattern.ts`).
+		const orchestrationGlobs = resolvePatternGlobs(ctx);
 
 		// Helper — reload registry + return orchestration patterns. Wrapped
 		// in a try to keep failures non-fatal (post-step contract).
@@ -1095,6 +1088,7 @@ export class EntityNewCommand extends Command {
 					entities: entityDefs,
 					outputRoot: adapterOutputRoot,
 					backendSrcAbs: layout.backendSrc,
+					modulesAbs: layout.modules,
 					aliases: assemblyTsAliases?.aliases ?? {},
 					mode: runtimeMode,
 				});

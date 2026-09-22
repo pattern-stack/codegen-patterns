@@ -6,7 +6,6 @@
  *   - custom `auth.redirect_uri_base` flows through
  *   - non-string `auth.redirect_uri_base` does not leak through
  *   - `paths.backend_src` flows into appModulePath + schemaPath
- *   - `paths.subsystems` takes precedence over `paths.backend_src` for schemaPath
  *   - tokenEncryptionKey is 44-char base64 (32 bytes)
  *   - localsToHygenArgs serialises all flags + paths are absolute
  */
@@ -76,22 +75,6 @@ describe('resolveAuthScaffoldLocals', () => {
 				CWD,
 				'packages/api/src/shared/subsystems/auth/auth-oauth-state.schema.ts',
 			),
-		);
-	});
-
-	test('paths.subsystems takes precedence for schemaPath', () => {
-		const locals = resolveAuthScaffoldLocals({
-			cwd: CWD,
-			config: {
-				paths: {
-					backend_src: 'packages/api/src',
-					subsystems: 'custom/subsystems',
-				},
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			} as any,
-		});
-		expect(locals.schemaPath).toBe(
-			path.resolve(CWD, 'custom/subsystems/auth/auth-oauth-state.schema.ts'),
 		);
 	});
 

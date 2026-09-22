@@ -66,6 +66,9 @@ export const BASE_PATHS = {
   // Where entity YAMLs live: `paths.entities` (#634 — one key, one reader).
   // Read by `loadOwnedTableNames` (#636), which runs inside the hygen prompt.
   entitiesDir: resolvedConfig.paths.entities,
+  // The clean-lite-ps module tree (PATH-1, #645): `paths.modules_dir`,
+  // default `<backend_src>/modules`.
+  modulesDir: resolvedConfig.paths.modules_dir,
   // Orchestration emission root (ADR-032 Phase 3-2, O-6):
   // `paths.orchestration_src`, default `<backend_src>/orchestration`.
   orchestrationSrc: resolvedConfig.paths.orchestration_src,

@@ -16,7 +16,7 @@ codegen subsystem install bridge
 
 This runs `copyRuntime` to vendor `runtime/subsystems/bridge/` into your
 project, drops a `generated/.gitkeep` under
-`<paths.subsystems>/bridge/generated/` (where `just gen-all` will later write
+`<backend_src>/shared/subsystems/bridge/generated/` (where `just gen-all` will later write
 `registry.ts`), and injects a `bridge:` block into `codegen.config.yaml`:
 
 ```yaml

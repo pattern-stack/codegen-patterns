@@ -176,7 +176,7 @@ async execute(input: CreateContactInput): Promise<Contact> {
 
 ## Generated artifacts — `runtime/subsystems/events/generated/`
 
-Five files, all generated, none hand-edited. In the codegen repo they sit under `runtime/subsystems/events/generated/`; when `subsystem install events` runs they land under `<paths.subsystems>/events/generated/` in the consumer project (default `shared/subsystems/events/generated/`).
+Five files, all generated, none hand-edited. In the codegen repo they sit under `runtime/subsystems/events/generated/`; when `subsystem install events` runs they land under `<backend_src>/shared/subsystems/events/generated/` in the consumer project (default `src/shared/subsystems/events/generated/`).
 
 ```
 runtime/subsystems/events/generated/
@@ -320,7 +320,7 @@ Also resolved in implementation:
 
 - Do not invent codegen features beyond the plan. The plan has authority; this file is a summary.
 - Do not generate user-pool events. Events are always in `events_*` pools. If you want "a user job runs when this event fires," that is the Event-to-Job Bridge (ADR-023) — the event drains in `events_*`, the *bridge* enqueues a user-pool job.
-- Do not hand-edit `runtime/subsystems/events/generated/*.ts` (or the `<paths.subsystems>/events/generated/` copy in a consumer project). They are reproduced from `events/*.yaml` by `event-codegen-generator.ts`.
+- Do not hand-edit `runtime/subsystems/events/generated/*.ts` (or the `<backend_src>/shared/subsystems/events/generated/` copy in a consumer project). They are reproduced from `events/*.yaml` by `event-codegen-generator.ts`.
 
 ## See also
 

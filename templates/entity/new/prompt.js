@@ -294,7 +294,7 @@ function resolveBehaviors(behaviorConfigs) {
 // pattern registry is rebuilt here from scratch. Library patterns register
 // themselves as a side effect of importing the barrel; app-defined patterns
 // are loaded from `codegen.config.yaml patterns:` globs (default
-// `src/patterns/*.pattern.ts`). Both loads are deterministic and
+// `<backend_src>/patterns/*.pattern.ts`). Both loads are deterministic and
 // side-effect-free — the registry determinism test in
 // `src/__tests__/patterns/registry.test.ts` pins down that the CLI and the
 // subprocess produce identical sorted results for the same file set.
@@ -308,11 +308,9 @@ async function ensurePatternsRegistryLoaded() {
       await import('../../../src/patterns/library/index.js');
       const { loadAppPatterns } = await import('../../../src/patterns/registry.js');
 
-      // The `patterns:` manifest from the parsed config (CFG-0); absent or
-      // empty ⇒ the ADR-031 default glob (the CLI's `resolvePatternGlobs` rule).
-      const configured = getProjectConfig().patterns;
-      const manifest = configured.length > 0 ? configured : ['src/patterns/*.pattern.ts'];
-      const result = await loadAppPatterns(manifest, process.cwd());
+      // The resolved `patterns:` manifest (CFG-0); the schema fills an absent
+      // key from `paths.backend_src` (PATH-1) — the CLI's `resolvePatternGlobs`.
+      const result = await loadAppPatterns(getProjectConfig().patterns, process.cwd());
       for (const err of result.errors) {
         // eslint-disable-next-line no-console
         console.warn(`[codegen] ${err}`);
@@ -1481,9 +1479,9 @@ export default {
       // Database configuration
       databaseDialect,
 
-      // Project layout — used by clean-lite-ps prompt-extension to compute
-      // output paths under the configured source root (paths.backend_src).
-      backendSrc: BASE_PATHS.backendSrc,
+      // Project layout — the clean-lite-ps prompt-extension places every
+      // module under the configured module tree (paths.modules_dir, PATH-1).
+      modulesDir: BASE_PATHS.modulesDir,
 
       // Entity names
       name,
