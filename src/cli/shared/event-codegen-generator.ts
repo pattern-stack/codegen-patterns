@@ -33,6 +33,7 @@ import type {
 	EventPayloadField,
 } from '../../schema/event-definition.schema.js';
 import type { RuntimeMode } from './runtime-import.js';
+import { generating } from '../../utils/generated-file.js';
 
 // ---------------------------------------------------------------------------
 // Mode-aware runtime imports (ADR-037)
@@ -914,7 +915,7 @@ export async function generateEventCodegen(
 	if (!dryRun && !hasError) {
 		fs.mkdirSync(outputDir, { recursive: true });
 		for (const file of files) {
-			fs.writeFileSync(file.outputPath, file.content);
+			generating(file.outputPath, () => fs.writeFileSync(file.outputPath, file.content));
 		}
 		written = true;
 	}

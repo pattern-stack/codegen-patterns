@@ -41,6 +41,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { generating } from "../../utils/generated-file";
 import { type ActiveProviderDefinition, isActiveProvider, parseImportRef, type ProviderDefinition } from "../../schema/provider-definition.schema";
 import type { LoadedProvider } from "../../parser/validate-providers";
 import { isDivisibleCursor } from "../../../runtime/subsystems/integration";
@@ -1392,8 +1393,10 @@ function pascalFromSnake(s: string): string {
 }
 
 function writeFile(outPath: string, content: string): void {
-  mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, content);
+  generating(outPath, () => {
+    mkdirSync(dirname(outPath), { recursive: true });
+    writeFileSync(outPath, content);
+  });
 }
 
 function writeIfChanged(outPath: string, content: string): void {

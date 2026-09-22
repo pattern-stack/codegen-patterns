@@ -264,7 +264,6 @@ function runCodegen() {
     execSync(
       `HYGEN_TMPLS="${templatesDir}" bunx --bun hygen subsystem jobs ` +
         `--appName baseline ` +
-        `--workerMode embedded ` +
         `--multiTenant ${v.multiTenant} ` +
         `--mainTsPath "${join(sandbox, 'src/main.ts')}" ` +
         `--configPath "${join(sandbox, 'codegen.config.yaml')}" ` +

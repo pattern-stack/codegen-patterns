@@ -33,6 +33,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { generating } from '../../utils/generated-file.js';
 
 import type { OrchestrationPatternDefinition, OrchestrationRegistrySpec } from '../../patterns/pattern-definition.js';
 
@@ -701,10 +702,10 @@ export function generateOrchestrationModules(
 		for (const r of perPattern) {
 			fs.mkdirSync(r.outputDir, { recursive: true });
 			for (const f of r.files) {
-				fs.writeFileSync(f.outputPath, f.content);
+				generating(f.outputPath, () => fs.writeFileSync(f.outputPath, f.content));
 			}
 		}
-		fs.writeFileSync(rootBarrel.outputPath, rootBarrel.content);
+		generating(rootBarrel.outputPath, () => fs.writeFileSync(rootBarrel.outputPath, rootBarrel.content));
 		written = true;
 	}
 

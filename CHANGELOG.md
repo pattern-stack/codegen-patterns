@@ -287,14 +287,27 @@ resolve against.
   for `bullmq`, so a `memory` config booted the embedded worker's own
   orchestrator on drizzle — two backends in one process. The worker options
   now always state `backend` (every jobs install regenerates with
-  `backend: 'drizzle'` in them). `jobs.backend: memory` with a standalone
-  worker — `jobs.worker_mode: standalone`, or no `worker_mode` — is now a
-  config error naming both keys: a separate process cannot share the
+  `backend: 'drizzle'` in them). `jobs.backend: memory` with
+  `jobs.worker_mode: standalone` is now a config error naming both keys: a separate process cannot share the
   in-memory job store. `JobWorkerModule.forRoot` now **requires**
   `backend` (no `'drizzle'` default) — a hand-written call must state the
   same backend as your `JobsDomainModule`. The `main.ts` jobs hint no longer
   suggests hand-wiring `JobWorkerModule`: set `jobs.worker_mode: embedded`
   and regenerate.
+- **`jobs.worker_mode` has one default: `embedded`** (#659). A `jobs:` block
+  without `worker_mode` composed no worker in `<generated>/subsystems.ts`
+  (standalone) while the jobs scaffold treated it as embedded. The config
+  schema now defaults it to `embedded` — the value `subsystem install jobs`
+  writes — so such a block regenerates with
+  `JobWorkerModule.forRoot({ mode: 'embedded', … })` in `SUBSYSTEM_MODULES`.
+  If you run `worker.ts` as a separate process, state
+  `jobs.worker_mode: standalone`.
+- **`subsystem install` (vendored) regenerates from the config it just
+  wrote** (#661). The vendored install wrote `<generated>/subsystems.ts` and
+  `app-config.ts` from the config read *before* it injected the subsystem's
+  block — a fresh `subsystem install jobs` composed no `extensions` (and,
+  before #659, no embedded worker) until the next `entity new`. Both runtime
+  paths now reload `codegen.config.yaml` after writing it.
 - **A generated file the app imports that cannot be written fails the
   command** (#655). `entity new`, `relationship new`, `junction new` and
   `subsystem install` / `remove` printed a warning and exited 0 when
@@ -306,6 +319,18 @@ resolve against.
   upgrade-openapi` / `upgrade-auth` name the file. `subsystem install --json` (vendored) now regenerates the barrel
   at all; the `barrelRegenerated` field of `subsystem remove --json` is gone
   (it is always regenerated, or the command fails).
+- **Every `entity new` post-step fails the command when it cannot regenerate
+  its output** (#660). The `ScopeEntityType` union, the event modules, the
+  bridge registry, orchestration modules, the frontend tree and the provider /
+  adapter / integration-assembly / job-handler files printed a warning (or an
+  error) and exited 0 on failure. They now exit 1 naming the file (JSON:
+  `{ status: 'error', file, error }`), or the step's output directory when it
+  failed before writing — an `events/*.yaml` with an error (event codegen
+  writes nothing then), a duplicate or unknown `@JobHandler` trigger. The
+  JSON result's `scopeEntityType`, `eventCodegen`, `bridgeRegistry` and
+  `orchestration` fields are never `null`.
+  `entity new --json --no-continue-on-error` with a blocking provider issue
+  now prints that same error payload instead of nothing.
 - **The generated `main.ts` crashed when no `IUserContext` was bound** (#651).
   `app.get(AUTH_USER_CONTEXT, { strict: false })` throws for an unbound token,
   and Nest's default `abortOnError` turns that into `process.exit(1)` — so

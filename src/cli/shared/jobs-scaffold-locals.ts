@@ -20,8 +20,6 @@ import { resolveRuntimeMode, runtimeImport } from './runtime-import.js';
 export interface JobsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
 	appName: string;
-	/** Documented default worker topology. */
-	workerMode: 'embedded' | 'standalone';
 	/** Gates the `tenantId` column in the schema template (Q1 2026-04-19). */
 	multiTenant: boolean;
 	/** Where `main-hook.ejs.t` injects the embedded-mode guidance block. */
@@ -86,7 +84,8 @@ function workerSkipValue(exists: boolean): string {
  *
  * - `jobs.multi_tenant` defaults to `false` when the block is absent (first
  *   install case). JOB-8 flips this to an opt-in toggle end-to-end.
- * - `worker_mode` mirrors the spec default (`embedded`).
+ * - No template reads `worker_mode`: the composition is the barrel's, from the
+ *   schema's one default (JOBS-1, #659).
  * - `schemaPath` resolves from the subsystems root
  *   (`<paths.backend_src>/shared/subsystems`; see `project-layout.ts`),
  *   then appends `jobs/job-orchestration.schema.ts`
@@ -122,7 +121,6 @@ export function resolveJobsScaffoldLocals(
 
 	return {
 		appName: path.basename(cwd),
-		workerMode: normaliseWorkerMode(jobsBlock.worker_mode),
 		multiTenant: normaliseMultiTenant(jobsBlock.multi_tenant),
 		mainTsPath,
 		configPath,
@@ -150,11 +148,6 @@ function resolveJobWorkerModuleImport(config: CodegenConfig | null): string {
 	return runtimeImport(resolveRuntimeMode(config), 'subsystems/jobs/index');
 }
 
-function normaliseWorkerMode(raw: unknown): 'embedded' | 'standalone' {
-	if (raw === 'standalone') return 'standalone';
-	return 'embedded';
-}
-
 function normaliseMultiTenant(raw: unknown): boolean {
 	return raw === true;
 }
@@ -168,7 +161,6 @@ function normaliseMultiTenant(raw: unknown): boolean {
 export function localsToHygenArgs(locals: JobsScaffoldLocals): string[] {
 	return [
 		'--appName', locals.appName,
-		'--workerMode', locals.workerMode,
 		'--multiTenant', locals.multiTenant ? 'true' : 'false',
 		'--mainTsPath', locals.mainTsPath,
 		'--configPath', locals.configPath,

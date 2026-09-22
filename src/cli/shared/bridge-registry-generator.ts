@@ -36,6 +36,7 @@ import path from 'node:path';
 import ts from 'typescript';
 
 import type { RuntimeMode } from './runtime-import.js';
+import { generating } from '../../utils/generated-file.js';
 
 // ---------------------------------------------------------------------------
 // Mode-aware emission constants (ADR-037)
@@ -680,8 +681,10 @@ export async function generateBridgeRegistry(
   // 4. Write (or not).
   let written = false;
   if (!dryRun) {
-    fs.mkdirSync(outputDir, { recursive: true });
-    fs.writeFileSync(file.outputPath, file.content);
+    generating(file.outputPath, () => {
+      fs.mkdirSync(outputDir, { recursive: true });
+      fs.writeFileSync(file.outputPath, file.content);
+    });
     written = true;
   }
 

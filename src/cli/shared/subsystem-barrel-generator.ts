@@ -36,8 +36,8 @@ import {
 	jobWorkerBackendOptions,
 	type DrizzleJobsExt,
 } from './job-worker-options.js';
-import { DEFAULT_JOBS_WORKER_MODE } from '../../schema/codegen-config.schema.js';
-import { GeneratedFileError, generating } from './generated-file.js';
+import { JobsConfigSchema } from '../../schema/codegen-config.schema.js';
+import { GeneratedFileError, generating } from '../../utils/generated-file.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 import {
@@ -293,7 +293,9 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 	jobs: ({ moduleImport, cfg, bridgeInstalled }) => {
 		const backend = (cfg?.backend as string | undefined) ?? 'drizzle';
 		const multiTenant = Boolean(cfg?.multi_tenant);
-		const workerMode = ((cfg?.worker_mode as string | undefined) ?? DEFAULT_JOBS_WORKER_MODE).trim();
+		// JOBS-1 (#659): the schema owns `worker_mode`'s default; an absent
+		// `jobs:` block parses to it too.
+		const workerMode = JobsConfigSchema.parse(cfg ?? {}).worker_mode;
 		const imports = [
 			`import { JobsDomainModule } from '${moduleImport('jobs', 'jobs-domain.module')}';`,
 		];
@@ -316,9 +318,10 @@ const COMPOSERS: Partial<Record<SubsystemName, Composer>> = {
 			'pools',
 		);
 		const calls = [`\tJobsDomainModule.forRoot(${domainOpts}),`];
-		// JOB-7: `worker_mode: 'embedded'` runs the worker in-process alongside the
-		// HTTP app. `'standalone'` (default) means the user runs `bun src/worker.ts`
-		// separately and we don't include JobWorkerModule in AppModule.
+		// JOB-7: `worker_mode: 'embedded'` (the default) runs the worker in-process
+		// alongside the HTTP app. `'standalone'` means the user runs
+		// `bun src/worker.ts` separately and we don't include JobWorkerModule in
+		// AppModule.
 		if (workerMode === 'embedded') {
 			imports.push(
 				`import { JobWorkerModule } from '${moduleImport('jobs', 'job-worker.module')}';`

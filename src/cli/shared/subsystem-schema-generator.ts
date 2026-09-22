@@ -41,7 +41,7 @@ import {
 	type InstalledSubsystem,
 	type SubsystemName,
 } from './subsystem-detect.js';
-import { GeneratedFileError, generating } from './generated-file.js';
+import { GeneratedFileError, generating } from '../../utils/generated-file.js';
 import { projectLayout } from './project-layout.js';
 import { resolveRuntimeMode, type RuntimeMode } from './runtime-import.js';
 

@@ -162,6 +162,31 @@ async function vendoredLeg(): Promise<number> {
 		//    events/jobs would surface here.
 		run(`bun ${CLI_PATH} subsystem install events`, tmpDir);
 		run(`bun ${CLI_PATH} subsystem install jobs`, tmpDir);
+		// JOBS-1 (#661): the install regenerates `subsystems.ts` + `app-config.ts`
+		// from the `jobs:` block it just injected (`worker_mode: embedded`,
+		// `extensions.drizzle.poll_interval_ms: 1000`) — no second command.
+		{
+			const barrel = fs.readFileSync(path.join(tmpDir, 'src/generated/subsystems.ts'), 'utf-8');
+			const appConfig = fs.readFileSync(path.join(tmpDir, 'src/generated/app-config.ts'), 'utf-8');
+			const drizzleExt = '{ drizzle: { pollIntervalMs: 1000 } }';
+			const expected: Array<[string, boolean]> = [
+				...[
+					`JobsDomainModule.forRoot({ backend: 'drizzle', extensions: ${drizzleExt}, pools: jobPools })`,
+					`JobWorkerModule.forRoot({ mode: 'embedded', backend: 'drizzle', domainModuleExtensions: ${drizzleExt}, domainModulePools: jobPools })`,
+				].map((call): [string, boolean] => [call, barrel.includes(call)]),
+				[
+					'app-config.ts jobWorkerOptions: backend drizzle + domainModuleExtensions.drizzle.pollIntervalMs 1000',
+					/export const jobWorkerOptions = \{[^}]*"backend": "drizzle",\s*"domainModuleExtensions": \{\s*"drizzle": \{\s*"pollIntervalMs": 1000\s*\}/.test(appConfig),
+				],
+			];
+			const missing = expected.filter(([, ok]) => !ok).map(([what]) => what);
+			if (missing.length > 0) {
+				throw new Error(
+					`subsystem install jobs did not regenerate from the jobs: block it injected (#661) — missing:\n  ${missing.join('\n  ')}\n--- subsystems.ts\n${barrel}\n--- app-config.ts\n${appConfig}`,
+				);
+			}
+			log('jobs install regenerated subsystems.ts + app-config.ts from the injected jobs: block (#661)');
+		}
 		run(`bun ${CLI_PATH} subsystem install bridge`, tmpDir);
 		// #473 — observability is a combiner (ADR-025) that composes the read
 		// ports above via @Optional() DI. Installing it here exercises the

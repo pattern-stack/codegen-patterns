@@ -32,10 +32,7 @@ import { generateScopeEntityType } from '../shared/scope-entity-type-generator.j
 import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
 import { generateBridgeRegistry } from '../shared/bridge-registry-generator.js';
-import {
-	OrchestrationEmissionError,
-	generateOrchestrationModules,
-} from '../shared/orchestration-generator.js';
+import { generateOrchestrationModules } from '../shared/orchestration-generator.js';
 import {
 	_resetRegistryForTests,
 	getAllOrchestrationPatterns,
@@ -57,6 +54,7 @@ import { resolveRuntimeMode } from '../shared/runtime-import.js';
 import {
 	loadFrontendEmitContext,
 	emitFrontendSetWithGraph,
+	type ClientGraph,
 	CrossSyncModeHopError,
 	ReservedRelationAliasError,
 } from '../../emitters/frontend/index.js';
@@ -78,6 +76,7 @@ import { icons } from '../ui/icons.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode, printJson, setJsonMode } from '../ui/json.js';
 import { reportRegenerationFailure } from '../shared/generated-file.js';
+import { GeneratedFileError, generating } from '../../utils/generated-file.js';
 import type { PaneOutput } from '../ui/pane.js';
 import type { Hint } from '../ui/hints.js';
 import type { NounModule } from '../noun-module.js';
@@ -510,16 +509,14 @@ export class EntityNewCommand extends Command {
 		// `patterns:` list (default `<backend_src>/patterns/*.pattern.ts`).
 		const orchestrationGlobs = resolvePatternGlobs(ctx);
 
-		// Helper — reload registry + return orchestration patterns. Wrapped
-		// in a try to keep failures non-fatal (post-step contract).
+		// Helper — reload registry + return orchestration patterns. A throw
+		// fails the orchestration step (JOBS-1, #660); per-file import errors are
+		// the loader's (collected, printed once at startup by
+		// `loadAppPatternsForCli`).
 		const loadOrchestrationPatterns = async () => {
-			try {
-				_resetRegistryForTests({ includeLibrary: false });
-				await loadAppPatterns(orchestrationGlobs, ctx.cwd);
-				return getAllOrchestrationPatterns();
-			} catch {
-				return [];
-			}
+			_resetRegistryForTests({ includeLibrary: false });
+			await loadAppPatterns(orchestrationGlobs, ctx.cwd);
+			return getAllOrchestrationPatterns();
 		};
 
 		// Job definitions (RFC-0005 #7) — loaded ONCE, early, so their derived
@@ -807,96 +804,88 @@ export class EntityNewCommand extends Command {
 			return reportRegenerationFailure('entity new', err);
 		}
 
+		// Every post-step below writes files the app imports — the ScopeEntityType
+		// union, the event codegen modules, the bridge registry, the orchestration
+		// modules, the frontend tree, the provider / adapter / assembly / job
+		// handler files. A failed step fails the command, naming the file (or the
+		// step's output root when it failed before writing): JOBS-1, #660. Declared
+		// skips (bridge not installed, no entities for the frontend, a surface with
+		// no package) are not failures and stay informational.
+
 		// Regenerate ScopeEntityType union after barrels (full directory rescan).
 		// Always runs for both single-file and --all modes (OQ-1: always rescan).
-		// Warn-but-don't-fail — a file the app imports, so this soft path is a
-		// defect (#660), no longer backed by the barrels (they fail the command).
-		let scopeResult: Awaited<ReturnType<typeof generateScopeEntityType>> | null = null;
+		let scopeResult: Awaited<ReturnType<typeof generateScopeEntityType>>;
 		try {
-			scopeResult = await generateScopeEntityType({
-				entitiesDir,
-				outputPath: scopeEntityTypePath,
-			});
+			scopeResult = await generating(scopeEntityTypePath, () =>
+				generateScopeEntityType({
+					entitiesDir,
+					outputPath: scopeEntityTypePath,
+				}),
+			);
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printWarning(`scope-entity-type generation failed — ${msg}`);
-			}
+			return reportRegenerationFailure('entity new', err);
 		}
 
-		// Regenerate event codegen artifacts (EVT-3) after scope-entity-type.
-		// Same "warn-but-don't-fail" soft path as the scope step (#660).
-		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>> | null = null;
+		// Regenerate event codegen artifacts (EVT-3) after scope-entity-type. An
+		// error-severity issue means nothing was written — the modules the app
+		// imports would stay stale — so it fails the command too.
+		let eventCodegenResult: Awaited<ReturnType<typeof generateEventCodegen>>;
 		try {
-			eventCodegenResult = await generateEventCodegen({
-				entitiesDir,
-				eventsDir,
-				outputDir: eventCodegenOutputDir,
-				mode: runtimeMode,
-				extraSugarEvents: jobScheduledEvents,
-			});
-			if (!isJsonMode()) {
-				for (const issue of eventCodegenResult.issues) {
-					if (issue.severity === 'error') {
-						printError(
-							`event codegen: ${issue.message}${issue.path ? ` (${issue.path})` : ''}`,
-						);
-					}
+			eventCodegenResult = await generating(eventCodegenOutputDir, async () => {
+				const result = await generateEventCodegen({
+					entitiesDir,
+					eventsDir,
+					outputDir: eventCodegenOutputDir,
+					mode: runtimeMode,
+					extraSugarEvents: jobScheduledEvents,
+				});
+				const errors = result.issues.filter((i) => i.severity === 'error');
+				if (errors.length > 0) {
+					throw new Error(
+						errors.map((i) => `${i.message}${i.path ? ` (${i.path})` : ''}`).join('; '),
+					);
 				}
-			}
+				return result;
+			});
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printWarning(`event codegen failed — ${msg}`);
-			}
+			return reportRegenerationFailure('entity new', err);
 		}
 
 		// Bridge registry codegen (BRIDGE-6, ADR-023 Phase 2). Runs AFTER event
 		// codegen so the freshly-emitted eventRegistry is available for
-		// build-time validation. Same warn-but-don't-fail pattern as siblings.
-		let bridgeRegistryResult: Awaited<ReturnType<typeof generateBridgeRegistry>> | null = null;
+		// build-time validation (an unknown / duplicate / audit-tier trigger fails).
+		let bridgeRegistryResult: Awaited<ReturnType<typeof generateBridgeRegistry>>;
 		try {
-			bridgeRegistryResult = await generateBridgeRegistry({
-				handlersDir: bridgeHandlersDir,
-				eventsGeneratedDir: eventCodegenOutputDir,
-				outputDir: bridgeRegistryOutputDir,
-				mode: runtimeMode,
-				bridgeInstalled: bridgeInstalledForRegistry,
-				extraTriggers: jobBridgeTriggers,
-			});
-			if (bridgeRegistryResult.skipped && !isJsonMode()) {
-				printInfo(
-					'bridge subsystem not installed — skipping bridge registry codegen',
-				);
-			}
+			bridgeRegistryResult = await generating(bridgeRegistryOutputDir, () =>
+				generateBridgeRegistry({
+					handlersDir: bridgeHandlersDir,
+					eventsGeneratedDir: eventCodegenOutputDir,
+					outputDir: bridgeRegistryOutputDir,
+					mode: runtimeMode,
+					bridgeInstalled: bridgeInstalledForRegistry,
+					extraTriggers: jobBridgeTriggers,
+				}),
+			);
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printError(`bridge registry codegen failed — ${msg}`);
-			}
+			return reportRegenerationFailure('entity new', err);
+		}
+		if (bridgeRegistryResult.skipped && !isJsonMode()) {
+			printInfo('bridge subsystem not installed — skipping bridge registry codegen');
 		}
 
-		// Orchestration emission (ADR-032 Phase 3-2/3). Same warn-but-don't-fail
-		// pattern as the other post-steps. Hooked here so `just gen-all` keeps
-		// being a single "build everything" entrypoint per Phase 3-2 §3.2.
-		let orchestrationResult:
-			| ReturnType<typeof generateOrchestrationModules>
-			| null = null;
+		// Orchestration emission (ADR-032 Phase 3-2/3). Hooked here so
+		// `just gen-all` keeps being a single "build everything" entrypoint per
+		// Phase 3-2 §3.2.
+		let orchestrationResult: ReturnType<typeof generateOrchestrationModules>;
 		try {
-			const orchestrationPatterns = await loadOrchestrationPatterns();
-			orchestrationResult = generateOrchestrationModules({
-				patterns: orchestrationPatterns,
-				outputRoot: orchestrationOutputRoot,
-			});
+			orchestrationResult = await generating(orchestrationOutputRoot, async () =>
+				generateOrchestrationModules({
+					patterns: await loadOrchestrationPatterns(),
+					outputRoot: orchestrationOutputRoot,
+				}),
+			);
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				if (err instanceof OrchestrationEmissionError) {
-					printError(msg);
-				} else {
-					printWarning(`orchestration codegen failed — ${msg}`);
-				}
-			}
+			return reportRegenerationFailure('entity new', err);
 		}
 
 		// Frontend emission (ADR-038 FE-4). Whole-set: renders the complete
@@ -904,57 +893,49 @@ export class EntityNewCommand extends Command {
 		// store, fields, barrel) from the FULL entity set in one pass — so it runs
 		// ONCE here, after the per-entity Hygen loop, never per entity. Gated on
 		// `generate.frontend === true`; off by default (backend-only projects emit
-		// nothing). Same warn-but-don't-fail contract as the sibling post-steps,
-		// but NOT silent — failures and skips print. The output is deterministic
-		// for a given entity set (safe under re-run / baseline wipe-and-regenerate).
-		let frontendResult: { written: string[]; outDir: string } | null = null;
+		// nothing). A skip (no entities) prints; a failure fails the command. The
+		// output is deterministic for a given entity set (safe under re-run /
+		// baseline wipe-and-regenerate).
+		let frontendResult: {
+			written: string[];
+			outDir: string;
+			graph: ClientGraph | null;
+		} | null = null;
 		let frontendFailed = false;
 		const frontendConfig = ctx.config?.generate.frontend === true ? ctx.config : null;
 		if (frontendConfig) {
+			const frontendRoot = layout.frontendSrc;
 			try {
-				const loaded = loadFrontendEmitContext(ctx.cwd, frontendConfig, { entitiesDir });
-				if (loaded.skip !== undefined) {
-					if (!isJsonMode()) {
-						printInfo(`frontend emission skipped — ${loaded.skip}`);
+				frontendResult = generating(frontendRoot, () => {
+					const loaded = loadFrontendEmitContext(ctx.cwd, frontendConfig, { entitiesDir });
+					if (loaded.skip !== undefined) {
+						if (!isJsonMode()) printInfo(`frontend emission skipped — ${loaded.skip}`);
+						return null;
 					}
-				} else {
 					const { ctx: frontendCtx, outDir: frontendOutDir } = loaded;
 					const { written, graph } = emitFrontendSetWithGraph(
 						frontendCtx,
 						frontendOutDir,
 					);
-					frontendResult = { written, outDir: frontendOutDir };
-					if (!isJsonMode()) {
-						printInfo(
-							`frontend emitted (${written.length} files) → ${path.relative(ctx.cwd, frontendOutDir)}`,
-						);
-						// The graph step's drops and deferrals are printed, never silently
-						// swallowed: a relation that is declared but not navigable on the
-						// client is something the author has to be able to see (charter I9).
-						for (const warning of graph?.warnings ?? []) {
-							printWarning(`frontend graph: ${warning}`);
-						}
-						for (const deferral of graph?.deferred ?? []) {
-							printInfo(
-								`frontend graph: no accessors for '${deferral.entity}' — ${deferral.reason}`,
-							);
-						}
-					}
-				}
+					return { written, outDir: frontendOutDir, graph };
+				});
 			} catch (err: unknown) {
-				const msg = err instanceof Error ? err.message : String(err);
-				// A GENERATION error — a cross-mode hop (FE-REL §4.4) or a relation key
-				// that collides with a generated query alias — is the author's YAML to
-				// fix and fails the command, like REL-1's key collision. Everything else
-				// keeps the sibling post-steps' warn-but-don't-fail contract.
-				if (
-					err instanceof CrossSyncModeHopError ||
-					err instanceof ReservedRelationAliasError
-				) {
-					frontendFailed = true;
-					printError(`frontend graph emission failed — ${msg}`);
-				} else if (!isJsonMode()) {
-					printWarning(`frontend emission failed — ${msg}`);
+				return reportRegenerationFailure('entity new', err);
+			}
+			if (frontendResult && !isJsonMode()) {
+				printInfo(
+					`frontend emitted (${frontendResult.written.length} files) → ${path.relative(ctx.cwd, frontendResult.outDir)}`,
+				);
+				// The graph step's drops and deferrals are printed, never silently
+				// swallowed: a relation that is declared but not navigable on the
+				// client is something the author has to be able to see (charter I9).
+				for (const warning of frontendResult.graph?.warnings ?? []) {
+					printWarning(`frontend graph: ${warning}`);
+				}
+				for (const deferral of frontendResult.graph?.deferred ?? []) {
+					printInfo(
+						`frontend graph: no accessors for '${deferral.entity}' — ${deferral.reason}`,
+					);
 				}
 			}
 		}
@@ -1003,48 +984,50 @@ export class EntityNewCommand extends Command {
 		// is present the import check is skipped but slug/surface checks still
 		// run. Skips cleanly when no providers dir exists, so projects without
 		// integrations see no change. Blocking issues ⇒ nothing is written.
-		let providerResult: ReturnType<typeof generateProviderModules> | null = null;
+		const providerOutputRoot = path.join(layout.backendSrc, 'integrations/providers');
+		let providerResult: ReturnType<typeof generateProviderModules>;
 		try {
-			const providersDir = projectLayout(ctx.cwd, ctx.config).providers;
-			const providerOutputRoot = path.join(layout.backendSrc, 'integrations/providers');
-			const entitySurfaces = fs.existsSync(entitiesDir)
-				? collectEntitySurfaces(
-						loadEntitiesFromYaml(
-							findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
-						).successes.map((s) => s.definition),
-					)
-				: new Set<string>();
-			const tsAliases = resolveTsconfigAliases(ctx.cwd);
-			providerResult = generateProviderModules({
-				providersDir,
-				outputRoot: providerOutputRoot,
-				entitySurfaces,
-				sourceRoot: tsAliases?.sourceRoot,
-				aliases: tsAliases?.aliases,
-				skipImportCheck: tsAliases === null,
-				mode: runtimeMode,
+			providerResult = generating(providerOutputRoot, () => {
+				const providersDir = projectLayout(ctx.cwd, ctx.config).providers;
+				const entitySurfaces = fs.existsSync(entitiesDir)
+					? collectEntitySurfaces(
+							loadEntitiesFromYaml(
+								findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
+							).successes.map((s) => s.definition),
+						)
+					: new Set<string>();
+				const tsAliases = resolveTsconfigAliases(ctx.cwd);
+				return generateProviderModules({
+					providersDir,
+					outputRoot: providerOutputRoot,
+					entitySurfaces,
+					sourceRoot: tsAliases?.sourceRoot,
+					aliases: tsAliases?.aliases,
+					skipImportCheck: tsAliases === null,
+					mode: runtimeMode,
+				});
 			});
-			if (!providerResult.skipped && !isJsonMode()) {
-				for (const issue of providerResult.issues) {
-					printError(`provider codegen: ${issue.message}`);
-				}
-				if (providerResult.issues.length === 0) {
-					printInfo(
-						`provider modules regenerated (${providerResult.written.length}) → ${providerOutputRoot}`,
-					);
-				}
-			}
-			if (
-				providerResult.issues.some((i) => i.severity === 'error') &&
-				!this.continueOnError
-			) {
-				return 1;
-			}
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (!isJsonMode()) {
-				printWarning(`provider codegen failed — ${msg}`);
+			return reportRegenerationFailure('entity new', err);
+		}
+		if (!providerResult.skipped && !isJsonMode()) {
+			for (const issue of providerResult.issues) {
+				printError(`provider codegen: ${issue.message}`);
 			}
+			if (providerResult.issues.length === 0) {
+				printInfo(
+					`provider modules regenerated (${providerResult.written.length}) → ${providerOutputRoot}`,
+				);
+			}
+		}
+		const providerErrors = providerResult.issues.filter((i) => i.severity === 'error');
+		if (providerErrors.length > 0 && !this.continueOnError) {
+			// Text mode printed each issue above; JSON mode gets the same payload as every other failure.
+			if (!isJsonMode()) return 1;
+			return reportRegenerationFailure(
+				'entity new',
+				new GeneratedFileError(providerOutputRoot, providerErrors.map((i) => i.message).join('; ')),
+			);
 		}
 
 		// Adapter / module / barrel / surface-aggregator emission (RFC-0001 §2/§4,
@@ -1053,65 +1036,65 @@ export class EntityNewCommand extends Command {
 		// scaffolds are never overwritten; @generated files re-emit each run. A
 		// provider surface with no surface package (Track C) is skipped with a
 		// reason, not an error.
-		try {
-			if (providerResult && !providerResult.skipped && providerResult.issues.length === 0) {
-				const providersDir = providerResult.providersDir;
-				const adapterOutputRoot = path.join(layout.backendSrc, 'integrations');
-				const entityDefs = fs.existsSync(entitiesDir)
-					? loadEntitiesFromYaml(
-							findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
-						).successes.map((s) => s.definition)
-					: [];
-				const loadedProviders = loadProvidersFromYaml(
-					findYamlFiles(providersDir),
-				).successes.map((s) => ({
-					definition: s.definition,
-					filePath: s.filePath,
-				}));
-				// Resolve the consumer's tsconfig aliases (already loaded above for
-				// the provider import pre-flight) so the assembly's entity repo/module
-				// imports prefer the project's `@modules/...`-style alias.
-				const assemblyTsAliases = resolveTsconfigAliases(ctx.cwd);
-				const adapterResult = emitAdapters({
-					providers: loadedProviders,
-					entities: entityDefs,
-					outputRoot: adapterOutputRoot,
-					backendSrcAbs: layout.backendSrc,
-					modulesAbs: layout.modules,
-					aliases: assemblyTsAliases?.aliases ?? {},
-					mode: runtimeMode,
+		const adapterOutputRoot = path.join(layout.backendSrc, 'integrations');
+		if (!providerResult.skipped && providerResult.issues.length === 0) {
+			let adapterResult: ReturnType<typeof emitAdapters>;
+			try {
+				adapterResult = generating(adapterOutputRoot, () => {
+					const providersDir = providerResult.providersDir;
+					const entityDefs = fs.existsSync(entitiesDir)
+						? loadEntitiesFromYaml(
+								findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
+							).successes.map((s) => s.definition)
+						: [];
+					const loadedProviders = loadProvidersFromYaml(
+						findYamlFiles(providersDir),
+					).successes.map((s) => ({
+						definition: s.definition,
+						filePath: s.filePath,
+					}));
+					// Resolve the consumer's tsconfig aliases (already loaded above for
+					// the provider import pre-flight) so the assembly's entity repo/module
+					// imports prefer the project's `@modules/...`-style alias.
+					const assemblyTsAliases = resolveTsconfigAliases(ctx.cwd);
+					return emitAdapters({
+						providers: loadedProviders,
+						entities: entityDefs,
+						outputRoot: adapterOutputRoot,
+						backendSrcAbs: layout.backendSrc,
+						modulesAbs: layout.modules,
+						aliases: assemblyTsAliases?.aliases ?? {},
+						mode: runtimeMode,
+					});
 				});
-				if (!isJsonMode()) {
-					if (adapterResult.written.length || adapterResult.scaffoldsWritten.length) {
-						printInfo(
-							`adapter codegen: ${adapterResult.scaffoldsWritten.length} scaffold(s) + ${adapterResult.written.length} @generated → ${adapterOutputRoot}`,
-						);
-					}
-					if (adapterResult.assembliesWritten.length || adapterResult.tokensWritten.length) {
-						printInfo(
-							`integration assembly codegen: ${adapterResult.assembliesWritten.length} module(s) + ${adapterResult.tokensWritten.length} tokens file(s) + ${adapterResult.integrationAggregatorsWritten.length} aggregator(s)`,
-						);
-					}
-					if (adapterResult.changeEmittersWritten.length) {
-						printInfo(
-							`integration change-emitters (emit_changes): ${adapterResult.changeEmittersWritten.length} emitter(s)`,
-						);
-					}
-					for (const s of adapterResult.scaffoldsSkipped) {
-						printInfo(`skipped scaffold ${s} (author-owned)`);
-					}
-					for (const s of adapterResult.skippedSurfaces) {
-						printWarning(`adapter codegen: ${s.reason} (provider ${s.provider})`);
-					}
-					for (const s of adapterResult.skippedAssemblies) {
-						printWarning(`integration assembly: ${s.reason}`);
-					}
-				}
+			} catch (err: unknown) {
+				return reportRegenerationFailure('entity new', err);
 			}
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
 			if (!isJsonMode()) {
-				printWarning(`adapter codegen failed — ${msg}`);
+				if (adapterResult.written.length || adapterResult.scaffoldsWritten.length) {
+					printInfo(
+						`adapter codegen: ${adapterResult.scaffoldsWritten.length} scaffold(s) + ${adapterResult.written.length} @generated → ${adapterOutputRoot}`,
+					);
+				}
+				if (adapterResult.assembliesWritten.length || adapterResult.tokensWritten.length) {
+					printInfo(
+						`integration assembly codegen: ${adapterResult.assembliesWritten.length} module(s) + ${adapterResult.tokensWritten.length} tokens file(s) + ${adapterResult.integrationAggregatorsWritten.length} aggregator(s)`,
+					);
+				}
+				if (adapterResult.changeEmittersWritten.length) {
+					printInfo(
+						`integration change-emitters (emit_changes): ${adapterResult.changeEmittersWritten.length} emitter(s)`,
+					);
+				}
+				for (const s of adapterResult.scaffoldsSkipped) {
+					printInfo(`skipped scaffold ${s} (author-owned)`);
+				}
+				for (const s of adapterResult.skippedSurfaces) {
+					printWarning(`adapter codegen: ${s.reason} (provider ${s.provider})`);
+				}
+				for (const s of adapterResult.skippedAssemblies) {
+					printWarning(`integration assembly: ${s.reason}`);
+				}
 			}
 		}
 
@@ -1121,26 +1104,26 @@ export class EntityNewCommand extends Command {
 		// scheduled-event + bridge-trigger contributions already rode the event /
 		// bridge codegen above (from the early `jobLoad`); this step only writes the
 		// `@generated` base (reflow) + emit-once subclass per job into
-		// `<backend_src>/jobs/`. Same warn-but-don't-fail contract as siblings.
-		try {
-			if (jobLoad.jobs.length > 0) {
-				const jobEmit = emitJobHandlers({
-					jobs: jobLoad.jobs,
-					jobsHandlersDir: bridgeHandlersDir,
-					mode: runtimeMode,
-				});
-				if (!isJsonMode()) {
-					printInfo(
-						`jobs: emitted ${jobEmit.basesWritten.length} handler base(s); ` +
-							`${jobEmit.scaffoldsWritten.length} scaffold(s) written, ` +
-							`${jobEmit.scaffoldsSkipped.length} kept`,
-					);
-				}
+		// `<backend_src>/jobs/`.
+		if (jobLoad.jobs.length > 0) {
+			let jobEmit: ReturnType<typeof emitJobHandlers>;
+			try {
+				jobEmit = generating(bridgeHandlersDir, () =>
+					emitJobHandlers({
+						jobs: jobLoad.jobs,
+						jobsHandlersDir: bridgeHandlersDir,
+						mode: runtimeMode,
+					}),
+				);
+			} catch (err: unknown) {
+				return reportRegenerationFailure('entity new', err);
 			}
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
 			if (!isJsonMode()) {
-				printWarning(`jobs codegen failed — ${msg}`);
+				printInfo(
+					`jobs: emitted ${jobEmit.basesWritten.length} handler base(s); ` +
+						`${jobEmit.scaffoldsWritten.length} scaffold(s) written, ` +
+						`${jobEmit.scaffoldsSkipped.length} kept`,
+				);
 			}
 		}
 
@@ -1158,45 +1141,37 @@ export class EntityNewCommand extends Command {
 					schema: barrelResult.schemaBarrel,
 					entityCount: barrelResult.entityCount,
 				},
-				scopeEntityType: scopeResult
-					? {
-							outputPath: scopeResult.outputPath,
-							scopeableNames: scopeResult.scopeableNames,
-						}
-					: null,
-				eventCodegen: eventCodegenResult
-					? {
-							outputDir: eventCodegenResult.outputDir,
-							eventCount: eventCodegenResult.eventCount,
-							written: eventCodegenResult.written,
-							files: eventCodegenResult.files.map((f) => ({
-								name: f.name,
-								outputPath: f.outputPath,
-							})),
-						}
-					: null,
-				bridgeRegistry: bridgeRegistryResult
-					? {
-							outputDir: bridgeRegistryResult.outputDir,
-							triggerCount: bridgeRegistryResult.triggerCount,
-							eventTypeCount: bridgeRegistryResult.eventTypeCount,
-							written: bridgeRegistryResult.written,
-						}
-					: null,
-				orchestration: orchestrationResult
-					? {
-							outputRoot: orchestrationResult.outputRoot,
-							written: orchestrationResult.written,
-							patterns: orchestrationResult.patterns.map((p) => ({
-								name: p.patternName,
-								slug: p.slug,
-							})),
-							files: orchestrationResult.files.map((f) => ({
-								name: f.name,
-								relativePath: f.relativePath,
-							})),
-						}
-					: null,
+				scopeEntityType: {
+					outputPath: scopeResult.outputPath,
+					scopeableNames: scopeResult.scopeableNames,
+				},
+				eventCodegen: {
+					outputDir: eventCodegenResult.outputDir,
+					eventCount: eventCodegenResult.eventCount,
+					written: eventCodegenResult.written,
+					files: eventCodegenResult.files.map((f) => ({
+						name: f.name,
+						outputPath: f.outputPath,
+					})),
+				},
+				bridgeRegistry: {
+					outputDir: bridgeRegistryResult.outputDir,
+					triggerCount: bridgeRegistryResult.triggerCount,
+					eventTypeCount: bridgeRegistryResult.eventTypeCount,
+					written: bridgeRegistryResult.written,
+				},
+				orchestration: {
+					outputRoot: orchestrationResult.outputRoot,
+					written: orchestrationResult.written,
+					patterns: orchestrationResult.patterns.map((p) => ({
+						name: p.patternName,
+						slug: p.slug,
+					})),
+					files: orchestrationResult.files.map((f) => ({
+						name: f.name,
+						relativePath: f.relativePath,
+					})),
+				},
 				frontend: frontendResult
 					? {
 							outDir: frontendResult.outDir,
@@ -1230,17 +1205,13 @@ export class EntityNewCommand extends Command {
 			printInfo(
 				`barrels regenerated (${barrelResult.entityCount} entities) → ${path.relative(ctx.cwd, barrelResult.modulesBarrel)}, ${path.relative(ctx.cwd, barrelResult.schemaBarrel)}`
 			);
-			if (scopeResult) {
-				printInfo(
-					`scope-entity-type regenerated (${scopeResult.scopeableNames.length} scopeable) → ${path.relative(ctx.cwd, scopeResult.outputPath)}`
-				);
-			}
-			if (eventCodegenResult) {
-				printInfo(
-					`event codegen regenerated (${eventCodegenResult.eventCount} events) → ${path.relative(ctx.cwd, eventCodegenResult.outputDir)}`
-				);
-			}
-			if (orchestrationResult && orchestrationResult.patterns.length > 0) {
+			printInfo(
+				`scope-entity-type regenerated (${scopeResult.scopeableNames.length} scopeable) → ${path.relative(ctx.cwd, scopeResult.outputPath)}`
+			);
+			printInfo(
+				`event codegen regenerated (${eventCodegenResult.eventCount} events) → ${path.relative(ctx.cwd, eventCodegenResult.outputDir)}`
+			);
+			if (orchestrationResult.patterns.length > 0) {
 				printInfo(
 					`orchestration regenerated (${orchestrationResult.patterns.length} patterns, ${orchestrationResult.files.length} files) → ${path.relative(ctx.cwd, orchestrationResult.outputRoot)}`,
 				);

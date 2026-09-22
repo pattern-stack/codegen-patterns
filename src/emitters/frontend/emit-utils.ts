@@ -10,6 +10,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { generating } from '../../utils/generated-file.js';
+
 /**
  * House `@generated` banner. `sourceDesc` describes the input the file was
  * rendered from (e.g. `entities/opportunity.yaml`, `the entity set`).
@@ -34,6 +36,8 @@ export function withBanner(sourceDesc: string, body: string): string {
  * steps stay declarative (build string → write).
  */
 export function writeFile(outPath: string, content: string): void {
-	mkdirSync(dirname(outPath), { recursive: true });
-	writeFileSync(outPath, content);
+	generating(outPath, () => {
+		mkdirSync(dirname(outPath), { recursive: true });
+		writeFileSync(outPath, content);
+	});
 }
