@@ -234,6 +234,10 @@ test-studio:
     ui="{{justfile_directory()}}/tools/studio"
     [ -d "$ui/node_modules" ] || (cd "$ui" && bun install)
     cd "$ui" && bun test src/__tests__
+    # End-to-end (STUDIO-0 §6): boots the real server against a real demo
+    # project and drives the whole loop over HTTP. Sets its own private TMPDIR
+    # (#691), so it is parallel-safe however this recipe is invoked.
+    cd "{{justfile_directory()}}" && bun test/studio/run-studio-e2e.ts
 
 # Run all tests. Docker-free by design — `just test-integration` needs Docker
 # and runs as its own CI job (see .github/workflows/ci.yml) so a Docker flake
