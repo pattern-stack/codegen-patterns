@@ -65,7 +65,7 @@ export class AppModule {}
 |---|---|---|
 | `EventsModule` | `forRoot({ backend, multiTenant?, pools? })` | `backend: 'drizzle' \| 'memory'`. `pools` restricts this process's drain loop to specific event lanes. |
 | `JobsDomainModule` | `forRoot({ backend, multiTenant?, extensions? })` | `backend: 'drizzle' \| 'memory' \| 'bullmq'`. Domain layer (orchestrator, run/step services). `extensions.bullmq` / `extensions.drizzle` are the opt-in backend extras. |
-| `JobWorkerModule` | `forRoot({ mode, backend?, pools?, allPools?, shutdownTimeoutMs? })` | `mode: 'embedded' \| 'standalone'`. `pools` = active pool names this process drains (defaults to all non-reserved). `allPools: true` drains every pool incl. reserved. |
+| `JobWorkerModule` | `forRoot({ mode, backend, pools?, allPools?, shutdownTimeoutMs? })` | `mode: 'embedded' \| 'standalone'`. `backend` is required and must equal your `JobsDomainModule`'s. `pools` = active pool names this process drains (defaults to all non-reserved). `allPools: true` drains every pool incl. reserved. |
 | `CacheModule` | `forRoot({ backend })` | optionally registers a cleanup job when jobs is present. |
 | `StorageModule` | `forRoot({ backend })` | `backend: 'local' \| 'memory'`. Implement S3/GCS by implementing the storage protocol. |
 | `IntegrationModule` | `forRoot({ backend, multiTenant? })` | wires the cursor store / run recorder / differ ports — NOT the orchestrator (that's per-entity; see the `integration` skill). |

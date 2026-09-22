@@ -35,7 +35,7 @@ unless_exists: true
  *
  * STANDALONE ONLY: this entrypoint is for `jobs.worker_mode: standalone`. In
  * embedded mode the worker already runs inside `AppModule` (via the
- * `JobWorkerModule.forRoot({ mode: 'embedded' })` the barrel composes), so
+ * `JobWorkerModule.forRoot({ mode: 'embedded', backend, … })` the barrel composes), so
  * booting this file too would double-spawn the worker against the same pools.
  *
  * DO NOT boot `AppModule` twice in one process: a consumer `AppModule`

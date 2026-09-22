@@ -35,6 +35,11 @@ machine-readable output and `--cwd <path>` to target another project root.
   - `src/generated/schema.ts` — the Drizzle schema barrel
   - `src/generated/app-config.ts` — the config values your app reads at boot
   - the per-entity module tree (`src/modules/<plural>/…` in clean-lite-ps)
+
+  If one of the generated barrels (including `subsystems.ts` /
+  `subsystems-schema.ts`) cannot be written, the command exits 1 and names the
+  file — fix that (a permission, a directory in the way) and re-run. Files
+  that run already wrote (the entity module tree) stay; re-running converges.
 - **Where the runtime comes from** depends on `runtime:` in
   `codegen.config.yaml` (ADR-037):
   - `package` (the default) — generated code imports the runtime straight from

@@ -42,6 +42,7 @@ import {
 import type { EntityDefinition } from '../../schema/entity-definition.schema.js';
 import type { PathsConfig } from '../../schema/codegen-config.schema.js';
 import { deriveJunctionName } from '../../schema/junction-definition.schema.js';
+import { generating } from './generated-file.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -347,20 +348,6 @@ export async function regenerateBarrels(
 	// modules, `backend_src` the clean pipeline's.
 	const paths = configOrDefaults(ctx.config).paths;
 
-	// Entities, relationship modules, and junction modules all produce peer
-	// modules on disk — merge all three into the same deterministic list so the
-	// generated barrel reflects the full module graph. Relationships and junctions
-	// are silently skipped if their dirs don't exist (the common case for projects
-	// that haven't generated any yet).
-	//
-	// All three feed through entityFilePaths() so the import-depth fix from
-	// commit 01bb917 covers junctions automatically.
-	const entities = [
-		...collectEntities(entitiesDir),
-		...collectRelationships(relationshipsDir),
-		...collectJunctions(junctionsDir),
-	].sort((a, b) => a.name.localeCompare(b.name));
-
 	// Compute barrel paths relative to project root so imports line up.
 	const generatedRel = path.relative(cwd, generatedDir) || path.basename(generatedDir);
 	const modulesRel = path.posix.join(
@@ -372,17 +359,40 @@ export async function regenerateBarrels(
 		'schema.ts'
 	);
 
-	const modulesContent = buildModulesBarrel(entities, modulesRel, architecture, paths);
-	const schemaContent = buildSchemaBarrel(entities, schemaRel, architecture, paths);
-
 	const modulesAbs = path.resolve(cwd, modulesRel);
 	const schemaAbs = path.resolve(cwd, schemaRel);
 
+	// JOBS-0 (#655): the app imports both barrels — a failure names the file.
+	//
+	// Entities, relationship modules, and junction modules all produce peer
+	// modules on disk — merge all three into the same deterministic list so the
+	// generated barrel reflects the full module graph. Relationships and junctions
+	// are silently skipped if their dirs don't exist (the common case for projects
+	// that haven't generated any yet).
+	//
+	// All three feed through entityFilePaths() so the import-depth fix from
+	// commit 01bb917 covers junctions automatically.
+	const entities = generating(modulesAbs, () =>
+		[
+			...collectEntities(entitiesDir),
+			...collectRelationships(relationshipsDir),
+			...collectJunctions(junctionsDir),
+		].sort((a, b) => a.name.localeCompare(b.name)),
+	);
+	const modulesContent = generating(modulesAbs, () =>
+		buildModulesBarrel(entities, modulesRel, architecture, paths),
+	);
+	const schemaContent = generating(schemaAbs, () =>
+		buildSchemaBarrel(entities, schemaRel, architecture, paths),
+	);
+
 	let written = false;
 	if (!dryRun) {
-		fs.mkdirSync(path.dirname(modulesAbs), { recursive: true });
-		fs.writeFileSync(modulesAbs, modulesContent);
-		fs.writeFileSync(schemaAbs, schemaContent);
+		generating(modulesAbs, () => {
+			fs.mkdirSync(path.dirname(modulesAbs), { recursive: true });
+			fs.writeFileSync(modulesAbs, modulesContent);
+		});
+		generating(schemaAbs, () => fs.writeFileSync(schemaAbs, schemaContent));
 		written = true;
 	}
 
