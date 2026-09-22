@@ -103,7 +103,8 @@ Every one of these also assumed the target's folder is a sibling (`../<plural>/`
    `modules/<target>.entity.ts`. That branch is deleted; the check is the target's own `moduleDir`.
 6. **The prompt honoured only `paths.entities_dir`.** The CLI resolves `paths.entities ?? paths.entities_dir`. The
    prompts now use the CLI's rule (Found #11). The frontend emitter still reads only `entities_dir`:
-   **#634**.
+   **#634**. (2026-09-18, CLI-0: `paths.entities_dir` is deleted. `paths.entities` is the one key, and the frontend
+   emitter takes the resolved directory as an argument. See `docs/specs/CLI-0.md`.)
 7. **Unit tests that build locals by hand now name their targets.** `src/__tests__/clean-lite-ps/_entity-lookup.ts`
    (`withEntities(base)`) supplies a fixed lookup with declared plurals. That is 8 files, plus the two junction test
    files, which now write endpoint YAMLs into their temp project.

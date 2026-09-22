@@ -29,6 +29,7 @@
  */
 import path from 'node:path';
 
+import { entitiesDirCandidates } from '../../config/entities-dir.js';
 import type { CodegenConfig } from './context.js';
 
 /** Default when `paths.backend_src` is unset. Matches `project init`. */
@@ -41,15 +42,6 @@ const FALLBACK_BACKEND_SRC = 'src';
  * unified (#303 fix #5). Override via `paths.modules_dir`.
  */
 const DEFAULT_MODULES_DIR = 'modules';
-
-/**
- * Default entity-yaml directory for the vendored `connection.yaml`.
- * Spec'd as `definitions/entities/` in #287 (the convention the
- * `examples/auth-integrations` starter ships with). Overridable via
- * `paths.entities` (or legacy `paths.entities_dir`) in
- * `codegen.config.yaml` if the consumer keeps their yaml elsewhere.
- */
-const DEFAULT_DEFINITIONS_DIR = 'definitions/entities';
 
 export interface AuthIntegrationsScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -67,8 +59,8 @@ export interface AuthIntegrationsScaffoldLocals {
 	 */
 	vendorRoot: string;
 	/**
-	 * Where the vendored `connection.yaml` lands. Resolves from
-	 * `paths.definitions` if set, else `<cwd>/definitions/entities/connection.yaml`.
+	 * Where the vendored `connection.yaml` lands: `connection.yaml` in the
+	 * project's entities directory (`src/config/entities-dir.ts`).
 	 */
 	definitionsPath: string;
 	/**
@@ -100,11 +92,9 @@ export interface AuthIntegrationsScaffoldLocalsInput {
  *   `<cwd>/<paths.backend_src>/modules`. The auth-integrations starter
  *   is vendored under `<vendorRoot>/connections/` next to the
  *   codegen-emitted `connection` entity module (#303 fix #5).
- * - `definitionsPath` resolves to `<cwd>/<paths.entities>/connection.yaml`
- *   (or legacy `<cwd>/<paths.entities_dir>/connection.yaml`) if set,
- *   else `<cwd>/definitions/entities/connection.yaml`. (The
- *   `examples/auth-integrations/definitions/entities/connection.yaml`
- *   convention.)
+ * - `definitionsPath` is `connection.yaml` in the entities directory the CLI
+ *   reads (`paths.entities`, else `<cwd>/entities`),
+ *   so `entity new` finds the vendored YAML (#634).
  * - `authModuleRegistered` is detected by reading `app.module.ts` and
  *   substring-checking for `AuthModule.forRoot`. False positives (a
  *   commented-out import) are acceptable: the warning is a hint, not a
@@ -130,26 +120,14 @@ export function resolveAuthIntegrationsScaffoldLocals(
 			? path.resolve(cwd, modulesConfigured)
 			: path.resolve(cwd, backendSrc, DEFAULT_MODULES_DIR);
 
-	// Honor the consumer's configured entity-yaml directory. Order matches
-	// `Context.entitiesDir` resolution: `paths.entities` first, then legacy
-	// `paths.entities_dir`. (Older `paths.definitions` is NOT a real key and
-	// was a hotfix-fixed bug — #303.)
-	// `typeof === 'string'` is load-bearing, not redundant with the type: the CLI
-	// holds raw `yaml.parse` output, so a blank `entities:` key is null at runtime
-	// however it is typed.
-	const configuredPaths = config?.paths;
-	const entitiesConfigured =
-		typeof configuredPaths?.entities === 'string' &&
-		configuredPaths.entities.length > 0
-			? configuredPaths.entities
-			: typeof configuredPaths?.entities_dir === 'string' &&
-				  configuredPaths.entities_dir.length > 0
-				? configuredPaths.entities_dir
-				: null;
-	const definitionsPath =
-		entitiesConfigured !== null
-			? path.resolve(cwd, entitiesConfigured, 'connection.yaml')
-			: path.resolve(cwd, DEFAULT_DEFINITIONS_DIR, 'connection.yaml');
+	// The CLI's entities-directory rule (#634): `paths.entities`, else
+	// `<cwd>/entities`. Its first candidate, not the existence-checked resolver,
+	// so this module stays filesystem-free. (Older `paths.definitions` is NOT a
+	// real key — #303.)
+	const definitionsPath = path.resolve(
+		entitiesDirCandidates(cwd, config?.paths)[0]!,
+		'connection.yaml',
+	);
 
 	const appModulePath = path.resolve(cwd, backendSrc, 'app.module.ts');
 

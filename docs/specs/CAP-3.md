@@ -100,7 +100,7 @@ computed relative to the repository's own folder so a `context:`-nested entity s
 **`Actor`** — `individual` emits `{ kind: 'individual' }`. `group` resolves `members:` against the entity's
 `relationships:`; it must name a `has_many`, whose `foreign_key` gives the column and whose `target` names the
 member entity. That entity's table export and module folder come from **its own YAML** (`plural:`, `context:`),
-read through `createEntityLookup` (`prompt.js` passes one over `paths.entities_dir`, default `entities`) and
+read through `createEntityLookup` (`prompt.js` passes one over the CLI's entities directory, `paths.entities`, default `entities`) and
 `entityModuleNaming` — the one naming rule, which the entity's own emission also uses. Nothing is re-pluralized at
 emit time (Found #9). A self-referential group (`members:` naming a `has_many` back to this entity) uses this
 entity's own table and adds no import:

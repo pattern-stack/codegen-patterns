@@ -3,7 +3,8 @@ to: "<%= typeof clpOutputPaths !== 'undefined' ? clpOutputPaths.deleteUseCase : 
 skip_if: "<%= typeof clpOutputPaths === 'undefined' || !clpOutputPaths.deleteUseCase %>"
 force: true
 ---
-<%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
+<%_ if (typeof clpOutputPaths !== 'undefined') { -%>
+<%- generatedBanner %>
 <% if (hasEmits && deleteEventType) { -%>
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
@@ -67,3 +68,4 @@ export class <%= classNames.deleteUseCase %> {
   }
 }
 <% } -%>
+<%_ } -%>

@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -71,7 +72,7 @@ const eavEntity = { ...baseEntity, eav: true };
 
 describe('clean-lite-ps eav templates — prompt-extension wiring', () => {
   it('exposes paired read use-case class names', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
 
     expect(locals.eavEnabled).toBe(true);
     expect(locals.classNames.findByIdWithFieldsUseCase).toBe(
@@ -83,7 +84,7 @@ describe('clean-lite-ps eav templates — prompt-extension wiring', () => {
   });
 
   it('exposes paired read output paths when eav is true', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
 
     expect(locals.clpOutputPaths.findByIdWithFieldsUseCase).toBe(
       'src/modules/opportunities/use-cases/find-opportunity-by-id-with-fields.use-case.ts',
@@ -94,7 +95,7 @@ describe('clean-lite-ps eav templates — prompt-extension wiring', () => {
   });
 
   it('nulls paired read output paths when eav is omitted (default)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
 
     expect(locals.eavEnabled).toBe(false);
     expect(locals.clpOutputPaths.findByIdWithFieldsUseCase).toBeNull();
@@ -104,7 +105,7 @@ describe('clean-lite-ps eav templates — prompt-extension wiring', () => {
 
 describe('clean-lite-ps eav templates — paired read use cases', () => {
   it('find-by-id-with-fields delegates to service.findByIdWithFields', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('use-cases/find-by-id-with-fields.ejs.t', locals);
 
     expect(output).toContain('export class FindOpportunityByIdWithFieldsUseCase');
@@ -118,7 +119,7 @@ describe('clean-lite-ps eav templates — paired read use cases', () => {
   });
 
   it('list-with-fields delegates to service.listWithFields', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('use-cases/list-with-fields.ejs.t', locals);
 
     expect(output).toContain('export class ListOpportunitiesWithFieldsUseCase');
@@ -131,7 +132,7 @@ describe('clean-lite-ps eav templates — paired read use cases', () => {
 
 describe('clean-lite-ps eav templates — compound-write use cases', () => {
   it('create.ejs.t emits the transactional compound-write shape when eav is true', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('use-cases/create.ejs.t', locals);
 
     // Imports — EAV-specific plumbing.
@@ -169,7 +170,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
   });
 
   it('create.ejs.t preserves the one-line shape when eav is false', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/create.ejs.t', locals);
 
     expect(output).toContain('return this.service.create(dto);');
@@ -179,7 +180,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
   });
 
   it('update.ejs.t emits the transactional compound-write shape when eav is true', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('use-cases/update.ejs.t', locals);
 
     expect(output).toContain(
@@ -199,7 +200,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
   });
 
   it('update.ejs.t preserves the one-line shape when eav is false', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('use-cases/update.ejs.t', locals);
 
     expect(output).toContain('return this.service.update(id, dto);');
@@ -210,7 +211,7 @@ describe('clean-lite-ps eav templates — compound-write use cases', () => {
 
 describe('clean-lite-ps eav templates — service rendering', () => {
   it('injects FieldValueService and emits paired read methods when eav is true', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('service.ejs.t', locals);
 
     expect(output).toContain(
@@ -236,7 +237,7 @@ describe('clean-lite-ps eav templates — service rendering', () => {
   });
 
   it('omits EAV wiring when eav is false (default)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('service.ejs.t', locals);
 
     expect(output).not.toContain('FieldValueService');
@@ -248,7 +249,7 @@ describe('clean-lite-ps eav templates — service rendering', () => {
 
 describe('clean-lite-ps eav templates — controller rendering', () => {
   it('adds GET /with-fields + GET /:id/with-fields routes when eav is true', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).toContain(
@@ -279,7 +280,7 @@ describe('clean-lite-ps eav templates — controller rendering', () => {
   });
 
   it('omits EAV routes when eav is false (default)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('controller.ejs.t', locals);
 
     expect(output).not.toContain('with-fields');
@@ -290,7 +291,7 @@ describe('clean-lite-ps eav templates — controller rendering', () => {
 
 describe('clean-lite-ps eav templates — module rendering', () => {
   it('imports FieldValuesModule and registers paired use cases when eav is true', () => {
-    const locals = buildCleanLitePsLocals(eavEntity, {});
+    const locals = buildCleanLitePsLocals(eavEntity, withEntities());
     const output = render('module.ejs.t', locals);
 
     expect(output).toContain(
@@ -308,7 +309,7 @@ describe('clean-lite-ps eav templates — module rendering', () => {
   });
 
   it('omits EAV wiring when eav is false (default)', () => {
-    const locals = buildCleanLitePsLocals(baseEntity, {});
+    const locals = buildCleanLitePsLocals(baseEntity, withEntities());
     const output = render('module.ejs.t', locals);
 
     expect(output).not.toContain('FieldValuesModule');
@@ -319,7 +320,7 @@ describe('clean-lite-ps eav templates — module rendering', () => {
 describe('clean-lite-ps eav templates — composition with generate.writes', () => {
   it('suppresses compound writes but keeps paired reads when writes:false + eav:true', () => {
     const def = { ...eavEntity, generate: { writes: false } };
-    const locals = buildCleanLitePsLocals(def, {});
+    const locals = buildCleanLitePsLocals(def, withEntities());
 
     expect(locals.generateWrites).toBe(false);
     expect(locals.eavEnabled).toBe(true);

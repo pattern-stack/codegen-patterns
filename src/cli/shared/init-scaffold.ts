@@ -959,7 +959,7 @@ export async function buildInitPlan(
 			runtime: runtimeMode,
 			paths: {
 				backend_src: 'src',
-				entities_dir: 'entities',
+				entities: 'entities',
 				events_dir: 'events',
 				generated: 'src/generated',
 			},

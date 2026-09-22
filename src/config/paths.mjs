@@ -65,6 +65,10 @@ export const BASE_PATHS = {
   // Backend base
   backendSrc: projectConfig?.paths?.backend_src ?? "app/backend/src",
 
+  // Where entity YAMLs live — `paths.entities` (#634: one key, one reader).
+  // Read by `loadOwnedTableNames` (#636), which runs inside the hygen prompt.
+  entitiesDir: projectConfig?.paths?.entities ?? "entities",
+
   // Frontend base
   frontendSrc: projectConfig?.paths?.frontend_src ?? "app/frontend/src",
 
@@ -73,9 +77,6 @@ export const BASE_PATHS = {
 
   // Schema directory (relative to backendSrc)
   schemaDir: projectConfig?.paths?.schema_dir ?? "infrastructure/persistence/drizzle",
-
-  // Entity definitions directory
-  entitiesDir: projectConfig?.paths?.entities_dir ?? "entities",
 
   // Manifest output directory
   manifestDir: projectConfig?.paths?.manifest_dir ?? ".codegen",

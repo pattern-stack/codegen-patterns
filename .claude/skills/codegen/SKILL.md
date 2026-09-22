@@ -38,9 +38,9 @@ If this file disagrees with those, they win — fix this file.
 
 ```bash
 codegen entity new <yaml>                 # one entity
-codegen entity new --all                  # every YAML under paths.entities_dir (default entities/)
+codegen entity new --all                  # every YAML under paths.entities (default entities/)
 codegen entity new --all --only <names>   # subset
-codegen entity new --all --dry-run | --force | --continue-on-error
+codegen entity new --all --dry-run | --force | --no-continue-on-error
 codegen entity list [--pattern <P>] [--format json]
 codegen entity validate [dir] [--strict]  # schema + cross-refs; --strict fails on warnings
 
@@ -50,9 +50,13 @@ codegen junction new <yaml> | --all       # junctions/ — first-class M:N with 
 codegen junction list
 ```
 
+`entity new` pre-flights each target (schema, `emits:`, `roles:`) and prints every rejection with its reasons in every
+mode; `--json` carries them in `failed[].details`. Continue-on-error is the default: rejected entities are skipped
+and the run exits 1. With `--no-continue-on-error` a pre-flight rejection stops the run before anything is generated (#627).
+
 **Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
 `eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +
-folder) and `context:` (folder nesting), read from `paths.entities` / `paths.entities_dir` / `entities/` (the first that exists — the CLI's rule,
+folder) and `context:` (folder nesting), read from `paths.entities` / `entities/` (the first that exists — the CLI's rule,
 `src/config/entities-dir.ts`). A target with no YAML there is a **generation error** naming the directory searched;
 for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML — or one not
 generated yet — is not wired (the two-pass `targetExists` check), not an error.
@@ -220,7 +224,7 @@ Top-level keys: `runtime`, `paths`, `locations`, `generate`, `naming`,
 runtime: package
 paths:
   backend_src: src
-  entities_dir: entities
+  entities: entities                # entity YAML directory; default entities/
   generated: src/generated
   events_dir: events              # default <cwd>/events
   jobs_dir: definitions/jobs      # default
@@ -279,10 +283,16 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
   `templates/entity/new/clean-lite-ps/` = clean-lite-ps). Frontend and integration: TS emitters in `src/emitters/`.
 - Gates: `just test-unit`, `just test-baseline` (regenerate snapshots when output
   changes intentionally), `just test-smoke`, `just test-post-publish` (tarball).
-- The smoke harness filters tsc output. `filterConsumerErrors` drops any line
-  containing `../` or `node_modules/`, so a passing smoke does not rule out broken
-  relative imports (#576). To be sure, run `KEEP_SMOKE_DIR=1` and then an
-  unfiltered `bunx tsc --noEmit --skipLibCheck` in the kept directory.
+- Every smoke fails on any `tsc` diagnostic located in the project it generated.
+  `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** (outside
+  that project, or in `node_modules`), never by message or directory (GATE-2, #604).
+- clean-lite-ps bodies render under `architecture: clean` too (`skip_if` stops the
+  write, not the render). Each body opens with one guard,
+  `<%_ if (typeof clpOutputPaths !== 'undefined') { -%>`, and inside it every local is
+  referenced **unguarded**: never `typeof x !== 'undefined' ? x : <fallback>`. A missing
+  local must throw (#638, grep-asserted in `src/__tests__/clean-lite-ps/strict-locals.test.ts`).
+  A new runtime import specifier goes in `runtimeImportLocals` (`src/config/runtime-mode.mjs`);
+  unit tests get the prompt-owned locals from `withEntities()` (`src/__tests__/clean-lite-ps/_entity-lookup.ts`).
 - Releases: a version bump merged to main publishes. If the version is already on
   npm, the CI publish job is a **green no-op** — always bump alongside
   consumer-visible changes, and add a `CHANGELOG.md` entry.

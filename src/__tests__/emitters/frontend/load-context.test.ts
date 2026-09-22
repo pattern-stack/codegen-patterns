@@ -194,7 +194,7 @@ describe('loadFrontendEmitContext — registry + parsed loading', () => {
 
 describe('loadFrontendEmitContext — zero entities skips', () => {
 	it('returns a skip reason when the entities dir has no YAML', () => {
-		const empty = resolve(import.meta.dir, '__no_such_entities_dir__');
+		const empty = resolve(import.meta.dir, '__no_such_entities__');
 		const r = loadFrontendEmitContext(empty, {}, { entitiesDir: empty });
 		expect(r.skip).toBeDefined();
 		expect(r.ctx).toBeUndefined();

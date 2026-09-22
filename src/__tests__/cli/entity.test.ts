@@ -373,13 +373,18 @@ describe('entity noun — new --dry-run', () => {
 				root,
 			]),
 		);
-		expect(result).toBe(0);
+		// The valid entity is still planned; the rejected one fails the run, as it
+		// would a real run.
+		expect(result).toBe(1);
 		const parsed = JSON.parse(out);
 		expect(parsed.command).toBe('entity new');
 		expect(parsed.totals.planned).toBe(1);
 		expect(parsed.totals.invalid).toBe(1);
 		const names = (parsed.entities as Array<{ name: string }>).map((e) => e.name);
 		expect(names).toContain('contact');
+		expect(parsed.invalid).toHaveLength(1);
+		expect(parsed.invalid[0].name).toBe('example.yaml');
+		expect(parsed.invalid[0].message.length).toBeGreaterThan(0);
 	});
 
 	test('--all --no-continue-on-error restores fatal exit for invalid YAML', async () => {
@@ -403,6 +408,193 @@ describe('entity noun — new --dry-run', () => {
 			]),
 		);
 		expect(result).toBe(1);
+	});
+});
+
+/** Run the CLI capturing stdout and stderr separately (text mode). */
+function captureStreams<T>(
+	fn: () => Promise<T>,
+): Promise<{ result: T; out: string; err: string }> {
+	const out: string[] = [];
+	const err: string[] = [];
+	const decode = (d: string | Uint8Array) =>
+		typeof d === 'string' ? d : new TextDecoder().decode(d);
+	const origOut = process.stdout.write.bind(process.stdout);
+	const origErrWrite = process.stderr.write.bind(process.stderr);
+	const origLog = console.log;
+	const origError = console.error;
+	const origWarn = console.warn;
+	process.stdout.write = ((d: string | Uint8Array) => {
+		out.push(decode(d));
+		return true;
+	}) as typeof process.stdout.write;
+	process.stderr.write = ((d: string | Uint8Array) => {
+		err.push(decode(d));
+		return true;
+	}) as typeof process.stderr.write;
+	console.log = (...a: unknown[]) => void out.push(a.map(String).join(' ') + '\n');
+	console.error = (...a: unknown[]) => void err.push(a.map(String).join(' ') + '\n');
+	console.warn = (...a: unknown[]) => void err.push(a.map(String).join(' ') + '\n');
+	return (async () => {
+		try {
+			const result = await fn();
+			return { result, out: out.join(''), err: err.join('') };
+		} finally {
+			process.stdout.write = origOut;
+			process.stderr.write = origErrWrite;
+			console.log = origLog;
+			console.error = origError;
+			console.warn = origWarn;
+		}
+	})();
+}
+
+// #627: the reason a target was rejected is printed in every mode.
+// `--continue-on-error` (the default) decides whether the run stops, never
+// whether the reason is shown.
+describe('entity noun — new reports every pre-flight rejection', () => {
+	function mkInvalidProject(): string {
+		const root = mkSelfContainedProject();
+		tempDirs.push(root);
+		// `config:` at the YAML root instead of inside `entity:` — the CAP-1 miss.
+		fs.writeFileSync(
+			path.join(root, 'entities', 'bad.yaml'),
+			[
+				'entity:',
+				'  name: bad',
+				'  plural: bads',
+				'  table: bads',
+				'config:',
+				'  x: 1',
+				'fields:',
+				'  title:',
+				'    type: string',
+				'',
+			].join('\n'),
+		);
+		return root;
+	}
+
+	test('default mode: one invalid YAML prints its reason and exits 1', async () => {
+		const root = mkInvalidProject();
+		const cli = buildCli();
+		const { result, err } = await captureStreams(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'bad.yaml'),
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+		expect(err).toContain('bad.yaml');
+		expect(err).toContain("'config'");
+	});
+
+	test('JSON mode: the rejection and its details are in the payload', async () => {
+		const root = mkInvalidProject();
+		const cli = buildCli();
+		const { result, out } = await captureStreams(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'bad.yaml'),
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+		const parsed = JSON.parse(out);
+		expect(parsed.totals.failed).toBe(1);
+		expect(parsed.failed[0].name).toBe('bad.yaml');
+		expect(parsed.failed[0].details.join('\n')).toContain("'config'");
+	});
+
+	test('--no-continue-on-error --json stops before generating and says why', async () => {
+		const root = mkInvalidProject();
+		const cli = buildCli();
+		const { result, out } = await captureStreams(() =>
+			cli.run([
+				'entity',
+				'new',
+				'--all',
+				'--force',
+				'--json',
+				'--no-continue-on-error',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+		const parsed = JSON.parse(out);
+		expect(parsed.stopped).toBe('pre-flight');
+		expect(parsed.failed.map((f: { name: string }) => f.name)).toEqual(['bad.yaml']);
+		expect(fs.existsSync(path.join(root, 'src'))).toBe(false);
+	});
+
+	test('an invalid emits: rejects the entity with its reason in default mode', async () => {
+		const root = mkSelfContainedProject();
+		tempDirs.push(root);
+		fs.appendFileSync(
+			path.join(root, 'entities', 'note.yaml'),
+			'emits:\n  - no_such_event\n',
+		);
+		const cli = buildCli();
+		const { result, err } = await captureStreams(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'note.yaml'),
+				'--dry-run',
+				'--force',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+		expect(err).toContain('note.yaml — emits: validation failed');
+		expect(err).toContain("emits 'no_such_event' has no matching");
+	});
+
+	test('an entity with emits: and roles: errors reports both', async () => {
+		const root = mkSelfContainedProject();
+		tempDirs.push(root);
+		fs.appendFileSync(
+			path.join(root, 'entities', 'note.yaml'),
+			[
+				'emits:',
+				'  - no_such_event',
+				'roles:',
+				'  author:',
+				'    target: nobody',
+				'    cardinality: one',
+				'',
+			].join('\n'),
+		);
+		const cli = buildCli();
+		const { result, out } = await captureStreams(() =>
+			cli.run([
+				'entity',
+				'new',
+				path.join(root, 'entities', 'note.yaml'),
+				'--dry-run',
+				'--force',
+				'--json',
+				'--cwd',
+				root,
+			]),
+		);
+		expect(result).toBe(1);
+		const parsed = JSON.parse(out);
+		expect(parsed.invalid).toHaveLength(1);
+		expect(parsed.invalid[0].message).toBe('emits: and roles: validation failed');
+		const details = parsed.invalid[0].details.join('\n');
+		expect(details).toContain("emits 'no_such_event'");
+		expect(details).toContain('nobody');
 	});
 });
 

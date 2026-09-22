@@ -10,7 +10,7 @@
  *      were rejected ("Unrecognized key(s) in object: 'surface' at 'entity'").
  *      Root-level placement is a clean break — it no longer validates.
  *
- *   2. With `entities_dir: definitions`, the recursive YAML walk used to pull in
+ *   2. With `paths.entities: definitions`, the recursive YAML walk used to pull in
  *      `definitions/providers/*.yaml` and run them through the ENTITY loader,
  *      where they fail validation. Entity discovery must exclude the providers
  *      subtree; provider files route ONLY through ProviderDefinitionSchema.

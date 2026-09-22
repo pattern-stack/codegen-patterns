@@ -104,7 +104,7 @@ export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
  * - `backend_src`: backend source root. Default `src` (`app/backend/src` under
  *   the `clean` architecture's own defaults).
  * - `frontend_src`: frontend source root (ADR-038 emitter).
- * - `entities` / `entities_dir`: where entity YAML is read from.
+ * - `entities`: where entity YAML is read from (`src/config/entities-dir.ts`).
  * - `events_dir` / `jobs_dir` / `providers`: definition roots for the events,
  *   jobs (RFC-0005) and integration-provider (RFC-0001) loaders.
  * - `subsystems`: install root for vendored subsystem runtime files.
@@ -118,7 +118,6 @@ export const PathsConfigSchema = z
     backend_src: z.string().optional(),
     frontend_src: z.string().optional(),
     entities: z.string().optional(),
-    entities_dir: z.string().optional(),
     events_dir: z.string().optional(),
     jobs_dir: z.string().optional(),
     providers: z.string().optional(),
