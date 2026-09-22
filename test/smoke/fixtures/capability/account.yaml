@@ -4,7 +4,10 @@
 # selection is by contribution, not position (ADR-041 §2). Four capabilities
 # layer over it, so codegen emits `<Entity>ComposedBase` rather than a
 # four-deep inline `extends`. `Actor` (the last, so the outermost layer) is
-# what lets a meeting's `about` role point here (CAP-2).
+# what lets a meeting's `about` role point here (CAP-2). It is the library
+# `Actor` as a GROUP (CAP-3): its members are its contacts, named by the
+# `has_many` below, which codegen resolves to the `contacts` table and its
+# `account_id` FK for `memberPredicate`.
 #
 # The `Integrated` spine also emits the `AccountIntegrationWrite` /
 # `AccountIntegrationProjection` interfaces INTO the repository file, which the
@@ -21,6 +24,9 @@ entity:
   config:
     Group:
       membersColumn: status
+    Actor:
+      kind: group
+      members: contacts
 
 fields:
   name:
@@ -36,6 +42,12 @@ fields:
 
 behaviors:
   - timestamps
+
+relationships:
+  contacts:
+    type: has_many
+    target: contact
+    foreign_key: account_id
 
 queries:
   - by: [status]

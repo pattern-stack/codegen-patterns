@@ -30,24 +30,14 @@ import { validateOrchestrationProject } from '../../patterns/validate-orchestrat
 // Side-effect: pre-register library domain patterns.
 import '../../patterns/index.ts';
 import {
-	ActivityPattern,
-	BasePattern,
-	JunctionPattern,
-	KnowledgePattern,
-	MetadataPattern,
-	IntegratedPattern,
+	LIBRARY_PATTERN_DEFINITIONS,
 } from '../../patterns/library/index.ts';
 
 // Re-seed library patterns once this file finishes so subsequent test
 // files in the same Bun process see the canonical registry.
 afterAll(() => {
 	_resetRegistryForTests({ includeLibrary: true });
-	registerLibraryPattern(BasePattern);
-	registerLibraryPattern(IntegratedPattern);
-	registerLibraryPattern(ActivityPattern);
-	registerLibraryPattern(KnowledgePattern);
-	registerLibraryPattern(MetadataPattern);
-	registerLibraryPattern(JunctionPattern);
+	for (const p of LIBRARY_PATTERN_DEFINITIONS) registerLibraryPattern(p);
 });
 
 // ============================================================================

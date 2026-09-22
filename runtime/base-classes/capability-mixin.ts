@@ -88,3 +88,19 @@ export type EntityOf<TBase extends RepositoryCtor> =
  */
 export type TableOf<TBase extends RepositoryCtor> =
 	RepositoryOf<TBase> extends BaseRepository<infer _TEntity, infer TTable> ? TTable : PgTable;
+
+/**
+ * The constructor a capability mixin returns, typed by the surface it adds.
+ *
+ * A mixin compiled with declarations (every mixin shipped in `runtime/`) must
+ * annotate its return type: TypeScript cannot emit the anonymous class type of
+ * a mixin whose base carries `protected` members, and every repository base
+ * does (TS4094, CAP-3). Annotate as `TBase & CapabilityCtor<TheSurface>`,
+ * where `TheSurface` is an exported interface of the mixin's public members.
+ * An interface cannot carry `protected` members, so a config property the
+ * generated repository fills is public on such a mixin — the repository emits
+ * it with `override readonly`, which also overrides a `protected` declaration
+ * (a consumer-authored mixin compiled without declarations may keep that).
+ */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+export type CapabilityCtor<TSurface> = abstract new (...args: any[]) => TSurface;

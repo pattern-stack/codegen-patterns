@@ -355,9 +355,9 @@ An entity composes **one inheritable spine** (a domain pattern: `Base`, `Integra
 
 ```yaml
 entity:
-  patterns: [Actor, Integrated, Communication]   # spine found by contribution, not position
+  patterns: [Actor, Integrated]                  # spine found by contribution, not position
   config:
-    Actor: { kind: group }                       # per-capability config
+    Actor: { kind: group, members: contacts }    # per-capability config
 ```
 
 - The spine is whichever declared domain pattern contributes a repository/service class —
@@ -371,12 +371,16 @@ entity:
   are checked for name collisions against each other, the `queries:` methods and the
   relationship forwarders **at generation time**.
 - A capability's `config:` block lands on the generated repository as a property its mixin
-  declares (`<camelName>Config` by default).
+  declares (`<camelName>Config` by default), emitted `override readonly`.
+- A pattern name is unique across library and app patterns: an app pattern that reuses a library
+  name (`Actor`, `Integrated`, …) is refused at load, never a silent override.
 
 Write a capability mixin against `@pattern-stack/codegen/runtime/base-classes/capability-mixin`
 (`@shared/base-classes/capability-mixin` in vendored mode) — it ships the constructor constraint
 and the `EntityOf` / `TableOf` helpers that keep a capability method's signature concrete through
-the chain.
+the chain. A mixin compiled with declarations annotates its return type as
+`TBase & CapabilityCtor<Surface>` (an interface of its public members): TypeScript cannot emit the
+anonymous class type of a mixin over a repository's `protected` members.
 
 ## Roles — named edges to actor entities (`roles:`)
 
@@ -401,8 +405,37 @@ roles:
 - **`cardinality: many`** names the junction that owns the edge (`via:` must be `<entity>_<target>` or
   `<target>_<entity>`, and exist in `junctions/`). It emits nothing itself.
 - Every `target` must declare the **`Actor`** capability in its `patterns:`; an entity with `roles:` must declare
-  **`Communication`**, and vice versa. These are `kind: 'capability'` patterns — declare your own until the library
-  ships them.
+  **`Communication`**, and vice versa. Both are library capabilities (ADR-041.1).
+
+### `Communication` and `Actor`
+
+`Communication` has no `config:` — its configuration is the `roles:` block, which codegen resolves (FK columns,
+the junction's table) into `communicationConfig` on the repository. It adds, on the repository and forwarded on
+the service:
+
+- `findByRole(role, actorId)` — `role` typed to the declared role names; the rows in which `actorId` occupies `role` (`findByRole('attendees', contactId)` →
+  the meetings that contact attended). One statement; a many-role is an `EXISTS` over the junction.
+- `participants(id)` — `{ role, target, id }[]` for every role of one row, ids only (hydrate through relations),
+  one `UNION ALL`.
+
+`Actor` says what kind of actor an entity is:
+
+```yaml
+entity:
+  name: account
+  patterns: [Actor]
+  config:
+    Actor: { kind: group, members: contacts }    # or { kind: individual }; config is required
+relationships:
+  contacts: { type: has_many, target: contact, foreign_key: account_id }   # what members: names
+```
+
+Its repository gains `memberPredicate(actorId)` — "this row is, or contains, `actorId`" as a predicate over its
+own table (identity for an individual; for a group, an `EXISTS` over the member table): e.g.
+`accounts.list({ where: accounts.memberPredicate(contactId) })`. It is not forwarded to the service.
+
+Every one of these reads runs through the repository's scoped `baseQuery()` — tenant scope and soft-delete apply
+exactly as they do to `findById`; none takes a scope parameter.
 
 Role errors fail `entity new` for the offending entity (a role's target lives in another file, so the CLI checks
 them before generating) and are reported by `entity validate`.

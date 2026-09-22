@@ -249,6 +249,18 @@ function loadCodegenConfig(cwd) {
   }
 }
 
+/** `paths.entities_dir` from codegen.config.yaml, when set. */
+function readEntitiesDirSetting(cwd) {
+  const configPath = path.resolve(cwd, "codegen.config.yaml");
+  if (!fs.existsSync(configPath)) return null;
+  try {
+    const dir = yaml.parse(fs.readFileSync(configPath, "utf-8"))?.paths?.entities_dir;
+    return typeof dir === "string" && dir.length > 0 ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Normalize behavior config (string or object with name/options)
  */
@@ -1784,8 +1796,19 @@ export default {
       // import per pattern file) and matches the two-process load story
       // the registry tests pin down.
       await ensurePatternsRegistryLoaded();
-      const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
-      Object.assign(locals, buildCleanLitePsLocals(definition, locals));
+      const { buildCleanLitePsLocals, createEntityLookup } = await import('./clean-lite-ps/prompt-extension.js');
+      // Cross-entity facts (a group Actor's member entity's `plural:` /
+      // `context:`, ADR-041.1) are read from that entity's own YAML — lazily,
+      // only when a reference needs one. Same entities-dir rule as the
+      // frontend emitter (`paths.entities_dir`, default `entities`).
+      const entitiesDir = path.resolve(
+        process.cwd(),
+        readEntitiesDirSetting(process.cwd()) ?? 'entities',
+      );
+      Object.assign(
+        locals,
+        buildCleanLitePsLocals(definition, { ...locals, entityLookup: createEntityLookup(entitiesDir) }),
+      );
     } else {
       // Inject safe stub locals so CLP template bodies can render without crashing.
       // The to: guard resolves to "null" which causes Hygen to skip file writing.

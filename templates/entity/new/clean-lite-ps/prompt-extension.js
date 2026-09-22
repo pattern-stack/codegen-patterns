@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pluralizePkg from 'pluralize';
+import yaml from 'yaml';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
@@ -21,6 +22,10 @@ import {
 } from '../../../../src/patterns/compose.js';
 import '../../../../src/patterns/library/index.js';
 import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
+import {
+  ACTOR_CAPABILITY,
+  COMMUNICATION_CAPABILITY,
+} from '../../../../src/roles/derive.js';
 
 // ============================================================================
 // Pattern registry resolution
@@ -46,8 +51,90 @@ function renderPatternConfigLiteral(value, indent = '  ', initialIndent = '') {
   return _renderLiteral(value, indent, initialIndent);
 }
 
+/**
+ * A config value that is a TypeScript identifier rather than a string — a
+ * Drizzle table handle a library capability's resolved config carries
+ * (`via: { table: meetingContacts }`, ADR-041.1). `_renderLiteral` writes it
+ * bare; the resolver that produced it also returns the import.
+ *
+ * The marker is a module-private Symbol key, so no value parsed from YAML (an
+ * app capability's verbatim `config:`) can ever be mistaken for one.
+ */
+const IDENTIFIER_REF = Symbol('codegen.identifierRef');
+
+export function identifierRef(name) {
+  return { [IDENTIFIER_REF]: name };
+}
+
+function isIdentifierRef(value) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof value[IDENTIFIER_REF] === 'string'
+  );
+}
+
+/**
+ * An entity's module naming, from its OWN `entity:` block — the rule its own
+ * emission uses (`buildCleanLitePsLocals`), so a cross-entity reference and the
+ * referenced entity agree by construction: `plural:` (else `pluralize(name)`)
+ * is both the table export and the module folder, nested under `context:`.
+ */
+export function entityModuleNaming(entityBlock, srcRoot) {
+  const plural = entityBlock.plural || pluralize(entityBlock.name);
+  const groupDir = entityBlock.context
+    ? `${srcRoot}/modules/${entityBlock.context}`
+    : `${srcRoot}/modules`;
+  return {
+    plural,
+    moduleGroupDir: groupDir,
+    entityFile: `${groupDir}/${plural}/${entityBlock.name}.entity`,
+  };
+}
+
+/**
+ * Look up another entity's `entity:` block by name from the project's entity
+ * YAMLs (`<cwd>/<paths.entities_dir | 'entities'>`, the frontend emitter's
+ * rule). Lazy and cached: the directory is read only when a cross-entity
+ * reference needs a fact the referencing YAML does not state (ADR-041.1: a
+ * group Actor's member entity). Parsed with `yaml` directly, as `prompt.js`
+ * parses every entity — the zod-backed registry does not ship to consumers.
+ *
+ * Exported for unit-testing; `prompt.js` passes one as `entityLookup`.
+ */
+export function createEntityLookup(entitiesDir) {
+  let byName = null;
+  const load = () => {
+    byName = new Map();
+    const walk = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (/\.ya?ml$/.test(e.name)) {
+          try {
+            const doc = yaml.parse(fs.readFileSync(full, 'utf-8'));
+            if (doc && doc.entity && typeof doc.entity.name === 'string') {
+              byName.set(doc.entity.name, doc.entity);
+            }
+          } catch {
+            // A malformed YAML is reported by the CLI's own validation; it is
+            // simply not resolvable here.
+          }
+        }
+      }
+    };
+    walk(entitiesDir);
+  };
+  return (name) => {
+    if (!byName) load();
+    return byName.get(name) ?? null;
+  };
+}
+
 function _renderLiteral(value, baseIndent, currentIndent) {
   if (value === null) return 'null';
+  if (isIdentifierRef(value)) return value[IDENTIFIER_REF];
   if (typeof value === 'string') {
     // Single-quoted TS string with \\ + ' escapes. Matches ADR-031 example style.
     return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -71,6 +158,139 @@ function _renderLiteral(value, baseIndent, currentIndent) {
   }
   // Anything else — fall back to a safe JSON serialization.
   return JSON.stringify(value);
+}
+
+/**
+ * Resolve a library capability's repository config (ADR-041.1, CAP-3).
+ *
+ * CAP-1's hand-off renders a capability's `config:` block verbatim. The two
+ * library capabilities need more: their mixins read Drizzle tables and column
+ * keys, and the YAML names neither — it names roles, junctions and has_many
+ * relationships. This resolves those names, once, at generation:
+ *
+ *   - `Communication` → `{ roles: { <role>: edge } }` from the `roles:` block.
+ *     A one-role's column is its `clpBelongsTo` entry's `camelField` — the FK
+ *     CAP-2 already derived, not a second derivation. A many-role's junction is
+ *     addressed by `junction new`'s naming rules (table
+ *     `camelCase(pluralize(via))`, file `modules/<plural>/<via>.entity`, FK
+ *     columns `<entity>_id`), which have no YAML override.
+ *   - `Actor` → `{ kind }`, plus for a group the member table + FK of the
+ *     `has_many` that `members:` names.
+ *
+ * Returns `null` for any other capability (its config stays verbatim), else
+ * `{ config, imports }`. Throws — a generation error, ADR-041 §4's posture — on
+ * a missing or invalid `Actor` config, a `members:` that is not a has_many, or
+ * a `Communication` entity with no roles.
+ *
+ * Exported for unit-testing.
+ */
+export function resolveLibraryCapabilityConfig(cap, ctx) {
+  const {
+    entityName,
+    entityNamePlural,
+    definition,
+    relationships,
+    belongsTo,
+    repositoryDir,
+    srcRoot,
+    entityLookup,
+  } = ctx;
+  const importFrom = (target) => {
+    const rel = path.posix.relative(repositoryDir, target);
+    return rel.startsWith('.') ? rel : `./${rel}`;
+  };
+  const modulesRoot = `${srcRoot}/modules`;
+
+  if (cap.name === COMMUNICATION_CAPABILITY) {
+    const declared = definition.roles || {};
+    const roles = {};
+    const imports = [];
+    for (const [role, def] of Object.entries(declared)) {
+      if (def.cardinality === 'one') {
+        const fk = belongsTo.find((r) => r.role === role);
+        if (!fk) {
+          throw new Error(
+            `[codegen] '${entityName}' role '${role}': no derived belongs_to — was the roles: block merged?`,
+          );
+        }
+        roles[role] = { cardinality: 'one', target: def.target, column: fk.camelField };
+        continue;
+      }
+      const junctionPlural = pluralize(def.via);
+      const table = camelCase(junctionPlural);
+      roles[role] = {
+        cardinality: 'many',
+        target: def.target,
+        via: {
+          table: identifierRef(table),
+          self: camelCase(`${entityName}_id`),
+          target: camelCase(`${def.target}_id`),
+        },
+      };
+      imports.push({
+        name: table,
+        importPath: importFrom(`${modulesRoot}/${junctionPlural}/${def.via}.entity`),
+      });
+    }
+    if (Object.keys(roles).length === 0) {
+      throw new Error(
+        `[codegen] '${entityName}' declares the '${COMMUNICATION_CAPABILITY}' capability but no roles: — ` +
+          `the two imply each other.`,
+      );
+    }
+    return { config: { roles }, imports };
+  }
+
+  if (cap.name === ACTOR_CAPABILITY) {
+    const parsed = cap.configSchema ? cap.configSchema.safeParse(cap.config ?? undefined) : null;
+    if (!parsed || !parsed.success) {
+      const detail = parsed
+        ? parsed.error.issues.map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`).join(', ')
+        : 'no config schema';
+      throw new Error(
+        `[codegen] '${entityName}' declares the '${ACTOR_CAPABILITY}' capability, whose config is ` +
+          `required: config: { ${ACTOR_CAPABILITY}: { kind: individual } } or ` +
+          `{ kind: group, members: <has_many relationship> } (${detail}).`,
+      );
+    }
+    const config = parsed.data;
+    if (config.kind === 'individual') return { config: { kind: 'individual' }, imports: [] };
+    const members = relationships[config.members];
+    if (!members || members.type !== 'has_many') {
+      throw new Error(
+        `[codegen] '${entityName}' ${ACTOR_CAPABILITY} members: '${config.members}' must name one of ` +
+          `its has_many relationships.`,
+      );
+    }
+    const foreignKey = camelCase(members.foreign_key);
+    // A self-referential group (members of an account are accounts): the
+    // table is this entity's own, already imported by the repository.
+    if (members.target === entityName) {
+      return {
+        config: { kind: 'group', members: { table: identifierRef(entityNamePlural), foreignKey } },
+        imports: [],
+      };
+    }
+    // The member entity's table export and module folder come from ITS YAML
+    // (`plural:`, `context:`) — never re-pluralized here (charter I1).
+    const target = entityLookup ? entityLookup(members.target) : null;
+    if (!target) {
+      throw new Error(
+        `[codegen] '${entityName}' ${ACTOR_CAPABILITY} members: '${config.members}' targets ` +
+          `'${members.target}', which has no entity YAML in the entities directory.`,
+      );
+    }
+    const naming = entityModuleNaming(target, srcRoot);
+    return {
+      config: {
+        kind: 'group',
+        members: { table: identifierRef(naming.plural), foreignKey },
+      },
+      imports: [{ name: naming.plural, importPath: importFrom(naming.entityFile) }],
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -1169,7 +1389,10 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   const entityName = entity.name;
   const entityNamePascal = pascalCase(entityName);
-  const entityNamePlural = entity.plural || pluralize(entityName);
+  // One naming rule for this entity and for any entity that references it
+  // (`entityModuleNaming`).
+  const ownNaming = entityModuleNaming(entity, srcRoot);
+  const entityNamePlural = ownNaming.plural;
   const entityNamePluralPascal = pascalCase(entityNamePlural);
 
   // #403: bounded-context folder grouping. `entity.context:` nests this
@@ -1180,9 +1403,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
   // the generated barrel recomputes its import paths from the full file paths
   // below. The module-folder base used by every clpOutputPaths entry:
   const entityContext = entity.context || null;
-  const moduleGroupDir = entityContext
-    ? `${srcRoot}/modules/${entityContext}`
-    : `${srcRoot}/modules`;
+  const moduleGroupDir = ownNaming.moduleGroupDir;
 
   // Generation toggles — `generate.writes` defaults to true so consumers who
   // regenerate pick up create/update/delete use cases without YAML changes.
@@ -1281,6 +1502,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
         configProperty: cap.configProperty || `${camelCase(cap.name.charAt(0).toLowerCase() + cap.name.slice(1))}Config`,
         config: capConfigBlock,
         hasConfig: hasCapConfig,
+        // Read by `resolveLibraryCapabilityConfig` to validate at generation.
+        configSchema: cap.configSchema,
       });
     }
     for (const method of cap.forwarderMethods ?? []) {
@@ -1368,6 +1591,33 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
   // Process has_many relationships (CGP-358b)
   const hasMany = processHasMany(relationships, entityNamePlural, fs, path, srcRoot);
+
+  // ADR-041.1 — the two library capabilities' configs are RESOLVED, not copied:
+  // `Communication`'s comes from `roles:` (never authored), `Actor`'s `members:`
+  // names a has_many whose table + FK codegen looks up. The result replaces the
+  // verbatim `config:` block on the matching `capabilityMixins` entry, and the
+  // tables it references become repository imports.
+  const capabilityConfigImports = [];
+  for (const cap of capabilityMixins) {
+    const resolved = resolveLibraryCapabilityConfig(cap, {
+      entityName,
+      entityNamePlural,
+      definition,
+      relationships,
+      belongsTo,
+      repositoryDir: `${moduleGroupDir}/${entityNamePlural}`,
+      srcRoot,
+      entityLookup: baseLocals?.entityLookup,
+    });
+    if (!resolved) continue;
+    cap.config = resolved.config;
+    cap.hasConfig = true;
+    for (const imp of resolved.imports) {
+      if (!capabilityConfigImports.some((i) => i.name === imp.name)) {
+        capabilityConfigImports.push(imp);
+      }
+    }
+  }
 
   // Issue #41 — warn when a soft-delete entity declares non-restrict on_delete on any
   // belongs_to relation. The FK constraint applies to hard-delete only;
@@ -1810,6 +2060,7 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     // exactly the string the template used to build inline.
     capabilityMixins,
     capabilityForwarders,
+    capabilityConfigImports,
     composedBaseClass,
     composedBaseImport,
     repositoryExtendsClause,

@@ -188,7 +188,7 @@ measured as unavoidable (§M2, §M3) and each the same idiom the shipped `WithAn
 ```ts
 export function WithX<TBase extends RepositoryCtor>(Base: TBase) {
   abstract class XMixin extends Base {
-    protected readonly xConfig?: XConfig;                 // filled by the generated repository
+    protected readonly xConfig?: XConfig;                 // filled by the generated repository (public in a runtime-shipped mixin — CAP-3)
     async something(id: string): Promise<Array<EntityOf<TBase>>> {
       const rows = await this.baseQuery(eq(this.col('id'), id));   // ALS-scoped by baseQuery (I3)
       return rows as Array<EntityOf<TBase>>;
@@ -241,8 +241,12 @@ Per-capability config (ADR-041 §6 "config hand-off"): when the capability decla
 supplies `config: { <Cap>: {…} }`, the repository emits
 
 ```ts
-  protected override readonly groupConfig = { … } as const;
+  override readonly groupConfig = { … } as const;
 ```
+
+> Changed in CAP-3 (#629): emitted **public** `override readonly`, not `protected override readonly`. A mixin
+> shipped in `runtime/` must declare its surface through an interface (TS4094 under declaration emit), which
+> cannot carry `protected`. A public override still fills a consumer mixin's `protected` declaration.
 
 using the same `renderPatternConfigLiteral` the spine's `patternConfig` uses. `configProperty` defaults to
 `<camelCase(name)>Config`. `override` requires the mixin to declare the property — that is the contract (§4), and a
@@ -417,7 +421,8 @@ forwarder methods.
 it **must** get its tenant scope that way rather than taking a parameter (charter I3).
 
 **How config reaches the mixin.** The entity's `config: { <Capability>: {...} }` block (inside the `entity:` block)
-is emitted on the generated **repository** as `protected override readonly <configProperty> = {...} as const`,
+is emitted on the generated **repository** as `override readonly <configProperty> = {...} as const` (public —
+changed in CAP-3 (#629) from `protected override readonly`; see `docs/specs/CAP-3.md` Found #1),
 defaulting to `<camelCase(name)>Config`. The mixin declares that property — optional (`?`) or abstract — and reads it
 at runtime. Nothing is emitted on the service, and nothing is passed to a constructor.
 

@@ -18,44 +18,17 @@ import {
 import { validatePatternComposition } from '../../patterns/validate-composition.ts';
 import { validateRolesForGeneration, validateRolesProject } from '../../roles/validate-roles.ts';
 import '../../patterns/index.ts';
-import {
-	ActivityPattern,
-	BasePattern,
-	IntegratedPattern,
-	JunctionPattern,
-	KnowledgePattern,
-	MetadataPattern,
-} from '../../patterns/library/index.ts';
+import { BasePattern, LIBRARY_PATTERN_DEFINITIONS } from '../../patterns/library/index.ts';
 
-// CAP-3 ships `Actor` / `Communication`. Until then a project declares its own;
-// these stand in for that, exactly as an app capability would.
-function registerCapabilityStubs(): void {
-	registerLibraryPattern({
-		name: 'Actor',
-		kind: 'capability',
-		forwarderMethods: ['memberPredicate'],
-	});
-	registerLibraryPattern({
-		name: 'Communication',
-		kind: 'capability',
-		forwarderMethods: ['findByRole'],
-	});
+// `Actor` / `Communication` are library capabilities (CAP-3), so the canonical
+// library registry is all these rules need.
+function restoreLibrary(): void {
+	_resetRegistryForTests({ includeLibrary: true });
+	for (const p of LIBRARY_PATTERN_DEFINITIONS) registerLibraryPattern(p);
 }
 
-beforeEach(() => {
-	_resetRegistryForTests({ includeLibrary: true });
-	for (const p of [BasePattern, IntegratedPattern, ActivityPattern, KnowledgePattern, MetadataPattern, JunctionPattern]) {
-		registerLibraryPattern(p);
-	}
-	registerCapabilityStubs();
-});
-
-afterAll(() => {
-	_resetRegistryForTests({ includeLibrary: true });
-	for (const p of [BasePattern, IntegratedPattern, ActivityPattern, KnowledgePattern, MetadataPattern, JunctionPattern]) {
-		registerLibraryPattern(p);
-	}
-});
+beforeEach(restoreLibrary);
+afterAll(restoreLibrary);
 
 function entity(
 	name: string,

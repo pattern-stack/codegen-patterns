@@ -139,10 +139,12 @@ entity:
   pattern: Integrated           # Integrated | Activity | Metadata | Knowledge | Base | app-defined (ADR-031)
   patterns: [Integrated, Actor] # composition (ADR-041): ONE inheritable spine + N kind:'capability' patterns.
                                 #   two spines is a hard error; order is nesting order, rightmost outermost.
+                                #   library capabilities: Actor (config required), Communication (ADR-041.1)
   context: crm                  # bounded context (ADR-0004); clean-lite-ps nests modules/<context>/<plural>/
   surface: crm                  # integration surface (ADR-0006) — drives integration codegen
   sync: api                     # frontend per-entity override: api | electric
-  config:                       # per-pattern AND per-capability config, e.g. { Activity: { subject: account } }
+  config:                       # per-pattern AND per-capability config, e.g. { Activity: { subject: account } },
+                                #   { Actor: { kind: individual } } | { Actor: { kind: group, members: <has_many> } }
 
 fields:
   email: { type: string, required: true, max_length: 255, index: true }
@@ -151,7 +153,8 @@ fields:
 relationships:
   account: { type: belongs_to, target: account, foreign_key: account_id }
 
-roles:                          # CAP-2: needs `Communication` in patterns:; every target needs `Actor`
+roles:                          # needs `Communication` in patterns:; every target needs `Actor`.
+                                #   Communication → repo findByRole(role, actorId) + participants(id), forwarded on the service
   host:      { target: contact, cardinality: one }                       # → belongs_to, FK host_contact_id, indexed, key `host`
   attendees: { target: contact, cardinality: many, via: meeting_contact } # → validated against junctions/, emits nothing
 
