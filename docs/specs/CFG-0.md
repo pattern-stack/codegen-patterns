@@ -153,7 +153,11 @@ reader and from every writer; the schema then rejects it.
    `jobs.pools.<name>`.
 2. A unit test greps `src/`, `templates/` and `runtime/` for every `paths.<key>` read off a config object and
    asserts each key is declared in `PathsConfigSchema` (issue gate 2); a second grep does the same for every top-level
-   key read off the parsed config.
+   key read off the parsed config. **That census ships with PATH-0 (#642 / PR #646), not here** — nine `paths.<key>`
+   readers are still undeclared at this point in the stack and `templates/entity/new/prompt.js` still locates and
+   parses the config itself, so the census cannot pass on CFG-0's own PR. PATH-0 declares one default per key and
+   rewrites the census in the same commit; a gate that cannot pass in the PR that ships it is worse than no gate
+   (#726).
 3. `codegen entity new --all` with an unknown key exits 1 and prints the key; so does `hygen entity new` run directly.
 4. Every fixture config (`test/fixtures/codegen.config*.yaml`), every subsystem-config injector block, the config
    `project init` writes and the config `project scan --write` writes pass the strict parse (unit-tested).
@@ -204,7 +208,7 @@ Run after the last code edit (commit `f2ea421`; the only later change is this ta
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | pass (baseline runner, `clean` pipeline, byte-identical) |
-| `just test-all` | pass: 3446 unit tests, 0 fail (new: `config/project-config.test.ts`, `config/config-census.test.ts`); baseline; every smoke; junction unit; integration-emit; smoke-integration |
+| `just test-all` | pass: 3446 unit tests, 0 fail (new: `config/project-config.test.ts`; the census lands with PATH-0); baseline; every smoke; junction unit; integration-emit; smoke-integration |
 | `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair in `bridge-e2e.test.ts`) |
 | `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
 | `just test-post-publish` | pass — the shipped loader (`src/config/project-config.ts` + both schema files, added to `files`) resolves `zod` / `yaml` from the tarball |
