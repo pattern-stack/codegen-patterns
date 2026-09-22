@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { withEntities } from './_entity-lookup';
 
 const ENTITY_TEMPLATE = readFileSync(
   resolve(import.meta.dir, '../../../templates/entity/new/clean-lite-ps/entity.ejs.t'),
@@ -44,7 +45,10 @@ function render(
   output: string;
   locals: Record<string, unknown>;
 } {
-  const locals = buildCleanLitePsLocals(definition, baseLocals) as Record<string, unknown>;
+  const locals = buildCleanLitePsLocals(definition, withEntities(baseLocals)) as Record<
+    string,
+    unknown
+  >;
   const output = ejs.render(extractBody(ENTITY_TEMPLATE), locals, { rmWhitespace: false });
   return { output, locals };
 }
@@ -354,10 +358,15 @@ describe('field-level foreign_key to a host-owned table (#636)', () => {
     expect(output).toContain("index('notes_tenant_id_idx').on(t.tenantId)");
   });
 
-  it('without an ownedTableNames list every target is treated as owned', () => {
-    // The pre-#636 behaviour, which only reachable when a caller builds locals
-    // without prompt.js (the emission tests above do exactly that).
-    const { output } = render(definition);
-    expect(output).toContain('.references(() => tenants.id)');
+  it('without an ownedTableNames list an unresolvable target is an error', () => {
+    // #636 treated a no-list caller as "every target is owned"; NAME-0 then made
+    // the import come from the target's own YAML, so "owned" now means a YAML
+    // declares it. With no list and no YAML for `tenants` the two rules meet
+    // here, and NAME-0's wins: the alternative is an import of a module codegen
+    // never writes. `prompt.js` always passes the list, so real generation still
+    // gets the host-owned plain column proved above.
+    expect(() => render(definition)).toThrow(
+      /the table 'tenants' is not owned by any entity YAML/,
+    );
   });
 });

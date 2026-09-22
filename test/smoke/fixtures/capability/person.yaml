@@ -1,0 +1,36 @@
+# NAME-0 smoke fixture: person — an IRREGULAR declared plural (#630 / #611).
+#
+# `pluralize('person')` is `people`; this entity's table export and module
+# folder are `persons`, because its YAML says so. Every reference to it —
+# `crew.lead` (belongs_to), `squad.members` (has_many) and the `crew_person`
+# junction — must read that, not re-derive it. (The frontend golden fixture
+# uses the same shape.) `led_crews` is a has_many onto the nested `crew`.
+#
+# The NAME-0 fixtures form a DAG (shift → crew → person → squad): two tables
+# with FKs to each other do not typecheck today (#631), and an entity
+# that both belongs_to and has_many the same target imports its repository
+# twice (#632) — neither is a naming defect.
+entity:
+  name: person
+  plural: persons
+  table: persons
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  squad:
+    type: belongs_to
+    target: squad
+    foreign_key: squad_id
+  led_crews:
+    type: has_many
+    target: crew
+    foreign_key: lead_person_id

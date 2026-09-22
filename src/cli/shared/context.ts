@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
+import { findConfigUpward, resolveEntitiesDir } from '../../config/entities-dir.js';
 import { scanProject } from '../../scanner/index.js';
 import type { ProjectProfile } from '../../scanner/types.js';
 import type { PathsConfigInput } from '../../schema/codegen-config.schema.js';
@@ -60,23 +61,6 @@ export interface LoadContextOptions {
 	skipDetection?: boolean;
 }
 
-/**
- * Walk upward from `start` looking for a `codegen.config.yaml`. Returns the
- * absolute path or null if none is found before reaching the filesystem root.
- */
-function findConfigUpward(start: string): string | null {
-	let dir = path.resolve(start);
-	const root = path.parse(dir).root;
-	while (true) {
-		const candidate = path.join(dir, 'codegen.config.yaml');
-		if (fs.existsSync(candidate)) return candidate;
-		if (dir === root) return null;
-		const parent = path.dirname(dir);
-		if (parent === dir) return null;
-		dir = parent;
-	}
-}
-
 function loadConfigFromPath(configPath: string): CodegenConfig | null {
 	try {
 		const content = fs.readFileSync(configPath, 'utf-8');
@@ -88,20 +72,6 @@ function loadConfigFromPath(configPath: string): CodegenConfig | null {
 	} catch {
 		return null;
 	}
-}
-
-function resolveEntitiesDir(cwd: string, config: CodegenConfig | null): string | null {
-	const fromConfig =
-		(config?.paths?.entities as string | undefined) ??
-		(config?.paths?.entities_dir as string | undefined);
-	const candidates: string[] = [];
-	if (fromConfig) candidates.push(path.resolve(cwd, fromConfig));
-	candidates.push(path.resolve(cwd, 'entities'));
-
-	for (const c of candidates) {
-		if (fs.existsSync(c) && fs.statSync(c).isDirectory()) return c;
-	}
-	return null;
 }
 
 function countEntityYamls(entitiesDir: string | null): number {
@@ -154,7 +124,7 @@ export async function loadContext(overrides: LoadContextOptions = {}): Promise<C
 	const configPath = explicit && fs.existsSync(explicit) ? explicit : findConfigUpward(cwd);
 	const config = configPath ? loadConfigFromPath(configPath) : null;
 
-	const entitiesDir = resolveEntitiesDir(cwd, config);
+	const entitiesDir = resolveEntitiesDir(cwd, config?.paths);
 	const entityCount = countEntityYamls(entitiesDir);
 
 	const isInitialized = Boolean(configPath) || entityCount > 0;

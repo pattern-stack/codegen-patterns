@@ -69,6 +69,10 @@ relationships:
   service-layer composition method on the declaring entity's service).
 - Cross-entity targets must resolve at generation time — regenerate the set with
   `codegen entity new --all`.
+- The target's table and folder come from the target's own YAML (`plural:`,
+  `context:`), never from pluralizing its name. A `belongs_to` (or field
+  `foreign_key:`) whose target has no YAML in the entities directory is a
+  generation error; a `has_many` onto one is simply not wired.
 
 ## `generate:` — output toggles
 

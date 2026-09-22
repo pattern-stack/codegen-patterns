@@ -1,0 +1,23 @@
+# NAME-0 smoke fixture: squad — a has_many onto the irregular-plural `person`
+# (#630). Named to sort after `person`, so the single `entity new --all` pass
+# finds person's files on disk and wires the has_many.
+entity:
+  name: squad
+  plural: squads
+  table: squads
+  folder_structure: nested
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+relationships:
+  members:
+    type: has_many
+    target: person
+    foreign_key: squad_id
