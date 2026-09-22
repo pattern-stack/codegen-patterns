@@ -7,7 +7,7 @@
  * concrete `BaseRepository` / `BaseService` reference.
  *
  * Matches the existing `family: base` entry in
- * `templates/entity/new/clean-lite-ps/prompt-extension.js` verbatim.
+ * `templates/entity/new/backend/entity-locals.js` verbatim.
  */
 
 import { definePattern } from '../pattern-definition.js';

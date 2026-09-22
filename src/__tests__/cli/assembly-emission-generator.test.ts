@@ -361,7 +361,7 @@ describe("resolveEntityModuleImports — entity repo/module import resolution", 
     expect(loc.repoClass).toBe("CallRecordingRepository");
     expect(loc.moduleClass).toBe("CallRecordingsModule");
     expect(loc.repoImportSpecifier).toBe(
-      "@modules/call_recordings/call_recording.repository",
+      "@modules/call-recordings/call-recording.repository",
     );
   });
 });

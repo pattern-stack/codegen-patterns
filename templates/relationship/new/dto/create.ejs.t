@@ -5,7 +5,7 @@ force: true
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { z } from 'zod';
 <%_ if (hasTypes) { _%>
-import { <%= typeEnumName %> } from '../<%= name %>.entity';
+import { <%= typeEnumName %> } from '../<%= entityFileStem %>.entity';
 <%_ } _%>
 
 export const <%= classNames.createSchema %> = z.object({

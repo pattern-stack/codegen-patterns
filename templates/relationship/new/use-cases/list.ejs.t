@@ -4,8 +4,8 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable } from '@nestjs/common';
-import { <%= classNames.service %> } from '../<%= name %>.service';
-import type { <%= classNames.entity %> } from '../<%= name %>.entity';
+import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
 @Injectable()
 export class <%= classNames.listUseCase %> {

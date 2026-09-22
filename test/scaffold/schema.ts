@@ -19,7 +19,7 @@ export * from '@gen/modules/contacts/contact.entity';
 // REL-1 (#586): the related set the relations round-trip traverses.
 export * from '@gen/modules/accounts/account.entity';
 export * from '@gen/modules/opportunities/opportunity.entity';
-export * from '@gen/modules/opportunity_contacts/opportunity_contact.entity';
+export * from '@gen/modules/opportunity-contacts/opportunity-contact.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

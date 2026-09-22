@@ -14,7 +14,7 @@
 
 export type SyncMode = 'api' | 'electric';
 
-export type EntityName = 'person' | 'user';
+export type EntityName = 'deal_state' | 'person' | 'user';
 
 export interface EntitySyncConfig {
 	mode: SyncMode;
@@ -22,6 +22,7 @@ export interface EntitySyncConfig {
 
 /** Resolved per-entity sync modes (per-entity `sync:` over global default). */
 export const defaultConfig: Record<EntityName, EntitySyncConfig> = {
+	deal_state: { mode: 'api' },
 	person: { mode: 'electric' },
 	user: { mode: 'api' },
 };

@@ -1,5 +1,5 @@
 /**
- * GEN-0 (#649) — the clean-lite-ps module tree `<modules_dir>[/<context>]/<plural>`
+ * GEN-0 (#649) — the backend module tree `<modules_dir>[/<context>]/<plural>`
  * is one shipped function (`src/config/module-tree.ts`). The hygen emission
  * re-exports it; the barrels and the integration assemblies call it. This test
  * states the rule and that the emission's export IS that function.

@@ -72,7 +72,7 @@ describe('the defaults table', () => {
 		expect(() => parseCodegenConfig({ paths: { backend_src: '' } }, 't')).toThrow(/paths\.backend_src/);
 	});
 
-	// Charter Q5, resolved by ARCH-0 (#677): clean-lite-ps is the only backend
+	// Charter Q5, resolved by ARCH-0 (#677): there is exactly one backend
 	// pipeline, so there is no architecture key to default — using it is the
 	// CFG-0 unknown-key error, naming the key and the file.
 	it('generate.architecture is an unknown key naming the file (ARCH-0)', () => {
@@ -179,7 +179,7 @@ describe('no reader carries its own default literal', () => {
 		/\?\?\s*path\.(?:resolve|join)\(/,
 		/\|\|\s*path\.(?:resolve|join)\(/,
 		// PATH-1: the `patterns` default is the schema's, derived from
-		// `backend_src`; a clean-lite-ps module lives under `paths.modules_dir`,
+		// `backend_src`; a backend module lives under `paths.modules_dir`,
 		// never `<something>/modules`.
 		/['"`]src\/patterns\//,
 		/\$\{[^}]*\}\/modules\b/,

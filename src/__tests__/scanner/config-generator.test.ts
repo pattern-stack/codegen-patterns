@@ -351,7 +351,7 @@ describe('generateConfig', () => {
 	});
 
 	describe('generate block', () => {
-		it('proposes no architecture key — clean-lite-ps is the only pipeline (ARCH-0)', () => {
+		it('proposes no architecture key — backend is the only pipeline (ARCH-0)', () => {
 			const profile = createMockProfile();
 			const config = generateConfig(profile);
 			expect(Object.keys(config.generate)).toEqual(['frontend']);

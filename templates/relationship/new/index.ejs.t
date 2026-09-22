@@ -9,12 +9,12 @@ force: true
  */
 
 // Value exports (module, service, controller)
-export { <%= classNames.module %> } from './<%= entityNamePlural %>.module';
-export { <%= classNames.service %> } from './<%= name %>.service';
-export { <%= classNames.controller %> } from './<%= name %>.controller';
+export { <%= classNames.module %> } from './<%= entityPluralFileStem %>.module';
+export { <%= classNames.service %> } from './<%= entityFileStem %>.service';
+export { <%= classNames.controller %> } from './<%= entityFileStem %>.controller';
 
 // Type-only exports (entity, DTOs)
-export type { <%= classNames.entity %> } from './<%= name %>.entity';
-export type { <%= classNames.createDto %> } from './dto/create-<%= name %>.dto';
-export type { <%= classNames.updateDto %> } from './dto/update-<%= name %>.dto';
-export type { <%= classNames.outputDto %> } from './dto/<%= name %>-output.dto';
+export type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+export type { <%= classNames.createDto %> } from './dto/create-<%= entityFileStem %>.dto';
+export type { <%= classNames.updateDto %> } from './dto/update-<%= entityFileStem %>.dto';
+export type { <%= classNames.outputDto %> } from './dto/<%= entityFileStem %>-output.dto';

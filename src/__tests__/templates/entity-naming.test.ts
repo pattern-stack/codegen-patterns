@@ -1,7 +1,7 @@
 /**
  * The shared cross-entity naming module (NAME-0, #630 / #611) —
  * `templates/_shared/entity-naming.mjs`, read by the entity prompt, the
- * clean-lite-ps extension and the junction prompt.
+ * backend extension and the junction prompt.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';

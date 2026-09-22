@@ -12,7 +12,7 @@ import type { JunctionIntegrationConfig } from '<%= junctionIntegrationRepositor
 <%_ integrationParentImports.forEach((imp) => { _%>
 import { <%= imp.table %> } from '<%= imp.importPath %>';
 <%_ }); _%>
-import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= name %>.entity';
+import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 
 /**
  * Canonical fields a integrated <%= name %> junction write carries (#374). BOTH

@@ -33,11 +33,11 @@ export function buildEntityHooksFile(
 	entity: EntityRegistryEntry,
 	ctx: FrontendEmitContext,
 ): string {
-	const { camelName, className, name } = entity;
+	const { camelName, className, name, fileStem } = entity;
 
 	const body = `import { createEntityHooks } from '@pattern-stack/frontend-patterns';
-import { ${camelName}Collection } from '../collections/${name}';
-import { ${camelName}Api } from '../api/${name}';
+import { ${camelName}Collection } from '../collections/${fileStem}';
+import { ${camelName}Api } from '../api/${fileStem}';
 import { getSyncMode } from '../config';
 import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
 
@@ -76,7 +76,7 @@ export const {
 export function buildEntitiesIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 	const blocks = entities.map((e) => {
-		const { camelName, className, name } = e;
+		const { camelName, className, fileStem } = e;
 		return `export {
 \t${camelName}Hooks,
 \tuse${className}List,
@@ -85,7 +85,7 @@ export function buildEntitiesIndexFile(ctx: FrontendEmitContext): string {
 \tuseUpdate${className},
 \tuseDelete${className},
 \t${camelName}Keys,
-} from './${name}';`;
+} from './${fileStem}';`;
 	});
 	return withBanner(SOURCE_DESC_SET, `${blocks.join('\n\n')}\n`);
 }
@@ -100,7 +100,7 @@ export function emitEntities(ctx: FrontendEmitContext, outDir: string): string[]
 	const written: string[] = [];
 
 	for (const entity of entities) {
-		const filePath = join(entitiesDir, `${entity.name}.ts`);
+		const filePath = join(entitiesDir, `${entity.fileStem}.ts`);
 		writeFile(filePath, buildEntityHooksFile(entity, ctx));
 		written.push(filePath);
 	}

@@ -51,6 +51,7 @@
 import { join } from 'node:path';
 import type { FrontendEmitContext } from './types';
 import { withBanner, writeFile } from './emit-utils';
+import { emittedStem } from '../../config/file-naming.js';
 import {
 	accessorNodes,
 	type ClientGraph,
@@ -166,7 +167,10 @@ function targetNaming(
 			camelName: node.entity.camelName,
 			entityFile: node.entity.name,
 			collectionVar: `${node.entity.camelName}Collection`,
-			collectionFile: node.entity.name,
+			// A codegen-EMITTED path (`../collections/<stem>`), so it takes the
+			// #695/#684 naming rule. `entityFile` above is a CONSUMER-owned
+			// `dbEntities` module and deliberately keeps the raw name.
+			collectionFile: emittedStem(node.entity.name),
 		};
 	}
 	if (node.junction) {
@@ -175,7 +179,7 @@ function targetNaming(
 			camelName: node.junction.camelName,
 			entityFile: node.junction.name,
 			collectionVar: `${node.junction.camelName}Collection`,
-			collectionFile: node.junction.name,
+			collectionFile: emittedStem(node.junction.name),
 		};
 	}
 	return null;
@@ -244,7 +248,7 @@ export function buildEntityGraphFile(
 	// the registry — never re-derived from a relation's target string.
 	const collections = new Map<string, string>(); // file → var
 	const rowTypes = new Map<string, string>(); // file → className
-	collections.set(entity.name, `${entity.camelName}Collection`);
+	collections.set(emittedStem(entity.name), `${entity.camelName}Collection`);
 	rowTypes.set(entity.name, entity.className);
 
 	const naming = new Map<string, TargetNaming>();
@@ -256,7 +260,10 @@ export function buildEntityGraphFile(
 		rowTypes.set(t.entityFile, t.className);
 		if (rel.through) {
 			const j = graph.junctions.find((x) => x.collectionKey === rel.through?.collection);
-			if (j) collections.set(j.name, `${j.camelName}Collection`);
+			// The key is a FILE STEM — it becomes `../collections/<stem>`. It must be
+			// the #695/#684 naming rule, like every other entry in this map, not the
+			// raw junction name (NAME-2: filesystem kebab).
+			if (j) collections.set(emittedStem(j.name), `${j.camelName}Collection`);
 		}
 		// A to-many branch may nest the TARGET's to-one hops into its own query.
 		const targetNode = graph.nodes.find((n) => n.collection === rel.target);

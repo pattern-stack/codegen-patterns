@@ -14,7 +14,7 @@
  * graph does not ship in the package's `files` (CAP-3 Found #9). This module
  * ships with `templates/`.
  *
- * Readers: `templates/entity/new/prompt.js`, the clean-lite-ps extension, and
+ * Readers: `templates/entity/new/prompt.js`, the backend extension, and
  * `templates/junction/new/prompt.js`. Where the YAMLs live, and how the tree
  * is walked, is the CLI's own rule — imported, not restated
  * (`src/config/entities-dir.ts`, `src/utils/find-yaml-files.ts`), as is the

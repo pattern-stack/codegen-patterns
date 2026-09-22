@@ -2,5 +2,6 @@
 // Hand edits are overwritten on re-emit. Regenerate with `bun run codegen`.
 
 export * from './client';
+export * from './deal-state';
 export * from './person';
 export * from './user';

@@ -2,7 +2,7 @@
  * IntegratedPattern — adds external-system integration columns and methods.
  *
  * Replaces the legacy `family: integrated` entry in
- * `templates/entity/new/clean-lite-ps/prompt-extension.js`. Class names,
+ * `templates/entity/new/backend/entity-locals.js`. Class names,
  * import paths, and inherited-method comment lines are preserved verbatim
  * so PATTERN-5's template swap produces byte-identical output for
  * pre-existing `family: integrated` fixtures.

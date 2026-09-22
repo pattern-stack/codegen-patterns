@@ -3,8 +3,8 @@
  *
  * Usage: bunx hygen entity new --yaml entities/opportunity.yaml
  *
- * clean-lite-ps is the only backend pipeline (ARCH-0, #677), and
- * `clean-lite-ps/prompt-extension.js` builds almost every local it reads from
+ * backend is the only backend pipeline (ARCH-0, #677), and
+ * `backend/entity-locals.js` builds almost every local it reads from
  * the parsed YAML itself. What is left here is the handful of locals the
  * extension does NOT build: the `@generated` banner, the runtime-mode import
  * specifiers, the `detection:` literal, and the EVT-7 `emits:` descriptors.
@@ -14,7 +14,7 @@
  * behaviorStrategy, expose*, the field / relationship / query / event passes
  * behind them — together with the config surface that fed them (`naming:`,
  * `database:`, `behaviors:`, `locations.backend*`, the entity layout keys).
- * Every one was measured dead: no clean-lite-ps template and no
+ * Every one was measured dead: no backend template and no
  * `prompt-extension.js` read it. See `docs/specs/ARCH-1.md`.
  */
 
@@ -315,7 +315,7 @@ export default {
     // CAP-2 (ADR-041): a `cardinality: one` role IS a `belongs_to`, so it is
     // merged into `definition.relationships` HERE — once, at the single point
     // the YAML enters the template pipeline — and rides the existing FK / index
-    // / on-delete path from then on. Every reader downstream (the clean-lite-ps
+    // / on-delete path from then on. Every reader downstream (the backend
     // extension) sees the merged form without knowing roles exist. The
     // derivation is shared with the analyzer parser (`src/roles/derive.ts`)
     // because this file parses YAML directly and never sees
@@ -350,36 +350,36 @@ export default {
     const camelName = camelCase(name);
 
     // ========================================================================
-    // Clean-Lite-PS template locals
+    // backend template locals
     //
-    // clean-lite-ps is the only backend pipeline (ARCH-0, #677). Every body
+    // backend is the only backend pipeline (ARCH-0, #677). Every body
     // references its locals unguarded, so a missing one throws (#638).
     // ========================================================================
 
     // Load app-defined patterns (if any) into the registry before the
-    // clean-lite-ps extension reads it. `loadAppPatterns` is idempotent
+    // backend extension reads it. `loadAppPatterns` is idempotent
     // and deterministic — calling it every run is cheap (one dynamic
     // import per pattern file) and matches the two-process load story
     // the registry tests pin down.
     await ensurePatternsRegistryLoaded();
-    const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
+    const { buildBackendLocals } = await import('./backend/entity-locals.js');
     // Every cross-entity fact — a belongs_to / has_many / field foreign_key
     // target's table and module folder, an EAV definition entity, a group
     // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
     // YAML, lazily, on the first reference that needs one. The junctions naming
     // this entity are read from the junction YAMLs.
-    // #636 — the Drizzle tables codegen OWNS. The clean-lite-ps extension needs
-    // this to tell a host-owned FK target (plain column, no import) from one it
-    // generates. ARCH-1 (#682) replaced a `...locals` spread at this call with an
-    // explicit key list and did not carry this one, which silently reverted #636:
+    // #636 — the Drizzle tables codegen OWNS. The backend extension needs this to
+    // tell a host-owned FK target (plain column, no import) from one it generates.
+    // ARCH-1 (#682) replaced a `...locals` spread at this call with an explicit key
+    // list and did not carry this one, which silently reverted #636:
     // `processFieldFeatures` reads an absent set as "every target is owned", so a
     // host-owned `foreign_key:` became a hard error instead of a plain column.
     // Computed once here and reused in the returned locals below;
     // `loadOwnedTableNames` caches per directory, so the second read is free.
     const ownedTableNames = Array.from(loadOwnedTableNames(process.cwd()));
 
-    const clpLocals = buildCleanLitePsLocals(definition, {
-      // The clean-lite-ps module tree (PATH-1, #645).
+    const backendLocals = buildBackendLocals(definition, {
+      // The backend module tree (PATH-1, #645).
       modulesDir: BASE_PATHS.modulesDir,
       runtimeMode,
       ownedTableNames,
@@ -486,21 +486,21 @@ export default {
       const merged = new Map(sugar);
       for (const [k, v] of topLevel) merged.set(k, v);
 
-      // Payload-mapping rules 3/4 read the clean-lite-ps field set — the same
+      // Payload-mapping rules 3/4 read the backend field set — the same
       // list the entity and its DTOs are emitted from, so "is this key on the
       // entity / on CreateXDto" is answered by the emission itself rather than
       // by a second field pass (I1). ARCH-1 (#682): prompt.js's own field
       // processing existed for the deleted `clean` templates and is gone.
-      // `clpProcessedFields` / `clpCreateDtoFields` are the NON-FK fields; the
+      // `processedFields` / `createDtoFields` are the NON-FK fields; the
       // belongs_to FK columns are emitted onto both the entity and CreateXDto
-      // from `clpBelongsToFkFields`, so both sets include them.
-      const fkKeysCamel = clpLocals.clpBelongsToFkFields.map((f) => f.camelName);
+      // from `belongsToFkFields`, so both sets include them.
+      const fkKeysCamel = backendLocals.belongsToFkFields.map((f) => f.camelName);
       const entityKeysCamel = new Set([
-        ...clpLocals.clpProcessedFields.map((f) => f.camelName),
+        ...backendLocals.processedFields.map((f) => f.camelName),
         ...fkKeysCamel,
       ]);
       const dtoKeysCamel = new Set([
-        ...clpLocals.clpCreateDtoFields.map((f) => f.camelName),
+        ...backendLocals.createDtoFields.map((f) => f.camelName),
         ...fkKeysCamel,
       ]);
 
@@ -578,7 +578,7 @@ export default {
       emitsEvents.find((e) => e.type === `${name}_deleted`) ?? null;
 
     // Mode-resolved runtime import specifiers (ADR-037), one table shared with
-    // the unit tests that render clean-lite-ps bodies (`runtimeImportLocals`).
+    // the unit tests that render backend bodies (`runtimeImportLocals`).
     const runtimeImportSpecifiers = runtimeImportLocals(runtimeMode);
 
     // @generated banner — single line stamped at the top of every
@@ -602,10 +602,10 @@ export default {
       generatedBanner,
 
       // Runtime mode (ADR-037) — drives runtime import specifiers; read by the
-      // clean-lite-ps prompt-extension to rewrite base-class imports.
+      // backend prompt-extension to rewrite base-class imports.
       runtimeMode,
 
-      // Project layout — the clean-lite-ps prompt-extension places every
+      // Project layout — the backend prompt-extension places every
       // module under the configured module tree (paths.modules_dir, PATH-1).
       modulesDir: BASE_PATHS.modulesDir,
 
@@ -620,7 +620,7 @@ export default {
       deleteEventType,
 
       ...runtimeImportSpecifiers,
-      ...clpLocals,
+      ...backendLocals,
     };
   },
 };

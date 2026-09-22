@@ -71,9 +71,9 @@ JSON run too.
 **Junction fan-out (JUNC-0, #678).** A junction is mirrored onto both parents — `attach<Right>` / `detach<Right>` /
 `<rightPlural>List` / `<rightPlural>SetPrimary` on the left, `addTo<Left>` / `removeFrom<Left>` / `<leftPlural>List` /
 `<leftPlural>SetPrimary` on the right, delegating to the junction service (`expose_on_parent.<side>: false` opts a side
-out). The parent's **own** clean-lite-ps `service.ejs.t` / `module.ejs.t` render it from the junction YAMLs
+out). The parent's **own** backend `service.ejs.t` / `module.ejs.t` render it from the junction YAMLs
 (`templates/_shared/junction-fan-out.mjs`: `junctionNaming`, `loadJunctionDefinitions`, `junctionFanOutFor` →
-`clpJunctionFanOut`); nothing injects into a parent. `junction new` writes the junction's own files and then re-renders
+`junctionFanOut`); nothing injects into a parent. `junction new` writes the junction's own files and then re-renders
 both endpoints through `entity new`'s per-target path (`src/cli/shared/entity-render.ts`: `preflightEntityTargets` +
 `renderEntityTargets`, no post-steps). So `entity new` ↔ `junction new` in any order, any number of times, give the
 same bytes; deleting a junction YAML drops its fan-out on the next `entity new`. The junctions directory is
@@ -96,10 +96,10 @@ folder) and `context:` (folder nesting), read from `paths.entities` / `entities/
 for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML — or one not
 generated yet — is not wired (the two-pass `targetExists` check), not an error.
 
-**Every generated FK callback is `.references((): AnyPgColumn => <table>.id)`** (NAME-1, #631) — clean-lite-ps
+**Every generated FK callback is `.references((): AnyPgColumn => <table>.id)`** (NAME-1, #631) — backend
 belongs_to + field `foreign_key:`, junction and relationship endpoints. Two tables with FKs to each other (or any
-longer FK cycle) therefore compile; the annotation is type-only. A clean-lite-ps service composes each other
-entity's repository **once**, however many edges reach it (`clpRepositoryDeps`, #632).
+longer FK cycle) therefore compile; the annotation is type-only. A backend service composes each other
+entity's repository **once**, however many edges reach it (`repositoryDeps`, #632).
 
 `entity new` also runs the whole-set post-steps, all from the full definition set:
 
@@ -194,7 +194,7 @@ entity:
   patterns: [Integrated, Actor] # composition (ADR-041): ONE inheritable spine + N kind:'capability' patterns.
                                 #   two spines is a hard error; order is nesting order, rightmost outermost.
                                 #   library capabilities: Actor (config required), Communication (ADR-041.1)
-  context: crm                  # bounded context (ADR-0004); clean-lite-ps nests modules/<context>/<plural>/
+  context: crm                  # bounded context (ADR-0004); backend nests modules/<context>/<plural>/
   surface: crm                  # integration surface (ADR-0006) — drives integration codegen
   sync: api                     # frontend per-entity override: api | electric
   config:                       # per-pattern AND per-capability config, e.g. { Activity: { subject: account } },
@@ -296,7 +296,7 @@ paths:
   generated: src/generated        # default <backend_src>/generated
   events_dir: events              # default events
   jobs_dir: definitions/jobs      # default
-generate:                         # no architecture key — clean-lite-ps is the only backend (ARCH-0)
+generate:                         # no architecture key — backend is the only backend (ARCH-0)
   frontend: false
   semantic: false                 # emit <generated>/semantic/ — the declared AggregateModel (SEM-2)
 patterns: [src/patterns/*.pattern.ts]   # default <backend_src>/patterns/*.pattern.ts
@@ -311,7 +311,7 @@ Every `paths.*` key has ONE default, declared in `PathsConfigSchema` (PATH-0):
 (`<backend_src>/patterns/*.pattern.ts`, filled by `CodegenConfigSchema`'s top-level
 transform). There is no `paths.subsystems` — the runtime root is
 `<backend_src>/shared/subsystems` (`projectLayout(...).subsystems`). `modules_dir`
-places every clean-lite-ps module: `entityModuleNaming(block, modulesDir)`
+places every backend module: `entityModuleNaming(block, modulesDir)`
 (`templates/_shared/entity-naming.mjs`), the junction / relationship prompts,
 `barrel-generator.ts`, the integration assemblies (PATH-1). No file ⇒ `DEFAULT_CODEGEN_CONFIG`.
 CLI code resolves directories through `projectLayout(cwd, config)`
@@ -360,28 +360,72 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 - **Use case** — workflow. Composes services, owns the transaction for cross-domain writes, emits events.
 - **Controller** — thin; calls use cases only.
 
+## Emitted names (NAME-2, #695/#684)
+
+> **The filesystem is kebab-case. The database is snake_case. TypeScript identifiers follow TypeScript
+> convention.**
+
+One rule, one module: `src/config/file-naming.ts` — `kebab(name)`, `emittedDir(name)`,
+`emittedStem(...parts)`. `entityModuleNaming` (`src/config/module-tree.ts`) applies it, so module
+directories and the entity / module / repository files are decided at the single choke point the hygen
+prompts, the barrel generator and the assembly emitter all already read. The **frontend** and
+**integration** emitters name their per-entity files from `EntityRegistryEntry.fileStem` /
+`pluralFileStem` — the registry carries the emitted spelling beside `className` and `camelName`.
+
+Two kinds of name deliberately stay snake: **database identifiers** (above), and **paths into code this
+generator does not emit** — the frontend imports entity types from the consumer's own db package
+(`@repo/db/entities/deal_state`), named by its owner, not by this rule.
+
+| Kind | `entity: { name: deal_state, plural: deal_states }` |
+|---|---|
+| module folder | `src/modules/deal-states/` |
+| file stems | `deal-state.entity.ts`, `deal-states.module.ts`, `find-deal-state-by-id.use-case.ts`, `list-deal-states.query.ts` |
+| **SQL table + Drizzle export** | `export const deal_states = pgTable('deal_states', …)` — **snake, unchanged** |
+| **columns, `pgEnum` names** | snake, unchanged |
+
+Rules when you touch emission:
+
+- **Never build a stem by hand.** `emittedStem('find', entityName, 'by-id')`, not
+  `` `find-${entityName}-by-id` ``. Typed hyphens are what #684 was: they look correct for every
+  single-word entity and break on the first multi-word one.
+- **`EntityModuleNaming.plural` is not a filesystem name.** It is the `pgTable` argument and the exported
+  table identifier. Do not kebab it; that renames the SQL table.
+- **Do not add a fifth kebab.** `file-naming.ts` is the only one. `case-converters.mjs` was deleted when it
+  went to zero importers; the dead `s.replace(/_/g,'-')` copies in the junction and relationship prompts went
+  with it.
+- **Test harnesses import the rule, they do not restate it.** `test/smoke/run-smoke-junction.ts` derives its
+  expected paths with `emittedDir` / `emittedStem` so the harness and the generator cannot disagree.
+- **The pin is a property, not a list.** `src/__tests__/config/file-naming.test.ts` asserts that for a
+  multi-word entity no path segment contains `_`, across the backend, frontend and integration stem shapes.
+  Add a stem shape there, not a filename.
+- **A fixture set with only single-word entities cannot test this.** `kebab(x) === x` for `contact` /
+  `person` / `user`, so such a fixture passes whether the rule is applied or not. `deal_state` is the
+  multi-word entity in the backend baseline and in `test/frontend-golden/entities/` — keep one wherever a
+  new tree gets snapshot coverage.
+- Identifier casing is a **separate, still-open axis** — see #697.
+
 ## Working on the generator
 
-- Backend: hygen templates, one pipeline — `templates/entity/new/clean-lite-ps/` (the
+- Backend: hygen templates, one pipeline — `templates/entity/new/backend/` (the
   `clean` pipeline and `generate.architecture` were deleted, ARCH-0 #677; its leftover
   config surface — `naming:`, `locations.backend*`, `database:`, `behaviors:`, the entity
   layout keys and 69 dead `prompt.js` locals — by ARCH-1, #682, so each is now an
   unknown-key error). `prompt.js` now builds only the locals `prompt-extension.js` does
   not: the banner, runtime-import specifiers, `detection:` and the EVT-7 `emits:`
   descriptors. Frontend and integration: TS emitters in `src/emitters/`.
-- Gates: `just test-unit`, `just test-baseline` (clean-lite-ps over the closed set in
+- Gates: `just test-unit`, `just test-baseline` (backend over the closed set in
   `test/fixtures/entities/`, typechecked; `bun test/run-test.ts generate && bun test/run-test.ts baseline`
   regenerates the snapshot when output changes intentionally), `just test-smoke`, `just test-post-publish` (tarball).
 - Every smoke fails on any `tsc` diagnostic located in the project it generated.
   `test/smoke/_consumer-errors.ts` drops a diagnostic only by **location** (outside
   that project, or in `node_modules`), never by message or directory (GATE-2, #604).
-- clean-lite-ps templates reference every local **unguarded** — no `typeof` test
+- backend templates reference every local **unguarded** — no `typeof` test
   anywhere in the body or frontmatter, not even a body guard (ARCH-0 deleted the one
-  `typeof clpOutputPaths` guard `clean` needed). A missing local must throw (#638,
-  grep-asserted in `src/__tests__/clean-lite-ps/strict-locals.test.ts`). `skip_if` stays
-  only for a real condition (`clpApiEnabled === false`, an optional output path).
+  `typeof outputPaths` guard `clean` needed). A missing local must throw (#638,
+  grep-asserted in `src/__tests__/backend/strict-locals.test.ts`). `skip_if` stays
+  only for a real condition (`apiEnabled === false`, an optional output path).
   A new runtime import specifier goes in `runtimeImportLocals` (`src/config/runtime-mode.mjs`);
-  unit tests get the prompt-owned locals from `withEntities()` (`src/__tests__/clean-lite-ps/_entity-lookup.ts`).
+  unit tests get the prompt-owned locals from `withEntities()` (`src/__tests__/backend/_entity-lookup.ts`).
 - Releases: a version bump merged to main publishes. If the version is already on
   npm, the CI publish job is a **green no-op** — always bump alongside
   consumer-visible changes, and add a `CHANGELOG.md` entry.

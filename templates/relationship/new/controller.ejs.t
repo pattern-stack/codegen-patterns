@@ -4,9 +4,9 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Controller, Get, Param } from '@nestjs/common';
-import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= name %>-by-id.use-case';
-import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityNamePlural %>.use-case';
-import type { <%= classNames.entity %> } from './<%= name %>.entity';
+import { <%= classNames.findByIdUseCase %> } from './use-cases/find-<%= entityFileStem %>-by-id.use-case';
+import { <%= classNames.listUseCase %> } from './use-cases/list-<%= entityPluralFileStem %>.use-case';
+import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 // Write use cases must be hand-written. Import them here when ready.
 
 @Controller('<%= entityNamePlural %>')

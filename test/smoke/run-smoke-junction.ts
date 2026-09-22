@@ -7,7 +7,7 @@
  *   --scenario junction              (default) intra-domain: opportunity × contact
  *   --scenario junction-cross-domain cross-domain: opportunity × activity
  *
- * clean-lite-ps is the only backend pipeline (ARCH-0, #677), so there is no
+ * backend is the only backend pipeline (ARCH-0, #677), so there is no
  * architecture axis.
  *
  * `--runtime vendored|package` (default vendored) picks the ADR-037 runtime
@@ -28,6 +28,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { emittedDir, emittedStem } from '../../src/config/file-naming.js';
 import { tscGateErrors } from './_consumer-errors';
 
 import {
@@ -169,13 +170,16 @@ function assertJunctionEmission(
     ? junctionName.slice(0, -1) + 'ies'
     : junctionName + 's';
 
-  const junctionDir = `${P.modules}/${pluralName}`;
+  // NAME-2: the emitted folder and stems are kebab; `junctionName` /
+  // `pluralName` stay snake (class-name source and SQL table name).
+  const junctionDir = `${P.modules}/${emittedDir(pluralName)}`;
+  const junctionStem = emittedStem(junctionName);
 
   const leftPascal = pascalCase(leftEnt);
   const rightPascal = pascalCase(rightEnt);
 
   // ── Entity file ──────────────────────────────────────────────────────────
-  const entityFile = reads(`${junctionDir}/${junctionName}.entity.ts`);
+  const entityFile = reads(`${junctionDir}/${junctionStem}.entity.ts`);
 
   // Composite PK on left + right FK columns. When the junction carries a role
   // discriminator (#372), the role column joins the PK as a third member.
@@ -226,7 +230,7 @@ function assertJunctionEmission(
   }
 
   // ── Repository file ──────────────────────────────────────────────────────
-  const repoFile = reads(`${junctionDir}/${junctionName}.repository.ts`);
+  const repoFile = reads(`${junctionDir}/${junctionStem}.repository.ts`);
 
   // #374: junctions now extend JunctionIntegrationRepository (which extends BaseRepository)
   // to inherit the inbound-integration write surface (integrationUpsertOne/etc.).
@@ -246,7 +250,7 @@ function assertJunctionEmission(
   assertContains(repoFile, /limit\?:\s*number/, 'repo: limit pagination param');
 
   // ── Service file ─────────────────────────────────────────────────────────
-  const svcFile = reads(`${junctionDir}/${junctionName}.service.ts`);
+  const svcFile = reads(`${junctionDir}/${junctionStem}.service.ts`);
 
   assertContains(svcFile, /extends WithAnalytics\(\s*BaseService</, 'service: extends WithAnalytics(BaseService<');
   assertContains(svcFile, /protected override readonly entityName/, 'service: entityName override');
@@ -313,8 +317,8 @@ function assertRuntimeSpecifiers(
   const { junctionName } = SCENARIO_META[scenario];
   const pluralName = pluralize(junctionName);
   const files = [
-    `${P.modules}/${pluralName}/${junctionName}.repository.ts`,
-    `${P.modules}/${pluralName}/${junctionName}.service.ts`,
+    `${P.modules}/${emittedDir(pluralName)}/${emittedStem(junctionName)}.repository.ts`,
+    `${P.modules}/${emittedDir(pluralName)}/${emittedStem(junctionName)}.service.ts`,
   ];
   const packageOwned = /'@shared\/(?:base-classes|constants|types)\//;
   const packageForm = /'@pattern-stack\/codegen\/runtime\/(?:base-classes|constants|types)\//;
@@ -353,7 +357,10 @@ function assertBarrelIncludes(generatedSrc: string, pluralName: string): void {
 
   const moduleClass = pascalCase(pluralName) + 'Module';
   assertContains(modulesContent, new RegExp(moduleClass), `modules barrel: includes ${moduleClass}`);
-  assertContains(schemaContent, new RegExp(pluralName), `schema barrel: includes ${pluralName}`);
+  // NAME-2: the barrel re-exports by emitted PATH, which is kebab; the table
+  // symbol it re-exports stays snake. Assert the path.
+  const schemaDir = emittedDir(pluralName);
+  assertContains(schemaContent, new RegExp(schemaDir), `schema barrel: includes ${schemaDir}`);
 
   log(`barrel assertions passed: ${pluralName}`);
 }
@@ -452,7 +459,7 @@ function assertCustomLayout(projectDir: string): void {
     throw new Error(`layout custom: the jobs main.ts hook did not land in ${P.backendSrc}/main.ts`);
   }
 
-  // PATH-1 (#645): every clean-lite-ps module lives under `paths.modules_dir`,
+  // PATH-1 (#645): every backend module lives under `paths.modules_dir`,
   // and nothing under the default `<backend_src>/modules`.
   if (fs.existsSync(path.join(projectDir, P.backendSrc, 'modules'))) {
     throw new Error(`layout custom: '${P.backendSrc}/modules/' was created — an emitter ignored paths.modules_dir`);

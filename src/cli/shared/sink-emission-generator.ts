@@ -83,13 +83,14 @@
  */
 
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { emittedStem } from '../../config/file-naming.js';
 
 // ============================================================================
 // Input
 // ============================================================================
 
 /** One copy-through scalar column on the integration write/projection surface.
- *  Mirrors `buildIntegrationSurface().writeFields` in the clean-lite-ps
+ *  Mirrors `buildIntegrationSurface().writeFields` in the backend
  *  prompt-extension: `camelName` + nullable-aware `tsType`. */
 export interface SinkCopyThroughField {
   /** camelCase column name (e.g. `email`, `userId`). */
@@ -479,7 +480,7 @@ import {
   ${n.sinkBaseClass},
   ${n.defaultToCanonicalView},
   ${n.defaultBuildWrite},
-} from './${input.entityName}.sink.generated';
+} from './${emittedStem(input.entityName)}.sink.generated';
 import type {
   ${n.projectionType},
   ${n.writeType},

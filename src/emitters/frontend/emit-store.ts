@@ -132,16 +132,16 @@ export function buildStoreIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 
 	const hookImports = entities
-		.map((e) => `import { ${e.camelName}Hooks } from '../entities/${e.name}';`)
+		.map((e) => `import { ${e.camelName}Hooks } from '../entities/${e.fileStem}';`)
 		.join('\n');
 	const collectionImports = entities
-		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
+		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.fileStem}';`)
 		.join('\n');
 	// Generated FieldMeta per entity (`<camel>Fields` from fields/<entity>).
 	// Registered under the SAME plural key as entities/collections so
 	// `store.<entity>.useData()` resolves meta = fields[plural].
 	const fieldsImports = entities
-		.map((e) => `import { ${e.camelName}Fields } from '../fields/${e.name}';`)
+		.map((e) => `import { ${e.camelName}Fields } from '../fields/${e.fileStem}';`)
 		.join('\n');
 
 	const entityEntries = entities
@@ -216,10 +216,10 @@ export function buildResolversFile(ctx: FrontendEmitContext): string {
 	// The api import backs the full-fetch escape hatch (LANDMINE 1) — emitted only
 	// for the entities actually full-fetched below.
 	const collectionImports = entities
-		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
+		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.fileStem}';`)
 		.join('\n');
 	const apiImports = fetched
-		.map((e) => `import { ${e.camelName}Api } from '../api/${e.name}';`)
+		.map((e) => `import { ${e.camelName}Api } from '../api/${e.fileStem}';`)
 		.join('\n');
 	const typeImports = entities
 		.map((e) => `import type { ${e.className} } from '${ctx.config.dbEntitiesImport}/${e.name}';`)
@@ -370,10 +370,10 @@ export function buildLookupsFile(ctx: FrontendEmitContext): string {
 	const fetched = entities.filter((e) => fullFetch.has(e.name));
 
 	const collectionImports = entities
-		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.name}';`)
+		.map((e) => `import { ${e.camelName}Collection } from '../collections/${e.fileStem}';`)
 		.join('\n');
 	const apiImports = fetched
-		.map((e) => `import { ${e.camelName}Api } from '../api/${e.name}';`)
+		.map((e) => `import { ${e.camelName}Api } from '../api/${e.fileStem}';`)
 		.join('\n');
 	const typeImports = entities
 		.map((e) => `import type { ${e.className} } from '${ctx.config.dbEntitiesImport}/${e.name}';`)

@@ -132,7 +132,7 @@ ${authHeaderBlock}
 
 /**
  * `api/<entity>.ts` — per-entity REST methods over the generated controller
- * routes (update is `PATCH`, the clean-lite-ps controller's verb). The entity
+ * routes (update is `PATCH`, the backend controller's verb). The entity
  * type is imported plain (`<Class>`) from `dbEntities` (typeNaming knob is dead;
  * packages/db exports plain names — see FE-2 report).
  */
@@ -200,7 +200,7 @@ export function buildApiIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
 	const lines = [
 		"export * from './client';",
-		...entities.map((e) => `export * from './${e.name}';`),
+		...entities.map((e) => `export * from './${e.fileStem}';`),
 	];
 	return withBanner(SOURCE_DESC_SET, `${lines.join('\n')}\n`);
 }
@@ -219,7 +219,7 @@ export function emitApi(ctx: FrontendEmitContext, outDir: string): string[] {
 	written.push(clientPath);
 
 	for (const entity of entities) {
-		const entityPath = join(apiDir, `${entity.name}.ts`);
+		const entityPath = join(apiDir, `${entity.fileStem}.ts`);
 		writeFile(entityPath, buildEntityApiFile(entity, ctx));
 		written.push(entityPath);
 	}

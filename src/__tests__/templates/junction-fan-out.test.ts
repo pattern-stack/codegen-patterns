@@ -1,6 +1,6 @@
 /**
  * JUNC-0 (#678) — a junction's fan-out onto its two parents is rendered by the
- * parents' OWN clean-lite-ps service + module templates, from the junction YAML
+ * parents' OWN backend service + module templates, from the junction YAML
  * set (`templates/_shared/junction-fan-out.mjs`). Nothing injects into them, so
  * the parent files are a function of the YAMLs, not of which command ran last.
  *
@@ -21,11 +21,11 @@ import {
 	loadJunctionDefinitions,
 } from '../../../templates/_shared/junction-fan-out.mjs';
 import { entityLookupFrom } from '../../../templates/_shared/entity-naming.mjs';
-import { buildCleanLitePsLocals } from '../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { deriveJunctionName } from '../../schema/junction-definition.schema';
-import { withEntities } from '../clean-lite-ps/_entity-lookup';
+import { withEntities } from '../backend/_entity-lookup';
 
-const TEMPLATES = path.resolve(import.meta.dir, '../../../templates/entity/new/clean-lite-ps');
+const TEMPLATES = path.resolve(import.meta.dir, '../../../templates/entity/new/backend');
 
 function render(template: string, locals: Record<string, unknown>): string {
 	const source = fs.readFileSync(path.join(TEMPLATES, template), 'utf8');
@@ -59,11 +59,11 @@ describe('junctionNaming — the one junction naming rule', () => {
 		expect(junctionNaming('crew_person', MODULES)).toEqual({
 			name: 'crew_person',
 			plural: 'crew_people',
-			moduleDir: 'src/modules/crew_people',
-			entityFile: 'src/modules/crew_people/crew_person.entity',
-			repositoryFile: 'src/modules/crew_people/crew_person.repository.ts',
-			serviceFile: 'src/modules/crew_people/crew_person.service.ts',
-			moduleFile: 'src/modules/crew_people/crew_people.module.ts',
+			moduleDir: 'src/modules/crew-people',
+			entityFile: 'src/modules/crew-people/crew-person.entity',
+			repositoryFile: 'src/modules/crew-people/crew-person.repository.ts',
+			serviceFile: 'src/modules/crew-people/crew-person.service.ts',
+			moduleFile: 'src/modules/crew-people/crew-people.module.ts',
 			tableVar: 'crewPeople',
 			entityClass: 'CrewPerson',
 			serviceClass: 'CrewPersonService',
@@ -102,12 +102,12 @@ describe('junctionFanOutFor', () => {
 
 	it('imports reach the junction and the counterparty at their own folders', () => {
 		const [left] = fanOut('crew', [CREW_PERSON], 'src/modules/org/crews');
-		expect(left.junctionServiceImport).toBe('../../crew_people/crew_person.service');
-		expect(left.junctionEntityImport).toBe('../../crew_people/crew_person.entity');
-		expect(left.junctionModuleImport).toBe('../../crew_people/crew_people.module');
+		expect(left.junctionServiceImport).toBe('../../crew-people/crew-person.service');
+		expect(left.junctionEntityImport).toBe('../../crew-people/crew-person.entity');
+		expect(left.junctionModuleImport).toBe('../../crew-people/crew-people.module');
 		expect(left.counterpartyEntityImport).toBe('../../persons/person.entity');
 		const [right] = fanOut('person', [CREW_PERSON], 'src/modules/persons');
-		expect(right.junctionModuleImport).toBe('../crew_people/crew_people.module');
+		expect(right.junctionModuleImport).toBe('../crew-people/crew-people.module');
 		expect(right.counterpartyEntityImport).toBe('../org/crews/crew.entity');
 	});
 
@@ -166,7 +166,7 @@ describe('the parent templates render the fan-out', () => {
 		junctions: unknown[],
 		relationships: Record<string, unknown> = {},
 	): Locals =>
-		buildCleanLitePsLocals(
+		buildBackendLocals(
 			{
 				entity: { table: entity.plural, ...entity },
 				fields: { name: { type: 'string', required: true } },
@@ -178,7 +178,7 @@ describe('the parent templates render the fan-out', () => {
 
 	it('no junction → no fan-out, no forwardRef', () => {
 		const l = localsFor(ACCOUNT, [CREW_PERSON]);
-		expect(l.clpJunctionFanOut).toEqual([]);
+		expect(l.junctionFanOut).toEqual([]);
 		expect(render('service.ejs.t', l)).not.toContain('forwardRef');
 		expect(render('module.ejs.t', l)).not.toContain('forwardRef');
 	});
@@ -188,9 +188,9 @@ describe('the parent templates render the fan-out', () => {
 		expect(svc).toContain("import { Injectable, Inject, Optional, forwardRef } from '@nestjs/common';");
 		expect(svc.match(/from '@nestjs\/common'/g)).toHaveLength(1);
 		expect(svc).toContain(
-			"import { CrewPersonService, CrewPersonLinkInput } from '../../crew_people/crew_person.service';",
+			"import { CrewPersonService, CrewPersonLinkInput } from '../../crew-people/crew-person.service';",
 		);
-		expect(svc).toContain("import type { CrewPerson } from '../../crew_people/crew_person.entity';");
+		expect(svc).toContain("import type { CrewPerson } from '../../crew-people/crew-person.entity';");
 		expect(svc).toContain("import type { Person } from '../../persons/person.entity';");
 		expect(svc).toContain('@Inject(forwardRef(() => CrewPersonService))');
 		expect(svc).toContain('private readonly crewPersonService!: CrewPersonService;');
@@ -206,7 +206,7 @@ describe('the parent templates render the fan-out', () => {
 	it('module: forwardRef joins the one import; the junction module is imported via forwardRef', () => {
 		const mod = render('module.ejs.t', localsFor(PERSON, [CREW_PERSON]));
 		expect(mod).toContain("import { Inject, Module, forwardRef, type OnModuleInit } from '@nestjs/common';");
-		expect(mod).toContain("import { CrewPeopleModule } from '../crew_people/crew_people.module';");
+		expect(mod).toContain("import { CrewPeopleModule } from '../crew-people/crew-people.module';");
 		expect(mod).toContain('    DatabaseModule,\n    forwardRef(() => CrewPeopleModule),\n');
 	});
 
@@ -215,7 +215,7 @@ describe('the parent templates render the fan-out', () => {
 		const l = localsFor(badge, [{ pattern: 'Junction', between: ['badge', 'person'] }], {
 			holder: { type: 'belongs_to', target: 'person', foreign_key: 'holder_person_id' },
 		});
-		expect(l.clpJunctionFanOut[0].importCounterparty).toBe(false);
+		expect(l.junctionFanOut[0].importCounterparty).toBe(false);
 		const svc = render('service.ejs.t', l);
 		expect(svc.match(/import type \{ Person \} from '\.\.\/persons\/person\.entity';/g)).toHaveLength(1);
 	});

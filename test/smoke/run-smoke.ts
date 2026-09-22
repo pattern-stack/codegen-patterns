@@ -54,7 +54,7 @@ function cli(tmpDir: string): string {
 // `default` (no flag) preserves the historical behavior. `relationship`
 // swaps in `test/smoke/fixtures/crm/` (account self-ref + cross-entity
 // belongs_to + has_many) and runs `assertRelationshipEmission()` after
-// entity generation to verify the clean-lite-ps relationship emission:
+// entity generation to verify the backend relationship emission:
 // FK columns + service composition, and the ABSENCE of the v1 Drizzle
 // `relations()` const (DRZ-1, #583).
 type Scenario = 'default' | 'relationship';
@@ -205,9 +205,9 @@ function assertNoV1Relations(source: string, label: string): void {
 }
 
 /**
- * Verify the clean-lite-ps relationship emission for the CRM fixture set.
+ * Verify the backend relationship emission for the CRM fixture set.
  *
- * Layout: `clean-lite-ps/prompt-extension.js` emits each entity at
+ * Layout: `backend/entity-locals.js` emits each entity at
  * `${srcRoot}/modules/${plural}/${name}.entity.ts`. The smoke project's
  * `srcRoot` is `<tmpDir>/src` (per `codegen project init --yes`).
  *
@@ -515,25 +515,25 @@ async function main(): Promise<number> {
 		//
 		// For the relationship scenario, run TWICE (two-pass) so cross-entity
 		// `has_many` targets are on disk for the second pass — this seeds
-		// `clpExistingHasMany`, which drives the service-layer composition
+		// `existingHasMany`, which drives the service-layer composition
 		// methods for all targets, not just those generated first. (It no
 		// longer drives any entity-file emission — DRZ-1 deleted the many()
 		// const.)
 		// (Mirrors the baseline test's two-pass strategy in test/run-test.ts.)
 		run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
 		if (SCENARIO === 'relationship') {
-			log('second pass (relationship scenario — seeds clpExistingHasMany)');
+			log('second pass (relationship scenario — seeds existingHasMany)');
 			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the
-		// clean-lite-ps relationship emission shape on the CRM fixtures:
+		// backend relationship emission shape on the CRM fixtures:
 		// FK columns + service composition present, v1 relations() const
 		// absent (DRZ-1). Runs before subsystem installs so a failure
 		// shortcuts the slower steps; the install steps don't rewrite
 		// entity files.
 		if (SCENARIO === 'relationship') {
-			log('asserting clean-lite-ps relationship emission for CRM fixtures');
+			log('asserting backend relationship emission for CRM fixtures');
 			assertRelationshipEmission(tmpDir);
 			log('relationship emission OK');
 		}

@@ -17,7 +17,7 @@ import type { UpdateOrganizationDto } from './dto/update-organization.dto';
 import type { Organization } from './organization.entity';
 
 // OPENAPI-3: decorators reference registered schemas by `$ref` because
-// CLP DTOs are Zod-derived types (OPENAPI-2 registers them by name at
+// the DTOs are Zod-derived types (OPENAPI-2 registers them by name at
 // onModuleInit). `ErrorResponseDto` is auto-registered by the shared
 // registry.
 @ApiBearerAuth()

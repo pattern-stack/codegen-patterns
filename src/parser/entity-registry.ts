@@ -14,6 +14,7 @@
  */
 
 import { resolve } from 'node:path';
+import { emittedStem } from '../config/file-naming.js';
 import { findYamlFiles } from '../utils/find-yaml-files';
 import { loadEntityFromYaml, type LoadError } from '../utils/yaml-loader';
 import type { AnalysisIssue } from '../analyzer/types';
@@ -26,6 +27,13 @@ export interface EntityRegistryEntry {
 	classNamePlural: string;
 	camelName: string; // 'dealState'
 	pluralCamelName: string;
+	/**
+	 * The emitted file stem (NAME-2): kebab-case, `deal-state`. Every generator
+	 * that writes a per-entity file names it from this, never from `name` —
+	 * `name` is the YAML/DB spelling and the class-name source.
+	 */
+	fileStem: string; // 'deal-state'
+	pluralFileStem: string; // 'deal-states'
 	sync: 'api' | 'electric' | null; // null → inherit global frontend.sync.mode
 }
 
@@ -113,6 +121,8 @@ export function loadEntityRegistry(entitiesDir: string): LoadEntityRegistryResul
 			classNamePlural: pascalCase(entity.plural),
 			camelName: camelCase(entity.name),
 			pluralCamelName: camelCase(entity.plural),
+			fileStem: emittedStem(entity.name),
+			pluralFileStem: emittedStem(entity.plural),
 			sync: entity.sync ?? null,
 		});
 	}

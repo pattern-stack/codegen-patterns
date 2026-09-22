@@ -1,5 +1,5 @@
 /**
- * Snapshot test: intra-domain junction (opportunity × contact, clean-lite-ps).
+ * Snapshot test: intra-domain junction (opportunity × contact, backend).
  *
  * Locks the emitted output of the junction codegen pipeline against drift.
  * The smoke harness covers compile + grep; this covers full-file shape.
@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { bootstrapJunctionProject, type BootstrapResult } from './_helpers';
 
-describe('junction emission snapshot — opportunity_contact (clean-lite-ps)', () => {
+describe('junction emission snapshot — opportunity_contact (backend)', () => {
   let project: BootstrapResult;
 
   beforeAll(async () => {
@@ -27,18 +27,18 @@ describe('junction emission snapshot — opportunity_contact (clean-lite-ps)', (
     project?.cleanup();
   });
 
-  test('emits opportunity_contact.entity.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_contacts/opportunity_contact.entity.ts'))
+  test('emits opportunity-contact.entity.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-contacts/opportunity-contact.entity.ts'))
       .toMatchSnapshot();
   });
 
-  test('emits opportunity_contact.repository.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_contacts/opportunity_contact.repository.ts'))
+  test('emits opportunity-contact.repository.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-contacts/opportunity-contact.repository.ts'))
       .toMatchSnapshot();
   });
 
-  test('emits opportunity_contact.service.ts', () => {
-    expect(project.emittedFile('src/modules/opportunity_contacts/opportunity_contact.service.ts'))
+  test('emits opportunity-contact.service.ts', () => {
+    expect(project.emittedFile('src/modules/opportunity-contacts/opportunity-contact.service.ts'))
       .toMatchSnapshot();
   });
 

@@ -9,8 +9,8 @@ force: true
  */
 
 // Value exports (module, service)
-export { <%= classNames.module %> } from './<%= entityNamePlural %>.module';
-export { <%= classNames.service %> } from './<%= name %>.service';
+export { <%= classNames.module %> } from './<%= entityPluralFileStem %>.module';
+export { <%= classNames.service %> } from './<%= entityFileStem %>.service';
 
 // Type-only exports (entity)
-export type { <%= classNames.entity %> } from './<%= name %>.entity';
+export type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';

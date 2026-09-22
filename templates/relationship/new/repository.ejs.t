@@ -10,7 +10,7 @@ import { eq<%= hasMultiFieldQuery ? ', and' : '' %><%= hasOrderedQuery ? ', desc
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 import { BaseRepository } from '<%= baseRepositoryImport %>';
-import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= name %>.entity';
+import { <%= tableVarName %>, type <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 
 @Injectable()
 export class <%= classNames.repository %> extends BaseRepository<<%= classNames.entity %>, typeof <%= tableVarName %>> {

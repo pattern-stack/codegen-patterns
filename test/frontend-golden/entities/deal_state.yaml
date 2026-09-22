@@ -1,0 +1,43 @@
+# Golden frontend fixture — the MULTI-WORD entity (NAME-2, #695/#684).
+#
+# The frontend emitter names every per-entity file from the registry's
+# `fileStem`, which is kebab-case: this entity emits `api/deal-state.ts`,
+# `collections/deal-state.ts`, `entities/deal-state.ts`, `fields/deal-state.ts`
+# and is re-exported and imported under those stems — NOT `deal_state.ts`.
+#
+# Without a multi-word entity here the rule is untestable at the frontend:
+# `kebab(x) === x` for every single-word name, so `person` / `user` would pass
+# byte-identically whether the rule is applied or not. This fixture is the only
+# thing in the frontend tree that can fail if the stem regresses to the raw
+# YAML name.
+#
+# The DB-facing half is deliberately still snake: the `@repo/db/entities/...`
+# specifier is a CONSUMER-owned path this generator does not emit, so it keeps
+# the entity's YAML name.
+entity:
+  name: deal_state
+  plural: deal_states
+  table: deal_states
+  sync: api
+
+fields:
+  tenant_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: tenants.id
+
+  name:
+    type: string
+    required: true
+    max_length: 100
+    ui_key_field: true
+    ui_key_field_order: 0
+
+  sort_order:
+    type: integer
+    required: true
+
+  is_closed:
+    type: boolean
+    required: true

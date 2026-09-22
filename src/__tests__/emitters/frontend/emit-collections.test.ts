@@ -2,7 +2,7 @@
  * Frontend emitter — collection emission tests (ADR-038, FE-2).
  *
  * String-level (pure builders, no fs). Includes the 3 cases ported from the
- * deleted clean-lite-ps/frontend-sync-mode.test.ts (electric default, api mode,
+ * deleted backend/frontend-sync-mode.test.ts (electric default, api mode,
  * API_BASE_URL variant), plus per-entity override, auth on/off, parser/column-
  * mapper emission, the SSR guard, the index barrel, and determinism.
  */

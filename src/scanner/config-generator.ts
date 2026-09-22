@@ -56,7 +56,7 @@ export function generateConfig(profile: ProjectProfile): ProposedConfig {
 
 	// 3. Generate toggles — frontend is true iff either the profile exposed an
 	//    explicit frontend_src or an `apps/frontend/` directory exists under the
-	//    project root. There is no backend-architecture toggle: clean-lite-ps is
+	//    project root. There is no backend-architecture toggle: backend is
 	//    the only backend pipeline (ARCH-0, #677).
 	const generate = buildGenerateConfig(profile, paths);
 

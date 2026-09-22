@@ -62,6 +62,7 @@ import {
   type IntegrationTokenEntry,
 } from "./assembly-emission-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
+import { emittedStem } from '../../config/file-naming.js';
 import { composePatterns, declaredPatternNames, getPattern } from "../../patterns/index.js";
 import pluralize from "pluralize";
 
@@ -907,7 +908,7 @@ type EmitAdaptersModuleTree =
   | {
       /** Absolute `<backend_src>` root on disk (locates `<backend_src>/integrations`). */
       backendSrcAbs: string;
-      /** Absolute `paths.modules_dir` on disk — the clean-lite-ps module tree
+      /** Absolute `paths.modules_dir` on disk — the backend module tree
        *  the entity repo/module imports resolve into. */
       modulesAbs: string;
     }
@@ -1122,12 +1123,12 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           aliases,
         );
         const sinkInput = buildSinkInput(def!, surface, slugs[0], sinkRepoImportSpecifier);
-        const basePath = join(sinksDir, `${entityName}.sink.generated.ts`);
+        const basePath = join(sinksDir, `${emittedStem(entityName)}.sink.generated.ts`);
         const baseContent = generateSinkBase({ ...sinkInput, mode });
         if (!opts.dryRun) writeIfChanged(basePath, baseContent);
         result.written.push(basePath);
 
-        const subclassPath = join(sinksDir, `${entityName}.sink.ts`);
+        const subclassPath = join(sinksDir, `${emittedStem(entityName)}.sink.ts`);
         if (existsSync(subclassPath)) {
           result.scaffoldsSkipped.push(subclassPath);
         } else {
@@ -1144,7 +1145,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
         // mapping is mechanical, so re-emit byte-identically with writeIfChanged.
         const emitChanges = def?.integration?.sink?.emit_changes === true;
         if (emitChanges) {
-          const emitterPath = join(sinksDir, `${entityName}.change-emitter.ts`);
+          const emitterPath = join(sinksDir, `${emittedStem(entityName)}.change-emitter.ts`);
           const emitterContent = generateChangeEmitter({
             entityName,
             entityClass: loc.entityClass,
@@ -1161,7 +1162,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
           const assemblyPath = join(
             modulesDir,
             slug,
-            `${entityName}-integration.module.ts`,
+            `${emittedStem(entityName)}-integration.module.ts`,
           );
           const assemblyContent = generateAssemblyModule({
             surface,
@@ -1220,7 +1221,7 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
 /**
  * Derive the FK external-key write-surface name for a `belongs_to` relationship,
  * mirroring `processBelongsTo`'s `relationKey` branches in
- * `templates/entity/new/clean-lite-ps/prompt-extension.js:447-460`, then
+ * `templates/entity/new/backend/entity-locals.js:447-460`, then
  * appending `ExternalId`.
  *
  * Three shapes (see spec #487 anti-drift table):
@@ -1251,7 +1252,7 @@ export function fkWriteKey(
 
 /**
  * Build the {@link SinkEmitInput} for a `pattern: Integrated` entity — mirrors
- * `buildIntegrationSurface().writeFields`/`writeFkFields` (clean-lite-ps
+ * `buildIntegrationSurface().writeFields`/`writeFkFields` (backend
  * prompt-extension): copy-through scalars are the non-FK `fields:` (camelCased,
  * nullable-aware tsType); FK external keys are one `<relationKey>ExternalId` per
  * `belongs_to`. Uses {@link fkWriteKey} for the derivation so the write-key

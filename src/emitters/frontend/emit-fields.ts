@@ -363,7 +363,7 @@ ${searchFields}
 /** `fields/index.ts` — `export * from './<name>'` per entity, sorted. */
 export function buildFieldsIndexFile(ctx: FrontendEmitContext): string {
 	const entities = sortEntities(ctx.entities);
-	const lines = entities.map((e) => `export * from './${e.name}';`);
+	const lines = entities.map((e) => `export * from './${e.fileStem}';`);
 	return withBanner(SOURCE_DESC_SET, `${lines.join('\n')}\n`);
 }
 
@@ -381,7 +381,7 @@ export function emitFields(ctx: FrontendEmitContext, outDir: string): string[] {
 	written.push(typePath);
 
 	for (const entity of entities) {
-		const filePath = join(fieldsDir, `${entity.name}.ts`);
+		const filePath = join(fieldsDir, `${entity.fileStem}.ts`);
 		writeFile(filePath, buildEntityFieldsFile(entity, ctx));
 		written.push(filePath);
 	}

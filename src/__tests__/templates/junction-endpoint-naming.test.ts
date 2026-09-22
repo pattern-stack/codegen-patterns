@@ -90,17 +90,17 @@ describe('junction endpoints resolve from their own YAML', () => {
 			contact: 'entity:\n  name: contact\n  plural: contacts\n',
 		});
 		expect(l.leftEntityImportFromJunction).toBe('../opportunities/opportunity.entity');
-		expect(l.outputPaths.service).toBe('src/modules/opportunity_contacts/opportunity_contact.service.ts');
+		expect(l.outputPaths.service).toBe('src/modules/opportunity-contacts/opportunity-contact.service.ts');
 	});
 
-	it('clean-lite-ps output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
+	it('backend output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
 		const l = await junctionLocals(
 			['crew', 'person'],
 			ENTITIES,
 			'paths:\n  backend_src: apps/api/src\n  modules_dir: apps/api/src/domain\n',
 		);
-		expect(l.outputPaths.entity).toBe('apps/api/src/domain/crew_people/crew_person.entity.ts');
-		expect(l.outputPaths.module).toBe('apps/api/src/domain/crew_people/crew_people.module.ts');
+		expect(l.outputPaths.entity).toBe('apps/api/src/domain/crew-people/crew-person.entity.ts');
+		expect(l.outputPaths.module).toBe('apps/api/src/domain/crew-people/crew-people.module.ts');
 		// Imports are relative between folders of the one tree — unchanged.
 		expect(l.leftEntityImportFromJunction).toBe('../org/crews/crew.entity');
 	});

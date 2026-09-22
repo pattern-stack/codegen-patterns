@@ -124,6 +124,35 @@ describe('frontend golden tree', () => {
 		expect(resolvers).toContain('export interface UserRefs');
 	});
 
+	it('names every emitted file by the kebab stem, not the YAML name (NAME-2)', () => {
+		// `deal_state` is the only multi-word entity in the fixture set, and the
+		// only thing here that can fail: kebab(x) === x for `person` / `user`, so
+		// they pass byte-identically whether the rule is applied or not.
+		const emitted = listFiles(outDir);
+		for (const rel of emitted) {
+			expect(`emitted path: ${rel}`).not.toContain('_');
+		}
+		for (const dir of ['api', 'collections', 'entities', 'fields']) {
+			expect(emitted).toContain(`${dir}/deal-state.ts`);
+			expect(emitted).not.toContain(`${dir}/deal_state.ts`);
+		}
+
+		// Barrels and cross-file imports follow the same stem, or the tree does
+		// not resolve.
+		expect(readFileSync(join(outDir, 'api/index.ts'), 'utf-8')).toContain(
+			"export * from './deal-state';",
+		);
+		expect(readFileSync(join(outDir, 'store/lookups.ts'), 'utf-8')).toContain(
+			"from '../collections/deal-state'",
+		);
+
+		// The DB-facing specifier is a CONSUMER-owned path this generator does not
+		// emit, so it keeps the entity's YAML name — the rule's boundary.
+		expect(readFileSync(join(outDir, 'collections/deal-state.ts'), 'utf-8')).toContain(
+			"from '@repo/db/entities/deal_state'",
+		);
+	});
+
 	it('honors per-entity sync mode (user=api, person=electric)', () => {
 		const userCollection = readFileSync(
 			join(outDir, 'collections/user.ts'),

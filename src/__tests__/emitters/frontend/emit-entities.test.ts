@@ -54,10 +54,12 @@ describe('emit-entities — hook wiring file', () => {
 		expect(out).toContain(
 			"import type { DealState } from '@repo/db/entities/deal_state';",
 		);
+		// NAME-2: our own emitted files are kebab; the `@repo/db/entities/...`
+		// specifier above is consumer-owned and keeps the YAML name.
 		expect(out).toContain(
-			"import { dealStateCollection } from '../collections/deal_state';",
+			"import { dealStateCollection } from '../collections/deal-state';",
 		);
-		expect(out).toContain("import { dealStateApi } from '../api/deal_state';");
+		expect(out).toContain("import { dealStateApi } from '../api/deal-state';");
 	});
 
 	it('destructures all 6 per-entity re-exports with pts naming', () => {

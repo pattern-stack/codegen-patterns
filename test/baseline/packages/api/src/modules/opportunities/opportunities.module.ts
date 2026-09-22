@@ -4,7 +4,7 @@ import { OPENAPI_REGISTRY, type OpenApiRegistry } from '@shared/openapi';
 import { DatabaseModule } from '@shared/database/database.module';
 import { OrganizationRepository } from '../organizations/organization.repository';
 import { UserRepository } from '../users/user.repository';
-import { DealStateRepository } from '../deal_states/deal_state.repository';
+import { DealStateRepository } from '../deal-states/deal-state.repository';
 
 import { OpportunityRepository } from './opportunity.repository';
 import { OpportunityService } from './opportunity.service';
@@ -60,9 +60,9 @@ export class OpportunitiesModule implements OnModuleInit {
   onModuleInit(): void {
     this.openApi.registerSchema('CreateOpportunityDto', CreateOpportunitySchema);
     this.openApi.registerSchema('UpdateOpportunityDto', UpdateOpportunitySchema);
-    // CLP pipeline names the response schema <Entity>OutputDto (matches
+    // The response schema is named <Entity>OutputDto (matches
     // classNames.outputDto); the OPENAPI-2 spec sketch uses "ResponseDto"
-    // but existing CLP code already publishes OutputDto everywhere, so we
+    // but the generated code publishes OutputDto everywhere, so we
     // keep consistency. OPENAPI-3 decorators reference the same name.
     this.openApi.registerSchema('OpportunityOutputDto', OpportunityOutputSchema);
   }

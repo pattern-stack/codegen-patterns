@@ -9,12 +9,13 @@
  * rendered by their own templates (templates/_shared/junction-fan-out.mjs,
  * JUNC-0 #678) — this generator writes only the junction's own files.
  *
- * Output paths are the clean-lite-ps module tree (`paths.modules_dir`) — the
+ * Output paths are the backend module tree (`paths.modules_dir`) — the
  * only backend pipeline (ARCH-0, #677).
  */
 
 import fs from "node:fs";
-import path from "node:path";
+
+import { emittedStem } from '../../../src/config/file-naming.js';import path from "node:path";
 import yaml from "yaml";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { junctionName as deriveJunctionName, junctionNaming } from "../../_shared/junction-fan-out.mjs";
@@ -33,7 +34,6 @@ import { configOrDefaults, loadProjectConfig } from "../../../src/config/project
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 const pascalCase = (s) => capitalize(camelCase(s));
-const kebabCase = (s) => s.replace(/_/g, "-");
 
 // ============================================================================
 // Config Loading Helpers
@@ -200,8 +200,10 @@ export default {
     const entityNamePlural = tableName;
     const tableVarName = camelCase(entityNamePlural);
     const entityNamePluralPascal = pascalCase(entityNamePlural);
-    const entityNameKebab = kebabCase(junctionName);
-    const entityNamePluralKebab = kebabCase(entityNamePlural);
+    // NAME-2 — emitted file stems (kebab). `junctionName` / `entityNamePlural`
+    // stay snake: they are the class-name source and the SQL table name.
+    const entityFileStem = emittedStem(junctionName);
+    const entityPluralFileStem = emittedStem(entityNamePlural);
 
     // ======================================================================
     // Pairing endpoints
@@ -438,9 +440,9 @@ export default {
       entityNamePascal,
       entityNameCamel,
       entityNamePlural,
+      entityFileStem,
+      entityPluralFileStem,
       entityNamePluralPascal,
-      entityNameKebab,
-      entityNamePluralKebab,
       tableName,
       tableVarName,
 

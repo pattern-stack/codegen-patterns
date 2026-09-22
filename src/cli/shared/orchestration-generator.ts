@@ -32,6 +32,7 @@
  */
 
 import fs from 'node:fs';
+import { kebab } from '../../config/file-naming.js';
 import path from 'node:path';
 import { generating } from '../../utils/generated-file.js';
 
@@ -112,9 +113,8 @@ function splitWords(str: string): string[] {
 		.map((w) => w.toLowerCase());
 }
 
-export function toKebabCase(str: string): string {
-	return splitWords(str).join('-');
-}
+/** The one kebab rule (NAME-2) — a pattern slug names an emitted file. */
+export const toKebabCase = kebab;
 
 export function toPascalCase(str: string): string {
 	return splitWords(str)

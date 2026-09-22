@@ -2,6 +2,16 @@
 // Hand edits are overwritten on re-emit. Regenerate with `bun run codegen`.
 
 export {
+	dealStateHooks,
+	useDealStateList,
+	useDealState,
+	useCreateDealState,
+	useUpdateDealState,
+	useDeleteDealState,
+	dealStateKeys,
+} from './deal-state';
+
+export {
 	personHooks,
 	usePersonList,
 	usePerson,

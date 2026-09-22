@@ -32,6 +32,7 @@
  */
 
 import { relative, resolve, sep } from "node:path";
+import { emittedStem } from '../../config/file-naming.js';
 import { entityModuleNaming } from "../../config/module-tree.js";
 import { changeEmitterClass } from "./change-emitter-emission-generator";
 import { providerConstantCase, providerPascalCase } from "./provider-module-generator";
@@ -54,7 +55,7 @@ function generatedBanner(sourceDesc: string): string {
 
 /** Entity names are snake_case (`call_recording`); provider slugs are kebab
  *  (`ms-graph`). The provider helpers split on `-` only, so entity names need a
- *  `_`-aware PascalCase/CONSTANT_CASE transform (matching clean-lite-ps'
+ *  `_`-aware PascalCase/CONSTANT_CASE transform (matching backend'
  *  `pascalCase`). e.g. `call_recording` → `CallRecording` / `CALL_RECORDING`. */
 function entityPascalCase(name: string): string {
   return name
@@ -166,7 +167,7 @@ export function generateAssemblyModule(input: AssemblyEmitInput): string {
 
   const sinkClass = `${input.entityClass}Sink`;
   // The sink scaffold lives at `../../sinks/<entity>.sink` relative to the module.
-  const sinkImport = `../../sinks/${input.entityName}.sink`;
+  const sinkImport = `../../sinks/${emittedStem(input.entityName)}.sink`;
 
   const token = integrationUseCaseToken(input.entityName, input.provider);
   const moduleClass = assemblyModuleClass(input.entityName, input.provider);
@@ -180,7 +181,7 @@ export function generateAssemblyModule(input: AssemblyEmitInput): string {
   const emitChanges = input.emitChanges === true;
   const emitterClass = changeEmitterClass(input.entityClass);
   // The change-emitter lives next to the sink: `../../sinks/<entity>.change-emitter`.
-  const emitterImport = `../../sinks/${input.entityName}.change-emitter`;
+  const emitterImport = `../../sinks/${emittedStem(input.entityName)}.change-emitter`;
   const integrationTokenImports = emitChanges
     ? `  INTEGRATION_CHANGE_EMITTER,\n  INTEGRATION_CHANGE_SOURCE,\n  INTEGRATION_SINK,`
     : `  INTEGRATION_CHANGE_SOURCE,\n  INTEGRATION_SINK,`;
@@ -329,7 +330,7 @@ export function generateIntegrationAggregator(
     .map((e) => {
       const cls = assemblyModuleClass(e.entityName, e.provider);
       // Each assembly lives at `./modules/<provider>/<entity>-integration.module`.
-      const path = `./modules/${e.provider}/${e.entityName}-integration.module`;
+      const path = `./modules/${e.provider}/${emittedStem(e.entityName)}-integration.module`;
       return `import { ${cls} } from '${path}';`;
     })
     .join("\n");
@@ -362,10 +363,10 @@ export class ${aggregatorClass} {}
 // ============================================================================
 
 /**
- * Where the clean-lite-ps pipeline emits an entity's repository + NestJS module,
+ * Where the backend pipeline emits an entity's repository + NestJS module,
  * and how to import them from the assembly file.
  *
- * Mirrors `buildCleanLitePsLocals` (templates/.../clean-lite-ps/prompt-extension.js):
+ * Mirrors `buildBackendLocals` (templates/.../backend/entity-locals.js):
  *   - repo:   `<modules_dir>[/<context>]/<plural>/<entity>.repository.ts`
  *   - module: `<modules_dir>[/<context>]/<plural>/<plural>.module.ts`
  *
@@ -416,7 +417,7 @@ export interface ResolveEntityModuleImportsInput {
    *  the assembly under `<backend_src>/integrations`. */
   backendSrcAbs: string;
   /** Absolute `paths.modules_dir` on disk (e.g. `/abs/project/src/modules`) —
-   *  the clean-lite-ps module tree the entity's repo + module live in (PATH-1). */
+   *  the backend module tree the entity's repo + module live in (PATH-1). */
   modulesAbs: string;
   /** tsconfig path aliases: aliasKey → absolute target dir. May be empty. */
   aliases: Record<string, string>;
@@ -478,7 +479,7 @@ export function resolveEntityModuleImports(
   const repoClass = `${entityClass}Repository`;
   const moduleClass = `${pluralPascalCase(input.entityPlural)}Module`;
 
-  // The clean-lite-ps module tree (`src/config/module-tree.ts`, GEN-0 #649).
+  // The backend module tree (`src/config/module-tree.ts`, GEN-0 #649).
   const naming = entityModuleNaming(
     { name: input.entityName, plural: input.entityPlural, context: input.context },
     input.modulesAbs,

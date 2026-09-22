@@ -4,12 +4,12 @@
  * A junction (`pattern: Junction`, `between: [left, right]`) is mirrored onto
  * both parent services: attach / detach / list / setPrimary, delegating to the
  * one junction service (`docs/relationship-pattern-audit.md` §1). The parent's
- * OWN clean-lite-ps service + module templates render that fan-out from the
+ * OWN backend service + module templates render that fan-out from the
  * junction YAML set — never an inject into a file another command owns, so
  * `entity new` and `junction new` in any order give the same bytes (charter I2).
  *
  * Readers: `templates/junction/new/prompt.js` (the junction's own files) and
- * `templates/entity/new/clean-lite-ps/prompt-extension.js` (the parents' fan-out
+ * `templates/entity/new/backend/entity-locals.js` (the parents' fan-out
  * and the Communication capability's `via:` junction). One naming rule for all
  * of them (charter I1). The name + plural rule itself is
  * `src/config/junction-naming.ts`, shared with the CLI (schema, roles, barrels).
@@ -24,6 +24,7 @@ import yaml from 'yaml';
 import { junctionName, junctionPlural } from '../../src/config/junction-naming.js';
 import { junctionsDirFor } from '../../src/config/junctions-dir.js';
 import { findYamlFiles } from '../../src/utils/find-yaml-files.js';
+import { emittedStem } from '../../src/config/file-naming.js';
 import { entityModuleNaming, relativeModuleDir } from './entity-naming.mjs';
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -50,7 +51,7 @@ export function junctionNaming(name, modulesDir) {
     moduleDir,
     entityFile: path.posix.normalize(tree.entityFile),
     repositoryFile: path.posix.normalize(tree.repositoryFile),
-    serviceFile: `${moduleDir}/${name}.service.ts`,
+    serviceFile: `${moduleDir}/${emittedStem(name)}.service.ts`,
     moduleFile: path.posix.normalize(tree.moduleFile),
     tableVar: camelCase(plural),
     entityClass: pascal,
@@ -127,10 +128,10 @@ export function junctionFanOutFor(entityName, ctx) {
       counterpartyIdParam: `${camelCase(counterparty)}Id`,
       counterpartyPascal,
       counterpartyEntityImport:
-        `${relativeModuleDir(selfModuleDir, counterpartyNaming.moduleDir)}/${counterparty}.entity`,
-      junctionServiceImport: `${junctionDir}/${name}.service`,
-      junctionEntityImport: `${junctionDir}/${name}.entity`,
-      junctionModuleImport: `${junctionDir}/${junction.plural}.module`,
+        `${relativeModuleDir(selfModuleDir, counterpartyNaming.moduleDir)}/${emittedStem(counterparty)}.entity`,
+      junctionServiceImport: `${junctionDir}/${emittedStem(name)}.service`,
+      junctionEntityImport: `${junctionDir}/${emittedStem(name)}.entity`,
+      junctionModuleImport: `${junctionDir}/${emittedStem(junction.plural)}.module`,
       attachMethod: side === 'left' ? `attach${counterpartyPascal}` : `addTo${counterpartyPascal}`,
       detachMethod: side === 'left' ? `detach${counterpartyPascal}` : `removeFrom${counterpartyPascal}`,
       listMethod: `${counterpartyPlural}List`,

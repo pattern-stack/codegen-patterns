@@ -1,6 +1,6 @@
 # Smoke fixture (relationship scenario): contact
 #
-# Cross-entity `belongs_to account` on `account_id`. Verifies clean-lite-ps
+# Cross-entity `belongs_to account` on `account_id`. Verifies backend
 # emits `account: one(accounts, { fields: [contacts.accountId], references:
 # [accounts.id] })` in the `contactsRelations` const.
 entity:

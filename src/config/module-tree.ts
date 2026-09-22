@@ -1,6 +1,7 @@
 /**
- * The clean-lite-ps module tree — the ONE rule for where an entity's module
- * lives: `<modules_dir>[/<context>]/<plural>` (PATH-1, #645; GEN-0, #649).
+ * The backend module tree — the ONE rule for where an entity's module
+ * lives: `<modules_dir>[/<context>]/<plural>`, each segment kebab-cased by
+ * `file-naming.ts` (PATH-1, #645; GEN-0, #649; NAME-2, #695).
  *
  * Read by the hygen emission (`templates/_shared/entity-naming.mjs` re-exports
  * it), the barrels (`src/cli/shared/barrel-generator.ts` › `entityFilePaths`)
@@ -14,6 +15,7 @@
  */
 
 import pluralize from 'pluralize';
+import { emittedDir, emittedStem } from './file-naming.js';
 
 /** The fields of an `entity:` block the tree reads. */
 export interface ModuleTreeEntity {
@@ -25,9 +27,15 @@ export interface ModuleTreeEntity {
 }
 
 export interface EntityModuleNaming {
-	/** The Drizzle table export and the module folder's name. */
+	/**
+	 * The Drizzle table export and the `pgTable('…')` argument — a DATABASE
+	 * identifier, so it stays snake_case (NAME-2). The module folder is
+	 * `emittedDir(plural)` and is kebab-case; the two are deliberately not the
+	 * same string. A user-chosen layout may move the folder; it must not touch
+	 * this.
+	 */
 	plural: string;
-	/** `<modules_dir>[/<context>]/<plural>` — the folder holding the entity's files. */
+	/** `<modules_dir>[/<context>]/<plural>`, kebab-cased — the folder holding the entity's files. */
 	moduleDir: string;
 	/** The entity (+ Drizzle table) module, without extension. */
 	entityFile: string;
@@ -44,12 +52,13 @@ export interface EntityModuleNaming {
  */
 export function entityModuleNaming(entity: ModuleTreeEntity, modulesDir: string): EntityModuleNaming {
 	const plural = entity.plural || pluralize.plural(entity.name);
-	const moduleDir = entity.context ? `${modulesDir}/${entity.context}/${plural}` : `${modulesDir}/${plural}`;
+	const dir = emittedDir(plural);
+	const moduleDir = entity.context ? `${modulesDir}/${emittedDir(entity.context)}/${dir}` : `${modulesDir}/${dir}`;
 	return {
 		plural,
 		moduleDir,
-		entityFile: `${moduleDir}/${entity.name}.entity`,
-		moduleFile: `${moduleDir}/${plural}.module.ts`,
-		repositoryFile: `${moduleDir}/${entity.name}.repository.ts`,
+		entityFile: `${moduleDir}/${emittedStem(entity.name)}.entity`,
+		moduleFile: `${moduleDir}/${emittedStem(plural)}.module.ts`,
+		repositoryFile: `${moduleDir}/${emittedStem(entity.name)}.repository.ts`,
 	};
 }

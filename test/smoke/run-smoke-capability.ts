@@ -383,7 +383,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	);
 	assertContains(
 		meetingRepo,
-		/import \{ meetingContacts \} from '\.\.\/meeting_contacts\/meeting_contact\.entity';/,
+		/import \{ meetingContacts \} from '\.\.\/meeting-contacts\/meeting-contact\.entity';/,
 		'meeting.repository.ts imports the junction table',
 	);
 	for (const method of ['findByRole', 'participants']) {
@@ -472,11 +472,11 @@ function assertTargetNaming(tmpDir: string): void {
 	expectImport('squads/squad.service.ts', "import { PersonRepository } from '../persons/person.repository';");
 	expectImport('persons/person.service.ts', "import { CrewRepository } from '../org/crews/crew.repository';");
 	// junction — both endpoints, both directions, and the parent injects
-	expectImport('crew_people/crew_person.entity.ts', "import { crews } from '../org/crews/crew.entity';");
-	expectImport('crew_people/crew_person.entity.ts', "import { persons } from '../persons/person.entity';");
-	expectImport('crew_people/crew_people.module.ts', "import { PersonsModule } from '../persons/persons.module';");
-	expectImport('org/crews/crews.module.ts', "import { CrewPeopleModule } from '../../crew_people/crew_people.module';");
-	expectImport('persons/persons.module.ts', "import { CrewPeopleModule } from '../crew_people/crew_people.module';");
+	expectImport('crew-people/crew-person.entity.ts', "import { crews } from '../org/crews/crew.entity';");
+	expectImport('crew-people/crew-person.entity.ts', "import { persons } from '../persons/person.entity';");
+	expectImport('crew-people/crew-people.module.ts', "import { PersonsModule } from '../persons/persons.module';");
+	expectImport('org/crews/crews.module.ts', "import { CrewPeopleModule } from '../../crew-people/crew-people.module';");
+	expectImport('persons/persons.module.ts', "import { CrewPeopleModule } from '../crew-people/crew-people.module';");
 	// The counterparty import and crew's own belongs_to import are one line —
 	// the inject's skip_if only dedupes them when both use the same path.
 	const crewService = reads('org/crews/crew.service.ts');
@@ -486,8 +486,8 @@ function assertTargetNaming(tmpDir: string): void {
 	}
 
 	// relationship (NAME-1, #633) — both endpoints from their own YAML
-	expectImport('crew_assignments/crew_assignment.entity.ts', "import { persons } from '../persons/person.entity';");
-	expectImport('crew_assignments/crew_assignment.entity.ts', "import { crews } from '../org/crews/crew.entity';");
+	expectImport('crew-assignments/crew-assignment.entity.ts', "import { persons } from '../persons/person.entity';");
+	expectImport('crew-assignments/crew-assignment.entity.ts', "import { crews } from '../org/crews/crew.entity';");
 
 	// #632 — `person` belongs_to AND has_many `crew`: one repository, once.
 	const countLines = (file: string, line: string): number =>
@@ -509,9 +509,9 @@ function assertTargetNaming(tmpDir: string): void {
 		'org/crews/crew.entity.ts',
 		'org/crews/crew.service.ts',
 		'squads/squad.service.ts',
-		'crew_people/crew_person.entity.ts',
-		'crew_people/crew_person.service.ts',
-		'crew_assignments/crew_assignment.entity.ts',
+		'crew-people/crew-person.entity.ts',
+		'crew-people/crew-person.service.ts',
+		'crew-assignments/crew-assignment.entity.ts',
 	]) {
 		assertNotContains(reads(file), /\bpeople\/person\b|'\.\.\/crews\//, `${file} (re-derived target path)`);
 	}

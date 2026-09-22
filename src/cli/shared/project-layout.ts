@@ -37,7 +37,7 @@ export interface ProjectLayout {
 	providers: string;
 	/** `paths.generated` — codegen-owned cross-entity barrels. */
 	generated: string;
-	/** `paths.modules_dir` — the clean-lite-ps entity module tree (target of
+	/** `paths.modules_dir` — the backend entity module tree (target of
 	 *  `@modules/*`) and the `auth-integrations` vendor root. */
 	modules: string;
 	/** `paths.orchestration_src` — orchestration emission root. */

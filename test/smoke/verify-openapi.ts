@@ -158,7 +158,7 @@ async function main(): Promise<void> {
 		const requiredSchemas = [
 			'CreateContactDto',
 			'UpdateContactDto',
-			// clean-lite-ps registers the response DTO as `OutputDto`
+			// backend registers the response DTO as `OutputDto`
 			// (OPENAPI-2 implementation note 3).
 			'ContactOutputDto',
 			'ErrorResponseDto',

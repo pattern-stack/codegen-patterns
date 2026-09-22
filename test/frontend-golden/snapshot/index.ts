@@ -5,6 +5,7 @@
  * Generated frontend data layer.
  *
  * Entities:
+ * - DealState
  * - Person
  * - User
  *

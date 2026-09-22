@@ -19,7 +19,7 @@ Before any work, read:
 - **Issues** tracked via GitHub Issues
 - **Stack**: TypeScript, Hygen templates, NestJS (generated output), Drizzle ORM
 - **Architecture**: YAML entity definitions -> Parser -> Analyzer -> Hygen templates -> Generated code
-- **Two template pipelines**: Full Clean Architecture and Clean-Lite-PS
+- **Two template pipelines**: Full Clean Architecture and backend
 
 ### Modes
 

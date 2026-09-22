@@ -9,8 +9,8 @@ import { OrganizationRepository } from '../organizations/organization.repository
 import type { Organization } from '../organizations/organization.entity';
 import { UserRepository } from '../users/user.repository';
 import type { User } from '../users/user.entity';
-import { DealStateRepository } from '../deal_states/deal_state.repository';
-import type { DealState } from '../deal_states/deal_state.entity';
+import { DealStateRepository } from '../deal-states/deal-state.repository';
+import type { DealState } from '../deal-states/deal-state.entity';
 
 @Injectable()
 export class OpportunityService extends WithAnalytics(

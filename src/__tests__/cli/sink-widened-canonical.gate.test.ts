@@ -39,6 +39,7 @@ import { generateSinkBase } from '../../cli/shared/sink-emission-generator';
 
 const MESSAGE_SINK_INPUT = {
   entityName: 'message',
+  entityFileStem: 'message',
   entityClass: 'Message',
   surface: 'crm',
   pattern: 'Integrated',

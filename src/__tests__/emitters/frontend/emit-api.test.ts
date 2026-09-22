@@ -2,7 +2,7 @@
  * Frontend emitter — REST api client tests (ADR-038, FE-2).
  *
  * Covers client.ts baseURL variants + auth on/off + 204 handling, per-entity
- * routes/verbs (clean → PUT, clean-lite-ps → PATCH), the plain entity-type
+ * routes/verbs (clean → PUT, backend → PATCH), the plain entity-type
  * import, and the index barrel.
  */
 
@@ -103,7 +103,7 @@ describe('emit-api — <entity>.ts routes + verbs', () => {
 		);
 	});
 
-	it('update is PATCH — the clean-lite-ps controller verb', () => {
+	it('update is PATCH — the backend controller verb', () => {
 		const out = buildEntityApiFile(entry('contact', 'contacts'), ctx([]));
 		expect(out).toContain("request<Contact>('PATCH', `/contacts/${id}`, data)");
 		expect(out).not.toContain("'PUT'");

@@ -4,10 +4,9 @@
  *
  * Drizzle 1.0 removed `relations` from the `drizzle-orm` root export, so any
  * generated project carrying the v1 const stops compiling. DRZ-1 deleted the
- * emission from all three backend pipelines (entity/clean, clean-lite-ps,
- * junction) and left the slot deliberately empty. REL-1 refilled it with a
- * whole-set `defineRelations()` manifest (ADR-044), emitted by
- * `src/emitters/relations/` rather than by a template.
+ * emission from all three backend pipelines (entity/clean, backend,
+ * junction) and left the slot deliberately empty. REL-1 (#586) refills it with
+ * a whole-set v2 `defineRelations()` manifest under ADR-044.
  *
  * Re-pointed for REL-1 in two ways:
  *
