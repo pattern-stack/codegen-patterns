@@ -404,12 +404,7 @@ export async function regenerateBarrels(
  * Honors `generate.architecture`, falling back to 'clean'.
  */
 export function resolveArchitecture(ctx: Context): Architecture {
-	const cfg = ctx.config as
-		| { generate?: { architecture?: string } }
-		| null
-		| undefined;
-	const raw = cfg?.generate?.architecture;
-	return raw === 'clean-lite-ps' ? 'clean-lite-ps' : 'clean';
+	return ctx.config?.generate.architecture ?? 'clean';
 }
 
 /**

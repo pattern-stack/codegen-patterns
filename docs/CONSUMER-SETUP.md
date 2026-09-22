@@ -529,6 +529,31 @@ database:
   dialect: postgres
 ```
 
+**The file is validated strictly.** Every `codegen` command (and every generator it runs) parses
+`codegen.config.yaml` through one schema, `CodegenConfigSchema` (`src/schema/codegen-config.schema.ts`). An unknown
+or removed key — a typo such as `paths.entitis`, or `paths.entities_dir`, which was replaced by `paths.entities` — is
+an error that names the key, lists the keys expected there, and exits 1. There is no warning mode. The top-level
+blocks are:
+
+| Block | What it configures |
+|---|---|
+| `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
+| `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `subsystems`, `modules_dir`, `orchestration_src`, `generated` |
+| `generate` | `architecture`, `frontend`, `analytics`, and the `clean`-pipeline toggles `drizzleSchema` / `commands` / `queries` / `dtos` |
+| `patterns` | glob list for app-defined patterns (below) |
+| `naming` | `fileCase`, `suffixStyle`, `entityInclusion`, `terminology`, `layers.<layer>.*` |
+| `locations` | `path` / `import` overrides for the generator's named locations (`dbEntities`, `backendDomain`, …) |
+| `frontend` | the frontend emitter (README › Frontend generation) |
+| `database` | `dialect: postgres \| sqlite` (`clean` pipeline) |
+| `behaviors` | `strategy: inline \| base_class` (`clean` pipeline) |
+| `dev` | `port` for `codegen dev` |
+| `auth` | `devAllowAnonymous` (ADR-043), `redirect_uri_base` (auth subsystem) |
+| `subsystems` | `install:` — the installed-subsystem list in package mode |
+| `events`, `jobs`, `bridge`, `integration`, `observability`, `openapi`, `cache`, `storage` | written by `codegen subsystem install <name>`; see each subsystem's section |
+
+Two maps are open by design: `jobs.pools` (keyed by pool name; each pool's keys are still checked) and
+`frontend.parsers` (keyed by column type).
+
 `codegen project init` defaults `generate.architecture` to `clean-lite-ps` — the lighter consumer-facing layout used by the scaffold-demo app. To opt into the full Clean Architecture pipeline (separate `domain/`, `application/`, `infrastructure/` directories, separate command/query classes), edit `codegen.config.yaml` and set `generate.architecture: clean`. The two pipelines are mutually exclusive and the scanner only overrides the default when it finds existing domain/application directories (see `docs/specs/TEST-SESSION-1.md` §3).
 
 `paths.generated` must sit inside your `tsconfig.json` `"include"` globs — otherwise TS won't typecheck the barrel.

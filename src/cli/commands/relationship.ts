@@ -241,7 +241,7 @@ export class RelationshipNewCommand extends Command {
 			if (!isJsonMode()) {
 				printInfo(`generating ${v.name}`);
 			}
-			const res = invokeRelationshipNew(v.file, ctx.cwd);
+			const res = invokeRelationshipNew(v.file, ctx.cwd, ctx.configPath);
 			if (res.ok) {
 				succeeded.push(v.name);
 				if (!isJsonMode()) printSuccess(`${v.name}`);

@@ -351,19 +351,20 @@ describe('generate config', () => {
 		}
 	});
 
-	it('passes through unknown keys (legacy toggles)', () => {
+	it('rejects unknown keys (CFG-0: the FE-3 frontend toggles are gone)', () => {
 		const result = GenerateConfigSchema.safeParse({
 			architecture: 'clean',
 			frontend: false,
 			drizzleSchema: false,
 			hooks: true,
 		});
-		expect(result.success).toBe(true);
-		if (result.success) {
-			expect((result.data as Record<string, unknown>).drizzleSchema).toBe(false);
-			expect((result.data as Record<string, unknown>).hooks).toBe(true);
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
+			expect(JSON.stringify(result.error.issues)).toContain('hooks');
 		}
 	});
+
 });
 
 // ============================================================================

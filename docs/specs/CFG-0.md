@@ -1,0 +1,214 @@
+# CFG-0 — `codegen.config.yaml` is validated at runtime, once, for every reader
+
+**Status:** Implemented
+**Date:** 2026-09-18 · **Implemented:** 2026-09-18
+**Issue:** #640
+**Project:** #578
+**Depends on:** CLI-0 (#641, `paths.entities_dir` deleted)
+**Governed by:** charter (`.ai-docs/stacks/relations-v2-and-semantic-model/PROJECT.md`) §4 · CLAUDE.md § Operating
+Principles (no backwards compatibility)
+
+## Why
+
+`codegen.config.yaml` is never validated. The CLI (`src/cli/shared/context.ts` › `loadConfigFromPath`) casts
+`yaml.parse` output to `CodegenConfig`; `PathsConfigSchema` is used only for its type, and is `.passthrough()`. The
+hygen prompts run in a `bunx --bun hygen` subprocess and read the same file raw through **five more loaders**:
+`src/config/config-loader.mjs` (→ `paths.mjs`, `locations.mjs`, `naming-config.mjs`), `runtime-mode.mjs`
+› `loadRuntimeMode`, `templates/_shared/entity-naming.mjs` › `projectEntityLookup`, `templates/entity/new/prompt.js`
+(twice: `behaviors.strategy`, `patterns`) and `templates/junction/new/prompt.js`. Two further TS loaders
+(`src/config/config-loader.ts`, `src/utils/config-loader.ts`) validate a few blocks with Zod but are imported by
+nothing.
+
+So a misspelled or removed key is silently ignored and the default applies. `paths.entities_dir: defs` (deleted in
+CLI-0) reads entities from `entities/` with no message; so does the typo `paths.entitis`. And the schema that claims to
+be the single source of truth for `paths.*` does not declare three keys `paths.mjs` reads.
+
+## Charter invariants this PR touches
+
+- **I1 declare once.** One schema (`CodegenConfigSchema`) declares every key; one loader
+  (`src/config/project-config.ts`) parses it; every reader — CLI, `.mjs` helpers, prompts — gets the parsed object.
+- **I7 no backwards compatibility.** An unknown or removed key is an error naming the key and the file. No alias, no
+  warning mode, no `--no-validate`. Keys nothing reads are deleted from their writers and readers, not declared.
+- **I9 gates are honest.** Gate 2 is a grep over the source, not a list maintained by hand.
+- **I11 scope.** Generator plumbing only. Generated output is unchanged except where a deleted key was written into a
+  consumer's `codegen.config.yaml` (the `auth:` injector, `project scan --write`).
+
+## Design
+
+### One schema, closed
+
+`src/schema/codegen-config.schema.ts` gains `CodegenConfigSchema`, a `.strict()` object whose keys are the top-level
+blocks below. Every block whose keys can be enumerated is `.strict()`; `.passthrough()` is gone from the file. The
+only open maps are the ones that model a map by design:
+
+- `jobs.pools` — keyed by pool name (the five framework pools plus user pools); each **value** is `.strict()`.
+- `frontend.parsers` — keyed by Electric column type (unchanged).
+
+`locations` is closed: its keys are the location names the generator reads (the default table in `locations.mjs`,
+minus the entries nothing reads — see the census). `subsystems.install` is an enum of the known subsystem names.
+
+### One parse, one loader
+
+`src/config/project-config.ts` (new, ships in `files`, imports only `node:*`, `yaml` and the two schema files, which
+also ship) owns reading, parsing and validating:
+
+- `resolveConfigPath(cwd)` — `CODEGEN_CONFIG_PATH` when set (the CLI sets it for the hygen subprocess, so an explicit
+  `--config` reaches the prompts), else `findConfigUpward(cwd)` (the CLI's existing rule).
+- `loadCodegenConfig(configPath)` — read, `yaml.parse`, `CodegenConfigSchema.parse`; cached per path and reused while
+  the file text is unchanged (`subsystem install` edits the file and re-reads it in the same process, so a
+  path-only cache served a stale parse). Throws `CodegenConfigError`, whose message names the file and lists every issue as
+  `<key.path>: <message>`; an unknown key reads `paths.entities_dir: unknown key (expected one of: backend_src, …)`.
+- `loadProjectConfig(cwd)` — `resolveConfigPath` + `loadCodegenConfig`; `null` when there is no file.
+
+Readers after the change:
+
+| Reader | Before | After |
+|---|---|---|
+| `src/cli/shared/context.ts` | `yaml.parse` cast to `CodegenConfig`; any error → `null` | `loadCodegenConfig`; `CodegenConfig` is `z.infer<typeof CodegenConfigSchema>` |
+| `src/config/config-loader.mjs` | `yaml.parse` at `process.cwd()`; error → warning + `null` | `loadProjectConfig(process.cwd())` |
+| `src/config/runtime-mode.mjs` › `loadRuntimeMode` | own `yaml.parse`; any error → `package` | `loadProjectConfig(cwd)?.runtime ?? 'package'` |
+| `templates/_shared/entity-naming.mjs` | own `yaml.parse` of `paths` | `loadProjectConfig(cwd)?.paths` |
+| `templates/entity/new/prompt.js` | two own `yaml.parse`s (`behaviors`, `patterns`) | `getProjectConfig()` |
+| `templates/junction/new/prompt.js` | own `yaml.parse` | `loadProjectConfig(cwd)` |
+| `src/cli/shared/pattern-globs.ts` / `prompt.js` `patterns` | CLI: empty list ⇒ default glob; prompt: empty list ⇒ `[]` | both: absent or empty ⇒ default glob |
+| `src/cli/shared/subsystem-detect.ts` › `configuredInstalledSubsystems` | `config[name].backend` for every installed name | only for the six blocks that declare `backend` |
+| `src/config/naming-config.mjs` | deep-merge + re-validate `naming` | reads the parsed, defaulted `naming` |
+| `src/cli/commands/project-upgrade-auth.ts` › `authBarrelImport` | regex over the file text for `runtime: vendored` | `loadProjectConfig(projectRoot)?.runtime` |
+| `src/emitters/frontend/load-context.ts` | re-parses `frontend` with `safeParse`, silently defaulting on failure | reads the parsed block |
+| `src/config/config-loader.ts`, `src/utils/config-loader.ts` | unimported | deleted |
+
+`src/schema/naming-config.schema.mjs` keeps its constants and resolver but loses its plain-JS validator (a second
+validator of the same block). `src/config/paths.mjs` exports `GENERATE_DEFAULTS` (= `GenerateConfigSchema.parse({})`,
+unit-tested) for the no-config-file case.
+
+The CLI throws `CodegenConfigError` out of `loadContext`; Clipanion prints `Codegen Config Error: …` and exits 1
+(the error carries `clipanion: { type: 'none' }`, so no stack). A prompt run directly through hygen throws the same
+error at import of `config-loader.mjs`, and hygen exits non-zero.
+
+**Out of scope, declared only:** three readers run inside the *consumer's app*, not the generator — the generated
+`main.ts` (`openapi.*`, `auth.devAllowAnonymous`; `init-scaffold.ts`, `project-upgrade-openapi.ts`,
+`project-upgrade-auth.ts`) and the jobs runtime's `pool-config.loader.ts` (`jobs.pools`). They cannot import the
+generator's loader without making it a runtime dependency of the app. Their keys are declared, so the generator
+rejects a bad value before the app sees it. Follow-up: **#643**. The census test's "no second loader" check lists
+exactly these four files as allowed.
+
+### Key census
+
+Every key path read anywhere, whether it is declared, and who reads it. "Delete" means the key is removed from its
+reader and from every writer; the schema then rejects it.
+
+| Key | Declared? | Readers |
+|---|---|---|
+| `runtime` | yes (`package` \| `vendored`, default `package`) | `runtime-import.ts` › `resolveRuntimeMode` (CLI), `runtime-mode.mjs` (prompts), `project-upgrade-auth.ts` |
+| `paths.backend_src` | yes | `paths.mjs`, `locations.mjs`, `junction/new/prompt.js`, `entity.ts`, `events.ts`, `subsystems-path.ts`, `subsystem-detect.ts`, `barrel-generator.ts`, `orchestration.ts`, `*-scaffold-locals.ts` |
+| `paths.frontend_src` | yes | `paths.mjs` |
+| `paths.entities` | yes | `entities-dir.ts` (CLI + `entity-naming.mjs`), `auth-integrations-scaffold-locals.ts` |
+| `paths.events_dir` | yes | `events-path.ts` |
+| `paths.jobs_dir` | yes | `jobs-path.ts` |
+| `paths.providers` | yes | `entity.ts`, `emitters/frontend/load-context.ts` |
+| `paths.subsystems` | yes | `subsystems-path.ts`, `subsystem-detect.ts`, `events.ts`, `context.ts` |
+| `paths.modules_dir` | yes | `subsystem-detect.ts`, `auth-integrations-scaffold-locals.ts` |
+| `paths.orchestration_src` | yes | `paths.mjs`, `entity.ts`, `orchestration.ts` |
+| `paths.generated` | yes (default `src/generated`) | `paths.mjs`, `barrel-generator.ts`, `project.ts` |
+| `paths.packages` | **delete** | `paths.mjs` `BASE_PATHS.packages` — read by nothing |
+| `paths.schema_dir` | **delete** | `paths.mjs` `BASE_PATHS.schemaDir` → prompt local `schemaDir`, used by no template |
+| `paths.manifest_dir` | **delete** | `paths.mjs` `BASE_PATHS.manifestDir` — read by nothing |
+| `generate.architecture` | yes (default `clean`) | `paths.mjs`, `prompt.js`, `junction/new/prompt.js`, `barrel-generator.ts`, `project.ts`, `load-context.ts` |
+| `generate.frontend` | yes (default `false`) | `paths.mjs`, `entity.ts` |
+| `generate.analytics` | yes, unread (`none` \| `cube`) | none today — PLAN Unit 3 replaces it with `generate.semantic` |
+| `generate.drizzleSchema` / `commands` / `queries` / `dtos` | yes (default `true`) | `prompt.js` → `generate.*` locals, read by `backend/` (`clean`) templates — #602 territory |
+| `generate.schemaServer` / `schemaClient` / `electricMigrations` | **delete** | `prompt.js` locals read by no template |
+| `patterns` | yes (glob list) | `pattern-globs.ts` (CLI), `prompt.js` |
+| `frontend.*` | yes (unchanged, already strict) | `emitters/frontend/load-context.ts` |
+| `auth.devAllowAnonymous` | yes | generated `main.ts` (consumer runtime) |
+| `auth.redirect_uri_base` | yes | `auth-scaffold-locals.ts` |
+| `auth.encryption_key` / `oauth_state_store` / `enable_controller` | **delete** | written by the `auth:` injector, read by nothing |
+| `naming.*` (`fileCase`, `suffixStyle`, `entityInclusion`, `terminology.{command,query}`, `layers.<layer>.*`) | yes (`BackendNamingConfigSchema`, now strict) | `naming-config.mjs` → `paths.mjs`, `prompt.js` |
+| `locations.<name>.{path,import}` | yes, for the 21 names read | `locations.mjs` → `paths.mjs` (`BACKEND_LAYERS`), `prompt.js`, `prompt-extension.js`, templates; `load-context.ts` (`dbEntities`, `frontendCollectionsAuth`) |
+| `locations.{backendSrc,frontendSrc,frontendCollections,frontendStore,frontendStoreEntities,frontendEntities,frontendEntityMetadata,trpcClient}` | **delete** | defaults in `locations.mjs` read by nothing |
+| `database.dialect` | yes (`postgres` \| `sqlite`, default `postgres`) | `paths.mjs` → `backend/database/*.ejs.t` (`clean`) — #602 territory |
+| `behaviors.strategy` | yes (`base_class` \| `inline`, default `inline`) | `prompt.js` → `backend/database/repository.ejs.t` (`clean`) — #602 territory |
+| `dev.port` | yes | `dev.ts` |
+| `subsystems.install` | yes (enum of subsystem names) | `subsystem-detect.ts`, `subsystems-install-config.ts` |
+| `events.{backend,multi_tenant}` | yes | `subsystem-barrel-generator.ts`, `subsystem-detect.ts`, `events-scaffold-locals.ts` |
+| `events.extensions.drizzle.listen_notify` | yes | `subsystem-barrel-generator.ts` |
+| `events.pools` | **delete** | commented example in the `events:` injector, read by nothing |
+| `jobs.{backend,multi_tenant,worker_mode,worker_pools,all_pools}` | yes | `subsystem-barrel-generator.ts`, `jobs-scaffold-locals.ts`, `subsystem-detect.ts` |
+| `jobs.extensions.drizzle.{listen_notify,poll_interval_ms,stale_threshold_ms,stale_sweeper_interval_ms,claim_heartbeat_interval_ms}` | yes | `subsystem-barrel-generator.ts` |
+| `jobs.extensions.bullmq.{redis_url,queue_prefix,bull_board.{enabled,mount_path}}` | yes | `subsystem-barrel-generator.ts`, `jobs-scaffold-locals.ts` (runtime shape `BullMqExtensionsConfig`) |
+| `jobs.pools.<name>.{queue,concurrency,reserved,description}` | yes (open map, strict value) | jobs runtime `pool-config.loader.ts` (consumer runtime) |
+| `bridge.{backend,multi_tenant}` | yes | `subsystem-barrel-generator.ts`, `bridge-scaffold-locals.ts`, `subsystem-detect.ts` |
+| `integration.{backend,multi_tenant}` | yes | `subsystem-barrel-generator.ts`, `integration-scaffold-locals.ts`, `subsystem-detect.ts` |
+| `integration.differ.{ignore,unignore}` | yes | `subsystem-barrel-generator.ts` |
+| `observability.reporters.bridgeMetrics.{enabled,intervalMs,windowHours}` | yes | `subsystem-barrel-generator.ts`, `observability-scaffold-locals.ts` |
+| `openapi.{enabled,path,title,version,description,auth}` | yes | generated `main.ts` (consumer runtime) |
+| `cache.backend`, `storage.backend` | yes | `subsystem-detect.ts` › `configuredInstalledSubsystems` |
+| `<name>.backend` for `observability`, `auth`, `auth-integrations`, `openapi-config` | **delete** | the same generic `config[name].backend` read; those subsystems have one backend. The read is narrowed to the six blocks that declare `backend` |
+| `framework`, `orm`, `layout.*`, `_confidence`, `naming.suffixes`, `paths.{domain,application,infrastructure,presentation}` | **delete** | written by `project scan --write`, read by nothing |
+
+## Acceptance
+
+1. `loadCodegenConfig` on a file with `paths.entities_dir` throws `CodegenConfigError` naming `paths.entities_dir` and
+   the file (issue gate 1). Same for the typo `paths.entitis`, an unknown top-level key, and an unknown key inside
+   `jobs.pools.<name>`.
+2. A unit test greps `src/`, `templates/` and `runtime/` for every `paths.<key>` read off a config object and
+   asserts each key is declared in `PathsConfigSchema` (issue gate 2); a second grep does the same for every top-level
+   key read off the parsed config. **That census ships with PATH-0 (#642 / PR #646), not here** — nine `paths.<key>`
+   readers are still undeclared at this point in the stack and `templates/entity/new/prompt.js` still locates and
+   parses the config itself, so the census cannot pass on CFG-0's own PR. PATH-0 declares one default per key and
+   rewrites the census in the same commit; a gate that cannot pass in the PR that ships it is worse than no gate
+   (#726).
+3. `codegen entity new --all` with an unknown key exits 1 and prints the key; so does `hygen entity new` run directly.
+4. Every fixture config (`test/fixtures/codegen.config*.yaml`), every subsystem-config injector block, the config
+   `project init` writes and the config `project scan --write` writes pass the strict parse (unit-tested).
+5. No file both locates `codegen.config.yaml` and parses YAML except `project-config.ts` and the four consumer-runtime
+   emitters (#643) — grep-asserted, with the exception list exact.
+
+## What downstream must know
+
+- Adding a config key = declare it in `CodegenConfigSchema` with a comment naming its reader. Reading an undeclared
+  key is a type error in TS and a gate-2 failure everywhere.
+- The parsed config carries schema defaults (`generate`, `frontend`, `auth`, `naming`, `behaviors`, `database`,
+  `paths.generated`, `runtime`, `patterns`). `ctx.config` is `null` only when there is no file.
+- PLAN Unit 3 renames `generate.analytics` → `generate.semantic` in this schema.
+
+## Found
+
+1. **Seven loaders, two of them dead.** Five hygen-side raw parses, the CLI's cast, and two Zod loaders
+   (`src/config/config-loader.ts`, `src/utils/config-loader.ts`) that nothing imported. The dead ones disagreed with
+   the live ones: `behaviors.strategy` defaulted to `base_class` there and `inline` in the prompt. Deleted.
+2. **The `auth:` injector wrote three keys nothing read** (`encryption_key`, `oauth_state_store`,
+   `enable_controller`), and `AuthConfigSchema` was already `.strict()` without them. The conflict was invisible only
+   because the one loader that validated `auth:` was never imported. Deleted from the injector.
+3. **The `events:` injector's config failed its own schema.** `extensions:` / `drizzle:` were live with every value
+   commented out, which YAML parses as `drizzle: null`. The whole example is now commented. Found by
+   `src/__tests__/cli/subsystem.test.ts` once the parse was strict.
+4. **The frontend emitter swallowed an invalid `frontend:` block** (`safeParse`, fall back to defaults). It now
+   throws; the test that pinned the fallback is inverted.
+5. **`--config <path>` never reached the prompts** — they read `./codegen.config.yaml` (or walked upward). The CLI
+   now passes its resolved path as `$CODEGEN_CONFIG_PATH`.
+6. **`subsystems.install` silently skipped unknown names.** Now an enum.
+7. **`project scan --write` wrote nine keys nothing read** (`framework`, `orm`, `layout.*`, `_confidence`,
+   `naming.suffixes`, four clean-architecture `paths.*`). It now writes `naming`, `paths.{backend_src,frontend_src}`
+   and `generate`, validated before it is shown.
+8. **Two fixture configs carried dead keys**: `locations.backendSrc` (baseline fixture) and eight FE-3 frontend
+   toggles (`codegen.config.custom-naming.yaml`). Fixed in the fixtures; the schema was not loosened.
+9. **Readers still disagree on fallbacks** for an absent `paths.backend_src`, the orchestration root and (with no
+   config file) `generate.architecture`; the entity prompt hard-codes `events/` instead of reading
+   `paths.events_dir`. Filed: **#642**. One consequence of the single parse is already visible: a config that
+   omits `generate.architecture` now gives the junction prompt the schema default `clean` (it used to fall back to
+   `clean-lite-ps`); with no config file at all the junction prompt still uses `clean-lite-ps`.
+10. **Consumer-app readers parse the file raw at boot** (generated `main.ts`, the jobs pool loader). Filed: **#643**.
+11. **`project config` prints the parsed config**, defaults included, rather than the raw file.
+
+## Gates
+
+Run after the last code edit (commit `f2ea421`; the only later change is this table).
+
+| Gate | Result |
+|---|---|
+| `bun run typecheck && bun run build && bun run test` | pass (baseline runner, `clean` pipeline, byte-identical) |
+| `just test-all` | pass: 3446 unit tests, 0 fail (new: `config/project-config.test.ts`; the census lands with PATH-0); baseline; every smoke; junction unit; integration-emit; smoke-integration |
+| `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair in `bridge-e2e.test.ts`) |
+| `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (#602) |
+| `just test-post-publish` | pass — the shipped loader (`src/config/project-config.ts` + both schema files, added to `files`) resolves `zod` / `yaml` from the tarball |

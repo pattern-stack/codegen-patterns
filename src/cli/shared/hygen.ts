@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { CONFIG_PATH_ENV } from '../../config/project-config.js';
 
 export interface HygenInvocation {
 	/** e.g. 'entity' */
@@ -43,6 +44,13 @@ export interface HygenInvocation {
 	cwd?: string;
 	/** If false, suppresses child stdio inheritance. Defaults to true. */
 	inherit?: boolean;
+	/**
+	 * The `codegen.config.yaml` the CLI resolved (`ctx.configPath`). Passed to
+	 * the prompts as `$CODEGEN_CONFIG_PATH` so they parse the same file — an
+	 * explicit `--config` included (CFG-0). Absent ⇒ the prompts walk upward
+	 * from `cwd`, which is the CLI's own rule.
+	 */
+	configPath?: string | null;
 }
 
 export interface HygenResult {
@@ -131,7 +139,10 @@ export function invokeHygen(opts: HygenInvocation): HygenResult {
 
 	const execOpts: ExecSyncOptions = {
 		cwd: opts.cwd ?? process.cwd(),
-		env: hygenChildEnv(templateRoot, opts.env),
+		env: {
+			...hygenChildEnv(templateRoot, opts.env),
+			...(opts.configPath ? { [CONFIG_PATH_ENV]: opts.configPath } : {}),
+		},
 		stdio: opts.inherit === false ? 'pipe' : 'inherit',
 	};
 
@@ -161,24 +172,34 @@ export function invokeHygen(opts: HygenInvocation): HygenResult {
  * Convenience wrapper for the most common pattern — generating one entity
  * from a YAML path.
  */
-export function invokeEntityNew(absoluteYamlPath: string, cwd?: string): HygenResult {
+export function invokeEntityNew(
+	absoluteYamlPath: string,
+	cwd?: string,
+	configPath?: string | null,
+): HygenResult {
 	return invokeHygen({
 		generator: 'entity',
 		action: 'new',
 		args: ['--yaml', absoluteYamlPath],
 		cwd,
+		configPath,
 	});
 }
 
 /**
  * Convenience wrapper for generating one relationship from a YAML path.
  */
-export function invokeRelationshipNew(absoluteYamlPath: string, cwd?: string): HygenResult {
+export function invokeRelationshipNew(
+	absoluteYamlPath: string,
+	cwd?: string,
+	configPath?: string | null,
+): HygenResult {
 	return invokeHygen({
 		generator: 'relationship',
 		action: 'new',
 		args: ['--yaml', absoluteYamlPath],
 		cwd,
+		configPath,
 	});
 }
 
@@ -190,11 +211,16 @@ export function invokeRelationshipNew(absoluteYamlPath: string, cwd?: string): H
  * `.js`-pointing-at-`.ts` imports under NodeNext module resolution.
  * Bun's ESM resolver handles that mapping; Node's does not.
  */
-export function invokeJunctionNew(absoluteYamlPath: string, cwd?: string): HygenResult {
+export function invokeJunctionNew(
+	absoluteYamlPath: string,
+	cwd?: string,
+	configPath?: string | null,
+): HygenResult {
 	return invokeHygen({
 		generator: 'junction',
 		action: 'new',
 		args: ['--yaml', absoluteYamlPath],
 		cwd,
+		configPath,
 	});
 }

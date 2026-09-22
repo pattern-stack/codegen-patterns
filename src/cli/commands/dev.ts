@@ -56,10 +56,7 @@ function runCmd(cmd: string, cwd: string, opts?: { silent?: boolean }): {
 }
 
 function getAppPort(ctx: Context): number {
-	const env = (ctx.config as Record<string, unknown> | null)?.dev as
-		| Record<string, unknown>
-		| undefined;
-	return Number(env?.port ?? process.env.PORT ?? DEFAULT_APP_PORT);
+	return Number(ctx.config?.dev?.port ?? process.env.PORT ?? DEFAULT_APP_PORT);
 }
 
 function getPgPort(_ctx: Context): number {

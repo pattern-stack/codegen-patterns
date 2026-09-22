@@ -19,9 +19,6 @@ locations:
     import: "@repo/db/entities"
 
   # Backend locations (packages/api structure)
-  backendSrc:
-    path: packages/api/src
-    import: "@api"
   backendDomain:
     path: packages/api/src/domain
     import: "@api/domain"

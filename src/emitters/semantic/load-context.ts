@@ -26,7 +26,8 @@ import { sortEntities, type SemanticEmitContext } from './types';
 /** The slice of `codegen.config.yaml` this loader reads. */
 export interface SemanticConfigInput {
 	paths?: {
-		entities_dir?: string;
+		/** CFG-0 (#640) declares this as `paths.entities`; `entities_dir` is gone. */
+		entities?: string;
 		generated?: string;
 		[key: string]: unknown;
 	};
@@ -71,7 +72,7 @@ export function loadSemanticEmitContext(
 	opts: { entitiesDir?: string; junctionsDir?: string } = {},
 ): LoadSemanticEmitContextResult {
 	const entitiesDir =
-		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities_dir ?? 'entities');
+		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? 'entities');
 	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, 'junctions');
 
 	const { registry } = loadEntityRegistry(entitiesDir);

@@ -24,6 +24,7 @@ import {
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
+import { loadProjectConfig } from "../../../src/config/project-config.js";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -39,23 +40,11 @@ const kebabCase = (s) => s.replace(/_/g, "-");
 // Config Loading Helpers
 // ============================================================================
 
-/**
- * Load `codegen.config.yaml` at cwd — the one config filename every loader
- * reads (`loadRuntimeMode` included). Returns null when absent (safe fallback:
- * assume clean-lite-ps layout with srcRoot = 'src').
- */
-function loadCodegenConfig(cwd) {
-  const p = path.join(cwd, "codegen.config.yaml");
-  if (!fs.existsSync(p)) return null;
-  try {
-    return yaml.parse(fs.readFileSync(p, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-
 function resolveArchitecture(config) {
-  return config?.generate?.architecture === "clean" ? "clean" : "clean-lite-ps";
+  // The parsed config (CFG-0) always carries `generate.architecture` (schema
+  // default `clean`). No config file at all ⇒ the clean-lite-ps layout — a
+  // different fallback from the entity prompt's, tracked in #642.
+  return config ? config.generate.architecture : "clean-lite-ps";
 }
 
 function resolveSrcRoot(config, architecture) {
@@ -322,7 +311,7 @@ export default {
     // Architecture-aware output paths
     // ======================================================================
 
-    const config_ = loadCodegenConfig(cwd);
+    const config_ = loadProjectConfig(cwd);
     const architecture = resolveArchitecture(config_);
     const srcRoot = resolveSrcRoot(config_, architecture);
     const outputPaths = resolveOutputPaths(junctionName, entityNamePlural, architecture, srcRoot);

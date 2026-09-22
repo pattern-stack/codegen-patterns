@@ -122,13 +122,9 @@ describe('mapFrontendEmitConfig — architecture + locations', () => {
 	});
 });
 
-describe('mapFrontendEmitConfig — invalid frontend block falls back to defaults', () => {
-	it('does not throw on an unknown key; returns full defaults', () => {
-		// `.strict()` rejects the unknown key — the mapper falls back to defaults
-		// rather than throwing (the loader surfaces the warning separately).
-		const c = mapFrontendEmitConfig({ frontend: { bogus: true } });
-		expect(c.globalSyncMode).toBe('electric');
-		expect(c.authFunction).toBe('getAuthorizationHeader');
+describe('mapFrontendEmitConfig — invalid frontend block', () => {
+	it('throws on an unknown key rather than falling back to defaults (CFG-0)', () => {
+		expect(() => mapFrontendEmitConfig({ frontend: { bogus: true } })).toThrow(/bogus/);
 	});
 });
 
