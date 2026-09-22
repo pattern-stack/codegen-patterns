@@ -6,10 +6,10 @@
 # junction — must read that, not re-derive it. (The frontend golden fixture
 # uses the same shape.) `led_crews` is a has_many onto the nested `crew`.
 #
-# The NAME-0 fixtures form a DAG (shift → crew → person → squad): two tables
-# with FKs to each other do not typecheck today (#631), and an entity
-# that both belongs_to and has_many the same target imports its repository
-# twice (#632) — neither is a naming defect.
+# NAME-1: `person.crew` (belongs_to crew) closes an FK cycle with `crew.lead`
+# (belongs_to person) — both tables reference each other (#631) — and makes
+# `person` both belongs_to and has_many `crew`, so its service and module need
+# ONE `CrewRepository`, not two (#632).
 entity:
   name: person
   plural: persons
@@ -26,6 +26,10 @@ behaviors:
   - timestamps
 
 relationships:
+  crew:
+    type: belongs_to
+    target: crew
+    foreign_key: crew_id
   squad:
     type: belongs_to
     target: squad

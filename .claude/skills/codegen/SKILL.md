@@ -51,12 +51,16 @@ codegen junction list
 ```
 
 **Cross-entity names come from the target's YAML** (NAME-0). A `belongs_to`, a field `foreign_key: <table>.<col>`, an
-`eav_definition_table` and each junction endpoint are addressed by the target entity's own `plural:` (table export +
+`eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +
 folder) and `context:` (folder nesting), read from `paths.entities` / `paths.entities_dir` / `entities/` (the first that exists — the CLI's rule,
 `src/config/entities-dir.ts`). A target with no YAML there is a **generation error** naming the directory searched;
 for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML — or one not
-generated yet — is not wired (the two-pass `targetExists` check), not an error. `relationship new` does not follow
-this rule yet (#633).
+generated yet — is not wired (the two-pass `targetExists` check), not an error.
+
+**Every generated FK callback is `.references((): AnyPgColumn => <table>.id)`** (NAME-1, #631) — clean-lite-ps
+belongs_to + field `foreign_key:`, junction and relationship endpoints. Two tables with FKs to each other (or any
+longer FK cycle) therefore compile; the annotation is type-only. A clean-lite-ps service composes each other
+entity's repository **once**, however many edges reach it (`clpRepositoryDeps`, #632).
 
 `entity new` also runs the whole-set post-steps, all from the full definition set:
 

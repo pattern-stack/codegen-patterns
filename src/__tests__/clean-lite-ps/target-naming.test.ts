@@ -91,8 +91,8 @@ describe('belongs_to', () => {
 		const entity = render('entity.ejs.t', locals);
 		expect(entity).toContain("import { persons } from '../persons/person.entity';");
 		expect(entity).toContain("import { crews } from '../org/crews/crew.entity';");
-		expect(entity).toContain('.references(() => persons.id');
-		expect(entity).toContain('.references(() => crews.id');
+		expect(entity).toContain('.references((): AnyPgColumn => persons.id');
+		expect(entity).toContain('.references((): AnyPgColumn => crews.id');
 		expect(entity).not.toContain('people');
 
 		const service = render('service.ejs.t', locals);
@@ -206,5 +206,110 @@ describe('eav_definition_table', () => {
 		expect(render('service.ejs.t', locals)).toContain(
 			"import { CriterionRepository } from '../meta/criterions/criterion.repository';",
 		);
+	});
+});
+
+describe('a service that composes the same target twice (#632)', () => {
+	// `person` both belongs_to `crew` and has_many `crew`: one repository, one
+	// import, one constructor parameter — whichever edges reach it.
+	const both = () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'name1-'));
+		tmpDirs.push(root);
+		fs.mkdirSync(path.join(root, 'modules', 'org', 'crews'), { recursive: true });
+		fs.writeFileSync(path.join(root, 'modules', 'org', 'crews', 'crew.entity.ts'), '');
+		return localsFor(
+			PERSON,
+			{
+				relationships: {
+					crew: { type: 'belongs_to', target: 'crew', foreign_key: 'crew_id' },
+					led_crews: { type: 'has_many', target: 'crew', foreign_key: 'lead_person_id' },
+				},
+			},
+			{ srcRoot: root },
+		);
+	};
+
+	it('collects one repository dependency per target entity', () => {
+		expect(both().clpRepositoryDeps).toEqual([
+			{
+				entity: 'crew',
+				entityClass: 'Crew',
+				repositoryClass: 'CrewRepository',
+				property: 'crewRepo',
+				importDir: '../org/crews',
+			},
+		]);
+	});
+
+	it('the service imports and injects it once; both methods use it', () => {
+		const service = render('service.ejs.t', both());
+		const count = (needle: string) => service.split(needle).length - 1;
+		expect(count("import { CrewRepository } from '../org/crews/crew.repository';")).toBe(1);
+		expect(count("import type { Crew } from '../org/crews/crew.entity';")).toBe(1);
+		expect(count('private readonly crewRepo: CrewRepository,')).toBe(1);
+		// Per-relationship methods are unchanged: one per edge.
+		expect(service).toContain('this.crewRepo.findById(entity.crewId)');
+		expect(service).toContain('this.crewRepo.findByLeadPersonId(personId, opts)');
+	});
+
+	it('the module imports and provides it once', () => {
+		const module = render('module.ejs.t', both());
+		const count = (needle: string) => module.split(needle).length - 1;
+		expect(count("import { CrewRepository } from '../org/crews/crew.repository';")).toBe(1);
+		expect(count('    CrewRepository,\n')).toBe(1);
+	});
+
+	it('an EAV definition entity also reached by a belongs_to is imported and injected once', () => {
+		const locals = localsFor(
+			{ name: 'criterion_value', plural: 'criterion_values', pattern: 'Metadata' },
+			{
+				eav_value_table: true,
+				eav_definition_table: 'criterion',
+				fields: {
+					entity_type: { type: 'string', required: true },
+					entity_id: { type: 'uuid', required: true },
+					user_id: { type: 'uuid', required: true },
+					value: { type: 'json', required: true },
+				},
+				relationships: {
+					criterion: { type: 'belongs_to', target: 'criterion', foreign_key: 'criterion_id' },
+				},
+			},
+		);
+		expect(locals.eavDefinitionRepositoryImported).toBe(true);
+		const service = render('service.ejs.t', locals);
+		expect(
+			service.split("import { CriterionRepository } from '../meta/criterions/criterion.repository';").length - 1,
+		).toBe(1);
+		// One constructor parameter for the class; the EAV methods address it.
+		expect(service.split(': CriterionRepository,').length - 1).toBe(1);
+		expect(service).toContain('private readonly criterionRepo: CriterionRepository,');
+		expect(service).not.toContain('definitionRepo');
+		expect(service).toContain('this.criterionRepo.list()');
+	});
+});
+
+describe('every FK callback is annotated (#631)', () => {
+	it('a cross-entity belongs_to FK carries AnyPgColumn, and the type is imported', () => {
+		const entity = render('entity.ejs.t', badge());
+		expect(entity).toContain('type AnyPgColumn,');
+		expect(entity).not.toContain('.references(() =>');
+	});
+
+	it('a cross-entity field-level foreign_key carries AnyPgColumn', () => {
+		const locals = localsFor(
+			{ name: 'badge', plural: 'badges' },
+			{ fields: { holder_id: { type: 'uuid', foreign_key: 'persons.id' } } },
+		);
+		expect(locals.clpHasFk).toBe(true);
+		const entity = render('entity.ejs.t', locals);
+		expect(entity).toContain("holderId: uuid('holder_id').references((): AnyPgColumn => persons.id),");
+		expect(entity).toContain('type AnyPgColumn,');
+	});
+
+	it('a table with no FK column does not import AnyPgColumn', () => {
+		const locals = localsFor({ name: 'badge', plural: 'badges' });
+		expect(locals.clpHasFk).toBe(false);
+		expect(render('entity.ejs.t', locals)).not.toContain('AnyPgColumn');
 	});
 });

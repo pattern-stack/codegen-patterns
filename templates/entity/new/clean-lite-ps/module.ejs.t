@@ -14,21 +14,10 @@ force: true
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { OPENAPI_REGISTRY, type OpenApiRegistry } from '<%= typeof openApiImport !== 'undefined' ? openApiImport : '@shared/openapi' %>';
 import { DatabaseModule } from '@shared/database/database.module';
-<%_ /* CGP-358b: Import cross-entity repos needed for has_many composition */ _%>
-<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
-<%_ const hasManyNeedingImport = clpExistingHasMany.filter(r => !r.isSelfRef); _%>
-<%_ const uniqueHasManyForModule = [...new Map(hasManyNeedingImport.map(r => [r.target, r])).values()]; _%>
-<%_ uniqueHasManyForModule.forEach(rel => { _%>
-import { <%= rel.targetClass %>Repository } from '<%= rel.targetImportDir %>/<%= rel.target %>.repository';
+<%_ /* #632: one import per composed repository (belongs_to + has_many targets, deduped) */ _%>
+<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
+import { <%= dep.repositoryClass %> } from '<%= dep.importDir %>/<%= dep.entity %>.repository';
 <%_ }) _%>
-<%_ } _%>
-<%_ /* CGP-358b: Import cross-entity repos needed for belongs_to composition */ _%>
-<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
-<%_ const uniqueBelongsToForModule = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
-<%_ uniqueBelongsToForModule.forEach(rel => { _%>
-import { <%= rel.relatedEntityPascal %>Repository } from '<%= rel.relatedImportDir %>/<%= rel.relatedEntity %>.repository';
-<%_ }) _%>
-<%_ } _%>
 <% if (eavEnabled) { -%>
 import { FieldValuesModule } from '../field_values/field_values.module';
 <% } -%>
@@ -85,19 +74,10 @@ import { <%= classNames.searchController %> } from './<%= entityName %>-search.c
   providers: [
     <%= classNames.repository %>,
     <%= classNames.service %>,
-<%_ /* CGP-358b: Register cross-entity repos as providers (needed for service DI) */ _%>
-<%_ if (typeof clpExistingHasMany !== 'undefined') { _%>
-<%_ const uniqueHasManyProviders = [...new Map(clpExistingHasMany.filter(r => !r.isSelfRef).map(r => [r.target, r])).values()]; _%>
-<%_ uniqueHasManyProviders.forEach(rel => { _%>
-    <%= rel.targetClass %>Repository,
+<%_ /* CGP-358b / #632: register each composed repository once (needed for service DI) */ _%>
+<%_ (typeof clpRepositoryDeps !== 'undefined' ? clpRepositoryDeps : []).forEach(dep => { _%>
+    <%= dep.repositoryClass %>,
 <%_ }) _%>
-<%_ } _%>
-<%_ if (typeof clpBelongsTo !== 'undefined') { _%>
-<%_ const uniqueBelongsToProviders = [...new Map(clpBelongsTo.filter(r => !r.isSelfFk).map(r => [r.relatedEntity, r])).values()]; _%>
-<%_ uniqueBelongsToProviders.forEach(rel => { _%>
-    <%= rel.relatedEntityPascal %>Repository,
-<%_ }) _%>
-<%_ } _%>
     <%= classNames.findByIdUseCase %>,
     <%= classNames.listUseCase %>,
 <% if (eavEnabled) { -%>
