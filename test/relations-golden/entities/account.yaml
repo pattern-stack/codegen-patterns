@@ -7,7 +7,6 @@ entity:
   name: account
   plural: accounts
   table: accounts
-  folder_structure: nested
 
 fields:
   name:

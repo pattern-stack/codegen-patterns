@@ -364,9 +364,11 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 
 - Backend: hygen templates, one pipeline — `templates/entity/new/clean-lite-ps/` (the
   `clean` pipeline and `generate.architecture` were deleted, ARCH-0 #677; its leftover
-  config surface — `naming:`, `locations.backend*`, `database:`, `behaviors:`, entity
-  layout keys, dead `prompt.js` locals — is ARCH-1, #682). Frontend and integration: TS
-  emitters in `src/emitters/`.
+  config surface — `naming:`, `locations.backend*`, `database:`, `behaviors:`, the entity
+  layout keys and 69 dead `prompt.js` locals — by ARCH-1, #682, so each is now an
+  unknown-key error). `prompt.js` now builds only the locals `prompt-extension.js` does
+  not: the banner, runtime-import specifiers, `detection:` and the EVT-7 `emits:`
+  descriptors. Frontend and integration: TS emitters in `src/emitters/`.
 - Gates: `just test-unit`, `just test-baseline` (clean-lite-ps over the closed set in
   `test/fixtures/entities/`, typechecked; `bun test/run-test.ts generate && bun test/run-test.ts baseline`
   regenerates the snapshot when output changes intentionally), `just test-smoke`, `just test-post-publish` (tarball).

@@ -3,7 +3,6 @@ entity:
   name: note
   plural: notes
   table: notes
-  folder_structure: nested
 
 fields:
   opportunity_id:

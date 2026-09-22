@@ -338,17 +338,17 @@ function renderPlanOnly(plan: InitPlan, opts: { dryRun: boolean }): number {
 
 /**
  * The `codegen.config.yaml` a scan proposes: only keys `CodegenConfigSchema`
- * declares (CFG-0). The detected framework, ORM, layout, suffix list,
- * clean-architecture layer paths and confidence scores are reported on the
- * console and in `--json`, not written — nothing reads them from the config.
+ * declares (CFG-0). The detected framework, ORM, file-naming conventions,
+ * layer paths and confidence scores are reported on the console and in
+ * `--json`, not written — nothing reads them from the config. ARCH-1 (#682)
+ * dropped the proposed `naming:` block with the key itself.
  * Validated before it is shown or written, so a scan never proposes a config
  * the loader rejects.
  */
 export function proposedConfigYaml(config: ProposedConfig): Record<string, unknown> {
-	const { suffixes: _suffixes, ...naming } = config.naming;
 	const paths: Record<string, string> = { backend_src: config.paths.backend_src };
 	if (config.paths.frontend_src) paths.frontend_src = config.paths.frontend_src;
-	const yamlConfig = { naming, paths, generate: config.generate };
+	const yamlConfig = { paths, generate: config.generate };
 	parseCodegenConfig(yamlConfig, '<project scan>');
 	return yamlConfig;
 }

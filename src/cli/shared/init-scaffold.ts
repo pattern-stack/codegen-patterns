@@ -928,17 +928,6 @@ export async function buildInitPlan(
 			generate: {
 				frontend,
 			},
-			naming: {
-				fileCase: 'kebab-case',
-				suffixStyle: 'dotted',
-				terminology: {
-					command: 'use-case',
-					query: 'use-case',
-				},
-			},
-			database: {
-				dialect: 'postgres',
-			},
 		};
 		const content = stringifyYaml(config, { indent: 2 });
 		entries.push(fileEntry(cwd, configPath, content, { force }));

@@ -7,7 +7,6 @@ entity:
   name: tag
   plural: tags
   table: tags
-  folder_structure: nested
   sync: electric
 
 fields:

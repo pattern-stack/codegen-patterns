@@ -9,7 +9,6 @@ entity:
   name: person
   plural: persons
   table: persons
-  folder_structure: nested
 
 fields:
   contact_id:

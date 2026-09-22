@@ -5,7 +5,6 @@ entity:
   name: deal_state
   plural: deal_states
   table: deal_states
-  folder_structure: nested
 
 fields:
   tenant_id:

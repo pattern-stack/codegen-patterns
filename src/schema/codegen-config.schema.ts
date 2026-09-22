@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { BackendNamingConfigSchema } from "./naming-config.schema.js";
 import { poolOverrideIssues } from "../../runtime/subsystems/jobs/pool-config.js";
 
 /**
@@ -396,7 +395,7 @@ export const AuthConfigSchema = z
 export type AuthConfig = z.infer<typeof AuthConfigSchema>;
 
 // ============================================================================
-// Locations (path + import pairs, src/config/locations.mjs)
+// Locations (path + import pairs — the frontend emitter's roots)
 // ============================================================================
 
 /** One `locations.<name>` override — either half may be given. */
@@ -408,41 +407,22 @@ const LocationSchema = z
   .strict();
 
 /**
- * Every location name the generator reads. `locations.mjs` holds the default for
- * each; a `locations.<name>` entry overrides it (shallow, per half). Readers:
- * `paths.mjs` (`BACKEND_LAYERS`, the `backend*` layer dirs — only the deleted
- * `clean` pipeline's templates consumed them; ARCH-1, #682), `prompt.js` /
- * `prompt-extension.js` and the entity templates (the rest), and the frontend
- * emitter (`dbEntities`, `frontendCollectionsAuth`, `frontendGenerated`).
+ * Every location name the generator reads — all three are the frontend
+ * emitter's (`src/emitters/frontend/load-context.ts`, which resolves them from
+ * the raw config against the defaults it declares). A `locations.<name>` entry
+ * overrides a default shallowly, per half.
  *
- * CFG-0 deleted the eight defaults nothing read (`backendSrc`, `frontendSrc`,
- * `frontendCollections`, `frontendStore`, `frontendStoreEntities`,
- * `frontendEntities`, `frontendEntityMetadata`, `trpcClient`) and the
- * "new location defined in config" branch: a name outside this list is an
+ * CFG-0 deleted the eight defaults nothing read. ARCH-1 (#682) deleted the next
+ * eighteen: the 14 `backend*` layer dirs, whose only reader was `paths.mjs`'s
+ * `BACKEND_LAYERS` / `getImportPaths` feeding the deleted `clean` pipeline's
+ * templates, and `dbSchemaServer` / `dbSchemaClient` / `dbMigrations` /
+ * `dbContextEngine`, which nothing read at all. A name outside this list is an
  * error, not an unused entry.
  */
 export const LOCATION_NAMES = [
   'dbEntities',
-  'dbSchemaServer',
-  'dbSchemaClient',
-  'dbMigrations',
-  'dbContextEngine',
   'frontendGenerated',
   'frontendCollectionsAuth',
-  'backendDomain',
-  'backendCommands',
-  'backendQueries',
-  'backendSchemas',
-  'backendDrizzle',
-  'backendRepositories',
-  'backendDatabaseModule',
-  'backendControllers',
-  'backendModules',
-  'backendConstants',
-  'backendAuthGuard',
-  'backendCurrentUserDecorator',
-  'backendElectricService',
-  'backendElectricModule',
 ] as const;
 
 export type LocationName = (typeof LOCATION_NAMES)[number];
@@ -457,34 +437,6 @@ export const LocationsConfigSchema = z
   .strict();
 
 export type LocationsConfig = z.infer<typeof LocationsConfigSchema>;
-
-// ============================================================================
-// Knobs only the deleted `clean` pipeline read — deleted by ARCH-1 (#682)
-// ============================================================================
-
-/**
- * `database.dialect` — read by `paths.mjs` › `getDatabaseDialect` into the
- * `databaseDialect` local, which only the deleted `clean` pipeline's Drizzle
- * templates read (ARCH-0). Read by no template since; #682.
- */
-export const DatabaseConfigSchema = z
-  .object({
-    dialect: z.enum(['postgres', 'sqlite']).default('postgres'),
-  })
-  .strict()
-  .default({});
-
-/**
- * `behaviors.strategy` — read by `templates/entity/new/prompt.js` (an entity's
- * own `behavior_strategy:` wins) into the `behaviorStrategy` local, which only
- * the deleted `clean` pipeline's repository template read (ARCH-0); #682.
- */
-export const BehaviorsConfigSchema = z
-  .object({
-    strategy: z.enum(['base_class', 'inline']).default('inline'),
-  })
-  .strict()
-  .default({});
 
 // ============================================================================
 // Dev (`codegen dev`)
@@ -763,12 +715,9 @@ export const CodegenConfigObjectSchema = z
     paths: ResolvedPathsSchema.default({}),
     generate: GenerateConfigSchema.default({}),
     patterns: PatternsConfigSchema,
-    naming: BackendNamingConfigSchema.default({}),
     locations: LocationsConfigSchema.optional(),
     frontend: FrontendConfigSchema,
     auth: AuthConfigSchema,
-    database: DatabaseConfigSchema,
-    behaviors: BehaviorsConfigSchema,
     dev: DevConfigSchema.optional(),
     subsystems: SubsystemsConfigSchema.optional(),
     events: EventsConfigSchema.optional(),

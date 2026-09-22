@@ -70,15 +70,6 @@ const EntityConfigSchema = z.object({
   name: z.string().describe("Entity name in snake_case (e.g., 'opportunity')"),
   plural: z.string().describe("Plural form in snake_case (e.g., 'opportunities')"),
   table: z.string().describe("Database table name"),
-  folder_structure: z.enum(["nested", "flat"]).optional().describe(
-    "Directory structure: nested (domain/entity/) or flat (domain/)"
-  ),
-  file_grouping: z.enum(["separate", "grouped"]).optional().describe(
-    "File organization: separate (entity.ts, repository.ts) or grouped (index.ts)"
-  ),
-  behavior_strategy: z.enum(["base_class", "inline"]).optional().describe(
-    "Repository pattern: base_class (DRY) or inline (explicit)"
-  ),
   expose: z.array(z.enum(["repository", "rest", "trpc"])).optional().describe(
     "Which layers to generate"
   ),

@@ -5,7 +5,6 @@ entity:
   name: user
   plural: users
   table: users
-  folder_structure: nested
 
 fields:
   tenant_id:

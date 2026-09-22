@@ -10,7 +10,6 @@ entity:
   plural: opportunities
   table: opportunities
   pattern: Integrated
-  folder_structure: nested
 
 fields:
   account_id:

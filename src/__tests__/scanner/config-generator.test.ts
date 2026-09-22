@@ -93,136 +93,8 @@ describe('generateConfig', () => {
 		});
 	});
 
-	describe('folder structure', () => {
-		it('uses nested structure for clean architecture', () => {
-			const profile = createMockProfile({
-				architecture: {
-					detected: 'layered',
-					confidence: 85,
-					evidence: ['domain', 'application', 'infrastructure'],
-				},
-			});
 
-			const config = generateConfig(profile);
 
-			expect(config.folder_structure).toBe('nested');
-		});
-
-		it('uses nested structure for feature architecture', () => {
-			const profile = createMockProfile({
-				architecture: {
-					detected: 'feature',
-					confidence: 80,
-					evidence: ['features', 'features/auth', 'features/users'],
-				},
-			});
-
-			const config = generateConfig(profile);
-
-			expect(config.folder_structure).toBe('nested');
-		});
-
-		it('uses flat structure for MVC architecture', () => {
-			const profile = createMockProfile({
-				architecture: {
-					detected: 'mvc',
-					confidence: 90,
-					evidence: ['models', 'views', 'controllers'],
-				},
-			});
-
-			const config = generateConfig(profile);
-
-			expect(config.folder_structure).toBe('flat');
-		});
-
-		it('uses flat structure for flat architecture', () => {
-			const profile = createMockProfile({
-				architecture: {
-					detected: 'flat',
-					confidence: 100,
-					evidence: ['No architectural pattern detected'],
-				},
-			});
-
-			const config = generateConfig(profile);
-
-			expect(config.folder_structure).toBe('flat');
-		});
-	});
-
-	describe('file grouping', () => {
-		it('uses separate grouping when detected', () => {
-			const profile = createMockProfile({
-				naming: {
-					fileCase: { detected: 'kebab-case', confidence: 95, evidence: [] },
-					suffixes: ['.service', '.entity'],
-					fileGrouping: {
-						detected: 'separate',
-						confidence: 90,
-						evidence: ['user.entity.ts', 'user.service.ts'],
-					},
-				},
-			});
-
-			const config = generateConfig(profile);
-
-			expect(config.file_grouping).toBe('separate');
-		});
-
-		it('uses grouped grouping when detected', () => {
-			const profile = createMockProfile({
-				naming: {
-					fileCase: { detected: 'kebab-case', confidence: 95, evidence: [] },
-					suffixes: [],
-					fileGrouping: {
-						detected: 'grouped',
-						confidence: 85,
-						evidence: ['index.ts with barrel exports'],
-					},
-				},
-			});
-
-			const config = generateConfig(profile);
-
-			expect(config.file_grouping).toBe('grouped');
-		});
-	});
-
-	describe('naming conventions', () => {
-		it('includes file case and suffixes', () => {
-			const profile = createMockProfile({
-				naming: {
-					fileCase: {
-						detected: 'PascalCase',
-						confidence: 92,
-						evidence: ['UserService.ts', 'OrderRepository.ts'],
-					},
-					suffixes: ['.service', '.repository', '.controller'],
-					fileGrouping: { detected: 'separate', confidence: 80, evidence: [] },
-				},
-			});
-
-			const config = generateConfig(profile);
-
-			expect(config.naming.fileCase).toBe('PascalCase');
-			expect(config.naming.suffixes).toEqual(['.service', '.repository', '.controller']);
-		});
-
-		it('handles empty suffixes list', () => {
-			const profile = createMockProfile({
-				naming: {
-					fileCase: { detected: 'camelCase', confidence: 88, evidence: [] },
-					suffixes: [],
-					fileGrouping: { detected: 'grouped', confidence: 75, evidence: [] },
-				},
-			});
-
-			const config = generateConfig(profile);
-
-			expect(config.naming.suffixes).toEqual([]);
-		});
-	});
 
 	describe('paths inference', () => {
 		describe('clean architecture', () => {
@@ -536,9 +408,6 @@ describe('generateConfig', () => {
 
 			expect(config.framework).toBe('nestjs');
 			expect(config.orm).toBe('drizzle');
-			expect(config.folder_structure).toBe('nested');
-			expect(config.file_grouping).toBe('separate');
-			expect(config.naming.fileCase).toBe('kebab-case');
 			expect(config.paths.backend_src).toBe('/app/src');
 			expect(config.confidence.overall).toBeGreaterThan(85);
 		});
@@ -564,9 +433,6 @@ describe('generateConfig', () => {
 
 			expect(config.framework).toBe('express');
 			expect(config.orm).toBe('typeorm');
-			expect(config.folder_structure).toBe('flat');
-			expect(config.file_grouping).toBe('grouped');
-			expect(config.naming.fileCase).toBe('PascalCase');
 			expect(config.paths.domain).toBe('/project/src/models');
 		});
 
@@ -591,9 +457,6 @@ describe('generateConfig', () => {
 
 			expect(config.framework).toBe('fastify');
 			expect(config.orm).toBe('prisma');
-			expect(config.folder_structure).toBe('nested');
-			expect(config.file_grouping).toBe('separate');
-			expect(config.naming.fileCase).toBe('camelCase');
 			expect(config.paths.domain).toContain('modules/{feature}');
 		});
 	});

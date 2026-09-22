@@ -2,26 +2,27 @@
  * Hygen prompt.js - Loads entity YAML and prepares template locals
  *
  * Usage: bunx hygen entity new --yaml entities/opportunity.yaml
+ *
+ * clean-lite-ps is the only backend pipeline (ARCH-0, #677), and
+ * `clean-lite-ps/prompt-extension.js` builds almost every local it reads from
+ * the parsed YAML itself. What is left here is the handful of locals the
+ * extension does NOT build: the `@generated` banner, the runtime-mode import
+ * specifiers, the `detection:` literal, and the EVT-7 `emits:` descriptors.
+ *
+ * ARCH-1 (#682) deleted the other 69 locals this file used to export — layout,
+ * paths, fileNames, imports, backendLayers, locations, *CommandClass,
+ * behaviorStrategy, expose*, the field / relationship / query / event passes
+ * behind them — together with the config surface that fed them (`naming:`,
+ * `database:`, `behaviors:`, `locations.backend*`, the entity layout keys).
+ * Every one was measured dead: no clean-lite-ps template and no
+ * `prompt-extension.js` read it. See `docs/specs/ARCH-1.md`.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "yaml";
 import pluralizePkg from "pluralize";
-import {
-  BACKEND_LAYERS,
-  BASE_PATHS,
-  FOLDER_STRUCTURES,
-  FILE_GROUPINGS,
-  LOCATIONS,
-  getEntityPaths,
-  getEntityFileNames,
-  getImportPaths,
-  getLayoutConfig,
-  getDatabaseDialect,
-  getProjectConfig,
-} from "../../../src/config/paths.mjs";
-import { getNamingConfig } from "../../../src/config/naming-config.mjs";
+import { BASE_PATHS, getProjectConfig } from "../../../src/config/paths.mjs";
 import { deriveRoleRelationships } from "../../../src/roles/derive.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { projectEntityLookup } from "../../_shared/entity-naming.mjs";
@@ -29,10 +30,8 @@ import { loadJunctionDefinitions } from "../../_shared/junction-fan-out.mjs";
 import {
   loadRuntimeMode,
   runtimeImportLocals,
-  rewriteSharedImport,
 } from "../../../src/config/runtime-mode.mjs";
 
-// ============================================================================
 // Behavior Registry (inline to avoid import issues with Hygen)
 // ============================================================================
 
@@ -316,12 +315,12 @@ export default {
     // CAP-2 (ADR-041): a `cardinality: one` role IS a `belongs_to`, so it is
     // merged into `definition.relationships` HERE — once, at the single point
     // the YAML enters the template pipeline — and rides the existing FK / index
-    // / on-delete path from then on. Every reader downstream (this file's
-    // locals, the clean-lite-ps extension) sees the merged form without knowing
-    // roles exist. The derivation is shared with the analyzer parser
-    // (`src/roles/derive.ts`) because this file parses YAML directly and never
-    // sees `EntityDefinitionSchema`: writing the rules in either place alone
-    // would make the other a second implementation (I1).
+    // / on-delete path from then on. Every reader downstream (the clean-lite-ps
+    // extension) sees the merged form without knowing roles exist. The
+    // derivation is shared with the analyzer parser (`src/roles/derive.ts`)
+    // because this file parses YAML directly and never sees
+    // `EntityDefinitionSchema`: writing the rules in either place alone would
+    // make the other a second implementation (I1).
     //
     // A role key can never silently overwrite a declared relationship: the
     // schema rejects that collision at load, and `entity new` validates every
@@ -333,21 +332,13 @@ export default {
       };
     }
 
-
     // Resolve the runtime mode (ADR-037) once — drives every runtime import
     // specifier the generated entity code carries.
     const runtimeMode = loadRuntimeMode(process.cwd());
 
-    // Prepare locals for templates
     const entity = definition.entity;
-    const fields = definition.fields || {};
-    const relationships = definition.relationships || {};
-    const behaviors = definition.behaviors || [];
+    const name = entity.name;
 
-    // v2 blocks (optional — absent in v1 entities)
-    const queriesBlock = definition.queries || null;
-    const integrationBlock = definition.integration || null;
-    const eventsBlock = definition.events || null;
     // EVT-7: emits is semantically 3-valued — undefined (fallback path),
     // [] (explicit opt-out), or string[] (typed emission). Preserve the
     // undefined/null-vs-empty distinction by refusing the || null shortcut.
@@ -355,824 +346,57 @@ export default {
       ? definition.emits
       : null;
 
-    // Helper functions
-    const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const camelCase = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    const pascalCase = (s) => capitalize(camelCase(s));
-    const pluralize = (s) => pluralizePkg.plural(s);
+    const camelName = camelCase(name);
+
+    // ========================================================================
+    // Clean-Lite-PS template locals
+    //
+    // clean-lite-ps is the only backend pipeline (ARCH-0, #677). Every body
+    // references its locals unguarded, so a missing one throws (#638).
+    // ========================================================================
+
+    // Load app-defined patterns (if any) into the registry before the
+    // clean-lite-ps extension reads it. `loadAppPatterns` is idempotent
+    // and deterministic — calling it every run is cheap (one dynamic
+    // import per pattern file) and matches the two-process load story
+    // the registry tests pin down.
+    await ensurePatternsRegistryLoaded();
+    const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
+    // Every cross-entity fact — a belongs_to / has_many / field foreign_key
+    // target's table and module folder, an EAV definition entity, a group
+    // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
+    // YAML, lazily, on the first reference that needs one. The junctions naming
+    // this entity are read from the junction YAMLs.
+    // #636 — the Drizzle tables codegen OWNS. The clean-lite-ps extension needs
+    // this to tell a host-owned FK target (plain column, no import) from one it
+    // generates. ARCH-1 (#682) replaced a `...locals` spread at this call with an
+    // explicit key list and did not carry this one, which silently reverted #636:
+    // `processFieldFeatures` reads an absent set as "every target is owned", so a
+    // host-owned `foreign_key:` became a hard error instead of a plain column.
+    // Computed once here and reused in the returned locals below;
+    // `loadOwnedTableNames` caches per directory, so the second read is free.
+    const ownedTableNames = Array.from(loadOwnedTableNames(process.cwd()));
+
+    const clpLocals = buildCleanLitePsLocals(definition, {
+      // The clean-lite-ps module tree (PATH-1, #645).
+      modulesDir: BASE_PATHS.modulesDir,
+      runtimeMode,
+      ownedTableNames,
+      entityLookup: projectEntityLookup(process.cwd()),
+      // JUNC-0 (#678): the junction set this entity's fan-out renders from.
+      junctions: loadJunctionDefinitions(process.cwd()),
+    });
+
+    // ========================================================================
+    // Detection (ADR-033.1 / ADR-033.2 typed provider artifacts)
+    // ========================================================================
 
-    // ============================================================================
-    // UI Metadata Inference Functions
-    // ============================================================================
-
-    /**
-     * Format field name as human-readable label
-     * e.g., "created_at" -> "Created At", "account_id" -> "Account Id"
-     */
-    const formatLabel = (fieldName) => {
-      return fieldName
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-    };
-
-    /**
-     * Infer UI type from field definition
-     * Considers explicit ui_type, field type, choices, foreign keys, and name patterns
-     */
-    const inferUiType = (fieldName, field) => {
-      // If explicit ui_type provided, use it
-      if (field.ui_type) return field.ui_type;
-
-      // Check for choices (enum)
-      if (Array.isArray(field.choices) && field.choices.length > 0)
-        return "enum";
-
-      // Check for foreign key (reference)
-      if (field.foreign_key) return "reference";
-
-      // Check field name patterns
-      const nameLower = fieldName.toLowerCase();
-      if (nameLower.includes("email")) return "email";
-      if (nameLower.includes("url") || nameLower.includes("website"))
-        return "url";
-      if (nameLower.includes("password")) return "password";
-      if (
-        nameLower.includes("price") ||
-        nameLower.includes("amount") ||
-        nameLower.includes("cost") ||
-        nameLower.includes("value") ||
-        nameLower.includes("revenue")
-      )
-        return "money";
-      if (nameLower.includes("percent") || nameLower.includes("rate"))
-        return "percentage";
-
-      // Infer from field type
-      const typeMap = {
-        string:
-          field.max_length && field.max_length > 500 ? "textarea" : "text",
-        integer: "number",
-        decimal: "number",
-        boolean: "boolean",
-        uuid: "text",
-        date: "date",
-        datetime: "datetime",
-        json: "json",
-      };
-
-      return typeMap[field.type] || "text";
-    };
-
-    /**
-     * Infer UI group from field name patterns
-     */
-    const inferUiGroup = (fieldName, field) => {
-      if (field.ui_group) return field.ui_group;
-
-      const nameLower = fieldName.toLowerCase();
-
-      // Common field groupings
-      if (["id", "uuid"].includes(nameLower)) return "identification";
-      if (["created_at", "updated_at", "deleted_at"].includes(nameLower))
-        return "metadata";
-      if (
-        nameLower.includes("price") ||
-        nameLower.includes("amount") ||
-        nameLower.includes("cost") ||
-        nameLower.includes("value") ||
-        nameLower.includes("revenue")
-      )
-        return "financial";
-      if (nameLower.includes("email") || nameLower.includes("phone"))
-        return "contact";
-      if (nameLower.includes("name") || nameLower.includes("title"))
-        return "identification";
-      if (nameLower.includes("description") || nameLower.includes("notes"))
-        return "content";
-      if (
-        nameLower.includes("status") ||
-        nameLower.includes("state") ||
-        nameLower.includes("stage")
-      )
-        return "status";
-      if (field.foreign_key) return "relationships";
-
-      return "general";
-    };
-
-    /**
-     * Infer UI importance from field properties
-     */
-    const inferUiImportance = (fieldName, field) => {
-      if (field.ui_importance) return field.ui_importance;
-
-      const nameLower = fieldName.toLowerCase();
-
-      // Auto-generated fields are tertiary
-      if (["id", "created_at", "updated_at", "deleted_at"].includes(nameLower))
-        return "tertiary";
-
-      // Foreign keys that are likely internal references
-      if (field.foreign_key && nameLower.endsWith("_id")) return "secondary";
-
-      // Required fields are primary by default
-      if (field.required) return "primary";
-
-      // Name/title fields are typically primary
-      if (nameLower.includes("name") || nameLower.includes("title"))
-        return "primary";
-
-      return "secondary";
-    };
-
-    // Entity name variations
-    const name = entity.name; // opportunity
-    const plural = entity.plural; // opportunities
-    const table = entity.table; // opportunities
-    const className = pascalCase(name); // Opportunity
-    const classNamePlural = pascalCase(plural); // Opportunities
-    const camelName = camelCase(name); // opportunity
-    const repositoryToken = `${pascalCase(name).toUpperCase()}_REPOSITORY`; // OPPORTUNITY_REPOSITORY
-
-    // Layout configuration (folder structure + file grouping)
-    // See tools/codegen/config/paths.js for options
-    const layout = getLayoutConfig(entity);
-    const { folderStructure, fileGrouping, isNested, isGrouped } = layout;
-
-    // Behavior strategy (base_class vs inline)
-    // Per-entity override takes precedence over global config
-    const behaviorStrategy =
-      entity.behavior_strategy || getProjectConfig().behaviors.strategy;
-
-    // Resolve behaviors
-    const resolvedBehaviors = resolveBehaviors(behaviors);
-
-    // Compute paths using centralized config
-    // See tools/codegen/config/paths.js for path definitions
-    const paths = getEntityPaths({ name, plural, isNested, isGrouped });
-
-    // Load naming configuration for file naming
-    const namingConfig = getNamingConfig();
-
-    // File names using centralized config with naming configuration
-    const fileNames = getEntityFileNames({ name, plural, isNested, isGrouped, namingConfig });
-
-    // Terminology-aware class name suffixes
-    // Supports 'command' vs 'use-case' naming for application layer
-    const applicationLayerSuffix = namingConfig.terminology.command === 'use-case' ? 'UseCase' : 'Command';
-    const queryLayerSuffix = namingConfig.terminology.query === 'use-case' ? 'UseCase' : 'Query';
-
-    // Pre-computed class names using configured terminology
-    const createCommandClass = `Create${className}${applicationLayerSuffix}`;
-    const updateCommandClass = `Update${className}${applicationLayerSuffix}`;
-    const deleteCommandClass = `Delete${className}${applicationLayerSuffix}`;
-    const getByIdQueryClass = `Get${className}ById${queryLayerSuffix}`;
-    const listQueryClass = `List${classNamePlural}${queryLayerSuffix}`;
-
-    // Step 1: Compute all possible output paths
-    const src = BASE_PATHS.backendSrc;
-    const allPaths = {
-      // Domain layer
-      entity: `${src}/${paths.domain}/${fileNames.entity}`,
-      repositoryInterface: `${src}/${paths.domain}/${fileNames.repositoryInterface}`,
-      domainGroupedIndex: `${src}/${paths.domain}/index.ts`,
-
-      // Application layer - commands
-      createCommand: `${src}/${paths.commands}/${fileNames.createCommand}`,
-      updateCommand: `${src}/${paths.commands}/${fileNames.updateCommand}`,
-      deleteCommand: `${src}/${paths.commands}/${fileNames.deleteCommand}`,
-      commandsIndex: `${src}/${paths.commands}/index.ts`,
-
-      // Application layer - queries
-      getByIdQuery: `${src}/${paths.queries}/${fileNames.getByIdQuery}`,
-      listQuery: `${src}/${paths.queries}/${fileNames.listQuery}`,
-      queriesIndex: `${src}/${paths.queries}/index.ts`,
-
-      // Application layer - schemas (always generated)
-      dto: `${src}/${paths.schemas}/${fileNames.dto}`,
-
-      // Infrastructure layer (always generated)
-      drizzleSchema: `${src}/${paths.drizzle}/${fileNames.schema}`,
-      repository: `${src}/${paths.repositories}/${fileNames.repository}`,
-
-      // Presentation layer (always generated)
-      controller: `${src}/${paths.controllers}/${fileNames.controller}`,
-
-      // Modules (always generated)
-      module: `${src}/${paths.modules}/${fileNames.module}`,
-    };
-
-    // Step 2: Apply mode filter (null = skip generation)
-    const outputPaths = {
-      // Domain: separate files OR grouped index
-      entity: !isGrouped ? allPaths.entity : null,
-      repositoryInterface: !isGrouped ? allPaths.repositoryInterface : null,
-      domainGroupedIndex: isGrouped ? allPaths.domainGroupedIndex : null,
-
-      // Commands: separate files OR grouped index
-      createCommand: !isGrouped ? allPaths.createCommand : null,
-      updateCommand: !isGrouped ? allPaths.updateCommand : null,
-      deleteCommand: !isGrouped ? allPaths.deleteCommand : null,
-      commandsIndex: (!isGrouped && isNested) ? allPaths.commandsIndex : null,
-      commandsGroupedIndex: isGrouped ? allPaths.commandsIndex : null,
-
-      // Queries: separate files OR grouped index
-      getByIdQuery: !isGrouped ? allPaths.getByIdQuery : null,
-      listQuery: !isGrouped ? allPaths.listQuery : null,
-      queriesIndex: (!isGrouped && isNested) ? allPaths.queriesIndex : null,
-      queriesGroupedIndex: isGrouped ? allPaths.queriesIndex : null,
-
-      // Always generated (mode-independent)
-      dto: allPaths.dto,
-      drizzleSchema: allPaths.drizzleSchema,
-      repository: allPaths.repository,
-      controller: allPaths.controller,
-      module: allPaths.module,
-    };
-
-    // Import paths using centralized config
-    // See tools/codegen/config/paths.js for path definitions
-    const importHelpers = getImportPaths({ isNested });
-    const imports = {
-      // From commands/queries to other locations
-      constants: importHelpers.constants(name),
-      domain: importHelpers.domain(name),
-      schemas: importHelpers.schemas(name),
-      // From domain to other domain files (same folder when nested)
-      domainEntity: importHelpers.domainEntity(name),
-      // From module (modules/) to commands/queries
-      moduleToGetByIdQuery: importHelpers.moduleToQuery(name, fileNames.getByIdQuery.replace('.ts', '')),
-      moduleToListQuery: importHelpers.moduleToQuery(name, fileNames.listQuery.replace('.ts', '')),
-      moduleToDeclarativeQueries: importHelpers.moduleToQuery(name, 'declarative-queries'),
-      moduleToRelationshipQueries: importHelpers.moduleToQuery(name, 'relationships.queries'),
-      moduleToCreateCommand: importHelpers.moduleToCommand(name, fileNames.createCommand.replace('.ts', '')),
-      moduleToUpdateCommand: importHelpers.moduleToCommand(name, fileNames.updateCommand.replace('.ts', '')),
-      moduleToDeleteCommand: importHelpers.moduleToCommand(name, fileNames.deleteCommand.replace('.ts', '')),
-      moduleToRepository: importHelpers.moduleToRepository(fileNames.repository.replace('.ts', '')),
-      moduleToConstants: importHelpers.moduleToConstants(),
-      moduleToDatabaseModule: importHelpers.moduleToDatabaseModule(),
-      moduleToController: importHelpers.moduleToController(fileNames.controller.replace('.ts', '')),
-      // OPENAPI-2: module imports DTO file to register Zod schemas at onModuleInit.
-      moduleToDto: importHelpers.moduleToDto(fileNames.dto.replace('.ts', '')),
-      // ADR-033.1: integration-source module imports the entity type from the
-      // domain barrel for the IChangeSource<T> type parameter.
-      moduleToDomain: importHelpers.moduleToDomain(),
-      // From controller (presentation/rest/) to queries/commands
-      controllerToGetByIdQuery: importHelpers.controllerToQuery(name, fileNames.getByIdQuery.replace('.ts', '')),
-      controllerToListQuery: importHelpers.controllerToQuery(name, fileNames.listQuery.replace('.ts', '')),
-      controllerToCreateCommand: importHelpers.controllerToCommand(name, fileNames.createCommand.replace('.ts', '')),
-      controllerToUpdateCommand: importHelpers.controllerToCommand(name, fileNames.updateCommand.replace('.ts', '')),
-      controllerToDeleteCommand: importHelpers.controllerToCommand(name, fileNames.deleteCommand.replace('.ts', '')),
-      controllerToSchemas: importHelpers.controllerToSchemas(),
-      controllerToDomain: importHelpers.controllerToDomain(),
-      // From app.module.ts to modules
-      appModuleToModule: importHelpers.appModuleToModule(fileNames.module.replace('.ts', '')),
-      appModuleToTrpcModule: importHelpers.appModuleToTrpcModule(`${name}-trpc.module`),
-      // From repository to constants (relative path)
-      repositoryToConstants: importHelpers.repositoryToConstants(),
-      // For domain/index.ts export
-      domainExport: isNested ? `./${name}` : null,
-      // Electric-related imports
-      controllerToAuthGuard: importHelpers.controllerToAuthGuard(),
-      controllerToCurrentUser: importHelpers.controllerToCurrentUser(),
-      controllerToElectricService: importHelpers.controllerToElectricService(),
-      moduleToElectricModule: importHelpers.moduleToElectricModule(),
-    };
-
-    // Type mappings
-    const tsTypes = {
-      string: "string",
-      integer: "number",
-      decimal: "number",
-      boolean: "boolean",
-      uuid: "string",
-      date: "Date",
-      datetime: "Date",
-      json: "unknown",
-      string_array: "string[]",
-      entity_ref: "EntityRef", // Placeholder - handled specially
-      enum: "string", // Actual type generated from choices
-    };
-
-    const drizzleTypes = {
-      string: "varchar",
-      integer: "integer",
-      decimal: "decimal",
-      boolean: "boolean",
-      uuid: "uuid",
-      date: "date",
-      datetime: "timestamp",
-      json: "jsonb",
-      string_array: "text_array",
-      entity_ref: "entity_ref", // Placeholder - handled specially
-      enum: "enum", // Placeholder - pgEnum generated
-    };
-
-    const zodTypes = {
-      string: "z.string()",
-      integer: "z.number().int()",
-      // Drizzle maps PG `numeric` to JS string — z.coerce.string() avoids
-      // silent precision loss. Aligned with clean-lite-ps (PR #42). See #43.
-      decimal: "z.coerce.string()",
-      boolean: "z.boolean()",
-      uuid: "z.string().uuid()",
-      date: "z.coerce.date()",
-      datetime: "z.coerce.date()",
-      json: "z.unknown()",
-      string_array: "z.array(z.string())",
-      entity_ref: "entity_ref", // Placeholder - handled specially
-      enum: "z.enum()", // Placeholder - choices added
-    };
-
-    /**
-     * Load choices from an external YAML file (for choices_from option)
-     */
-    const loadChoicesFromFile = (choicesFromPath, yamlDir) => {
-      // Try relative to entities directory first
-      const entitiesPath = path.resolve(
-        process.cwd(),
-        "entities",
-        choicesFromPath,
-      );
-      if (fs.existsSync(entitiesPath)) {
-        const content = fs.readFileSync(entitiesPath, "utf-8");
-        const parsed = yaml.parse(content);
-        // For relationship_types.yaml, extract keys from relationship_types section
-        if (parsed.relationship_types) {
-          return Object.keys(parsed.relationship_types);
-        }
-        // Otherwise extract top-level keys
-        return Object.keys(parsed);
-      }
-
-      // Try relative to the YAML file directory
-      const relativePath = path.resolve(yamlDir, choicesFromPath);
-      if (fs.existsSync(relativePath)) {
-        const content = fs.readFileSync(relativePath, "utf-8");
-        const parsed = yaml.parse(content);
-        if (parsed.relationship_types) {
-          return Object.keys(parsed.relationship_types);
-        }
-        return Object.keys(parsed);
-      }
-
-      throw new Error(`choices_from file not found: ${choicesFromPath}`);
-    };
-
-    // Process fields for templates
-    const processedFields = [];
-    const entityRefFields = []; // Track entity_ref fields for special handling
-
-    for (const [fieldName, field] of Object.entries(fields)) {
-      // Skip 'id' field - it's always added explicitly in templates to avoid duplicates
-      if (fieldName === 'id') continue;
-
-      // Handle entity_ref type specially - generates TWO fields
-      if (field.type === "entity_ref") {
-        const allowedTypes = field.allowed_types || [];
-        const baseName = fieldName;
-        const baseCamel = camelCase(fieldName);
-
-        // Track for later use (composite indexes, query methods)
-        entityRefFields.push({
-          name: baseName,
-          camelName: baseCamel,
-          pascalName: pascalCase(baseName),
-          allowedTypes,
-          required: field.required ?? false,
-          nullable: field.nullable ?? false,
-        });
-
-        // Generate the type field (enum)
-        processedFields.push({
-          name: `${baseName}_entity_type`,
-          camelName: `${baseCamel}EntityType`,
-          type: "entity_ref_type",
-          tsType: "EntityType",
-          drizzleType: "entity_type_enum",
-          zodType: "entityTypeSchema",
-          required: field.required ?? false,
-          nullable: field.nullable ?? false,
-          isEntityRefType: true,
-          entityRefBase: baseName,
-          allowedTypes,
-          // UI metadata for entity ref
-          ui_type: "enum",
-          ui_label: formatLabel(`${baseName} type`),
-          ui_importance: "secondary",
-          ui_group: "relationships",
-          ui_visible: false,
-        });
-
-        // Generate the id field (uuid)
-        processedFields.push({
-          name: `${baseName}_entity_id`,
-          camelName: `${baseCamel}EntityId`,
-          type: "entity_ref_id",
-          tsType: "string",
-          drizzleType: "uuid",
-          zodType: "z.string().uuid()",
-          required: field.required ?? false,
-          nullable: field.nullable ?? false,
-          isEntityRefId: true,
-          entityRefBase: baseName,
-          // UI metadata
-          ui_type: "text",
-          ui_label: formatLabel(`${baseName} id`),
-          ui_importance: "secondary",
-          ui_group: "relationships",
-          ui_visible: false,
-        });
-
-        continue; // Skip normal processing
-      }
-
-      // Handle enum type with choices or choices_from
-      let choices = field.choices;
-      if (field.type === "enum" && field.choices_from) {
-        try {
-          choices = loadChoicesFromFile(field.choices_from, path.dirname(fullPath));
-        } catch (e) {
-          console.warn(
-            `Warning: Could not load choices from ${field.choices_from}: ${e.message}`,
-          );
-          choices = [];
-        }
-      }
-
-      const hasChoices = Array.isArray(choices) && choices.length > 0;
-
-      // For choice fields, generate literal union type instead of string
-      let tsType = tsTypes[field.type] || "unknown";
-      if (hasChoices) {
-        tsType = choices.map((c) => `'${c}'`).join(" | ");
-      }
-
-      // For choice fields, we'll use pgEnum instead of varchar
-      let drizzleType = drizzleTypes[field.type] || "varchar";
-      if (hasChoices || field.type === "enum") {
-        drizzleType = "enum"; // Special marker for enum handling
-      }
-
-      let zodType = zodTypes[field.type] || "z.unknown()";
-      if (hasChoices) {
-        zodType = `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`;
-      }
-
-      // Generate enum name for Drizzle pgEnum. Namespace the const + pg TYPE
-      // name by entity (`opportunity_status` / `opportunityStatusEnum`) so two
-      // entities that each declare a same-named enum field (e.g. `status`,
-      // `role`) don't emit a duplicate `export const statusEnum` (TS2308) or a
-      // duplicate `CREATE TYPE status` (a migration conflict). The COLUMN name
-      // stays the bare field name — only the type + export are namespaced.
-      const enumDbName = hasChoices
-        ? (name ? `${name}_${fieldName}` : fieldName)
-        : null;
-      const enumName = hasChoices ? camelCase(enumDbName) + "Enum" : null;
-
-      // Infer UI metadata with defaults
-      const ui_type = inferUiType(fieldName, field);
-      const ui_label = field.ui_label || formatLabel(fieldName);
-      const ui_importance = inferUiImportance(fieldName, field);
-      const ui_group = inferUiGroup(fieldName, field);
-      const ui_sortable = field.ui_sortable ?? false;
-      const ui_filterable = field.ui_filterable ?? false;
-      // Default visibility: hide id and timestamp fields
-      const ui_visible =
-        field.ui_visible ??
-        !["id", "created_at", "updated_at", "deleted_at"].includes(fieldName);
-
-      processedFields.push({
-        name: fieldName,
-        camelName: camelCase(fieldName),
-        type: field.type,
-        tsType,
-        drizzleType,
-        zodType,
-        required: field.required ?? false,
-        nullable: field.nullable ?? false,
-        maxLength: field.max_length,
-        minLength: field.min_length,
-        min: field.min,
-        max: field.max,
-        choices,
-        choicesFrom: field.choices_from,
-        hasChoices,
-        enumName,
-        enumDbName,
-        default: field.default,
-        index: field.index ?? false,
-        unique: field.unique ?? false,
-        foreignKey: field.foreign_key,
-        // UI metadata
-        ui_type,
-        ui_label,
-        ui_importance,
-        ui_group,
-        ui_sortable,
-        ui_filterable,
-        ui_visible,
-        ui_placeholder: field.ui_placeholder,
-        ui_help: field.ui_help,
-        ui_format: field.ui_format,
-      });
-    }
-
-    // Collect enum fields for Drizzle pgEnum generation
-    const enumFields = processedFields.filter((f) => f.hasChoices);
-
-    // Process relationships by type
-    const belongsToRelations = Object.entries(relationships)
-      .filter(([_, rel]) => rel.type === "belongs_to")
-      .map(([relName, rel]) => ({
-        name: relName,
-        type: "belongs_to",
-        target: rel.target,
-        targetClass: pascalCase(rel.target),
-        targetPlural: pluralize(rel.target),
-        targetPluralClass: pascalCase(pluralize(rel.target)),
-        foreignKey: rel.foreign_key,
-        foreignKeyCamel: camelCase(rel.foreign_key),
-        foreignKeyPascal: pascalCase(rel.foreign_key),
-      }));
-
-    const hasManyRelations = Object.entries(relationships)
-      .filter(([_, rel]) => rel.type === "has_many")
-      .map(([relName, rel]) => ({
-        name: relName,
-        type: "has_many",
-        target: rel.target,
-        targetClass: pascalCase(rel.target),
-        targetPlural: pluralize(rel.target),
-        targetPluralClass: pascalCase(pluralize(rel.target)),
-        inverseForeignKey: rel.foreign_key,
-        inverseForeignKeyCamel: camelCase(rel.foreign_key),
-      }));
-
-    const hasOneRelations = Object.entries(relationships)
-      .filter(([_, rel]) => rel.type === "has_one")
-      .map(([relName, rel]) => ({
-        name: relName,
-        type: "has_one",
-        target: rel.target,
-        targetClass: pascalCase(rel.target),
-        targetPlural: pluralize(rel.target),
-        inverseForeignKey: rel.foreign_key,
-        inverseForeignKeyCamel: camelCase(rel.foreign_key),
-      }));
-
-    // All relationships combined
-    const allRelationships = [
-      ...belongsToRelations,
-      ...hasManyRelations,
-      ...hasOneRelations,
-    ];
-
-    // Check which related entities have generated domain files
-    // This allows the repository to skip importing entities that don't exist yet
-    const checkEntityExists = (targetName) => {
-      const domainBase = `${BASE_PATHS.backendSrc}/domain`;
-      const nestedPath = path.resolve(
-        process.cwd(),
-        `${domainBase}/${targetName}/${targetName}.entity.ts`,
-      );
-      const flatPath = path.resolve(
-        process.cwd(),
-        `${domainBase}/${targetName}.entity.ts`,
-      );
-      return fs.existsSync(nestedPath) || fs.existsSync(flatPath);
-    };
-
-    // Mark each relationship with whether its target entity exists
-    for (const rel of allRelationships) {
-      rel.targetExists = checkEntityExists(rel.target);
-    }
-    for (const rel of belongsToRelations) {
-      rel.targetExists = checkEntityExists(rel.target);
-    }
-    for (const rel of hasManyRelations) {
-      rel.targetExists = checkEntityExists(rel.target);
-    }
-    for (const rel of hasOneRelations) {
-      rel.targetExists = checkEntityExists(rel.target);
-    }
-
-    // Filter to only relationships with existing targets for repository imports
-    const existingRelationships = allRelationships.filter(
-      (r) => r.targetExists,
-    );
-    const existingBelongsTo = belongsToRelations.filter((r) => r.targetExists);
-    const existingHasMany = hasManyRelations.filter((r) => r.targetExists);
-    const existingHasOne = hasOneRelations.filter((r) => r.targetExists);
-
-    // Convenience flags
-    const hasRelationships = allRelationships.length > 0;
-    const hasExistingRelationships = existingRelationships.length > 0;
-    const hasBelongsTo = belongsToRelations.length > 0;
-    const hasHasMany = hasManyRelations.length > 0;
-    const hasHasOne = hasOneRelations.length > 0;
-
-    // Legacy format for backward compatibility
-    const processedRelationships = allRelationships;
-
-    // Separate required vs optional fields for DTOs
-    const requiredFields = processedFields.filter((f) => f.required);
-    const optionalFields = processedFields.filter((f) => !f.required);
-
-    // Compute which Drizzle imports are needed (always need pgTable, uuid for id)
-    // Note: timestamp is NOT always needed - only if behaviors include timestamps or soft_delete
-    const drizzleImportsNeeded = new Set(["pgTable", "uuid"]);
-
-    // Add pgEnum if we have any enum fields
-    if (enumFields.length > 0) {
-      drizzleImportsNeeded.add("pgEnum");
-    }
-
-    // Check if we have entity_ref fields (need to import entity type enum)
-    const hasEntityRefFields = entityRefFields.length > 0;
-    if (hasEntityRefFields) {
-      drizzleImportsNeeded.add("pgEnum");
-    }
-
-    for (const field of processedFields) {
-      // Map drizzle type to import name (skip 'enum' as it's handled via pgEnum)
-      const importMap = {
-        varchar: "varchar",
-        integer: "integer",
-        decimal: "numeric",
-        boolean: "boolean",
-        uuid: "uuid",
-        date: "date",
-        timestamp: "timestamp",
-        jsonb: "jsonb",
-        text_array: "text",
-      };
-      const importName = importMap[field.drizzleType];
-      if (importName) {
-        drizzleImportsNeeded.add(importName);
-      }
-    }
-
-    // Add Drizzle imports from behaviors
-    for (const imp of resolvedBehaviors.drizzleImports) {
-      drizzleImportsNeeded.add(imp);
-    }
-
-    const drizzleImports = Array.from(drizzleImportsNeeded).sort();
-
-    // Get database dialect from config
-    const databaseDialect = getDatabaseDialect();
-
-    // Derive Electric where clause FK field from entity fields
-    // Look for foreign_key to users or tenants
-    let electricWhereColumn = 'tenant_id'; // fallback
-    let electricWhereValue = 'user.tenantId'; // fallback
-
-    for (const field of processedFields) {
-      if (field.foreignKey) {
-        // Check if it references users table
-        if (field.foreignKey.startsWith('users.')) {
-          electricWhereColumn = field.name;
-          electricWhereValue = `user.${field.camelName}`;
-          break;
-        }
-        // Check if it references tenants table
-        if (field.foreignKey.startsWith('tenants.')) {
-          electricWhereColumn = field.name;
-          electricWhereValue = `user.${field.camelName}`;
-          // Don't break - users FK takes precedence
-        }
-      }
-    }
-
-    // ============================================================================
-    // v2: Queries
-    // ============================================================================
-
-    /**
-     * Derive a camelCase method name from a query spec.
-     *
-     * Rules:
-     *   select present → findXsByY  (e.g., select:[email], by:[opportunity_id] → findEmailsByOpportunityId)
-     *   otherwise      → findByX    (e.g., by:[user_id] → findByUserId)
-     *                                (e.g., by:[user_id, account_id] → findByUserIdAndAccountId)
-     */
-    function deriveQueryMethodName(query) {
-      const byFields = Array.isArray(query.by) ? query.by : [];
-      const selectFields = Array.isArray(query.select) ? query.select : [];
-
-      // Convert snake_case field list to PascalCase joined by "And"
-      const byPart = byFields.map((f) => pascalCase(f)).join('And');
-
-      if (selectFields.length > 0) {
-        // findEmailsByOpportunityId — select fields come first (plural implied)
-        const selectPart = selectFields.map((f) => pascalCase(f)).join('And') + 's';
-        return `find${selectPart}By${byPart}`;
-      }
-
-      return `findBy${byPart}`;
-    }
-
-    const hasQueries = queriesBlock != null && queriesBlock.length > 0;
-
-    // Build a lookup of field name → TS type for query param resolution
-    const fieldTypeMap = {};
-    for (const pf of processedFields) {
-      fieldTypeMap[pf.name] = pf.tsType;
-      fieldTypeMap[pf.camelName] = pf.tsType;
-    }
-
-    const processedQueries = hasQueries
-      ? queriesBlock.map((q) => {
-          const byFields = Array.isArray(q.by) ? q.by : [];
-          const selectFields = Array.isArray(q.select) ? q.select : [];
-          const isUnique = q.unique ?? false;
-          const viaTable = q.via ?? null;
-
-          // Build typed params from by fields
-          const params = byFields.map((f) => ({
-            name: f,
-            camelName: camelCase(f),
-            tsType: fieldTypeMap[f] || fieldTypeMap[camelCase(f)] || 'string',
-          }));
-
-          // Parse order: "created_at desc" → { column, direction }
-          let orderBy = null;
-          let orderDirection = null;
-          if (q.order) {
-            const parts = q.order.trim().split(/\s+/);
-            orderBy = camelCase(parts[0]);
-            orderDirection = parts[1] || 'asc';
-          }
-
-          // Derive method name
-          const methodName = deriveQueryMethodName(q);
-
-          // Derive return type
-          let returnType;
-          if (isUnique) {
-            returnType = `${className} | null`;
-          } else if (selectFields.length > 0) {
-            // Projection — return picked fields
-            const camelFields = selectFields.map((f) => camelCase(f));
-            returnType = selectFields.length === 1
-              ? `${fieldTypeMap[selectFields[0]] || fieldTypeMap[camelFields[0]] || 'string'}[]`
-              : `Pick<${className}, ${camelFields.map((f) => `'${f}'`).join(' | ')}>[]`;
-          } else {
-            returnType = `${className}[]`;
-          }
-
-          // Use case class name
-          const useCaseClassName = pascalCase(methodName) + queryLayerSuffix;
-
-          return {
-            // Raw YAML fields
-            by: byFields,
-            unique: isUnique,
-            select: selectFields,
-            order: q.order ?? null,
-            limit: q.limit ?? null,
-            via: viaTable,
-            // Derived
-            methodName,
-            returnType,
-            params,
-            isUnique,
-            orderBy,
-            orderDirection,
-            viaTable,
-            viaTableCamel: viaTable ? camelCase(viaTable) : null,
-            selectFields: selectFields.map((f) => camelCase(f)),
-            useCaseClassName,
-            // Convenience flags
-            hasVia: viaTable != null,
-            hasSelect: selectFields.length > 0,
-            hasOrder: q.order != null,
-            hasLimit: q.limit != null,
-            hasMultipleParams: params.length > 1,
-          };
-        })
-      : [];
-
-    const hasDeclarativeQueries = processedQueries.length > 0;
-    const declarativeQueryClasses = processedQueries.map((q) => q.useCaseClassName);
-
-    // Check if any query needs 'and' import (multi-field WHERE)
-    const hasMultiFieldQuery = processedQueries.some((q) => q.hasMultipleParams);
-    // Check if any query needs 'desc'/'asc' import (ordered)
-    const hasOrderedQuery = processedQueries.some((q) => q.hasOrder);
-
-    // ============================================================================
-    // v2: Integration
-    // ============================================================================
-
-    // ADR-033.1 / ADR-033.2: provider-keyed detection block.
     // Provider key order is YAML insertion order (preserved by yaml.parse).
     const detectionBlock = (definition.detection && typeof definition.detection === 'object')
       ? definition.detection
       : null;
-    const detectionProviders = detectionBlock ? Object.keys(detectionBlock) : [];
-    const hasDetection = detectionProviders.length > 0;
+    const hasDetection = detectionBlock != null && Object.keys(detectionBlock).length > 0;
 
     // Render the per-entity DetectionConfigs map as a TS object literal.
     // JSON.stringify produces valid TS for the canonical DetectionConfig shape
@@ -1182,60 +406,9 @@ export default {
       ? JSON.stringify(detectionBlock, null, 2)
       : '{}';
 
-    const hasIntegrationBlock = integrationBlock != null;
-    const integrationElectric = hasIntegrationBlock ? (integrationBlock.electric ?? false) : false;
-    const rawIntegrationProviders = hasIntegrationBlock ? (integrationBlock.providers ?? {}) : {};
-    const hasIntegrationProviders = Object.keys(rawIntegrationProviders).length > 0;
-
-    const integrationProviders = hasIntegrationProviders
-      ? Object.entries(rawIntegrationProviders).map(([providerName, cfg]) => {
-          // Normalize field_mapping: { local: key, remote: value }[]
-          const rawMapping = cfg.field_mapping ?? {};
-          const fieldMapping = Object.entries(rawMapping).map(([local, remote]) => ({
-            local,
-            remote,
-          }));
-
-          return {
-            name: providerName,
-            remoteEntity: cfg.remote_entity ?? null,
-            direction: cfg.direction ?? 'bidirectional',
-            cdc: cfg.cdc ?? false,
-            fieldMapping,
-            readOnlyFields: cfg.read_only_fields ?? [],
-          };
-        })
-      : [];
-
-    // ============================================================================
-    // v2: Events
-    // ============================================================================
-
-    const hasEvents = eventsBlock != null && eventsBlock.length > 0;
-    const processedEvents = hasEvents
-      ? eventsBlock.map((ev) => {
-          // Convert body: { field: type } to array of { field, type }
-          const rawBody = ev.body ?? {};
-          const body = Object.entries(rawBody).map(([field, type]) => ({ field, type }));
-
-          // Derive class names from event name (snake_case → PascalCase + Event)
-          const className = pascalCase(ev.name) + 'Event';
-          const handlerClassName = pascalCase(ev.name) + 'Handler';
-
-          return {
-            name: ev.name,
-            queue: ev.queue ?? null,
-            body,
-            generateHandler: ev.generate_handler ?? false,
-            className,
-            handlerClassName,
-          };
-        })
-      : [];
-
-    // ============================================================================
+    // ========================================================================
     // EVT-7: emits — resolve typed events for create/update/delete use-cases.
-    // ============================================================================
+    // ========================================================================
     //
     // The `emits:` list is guaranteed-valid at this point — the CLI pre-flight
     // (`validateEntityEmits`) has already run. Our job is to derive:
@@ -1313,19 +486,23 @@ export default {
       const merged = new Map(sugar);
       for (const [k, v] of topLevel) merged.set(k, v);
 
-      // Build quick lookups keyed by camelCase for payload-mapping rules 3/4.
-      const entityKeysCamel = new Set(
-        processedFields.map((f) => f.camelName),
-      );
-
-      // DTO keys = the fields actually present on CreateXDto (input-eligible).
-      // The CLP + Clean DTOs derive from the same processedFields list (minus
-      // behaviors-computed fields like createdAt/updatedAt/deletedAt). We
-      // approximate here by using all processedFields — the TODO comments on
-      // each generated line make any miss visually obvious.
-      const dtoKeysCamel = new Set(
-        processedFields.map((f) => f.camelName),
-      );
+      // Payload-mapping rules 3/4 read the clean-lite-ps field set — the same
+      // list the entity and its DTOs are emitted from, so "is this key on the
+      // entity / on CreateXDto" is answered by the emission itself rather than
+      // by a second field pass (I1). ARCH-1 (#682): prompt.js's own field
+      // processing existed for the deleted `clean` templates and is gone.
+      // `clpProcessedFields` / `clpCreateDtoFields` are the NON-FK fields; the
+      // belongs_to FK columns are emitted onto both the entity and CreateXDto
+      // from `clpBelongsToFkFields`, so both sets include them.
+      const fkKeysCamel = clpLocals.clpBelongsToFkFields.map((f) => f.camelName);
+      const entityKeysCamel = new Set([
+        ...clpLocals.clpProcessedFields.map((f) => f.camelName),
+        ...fkKeysCamel,
+      ]);
+      const dtoKeysCamel = new Set([
+        ...clpLocals.clpCreateDtoFields.map((f) => f.camelName),
+        ...fkKeysCamel,
+      ]);
 
       return emitsBlock.map((emitName) => {
         const ev = merged.get(emitName);
@@ -1416,15 +593,11 @@ export default {
       seam: 'a pattern (src/patterns/*.pattern.ts) or the entity YAML',
     });
 
-    // Many locals below (layout, paths, fileNames, imports, *CommandClass,
-    // behaviorStrategy, expose*, …) were read only by the deleted `clean`
-    // pipeline's templates (ARCH-0). ARCH-1 (#682) deletes them together with
-    // the config surface that feeds them.
-    const locals = {
+    return {
       // #636 — the Drizzle tables codegen OWNS. A field-level `foreign_key:`
       // to a table outside this set is host-owned: a plain column, no
       // `.references()` and no import. See loadOwnedTableNames().
-      ownedTableNames: Array.from(loadOwnedTableNames(process.cwd())),
+      ownedTableNames,
       // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
       generatedBanner,
 
@@ -1432,200 +605,22 @@ export default {
       // clean-lite-ps prompt-extension to rewrite base-class imports.
       runtimeMode,
 
-      // Database configuration
-      databaseDialect,
-
       // Project layout — the clean-lite-ps prompt-extension places every
       // module under the configured module tree (paths.modules_dir, PATH-1).
       modulesDir: BASE_PATHS.modulesDir,
 
-      // Entity names
-      name,
-      plural,
-      table,
-      className,
-      classNamePlural,
-      camelName,
-      repositoryToken,
-
-      // Fields
-      fields: processedFields,
-      requiredFields,
-      optionalFields,
-      enumFields,
-
-      // Entity reference fields (polymorphic refs)
-      entityRefFields,
-      hasEntityRefFields,
-
-      // Relationships - separated by type
-      relationships: allRelationships,
-      // `hasManyRelations` / `hasOneRelations` are deliberately NOT exported:
-      // their only template reader was the v1 Drizzle relation const that
-      // DRZ-1 (#583) deleted. The derived `existingHasMany` / `hasHasMany` /
-      // index and composition locals below still carry everything templates
-      // need. (Spelling the deleted call literally here would trip the guard
-      // in src/__tests__/templates/no-v1-relations-emission.test.ts.)
-      belongsToRelations,
-
-      // Relationship flags
-      hasRelationships,
-      hasExistingRelationships,
-      hasBelongsTo,
-      hasHasMany,
-      hasHasOne,
-
-      // Filtered relationships (only those with existing target entities)
-      existingRelationships,
-      existingBelongsTo,
-      existingHasMany,
-      existingHasOne,
-
-      // Drizzle imports (only what's needed)
-      drizzleImports,
-
-      // Layout configuration
-      // folder_structure: "nested" | "flat" - controls directory nesting
-      // file_grouping: "separate" | "grouped" - controls file organization
-      layout,
-      folderStructure,
-      fileGrouping,
-      isNested,
-      isGrouped,
-      paths,
-      fileNames,
-      imports,
-
-      // Base paths for templates (from centralized config)
-      basePaths: BASE_PATHS,
-      backendLayers: BACKEND_LAYERS,
-
-      // Unified locations (path + import alias)
-      // Usage: locations.dbEntities.path, locations.dbEntities.import
-      locations: LOCATIONS,
-
-      // NOTE: the `frontend:` locals block (auth/sync/parsers/collections) was
-      // deleted with the hygen frontend templates (FE-3). The frontend emitter
-      // (src/emitters/frontend/) now reads `frontend.*` from codegen.config.yaml
-      // directly into its own FrontendEmitConfig — no template ever consumed
-      // these locals after the templates were removed.
-
-      // Naming configuration (for templates that need it)
-      namingConfig,
-      applicationLayerSuffix,
-      queryLayerSuffix,
-
-      // Pre-computed class names with configured terminology
-      createCommandClass,
-      updateCommandClass,
-      deleteCommandClass,
-      getByIdQueryClass,
-      listQueryClass,
-
-      // Pre-computed output paths for templates (avoids ternary in YAML frontmatter)
-      outputPaths,
-
-      // Behavior strategy and resolved behaviors
-      behaviorStrategy,
-      behaviors: resolvedBehaviors,
-      behaviorFields: resolvedBehaviors.fields,
-      hasBehaviors: resolvedBehaviors.hasBehaviors,
-      hasTimestamps: resolvedBehaviors.hasTimestamps,
-      hasSoftDelete: resolvedBehaviors.hasSoftDelete,
-      hasUserTracking: resolvedBehaviors.hasUserTracking,
-      hasTemporalValidity: resolvedBehaviors.hasTemporalValidity,
-      repositoryBehaviorConfig: resolvedBehaviors.repositoryConfig,
-
-      // Expose configuration (which layers to generate).
-      // ADR-043 §6: `api: false` suppresses the ENTIRE HTTP surface (REST +
-      // Electric + tRPC) — equivalent to repository-only — while leaving the
-      // entity/repository/service/use-cases in-process reachable.
-      expose: entity.expose || ["repository", "rest", "trpc"],
-      exposeRepository: (
-        entity.expose || ["repository", "rest", "trpc"]
-      ).includes("repository"),
-      exposeRest:
-        entity.api !== false &&
-        (entity.expose || ["repository", "rest", "trpc"]).includes("rest"),
-      exposeTrpc:
-        entity.api !== false &&
-        (entity.expose || ["repository", "rest", "trpc"]).includes("trpc"),
-      exposeElectric:
-        entity.api !== false &&
-        (entity.expose || ["repository", "rest", "trpc"]).includes("electric"),
-
-      // Electric SQL where clause (derived from entity FK fields)
-      electricWhereColumn,
-      electricWhereValue,
-
-      // ======================================================================
-      // v2 variables
-      // ======================================================================
-
-      // Queries
-      hasQueries,
-      processedQueries,
-      hasDeclarativeQueries,
-      declarativeQueryClasses,
-      hasMultiFieldQuery,
-      hasOrderedQuery,
-
-      // Integration
-      hasIntegrationBlock,
-      integrationElectric,
-      hasIntegrationProviders,
-      integrationProviders,
-
       // Detection (ADR-033.1 / ADR-033.2 typed provider artifacts)
       hasDetection,
-      detectionProviders,
       detectionConfigsLiteral,
-
-      // Events
-      hasEvents,
-      processedEvents,
 
       // EVT-7: emits (typed auto-emission via TypedEventBus)
       hasEmits,
-      emitsEvents,
       createEventType,
       updateEventType,
       deleteEventType,
+
       ...runtimeImportSpecifiers,
+      ...clpLocals,
     };
-
-    // ========================================================================
-    // Clean-Lite-PS template locals
-    //
-    // clean-lite-ps is the only backend pipeline (ARCH-0, #677). Every body
-    // references its locals unguarded, so a missing one throws (#638).
-    // ========================================================================
-    // EVT-7 note: hasEmits / emitsEvents / *EventType / *Import locals are
-    // already in `locals` above — CLP templates read the same locals to render
-    // typed publish blocks in their use-cases.
-
-    // Load app-defined patterns (if any) into the registry before the
-    // clean-lite-ps extension reads it. `loadAppPatterns` is idempotent
-    // and deterministic — calling it every run is cheap (one dynamic
-    // import per pattern file) and matches the two-process load story
-    // the registry tests pin down.
-    await ensurePatternsRegistryLoaded();
-    const { buildCleanLitePsLocals } = await import('./clean-lite-ps/prompt-extension.js');
-    // Every cross-entity fact — a belongs_to / has_many / field foreign_key
-    // target's table and module folder, an EAV definition entity, a group
-    // Actor's members (NAME-0, ADR-041.1) — is read from that entity's own
-    // YAML, lazily, on the first reference that needs one. The junctions naming
-    // this entity are read from the junction YAMLs.
-    Object.assign(
-      locals,
-      buildCleanLitePsLocals(definition, {
-        ...locals,
-        entityLookup: projectEntityLookup(process.cwd()),
-        // JUNC-0 (#678): the junction set this entity's fan-out renders from.
-        junctions: loadJunctionDefinitions(process.cwd()),
-      }),
-    );
-
-    return locals;
   },
 };

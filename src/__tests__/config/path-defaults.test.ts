@@ -11,7 +11,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { DEFAULT_CODEGEN_CONFIG, parseCodegenConfig } from '../../config/project-config';
-import { DEFAULT_BACKEND_NAMING } from '../../schema/naming-config.schema';
 import { importSpecifier, projectLayout, tsconfigIncludes } from '../../cli/shared/project-layout';
 import { loadContext } from '../../cli/shared/context';
 import { buildInitPlan } from '../../cli/shared/init-scaffold';
@@ -95,9 +94,77 @@ describe('the defaults table', () => {
 		}
 	});
 
-	it('the naming defaults are the schema defaults (#644 review)', () => {
-		expect(DEFAULT_BACKEND_NAMING).toEqual(DEFAULT_CODEGEN_CONFIG.naming);
+	// ARCH-1 (#682): the config surface only the deleted `clean` pipeline read.
+	// One named case per deleted block — each must be the CFG-0 unknown-key
+	// error, naming the key AND the file.
+	it('naming: is an unknown key naming the file (ARCH-1)', () => {
+		expect(() =>
+			parseCodegenConfig({ naming: { fileCase: 'kebab-case' } }, 'apps/api/codegen.config.yaml'),
+		).toThrow(
+			/apps\/api\/codegen\.config\.yaml is not a valid codegen\.config\.yaml:\n {2}- naming: unknown key/,
+		);
 	});
+
+	it('database: is an unknown key naming the file (ARCH-1)', () => {
+		expect(() =>
+			parseCodegenConfig({ database: { dialect: 'postgres' } }, 'apps/api/codegen.config.yaml'),
+		).toThrow(
+			/apps\/api\/codegen\.config\.yaml is not a valid codegen\.config\.yaml:\n {2}- database: unknown key/,
+		);
+	});
+
+	it('behaviors: is an unknown key naming the file (ARCH-1)', () => {
+		expect(() =>
+			parseCodegenConfig({ behaviors: { strategy: 'inline' } }, 'apps/api/codegen.config.yaml'),
+		).toThrow(
+			/apps\/api\/codegen\.config\.yaml is not a valid codegen\.config\.yaml:\n {2}- behaviors: unknown key/,
+		);
+	});
+
+	it('every deleted locations.* name is an unknown key naming the file (ARCH-1)', () => {
+		const deleted = [
+			'backendDomain',
+			'backendCommands',
+			'backendQueries',
+			'backendSchemas',
+			'backendDrizzle',
+			'backendRepositories',
+			'backendDatabaseModule',
+			'backendControllers',
+			'backendModules',
+			'backendConstants',
+			'backendAuthGuard',
+			'backendCurrentUserDecorator',
+			'backendElectricService',
+			'backendElectricModule',
+			'dbSchemaServer',
+			'dbSchemaClient',
+			'dbMigrations',
+			'dbContextEngine',
+		];
+		for (const name of deleted) {
+			expect(() =>
+				parseCodegenConfig(
+					{ locations: { [name]: { path: 'src/x' } } },
+					'apps/api/codegen.config.yaml',
+				),
+			).toThrow(
+				new RegExp(
+					`apps/api/codegen\\.config\\.yaml is not a valid codegen\\.config\\.yaml:\\n {2}- locations\\.${name}: unknown key`,
+				),
+			);
+		}
+	});
+
+	it('the three surviving locations.* names still parse (ARCH-1)', () => {
+		// The frontend emitter reads exactly these (load-context.ts).
+		for (const name of ['dbEntities', 'frontendGenerated', 'frontendCollectionsAuth']) {
+			expect(() =>
+				parseCodegenConfig({ locations: { [name]: { path: 'src/x', import: '@x' } } }, 't'),
+			).not.toThrow();
+		}
+	});
+
 });
 
 describe('no reader carries its own default literal', () => {

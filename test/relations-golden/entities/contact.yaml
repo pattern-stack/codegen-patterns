@@ -8,7 +8,6 @@ entity:
   name: contact
   plural: contacts
   table: contacts
-  folder_structure: nested
 
 fields:
   account_id:

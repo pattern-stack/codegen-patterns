@@ -18,7 +18,6 @@ entity:
   plural: accounts
   table: accounts
   patterns: [Group, Integrated, Individual, Audited, Actor]
-  folder_structure: nested
   # Per-capability config (ADR-041 §6) — emitted as `groupConfig` on the
   # repository, where `WithGroup` declares the property.
   config:

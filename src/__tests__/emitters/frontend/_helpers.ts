@@ -100,7 +100,6 @@ export function parsedEntity(
 		plural: e.plural,
 		table: e.table,
 		expose: ['repository', 'rest', 'trpc'],
-		folderStructure: 'nested',
 		fields: new Map(),
 		relationships: new Map(),
 		behaviors: [],

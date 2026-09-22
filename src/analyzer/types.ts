@@ -203,7 +203,6 @@ export interface ParsedEntity {
 	 * is exposed.
 	 */
 	expose: ('repository' | 'rest' | 'trpc' | 'electric')[];
-	folderStructure: 'nested' | 'flat';
 	fields: Map<string, ParsedField>;
 	relationships: Map<string, ParsedRelationship>;
 	/**

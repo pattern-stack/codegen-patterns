@@ -7,7 +7,6 @@ entity:
   plural: briefings
   table: briefings
   patterns: [Communication]
-  folder_structure: nested
 
 fields:
   summary:

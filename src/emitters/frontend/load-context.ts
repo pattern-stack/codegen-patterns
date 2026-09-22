@@ -15,11 +15,11 @@
  * Zero entities ⇒ `{ skip }` with a human-readable reason (nothing to emit). The
  * caller surfaces the reason like the sibling post-steps do.
  *
- * Locations are read straight off the passed `config` object (with the same
- * defaults `src/config/locations.mjs` declares) rather than importing that
- * module's `LOCATIONS` singleton — the singleton binds `process.cwd()` at import
- * time, which is wrong under the CLI's `--cwd`. Reading from the in-hand config
- * keeps the emitter cwd-correct and free of the `.mjs` layer.
+ * Locations are read straight off the passed `config` object, against the
+ * defaults this module declares. They used to live in a `LOCATIONS` singleton
+ * (`src/config/locations.mjs`, deleted by ARCH-1) that bound `process.cwd()` at
+ * import time, which is wrong under the CLI's `--cwd`. Reading from the in-hand
+ * config keeps the emitter cwd-correct and free of the `.mjs` layer.
  */
 
 import { existsSync, statSync } from 'node:fs';
@@ -50,7 +50,7 @@ import { sortEntities } from './types';
 const JUNCTIONS_DIR = 'junctions';
 
 // ---------------------------------------------------------------------------
-// Location defaults (mirror src/config/locations.mjs)
+// Location defaults — the only copy (ARCH-1, #682 deleted src/config/locations.mjs)
 // ---------------------------------------------------------------------------
 
 /** Default `locations.dbEntities` — the module entity types + Zod schemas import from. */
@@ -97,7 +97,7 @@ export type LoadFrontendEmitContextResult =
 
 /**
  * Resolve a `locations.<key>` entry from config, falling back to the bundled
- * default. Mirrors `buildLocations` in `locations.mjs` (shallow per-key merge).
+ * default (shallow per-key merge).
  */
 function resolveLocation(
 	config: FrontendConfigInput,

@@ -8,7 +8,6 @@ entity:
   plural: two_spines
   table: two_spines
   patterns: [Integrated, Activity]
-  folder_structure: nested
 
 fields:
   label:

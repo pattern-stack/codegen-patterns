@@ -8,7 +8,6 @@ entity:
   plural: field_definitions
   table: field_definitions
   pattern: Base
-  folder_structure: nested
 
 fields:
   key:

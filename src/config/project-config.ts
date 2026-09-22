@@ -3,8 +3,8 @@
  *
  * Reads, parses and validates the file through `CodegenConfigSchema` — once per
  * file text — for every reader: the CLI context (`src/cli/shared/context.ts`) and
- * the hygen side (`src/config/config-loader.mjs` → `paths.mjs` / `locations.mjs`
- * / `naming-config.mjs`, `runtime-mode.mjs`, `templates/_shared/entity-naming.mjs`,
+ * the hygen side (`src/config/config-loader.mjs` → `paths.mjs`,
+ * `runtime-mode.mjs`, `templates/_shared/entity-naming.mjs`,
  * the entity and junction prompts). Nothing else parses the file.
  *
  * An unknown or removed key, or a value of the wrong shape, is a

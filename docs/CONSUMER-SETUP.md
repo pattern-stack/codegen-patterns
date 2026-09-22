@@ -521,15 +521,6 @@ paths:
 generate:
   frontend: false                   # emit Electric-SQL frontend pipeline?
 
-naming:
-  fileCase: kebab-case              # kebab-case | PascalCase | camelCase | snake_case
-  suffixStyle: dotted               # dotted (.entity.ts) | suffixed (Entity.ts)
-  terminology:
-    command: use-case
-    query: use-case
-
-database:
-  dialect: postgres
 ```
 
 **The file is validated strictly.** Every `codegen` command (and every generator it runs) parses
@@ -544,11 +535,8 @@ blocks are:
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
 | `generate` | `frontend`, `analytics` |
 | `patterns` | glob list for app-defined patterns (below); default `<backend_src>/patterns/*.pattern.ts` |
-| `naming` | `fileCase`, `suffixStyle`, `entityInclusion`, `terminology`, `layers.<layer>.*` |
-| `locations` | `path` / `import` overrides for the generator's named locations (`dbEntities`, `backendDomain`, …) |
+| `locations` | `path` / `import` overrides for the frontend emitter's three named locations (`dbEntities`, `frontendGenerated`, `frontendCollectionsAuth`) |
 | `frontend` | the frontend emitter (README › Frontend generation) |
-| `database` | `dialect: postgres \| sqlite` (`clean` pipeline) |
-| `behaviors` | `strategy: inline \| base_class` (`clean` pipeline) |
 | `dev` | `port` for `codegen dev` |
 | `auth` | `devAllowAnonymous` (ADR-043), `redirect_uri_base` (auth subsystem) |
 | `subsystems` | `install:` — the installed-subsystem list in package mode |
@@ -584,6 +572,12 @@ with `stopped: 'pre-flight'` — and the command exits 1. A `<type>.job.generate
 longer loads is left on disk and named as stale in the rejection. The app has no `yaml` dependency.
 
 The backend layout is clean-lite-ps — a module folder per entity under `paths.modules_dir` — and there is no other. The `clean` pipeline and its `generate.architecture` key were deleted (ARCH-0, #677): a config that still sets the key fails with `generate.architecture: unknown key`, naming the file. Delete the line.
+
+ARCH-1 (#682) deleted the rest of the surface only `clean` read, so these fail the same way — delete them too:
+`naming:` (file-case / suffix-style / terminology: clean-lite-ps file names are fixed), `database:` (`dialect`),
+`behaviors:` (`strategy`), the 14 `locations.backend*` names plus `locations.dbSchemaServer` / `dbSchemaClient` /
+`dbMigrations` / `dbContextEngine`, and, in **entity YAML**, `folder_structure:`, `file_grouping:` and
+`behavior_strategy:`. `expose:` is unaffected — the frontend emitter reads it.
 
 **`paths.*` defaults.** Each key has exactly one default, declared in `PathsConfigSchema`; every command, generator and
 scaffold reads the same resolved value (PATH-0). Three keys default relative to `backend_src`:

@@ -153,6 +153,11 @@ The other **105** are not junction at all. They are the `clean` entity pipeline:
   from `locations.dbSchemaServer.import`, whose default (`src/config/locations.mjs:41`) is a monorepo alias, while the
   schema is emitted locally to `infrastructure/persistence/drizzle/`. Which location owns the tables in the `clean`
   pipeline is an unanswered design question, not a path typo (3);
+
+  > **2026-09-20 (ARCH-1, #682):** moot, and the names above no longer exist. ARCH-0 deleted the `clean` templates;
+  > ARCH-1 deleted `locations.dbSchemaServer` (no reader) and `src/config/locations.mjs` itself. The `locations:`
+  > block is now the frontend emitter's three names, whose defaults live in
+  > `src/emitters/frontend/load-context.ts`.
 - `@mguay/nestjs-trpc` — emitted by the trpc module template; not installed in the smoke project (3).
 
 ### Why this is not repaired here

@@ -19,30 +19,6 @@
           "type": "string",
           "description": "Database table name"
         },
-        "folder_structure": {
-          "description": "Directory structure: nested (domain/entity/) or flat (domain/)",
-          "type": "string",
-          "enum": [
-            "nested",
-            "flat"
-          ]
-        },
-        "file_grouping": {
-          "description": "File organization: separate (entity.ts, repository.ts) or grouped (index.ts)",
-          "type": "string",
-          "enum": [
-            "separate",
-            "grouped"
-          ]
-        },
-        "behavior_strategy": {
-          "description": "Repository pattern: base_class (DRY) or inline (explicit)",
-          "type": "string",
-          "enum": [
-            "base_class",
-            "inline"
-          ]
-        },
         "expose": {
           "description": "Which layers to generate",
           "type": "array",

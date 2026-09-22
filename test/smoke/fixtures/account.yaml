@@ -6,7 +6,6 @@ entity:
   plural: accounts
   table: accounts
   pattern: Integrated
-  folder_structure: nested
 
 fields:
   name:
