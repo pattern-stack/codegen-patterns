@@ -53,10 +53,10 @@ function injectTokenAt(target: unknown, index: number): unknown {
 
 describe('jobs package-mode DI metadata (ADR-037)', () => {
 	it('JobWorkerOrchestrator injects ModuleRef via an explicit token (no design:paramtypes reliance)', () => {
-		// Param index 5 is `moduleRef`. Without the explicit @Inject(ModuleRef)
+		// Param index 6 is `moduleRef` (after the CFG-1 `JOB_POOL_CONFIG` at 4). Without the explicit @Inject(ModuleRef)
 		// this is absent from self:paramtypes and the package bundle (no
 		// design:paramtypes) injects undefined → worker never boots.
-		expect(injectTokenAt(JobWorkerOrchestrator, 5)).toBe(ModuleRef);
+		expect(injectTokenAt(JobWorkerOrchestrator, 6)).toBe(ModuleRef);
 	});
 
 	it('MemoryJobOrchestrator injects its class deps + ModuleRef explicitly', () => {

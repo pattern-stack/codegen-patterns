@@ -12,7 +12,7 @@ import { <%= serviceBaseClass %> } from '<%= serviceBaseImport %>';
 import { <%= classNames.repository %> } from './<%= entityName %>.repository';
 import type { <%= classNames.entity %> } from './<%= entityName %>.entity';
 <% if (eavEnabled) { -%>
-import { FieldValueService } from '../field_values/field_value.service';
+import { FieldValueService } from '<%= eavFieldValueImportDir %>/field_value.service';
 <% } -%>
 <% if (eavValueTable) { -%>
 import { toEavRows, mergeEavRows } from '<%= eavHelpersImport %>';

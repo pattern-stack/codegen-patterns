@@ -108,7 +108,7 @@ export interface JobUpsertEntry {
 /**
  * Pool definition surface as the orchestrator needs it for boot-time row
  * materialisation. Defined locally here (not imported from
- * `pool-config.loader.ts`) so the protocol layer keeps zero dependencies on
+ * `pool-config.ts`) so the protocol layer keeps zero dependencies on
  * runtime config wiring — the loader's `PoolDefinition` is structurally
  * compatible.
  */

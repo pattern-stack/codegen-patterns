@@ -16,6 +16,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import YAML from 'yaml';
 import { aliasPackageRuntime } from '../smoke/_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -60,6 +61,51 @@ export const LAYOUT_PATHS: Record<Layout, LayoutPaths> = {
     modules: 'apps/backend/src/domain',
   },
 };
+
+/**
+ * CFG-1 (#643): the custom layout also sets every boot-time key non-default.
+ * The generator emits them into `<generated>/app-config.ts`; the smoke boots
+ * the app and asserts they arrived (`verify-boot.ts --expect-pools`,
+ * `verify-main.ts`), in both runtime modes.
+ */
+export const CUSTOM_LAYOUT_BOOT_CONFIG = {
+  openapi: { enabled: true, path: '/reference', title: 'Junction Smoke API', version: '9.9.9' },
+  auth: { devAllowAnonymous: true },
+  jobsPools: {
+    batch: { concurrency: 7 },
+    reports: { queue: 'jobs-reports', concurrency: 3 },
+  },
+} as const;
+
+/**
+ * Append the CFG-1 boot keys to the config the installs wrote, and spread
+ * `SUBSYSTEM_MODULES` into AppModule (the manual step `subsystem install`
+ * leaves to the consumer) so the booted app carries the jobs pool map. The
+ * worker runs `standalone` — the embedded one would query the (stub) database
+ * at init; `JobsDomainModule` alone binds `JOB_POOL_CONFIG`.
+ */
+function writeBootConfig(tmpDir: string, paths: LayoutPaths): void {
+  const configPath = path.join(tmpDir, 'codegen.config.yaml');
+  const doc = YAML.parseDocument(fs.readFileSync(configPath, 'utf8'));
+  const { openapi, auth, jobsPools } = CUSTOM_LAYOUT_BOOT_CONFIG;
+  doc.setIn(['openapi'], doc.createNode(openapi));
+  doc.setIn(['auth', 'devAllowAnonymous'], auth.devAllowAnonymous);
+  doc.setIn(['jobs', 'pools'], doc.createNode(jobsPools));
+  doc.setIn(['jobs', 'worker_mode'], 'standalone');
+  fs.writeFileSync(configPath, doc.toString());
+
+  const appModulePath = path.join(tmpDir, paths.backendSrc, 'app.module.ts');
+  const barrel = path.posix.relative(paths.backendSrc, `${paths.generated}/subsystems`);
+  const src = fs.readFileSync(appModulePath, 'utf8');
+  const wired = `import { SUBSYSTEM_MODULES } from './${barrel}';\n${src}`.replace(
+    /(imports:\s*\[DatabaseModule,\s*OpenApiModule,)\s*\.\.\.GENERATED_MODULES/,
+    '$1 ...SUBSYSTEM_MODULES, ...GENERATED_MODULES',
+  );
+  if (!wired.includes('...SUBSYSTEM_MODULES')) {
+    throw new Error(`could not spread SUBSYSTEM_MODULES into ${appModulePath} — the init template drifted`);
+  }
+  fs.writeFileSync(appModulePath, wired);
+}
 
 /**
  * The custom layout's app capability pattern (PATH-1, #645): the pattern file
@@ -158,7 +204,6 @@ const RUNTIME_DEPS = [
   'reflect-metadata@0.2',
   'pg@8',
   'zod@3',
-  'yaml@2',
 ];
 const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
 
@@ -261,6 +306,8 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     // jobs — #566's repro (`worker.ts` + the `main.ts` hook under backend_src).
     run(`bun ${CLI_PATH} subsystem install events`);
     run(`bun ${CLI_PATH} subsystem install jobs`);
+    writeBootConfig(tmpDir, paths);
+    log(`wrote non-default openapi / auth / jobs.pools (CFG-1): ${JSON.stringify(CUSTOM_LAYOUT_BOOT_CONFIG)}`);
     authorAppPattern(tmpDir, runtime, paths);
     log(`authored app pattern Audited under ${paths.backendSrc}/patterns (mixin under ${paths.modules})`);
   }

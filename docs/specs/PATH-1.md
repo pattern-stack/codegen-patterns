@@ -52,10 +52,10 @@ next to the `connection` entity module). The `clean` pipeline's layout is `locat
 | `paths.mjs` › `BASE_PATHS` | `backendSrc`, `orchestrationSrc` | + `modulesDir: resolvedConfig.paths.modules_dir` |
 | entity prompt → clean-lite-ps extension | locals `backendSrc`; extension's `srcRoot` = `baseLocals.srcRoot \|\| entity.src_root \|\| baseLocals.backendSrc \|\| default` | locals `modulesDir: BASE_PATHS.modulesDir`; extension's `modulesDir` = `baseLocals.modulesDir \|\| DEFAULT_CODEGEN_CONFIG.paths.modules_dir` (the schema's one default, for hand-built unit locals) |
 | `resolveLibraryCapabilityConfig` (`Communication` junction import) | `${srcRoot}/modules/<junctionPlural>/…` | `${modulesDir}/<junctionPlural>/…` |
-| junction prompt | clean-lite-ps output paths `${backend_src}/modules/<plural>/…`, junction module dir, endpoint naming | all from `paths.modules_dir` |
+| junction prompt | clean-lite-ps output paths `${backend_src}/modules/<plural>/…`, junction module dir, endpoint naming | all from `paths.modules_dir`; `clean` endpoints are named under a neutral `.` root (sibling-relative imports only) |
 | relationship prompt | `srcRoot = backend_src`, `${srcRoot}/modules/<plural>` | `modulesDir = paths.modules_dir` |
 | `barrel-generator.ts` › `entityFilePaths` (clean-lite-ps) | `${backendSrc}/modules[/<ctx>]/<plural>/…` | `${modulesDir}[/<ctx>]/<plural>/…` |
-| `assembly-emission-generator.ts` › `resolveEntityModuleImports` | `<backendSrcAbs>/modules[/<ctx>]/<plural>/…` | `<modulesAbs>[/<ctx>]/<plural>/…` (new required input `modulesAbs`); `emitAdapters` passes `layout.modules` |
+| `assembly-emission-generator.ts` › `resolveEntityModuleImports` | `<backendSrcAbs>/modules[/<ctx>]/<plural>/…` | `<modulesAbs>[/<ctx>]/<plural>/…` (new required input `modulesAbs`); `emitAdapters` takes `backendSrcAbs` + `modulesAbs` as a both-or-neither union, and `entity new` passes `layout.modules` |
 | `tsconfigIncludes(layout)` | `<backend_src>/**/*` + `<generated>/**/*` when outside | + `<modules_dir>/**/*` when outside `backend_src` |
 | entity / junction / relationship git-safety | `checkGitSafety([<backend_src>, <generated>])` | `[<backend_src>, <modules_dir>, <generated>]` |
 
@@ -132,16 +132,34 @@ the schema rejects `paths.subsystems`; `project-layout` covers `modules_dir` out
 8. **Pre-existing, filed: #647.** The clean-lite-ps EAV `FieldValueService` imports are hand-built
    (`'../field_values/…'`, `'../../field_values/…'`). They break for a `context:`-tagged EAV entity, or for a
    field-value entity with another `plural:` / `context:`. This is the NAME-0 class, and it is not a `modules_dir`
-   defect: the path is relative inside the one tree.
+   defect: the path is relative inside the one tree. **Fixed in #647** (CFG-1 branch): the prompt resolves `field_value`
+   through `resolveTargetNaming` (its own `plural:` / `context:`), and the service, repository, module and create/update
+   use-case templates import from `eavFieldValueImportDir`; the repository and module templates carried the same
+   hand-built path and were fixed with them. A missing `field_value` YAML under `eav: true` is a generation error.
+9. **The module-tree shape is spelled three times** (review). `entityModuleNaming` (`templates/`),
+   `barrel-generator.ts` › `entityFilePaths` and `assembly-emission-generator.ts` › `resolveEntityModuleImports`
+   each build `<modules_dir>[/<context>]/<plural>`. `src/` cannot import `templates/` outside tests, so
+   `src/__tests__/config/module-tree-spellings.test.ts` pins the two `src/` spellings against `entityModuleNaming`
+   for a flat, a `context:`-nested and an irregular-plural entity. Collapsing them into one shipped module under
+   `src/config/` is filed as **#649**.
+10. **The junction prompt ran `clean` endpoints through the module tree** (review). `architecture: clean` uses the
+    endpoint folders only for their sibling-relative form (`../<plural>/…`), and `modules_dir` never feeds it. The
+    prompt now names `clean` endpoints under a neutral `.` root, and a unit case asserts that a non-default
+    `modules_dir` leaves `clean` output unchanged.
+11. **A consumer application's name appears in 80 tracked files and one test filename** (review, charter I10). This
+    is pre-existing and was not fixed here. Filed as **#650**.
+12. **`emitAdapters` pairs `backendSrcAbs` and `modulesAbs` in the type** (review). The two are a union (both or
+    neither), so the runtime throw of the first revision is gone. `checkGitSafety` has a unit test for the
+    three-root call (`src/__tests__/cli/git-safety.test.ts`).
 
 ## Gates
 
-Run after the last code edit (commit `5c2bbfb`). The later commit changes only this table.
+Run after the last code edit (the review revision). Only the commit's doc text changed after the run: this table.
 
 | Gate | Result |
 |---|---|
 | `bun run typecheck && bun run build && bun run test` | pass (baseline runner, `clean` pipeline, byte-identical) |
-| `just test-all` | pass: 3453 unit tests, 0 fail. New cases: `patterns` default + `paths.subsystems` rejection + `modules_dir` include (`config/path-defaults.test.ts`), non-default `modules_dir` in the naming / barrel / assembly / junction / relationship units. Also: baseline; every smoke, including `junction --layout custom` in both runtimes (modules under `apps/backend/src/domain`, the app pattern loaded from `apps/backend/src/patterns/`, `tsc` + DI boot); junction snapshots unchanged (10 pass); integration-emit (56 pass); smoke-integration |
+| `just test-all` | pass: 3465 unit tests, 0 fail. New cases: `patterns` default, `paths.subsystems` rejection and `modules_dir` include (`config/path-defaults.test.ts`); the module-tree spelling pins (`config/module-tree-spellings.test.ts`); `checkGitSafety` for the three roots (`cli/git-safety.test.ts`); non-default `modules_dir` in the naming / barrel / assembly / junction (incl. `clean` unaffected) / relationship units. Also: baseline; every smoke, including `junction --layout custom` in both runtimes (modules under `apps/backend/src/domain`, the app pattern loaded from `apps/backend/src/patterns/`, `tsc` + DI boot); junction snapshots unchanged (10 pass); integration-emit (56 pass); smoke-integration |
 | `just test-integration` | pass: 74 pass, 0 fail, 2 skip (the pre-existing `test.skip` pair in `bridge-e2e.test.ts`) |
 | `just test-smoke-junction-clean` | known-red, unchanged: **118** errors (110 × TS2307 + 8 × TS7006, #602) |
 | `just test-post-publish` | pass |

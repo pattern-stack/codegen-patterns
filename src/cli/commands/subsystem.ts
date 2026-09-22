@@ -66,6 +66,8 @@ import {
 import { resolveRuntimeMode } from '../shared/runtime-import.js';
 import { ensureSubsystemInstalled } from '../shared/subsystems-install-config.js';
 import { projectLayout } from '../shared/project-layout.js';
+import { writeAppConfig } from '../shared/app-config-generator.js';
+import { loadCodegenConfig } from '../../config/project-config.js';
 
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
@@ -1018,6 +1020,11 @@ export class SubsystemInstallCommand extends Command {
 			);
 			return 1;
 		}
+
+		// CFG-1: main.ts reads `openapiConfig` from <generated>/app-config.ts,
+		// never the YAML — regenerate it from the config just written.
+		const written = loadCodegenConfig(configPath);
+		writeAppConfig(projectLayout(ctx.cwd, written).generated, written);
 
 		if (isJsonMode()) {
 			printJson({

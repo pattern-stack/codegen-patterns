@@ -8,7 +8,7 @@
  * tokens become available transitively via `global: true`.
  *
  * Lifecycle (`onModuleInit`, **order-critical** per JOB-5 spec):
- *   1. `loadPoolConfig()`                        → resolved `PoolConfig`
+ *   1. `JOB_POOL_CONFIG` (inner domain module)   → resolved `PoolConfig`
  *   2. `HandlerRegistry.getAll()`                → registered entries
  *   3. Reserved-pool validation                  → throws `ReservedPoolViolationError`
  *   4. `orchestrator.upsertJobRows(entries, …)`  → persist `job` definitions
@@ -40,6 +40,7 @@ import {
 } from './jobs-domain.module';
 import {
   JOB_ORCHESTRATOR,
+  JOB_POOL_CONFIG,
   JOB_RUN_SERVICE,
   JOB_STEP_SERVICE,
 } from './jobs-domain.tokens';
@@ -49,9 +50,8 @@ import type { IJobStepService } from './job-step-service.protocol';
 import {
   allNonReservedPoolNames,
   allPoolNames,
-  loadPoolConfig,
   type PoolConfig,
-} from './pool-config.loader';
+} from './pool-config';
 import { JobWorker, type JobWorkerOptions } from './job-worker';
 // #6 — `BullMQJobWorker` is lazy-loaded only when `backend: 'bullmq'` is
 // selected (`spawnBullMQWorker` below). The file is filtered out of drizzle/
@@ -104,10 +104,11 @@ export interface JobWorkerModuleOptions {
   /** SIGTERM drain budget. Default 30_000 ms. */
   shutdownTimeoutMs?: number;
   /**
-   * Test-only — point the pool config loader at a specific YAML file.
-   * Production code reads `${process.cwd()}/codegen.config.yaml`.
+   * Forwarded into the inner `JobsDomainModule.forRoot({ pools })` — the
+   * generator-validated `jobPools` from `<generated>/app-config.ts` (CFG-1).
+   * The worker reads the resolved map back through `JOB_POOL_CONFIG`.
    */
-  configPath?: string;
+  domainModulePools?: JobsDomainModuleOptions['pools'];
   /**
    * Forwarded into the inner `JobsDomainModule.forRoot()` call so the
    * worker module's caller can configure backend extensions in one place.
@@ -152,6 +153,8 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
     @Inject(JOB_STEP_SERVICE) private readonly stepService: IJobStepService,
     @Inject(JOB_WORKER_MODULE_OPTIONS)
     private readonly options: JobWorkerModuleOptions,
+    /** CFG-1 — the resolved pool map, from the inner `JobsDomainModule`. */
+    @Inject(JOB_POOL_CONFIG) private readonly poolConfig: PoolConfig,
     /**
      * Drizzle client is only required when `backend === 'drizzle'`. Made
      * `@Optional()` so memory-mode boots in `Test.createTestingModule`
@@ -192,7 +195,7 @@ export class JobWorkerOrchestrator implements OnModuleInit, OnModuleDestroy {
     const backend = this.options.backend ?? 'drizzle';
 
     // (1) Pool config first — every later step needs the resolved map.
-    const poolConfig = loadPoolConfig(this.options.configPath);
+    const poolConfig = this.poolConfig;
 
     // (2) Snapshot the registry. Decorators run at class-load time so the
     //     map is fully populated before any module init fires.
@@ -467,6 +470,7 @@ export class JobWorkerModule {
           backend: opts.backend ?? 'drizzle',
           extensions: opts.domainModuleExtensions,
           multiTenant: opts.multiTenant,
+          pools: opts.domainModulePools,
         }),
       ],
       providers: [

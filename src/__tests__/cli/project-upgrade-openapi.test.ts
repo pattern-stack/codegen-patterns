@@ -85,6 +85,14 @@ describe('runUpgradeOpenapi', () => {
 		const mainText = fs.readFileSync(path.join(cwd, 'src', 'main.ts'), 'utf-8');
 		expect(mainText).toMatch(/SwaggerModule\.setup/);
 		expect(mainText).toContain("from './shared/openapi'");
+		// CFG-1: the block reads the generated module, never the YAML.
+		expect(mainText).toContain("import { openapiConfig } from './generated/app-config';");
+		expect(mainText).toContain("import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';");
+		expect(mainText).not.toContain("'codegen.config.yaml'");
+		expect(mainText).not.toContain('parseYaml');
+		expect(fs.readFileSync(path.join(cwd, 'src', 'generated', 'app-config.ts'), 'utf-8')).toContain(
+			'export const openapiConfig',
+		);
 
 		// Vendored files created
 		expect(fs.existsSync(path.join(cwd, 'src', 'shared', 'openapi', 'registry.ts'))).toBe(true);

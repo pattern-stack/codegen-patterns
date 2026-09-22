@@ -172,6 +172,7 @@ export {
   installRequesterContext,
   makeRequesterContextMiddleware,
   resolveRequesterContext,
+  resolveUserContext,
   OAuth2RefreshStrategy,
   withAuthRetry,
   ConnectionBrokenError,

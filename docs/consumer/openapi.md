@@ -42,11 +42,22 @@ openapi:
   auth: bearer                             # 'bearer' | 'none' — adds BearerAuth security scheme globally
 ```
 
+Without an `openapi:` block the defaults are `enabled: false`, `path: /docs`,
+`title: API`, `version: 0.0.0`, `auth: bearer` (declared once, in the config
+schema).
+
+The block is a **generation-time** setting: `codegen` validates it and writes
+it into `src/generated/app-config.ts` (`openapiConfig`), which `main.ts`
+imports — the app never reads `codegen.config.yaml`. After editing it,
+regenerate (`codegen entity new --all` or any `codegen subsystem install`).
+A bad value (`auth: basic`, a misspelled key) fails that command, naming the
+key.
+
 Disable mode (`enabled: false`) leaves the registry singleton in place
 (generated modules still register their schemas at `onModuleInit`) but
 skips the `SwaggerModule.setup()` call in `main.ts` — no `/docs` route, no
-`/docs-json` route. Useful when shipping the same image to environments
-where the spec must not be exposed.
+`/docs-json` route. Because the switch is generated, a build that must not
+expose the spec is built from a config with `enabled: false`.
 
 ### What's exposed
 

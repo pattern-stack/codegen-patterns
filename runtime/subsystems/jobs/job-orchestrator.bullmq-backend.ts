@@ -44,7 +44,8 @@ import type {
   JobRun,
   StartOptions,
 } from './job-orchestrator.protocol';
-import { JOBS_MULTI_TENANT } from './jobs-domain.tokens';
+import { JOB_POOL_CONFIG, JOBS_MULTI_TENANT } from './jobs-domain.tokens';
+import type { PoolConfig } from './pool-config';
 import {
   BULLMQ_CONNECTION,
   resolvePoolQueueName,
@@ -112,6 +113,7 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
     @Optional()
     @Inject(BULLMQ_RESOLVED_CONFIG)
     private readonly bullConfig: BullMqResolvedConfig | null = null,
+    @Inject(JOB_POOL_CONFIG) private readonly poolConfig: PoolConfig,
   ) {
     super(db, multiTenant);
     this.bullDb = db;
@@ -150,7 +152,7 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
     if (!this.QueueCtor) {
       throw new Error('BullMQJobOrchestrator: queueFor called before loadBullMq()');
     }
-    const name = resolvePoolQueueName(pool, this.bullConfig);
+    const name = resolvePoolQueueName(pool, this.bullConfig, this.poolConfig);
     let q = this.queues.get(name);
     if (!q) {
       q = new this.QueueCtor(name, { connection: this.connection });
@@ -236,7 +238,7 @@ export class BullMQJobOrchestrator extends DrizzleJobOrchestrator {
           : parentRow.id;
         jobOpts.parent = {
           id: parentJobId,
-          queue: resolvePoolQueueName(parentRow.pool, this.bullConfig),
+          queue: resolvePoolQueueName(parentRow.pool, this.bullConfig, this.poolConfig),
         };
       }
     }

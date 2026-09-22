@@ -55,7 +55,7 @@ import type { IntegrationUpsertConfig } from '<%= integrationUpsertConfigImport 
 import type { BehaviorConfig } from '<%= baseRepositoryImport %>';
 <% } -%>
 <% if (eavEnabled) { -%>
-import { FieldValueService } from '../field_values/field_value.service';
+import { FieldValueService } from '<%= eavFieldValueImportDir %>/field_value.service';
 <% } -%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityName %>.entity';
 <%_ capabilityConfigImports.forEach((imp) => { _%>

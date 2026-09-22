@@ -83,7 +83,7 @@ export interface BarrelResult {
 	written: boolean;
 }
 
-interface EntityInfo {
+export interface EntityInfo {
 	name: string;
 	plural: string;
 	/**
@@ -228,7 +228,7 @@ export type BarrelPaths = Pick<PathsConfig, 'backend_src' | 'modules_dir'>;
  * `locations:` in codegen.config.yaml, the barrel will still point at the
  * default locations — a known limitation documented in ADR-017.
  */
-function entityFilePaths(
+export function entityFilePaths(
 	info: EntityInfo,
 	architecture: Architecture,
 	paths: BarrelPaths
