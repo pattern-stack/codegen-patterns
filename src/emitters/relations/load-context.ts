@@ -26,10 +26,20 @@ import {
 import { junctionIdentity } from './build-graph';
 import { sortEntities, type RelationsEmitContext } from './types';
 
+/**
+ * Directory names, not `paths.*` defaults: the caller resolves those from the
+ * schema (PATH-0, #642). These are the standalone-emitter fallback for a
+ * caller that passes no config at all.
+ */
+const ENTITIES_DIRNAME = 'entities';
+const JUNCTIONS_DIRNAME = 'junctions';
+const GENERATED_DIRNAME = 'src/generated';
+
 /** The slice of `codegen.config.yaml` this loader reads. */
 export interface RelationsConfigInput {
 	paths?: {
-		entities_dir?: string;
+		/** CFG-0 (#640) declares this as `paths.entities`. */
+		entities?: string;
 		generated?: string;
 		[key: string]: unknown;
 	};
@@ -83,9 +93,9 @@ export function loadRelationsEmitContext(
 	opts: { entitiesDir?: string; junctionsDir?: string } = {},
 ): LoadRelationsEmitContextResult {
 	const entitiesDir =
-		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities_dir ?? 'entities');
-	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, 'junctions');
-	const outDir = path.resolve(cwd, config?.paths?.generated ?? 'src/generated');
+		opts.entitiesDir ?? path.resolve(cwd, config?.paths?.entities ?? ENTITIES_DIRNAME);
+	const junctionsDir = opts.junctionsDir ?? path.resolve(cwd, JUNCTIONS_DIRNAME);
+	const outDir = path.resolve(cwd, config?.paths?.generated ?? GENERATED_DIRNAME);
 
 	const { registry } = loadEntityRegistry(entitiesDir);
 

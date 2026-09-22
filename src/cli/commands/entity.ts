@@ -26,9 +26,8 @@ import { regenerateRelationsManifest } from '../shared/relations-generator.js';
 import { checkGitSafety } from '../shared/git-safety.js';
 import {
 	regenerateBarrels,
-	resolveArchitecture,
-	resolveGeneratedDir,
 } from '../shared/barrel-generator.js';
+import { configOrDefaults } from '../../config/project-config.js';
 import { generateScopeEntityType } from '../shared/scope-entity-type-generator.js';
 import { regenerateSubsystemBarrel } from '../shared/subsystem-barrel-generator.js';
 import { regenerateSubsystemSchemaBarrel } from '../shared/subsystem-schema-generator.js';
@@ -66,9 +65,7 @@ import { loadProvidersFromYaml } from '../../utils/yaml-loader.js';
 import { loadEntities } from '../../parser/load-entities.js';
 import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
-import { resolveSubsystemsRoot } from '../shared/subsystems-path.js';
-import { resolveEventsDir } from '../shared/events-path.js';
-import { resolveJobsDir } from '../shared/jobs-path.js';
+import { projectLayout } from '../shared/project-layout.js';
 import { loadJobs } from '../../parser/load-jobs.js';
 import {
 	buildJobBridgeTriggers,
@@ -88,19 +85,6 @@ import type { NounModule } from '../noun-module.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Resolve the provider-definitions directory from config (`paths.providers`,
- * default `definitions/providers`). Provider YAML validates against
- * `ProviderDefinitionSchema` — it must be excluded from entity discovery so the
- * recursive `definitions` walk never feeds `definitions/providers/*.yaml` to the
- * entity loader (where it fails entity validation).
- */
-function resolveProvidersDir(ctx: Context): string {
-	const fromConfig = ctx.config?.paths?.providers;
-	return fromConfig != null
-		? path.resolve(ctx.cwd, fromConfig)
-		: path.resolve(ctx.cwd, 'definitions/providers');
-}
 
 /**
  * List entity YAML files under `dir`, excluding the provider-definitions
@@ -171,18 +155,19 @@ function padRight(s: string, n: number): string {
 // ---------------------------------------------------------------------------
 
 async function summary(ctx: Context): Promise<PaneOutput> {
-	if (!ctx.entitiesDir || ctx.entityCount === 0) {
+	const layout = projectLayout(ctx.cwd, ctx.config);
+	if (ctx.entityCount === 0) {
 		return {
 			title: 'entities',
 			body: [
 				'No entities defined yet.',
 				'',
-				`Create one at ${theme.system('entities/<name>.yaml')} to get started.`,
+				`Create one at ${theme.system(`${path.relative(ctx.cwd, layout.entities) || '.'}/<name>.yaml`)} to get started.`,
 			],
 		};
 	}
 
-	const files = listEntityYamls(ctx.entitiesDir, resolveProvidersDir(ctx));
+	const files = listEntityYamls(layout.entities, layout.providers);
 	const rows = files.map(summarizeEntityFile).filter((r): r is EntitySummaryRow => r !== null);
 
 	const patterns = new Set(rows.map((r) => r.pattern));
@@ -210,10 +195,10 @@ async function hints(ctx: Context): Promise<Hint[]> {
 	if (!ctx.isInitialized) {
 		return [{ command: 'codegen init', description: 'Initialize project' }];
 	}
-	if (!ctx.entitiesDir || ctx.entityCount === 0) {
+	if (ctx.entityCount === 0) {
 		return [
 			{
-				command: 'codegen entity new entities/example.yaml',
+				command: `codegen entity new ${path.relative(ctx.cwd, path.join(projectLayout(ctx.cwd, ctx.config).entities, 'example.yaml'))}`,
 				description: 'Generate first entity',
 			},
 		];
@@ -229,11 +214,7 @@ async function hints(ctx: Context): Promise<Hint[]> {
 	// it is a post-step of `entity new`. Surface that here when the project has
 	// provider definitions, so the only discoverability path doesn't depend on
 	// reading `entity new --help`.
-	const configuredProviders = ctx.config?.paths?.providers;
-	const providersDir =
-		typeof configuredProviders === 'string' && configuredProviders.length > 0
-			? path.resolve(ctx.cwd, configuredProviders)
-			: path.resolve(ctx.cwd, 'definitions/providers');
+	const providersDir = projectLayout(ctx.cwd, ctx.config).providers;
 	if (fs.existsSync(providersDir)) {
 		baseHints.push({
 			command: 'codegen entity new --all',
@@ -316,8 +297,8 @@ export class EntityNewCommand extends Command {
 
 		let targets: string[] = [];
 		if (this.all) {
-			const dir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
-			targets = listEntityYamls(dir, resolveProvidersDir(ctx));
+			const dir = projectLayout(ctx.cwd, ctx.config).entities;
+			targets = listEntityYamls(dir, projectLayout(ctx.cwd, ctx.config).providers);
 			if (targets.length === 0) {
 				printError(`No entity YAML files found in ${dir}`);
 				return 1;
@@ -350,11 +331,10 @@ export class EntityNewCommand extends Command {
 			}
 		}
 
-		const entitiesDirForEmits =
-			ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
-		const eventsDirForEmits = resolveEventsDir(ctx);
+		const entitiesDirForEmits = projectLayout(ctx.cwd, ctx.config).entities;
+		const eventsDirForEmits = projectLayout(ctx.cwd, ctx.config).eventsDir;
 		const allEntitiesForEmits = loadEntities(entitiesDirForEmits, {
-			excludeDirs: [resolveProvidersDir(ctx)],
+			excludeDirs: [projectLayout(ctx.cwd, ctx.config).providers],
 		}).entities;
 		const validatedNames = new Set(validated.map((v) => v.name));
 		const emitsTargetEntities = allEntitiesForEmits.filter((e) =>
@@ -459,22 +439,23 @@ export class EntityNewCommand extends Command {
 		// Git safety — we don't know specific output paths without running Hygen,
 		// so scope the check to the cwd's generated source roots if we can.
 		if (!this.force) {
-			const gitCheck = checkGitSafety(['src'], ctx.cwd);
+			const outputRoots = projectLayout(ctx.cwd, ctx.config);
+			const gitCheck = checkGitSafety([outputRoots.backendSrc, outputRoots.generated], ctx.cwd);
 			if (gitCheck.inRepo && !gitCheck.clean) {
 				printWarning(
-					`Uncommitted changes in ${gitCheck.dirty.length} files under src/. Pass --force to overwrite.`
+					`Uncommitted changes in ${gitCheck.dirty.length} generated-output files. Pass --force to overwrite.`
 				);
 				if (!isJsonMode()) return 1;
 			}
 		}
 
 		// Compute barrel plan (used in both dry-run reporting and post-gen execution).
-		const entitiesDir = ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+		const entitiesDir = projectLayout(ctx.cwd, ctx.config).entities;
 		const relationshipsDir = path.resolve(ctx.cwd, 'relationships');
-		const generatedDir = resolveGeneratedDir(ctx);
-		const architecture = resolveArchitecture(ctx);
+		const generatedDir = projectLayout(ctx.cwd, ctx.config).generated;
+		const architecture = configOrDefaults(ctx.config).generate.architecture;
 
-		const subsystemsRoot = resolveSubsystemsRoot(ctx);
+		const subsystemsRoot = projectLayout(ctx.cwd, ctx.config).subsystems;
 		// Runtime mode (ADR-037) drives WHERE consumer-specific generated code
 		// lands. Vendored mode keeps the legacy `<subsystemsRoot>/<name>/generated`
 		// tree (next to the runtime it imports). Package mode has no vendored tree,
@@ -490,7 +471,7 @@ export class EntityNewCommand extends Command {
 				? path.resolve(generatedDir, 'scope-entity-type.ts')
 				: path.resolve(subsystemsRoot, 'jobs/generated/scope-entity-type.ts');
 
-		const eventsDir = resolveEventsDir(ctx);
+		const eventsDir = projectLayout(ctx.cwd, ctx.config).eventsDir;
 		// Event codegen output. Package mode → `src/generated/events/` (the 5 files
 		// import the events runtime via the package subpath); also the dir the
 		// bridge registry validates trigger events against (so package-mode trigger
@@ -511,30 +492,18 @@ export class EntityNewCommand extends Command {
 			runtimeMode === 'package'
 				? generatedDir
 				: path.resolve(subsystemsRoot, 'bridge/generated');
-		// Handlers dir resolves under `paths.backend_src` (matching where the
-		// rest of the backend tree lives) with `src` as final fallback — the
-		// same default `subsystems-path.ts` uses for `subsystems` root.
+		// Handlers dir: `<backend_src>/jobs` (the layout's `jobHandlers`).
 		// Recursive scan tolerates absent dir (returns empty registry).
-		const backendSrcForHandlers = ctx.config?.paths?.backend_src ?? 'src';
+		const layout = projectLayout(ctx.cwd, ctx.config);
 
 		// `runtimeMode` (ADR-037) is resolved above — it drives the bridge
 		// registry output (mode-aware) plus every runtime import specifier the
 		// integration emitters write. Defaults to `package` (the new default).
-		const bridgeHandlersDir = path.resolve(
-			ctx.cwd,
-			backendSrcForHandlers,
-			'jobs',
-		);
+		const bridgeHandlersDir = layout.jobHandlers;
 
-		// Orchestration emission root (ADR-032 Phase 3-2 / O-6). Defaults to
-		// `${backend_src}/orchestration`, override via `paths.orchestration_src`.
-		const orchestrationConfigured = ctx.config?.paths?.orchestration_src;
-		const orchestrationOutputRoot = path.resolve(
-			ctx.cwd,
-			typeof orchestrationConfigured === 'string' && orchestrationConfigured.length > 0
-				? orchestrationConfigured
-				: path.join(backendSrcForHandlers, 'orchestration'),
-		);
+		// Orchestration emission root (ADR-032 Phase 3-2 / O-6):
+		// `paths.orchestration_src`, default `<backend_src>/orchestration`.
+		const orchestrationOutputRoot = layout.orchestration;
 
 		// Pattern globs used to discover orchestration patterns. Default
 		// matches the Phase 3-1 loader: `src/patterns/*.pattern.ts`.
@@ -567,7 +536,7 @@ export class EntityNewCommand extends Command {
 		// the bridge/schedule contributions come from the LOADED defs (not the
 		// emitted files), there is no two-pass ordering hazard. Opt-in: no
 		// `definitions/jobs/` ⇒ empty (warn-only), exactly like providers.
-		const jobsDir = resolveJobsDir(ctx);
+		const jobsDir = projectLayout(ctx.cwd, ctx.config).jobsDir;
 		const jobLoad = loadJobs(jobsDir);
 		if (!isJsonMode()) {
 			for (const issue of jobLoad.issues) {
@@ -1054,12 +1023,8 @@ export class EntityNewCommand extends Command {
 		// integrations see no change. Blocking issues ⇒ nothing is written.
 		let providerResult: ReturnType<typeof generateProviderModules> | null = null;
 		try {
-			const providersDir = resolveProvidersDir(ctx);
-			const providerOutputRoot = path.resolve(
-				ctx.cwd,
-				backendSrcForHandlers,
-				'integrations/providers',
-			);
+			const providersDir = projectLayout(ctx.cwd, ctx.config).providers;
+			const providerOutputRoot = path.join(layout.backendSrc, 'integrations/providers');
 			const entitySurfaces = fs.existsSync(entitiesDir)
 				? collectEntitySurfaces(
 						loadEntitiesFromYaml(
@@ -1109,11 +1074,7 @@ export class EntityNewCommand extends Command {
 		try {
 			if (providerResult && !providerResult.skipped && providerResult.issues.length === 0) {
 				const providersDir = providerResult.providersDir;
-				const adapterOutputRoot = path.resolve(
-					ctx.cwd,
-					backendSrcForHandlers,
-					'integrations',
-				);
+				const adapterOutputRoot = path.join(layout.backendSrc, 'integrations');
 				const entityDefs = fs.existsSync(entitiesDir)
 					? loadEntitiesFromYaml(
 							findYamlFiles(entitiesDir, { excludeDirs: [providersDir] }),
@@ -1133,7 +1094,7 @@ export class EntityNewCommand extends Command {
 					providers: loadedProviders,
 					entities: entityDefs,
 					outputRoot: adapterOutputRoot,
-					backendSrcAbs: path.resolve(ctx.cwd, backendSrcForHandlers),
+					backendSrcAbs: layout.backendSrc,
 					aliases: assemblyTsAliases?.aliases ?? {},
 					mode: runtimeMode,
 				});
@@ -1351,12 +1312,13 @@ export class EntityListCommand extends Command {
 			skipDetection: true,
 		});
 
-		if (!ctx.entitiesDir) {
-			printError('No entities directory found.');
+		const layout = projectLayout(ctx.cwd, ctx.config);
+		if (!fs.existsSync(layout.entities)) {
+			printError(`Entities directory not found: ${layout.entities} (paths.entities)`);
 			return 1;
 		}
 
-		const files = listEntityYamls(ctx.entitiesDir, resolveProvidersDir(ctx));
+		const files = listEntityYamls(layout.entities, layout.providers);
 		const rows = files
 			.map(summarizeEntityFile)
 			.filter((r): r is EntitySummaryRow => r !== null)
@@ -1430,7 +1392,7 @@ export class EntityValidateCommand extends Command {
 
 		const targetDir = this.dir
 			? path.resolve(ctx.cwd, this.dir)
-			: ctx.entitiesDir ?? path.resolve(ctx.cwd, 'entities');
+			: projectLayout(ctx.cwd, ctx.config).entities;
 
 		if (!fs.existsSync(targetDir)) {
 			printError(`Directory not found: ${targetDir}`);

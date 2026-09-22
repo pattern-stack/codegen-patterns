@@ -20,7 +20,7 @@ import {
 	type EmitRelationsResult,
 	type RelationsConfigInput,
 } from '../../emitters/relations/index.js';
-import { resolveGeneratedDir } from './barrel-generator.js';
+import { projectLayout } from './project-layout.js';
 import type { Context } from './context.js';
 
 export interface RelationsGeneratorOptions {
@@ -47,7 +47,7 @@ export function regenerateRelationsManifest(
 	opts: RelationsGeneratorOptions,
 ): EmitRelationsResult {
 	const { ctx, dryRun = false } = opts;
-	const generatedDir = opts.generatedDir ?? resolveGeneratedDir(ctx);
+	const generatedDir = opts.generatedDir ?? projectLayout(ctx.cwd, ctx.config).generated;
 
 	const { ctx: emitCtx } = loadRelationsEmitContext(
 		ctx.cwd,

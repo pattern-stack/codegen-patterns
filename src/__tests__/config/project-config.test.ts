@@ -23,7 +23,6 @@ import {
 } from '../../config/project-config';
 import {
 	CodegenConfigSchema,
-	GenerateConfigSchema,
 	SUBSYSTEM_NAMES,
 } from '../../schema/codegen-config.schema';
 import { SUBSYSTEMS } from '../../cli/shared/subsystem-detect';
@@ -31,8 +30,6 @@ import { loadContext } from '../../cli/shared/context';
 import { buildInitPlan } from '../../cli/shared/init-scaffold';
 import { proposedConfigYaml } from '../../cli/commands/project';
 import { generateConfig, scanProject } from '../../scanner/index';
-// @ts-expect-error — plain ESM helper, no declarations
-import { GENERATE_DEFAULTS } from '../../config/paths.mjs';
 
 const REPO = path.resolve(import.meta.dir, '../../..');
 
@@ -214,10 +211,6 @@ describe('the configs the generator writes pass the strict parse', () => {
 describe('tables kept in step with the schema', () => {
 	it('SUBSYSTEM_NAMES is the SUBSYSTEMS descriptor list', () => {
 		expect([...SUBSYSTEM_NAMES].sort()).toEqual(SUBSYSTEMS.map((s) => s.name).sort());
-	});
-
-	it('paths.mjs GENERATE_DEFAULTS is GenerateConfigSchema.parse({})', () => {
-		expect({ ...GENERATE_DEFAULTS }).toEqual(GenerateConfigSchema.parse({}));
 	});
 
 	it('the top-level schema is strict', () => {

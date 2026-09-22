@@ -26,9 +26,7 @@
 import path from 'node:path';
 
 import type { CodegenConfig } from './context.js';
-
-/** Default when `paths.backend_src` is unset. Matches `project init`. */
-const FALLBACK_BACKEND_SRC = 'src';
+import { projectLayout } from './project-layout.js';
 
 export interface ObservabilityScaffoldLocals {
 	/** Fallback basename for logs; not rendered in templates today. */
@@ -77,13 +75,9 @@ export function resolveObservabilityScaffoldLocals(
 	const { cwd, config } = input;
 	void input.fileExists;
 
-	const backendSrc =
-		typeof config?.paths?.backend_src === 'string' &&
-		config.paths.backend_src.length > 0
-			? config.paths.backend_src
-			: FALLBACK_BACKEND_SRC;
+	const layout = projectLayout(cwd, config);
 
-	const appModulePath = path.resolve(cwd, backendSrc, 'app.module.ts');
+	const appModulePath = layout.appModule;
 	const configPath = path.resolve(cwd, 'codegen.config.yaml');
 
 	const obsBlock = (config?.observability ?? {}) as Record<string, unknown>;

@@ -29,10 +29,17 @@ afterEach(() => {
 	for (const d of tmpDirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
+/**
+ * These cases exercise the clean-lite-ps layout, so they declare it: the
+ * no-config default is the schema's (`clean`, charter Q5), pinned once in
+ * `config/path-defaults.test.ts`.
+ */
+const CLEAN_LITE_PS = 'generate:\n  architecture: clean-lite-ps\n';
+
 async function junctionLocals(
 	between: [string, string],
 	entities: Record<string, string>,
-	config?: string,
+	config: string = CLEAN_LITE_PS,
 ): Promise<Record<string, any>> {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'junction-naming-'));
 	tmpDirs.push(dir);
@@ -40,7 +47,7 @@ async function junctionLocals(
 	for (const [name, body] of Object.entries(entities)) {
 		fs.writeFileSync(path.join(dir, 'entities', `${name}.yaml`), body);
 	}
-	if (config) fs.writeFileSync(path.join(dir, 'codegen.config.yaml'), config);
+	fs.writeFileSync(path.join(dir, 'codegen.config.yaml'), config);
 	const file = path.join(dir, 'junction.yaml');
 	fs.writeFileSync(file, `pattern: Junction\nbetween: [${between.join(', ')}]\n`);
 	const cwd = process.cwd();

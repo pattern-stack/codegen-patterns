@@ -606,3 +606,36 @@ describe('entity noun — module shape', () => {
 		expect(entityNoun.commandClasses).toContain(EntityValidateCommand);
 	});
 });
+
+// PATH-0 review: `paths.entities` has ONE value. A configured directory that
+// does not exist is reported as that directory — a stale `entities/` next to it
+// is never read in its place.
+describe('entity noun — a missing paths.entities is reported, never replaced by entities/', () => {
+	function mkStaleProject(): string {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'path0-'));
+		tempDirs.push(root);
+		fs.writeFileSync(path.join(root, 'codegen.config.yaml'), 'paths:\n  entities: definitions/entities\n');
+		fs.mkdirSync(path.join(root, 'entities'));
+		fs.writeFileSync(
+			path.join(root, 'entities', 'leftover.yaml'),
+			'entity:\n  name: leftover\n  plural: leftovers\nfields:\n  name:\n    type: string\n',
+		);
+		return root;
+	}
+
+	for (const argv of [
+		['entity', 'new', '--all', '--dry-run'],
+		['entity', 'list'],
+		['entity', 'validate'],
+	]) {
+		test(argv.join(' '), async () => {
+			const root = mkStaleProject();
+			const { result, out, err } = await captureStreams(() =>
+				buildCli().run([...argv, '--cwd', root]),
+			);
+			expect(result).toBe(1);
+			expect(out + err).toContain(path.join(root, 'definitions', 'entities'));
+			expect(out + err).not.toContain('leftover');
+		});
+	}
+});

@@ -12,9 +12,10 @@
  *   import { schema } from '<%= locations.dbEntities.import %>/<%= name %>';
  */
 
-import { projectConfig } from './config-loader.mjs';
+import { projectConfig, resolvedConfig } from './config-loader.mjs';
 
-const backendSrcPath = projectConfig?.paths?.backend_src ?? 'app/backend/src';
+// `paths.backend_src`, resolved — its one default lives in `PathsConfigSchema`.
+const backendSrcPath = resolvedConfig.paths.backend_src;
 
 // ============================================================================
 // Default Locations

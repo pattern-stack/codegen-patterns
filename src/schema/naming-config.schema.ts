@@ -247,22 +247,11 @@ export function resolveLayerNaming(
 // ============================================================================
 
 /**
- * Default naming configuration
- *
- * Preserves current hardcoded behavior for backward compatibility:
- * - kebab-case file names with dotted suffixes
- * - Entity name included only in flat mode
- * - Command/Query terminology (not UseCase)
+ * Default naming configuration: `BackendNamingConfigSchema`'s own defaults —
+ * derived, never restated (PATH-0, #644 review). kebab-case file names, dotted
+ * suffixes, entity name only in flat mode, command/query terminology.
  */
-export const DEFAULT_BACKEND_NAMING: BackendNamingConfig = {
-  fileCase: "kebab-case",
-  suffixStyle: "dotted",
-  entityInclusion: "flat-only",
-  terminology: {
-    command: "command",
-    query: "query",
-  },
-};
+export const DEFAULT_BACKEND_NAMING: BackendNamingConfig = BackendNamingConfigSchema.parse({});
 
 // ============================================================================
 // File Type Identifiers

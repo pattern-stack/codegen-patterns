@@ -30,7 +30,9 @@ function fail(msg: string): never {
 
 async function main(): Promise<void> {
 	const tmpDir = process.argv[2];
-	if (!tmpDir) fail('usage: verify-boot.ts <tmpDir>');
+	if (!tmpDir) fail('usage: verify-boot.ts <tmpDir> [<app.module.ts, project-relative>]');
+	// `<paths.backend_src>/app.module.ts` — `src/` unless the harness says (PATH-0).
+	const appModuleRel = process.argv[3] ?? 'src/app.module.ts';
 
 	// AppModule's path aliases (@shared/*, @modules/*, @generated/*) resolve
 	// relative to the tmp project's tsconfig — make it the cwd.
@@ -51,7 +53,7 @@ async function main(): Promise<void> {
 		process.env.DATABASE_URL ?? 'postgresql://stub:stub@127.0.0.1:1/stub';
 
 	const appModuleUrl = pathToFileURL(
-		path.join(tmpDir, 'src', 'app.module.ts'),
+		path.join(tmpDir, appModuleRel),
 	).href;
 	const { AppModule } = (await import(appModuleUrl)) as { AppModule: unknown };
 

@@ -12,20 +12,17 @@
  *   const domainNaming = resolveLayerNaming('domain');
  */
 
-import { projectConfig } from './config-loader.mjs';
-import {
-  DEFAULT_BACKEND_NAMING,
-  resolveLayerNaming as resolveLayer,
-} from '../schema/naming-config.schema.mjs';
+import { resolvedConfig } from './config-loader.mjs';
+import { resolveLayerNaming as resolveLayer } from '../schema/naming-config.schema.mjs';
 
 /**
- * The naming configuration: the parsed `naming:` block, or the defaults when
- * the project has no config file.
+ * The naming configuration: the parsed `naming:` block, or the schema's
+ * defaults when the project has no config file (`DEFAULT_CODEGEN_CONFIG`).
  *
  * @returns {import('../schema/naming-config.schema.ts').BackendNamingConfig}
  */
 export function getNamingConfig() {
-  return projectConfig?.naming ?? DEFAULT_BACKEND_NAMING;
+  return resolvedConfig.naming;
 }
 
 /**
@@ -41,10 +38,7 @@ export function resolveLayerNaming(layer) {
   return resolveLayer(getNamingConfig(), layer);
 }
 
-export { DEFAULT_BACKEND_NAMING };
-
 export default {
   getNamingConfig,
   resolveLayerNaming,
-  DEFAULT_BACKEND_NAMING,
 };

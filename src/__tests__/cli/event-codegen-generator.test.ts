@@ -179,11 +179,12 @@ describe('buildTypesContent — empty case', () => {
 		// No events declared → EventOfType degrades to the DomainEvent base (NOT
 		// `never`), so subsystem consumers (e.g. the bridge EventFlowService) that
 		// read `event.type`/`event.id` still type-check in a no-events project.
+		// `T` is used, so a consumer with `noUnusedParameters` stays clean (#566).
 		expect(content).toContain(
-			'export type EventOfType<T extends EventTypeName> = DomainEvent;',
+			'export type EventOfType<T extends EventTypeName> = T extends EventTypeName ? DomainEvent : never;',
 		);
 		expect(content).toContain(
-			"export type PayloadOfType<T extends EventTypeName> = DomainEvent['payload'];",
+			"export type PayloadOfType<T extends EventTypeName> = EventOfType<T>['payload'];",
 		);
 	});
 });
