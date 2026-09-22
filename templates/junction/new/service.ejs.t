@@ -4,9 +4,9 @@ force: true
 ---
 <%- typeof generatedBanner !== 'undefined' ? generatedBanner : '' %>
 import { Injectable, Inject, Optional } from '@nestjs/common';
-import { WithAnalytics } from '@shared/base-classes/with-analytics';
-import { EVENT_BUS } from '@shared/constants/tokens';
-import { BaseService } from '@shared/base-classes/base-service';
+import { WithAnalytics } from '<%= withAnalyticsImport %>';
+import { EVENT_BUS } from '<%= drizzleTokenImport %>';
+import { BaseService } from '<%= baseServiceImport %>';
 import { <%= classNames.repository %> } from './<%= name %>.repository';
 import type { <%= classNames.entity %> } from './<%= name %>.entity';
 import { <%= leftRepositoryClass %> } from '<%= leftRepoImportFromJunction %>';

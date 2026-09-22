@@ -16,6 +16,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { aliasPackageRuntime } from '../smoke/_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -25,6 +26,9 @@ export type Scenario = (typeof VALID_SCENARIOS)[number];
 
 export const VALID_ARCHITECTURES = ['clean-lite-ps', 'clean'] as const;
 export type Architecture = (typeof VALID_ARCHITECTURES)[number];
+
+export const VALID_RUNTIMES = ['vendored', 'package'] as const;
+export type RuntimeMode = (typeof VALID_RUNTIMES)[number];
 
 export interface ScenarioMeta {
   junctionName: string;
@@ -60,6 +64,12 @@ const DEV_DEPS = ['typescript@5', '@types/bun', '@types/pg@8'];
 export interface BootstrapOptions {
   scenario: Scenario;
   architecture: Architecture;
+  /**
+   * ADR-037 runtime mode. Defaults to `vendored`: the junction snapshots lock
+   * the `@shared/*` specifiers. The junction smoke also runs a `package` leg
+   * (#624) so the default mode's imports stay compiled.
+   */
+  runtime?: RuntimeMode;
   log?: (msg: string) => void;
 }
 
@@ -73,12 +83,12 @@ export interface BootstrapResult {
   cleanup(): void;
 }
 
-function writeCodegenConfig(tmpDir: string, architecture: Architecture): void {
+function writeCodegenConfig(tmpDir: string, architecture: Architecture, runtime: RuntimeMode): void {
   const configPath = path.join(tmpDir, 'codegen.config.yaml');
   const content = [
-    // ADR-037: vendored flow — the snapshot + tsc compile against `@shared/*`.
-    // (init wrote this too, but this overwrite would otherwise drop it.)
-    'runtime: vendored',
+    // ADR-037 runtime mode (init wrote this too, but this overwrite would
+    // otherwise drop it).
+    `runtime: ${runtime}`,
     'generate:',
     `  architecture: ${architecture}`,
     'paths:',
@@ -91,6 +101,7 @@ function writeCodegenConfig(tmpDir: string, architecture: Architecture): void {
 
 export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<BootstrapResult> {
   const { scenario, architecture } = opts;
+  const runtime = opts.runtime ?? 'vendored';
   const log = opts.log ?? (() => {});
 
   const fixturesDir = FIXTURES_DIR_MAP[scenario];
@@ -113,14 +124,17 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   run(`bun add ${RUNTIME_DEPS.join(' ')}`);
   run(`bun add -D ${DEV_DEPS.join(' ')}`);
 
-  // 3. codegen project init — `--runtime vendored` (ADR-037): the junction
-  //    snapshot asserts `@shared/*` runtime imports, so this is the vendored
-  //    flow; the new `package` default would flip the emitted specifiers.
-  run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime vendored`);
+  // 3. codegen project init — `--runtime <mode>` (ADR-037). Package mode
+  //    vendors nothing; alias the package specifiers to the in-repo runtime.
+  run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime ${runtime}`);
+  if (runtime === 'package') {
+    aliasPackageRuntime(tmpDir);
+    log('aliased @pattern-stack/codegen/runtime/* → in-repo runtime sources');
+  }
 
   // override architecture
-  writeCodegenConfig(tmpDir, architecture);
-  log(`wrote codegen.config.yaml (architecture: ${architecture})`);
+  writeCodegenConfig(tmpDir, architecture, runtime);
+  log(`wrote codegen.config.yaml (architecture: ${architecture}, runtime: ${runtime})`);
 
   // 4. copy entity fixtures
   const entityFixturesDir = path.join(fixturesDir, 'entities');

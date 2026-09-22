@@ -23,6 +23,7 @@ import {
   projectEntityLookup,
   relativeModuleDir,
 } from "../../_shared/entity-naming.mjs";
+import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -39,24 +40,18 @@ const kebabCase = (s) => s.replace(/_/g, "-");
 // ============================================================================
 
 /**
- * Find and load codegen.config.yaml from cwd upward. Returns null when absent
- * (safe fallback: assume clean-lite-ps layout with srcRoot = 'src').
+ * Load `codegen.config.yaml` at cwd — the one config filename every loader
+ * reads (`loadRuntimeMode` included). Returns null when absent (safe fallback:
+ * assume clean-lite-ps layout with srcRoot = 'src').
  */
 function loadCodegenConfig(cwd) {
-  const candidates = [
-    path.join(cwd, "codegen.config.yaml"),
-    path.join(cwd, "codegen.config.yml"),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      try {
-        return yaml.parse(fs.readFileSync(p, "utf-8"));
-      } catch {
-        // Fall through
-      }
-    }
+  const p = path.join(cwd, "codegen.config.yaml");
+  if (!fs.existsSync(p)) return null;
+  try {
+    return yaml.parse(fs.readFileSync(p, "utf-8"));
+  } catch {
+    return null;
   }
-  return null;
 }
 
 function resolveArchitecture(config) {
@@ -510,6 +505,20 @@ export default {
     // Return all template locals
     // ======================================================================
 
+    // Package-owned runtime imports resolve by `runtime:` mode (ADR-037, #624)
+    // through the entity pipeline's resolver: `@shared/<relpath>` vendored,
+    // `@pattern-stack/codegen/runtime/<relpath>` under the package default.
+    // `@shared/database/database.module` is consumer-local in both modes.
+    const runtimeMode = loadRuntimeMode(cwd);
+    const drizzleTokenImport = runtimeImport(runtimeMode, 'constants/tokens');
+    const drizzleTypeImport = runtimeImport(runtimeMode, 'types/drizzle');
+    const junctionIntegrationRepositoryImport = runtimeImport(
+      runtimeMode,
+      'base-classes/junction-integration-repository',
+    );
+    const withAnalyticsImport = runtimeImport(runtimeMode, 'base-classes/with-analytics');
+    const baseServiceImport = runtimeImport(runtimeMode, 'base-classes/base-service');
+
     // @generated DO-NOT-EDIT banner — stamped at the top of every
     // force-overwritten junction output. `yamlPath` is the consumer-relative
     // source definition.
@@ -523,6 +532,13 @@ export default {
     return {
       // @generated DO-NOT-EDIT banner (see renderGeneratedBanner)
       generatedBanner,
+
+      // Runtime-mode import specifiers (#624)
+      drizzleTokenImport,
+      drizzleTypeImport,
+      junctionIntegrationRepositoryImport,
+      withAnalyticsImport,
+      baseServiceImport,
 
       // Identity
       name: junctionName,

@@ -21,7 +21,8 @@ that NAME-0 removed.
   diff is the annotation and nothing else (see Gates). `clpHasSelfFk` is replaced by `clpHasFk`, not aliased.
 - **I9 gates are honest.** The package leg of the capability smoke now also compiles `relationship new` output.
   Its `@shared/*` diagnostics are the existing #624 defect. They are added to that named expectation, enumerated
-  exactly and asserted present and sole. They are not filtered.
+  exactly and asserted present and sole. They are not filtered. (RT-0 fixed #624 and deleted the expectation,
+  2026-09-17.)
 - **I11 scope.** clean-lite-ps, `junction new` and `relationship new`. The `clean` pipeline is not touched (#631
   below).
 
@@ -156,5 +157,5 @@ Output from the runs made after the last code edit (charter I9), re-run after th
 - **`clpHasSelfFk` is gone**; `clpHasFk` gates the `AnyPgColumn` import.
 - **`clpRepositoryDeps`** is the one list of other entities a clean-lite-ps service injects a repository for. A new
   edge kind that composes another repository adds to `collectRepositoryDeps`, not a new template loop.
-- **`relationship new` requires endpoint YAMLs**, like `junction new`. It still hardcodes `@shared/*` (#624) and
-  still hardcodes `srcRoot = 'src'`.
+- **`relationship new` requires endpoint YAMLs**, like `junction new`. It still hardcodes `srcRoot = 'src'`. Its
+  `@shared/*` runtime imports now resolve by runtime mode (RT-0, #624, 2026-09-17).

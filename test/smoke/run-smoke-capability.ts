@@ -57,14 +57,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { consumerErrors as scopeToConsumer } from './_consumer-errors';
+import { aliasPackageRuntime } from './_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
 const FIXTURES = path.join(REPO_ROOT, 'test', 'smoke', 'fixtures', 'capability');
 const CONSUMER_SRC = path.join(FIXTURES, 'consumer');
-const RUNTIME_ROOT = path.join(REPO_ROOT, 'runtime');
-const RUNTIME_BARREL = path.join(REPO_ROOT, 'runtime/subsystems/index.ts');
-const RUNTIME_SUBSYSTEMS = path.join(REPO_ROOT, 'runtime/subsystems');
 
 const KEEP = process.env.KEEP_SMOKE_DIR === '1';
 
@@ -183,30 +181,6 @@ function authorCapabilitySurface(tmpDir: string, mode: Mode): void {
 	}
 
 	log(`authored capability surface (${mode}: ${prefix}/capability-mixin)`);
-}
-
-/**
- * Package mode: the generated tree imports `@pattern-stack/codegen/runtime/*`,
- * which is unresolvable in checkout mode (the package is not installed). Alias
- * it to the in-repo runtime SOURCES — the contract under test — and pin
- * `@nestjs/*` to the project's own copy so there is exactly one Nest identity.
- * Same technique as `test/smoke-integration/run.ts`.
- */
-function aliasPackageRuntime(tmpDir: string): void {
-	const tsconfigPath = path.join(tmpDir, 'tsconfig.json');
-	const tsconfig = JSON.parse(
-		fs.readFileSync(tsconfigPath, 'utf-8').replace(/\/\/.*$/gm, ''),
-	) as { compilerOptions?: { paths?: Record<string, string[]> } };
-	tsconfig.compilerOptions ??= {};
-	tsconfig.compilerOptions.paths ??= {};
-	const paths = tsconfig.compilerOptions.paths;
-	paths['@pattern-stack/codegen/runtime/*'] = [`${RUNTIME_ROOT}/*`];
-	// The generated `main.ts` bootstraps off the subsystems barrel.
-	paths['@pattern-stack/codegen/subsystems'] = [RUNTIME_BARREL];
-	paths['@pattern-stack/codegen/subsystems/*'] = [`${RUNTIME_SUBSYSTEMS}/*`];
-	paths['@nestjs/*'] = [path.join(tmpDir, 'node_modules/@nestjs/*')];
-	fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2));
-	log('aliased @pattern-stack/codegen/runtime/* → in-repo runtime sources');
 }
 
 // ---------------------------------------------------------------------------
@@ -545,130 +519,6 @@ function assertTargetNaming(tmpDir: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// #624 — named single-purpose expectation (package leg only)
-// ---------------------------------------------------------------------------
-
-/**
- * `junction new` hardcodes `@shared/*` imports for five package-owned runtime
- * files, so under `runtime: package` the generated junction cannot resolve
- * them. A pre-existing defect in the junction templates, surfaced by this
- * smoke (CAP-2 is the first harness to generate a junction in package mode) and
- * tracked as #624 — it is not fixable inside CAP-2's scope.
- *
- * Per CLAUDE.md › Known-red gates this is a NAMED, single-purpose expectation,
- * not a filter: every one of the 16 diagnostics PER JUNCTION is enumerated
- * below by file, code and the symbol it names, with an exact count, for each of
- * the fixture set's two junctions — `meeting_contact` (CAP-2) and
- * `crew_person` (NAME-0, whose endpoints are an irregular plural and a
- * `context:`-nested entity) — and the 12 of the `crew_assignment` relationship
- * (NAME-1, below). Asserted PRESENT and SOLE:
- *
- *   - any diagnostic not in the list — including a new TS4112/TS2339 in the
- *     same two files naming a different symbol — fails the smoke (sole);
- *   - any listed diagnostic that stops appearing ALSO fails it, telling whoever
- *     fixed #624 to delete this expectation (present).
- */
-
-/**
- * The exact #624 diagnostic set, keyed `file|code|symbol` → count. The symbol is
- * what each message names — the missing module (TS2307), the class that cannot
- * `override` with no base (TS4112), the inherited member that is absent
- * (TS2339). No line numbers (template edits would churn them); no wildcards (a
- * new TS2339 naming a different member must fail). Compared as a multiset in
- * both directions: anything extra is a new error, anything missing means #624
- * moved — both fail the smoke.
- */
-function issue624Junction(folder: string, name: string, pascal: string): Array<[string, number]> {
-	const repo = `src/modules/${folder}/${name}.repository.ts`;
-	const service = `src/modules/${folder}/${name}.service.ts`;
-	return [
-		// 5 package-owned runtime modules the junction templates hardcode as @shared/*
-		[`${repo}|TS2307|@shared/constants/tokens`, 1],
-		[`${repo}|TS2307|@shared/types/drizzle`, 1],
-		[`${repo}|TS2307|@shared/base-classes/junction-integration-repository`, 2],
-		[`${service}|TS2307|@shared/base-classes/with-analytics`, 1],
-		[`${service}|TS2307|@shared/constants/tokens`, 1],
-		[`${service}|TS2307|@shared/base-classes/base-service`, 1],
-		// …and what an unresolved base class causes downstream
-		[`${repo}|TS4112|${pascal}Repository`, 1],
-		[`${repo}|TS2339|baseQuery`, 2],
-		[`${service}|TS4112|${pascal}Service`, 3],
-		[`${service}|TS2339|create`, 1],
-		[`${service}|TS2339|delete`, 1],
-		[`${service}|TS2339|update`, 1],
-	];
-}
-
-/**
- * The same defect in `relationship new` (NAME-1, #633: the fixture set's
- * `crew_assignment` relationship is the first `relationship new` output any
- * gate compiles). Its repository + service hardcode `@shared/*` for the same
- * package-owned bases; 12 diagnostics, enumerated exactly as above.
- */
-function issue624Relationship(folder: string, name: string, pascal: string): Array<[string, number]> {
-	const dir = `src/modules/${folder}`;
-	const repo = `${dir}/${name}.repository.ts`;
-	const service = `${dir}/${name}.service.ts`;
-	return [
-		[`${repo}|TS2307|@shared/constants/tokens`, 1],
-		[`${repo}|TS2307|@shared/types/drizzle`, 1],
-		[`${repo}|TS2307|@shared/base-classes/base-repository`, 1],
-		[`${service}|TS2307|@shared/base-classes/with-analytics`, 1],
-		[`${service}|TS2307|@shared/constants/tokens`, 1],
-		[`${service}|TS2307|@shared/base-classes/base-service`, 1],
-		[`${repo}|TS4112|${pascal}Repository`, 1],
-		[`${service}|TS4112|${pascal}Service`, 3],
-		[`${dir}/use-cases/find-${name}-by-id.use-case.ts|TS2339|findById`, 1],
-		[`${dir}/use-cases/list-${folder}.use-case.ts|TS2339|list`, 1],
-	];
-}
-
-const ISSUE_624_EXPECTED = new Map<string, number>([
-	...issue624Junction('meeting_contacts', 'meeting_contact', 'MeetingContact'),
-	...issue624Junction('crew_people', 'crew_person', 'CrewPerson'),
-	...issue624Relationship('crew_assignments', 'crew_assignment', 'CrewAssignment'),
-]);
-
-/** `file|code|symbol` for one tsc line, or null when it has no recognised shape. */
-function issue624Key(line: string): string | null {
-	const m = /^(.+?)\(\d+,\d+\): error (TS\d+): (.*)$/.exec(line);
-	if (!m) return null;
-	const [, file, code, text] = m;
-	const symbol =
-		code === 'TS2307'
-			? /Cannot find module '([^']+)'/.exec(text!)?.[1]
-			: code === 'TS4112'
-				? /containing class '([^']+)'/.exec(text!)?.[1]
-				: code === 'TS2339'
-					? /Property '([^']+)'/.exec(text!)?.[1]
-					: undefined;
-	return symbol ? `${file}|${code}|${symbol}` : null;
-}
-
-function applyIssue624Expectation(errors: string[]): string[] {
-	const unexpected: string[] = [];
-	const remaining = new Map(ISSUE_624_EXPECTED);
-	for (const line of errors) {
-		const key = issue624Key(line);
-		const left = key ? remaining.get(key) ?? 0 : 0;
-		if (key && left > 0) {
-			remaining.set(key, left - 1);
-		} else {
-			unexpected.push(line);
-		}
-	}
-	const missing = [...remaining].filter(([, n]) => n > 0);
-	if (missing.length > 0) {
-		unexpected.push(
-			`#624 expectation is stale — expected diagnostics no longer appear: ` +
-				missing.map(([k, n]) => `${k} ×${n}`).join('; ') +
-				`. If #624 is fixed, delete applyIssue624Expectation (and its CLAUDE.md row).`,
-		);
-	}
-	return unexpected;
-}
-
-// ---------------------------------------------------------------------------
 // Negative gates — ADR-041 §2 and §4 must FAIL generation, not warn
 // ---------------------------------------------------------------------------
 
@@ -768,7 +618,10 @@ async function leg(mode: Mode): Promise<number> {
 		run(`bun add ${RUNTIME_DEPS.join(' ')}`, tmpDir);
 		run(`bun add -D ${DEV_DEPS.join(' ')}`, tmpDir);
 		run(`bun ${CLI_PATH} project init --yes --with-tsconfig --runtime ${mode}`, tmpDir);
-		if (mode === 'package') aliasPackageRuntime(tmpDir);
+		if (mode === 'package') {
+			aliasPackageRuntime(tmpDir);
+			log('aliased @pattern-stack/codegen/runtime/* → in-repo runtime sources');
+		}
 
 		authorCapabilitySurface(tmpDir, mode);
 
@@ -816,20 +669,15 @@ async function leg(mode: Mode): Promise<number> {
 			encoding: 'utf-8',
 		});
 		const scoped = scopeToConsumer(`${tsc.stdout ?? ''}${tsc.stderr ?? ''}`, tmpDir);
-		// Package leg only: the #624 named expectation (see above). The vendored
-		// leg gets no expectation at all — there the junction and the relationship
-		// compile cleanly.
-		const errors = mode === 'package' ? applyIssue624Expectation(scoped) : scoped;
+		// Both legs, zero expectations: the junction and the relationship resolve
+		// their package-owned runtime imports by mode (#624).
+		const errors = scoped;
 		if (errors.length > 0) {
 			for (const line of errors) console.error(line);
 			logError(`[${mode}] ${errors.length} typecheck errors in consumer-emitted code`);
 			exitCode = 1;
 		} else {
-			log(
-				mode === 'package'
-					? `[${mode}] tsc OK — the composed tree compiles against the real bases; the #624 named expectation (junction + relationship @shared imports) matched, present and sole`
-					: `[${mode}] tsc OK — the composed tree compiles against the real bases`,
-			);
+			log(`[${mode}] tsc OK — the composed tree compiles against the real bases`);
 		}
 
 		if (exitCode === 0) {
