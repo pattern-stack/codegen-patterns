@@ -77,3 +77,6 @@ test/tmp/
 # Claude Code local session/worktree state (not project artifacts)
 .claude/.session/
 .claude/worktrees/
+
+# `just studio-demo` writes a real generated project here.
+.studio-demo/

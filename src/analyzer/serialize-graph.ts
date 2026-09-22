@@ -51,6 +51,8 @@ export interface SerializedRelationship {
   inverse?: string;
   through?: string;
   resolved: boolean;
+  /** CAP-2 — set when this relationship was derived from a `roles:` entry. */
+  role?: string;
 }
 
 export interface SerializedRelationshipDefinition {
@@ -98,20 +100,30 @@ function serializeFields(fields: Map<string, ParsedField>): Record<string, Seria
   return result;
 }
 
+/**
+ * One relationship, serialized. The entity map and the edge list both go
+ * through this — they used to carry separate field-by-field copies, and the
+ * edge copy silently dropped `role` (#698).
+ */
+function serializeRelationship(r: ParsedRelationship): SerializedRelationship {
+  return {
+    name: r.name,
+    type: r.type,
+    target: r.target,
+    foreignKey: r.foreignKey,
+    inverse: r.inverse,
+    through: r.through,
+    resolved: r.resolved,
+    role: r.role,
+  };
+}
+
 function serializeRelationships(
   rels: Map<string, ParsedRelationship>,
 ): Record<string, SerializedRelationship> {
   const result: Record<string, SerializedRelationship> = {};
   for (const [key, r] of rels) {
-    result[key] = {
-      name: r.name,
-      type: r.type,
-      target: r.target,
-      foreignKey: r.foreignKey,
-      inverse: r.inverse,
-      through: r.through,
-      resolved: r.resolved,
-    };
+    result[key] = serializeRelationship(r);
   }
   return result;
 }
@@ -174,15 +186,7 @@ export function serializeDomainGraph(graph: DomainGraph): SerializedDomainGraph 
     edges: graph.edges.map((e) => ({
       from: e.from,
       to: e.to,
-      relationship: {
-        name: e.relationship.name,
-        type: e.relationship.type,
-        target: e.relationship.target,
-        foreignKey: e.relationship.foreignKey,
-        inverse: e.relationship.inverse,
-        through: e.relationship.through,
-        resolved: e.relationship.resolved,
-      },
+      relationship: serializeRelationship(e.relationship),
       cardinality: e.cardinality,
       bidirectional: e.bidirectional,
     })),

@@ -114,6 +114,68 @@ codegen project scan             # detect conventions → propose config
 codegen project config           # view resolved config
 ```
 
+### Studio
+
+```bash
+codegen studio                   # serve the project in the current directory
+codegen studio ../demo-app       # serve a specific project
+codegen studio --port 5200       # pick a port (default 5178)
+```
+
+Studio is a local web UI over the generator: the entity graph, a YAML editor
+that validates before it writes, a relationship form, and Generate with live
+output and a diff of what changed. It binds **127.0.0.1 by default** and has no
+auth, so the bind address is doing the work — widen it deliberately, or not at
+all.
+
+State-changing requests are additionally checked against an origin allowlist:
+a request whose `Origin` is present and not this server's (or a `--allow-origin`
+value, or the dev Vite origin) is refused 403. That is not the same protection
+as the bind — it stops a page in a browser on this machine from driving Studio,
+which the bind cannot.
+
+#### Reaching Studio from another machine
+
+**Preferred — an SSH tunnel.** Studio stays on loopback and nothing is exposed:
+
+```bash
+ssh -L 5178:127.0.0.1:5178 <host>     # on your laptop
+codegen studio                        # on the host, unchanged
+# then browse http://127.0.0.1:5178 on the laptop
+```
+
+**If you must bind a reachable address** (tailnet, LAN):
+
+```bash
+codegen studio --host 10.0.0.5 --port 5178
+```
+
+It prints a warning, and it means it: the API is unauthenticated, so anyone who
+can reach that address can read and write this project's YAML and run generate,
+dbPush and restart in it. Only do this on a network where that set of people is
+one you trust — a tailnet, not a café.
+
+Same-origin browsing works with no further flags: the allowlist is rebuilt from
+the address you bound. If the browser reaches it by **name** rather than by that
+address, the `Origin` carries the name, so allow it explicitly:
+
+```bash
+codegen studio --host 10.0.0.5 --allow-origin http://box.tailnet.ts.net:5178
+```
+
+`--allow-origin` repeats, and takes exact origins only — no wildcards, no
+patterns, no `*`.
+
+The server never reimplements generation. Every operation shells the real CLI
+with `--json` and parses its payload, so what Studio shows is what the CLI
+does. Every client-supplied path is resolved inside the project directory:
+absolute paths, `..` traversals and symlinks pointing outside are all rejected.
+
+From a checkout, `just studio` runs the server and the UI's Vite dev server
+together, and `just studio-demo` builds a real generated demo project (3
+entities, a git baseline so the diff pane has something to diff against) for it
+to operate on.
+
 ## What Gets Generated
 
 **Backend** — one layout, backend, under `paths.modules_dir` (default

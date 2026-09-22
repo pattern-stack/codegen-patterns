@@ -26,6 +26,7 @@ import relationshipNoun from './commands/relationship.js';
 import junctionNoun from './commands/junction.js';
 import eventsNoun from './commands/events.js';
 import orchestrationNoun from './commands/orchestration.js';
+import studioCommand from './commands/studio.js';
 import initShortcut from './shortcuts/init.js';
 import updateShortcut from './shortcuts/update.js';
 
@@ -129,6 +130,7 @@ async function main(): Promise<void> {
 	cli.register(Builtins.VersionCommand);
 	cli.register(RootSummaryCommand);
 
+	cli.register(studioCommand);
 	cli.register(initShortcut);
 	cli.register(updateShortcut);
 

@@ -231,6 +231,34 @@ and no one-argument form. Generated repositories already emit it — regenerate.
   `validatePatternProject` are gone. The scanner reports an existing
   domain/application folder layout as `layered` (was `clean`).
 
+### Added
+
+- **`codegen studio` — a local web UI over the generator** (STUDIO-0, #698).
+  Serves the entity graph, a YAML editor that validates before it writes, a
+  relationship form, and Generate with live output and a diff of what changed.
+  Binds **127.0.0.1 only**, with no auth — the bind address is the security
+  boundary, not a default to loosen. `--port` (default 5178) picks the port.
+
+  The server never reimplements generation: every operation shells the real CLI
+  with `--json` and parses its payload, through one helper. Every
+  client-supplied path is resolved inside the project directory — absolute
+  paths, `..` traversals and symlinks pointing outside are rejected, including
+  for a file that does not exist yet. A `PUT` is validated against the matching
+  schema before it touches disk and returns `422 {issues}` carrying real Zod
+  issue paths; a YAML syntax error comes back through the same channel as one
+  synthesized issue.
+
+  From a checkout, `just studio` runs the server and the UI's Vite dev server
+  together, and `just studio-demo` builds a real generated demo project for it
+  to operate on, deriving its Postgres from `test/scaffold/harness-env.ts`.
+
+- **`SerializedRelationship.role`** (#698). `ParsedRelationship.role` (CAP-2)
+  never reached the serialized graph, so a role-derived `belongs_to` was
+  indistinguishable from an authored one in `project graph --json`. The entity
+  map and the edge list now go through one `serializeRelationship`, rather than
+  each carrying its own field-by-field copy — which is how the edge copy came
+  to drop the field.
+
 ### Changed
 
 - **A field FK to a host-owned table emits a plain column** (#636). A field-level

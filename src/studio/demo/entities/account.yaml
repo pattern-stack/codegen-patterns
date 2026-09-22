@@ -1,0 +1,47 @@
+# Studio demo entity: account — the organization everything else hangs off.
+#
+# This set (account / contact / opportunity) is deliberately small and
+# deliberately INCOMPLETE: there is no contact ↔ opportunity link. Adding that
+# link in the Studio relationship form is the demo (STUDIO-0 §3), and the
+# end-to-end test asserts the edge it produces.
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  pattern: Integrated
+
+fields:
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  domain:
+    type: string
+    required: false
+    max_length: 255
+    unique: true
+
+  tier:
+    type: enum
+    choices: [free, pro, enterprise]
+    required: true
+    default: free
+
+behaviors:
+  - timestamps
+
+relationships:
+  contacts:
+    type: has_many
+    target: contact
+    foreign_key: account_id
+  opportunities:
+    type: has_many
+    target: opportunity
+    foreign_key: account_id
+
+queries:
+  - by: [domain]
+    unique: true
+  - by: [tier]

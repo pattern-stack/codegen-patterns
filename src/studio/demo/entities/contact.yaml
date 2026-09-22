@@ -1,0 +1,52 @@
+# Studio demo entity: contact — a person at an account.
+#
+# The YAML-editor pane of the demo edits THIS file: the end-to-end test PUTs a
+# deliberate schema error into `title.type` and asserts the 422 issue, then
+# fixes it (STUDIO-0 §6.2).
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  pattern: Integrated
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: accounts.id
+
+  first_name:
+    type: string
+    required: true
+    max_length: 100
+
+  last_name:
+    type: string
+    required: true
+    max_length: 100
+
+  email:
+    type: string
+    required: true
+    max_length: 255
+    unique: true
+
+  title:
+    type: string
+    required: false
+    max_length: 150
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+
+queries:
+  - by: [account_id]
+  - by: [email]
+    unique: true
