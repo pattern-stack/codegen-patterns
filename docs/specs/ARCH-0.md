@@ -74,6 +74,8 @@ backend pipeline.
    `templates/entity/new/`) is mechanical, but it touches ~40 paths and every clean-lite-ps unit test, and #678 is
    editing the junction templates in parallel. **Proposed as a follow-up, pending the owner's call.** It isn't done
    here.
+   > **2026-09-19 — JUNC-0 (#678):** the junction inject templates (and their `-clp-` suffix) no longer exist — see
+   > `docs/specs/JUNC-0.md`.
 6. **Scanner.** The folder-layout detector keeps detecting an existing domain/application layering (it still picks
    `backend_src`), but its value is renamed `clean` → `layered`, so `project scan` no longer prints
    "architecture: clean" for something unrelated to a pipeline.
@@ -169,6 +171,8 @@ list undercounts: `paths`, `imports` and `outputPaths` are common words the grep
     only the `to:` line changed, from `architecture === 'clean-lite-ps' && exposeOnParent.<side> ? … : ''` to
     `exposeOnParent.<side> ? … : ''`. Bodies, `inject` / `before` / `after` / `skip_if` markers and file names are
     unchanged (the `-clp-` suffix stays; see decision 5).
+    > **2026-09-19 — JUNC-0 (#678):** these 14 templates are deleted. Each parent's own `service.ejs.t` /
+    > `module.ejs.t` renders the junction fan-out (`templates/_shared/junction-fan-out.mjs`); see `docs/specs/JUNC-0.md`.
   - No other junction template changed. The junction snapshots are byte-identical.
 - **Everyone:** `configOrDefaults(config).generate` is `{ frontend, analytics }`. `regenerateBarrels` takes no
   `architecture`. `entityFilePaths(info, { modules_dir })`. `analyzeDomain` options take no `architecture`.

@@ -89,6 +89,4 @@ export class ContactService extends WithAnalytics(
     if (!entity) return null;
     return entity.userId ? this.userRepo.findById(entity.userId) : null;
   }
-
-
 }

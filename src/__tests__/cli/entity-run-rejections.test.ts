@@ -303,3 +303,65 @@ describe('entity new rejects the run on a provider YAML with a blocking issue (C
 		expect(fs.existsSync(noteEntity(root))).toBe(true);
 	}, 60_000);
 });
+
+// ---------------------------------------------------------------------------
+// JUNC-0 (#678) — the junction set is a run-level input
+// ---------------------------------------------------------------------------
+// Every junction is mirrored onto both parents' service + module, rendered by
+// the parents' own templates from the junction YAMLs. A junction file the
+// pre-flight skipped would silently drop that fan-out, so every YAML under
+// junctions/ is a junction or a rejection (unparseable, or not
+// `pattern: Junction`) — and so is a junction naming an entity with no YAML
+// (its fan-out would import a module that is never generated).
+
+function writeJunction(root: string, name: string, body: string): string {
+	const file = path.join(root, 'junctions', name);
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, body);
+	return file;
+}
+
+describe('entity new rejects the run on a bad junction YAML (JUNC-0, #678)', () => {
+	test('a junction file that fails the schema — named, exit 1, nothing generated', async () => {
+		const root = mkProject();
+		writeJunction(root, 'broken.yaml', 'pattern: Junction\nbetween: [note, note]\n');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain('broken.yaml — ');
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
+		expect(fs.existsSync(modulesBarrel(root))).toBe(false);
+	});
+
+	test('a junction naming an entity with no YAML — named, exit 1, nothing generated', async () => {
+		const root = mkProject();
+		writeJunction(root, 'note_ghost.yaml', 'pattern: Junction\nbetween: [note, ghost]\n');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain("note_ghost.yaml — junction 'note_ghost' names 'ghost', which no entity YAML declares");
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
+	});
+
+	test('--json carries the rejection in the pre-flight payload', async () => {
+		const root = mkProject();
+		writeJunction(root, 'note_ghost.yaml', 'pattern: Junction\nbetween: [note, ghost]\n');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		const payload = JSON.parse(out.slice(out.indexOf('{')));
+		expect(payload.stopped).toBe('pre-flight');
+		expect(payload.failed.map((f: { name: string }) => f.name)).toContain('note_ghost.yaml');
+	});
+
+	test.each([
+		['unparseable YAML', 'broken.yaml', 'pattern: Junction\nbetween: [note, \n', 'Invalid YAML syntax'],
+		['lowercase pattern', 'typo.yaml', 'pattern: junction\nbetween: [note, user]\n', 'not a junction definition'],
+		['some other YAML', 'README.yaml', 'notes: [this is not a junction]\n', 'not a junction definition'],
+	])('every YAML under junctions/ is a junction or a rejection — %s', async (_label, name, body, reason) => {
+		const root = mkProject();
+		writeJunction(root, name, body);
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`${name} — `);
+		expect(out).toContain(reason);
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
+	});
+});

@@ -22,7 +22,7 @@ import type { CommandClass } from 'clipanion';
 import { stringify as stringifyYaml } from 'yaml';
 
 import { analyzeDomain } from '../../index.js';
-import { junctionsDirFor } from '../../parser/load-junctions.js';
+import { junctionsDirFor } from '../../config/junctions-dir.js';
 import { loadAppPatternsForCli, patternLoadIssues } from '../shared/pattern-globs.js';
 import { serializeDomainGraph } from '../../analyzer/serialize-graph.js';
 import {

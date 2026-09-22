@@ -61,6 +61,8 @@
     "src/patterns/compose.ts",
     "src/roles/derive.ts",
     "src/config/entities-dir.ts",
+    "src/config/junctions-dir.ts",
+    "src/config/junction-naming.ts",
     "src/config/module-tree.ts",
     "src/config/project-config.ts",
     "src/schema/codegen-config.schema.ts",

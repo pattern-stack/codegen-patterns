@@ -27,6 +27,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import pluralize from 'pluralize';
+import { junctionPlural } from '../../config/junction-naming.js';
+import { junctionsDirFor } from '../../config/junctions-dir.js';
 
 import { findYamlFiles } from '../../utils/find-yaml-files';
 
@@ -188,7 +190,7 @@ function collectJunctions(junctionsDir: string): EntityInfo[] {
 		if (!result.success) continue;
 		const def = result.definition;
 		const name = deriveJunctionName(def);
-		const plural = pluralize(name);
+		const plural = junctionPlural(name);
 		junctions.push({ name, plural });
 	}
 	junctions.sort((a, b) => a.name.localeCompare(b.name));
@@ -296,7 +298,7 @@ export async function regenerateBarrels(
 		ctx,
 		entitiesDir,
 		relationshipsDir = path.resolve(ctx.cwd, 'relationships'),
-		junctionsDir = path.resolve(ctx.cwd, 'junctions'),
+		junctionsDir = junctionsDirFor(ctx.cwd),
 		generatedDir,
 		dryRun = false,
 	} = opts;

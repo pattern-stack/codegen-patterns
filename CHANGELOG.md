@@ -305,6 +305,23 @@ backend pipeline (ARCH-0, #677).
   place the filters are assembled, and a shape test forbids `.where()` on a
   `baseQuery()` builder in `templates/` and `runtime/`. Regenerate to pick up
   the fixed finder bodies.
+- **Re-running `entity new` no longer deletes junction wiring from the parents**
+  (#678, JUNC-0). A junction's fan-out onto its two parents (`attach<X>` /
+  `detach<X>` / `<xs>List` / `<xs>SetPrimary`, the `forwardRef` service property
+  and the junction module import) used to be injected by `junction new` into
+  files `entity new` owns, so any later `entity new` silently wiped it. The
+  parents' own clean-lite-ps service + module templates now render it from
+  `junctions/*.yaml`; `junction new` re-renders both parents through the same
+  path instead of injecting. The two commands, in any order, give identical
+  files; deleting a junction YAML (or setting `expose_on_parent.<side>: false`)
+  removes that fan-out on the next run; `junction new` no longer requires
+  `entity new` to have run first. The generated methods are unchanged; the
+  parents' import layout and comments are not (one `@nestjs/common` import, no
+  `// junction:<name>:<side>-fan-out` markers). `entity new` now rejects the run
+  on any YAML under `junctions/` that does not parse, is not `pattern: Junction`,
+  fails the schema, or names an entity with no YAML — previously such a file was
+  skipped. `junction new` rejects a target outside `junctions/`.
+
 - **`jobs.backend: memory` reaches the worker** (#656). The worker options
   (the embedded `JobWorkerModule.forRoot` in `<generated>/subsystems.ts`,
   `jobWorkerOptions` in `<generated>/app-config.ts`) carried `backend` only

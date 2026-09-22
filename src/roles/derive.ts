@@ -23,6 +23,8 @@
  * See `docs/specs/CAP-2.md` §1–§3 and PLAN §6.3.
  */
 
+import { junctionName } from '../config/junction-naming.js';
+
 /** Name of the capability an entity must declare to be a role's `target`. */
 export const ACTOR_CAPABILITY = 'Actor';
 
@@ -130,5 +132,5 @@ export function deriveRoleRelationships(
  * whatever files exist.
  */
 export function junctionNamesFor(a: string, b: string): [string, string] {
-	return [`${a}_${b}`, `${b}_${a}`];
+	return [junctionName([a, b]), junctionName([b, a])];
 }

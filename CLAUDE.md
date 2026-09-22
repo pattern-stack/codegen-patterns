@@ -276,9 +276,11 @@ helper and never a directory carve-out.
 
 ### Template System
 
-Templates use Hygen. Two types:
-- Regular templates (e.g., `entity.ejs.t`) create new files
-- Inject templates (prefixed `_inject-`) modify existing files
+Templates use Hygen. Every template writes a complete file (`force: true`, or emit-once); there are no inject
+templates. A file two generators contribute to is rendered by its owner from both inputs — e.g. a junction's fan-out
+onto its parents is rendered by the parents' own service + module templates from the junction YAMLs
+(`templates/_shared/junction-fan-out.mjs`, JUNC-0 #678), and `junction new` re-renders the parents through
+`entity new`'s per-target path (`src/cli/shared/entity-render.ts`).
 
 Entry point: `templates/entity/new/prompt.js`. The clean-lite-ps locals come from `prompt-extension.js`.
 

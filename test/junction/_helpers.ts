@@ -3,7 +3,8 @@
  *
  * Spins up a fresh tmp project, installs pinned peer deps, runs
  * `codegen project init`, copies fixture entities + junctions, and runs
- * `codegen entity new --all --force` followed by `codegen junction new --all --force`.
+ * `codegen entity new --all --force` followed by `codegen junction new --all --force`
+ * (`junctionsFirst`: the junction YAMLs are already present for `entity new`).
  *
  * Used by:
  *   - test/junction/*.test.ts        (snapshot tests — read emitted files)
@@ -20,7 +21,7 @@ import YAML from 'yaml';
 import { aliasPackageRuntime } from '../smoke/_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
+export const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
 
 export const VALID_SCENARIOS = ['junction', 'junction-cross-domain'] as const;
 export type Scenario = (typeof VALID_SCENARIOS)[number];
@@ -218,6 +219,17 @@ export interface BootstrapOptions {
   runtime?: RuntimeMode;
   /** Path layout (PATH-0). Defaults to `default`. */
   layout?: Layout;
+  /**
+   * JUNC-0 (#678) order swap: copy the junction YAMLs BEFORE the first
+   * `entity new`, so the parents' fan-out is rendered by `entity new` from the
+   * start. Defaults to false (entity new → junction YAMLs → junction new).
+   */
+  junctionsFirst?: boolean;
+  /**
+   * Called with the project dir right after the first `entity new`, before
+   * `junction new` — the order-swap leg asserts the parents there too.
+   */
+  afterEntityNew?: (projectDir: string) => void;
   log?: (msg: string) => void;
 }
 
@@ -323,18 +335,27 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
     log(`wrote entity fixture: ${CUSTOM_LAYOUT_APP_PATTERN.entity}.yaml (patterns: [Base, Audited])`);
   }
 
-  // 5. codegen entity new --all
+  // 5–6. `entity new --all`, and the junction fixtures copied after it — or,
+  //      with `junctionsFirst` (JUNC-0 order swap), before it.
+  const copyJunctionFixtures = (): void => {
+    const junctionFixturesDir = path.join(fixturesDir, 'junctions');
+    const junctionsDir = path.join(tmpDir, 'junctions');
+    fs.mkdirSync(junctionsDir, { recursive: true });
+    for (const f of fs.readdirSync(junctionFixturesDir)) {
+      if (!f.endsWith('.yaml') && !f.endsWith('.yml')) continue;
+      fs.copyFileSync(path.join(junctionFixturesDir, f), path.join(junctionsDir, f));
+      log(`copied junction fixture: ${f}`);
+    }
+  };
+  if (opts.junctionsFirst) copyJunctionFixtures();
   run(`bun ${CLI_PATH} entity new --all --force`);
-
-  // 6. copy junction fixtures
-  const junctionFixturesDir = path.join(fixturesDir, 'junctions');
-  const junctionsDir = path.join(tmpDir, 'junctions');
-  fs.mkdirSync(junctionsDir, { recursive: true });
-  for (const f of fs.readdirSync(junctionFixturesDir)) {
-    if (!f.endsWith('.yaml') && !f.endsWith('.yml')) continue;
-    fs.copyFileSync(path.join(junctionFixturesDir, f), path.join(junctionsDir, f));
-    log(`copied junction fixture: ${f}`);
+  try {
+    opts.afterEntityNew?.(tmpDir);
+  } catch (err) {
+    if (process.env.KEEP_SMOKE_DIR !== '1') fs.rmSync(tmpDir, { recursive: true, force: true });
+    throw err;
   }
+  if (!opts.junctionsFirst) copyJunctionFixtures();
 
   // 7. codegen junction new --all
   run(`bun ${CLI_PATH} junction new --all --force`);

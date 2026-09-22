@@ -12,6 +12,7 @@ import {
   entityModuleNaming,
   relativeModuleDir,
 } from '../../../_shared/entity-naming.mjs';
+import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
@@ -117,9 +118,10 @@ function _renderLiteral(value, baseIndent, currentIndent) {
  *   - `Communication` → `{ roles: { <role>: edge } }` from the `roles:` block.
  *     A one-role's column is its `clpBelongsTo` entry's `camelField` — the FK
  *     CAP-2 already derived, not a second derivation. A many-role's junction is
- *     addressed by `junction new`'s naming rules (table
- *     `camelCase(pluralize(via))`, file `modules/<plural>/<via>.entity`, FK
- *     columns `<entity>_id`), which have no YAML override.
+ *     addressed by the one junction naming rule (`junctionNaming`,
+ *     `templates/_shared/junction-fan-out.mjs` — table `camelCase(pluralize(via))`,
+ *     file `<modules_dir>/<plural>/<via>.entity`, FK columns `<entity>_id`),
+ *     which has no YAML override.
  *   - `Actor` → `{ kind }`, plus for a group the member table + FK of the
  *     `has_many` that `members:` names.
  *
@@ -161,8 +163,8 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
         roles[role] = { cardinality: 'one', target: def.target, column: fk.camelField };
         continue;
       }
-      const junctionPlural = pluralize(def.via);
-      const table = camelCase(junctionPlural);
+      const junction = junctionNaming(def.via, modulesDir);
+      const table = junction.tableVar;
       roles[role] = {
         cardinality: 'many',
         target: def.target,
@@ -174,7 +176,7 @@ export function resolveLibraryCapabilityConfig(cap, ctx) {
       };
       imports.push({
         name: table,
-        importPath: importFrom(`${modulesDir}/${junctionPlural}/${def.via}.entity`),
+        importPath: importFrom(junction.entityFile),
       });
     }
     if (Object.keys(roles).length === 0) {
@@ -1645,6 +1647,25 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
     belongsTo,
     hasMany.filter((r) => r.targetExists),
   );
+
+  // JUNC-0 (#678): every junction naming this entity in `between:` is mirrored
+  // onto its service + module here, from the junction YAML set — the parent's
+  // own templates render the fan-out; nothing injects into them. A counterparty
+  // type the service already imports for a composed repository is not imported
+  // twice (nor for a second junction onto the same counterparty).
+  const junctionFanOut = junctionFanOutFor(entityName, {
+    junctions: baseLocals.junctions ?? [],
+    modulesDir,
+    entityLookup,
+    selfModuleDir: moduleDir,
+  });
+  const importedEntityTypes = new Set(
+    repositoryDeps.map((dep) => `${dep.importDir}/${dep.entity}.entity`),
+  );
+  for (const block of junctionFanOut) {
+    block.importCounterparty = !importedEntityTypes.has(block.counterpartyEntityImport);
+    importedEntityTypes.add(block.counterpartyEntityImport);
+  }
   const eavDefinitionDep = eavDefinitionEntity
     ? repositoryDeps.find((d) => d.entity === eavDefinitionEntity) ?? null
     : null;
@@ -2176,6 +2197,8 @@ export function buildCleanLitePsLocals(definition, baseLocals) {
 
     // #632: every other entity's repository the service composes, once each
     clpRepositoryDeps: repositoryDeps,
+    // JUNC-0 (#678): the junction fan-out this entity's service + module carry
+    clpJunctionFanOut: junctionFanOut,
     // The EAV definition repository is imported + injected by its own block
     // unless a relationship onto the same entity already put it in
     // `clpRepositoryDeps`; either way the EAV methods address it by
