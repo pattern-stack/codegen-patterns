@@ -34,7 +34,8 @@ import { printError, printInfo, printSuccess, printWarning } from '../ui/output.
 import { theme } from '../ui/theme.js';
 import { icons } from '../ui/icons.js';
 import type { Hint, NounModule, PaneOutput } from '../noun-module.js';
-import { resolvePatternGlobs } from '../shared/pattern-globs.js';
+import { patternLoadRejections, resolvePatternGlobs } from '../shared/pattern-globs.js';
+import { printRejections, reportPreflightStop } from '../shared/run-rejections.js';
 import { projectLayout } from '../shared/project-layout.js';
 
 // ---------------------------------------------------------------------------
@@ -80,9 +81,14 @@ export class OrchestrationGenCommand extends Command {
 			skipDetection: true,
 		});
 
+		// A pattern file the loader could not register leaves the set partial:
+		// the root barrel would be rewritten without its module. Stop before the
+		// validator and before writing (CLI-1, #667 — as `entity new` does, JOBS-2).
 		const loadResult = await reloadRegistry(ctx);
-		if (loadResult.errors.length > 0 && !isJsonMode()) {
-			for (const err of loadResult.errors) printWarning(err.message);
+		if (loadResult.errors.length > 0) {
+			const rejections = patternLoadRejections(loadResult.errors, ctx.cwd);
+			printRejections(rejections);
+			return reportPreflightStop('orchestration gen', rejections);
 		}
 
 		// Project-level validator (Phase 3-1) — surface name collisions etc.

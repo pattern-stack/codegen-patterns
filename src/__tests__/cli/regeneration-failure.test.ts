@@ -230,28 +230,6 @@ describe('entity new fails when a post-step cannot regenerate a file the app imp
 		expect(fs.existsSync(path.join(root, 'src/generated/events/types.ts'))).toBe(false);
 	});
 
-	test('provider blocking issue (--no-continue-on-error), JSON mode — the same error payload', async () => {
-		const root = project();
-		fs.mkdirSync(path.join(root, 'definitions/providers'), { recursive: true });
-		fs.writeFileSync(path.join(root, 'definitions/providers/broken.yaml'), 'slug: broken\n');
-		// --no-continue-on-error stops on an invalid entity YAML, so this case needs a valid one.
-		fs.writeFileSync(
-			path.join(root, 'entities', 'example.yaml'),
-			'entity:\n  name: note\n  plural: notes\n  table: notes\nfields:\n  body:\n    type: string\n',
-		);
-		const { code, out } = await run([
-			'entity', 'new', '--all', '--force', '--no-continue-on-error', '--json', '--cwd', root,
-		]);
-		expect(code).toBe(1);
-		const payload = JSON.parse(out);
-		expect(payload).toMatchObject({
-			command: 'entity new',
-			status: 'error',
-			file: path.join(root, 'src/integrations/providers'),
-		});
-		expect(payload.error).toContain("Required at 'surfaces'");
-	}, 60_000);
-
 	test('bridge registry — a duplicate trigger fails, naming the output dir', async () => {
 		const root = project('subsystems:\n  install: [bridge]\n');
 		fs.mkdirSync(path.join(root, 'src/jobs'), { recursive: true });

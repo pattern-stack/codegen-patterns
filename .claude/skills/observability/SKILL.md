@@ -104,16 +104,15 @@ src/__tests__/runtime/subsystems/
   observability.bridge-metrics.reporter.spec.ts  # reporter lifecycle + tenant passthrough
   job-run-service.observability.unit.spec.ts     # OBS-2 jobs port-extension tests
 
-templates/subsystem/observability/
-  prompt.js
-  main-hook.ejs.t                  # Comment hint into app.module.ts (jobs-pattern)
-
 templates/subsystem/observability-config/
   prompt.js
   codegen-config-observability-block.ejs.t   # observability: defaults block
 ```
 
-CLI install: `codegen subsystem install observability` (or `just gen-subsystem observability`).
+CLI install: `codegen subsystem install observability` (or `just gen-subsystem observability`). The scaffold is the
+`observability:` config block alone — it does not touch `app.module.ts`: the generated `<generated>/subsystems.ts`
+composes `ObservabilityModule.forRoot(...)` into `SUBSYSTEM_MODULES`, last, after the siblings it reads. The old
+`templates/subsystem/observability/main-hook.ejs.t` register-it-yourself TODO was deleted (CLI-1, #668).
 Backend literal in CLI registry: `'combiner'` (parallel to `'config-only'`).
 
 Phase 1 surface complete. Phase 2 deferred per scope.

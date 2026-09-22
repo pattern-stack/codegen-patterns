@@ -329,8 +329,6 @@ resolve against.
   writes nothing then), a duplicate or unknown `@JobHandler` trigger. The
   JSON result's `scopeEntityType`, `eventCodegen`, `bridgeRegistry` and
   `orchestration` fields are never `null`.
-  `entity new --json --no-continue-on-error` with a blocking provider issue
-  now prints that same error payload instead of nothing.
 - **An invalid job YAML or an unloadable app-pattern file fails `entity new`**
   (#664). An error in a `definitions/jobs/*.yaml` was printed (text mode only)
   and the run went on without that job — no handler base, no scheduled
@@ -345,6 +343,38 @@ resolve against.
   them — and exits 1. A stale `<type>.job.generated.ts` is left and named.
   `orchestration validate --json`'s `loaderErrors[]` entries are now
   `{ file, message }`.
+- **A provider YAML with a blocking issue fails `entity new`** (#666). A
+  `definitions/providers/*.yaml` that did not load or failed the provider
+  cross-check (unknown surface, duplicate slug, an auth strategy / client
+  import that does not resolve) was printed in text mode only and, under the
+  default `--continue-on-error`, the run exited 0 with the provider modules and
+  the adapter / assembly files derived from them left stale. It is now a
+  pre-flight rejection like an invalid job YAML: listed with the other
+  rejections (`--json`: `failed[]`, `stopped: 'pre-flight'`), the run stops
+  before generating anything whatever `--continue-on-error` says, and exits 1.
+- **An unloadable app-pattern file fails `orchestration gen` and the
+  validators** (#667). `orchestration gen` printed the loader error as a
+  text-mode warning and rewrote the orchestration barrel without the lost
+  pattern's module, exit 0; it now stops before writing, like `entity new`
+  (`--json`: `failed[]`, `stopped: 'pre-flight'`), exit 1. `entity validate`
+  and `project inspect --kind analyze|stats|doc` validated against the partial
+  pattern set with a text-only warning; each loader error is now an error
+  (`app_pattern_load_failed`, in `--json` too) and the command exits 1.
+  `project inspect --kind analyze --json` now prints JSON (it printed the
+  console report).
+- **`entity new --json` never exits non-zero with an empty stdout** (#669).
+  `--all` with no entity YAML (exit 1), `--all` plus a path and neither
+  (exit 2) now print `{ command: 'entity new', status: 'error', error }`.
+  A dirty generated-output tree without `--force` stopped the text-mode run
+  but not the `--json` run, which went on to overwrite the uncommitted files;
+  it now exits 1 with the same payload and writes nothing.
+- **`subsystem install observability` no longer edits `app.module.ts`**
+  (#668). The vendored install appended a `TODO: Register ObservabilityModule`
+  comment block telling you to add `ObservabilityModule.forRoot()` to
+  `AppModule.imports` — which the regenerated `SUBSYSTEM_MODULES` already
+  composes, so following it registered the module twice (and contradicted the
+  install's own printed hint). The install is now the `observability:` config
+  block alone.
 - **`subsystem install` tells you what is true about `AppModule`** (#663). The
   vendored install printed `Register JobsModule.forRoot({ backend: 'drizzle' })
   in your app.module.ts` for jobs / events / bridge / integration — a module
