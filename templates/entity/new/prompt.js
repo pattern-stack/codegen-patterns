@@ -383,6 +383,13 @@ export default {
       modulesDir: BASE_PATHS.modulesDir,
       runtimeMode,
       ownedTableNames,
+      // REL-2 (#587): the extension computes the relation-manifest and
+      // api-includes specifiers RELATIVE to each module folder, so it needs the
+      // same generated dir the emitters write into. Passed explicitly because
+      // this call takes a key list, not `...locals` — a key omitted here does
+      // not fail loudly, it falls back to the default `src/generated` and emits
+      // an import that resolves nowhere (see CLAUDE.md, spread-to-explicit-list).
+      generatedDir: getGeneratedDir(),
       entityLookup: projectEntityLookup(process.cwd()),
       // JUNC-0 (#678): the junction set this entity's fan-out renders from.
       junctions: loadJunctionDefinitions(process.cwd()),

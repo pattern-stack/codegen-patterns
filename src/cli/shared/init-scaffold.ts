@@ -1054,7 +1054,7 @@ export async function buildInitPlan(
 	entries.push(
 		fileEntry(
 			cwd,
-			path.join(cwd, 'src', 'generated', 'api-includes.ts'),
+			path.join(layout.generated, 'api-includes.ts'),
 			buildApiIncludes([]),
 			{ force }
 		)

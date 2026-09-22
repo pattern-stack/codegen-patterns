@@ -23,6 +23,7 @@ import {
 import { buildApiIncludes } from '../../../emitters/relations/emit-includes';
 import type { RelationsEmitContext } from '../../../emitters/relations/types';
 import type { EntityRegistryEntry } from '../../../parser/entity-registry';
+import { withEntities } from '../../backend/_entity-lookup';
 import {
 	EntityDefinitionSchema,
 	type EntityDefinition,
@@ -391,10 +392,10 @@ describe('buildApiIncludes — the emitted file', () => {
 });
 
 // The rule `declaresOwnRelation` encodes has a twin in the hygen half
-// (`clpIncludes`). They decide the same thing from the same YAML and must not
+// (`includes`). They decide the same thing from the same YAML and must not
 // drift: if the emitter says "allowlist is fine" and the template says "no
 // include surface", every allowlisted path is a silent 400.
-describe('declaresOwnRelation matches the template’s clpIncludes', () => {
+describe('declaresOwnRelation matches the template’s includes', () => {
 	const cases: Array<{ name: string; relationships: unknown; expected: boolean }> = [
 		{ name: 'none declared', relationships: undefined, expected: false },
 		{ name: 'empty block', relationships: {}, expected: false },
@@ -433,11 +434,13 @@ describe('declaresOwnRelation matches the template’s clpIncludes', () => {
 
 			// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 			// @ts-ignore -- plain-ESM hygen extension, no types
-			const { buildCleanLitePsLocals } = await import(
-				'../../../../templates/entity/new/clean-lite-ps/prompt-extension.js'
+			const { buildBackendLocals } = await import(
+				'../../../../templates/entity/new/backend/entity-locals.js'
 			);
-			const locals = buildCleanLitePsLocals(raw, {}) as { clpIncludes: boolean };
-			expect(locals.clpIncludes).toBe(expected);
+			// NAME-0 (#630): cross-entity naming resolves through an entity lookup,
+			// so a hand-built call needs the same base locals `prompt.js` passes.
+			const locals = buildBackendLocals(raw, withEntities()) as { includes: boolean };
+			expect(locals.includes).toBe(expected);
 		});
 	}
 });

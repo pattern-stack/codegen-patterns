@@ -12,6 +12,10 @@ import { <%= repositoryBaseClass %> } from '<%= repositoryBaseImport %>';
 import { <%= cap.mixin %> } from '<%= cap.importPath %>';
 <%_ }) _%>
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
+<%_ /* REL-2 (#587): the spine's THIRD type argument. The chain rendered below
+      names `Relations`, so this file needs the manifest type exactly as the
+      repository does — a composed base is the spine, just hoisted. */ _%>
+import type { Relations } from '<%= relationsImport %>';
 <%_ if (hasIntegrationSurface) { _%>
 <%_ /* Type-only, and therefore erased: the repository module imports this file
       back for its `extends` clause. A value import here would be a real cycle;

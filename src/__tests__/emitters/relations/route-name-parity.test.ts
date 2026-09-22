@@ -21,7 +21,7 @@ import { describe, expect, it } from 'bun:test';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore -- plain-ESM hygen extension, no types
-import { buildCleanLitePsLocals } from '../../../../templates/entity/new/clean-lite-ps/prompt-extension.js';
+import { buildBackendLocals } from '../../../../templates/entity/new/backend/entity-locals.js';
 import { includesConstName } from '../../../emitters/relations/emit-includes';
 import { deriveQueryMethodName } from '../../../schema/query-routes';
 
@@ -55,7 +55,7 @@ describe('finder route keys match the method names hygen emits', () => {
 				expected,
 			);
 			// …and the name the template actually emits for the same declaration.
-			const locals = buildCleanLitePsLocals(
+			const locals = buildBackendLocals(
 				{ ...baseEntity, queries: [query] },
 				{},
 			) as { processedQueries: Array<{ methodName: string }> };
@@ -72,7 +72,7 @@ describe('the allowlist constant name matches on both sides', () => {
 	] as const) {
 		it(`${plural} → ${expected}`, () => {
 			expect(includesConstName(plural)).toBe(expected);
-			const locals = buildCleanLitePsLocals(
+			const locals = buildBackendLocals(
 				{ ...baseEntity, entity: { ...baseEntity.entity, plural } },
 				{},
 			) as { apiIncludesConst: string };

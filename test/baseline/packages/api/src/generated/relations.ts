@@ -7,6 +7,7 @@
 // only consults `alias` when it has to infer a relation's columns from the
 // reverse side. See docs/specs/REL-1.md.
 import { defineRelations } from 'drizzle-orm';
+import type { BuildQueryResult, DBQueryConfig } from 'drizzle-orm';
 
 import * as schema from './schema';
 
@@ -37,3 +38,18 @@ export const relations = defineRelations(schema, (r) => ({
 		person: r.one.persons({ from: r.users.personId, to: r.persons.id, optional: true }),
 	},
 }));
+
+/** This project's relation graph, as a type. */
+export type Relations = typeof relations;
+
+/** The include surface of one table — the keys a `with` may name. */
+export type IncludeOf<TTable extends keyof Relations> =
+	'with' extends keyof DBQueryConfig<'one', Relations, Relations[TTable]>
+		? NonNullable<DBQueryConfig<'one', Relations, Relations[TTable]>['with']>
+		: Record<string, never>;
+
+/** The row shape a given include tree resolves to, nested exactly as asked. */
+export type ResultOf<
+	TTable extends keyof Relations,
+	TWith extends IncludeOf<TTable>,
+> = BuildQueryResult<Relations, Relations[TTable], { with: TWith }>;

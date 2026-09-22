@@ -107,7 +107,7 @@ describe('a RAW callback must take the table it renders against', () => {
 		expect(manifestEmitter).toContain('RAW: (t) =>');
 
 		const repositoryTemplate = readFileSync(
-			join(REPO_ROOT, 'templates/entity/new/clean-lite-ps/repository.ejs.t'),
+			join(REPO_ROOT, 'templates/entity/new/backend/repository.ejs.t'),
 			'utf8',
 		);
 		expect(repositoryTemplate).toContain('RAW: (t) => this.rootScopeRawOn(t,');

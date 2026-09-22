@@ -4,6 +4,12 @@ import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
 import { BaseService } from '@shared/base-classes/base-service';
 import { OrganizationRepository } from './organization.repository';
+import type {
+  OrganizationInclude,
+  OrganizationNoInclude,
+  OrganizationResult,
+} from './organization.repository';
+import type { ListOptions } from '@shared/base-classes/base-repository';
 import type { Organization } from './organization.entity';
 import { OpportunityRepository } from '../opportunities/opportunity.repository';
 import type { Opportunity } from '../opportunities/opportunity.entity';
@@ -23,6 +29,28 @@ export class OrganizationService extends WithAnalytics(
     private readonly opportunityRepo: OpportunityRepository,
   ) {
     super(repository);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Typed `with` includes (REL-2, #587) — pass-through, not composition
+  //
+  // These two overrides exist so the HTTP layer can carry an allowlisted include
+  // from the controller to the repository. They are DELEGATION ONLY: no join
+  // logic, no sibling-repository calls, no navigator. The typed navigator and the
+  // deletion of the CGP-358b composition methods below are REL-3's (#588).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  override findById<TWith extends OrganizationInclude = OrganizationNoInclude>(
+    id: string,
+    opts?: { with?: TWith },
+  ): Promise<OrganizationResult<TWith> | null> {
+    return this.repository.findById<TWith>(id, opts);
+  }
+
+  override list<TWith extends OrganizationInclude = OrganizationNoInclude>(
+    options?: ListOptions & { with?: TWith },
+  ): Promise<Array<OrganizationResult<TWith>>> {
+    return this.repository.list<TWith>(options);
   }
 
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted

@@ -761,10 +761,12 @@ describe('capability composition emission (ADR-041)', () => {
     behaviors: ['timestamps'],
   });
 
-  it('no capability → the extends clause is exactly the pre-CAP-1 string', () => {
+  it('no capability → the extends clause is the bare spine, REL-2 arity', () => {
     registerCapabilities();
     const locals = buildBackendLocals(entityWith([]), EMPTY_BASE_LOCALS);
-    expect(locals.repositoryExtendsClause).toBe('BaseRepository<Account, typeof accounts>');
+    expect(locals.repositoryExtendsClause).toBe(
+      'BaseRepository<Account, typeof accounts, Relations>',
+    );
     expect(locals.composedBaseClass).toBeNull();
     expect(locals.outputPaths.composedBase).toBeNull();
     expect(locals.capabilityMixins).toEqual([]);
@@ -775,7 +777,7 @@ describe('capability composition emission (ADR-041)', () => {
     registerCapabilities();
     const locals = buildBackendLocals(entityWith(['CeGroup']), EMPTY_BASE_LOCALS);
     expect(locals.repositoryExtendsClause).toBe(
-      'WithCeGroup(BaseRepository<Account, typeof accounts>)',
+      'WithCeGroup(BaseRepository<Account, typeof accounts, Relations>)',
     );
     expect(locals.composedBaseClass).toBeNull();
     expect(locals.outputPaths.composedBase).toBeNull();
@@ -795,7 +797,7 @@ describe('capability composition emission (ADR-041)', () => {
     // The repository extends the generated base; the chain lives in that file.
     expect(locals.repositoryExtendsClause).toBe('AccountComposedBase');
     expect(locals.composedBaseExtendsClause).toBe(
-      'WithCeAudited(WithCeIndividual(WithCeGroup(BaseRepository<Account, typeof accounts>)))',
+      'WithCeAudited(WithCeIndividual(WithCeGroup(BaseRepository<Account, typeof accounts, Relations>)))',
     );
   });
 
@@ -813,6 +815,7 @@ describe('capability composition emission (ADR-041)', () => {
         '    IntegratedEntityRepository<',
         '      Account,',
         '      typeof accounts,',
+        '      Relations,',
         '      AccountIntegrationWrite,',
         '      AccountIntegrationProjection',
         '    >,',

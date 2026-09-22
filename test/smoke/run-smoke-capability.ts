@@ -209,7 +209,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	// the capability nesting is Group innermost → Actor outermost.
 	assertContains(
 		composedBase,
-		/export abstract class AccountComposedBase extends WithActor\(\n  WithAudited\(\n    WithIndividual\(\n      WithGroup\(\n        IntegratedEntityRepository<\n          Account,\n          typeof accounts,\n          AccountIntegrationWrite,\n          AccountIntegrationProjection\n        >,\n      \),\n    \),\n  \),\n\) \{\}/,
+		/export abstract class AccountComposedBase extends WithActor\(\n  WithAudited\(\n    WithIndividual\(\n      WithGroup\(\n        IntegratedEntityRepository<\n          Account,\n          typeof accounts,\n          Relations,\n          AccountIntegrationWrite,\n          AccountIntegrationProjection\n        >,\n      \),\n    \),\n  \),\n\) \{\}/,
 		'account.composed-base.ts mixin chain, rightmost capability outermost',
 	);
 	assertContains(
@@ -305,7 +305,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	const contactRepo = reads('modules/contacts/contact.repository.ts');
 	assertContains(
 		contactRepo,
-		/export class ContactRepository extends WithActor\(BaseRepository<Contact, typeof contacts>\) \{/,
+		/export class ContactRepository extends WithActor\(BaseRepository<Contact, typeof contacts, Relations>\) \{/,
 		'contact.repository.ts inline capability wrap over the default Base spine',
 	);
 	assertContains(
@@ -366,7 +366,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	const meetingRepo = reads('modules/meetings/meeting.repository.ts');
 	assertContains(
 		meetingRepo,
-		/export class MeetingRepository extends WithCommunication\(ActivityEntityRepository<Meeting, typeof meetings>\) \{/,
+		/export class MeetingRepository extends WithCommunication\(ActivityEntityRepository<Meeting, typeof meetings, Relations>\) \{/,
 		'meeting.repository.ts Activity spine + Communication capability',
 	);
 	assertContains(
@@ -400,7 +400,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 	const noteRepo = reads('modules/notes/note.repository.ts');
 	assertContains(
 		noteRepo,
-		/export class NoteRepository extends BaseRepository<Note, typeof notes> \{/,
+		/export class NoteRepository extends BaseRepository<Note, typeof notes, Relations> \{/,
 		'note.repository.ts is byte-identical to the pre-CAP-1 shape',
 	);
 	assertNotContains(noteRepo, /ComposedBase|With[A-Z]/, 'note.repository.ts has no capability trace');
