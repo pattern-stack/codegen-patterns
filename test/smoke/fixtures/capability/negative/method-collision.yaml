@@ -1,0 +1,25 @@
+# CAP-1 negative fixture: a capability method colliding with a `queries:` method.
+#
+# `Group` contributes `members`; the `queries:` entry below generates
+# `findByEmail`, and the `Colliding` capability contributes `findByEmail` too.
+# Two declarations of one method on the composed class — detected at generation
+# (ADR-041 §4) instead of reaching the consumer as a TS2393.
+entity:
+  name: collider
+  plural: colliders
+  table: colliders
+  patterns: [Colliding]
+  folder_structure: nested
+
+fields:
+  email:
+    type: string
+    required: true
+    max_length: 255
+
+behaviors:
+  - timestamps
+
+queries:
+  - by: [email]
+    unique: true

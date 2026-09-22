@@ -98,6 +98,27 @@ export class <%= classNames.service %> extends WithAnalytics(
   }
 <%_ }) _%>
 <% } %>
+<%_ /* ADR-041 — capability forwarders. A capability's methods live on the
+      repository (its mixin put them there); the service exposes the vocabulary
+      the capability declared in `forwarderMethods`. Signatures are derived from
+      the repository method, never re-declared (charter I1), and the forwarder is
+      deliberately NOT `async`: `ReturnType<…>` is whatever the capability
+      method returns, and `async` would require it to be a Promise. */ _%>
+<%_ if (capabilityForwarders.length > 0) { _%>
+  // ═══════════════════════════════════════════════════════════════════════
+  // Capability forwarders (ADR-041)
+  // Pass-through to the repository, where the capability's mixin lives.
+  // ═══════════════════════════════════════════════════════════════════════
+<%_ capabilityForwarders.forEach((fwd) => { _%>
+
+  /** Contributed by the `<%= fwd.capability %>` capability. */
+  <%= fwd.method %>(
+    ...args: Parameters<<%= classNames.repository %>['<%= fwd.method %>']>
+  ): ReturnType<<%= classNames.repository %>['<%= fwd.method %>']> {
+    return this.repository.<%= fwd.method %>(...args);
+  }
+<%_ }) _%>
+<%_ } _%>
 <%_ /* CGP-358b — service-layer composition methods for relationships */ _%>
 <%_ const hasBelongsToComposition = typeof clpBelongsTo !== 'undefined' && clpBelongsTo.length > 0; _%>
 <%_ const hasHasManyComposition = typeof clpExistingHasMany !== 'undefined' && clpExistingHasMany.length > 0; _%>

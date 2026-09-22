@@ -65,3 +65,12 @@ export { KnowledgeEntityService } from './knowledge-entity-service';
 
 // Mixins
 export { WithAnalytics } from './with-analytics';
+
+// Capability mixin contract (ADR-041) — the types a `kind: 'capability'`
+// pattern's repository mixin is written against.
+export type {
+	RepositoryCtor,
+	RepositoryOf,
+	EntityOf,
+	TableOf,
+} from './capability-mixin';
