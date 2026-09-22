@@ -456,28 +456,6 @@ export class EntityNewCommand extends Command {
 			return 1;
 		}
 
-		// The roles pre-flight the comment above refers to. Whether a role's
-		// target declares `Actor` is a question only the whole entity set can
-		// answer — the one-entity-at-a-time hygen prompt cannot, and the CLI can,
-		// because the EVT-7 `emits:` pre-flight already loaded every entity.
-		// A bad role is a generation-time error (the ADR-041 §4 posture, stated
-		// in `validateRolesForGeneration`): a consumer is not required to run
-		// `entity validate` first, so generation is the gate that matters.
-		const roleErrors = validateRolesForGeneration({
-			targets: emitsTargetEntities,
-			entities: allEntitiesForEmits,
-			junctions: loadJunctionSummaries(junctionsDirFor(ctx.cwd)),
-		});
-
-		if (roleErrors.length > 0) {
-			if (!isJsonMode()) {
-				for (const e of roleErrors) {
-					printError(`${e.entity ?? '(unknown)'}: ${e.message}`);
-				}
-			}
-			return 1;
-		}
-
 		// Git safety — we don't know specific output paths without running Hygen,
 		// so scope the check to the cwd's generated source roots if we can.
 		if (!this.force) {
