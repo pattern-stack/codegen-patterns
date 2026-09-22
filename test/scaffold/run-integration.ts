@@ -92,7 +92,7 @@ async function run() {
           // REL-1 (#586): the suite now generates a small related SET
           // (account · contact · opportunity + the opportunity×contact
           // junction) so the round-trip test has a graph to traverse.
-          '  entities_dir: test/scaffold/entities',
+          '  entities: test/scaffold/entities',
           '',
         ].join('\n'),
       );
