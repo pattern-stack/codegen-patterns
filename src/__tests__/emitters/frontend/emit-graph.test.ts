@@ -348,7 +348,9 @@ describe('emission is idempotent (charter I2)', () => {
 			expect(filesA).toEqual(filesB);
 			expect(filesA).toContain('graph/descriptor.ts');
 			expect(filesA).toContain('graph/account.ts');
-			expect(filesA).toContain('collections/account_tag.ts');
+			// NAME-2 (#695): the emitted stem is kebab. The junction's table stays
+			// `account_tags` and its YAML `junctions/account_tag.yaml`.
+			expect(filesA).toContain('collections/account-tag.ts');
 			for (const rel of filesA) {
 				expect(readFileSync(join(a, rel), 'utf-8'), rel).toBe(
 					readFileSync(join(b, rel), 'utf-8'),

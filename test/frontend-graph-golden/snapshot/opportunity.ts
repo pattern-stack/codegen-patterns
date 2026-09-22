@@ -7,7 +7,7 @@ import { accountCollection } from '../collections/account';
 import { contactCollection } from '../collections/contact';
 import { noteCollection } from '../collections/note';
 import { opportunityCollection } from '../collections/opportunity';
-import { opportunityContactCollection } from '../collections/opportunity_contact';
+import { opportunityContactCollection } from '../collections/opportunity-contact';
 
 import type { Account } from '@repo/db/entities/account';
 import type { Contact } from '@repo/db/entities/contact';

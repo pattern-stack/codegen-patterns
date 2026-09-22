@@ -305,7 +305,12 @@ export function emitCollections(
 	}
 
 	for (const junction of junctions) {
-		const filePath = join(collectionsDir, `${junction.name}.ts`);
+		// The file stem must be the one the barrel exports — `emittedStem`, the
+		// #695/#684 naming rule — not the raw junction name. A single-word
+		// junction spells the same either way; a multi-word one does not, and the
+		// barrel's `./opportunity-tag` then pointed at an emitted
+		// `opportunity_tag.ts` that TypeScript could not resolve.
+		const filePath = join(collectionsDir, `${emittedStem(junction.name)}.ts`);
 		writeFile(filePath, buildJunctionCollectionFile(junction, ctx));
 		written.push(filePath);
 	}

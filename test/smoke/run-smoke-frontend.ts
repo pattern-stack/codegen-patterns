@@ -211,7 +211,11 @@ async function main(): Promise<number> {
 		for (const required of [
 			'collections/account.ts', // electric branch — where FE-0's failure was
 			'collections/contact.ts', // api branch
-			'collections/opportunity_tag.ts', // the junction's link rows (FE-REL)
+			// NAME-2 (#695): filesystem kebab. The junction's TABLE stays
+			// `opportunity_tags` and its YAML stays `junctions/opportunity_tag.yaml`;
+			// only the emitted stem is kebab, and the collections barrel exports it
+			// under that spelling.
+			'collections/opportunity-tag.ts', // the junction's link rows (FE-REL)
 			'store/resolvers.ts', // belongs_to FK resolver
 			'store/index.ts', // createStore wiring
 			'graph/descriptor.ts', // the client relation graph (FE-REL §3)
