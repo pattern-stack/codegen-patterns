@@ -3,8 +3,10 @@
  * generation (task #16).
  *
  * A `queries: - name: search` block in entity YAML should emit:
- *   - SearchXsUseCase with filter-AND + optional ilike + count for total
- *   - <entity>-search.controller.ts with Zod-validated querystring
+ *   - SearchXsUseCase with filter-AND + optional ilike, paged through the
+ *     list use case so it returns the list's own `Page<T>` (#744)
+ *   - <entity>-search.controller.ts validating the list's `ListQuerySchema`
+ *     extended with the filters
  *   - Module wires both into controllers[] and providers[]
  *
  * Entities without a search query keep the existing shape; non-search
@@ -17,6 +19,7 @@ import { resolve } from 'node:path';
 import ejs from 'ejs';
 import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
 import { withEntities } from './_entity-lookup';
+import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 
 const TEMPLATE_ROOT = resolve(
   import.meta.dir,
@@ -68,7 +71,6 @@ const baseEntity = {
       name: 'search',
       filters: ['user_id', 'account_id', 'canonical_state', 'is_closed', 'is_won', 'provider'],
       search: 'name',
-      paginate: true,
     },
   ],
 };
@@ -85,7 +87,6 @@ describe('backend search templates — prompt-extension wiring', () => {
     expect(locals.searchQuery.filtersSchemaName).toBe('OpportunityFiltersSchema');
     expect(locals.searchQuery.inputTypeName).toBe('SearchOpportunitiesInput');
     expect(locals.searchQuery.searchField).toBe('name');
-    expect(locals.searchQuery.paginate).toBe(true);
   });
 
   it('resolves belongs_to FKs in filters (account_id → isUuid)', () => {
@@ -135,16 +136,19 @@ describe('backend search templates — prompt-extension wiring', () => {
 });
 
 describe('backend search templates — use-case rendering', () => {
-  it('emits SearchOpportunitiesUseCase with filter-AND + count for total', () => {
+  it('pages the filter-AND through the list use case, returning its Page<T> (#744)', () => {
     const locals = buildBackendLocals(baseEntity, withEntities());
     const output = render('use-cases/search.ejs.t', locals);
 
     expect(output).toContain('export class SearchOpportunitiesUseCase');
-    expect(output).toContain('export interface SearchOpportunitiesInput');
+    expect(output).toContain('export interface SearchOpportunitiesInput extends ListQuery {');
     expect(output).toContain('Promise<Page<Opportunity>>');
-    expect(output).toContain("import type { Page } from '@shared/http/pagination';");
-    expect(output).toContain('this.service.list({ where, limit: input.limit, offset: input.offset');
-    expect(output).toContain('this.service.count(where)');
+    // The list endpoint's envelope, from the list's own specifier — never a
+    // consumer-owned module (#744).
+    expect(output).toContain(`import type { ListQuery, Page } from '${locals.paginationImport}';`);
+    expect(output).not.toContain('@shared/http/pagination');
+    expect(output).toContain('private readonly listUseCase: ListOpportunitiesUseCase');
+    expect(output).toContain('return this.listUseCase.execute(input, { where: and(...conditions) });');
   });
 
   it('emits an ilike guard for the search field when declared', () => {
@@ -179,11 +183,14 @@ describe('backend search templates — controller rendering', () => {
     expect(output).toContain('export class OpportunitySearchController');
     expect(output).toContain("@Controller('opportunities')");
     expect(output).toContain("@Get('search')");
-    expect(output).toContain('const OpportunityFiltersSchema = z.object({');
-    expect(output).toContain('}).merge(PaginationSchema);');
+    // The list's query schema, extended — same paging + sort params (#744).
+    expect(output).toContain('const OpportunityFiltersSchema = ListQuerySchema.extend({');
     expect(output).toContain(
-      "import { PaginationSchema } from '@shared/http/pagination';",
+      `import { ListQuerySchema, type Page } from '${locals.paginationImport}';`,
     );
+    expect(output).not.toContain('@shared/http/pagination');
+    expect(output).toContain('@Query(new ZodValidationPipe(OpportunityFiltersSchema))');
+    expect(output).toContain('): Promise<Page<Opportunity>> {');
   });
 
   it('emits correct zod types per filter kind', () => {
@@ -230,7 +237,7 @@ describe('backend search templates — module rendering', () => {
   });
 });
 
-describe('backend search templates — schema union with legacy by-column queries', () => {
+describe('backend search templates — schema union with by-column queries', () => {
   it('accepts mixed search + by-column queries in the same queries: block', () => {
     const mixed = {
       ...baseEntity,
@@ -246,5 +253,27 @@ describe('backend search templates — schema union with legacy by-column querie
     // processedQueries separately.
     expect(locals.processedQueries.length).toBe(1);
     expect(locals.processedQueries[0].methodName).toBe('findByEmail');
+  });
+});
+
+describe('backend search templates — declaration schema', () => {
+  // Search pages and sorts by the request's ListQuery, as the list does (#744):
+  // a `paginate:` or `order:` key would be a switch nothing reads, so it is an
+  // unknown-key error rather than silently dropped.
+  for (const key of ['paginate', 'order'] as const) {
+    it(`rejects \`${key}:\` on a search declaration`, () => {
+      const value = key === 'paginate' ? true : 'name asc';
+      const result = EntityDefinitionSchema.safeParse({
+        ...baseEntity,
+        queries: [{ ...baseEntity.queries[0], [key]: value }],
+      });
+
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain(`'${key}'`);
+    });
+  }
+
+  it('accepts a search declaration without them', () => {
+    expect(EntityDefinitionSchema.safeParse(baseEntity).success).toBe(true);
   });
 });

@@ -18,7 +18,10 @@ import type {
  * into a `Page<Contact>` envelope. Defaults: page 1,
  * pageSize 50 (max 200), sort `created_at desc, id desc`. `total`/`pageCount`
  * reflect the (optionally filtered) set, so pagination composes with where
- * filters orthogonally — it works fully unfiltered too.
+ * filters orthogonally — it works fully unfiltered too. `options.where` is the
+ * filter seam: the entity's search use case, when its YAML declares one, ANDs
+ * its predicates and pages through here, so search and list share one
+ * envelope (#744).
  *
  * v1 ENGINE = OFFSET. `nextCursor` is computed from the last row and emitted
  * (contract-stable), but cursor-REQUEST honoring (keyset seek) is DEFERRED:
@@ -38,8 +41,9 @@ export class ListContactsUseCase {
    */
   async execute<TWith extends ContactInclude = ContactNoInclude>(
     query?: ListQuery,
-    include?: TWith,
+    options: { include?: TWith; where?: SQL } = {},
   ): Promise<Page<ContactResult<TWith>>> {
+    const { include, where } = options;
     const resolved = resolveListQuery(query);
 
     // Default sort: `created_at desc, id desc` (id is the stable keyset
@@ -68,11 +72,9 @@ export class ListContactsUseCase {
           { column: 'id', direction: 'desc' },
         ];
 
-    // Arbitrary where-filters are NOT modeled in v1 (the ListQuery owns only
-    // pagination + sort); `where` stays undefined so the list is unfiltered by
-    // default. A future filter seam ANDs predicates here and passes the same
-    // `where` to both `list` and `count` so `total`/`pageCount` stay accurate.
-    const where: SQL | undefined = undefined;
+    // The ListQuery owns only pagination + sort; filtering is the caller's
+    // `where` (undefined = unfiltered). The same `where` goes to both `list`
+    // and `count`, so `total`/`pageCount` describe the filtered set.
 
     // KEYSET SEAM (deferred — v1 fetches by offset). When the keyset upgrade
     // lands, branch here on `resolved.cursor`: decode it and fetch by

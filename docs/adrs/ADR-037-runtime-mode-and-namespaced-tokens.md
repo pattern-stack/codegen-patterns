@@ -76,9 +76,16 @@ helper — both the integration generators (RFC-0001/0003 emitter) **and** the
 entity generators (today via the pattern library's `repositoryImport` /
 `serviceImport` and the Hygen template locals). Consumer-app files that are
 *always* scaffolded locally and never owned by the package runtime
-(`@shared/database/database.module`, `@shared/http/pagination`,
-`@shared/openapi`, `@shared/connections/*`) stay `@shared/*` in both modes — they
-are not part of the package runtime and have no package specifier.
+(`@shared/database/database.module`, `@shared/openapi`, `@shared/connections/*`)
+stay `@shared/*` in both modes — they are not part of the package runtime and have
+no package specifier.
+
+> **Revision (2026-10-04, #744):** `@shared/http/pagination` was listed here as a
+> consumer-owned search contract (`PaginationSchema` + `{ items, total, limit,
+> offset }`) that nothing generated. It is gone: the `queries: search` endpoint
+> pages through the list use case and returns the list's runtime-shipped
+> `Page<T>`, imported via the same `paginationImport` local — one pagination
+> envelope per generated API.
 
 `vendored` mode is **byte-for-byte unchanged from today** — the helper returns
 exactly the `@shared/...` specifiers the generators already emitted.

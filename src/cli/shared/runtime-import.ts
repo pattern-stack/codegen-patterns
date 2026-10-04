@@ -18,8 +18,8 @@
  *
  * NOT routed through here: consumer-app files the package never owns and that
  * `project init` always scaffolds locally regardless of mode —
- * `@shared/database/database.module`, `@shared/http/pagination`,
- * `@shared/openapi`, `@shared/connections/*`. Those have no package specifier
+ * `@shared/database/database.module`, `@shared/openapi`,
+ * `@shared/connections/*`. Those have no package specifier
  * and stay `@shared/*` in both modes.
  */
 

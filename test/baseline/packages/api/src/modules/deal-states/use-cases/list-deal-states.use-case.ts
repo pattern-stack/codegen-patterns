@@ -21,7 +21,10 @@ import type {
  * primary key is already a total order, which is what the tie-break is for.
  * `total`/`pageCount`
  * reflect the (optionally filtered) set, so pagination composes with where
- * filters orthogonally — it works fully unfiltered too.
+ * filters orthogonally — it works fully unfiltered too. `options.where` is the
+ * filter seam: the entity's search use case, when its YAML declares one, ANDs
+ * its predicates and pages through here, so search and list share one
+ * envelope (#744).
  *
  * v1 ENGINE = OFFSET, and `nextCursor` is always null here: the cursor encodes
  * `(created_at, id)`, which this entity has no `created_at` for. Add the
@@ -39,8 +42,9 @@ export class ListDealStatesUseCase {
    */
   async execute<TWith extends DealStateInclude = DealStateNoInclude>(
     query?: ListQuery,
-    include?: TWith,
+    options: { include?: TWith; where?: SQL } = {},
   ): Promise<Page<DealStateResult<TWith>>> {
+    const { include, where } = options;
     const resolved = resolveListQuery(query);
 
     // Default sort: `id desc`. This entity has no `timestamps` behavior, so
@@ -69,11 +73,9 @@ export class ListDealStatesUseCase {
         ]
       : [{ column: 'id', direction: 'desc' }];
 
-    // Arbitrary where-filters are NOT modeled in v1 (the ListQuery owns only
-    // pagination + sort); `where` stays undefined so the list is unfiltered by
-    // default. A future filter seam ANDs predicates here and passes the same
-    // `where` to both `list` and `count` so `total`/`pageCount` stay accurate.
-    const where: SQL | undefined = undefined;
+    // The ListQuery owns only pagination + sort; filtering is the caller's
+    // `where` (undefined = unfiltered). The same `where` goes to both `list`
+    // and `count`, so `total`/`pageCount` describe the filtered set.
 
     // No KEYSET SEAM here: the cursor codec encodes `(created_at, id)` and this
     // entity has no `created_at`, so `computeNextCursor` yields null and there

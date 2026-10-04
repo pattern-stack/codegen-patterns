@@ -97,10 +97,9 @@ export class DealController {
     @Query(new ZodValidationPipe(ListDealsQuerySchema)) query: ListDealsQueryDto,
     @Query('include') include?: string,
   ): Promise<Page<DealApiResult>> {
-    return this.listUseCase.execute(
-      query,
-      this.resolveInclude(include, undefined),
-    );
+    return this.listUseCase.execute(query, {
+      include: this.resolveInclude(include, undefined),
+    });
   }
 
   @ApiOperation({ summary: 'Find deal by id', operationId: 'findDealById' })

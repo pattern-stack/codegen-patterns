@@ -219,10 +219,10 @@ export const VENDORED_RUNTIME_FILES: VendoredRuntimeFile[] = [
 	{ runtime: 'pipes/zod-validation.pipe.ts', target: 'pipes/zod-validation.pipe.ts' },
 	// Pagination-by-default (Page<T> envelope, ListQuerySchema, resolveListQuery,
 	// buildPage, opaque cursor codec) — imported by EVERY generated list
-	// controller/dto/use-case. Vendored to `src/shared/http/page.ts` (alias
-	// `@shared/http/page`), DISTINCT from the consumer's optional `@shared/http/
-	// pagination` search contract so the two never collide. Package mode resolves
-	// the same source via `@pattern-stack/codegen/runtime/http/pagination`.
+	// controller/dto/use-case, and by the search controller/use-case, which page
+	// through the list (#744). Vendored to `src/shared/http/page.ts` (alias
+	// `@shared/http/page`). Package mode resolves the same source via
+	// `@pattern-stack/codegen/runtime/http/pagination`.
 	{ runtime: 'http/pagination.ts', target: 'http/page.ts' },
 	// The HTTP include allowlist resolver (REL-2 §5) — imported by EVERY generated
 	// controller, because the `?include=` parameter is validated on every read

@@ -5,12 +5,19 @@ force: true
 ---
 <%- generatedBanner %>
 <% if (hasSearchQuery) { -%>
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { PaginationSchema } from '@shared/http/pagination';
+import { ZodValidationPipe } from '<%= zodValidationPipeImport %>';
+import { ListQuerySchema, type Page } from '<%= paginationImport %>';
 import { <%= searchQuery.useCaseClassName %> } from './use-cases/search-<%= entityPluralFileStem %>.use-case';
+import type { <%= classNames.entity %> } from './<%= entityFileStem %>.entity';
 
-const <%= searchQuery.filtersSchemaName %> = z.object({
+/**
+ * The list endpoint's query (page / pageSize / cursor / sort_by / sort_order)
+ * extended with the filters declared in <%= entityName %>.yaml — so search pages
+ * and sorts exactly as `GET /<%= entityNamePlural %>` does (#744).
+ */
+const <%= searchQuery.filtersSchemaName %> = ListQuerySchema.extend({
 <% searchQuery.filters.forEach((f) => { -%>
 <% if (f.isUuid) { -%>
   <%= f.camelName %>: z.string().uuid().optional(),
@@ -27,25 +34,23 @@ const <%= searchQuery.filtersSchemaName %> = z.object({
 <% if (searchQuery.searchField) { -%>
   search: z.string().optional(),
 <% } -%>
-}).merge(PaginationSchema);
-
-function parseOrThrow<S extends z.ZodTypeAny>(schema: S, input: unknown): z.infer<S> {
-  const result = schema.safeParse(input);
-  if (!result.success) throw new BadRequestException(result.error.flatten());
-  return result.data;
-}
+});
 
 /**
- * Filtered search controller (task #16) — generated from queries:
- * block in <%= entityName %>.yaml.
+ * Filtered search controller — generated from the `queries: - name: search`
+ * block in <%= entityName %>.yaml. Returns the same `Page<T>` envelope as the
+ * list endpoint.
  */
 @Controller('<%= entityNamePlural %>')
 export class <%= classNames.searchController %> {
   constructor(private readonly searchUseCase: <%= searchQuery.useCaseClassName %>) {}
 
   @Get('search')
-  async search(@Query() query: Record<string, unknown>) {
-    return this.searchUseCase.execute(parseOrThrow(<%= searchQuery.filtersSchemaName %>, query));
+  async search(
+    @Query(new ZodValidationPipe(<%= searchQuery.filtersSchemaName %>))
+    query: z.infer<typeof <%= searchQuery.filtersSchemaName %>>,
+  ): Promise<Page<<%= classNames.entity %>>> {
+    return this.searchUseCase.execute(query);
   }
 }
 <% } -%>

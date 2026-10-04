@@ -1174,8 +1174,9 @@ function processQueries(queriesBlock, processedFields, entityNamePascal) {
  * Process the `queries: - name: search` declarations into template locals.
  *
  * A search query compiles down to:
- *   - A `SearchXsUseCase` class composing the entity service's list+count
- *     with filter-AND and optional ilike search.
+ *   - A `SearchXsUseCase` class that ANDs the filters (and the optional
+ *     ilike search) into a `where` and pages through the list use case, so
+ *     search returns the list's own `Page<T>` (#744).
  *   - A thin `@Get('search')` controller route that runs the request
  *     querystring through a Zod schema before delegating.
  *   - A `searchUseCase` / output-path entry so the module/controller
@@ -1228,13 +1229,11 @@ function processSearchQueries(queriesBlock, processedFields, belongsTo, entityNa
   });
 
   const searchField = typeof search.search === 'string' ? search.search : null;
-  const paginate = search.paginate !== false; // default true
 
   return {
     filters: resolvedFilters,
     searchField,
     searchFieldCamel: searchField ? camelCase(searchField) : null,
-    paginate,
     useCaseClassName: `Search${entityNamePluralPascal}UseCase`,
     filtersSchemaName: `${entityNamePascal}FiltersSchema`,
     inputTypeName: `Search${entityNamePluralPascal}Input`,

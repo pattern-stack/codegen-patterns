@@ -18,6 +18,8 @@ import { CreateDealUseCase } from './use-cases/create-deal.use-case';
 import { UpdateDealUseCase } from './use-cases/update-deal.use-case';
 import { DeleteDealUseCase } from './use-cases/delete-deal.use-case';
 import { declarativeQueryClasses } from './use-cases/declarative-queries';
+import { SearchDealsUseCase } from './use-cases/search-deals.use-case';
+import { DealSearchController } from './deal-search.controller';
 
 @Module({
   imports: [
@@ -28,7 +30,7 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
     // UsersModule,
     // AccountsModule,
   ],
-  controllers: [DealController],
+  controllers: [DealController, DealSearchController],
   providers: [
     DealRepository,
     DealService,
@@ -40,6 +42,7 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
     UpdateDealUseCase,
     DeleteDealUseCase,
     ...declarativeQueryClasses,
+    SearchDealsUseCase,
   ],
   // ADR-002 (revised): the service is the public API; the repository is ALSO
   // exported so sibling modules that compose this entity cross-module (junction

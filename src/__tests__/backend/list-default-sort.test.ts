@@ -64,7 +64,7 @@ const withoutTimestamps = {
 const withTimestamps = { ...withoutTimestamps, behaviors: ['timestamps'] };
 
 /** Same pair, carrying a `search` query so search.ejs.t renders its body. */
-const searchQuery = [{ name: 'search', filters: ['name'], search: 'name', paginate: true }];
+const searchQuery = [{ name: 'search', filters: ['name'], search: 'name' }];
 const searchWithoutTimestamps = { ...withoutTimestamps, queries: searchQuery };
 const searchWithTimestamps = { ...withTimestamps, queries: searchQuery };
 
@@ -154,27 +154,17 @@ describe('backend list use-case — default sort', () => {
 });
 
 // ===========================================================================
-// search.ejs.t — the same hard-coding, one template over
+// search.ejs.t — no sort of its own: it pages through the list use case (#744),
+// so the rule above is the search's rule too, in one place.
 // ===========================================================================
 
-describe('backend search use-case — default sort', () => {
-  it('orders by the primary key when there are no timestamps (#604)', () => {
-    const out = render('use-cases/search.ejs.t', searchWithoutTimestamps);
-
-    expect(out).toContain('orderBy: asc(accounts.id)');
-    expect(out).not.toMatch(/\.createdAt\b/);
-  });
-
-  it('still orders by created_at when timestamps are declared', () => {
-    const out = render('use-cases/search.ejs.t', searchWithTimestamps);
-
-    expect(out).toContain('orderBy: asc(accounts.createdAt)');
-  });
-
-  it('emits exactly one service.list call in both shapes', () => {
+describe('backend search use-case — sorts through the list', () => {
+  it('names no sort column and delegates to the list use case, in both shapes', () => {
     for (const definition of [searchWithoutTimestamps, searchWithTimestamps]) {
       const out = render('use-cases/search.ejs.t', definition);
-      expect(out.match(/this\.service\.list\(/g)).toHaveLength(1);
+
+      expect(out).not.toMatch(/orderBy|\.createdAt\b|this\.service\./);
+      expect(out.match(/this\.listUseCase\.execute\(/g)).toHaveLength(1);
     }
   });
 });

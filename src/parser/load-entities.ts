@@ -93,7 +93,7 @@ export interface LoadEntitiesResult {
 function transformToEntity(result: LoadResult): ParsedEntity {
 	const { definition, filePath } = result;
 
-	// Search queries use a different shape (name/filters/search/paginate) and
+	// Search queries use a different shape (name/filters/search) and
 	// are consumed directly by the codegen templates, not by the analyzer.
 	// Narrow to the by-column variant here for ParsedQuery mapping.
 	const queries: ParsedQuery[] | undefined = definition.queries

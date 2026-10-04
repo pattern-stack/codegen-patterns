@@ -55,27 +55,32 @@ Shapes:
 - **`order: <col> <dir>`** — default ordering for the finder (e.g. `created_at
   desc`).
 
-### Filtered search with pagination
+### Filtered search
 
 ```yaml
 queries:
   - name: search                  # → SearchContacts use case + GET /contacts/search
     filters: [user_id, account_id, email]   # optional equality filters
     search: name                  # ilike column for free-text
-    paginate: true                # returns { items, total, limit, offset }
 ```
 
-A `name`d query with `filters`/`search`/`paginate` generates a search use case
-and a `GET /<plural>/search` route. `paginate: true` makes the route accept
-`limit`/`offset` and return a paged envelope.
+A `name: search` query generates a search use case and a `GET /<plural>/search`
+route. Search is the list endpoint with filters: the route takes the list's
+query (`page`, `pageSize`, `cursor`, `sort_by`, `sort_order`) plus one optional
+param per filter (and `search`), and returns the same `Page<T>` envelope as
+`GET /<plural>` (`{ items, page, pageCount, total, pageSize, nextCursor }`). The
+use case ANDs the filters into a `where` and pages through the list use case, so
+paging defaults, the page-size clamp and sort are the list's. There is no
+`paginate:` or `order:` key on a search — either is a validation error.
 
 ## Non-obvious rules
 
 - **Finder names are generated** from the column list — don't also hand-write a
   finder of the same name; compose on top instead.
 - **Unique finders return a single nullable result**; non-unique return arrays.
-- **`order:` is the default sort**, not a parameter — add a `queries:` search
-  entry if you need caller-controlled ordering.
+- **`order:` is the default sort** of a `by:` finder, not a parameter — add a
+  `queries:` search entry if you need caller-controlled ordering (`sort_by` /
+  `sort_order`, as on the list).
 - **Family methods assume their columns exist.** `Integrated` expects the
   external-id + provider shape (its implied `external_id_tracking` behavior
   emits it). It adds **no** user-ownership finder — a global integrated table
