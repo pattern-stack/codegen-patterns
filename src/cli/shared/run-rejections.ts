@@ -6,8 +6,9 @@
  * `printError` `<basename> — <message>`, one bullet per detail; JSON mode prints
  * nothing on stderr and carries it), and, when the command stops on it, reported
  * as the `stopped: 'pre-flight'` payload. `entity new` collects per-entity
- * rejections (schema, `emits:`, `roles:`) and run-level ones (job YAML, app
- * pattern file, provider YAML); `orchestration gen` collects pattern files.
+ * rejections (schema, `emits:`, `roles:`) and run-level ones (job YAML, a job
+ * whose integration subsystem is not installed, app pattern file, provider
+ * YAML); `orchestration gen` collects pattern files.
  */
 
 import path from 'node:path';

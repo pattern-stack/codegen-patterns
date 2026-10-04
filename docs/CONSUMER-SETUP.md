@@ -569,7 +569,12 @@ without its module), and a `<paths.providers>/*.yaml` that does not load or fail
 surface, duplicate slug, an auth strategy / client import that does not resolve (its module and assemblies feed every
 integrated entity's wiring). Each is listed like a rejected entity YAML — file, reason, details; in `--json`, under `failed[]`
 with `stopped: 'pre-flight'` — and the command exits 1. A `<type>.job.generated.ts` emitted from a job YAML that no
-longer loads is left on disk and named as stale in the rejection. The app has no `yaml` dependency.
+longer loads is left on disk and named as stale in the rejection. A job YAML that loads but whose project has not
+installed the integration subsystem stops the run the same way: every arm's `read:` block is a `DetectionConfig`, which
+the job's handler base types against the integration subsystem, so the rejection names the job, the arm and `codegen
+subsystem install integration` (#745). "Installed" is what the subsystem barrel composes from — the vendored
+`integration.module.ts` under `runtime: vendored`, `subsystems.install` under `runtime: package`. The app has no `yaml`
+dependency.
 
 The backend layout is backend — a module folder per entity under `paths.modules_dir` — and there is no other. The `clean` pipeline and its `generate.architecture` key were deleted (ARCH-0, #677): a config that still sets the key fails with `generate.architecture: unknown key`, naming the file. Delete the line.
 

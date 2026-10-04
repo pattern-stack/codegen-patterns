@@ -187,7 +187,10 @@ codegen skills list
   printed (`--json`: `failed[]`, `stopped: 'pre-flight'`) — whatever
   `--continue-on-error` says: every entity's output depends on them. A bad
   entity YAML only skips that entity (exit 1 at the end). Fix the file and
-  re-run. `orchestration gen` stops the same way on a pattern file it cannot
+  re-run. A valid job YAML stops the run the same way when the integration
+  subsystem is not installed — every arm's `read:` block types against it —
+  naming the job, the arm and `codegen subsystem install integration`.
+  `orchestration gen` stops the same way on a pattern file it cannot
   load; `entity validate` and `project inspect --kind analyze` report it as
   an error and exit 1.
 - **YAML is `snake_case`; generated TS properties are `camelCase`.** The

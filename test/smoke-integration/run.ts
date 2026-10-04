@@ -309,6 +309,11 @@ async function main(): Promise<number> {
 			);
 		}
 
+		// 7a. A job definition's handler base types its arms' `read:` leaves
+		//     against the integration subsystem, so `entity new` refuses to run
+		//     until it is installed (#745) — the step a real consumer takes.
+		run(`bun ${CLI_PATH} subsystem install integration`, tmpDir);
+
 		// 8. Generate twice (two-pass: seed cross-entity refs, then the full
 		//    integration tree).
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);

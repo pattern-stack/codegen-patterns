@@ -50,11 +50,15 @@ const VALID_JOB = [
 	'',
 ].join('\n');
 
-/** A package-mode project with one valid entity. */
-function mkProject(): string {
+/**
+ * A package-mode project with one valid entity. `integration` is on the install
+ * list because every job arm's `read:` block types against it (#745); the #745
+ * tests below build a project without it.
+ */
+function mkProject(config = 'paths:\n  entities: entities\nsubsystems:\n  install: [integration]\n'): string {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'run-reject-'));
 	tempDirs.push(root);
-	fs.writeFileSync(path.join(root, 'codegen.config.yaml'), 'paths:\n  entities: entities\n');
+	fs.writeFileSync(path.join(root, 'codegen.config.yaml'), config);
 	fs.mkdirSync(path.join(root, 'entities'));
 	fs.writeFileSync(path.join(root, 'entities', 'note.yaml'), VALID_ENTITY);
 	return root;
@@ -171,6 +175,48 @@ describe('entity new rejects the run on an invalid job YAML (#664)', () => {
 		expect(fs.existsSync(path.join(root, 'src/jobs/note_poll.job.generated.ts'))).toBe(true);
 		expect(fs.existsSync(noteEntity(root))).toBe(true);
 	}, 60_000);
+});
+
+const INTEGRATION_MISSING =
+	"job 'note_poll' arm 'note' (kind: poll) has a `read:` block, which types against the integration subsystem — not installed. Run `codegen subsystem install integration`.";
+
+describe('entity new rejects the run on a job whose arm reads through an uninstalled integration subsystem (#745)', () => {
+	test('package mode, integration not in subsystems.install — names the job, the arm and the install command; exit 1, nothing written', async () => {
+		const root = mkProject('paths:\n  entities: entities\nsubsystems:\n  install: [events, jobs, bridge]\n');
+		writeJob(root, 'note_poll.yaml', VALID_JOB);
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(out).toContain(`note_poll.yaml — ${INTEGRATION_MISSING}`);
+		expect(out).not.toContain('generating note');
+		expect(fs.existsSync(path.join(root, 'src/jobs/note_poll.job.generated.ts'))).toBe(false);
+		expect(fs.existsSync(modulesBarrel(root))).toBe(false);
+		expect(fs.existsSync(noteEntity(root))).toBe(false);
+	});
+
+	test('JSON mode — the refusal is in failed[], stopped at pre-flight', async () => {
+		const root = mkProject('paths:\n  entities: entities\n');
+		const file = writeJob(root, 'note_poll.yaml', VALID_JOB);
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(JSON.parse(out)).toMatchObject({
+			command: 'entity new',
+			stopped: 'pre-flight',
+			totals: { succeeded: 0, failed: 1 },
+			failed: [{ name: 'note_poll.yaml', file, message: INTEGRATION_MISSING, details: [] }],
+		});
+	});
+
+	test('vendored mode — "installed" is the vendored integration.module.ts, not a stub directory', async () => {
+		const root = mkProject('runtime: vendored\npaths:\n  entities: entities\nsubsystems:\n  install: [integration]\n');
+		writeJob(root, 'note_poll.yaml', VALID_JOB);
+		// A protocol stub without the module file is `incomplete`, not installed.
+		const dir = path.join(root, 'src/shared/subsystems/integration');
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, 'integration.protocol.ts'), 'export {};\n');
+		const { code, out } = await run(['entity', 'new', '--all', '--force', '--json', '--cwd', root]);
+		expect(code).toBe(1);
+		expect(JSON.parse(out).failed).toMatchObject([{ name: 'note_poll.yaml', message: INTEGRATION_MISSING }]);
+	});
 });
 
 describe('entity new rejects the run on an app-pattern file it cannot load (JOBS-2, from the #660 audit)', () => {
