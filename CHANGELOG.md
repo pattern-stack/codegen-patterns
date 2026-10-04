@@ -633,6 +633,13 @@ and no one-argument form. Generated repositories already emit it — regenerate.
   CLI's entities directory** (#634): `paths.entities`, else `entities/`. It
   previously defaulted to `definitions/entities/`, which `entity new` does not
   read.
+- **`type: string_array` is a real Postgres array** (#281). It emitted a `text` column with a
+  `z.unknown()` DTO, so the generated create/update use-cases did not compile. It now emits
+  `text('x').array()`, `string[]` on the entity, and `z.array(z.string())` in both DTOs (and `string[]` in an
+  Integrated sink's copy-through). With `choices:` it is an **array of the enum**
+  (`xEnum('x').array()`, `z.array(z.enum([...]))`) where it used to collapse silently into a single enum
+  column. The relationship and junction pipelines' extra fields follow the same rule. Regenerate, and migrate
+  any `text` / enum column that was declared `string_array`.
 
 ### Removed
 

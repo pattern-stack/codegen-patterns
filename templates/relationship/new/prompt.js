@@ -105,8 +105,24 @@ const DRIZZLE_TYPE_MAP = {
   date: "date",
   datetime: "timestamp",
   json: "jsonb",
-  string_array: "text",
 };
+
+// Array field types → their ELEMENT type (#281): a Postgres array of the
+// element column, `z.array(<element>)`, `<element>[]` — the entity pipeline's
+// rule (templates/entity/new/backend/entity-locals.js).
+const ARRAY_ELEMENT_TYPE = {
+  string_array: "string",
+};
+const isArrayType = (type) => Object.prototype.hasOwnProperty.call(ARRAY_ELEMENT_TYPE, type);
+
+/** A field value's Zod schema before nullability/optionality. */
+function zodValueFor({ type, hasChoices, choices }) {
+  const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
+  const element = hasChoices
+    ? `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`
+    : ZOD_TYPE_MAP[elementType] || "z.unknown()";
+  return isArrayType(type) ? `z.array(${element})` : element;
+}
 
 const DRIZZLE_IMPORT_MAP = {
   text: "text",
@@ -151,6 +167,7 @@ function buildDrizzleChain(fieldName, field, drizzleType) {
   const hasDefault = field.default !== undefined && field.default !== null;
 
   let chain = `${drizzleType}('${fieldName}')`;
+  if (isArrayType(field.type)) chain += ".array()";
   if (required && !nullable) chain += ".notNull()";
   if (drizzleType === "boolean" && hasDefault) chain += `.default(${field.default})`;
 
@@ -170,13 +187,14 @@ function processFields(fields) {
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
 
-    const drizzleType = DRIZZLE_TYPE_MAP[type] || "text";
-    const tsType = hasChoices
+    const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
+    const isArray = isArrayType(type);
+    const drizzleType = DRIZZLE_TYPE_MAP[elementType] || "text";
+    const elementTsType = hasChoices
       ? choices.map((c) => `'${c}'`).join(" | ")
-      : TS_TYPE_MAP[type] || "unknown";
-    const zodType = hasChoices
-      ? `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`
-      : ZOD_TYPE_MAP[type] || "z.unknown()";
+      : TS_TYPE_MAP[elementType] || "unknown";
+    const tsType = !isArray ? elementTsType : hasChoices ? `(${elementTsType})[]` : `${elementTsType}[]`;
+    const zodType = zodValueFor({ type, hasChoices, choices });
 
     const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType);
     const enumName = hasChoices ? camelCase(fieldName) + "Enum" : null;
@@ -196,6 +214,7 @@ function processFields(fields) {
       choices,
       hasChoices,
       enumName,
+      isArray,
       foreignKey: field.foreign_key,
     });
   }
@@ -213,14 +232,7 @@ function zodChainForCreate(field) {
   // Nullability and optionality are independent — see the backend copy of
   // this function for the rationale (nullable-and-optional fields must get both
   // `.nullable()` and `.optional()`, not just `.nullable()`).
-  if (hasChoices) {
-    let base = `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`;
-    if (nullable) base += ".nullable()";
-    if (!required) base += ".optional()";
-    return base;
-  }
-
-  let base = ZOD_TYPE_MAP[type] || "z.unknown()";
+  let base = zodValueFor({ type, hasChoices, choices });
   if (type === "boolean" && hasDefault) {
     base += `.default(${field.default ?? false})`;
     return base;
@@ -232,16 +244,8 @@ function zodChainForCreate(field) {
 
 function zodChainForOutput(field) {
   const { type, nullable, hasChoices, choices } = field;
-
-  if (hasChoices) {
-    const base = `z.enum([${choices.map((c) => `'${c}'`).join(", ")}])`;
-    if (nullable) return base + ".nullable()";
-    return base;
-  }
-
-  let base = ZOD_TYPE_MAP[type] || "z.unknown()";
-  if (nullable) return base + ".nullable()";
-  return base;
+  const base = zodValueFor({ type, hasChoices, choices });
+  return nullable ? base + ".nullable()" : base;
 }
 
 // ============================================================================

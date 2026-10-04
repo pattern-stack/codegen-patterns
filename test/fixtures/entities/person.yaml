@@ -29,5 +29,19 @@ fields:
     required: true
     max_length: 100
 
+  # string_array (#281): a Postgres text[] column, `z.array(z.string())` in
+  # the DTOs, `string[]` on the entity type.
+  nicknames:
+    type: string_array
+    required: false
+    nullable: true
+
+  # string_array + choices: an array of the enum, never a single enum column.
+  preferred_channels:
+    type: string_array
+    choices: [email, phone, sms]
+    required: true
+    default: [email]
+
 # Relationships handled via junction tables (employment, deal roles, etc.)
 # Not defined here - those are separate entities

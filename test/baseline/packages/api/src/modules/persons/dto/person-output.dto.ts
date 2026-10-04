@@ -7,6 +7,8 @@ export const PersonOutputSchema = z.object({
   email: z.string(),
   firstName: z.string(),
   lastName: z.string(),
+  nicknames: z.array(z.string()).nullable(),
+  preferredChannels: z.array(z.enum(['email', 'phone', 'sms'])),
 });
 
 export type PersonOutputDto = z.infer<typeof PersonOutputSchema>;

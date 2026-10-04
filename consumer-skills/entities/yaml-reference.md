@@ -22,7 +22,7 @@ Each key is a `snake_case` column; the generated TS property is `camelCase`.
 ```yaml
 fields:
   email:
-    type: string           # string | integer | decimal | boolean | uuid | date | datetime | json | enum
+    type: string           # string | integer | decimal | boolean | uuid | date | datetime | json | enum | string_array
     required: true         # NOT NULL + required in Create DTO
     max_length: 255        # string length constraint (DB + Zod)
     index: true            # single-column index
@@ -42,6 +42,9 @@ Type notes:
 - `json` — `jsonb`; typed as `Record<string, unknown>` unless you narrow it in
   your own code.
 - `datetime` vs `date` — timestamp vs date-only column.
+- `string_array` — a Postgres `text[]` column; `string[]` on the entity, `z.array(z.string())` in the DTOs.
+  Add `choices:` to constrain the elements: the column becomes an array of a generated enum
+  (`('pg' | 'sg')[]`), not a single enum value. `default: [pg]` gives the column an array default.
 
 ## `behaviors:` — cross-cutting columns + logic
 
