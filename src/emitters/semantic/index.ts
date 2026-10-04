@@ -34,7 +34,7 @@ export type {
 } from './types';
 export { sortEntities } from './types';
 export { buildSemanticModel, junctionIdentity } from './build-model';
-export { buildSemanticModelSource, GENERATED_BANNER, SEMANTIC_MODEL_FILE, TYPES_MODULE } from './emit-model';
+export { buildSemanticModelSource, GENERATED_BANNER, SEMANTIC_MODEL_FILE, QUERY_SURFACE_MODULE } from './emit-model';
 export { buildSemanticIndex, SEMANTIC_INDEX_FILE } from './emit-index';
 export {
 	loadJunctionDefinitions,
@@ -62,7 +62,7 @@ export interface EmitSemanticResult {
  * for a given context, safe to re-run.
  *
  * Two files: `model.ts` and the `index.ts` barrel. The vocabulary types come
- * from the published package (`TYPES_MODULE`), never a vendored copy.
+ * from the published package (`QUERY_SURFACE_MODULE`), never a vendored copy.
  */
 export function emitSemanticModel(
 	ctx: SemanticEmitContext,

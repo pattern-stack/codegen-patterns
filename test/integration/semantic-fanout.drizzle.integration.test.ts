@@ -356,3 +356,46 @@ describe.skipIf(!RUN)('SEM-3 — the fan-out trap', () => {
 		expect(byStage.negotiation).toBe(250);
 	});
 });
+
+/**
+ * #734 — a measure asked for BY NAME. The engine resolves `{ ref }` only from
+ * `model.catalog`; it never derives atomic entries itself. So the emitted model
+ * must carry them, and it does by CALLING the package's own
+ * `measuresFromRegistry` (ADR-045, 2026-10-04 revision) — the package stays the
+ * one owner of the tag → key rule. Without that call both of these fail:
+ * `unknown measure ref "amount.sum"` and `ratio "win_rate": leg measure
+ * "won_amount.sum" is not in the catalog`.
+ */
+describe.skipIf(!RUN)('SEM-3 — measures by {ref} (#734)', () => {
+	it('the emitted catalog carries the derived atomic entries beside the composites', () => {
+		expect(model.catalog['amount.sum']).toEqual(qs.measuresFromRegistry(model.analytics)['amount.sum']);
+		expect(model.catalog.win_rate).toMatchObject({ kind: 'ratio' });
+	});
+
+	it('an atomic `<field>.<agg>` ref', async () => {
+		const result = await qs.runAggregateDrizzle(db, model, {
+			entity: 'opportunity',
+			group_by: ['stage'],
+			measures: [{ ref: 'amount.sum', as: 'total' }],
+		});
+		const byStage = Object.fromEntries(
+			result.rows.map((r: Record<string, unknown>) => [r.stage, Number(r.total)]),
+		);
+		expect(byStage.closed_won).toBe(175);
+		expect(byStage.negotiation).toBe(250);
+	});
+
+	it('a composite ratio over two atomic legs', async () => {
+		const result = await qs.runAggregateDrizzle(db, model, {
+			entity: 'opportunity',
+			group_by: ['account.name'],
+			measures: [{ ref: 'win_rate' }],
+		});
+		const byName = Object.fromEntries(
+			result.rows.map((r: Record<string, unknown>) => [r['account.name'], Number(r.win_rate)]),
+		);
+		// won_amount.sum / amount.sum: Acme 100 / 350, Globex 75 / 75.
+		expect(byName.Acme).toBeCloseTo(100 / 350, 6);
+		expect(byName.Globex).toBe(1);
+	});
+});

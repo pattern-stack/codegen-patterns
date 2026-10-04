@@ -165,7 +165,7 @@ describe('semantic golden — the decisions the snapshot locks', () => {
 		expect(model).toContain('opportunity_contact: schema.opportunityContacts,');
 	});
 
-	it('emits composite metrics only — never atomic catalog entries', () => {
+	it('declares the composites; the atomic entries are a call to the package, never emitted (#734)', () => {
 		expect(model).toContain(
 			"win_rate: { kind: 'ratio', numerator: 'won_amount.sum', denominator: 'amount.sum', label: 'Win rate' }",
 		);
@@ -176,6 +176,9 @@ describe('semantic golden — the decisions the snapshot locks', () => {
 			"running_pipeline: { kind: 'cumulative', measure: 'amount.sum', order_by: 'closed_at', partition_by: 'account_id' }",
 		);
 		expect(model).not.toContain("kind: 'atomic'");
+		expect(model).toContain(
+			'const catalog: MeasureCatalog = { ...measuresFromRegistry(analytics), ...composites };',
+		);
 	});
 
 	it('derives searchableColumns from the declaration, excluding ids and FKs', () => {

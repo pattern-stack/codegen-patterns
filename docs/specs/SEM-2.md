@@ -305,13 +305,18 @@ narrower claim, and the CRM set is the one SEM-3 builds on.
 
 ## What downstream must know
 
+- **The catalog is a call plus the composites** (#734, 2026-10-04): `buildAggregateModel()` returns
+  `catalog: { ...measuresFromRegistry(analytics), ...composites }`. The engine resolves `{ ref }` only from
+  `model.catalog`, so as first shipped (composites only) every named measure failed. The emitter still writes no
+  atomic entry — the package's deriver produces them at call time — so the generated model imports one runtime value
+  from the package root, which loads no optional peer (measured against 0.3.1; ADR-045's 2026-10-04 revision).
 - **Registry keys are entity names** (singular snake); junctions are keyed by their derived junction name. Relationship
   keys are the YAML relationship names verbatim (snake_case). SEM-3's queries and any host wiring must use those.
 - **`buildAggregateModel()` is a function, not a const** — it reads `getColumns` at call time, so the module is safe to
   import before the schema is fully initialised.
-- **The types module is named once** (`TYPES_MODULE` in `emit-model.ts`) and, since SEM-4 (#694), it is
-  `@pattern-stack/query-surface` — an optional peer a project with `generate.semantic: true` installs. The emitted
-  barrel re-exports the types from it.
+- **The package is named once** — `QUERY_SURFACE_MODULE` in `emit-model.ts` (`TYPES_MODULE` until #734 made the
+  model import a value from it too). Since SEM-4 (#694) it is `@pattern-stack/query-surface`, an optional peer a
+  project with `generate.semantic: true` installs. The emitted barrel re-exports the types from it.
 - **`has_one` is emitted, and the package knows it** since query-surface#41 (published 0.3.0) (S7).
 - **`through:` and EAV are not emitted**, and `string_array` / `entity_ref` are absent from `analytics.fields`.
 - **Junction payload columns are emitted** — FKs, `role` (a dimension) when declared with `choices:`, the

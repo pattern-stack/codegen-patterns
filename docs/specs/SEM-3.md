@@ -156,6 +156,12 @@ It imports `buildAggregateModel()` from the emitted snapshot and, through the pa
 2. **the grain oracle** — `diagnoseAggregate(model.analytics, input)` returns no findings for the safe shape.
 3. **measure** — `runAggregateDrizzle(db, model, input)` on real rows, asserting `plan.needsCte === true`,
    `plan.groupGrain === 'account'`, and the exact rows.
+4. **measure by name** (added by #734, 2026-10-04) — the same call with `{ ref }` measures: an atomic `amount.sum`
+   grouped by `stage`, and the composite ratio `win_rate` (legs `won_amount.sum` / `amount.sum`) grouped by
+   `account.name`. Both failed against the model as SEM-2 shipped it — `unknown measure ref "amount.sum"` and
+   `ratio "win_rate": leg measure "won_amount.sum" is not in the catalog` — because the engine reads named measures
+   only from `model.catalog`, which carried composites alone. The model now builds its catalog by calling the
+   package's `measuresFromRegistry` (ADR-045, 2026-10-04 revision); 13 pass / 0 fail.
 4. **the trap itself** — the same question as a naive single-pass join, asserted to return the *wrong* count. Without
    this the `needsCte` assertion is a claim about an implementation detail; with it, the test demonstrates a
    correctness property.
@@ -206,7 +212,7 @@ relationship smoke's `tsc`, it now gates the emitter in CI.
 | `src/__tests__/emitters/semantic/golden-model.test.ts` (extended) | The widened `aggs`, the non-additive percentage and the junction shape are locked in the snapshot. | `just test-all` |
 | `src/__tests__/emitters/semantic/golden-schema.test.ts` (new) | Every table the emitted snapshot references exists in `test/semantic-golden/schema.ts`, so the fixture barrel cannot drift from the model. The junction table mirrors the junction template (composite key, no `id`); a named expectation pins that the junction `pk` names no column (#689). | `just test-all` |
 | `just test-smoke-relationship` | The tagged CRM slice still type-checks as an emitted model under the consumer tsconfig. | `just test-all` |
-| `just test-semantic-integration` | **The demonstration.** describe + the grain oracle + a fan-out measure against real Postgres, with the naive counter-example. **9/9 against query-surface#41** (T12); runs in CI against the installed 0.3.1 since SEM-4 (#694). | a step in the CI `integration` job |
+| `just test-semantic-integration` | **The demonstration.** describe + the grain oracle + a fan-out measure against real Postgres, with the naive counter-example, and measures by `{ ref }` — atomic and composite (#734). **9/9 against query-surface#41** (T12); runs in CI against the installed 0.3.1 since SEM-4 (#694). | a step in the CI `integration` job |
 | `just test-all`, `just test-integration` | No regression. | CI |
 
 ## What downstream must know
@@ -219,8 +225,9 @@ relationship smoke's `tsc`, it now gates the emitter in CI.
   resolution — but it does affect nothing else either, so queries must use entity names.
 - **A column must carry `role: 'dimension'` to be groupable.** An untagged column is registered (filterable,
   resolvable) but `group_by` refuses it. Tag every dimension you intend to group by.
-- **`describe` against a host-supplied model is `conformedDimensions` + `measuresFromRegistry`**, not
+- **`describe` against a host-supplied model is `conformedDimensions` + `model.catalog`**, not
   `buildEntityCatalog` — that one reads the package's module-global introspected registry, which is the other path.
+  Since #734 `model.catalog` carries the atomic entries (`measuresFromRegistry(model.analytics)`) and the composites.
 - **The fan-out-trap exit criterion is gated in CI** since SEM-4 (#694): the suite runs against the installed
   `@pattern-stack/query-surface@0.3.1` devDependency. (When SEM-3 shipped it was demonstrated against #41's head
   `ba816c3` only, 9/9 — T12.)
