@@ -2,60 +2,239 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] — 0.31.0
+## [0.31.0] — 2026-10-04
 
-**Breaking:** this release requires the **Drizzle 1.0 line**, and `drizzle-orm`
-is now a **peer dependency** (`^1.0.0-rc.4`) rather than a bundled dependency —
-install it yourself. `BaseRepository` and every family base also take a third,
-**required** type parameter — the relation manifest's type
-(`BaseRepository<TEntity, TTable, TRelations>`, #587) — with no default, because
-a default would let a repository that forgot its manifest compile and then
-silently accept no includes. Generated repositories are regenerated; a
-hand-written one binds `typeof relations` from `<generated>/relations`.
+**Breaking.** Relations v2 and the semantic model (#578): Drizzle 1.0, a typed relation
+graph with includes scoped at every hop, repository tenant isolation, capability patterns,
+the semantic-model vocabulary, and one backend pipeline. Upgrading from 0.30.0:
 
-The v1 Drizzle `relations()` const is no longer emitted
-(entity, clean-lite-ps entity, junction); it is replaced by the generated v2
-`defineRelations()` manifest (#586), which is what `db.query.*` traversals now
-resolve against.
+1. Install `drizzle-orm@^1.0.0-rc.4` yourself — it is now a peer (#584).
+2. Delete the config keys and entity-YAML keys this release removes. `codegen` now
+   rejects every unknown key by name, so the first run lists them for you (#640, #677,
+   #682, SEM-1 #590).
+3. Regenerate with `codegen entity new --all`. Every emitted path for a multi-word
+   entity changes to kebab-case (#695), and a project that never set
+   `generate.architecture` was on the deleted `clean` pipeline — delete its old
+   `domain/` / `application/` / `infrastructure/` / `presentation/` trees (#677).
+4. Update hand-written repositories: `BaseRepository<TEntity, TTable, TRelations>`
+   (#603, #587), and `BehaviorConfig.tenantScoped` is required (#585).
+5. One-time edit to an existing standalone `worker.ts` (#652), and state `backend` on a
+   hand-written `JobWorkerModule.forRoot` call (#656). See **Changed** and **Fixed**.
 
-### Fixed
+### Breaking
 
-- **A junction with a multi-word endpoint compiles** (#730). `junction new` imported each endpoint's
-  entity, repository and module at a snake stem beside the kebab folder
-  (`../fantasy/fantasy-teams/fantasy_team.entity`), so `fantasy_team × player` emitted 12 `tsc` errors. The
-  specifiers now point at the files the endpoint's own emission writes (`entityModuleNaming`). Regenerate
-  junctions with a multi-word endpoint.
-- **A `has_many` onto a multi-word target gets its composition method.** The two-pass existence check
-  looked for a snake `<target>.entity.ts`, so `league.fantasy_teams()` / `player.game_logs()` were silently
-  never emitted. It now looks for the emitted kebab stem.
-- **The emitted frontend tree did not compile in a real install** (#620). The four `@tanstack/*`
-  packages in the version-pairing contract each pin `@tanstack/db` **exactly** and release in
-  lockstep, but `deps.ts` ranged them with carets — so a consumer installing exactly what codegen
-  told them to got **four** `@tanstack/db` copies (0.5.33 / 0.6.1 / 0.7.0 / 0.9.2), four type
-  identities, and `createCollection(electricCollectionOptions(...))` failed to type-check. The
-  frontend analogue of the dual-`drizzle-orm` hazard the 1.0 bump fixed.
-  - `@tanstack/db`, `@tanstack/react-db`, `@tanstack/electric-db-collection` and
-    `@tanstack/query-db-collection` are now pinned **exactly** to the set that agrees
-    (`0.5.33` / `0.1.77` / `0.2.41` / `1.0.30`). The pins alone collapse the tree to one copy on
-    bun and npm. `project init` also merges a belt-and-braces
-    `overrides: { "@tanstack/db": "$@tanstack/db" }` entry, which keeps one copy should a
-    transitive range ever disagree with the pin.
-  - **Re-running `project init` corrects the lockstep set.** An existing frontend `package.json`
-    whose entry for any of those four is not the pin — the caret ranges earlier `project init`
-    wrote, or one package moved without the others — is rewritten to the pin, and init names
-    each rewrite. Every other entry, overrides included, is still only added when missing.
-  - `@electric-sql/client` joins the contract: the emitted electric collections import
-    `snakeCamelMapper` from it, and it previously resolved only by hoisting.
-  - `@pattern-stack/frontend-patterns` deliberately **stays** on the `0.2.0-alpha` line — the
-    `1.0.0` published on npm ships no sync layer (no `createStore` / `createEntityHooks`) and is
-    not dist-tagged `latest`.
-  - New gate `just test-smoke-frontend`, in `just test-all`: scaffolds with
-    `generate.frontend: true`, installs the contract from live npm, asserts exactly one
-    `@tanstack/db`, and type-checks the emitted tree. The emitted frontend tree was previously
-    type-checked nowhere, which is why this shipped unnoticed.
+**Drizzle 1.0 is required, as a peer.** `drizzle-orm` is a **peer dependency**
+(`^1.0.0-rc.4`) rather than a bundled dependency (#584) — install it yourself. The details
+are under **Changed**.
+
+**The v1 Drizzle `relations()` const is no longer emitted** (#583) by the entity or
+junction templates. It is replaced by the generated v2 `defineRelations()` manifest (#586),
+which is what `db.query.*` traversals now resolve against.
+
+`BaseRepository` and every family repository take a **second, required
+type parameter** — the concrete Drizzle table (REL-0, #603). Hand-written
+repositories must change `extends BaseRepository<Contact>` to
+`extends BaseRepository<Contact, typeof contacts>` (likewise
+`IntegratedEntityRepository`, `ActivityEntityRepository`, `MetadataEntityRepository`,
+`KnowledgeEntityRepository`, `JunctionIntegrationRepository`). There is no default
+and no one-argument form. Generated repositories already emit it — regenerate.
+
+`BaseRepository` and every family base also take a **third, required type
+parameter** — the relation manifest's type (`BaseRepository<TEntity, TTable, TRelations>`,
+REL-2, #587) — with no default, because a default would let a repository that forgot its
+manifest compile and then silently accept no includes. Generated repositories are
+regenerated; a hand-written one binds `typeof relations` from `<generated>/relations`.
+
+`BehaviorConfig.tenantScoped` is a **required** field, not
+optional-with-a-default (#585, ADR-042). Every `behaviors` literal in a hand-written
+repository must state its posture — a repository that silently defaulted to `false` is the
+failure this guards against. Generated repositories are regenerated. The feature itself is
+under **Added**.
+
+The `clean` backend architecture is deleted. There is one backend
+pipeline (ARCH-0, #677) — named `clean-lite-ps` at the time, renamed to `backend` by
+NAME-2 (#695) later in this release.
+
+The config surface only the deleted `clean` pipeline read is gone (ARCH-1,
+#682). `naming:`, `database:` and `behaviors:` are no longer config blocks; the 14
+`locations.backend*` names and `locations.dbSchemaServer` / `dbSchemaClient` /
+`dbMigrations` / `dbContextEngine` are no longer location names; and `folder_structure:`,
+`file_grouping:` and `behavior_strategy:` are no longer entity-YAML keys. Each is now an
+unknown-key error naming the key and the file — **delete those lines**. The backend
+pipeline emits one module folder per entity with fixed file names and always extends a pattern
+base, so none of them had a meaning left. `expose:` is unaffected (the frontend emitter
+reads it), and the entity-level `behaviors:` list is a different, untouched key.
+
+Every emitted file and folder is now **kebab-case** (NAME-2, #695/#684).
+One rule, `src/config/file-naming.ts`: *the filesystem is kebab-case, the database is
+snake_case*. A multi-word entity that emitted
+`modules/deal_states/use-cases/find-deal_state-by-id.use-case.ts` now emits
+`modules/deal-states/use-cases/find-deal-state-by-id.use-case.ts`. **Single-word
+entities are unaffected** — they were already kebab, by accident. The SQL table name,
+the `pgTable('…')` / `pgEnum('…')` arguments, column names and the Drizzle table export
+(`export const deal_states`) are **unchanged**: they are database identifiers, not
+paths. Consumers with a multi-word entity regenerate; anything that referenced an
+emitted path by hand — an import in hand-written code, a path in a script or tsconfig —
+must be updated. Hygen's inject guards key on import specifiers, so a project generated
+across this change and not regenerated can double-inject.
+
+The `clean-lite-ps` name is retired (NAME-2, #695). The one backend
+pipeline is `templates/entity/new/backend/`; `prompt-extension.js` is
+`backend/entity-locals.js` and exports `buildBackendLocals`; the `clp*` template locals
+lose the prefix. This matters only to a consumer that reached into the package's
+template tree — the CLI surface is unchanged. `src/config/case-converters.mjs` is
+deleted (it had no importers after ARCH-1).
+
+The entity `analytics:` vocabulary is replaced by the semantic-model
+vocabulary (SEM-1, #590, ADR-045). The old, MetricFlow-shaped keys were parse-only — no
+template, emitter or parser read them — so they are replaced outright, with no aliases:
+  - **`generate.analytics: none | cube` is now `generate.semantic: boolean`** (default
+    `false`). `generate.analytics` is rejected by name, pointing at `generate.semantic`.
+  - **The field schema is strict.** `FieldDefinitionSchema` is now `.strict()`, so a field
+    still carrying a removed key fails by name instead of parsing to a field with no tags.
+    Removed field keys: `measure`, `analytics_aggregation`, `agg_time_dimension`,
+    `non_additive_dimension`, `dimension`, `dimension_type`, `time_granularity`,
+    `is_partition`, `entity`, `entity_type`, `entity_role`, `analytics_visibility`,
+    `semantic_expr`, `semantic_label`. Keys and roles come from `relationships:` /
+    `roles:`; labels and visibility already ride `ui_label` / `ui_visible`.
+  - **Entity level:** `analytics.measure_packs` and `analytics.cube_name` are deleted, and
+    `analytics.metrics:` is retyped to `ratio` / `derived` / `cumulative`. The `simple`
+    metric type is gone — a simple metric is a measure-tagged field. Metric `filter`,
+    `description`, `window` and `grain_to_date` are dropped.
+  - **The Cube.js runtime is deleted** — `runtime/analytics/**`,
+    `runtime/subsystems/analytics/**` (`IAnalyticsQuery`, its tokens, module, cube and
+    noop backends) and the optional `@cubejs-client/core` peer. `WithAnalytics` (the
+    service mixin) is unrelated and stays.
+
+  The replacement vocabulary is under **Added**.
+
+An entity may declare **only one inheritable spine base** (CAP-1, #593,
+ADR-041). The backend used to take its base class from `patterns[0]` and silently drop
+every later pattern's `repositoryClass` / `serviceClass`, so `patterns: [Integrated,
+Activity]` validated and emitted only `IntegratedEntityRepository`. Positional selection is
+deleted: the spine is the one declared domain pattern that contributes a base class,
+wherever it sits in the list, and two such patterns are an error at validation
+(`pattern_multiple_spines`) and at generation, naming both. Express the second as a
+`kind: 'capability'` pattern (see **Added**). Two related rules:
+  - **An app pattern may not reuse a library pattern's name** (CAP-3, #595). An app
+    `domain` / `capability` pattern named like a library one (`Integrated`, `Actor`,
+    `Communication`, …) used to shadow it silently; it is now a load error naming both.
+  - **Pattern config on the repository is public.** Every capability config is emitted as
+    `override readonly <cap>Config = { … } as const` (CAP-3): a mixin shipped in `runtime/`
+    declares its surface through an interface, which cannot carry `protected`. A public
+    override still fills a consumer mixin's `protected` declaration.
+
+`codegen.config.yaml` is validated **strictly, on every command** (#640) — an
+unknown or removed key stops the command with an error naming the key and the file. With
+the removals in this release (`generate.architecture` and its toggles, `naming:`,
+`database:`, `behaviors:`, `paths.subsystems`, `paths.entities_dir`, `generate.analytics`,
+and the keys under **Removed**), an existing config will very likely need lines deleted
+before the first run. Details under **Changed**.
+
+**Two `belongs_to` onto one target key their members by the relationship name** (#731). A
+declared non-self `belongs_to` now names its service parent-fetch method and its Integrated
+`<key>ExternalId` write key after the **relationship**, not the target: `owner: { target: user }` emits
+`owner()` / `ownerExternalId`, not `user()` / `userExternalId`. Regenerate, and rename callers. Details
+under **Fixed**.
 
 ### Added
 
+- **Studio has a light theme that follows the system** (#756). Every colour token is a
+  `light-dark()` pair, `data-theme` on `<html>` pins it either way, and the header has an Auto / Light /
+  Dark toggle. The graph library's theme, the edge-kind table and the YAML editor follow it. The runbook
+  screenshots are captured in both themes (`<n>-<name>.png` / `<n>-<name>.light.png`).
+- **The semantic-model vocabulary** (SEM-1, #590, ADR-045) — the field tags the semantic
+  query layer consumes:
+  - On a field: `role: measure | dimension`; `agg` **or** `aggs` from
+    `count | count_distinct | sum | avg | min | max`; `additivity: additive | semi | non`
+    (required on every measure — it cannot be inferred from the type); `time: true` (on
+    `date` / `datetime` only, never on a measure).
+  - On the entity: `analytics.metrics:` of type `ratio` (`numerator` / `denominator`),
+    `derived` (an `expr` **tree** of `{ ref }`, `{ lit }` and `{ op, left, right }`, not a
+    string) or `cumulative` (`measure`, `order_by`, `partition_by`). The catalog is one
+    flat namespace across entities, so a metric declared on one entity may name legs on
+    another.
+  - Atomic catalog keys follow the consuming package's rule: `<field>.<agg>` per entry when
+    `aggs:` is declared, the bare `<field>` when `agg:` is.
+  - Per-file rules are schema refinements. Cross-entity rules — a leg that names no
+    declared measure, an atomic key owned by two entities, a duplicate metric name, a
+    metric named like an atomic key, a `cumulative` `order_by` / `partition_by` that is not
+    a field of the measure's own entity — live in `validate-semantic.ts`, run by
+    `entity validate` / `project inspect` and by the `entity new` pre-flight, which fails
+    the run.
+- **`<generated>/semantic/` — the semantic model emitter** (SEM-2, #591; SEM-3, #592). With
+  `generate.semantic: true`, `entity new` writes `semantic/{types,model,index}.ts`, whose
+  `buildAggregateModel()` returns the `AggregateModel` (`registry`, `analytics`, `tables`,
+  `colByDbName`, `catalog`) the semantic query layer runs against. It is **declared from
+  the parsed entity set**, never by walking Drizzle relations; the only Drizzle object read
+  is `getColumns()` for the column map.
+  - Registry entries are keyed by entity name; a junction by its `<a>_<b>` name, with two
+    `belongs_to` edges and an inverse `has_many` on each endpoint. Relationship keys are
+    the YAML names. `has_one` is emitted; `through:` and EAV are not.
+  - Junction entries carry exactly the columns the junction table has, and no `id`.
+  - Columns contributed by `behaviors:` (`created_at`, `updated_at`, `deleted_at`) reach
+    `analytics.fields` as dimensions, so they can be filtered and grouped (SEM-3). `time:
+    true` is never derived — which column is the time axis is the author's call.
+  - Only **composite** catalog entries are emitted; the consuming package derives the
+    atomic ones from the field tags.
+  - The vocabulary types are vendored in `types.ts` until the query package publishes.
+  - Emission is warn-but-don't-fail: nothing in a generated project imports the model, so
+    a failure prints a warning rather than failing the run.
+  - Gates: a golden snapshot (`test/semantic-golden/`), the relationship smoke (whose CRM
+    fixtures carry analytics tags, so the emitted tree is type-checked), and a fan-out-trap
+    demonstration against the real query engine, which skips with a printed reason until
+    that engine loads on Drizzle 1.0.
+- **Capability patterns: `kind: 'capability'`** (CAP-1, #593, ADR-041). A third pattern
+  kind, beside `domain` and `orchestration`, for behaviour that is layered on rather than
+  inherited. A capability declares a `mixin` + `mixinImport` (both or neither),
+  `forwarderMethods`, `configProperty`, `configSchema`, `columns` and `impliedBehaviors` —
+  never `repositoryClass` / `serviceClass`. Declare one with `defineCapabilityPattern()`.
+  - Capability mixins wrap the repository's spine base in declaration order (rightmost
+    outermost): one capability inlines as `WithA(Spine<…>)`; two or more get a generated
+    `<entity>.composed-base.ts`. Without capabilities the repository is unchanged.
+  - Each `forwarderMethods` entry becomes a non-`async` service method typed from the
+    repository's own (`Parameters<>` / `ReturnType<>`), so no signature is declared twice.
+  - `config: { <Capability>: {…} }` on the entity is validated against the capability's
+    `configSchema` and emitted on the repository as `override readonly <cap>Config`.
+  - A forwarder that collides with another capability's, a `queries:` finder or a
+    relationship forwarder fails generation.
+  - `runtime/base-classes/capability-mixin.ts` (`RepositoryCtor`, `EntityOf`, `TableOf`,
+    `CapabilityCtor`) is the shape a mixin is written against; a mixin reads through the
+    repository's own `baseQuery()` / `scopeAnd()`, so tenant, soft-delete and
+    `userTracking` scope apply with no parameter.
+  - New gate `just test-smoke-capability`, in `just test-all`, compiles a three-capability
+    fixture against the real bases in both runtime modes.
+- **The `roles:` block — named, typed edges to actor entities** (CAP-2, #594). A top-level
+  sibling of `fields:` / `relationships:`:
+
+  ```yaml
+  roles:
+    host:      { target: contact, cardinality: one, column: host_contact_id }
+    attendees: { target: contact, cardinality: many, via: meeting_contact }
+  ```
+
+  `cardinality: one` becomes a `belongs_to` keyed by the **role** name (so two roles to one
+  target stay two edges) and rides the existing FK column / index / `on_delete` path —
+  indexed by default, `on_delete: restrict` by default, the column defaulting to
+  `<role>_<target>_id`. `cardinality: many` emits nothing: `via:` must name the existing
+  junction between the two entities. The block is strict at every level. A role's target
+  must declare `Actor`, and `roles:` and `Communication` must appear together; these are
+  checked by `entity validate` and by the `entity new` pre-flight, which refuses the
+  entity. The CLI now loads app patterns before it validates, so `entity validate`,
+  `project inspect` and `project graph` stop reporting app patterns as unknown.
+- **`Actor` and `Communication` library capabilities** (CAP-3, #595), with runtime mixins
+  `WithActor` and `WithCommunication`.
+  - `patterns: [<spine>, Communication]` + `roles:` gives the repository
+    `findByRole(role, actorId)` (`role` typed to the declared role names; a many-role is an
+    `EXISTS` over its junction) and `participants(id)` (`{ role, target, id }[]`, ids only,
+    one `UNION ALL`). Both are forwarded on the service.
+  - `patterns: [Actor]` takes a required `config: { Actor: { kind: individual } }` or
+    `{ kind: group, members: <has_many name> }` and gives the repository
+    `memberPredicate(actorId): SQL` over its own table, for use in its own reads. It is not
+    forwarded.
+  - The emitted `communicationConfig` / `actorConfig` carry live table handles, resolved
+    from the junction's and member entity's own YAML. A missing or invalid config, or a
+    `members:` that does not name a `has_many`, is a generation error.
 - **Frontend relation graph + typed traversal accessors** (#589, ADR-044 §5, FE-REL). The
   frontend emitter now writes a `graph/` tree beside the collections: `graph/descriptor.ts` (the
   client relation graph, a runtime value keyed by `entity.plural` with the YAML relationship names
@@ -169,9 +348,6 @@ resolve against.
     compile.
   - Repository `with` includes, per-hop scoping and the HTTP include allowlist
     are **not** part of this change — see REL-2.
-
-### Added
-
 - **Repository-level tenant isolation: `tenant_scoped: true`** (#585, ADR-042).
   An entity YAML flag that makes every generated read and every by-id write
   filter by the ambient tenant, and every `create()` stamp it. One declaration
@@ -213,95 +389,14 @@ resolve against.
   backed by a `unique(...).nullsNotDistinct()` constraint. The two paths that
   cannot be made safe fail closed instead — `MetadataEntityRepository.upsertMany`
   with a caller-supplied conflict target throws, and
-  `tenant_scoped` + `eav_value_table` is a generation-time error (#703). So is
-  `tenant_scoped` under `generate.architecture: clean`, which cannot honour the
-  flag (#602).
+  `tenant_scoped` + `eav_value_table` is a generation-time error (#703).
 
   Proven by a cross-tenant integration suite against real Postgres: a read, a
   write, an upsert and a delete from tenant A cannot see or touch tenant B's
   rows, a missing tenant throws, and a job runs inside its own tenant. Neutering
   the predicate fails 27 of those assertions.
 
-  **Breaking for hand-written repositories:** `BehaviorConfig.tenantScoped` is a
-  **required** field, not optional-with-a-default. Every `behaviors` literal must
-  state its posture — a repository that silently defaulted to `false` is the
-  failure this guards against. Generated repositories are regenerated.
-(entity, backend entity, junction); hand-written `db.query.*` code that
-relied on it must wait for the v2 manifest (REL-1) or declare its own.
-
-**Breaking:** the `clean` backend architecture is deleted. There is one backend
-pipeline (ARCH-0, #677) — named `clean-lite-ps` at the time, renamed to `backend` by
-NAME-2 (#695) later in this same unreleased cycle.
-
-**Breaking:** the config surface only the deleted `clean` pipeline read is gone (ARCH-1,
-#682). `naming:`, `database:` and `behaviors:` are no longer config blocks; the 14
-`locations.backend*` names and `locations.dbSchemaServer` / `dbSchemaClient` /
-`dbMigrations` / `dbContextEngine` are no longer location names; and `folder_structure:`,
-`file_grouping:` and `behavior_strategy:` are no longer entity-YAML keys. Each is now an
-unknown-key error naming the key and the file — **delete those lines**. The backend
-pipeline emits one module folder per entity with fixed file names and always extends a pattern
-base, so none of them had a meaning left. `expose:` is unaffected (the frontend emitter
-reads it), and the entity-level `behaviors:` list is a different, untouched key.
-
-**Breaking:** every emitted file and folder is now **kebab-case** (NAME-2, #695/#684).
-One rule, `src/config/file-naming.ts`: *the filesystem is kebab-case, the database is
-snake_case*. A multi-word entity that emitted
-`modules/deal_states/use-cases/find-deal_state-by-id.use-case.ts` now emits
-`modules/deal-states/use-cases/find-deal-state-by-id.use-case.ts`. **Single-word
-entities are unaffected** — they were already kebab, by accident. The SQL table name,
-the `pgTable('…')` / `pgEnum('…')` arguments, column names and the Drizzle table export
-(`export const deal_states`) are **unchanged**: they are database identifiers, not
-paths. Consumers with a multi-word entity regenerate; anything that referenced an
-emitted path by hand — an import in hand-written code, a path in a script or tsconfig —
-must be updated. Hygen's inject guards key on import specifiers, so a project generated
-across this change and not regenerated can double-inject.
-
-**Breaking:** the `clean-lite-ps` name is retired (NAME-2, #695). The one backend
-pipeline is `templates/entity/new/backend/`; `prompt-extension.js` is
-`backend/entity-locals.js` and exports `buildBackendLocals`; the `clp*` template locals
-lose the prefix. This matters only to a consumer that reached into the package's
-template tree — the CLI surface is unchanged. `src/config/case-converters.mjs` is
-deleted (it had no importers after ARCH-1).
-
-**Breaking:** `BaseRepository` and every family repository take a **second, required
-type parameter** — the concrete Drizzle table (REL-0, #603). Hand-written
-repositories must change `extends BaseRepository<Contact>` to
-`extends BaseRepository<Contact, typeof contacts>` (likewise
-`IntegratedEntityRepository`, `ActivityEntityRepository`, `MetadataEntityRepository`,
-`KnowledgeEntityRepository`, `JunctionIntegrationRepository`). There is no default
-and no one-argument form. Generated repositories already emit it — regenerate.
-
-### Removed
-
-- **The clean-only config surface** (#682). With the keys above went
-  `src/schema/naming-config.schema.ts`, `src/config/naming-config.mjs` and
-  `src/config/locations.mjs`; `src/config/paths.mjs` keeps only `BASE_PATHS`,
-  `getOrchestrationPath`, `getProjectConfig` and `getGeneratedDir`. `project init` no
-  longer writes `naming:` / `database:`, and `project scan` no longer proposes `naming:`.
-  `templates/entity/new/prompt.js` drops the 69 locals no template read (1570 → 377
-  lines); the clean-lite-ps extension already built everything else. Generated output is
-  byte-identical — the baseline snapshot is unchanged.
-- **The `clean` backend pipeline and `generate.architecture`** (#677). The full
-  Clean Architecture templates (`templates/entity/new/backend/`: separate
-  command/query classes, repository interfaces, `domain/` / `application/` /
-  `infrastructure/` / `presentation/` layout) are gone. Every entity is emitted
-  as a clean-lite-ps module folder under `paths.modules_dir`. `generate.architecture`
-  and the `clean`-only toggles `generate.drizzleSchema`, `commands`, `queries` and
-  `dtos` are removed from the schema, so each is now an unknown-key error naming
-  the key and the file. **Delete those lines from `codegen.config.yaml`.** There
-  is no alias and no migration path. The schema default was `clean`, so **a
-  project whose config never set `architecture` was generating `clean` output
-  and now gets the clean-lite-ps module tree.** Regenerate, then delete the
-  old `domain/`, `application/`, `infrastructure/` and `presentation/` trees.
-  Other effects: the frontend emitter's generated `update` always uses
-  `PATCH` (the clean-lite-ps controller's verb; `clean` used `PUT`).
-  `project init`, `project scan` and the project status pane no longer write or
-  show an architecture. The analyzer's `pattern_clean_pipeline_noop` warning and
-  `validatePatternProject` are gone. The scanner reports an existing
-  domain/application folder layout as `layered` (was `clean`).
-
-### Added
-
+  `BehaviorConfig.tenantScoped` is now required — see **Breaking**.
 - **`codegen studio` — a local web UI over the generator** (STUDIO-0, #698).
   Serves the entity graph, a YAML editor that validates before it writes, a
   relationship form, and Generate with live output and a diff of what changed.
@@ -450,13 +545,72 @@ and no one-argument form. Generated repositories already emit it — regenerate.
 
 ### Fixed
 
+- **A junction with a multi-word endpoint compiles** (#730). `junction new` imported each endpoint's
+  entity, repository and module at a snake stem beside the kebab folder
+  (`../fantasy/fantasy-teams/fantasy_team.entity`), so `fantasy_team × player` emitted 12 `tsc` errors. The
+  specifiers now point at the files the endpoint's own emission writes (`entityModuleNaming`). Regenerate
+  junctions with a multi-word endpoint.
+- **A `has_many` onto a multi-word target gets its composition method** (#738). The two-pass existence check
+  looked for a snake `<target>.entity.ts`, so `league.fantasy_teams()` / `player.game_logs()` were silently
+  never emitted. It now looks for the emitted kebab stem.
 - **Two `belongs_to` onto one target compile** (#731). `game.home_team` + `game.away_team → nba_team`
   imported `nba_teams` twice into the entity file, and keyed the per-edge members by the *target*: two
   `nba_team()` service methods and two `nba_teamExternalId` Integrated write keys. The entity file now imports
-  each parent table once, and a declared non-self `belongs_to`'s members are keyed by the **relationship name**
-  (`homeTeam`-style casing is #494 / #697's; the name is used verbatim, as a `has_many`'s already was).
-  **Breaking for a relationship whose name differs from its target:** `owner: { target: user }` emits
-  `owner()` / `ownerExternalId`, not `user()` / `userExternalId`. Regenerate, and rename callers.
+  each parent table once, and the members are keyed by the relationship name (see **Breaking**; the
+  `homeTeam`-style casing is #494 / #697's).
+- **`type: string_array` is a real Postgres array** (#281, #735). It emitted a `text` column with a
+  `z.unknown()` DTO, so the generated create/update use-cases did not compile. It now emits
+  `text('x').array()`, `string[]` on the entity, and `z.array(z.string())` in both DTOs (and `string[]` in an
+  Integrated sink's copy-through). With `choices:` it is an **array of the enum**
+  (`xEnum('x').array()`, `z.array(z.enum([...]))`) where it used to collapse silently into a single enum
+  column. The relationship and junction pipelines' extra fields follow the same rule. Regenerate, and migrate
+  any `text` / enum column that was declared `string_array`.
+- **The emitted frontend tree did not compile in a real install** (#620). The four `@tanstack/*`
+  packages in the version-pairing contract each pin `@tanstack/db` **exactly** and release in
+  lockstep, but `deps.ts` ranged them with carets — so a consumer installing exactly what codegen
+  told them to got **four** `@tanstack/db` copies (0.5.33 / 0.6.1 / 0.7.0 / 0.9.2), four type
+  identities, and `createCollection(electricCollectionOptions(...))` failed to type-check. The
+  frontend analogue of the dual-`drizzle-orm` hazard the 1.0 bump fixed.
+  - `@tanstack/db`, `@tanstack/react-db`, `@tanstack/electric-db-collection` and
+    `@tanstack/query-db-collection` are now pinned **exactly** to the set that agrees
+    (`0.5.33` / `0.1.77` / `0.2.41` / `1.0.30`). The pins alone collapse the tree to one copy on
+    bun and npm. `project init` also merges a belt-and-braces
+    `overrides: { "@tanstack/db": "$@tanstack/db" }` entry, which keeps one copy should a
+    transitive range ever disagree with the pin.
+  - **Re-running `project init` corrects the lockstep set.** An existing frontend `package.json`
+    whose entry for any of those four is not the pin — the caret ranges earlier `project init`
+    wrote, or one package moved without the others — is rewritten to the pin, and init names
+    each rewrite. Every other entry, overrides included, is still only added when missing.
+  - `@electric-sql/client` joins the contract: the emitted electric collections import
+    `snakeCamelMapper` from it, and it previously resolved only by hoisting.
+  - `@pattern-stack/frontend-patterns` deliberately **stays** on the `0.2.0-alpha` line — the
+    `1.0.0` published on npm ships no sync layer (no `createStore` / `createEntityHooks`) and is
+    not dist-tagged `latest`.
+  - New gate `just test-smoke-frontend`, in `just test-all`: scaffolds with
+    `generate.frontend: true`, installs the contract from live npm, asserts exactly one
+    `@tanstack/db`, and type-checks the emitted tree. The emitted frontend tree was previously
+    type-checked nowhere, which is why this shipped unnoticed.
+- **Cross-entity names come from the target's own YAML** (NAME-0, #630, #611; NAME-1, #633).
+  `belongs_to`, `has_many`, field `foreign_key:`, the EAV definition table, junction
+  endpoints and `relationship new` endpoints built another entity's table export and folder
+  with `pluralize()` and a hand-built `'../<plural>/'` path, so an irregular `plural:` or a
+  `context:`-nested entity on either side of an edge produced an import that did not
+  resolve. They now read the target's YAML. A missing target YAML is a generation error
+  naming the directory searched, and two YAMLs declaring the same `plural:` is a load error
+  naming both files.
+- **One repository dependency per target** (#632). An entity with both a `belongs_to` and a
+  `has_many` to one target imported that repository twice and declared two constructor
+  parameters for it, which failed `tsc` (TS2300). The service and module now get one
+  deduplicated list.
+- **Every generated FK callback is annotated `(): AnyPgColumn =>`** (#631). Only a self-FK was
+  annotated, so two entities with FKs to each other (or a longer cycle) failed `tsc`
+  (TS7022 / TS7024).
+- **Junction and relationship templates resolve runtime imports by runtime mode** (RT-0,
+  #624). They hardcoded `@shared/*` imports, so a junction or relationship generated in
+  package mode did not compile. Vendored output is unchanged.
+- **The list use-case compiles for an entity without `timestamps`** (#604). Its default sort
+  was `desc(<table>.createdAt)` whatever the entity declared; it now falls back to the
+  primary key. `search` had the same defect and is fixed with it.
 - **Repository finders keep the soft-delete and `userTracking` filters** (#616).
   Finders built on `BaseRepository.baseQuery()` — the clean-lite-ps, junction
   and relationship `queries:` finders and the Integrated / Activity / Metadata
@@ -633,16 +787,35 @@ and no one-argument form. Generated repositories already emit it — regenerate.
   CLI's entities directory** (#634): `paths.entities`, else `entities/`. It
   previously defaulted to `definitions/entities/`, which `entity new` does not
   read.
-- **`type: string_array` is a real Postgres array** (#281). It emitted a `text` column with a
-  `z.unknown()` DTO, so the generated create/update use-cases did not compile. It now emits
-  `text('x').array()`, `string[]` on the entity, and `z.array(z.string())` in both DTOs (and `string[]` in an
-  Integrated sink's copy-through). With `choices:` it is an **array of the enum**
-  (`xEnum('x').array()`, `z.array(z.enum([...]))`) where it used to collapse silently into a single enum
-  column. The relationship and junction pipelines' extra fields follow the same rule. Regenerate, and migrate
-  any `text` / enum column that was declared `string_array`.
 
 ### Removed
 
+- **The clean-only config surface** (#682). With the keys above went
+  `src/schema/naming-config.schema.ts`, `src/config/naming-config.mjs` and
+  `src/config/locations.mjs`; `src/config/paths.mjs` keeps only `BASE_PATHS`,
+  `getOrchestrationPath`, `getProjectConfig` and `getGeneratedDir`. `project init` no
+  longer writes `naming:` / `database:`, and `project scan` no longer proposes `naming:`.
+  `templates/entity/new/prompt.js` drops the 69 locals no template read (1570 → 377
+  lines); the clean-lite-ps extension already built everything else. Generated output is
+  byte-identical — the baseline snapshot is unchanged.
+- **The `clean` backend pipeline and `generate.architecture`** (#677). The full
+  Clean Architecture templates (then at `templates/entity/new/backend/`, a path the
+  surviving pipeline took over in NAME-2: separate command/query classes, repository interfaces, `domain/` / `application/` /
+  `infrastructure/` / `presentation/` layout) are gone. Every entity is emitted
+  as a clean-lite-ps module folder under `paths.modules_dir`. `generate.architecture`
+  and the `clean`-only toggles `generate.drizzleSchema`, `commands`, `queries` and
+  `dtos` are removed from the schema, so each is now an unknown-key error naming
+  the key and the file. **Delete those lines from `codegen.config.yaml`.** There
+  is no alias and no migration path. The schema default was `clean`, so **a
+  project whose config never set `architecture` was generating `clean` output
+  and now gets the clean-lite-ps module tree.** Regenerate, then delete the
+  old `domain/`, `application/`, `infrastructure/` and `presentation/` trees.
+  Other effects: the frontend emitter's generated `update` always uses
+  `PATCH` (the clean-lite-ps controller's verb; `clean` used `PUT`).
+  `project init`, `project scan` and the project status pane no longer write or
+  show an architecture. The analyzer's `pattern_clean_pipeline_noop` warning and
+  `validatePatternProject` are gone. The scanner reports an existing
+  domain/application folder layout as `layered` (was `clean`).
 - **Config keys nothing read** (#640) — each is now rejected by name:
   `paths.packages`, `paths.schema_dir`, `paths.manifest_dir`;
   `generate.schemaServer`, `generate.schemaClient`, `generate.electricMigrations`
@@ -662,8 +835,8 @@ and no one-argument form. Generated repositories already emit it — regenerate.
 - **v1 Drizzle `relations()` emission** (#583). Drizzle 1.0 removes `relations`
   from the `drizzle-orm` root export, so every generated project with a
   relationship stopped compiling on 1.0. Nothing generated consumed the const —
-  it was an opt-in extension for hand-written queries. All three backend
-  pipelines lose it, along with the now-dead sibling-table imports it was the
+  it was an opt-in extension for hand-written queries. Every backend
+  template loses it, along with the now-dead sibling-table imports it was the
   only reader of. Everything else relationships drive is untouched: FK columns,
   indexes, `on_delete`, service-layer composition and `queries:`. The slot is
   deliberately left empty until REL-1 (#586) emits a whole-set v2
