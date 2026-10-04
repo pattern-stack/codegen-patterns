@@ -63,6 +63,11 @@ import {
 } from "./assembly-emission-generator";
 import { subsystemsImport, type RuntimeMode } from "./runtime-import";
 import { emittedStem } from '../../config/file-naming.js';
+import {
+  fieldColumnNullable,
+  foreignKeyColumnNullable,
+  type FieldNullabilityDeclaration,
+} from "../../schema/field-nullability";
 import { composePatterns, declaredPatternNames, getPattern } from "../../patterns/index.js";
 import pluralize from "pluralize";
 
@@ -853,7 +858,7 @@ export interface EmitAdaptersEntity {
      *  primitive's static filter const + cursor divisibility (RFC-0003 R3). */
     detection?: Record<string, DetectionConfig>;
   };
-  fields?: Record<string, { type?: string; nullable?: boolean }>;
+  fields?: Record<string, { type?: string } & FieldNullabilityDeclaration>;
   relationships?: Record<
     string,
     { type?: string; target?: string; foreign_key?: string; nullable?: boolean }
@@ -1298,7 +1303,7 @@ export function buildSinkInput(
     .filter(isCopyThrough)
     .map(([name, f]) => ({
       camelName: snakeToCamel(name),
-      tsType: tsTypeFor(f.type, f.nullable),
+      tsType: tsTypeFor(f.type, fieldColumnNullable(f)),
     }));
 
   // copyThroughFields — WRITE-SURFACE copy-through (excludeSet applied).
@@ -1308,7 +1313,7 @@ export function buildSinkInput(
     .filter((entry) => isCopyThrough(entry) && !excludeSet.has(entry[0]))
     .map(([name, f]) => ({
       camelName: snakeToCamel(name),
-      tsType: tsTypeFor(f.type, f.nullable),
+      tsType: tsTypeFor(f.type, fieldColumnNullable(f)),
     }));
 
   // FK external keys — derived via fkWriteKey() which mirrors processBelongsTo's
@@ -1336,7 +1341,9 @@ export function buildSinkInput(
       const foreignKey = rel.foreign_key ?? `${relName}_id`;
       return {
         camelName: snakeToCamel(foreignKey),
-        tsType: rel.nullable ? "string | null" : "string",
+        tsType: foreignKeyColumnNullable(rel.nullable, fields[foreignKey])
+          ? "string | null"
+          : "string",
       };
     });
 

@@ -123,7 +123,6 @@ describe('#490 contract (a): both derivations exclude conversationExternalId fro
     false,
     false,
     false,
-    {},
     sinkPolicyExclude,
   ) as {
     integrationConfig: { writeColumns: string[] };
@@ -197,7 +196,6 @@ describe('#490 contract (b): excluded field stays in projectionColumns/projectio
     false,
     false,
     false,
-    {},
     sinkPolicyExclude,
   ) as {
     integrationConfig: { projectionColumns: string[] };
@@ -369,7 +367,6 @@ describe('#490 buildIntegrationSurface: exclusion scope fence (write-only)', () 
     true,   // hasTimestamps
     false,
     false,
-    {},
     sinkPolicyExclude,
   ) as {
     integrationConfig: { writeColumns: string[]; projectionColumns: string[]; softDelete: boolean };

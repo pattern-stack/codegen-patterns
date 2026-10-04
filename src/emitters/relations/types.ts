@@ -8,9 +8,8 @@
  *
  * The context deliberately carries the RAW, zod-parsed `EntityDefinition`
  * rather than the analyzer's `ParsedEntity`: `ParsedRelationship` drops the
- * relationship's `nullable:`, and `ParsedField` collapses "undeclared" into
- * `false`, so the `optional:` precedence in `build-graph.ts` cannot be
- * reproduced from the parsed model. Naming still comes from the cross-entity
+ * relationship's `nullable:`, which the `optional:` precedence in
+ * `build-graph.ts` (`foreignKeyColumnNullable`) reads directly. Naming still comes from the cross-entity
  * registry — the target entity's own `plural`, never a re-pluralized string.
  */
 

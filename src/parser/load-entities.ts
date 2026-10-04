@@ -37,6 +37,7 @@ import {
 } from '../schema/relationship-definition.schema';
 import type { FieldDefinition } from '../schema/entity-definition.schema';
 import { deriveRoleRelationships, roleForeignKey } from '../roles/derive';
+import { fieldColumnNullable, foreignKeyColumnNullable } from '../schema/field-nullability';
 
 /**
  * Map the YAML `ui_*` keys onto `ParsedField.ui`. Shared by the entity and
@@ -128,7 +129,7 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 			name,
 			type: fieldDef.type,
 			required: fieldDef.required ?? false,
-			nullable: fieldDef.nullable ?? false,
+			nullable: fieldColumnNullable(fieldDef),
 			unique: fieldDef.unique ?? false,
 			index: fieldDef.index ?? false,
 			foreignKey: fieldDef.foreign_key ? parseForeignKey(fieldDef.foreign_key) : undefined,
@@ -209,6 +210,21 @@ function transformToEntity(result: LoadResult): ParsedEntity {
 				role: name,
 			});
 		}
+	}
+
+	// A `belongs_to`'s FK column is the field's column, but an explicit
+	// `nullable:` on the relationship (or the role deriving it) outranks the
+	// field's own declaration — the precedence the entity template emits.
+	const fkNullable = new Map<string, boolean | undefined>();
+	for (const rel of Object.values(definition.relationships ?? {})) {
+		if (rel.type === 'belongs_to' && rel.foreign_key) fkNullable.set(rel.foreign_key, rel.nullable);
+	}
+	for (const derived of Object.values(deriveRoleRelationships(definition.roles))) {
+		fkNullable.set(derived.foreign_key, derived.nullable);
+	}
+	for (const [fk, relNullable] of fkNullable) {
+		const field = entity.fields.get(fk);
+		if (field) field.nullable = foreignKeyColumnNullable(relNullable, definition.fields[fk]);
 	}
 
 	// Parse integration configuration
@@ -452,7 +468,7 @@ function transformToRelationshipDefinition(
 				name,
 				type: fieldDef.type,
 				required: fieldDef.required ?? false,
-				nullable: fieldDef.nullable ?? false,
+				nullable: fieldColumnNullable(fieldDef),
 				unique: fieldDef.unique ?? false,
 				index: fieldDef.index ?? false,
 				foreignKey: fieldDef.foreign_key

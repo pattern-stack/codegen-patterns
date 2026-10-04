@@ -131,14 +131,14 @@ describe('buildIntegrationSurface derivation', () => {
     expect(cfg.projectionColumns).not.toContain('provider');
   });
 
-  it('marks a required FK resolver strict and leaves a nullable FK opportunistic', () => {
-    // strictness is sourced from the FK FIELD's `required` — NOT the
-    // relationship-level `nullable` (which defaults true when undeclared).
+  it('marks a NOT NULL FK resolver strict and leaves a nullable FK opportunistic', () => {
+    // strictness is the FK COLUMN's nullability — `rel.nullable`, which
+    // processBelongsTo resolves by `foreignKeyColumnNullable` (#613).
     const belongsTo = [
       {
         field: 'account_id', camelField: 'accountId', relationKey: 'account',
         relatedTable: 'accounts', relatedEntity: 'account', isSelfFk: false,
-        nullable: true, importPath: '../accounts/account.entity',
+        nullable: false, importPath: '../accounts/account.entity',
       },
       {
         field: 'parent_id', camelField: 'parentId', relationKey: 'parent',
@@ -146,16 +146,11 @@ describe('buildIntegrationSurface derivation', () => {
         nullable: true, importPath: '../leads/lead.entity',
       },
     ];
-    const fields = {
-      account_id: { type: 'uuid', required: true, foreign_key: 'accounts.id' },
-      parent_id: { type: 'uuid', nullable: true, foreign_key: 'leads.id' },
-    };
-    const surface = buildIntegrationSurface('Integrated', [], belongsTo, true, false, false, fields) as any;
+    const surface = buildIntegrationSurface('Integrated', [], belongsTo, true, false, false) as any;
     const byCol = Object.fromEntries(surface.fkResolvers.map((r: any) => [r.column, r]));
-    // required, non-null FK column → strict (unresolved parent = failed item)
+    // NOT NULL FK column → strict (unresolved parent = failed item)
     expect(byCol.accountId.strict).toBe(true);
-    // nullable FK (self-FK hierarchy) → opportunistic, even though the
-    // relationship-level nullable would have defaulted the same way
+    // nullable FK (self-FK hierarchy) → opportunistic
     expect(byCol.parentId.strict).toBe(false);
   });
 });
@@ -259,32 +254,32 @@ describe('#490 buildIntegrationSurface — delete knob: resolveSoftDeleteBoolean
 
   it('soft → true (regardless of hasSoftDelete)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, {}, { delete: 'soft' }) as any;
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, { delete: 'soft' }) as any;
     expect(surface.integrationConfig.softDelete).toBe(true);
   });
 
   it('tombstone → false (regardless of hasSoftDelete)', () => {
-    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, {}, { delete: 'tombstone' }) as any;
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, { delete: 'tombstone' }) as any;
     expect(surface.integrationConfig.softDelete).toBe(false);
   });
 
   it('noop → !!hasSoftDelete (false when no soft_delete behavior)', () => {
-    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, {}, { delete: 'noop' }) as any;
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, { delete: 'noop' }) as any;
     expect(surface.integrationConfig.softDelete).toBe(false);
   });
 
   it('noop → !!hasSoftDelete (true when soft_delete behavior present)', () => {
-    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, {}, { delete: 'noop' }) as any;
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, { delete: 'noop' }) as any;
     expect(surface.integrationConfig.softDelete).toBe(true);
   });
 
   it('absent delete knob → !!hasSoftDelete (false)', () => {
-    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false, {}) as any;
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, false) as any;
     expect(surface.integrationConfig.softDelete).toBe(false);
   });
 
   it('absent delete knob → !!hasSoftDelete (true)', () => {
-    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true, {}) as any;
+    const surface = buildIntegrationSurface('Integrated', [], [], false, false, true) as any;
     expect(surface.integrationConfig.softDelete).toBe(true);
   });
 });
@@ -308,7 +303,6 @@ describe('#490 buildIntegrationSurface — exclude_fields: writeColumns/writeFie
     false,
     false,
     false,
-    {},
     policy,
   ) as any;
 

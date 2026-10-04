@@ -69,7 +69,7 @@
             "type": "boolean"
           },
           "nullable": {
-            "description": "Database column allows NULL",
+            "description": "Database column allows NULL. Undeclared: NULL unless required: true. false (without required: true) needs a default:",
             "type": "boolean"
           },
           "max_length": {

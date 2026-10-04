@@ -11,6 +11,7 @@ import pluralize from 'pluralize';
 
 import type { EntityDefinition } from '../../schema/entity-definition.schema';
 import type { JunctionDefinition } from '../../schema/junction-definition.schema';
+import { foreignKeyColumnNullable } from '../../schema/field-nullability';
 import {
 	camelCase,
 	RelationKeyCollisionError,
@@ -89,37 +90,18 @@ export function entityScope(def: EntityDefinition): ScopeConfigLiteral | null {
 /**
  * `optional` for a `belongs_to` — whether the include's result may be null.
  *
- * Precedence, on the same YAML `processBelongsTo` reads
- * (`templates/entity/new/clean-lite-ps/prompt-extension.js:468-482`): an
- * explicit relationship `nullable:` wins, else the FK column's own `fields:`
- * declaration — `required: true` ⇒ NOT NULL ⇒ not optional, `nullable: true` ⇒
- * optional — else optional.
- *
- * The field branch keys off `required` alone, and deliberately does NOT read
- * `field.nullable`, for two compounding reasons:
- *
- *  - `FieldDefinitionSchema` defaults BOTH flags to `false`
- *    (`entity-definition.schema.ts:172-173`), so after parsing, a field that
- *    declared neither is indistinguishable from one that declared
- *    `nullable: false`. The template sees the raw YAML and treats "declared
- *    neither" as nullable (#613).
- *  - `nullable: true` can never coexist with `required: true` — the schema
- *    rejects that pair outright — so reading it could only ever agree with
- *    `required`.
- *
- * The result matches the template for every declaration except
- * `{ required: false, nullable: false }`, where the column is NOT NULL but the
- * include's type stays `T | null`. Over-permissive, never a wrong row.
+ * Exactly the FK column's nullability, by the one rule the entity template
+ * emits the column with (`foreignKeyColumnNullable`, `field-nullability.ts`):
+ * an explicit relationship `nullable:` wins, else the FK column's own
+ * `fields:` declaration, else optional. A NOT NULL FK — `required: true`, or
+ * `nullable: false` with a `default:` — is never optional (#613).
  */
 function belongsToOptional(
 	def: EntityDefinition,
 	fk: string,
 	relNullable: boolean | undefined,
 ): boolean {
-	if (relNullable !== undefined && relNullable !== null) return relNullable;
-	const field = def.fields[fk];
-	if (!field) return true;
-	return field.required !== true;
+	return foreignKeyColumnNullable(relNullable, def.fields[fk]);
 }
 
 /** Add an edge, failing loudly on a duplicate key for the same table. */

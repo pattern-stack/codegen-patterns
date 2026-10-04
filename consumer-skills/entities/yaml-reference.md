@@ -34,7 +34,24 @@ fields:
   score:
     type: decimal
     nullable: true
+  pts:
+    type: integer
+    nullable: false        # NOT NULL, optional on create: the DB fills the default
+    default: 0
 ```
+
+Nullability — `required` is the create contract, `nullable` the column:
+
+| Declaration | Column | Create DTO | Read type |
+|---|---|---|---|
+| `required: true` | NOT NULL | required | `T` |
+| `nullable: false` + `default:` | NOT NULL, DB default | optional | `T` |
+| `nullable: true`, or neither declared | NULL | optional, accepts `null` | `T \| null` |
+| `nullable: false` without `default:` | — | generation error: say `required: true` | — |
+| `required: true` + `nullable: true` | — | generation error | — |
+
+A `belongs_to`'s FK column follows the same rule from its `fields:` entry; a
+`nullable:` on the relationship itself outranks it.
 
 Type notes:
 - `uuid` — typically the PK and foreign keys.

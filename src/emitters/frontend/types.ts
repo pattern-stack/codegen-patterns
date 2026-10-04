@@ -114,8 +114,7 @@ export interface FrontendEmitContext {
 	 * YAML, so the client descriptor and the Drizzle manifest are the same
 	 * declaration projected twice (charter I1). The raw definition is required
 	 * rather than `parsed` for the reason REL-1 records: `ParsedRelationship`
-	 * drops `nullable:` and `ParsedField` collapses "undeclared" into `false`,
-	 * so the `optional` precedence cannot be reproduced from the parsed model.
+	 * drops `nullable:`, which the `optional` precedence reads directly.
 	 *
 	 * Absent ⇒ no graph is emitted (a context built without them — an older
 	 * test fixture — keeps its previous output exactly).
