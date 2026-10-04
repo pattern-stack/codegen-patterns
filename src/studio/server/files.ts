@@ -26,11 +26,17 @@ import { JunctionDefinitionSchema } from '../../schema/junction-definition.schem
 import { RelationshipDefinitionSchema } from '../../schema/relationship-definition.schema.js';
 import { CodegenConfigSchema } from '../../schema/codegen-config.schema.js';
 import type { StudioFile, StudioFileKind, ZodIssueLike } from '../shared/api.js';
-import { resolveProjectPath, toProjectRelative } from './paths.js';
+import { realProjectDir, resolveProjectPath, toProjectRelative } from './paths.js';
 
 export const CONFIG_FILENAME = 'codegen.config.yaml';
 
-/** The directories Studio reads definitions from, all absolute. */
+/**
+ * The directories Studio reads definitions from, all absolute and rooted at the
+ * project's REAL path. `resolveProjectPath` / `toProjectRelative` check and
+ * relativize against the symlink-resolved root, so a directory spelled through
+ * the unresolved one (macOS `os.tmpdir()` is `/var/…` → `/private/var/…`) would
+ * relativize to a `../../…` climb and never match a resolved path (#750).
+ */
 export interface DefinitionDirs {
 	entities: string;
 	providers: string;
@@ -39,13 +45,14 @@ export interface DefinitionDirs {
 }
 
 export function definitionDirs(projectDir: string): DefinitionDirs {
-	const config = loadProjectConfig(projectDir);
-	const layout = projectLayout(projectDir, config);
+	const root = realProjectDir(projectDir);
+	const config = loadProjectConfig(root);
+	const layout = projectLayout(root, config);
 	return {
 		entities: layout.entities,
 		providers: layout.providers,
-		junctions: junctionsDirFor(projectDir),
-		relationships: path.resolve(projectDir, 'relationships'),
+		junctions: junctionsDirFor(root),
+		relationships: path.resolve(root, 'relationships'),
 	};
 }
 
@@ -97,7 +104,7 @@ export function listFiles(projectDir: string): StudioFile[] {
 	for (const f of yamlsIn(dirs.junctions)) add(f, 'junction');
 	for (const f of yamlsIn(dirs.relationships)) add(f, 'relationship');
 
-	const configPath = path.join(projectDir, CONFIG_FILENAME);
+	const configPath = path.join(realProjectDir(projectDir), CONFIG_FILENAME);
 	if (fs.existsSync(configPath)) add(configPath, 'config');
 
 	const order: Record<StudioFileKind, number> = {
@@ -122,7 +129,7 @@ export function kindForPath(projectDir: string, relPath: string): StudioFileKind
 		return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 	};
 
-	if (abs === path.join(projectDir, CONFIG_FILENAME)) return 'config';
+	if (abs === path.join(realProjectDir(projectDir), CONFIG_FILENAME)) return 'config';
 	if (under(dirs.junctions)) return 'junction';
 	if (under(dirs.relationships)) return 'relationship';
 	if (under(dirs.providers)) return null; // provider YAML is not a Studio surface
