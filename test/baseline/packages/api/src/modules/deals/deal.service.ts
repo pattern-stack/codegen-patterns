@@ -94,10 +94,20 @@ export class DealService extends WithAnalytics(
    * Fetch the User parent for this Deal.
    * Two repo calls: find self by id → find target by FK.
    */
-  async user(dealId: string): Promise<User | null> {
+  async owner(dealId: string): Promise<User | null> {
     const entity = await this.repository.findById(dealId);
     if (!entity) return null;
     return entity.ownerId ? this.userRepo.findById(entity.ownerId) : null;
+  }
+
+  /**
+   * Fetch the User parent for this Deal.
+   * Two repo calls: find self by id → find target by FK.
+   */
+  async closer(dealId: string): Promise<User | null> {
+    const entity = await this.repository.findById(dealId);
+    if (!entity) return null;
+    return entity.closedById ? this.userRepo.findById(entity.closedById) : null;
   }
 
   /**

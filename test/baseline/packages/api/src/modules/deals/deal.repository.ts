@@ -29,7 +29,8 @@ export interface DealIntegrationWrite {
   readonly stage: 'prospecting' | 'qualification' | 'proposal' | 'negotiation' | 'closed_won' | 'closed_lost';
   readonly closeDate: Date | null;
   readonly probability: number | null;
-  readonly userExternalId?: string | null;
+  readonly ownerExternalId?: string | null;
+  readonly closerExternalId?: string | null;
   readonly accountExternalId?: string | null;
   /** Flat custom-field bag (EAV). */
   readonly fields?: Record<string, unknown>;
@@ -49,6 +50,7 @@ export interface DealIntegrationProjection {
   readonly closeDate: Date | null;
   readonly probability: number | null;
   readonly ownerId: string;
+  readonly closedById: string | null;
   readonly accountId: string;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -112,10 +114,11 @@ export class DealRepository extends IntegratedEntityRepository<
     conflictTarget: ['provider', 'externalId'],
     writeColumns: ['name', 'amount', 'stage', 'closeDate', 'probability'],
     fkResolvers: [
-      { column: 'ownerId', writeKey: 'userExternalId', refTable: users, strict: true },
+      { column: 'ownerId', writeKey: 'ownerExternalId', refTable: users, strict: true },
+      { column: 'closedById', writeKey: 'closerExternalId', refTable: users },
       { column: 'accountId', writeKey: 'accountExternalId', refTable: accounts, strict: true },
     ],
-    projectionColumns: ['id', 'externalId', 'name', 'amount', 'stage', 'closeDate', 'probability', 'ownerId', 'accountId', 'createdAt', 'updatedAt'],
+    projectionColumns: ['id', 'externalId', 'name', 'amount', 'stage', 'closeDate', 'probability', 'ownerId', 'closedById', 'accountId', 'createdAt', 'updatedAt'],
     eav: false,
     softDelete: true,
   };
@@ -266,6 +269,28 @@ export class DealRepository extends IntegratedEntityRepository<
       where: {
         AND: [
           { ownerId: { eq: id } },
+          { RAW: (t) => this.rootScopeRawOn(t, { softDelete: true }) },
+        ],
+      },
+      with: opts.with,
+      ...(opts.limit === undefined ? {} : { limit: opts.limit }),
+    });
+    return rows as Array<DealResult<TWith>>;
+  }
+
+  async findByClosedById<TWith extends DealInclude = DealNoInclude>(
+    id: string,
+    opts?: { cursor?: string; limit?: number; with?: TWith },
+  ): Promise<Array<DealResult<TWith>>> {
+    if (opts?.with === undefined) {
+      let q = this.baseQuery(eq(this.table['closedById'], id));
+      if (opts?.limit) q = q.limit(opts.limit) as typeof q;
+      return (await q) as Array<DealResult<TWith>>;
+    }
+    const rows = await this.db.query.deals.findMany({
+      where: {
+        AND: [
+          { closedById: { eq: id } },
           { RAW: (t) => this.rootScopeRawOn(t, { softDelete: true }) },
         ],
       },

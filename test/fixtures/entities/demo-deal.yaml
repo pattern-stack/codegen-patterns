@@ -27,6 +27,14 @@ fields:
     required: true
     foreign_key: accounts.id
     index: true
+  # A second belongs_to onto `user` (#731): two edges to one target must emit
+  # one table import, and per-edge members keyed by the RELATIONSHIP name
+  # (`owner()` / `closer()`, `ownerExternalId` / `closerExternalId`), never
+  # by the target's.
+  closed_by_id:
+    type: uuid
+    nullable: true
+    foreign_key: users.id
   close_date:
     type: date
     nullable: true
@@ -43,6 +51,10 @@ relationships:
     type: belongs_to
     target: user
     foreign_key: owner_id
+  closer:
+    type: belongs_to
+    target: user
+    foreign_key: closed_by_id
   account:
     type: belongs_to
     target: account

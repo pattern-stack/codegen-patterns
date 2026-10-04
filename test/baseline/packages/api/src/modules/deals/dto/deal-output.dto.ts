@@ -4,6 +4,7 @@ import { z } from 'zod';
 export const DealOutputSchema = z.object({
   id: z.string().uuid(),
   ownerId: z.string().uuid(),
+  closedById: z.string().uuid().nullable(),
   accountId: z.string().uuid(),
   name: z.string(),
   amount: z.coerce.string().nullable(),

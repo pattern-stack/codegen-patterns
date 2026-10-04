@@ -726,12 +726,15 @@ function processBelongsTo(relationships, naming, fields = {}) {
     const onDeleteYaml = rel.on_delete ?? 'restrict';
     const onDelete = mapOnDelete(onDeleteYaml);
 
-    // Relation key: for self-FKs derive from the FK column name
-    // (parent_account_id → parentAccount) to avoid colliding with the
-    // table's own snake_case name. For non-self-FKs preserve the prior
-    // behavior of using the target entity name verbatim so existing
-    // consumer code (e.g. drizzle queryBuilder.with.field_definition)
-    // keeps working.
+    // Relation key — names this edge's per-relationship members (the
+    // service's parent-fetch method, the Integrated write key
+    // `<relationKey>ExternalId`). For self-FKs derive from the FK column name
+    // (parent_account_id → parentAccount) to avoid colliding with the table's
+    // own snake_case name. Otherwise it is the RELATIONSHIP name, verbatim —
+    // as a has_many's member is — never the target's: two belongs_to onto one
+    // target (`home_team` / `away_team` → `nba_team`) are two edges, and
+    // keying by target gave them one method and one write key between them
+    // (#731). Casing is #494 / #697's, not changed here.
     let relationKey;
     if (rel.role) {
       // CAP-2: a role names its own edge. Keying by target would give `host:
@@ -743,7 +746,7 @@ function processBelongsTo(relationships, naming, fields = {}) {
       const base = field.endsWith('_id') ? field.slice(0, -3) : field;
       relationKey = camelCase(base);
     } else {
-      relationKey = target;
+      relationKey = relName;
     }
 
     result.push({
@@ -1830,6 +1833,16 @@ export function buildBackendLocals(definition, baseLocals) {
   const fieldFkImports = fieldFeatures.fkImports.filter(
     (imp) => !belongsToTables.has(imp.relatedTable),
   );
+  // The entity file's parent-table imports for its belongs_to columns: one per
+  // TABLE, not one per edge — two belongs_to onto one target reference the
+  // same table export, and importing it twice is TS2300 (#731). The entity's
+  // own table is declared in the file, never imported.
+  const belongsToTableImports = [];
+  for (const rel of belongsTo) {
+    if (rel.relatedTable === entityNamePlural) continue;
+    if (belongsToTableImports.some((imp) => imp.relatedTable === rel.relatedTable)) continue;
+    belongsToTableImports.push({ relatedTable: rel.relatedTable, importPath: rel.importPath });
+  }
 
   // Composite unique indexes (#356).
   const uniqueIndexExpressions = processUniqueIndexes(
@@ -2317,6 +2330,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // entries: single-column indexes (#355) + composite unique indexes (#356)
     // + the external_id_tracking unique index.
     fieldFkImports,
+    belongsToTableImports,
     tableConstraints,
 
     // Declarative queries

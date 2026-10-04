@@ -1221,23 +1221,25 @@ export function emitAdapters(opts: EmitAdaptersOptions): EmitAdaptersResult {
 /**
  * Derive the FK external-key write-surface name for a `belongs_to` relationship,
  * mirroring `processBelongsTo`'s `relationKey` branches in
- * `templates/entity/new/backend/entity-locals.js:447-460`, then
- * appending `ExternalId`.
+ * `templates/entity/new/backend/entity-locals.js`, then appending `ExternalId`.
  *
- * Three shapes (see spec #487 anti-drift table):
+ * Two shapes (see spec #487 anti-drift table):
  *   - self-FK  → `camelCase(foreign_key − _id) + 'ExternalId'`
  *     (e.g. `parent_account_id` + target `account` → `parentAccountExternalId`)
- *   - non-self → `target + 'ExternalId'` (target VERBATIM, snake retained)
- *     (e.g. target `account` → `accountExternalId`;
- *            target `sales_account` → `sales_accountExternalId`)
+ *   - non-self → `relationshipName + 'ExternalId'` (the RELATIONSHIP name,
+ *     VERBATIM, snake retained — never the target's: two belongs_to onto one
+ *     target are two write keys, `home_teamExternalId` / `away_teamExternalId`,
+ *     #731)
+ *     (e.g. relationship `account` → `accountExternalId`;
+ *            relationship `sales_account` → `sales_accountExternalId`)
  *
  * The non-self snake-retention is a deliberate wart mirrored from the template:
- * `relationKey` is overloaded (also the Drizzle relation name + service accessor)
- * so normalising it here would corrupt generated consumer code. Normalization is
- * tracked as a follow-up (#494). Source of truth: prompt-extension.js:447-460.
+ * `relationKey` is overloaded (also the service accessor) so normalising it here
+ * would corrupt generated consumer code. Normalization is tracked as a follow-up
+ * (#494).
  */
 export function fkWriteKey(
-  target: string,
+  relationshipName: string,
   foreignKey: string,
   isSelfFk: boolean,
 ): string {
@@ -1246,8 +1248,8 @@ export function fkWriteKey(
     const base = foreignKey.endsWith("_id") ? foreignKey.slice(0, -3) : foreignKey;
     return snakeToCamel(base) + "ExternalId";
   }
-  // Non-self: target verbatim (may be snake, e.g. sales_account → sales_accountExternalId)
-  return `${target}ExternalId`;
+  // Non-self: relationship name verbatim (may be snake, e.g. sales_account → sales_accountExternalId)
+  return `${relationshipName}ExternalId`;
 }
 
 /**
@@ -1310,7 +1312,7 @@ export function buildSinkInput(
     }));
 
   // FK external keys — derived via fkWriteKey() which mirrors processBelongsTo's
-  // relationKey branches (prompt-extension.js:447-460) exactly. isSelfFk is
+  // relationKey branches (entity-locals.js) exactly. isSelfFk is
   // detected the same way the template does: pluralize(target) === entityNamePlural
   // (prompt-extension.js:440-441).
   const entityNamePlural = def.entity.plural ?? pluralize.plural(def.entity.name);
@@ -1320,7 +1322,7 @@ export function buildSinkInput(
       const target = rel.target ?? relName;
       const foreignKey = rel.foreign_key ?? `${target}_id`;
       const isSelfFk = pluralize.plural(target) === entityNamePlural;
-      return { writeKey: fkWriteKey(target, foreignKey, isSelfFk) };
+      return { writeKey: fkWriteKey(relName, foreignKey, isSelfFk) };
     });
 
   // Local FK columns — the projection carries the FK column itself (e.g.

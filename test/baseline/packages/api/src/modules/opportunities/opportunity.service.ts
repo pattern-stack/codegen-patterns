@@ -84,7 +84,7 @@ export class OpportunityService extends WithAnalytics(
    * Fetch the User parent for this Opportunity.
    * Two repo calls: find self by id → find target by FK.
    */
-  async user(opportunityId: string): Promise<User | null> {
+  async owner(opportunityId: string): Promise<User | null> {
     const entity = await this.repository.findById(opportunityId);
     if (!entity) return null;
     return entity.ownerId ? this.userRepo.findById(entity.ownerId) : null;
@@ -94,7 +94,7 @@ export class OpportunityService extends WithAnalytics(
    * Fetch the DealState parent for this Opportunity.
    * Two repo calls: find self by id → find target by FK.
    */
-  async deal_state(opportunityId: string): Promise<DealState | null> {
+  async state(opportunityId: string): Promise<DealState | null> {
     const entity = await this.repository.findById(opportunityId);
     if (!entity) return null;
     return entity.stateId ? this.dealStateRepo.findById(entity.stateId) : null;
