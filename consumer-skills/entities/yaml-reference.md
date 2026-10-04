@@ -242,9 +242,12 @@ compile with `Cannot find module '@pattern-stack/query-surface'`.
 
 Everything in it is **declared** from your YAML. Two consequences worth knowing:
 
-- **Atomic measures are not in the emitted catalog.** The semantic layer derives
-  them from the `role: measure` tags; the catalog carries only your `ratio` /
-  `derived` / `cumulative` entries.
+- **Atomic measures are derived, not written out.** `buildAggregateModel()`
+  builds its catalog by calling the semantic layer's own `measuresFromRegistry`
+  over the `role: measure` tags and adding your `ratio` / `derived` /
+  `cumulative` entries over it. So a query can name either kind —
+  `{ ref: 'amount.sum' }` or `{ ref: 'win_rate' }` — and the key rule has one
+  owner, the package.
 - **Registry keys are your entity names** (singular snake), junctions are keyed
   by `<a>_<b>`, and relationship keys are your YAML relationship names verbatim.
   Those are the names a query uses.

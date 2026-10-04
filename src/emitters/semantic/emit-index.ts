@@ -2,14 +2,14 @@
  * Semantic emitter — the emitted barrel (SEM-2).
  */
 
-import { GENERATED_BANNER, TYPES_MODULE } from './emit-model';
+import { GENERATED_BANNER, QUERY_SURFACE_MODULE } from './emit-model';
 
 export const SEMANTIC_INDEX_FILE = 'index.ts';
 
 /**
  * Render `<generated>/semantic/index.ts`.
  *
- * The type re-export names {@link TYPES_MODULE}, so consumers can import the
+ * The type re-export names {@link QUERY_SURFACE_MODULE}, so consumers can import the
  * vocabulary from the barrel alongside the model. Every name below is exported
  * from the package root.
  */
@@ -28,6 +28,6 @@ export type {
 	MeasureCatalog,
 	MeasureDef,
 	RelDescriptor,
-} from '${TYPES_MODULE}';
+} from '${QUERY_SURFACE_MODULE}';
 `;
 }

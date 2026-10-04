@@ -280,6 +280,9 @@ metric — a Zod discriminated union may not hold a refined (`ZodEffects`) membe
 > expression-measure machinery the emitter never populates.
 > **SEM-4 (2026-10-04, #694):** the package published (0.3.1) and the fallback is gone — the emitted model imports
 > its types from `@pattern-stack/query-surface`, an optional peer; `types.ts` and the conformance test are deleted.
+> **#734 (2026-10-04):** the emitted catalog is `{ ...measuresFromRegistry(analytics), ...composites }` — the engine
+> reads `{ ref }` only from `model.catalog`, so composites alone failed every named measure. Still no atomic entry is
+> emitted; the model calls the package's deriver (ADR-045, 2026-10-04 revision).
 
 New whole-set emitter `src/emitters/semantic/` shaped like `src/emitters/frontend/` (`loadSemanticEmitContext` +
 `emitSemanticModel(ctx, outDir)`, name-sorted entities, complete-file writes with the `@generated` banner). Post-step

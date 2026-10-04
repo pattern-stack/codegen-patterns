@@ -124,6 +124,35 @@ withdrawn, and decision 4's named `has_one` expectation went with the conformanc
 of codegen (`^0.3.1`) that a project with `generate.semantic: true` installs, and an exact devDependency here, which
 is what lets SEM-3's demonstration run in CI. Decision 2 is unchanged.
 
+## Revision — 2026-10-04, #734: the catalog calls the package's deriver
+
+**Found:** `@pattern-stack/query-surface@0.3.1`'s engine resolves a named measure (`{ ref }`) only from
+`model.catalog` (`normalizeAggregate(model.catalog ?? {}, …)`) and never calls `measuresFromRegistry` itself. SEM-2's
+decision 2 (catalog = composites only) therefore made every `{ ref }` fail against the emitted model — an atomic one
+with `unknown measure ref`, a composite with `leg measure … is not in the catalog`, because its legs are atomic.
+
+**Decision:** `buildAggregateModel()` builds the catalog as
+`{ ...measuresFromRegistry(analytics), ...composites }` — the package's own deriver, called at model-build time over
+the emitted `analytics`, with the declared composites over it.
+
+- **Decision 2 holds as written.** The emitter still writes no atomic entry; it writes a *call*. The tag → key rule
+  has one owner (the package) and one emitter of its result (the package, at call time), which is what §Consequences'
+  "one rule, one emitter of the result" asks for. Codegen's `deriveAtomicMeasureKeys` stays a parse-time replica used
+  only to resolve metric legs and refuse collisions.
+- **The spread order shadows nothing.** `codegen entity validate` already refuses a metric named like a derived
+  measure and an atomic key declared on two entities, so the two halves have disjoint keys for any model that
+  generates.
+- **The generated model now imports one runtime value** from the package root, not only types. Measured before
+  building on it: with only `drizzle-orm` installed beside `@pattern-stack/query-surface@0.3.1`,
+  `import { measuresFromRegistry } from '@pattern-stack/query-surface'` loads under both bun and node. The root entry
+  reaches `drizzle-orm` only; `@nestjs/*`, `zod` and the MCP SDK are imported from the `./nest` and `./mcp` subpaths.
+  If a later release makes the root load an optional peer, this decision is to be revisited, not worked around.
+- **Rejected: the package derives atomic entries when `catalog` lacks a leg.** It would make the engine own the
+  merge too, which is arguably the better home, but it is a change to another repository's contract; the call here is
+  the same keys either way and can be deleted if the package takes it on.
+- **Host consequence:** a host that merges `measuresFromRegistry(model.analytics)` into the catalog by hand can delete
+  that merge; it produces the same keys.
+
 ## Follow-ups
 
 - **SEM-3** demonstrates the model end to end against a fan-out trap.

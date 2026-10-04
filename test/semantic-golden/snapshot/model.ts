@@ -5,11 +5,12 @@ import { getColumns } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 import * as schema from '../schema';
-import type {
-	AggRegistry,
-	AggregateModel,
-	EntityDescriptor,
-	MeasureCatalog,
+import {
+	measuresFromRegistry,
+	type AggRegistry,
+	type AggregateModel,
+	type EntityDescriptor,
+	type MeasureCatalog,
 } from '@pattern-stack/query-surface';
 
 const tables: Record<string, PgTable> = {
@@ -168,9 +169,8 @@ const analytics: AggRegistry = {
 	},
 };
 
-// Composite metrics only. Atomic measures are DERIVED by the consuming
-// package from the `role: 'measure'` field tags above.
-const catalog: MeasureCatalog = {
+// Composite metrics from `analytics.metrics:`.
+const composites: MeasureCatalog = {
 	revenue_gap: { kind: 'derived', expr: { op: '-', left: { ref: 'annual_revenue.sum' }, right: { ref: 'amount.sum' } } },
 	running_pipeline: { kind: 'cumulative', measure: 'amount.sum', order_by: 'closed_at', partition_by: 'account_id' },
 	win_rate: { kind: 'ratio', numerator: 'won_amount.sum', denominator: 'amount.sum', label: 'Win rate' },
@@ -183,5 +183,8 @@ const catalog: MeasureCatalog = {
  * this module before the schema barrel is fully initialised is safe.
  */
 export function buildAggregateModel(): AggregateModel {
+	// Atomic measures are derived by the package from the `role: 'measure'`
+	// tags above — one owner of that rule; the composites are declared here.
+	const catalog: MeasureCatalog = { ...measuresFromRegistry(analytics), ...composites };
 	return { registry, analytics, tables, colByDbName, catalog };
 }

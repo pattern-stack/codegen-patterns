@@ -237,7 +237,8 @@ function assertNoV1Relations(source: string, label: string): void {
  * The consumer `tsc` pass already proves the tree COMPILES against the real
  * schema barrel under the consumer tsconfig, which is the gate that matters.
  * These assertions pin that it is not vacuously correct: the tags survived, the
- * catalog carries composites and no atomic entries, and the table identifiers
+ * catalog carries composites and no atomic entries (it calls the package's
+ * `measuresFromRegistry` for those, #734), and the table identifiers
  * are the ones the barrel actually exports.
  */
 function assertSemanticEmission(tmpDir: string): void {
@@ -305,10 +306,17 @@ function assertSemanticEmission(tmpDir: string): void {
 		'has_many descriptor',
 	);
 
-	// Composites present, atomic entries absent — the package derives those.
+	// Composites present, atomic entries absent — the package derives those,
+	// and the catalog CALLS it (#734); `tsc` then proves the value import
+	// resolves against the installed package.
 	assertContains(model, /win_rate: \{ kind: 'ratio'/, 'ratio metric');
 	assertContains(model, /pipeline_gap: \{ kind: 'derived'/, 'derived metric');
 	assertNotContains(model, /kind: 'atomic'/, 'semantic model must not emit atomic catalog entries');
+	assertContains(
+		model,
+		/const catalog: MeasureCatalog = \{ \.\.\.measuresFromRegistry\(analytics\), \.\.\.composites \};/,
+		'catalog = measuresFromRegistry(analytics) + composites (#734)',
+	);
 
 	// The model is a function, so importing it cannot run before the barrel is up.
 	assertContains(
