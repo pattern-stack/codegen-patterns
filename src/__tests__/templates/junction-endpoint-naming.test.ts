@@ -93,6 +93,29 @@ describe('junction endpoints resolve from their own YAML', () => {
 		expect(l.outputPaths.service).toBe('src/modules/opportunity-contacts/opportunity-contact.service.ts');
 	});
 
+	it('a multi-word endpoint is imported at its kebab stems, not its snake name (#730)', async () => {
+		const l = await junctionLocals(['fantasy_team', 'player'], {
+			fantasy_team: 'entity:\n  name: fantasy_team\n  plural: fantasy_teams\n  context: fantasy\n',
+			player: 'entity:\n  name: player\n  plural: players\n',
+		});
+		// The table export stays snake (a database identifier, NAME-2) ...
+		expect(l.leftTable).toBe('fantasy_teams');
+		// ... every file it is imported from is kebab, the way its own emission names it.
+		expect(l.leftEntityImportFromJunction).toBe('../fantasy/fantasy-teams/fantasy-team.entity');
+		expect(l.leftRepoImportFromJunction).toBe('../fantasy/fantasy-teams/fantasy-team.repository');
+		expect(l.leftModuleImportFromJunction).toBe('../fantasy/fantasy-teams/fantasy-teams.module');
+		expect(l.rightEntityImportFromJunction).toBe('../players/player.entity');
+
+		const rendered = ['entity.ejs.t', 'service.ejs.t', 'module.ejs.t', 'repository.ejs.t']
+			.map((t) => render(t, l))
+			.join('\n');
+		expect(rendered).toContain("import { fantasy_teams } from '../fantasy/fantasy-teams/fantasy-team.entity';");
+		expect(rendered).toContain("from '../fantasy/fantasy-teams/fantasy-team.repository';");
+		expect(rendered).toContain("import { FantasyTeamsModule } from '../fantasy/fantasy-teams/fantasy-teams.module';");
+		// No relative import specifier carries an underscore.
+		expect(rendered).not.toMatch(/from '\.[^']*_[^']*'/);
+	});
+
 	it('backend output and endpoint folders follow paths.modules_dir (PATH-1)', async () => {
 		const l = await junctionLocals(
 			['crew', 'person'],

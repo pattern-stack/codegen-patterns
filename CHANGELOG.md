@@ -20,6 +20,14 @@ resolve against.
 
 ### Fixed
 
+- **A junction with a multi-word endpoint compiles** (#730). `junction new` imported each endpoint's
+  entity, repository and module at a snake stem beside the kebab folder
+  (`../fantasy/fantasy-teams/fantasy_team.entity`), so `fantasy_team × player` emitted 12 `tsc` errors. The
+  specifiers now point at the files the endpoint's own emission writes (`entityModuleNaming`). Regenerate
+  junctions with a multi-word endpoint.
+- **A `has_many` onto a multi-word target gets its composition method.** The two-pass existence check
+  looked for a snake `<target>.entity.ts`, so `league.fantasy_teams()` / `player.game_logs()` were silently
+  never emitted. It now looks for the emitted kebab stem.
 - **The emitted frontend tree did not compile in a real install** (#620). The four `@tanstack/*`
   packages in the version-pairing contract each pin `@tanstack/db` **exactly** and release in
   lockstep, but `deps.ts` ranged them with carets — so a consumer installing exactly what codegen

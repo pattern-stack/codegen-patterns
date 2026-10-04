@@ -29,7 +29,8 @@ function render(template: string, locals: Record<string, unknown>): string {
 const PERSON = { name: 'person', plural: 'persons' };
 const CREW = { name: 'crew', plural: 'crews', context: 'org' };
 const CRITERION = { name: 'criterion', plural: 'criterions', context: 'meta' };
-const lookup = entityLookupFrom([PERSON, CREW, CRITERION]);
+const GAME_LOG = { name: 'game_log', plural: 'game_logs' };
+const lookup = entityLookupFrom([PERSON, CREW, CRITERION, GAME_LOG]);
 
 const tmpDirs: string[] = [];
 afterEach(() => {
@@ -150,6 +151,19 @@ describe('has_many', () => {
 		expect(render('module.ejs.t', after)).toContain(
 			"import { PersonRepository } from '../../persons/person.repository';",
 		);
+	});
+
+	it('a multi-word target is found at its KEBAB stem, the file its own emission writes', () => {
+		// A snake-stem existence check never found `game-logs/game-log.entity.ts`,
+		// so a multi-word has_many was silently left unwired (hoops dogfood F7).
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'name0-'));
+		tmpDirs.push(root);
+		const rels = { game_logs: { type: 'has_many', target: 'game_log', foreign_key: 'crew_id' } };
+		fs.mkdirSync(path.join(root, 'modules', 'game-logs'), { recursive: true });
+		fs.writeFileSync(path.join(root, 'modules', 'game-logs', 'game-log.entity.ts'), '');
+		const [gameLogs] = roster(root, rels).hasMany;
+		expect(gameLogs.targetExists).toBe(true);
+		expect(gameLogs.importPath).toBe('../../game-logs/game-log.repository');
 	});
 
 	it('a target with no entity YAML stays a soft skip (not wired, no error)', () => {

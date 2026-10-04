@@ -1,0 +1,21 @@
+# Minimal parent entity — sales_activity (Activity pattern)
+# Exercises cross-pattern pairing in smoke scenario B, and a MULTI-WORD
+# endpoint: its files are kebab (`sales-activities/sales-activity.entity.ts`)
+# while its name, table and FK column stay snake — the junction's imports
+# must reach the kebab stems (#730).
+entity:
+  name: sales_activity
+  plural: sales_activities
+  table: sales_activities
+  pattern: Activity
+
+fields:
+  type:
+    type: string
+    required: true
+  subject:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps

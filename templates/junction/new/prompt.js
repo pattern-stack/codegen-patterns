@@ -14,8 +14,8 @@
  */
 
 import fs from "node:fs";
-
-import { emittedStem } from '../../../src/config/file-naming.js';import path from "node:path";
+import path from "node:path";
+import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { junctionName as deriveJunctionName, junctionNaming } from "../../_shared/junction-fan-out.mjs";
@@ -312,23 +312,26 @@ export default {
     // The junction's own folder is flat (a junction has no `context:`).
     const junctionModuleDir = junction.moduleDir;
 
-    // Relative imports from the junction's folder to each endpoint's —
-    // computed from the two module folders, so an endpoint nested under a
-    // `context:` gets the extra segment. Flat siblings give `../<plural>`.
+    // Import specifiers from the junction's folder to each endpoint's entity,
+    // repository and module files — relative paths to the files the endpoint's
+    // own naming names (`entityModuleNaming`, NAME-2), so the stems are the
+    // emitted kebab ones and an endpoint nested under a `context:` gets the
+    // extra segment. Never `${endpoint}.entity` by hand: a multi-word endpoint
+    // emits `fantasy-team.entity`, not `fantasy_team.entity` (#730).
     // (The parents' side — their fan-out onto this junction — is rendered by
     // their own templates: templates/_shared/junction-fan-out.mjs, JUNC-0.)
-    const leftDirFromJunction = relativeModuleDir(junctionModuleDir, leftNaming.moduleDir);
-    const rightDirFromJunction = relativeModuleDir(junctionModuleDir, rightNaming.moduleDir);
+    const importFromJunction = (file) =>
+      `${relativeModuleDir(junctionModuleDir, path.posix.dirname(file))}/${path.posix.basename(file).replace(/\.ts$/, '')}`;
 
-    // Left/right repo + module import paths from the junction service's
-    // perspective (used by service.ejs.t to import target repos and by
-    // module.ejs.t to import the parent modules).
-    const leftRepoImportFromJunction = `${leftDirFromJunction}/${leftEntity}.repository`;
-    const rightRepoImportFromJunction = `${rightDirFromJunction}/${rightEntity}.repository`;
-    const leftEntityImportFromJunction = `${leftDirFromJunction}/${leftEntity}.entity`;
-    const rightEntityImportFromJunction = `${rightDirFromJunction}/${rightEntity}.entity`;
-    const leftModuleImportFromJunction = `${leftDirFromJunction}/${leftEntityPlural}.module`;
-    const rightModuleImportFromJunction = `${rightDirFromJunction}/${rightEntityPlural}.module`;
+    // Left/right repo + entity + module import paths from the junction's
+    // perspective (used by service.ejs.t to import target repos, entity.ejs.t
+    // for the FK tables and module.ejs.t to import the parent modules).
+    const leftRepoImportFromJunction = importFromJunction(leftNaming.repositoryFile);
+    const rightRepoImportFromJunction = importFromJunction(rightNaming.repositoryFile);
+    const leftEntityImportFromJunction = importFromJunction(leftNaming.entityFile);
+    const rightEntityImportFromJunction = importFromJunction(rightNaming.entityFile);
+    const leftModuleImportFromJunction = importFromJunction(leftNaming.moduleFile);
+    const rightModuleImportFromJunction = importFromJunction(rightNaming.moduleFile);
 
     // Parent module + repository class names.
     const leftRepositoryClass = `${leftEntityPascal}Repository`;

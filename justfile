@@ -54,7 +54,7 @@ test-smoke-junction:
     bun test/smoke/run-smoke-junction.ts --scenario junction --runtime vendored --layout custom
     bun test/smoke/run-smoke-junction.ts --scenario junction --runtime package --layout custom
 
-# Junction smoke: cross-domain pairing (opportunity × activity), both runtime
+# Junction smoke: cross-domain pairing (opportunity × sales_activity — a multi-word endpoint, #730), both runtime
 # modes (ADR-037)
 test-smoke-junction-cross-domain:
     bun test/smoke/run-smoke-junction.ts --scenario junction-cross-domain --runtime vendored

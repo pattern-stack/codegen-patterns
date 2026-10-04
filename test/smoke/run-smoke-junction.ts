@@ -278,8 +278,8 @@ function assertJunctionEmission(
   );
 
   // ── CGP-60: parent service fan-out (rendered by the parents, JUNC-0) ───
-  const leftParentSvc = reads(`${P.modules}/${pluralize(leftEnt)}/${leftEnt}.service.ts`);
-  const rightParentSvc = reads(`${P.modules}/${pluralize(rightEnt)}/${rightEnt}.service.ts`);
+  const leftParentSvc = reads(parentFile(leftEnt, 'service'));
+  const rightParentSvc = reads(parentFile(rightEnt, 'service'));
 
   // Left parent — verb-flat for attach/detach, flat-noun for list/setPrimary
   assertContains(leftParentSvc, new RegExp(`attach${rightPascal}\\s*\\(`), `left parent: attach${rightPascal}`);
@@ -341,6 +341,19 @@ function pluralize(s: string): string {
   return s + 's';
 }
 
+/**
+ * A parent endpoint's emitted service / module file, project-relative. Folder
+ * and stems go through the NAME-2 rule (`emittedDir` / `emittedStem`), so a
+ * multi-word endpoint (`sales_activity`, the cross-domain scenario) resolves
+ * to `sales-activities/sales-activity.service.ts` — the harness reads the
+ * files the generator writes, not a snake_case guess at them (#730).
+ */
+function parentFile(entity: string, kind: 'service' | 'module'): string {
+  const plural = pluralize(entity);
+  const stem = kind === 'service' ? emittedStem(entity) : emittedStem(plural);
+  return `${P.modules}/${emittedDir(plural)}/${stem}.${kind}.ts`;
+}
+
 function assertBarrelIncludes(generatedSrc: string, pluralName: string): void {
   const modulesBarrel = path.join(generatedSrc, P.generated, 'modules.ts');
   const schemaBarrel = path.join(generatedSrc, P.generated, 'schema.ts');
@@ -387,8 +400,14 @@ function assertJunctionRelations(
   }
   const manifest = fs.readFileSync(manifestPath, 'utf8');
 
+  // An endpoint's table export is its snake plural (a database identifier,
+  // NAME-2); a relation KEY is the camelCased name (`sales_activities` →
+  // `salesActivities`). Single-word endpoints cannot tell the two apart, so the
+  // multi-word cross-domain scenario is what pins both (#730).
   const leftPlural = pluralize(leftEnt);
   const rightPlural = pluralize(rightEnt);
+  const leftKey = camelCase(leftPlural);
+  const rightKey = camelCase(rightPlural);
   const junctionVar = camelCase(pluralize(junctionName));
   const leftFk = camelCase(`${leftEnt}_id`);
   const rightFk = camelCase(`${rightEnt}_id`);
@@ -397,16 +416,16 @@ function assertJunctionRelations(
   assertContains(
     manifest,
     new RegExp(
-      `${rightPlural}: r\\.many\\.${rightPlural}\\(\\{ from: r\\.${leftPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${leftFk}\\), to: r\\.${rightPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${rightFk}\\) \\}\\)`,
+      `${rightKey}: r\\.many\\.${rightPlural}\\(\\{ from: r\\.${leftPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${leftFk}\\), to: r\\.${rightPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${rightFk}\\) \\}\\)`,
     ),
-    `relations manifest: ${leftPlural}.${rightPlural} through ${junctionVar}`,
+    `relations manifest: ${leftPlural}.${rightKey} through ${junctionVar}`,
   );
   assertContains(
     manifest,
     new RegExp(
-      `${leftPlural}: r\\.many\\.${leftPlural}\\(\\{ from: r\\.${rightPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${rightFk}\\), to: r\\.${leftPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${leftFk}\\) \\}\\)`,
+      `${leftKey}: r\\.many\\.${leftPlural}\\(\\{ from: r\\.${rightPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${rightFk}\\), to: r\\.${leftPlural}\\.id\\.through\\(r\\.${junctionVar}\\.${leftFk}\\) \\}\\)`,
     ),
-    `relations manifest: ${rightPlural}.${leftPlural} through ${junctionVar}`,
+    `relations manifest: ${rightPlural}.${leftKey} through ${junctionVar}`,
   );
 
   // The row-level edge from each parent to the junction table itself.
@@ -422,9 +441,16 @@ function assertJunctionRelations(
   assertContains(
     manifest,
     new RegExp(
-      `${leftEnt}: r\\.one\\.${leftPlural}\\(\\{ from: r\\.${junctionVar}\\.${leftFk}, to: r\\.${leftPlural}\\.id, optional: false \\}\\)`,
+      `${camelCase(leftEnt)}: r\\.one\\.${leftPlural}\\(\\{ from: r\\.${junctionVar}\\.${leftFk}, to: r\\.${leftPlural}\\.id, optional: false \\}\\)`,
     ),
-    `relations manifest: ${junctionVar}.${leftEnt}`,
+    `relations manifest: ${junctionVar}.${camelCase(leftEnt)}`,
+  );
+  assertContains(
+    manifest,
+    new RegExp(
+      `${camelCase(rightEnt)}: r\\.one\\.${rightPlural}\\(\\{ from: r\\.${junctionVar}\\.${rightFk}, to: r\\.${rightPlural}\\.id, optional: false \\}\\)`,
+    ),
+    `relations manifest: ${junctionVar}.${camelCase(rightEnt)}`,
   );
 
   log(`relations manifest assertions passed: ${junctionVar}`);
@@ -497,10 +523,7 @@ function assertCustomLayout(projectDir: string): void {
 /** Both parents' service + module files, project-relative. */
 function parentFiles(scenario: Scenario): string[] {
   const { leftEnt, rightEnt } = SCENARIO_META[scenario];
-  return [leftEnt, rightEnt].flatMap((e) => [
-    `${P.modules}/${pluralize(e)}/${e}.service.ts`,
-    `${P.modules}/${pluralize(e)}/${pluralize(e)}.module.ts`,
-  ]);
+  return [leftEnt, rightEnt].flatMap((e) => [parentFile(e, 'service'), parentFile(e, 'module')]);
 }
 
 function readParents(projectDir: string, scenario: Scenario): Map<string, string> {
