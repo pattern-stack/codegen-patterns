@@ -357,3 +357,17 @@ or drizzle-kit `unresolved decisions` is re-run isolated before it counts as a f
    failed on `@nestjs/swagger` and a drizzle version mismatch **before any edit**, and the control run on a clean
    base branch failed identically, which is what identified it. `bun install` in the worktree fixed it. Worth
    knowing because it reads exactly like a real regression.
+
+9. **Revision 2026-10-04 — the junction prompt's endpoint import specifiers were the site finding 4 warned
+   about (#730).** `templates/junction/new/prompt.js` built the six specifiers it imports each endpoint through
+   as `${endpoint}.entity`, `${endpoint}.repository` and `${plural}.module` — kebab *directory* (from
+   `entityModuleNaming`), snake *stem*. The property test above covers emitted **paths**, not the specifiers that
+   import them, and every junction gate used single-word endpoints (`kebab(x) === x`), so nothing failed until
+   the hoops dogfood paired `fantasy_team × player` and got 12 `tsc` errors. The specifiers are now relative
+   paths to the endpoint's own `entityFile` / `repositoryFile` / `moduleFile` from `entityModuleNaming` — the files
+   its own emission writes — rather than a stem rebuilt beside them. The junction cross-domain smoke now pairs
+   `opportunity × sales_activity`, so the compile gate and the relations-manifest assertions see a name where the
+   snake table export (`sales_activities`) and the camel relation key (`salesActivities`) differ; the harness's
+   parent-file paths go through `emittedDir` / `emittedStem` (finding 5's rule, which the parent paths had not
+   adopted). `junction-endpoint-naming.test.ts` asserts no relative specifier in the rendered junction templates
+   carries `_`.

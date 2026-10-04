@@ -188,7 +188,7 @@ export interface ScenarioMeta {
 
 export const SCENARIO_META: Record<Scenario, ScenarioMeta> = {
   'junction':              { junctionName: 'opportunity_contact',  leftEnt: 'opportunity', rightEnt: 'contact',  hasRole: true  },
-  'junction-cross-domain': { junctionName: 'opportunity_activity', leftEnt: 'opportunity', rightEnt: 'activity', hasRole: false },
+  'junction-cross-domain': { junctionName: 'opportunity_sales_activity', leftEnt: 'opportunity', rightEnt: 'sales_activity', hasRole: false },
 };
 
 export const FIXTURES_DIR_MAP: Record<Scenario, string> = {
