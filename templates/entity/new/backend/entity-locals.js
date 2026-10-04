@@ -608,11 +608,13 @@ function processHasMany(relationships, naming) {
     // that exist so the import block doesn't reference files that aren't on
     // disk yet (two-pass generation). Deliberately a file check, not a YAML
     // check: a single `entity new x.yaml` must not import a sibling that has a
-    // YAML but has never been generated.
+    // YAML but has never been generated. The stem is the emitted (kebab) one —
+    // a snake `${target}.entity.ts` never matched a multi-word target, which
+    // silently dropped its composition method (hoops dogfood F7).
     let targetExists = isSelfRef;
     if (!isSelfRef && resolved) {
       targetExists = fs.existsSync(
-        path.resolve(resolved.moduleDir, `${target}.entity.ts`),
+        path.resolve(resolved.moduleDir, `${emittedStem(target)}.entity.ts`),
       );
     }
 

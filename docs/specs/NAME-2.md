@@ -371,3 +371,9 @@ or drizzle-kit `unresolved decisions` is re-run isolated before it counts as a f
    parent-file paths go through `emittedDir` / `emittedStem` (finding 5's rule, which the parent paths had not
    adopted). `junction-endpoint-naming.test.ts` asserts no relative specifier in the rendered junction templates
    carries `_`.
+
+   The same dogfood found the twin in `entity-locals.js` › `processHasMany`: the two-pass existence check looked
+   for `${target}.entity.ts` at the target's (kebab) folder, so a multi-word `has_many` target never "existed"
+   and its composition method (`league.fantasy_teams()`, `player.game_logs()`) was dropped without a warning.
+   Nothing failed to compile — the method was simply absent. It now checks `emittedStem(target)`;
+   `target-naming.test.ts` pins it.
