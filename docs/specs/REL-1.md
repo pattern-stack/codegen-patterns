@@ -299,6 +299,14 @@ is NOT NULL while the include's type stays `T | null`. Over-permissive, never a 
 pre-existing inconsistency between the generator's TS and hygen halves (`ParsedField` collapses the same way), filed
 as #613 rather than changed under this PR.
 
+> **Revision 2026-10-04 (#613, #736).** Resolved. `FieldDefinitionSchema` no longer defaults `nullable`, so
+> "undeclared" survives parsing, and the precedence has one statement — `src/schema/field-nullability.ts`
+> (`fieldColumnNullable` / `foreignKeyColumnNullable`) — that the entity template, the parser's `ParsedField.nullable`
+> and `belongsToOptional` all call. The `{ required: false, nullable: false }` exception above is gone in both
+> directions: with a `default:` the column is NOT NULL and the edge is not optional; without one the declaration is a
+> schema error. (The column was in fact nullable before #736 for a non-FK field — the template only emitted
+> `.notNull()` for `required: true`.)
+
 ### Found #2 — the DRZ-1 guard's file-wide rule had to be narrowed, not just widened
 
 The guard banned **any** import list containing `relations`. The v2 wiring legitimately carries

@@ -26,6 +26,11 @@ import {
 } from '../../../../src/patterns/compose.js';
 import '../../../../src/patterns/library/index.js';
 import { emittedStem } from '../../../../src/config/file-naming.js';
+import {
+  fieldColumnNullable,
+  foreignKeyColumnNullable,
+  hasColumnDefault,
+} from '../../../../src/schema/field-nullability.js';
 import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
@@ -457,9 +462,7 @@ const EXTERNAL_ID_TRACKING_FIELDS = new Set([
  * Build a Drizzle column chain for a field
  */
 function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
-  const nullable = field.nullable ?? false;
-  const required = field.required ?? false;
-  const hasDefault = field.default !== undefined && field.default !== null;
+  const hasDefault = hasColumnDefault(field);
 
   // Drizzle's `date('x')` returns the PgDateString builder by default
   // (data type: string). Force the Date-typed variant so DTO Zod
@@ -480,8 +483,10 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
     chain += '.array()';
   }
 
-  // Add .notNull() for non-nullable required fields
-  if (required && !nullable) {
+  // NOT NULL by the one nullability rule (`field-nullability.ts`, #736):
+  // `required: true`, or `nullable: false` (which the schema only accepts
+  // with a `default:`, rendered below).
+  if (!fieldColumnNullable(field)) {
     chain += '.notNull()';
   }
 
@@ -510,7 +515,7 @@ function quoteLiteral(value) {
  * - array of strings (an array column) → array of single-quoted literals
  * - anything else (jsonb object/array default) → JSON literal
  */
-function renderColumnDefault(value, drizzleType) {
+export function renderColumnDefault(value, drizzleType) {
   if (
     (drizzleType === 'timestamp' || drizzleType === 'date') &&
     typeof value === 'string' &&
@@ -553,9 +558,11 @@ function processFields(fields, entityName = '') {
     if (fieldName === 'id') continue;
 
     const type = field.type || 'string';
-    const nullable = field.nullable ?? false;
+    // The column's nullability, which the read types and DTO chains below
+    // must agree with — the same rule `buildDrizzleChain` emits it by.
+    const nullable = fieldColumnNullable(field);
     const required = field.required ?? false;
-    const hasDefault = field.default !== undefined && field.default !== null;
+    const hasDefault = hasColumnDefault(field);
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
 
@@ -724,8 +731,8 @@ function resolveTargetNaming(target, naming, { required }) {
  * `required`/`nullable` (→ `.notNull()`) and `index: true` (→ a single-column
  * index). The relationship moves the column out of `processedFields`, so
  * those declarations would otherwise be silently dropped. An explicit
- * `nullable:` on the relationship still wins (back-compat for fixtures that set
- * it directly on the relation).
+ * `nullable:` on the relationship (or role) outranks the field declaration
+ * (`foreignKeyColumnNullable`).
  */
 function processBelongsTo(relationships, naming, fields = {}) {
   if (!relationships) return [];
@@ -737,24 +744,10 @@ function processBelongsTo(relationships, naming, fields = {}) {
 
     const target = rel.target;
     const field = rel.foreign_key;
-    // Inherit nullability from the underlying field declaration when present.
-    // Precedence: explicit relationship `nullable:` → field `required`/`nullable`
-    // → default nullable (true). A `required: true` field is NOT NULL.
+    // Precedence: explicit relationship `nullable:` → the FK field's own
+    // declaration → nullable. One rule, shared with the parser and REL-1.
     const fieldDef = fields[field];
-    let nullable;
-    if (rel.nullable !== undefined && rel.nullable !== null) {
-      nullable = rel.nullable;
-    } else if (fieldDef) {
-      if (fieldDef.required === true) {
-        nullable = false;
-      } else if (fieldDef.nullable !== undefined && fieldDef.nullable !== null) {
-        nullable = fieldDef.nullable;
-      } else {
-        nullable = true;
-      }
-    } else {
-      nullable = true;
-    }
+    const nullable = foreignKeyColumnNullable(rel.nullable, fieldDef);
     // Carry the field's `index: true` so the table-constraints builder can emit
     // the same single-column index a non-FK field would get.
     //
@@ -1289,12 +1282,11 @@ export function resolveSoftDeleteBoolean(deleteKnob, hasSoftDelete) {
  * @param {boolean} hasTimestamps
  * @param {boolean} eavEnabled
  * @param {boolean} hasSoftDelete
- * @param {object} [fields]           raw entity fields (for FK strict detection)
  * @param {object} [sinkPolicy]       integration.sink knobs {delete?, exclude_fields?}
  * @param {boolean} [tenantScoped]    entity `tenant_scoped: true` (ADR-042) —
  *   prefixes the ON CONFLICT target with tenant_id
  */
-export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, fields, sinkPolicy, tenantScoped = false) {
+export function buildIntegrationSurface(patternName, processedFields, belongsTo, hasTimestamps, eavEnabled, hasSoftDelete, sinkPolicy, tenantScoped = false) {
   if (patternName !== 'Integrated') return null;
 
   // Per-field exclusion (#490): drop declared-excluded fields from copy-through.
@@ -1323,12 +1315,11 @@ export function buildIntegrationSurface(patternName, processedFields, belongsTo,
     isSelfFk: rel.isSelfFk,
     nullable: rel.nullable,
     // Strict resolution (throw on unresolved parent → failed item) when the FK
-    // COLUMN is required/non-null; opportunistic null otherwise. Sourced from
-    // the FK field's `required` — the relationship-level `nullable` is
-    // unreliable (defaults true when undeclared, e.g. a `belongs_to` with no
-    // explicit `nullable:`). Nullable FKs (e.g. self-FK hierarchies) stay
-    // opportunistic. (#374)
-    strict: fields?.[rel.field]?.required === true,
+    // COLUMN is NOT NULL — writing null there would fail the insert anyway;
+    // opportunistic null otherwise. `rel.nullable` is the column's resolved
+    // nullability (`foreignKeyColumnNullable`). Nullable FKs (e.g. self-FK
+    // hierarchies) stay opportunistic. (#374, #613)
+    strict: !rel.nullable,
     relatedTable: rel.relatedTable,
     relatedEntity: rel.relatedEntity,
     importPath: rel.importPath,
@@ -2098,7 +2089,6 @@ export function buildBackendLocals(definition, baseLocals) {
     hasTimestamps,
     eavEnabled,
     hasSoftDelete,
-    fields,
     sinkPolicy,
     tenantScoped,
   );

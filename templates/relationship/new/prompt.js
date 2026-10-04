@@ -21,6 +21,13 @@ import {
 import { emittedStem } from "../../../src/config/file-naming.js";
 import { loadRuntimeMode, runtimeImport } from "../../../src/config/runtime-mode.mjs";
 import { configOrDefaults, loadProjectConfig } from "../../../src/config/project-config.js";
+import {
+  NOT_NULL_WITHOUT_DEFAULT_MESSAGE,
+  fieldColumnNullable,
+  hasColumnDefault,
+  notNullWithoutDefault,
+} from "../../../src/schema/field-nullability.js";
+import { renderColumnDefault } from "../../entity/new/backend/entity-locals.js";
 
 // ============================================================================
 // Naming Helpers (inlined to avoid import issues with Hygen)
@@ -162,14 +169,12 @@ const TS_TYPE_MAP = {
 // ============================================================================
 
 function buildDrizzleChain(fieldName, field, drizzleType) {
-  const nullable = field.nullable ?? false;
-  const required = field.required ?? false;
-  const hasDefault = field.default !== undefined && field.default !== null;
-
   let chain = `${drizzleType}('${fieldName}')`;
   if (isArrayType(field.type)) chain += ".array()";
-  if (required && !nullable) chain += ".notNull()";
-  if (drizzleType === "boolean" && hasDefault) chain += `.default(${field.default})`;
+  // The entity pipeline's rule and default rendering (#736): a NOT NULL column
+  // with a DB default must carry that default, or every insert omitting it fails.
+  if (!fieldColumnNullable(field)) chain += ".notNull()";
+  if (hasColumnDefault(field)) chain += renderColumnDefault(field.default, drizzleType);
 
   return chain;
 }
@@ -180,10 +185,15 @@ function processFields(fields) {
   for (const [fieldName, field] of Object.entries(fields)) {
     if (fieldName === "id") continue;
 
+    // Relationship `fields:` are not parsed by FieldDefinitionSchema, so the
+    // schema's refusal is repeated here, with the same message.
+    if (notNullWithoutDefault(field)) {
+      throw new Error(`[codegen] relationship field '${fieldName}': ${NOT_NULL_WITHOUT_DEFAULT_MESSAGE}`);
+    }
     const type = field.type || "string";
-    const nullable = field.nullable ?? false;
+    const nullable = fieldColumnNullable(field);
     const required = field.required ?? false;
-    const hasDefault = field.default !== undefined && field.default !== null;
+    const hasDefault = hasColumnDefault(field);
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
 

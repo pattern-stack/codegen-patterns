@@ -128,8 +128,6 @@ function processCustomFields(fields, junctionName) {
       camelName: camelCase(fieldName),
       type,
       drizzleType,
-      nullable: field.nullable ?? true,
-      required: field.required ?? false,
       choices: choices ?? [],
       hasChoices,
       enumName,

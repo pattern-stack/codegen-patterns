@@ -150,7 +150,9 @@ describe('string_array in relationship and junction extra fields (#281)', () => 
 		expect(tags.zodType).toBe('z.array(z.string())');
 		const dto = render('relationship/new/dto/create.ejs.t', l);
 		expect(dto).toContain('tags: z.array(z.string()).nullable().optional(),');
-		expect(dto).toContain("slots: z.array(z.enum(['pg', 'sg'])).optional(),");
+		// `slots` declares no nullability, so its column is nullable — and the
+		// DTO says so (#613: one rule for the column and the read/write types).
+		expect(dto).toContain("slots: z.array(z.enum(['pg', 'sg'])).nullable().optional(),");
 		expect(dto).not.toContain('z.unknown()');
 	});
 

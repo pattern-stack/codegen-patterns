@@ -370,3 +370,69 @@ describe('field-level foreign_key to a host-owned table (#636)', () => {
     );
   });
 });
+
+// ============================================================================
+// #736 / #613 — column nullability by the one rule (field-nullability.ts)
+// ============================================================================
+
+describe('column nullability (#736, #613)', () => {
+  const definition = {
+    entity: { name: 'stat_line', plural: 'stat_lines', table: 'stat_lines', pattern: 'Base' },
+    fields: {
+      // The #736 repro: NOT NULL with a DB default, optional on create.
+      pts: { type: 'integer', required: false, nullable: false, default: 0 },
+      // Neither declared: a nullable column, and the read type says so.
+      ast: { type: 'integer' },
+      reb: { type: 'integer', nullable: true },
+      player_name: { type: 'string', required: true },
+    },
+    relationships: {},
+    behaviors: [],
+  };
+
+  type ZodField = { camelName: string; zodChainCreate?: string; zodChainOutput?: string };
+  const byName = (list: unknown, key: 'zodChainCreate' | 'zodChainOutput') =>
+    Object.fromEntries((list as ZodField[]).map((f) => [f.camelName, f[key]]));
+
+  it('required: false, nullable: false, default: → NOT NULL with the default', () => {
+    const { output } = render(definition);
+    expect(output).toContain("pts: integer('pts').notNull().default(0),");
+  });
+
+  it('the other declarations keep their columns', () => {
+    const { output } = render(definition);
+    expect(output).toContain("ast: integer('ast'),");
+    expect(output).toContain("reb: integer('reb'),");
+    expect(output).toContain("playerName: text('player_name').notNull(),");
+  });
+
+  it('a NOT NULL column with a default is optional on create and non-null on read', () => {
+    const { locals } = render(definition);
+    expect(byName(locals.createDtoFields, 'zodChainCreate').pts).toBe('z.number().int().optional()');
+    expect(byName(locals.outputDtoFields, 'zodChainOutput').pts).toBe('z.number().int()');
+  });
+
+  it('an undeclared nullable column reads as nullable, matching its column', () => {
+    const { locals } = render(definition);
+    expect(byName(locals.createDtoFields, 'zodChainCreate').ast).toBe('z.number().int().nullable().optional()');
+    expect(byName(locals.outputDtoFields, 'zodChainOutput').ast).toBe('z.number().int().nullable()');
+  });
+
+  it('a belongs_to FK declared nullable: false with a default is NOT NULL', () => {
+    const { output } = render({
+      entity: { name: 'note', plural: 'notes', table: 'notes', pattern: 'Base' },
+      fields: {
+        conversation_id: {
+          type: 'uuid',
+          nullable: false,
+          default: '00000000-0000-0000-0000-000000000000',
+        },
+      },
+      relationships: {
+        conversation: { type: 'belongs_to', target: 'conversation', foreign_key: 'conversation_id' },
+      },
+      behaviors: [],
+    });
+    expect(output).toContain("conversationId: uuid('conversation_id').notNull()");
+  });
+});

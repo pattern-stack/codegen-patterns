@@ -48,6 +48,17 @@ fields:
     nullable: true
     max_length: 20
 
+  # #736: NOT NULL with a DB default — optional on create, non-null on read.
+  weight:
+    type: integer
+    required: false
+    nullable: false
+    default: 0
+
+  # #613: nullability undeclared — a nullable column, and the DTOs say so.
+  description:
+    type: string
+
 relationships:
   opportunities:
     type: has_many

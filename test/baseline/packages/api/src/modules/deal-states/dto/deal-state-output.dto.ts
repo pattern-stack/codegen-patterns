@@ -10,6 +10,8 @@ export const DealStateOutputSchema = z.object({
   sortOrder: z.number().int(),
   probabilityDefault: z.number().int().nullable(),
   color: z.string().nullable(),
+  weight: z.number().int(),
+  description: z.string().nullable(),
 });
 
 export type DealStateOutputDto = z.infer<typeof DealStateOutputSchema>;

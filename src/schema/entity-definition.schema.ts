@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { roleForeignKey } from "../roles/derive.js";
+import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
 import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
 
 /**
@@ -164,17 +165,23 @@ const UiMetadataSchema = z.object({
 /**
  * Field Definition Schema
  *
- * Semantics:
- * - `required: true` → Field must be provided on CREATE (DTO validation)
- * - `required: false` → Field is optional on CREATE (DTO validation)
- * - `nullable: true` → Database column allows NULL
- * - `nullable: false` (default) → Database column is NOT NULL
+ * Semantics — `required` is the create contract, `nullable` the column:
+ * - `required: true` → must be provided on CREATE; the column is NOT NULL
+ * - `required: false` (default) → optional on CREATE
+ * - `nullable: true` → the column allows NULL; reads are `T | null`
+ * - `nullable: false` → the column is NOT NULL
+ * - `nullable` undeclared → NOT NULL when `required: true`, else NULL allowed.
+ *   Deliberately no `.default(false)`: "undeclared" must survive parsing.
  *
- * Common patterns:
- * - `required: true` (nullable defaults to false) → Must provide, cannot be null
- * - `required: false, nullable: true` → Optional field, can be null
- * - `required: true, nullable: true` → INVALID (rejected by validator)
- * - `required: false, nullable: false` → Has default value in DB
+ * The four declarations (the rule itself lives in `field-nullability.ts`,
+ * which every generator reads — never re-derive it):
+ * - `required: true` → NOT NULL, required on create
+ * - `required: false, nullable: true` (or neither) → NULL, optional on create
+ * - `required: false, nullable: false, default: <v>` → NOT NULL with a DB
+ *   default, optional on create, non-null on read (#736)
+ * - `required: false, nullable: false` with NO `default:` → INVALID: an insert
+ *   that omits it would fail. Say `required: true` instead.
+ * - `required: true, nullable: true` → INVALID (a required field cannot be null)
  */
 /**
  * Base Field Schema - Core database/type properties
@@ -182,7 +189,7 @@ const UiMetadataSchema = z.object({
 const BaseFieldSchema = z.object({
   type: FieldTypeSchema,
   required: z.boolean().optional().default(false),
-  nullable: z.boolean().optional().default(false),
+  nullable: z.boolean().optional(),
 
   // String constraints
   max_length: z.number().int().positive().optional(),
@@ -228,6 +235,10 @@ const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
     message:
       "'required: true' and 'nullable: true' cannot both be set. A required field cannot be null.",
     path: ["required"],
+  })
+  .refine((data) => !notNullWithoutDefault(data), {
+    message: NOT_NULL_WITHOUT_DEFAULT_MESSAGE,
+    path: ["nullable"],
   })
   .refine(
     (data) => {

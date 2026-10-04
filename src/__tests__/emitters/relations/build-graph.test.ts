@@ -113,7 +113,7 @@ describe('buildRelationGraph — belongs_to', () => {
 				def: definition(
 					'contact',
 					'contacts',
-					{ account_id: { type: 'uuid', required: false, nullable: false, ...fk } },
+					{ account_id: { type: 'uuid', ...fk } },
 					{ account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id', ...relExtra } },
 				),
 			},
@@ -139,10 +139,18 @@ describe('buildRelationGraph — belongs_to', () => {
 	});
 
 	it('the schema forbids required + nullable, so the two can never disagree', () => {
-		// Why `belongsToOptional` reads `required` alone and never `nullable`.
 		expect(() => withFk({ required: true, nullable: true })).toThrow(
 			/cannot both be set/,
 		);
+	});
+
+	it('a NOT NULL FK column with a default is not optional (#613)', () => {
+		const fk = { required: false, nullable: false, default: '00000000-0000-0000-0000-000000000000' };
+		expect(edge(withFk(fk), 'contacts', 'account').optional).toBe(false);
+	});
+
+	it('the schema forbids a NOT NULL FK column that is optional on create with no default', () => {
+		expect(() => withFk({ nullable: false })).toThrow(/needs a 'default:'/);
 	});
 
 	it('an explicit relationship `nullable:` beats the field declaration', () => {

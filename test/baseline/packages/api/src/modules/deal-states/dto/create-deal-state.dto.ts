@@ -9,6 +9,8 @@ export const CreateDealStateSchema = z.object({
   sortOrder: z.number().int(),
   probabilityDefault: z.number().int().nullable().optional(),
   color: z.string().nullable().optional(),
+  weight: z.number().int().optional(),
+  description: z.string().nullable().optional(),
 });
 
 export type CreateDealStateDto = z.infer<typeof CreateDealStateSchema>;
