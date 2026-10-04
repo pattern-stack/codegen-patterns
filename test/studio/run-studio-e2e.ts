@@ -322,9 +322,12 @@ async function main(): Promise<number> {
 		step('GET /api/health');
 		const health = await expectApi<HealthResponse>('GET', '/api/health', 200);
 		assertEqual(health.ok, true, 'health.ok is true');
+		// The server reports the project's REAL path (`realProjectDir`), so compare
+		// against that: on macOS the private TMPDIR sits behind `/var` →
+		// `/private/var`, and the unresolved spelling never matches (#750).
 		assertEqual(
-			path.resolve(health.projectDir),
-			path.resolve(projectDir),
+			health.projectDir,
+			fs.realpathSync(projectDir),
 			'health.projectDir is the demo project',
 		);
 
