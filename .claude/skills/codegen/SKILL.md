@@ -333,7 +333,7 @@ All families get `findById`, `findByIds`, `list`, `count`, `exists`, `create`,
 
 | Family | Adds |
 |---|---|
-| Integrated | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `integrationUpsert` |
+| Integrated | `findByExternalId`, `findManyByExternalIds`, `integrationUpsert` — no user-ownership finders: the pattern declares no `user_id` (#746) |
 | Activity | `findByDateRange`, `findByUserId`, `findBySubjectId`, `findRecentBySubjectId` |
 | Metadata | `findByEntityIdAndType`, `listByEntityId`, `listHistoryByEntityId` |
 | Knowledge | `semanticSearch`, `findPendingByOpportunityId`, `updateStatus`, `updateStatusBatch` (stub) |

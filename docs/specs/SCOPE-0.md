@@ -126,6 +126,12 @@ is "only the first one". `findByExternalId`, `findManyByExternalIds`, `findAllBy
 neither the soft-deleted row nor the other user's, including when the *leaf predicate itself* names the other user
 (`findAllByUserId(USER_B)` as user A → `[]`).
 
+> **Revision 2026-10-04 (#746).** `findAllByUserId` / `findVisibleByUserId` were removed from
+> `IntegratedEntityRepository` (and `findAllByUser` / `findVisibleByUser` from `IntegratedEntityService`):
+> `pattern: Integrated` declares no `user_id`, so the finder threw on every global integrated table. The two
+> assertions that used it now pass the same `userId` leaf through `list({ where: eq(crmEntities.userId, …) })` —
+> the same `baseQuery(leaf)` path — so the proof is unchanged; the integrated base's site count drops from 3 to 2.
+
 **Per family.** The same three-row seed, with both guards on, is run against **every** finder of the other two
 family bases — `ActivityEntityRepository` (`findByDateRange`, `findByUserId` ×2 including `findByUserId(USER_B)`,
 `findBySubjectId`, `findRecentBySubjectId`) and `MetadataEntityRepository` (`findByEntityIdAndType`,

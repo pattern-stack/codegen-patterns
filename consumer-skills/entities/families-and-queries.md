@@ -15,14 +15,14 @@ an optional `tx?: DrizzleTx` for transactional composition.
 | Family | Use it for | Adds on top of CRUD |
 |---|---|---|
 | `Base` | plain tables with no special access pattern | nothing — standard CRUD only |
-| `Synced` | records mirrored from an external system (have an external id + per-user visibility) | `findByExternalId`, `findAllByUserId`, `findVisibleByUserId`, `syncUpsert` |
+| `Integrated` | records mirrored from an external system (have an external id + provider) | `findByExternalId`, `findManyByExternalIds`, `integrationUpsert` |
 | `Activity` | time-ordered activity/interaction rows scoped to a subject | `findByDateRange`, `findByUserId`, `findBySubjectId`, `findRecentBySubjectId` (subject FK + recency column resolved from `config: { Activity: { subject: <entity> } }`) |
 | `Metadata` | key/value or definition/value rows describing other entities | `findByEntityIdAndType`, `listByEntityId`, `listHistoryByEntityId` |
 | `Knowledge` | semantically-searchable knowledge rows (pgvector at runtime) | `semanticSearch`, `findPendingByOpportunityId`, `updateStatus`, `updateStatusBatch` |
 
 Choosing a family:
-- Mirrors an external system (CRM, etc.)? → `Synced` (often paired with the
-  `sync` skill).
+- Mirrors an external system (CRM, etc.)? → `Integrated` (often paired with the
+  `integration` skill).
 - Append-only timeline tied to a parent record? → `Activity`.
 - Describes/annotates other entities (incl. the EAV value table)? → `Metadata`.
 - Vector search / RAG? → `Knowledge`.
@@ -76,8 +76,11 @@ and a `GET /<plural>/search` route. `paginate: true` makes the route accept
 - **Unique finders return a single nullable result**; non-unique return arrays.
 - **`order:` is the default sort**, not a parameter — add a `queries:` search
   entry if you need caller-controlled ordering.
-- **Family methods assume their columns exist.** `Synced` expects an external-id
-  + user-visibility shape; `Activity`'s subject finders expect the subject FK
+- **Family methods assume their columns exist.** `Integrated` expects the
+  external-id + provider shape (its implied `external_id_tracking` behavior
+  emits it). It adds **no** user-ownership finder — a global integrated table
+  (reference data) has no `user_id`. If yours is user-owned, declare the
+  `user_id` field and a `queries: [{ by: [user_id] }]` finder; `Activity`'s subject finders expect the subject FK
   named by its `config:` (`subject: person` → `person_id`, or an explicit
   `subjectColumn`) plus a recency column (`occurred_at` by default, or
   `config.occurredAt`). If your table doesn't fit, pick `Base` and add explicit

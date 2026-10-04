@@ -401,7 +401,7 @@ export class OpportunityService extends WithAnalytics(
   //
   // Inherited from IntegratedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
-  //   findByExternalId, findAllByUserId, findVisibleByUserId
+  //   findByExternalId, findManyByExternalIds
 
   // ═══════════════════════════════════════════════════════════════════════
   // Junction fan-out (CGP-60)
@@ -511,7 +511,7 @@ export class ContactService extends WithAnalytics(
   //
   // Inherited from IntegratedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
-  //   findByExternalId, findAllByUserId, findVisibleByUserId
+  //   findByExternalId, findManyByExternalIds
 
   // ═══════════════════════════════════════════════════════════════════════
   // Relationship composition methods (CGP-358b / CGP-62)

@@ -27,8 +27,6 @@ function makeMockRepo(
     delete: mock(async () => undefined),
     findByExternalId: mock(async () => null),
     findManyByExternalIds: mock(async () => []),
-    findAllByUserId: mock(async () => []),
-    findVisibleByUserId: mock(async () => []),
     integrationUpsert: mock(async () => []),
     ...overrides,
   };
@@ -47,18 +45,6 @@ describe('IntegratedEntityService', () => {
     });
   });
 
-  describe('findAllByUser', () => {
-    it('delegates to repository.findAllByUserId', async () => {
-      const entities: TestEntity[] = [{ id: '1', name: 'A' }];
-      const repo = makeMockRepo({ findAllByUserId: mock(async () => entities) });
-      const service = new TestCrmService(repo);
-
-      const result = await service.findAllByUser('user-1');
-      expect(result).toEqual(entities);
-      expect(repo.findAllByUserId).toHaveBeenCalledWith('user-1');
-    });
-  });
-
   describe('findManyByExternalIds', () => {
     it('delegates to repository.findManyByExternalIds', async () => {
       const entities: TestEntity[] = [{ id: '1', name: 'A' }, { id: '2', name: 'B' }];
@@ -71,15 +57,11 @@ describe('IntegratedEntityService', () => {
     });
   });
 
-  describe('findVisibleByUser', () => {
-    it('delegates to repository.findVisibleByUserId', async () => {
-      const entities: TestEntity[] = [{ id: '1', name: 'Visible' }];
-      const repo = makeMockRepo({ findVisibleByUserId: mock(async () => entities) });
-      const service = new TestCrmService(repo);
-
-      const result = await service.findVisibleByUser('user-1');
-      expect(result).toEqual(entities);
-      expect(repo.findVisibleByUserId).toHaveBeenCalledWith('user-1');
+  // #746: the Integrated pattern declares no user axis, so the family service
+  // carries no user-ownership finders (and its repository contract none either).
+  describe('no user-ownership finders (#746)', () => {
+    it.each(['findAllByUser', 'findVisibleByUser'])('does not expose %s', (method) => {
+      expect(method in IntegratedEntityService.prototype).toBe(false);
     });
   });
 

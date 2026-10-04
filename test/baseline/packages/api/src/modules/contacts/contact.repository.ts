@@ -312,6 +312,6 @@ export class ContactRepository extends IntegratedEntityRepository<
 
   // Inherited from IntegratedEntityRepository:
   //   findById, findByIds, list, count, exists, create, update, delete, upsertMany
-  //   findByExternalId, findManyByExternalIds, findAllByUserId, findVisibleByUserId
+  //   findByExternalId, findManyByExternalIds
   //   integrationUpsertOne, findByExternalIdProjected, softDeleteByExternalId, integrationUpsert
 }

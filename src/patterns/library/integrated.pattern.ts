@@ -23,12 +23,12 @@ export const IntegratedPattern = definePattern({
 	serviceImport: '@shared/base-classes/integrated-entity-service',
 	repositoryInheritedMethods: [
 		'findById, findByIds, list, count, exists, create, update, delete, upsertMany',
-		'findByExternalId, findManyByExternalIds, findAllByUserId, findVisibleByUserId',
+		'findByExternalId, findManyByExternalIds',
 		'integrationUpsertOne, findByExternalIdProjected, softDeleteByExternalId, integrationUpsert',
 	],
 	serviceInheritedMethods: [
 		'findById, findByIds, list, count, exists, create, update, delete',
-		'findByExternalId, findAllByUserId, findVisibleByUserId',
+		'findByExternalId, findManyByExternalIds',
 	],
 	impliedBehaviors: ['external_id_tracking'],
 	description: 'External CRM/system integration columns and integrationUpsert methods',
