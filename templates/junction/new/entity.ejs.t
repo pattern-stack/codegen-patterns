@@ -73,11 +73,11 @@ export const <%= tableVarName %> = pgTable(
     // Custom fields
 <%_ processedCustomFields.forEach(field => { _%>
 <%_ if (field.hasChoices) { _%>
-    <%= field.camelName %>: <%= field.enumName %>('<%= field.name %>'),
+    <%= field.camelName %>: <%= field.enumName %>('<%= field.name %>')<%= field.isArray ? '.array()' : '' %>,
 <%_ } else if (field.drizzleType === 'uuid') { _%>
     <%= field.camelName %>: uuid('<%= field.name %>'),
 <%_ } else { _%>
-    <%= field.camelName %>: <%= field.drizzleType %>('<%= field.name %>'),
+    <%= field.camelName %>: <%= field.drizzleType %>('<%= field.name %>')<%= field.isArray ? '.array()' : '' %>,
 <%_ } _%>
 <%_ }) _%>
 <%_ } _%>

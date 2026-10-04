@@ -6,6 +6,8 @@ export const CreatePersonSchema = z.object({
   email: z.string(),
   firstName: z.string(),
   lastName: z.string(),
+  nicknames: z.array(z.string()).nullable().optional(),
+  preferredChannels: z.array(z.enum(['email', 'phone', 'sms'])),
 });
 
 export type CreatePersonDto = z.infer<typeof CreatePersonSchema>;

@@ -1382,6 +1382,9 @@ const TS_TYPE_FOR_SINK: Record<string, string> = {
   date: "Date",
   datetime: "Date",
   json: "unknown",
+  // A Postgres text[] column (#281) — the entity's `string[]`, so the sink's
+  // copy-through member matches the projection it is diffed against.
+  string_array: "string[]",
 };
 
 function tsTypeFor(type: string | undefined, nullable: boolean | undefined): string {

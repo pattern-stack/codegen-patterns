@@ -401,6 +401,33 @@ const TS_TYPE_MAP = {
   json: 'unknown',
 };
 
+// Array field types → their ELEMENT type (#281). An array field is its element
+// type wrapped once, in all three vocabularies: a Postgres array column
+// (`text('x').array()`), `z.array(<element>)`, `<element>[]`. With `choices:`
+// the element is the enum, so `string_array` + `choices` is an enum ARRAY —
+// never a single enum column (F4).
+const ARRAY_ELEMENT_TYPE = {
+  string_array: 'string',
+};
+
+/** True when `type` is an array field type. */
+function isArrayType(type) {
+  return Object.prototype.hasOwnProperty.call(ARRAY_ELEMENT_TYPE, type);
+}
+
+/**
+ * The Zod schema of a field's VALUE, before nullability/optionality: the enum
+ * of its choices or its scalar's schema, wrapped in `z.array()` for an array
+ * type. The one place processFields and both DTO chains read it from.
+ */
+function zodValueFor({ type, hasChoices, choices }) {
+  const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
+  const element = hasChoices
+    ? `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`
+    : (ZOD_TYPE_MAP[elementType] || 'z.unknown()');
+  return isArrayType(type) ? `z.array(${element})` : element;
+}
+
 // Fields managed by behaviors — excluded from create DTO
 const BEHAVIOR_MANAGED_FIELDS = new Set([
   'created_at',
@@ -448,6 +475,10 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
   } else {
     chain = `${drizzleType}('${fieldName}')`;
   }
+  // An array type is a Postgres array of its element column (#281).
+  if (isArrayType(field.type)) {
+    chain += '.array()';
+  }
 
   // Add .notNull() for non-nullable required fields
   if (required && !nullable) {
@@ -464,6 +495,11 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
   return chain;
 }
 
+/** A single-quoted, escaped TS string literal. */
+function quoteLiteral(value) {
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
 /**
  * Render a Drizzle `.default(...)` (or `.defaultNow()`) suffix for a column.
  *
@@ -471,6 +507,7 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
  * - numeric (Drizzle returns it as a string) → quoted, even for numeric YAML values
  * - string / enum literal → single-quoted, escaped
  * - number / boolean → bare literal
+ * - array of strings (an array column) → array of single-quoted literals
  * - anything else (jsonb object/array default) → JSON literal
  */
 function renderColumnDefault(value, drizzleType) {
@@ -488,7 +525,12 @@ function renderColumnDefault(value, drizzleType) {
     return `.default(${value})`;
   }
   if (typeof value === 'string') {
-    return `.default('${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+    return `.default(${quoteLiteral(value)})`;
+  }
+  // An array column's default (#281): its elements as literals, the way a
+  // scalar default renders — `.default(['email'])`.
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+    return `.default([${value.map(quoteLiteral).join(', ')}])`;
   }
   return `.default(${JSON.stringify(value)})`;
 }
@@ -521,9 +563,10 @@ function processFields(fields, entityName = '') {
     // Postgres-native pgEnum declaration + column reference, so the
     // generated `InferSelectModel` type narrows to the literal union
     // instead of falling back to `string`.
+    const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
     const drizzleType = hasChoices
       ? 'enum'
-      : (DRIZZLE_TYPE_MAP[type] || 'text');
+      : (DRIZZLE_TYPE_MAP[elementType] || 'text');
     // Namespace the enum const + pg type name by entity so same-named enum
     // fields on different entities don't collide (TS2308 / duplicate CREATE TYPE).
     // The COLUMN name keeps the bare snake field name (`role`); only the const
@@ -532,12 +575,13 @@ function processFields(fields, entityName = '') {
       ? (entityName ? `${entityName}_${fieldName}` : fieldName)
       : null;
     const enumName = hasChoices ? camelCase(enumDbName) + 'Enum' : null;
-    const tsType = hasChoices
+    const elementTsType = hasChoices
       ? choices.map((c) => `'${c}'`).join(' | ')
-      : (TS_TYPE_MAP[type] || 'unknown');
-    const zodType = hasChoices
-      ? `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`
-      : (ZOD_TYPE_MAP[type] || 'z.unknown()');
+      : (TS_TYPE_MAP[elementType] || 'unknown');
+    const tsType = !isArrayType(type)
+      ? elementTsType
+      : (hasChoices ? `(${elementTsType})[]` : `${elementTsType}[]`);
+    const zodType = zodValueFor({ type, hasChoices, choices });
 
     const drizzleChain = buildDrizzleChain(fieldName, field, drizzleType, enumName);
 
@@ -1001,14 +1045,7 @@ function zodChainForCreate(field) {
   // so a nullable-and-optional field never got `.optional()` — forcing callers
   // to send an explicit `null` for every optional column (e.g. POST /accounts
   // rejecting a body that omits `domain`/`industry`).
-  if (hasChoices) {
-    let base = `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`;
-    if (nullable) base += '.nullable()';
-    if (!required) base += '.optional()';
-    return base;
-  }
-
-  let base = ZOD_TYPE_MAP[type] || 'z.unknown()';
+  let base = zodValueFor({ type, hasChoices, choices });
 
   if (type === 'boolean' && hasDefault) {
     // `.default()` already makes the input optional in Zod.
@@ -1026,20 +1063,8 @@ function zodChainForCreate(field) {
  */
 function zodChainForOutput(field) {
   const { type, nullable, hasChoices, choices } = field;
-
-  if (hasChoices) {
-    const base = `z.enum([${choices.map((c) => `'${c}'`).join(', ')}])`;
-    if (nullable) return base + '.nullable()';
-    return base;
-  }
-
-  let base = ZOD_TYPE_MAP[type] || 'z.unknown()';
-
-  if (nullable) {
-    return base + '.nullable()';
-  }
-
-  return base;
+  const base = zodValueFor({ type, hasChoices, choices });
+  return nullable ? base + '.nullable()' : base;
 }
 
 // ============================================================================

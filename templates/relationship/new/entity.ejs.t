@@ -78,7 +78,7 @@ export const <%= tableVarName %> = pgTable(
     // Custom fields
 <%_ processedFields.forEach(field => { _%>
 <%_ if (field.hasChoices) { _%>
-    <%= field.camelName %>: <%= field.enumName %>('<%= field.name %>'),
+    <%= field.camelName %>: <%= field.enumName %>('<%= field.name %>')<%= field.isArray ? '.array()' : '' %>,
 <%_ } else if (field.foreignKey) { _%>
     <%= field.camelName %>: uuid('<%= field.name %>'),
 <%_ } else { _%>

@@ -107,13 +107,20 @@ const DRIZZLE_TYPE_MAP = {
   enum: "text", // overridden below when hasChoices
 };
 
+// Array field types → their ELEMENT type (#281): the column is a Postgres
+// array of the element column — the entity pipeline's rule.
+const ARRAY_ELEMENT_TYPE = {
+  string_array: "string",
+};
+
 function processCustomFields(fields, junctionName) {
   const processed = [];
   for (const [fieldName, field] of Object.entries(fields ?? {})) {
     const type = field.type || "string";
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
-    const drizzleType = hasChoices ? "text" : (DRIZZLE_TYPE_MAP[type] ?? "text");
+    const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
+    const drizzleType = hasChoices ? "text" : (DRIZZLE_TYPE_MAP[elementType] ?? "text");
     const enumName = hasChoices ? `${camelCase(junctionName)}${pascalCase(fieldName)}Enum` : null;
 
     processed.push({
@@ -126,6 +133,7 @@ function processCustomFields(fields, junctionName) {
       choices: choices ?? [],
       hasChoices,
       enumName,
+      isArray: Object.prototype.hasOwnProperty.call(ARRAY_ELEMENT_TYPE, type),
     });
   }
   return processed;
