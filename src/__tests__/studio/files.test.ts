@@ -167,3 +167,34 @@ describe('readFile', () => {
 		expect(() => readFile(projectDir, 'entities/nope.yaml')).toThrow(FileNotFoundError);
 	});
 });
+
+// A project root reached through a symlink (#750). macOS gets one for free —
+// `os.tmpdir()` is `/var/…` and `/var` → `/private/var` — but CI runs Linux,
+// where it does not, so the link is made on purpose here: without it this
+// suite cannot fail on the case it guards on the platform that gates merges.
+describe('a project root behind a symlink', () => {
+	let linked: string;
+	beforeEach(() => {
+		linked = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'studio-link-')), 'project');
+		roots.push(path.dirname(linked));
+		fs.symlinkSync(projectDir, linked, 'dir');
+	});
+
+	it('lists project-relative paths, not a climb out of the link', () => {
+		expect(listFiles(linked).map((f) => f.path)).toEqual([
+			'entities/contact.yaml',
+			'codegen.config.yaml',
+		]);
+	});
+
+	it('classifies by directory and recognises the config', () => {
+		expect(kindForPath(linked, 'entities/contact.yaml')).toBe('entity');
+		expect(kindForPath(linked, 'codegen.config.yaml')).toBe('config');
+	});
+
+	it('writes a new file through the link', () => {
+		const content = VALID_ENTITY.replace(/contact/g, 'lead');
+		expect(writeFile(linked, 'entities/lead.yaml', content).ok).toBe(true);
+		expect(fs.existsSync(path.join(projectDir, 'entities', 'lead.yaml'))).toBe(true);
+	});
+});
