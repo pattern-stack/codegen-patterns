@@ -18,35 +18,54 @@ Pin **exactly** while the line is in prerelease. Codegen's own harnesses do.
 
 ## The client
 
-`codegen project init` emits `database.module.ts` with the 1.0 constructor:
+`codegen project init` emits `database.module.ts` with the 1.0 constructor and
+the **generated relations manifest**:
 
 ```ts
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
+import { relations } from '../../generated/relations'; // <paths.generated>/relations.ts
 
-export type DrizzleDB = NodePgDatabase;
+export type DrizzleDB = NodePgDatabase<typeof relations>;
 
 // …
-return drizzle({ client: pool });
+return drizzle({ client: pool, relations });
 ```
 
 Two things changed from the 0.x form:
 
 | 0.x | 1.0 |
 |---|---|
-| `drizzle(pool, { schema })` | `drizzle({ client: pool })` |
-| `ReturnType<typeof drizzle<typeof schema>>` | `NodePgDatabase` |
+| `drizzle(pool, { schema })` | `drizzle({ client: pool, relations })` |
+| `ReturnType<typeof drizzle<typeof schema>>` | `NodePgDatabase<typeof relations>` |
 
 `schema` was **removed** from the pg config type
 (`DrizzlePgConfig = Omit<DrizzleConfig, 'schema'>`), not renamed. The generic
 slot on `NodePgDatabase` is now the *relations manifest*
 (`NodePgDatabase<TRelations extends AnyRelations = EmptyRelations>`), which is
-what `defineRelations()` produces. Codegen does not emit a manifest yet, so
-`NodePgDatabase` with its default is the accurate type. When the generator
-starts emitting one it will be passed as `drizzle({ client: pool, relations })`
-and the type will pick it up.
+what `defineRelations()` produces.
 
-Nothing else in a generated project reads the schema object: repositories
+## The relations manifest
+
+Codegen owns `<paths.generated>/relations.ts` (REL-1, ADR-044). It is one
+`defineRelations()` call over every entity's relationships, regenerated from the
+YAML on every `codegen entity new`; never edit it. Passing it to `drizzle()` is
+what makes `db.query.<table>.findMany({ with: … })` resolve and type end to end.
+Leave it out and `db.query` has no relations to follow: `with:` neither type-checks nor resolves.
+
+Generated repositories already go through it: their typed includes (REL-2,
+`api.includes`) are RQBv2 `with:` trees over this manifest.
+
+**Scoping: the hops are guarded, the root is not.** Each relation in the
+manifest carries the target's scope guards (tenant, user, soft-delete) through
+`hopScope`, so every hop of an include tree is scoped however you reach it. The
+**root row** of a query is filtered by the generated repository, not by the
+manifest. So a hand-written `db.query.<table>.findMany({ with: … })` that skips the
+repository returns roots from every tenant and user, with correctly scoped
+children under them (asserted by `test/scaffold/tests/relation-scope.test.ts`, L3b).
+Go through the repository, or put the root's scope in your own `where:`.
+
+Nothing else in a generated project reads the table schema object: repositories
 import their table directly. The `src/generated/schema.ts` barrel exists for
 drizzle-kit and for code that imports tables by name.
 
