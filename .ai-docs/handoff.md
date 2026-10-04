@@ -16,8 +16,8 @@ the reference entities in Studio.
   measures; workaround `measuresFromRegistry`), and #736, #737, #739–#749.
 
 ## Notes
-- **The dogfood lives in `~/Projects/dug/hoops-data/`:** the plan, seven research reports, the briefs and reports from
-  the Herdr agents (`.ai-docs/projects/hoops/briefs/`), the story page https://claude.ai/artifact/3DALXjEvdMt1kkS5fsAJMu,
+- **The dogfood lives in `~/Projects/dug/hoops-data/`:** the plan, seven research reports, the five Herdr agent
+  briefs and reports, indexed with their final outcomes in `.ai-docs/projects/hoops/briefs/README.md`, the story page https://claude.ai/artifact/3DALXjEvdMt1kkS5fsAJMu,
   and the rankings and projection reference scripts (`oracle/draft_kit.py`, `oracle/projections.py`, `oracle/knobs.toml`).
 - **Agents:** Herdr agents in `--permission-mode auto` are refused `gh pr merge` ("Merge Without Review"). The lead
   session merges after Doug approves.
