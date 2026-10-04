@@ -6,34 +6,31 @@ force: true
 <%- generatedBanner %>
 <% if (hasSearchQuery) { -%>
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq<% if (searchQuery.searchField) { %>, ilike<% } %>, type SQL } from 'drizzle-orm';
-import type { Page } from '@shared/http/pagination';
-import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
+import { and, eq<% if (searchQuery.searchField) { %>, ilike<% } %>, type SQL } from 'drizzle-orm';
+import type { ListQuery, Page } from '<%= paginationImport %>';
+import { <%= classNames.listUseCase %> } from './list-<%= entityPluralFileStem %>.use-case';
 import { <%= entityNamePlural %>, type <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 
-export interface <%= searchQuery.inputTypeName %> {
+/** The list query (paging + sort) plus the declared search filters. */
+export interface <%= searchQuery.inputTypeName %> extends ListQuery {
 <% searchQuery.filters.forEach((f) => { -%>
   <%= f.camelName %>?: <%- f.hasChoices ? f.choices.map((c) => `'${c}'`).join(' | ') : f.tsType %>;
 <% }) -%>
 <% if (searchQuery.searchField) { -%>
   search?: string;
 <% } -%>
-<% if (searchQuery.paginate) { -%>
-  limit: number;
-  offset: number;
-<% } -%>
 }
 
 /**
- * Filtered search use case (task #16).
+ * Filtered search use case — generated from the `queries: - name: search` block.
  *
- * Composes the entity service's `list` + `count` with filter-AND and
- * an optional ilike search on `<%= searchQuery.searchField ?? 'N/A' %>`.
- * Pagination is enforced at the Zod layer in the controller.
+ * A search is the list with a `where`: it ANDs the declared filters<% if (searchQuery.searchField) { %>
+ * (and an ilike on `<%= searchQuery.searchField %>`)<% } %> and pages through `<%= classNames.listUseCase %>`,
+ * so paging, sort and the `Page<T>` envelope are the list endpoint's own (#744).
  */
 @Injectable()
 export class <%= searchQuery.useCaseClassName %> {
-  constructor(private readonly service: <%= classNames.service %>) {}
+  constructor(private readonly listUseCase: <%= classNames.listUseCase %>) {}
 
   async execute(input: <%= searchQuery.inputTypeName %>): Promise<Page<<%= classNames.entity %>>> {
     const conditions: SQL[] = [];
@@ -48,23 +45,7 @@ export class <%= searchQuery.useCaseClassName %> {
     if (input.search) conditions.push(ilike(<%= entityNamePlural %>.<%= searchQuery.searchFieldCamel %>, `%${input.search}%`));
 <% } -%>
 
-    const where =
-      conditions.length === 0 ? undefined :
-      conditions.length === 1 ? conditions[0] :
-      and(...conditions);
-
-    const [items, total] = await Promise.all([
-<% if (hasTimestamps) { -%>
-      this.service.list({ where, limit: input.limit, offset: input.offset, orderBy: asc(<%= entityNamePlural %>.createdAt) }),
-<% } else { -%>
-      // No `timestamps` behavior on this entity — order by the uuid primary key
-      // instead of a `created_at` column that does not exist (#604).
-      this.service.list({ where, limit: input.limit, offset: input.offset, orderBy: asc(<%= entityNamePlural %>.id) }),
-<% } -%>
-      this.service.count(where),
-    ]);
-
-    return { items, total, limit: input.limit, offset: input.offset };
+    return this.listUseCase.execute(input, { where: and(...conditions) });
   }
 }
 <% } -%>

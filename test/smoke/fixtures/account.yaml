@@ -25,3 +25,8 @@ behaviors:
 
 queries:
   - by: [status]
+  # Filtered search (#744) — must import only what the consumer has: the list
+  # endpoint's ListQuery / Page<T> envelope, never a consumer-owned module.
+  - name: search
+    filters: [status]
+    search: name

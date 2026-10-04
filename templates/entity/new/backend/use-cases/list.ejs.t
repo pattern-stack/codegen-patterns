@@ -31,7 +31,10 @@ import type {
  * `total`/`pageCount`
 <% } -%>
  * reflect the (optionally filtered) set, so pagination composes with where
- * filters orthogonally — it works fully unfiltered too.
+ * filters orthogonally — it works fully unfiltered too. `options.where` is the
+ * filter seam: the entity's search use case, when its YAML declares one, ANDs
+ * its predicates and pages through here, so search and list share one
+ * envelope (#744).
  *
 <% if (hasTimestamps) { -%>
  * v1 ENGINE = OFFSET. `nextCursor` is computed from the last row and emitted
@@ -58,10 +61,15 @@ export class <%= classNames.listUseCase %> {
    */
   async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
     query?: ListQuery,
-    include?: TWith,
+    options: { include?: TWith; where?: SQL } = {},
   ): Promise<Page<<%= classNames.entity %>Result<TWith>>> {
+    const { include, where } = options;
 <% } else { -%>
-  async execute(query?: ListQuery): Promise<Page<<%= classNames.entity %>>> {
+  async execute(
+    query?: ListQuery,
+    options: { where?: SQL } = {},
+  ): Promise<Page<<%= classNames.entity %>>> {
+    const { where } = options;
 <% } -%>
     const resolved = resolveListQuery(query);
 
@@ -105,11 +113,9 @@ export class <%= classNames.listUseCase %> {
       : [{ column: 'id', direction: 'desc' }];
 <% } -%>
 
-    // Arbitrary where-filters are NOT modeled in v1 (the ListQuery owns only
-    // pagination + sort); `where` stays undefined so the list is unfiltered by
-    // default. A future filter seam ANDs predicates here and passes the same
-    // `where` to both `list` and `count` so `total`/`pageCount` stay accurate.
-    const where: SQL | undefined = undefined;
+    // The ListQuery owns only pagination + sort; filtering is the caller's
+    // `where` (undefined = unfiltered). The same `where` goes to both `list`
+    // and `count`, so `total`/`pageCount` describe the filtered set.
 
 <% if (hasTimestamps) { -%>
     // KEYSET SEAM (deferred — v1 fetches by offset). When the keyset upgrade

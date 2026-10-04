@@ -97,10 +97,9 @@ export class UserController {
     @Query(new ZodValidationPipe(ListUsersQuerySchema)) query: ListUsersQueryDto,
     @Query('include') include?: string,
   ): Promise<Page<UserApiResult>> {
-    return this.listUseCase.execute(
-      query,
-      this.resolveInclude(include, undefined),
-    );
+    return this.listUseCase.execute(query, {
+      include: this.resolveInclude(include, undefined),
+    });
   }
 
   @ApiOperation({ summary: 'Find user by id', operationId: 'findUserById' })

@@ -729,30 +729,32 @@ const QueryDeclarationSchema = z.object({
 export type QueryDeclaration = z.infer<typeof QueryDeclarationSchema>;
 
 /**
- * Search Query Declaration — filtered search with pagination.
+ * Search Query Declaration — the list endpoint, filtered.
  *
  * Emits:
- *   - `searchXs(input): Promise<Page<Entity>>` on the service
- *   - `GET /xs/search` controller route with Zod filter schema
- *   - `SearchXsUseCase` with filter-AND + count-for-total semantics
+ *   - `GET /xs/search` — the list's `ListQuery` (page / pageSize / cursor /
+ *     sort_by / sort_order) extended with one optional param per filter
+ *   - `SearchXsUseCase` — ANDs the filters (and the optional ilike) into a
+ *     `where` and pages through `ListXsUseCase`, so the response is the same
+ *     `Page<T>` envelope the list returns (#744). There is one pagination
+ *     envelope per generated API, and it ships with the runtime.
  *
  * Example:
  *   - name: search
  *     filters: [user_id, provider, is_visible, canonical_state, is_closed]
  *     search: name              # optional ilike on a single text column
- *     paginate: true            # defaults to limit 50, max 200, offset 0
  *
- * Consumer contract: `@shared/http/pagination` must export
- * `PaginationSchema` (z.object with limit+offset defaults) and a
- * `Page<T>` interface with `{ items, total, limit, offset }`.
+ * `.strict()`: search pages and sorts the way the list does — by the request's
+ * `page` / `pageSize` / `sort_by` / `sort_order` — so there is no `paginate:` or
+ * `order:` key to declare.
  */
-const SearchQueryDeclarationSchema = z.object({
-  name: z.literal('search'),
-  filters: z.array(z.string()).min(1),
-  search: z.string().optional(),
-  paginate: z.boolean().optional().default(true),
-  order: z.string().optional(),
-});
+const SearchQueryDeclarationSchema = z
+  .object({
+    name: z.literal('search'),
+    filters: z.array(z.string()).min(1),
+    search: z.string().optional(),
+  })
+  .strict();
 
 export type SearchQueryDeclaration = z.infer<typeof SearchQueryDeclarationSchema>;
 

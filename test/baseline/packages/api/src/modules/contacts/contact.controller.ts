@@ -97,10 +97,9 @@ export class ContactController {
     @Query(new ZodValidationPipe(ListContactsQuerySchema)) query: ListContactsQueryDto,
     @Query('include') include?: string,
   ): Promise<Page<ContactApiResult>> {
-    return this.listUseCase.execute(
-      query,
-      this.resolveInclude(include, undefined),
-    );
+    return this.listUseCase.execute(query, {
+      include: this.resolveInclude(include, undefined),
+    });
   }
 
   @ApiOperation({ summary: 'Find contact by id', operationId: 'findContactById' })

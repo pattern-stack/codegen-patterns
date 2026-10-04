@@ -92,14 +92,13 @@ export function runtimeImportLocals(mode) {
     // ADR-043 §5: use-cases read the acting principal from the ambient
     // RequesterContext (ALS), never from self-asserted request headers.
     tenantContextImport: runtimeImport(mode, "base-classes/tenant-context"),
-    // Pagination contract (pagination-by-default). ASYMMETRIC by mode:
+    // Pagination contract (pagination-by-default) — the ONE envelope of a
+    // generated API: the list endpoint and the `queries: search` endpoint both
+    // import it from here (#744). ASYMMETRIC by mode:
     //   - package  → `@pattern-stack/codegen/runtime/http/pagination` (Page<T>,
     //     ListQuerySchema, resolveListQuery, buildPage, cursor codec).
     //   - vendored → `@shared/http/page` (vendored to `src/shared/http/page.ts`
-    //     by project init's VENDORED_RUNTIME_FILES). DISTINCT from the consumer's
-    //     OPTIONAL `@shared/http/pagination` search contract ({items,total,limit,
-    //     offset}) — vendoring the Page<T> envelope to `/pagination` would
-    //     clobber it, so the list envelope lives at `/page`.
+    //     by project init's VENDORED_RUNTIME_FILES).
     // Unlike most @shared/http/* files (which the package never owns), THIS one
     // IS package-published — the list endpoint is unconditional, so its contract
     // must ship with codegen (package mode) and be vendored (vendored mode).

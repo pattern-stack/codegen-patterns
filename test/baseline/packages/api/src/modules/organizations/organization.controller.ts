@@ -97,10 +97,9 @@ export class OrganizationController {
     @Query(new ZodValidationPipe(ListOrganizationsQuerySchema)) query: ListOrganizationsQueryDto,
     @Query('include') include?: string,
   ): Promise<Page<OrganizationApiResult>> {
-    return this.listUseCase.execute(
-      query,
-      this.resolveInclude(include, undefined),
-    );
+    return this.listUseCase.execute(query, {
+      include: this.resolveInclude(include, undefined),
+    });
   }
 
   @ApiOperation({ summary: 'Find organization by id', operationId: 'findOrganizationById' })

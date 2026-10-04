@@ -66,6 +66,11 @@ queries:
     order: close_date desc
   - by: [stage]
   - by: [owner_id, stage]
+  # Filtered search (#744): pages through the list use case and returns its
+  # Page<T> — the baseline typecheck compiles it against the vendored runtime.
+  - name: search
+    filters: [stage, owner_id]
+    search: name
 
 events:
   - name: deal_created

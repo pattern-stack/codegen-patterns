@@ -122,10 +122,9 @@ export class <%= classNames.controller %> {
     @Query('include') include?: string,
   ): Promise<Page<<%= classNames.entity %>ApiResult>> {
 <% if (includes) { -%>
-    return this.listUseCase.execute(
-      query,
-      this.resolveInclude(include, <%- apiIncludeRoutes.includes('list') ? `${apiIncludesConst}.list` : 'undefined' %>),
-    );
+    return this.listUseCase.execute(query, {
+      include: this.resolveInclude(include, <%- apiIncludeRoutes.includes('list') ? `${apiIncludesConst}.list` : 'undefined' %>),
+    });
 <% } else { -%>
     // <%= entityName %> has no relations in the generated graph, so there is no
     // include to expose — but the parameter is still VALIDATED, so `?include=`

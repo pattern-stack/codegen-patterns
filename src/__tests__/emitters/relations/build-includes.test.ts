@@ -103,7 +103,7 @@ describe('readRouteKeys', () => {
 	it('excludes the named-search form — it is not a finder (§5.4)', () => {
 		const def = parse({
 			...ACCOUNT,
-			queries: [{ name: 'search', filters: ['name'], paginate: true }],
+			queries: [{ name: 'search', filters: ['name'] }],
 		});
 		expect(readRouteKeys(def)).toEqual(['find_by_id', 'list']);
 	});

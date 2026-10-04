@@ -97,10 +97,9 @@ export class OpportunityController {
     @Query(new ZodValidationPipe(ListOpportunitiesQuerySchema)) query: ListOpportunitiesQueryDto,
     @Query('include') include?: string,
   ): Promise<Page<OpportunityApiResult>> {
-    return this.listUseCase.execute(
-      query,
-      this.resolveInclude(include, undefined),
-    );
+    return this.listUseCase.execute(query, {
+      include: this.resolveInclude(include, undefined),
+    });
   }
 
   @ApiOperation({ summary: 'Find opportunity by id', operationId: 'findOpportunityById' })
