@@ -550,7 +550,8 @@ paths:
 
 generate:
   frontend: false                # default false; scanner detects apps/frontend/
-  semantic: false                # default false; emit src/generated/semantic/ (declared AggregateModel)
+  semantic: false                # default false; emit src/generated/semantic/ (declared AggregateModel) —
+                                 # true needs the optional peer @pattern-stack/query-surface installed
 
 # frontend:                      # inert unless generate.frontend: true
 #   ...                          # see "Frontend generation" above for the full block

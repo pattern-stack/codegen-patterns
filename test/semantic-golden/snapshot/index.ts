@@ -15,4 +15,4 @@ export type {
 	MeasureCatalog,
 	MeasureDef,
 	RelDescriptor,
-} from './types';
+} from '@pattern-stack/query-surface';

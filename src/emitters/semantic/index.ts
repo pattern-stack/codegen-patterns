@@ -16,8 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { buildSemanticIndex, SEMANTIC_INDEX_FILE } from './emit-index';
-import { buildSemanticModelSource, SEMANTIC_MODEL_FILE, TYPES_MODULE } from './emit-model';
-import { buildSemanticTypes } from './emit-types';
+import { buildSemanticModelSource, SEMANTIC_MODEL_FILE } from './emit-model';
 import { buildSemanticModel } from './build-model';
 import type { SemanticEmitContext } from './types';
 
@@ -36,7 +35,6 @@ export type {
 export { sortEntities } from './types';
 export { buildSemanticModel, junctionIdentity } from './build-model';
 export { buildSemanticModelSource, GENERATED_BANNER, SEMANTIC_MODEL_FILE, TYPES_MODULE } from './emit-model';
-export { buildSemanticTypes } from './emit-types';
 export { buildSemanticIndex, SEMANTIC_INDEX_FILE } from './emit-index';
 export {
 	loadJunctionDefinitions,
@@ -47,8 +45,6 @@ export type {
 	LoadSemanticEmitContextResult,
 	SemanticConfigInput,
 } from './load-context';
-
-export const SEMANTIC_TYPES_FILE = 'types.ts';
 
 export interface EmitSemanticResult {
 	/** Absolute directory the model was written into. */
@@ -65,8 +61,8 @@ export interface EmitSemanticResult {
  * Emit the semantic model into `outDir`. Complete-file writes, deterministic
  * for a given context, safe to re-run.
  *
- * `types.ts` is emitted only while the vocabulary is vendored — see
- * `emit-types.ts` for what changes when the package publishes.
+ * Two files: `model.ts` and the `index.ts` barrel. The vocabulary types come
+ * from the published package (`TYPES_MODULE`), never a vendored copy.
  */
 export function emitSemanticModel(
 	ctx: SemanticEmitContext,
@@ -79,9 +75,6 @@ export function emitSemanticModel(
 		[SEMANTIC_MODEL_FILE]: buildSemanticModelSource(model),
 		[SEMANTIC_INDEX_FILE]: buildSemanticIndex(),
 	};
-	if (TYPES_MODULE === './types') {
-		contents[SEMANTIC_TYPES_FILE] = buildSemanticTypes();
-	}
 
 	const written = Object.keys(contents).sort();
 

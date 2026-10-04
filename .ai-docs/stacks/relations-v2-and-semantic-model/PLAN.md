@@ -278,6 +278,8 @@ metric — a Zod discriminated union may not hold a refined (`ZodEffects`) membe
 > too; (3) the conformance test asserts a **sound narrowing**, not declaration identity — an emitted model must be
 > assignable to the package's types, and demanding identity would force the mirror to carry EAV and
 > expression-measure machinery the emitter never populates.
+> **SEM-4 (2026-10-04, #694):** the package published (0.3.1) and the fallback is gone — the emitted model imports
+> its types from `@pattern-stack/query-surface`, an optional peer; `types.ts` and the conformance test are deleted.
 
 New whole-set emitter `src/emitters/semantic/` shaped like `src/emitters/frontend/` (`loadSemanticEmitContext` +
 `emitSemanticModel(ctx, outDir)`, name-sorted entities, complete-file writes with the `@generated` banner). Post-step
@@ -321,6 +323,7 @@ Mapping rules that need a decision (recommendation first):
 > `account.name` was untagged and so not groupable; tagged, it is **9/9**. CI still skips: no engine is installed
 > there. The suite resolves an installed `@pattern-stack/query-surface` first, so SEM-4 turns it on by adding the
 > devDependency — one item of the measured nine-item retirement list in `docs/specs/SEM-2.md` §4.
+> **SEM-4 (2026-10-04, #694) did:** CI's `integration` job now runs the suite against the installed 0.3.1 — 10/0.
 > Two further things every later unit needs: (1) `needsCte` is `sources.length > 1`, so the fan-out trap needs a
 > measure at the PARENT grain beside the one over the `has_many`; (2) never probe the sibling checkout without
 > staging it — it has no `node_modules`, so `bun <script>` auto-installs 0.45 and hands you a 0.45 answer.

@@ -303,7 +303,8 @@ paths:
   jobs_dir: definitions/jobs      # default
 generate:                         # no architecture key — backend is the only backend (ARCH-0)
   frontend: false
-  semantic: false                 # emit <generated>/semantic/ — the declared AggregateModel (SEM-2)
+  semantic: false                 # emit <generated>/semantic/ — the declared AggregateModel (SEM-2);
+                                  # true needs the optional peer @pattern-stack/query-surface (SEM-4)
 patterns: [src/patterns/*.pattern.ts]   # default <backend_src>/patterns/*.pattern.ts
 auth:
   devAllowAnonymous: false        # strict block; localhost-only escape hatch

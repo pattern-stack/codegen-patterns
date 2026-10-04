@@ -10,7 +10,7 @@ import type {
 	AggregateModel,
 	EntityDescriptor,
 	MeasureCatalog,
-} from './types';
+} from '@pattern-stack/query-surface';
 
 const tables: Record<string, PgTable> = {
 	account: schema.accounts,

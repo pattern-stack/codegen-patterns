@@ -25,8 +25,8 @@ source of the cardinality graph. The emitter declares from it and never reads a 
   through the cross-entity registry (the target's own `plural`), never re-pluralized at emit time.
 - **I2 generated means regenerated.** `<generated>/semantic/*` are whole-set, complete-file writes with an
   `@generated` banner, name-sorted, byte-identical on re-run. No inject, no anchors, no author seam.
-- **I7 no backwards compat.** No cube-era shim, no parallel model shape. The type mirror is a *pre-publication
-  stand-in* with a named removal path (§4), not a compatibility layer.
+- **I7 no backwards compat.** No cube-era shim, no parallel model shape. The type mirror was a *pre-publication
+  stand-in* with a named removal path (§4), not a compatibility layer — and SEM-4 (#694) took that path.
 - **I9 honest gates.** Golden snapshot + unit tests land in `just test-all`; the emitted model is type-checked inside
   a real smoke project. The sibling-checkout conformance test skips **with a printed reason** when the checkout is
   absent — a named, single-purpose skip, not a filter. No new `any`.
@@ -168,6 +168,10 @@ which 1.0 changed under it.
 
 ### 4. Types: the mirror, and retiring it
 
+> **Retired 2026-10-04 by SEM-4 (#694).** The emitted model imports its types from `@pattern-stack/query-surface`;
+> `types.ts`, `emit-types.ts` and the conformance test are deleted. What follows is the design SEM-2 shipped, kept
+> because it explains the measured list; "Done — what SEM-4 changed" after the list records what it missed.
+
 The package is not published (charter risk register; query-surface#40). PLAN §5.3's fallback therefore applies:
 `types.ts` is emitted as a **verbatim mirror** of the vocabulary — `Agg`, `Additivity`, `AggColType`,
 `AggFieldMeta`, `AggRelationship`, `AggEntity`, `AggRegistry`, `RelDescriptor`, `EntityDescriptor` (the subset SEM-2
@@ -204,6 +208,28 @@ done, except the two marked *not gated*:
 
 The emitted barrel (`emit-index.ts`) needs **no** edit: it re-exports the vocabulary from `TYPES_MODULE`, and every
 name it re-exports is exported from the package root (checked against query-surface#41's `src/index.ts`).
+
+#### Done — what SEM-4 changed (2026-10-04, #694), against `@pattern-stack/query-surface@0.3.1`
+
+All nine items landed. The list was right about every gated item: each went red as recorded and green once done.
+What differed:
+
+- **Item 8, the peer range.** The peer is `^0.3.1`, not an exact pin: a 0.x caret stays inside 0.3, and it follows
+  the `drizzle-orm` precedent (a range on the peer, the exact version on the devDependency and in the smoke). The
+  devDependency and the smoke's `RUNTIME_DEPS` pin `0.3.1` exactly.
+- **Item 9 understated CONSUMER-SETUP.** It needs the install line *and* `--legacy-peer-deps` for npm: the package's
+  optional `@nestjs/*` peers are `^11`, codegen's are `^10`, and npm stops with `ERESOLVE` (measured, Nest 10 + npm).
+  Its config-block table also still listed `generate.analytics`, removed by SEM-1; it now says `semantic`.
+- **Missed: SEM-3's engine sourcing.** With the devDependency, the suite's "no engine" skip became an absent input
+  defaulting to permissive (CLAUDE.md gate shape (c)), and its pre-1.0 `createOne` skip could only match a version the
+  repo no longer installs. Both skips and the sibling-checkout probe are deleted; the installed package is required
+  (a load error fails), and `QUERY_SURFACE_PATH` stays as the explicit override for unreleased engine work. The one
+  skip left is no Docker. In CI the suite **runs**: 10 pass / 0 fail.
+- **Missed: comments that described the mirror** — `SemanticRelationship` in `types.ts` (pointed at the conformance
+  test), `emit-index.ts`'s header, the justfile recipe and the CI step comment, and the SEM-3 suite's `has_one` test.
+- **Not code, but required by the charter:** ADR-045's dated revision, PLAN §5.3 / §5.4 notes, and the charter's §8
+  risk row (retired).
+- `just test-all`'s 17 skips (the conformance suite, Found #4) are gone; `just test-unit` is 4060 pass / 3 skip.
 
 **Retiring the mirror is the only exit for the conformance test.** The mirror was written against query-surface
 `main` before #41 (17/17 at `61c0df4`). Against #41's head (`ba816c3`) it is 15 pass / 2 fail — the two `has_one`
@@ -270,7 +296,7 @@ one — and it is a declaration-level lie, so it stays a documented fallback rat
 |---|---|---|
 | `src/__tests__/emitters/semantic/golden-model.test.ts` | Byte-identical whole-set output for `test/semantic-golden/` — measures with `aggs` and with a single `agg`, a non-additive measure, a time axis, an enum dimension with a declared domain, a `has_one`, a junction, a cross-entity ratio and a derived tree. Regenerate with `UPDATE_SEMANTIC_GOLDEN=1`. Mirrors the frontend golden test. | `just test-unit` → `just test-all` |
 | `src/__tests__/emitters/semantic/build-model.test.ts` | Unit: type mapping, `searchableColumns` derivation, junction descriptors + inverse edges, scope columns as dimensions, `through:` omitted, `string_array` / `entity_ref` omitted, registry-resolved plurals, catalog composites only. | `just test-unit` |
-| `src/__tests__/emitters/semantic/conformance.test.ts` | The mirror matches the sibling package's vocabulary types, or skips **with a printed reason**. Carries the named `has_one` expectation. | `just test-unit` |
+| ~~`src/__tests__/emitters/semantic/conformance.test.ts`~~ (deleted by SEM-4) | The mirror matches the sibling package's vocabulary types, or skips **with a printed reason**. Carries the named `has_one` expectation. | `just test-unit` |
 | `just test-smoke-relationship` | **The real gate.** The CRM fixture set gains analytics tags and `generate.semantic: true`, so the emitted `semantic/` tree is type-checked by the smoke's `tsc` over the generated project — under the consumer tsconfig, against the real emitted schema barrel. | `just test-all` |
 | `just test-all`, `just test-integration` | No regression in the emitters, CLI or scaffold. | CI |
 
@@ -283,12 +309,10 @@ narrower claim, and the CRM set is the one SEM-3 builds on.
   keys are the YAML relationship names verbatim (snake_case). SEM-3's queries and any host wiring must use those.
 - **`buildAggregateModel()` is a function, not a const** — it reads `getColumns` at call time, so the module is safe to
   import before the schema is fully initialised.
-- **The types module is named once** (`TYPES_MODULE` in `emit-model.ts`), but retiring the mirror is **nine** edits,
-  seven of them gated — the measured list is §4 "Retiring the mirror". The emitted barrel re-exports types from
-  `TYPES_MODULE`, so it survives the switch untouched.
-- **The conformance test is red against query-surface#41** (15/2, the `has_one` tripwires) and green against `main`
-  (17/17). Retiring the mirror is its only exit — see §4.
-- **`has_one` is emitted but not in the package before #41** (S7).
+- **The types module is named once** (`TYPES_MODULE` in `emit-model.ts`) and, since SEM-4 (#694), it is
+  `@pattern-stack/query-surface` — an optional peer a project with `generate.semantic: true` installs. The emitted
+  barrel re-exports the types from it.
+- **`has_one` is emitted, and the package knows it** since query-surface#41 (published 0.3.0) (S7).
 - **`through:` and EAV are not emitted**, and `string_array` / `entity_ref` are absent from `analytics.fields`.
 - **Junction payload columns are emitted** — FKs, `role` (a dimension) when declared with `choices:`, the
   BaseJunctionFields per `temporal` / `sourced`, payload `fields:`, timestamps — and **no `id`**. A junction's
@@ -356,6 +380,8 @@ rather than documented:
   golden junction now declares `role` with `choices:` and a decimal payload field so the snapshot locks both paths.
 
 ### Found #4 — the conformance test skips by default in this repo's own CI
+
+> Moot since SEM-4 (#694): the mirror and the conformance test are deleted.
 
 `QUERY_SURFACE_PATH` is unset and the sibling is not laid out beside this checkout, so `just test-all` runs the suite
 as 17 skips plus the printed reason. That is deliberate — a machine-specific absolute path does not belong in the

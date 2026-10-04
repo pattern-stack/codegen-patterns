@@ -188,13 +188,11 @@ test-integration-quick:
 test-obs-integration:
     bun test "{{justfile_directory()}}/test/integration/observability-list-reads.drizzle.integration.test.ts"
 
-# Engine: QUERY_SURFACE_PATH (explicit checkout — fails, never skips, on any
-# load error), else an installed @pattern-stack/query-surface, else a sibling
-# ../query-surface checkout. Skips WITH A PRINTED REASON when there is no
-# engine, no Docker, or an auto-discovered engine is the pre-drizzle-1.0
-# package. 9/9 against query-surface#41.
-#
 # SEM-3 demonstration gate: the EMITTED model answers a fan-out-trap measure
+# against real Postgres, through @pattern-stack/query-surface's own engine.
+# Engine: the installed devDependency (SEM-4) — required, a load error fails;
+# QUERY_SURFACE_PATH points it at a checkout instead (fails, never skips).
+# The one skip is no Docker, printed. Runs in the CI `integration` job.
 test-semantic-integration:
     bun test "{{justfile_directory()}}/test/integration/semantic-fanout.drizzle.integration.test.ts"
 

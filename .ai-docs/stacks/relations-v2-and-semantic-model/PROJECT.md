@@ -187,7 +187,7 @@ Append-only. A decision that changes an invariant or the target picture also get
 | Drizzle 1.0 changes between rc.4 and GA | a gate fails after a pin move | pins are exact in harnesses; re-run gates on each RC; DRZ-2's spec records the API surface we depend on |
 | ~~Per-hop scoping cannot be expressed cleanly in RQBv2~~ | — | **Retired 2026-09-20.** It can: `RelationsFilter.RAW` accepts a callback that Drizzle invokes while BUILDING the statement, once per traversed relation, so a module-level manifest carries a per-request predicate. The fallback (include-tree rewriting) was rejected on a measured leak, not on capability. |
 | A scope leak through traversal | — | **Covered for the hops (REL-2, #587):** 10 leak tests at depth 3 in `just test-integration`, mutation-checked (8 of 10 go red when the hop `where` is removed). The remaining exposure is a NEW traversal source that does not go through a relation — there is none today, because the guard is on the relation. |
-| query-surface not published when SEM-2 is ready | query-surface#40 still open | documented fallback: vendored type mirror + conformance test (PLAN §5.3) |
+| ~~query-surface not published when SEM-2 is ready~~ | — | **Retired 2026-10-04 (SEM-4, #694).** The fallback was taken at SEM-2 (vendored type mirror + conformance test); the package published as 0.3.0 / 0.3.1 and the mirror is deleted — the emitted model imports the package, an optional peer. |
 | Snapshot churn hides real regressions | large baseline diffs | DRZ-1 isolates the mechanical churn; every later PR explains each snapshot class it changes |
 | Plan drift — docs stop matching reality | a spec contradicts this charter | §9 protocol; the checkpoint after DRZ-2; any agent that finds drift fixes it in the same PR |
 
