@@ -54,9 +54,8 @@ export type AggColType =
  * One relationship edge, in the shape both `EntityDescriptor.relationships`
  * and `AggEntity.rels` take.
  *
- * `has_one` is emitted faithfully. The consuming package does not know the kind
- * yet (query-surface#40) — see docs/specs/SEM-2.md S7 and the conformance
- * test's named expectation.
+ * `has_one` is emitted faithfully; the package's `AggRelationship.kind` carries
+ * it (docs/specs/SEM-2.md S7).
  */
 export interface SemanticRelationship {
 	kind: 'belongs_to' | 'has_many' | 'has_one';

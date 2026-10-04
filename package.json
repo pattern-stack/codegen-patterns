@@ -108,6 +108,7 @@
     "@nestjs/core": "^10",
     "@nestjs/schedule": "^4.0.0 || ^5.0.0",
     "@nestjs/swagger": "^7.0.0 || ^8.0.0",
+    "@pattern-stack/query-surface": "^0.3.1",
     "bullmq": ">=5.0.0",
     "class-transformer": ">=0.5.0",
     "class-validator": ">=0.14.0",
@@ -125,6 +126,9 @@
       "optional": true
     },
     "@nestjs/swagger": {
+      "optional": true
+    },
+    "@pattern-stack/query-surface": {
       "optional": true
     },
     "bullmq": {
@@ -156,6 +160,7 @@
     "@pattern-stack/codegen-mail": "workspace:*",
     "@pattern-stack/codegen-messaging": "workspace:*",
     "@pattern-stack/codegen-transcript": "workspace:*",
+    "@pattern-stack/query-surface": "0.3.1",
     "@testcontainers/postgresql": "^12.0.0",
     "@types/bun": "latest",
     "@types/ejs": "^3.1.5",

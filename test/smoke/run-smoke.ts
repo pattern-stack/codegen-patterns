@@ -95,6 +95,10 @@ const RUNTIME_DEPS = [
 	'@nestjs/swagger@7',
 	'@anatine/zod-openapi@2',
 	'drizzle-orm@1.0.0-rc.4',
+	// SEM-4: the emitted semantic model (relationship scenario) imports its
+	// types from the package — exact, like drizzle-orm, matching the repo's
+	// devDependency. Without it: TS2307 in src/generated/semantic/*.ts.
+	'@pattern-stack/query-surface@0.3.1',
 	'reflect-metadata@0.2',
 	'pg@8',
 	'zod@3',
@@ -238,7 +242,7 @@ function assertNoV1Relations(source: string, label: string): void {
  */
 function assertSemanticEmission(tmpDir: string): void {
 	const dir = path.join(tmpDir, 'src/generated/semantic');
-	for (const file of ['model.ts', 'types.ts', 'index.ts']) {
+	for (const file of ['model.ts', 'index.ts']) {
 		if (!fs.existsSync(path.join(dir, file))) {
 			throw new Error(`semantic model: expected ${file} in src/generated/semantic`);
 		}
@@ -620,7 +624,7 @@ async function main(): Promise<number> {
 
 		// 4.5. SEM-2: switch the semantic emitter on for the relationship
 		// scenario. The CRM fixtures carry analytics tags, so `entity new` emits
-		// `src/generated/semantic/{types,model,index}.ts` — and the `tsc` pass
+		// `src/generated/semantic/{model,index}.ts` — and the `tsc` pass
 		// below then type-checks the emitted model under the CONSUMER tsconfig,
 		// against the real schema barrel. That compile is the actual gate for
 		// this emitter; the golden snapshot only pins its text.

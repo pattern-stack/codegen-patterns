@@ -16,23 +16,18 @@
  * answer and the wrong answer a naive join gives — so it demonstrates the trap
  * rather than assuming it.
  *
- * WHERE THE ENGINE COMES FROM, in order:
- *   1. `QUERY_SURFACE_PATH` — an explicit checkout. Setting it is a demand to
- *      run: a missing path, or ANY load error, FAILS the suite; it never skips.
- *   2. an installed `@pattern-stack/query-surface` (resolved from this repo).
- *      Unpublished today (query-surface#40/#41), so nothing is installed; once
- *      SEM-4 adds it as a devDependency this is what CI uses, with no edit here.
- *   3. a sibling checkout (`../query-surface`), for local runs.
+ * WHERE THE ENGINE COMES FROM:
+ *   - the installed `@pattern-stack/query-surface` — a devDependency of this
+ *     repo, pinned exactly (SEM-4, #694). This is what CI runs. It is
+ *     REQUIRED: if it does not resolve or load, the suite fails. An absent
+ *     engine is not a reason to skip once the repo depends on it.
+ *   - `QUERY_SURFACE_PATH` — an explicit checkout, for running the emitted
+ *     model against unreleased engine work. Setting it is a demand to run: a
+ *     missing path, or ANY load error, FAILS the suite.
  *
- * SKIPS, each named and printed (charter I9 — a skip with a stated reason is
- * not a filter):
- *   - no engine from any of the three sources;
- *   - no Docker → the `obs-list-reads` precedent;
- *   - an AUTO-DISCOVERED engine (2 or 3) that is the pre-1.0 package: its
- *     introspection path value-imports `createOne` / `createMany` /
- *     `Relations`, which drizzle-orm 1.0 removed from the root export. The skip
- *     matches THAT SyntaxError and nothing else — any other load error fails.
- *     query-surface#41 is the fix; against its head this suite is 9/9.
+ * ONE SKIP, named and printed (charter I9 — a skip with a stated reason is not
+ * a filter): no Docker → the `obs-list-reads` precedent. The CI `integration`
+ * job has Docker, so there it runs.
  *
  * WHY A CHECKOUT IS STAGED INTO THIS REPO. The checkout has no
  * `node_modules`, and nothing between it and `/` does either, so a bare
@@ -45,14 +40,10 @@
  * shared by the engine, the table objects and the db handle. A cross-copy
  * mismatch would fail loudly anyway: the package's `is(x, PgTable)` checks are
  * identity-based (the dual-type-identity hazard `init-scaffold.ts` documents).
- * An INSTALLED package needs no staging: it resolves drizzle-orm as a peer from
+ * The INSTALLED package needs no staging: it resolves drizzle-orm as a peer from
  * this repo's `node_modules`.
  *
- * Runs via `just test-semantic-integration` and the CI `integration` job. In CI
- * today there is no engine (the package is unpublished and no checkout is
- * present), so it SKIPS, loudly. It starts gating in CI when SEM-4 installs the
- * package — adding the devDependency is the one edit, and it is on SEM-4's list
- * (docs/specs/SEM-2.md §4, item 8).
+ * Runs via `just test-semantic-integration` and the CI `integration` job.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -65,30 +56,16 @@ import { Pool } from 'pg';
 import { buildAggregateModel } from '../semantic-golden/snapshot/model';
 
 // ────────────────────────────────────────────────────────────────────────────
-// Preconditions — each skip names itself and prints why.
+// Preconditions — the engine (required) and Docker (the one named skip).
 // ────────────────────────────────────────────────────────────────────────────
 
 const PACKAGE = '@pattern-stack/query-surface';
 
-type EngineSource =
-	| { kind: 'explicit'; root: string }
-	| { kind: 'installed'; entry: string }
-	| { kind: 'sibling'; root: string };
+type EngineSource = { kind: 'installed' } | { kind: 'explicit'; root: string };
 
-function findEngine(): EngineSource | null {
+function findEngine(): EngineSource {
 	const fromEnv = process.env.QUERY_SURFACE_PATH;
-	if (fromEnv) return { kind: 'explicit', root: fromEnv };
-	try {
-		return { kind: 'installed', entry: Bun.resolveSync(PACKAGE, import.meta.dir) };
-	} catch {
-		// not installed — fall through to a sibling checkout
-	}
-	const repoRoot = resolve(import.meta.dir, '../..');
-	for (const candidate of ['../query-surface', '../../query-surface']) {
-		const dir = resolve(repoRoot, candidate);
-		if (existsSync(resolve(dir, 'src/index.ts'))) return { kind: 'sibling', root: dir };
-	}
-	return null;
+	return fromEnv ? { kind: 'explicit', root: fromEnv } : { kind: 'installed' };
 }
 
 async function dockerIsAvailable(): Promise<boolean> {
@@ -119,18 +96,6 @@ function stagePackage(root: string): string {
 	return dir;
 }
 
-/**
- * THE ONE ERROR THAT SKIPS: the pre-1.0 package value-importing a v1 relations
- * export drizzle-orm 1.0 removed from its root. Bun reports it as
- *   SyntaxError: Export named 'createOne' not found in module '…/drizzle-orm/index.js'.
- */
-const PRE_1_0_PACKAGE =
-	/^Export named '(createOne|createMany|Relations)' not found in module '[^']*\/drizzle-orm\/index\.js'/;
-
-function isPre10Package(err: unknown): boolean {
-	return err instanceof SyntaxError && PRE_1_0_PACKAGE.test(err.message);
-}
-
 type Engine = Record<string, (...args: never[]) => never> & Record<string, unknown>;
 
 /** Load the engine, staging a checkout first. Returns the staged dir to clean up. */
@@ -154,57 +119,36 @@ const SOURCE = findEngine();
 const DOCKER_OK = await dockerIsAvailable();
 
 /**
- * Load once, up front, so the skip decision is made on the real error. An
- * explicit checkout rethrows everything (the suite then FAILS in `beforeAll`);
- * an auto-discovered one skips only on {@link isPre10Package}.
+ * Load once, up front. Any load error is kept and rethrown by the always-on
+ * check below and by `beforeAll`, so it FAILS the run — there is no load error
+ * that skips.
  */
 let loaded: { qs: Engine; staged: string | null } | null = null;
 let loadError: unknown = null;
-if (SOURCE !== null) {
-	try {
-		loaded = await loadEngine(SOURCE);
-	} catch (err) {
-		loadError = err;
-	}
+try {
+	loaded = await loadEngine(SOURCE);
+} catch (err) {
+	loadError = err;
 }
-const SKIP_PRE_1_0 = SOURCE !== null && SOURCE.kind !== 'explicit' && isPre10Package(loadError);
 
-if (SOURCE === null) {
-	console.warn(
-		`[SEM-3 fan-out] SKIPPED — no ${PACKAGE} engine: not installed, no sibling checkout, ` +
-			'QUERY_SURFACE_PATH unset. The emitted model is NOT verified against the semantic ' +
-			'engine in this run.',
-	);
-}
 if (!DOCKER_OK) {
 	console.warn('[SEM-3 fan-out] SKIPPED — Docker not available; no Postgres to query.');
 }
-if (SKIP_PRE_1_0) {
-	console.warn(
-		`[SEM-3 fan-out] SKIPPED — the ${SOURCE!.kind} ${PACKAGE} is the pre-drizzle-1.0 package: ` +
-			(loadError as Error).message +
-			'\n  pattern-stack/query-surface#41 (1.0 peer + has_one + publish) is the fix; ' +
-			'point QUERY_SURFACE_PATH at a checkout of it to run the demonstration.',
-	);
-}
-if (SOURCE !== null) {
-	const where = SOURCE.kind === 'installed' ? SOURCE.entry : SOURCE.root;
-	console.log(`[SEM-3 fan-out] engine: ${SOURCE.kind} (${where})`);
-}
+console.log(
+	`[SEM-3 fan-out] engine: ${SOURCE.kind} (${SOURCE.kind === 'explicit' ? SOURCE.root : PACKAGE})`,
+);
 
-/** Run unless a named skip applies. A load error that is NOT a named skip
- *  leaves this true, so `beforeAll` rethrows it and the suite fails. */
-const RUN = SOURCE !== null && DOCKER_OK && !SKIP_PRE_1_0;
+/** Run unless Docker is missing. A load error leaves this true, so
+ *  `beforeAll` rethrows it and the suite fails. */
+const RUN = DOCKER_OK;
 
 /**
- * Runs ALWAYS — even without Docker — so a load error that is not the named
- * pre-1.0 skip fails the run instead of hiding behind another skip.
+ * Runs ALWAYS — even without Docker — so a load error fails the run instead of
+ * hiding behind the Docker skip.
  */
-describe('SEM-3 — the semantic engine loads, or skips for the one named reason', () => {
-	it(SOURCE === null ? 'no engine present (skip printed above)' : `the ${SOURCE.kind} engine loads`, () => {
-		if (SOURCE === null || loadError === null) return;
-		if (SKIP_PRE_1_0) return;
-		throw loadError;
+describe('SEM-3 — the semantic engine loads', () => {
+	it(`the ${SOURCE.kind} engine loads`, () => {
+		if (loadError !== null) throw loadError;
 	});
 });
 
@@ -322,10 +266,10 @@ describe.skipIf(!RUN)('SEM-3 — describe over the emitted model', () => {
 		expect(byPath.has('account.created_at')).toBe(true);
 	});
 
-	it('accepts the emitted `has_one` edge (query-surface#40 not required to read the model)', () => {
+	it('accepts the emitted `has_one` edge', () => {
 		expect(model.analytics.account.rels.primary_contact.kind).toBe('has_one');
-		// The graph walks match on belongs_to / has_many and ignore an unknown
-		// kind, so an emitted has_one neither breaks discovery nor invents a path.
+		// The package knows the kind (query-surface#41): discovery walks it as a
+		// to-one edge rather than rejecting the model.
 		const dims = qs.conformedDimensions(model.analytics, 'account');
 		expect(Array.isArray(dims)).toBe(true);
 	});

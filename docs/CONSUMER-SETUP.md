@@ -520,8 +520,29 @@ paths:
 
 generate:
   frontend: false                   # emit Electric-SQL frontend pipeline?
+  semantic: false                   # emit the semantic model? (needs @pattern-stack/query-surface, below)
 
 ```
+
+### `generate.semantic: true` — install `@pattern-stack/query-surface`
+
+The emitted `<paths.generated>/semantic/` imports from `@pattern-stack/query-surface`, the semantic-query package that
+runs it. It is an **optional peer** of `@pattern-stack/codegen` (`^0.3.1`): install it yourself when you turn
+`generate.semantic` on, or the generated tree fails to compile with `Cannot find module
+'@pattern-stack/query-surface'`.
+
+```bash
+bun add @pattern-stack/query-surface@^0.3.1
+# npm: the flag is required next to codegen's Nest 10 peers (see below)
+npm install --legacy-peer-deps @pattern-stack/query-surface@^0.3.1
+```
+
+- **npm needs `--legacy-peer-deps`.** The package declares optional peers on `@nestjs/common` / `@nestjs/swagger`
+  `^11` for its `./nest` adapter; codegen's are `^10`. npm treats an installed optional peer outside its range as a
+  conflict and stops with `ERESOLVE`. The generated model imports only the package root, which loads neither Nest nor
+  any other optional peer, so the mismatch does not reach it. It does stop a Nest 10 app from mounting the package's
+  `./nest` adapter.
+- **Licence:** FSL-1.1-MIT (converts to MIT two years after each release). Check it fits your use before you ship.
 
 **The file is validated strictly.** Every `codegen` command (and every generator it runs) parses
 `codegen.config.yaml` through one schema, `CodegenConfigSchema` (`src/schema/codegen-config.schema.ts`). An unknown
@@ -533,7 +554,7 @@ blocks are:
 |---|---|
 | `runtime` | `package` (default) \| `vendored` — where generated code imports the runtime from (ADR-037) |
 | `paths` | `backend_src`, `frontend_src`, `entities`, `events_dir`, `jobs_dir`, `providers`, `modules_dir`, `orchestration_src`, `generated` |
-| `generate` | `frontend`, `analytics` |
+| `generate` | `frontend`, `semantic` |
 | `patterns` | glob list for app-defined patterns (below); default `<backend_src>/patterns/*.pattern.ts` |
 | `locations` | `path` / `import` overrides for the frontend emitter's three named locations (`dbEntities`, `frontendGenerated`, `frontendCollectionsAuth`) |
 | `frontend` | the frontend emitter (README › Frontend generation) |

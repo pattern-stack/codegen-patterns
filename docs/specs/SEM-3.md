@@ -65,6 +65,9 @@ peer, `has_one`, publishable `0.2.0`. The retroactive review of PR #622 ran this
 
 ### Consequence: the demonstration runs wherever an engine is available — not yet in CI
 
+> **Superseded 2026-10-04 by SEM-4 (#694):** the package is published (0.3.1) and is a devDependency, so CI runs the
+> suite. The paragraph below is the state when SEM-3 shipped.
+
 T4 made the demonstration un-runnable against `main`; T10–T12 show it passes against #41. The package is not
 published and CI has no checkout, so **in CI the suite skips, loudly, until SEM-4 installs the package** — adding
 `@pattern-stack/query-surface` as a devDependency is the one edit that turns it on (docs/specs/SEM-2.md §4, item 8);
@@ -102,8 +105,8 @@ QUERY_SURFACE_PATH=/path/to/query-surface just test-semantic-integration
 ```
 
 Setting `QUERY_SURFACE_PATH` is a demand to run: a missing path or **any** load error fails the suite — it never
-skips. The same recipe is a step in the CI `integration` job, where there is no engine today, so CI reports the skip
-rather than hiding it.
+skips. Without it, the suite runs against the installed `@pattern-stack/query-surface` devDependency (SEM-4, #694),
+which is what the CI `integration` job runs.
 
 ## Scope
 
@@ -163,19 +166,16 @@ any directory between it and `/`, so a bare `drizzle-orm` specifier inside it re
 engine, the table objects and the db handle share one drizzle copy or the run fails loudly. This is what turned the
 design's wrong answer into T4.
 
-**Where the engine comes from, in order:** `QUERY_SURFACE_PATH` (an explicit checkout — never skips); an
-installed `@pattern-stack/query-surface` (none today; what CI uses once SEM-4 adds the devDependency); a sibling
-`../query-surface` checkout. Checkouts are staged; an installed package resolves drizzle-orm as a peer from this repo.
+**Where the engine comes from** (as of SEM-4, #694): the installed `@pattern-stack/query-surface` devDependency,
+pinned exactly — **required**, so a resolve or load error fails the suite; or `QUERY_SURFACE_PATH`, an explicit
+checkout for running the emitted model against unreleased engine work (staged; never skips). An installed package
+resolves drizzle-orm as a peer from this repo.
 
-**Skips, each named and printed:**
+**One skip, named and printed:** no Docker (the `obs-list-reads` precedent). Anything else fails.
 
-- no engine from any source → print the three places it looked;
-- no Docker → print why (the `obs-list-reads` precedent);
-- an **auto-discovered** engine that is the pre-1.0 package → only on the exact error
-  `SyntaxError: Export named '(createOne|createMany|Relations)' not found in module '…/drizzle-orm/index.js'`, printed
-  verbatim, naming query-surface#41.
-
-Anything else fails. **As first shipped the skip was not honest** (review of PR #622): `packageLoads()` caught every
+SEM-4 deleted the other two skips and the sibling-checkout probe. Once the repo depends on the package, "no engine"
+is an absent input defaulting to permissive (CLAUDE.md, gate shape (c)), and the pre-1.0 `createOne` skip could only
+match a package version the repo no longer installs. The history below is what SEM-3 shipped. **As first shipped the skip was not honest** (review of PR #622): `packageLoads()` caught every
 error and reported it as "does not load against drizzle-orm 1.0", so on a fresh clone — where `test/tmp/` does not
 exist and `mkdtemp` threw `ENOENT` — it printed the drizzle reason for a filesystem error; and an explicit
 `QUERY_SURFACE_PATH` to a bad path skipped. Now: `test/tmp/` is created before staging; the skip matches the one
@@ -187,9 +187,9 @@ no `test/tmp/` → 10/0.
 None is a filter: each is a whole-suite skip with a stated reason, visible in the run output.
 
 **Where it runs:** `just test-semantic-integration`, plus a step in the CI `integration` job, which already has
-Docker. A gate in no CI job rots (CLAUDE.md), so it is wired in now and **reports its skip in CI** until SEM-4
-installs the package there. What gates the emitter in CI today remains the golden snapshot, the golden-schema test
-and the relationship smoke's `tsc`.
+Docker. As shipped it reported its skip in CI; since SEM-4 (#694) installs the package as a devDependency it **runs
+there** — 10 pass / 0 fail against 0.3.1. Together with the golden snapshot, the golden-schema test and the
+relationship smoke's `tsc`, it now gates the emitter in CI.
 
 ## Out of scope
 
@@ -206,7 +206,7 @@ and the relationship smoke's `tsc`.
 | `src/__tests__/emitters/semantic/golden-model.test.ts` (extended) | The widened `aggs`, the non-additive percentage and the junction shape are locked in the snapshot. | `just test-all` |
 | `src/__tests__/emitters/semantic/golden-schema.test.ts` (new) | Every table the emitted snapshot references exists in `test/semantic-golden/schema.ts`, so the fixture barrel cannot drift from the model. The junction table mirrors the junction template (composite key, no `id`); a named expectation pins that the junction `pk` names no column (#689). | `just test-all` |
 | `just test-smoke-relationship` | The tagged CRM slice still type-checks as an emitted model under the consumer tsconfig. | `just test-all` |
-| `just test-semantic-integration` | **The demonstration.** describe + the grain oracle + a fan-out measure against real Postgres, with the naive counter-example. **9/9 against query-surface#41** (T12); **skips in CI** (no engine installed) until SEM-4 adds the devDependency. | a step in the CI `integration` job, which reports the skip |
+| `just test-semantic-integration` | **The demonstration.** describe + the grain oracle + a fan-out measure against real Postgres, with the naive counter-example. **9/9 against query-surface#41** (T12); runs in CI against the installed 0.3.1 since SEM-4 (#694). | a step in the CI `integration` job |
 | `just test-all`, `just test-integration` | No regression. | CI |
 
 ## What downstream must know
@@ -221,15 +221,13 @@ and the relationship smoke's `tsc`.
   resolvable) but `group_by` refuses it. Tag every dimension you intend to group by.
 - **`describe` against a host-supplied model is `conformedDimensions` + `measuresFromRegistry`**, not
   `buildEntityCatalog` — that one reads the package's module-global introspected registry, which is the other path.
-- **The fan-out-trap exit criterion is demonstrated against query-surface#41, not gated in CI.** 9/9 against #41's
-  head `ba816c3` (T12). CI skips until SEM-4 installs the package.
-- **What must ship before the mirror can be retired** — query-surface#41 must merge and publish (it carries the 1.0
-  peer, `has_one` and `0.2.0`). Then SEM-4 applies the **nine-item, measured** list in docs/specs/SEM-2.md §4
-  "Retiring the mirror" — the old three-edit recipe was wrong. Item 8 (the devDependency) is also what turns this
-  suite on in CI; the suite already resolves an installed package first.
-- **The conformance test is red against #41** (15/2) and retiring the mirror is its only exit (SEM-2 §4).
+- **The fan-out-trap exit criterion is gated in CI** since SEM-4 (#694): the suite runs against the installed
+  `@pattern-stack/query-surface@0.3.1` devDependency. (When SEM-3 shipped it was demonstrated against #41's head
+  `ba816c3` only, 9/9 — T12.)
+- **The mirror is retired** (SEM-4, #694) — the emitted model imports its types from the published package; SEM-2 §4
+  records what the measured list missed.
 - **The pre-#41 package does not load on Drizzle 1.0 at all** (T4) — `src/index.ts` transitively reaches a value
-  import of `createMany` / `createOne`. #41 is therefore not optional for this project.
+  import of `createMany` / `createOne`. Every published version (0.3.0, 0.3.1) is post-#41 and peers drizzle-orm `^1.0.0-rc.4`.
 - **Junction payload columns are in the model** (since the SEM-2 review fix); a junction's `pk` names no column
   (#689); `role: { values: … }` on a junction generates no column (#690).
 - **Soft-deleted rows are summed unless the host's scope excludes them** — the model declares columns, not row

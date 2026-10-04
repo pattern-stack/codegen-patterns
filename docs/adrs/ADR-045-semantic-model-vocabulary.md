@@ -115,8 +115,18 @@ later consumes the model:
    `analytics.fields`. `through:` relationships are not emitted; the consuming layer resolves multi-hop paths from
    the one-hop graph.
 
+## Revision — 2026-10-04, SEM-4 (#694): the mirror is retired
+
+`@pattern-stack/query-surface` published (0.3.0, 0.3.1) with the Drizzle 1.0 peer and `has_one`. The emitted model
+imports its types from the package root; SEM-2's decision 3 (the vendored `types.ts` and its conformance test) is
+withdrawn, and decision 4's named `has_one` expectation went with the conformance test — the package's
+`AggRelationship.kind` now carries the kind, so there is nothing left to expect. The package is an **optional peer**
+of codegen (`^0.3.1`) that a project with `generate.semantic: true` installs, and an exact devDependency here, which
+is what lets SEM-3's demonstration run in CI. Decision 2 is unchanged.
+
 ## Follow-ups
 
 - **SEM-3** demonstrates the model end to end against a fan-out trap.
 - EAV field tags (`AggFieldMeta.eav`) are deliberately unaddressed here; PLAN §5.3 defers them.
-- **query-surface#40** (Drizzle 1.0 peer, `has_one`, publish) retires the vendored mirror and the named expectation.
+- ~~**query-surface#40** (Drizzle 1.0 peer, `has_one`, publish) retires the vendored mirror and the named
+  expectation.~~ Done: SEM-4 (#694), above.

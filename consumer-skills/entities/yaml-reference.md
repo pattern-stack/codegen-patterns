@@ -233,9 +233,12 @@ With `generate.semantic: true`, `codegen entity new` writes
 - `model.ts` — `buildAggregateModel()`, returning the registry (tables, keys,
   columns, relationships, searchable columns), the per-field analytics tags, the
   Drizzle table + column references, and the composite catalog.
-- `types.ts` — the model's types, vendored until the semantic-query package
-  publishes.
-- `index.ts` — the barrel.
+- `index.ts` — the barrel; it also re-exports the model's types.
+
+Both files import their types from `@pattern-stack/query-surface`, so a project
+with `generate.semantic: true` installs it (an optional peer of
+`@pattern-stack/codegen`, `^0.3.1`). Without it the generated tree fails to
+compile with `Cannot find module '@pattern-stack/query-surface'`.
 
 Everything in it is **declared** from your YAML. Two consequences worth knowing:
 

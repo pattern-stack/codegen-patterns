@@ -3,8 +3,7 @@
  *
  * The golden snapshot pins the whole tree; this pins the properties that must
  * survive a refactor of the renderer itself — chiefly that the types module is
- * named in exactly ONE place, so switching from the vendored mirror to the
- * published package cannot be done halfway.
+ * named in exactly ONE place, and that it is the published package.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -12,9 +11,7 @@ import { describe, expect, it } from 'bun:test';
 import {
 	buildSemanticIndex,
 	buildSemanticModelSource,
-	buildSemanticTypes,
 	emitSemanticModel,
-	SEMANTIC_TYPES_FILE,
 	TYPES_MODULE,
 } from '../../../emitters/semantic/index';
 import type { SemanticEmitContext, SemanticModel } from '../../../emitters/semantic/types';
@@ -22,28 +19,25 @@ import type { SemanticEmitContext, SemanticModel } from '../../../emitters/seman
 const emptyModel: SemanticModel = { entities: [], metrics: [], warnings: [] };
 
 describe('TYPES_MODULE is the single name of the types module', () => {
-	it('is the vendored mirror until the package publishes', () => {
-		// Flipping this is SEM-4's retirement, not a one-line change — the full
-		// list of edits is in emit-types.ts's header and docs/specs/SEM-2.md §4.
-		expect(TYPES_MODULE).toBe('./types');
+	it('is the published semantic-query package (SEM-4)', () => {
+		expect(TYPES_MODULE).toBe('@pattern-stack/query-surface');
 	});
 
 	it('is the only type-import specifier the model renders', () => {
 		const source = buildSemanticModelSource(emptyModel);
 		const specifiers = [...source.matchAll(/from '([^']+)'/g)].map((m) => m[1]!);
 		// The model legitimately imports drizzle and the schema barrel; every
-		// OTHER specifier must be TYPES_MODULE. A second hard-coded './types'
-		// somewhere would survive the switch and break the build.
+		// OTHER specifier must be TYPES_MODULE — no relative types module.
 		const typeSpecifiers = specifiers.filter(
 			(s) => s !== 'drizzle-orm' && s !== 'drizzle-orm/pg-core' && s !== '../schema',
 		);
 		expect(typeSpecifiers).toEqual([TYPES_MODULE]);
 	});
 
-	it('the emitted barrel re-exports the vocabulary from TYPES_MODULE, whichever it is', () => {
+	it('the emitted barrel re-exports the vocabulary from TYPES_MODULE', () => {
 		const index = buildSemanticIndex();
-		// Consumers import types from the barrel; retiring the mirror must not
-		// take them away, so the re-export follows the constant.
+		// Consumers import types from the barrel, so the re-export follows the
+		// constant.
 		expect(index).toContain(`} from '${TYPES_MODULE}';`);
 		expect(index).toContain('\tAggregateModel,');
 		expect(index).toContain("export { buildAggregateModel } from './model';");
@@ -57,14 +51,10 @@ describe('emitted file set', () => {
 		junctions: [],
 	};
 
-	it('includes types.ts only while the vocabulary is vendored', () => {
+	it('is the model and its barrel — no vendored types module', () => {
 		const result = emitSemanticModel(ctx, '/tmp/unused-sem2', { dryRun: true });
 		const files = Object.keys(result.contents).sort();
-		expect(files).toEqual(
-			TYPES_MODULE === './types'
-				? ['index.ts', 'model.ts', SEMANTIC_TYPES_FILE]
-				: ['index.ts', 'model.ts'],
-		);
+		expect(files).toEqual(['index.ts', 'model.ts']);
 	});
 
 	it('a dry run writes nothing but still renders every file', () => {
@@ -83,7 +73,6 @@ describe('rendering', () => {
 
 	it('carries the @generated banner on every file', () => {
 		expect(buildSemanticModelSource(emptyModel)).toStartWith('// @generated');
-		expect(buildSemanticTypes()).toStartWith('// @generated');
 		expect(buildSemanticIndex()).toStartWith('// @generated');
 	});
 
