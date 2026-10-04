@@ -14,7 +14,7 @@ import { readFileSync as read } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { JobDefinitionSchema, type JobDefinition } from '../../schema/job-definition.schema';
-import { emitJobHandlers, jobLoadRejections } from '../../cli/shared/emit-jobs';
+import { emitJobHandlers, jobLoadRejections, jobSubsystemRejections } from '../../cli/shared/emit-jobs';
 
 const FIXTURE_DIR = resolve(__dirname, '../../../test/fixtures/jobs');
 const loadJob = (name: string): JobDefinition =>
@@ -22,6 +22,7 @@ const loadJob = (name: string): JobDefinition =>
 
 const drivePoll = loadJob('drive_poll.yaml');
 const reconcilePoll = loadJob('reconcile_poll.yaml');
+const inboundSync = loadJob('inbound_sync.yaml');
 
 const tmpDirs: string[] = [];
 function tmpJobsDir(): string {
@@ -87,5 +88,37 @@ describe('jobLoadRejections (JOBS-2, #664)', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe('jobSubsystemRejections (#745)', () => {
+	const missing = (job: string, arm: string, kind: string) =>
+		`job '${job}' arm '${arm}' (kind: ${kind}) has a \`read:\` block, which types against the integration subsystem — not installed. Run \`codegen subsystem install integration\`.`;
+
+	it('integration installed — no rejection', () => {
+		expect(
+			jobSubsystemRejections([drivePoll, inboundSync], new Set(['jobs', 'integration']), '/p/definitions/jobs'),
+		).toEqual([]);
+	});
+
+	it('integration not installed — one rejection per job: the first arm is the message, the rest are details', () => {
+		expect(
+			jobSubsystemRejections([drivePoll, inboundSync], new Set(['events', 'jobs', 'bridge']), '/p/definitions/jobs'),
+		).toEqual([
+			{
+				file: '/p/definitions/jobs/drive_poll.yaml',
+				message: missing('drive_poll', drivePoll.arms[0]!.domain, 'poll'),
+				details: [],
+			},
+			{
+				file: '/p/definitions/jobs/inbound_sync.yaml',
+				message: missing('inbound_sync', 'message', 'realtime'),
+				details: inboundSync.arms.slice(1).map((a) => missing('inbound_sync', a.domain, a.kind)),
+			},
+		]);
+	});
+
+	it('no jobs — no rejection, whatever is installed', () => {
+		expect(jobSubsystemRejections([], new Set(), '/p/definitions/jobs')).toEqual([]);
 	});
 });

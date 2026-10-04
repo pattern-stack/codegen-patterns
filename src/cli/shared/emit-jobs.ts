@@ -20,7 +20,8 @@ import { basename, dirname, extname, join } from "node:path";
 import { generating } from "../../utils/generated-file";
 import type { AnalysisIssue } from "../../analyzer/types";
 import type { RuntimeMode } from "./runtime-import";
-import type { JobDefinition } from "../../schema/job-definition.schema";
+import type { JobArm, JobDefinition } from "../../schema/job-definition.schema";
+import type { SubsystemName } from "./subsystem-detect";
 import { issueRejections } from "./run-rejections";
 import {
 	generateJobHandlerBase,
@@ -96,6 +97,37 @@ export function jobLoadRejections(
 			}
 		}
 		return { file, message, details };
+	});
+}
+
+/**
+ * Jobs whose handler base would import a subsystem the project has not
+ * installed → one run-level rejection per job (#745). Every arm kind embeds a
+ * `read:` `DetectionConfig`, and the `@generated` base types its per-arm
+ * detection literals against the integration subsystem's barrel, so without it
+ * the consumer's `tsc` fails TS2307 (vendored) or the job runs with no
+ * `IntegrationModule` wired (package). `installed` is the mode-aware set
+ * `resolveInstalledSubsystems` returns — the same one the subsystem barrel
+ * composes from.
+ */
+export function jobSubsystemRejections(
+	jobs: JobDefinition[],
+	installed: ReadonlySet<SubsystemName>,
+	jobsDir: string,
+): JobLoadRejection[] {
+	if (installed.has("integration")) return [];
+	return jobs.flatMap((job) => {
+		const [first, ...rest] = job.arms;
+		if (first === undefined) return [];
+		const missing = (arm: JobArm) =>
+			`job '${job.type}' arm '${arm.domain}' (kind: ${arm.kind}) has a \`read:\` block, which types against the integration subsystem — not installed. Run \`codegen subsystem install integration\`.`;
+		return [
+			{
+				file: join(jobsDir, `${job.type}.yaml`),
+				message: missing(first),
+				details: rest.map(missing),
+			},
+		];
 	});
 }
 

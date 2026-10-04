@@ -33,7 +33,8 @@ import { findYamlFiles } from '../../utils/find-yaml-files.js';
 import type { AnalysisIssue } from '../../analyzer/types.js';
 import { projectLayout } from './project-layout.js';
 import { loadJobs } from '../../parser/load-jobs.js';
-import { jobLoadRejections } from './emit-jobs.js';
+import { jobLoadRejections, jobSubsystemRejections } from './emit-jobs.js';
+import { resolveInstalledSubsystems } from './subsystem-detect.js';
 import { issueRejections, type RejectionEntry, type RunRejection } from './run-rejections.js';
 import { printError, printInfo, printSuccess, printWarning } from '../ui/output.js';
 import { isJsonMode } from '../ui/json.js';
@@ -156,6 +157,17 @@ export async function preflightEntityTargets(
 	const { jobsDir, jobHandlers } = projectLayout(ctx.cwd, ctx.config);
 	const jobLoad = loadJobs(jobsDir);
 	runRejections.push(...jobLoadRejections(jobLoad.issues, jobHandlers));
+	// A job's handler base imports the integration subsystem (every arm's
+	// `read:` block is a `DetectionConfig`); a project that has not installed it
+	// gets a refusal naming the job, the arm and the install command, not a
+	// TS2307 in the emitted file (#745).
+	runRejections.push(
+		...jobSubsystemRejections(
+			jobLoad.jobs,
+			new Set((await resolveInstalledSubsystems(ctx)).map((s) => s.name)),
+			jobsDir,
+		),
+	);
 
 	// Provider definitions (RFC-0001, Track D) — loaded and cross-validated
 	// ONCE, here; the post-step emits from this set. A blocking issue (a YAML
