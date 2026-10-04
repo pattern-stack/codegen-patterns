@@ -10,7 +10,15 @@ import { Inspector } from './inspector/Inspector';
 import type { InspectorTab } from './inspector/Inspector';
 import { Drawer } from './drawer/Drawer';
 import { RUN_STEPS, initialRunState, isRunInFlight, runReducer } from './drawer/run-state';
-import { Button, Dot, Spinner, Toggle } from './ui/primitives';
+import { Button, Dot, Segmented, Spinner, Toggle } from './ui/primitives';
+import { useThemePreference } from './theme/use-theme';
+import type { ThemePreference } from './theme/theme';
+
+const THEME_OPTIONS: readonly { id: ThemePreference; label: string; title: string }[] = [
+  { id: 'system', label: 'Auto', title: 'Follow the system appearance' },
+  { id: 'light', label: 'Light', title: 'Always light' },
+  { id: 'dark', label: 'Dark', title: 'Always dark' },
+];
 
 const EMPTY_GRAPH: AdaptedGraph = { nodes: [], edges: [] };
 
@@ -48,6 +56,7 @@ export function App() {
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [drawerTab, setDrawerTab] = useState<'log' | 'diff'>('log');
   const [drawerHeight, setDrawerHeight] = useState(240);
+  const [themePreference, setThemePreference] = useThemePreference();
 
   const unsubscribe = useRef<(() => void) | null>(null);
 
@@ -236,14 +245,25 @@ export function App() {
         </span>
 
         {graph.counts != null && (
-          <span style={{ display: 'flex', gap: 'var(--sp-3)', fontSize: 11.5, color: 'var(--t-muted)' }}>
+          <span
+            style={{
+              display: 'flex',
+              flex: '0 0 auto',
+              gap: 'var(--sp-3)',
+              fontSize: 11.5,
+              color: 'var(--t-muted)',
+              whiteSpace: 'nowrap',
+            }}
+          >
             <span>{count(graph.counts.entities, 'entity', 'entities')}</span>
             <span>{count(graph.counts.junctions, 'junction')}</span>
             <span>{count(graph.counts.relationships, 'relationship')}</span>
           </span>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+        {/* Only the project path gives way when the header is short of room. */}
+        <div style={{ marginLeft: 'auto', flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+          <Segmented options={THEME_OPTIONS} value={themePreference} onChange={setThemePreference} label="Theme" />
           {RUN_STEPS.map((step) => (
             <Toggle
               key={step.name}

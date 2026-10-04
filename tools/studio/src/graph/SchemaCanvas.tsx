@@ -132,7 +132,9 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
 
   const miniMapColor = useCallback(
     (node: Node) =>
-      (node.data as unknown as GraphNodeData).kind === 'relationship' ? '#34d399' : '#60a5fa',
+      (node.data as unknown as GraphNodeData).kind === 'relationship'
+        ? 'var(--graph-relationship-color)'
+        : 'var(--graph-entity-color)',
     [],
   );
 
@@ -154,7 +156,7 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 0 L 10 5 L 0 10 z" fill={marker.color} />
+              <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: marker.color }} />
             </marker>
           ))}
         </defs>
@@ -182,14 +184,14 @@ export function SchemaCanvas({ nodes: graphNodes, edges: graphEdges, selectedId,
         nodesDraggable
         nodesConnectable={false}
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#1c2942" />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--s-dots)" />
         <Controls position="top-left" showInteractive={false} />
         {/* Only once the graph is too big to take in at once — below that the
             minimap is an overlay sitting on top of a card it duplicates. */}
         {graphNodes.length > MINIMAP_THRESHOLD && (
           <MiniMap
             nodeColor={miniMapColor}
-            maskColor="rgba(11, 17, 32, 0.75)"
+            maskColor="var(--s-mask)"
             nodeStrokeWidth={0}
             position="bottom-right"
             pannable

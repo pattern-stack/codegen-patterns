@@ -14,7 +14,7 @@ export type ButtonTone = 'default' | 'primary' | 'danger' | 'ghost';
 
 const buttonTones: Record<ButtonTone, CSSProperties> = {
   default: { background: 'var(--s-raised)', color: 'var(--t-primary)', borderColor: 'var(--s-line-strong)' },
-  primary: { background: 'var(--accent-strong)', color: '#04122b', borderColor: 'var(--accent-strong)' },
+  primary: { background: 'var(--accent-strong)', color: 'var(--t-on-accent)', borderColor: 'var(--accent-strong)' },
   danger: { background: 'var(--danger-soft)', color: 'var(--danger)', borderColor: 'var(--danger)' },
   ghost: { background: 'transparent', color: 'var(--t-secondary)', borderColor: 'transparent' },
 };
@@ -294,11 +294,71 @@ export function Toggle({
         fontSize: 12.5,
         cursor: 'pointer',
         userSelect: 'none',
+        whiteSpace: 'nowrap',
       }}
     >
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
+  );
+}
+
+// ── Segmented control ───────────────────────────────────────────────────────
+
+/** One choice out of a few, all visible — a radio group drawn as a pill. */
+export function Segmented<Id extends string>({
+  options,
+  value,
+  onChange,
+  label,
+}: {
+  options: readonly { id: Id; label: string; title?: string }[];
+  value: Id;
+  onChange: (next: Id) => void;
+  /** Accessible name for the group. */
+  label: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      style={{
+        display: 'inline-flex',
+        height: 24,
+        padding: 2,
+        gap: 2,
+        borderRadius: 'var(--r-md)',
+        border: '1px solid var(--s-line)',
+        background: 'var(--s-canvas)',
+      }}
+    >
+      {options.map((option) => {
+        const on = option.id === value;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            title={option.title}
+            onClick={() => onChange(option.id)}
+            style={{
+              padding: '0 var(--sp-2)',
+              border: 'none',
+              borderRadius: 'var(--r-sm)',
+              background: on ? 'var(--s-raised)' : 'transparent',
+              color: on ? 'var(--t-primary)' : 'var(--t-muted)',
+              fontFamily: 'inherit',
+              fontSize: 11,
+              fontWeight: on ? 600 : 500,
+              cursor: 'pointer',
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -10,7 +10,8 @@ import type { Diagnostic } from '@codemirror/lint';
 import { yaml as yamlLanguage } from '@codemirror/lang-yaml';
 import type { ZodIssueLike } from '@studio-shared';
 
-import { studioEditorTheme } from './editor-theme';
+import { editorDarkFlag, studioEditorTheme } from './editor-theme';
+import { useResolvedTheme } from '../theme/use-theme';
 import { issueMessage, issuePosition, locateIssues } from './yaml-issues';
 import type { LocatedIssue } from './yaml-issues';
 
@@ -38,6 +39,8 @@ export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const editable = useRef(new Compartment());
+  const darkFlag = useRef(new Compartment());
+  const resolvedTheme = useResolvedTheme();
   const [located, setLocated] = useState<LocatedIssue[]>([]);
 
   onChangeRef.current = onChange;
@@ -66,6 +69,7 @@ export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }
         highlightSelectionMatches(),
         yamlLanguage(),
         studioEditorTheme,
+        darkFlag.current.of(editorDarkFlag(resolvedTheme)),
         EditorView.lineWrapping,
         keymap.of([
           {
@@ -118,6 +122,12 @@ export function YamlEditor({ value, onChange, issues, onSave, readOnly = false }
       effects: editable.current.reconfigure(EditorView.editable.of(!readOnly)),
     });
   }, [readOnly]);
+
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: darkFlag.current.reconfigure(editorDarkFlag(resolvedTheme)),
+    });
+  }, [resolvedTheme]);
 
   // Diagnostics are recomputed against the *current* document, so an issue
   // keeps pointing at the right line while the author edits around it.

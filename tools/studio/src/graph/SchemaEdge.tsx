@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
 import type { EdgeProps } from '@xyflow/react';
-import { edgeStyle } from './edge-kinds';
+import { edgeColor, edgeStyle } from './edge-kinds';
 import type { StudioEdgeData } from './edge-kinds';
 
 /**
@@ -22,6 +22,7 @@ export const SchemaEdge = memo(function SchemaEdge({
 }: EdgeProps) {
   const edge = data as unknown as (StudioEdgeData & { dimmed?: boolean }) | undefined;
   const style = edgeStyle(edge?.studioKind ?? 'belongs_to');
+  const color = edgeColor(style);
 
   const [path, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -48,7 +49,7 @@ export const SchemaEdge = memo(function SchemaEdge({
         id={id}
         path={path}
         style={{
-          stroke: style.color,
+          stroke: color,
           strokeWidth: selected === true ? style.width + 1 : style.width,
           strokeDasharray: style.dash,
           opacity: dimmed ? 0.12 : 0.85,
@@ -67,7 +68,7 @@ export const SchemaEdge = memo(function SchemaEdge({
               padding: '1px 5px',
               borderRadius: 'var(--r-sm)',
               background: 'var(--s-canvas)',
-              border: `1px solid ${style.color}55`,
+              border: `1px solid color-mix(in srgb, ${color} 33%, transparent)`,
               color: 'var(--t-secondary)',
               pointerEvents: 'none',
               whiteSpace: 'nowrap',

@@ -212,6 +212,13 @@ than branching on a literal:
   edge kind. The legend is generated from it, so it cannot drift from what the
   canvas draws.
 
+Studio is themed light and dark from one switch: every colour token in
+`tools/studio/src/index.css` (and in the graph library's `graph-theme.css`) is a
+`light-dark(light, dark)` pair, `:root` follows the system, and `data-theme` on
+`<html>` pins it either way. A table that holds colours (edge kinds, CodeMirror
+syntax) stores `{ light, dark }` per row and renders it through `cssColor()`.
+Never add a colour literal to a component — it will be right in one theme only.
+
 `tools/` is outside the root workspace, so the app resolves its own deps;
 `just test-studio` installs them if absent and runs the pure-logic unit tests
 (graph adapter, YAML-issue line mapping, diff parser, run reducer).

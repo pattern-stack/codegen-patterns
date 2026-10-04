@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { EDGE_KIND_ORDER, EDGE_KIND_STYLES } from './edge-kinds';
+import { EDGE_KIND_ORDER, EDGE_KIND_STYLES, edgeColor } from './edge-kinds';
 
 const NODE_KINDS = [
   { glyph: '▣', label: 'entity', color: 'var(--graph-entity-color)' },
@@ -82,7 +82,7 @@ export function Legend({ roomy }: { roomy: boolean }) {
                   y1={4}
                   x2={12}
                   y2={4}
-                  stroke={EDGE_KIND_STYLES[kind].color}
+                  style={{ stroke: edgeColor(EDGE_KIND_STYLES[kind]) }}
                   strokeWidth={EDGE_KIND_STYLES[kind].width}
                   strokeDasharray={EDGE_KIND_STYLES[kind].dash}
                 />
@@ -106,7 +106,7 @@ export function Legend({ roomy }: { roomy: boolean }) {
                       y1={4}
                       x2={26}
                       y2={4}
-                      stroke={style.color}
+                      style={{ stroke: edgeColor(style) }}
                       strokeWidth={style.width}
                       strokeDasharray={style.dash}
                     />

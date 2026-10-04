@@ -371,6 +371,11 @@ interface GraphTheme {
 
 Shipped with `light` and `dark` presets. Consumers can override via CSS variables.
 
+`theme/graph-theme.css` writes every colour once as `light-dark(<light>, <dark>)` (2026-10-04, for Studio's light
+theme). The side is picked by the inherited `color-scheme`: the default is light, `data-theme="light" | "dark"`
+on any element pins its subtree, and a consumer that declares `color-scheme: light dark` on its root follows the
+system preference with no attribute. `presets.ts` mirrors the same values for script consumers.
+
 ---
 
 ## Viewer: Schema Graph (tools/schema-graph-viewer/)

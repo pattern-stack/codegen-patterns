@@ -17,38 +17,73 @@
 @import "../../../packages/graph-components/src/theme/graph-theme.css";
 
 /*
- * Surface scale. Four steps, darkest at the back, so panes read as stacked
- * rather than outlined: canvas < chrome < panel < raised.
+ * Theme. Every colour token is written once, as `light-dark(light, dark)`, so
+ * the two palettes sit side by side and cannot drift apart. Which side the
+ * browser picks is `color-scheme`, which inherits: `:root` says `light dark`,
+ * so the system preference decides, and `data-theme` on <html> narrows it to
+ * one side in either direction (`src/theme/theme.ts`). The component library's
+ * `--graph-*` tokens are written the same way and follow the same switch.
  */
 :root {
+  color-scheme: light dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
   color-scheme: dark;
+}
 
-  --s-canvas: #0b1120;
-  --s-chrome: #0f172a;
-  --s-panel: #131c2e;
-  --s-raised: #1b263c;
-  --s-hover: #22304a;
+/*
+ * Surface scale. Dark stacks by lightness, darkest at the back, so panes read
+ * as stacked rather than outlined: canvas < chrome < panel < raised.
+ *
+ * Light cannot stack the same way — "lighter is nearer" runs out at white. So
+ * the back is a cool grey, the panes and cards are white, and `raised` (chips,
+ * buttons on a pane) turns into a light grey fill on that white: elevation by
+ * shade and line rather than by lightness. The hues stay the slate family the
+ * dark scale uses, so the two read as one product.
+ */
+:root {
+  --s-canvas: light-dark(#f1f4f8, #0b1120);
+  --s-chrome: light-dark(#f8fafc, #0f172a);
+  --s-panel: light-dark(#ffffff, #131c2e);
+  --s-raised: light-dark(#edf1f6, #1b263c);
+  --s-hover: light-dark(#e2e8f0, #22304a);
 
-  --s-line: #243352;
-  --s-line-strong: #33456b;
+  --s-line: light-dark(#dce3ec, #243352);
+  --s-line-strong: light-dark(#c4cedb, #33456b);
 
-  --t-primary: #e2e8f0;
-  --t-secondary: #94a3b8;
-  --t-muted: #64748b;
+  /* The canvas's dot grid, and the minimap's out-of-view mask. */
+  --s-dots: light-dark(#cdd5e0, #1c2942);
+  --s-mask: light-dark(rgba(241, 244, 248, 0.75), rgba(11, 17, 32, 0.75));
 
-  --accent: #60a5fa;
-  --accent-strong: #3b82f6;
-  --accent-soft: #1e3a5f;
+  /* Text. `muted` clears 4.5:1 on canvas, chrome and panel in both themes;
+     `faint` is for line numbers only, where low contrast is the point. */
+  --t-primary: light-dark(#0f172a, #e2e8f0);
+  --t-secondary: light-dark(#3d4a5c, #94a3b8);
+  --t-muted: light-dark(#5f6c7f, #7886a0);
+  --t-faint: light-dark(#8a96a8, #475569);
+  /* Text on an `--accent-strong` fill. */
+  --t-on-accent: light-dark(#ffffff, #04122b);
 
-  --ok: #34d399;
-  --warn: #fbbf24;
-  --danger: #f87171;
-  --danger-soft: #450a0a;
+  /* Light takes the 600/700 steps of each hue where dark takes the 300/400s:
+     the same hue at the weight that holds 4.5:1 against a light surface. */
+  --accent: light-dark(#2563eb, #60a5fa);
+  --accent-strong: light-dark(#1d4ed8, #3b82f6);
+  --accent-soft: light-dark(#dbe6fe, #1e3a5f);
 
-  --add: #34d399;
-  --add-bg: rgba(52, 211, 153, 0.1);
-  --del: #f87171;
-  --del-bg: rgba(248, 113, 113, 0.1);
+  --ok: light-dark(#047857, #34d399);
+  --warn: light-dark(#b45309, #fbbf24);
+  --danger: light-dark(#b91c1c, #f87171);
+  --danger-soft: light-dark(#fdecec, #450a0a);
+
+  --add: light-dark(#047857, #34d399);
+  --add-bg: light-dark(rgba(16, 185, 129, 0.12), rgba(52, 211, 153, 0.1));
+  --del: light-dark(#b91c1c, #f87171);
+  --del-bg: light-dark(rgba(239, 68, 68, 0.09), rgba(248, 113, 113, 0.1));
 
   /* One spacing rhythm for every pane's padding and gaps. */
   --sp-1: 4px;
@@ -70,14 +105,10 @@
      panes above it. */
   --h-header: 48px;
   --h-tabbar: 36px;
-}
 
-/*
- * The component library reads `--graph-*` off `[data-theme="dark"]`, which
- * `index.html` sets on <html>. A handful of surfaces are re-pointed at the
- * scale above so library panels sit in the same stack as Studio's own.
- */
-[data-theme="dark"] {
+  /* A handful of the component library's surfaces are re-pointed at the scale
+     above so library panels sit in the same stack as Studio's own. Its other
+     `--graph-*` tokens carry their own light and dark values. */
   --graph-panel-bg: var(--s-panel);
   --graph-node-bg: var(--s-raised);
   --graph-node-border: var(--s-line);
@@ -217,7 +248,7 @@ body {
 /* Zod issues are underlined in place and repeated in a list below the editor;
    the line itself is tinted so it is findable while scrolling. */
 .cm-line.studio-issue-line {
-  background: rgba(248, 113, 113, 0.09);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 
 .studio-issue-mark {

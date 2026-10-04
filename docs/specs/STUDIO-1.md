@@ -8,6 +8,8 @@
 **REL-1** (#586, in review), **REL-2** (#587, in review — PR #713), **REL-3** (#588, planned — *this spec proposes
 its shape*), **TEN-1** (#585, not started), SCOPE-0 (#616, in review), ADR-043
 **Governed by:** charter §4 · CLAUDE.md § Operating Principles
+**Theming:** any surface this adds draws colour from Studio's tokens, or from a `{ light, dark }` table rendered
+through `cssColor()` — never a literal — so it works in both themes (STUDIO-0 § Theming).
 
 Owner, 2026-09-20, and he asks that it be read as a sketch: *"my ideas are initial plans but they're very high
 level thoughts."* So this spec proposes an interaction rather than transcribing one, and §2 lists every place it
