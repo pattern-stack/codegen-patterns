@@ -24,7 +24,7 @@ function makeMockRepo(): IIntegratedEntityRepository<TestEntity> {
     delete: mock(async () => undefined),
     findByExternalId: mock(async () => null),
     findManyByExternalIds: mock(async () => []),
-    findAllByUserId: mock(async () => []),
+    integrationUpsert: mock(async () => []),
   };
 }
 
@@ -65,14 +65,14 @@ describe('WithAnalytics', () => {
     expect(repo.findByExternalId).toHaveBeenCalledWith('sf-001');
   });
 
-  it('preserves family-specific findAllByUser', async () => {
+  it('preserves family-specific findManyByExternalIds', async () => {
     const entities: TestEntity[] = [{ id: '1', name: 'A' }];
     const repo = makeMockRepo();
-    repo.findAllByUserId = mock(async () => entities);
+    repo.findManyByExternalIds = mock(async () => entities);
     const service = new AnalyticsCrmService(repo);
 
-    const result = await service.findAllByUser('user-1');
+    const result = await service.findManyByExternalIds(['sf-001']);
     expect(result).toEqual(entities);
-    expect(repo.findAllByUserId).toHaveBeenCalledWith('user-1');
+    expect(repo.findManyByExternalIds).toHaveBeenCalledWith(['sf-001']);
   });
 });

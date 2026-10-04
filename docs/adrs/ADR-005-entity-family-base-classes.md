@@ -9,6 +9,12 @@
 
 > **Vocabulary note (2026-05-30, ADR-0005):** This ADR also predates the `sync`→`integration` rename (shipped in 0.11.0). Where the body says the `Synced` family / `SyncedEntityRepository` / `SyncedPattern` / `family: synced`, read `Integrated` / `IntegratedEntityRepository` / `IntegratedPattern` / `pattern: Integrated`; the "sync model" axis refers to the data-movement engine now called `integration`. The taxonomy and rationale below are preserved as written. See swe-brain `ADR-0005-rename-sync-to-integration` and the 0.11.0 CHANGELOG.
 
+> **Revision note (2026-10-04, #746):** The user-ownership finders sketched below for the CRM/Integrated family
+> (`findAllByUserId` / `findVisibleByUserId` on the repository, `findAllByUser` / `findVisibleByUser` on the service)
+> were removed. `pattern: Integrated` declares no `user_id`, so on a global integrated table (provider reference data)
+> they were public methods that threw. User ownership belongs to whatever declares the user axis — a `user_id` field
+> and its `queries: [{ by: [user_id] }]` finder — not to the integration pattern.
+
 ## Context
 
 Dealbrain has roughly a dozen entity types that cluster into four distinct families based on their access patterns, sync model, and lifecycle:

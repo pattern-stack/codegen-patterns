@@ -394,7 +394,7 @@ Families provide pre-built base classes with domain-specific query patterns:
 
 | Family | When to Use | Key Methods |
 |--------|-------------|-------------|
-| `integrated` | externally-integrated entities (contacts, accounts) | `findByExternalId`, `integrationUpsert`, `findAllByUserId` |
+| `integrated` | externally-integrated entities (contacts, accounts) | `findByExternalId`, `findManyByExternalIds`, `integrationUpsert` |
 | `activity` | Time-based events (emails, calls, meetings) | `findByDateRange`, `findRecentByOpportunityId` |
 | `metadata` | Key-value data (tags, custom fields) | `findByEntityIdAndType`, `upsertMany` |
 | `knowledge` | Vector-searchable content | Stub (needs pgvector) |

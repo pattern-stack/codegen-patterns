@@ -2,7 +2,8 @@
  * IntegratedEntityRepository integration tests against real Postgres.
  *
  * Tests family-specific methods: findByExternalId, findManyByExternalIds,
- * findAllByUserId, integrationUpsert (stub), findVisibleByUserId (stub).
+ * integrationUpsert. The family carries no user-ownership finders (#746) —
+ * `pattern: Integrated` declares no user axis.
  *
  * Gated behind SCAFFOLD_INTEGRATION=1 — see ./_skip-guard.ts.
  */
@@ -103,32 +104,8 @@ d('findManyByExternalIds', () => {
   });
 });
 
-d('findAllByUserId', () => {
-  test('returns only entities for the given user', async () => {
-    await repo.create(integratedEntityFactory({ userId: 'user-1', name: 'A' }));
-    await repo.create(integratedEntityFactory({ userId: 'user-1', name: 'B' }));
-    await repo.create(integratedEntityFactory({ userId: 'user-2', name: 'C' }));
-
-    const found = await repo.findAllByUserId('user-1');
-    expect(found).toHaveLength(2);
-    const names = found.map((e: CrmEntity) => e.name).sort();
-    expect(names).toEqual(['A', 'B']);
-  });
-
-  test('returns empty array when no matches', async () => {
-    const found = await repo.findAllByUserId('nonexistent');
-    expect(found).toEqual([]);
-  });
-});
-
-d('abstract stubs', () => {
-  test('integrationUpsert returns [] for empty input (#374: now concrete)', async () => {
+d('integrationUpsert', () => {
+  test('returns [] for empty input', async () => {
     await expect(repo.integrationUpsert([])).resolves.toEqual([]);
-  });
-
-  test('findVisibleByUserId throws not implemented', async () => {
-    await expect(repo.findVisibleByUserId('user-1')).rejects.toThrow(
-      'findVisibleByUserId not implemented',
-    );
   });
 });

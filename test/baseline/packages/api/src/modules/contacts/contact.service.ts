@@ -61,7 +61,7 @@ export class ContactService extends WithAnalytics(
   //
   // Inherited from IntegratedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
-  //   findByExternalId, findAllByUserId, findVisibleByUserId
+  //   findByExternalId, findManyByExternalIds
 
   // ═══════════════════════════════════════════════════════════════════════
   // Declarative queries (from queries: block in entity YAML)

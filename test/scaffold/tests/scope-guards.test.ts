@@ -195,8 +195,9 @@ d('count()', () => {
 });
 
 // ============================================================================
-// Family finders — 10 of the 17 sites live in these base classes, and every
-// generated finder compiles to the same `baseQuery(leaf)` call.
+// Family finders — 10 of SCOPE-0's 17 sites lived in these base classes (9 since
+// #746 removed `findAllByUserId`), and every generated finder compiles to the
+// same `baseQuery(leaf)` call.
 // ============================================================================
 
 d('finders built on baseQuery(leaf)', () => {
@@ -232,10 +233,13 @@ d('finders built on baseQuery(leaf)', () => {
     expect(found[0].id).toBe(live.id);
   });
 
-  test('findAllByUserId still honours the soft-delete guard', async () => {
+  // A caller-supplied `userId` leaf (`list({ where })` → `baseQuery(where)`) —
+  // the shape a user-owned entity's own `queries: [{ by: [user_id] }]` finder
+  // compiles to. The family base carries no user finder of its own (#746).
+  test('a userId leaf still honours the soft-delete guard', async () => {
     const { live, deleted } = await seed();
 
-    const found = await asUserA(() => repo.findAllByUserId(USER_A));
+    const found = await asUserA(() => repo.list({ where: eq(crmEntities.userId, USER_A) }));
     expect(found).toHaveLength(1);
     expect(found[0].id).toBe(live.id);
     expect(found.some((r: any) => r.id === deleted.id)).toBe(false);
@@ -246,7 +250,7 @@ d('finders built on baseQuery(leaf)', () => {
 
     // Asking for USER_B's rows BY NAME, as USER_A: the leaf predicate matches,
     // the scope does not. Pre-fix the scope was gone and this returned the row.
-    const found = await asUserA(() => repo.findAllByUserId(USER_B));
+    const found = await asUserA(() => repo.list({ where: eq(crmEntities.userId, USER_B) }));
     expect(found).toHaveLength(0);
     expect(otherUser.id).toBeDefined();
   });

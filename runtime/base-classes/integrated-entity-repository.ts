@@ -2,8 +2,7 @@
  * IntegratedEntityRepository<TEntity, TTable, TIntegrationWrite, TIntegrationProjection>
  *
  * Family-specific base for Integrated entities (contacts, accounts, opportunities).
- * Adds external ID lookups, user-scoped queries, and the generic inbound-integration
- * write surface (canonical→Drizzle upsert + provider-scoped FK resolution +
+ * Adds external ID lookups and the generic inbound-integration write surface (canonical→Drizzle upsert + provider-scoped FK resolution +
  * EAV dual-write seam), driven by the concrete repo's `integrationConfig`.
  *
  * `TTable` is the concrete `pgTable(...)` type (REL-0); the write/projection
@@ -46,14 +45,6 @@ export abstract class IntegratedEntityRepository<
   async findManyByExternalIds(externalIds: string[]): Promise<TEntity[]> {
     if (externalIds.length === 0) return [];
     const rows = await this.baseQuery(inArray(this.col('externalId'), externalIds));
-    return rows as TEntity[];
-  }
-
-  /**
-   * Find all entities owned by a specific user.
-   */
-  async findAllByUserId(userId: string): Promise<TEntity[]> {
-    const rows = await this.baseQuery(eq(this.col('userId'), userId));
     return rows as TEntity[];
   }
 
@@ -353,13 +344,5 @@ export abstract class IntegratedEntityRepository<
       );
     }
     return id;
-  }
-
-  /**
-   * Find entities visible to a user (ownership + sharing rules).
-   * Concrete repositories must implement with visibility logic.
-   */
-  async findVisibleByUserId(_userId: string): Promise<TEntity[]> {
-    throw new Error('findVisibleByUserId not implemented — override in concrete repository');
   }
 }

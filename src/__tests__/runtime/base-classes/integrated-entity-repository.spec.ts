@@ -383,3 +383,13 @@ describe('IntegratedEntityRepository.integrationUpsert (batch)', () => {
     expect(values.provider).toBe('salesforce');
   });
 });
+
+// #746: `pattern: Integrated` emits no `user_id` column, so a user-ownership
+// finder on the family base is a public method that throws on every global
+// integrated table (reference data synced from a provider). Ownership finders
+// belong to whatever declares the user axis, not to the integration pattern.
+describe('IntegratedEntityRepository — no user-ownership finders (#746)', () => {
+  it.each(['findAllByUserId', 'findVisibleByUserId'])('does not expose %s', (method) => {
+    expect(method in IntegratedEntityRepository.prototype).toBe(false);
+  });
+});
