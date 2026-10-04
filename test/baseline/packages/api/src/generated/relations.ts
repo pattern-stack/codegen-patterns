@@ -21,6 +21,7 @@ export const relations = defineRelations(schema, (r) => ({
 	},
 	deals: {
 		account: r.one.accounts({ from: r.deals.accountId, to: r.accounts.id, optional: false }),
+		closer: r.one.users({ from: r.deals.closedById, to: r.users.id, optional: true }),
 		owner: r.one.users({ from: r.deals.ownerId, to: r.users.id, optional: false }),
 	},
 	opportunities: {

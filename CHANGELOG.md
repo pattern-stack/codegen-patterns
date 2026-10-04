@@ -450,6 +450,13 @@ and no one-argument form. Generated repositories already emit it — regenerate.
 
 ### Fixed
 
+- **Two `belongs_to` onto one target compile** (#731). `game.home_team` + `game.away_team → nba_team`
+  imported `nba_teams` twice into the entity file, and keyed the per-edge members by the *target*: two
+  `nba_team()` service methods and two `nba_teamExternalId` Integrated write keys. The entity file now imports
+  each parent table once, and a declared non-self `belongs_to`'s members are keyed by the **relationship name**
+  (`homeTeam`-style casing is #494 / #697's; the name is used verbatim, as a `has_many`'s already was).
+  **Breaking for a relationship whose name differs from its target:** `owner: { target: user }` emits
+  `owner()` / `ownerExternalId`, not `user()` / `userExternalId`. Regenerate, and rename callers.
 - **Repository finders keep the soft-delete and `userTracking` filters** (#616).
   Finders built on `BaseRepository.baseQuery()` — the clean-lite-ps, junction
   and relationship `queries:` finders and the Integrated / Activity / Metadata

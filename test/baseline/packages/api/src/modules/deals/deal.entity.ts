@@ -33,6 +33,11 @@ export const deals = pgTable(
     // BaseService.delete() issues UPDATE … SET deleted_at = now(), not DELETE, so Postgres
     // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
     // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
+    closedById: uuid('closed_by_id').references((): AnyPgColumn => users.id, { onDelete: 'restrict' }),
+    // WARNING: on_delete: 'restrict' is a no-op when this entity uses soft_delete.
+    // BaseService.delete() issues UPDATE … SET deleted_at = now(), not DELETE, so Postgres
+    // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
+    // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
     accountId: uuid('account_id').notNull().references((): AnyPgColumn => accounts.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
     amount: numeric('amount'),

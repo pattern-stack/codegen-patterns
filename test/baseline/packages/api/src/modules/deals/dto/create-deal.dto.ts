@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 export const CreateDealSchema = z.object({
   ownerId: z.string().uuid(),
+  closedById: z.string().uuid().nullable().optional(),
   accountId: z.string().uuid(),
   name: z.string(),
   amount: z.coerce.string().nullable().optional(),

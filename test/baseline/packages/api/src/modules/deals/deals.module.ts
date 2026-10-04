@@ -25,6 +25,7 @@ import { declarativeQueryClasses } from './use-cases/declarative-queries';
     // TODO: Add subsystem modules as needed (EventsSubsystemModule, IntegrationsSubsystemModule, etc.)
     // Cross-domain modules from relationships:
     // UsersModule,
+    // UsersModule,
     // AccountsModule,
   ],
   controllers: [DealController],

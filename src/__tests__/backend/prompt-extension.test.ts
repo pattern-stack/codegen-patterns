@@ -1070,19 +1070,42 @@ describe('roles: → belongs_to emission (CAP-2)', () => {
     expect(role.nullable).toBe(declared.nullable);
   });
 
-  it('a declared (non-role) relationship keeps its target-derived key', () => {
+  it('a declared (non-role) relationship is keyed by its relationship name', () => {
     const locals = buildBackendLocals(
       {
         entity: { name: 'contact', plural: 'contacts', table: 'contacts' },
         fields: {},
-        relationships: { account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
+        relationships: { employer: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
         behaviors: [],
       },
       EMPTY_BASE_LOCALS,
     );
-    expect(locals.belongsTo[0].relationKey).toBe('account');
+    expect(locals.belongsTo[0].relationKey).toBe('employer');
     expect(locals.belongsTo[0].role).toBeNull();
     expect(locals.belongsTo[0].hasIndex).toBe(false);
+  });
+
+  // #731 — game.home_team / game.away_team → nba_team: two edges, one table.
+  it('two declared belongs_to onto one target: two keys, two write keys, one table import', () => {
+    const locals = buildBackendLocals(
+      {
+        entity: { name: 'game', plural: 'games', table: 'games', pattern: 'Integrated' },
+        fields: {},
+        relationships: {
+          home_team: { type: 'belongs_to', target: 'account', foreign_key: 'home_team_id' },
+          away_team: { type: 'belongs_to', target: 'account', foreign_key: 'away_team_id' },
+        },
+        behaviors: [],
+      },
+      EMPTY_BASE_LOCALS,
+    );
+    expect(locals.belongsTo.map((r: { relationKey: string }) => r.relationKey)).toEqual(['home_team', 'away_team']);
+    expect(locals.belongsToTableImports).toEqual([
+      { relatedTable: 'accounts', importPath: '../accounts/account.entity' },
+    ]);
+    expect(
+      locals.integrationWriteFkFields.map((f: { name: string }) => f.name),
+    ).toEqual(['home_teamExternalId', 'away_teamExternalId']);
   });
 });
 

@@ -12,10 +12,8 @@ import {
 <%_ } _%>
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
-<%_ belongsTo.forEach(rel => { _%>
-<%_ if (rel.relatedTable !== entityNamePlural) { _%>
-import { <%= rel.relatedTable %> } from '<%= rel.importPath %>';
-<%_ } _%>
+<%_ belongsToTableImports.forEach(imp => { _%>
+import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
 <%_ }) _%>
 <%_ /* #354: field-level foreign_key target table imports */ _%>
 <%_ fieldFkImports.forEach(imp => { _%>

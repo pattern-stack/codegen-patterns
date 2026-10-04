@@ -528,14 +528,20 @@ describe("generateSinkSubclass — precondition (pattern: Integrated gate)", () 
 // §1b — Contract test: fkWriteKey() ⇄ template's processBelongsTo relationKey
 // ============================================================================
 
-describe("fkWriteKey — contract test (mirrors processBelongsTo:447-460)", () => {
-  it("non-self single-word: target 'account' → accountExternalId", () => {
+describe("fkWriteKey — contract test (mirrors processBelongsTo's relationKey)", () => {
+  it("non-self single-word: relationship 'account' → accountExternalId", () => {
     expect(fkWriteKey("account", "account_id", false)).toBe(
       "accountExternalId",
     );
   });
 
-  it("non-self multi-word: target 'sales_account' → sales_accountExternalId (snake retained)", () => {
+  it("non-self: keyed by the RELATIONSHIP, so two edges onto one target get two keys (#731)", () => {
+    // game.home_team / game.away_team → nba_team
+    expect(fkWriteKey("home_team", "home_team_id", false)).toBe("home_teamExternalId");
+    expect(fkWriteKey("away_team", "away_team_id", false)).toBe("away_teamExternalId");
+  });
+
+  it("non-self multi-word: relationship 'sales_account' → sales_accountExternalId (snake retained)", () => {
     expect(fkWriteKey("sales_account", "sales_account_id", false)).toBe(
       "sales_accountExternalId",
     );

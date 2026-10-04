@@ -316,6 +316,18 @@ target-keyed derivation could not express when two roles share a target.
     `entity new`'s default `--continue-on-error` mode counts invalid YAMLs as failed without printing why (#627);
     the roles pre-flight prints unconditionally and does not inherit that.
 
+13. **Revision 2026-10-04 — declared `belongs_to` edges now get the rule roles got (#731).** CAP-2 keyed a
+    role-derived edge by the role (`relationKey = camelCase(role)`) because keying by target gave `host` and
+    `organizer` one method between them. A *declared* non-self `belongs_to` was still keyed by its target, so the
+    same collision survived for anyone who wrote the two edges by hand: the hoops dogfood's `game.home_team` /
+    `game.away_team → nba_team` emitted two `nba_team()` methods (TS2393) and two `nba_teamExternalId` write keys
+    (TS2300), and the entity file imported `nba_teams` once per edge (TS2300 — role edges hit this too:
+    `matchup.home` / `away`). The declared key is now the **relationship name**, verbatim — the way a `has_many`'s
+    member already was — and the entity file imports each parent table once (`belongsToTableImports`). The sink
+    emitter's `fkWriteKey` mirror takes the relationship name for the same reason. Casing stays #494 / #697's:
+    a role key is camel, a declared key is verbatim. REL-3 (#588) rewrites service composition and supersedes the
+    method half of this.
+
 ## Acceptance — all met
 
 Output from the run made **after the last edit** (charter I9).
