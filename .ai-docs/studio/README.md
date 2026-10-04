@@ -74,6 +74,10 @@ access, and binding it off-box to save one hop would be a worse hole than the on
 
 ## The demo, in about ninety seconds
 
+Each step has a screenshot in both themes: `<n>-<name>.png` is dark and `<n>-<name>.light.png` is light (for
+example [1-model-graph.light.png](1-model-graph.light.png)). Both sets were captured on 2026-10-04 at 1440×900, 2×,
+each from a freshly built demo, with the browser's colour scheme emulated and the toggle left on Auto.
+
 The demo set has a deliberate hole: **`contact` and `opportunity` are not linked**. Both hang off `account`, and
 nothing connects a person to a deal. Filling that hole is the walkthrough.
 
@@ -115,10 +119,17 @@ it somewhere to put them. `just test-studio` asserts the API's numbers.
 
 Every pane below was driven in a browser before it was written down, and the screenshots in this directory
 (`1-model-graph.png` … `8-server-down.png`) are states the UI actually reached, in the order a demo reaches
-them.
+them. Steps 1–7 also exist as `.light.png`; `8-server-down.png` and `9-laptop-1280x720.png` were captured before
+the theme toggle existed and are dark-only.
 
-**Layout.** A fixed header: project path, CLI version, `N entities · N junctions · N relationships`, the three
-run-step checkboxes (Generate / DB push / Restart), `Reload` and `Generate`. The graph fills the left; a
+**Layout.** A fixed header: project path, CLI version, `N entities · N junctions · N relationships`, the theme
+control (Auto / Light / Dark), the three run-step checkboxes (Generate / DB push / Restart), `Reload` and
+`Generate`. When the header is short of room only the project path gives way.
+
+**Theme.** Studio follows the system's light/dark setting by default. Auto / Light / Dark in the header pins it,
+and an explicit choice is remembered in this browser (`localStorage`, `studio.theme`); Auto forgets it. Under the
+hood it is `data-theme` on `<html>` — set it by hand in devtools and the whole app, the graph, the editor and the
+edge colours follow. STUDIO-0 § Theming has the mechanism. The graph fills the left; a
 resizable inspector column is on the right (drag its left edge) and a resizable drawer along the bottom (drag
 its top edge). Nothing resizes itself, so a streaming run never shifts anything above it.
 

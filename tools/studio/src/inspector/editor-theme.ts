@@ -1,75 +1,97 @@
 /**
- * CodeMirror dark theme and highlight style, matched to `index.css` tokens.
+ * CodeMirror theme and highlight style, matched to `index.css` tokens.
  *
  * Written out rather than pulled from `@codemirror/theme-one-dark` so the
  * editor sits in the same surface scale as every other pane; a second palette
  * inside one window is exactly the "looks assembled" failure.
+ *
+ * One theme serves both palettes. The chrome reads Studio's tokens, and the
+ * syntax colours are a table with both themes' value per tag, rendered as
+ * `light-dark()` — so CSS's `color-scheme` switch repaints the editor without
+ * it being rebuilt. The one thing CSS cannot reach is CodeMirror's own
+ * `darkTheme` flag (it picks the base styles for panels such as search), which
+ * `editorDarkFlag` sets from the resolved theme.
  */
 import { EditorView } from '@codemirror/view';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
+import type { Tag } from '@lezer/highlight';
 import type { Extension } from '@codemirror/state';
+import { cssColor } from '../theme/theme';
+import type { ResolvedTheme, ThemedColor } from '../theme/theme';
 
-const theme = EditorView.theme(
-  {
-    '&': {
-      color: '#e2e8f0',
-      backgroundColor: '#0b1120',
-      height: '100%',
-    },
-    '.cm-content': {
-      caretColor: '#60a5fa',
-      padding: '8px 0',
-    },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#60a5fa' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: '#1e3a5f',
-    },
-    '.cm-gutters': {
-      backgroundColor: '#0b1120',
-      color: '#475569',
-      border: 'none',
-      borderRight: '1px solid #243352',
-    },
-    '.cm-activeLine': { backgroundColor: 'rgba(96, 165, 250, 0.06)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#94a3b8' },
-    '.cm-lineNumbers .cm-gutterElement': { padding: '0 10px 0 8px' },
-    '.cm-selectionMatch': { backgroundColor: 'rgba(96, 165, 250, 0.14)' },
-    '.cm-foldPlaceholder': {
-      backgroundColor: '#1b263c',
-      border: 'none',
-      color: '#94a3b8',
-    },
-    '.cm-tooltip': {
-      backgroundColor: '#131c2e',
-      border: '1px solid #33456b',
-      borderRadius: '6px',
-      color: '#e2e8f0',
-      fontFamily: 'var(--font-ui)',
-      fontSize: '12px',
-    },
-    '.cm-tooltip .cm-tooltip-arrow:before': { borderTopColor: '#33456b' },
-    '.cm-tooltip .cm-tooltip-arrow:after': { borderTopColor: '#131c2e' },
-    '.cm-diagnostic': { padding: '4px 8px', borderLeft: 'none' },
-    '.cm-diagnostic-error': { borderLeft: '3px solid #f87171' },
-    '.cm-scroller': { overflow: 'auto' },
+const theme = EditorView.theme({
+  '&': {
+    color: 'var(--t-primary)',
+    backgroundColor: 'var(--s-canvas)',
+    height: '100%',
   },
-  { dark: true },
+  '.cm-content': {
+    caretColor: 'var(--accent)',
+    padding: '8px 0',
+  },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+    backgroundColor: 'var(--accent-soft)',
+  },
+  '.cm-gutters': {
+    backgroundColor: 'var(--s-canvas)',
+    color: 'var(--t-faint)',
+    border: 'none',
+    borderRight: '1px solid var(--s-line)',
+  },
+  '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent) 6%, transparent)' },
+  '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--t-secondary)' },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 10px 0 8px' },
+  '.cm-selectionMatch': { backgroundColor: 'color-mix(in srgb, var(--accent) 14%, transparent)' },
+  '.cm-foldPlaceholder': {
+    backgroundColor: 'var(--s-raised)',
+    border: 'none',
+    color: 'var(--t-secondary)',
+  },
+  '.cm-tooltip': {
+    backgroundColor: 'var(--s-panel)',
+    border: '1px solid var(--s-line-strong)',
+    borderRadius: '6px',
+    color: 'var(--t-primary)',
+    fontFamily: 'var(--font-ui)',
+    fontSize: '12px',
+  },
+  '.cm-tooltip .cm-tooltip-arrow:before': { borderTopColor: 'var(--s-line-strong)' },
+  '.cm-tooltip .cm-tooltip-arrow:after': { borderTopColor: 'var(--s-panel)' },
+  '.cm-diagnostic': { padding: '4px 8px', borderLeft: 'none' },
+  '.cm-diagnostic-error': { borderLeft: '3px solid var(--danger)' },
+  '.cm-scroller': { overflow: 'auto' },
+});
+
+/**
+ * Syntax colours, both themes per tag. Dark keeps the 300-step pastels that
+ * read on near-black; light takes the 700 steps of the same hues, each at or
+ * above 4.5:1 on the light editor background.
+ */
+const SYNTAX: { tag: Tag | Tag[]; color: ThemedColor; italic?: true }[] = [
+  // YAML keys.
+  { tag: [tags.definition(tags.propertyName), tags.propertyName], color: { light: '#0369a1', dark: '#7dd3fc' } },
+  { tag: [tags.atom, tags.bool, tags.null], color: { light: '#7e22ce', dark: '#c084fc' } },
+  { tag: tags.number, color: { light: '#b45309', dark: '#fbbf24' } },
+  { tag: tags.string, color: { light: '#15803d', dark: '#86efac' } },
+  { tag: tags.comment, color: { light: '#5f6c7f', dark: '#718096' }, italic: true },
+  { tag: tags.keyword, color: { light: '#1d4ed8', dark: '#60a5fa' } },
+  { tag: tags.meta, color: { light: '#475569', dark: '#94a3b8' } },
+  { tag: tags.invalid, color: { light: '#b91c1c', dark: '#f87171' } },
+];
+
+const highlight = HighlightStyle.define(
+  SYNTAX.map(({ tag, color, italic }) => ({
+    tag,
+    color: cssColor(color),
+    ...(italic ? { fontStyle: 'italic' } : {}),
+  })),
 );
 
-const highlight = HighlightStyle.define([
-  // YAML keys.
-  { tag: tags.definition(tags.propertyName), color: '#7dd3fc' },
-  { tag: tags.propertyName, color: '#7dd3fc' },
-  { tag: tags.atom, color: '#c084fc' },
-  { tag: tags.bool, color: '#c084fc' },
-  { tag: tags.number, color: '#fbbf24' },
-  { tag: tags.string, color: '#86efac' },
-  { tag: tags.comment, color: '#64748b', fontStyle: 'italic' },
-  { tag: tags.keyword, color: '#60a5fa' },
-  { tag: tags.null, color: '#c084fc' },
-  { tag: tags.meta, color: '#94a3b8' },
-  { tag: tags.invalid, color: '#f87171' },
-]);
-
 export const studioEditorTheme: Extension = [theme, syntaxHighlighting(highlight)];
+
+/** CodeMirror's own light/dark switch, for its base styles. Reconfigured on theme change. */
+export function editorDarkFlag(resolved: ResolvedTheme): Extension {
+  return EditorView.darkTheme.of(resolved === 'dark');
+}

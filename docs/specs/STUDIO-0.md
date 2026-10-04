@@ -61,6 +61,40 @@ components — the schema graph and a future instance graph. The Studio's graph 
 components on an `@xyflow/react` canvas with `elkjs` layout, the same composition `tools/schema-graph-viewer` uses.
 When slice 3 adds the data explorer, its instance graph is the second view of the same components, not a new library.
 
+### Theming — one palette table, two columns (2026-10-04)
+
+Studio follows the system appearance and can be pinned to either theme. It shipped dark-only; the light theme was
+added on 2026-10-04, and this section is how both work.
+
+- **One switch, and it is CSS's own.** Every colour token in `tools/studio/src/index.css` is written once as
+  `light-dark(<light>, <dark>)`. `:root` declares `color-scheme: light dark`, so with no attribute the browser's
+  `prefers-color-scheme` picks the side; `data-theme="light" | "dark"` on `<html>` narrows `color-scheme` to one
+  side, in either direction. No script has to run for the system default to be right.
+- **The attribute is the preference.** Absent means *system*. The header's Auto / Light / Dark control
+  (`useThemePreference`, `src/theme/use-theme.ts`) writes the attribute and remembers an explicit choice in
+  `localStorage` under `studio.theme`; `main.tsx` re-applies it before the first render. The pure rules —
+  `parsePreference`, `resolveTheme`, `themeAttribute` — are in `src/theme/theme.ts` and unit-tested.
+- **The component library follows the same switch.** `packages/graph-components/src/theme/graph-theme.css` is
+  written the same way: one `:root` block of `light-dark()` pairs, with `[data-theme]` setting `color-scheme`.
+  Its old two-block form (`:root` light, `[data-theme="dark"]` dark) could only follow an attribute, so a system
+  default would have needed script or a duplicated dark block. A consumer that sets neither still gets light, as
+  before.
+- **Tables carry both values side by side.** `edge-kinds.ts` stores each kind's stroke as `{ light, dark }` and
+  renders it through `edgeColor()` → `light-dark(…)`; the CodeMirror highlight style in `editor-theme.ts` is a
+  table of `{ light, dark }` per tag rendered the same way, and the editor chrome reads the surface tokens. So a
+  theme is a column, never a second table, and no renderer branches on the active theme.
+- **The one thing CSS cannot reach** is CodeMirror's `darkTheme` facet (it picks base styles for panels such as
+  search). `YamlEditor` reconfigures it from `useResolvedTheme()`, which derives the active theme from the same
+  two inputs CSS uses — the attribute and the media query — rather than storing it anywhere.
+- **SVG colours go through `style`, not presentation attributes.** `light-dark()` and `var()` are CSS values; an
+  edge stroke, marker fill or legend swatch set as `stroke="…"` would not be guaranteed to resolve them.
+
+The light palette is not an inversion. Dark stacks surfaces by lightness (canvas < chrome < panel < raised); light
+runs out of "lighter" at white, so its canvas is a cool grey, panels and cards are white, and `raised` becomes a
+light-grey fill on that white. Accent, status and edge hues are the dark theme's hues at the 600/700 weight, chosen
+so that body and muted text clear 4.5:1 against canvas, chrome and panel in **both** themes (dark's `--t-muted`
+was lifted from `#64748b` to `#7886a0` for the same reason). Line numbers (`--t-faint`) are deliberately below that.
+
 ---
 
 ## 3. The API contract as implemented

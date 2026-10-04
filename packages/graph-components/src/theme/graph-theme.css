@@ -1,115 +1,78 @@
-/* Graph Component Library — CSS Custom Properties */
+/* Graph Component Library — CSS Custom Properties
+ *
+ * Every colour is written once as `light-dark(light, dark)`. The browser picks
+ * a side from the inherited `color-scheme`: `normal` (the default) is light,
+ * and `data-theme="light" | "dark"` on any element pins its subtree. A consumer
+ * that declares `color-scheme: light dark` on its root follows the system
+ * preference with no attribute at all.
+ */
+
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
 
 :root {
-  /* Node colors by kind */
-  --graph-entity-color: #3b82f6;
-  --graph-relationship-color: #10b981;
-  --graph-record-color: #8b5cf6;
+  /* Node colors by kind. Entity and relationship are also text (a junction's
+     `from ↔ to` line), so their light values are the 600/700 steps that hold
+     4.5:1 on a white card. */
+  --graph-entity-color: light-dark(#2563eb, #60a5fa);
+  --graph-relationship-color: light-dark(#047857, #34d399);
+  --graph-record-color: light-dark(#8b5cf6, #a78bfa);
 
   /* Group colors */
-  --graph-group-base: #64748b;
-  --graph-group-synced: #3b82f6;
-  --graph-group-activity: #f59e0b;
-  --graph-group-metadata: #8b5cf6;
-  --graph-group-knowledge: #10b981;
+  --graph-group-base: light-dark(#64748b, #94a3b8);
+  --graph-group-synced: light-dark(#3b82f6, #60a5fa);
+  --graph-group-activity: light-dark(#f59e0b, #fbbf24);
+  --graph-group-metadata: light-dark(#8b5cf6, #a78bfa);
+  --graph-group-knowledge: light-dark(#10b981, #34d399);
 
   /* Badge: default */
-  --graph-badge-default-bg: #f1f5f9;
-  --graph-badge-default-text: #475569;
-  --graph-badge-default-border: #e2e8f0;
+  --graph-badge-default-bg: light-dark(#f1f5f9, #334155);
+  --graph-badge-default-text: light-dark(#475569, #cbd5e1);
+  --graph-badge-default-border: light-dark(#e2e8f0, #475569);
   /* Badge: primary */
-  --graph-badge-primary-bg: #dbeafe;
-  --graph-badge-primary-text: #1d4ed8;
-  --graph-badge-primary-border: #bfdbfe;
+  --graph-badge-primary-bg: light-dark(#dbeafe, #1e3a5f);
+  --graph-badge-primary-text: light-dark(#1d4ed8, #93c5fd);
+  --graph-badge-primary-border: light-dark(#bfdbfe, #1e40af);
   /* Badge: success */
-  --graph-badge-success-bg: #dcfce7;
-  --graph-badge-success-text: #15803d;
-  --graph-badge-success-border: #bbf7d0;
+  --graph-badge-success-bg: light-dark(#dcfce7, #14532d);
+  --graph-badge-success-text: light-dark(#15803d, #86efac);
+  --graph-badge-success-border: light-dark(#bbf7d0, #166534);
   /* Badge: warning */
-  --graph-badge-warning-bg: #fef3c7;
-  --graph-badge-warning-text: #a16207;
-  --graph-badge-warning-border: #fde68a;
+  --graph-badge-warning-bg: light-dark(#fef3c7, #451a03);
+  --graph-badge-warning-text: light-dark(#a16207, #fcd34d);
+  --graph-badge-warning-border: light-dark(#fde68a, #78350f);
   /* Badge: error */
-  --graph-badge-error-bg: #fee2e2;
-  --graph-badge-error-text: #b91c1c;
-  --graph-badge-error-border: #fecaca;
+  --graph-badge-error-bg: light-dark(#fee2e2, #450a0a);
+  --graph-badge-error-text: light-dark(#b91c1c, #fca5a5);
+  --graph-badge-error-border: light-dark(#fecaca, #7f1d1d);
   /* Badge: info */
-  --graph-badge-info-bg: #e0f2fe;
-  --graph-badge-info-text: #0369a1;
-  --graph-badge-info-border: #bae6fd;
-  /* Badge: muted */
-  --graph-badge-muted-bg: #f8fafc;
-  --graph-badge-muted-text: #94a3b8;
-  --graph-badge-muted-border: #f1f5f9;
+  --graph-badge-info-bg: light-dark(#e0f2fe, #0c4a6e);
+  --graph-badge-info-text: light-dark(#0369a1, #7dd3fc);
+  --graph-badge-info-border: light-dark(#bae6fd, #075985);
+  /* Badge: muted — the text clears 4.5:1 on its own background in both. */
+  --graph-badge-muted-bg: light-dark(#f8fafc, #1e293b);
+  --graph-badge-muted-text: light-dark(#64748b, #94a3b8);
+  --graph-badge-muted-border: light-dark(#f1f5f9, #334155);
 
   /* Edge colors */
-  --graph-edge-fk: #94a3b8;
-  --graph-edge-junction: #10b981;
-  --graph-edge-inline: #3b82f6;
+  --graph-edge-fk: light-dark(#94a3b8, #64748b);
+  --graph-edge-junction: light-dark(#10b981, #34d399);
+  --graph-edge-inline: light-dark(#3b82f6, #60a5fa);
 
   /* Surface */
-  --graph-node-bg: #ffffff;
-  --graph-node-border: #e2e8f0;
-  --graph-node-selected-border: #3b82f6;
-  --graph-panel-bg: #ffffff;
+  --graph-node-bg: light-dark(#ffffff, #1e293b);
+  --graph-node-border: light-dark(#e2e8f0, #334155);
+  --graph-node-selected-border: light-dark(#3b82f6, #60a5fa);
+  --graph-panel-bg: light-dark(#ffffff, #0f172a);
 
   /* Typography */
   --graph-font-family: ui-sans-serif, system-ui, sans-serif;
   --graph-font-size-sm: 0.75rem;
   --graph-font-size-md: 0.875rem;
   --graph-font-size-lg: 1rem;
-}
-
-[data-theme="dark"] {
-  /* Node colors by kind */
-  --graph-entity-color: #60a5fa;
-  --graph-relationship-color: #34d399;
-  --graph-record-color: #a78bfa;
-
-  /* Group colors */
-  --graph-group-base: #94a3b8;
-  --graph-group-synced: #60a5fa;
-  --graph-group-activity: #fbbf24;
-  --graph-group-metadata: #a78bfa;
-  --graph-group-knowledge: #34d399;
-
-  /* Badge: default */
-  --graph-badge-default-bg: #334155;
-  --graph-badge-default-text: #cbd5e1;
-  --graph-badge-default-border: #475569;
-  /* Badge: primary */
-  --graph-badge-primary-bg: #1e3a5f;
-  --graph-badge-primary-text: #93c5fd;
-  --graph-badge-primary-border: #1e40af;
-  /* Badge: success */
-  --graph-badge-success-bg: #14532d;
-  --graph-badge-success-text: #86efac;
-  --graph-badge-success-border: #166534;
-  /* Badge: warning */
-  --graph-badge-warning-bg: #451a03;
-  --graph-badge-warning-text: #fcd34d;
-  --graph-badge-warning-border: #78350f;
-  /* Badge: error */
-  --graph-badge-error-bg: #450a0a;
-  --graph-badge-error-text: #fca5a5;
-  --graph-badge-error-border: #7f1d1d;
-  /* Badge: info */
-  --graph-badge-info-bg: #0c4a6e;
-  --graph-badge-info-text: #7dd3fc;
-  --graph-badge-info-border: #075985;
-  /* Badge: muted */
-  --graph-badge-muted-bg: #1e293b;
-  --graph-badge-muted-text: #64748b;
-  --graph-badge-muted-border: #334155;
-
-  /* Edge colors */
-  --graph-edge-fk: #64748b;
-  --graph-edge-junction: #34d399;
-  --graph-edge-inline: #60a5fa;
-
-  /* Surface */
-  --graph-node-bg: #1e293b;
-  --graph-node-border: #334155;
-  --graph-node-selected-border: #60a5fa;
-  --graph-panel-bg: #0f172a;
 }

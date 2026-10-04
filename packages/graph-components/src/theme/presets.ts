@@ -1,8 +1,8 @@
 import type { GraphTheme } from './theme.js';
 
 export const lightTheme: GraphTheme = {
-  entityColor: '#3b82f6',
-  relationshipColor: '#10b981',
+  entityColor: '#2563eb',
+  relationshipColor: '#047857',
   recordColor: '#8b5cf6',
 
   groupColors: {
@@ -20,7 +20,7 @@ export const lightTheme: GraphTheme = {
     warning: { bg: '#fef3c7', text: '#a16207', border: '#fde68a' },
     error: { bg: '#fee2e2', text: '#b91c1c', border: '#fecaca' },
     info: { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd' },
-    muted: { bg: '#f8fafc', text: '#94a3b8', border: '#f1f5f9' },
+    muted: { bg: '#f8fafc', text: '#64748b', border: '#f1f5f9' },
   },
 
   edgeFk: '#94a3b8',
@@ -56,7 +56,7 @@ export const darkTheme: GraphTheme = {
     warning: { bg: '#451a03', text: '#fcd34d', border: '#78350f' },
     error: { bg: '#450a0a', text: '#fca5a5', border: '#7f1d1d' },
     info: { bg: '#0c4a6e', text: '#7dd3fc', border: '#075985' },
-    muted: { bg: '#1e293b', text: '#64748b', border: '#334155' },
+    muted: { bg: '#1e293b', text: '#94a3b8', border: '#334155' },
   },
 
   edgeFk: '#64748b',
