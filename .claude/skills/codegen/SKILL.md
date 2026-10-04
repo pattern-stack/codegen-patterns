@@ -62,7 +62,11 @@ surface, reuses a slug, or its auth / client import does not resolve (CLI-1, #66
 assemblies feed every integrated entity's wiring). A fourth is the **junction set** (JUNC-0, #678): every YAML under `junctions/` must be a valid junction — one that does
 not parse, is not `pattern: Junction`, fails the schema, or whose `between:` names an entity with no YAML stops the run
 — both parents render its fan-out, so a skipped junction would silently drop it. Same list, same printing, same `failed[]` entries (`stopped:
-'pre-flight'`); a stale `<type>.job.generated.ts` is left on disk and named in the rejection's details. The provider
+'pre-flight'`); a stale `<type>.job.generated.ts` is left on disk and named in the rejection's details. A valid job
+YAML in a project without the integration subsystem is a run-level rejection too (#745,
+`jobSubsystemRejections` in `emit-jobs.ts`): every arm's `read:` is a `DetectionConfig` the handler base imports from
+the integration barrel, so the refusal names the job, its arm(s) and `codegen subsystem install integration`. The
+installed set is `resolveInstalledSubsystems` (vendored module file / `subsystems.install`) — never a second detector. The provider
 set is loaded and validated once, in the pre-flight (`loadProviderSet`), and emitted from in the post-step
 (`emitProviderModules`); the rejection helpers are `src/cli/shared/run-rejections.ts`. Every other stop before a
 target is considered — no entity YAML, `--all` plus a path, neither, a dirty generated-output tree without `--force`
