@@ -5,3 +5,19 @@ commit_style: conventional
 task_management: github
 repo: pattern-stack/codegen-patterns
 project_number: 3
+
+# The sdlc phase-tuning hook injects these when a lead spawns the role. Every role is set: the plugin defaults some to Fable.
+# Model policy (Doug, Oct 17): no Fable at all. Opus at xhigh effort for planning, specs and review; Sonnet 5.5 for building and validating; Opus for coordinating.
+phase_models:
+  understander: opus
+  planner:      opus
+  specifier:    opus
+  reviewer:     opus
+  coordinator:  opus
+  implementer:  sonnet
+  validator:    sonnet
+phase_effort:
+  understander: xhigh
+  planner:      xhigh
+  specifier:    xhigh
+  reviewer:     xhigh
