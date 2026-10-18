@@ -6,8 +6,7 @@ task_management: github
 repo: pattern-stack/codegen-patterns
 project_number: 3
 
-# Builders on Sonnet 5.5 (Doug, Oct 17: "swap build to sonnet 5.5", to save the 5-hour usage limit).
-# The sdlc phase-tuning hook injects these when a lead spawns the role; unset roles keep their defaults.
+# The sdlc phase-tuning hook injects these when a lead spawns the role. Every role is set: the plugin defaults some to Fable.
 # Model policy (Doug, Oct 17): no Fable at all. Opus at xhigh effort for planning, specs and review; Sonnet 5.5 for building and validating; Opus for coordinating.
 phase_models:
   understander: opus
