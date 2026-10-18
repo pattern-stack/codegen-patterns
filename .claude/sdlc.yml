@@ -5,3 +5,10 @@ commit_style: conventional
 task_management: github
 repo: pattern-stack/codegen-patterns
 project_number: 3
+
+# Builders on Sonnet 5.5 (Doug, Oct 17: "swap build to sonnet 5.5", to save the 5-hour usage limit).
+# The sdlc phase-tuning hook injects these when a lead spawns the role; unset roles keep their defaults.
+phase_models:
+  coordinator:  opus
+  implementer:  sonnet
+  validator:    sonnet
