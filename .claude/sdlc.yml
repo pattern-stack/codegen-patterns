@@ -8,7 +8,17 @@ project_number: 3
 
 # Builders on Sonnet 5.5 (Doug, Oct 17: "swap build to sonnet 5.5", to save the 5-hour usage limit).
 # The sdlc phase-tuning hook injects these when a lead spawns the role; unset roles keep their defaults.
+# Model policy (Doug, Oct 17): no Fable at all. Opus at xhigh effort for planning, specs and review; Sonnet 5.5 for building and validating; Opus for coordinating.
 phase_models:
+  understander: opus
+  planner:      opus
+  specifier:    opus
+  reviewer:     opus
   coordinator:  opus
   implementer:  sonnet
   validator:    sonnet
+phase_effort:
+  understander: xhigh
+  planner:      xhigh
+  specifier:    xhigh
+  reviewer:     xhigh
