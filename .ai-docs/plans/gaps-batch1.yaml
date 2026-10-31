@@ -1,0 +1,572 @@
+# Gate-0 plan: generator gaps, batch 1.
+#
+# STATUS: Gate 0 APPROVED by Doug 2026-10-31, with every open_questions recommendation. Not synced (by decision):
+# the issues are filed; /design runs on them directly. The release issue is filed by hand.
+#
+# EVERY WORK ITEM HERE ALREADY EXISTS ON GITHUB. Each one names its issue(s) in
+# `existing_issues:`. /sync-issues must link these issues, not create them: see `plan.sync`.
+# The only new tracker issue is `release-0-32-0`.
+#
+# Base: origin/main @ a8629dfc. Every issue was checked against that commit.
+# There is no `.claude/canvases/plan/` in this repo, so this file follows the schema of
+# `.ai-docs/plans/codegen-app-patterns.yaml`. It also adds per-item `existing_issues`,
+# `stack`, `size`, `files` and `gates`.
+
+plan:
+  slug: gaps-batch1
+  summary: "Batch 1 of host-reported generator gaps: unique-constraint shapes, timestamptz, two package/barrel compile fixes, reserved entity names, single-pass --all, snake_case include paths; then release 0.32.0 with the unreleased #744 fix"
+  type: batch
+  repo: pattern-stack/codegen-patterns
+  milestone: "codegen 0.32.0"   # informational. Create it on sync or drop it; nothing depends on it.
+  epic_title: "Gaps batch 1: schema constraints, timestamptz, generated-tree compile fixes (release 0.32.0)"
+  epic_body: |
+    A host application generates its backend with codegen. It then repairs the output with pre- and post-generate
+    rewrites, and every `--force` regeneration reverts them. Batch 1 holds the gaps that need no design work: each
+    one is an existing issue with a stated "Done when", the generator code it names (checked at `a8629dfc`), and a
+    gate that fails on the defect before the fix lands.
+
+    **Stack A: schema constraints** (`entity-locals.js`, `entity.ejs.t`, entity schema)
+    #511 field `unique: true` emits nothing, then #784 adds partial / `NULLS NOT DISTINCT` / single-field
+    `unique_indexes:` entries, then #796 makes `datetime` and the behavior time columns `timestamptz`. #796 is
+    gate:human because it changes every consumer's DDL.
+
+    **Stack B: package-mode and barrel compile fixes**
+    #814 package-mode write use cases import a `TypedEventBus` the package barrel does not export. #811 an
+    `api: false` barrel exports a controller that was never emitted.
+
+    **Stack C: generator correctness**
+    #813 entity names that collide with TypeScript globals or template locals. #815 `entity new --all` needs two
+    runs to wire `has_many`.
+
+    **Independent:** #742 `api.includes` paths reject the YAML relationship name.
+
+    **Release:** 0.32.0 ships all of the above, plus #744 and the other fixes merged since 0.31.0, none of which
+    has been published yet. This needs a minor bump, not a patch (see `release-0-32-0`).
+
+    Out of scope, as follow-ups under #783: non-unique `indexes:` (partial, composite, expression, gin), the
+    `tenant: false` opt-out for a global unique on a tenant-scoped table, and the check that a unique finder is
+    backed by a unique constraint.
+
+    References: ADR-042 (tenant scoping, §5(c) tenant prefix on uniques), ADR-037 (runtime modes), ADR-043 §6
+    (`api: false`), ADR-044 / REL-2 (include allowlist), CLAUDE.md "a gate must be able to fail on its own subject".
+  stack:
+    base: main
+    base_commit: a8629dfc
+    depends_on: []
+
+  # How /sync-issues must treat this plan. As written, the command creates a parent epic and one issue per leaf,
+  # and its update path REPLACES issue bodies. All three would be wrong here. See open_questions.sync.
+  sync:
+    mode: reference-existing
+    create_epic: false            # #784 already sits under #783 and #796 under #793. A GitHub issue has one parent.
+    create_leaves: [release-0-32-0]
+    rules: |
+      - Never create a leaf that has `existing_issues:`, and never change its title or body. Those bodies hold
+        the host evidence and the "Done when" lists.
+      - For each existing issue: post this plan's description as one comment headed "Plan (gaps-batch1)"
+        carrying the `[plan-key:gaps-batch1/<key>]` marker. Add `gate:auto` or `gate:human` only if neither is
+        present (#511 has none). Do not re-parent the issue.
+      - Express `depends_on` as `Depends on: #N` lines in that comment. Do not edit the issue body.
+      - Add the issues to project 3. Most are already on it.
+      - Close #64 and #356 as already done. #356 shipped `unique_indexes:`, which also covers what #64 asked
+        for; both were verified stale at a8629dfc. #355 (`index: true`) looks stale too. Close all three only
+        if Doug agrees (open_questions.tracker_hygiene).
+
+stacks:
+  A:
+    name: schema-constraints
+    order: [field-unique-constraint, unique-indexes-shapes, datetime-timestamptz]
+    note: |
+      #511 → #784 is a real code dependency: #784 extends the entry builder that #511 starts routing field
+      uniques through. #796 does not depend on either and can be built in parallel. It lands third, as the top
+      of the stack, for three reasons. (1) All three edit `entity-locals.js` (different functions),
+      `entity-definition.schema.ts` (different blocks), the `entity.ejs.t` import header, and
+      `consumer-skills/entities/yaml-reference.md`. (2) #796 regenerates almost every baseline and junction
+      snapshot. (3) It is gate:human, so at the top of the stack a hold on it cannot block the two items below.
+  B:
+    name: generated-tree-compile-fixes
+    order: [package-mode-typed-event-bus, api-false-barrel]
+    note: |
+      No code dependency between the two. They share a stack because both add smoke fixtures, so the smoke
+      harness changes stay in one review order. Build them in parallel.
+  C:
+    name: generator-correctness
+    order: [reserved-entity-names, entity-new-all-single-pass]
+    note: |
+      No code dependency. They share a stack because #813 regenerates every baseline snapshot, and #815 switches
+      the baseline runner to a single pass that must reproduce those snapshots byte for byte. #815 has to be
+      verified against #813's regenerated output.
+  independent: [include-paths-relationship-names]
+
+merge_order: |
+  Doug merges everything at once. Restack in this order: A (#511, #784, #796), then B (#814, #811), then
+  C (#813, #815), then #742, then the release. Snapshot conflicts are resolved by regenerating
+  (`just test-baseline`, `just test-junction`) on the restacked branch, never by hand-merging snapshot files.
+  The known overlap: #796 and #813 both rewrite most of `test/baseline/**`.
+
+changelog_policy: |
+  `CHANGELOG.md` has no Unreleased section, and nothing merged since 0.31.0 has an entry. To keep three
+  parallel stacks free of CHANGELOG conflicts, each item PR carries a "Changelog:" block in its PR body, and the
+  release PR (`release-0-32-0`) writes the `[0.32.0]` section from those blocks plus the fixes already merged.
+  #796's block must include the migration text its issue asks for.
+
+issues:
+  # ───────────────────────────── Stack A ─────────────────────────────
+  - key: field-unique-constraint
+    title: "fix(#511): field `unique: true` emits a unique index (per tenant under tenant_scoped)"
+    existing_issues: [511]
+    stack: A
+    size: S
+    layer: L0
+    depends_on: []
+    parallel_with: [datetime-timestamptz, package-mode-typed-event-bus, api-false-barrel, reserved-entity-names, entity-new-all-single-pass, include-paths-relationship-names]
+    labels: ["domain:codegen", "gate:auto"]
+    files:
+      - templates/entity/new/backend/entity-locals.js        # lower field `unique: true` into the processUniqueIndexes input
+      - src/schema/entity-definition.schema.ts               # the unique_indexes min(2) message stops pointing at a no-op
+      - src/__tests__/backend/entity-column-features.test.ts
+      - src/__tests__/schema/unique-indexes.test.ts
+      - test/smoke/fixtures/                                 # a `unique: true` field on tenant_note.yaml and on a non-tenant fixture
+      - test/scaffold/entities/ + test/scaffold/tests/       # DB-level proof (23505)
+      - consumer-skills/codegen/SKILL.md                     # line 213 says unique creates a plain index
+      - consumer-skills/entities/families-and-queries.md     # line 53
+      - .claude/skills/codegen/SKILL.md
+    gates: [test-unit, test-smoke, test-integration, test-baseline]
+    description: |
+      At a8629dfc a field's `unique: true` emits nothing: no `.unique()`, no `uniqueIndex`, not even the plain
+      index #511 originally reported. Generated `findBy<Field>()` is still typed `T | null`. Loaders cannot
+      `ON CONFLICT` on the column, and duplicates land.
+
+      Fix: lower every field with `unique: true` into a single-field entry in the same list `unique_indexes:` feeds
+      `processUniqueIndexes`. One builder emits every unique, so under `tenant_scoped: true` the entry is
+      `(tenant_id, <col>)`, per ADR-042 §5(c). This covers a belongs_to FK column declared in `fields:` with
+      `unique: true` (the one-to-one case): the lowering reads the raw `fields:` map, as `index: true` does.
+      If a field declares both `unique: true` and `index: true`, emit only the unique index; the plain one would
+      be redundant. `queries: [{ by, unique: true }]` stays a finder hint and emits no DDL (see
+      open_questions.finder_unique). The YAML `unique_indexes:` entry keeps `min(2)` here; #784 lowers it to `min(1)`.
+
+      Acceptance:
+      - `unique: true` on a scalar field emits `uniqueIndex('<table>_<col>_uniq').on(t.<col>)`. Under
+        `tenant_scoped` it emits `uniqueIndex('<table>_tenant_id_<col>_uniq').on(t.tenantId, t.<col>)`.
+      - The same holds for a belongs_to FK column declared in `fields:` with `unique: true`.
+      - `unique: true` with `index: true` emits no plain `<table>_<col>_idx`.
+      - Integration: a scaffold entity with a `unique: true` field rejects a duplicate insert with SQLSTATE 23505.
+        The test fails on the base commit.
+      - Smoke `tsc` passes with the new fixture fields. Baseline snapshots are unchanged, because no baseline
+        fixture declares a field `unique: true`.
+      - The consumer docs above say `unique: true` creates a DB unique constraint.
+      - Changelog block: existing `unique: true` fields gain a unique index. Remove duplicates before migrating.
+
+  - key: unique-indexes-shapes
+    title: "feat(#784): unique_indexes takes `where`, `nulls_not_distinct` and single-field entries"
+    existing_issues: [784]
+    stack: A
+    size: M
+    layer: L0
+    depends_on: [field-unique-constraint]
+    parallel_with: [package-mode-typed-event-bus, api-false-barrel, reserved-entity-names, entity-new-all-single-pass, include-paths-relationship-names]
+    labels: ["domain:codegen", "gate:human"]
+    files:
+      - src/schema/entity-definition.schema.ts               # entry: min(1), where, nulls_not_distinct, name required with where, still strict
+      - templates/entity/new/backend/entity-locals.js        # processUniqueIndexes, collectDrizzleImports (`unique`), partial-entry flag
+      - templates/entity/new/backend/entity.ejs.t            # `import { sql } from 'drizzle-orm'` when a partial entry exists
+      - src/__tests__/schema/unique-indexes.test.ts
+      - src/__tests__/backend/tenant-scoping-templates.test.ts
+      - src/__tests__/backend/entity-column-features.test.ts
+      - test/smoke/fixtures/                                 # one entry of each shape, tenant and non-tenant
+      - test/scaffold/entities/ + test/scaffold/tests/       # DB behaviour of each shape
+      - consumer-skills/entities/yaml-reference.md           # a unique_indexes section, which it lacks today; note that NND needs PG 15+
+      - docs/adrs/ADR-042-automatic-repository-tenant-scoping.md   # dated revision note on §5(c) if the tenant default changes
+      - docs/specs/TEN-1.md
+    gates: [test-unit, test-smoke, test-integration, test-baseline]
+    description: |
+      Extend each `unique_indexes:` entry, with no new top-level key. The entry gains `where:` (a partial unique)
+      and `nulls_not_distinct:`, and its field count drops from `min(2)` to `min(1)`. The entry stays `.strict()`.
+      `where` and `nulls_not_distinct: true` are mutually exclusive in one entry, because of a Drizzle rc.4 limit
+      (#783 comment): only `uniqueIndex()` has `.where()`, and only the `unique()` table constraint has
+      `.nullsNotDistinct()`.
+
+      Emission:
+      - partial: `uniqueIndex(name).on(...).where(sql\`...\`)`
+      - NND: `unique(name).on(...).nullsNotDistinct()`, the same shape `external_id_tracking` already emits
+        under tenant_scoped (entity-locals.js ~L1896-1916)
+      - single-field: `uniqueIndex(name).on(...)`
+
+      Decisions this plan proposes. The open questions below hold the reasoning.
+      1. `where:` is raw SQL. Bare identifiers that name a column of this table (declared fields, belongs_to FK
+         columns, behavior columns such as `deleted_at` and `tenant_id`) are rewritten to `${t.<camel>}` outside
+         quoted literals, so drizzle-kit quotes them and a renamed column fails generation instead of shipping a
+         stale predicate. No keyword-level validation of the remaining SQL in batch 1.
+      2. `name:` is required when `where:` is set. Default names collide when two partial entries share
+         columns, and a predicate folded into the name would hit Postgres' 63-character identifier truncation.
+      3. A tenant-prefixed entry without `where:` defaults to NULLS NOT DISTINCT, because ADR-042 treats the
+         null-tenant partition as first-class (reproduced on PG 17 in #784). An entry can opt out with
+         `nulls_not_distinct: false`, since NND also changes the meaning of any other nullable column in the
+         entry. A partial entry on a tenant-scoped entity cannot have NND (the builder limit), so it does not
+         dedupe null-tenant rows. The docs say so.
+      4. Q3 (`tenant: false`) and Q4 (non-unique `indexes:`) are out of scope and get follow-up issues under #783.
+
+      Acceptance:
+      - Schema: a single-field entry passes. `where` together with `nulls_not_distinct: true` fails with a
+        message naming the Drizzle limit. `where` without `name` fails. An unknown key fails.
+      - Each shape renders exactly as in #784's "What it would emit" (plus the tenant prefix, and the tenant NND
+        default if decision 3 holds). An identifier in `where:` that names a declared column renders as
+        `${t.<camel>}`.
+      - Integration, against the real DDL from `drizzle-kit push`, with each case failing on the base commit:
+        a partial unique rejects a duplicate inside the predicate and accepts one outside it; an NND entry
+        rejects `(NULL, x)` twice; a tenant-prefixed entry rejects a duplicate key in the null-tenant partition.
+      - Smoke `tsc` passes over every shape, so misusing a builder fails the gate.
+      - yaml-reference.md documents the entry. If decision 3 holds, ADR-042 gets a dated revision note.
+      - Changelog block: if decision 3 holds, existing tenant-scoped `unique_indexes:` change from an index to an
+        NND constraint, null-tenant duplicates must be removed first, and PG 15+ is required.
+      - Follow-up issues filed under #783: `indexes:` (non-unique: composite, partial, expression, gin) and
+        `tenant: false`.
+
+  - key: datetime-timestamptz
+    title: "feat(#796)!: `type: datetime` and the behavior time columns emit timestamptz; `timezone: false` opts out"
+    existing_issues: [796]
+    stack: A
+    size: M
+    layer: L0
+    depends_on: []                # no code dependency. Lands third in Stack A (stacks.A.note).
+    parallel_with: [field-unique-constraint, unique-indexes-shapes, package-mode-typed-event-bus, api-false-barrel, entity-new-all-single-pass, include-paths-relationship-names]
+    labels: ["domain:codegen", "gate:human"]
+    files:
+      - templates/entity/new/backend/entity-locals.js        # buildDrizzleChain: datetime → timestamp('x', { withTimezone: true, mode: 'date' })
+      - src/schema/entity-definition.schema.ts               # field `timezone: boolean`, valid only with `type: datetime`
+      - templates/entity/new/backend/entity.ejs.t            # created_at / updated_at / deleted_at
+      - templates/junction/new/entity.ejs.t + templates/junction/new/prompt.js            # started_at, ended_at, matched_at, created_at, updated_at; datetime payload fields
+      - templates/relationship/new/entity.ejs.t + templates/relationship/new/prompt.js    # created_at, updated_at; datetime payload fields
+      - test/baseline/**                                     # regenerated
+      - test/junction/__snapshots__/*                        # regenerated
+      - src/__tests__/backend/entity-column-features.test.ts
+      - test/smoke/run-smoke.ts                              # assertion: no bare timestamp('…') in emitted entity files
+      - test/scaffold/tests/                                 # information_schema check + TZ round trip
+      - consumer-skills/entities/yaml-reference.md           # line 61 and the datetime docs
+    gates: [test-unit, test-baseline, test-junction, test-smoke, test-smoke-junction, test-integration]
+    description: |
+      Every `type: datetime` field and every behavior time column (`timestamps`, `soft_delete`) emits
+      `timestamp('x', { withTimezone: true, mode: 'date' })`. A declared field may set `timezone: false` for a
+      wall-clock time. The subsystem tables already use `withTimezone: true`, so this leaves one convention per
+      app. The DDL of every consumer changes, so the item is gate:human.
+
+      Recommended scope, pending open_questions.junction_temporal: the junction and relationship templates' time
+      columns change in this PR too. They are instants: `created_at`, `updated_at`, and the junction's
+      `started_at`, `ended_at` and `matched_at`. Leaving them out would keep the two-convention app the issue
+      exists to remove. #771 is a different column type: `valid_from` / `valid_to` are `type: date`, not
+      timestamps. It stays with the `date`-mode decision in #776.
+
+      Gate warning, from CLAUDE.md's rule that a gate must fail on its own subject: Drizzle maps a
+      `timestamp without time zone` value through `+0000` on read and `toISOString()` on write. A JS write and
+      read round trip may therefore pass on the base commit even with `TZ=America/New_York`. Confirm this at spec
+      time. The failure the host hits comes from DB-side `now()` defaults and other readers when the session
+      TimeZone is not UTC. The integration test must set a non-UTC session TimeZone, exercise a `defaultNow()`
+      column, and be shown red on the base commit.
+
+      Risk to check at spec time: semantic time grains. `date_trunc` on a timestamptz follows the session
+      TimeZone. Check how query-surface renders grains, and keep the semantic-fanout integration test green.
+
+      Acceptance (from #796 "Done when", plus the junction and relationship scope):
+      - Golden output: entity `datetime` fields and the timestamps / soft_delete columns carry
+        `withTimezone: true`. A field with `timezone: false` emits a bare `timestamp`. `timezone:` on any other
+        field type is a schema error.
+      - The junction and relationship templates' time columns carry `withTimezone: true`, and the junction
+        snapshots are regenerated.
+      - Smoke: no emitted entity file contains a bare `timestamp('…')` except the declared `timezone: false`
+        fixture field.
+      - Integration: `information_schema.columns` shows no `timestamp without time zone` column outside declared
+        opt-outs. With the process at `TZ=America/New_York` and a non-UTC DB session, an instant written and a
+        `defaultNow()` value both read back as the same instant. This test fails on the base commit.
+      - Changelog block, as #796 asks: the migration a schema-diff tool will produce is
+        `ALTER TABLE … ALTER COLUMN … TYPE timestamptz USING <col> AT TIME ZONE 'UTC'`. It is lossless only if
+        the app has always run in UTC.
+
+  # ───────────────────────────── Stack B ─────────────────────────────
+  - key: package-mode-typed-event-bus
+    title: "fix(#814): package-mode write use cases import TypedEventBus from the consumer's generated bus"
+    existing_issues: [814]
+    stack: B
+    size: M                        # the code is S; most of the work is a package-mode `emits:` smoke fixture with event YAMLs
+    layer: L0
+    depends_on: []
+    parallel_with: [api-false-barrel, field-unique-constraint, unique-indexes-shapes, datetime-timestamptz, reserved-entity-names, entity-new-all-single-pass, include-paths-relationship-names]
+    labels: ["domain:codegen", "gate:auto"]
+    files:
+      - templates/entity/new/backend/use-cases/create.ejs.t   # L12, L90
+      - templates/entity/new/backend/use-cases/update.ejs.t   # L12, L90
+      - templates/entity/new/backend/use-cases/delete.ejs.t   # L11
+      - src/config/runtime-mode.mjs + src/cli/shared/runtime-import.ts   # twins, kept in sync. `typedEventBusImport` is defined but unused today.
+      - templates/entity/new/backend/entity-locals.js         # module-relative `<generated>/events/bus` specifier, next to apiIncludesImport (~L1512-1521)
+      - test/smoke/                                           # an `emits:` entity + event YAMLs in a smoke that has vendored and package legs
+      - src/__tests__/                                        # render test: package vs vendored import lines
+    gates: [test-smoke-junction, test-smoke-capability, test-baseline, test-unit]
+    description: |
+      In package mode, the create, update and delete use cases of an entity that declares `emits:` import both
+      `TYPED_EVENT_BUS` and `TypedEventBus` from `@pattern-stack/codegen/subsystems`. That barrel exports only the
+      token, which is correct: runtime/subsystems/index.ts L15-25 explains that the package's own class is typed
+      to the package's events. The result is TS2305, and the host rewrites the import after every generation.
+
+      Fix: the token comes from the package and the class from the consumer's generated bus:
+        import { TYPED_EVENT_BUS } from '@pattern-stack/codegen/subsystems';
+        import { TypedEventBus } from '<module-relative>/<generated>/events/bus';
+      Vendored mode is unchanged: both names come from `@shared/subsystems/events`, whose `generated/bus` is the
+      consumer's own. The issue asks for the specifier to come from `runtimeImportLocals`. But that table is keyed
+      by mode only, and this path depends on the module folder, so it is computed beside `apiIncludesImport` from
+      the same `generatedDir`. `runtimeImportLocals` keeps the token specifier. The unused `typedEventBusImport`
+      entry gets either the mode switch or deleted, not left dead.
+
+      Acceptance (from #814 "Done when"):
+      - A package-mode smoke fixture with an `emits:` entity generates create, update and delete use cases that
+        pass `tsc`. The leg fails on the base commit with TS2305: `aliasPackageRuntime` maps the barrel to
+        `runtime/subsystems/index.ts`, which does not export the class.
+      - The same fixture passes in vendored mode.
+      - `just test-baseline` (vendored) produces byte-identical snapshots.
+      - The smoke chosen at spec time runs in `just test-all`. Candidates: the junction or capability smoke, both
+        of which already have vendored and package legs.
+
+  - key: api-false-barrel
+    title: "fix(#811): an `api: false` module barrel no longer exports a controller that was never emitted"
+    existing_issues: [811]
+    stack: B
+    size: S
+    layer: L0
+    depends_on: []
+    parallel_with: [package-mode-typed-event-bus, field-unique-constraint, unique-indexes-shapes, datetime-timestamptz, reserved-entity-names, entity-new-all-single-pass, include-paths-relationship-names]
+    labels: ["domain:codegen", "gate:auto"]
+    files:
+      - templates/entity/new/backend/index.ejs.t              # L14, guarded with apiEnabled, as module.ejs.t L33/L56 already are
+      - test/smoke/fixtures/                                  # two entities: `api: false` and `api: { enabled: false }`
+      - src/__tests__/                                        # render test for both forms
+    gates: [test-smoke, test-unit, test-baseline]
+    description: |
+      `controller.ejs.t` is skipped when `apiEnabled === false`, but `index.ejs.t` exports the controller
+      unconditionally. Every `api: false` barrel therefore fails `tsc` with TS2307. No fixture under `test/`
+      declares `api: false`, so no gate ever compiled one. The barrel is the only file that references the
+      controller: a grep of `src/` finds no other generator that imports `.controller`.
+
+      Acceptance (from #811 "Done when"):
+      - `index.ejs.t` exports the controller only when `apiEnabled`. It uses the same local `entity-locals.js`
+        derives from both YAML forms.
+      - Smoke fixtures declare one `api: false` entity and one `api: { enabled: false }` entity, and the smoke
+        `tsc` passes. Without the fix it fails with TS2307.
+      - Neither fixture is an include target, so REL-2's strict `api: false` traversal error is not triggered.
+      - Baseline snapshots are unchanged.
+
+  # ───────────────────────────── Stack C ─────────────────────────────
+  - key: reserved-entity-names
+    title: "fix(#813): entity names and plurals cannot collide with TypeScript globals or template locals"
+    existing_issues: [813]
+    stack: C
+    size: M
+    layer: L0
+    depends_on: []
+    parallel_with: [entity-new-all-single-pass, include-paths-relationship-names, field-unique-constraint, unique-indexes-shapes, datetime-timestamptz, package-mode-typed-event-bus, api-false-barrel]
+    labels: ["domain:codegen", "gate:auto"]
+    files:
+      - templates/entity/new/backend/repository.ejs.t        # Record<string, never> (L116) and other uses
+      - templates/entity/new/backend/{service,controller,search-controller,integration-source}.ejs.t
+      - templates/entity/new/backend/use-cases/{list,list-with-fields,find-by-id-with-fields,create,update}.ejs.t   # list.ejs.t L11 imports the table by its plural; L131 `const [items, total]`
+      - templates/entity/new/backend/dto/list-query.ejs.t
+      - src/schema/entity-definition.schema.ts               # entity name: reserved list → error naming the entity and the global
+      - test/smoke/fixtures/record.yaml, test/smoke/fixtures/item.yaml
+      - test/baseline/**                                     # regenerated
+      - consumer-skills/entities/yaml-reference.md           # naming rules + the reserved list
+    gates: [test-smoke, test-unit, test-baseline]
+    description: |
+      An entity named `record` emits `type Record`, which shadows `Record<K, V>` in the same files (TS2315). The
+      plural `items` collides with the list use case's own `const [items, total]` (TS2448/TS2454). Names such
+      as `map`, `set`, `date`, `promise` and `error` shadow globals and break as soon as a template uses that
+      global. Nothing in validation warns. This is the entity-name sibling of #715, which covers field names.
+
+      Fix, in two halves:
+      1. Templates are made safe for ordinary domain words. Each reference to the `Record` global in the backend
+         templates is qualified, or goes through a file-local alias. Confirm at spec time that
+         `globalThis.Record<…>` resolves in type position on the repo's TypeScript; otherwise emit the alias.
+         The list and use-case locals (`items`, `total`, `rows`, `page`) get names no plural can produce.
+      2. Validation rejects the names templates cannot reasonably avoid: names whose PascalCase shadows a global
+         that generated code depends on (Promise, Date, Error, Map, Set, Array, Object, String, Number, Boolean,
+         Symbol, Function, JSON, Math, …). The error names the entity and the global. The final list is
+         settled at spec time. It is an error, not a warning, because a warned name still fails `tsc`
+         (open_questions.reserved_names).
+
+      Acceptance (from #813 "Done when"):
+      - Smoke fixtures `record` and `item` (plural `items`) generate code that passes `tsc`. This fails on the
+        base commit with TS2315 and TS2448.
+      - Validation rejects a reserved name with a message naming the entity and the global it shadows. A unit
+        test covers it, and the same rule is visible through `just validate-entities` and Studio's
+        schema-on-write.
+      - Baseline snapshots are regenerated, and the diff contains only the qualification and the local renames.
+
+  - key: entity-new-all-single-pass
+    title: "fix(#815): `entity new --all` wires every has_many in one pass"
+    existing_issues: [815]
+    stack: C
+    size: M
+    layer: L0
+    depends_on: []
+    parallel_with: [reserved-entity-names, include-paths-relationship-names, field-unique-constraint, unique-indexes-shapes, datetime-timestamptz, package-mode-typed-event-bus, api-false-barrel]
+    labels: ["domain:codegen", "gate:auto"]
+    files:
+      - src/cli/shared/entity-render.ts                       # renderEntityTargets passes the target set to each hygen invocation
+      - templates/entity/new/prompt.js                        # reads the set into baseLocals
+      - templates/entity/new/backend/entity-locals.js         # processHasMany (~L657-670): targetExists = generated file exists OR target in the --all set
+      - test/run-test.ts                                      # baseline runner goes from two passes to one, using the same set mechanism
+      - src/__tests__/cli/ (or src/__tests__/backend/)       # parent generated before its has_many target, in one run
+      - CLAUDE.md                                             # the "Baseline tests … Two-pass generation" paragraph
+    gates: [test-baseline, test-unit]
+    description: |
+      A `has_many` is wired only if the target's `.entity.ts` already exists on disk. That file check is
+      deliberate: a single-file `entity new` must not import a sibling that was never generated. Under `--all`,
+      though, each target is a separate hygen subprocess run in sequence. On a clean tree, a parent rendered
+      before its target loses the composition with no warning, and the host runs `--all` twice.
+
+      Fix: under `--all`, every validated target is about to exist, so the check also accepts a target in that
+      set. The CLI passes the set to each hygen invocation; a single-file `entity new` keeps the pure file
+      check. If a target fails during a `--continue-on-error` run, its parent's import becomes a real `tsc`
+      error. That is honest, because the run failed.
+
+      Gate design: the baseline runner (`test/run-test.ts`) currently does two passes to work around this exact
+      defect. It moves to one pass using the same set mechanism. Its byte-for-byte snapshot compare then fails
+      on the base commit, so the baseline itself guards against regression.
+
+      Acceptance (from #815 "Done when"):
+      - On an empty output tree, one `entity new --all` produces the same files as two runs.
+      - A test generates a parent before its `has_many` target and asserts that the composition is present after
+        one run. It fails on the base commit.
+      - `just test-baseline` passes single-pass with unchanged snapshots, verified against #813's regenerated
+        snapshots once restacked.
+      - The two-pass comments in `entity-locals.js`, `test/run-test.ts` and CLAUDE.md describe the new truth.
+
+  # ───────────────────────────── Independent ─────────────────────────────
+  - key: include-paths-relationship-names
+    title: "fix(#742): api.includes paths accept the YAML relationship name; a miss lists the keys at that hop"
+    existing_issues: [742]
+    stack: independent
+    size: S
+    layer: L0
+    depends_on: []
+    parallel_with: [field-unique-constraint, unique-indexes-shapes, datetime-timestamptz, package-mode-typed-event-bus, api-false-barrel, reserved-entity-names, entity-new-all-single-pass]
+    labels: ["domain:codegen", "gate:auto"]
+    files:
+      - src/emitters/relations/build-includes.ts              # segment normalisation + the L204-207 error
+      - src/__tests__/emitters/relations/build-includes.test.ts
+      - docs/specs/REL-2.md                                   # include-path spelling rule
+    gates: [test-unit, test-smoke]
+    description: |
+      `api.includes.<route>.paths` accepts only the manifest's camelCase relation keys. The natural YAML
+      spelling (`fantasy_teams`) fails the whole manifest step, and the error neither names the wanted key nor
+      lists the available ones.
+
+      Every manifest key is `camelCase(<snake source name>)`: the relationship name, a plural, or an entity name
+      (src/emitters/relations/build-graph.ts). So each path segment is normalised with the same `camelCase`
+      (src/emitters/relations/types.ts:115) before lookup. The YAML relationship name and the key form then
+      name the same edge. The compiled allowlist keeps the key form, which is what clients send in `?include=`.
+      A segment that still misses fails with the keys available at that hop and, where one is close, a "did
+      you mean '<key>'?". See open_questions.include_spelling for the snake-only alternative.
+
+      Acceptance:
+      - #742's repro (`paths: [fantasy_teams]`) compiles to the `fantasyTeams` allowlist entry.
+      - An unknown segment's error lists the relation keys at that hop and suggests the nearest one.
+      - `max_depth`, prefix expansion and the `api: false` traversal error are unchanged, and existing
+        build-includes tests pass.
+      - The new tests fail on the base commit.
+
+  # ───────────────────────────── Release ─────────────────────────────
+  - key: release-0-32-0
+    title: "chore(release): 0.32.0: gaps batch 1 + the unreleased fixes since 0.31.0 (incl. #744)"
+    existing_issues: []            # the only new tracker issue in this plan
+    owner: "Doug (merge = publish: the CI `publish` job runs on a version bump merged to main)"
+    stack: release
+    size: S
+    layer: L0
+    depends_on: [field-unique-constraint, unique-indexes-shapes, datetime-timestamptz, package-mode-typed-event-bus, api-false-barrel, reserved-entity-names, entity-new-all-single-pass, include-paths-relationship-names]
+    parallel_with: []
+    labels: ["domain:codegen", "gate:human"]
+    files:
+      - package.json                                          # `just bump minor` → 0.32.0
+      - CHANGELOG.md                                          # [0.32.0] section with upgrade steps
+    gates: [test-all, test-integration, "publish-ci --dry-run (tarball smoke)"]
+    description: |
+      Cut 0.32.0. package.json and npm are both at 0.31.0, and `CHANGELOG.md` has no entry for anything merged
+      since. The release ships batch 1 and the fixes already on main: #744 (fix 06dc0b54, `queries: search`
+      pages through the list's `Page<T>`), #745, #746, #750, #751, #736 + #613, SEM-4 (#694, the semantic model
+      imports `@pattern-stack/query-surface`) and #734. Build the list from `git log` since the 0.31.0 release
+      commit, not from memory.
+
+      Bump level: **minor (0.32.0), not patch.** Under 0.x, `^0.31.0` resolves to `>=0.31.0 <0.32.0`, so a
+      patch would reach every caret-pinned consumer automatically. With it would come silent DDL changes: every
+      time column becomes timestamptz (#796), `unique: true` gains a constraint (#511), and tenant-scoped uniques
+      may become NND constraints (#784). A minor is the 0.x signal for "regenerate and review your migration".
+      It is still minor if Doug holds #796 at its gate, because #511 and #784 change DDL too.
+
+      Packages under `packages/*` publish at their own versions. Bump only those that changed since their last
+      publish.
+
+      Acceptance:
+      - The PR contains only `just bump minor` and the `[0.32.0]` CHANGELOG section. That section is assembled
+        from each item's "Changelog:" block, plus the already-merged fixes, plus upgrade steps: regenerate with
+        `entity new --all --force`; review the schema-diff migration (the timestamptz `USING … AT TIME ZONE
+        'UTC'`, new unique constraints, NND on PG 15+); dedupe before migrating; reserved entity names are now
+        rejected.
+      - `just test-all` and `just test-integration` are green on the release commit, and
+        `just publish-ci --dry-run` passes.
+      - After Doug merges: the CI publish job is green and `npm view @pattern-stack/codegen version` reports
+        0.32.0.
+      - #744's closing comment and the batch-1 issues get a "released in 0.32.0" note.
+
+open_questions:
+  where_syntax: |
+    #784 Q1: is `where:` raw SQL or a structured form? RECOMMEND raw SQL, as the issue body and its comment
+    both lean. Partial indexes need `IN (…)`, `> 0` and `status = '…'` in practice. Declared column identifiers
+    are rewritten to `${t.col}` outside quoted literals. The rest of the SQL is not validated in batch 1;
+    `drizzle-kit push` in test-integration is the backstop.
+  where_requires_name: |
+    #784: require `name:` whenever `where:` is set? RECOMMEND yes. Two partial entries over the same columns
+    otherwise get the same default name, and folding the predicate into the name runs into Postgres'
+    63-character limit.
+  tenant_nulls_not_distinct: |
+    #784 Q2: should a tenant-prefixed entry default to NULLS NOT DISTINCT? RECOMMEND yes for non-partial entries,
+    with `nulls_not_distinct: false` as the opt-out. The null-tenant partition is first-class under ADR-042, and
+    the external-id constraint already does this. Costs: existing tenant-scoped `unique_indexes:` change from an
+    index to a constraint (a DDL change, noted in the CHANGELOG); PG 15+ is required; partial entries on
+    tenant-scoped entities still cannot dedupe null-tenant rows (Drizzle limit, documented); and ADR-042 gets a
+    revision note.
+  q3_q4_scope: |
+    #784 Q3 (`tenant: false`) and Q4 (non-unique `indexes:`): RECOMMEND both stay out of batch 1, as follow-ups
+    under #783. `tenant: false` is a few lines of code, but it is a deliberate hole in ADR-042 §5(c) and needs
+    its own decision and ADR note. `indexes:` (32 host shapes: composite, partial, expression, gin) is a design.
+  finder_unique: |
+    #511 asks that a `queries:` entry with `unique: true` also emit the constraint. #64 and #784 call it a finder
+    hint. RECOMMEND: only field `unique:` and `unique_indexes:` declare constraints, and a query's `unique` stays a
+    hint. File a follow-up under #783 for a validation error when a unique finder has no unique constraint over
+    the same columns. That check would touch several existing fixtures (contact-v2's `by: [email]`), so it is
+    not batch-1 sized.
+  junction_temporal: |
+    #796 asks whether junction and relationship time columns change in the same PR. RECOMMEND yes for their
+    timestamp columns (`created_at`, `updated_at`, and the junction's `started_at`, `ended_at` and `matched_at`,
+    plus `datetime` payload fields); otherwise one app keeps two conventions. #771 is NOT part of this:
+    `valid_from` / `valid_to` are `type: date`, which belongs with the date-mode decision in #776.
+  reserved_names: |
+    #813: should a reserved entity name be an error or a warning? RECOMMEND an error, because a warned name still
+    fails `tsc` later and less clearly. The list is settled at spec time: globals that generated code depends on
+    and that templates cannot reasonably qualify. `record`, `item` and other everyday words are made to work, not
+    reserved.
+  include_spelling: |
+    #742: accept both spellings by normalising with the manifest's own `camelCase`, or require snake_case only?
+    RECOMMEND normalising. It is one rule, every key is `camelCase` of a snake name so nothing becomes
+    ambiguous, and existing camelCase YAML keeps working without a second code path.
+  release_level: |
+    RECOMMEND `just bump minor` → 0.32.0. A patch is wrong under 0.x caret ranges for a DDL-changing release.
+    See release-0-32-0.
+  sync: |
+    `/sync-issues` as written would create a parent epic and a duplicate issue for every leaf, and on re-sync it
+    replaces issue bodies. RECOMMEND not running it for this plan: go straight to /design on the existing
+    issues and create the release issue by hand. The alternative is running it in the reference-existing mode
+    described in `plan.sync`. Either way, nothing here should be re-parented.
+  plan_location: |
+    This plan is at `.ai-docs/plans/gaps-batch1.yaml`, as requested. Downstream sdlc agents find a stack by
+    globbing `.ai-docs/stacks/*/plan.yaml`. Move or copy it to `.ai-docs/stacks/gaps-batch1/plan.yaml` if the
+    specifier and implementer are to find it.
+  tracker_hygiene: |
+    Close #64 and #356 now as already done: `unique_indexes:` (#356) exists and emits, as verified at a8629dfc.
+    #355 (`index: true`) also looks stale. These are tracker writes for Doug, independent of any code.
