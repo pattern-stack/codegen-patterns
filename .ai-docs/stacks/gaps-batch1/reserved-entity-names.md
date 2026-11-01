@@ -22,7 +22,8 @@ A host application has entities named `record` and `item`, and renames them befo
 does not compile. After this PR:
 
 - An entity named `record` and one with plural `items` generate a tree that passes `tsc`, in both runtime modes.
-- Generated code cannot be broken by any entity name or plural that validation accepts. Validation rejects the three
+- Generated code cannot be broken by an entity name that shadows a TS global, or by a plural that equals a generated
+  local. Validation rejects the three
   names it cannot reasonably support (`promise`, `array`, `date`) with an error that names the entity and the global.
 
 ## Approach
@@ -377,7 +378,7 @@ Each gate below fails at a8629dfc on the thing it exists to prove.
 | **G1** smoke fixtures `record` + `item` | `just test-smoke` (vendored) and `just test-smoke-subsystems` (vendored + package), both in `test-all` | the host's two names compile | `repository.ejs.t:116` (unconditional) and `controller.ejs.t:74` (unconditional) emit `Record<…>` in a file that imports the entity's type `Record`, and `list.ejs.t:101` does the same: TS2315. `list.ejs.t:100-101` reads `items` before `list.ejs.t:131` declares it: TS2448 + TS2454. Reproduced on TypeScript 5.9.3 and 6.0.3 with the emitted shapes. The full smoke was not run for this spec, because it installs from npm. |
 | **G2** `src/__tests__/schema/reserved-entity-names.test.ts` | `just test-unit` | validation rejects the reserved names with a clear message | `EntityConfigSchema.name` is only a regex (`entity-definition.schema.ts:624-629`), so `name: date` parses. |
 | **G3** `src/__tests__/templates/emitted-name-hygiene.test.ts` | `just test-unit` | emitted code obeys both halves of the rule, in every rendered branch | A prototype of the helper over the committed trees reports **83** unqualified lib types (Record 47, Partial 15, Readonly 9, PropertyKey 5, Omit 3, Map 3, ReadonlyMap 1) and **80** plural-shaped bindings (the list `execute` of all 9 baseline entities, plus `search-deals`). |
-| **G4** junction hygiene test | `just test-junction` (`test-all`) | the junction service obeys rule 1 | `opportunity-contact.test.ts.snap:214-215,291,360` and `opportunity-sales-activity.test.ts.snap:196-197,273,342` hold bare `Partial<` / `Pick<` in a file that imports the junction type and both endpoint types. |
+| **G4** junction hygiene test | `just test-junction` (`test-all`) | the junction service obeys rule 1 | (added in the fix commit, red when applied to a8629dfc) `opportunity-contact.test.ts.snap:214-215,291,360` and `opportunity-sales-activity.test.ts.snap:196-197,273,342` hold bare `Partial<` / `Pick<` in a file that imports the junction type and both endpoint types. |
 | **G5** CLI + Studio surfaces | `just test-unit` | the rule is visible through `entity validate` and Studio's schema-on-write | No rejection exists, so `entity validate --json` exits 0 and `validateContent('entity', …)` returns `{ ok: true }`. |
 | **G6** byte snapshots | `just test-baseline`, frontend goldens (`test-unit`), `just test-junction` | the change is spelling-only | Regenerated. A reviewer reads the snapshot diff for anything that is not a qualification or a rename. |
 
@@ -428,6 +429,11 @@ one-token change, made so the rule has no exceptions. The hygiene helper flags i
 ## Out of scope
 
 - **Field names** that collide with locals or globals: #715.
+- **An entity type name equal to a symbol the templates import** (`Page` from pagination; `Post`, `Patch`, `Query`,
+  `Body`, `Param` from `@nestjs/common`). An entity `page` or `post` emits `type Page` next to the template's own
+  `Page` import, a loud TS2300 duplicate identifier. Same defect class as this issue, different mechanism (a template
+  import, not a lib global); the fix is to alias those imports in entity-scoped files, plus `page`/`post` smoke
+  fixtures and an import-collision case in the lint. Follow-up #833.
 - **A plural equal to a module-level library import** (`eq`, `and`, `sql`, `text`, `index`, a Drizzle builder…).
   These give a loud TS2300 duplicate identifier, never a silent bug, and no English plural produces one. A separate
   reserved-plural list would be a second list to keep in step.
@@ -499,6 +505,13 @@ Implemented as specified. Post-implementation truth:
 - Gates run locally: typecheck, test-unit, test-baseline, test-smoke, test-smoke-subsystems, test-smoke-relationship,
   test-smoke-junction, test-smoke-junction-cross-domain, test-smoke-capability, test-smoke-frontend, test-junction,
   test-integration-emit, test-smoke-integration, test-studio. `test-integration` (Docker) is left to CI.
+- The G3 branch matrix uses a neutral base entity (`widget`), not `record`: an entity named after a lib global binds
+  that type in every rendered file and rule 1 skips file-level bindings, so a bare use of it in a branch-only site
+  would pass. Rule 1 still skips imported names, because the entity's own type is a legitimate reference; that blind
+  spot is why the `record` / `item` compile proof stays in G1.
+- Relationship templates are rendered through the relationship prompt's locals and held to both rules (G3).
+- `generatedTypeName` is checked against the template's own `pascalCase` (via `entityNamePascal`) in G2.
+- Not fixed here, recorded in Out of scope: entity names equal to a template import (`page`, `post`, ...), #833.
 
 ## Diff Review — Adherence
 <!-- written by: reviewer · gate 2.5 · /sdlc:review (lens=adherence) -->

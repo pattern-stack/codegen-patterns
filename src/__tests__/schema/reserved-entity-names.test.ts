@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { EntityDefinitionSchema } from '../../schema/entity-definition.schema';
 import { RelationshipDefinitionSchema } from '../../schema/relationship-definition.schema';
+import { buildBackendLocals } from '../../../templates/entity/new/backend/entity-locals.js';
+import { withEntities } from '../backend/_entity-lookup';
 import {
   generatedTypeName,
   RESERVED_ENTITY_TYPE_NAMES,
@@ -31,6 +33,17 @@ describe('reserved entity names (#813)', () => {
   test('generatedTypeName', () => {
     expect(generatedTypeName('deal_state')).toBe('DealState');
   });
+
+  test.each(['deal_state', 'a_b_c', 'x2_y', 'record', 'sales_activity'])(
+    'generatedTypeName agrees with the template rule for %s',
+    (name) => {
+      const locals = buildBackendLocals(
+        { entity: { name, plural: `${name}s`, table: `${name}s`, pattern: 'Base' }, fields: {}, relationships: {}, behaviors: [] },
+        withEntities(),
+      ) as Record<string, unknown>;
+      expect(locals.entityNamePascal).toBe(generatedTypeName(name));
+    },
+  );
 
   test.each(['promise', 'array', 'date'])('entity name %s gives one issue at entity.name', (name) => {
     const r = EntityDefinitionSchema.safeParse(entity(name));
