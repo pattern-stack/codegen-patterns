@@ -1,6 +1,6 @@
 ---
 issue: pattern-stack/codegen-patterns#742
-status: strategy-approved            # gate:auto, so Gate 1 is satisfied by the specifier
+status: implemented                # gate:auto; Gate 2.5 findings applied
 stack: gaps-batch1
 plan_leaf_key: include-paths-relationship-names
 plan: origin/dugshub/gaps-batch1-plan:.ai-docs/stacks/gaps-batch1/plan.yaml   # Gate 0 approved 2026-10-31

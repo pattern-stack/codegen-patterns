@@ -561,6 +561,28 @@ describe('buildIncludeAllowlists — a miss says what exists (#742)', () => {
 		expect(msg).toContain("names no relation at 'fantasy_teams.league'");
 		expect(msg).toContain("table 'fantasy_teams'");
 		expect(msg).toContain('Relation keys at this hop: homeLeague.');
+		// 'league' -> 'homeLeague' is distance 4, over the limit of 3: no guess.
+		expect(msg).not.toContain('Did you mean');
+	});
+
+	it('M6: a suggestion at exactly the distance limit is still made', () => {
+		const msg = messageOf(() =>
+			compile([
+				{ ...ACCOUNT, api: { includes: { find_by_id: { max_depth: 1, paths: ['opportunity'] } } } },
+				CONTACT,
+				OPPORTUNITY,
+			]),
+		);
+		// 'opportunity' -> 'opportunities' is distance 3; limit is max(2, floor(13/3)) = 4.
+		expect(msg).toContain("Did you mean 'opportunities'?");
+	});
+
+	it('M7: an `api: false` miss quotes the declared (snake) spelling', () => {
+		const msg = messageOf(() =>
+			compile([leagueWith(1, ['fantasy_teams']), { ...FANTASY_TEAM, api: false }]),
+		);
+		expect(msg).toContain("'fantasy_teams'");
+		expect(msg).toContain("declares 'api: false'");
 	});
 
 	it('M3: a case slip is suggested', () => {

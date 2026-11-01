@@ -211,7 +211,7 @@ export function buildIncludeAllowlists(
         const segments = declared.split('.').map((s) => s.trim());
         if (segments.some((s) => s.length === 0)) {
           throw new IncludeAllowlistError(
-            `${entity.name}.api.includes.${route}: '${declared}' is not a dot path over relation keys.`,
+            `${entity.name}.api.includes.${route}: '${declared}' is not a dot path over relations.`,
           );
         }
         if (segments.length > decl.max_depth) {

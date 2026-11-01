@@ -39,7 +39,7 @@ module — plus an entry in the `GENERATED_MODULES` and schema barrels.
 
 | For | Read |
 |---|---|
-| The full YAML block reference — fields, types, behaviors, relationships, EAV flags, `generate:` | `yaml-reference.md` |
+| The full YAML block reference — fields, types, behaviors, relationships, EAV flags, `generate:`, `api:` (HTTP surface, include allowlist) | `yaml-reference.md` |
 | Choosing a family, the methods each family adds, and the `queries:` block shapes | `families-and-queries.md` |
 
 ## Minimum viable entity
