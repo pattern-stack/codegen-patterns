@@ -11,6 +11,7 @@
 
 import { execSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
+import { entityNewArgs } from '../src/cli/shared/hygen';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
 // Repo root — one level up from this file's directory (test/ → repo).
@@ -169,7 +170,7 @@ function runCodegen() {
       console.log(`     Generating: ${fixture}`);
 
       try {
-        execSync(`HYGEN_TMPLS="${templatesDir}" bunx --bun hygen entity new --yaml "${yamlPath}" --renderSet "${renderSet.join(',')}"`, {
+        execSync(`HYGEN_TMPLS="${templatesDir}" bunx --bun hygen entity new ${entityNewArgs(yamlPath, renderSet).map(a => `"${a}"`).join(' ')}`, {
           cwd: ROOT,
           stdio: 'pipe',
         });
