@@ -207,7 +207,7 @@ entity:
                                 #   { Actor: { kind: individual } } | { Actor: { kind: group, members: <has_many> } }
 
 fields:
-  email: { type: string, required: true, max_length: 255, index: true }
+  email: { type: string, required: true, max_length: 255, unique: true }
   status: { type: enum, choices: [active, inactive] }
 
 relationships:
@@ -226,7 +226,7 @@ generate:
 
 queries:
   - by: [email]
-    unique: true                # NOTE: emits an index, not a DB UNIQUE constraint (#484, #511)
+    unique: true                # finder hint (single row); no DDL. The constraint is field `unique: true` / `unique_indexes:`
   - by: [account_id]
     order: created_at desc
   - name: search                # → SearchXUseCase + GET /<plural>/search — the list's

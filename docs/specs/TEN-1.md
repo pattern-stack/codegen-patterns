@@ -92,6 +92,10 @@ pipeline). In `clean-lite-ps`, field-level `unique: true` reaches the locals (`p
 `uniqueIndex('uq_<table>_provider_external_id').on(t.provider, t.externalId)` for `external_id_tracking`
 (`prompt-extension.js:1300-1310`). §4.4 rules on both; there is no "suppress the bare per-field `.unique()`" work.
 
+> **Update 2026-10-31 (#511).** Field-level `unique: true` is now emitted: it is lowered into a single-field entry of
+> `processUniqueIndexes`, which applies the tenant prefix. The "emitted nowhere" statement above was the defect #511
+> fixed.
+
 **M4 — `jobRuns` has `tenantId` but no `userId`.** `tenantId: text('tenant_id')`
 (`runtime/subsystems/jobs/job-orchestration.schema.ts:137`) — **`text`, not `uuid`**. And there is no `userId` column
 on `job_run` (verified against the full column list, `:120-160`), so ADR-042 §6's `claimed.userId ?? SYSTEM_USER` has
@@ -446,9 +450,10 @@ it is documented in §12 rather than papered over by widening the entity column 
 
 #### 4.4 Uniqueness (M3, M5)
 
-- **Field-level `unique: true` / `queries: unique: true`** — nothing to do. `clean-lite-ps` emits no single-column
-  unique constraint (M3). ADR-042 §5(c)'s rewrite is a correction, not a task. A unit test asserts a `tenant_scoped`
-  entity with a `unique: true` field emits no bare unique.
+- **Field-level `unique: true` / `queries: unique: true`** — *(updated 2026-10-31, #511)* field `unique: true` is
+  lowered into `processUniqueIndexes`, so a `tenant_scoped` entity emits only the tenant-prefixed
+  `uniqueIndex('<table>_tenant_id_<col>_uniq')`, never a bare one; a unit test asserts both. `queries: unique: true`
+  stays a finder hint with no DDL (#821).
 - **Top-level `unique_indexes:`** — `processUniqueIndexes` (`prompt-extension.js:601-609`) prepends `tenant_id` to each
   entry's column list when `tenantScoped`, and the default name becomes `<table>_tenant_id_<cols>_uniq`. An
   author-supplied `name` is preserved. Without this, two tenants cannot hold the same natural key, which is the exact
@@ -734,7 +739,7 @@ would have produced under the default `'user'` scope.
 | `src/__tests__/runtime/base-classes/tenant-context.spec.ts` (new) | the three states of `getTenantId` × two enforcement modes; **both** strict throw sites; the two hatches, their nesting, and that they throw SYNCHRONOUSLY when there is no outer context; ALS propagation across an `await`; `SYSTEM_ACTOR_ID` |
 | `src/__tests__/runtime/base-classes/base-repository.spec.ts` (extended) | `tenantPredicateFor` for string / null / undefined, its throw on a table with no `tenant_id`, and — the REL-2 contract — the same call against a table the repository does not own; the gating matrix; all four guards in ONE `WHERE`; the null partition; `stampTenant` including the `tenantScope: 'all'` write throw |
 | `src/__tests__/runtime/subsystems/job-worker.tenant-als.spec.ts` (new) | `processRun` enters with the run's own tenant, `SYSTEM_ACTOR_ID`, `scope: 'superuser'`; `tenantId: null` is present not absent; the context does not leak past the handler |
-| `src/__tests__/clean-lite-ps/tenant-scoping-templates.test.ts` (new) | column (nullable, no `.references()`) + index + `tenantScoped: true` + `scopeEnforcement: 'strict'`; the literal emitted for an otherwise behaviorless entity; the `unique_indexes` prefix with and without an author name; `nullsNotDistinct` on the external-id constraint; the declared `conflictTarget`; no bare single-column unique (§M3); the `eav_value_table` refusal; the junction schema's rejection |
+| `src/__tests__/clean-lite-ps/tenant-scoping-templates.test.ts` (new) | column (nullable, no `.references()`) + index + `tenantScoped: true` + `scopeEnforcement: 'strict'`; the literal emitted for an otherwise behaviorless entity; the `unique_indexes` prefix with and without an author name; `nullsNotDistinct` on the external-id constraint; the declared `conflictTarget`; field `unique: true` emits only the tenant-prefixed unique (§M3, #511); the `eav_value_table` refusal; the junction schema's rejection |
 | `src/__tests__/clean-lite-ps/entity-column-features.test.ts` (extended) | #636 — host-owned target emits a plain column and no import, an owned target still gets its FK, `index: true` still applies to the host-owned column |
 | `src/__tests__/templates/tenant-scoping-guards.test.ts` (new) | `assertTenantScopingSupported` (permit / refuse / message / non-`true` values); `loadOwnedTableNames` (table vs plural vs pluralized name, nested dirs, malformed YAML, missing dir, and that a `foreign_key` target is not itself owned) |
 
