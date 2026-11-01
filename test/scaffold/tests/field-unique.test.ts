@@ -26,7 +26,8 @@ let sql: any;
 
 beforeAll(async () => {
   if (!SHOULD_RUN_SCAFFOLD) return;
-  ({ accounts, accountProfiles, assetTags } = await import('../schema'));
+  // Generated table exports keep the table's snake_case name (NAME-2): `account_profiles`, `asset_tags`.
+  ({ accounts, account_profiles: accountProfiles, asset_tags: assetTags } = await import('../schema'));
   ({ getTestDb, truncateAll, closeDb } = await import('./setup'));
   ({ sql } = await import('drizzle-orm'));
 });
