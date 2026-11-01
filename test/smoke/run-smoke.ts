@@ -137,6 +137,31 @@ function run(cmd: string, cwd: string, env: NodeJS.ProcessEnv = {}): void {
 	});
 }
 
+/** Every file under `dir`, relative path -> contents. */
+function snapshotTree(dir: string): Map<string, string> {
+	const out = new Map<string, string>();
+	const walk = (d: string) => {
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const abs = path.join(d, e.name);
+			if (e.isDirectory()) walk(abs);
+			else out.set(path.relative(dir, abs), fs.readFileSync(abs, 'utf8'));
+		}
+	};
+	walk(dir);
+	return out;
+}
+
+/** Every added, removed or changed path between two snapshots. */
+function diffSnapshots(a: Map<string, string>, b: Map<string, string>): string[] {
+	const diff: string[] = [];
+	for (const [k, v] of a) {
+		if (!b.has(k)) diff.push(`removed ${k}`);
+		else if (b.get(k) !== v) diff.push(`changed ${k}`);
+	}
+	for (const k of b.keys()) if (!a.has(k)) diff.push(`added ${k}`);
+	return diff.sort();
+}
+
 function runSilent(cmd: string, cwd: string): { code: number | null; out: string; err: string } {
 	const parts = cmd.split(' ');
 	const r = spawnSync(parts[0], parts.slice(1), { cwd, encoding: 'utf-8' });
@@ -651,18 +676,11 @@ async function main(): Promise<number> {
 
 		// 5. Run `codegen entity new --all`.
 		//
-		// For the relationship scenario, run TWICE (two-pass) so cross-entity
-		// `has_many` targets are on disk for the second pass — this seeds
-		// `existingHasMany`, which drives the service-layer composition
-		// methods for all targets, not just those generated first. (It no
-		// longer drives any entity-file emission — DRZ-1 deleted the many()
-		// const.)
-		// (Mirrors the baseline test's two-pass strategy in test/run-test.ts.)
+		// ONE run is the whole subject (#815): every `has_many` onto an entity in
+		// the run is wired on a clean tree, whatever the sort order. The
+		// relationship scenario then proves it literally in step 5.3 — a second
+		// run changes no file.
 		run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
-		if (SCENARIO === 'relationship') {
-			log('second pass (relationship scenario — seeds existingHasMany)');
-			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
-		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the
 		// backend relationship emission shape on the CRM fixtures:
@@ -683,6 +701,20 @@ async function main(): Promise<number> {
 			log('asserting semantic model emission for CRM fixtures');
 			assertSemanticEmission(tmpDir);
 			log('semantic emission OK');
+		}
+
+		// 5.3. #815 — a second `entity new --all --force` leaves `src/` byte-identical.
+		if (SCENARIO === 'relationship') {
+			log('asserting a second entity new --all changes no file (#815)');
+			const before = snapshotTree(path.join(tmpDir, 'src'));
+			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
+			const diff = diffSnapshots(before, snapshotTree(path.join(tmpDir, 'src')));
+			if (diff.length > 0) {
+				throw new Error(
+					`a second 'entity new --all' changed ${diff.length} file(s) — one run is not enough (#815):\n  ${diff.join('\n  ')}`,
+				);
+			}
+			log('second run changed nothing OK');
 		}
 
 		// 5.5. Install the observability subsystem (combiner — ADR-025).
