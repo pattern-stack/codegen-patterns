@@ -186,7 +186,7 @@ This is route *emission*, not auth — an `api: false` entity is invisible to HT
 
 > **Note, 2026-09-20 (REL-2, #587) — the key gained an object form, and the rule held.** `api:` is now either a boolean or `{ enabled?, includes? }`, where `includes` is the HTTP include allowlist (ADR-044 §7). Two consequences for this section, neither of which weakens it:
 >
-> - **One reader for both forms.** `apiEnabled(def)` (`src/schema/entity-definition.schema.ts`) is what every emitter calls, so `api: false` and `api: { enabled: false }` cannot diverge. The `apiEnabled` local (named `clpApiEnabled` until NAME-2) reads the same rule in the hygen half; `write-templates.test.ts` pins the pair for both forms.
+> - **One reader for both forms.** `apiEnabled(def)` (`src/schema/entity-definition.schema.ts`) is what every emitter calls, so `api: false` and `api: { enabled: false }` cannot diverge. The `apiEnabled` local (named `clpApiEnabled` until NAME-2) reads the same rule in the hygen half; `write-templates.test.ts` pins the hygen half for both forms, `schema-v2.test.ts` the schema half.
 > - **No include may traverse a closed entity.** ADR-044 §7 originally allowed an allowlist to name a path through an `api: false` entity as an explicit opt-in. That clause is withdrawn (ADR-044's 2026-09-20 revision): such a path is a generation error naming both entities, so this section's "no network data plane" has no exception. Declaring `api.includes` beside `enabled: false` is the same error.
 
 ### 7. Auto-wire the boundary + guard at install (complete ADR-0002's deferral)

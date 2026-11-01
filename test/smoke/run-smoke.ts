@@ -356,6 +356,16 @@ function assertApiFalseEmission(tmpDir: string): void {
 			throw new Error(`api:false entity must not emit ${rel} (ADR-043 §6, #811)`);
 		}
 	}
+	// The search-controller absence above only means something if the `search`
+	// query resolved: the use case is emitted for audit_entry, and an entity with
+	// an API still gets its search controller.
+	const auditUseCases = fs.readdirSync(mod('audit-entries/use-cases'));
+	if (!auditUseCases.some((f) => /search/.test(f))) {
+		throw new Error('audit_entry search use case missing: the search-controller absence check would be vacuous (#811)');
+	}
+	if (!fs.existsSync(mod('accounts/account-search.controller.ts'))) {
+		throw new Error('accounts/account-search.controller.ts missing (positive control)');
+	}
 	// Positive control: an entity with an API still exports its controller.
 	assertContains(
 		reads('accounts/index.ts'),

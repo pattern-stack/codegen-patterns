@@ -7,7 +7,7 @@ key: api-false-barrel
 layer: L0
 size: S
 gate: auto
-status: strategy-approved
+status: implemented
 base: origin/main @ a8629dfc
 branch: dugshub/811-api-false-barrel
 plan: ".ai-docs/stacks/gaps-batch1/plan.yaml on branch dugshub/gaps-batch1-plan (Gate 0 approved 2026-10-31 with every open_questions recommendation)"
@@ -142,7 +142,7 @@ In `write-templates.test.ts`, `baseEntity` is `contact`:
 | `just test-unit` | U2 and U3: the barrel render under both forms | **red.** A probe ran these assertions against base `index.ejs.t` through `buildBackendLocals` + `withEntities()`. `api: false` FAILED, `api: {"enabled":false}` FAILED, and the default barrel passed. |
 | `just test-smoke`, step-6 `tsc` | the two new barrels compile under the consumer tsconfig | **red, with exactly the subject.** A probe generated both fixtures with the base CLI (`entity new --all`) and typechecked `src/modules/**`. Inside it there were exactly two diagnostics: `audit-entries/index.ts(10,38)` and `sync-cursors/index.ts(10,38)`, both TS2307 `Cannot find module './…controller'`. After the controller line was deleted from the generated barrels, there were zero. The probe's tsconfig mirrored `test/tsconfig.baseline.json`. The smoke's own tsconfig (from `bun init`, merged by `project init`) has no `include`, so `tsc` checks every `.ts` in the project, barrels included. |
 | `just test-smoke`, `assertApiFalseEmission` | barrel content, no controller files, `controllers: []` | **red.** The base barrel contains `'./audit-entry.controller'` (the probe output above). |
-| `just test-smoke-subsystems`, vendored leg | the same fixtures directory (`run-smoke-subsystems.ts:39, 150-155`) in a full-tree `tsc` (`:378-383`) | **red**, with the same two TS2307s. The package leg typechecks only `src/worker.ts`, so it does not see the barrels. |
+| `just test-smoke-subsystems`, vendored leg | the same fixtures directory (`run-smoke-subsystems.ts:39, 150-155`) in a full-tree `tsc` (`:378-383`) | **not run on base; inferred red** from the probe plus the shared fixtures directory (same two TS2307s expected). The package leg typechecks only `src/worker.ts`, so it does not see the barrels. |
 | `just test-baseline` | barrels of entities with an API stay byte-identical (9 under `test/baseline/packages/api/src/modules/*/index.ts`) | green before and after. It fails if the guard changes the output for entities with an API: an EJS tag without `-%>` adds a blank line to all 9 barrels, and a reworded comment changes all 9. |
 | `just test-post-publish` (CI `publish` job) | tarball mode runs `run-smoke.ts`, and `FIXTURES_DIR` is in the repo | red on base, like `test-smoke` |
 
@@ -178,14 +178,14 @@ assertion to `run-smoke.ts`. A conflict there is a hunk-ordering merge. No snaps
 
 ## Acceptance
 
-- [ ] `index.ejs.t` exports the controller only when `apiEnabled`, under both YAML forms (U2, U3).
-- [ ] The smoke fixtures `audit_entry.yaml` (`api: false`) and `sync_cursor.yaml` (`api: { enabled: false }`) exist,
+- [x] `index.ejs.t` exports the controller only when `apiEnabled`, under both YAML forms (U2, U3).
+- [x] The smoke fixtures `audit_entry.yaml` (`api: false`) and `sync_cursor.yaml` (`api: { enabled: false }`) exist,
       and `just test-smoke` passes, `tsc` and `assertApiFalseEmission` included.
-- [ ] The PR body shows the gate commit red: U2/U3 failing, the two TS2307s in the smoke and the assertion failing.
-- [ ] `just test-smoke-subsystems` passes.
-- [ ] `just test-baseline` passes with no snapshot change.
-- [ ] The ADR-043 §6 revision note and the consumer SKILL line are in the same PR.
-- [ ] The PR body carries the Changelog block below.
+- [x] The PR body shows the gate commit red: U2/U3 failing, the two TS2307s in the smoke and the assertion failing.
+- [x] `just test-smoke-subsystems` passes.
+- [x] `just test-baseline` passes with no snapshot change.
+- [x] The ADR-043 §6 revision note and the consumer SKILL line are in the same PR.
+- [x] The PR body carries the Changelog block below.
 
 ## Changelog block (PR body)
 
@@ -199,3 +199,8 @@ Changelog:
   Upgrade: regenerate (`codegen entity new --all --force`), then delete any post-generate step that removed the
   controller export. No schema or DDL change.
 ```
+
+## Post-implementation notes
+
+- Build order step 3 (a separate docs commit) was folded into the fix commit.
+- Gate 2.5 follow-up: `assertApiFalseEmission` also asserts the `audit_entry` search use case exists and `accounts/account-search.controller.ts` exists, so the search-controller absence check cannot pass vacuously.
