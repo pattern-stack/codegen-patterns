@@ -122,8 +122,8 @@ describe('backend controller 404 semantics on :id routes', () => {
     expect(output).toContain('const entity = await this.findByIdWithFieldsUseCase.execute(id);');
     expect(output).toContain('if (!entity) throw new NotFoundException(`Contact ${id} not found`);');
     // Signature type widens to include the fields bag but drops | null.
-    expect(output).toMatch(/Promise<Contact & \{ fields: Record<string, unknown> \}>/);
-    expect(output).not.toContain('Promise<(Contact & { fields: Record<string, unknown> }) | null>');
+    expect(output).toMatch(/Promise<Contact & \{ fields: globalThis.Record<string, unknown> \}>/);
+    expect(output).not.toContain('Promise<(Contact & { fields: globalThis.Record<string, unknown> }) | null>');
   });
 
   it('list route (no :id) returns a Page<T> envelope, not a bare array (no 404 logic)', () => {

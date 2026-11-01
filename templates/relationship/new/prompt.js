@@ -310,7 +310,7 @@ function processQueries(queriesBlock, allFieldsMap, entityNamePascal) {
       returnType =
         selectFields.length === 1
           ? `${allFieldsMap[selectFields[0]] || allFieldsMap[camelFields[0]] || "string"}[]`
-          : `Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(" | ")}>[]`;
+          : `globalThis.Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(" | ")}>[]`;
     } else {
       returnType = `${entityNamePascal}[]`;
     }

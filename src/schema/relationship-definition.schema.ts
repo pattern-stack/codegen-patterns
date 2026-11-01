@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { reservedGlobalFor, reservedNameMessage } from './reserved-entity-names.js';
 
 /**
  * Relationship Definition Schema
@@ -116,7 +117,15 @@ const RelationshipConfigSchema = z
 		name: z.string().regex(
 			/^[a-z][a-z0-9_]*$/,
 			'Relationship name must be snake_case',
-		),
+		).superRefine((name, ctx) => {
+			const reserved = reservedGlobalFor(name);
+			if (reserved) {
+				ctx.addIssue({
+					code: 'custom',
+					message: reservedNameMessage('Relationship', name, reserved),
+				});
+			}
+		}),
 
 		/** Database table name. Defaults to {name}s if not specified. */
 		table: z

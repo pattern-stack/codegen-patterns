@@ -9,11 +9,16 @@ Every block of an `entities/<name>.yaml` file and what it generates.
 ```yaml
 entity:
   name: contact            # REQUIRED. singular snake_case. Drives class names + table.
-  plural: contacts         # optional; inferred (pluralized) if omitted
-  table: contacts          # optional; defaults to the plural
+  plural: contacts         # REQUIRED. snake_case; the Drizzle table export
+  table: contacts          # REQUIRED. the database table name
   pattern: Synced          # the family — Base | Synced | Activity | Metadata | Knowledge
                            #   (or an app-defined pattern). See families-and-queries.md.
 ```
+
+**Reserved names.** `promise`, `array` and `date` are rejected (also as relationship names): the generated type
+would shadow the `Promise`, `Array` or `Date` global, which generated code uses in nearly every signature. Every
+other name works, `record`, `item`, `map` and `error` included, and no plural collides with a generated local
+(`items`, `options`, `conditions`). (#813)
 
 ## `fields:` — columns
 

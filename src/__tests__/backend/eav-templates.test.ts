@@ -114,7 +114,7 @@ describe('backend eav templates — paired read use cases', () => {
       "import { OpportunityService } from '../opportunity.service';",
     );
     expect(output).toContain(
-      '(Opportunity & { fields: Record<string, unknown> }) | null',
+      '(Opportunity & { fields: globalThis.Record<string, unknown> }) | null',
     );
     expect(output).toContain('return this.service.findByIdWithFields(id);');
   });
@@ -125,7 +125,7 @@ describe('backend eav templates — paired read use cases', () => {
 
     expect(output).toContain('export class ListOpportunitiesWithFieldsUseCase');
     expect(output).toContain(
-      'Array<Opportunity & { fields: Record<string, unknown> }>',
+      'Array<Opportunity & { fields: globalThis.Record<string, unknown> }>',
     );
     expect(output).toContain('return this.service.listWithFields();');
   });
@@ -144,7 +144,7 @@ describe('backend eav templates — compound-write use cases', () => {
     );
 
     // Constructor composes entity service + FieldValueService + DRIZZLE_DB.
-    expect(output).toContain('private readonly opportunities: OpportunityService,');
+    expect(output).toContain('private readonly service: OpportunityService,');
     expect(output).toContain('private readonly fields: FieldValueService,');
     expect(output).toContain('@Inject(DRIZZLE) private readonly db: DrizzleClient,');
 
@@ -152,7 +152,7 @@ describe('backend eav templates — compound-write use cases', () => {
     expect(output).toContain('this.db.transaction(async (tx) =>');
     expect(output).toContain('const { fields, ...core } = dto;');
     expect(output).toContain(
-      'const entity = await this.opportunities.create(core as CreateOpportunityDto, tx);',
+      'const entity = await this.service.create(core as CreateOpportunityDto, tx);',
     );
 
     // Calls the service-level compound helper — NOT toEavRows / upsertMany.
@@ -185,10 +185,10 @@ describe('backend eav templates — compound-write use cases', () => {
     const output = render('use-cases/update.ejs.t', locals);
 
     expect(output).toContain(
-      'dto: UpdateOpportunityDto & { fields?: Record<string, unknown> },',
+      'dto: UpdateOpportunityDto & { fields?: globalThis.Record<string, unknown> },',
     );
     expect(output).toContain(
-      'const entity = await this.opportunities.update(id, core as UpdateOpportunityDto, tx);',
+      'const entity = await this.service.update(id, core as UpdateOpportunityDto, tx);',
     );
     expect(output).toContain('if (!entity) return null;');
 

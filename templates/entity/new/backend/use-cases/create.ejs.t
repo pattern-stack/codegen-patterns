@@ -35,7 +35,7 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 @Injectable()
 export class <%= classNames.createUseCase %> {
   constructor(
-    private readonly <%= entityNamePlural %>: <%= classNames.service %>,
+    private readonly service: <%= classNames.service %>,
     private readonly fields: FieldValueService,
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
 <% if (hasEmits && createEventType) { -%>
@@ -44,14 +44,14 @@ export class <%= classNames.createUseCase %> {
   ) {}
 
   async execute(
-    dto: <%= classNames.createDto %> & { fields?: Record<string, unknown> },
+    dto: <%= classNames.createDto %> & { fields?: globalThis.Record<string, unknown> },
   ): Promise<<%= classNames.entity %>> {
 <% if (hasEmits && createEventType) { -%>
     const requester = tryGetRequester();
 <% } -%>
     return this.db.transaction(async (tx) => {
       const { fields, ...core } = dto;
-      const entity = await this.<%= entityNamePlural %>.create(core as <%= classNames.createDto %>, tx);
+      const entity = await this.service.create(core as <%= classNames.createDto %>, tx);
       if (fields && Object.keys(fields).length > 0) {
         await this.fields.upsertFieldsTransactional(
           '<%= entityName %>',

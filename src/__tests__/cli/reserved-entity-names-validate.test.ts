@@ -70,16 +70,19 @@ describe('entity validate rejects a reserved entity name (#813)', () => {
 		expect(code).toBe(1);
 		const payload = JSON.parse(out);
 		expect(payload.valid).toBe(false);
-		expect(payload.errors).toHaveLength(1);
-		expect(payload.errors[0].message).toContain("'date'");
-		expect(payload.errors[0].message).toContain('Date');
+		// The loader reports a header entry and then one entry per Zod issue.
+		const reserved = payload.errors.filter((e: { message: string }) => e.message.includes('is reserved'));
+		expect(reserved).toHaveLength(1);
+		expect(reserved[0].message).toContain("'date'");
+		expect(reserved[0].message).toContain('Date');
 	});
 
 	test('text mode — printed as a validation error, exit 1', async () => {
 		const root = mkProject('date');
 		const { code, out } = await run(['entity', 'validate', '--cwd', root]);
 		expect(code).toBe(1);
-		expect(out).toContain('1 validation errors');
+		expect(out).toContain('validation errors');
+		expect(out).toContain("Entity name 'date' is reserved");
 		expect(out).not.toContain('All entities validated');
 	});
 

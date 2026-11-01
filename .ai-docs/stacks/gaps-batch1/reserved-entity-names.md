@@ -5,7 +5,7 @@ plan_key: reserved-entity-names
 stack_position: C (1 of 2; #815 lands on top and must reproduce this PR's regenerated snapshots single-pass)
 layer: L0
 gate: auto (gate:auto)
-status: approved
+status: implemented
 base: main @ a8629dfc
 related:
   - .ai-docs/stacks/gaps-batch1/plan.yaml          # Gate 0, approved 2026-10-31 with every open_questions recommendation (branch dugshub/gaps-batch1-plan)
@@ -415,7 +415,7 @@ Each gate below fails at a8629dfc on the thing it exists to prove.
   `relationship-endpoint-naming.test.ts:31-52` does: the `returnType` is `globalThis.Pick<…>[]`.
 
 **G5 cases.** `entity validate --json --cwd <tmp>` on a project whose `entities/date.yaml` is otherwise valid exits 1.
-`errors` holds one entry, and its message contains `'date'` and `Date`. Text mode prints it as a validation error.
+`errors` holds a loader header entry plus one entry per Zod issue; exactly one contains `is reserved`, `'date'` and `Date`. Text mode prints it as a validation error.
 The Studio cases are listed under File-level plan → Modify: tests.
 
 **Local checks before review** (no Docker): `nice -n 19 just typecheck`, `nice -n 19 just test-unit` and
@@ -486,7 +486,19 @@ _No addendum required._
 
 ## Implementation notes
 <!-- written by: implementer · gate 2 · /sdlc:develop -->
-_Awaiting implementation._
+Implemented as specified. Post-implementation truth:
+
+- `entity validate` reports a header entry (`Validation failed for <file>`) followed by one entry per Zod issue, so G5
+  asserts exactly one entry containing the reserved-name message rather than `errors.length === 1`.
+- The hygiene helper treats any all-lowercase binding as plural-shaped, so a single-word local such as `known` or `k`
+  in a table-reading function is flagged; tests use camelCase locals (`isKnown`).
+- Pinned spellings updated (never loosened): `src/__tests__/backend/*`, `src/__tests__/emitters/frontend/emit-{api,fields,store}.test.ts`
+  and `test/smoke/run-smoke-capability.ts` (the forwarder regexes now expect `globalThis.Parameters` / `globalThis.ReturnType`).
+- Snapshots regenerated: `test/baseline`, `test/frontend-golden`, `test/frontend-graph-golden`, `test/junction`. The diffs
+  contain only `globalThis.` qualifications and the list/search renames.
+- Gates run locally: typecheck, test-unit, test-baseline, test-smoke, test-smoke-subsystems, test-smoke-relationship,
+  test-smoke-junction, test-smoke-junction-cross-domain, test-smoke-capability, test-smoke-frontend, test-junction,
+  test-integration-emit, test-smoke-integration, test-studio. `test-integration` (Docker) is left to CI.
 
 ## Diff Review — Adherence
 <!-- written by: reviewer · gate 2.5 · /sdlc:review (lens=adherence) -->

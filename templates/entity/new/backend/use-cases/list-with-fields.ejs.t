@@ -12,7 +12,7 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 export class <%= classNames.listWithFieldsUseCase %> {
   constructor(private readonly service: <%= classNames.service %>) {}
 
-  async execute(): Promise<Array<<%= classNames.entity %> & { fields: Record<string, unknown> }>> {
+  async execute(): Promise<Array<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }>> {
     return this.service.listWithFields();
   }
 }

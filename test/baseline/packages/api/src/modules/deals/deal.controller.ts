@@ -51,7 +51,7 @@ export class DealController {
    */
   private resolveInclude<TFragment>(
     raw: string | undefined,
-    allow: Readonly<Record<string, TFragment>> | undefined,
+    allow: globalThis.Readonly<globalThis.Record<string, TFragment>> | undefined,
   ): TFragment | undefined {
     try {
       return resolveAllowedInclude(raw, allow);

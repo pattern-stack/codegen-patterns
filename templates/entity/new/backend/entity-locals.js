@@ -1129,7 +1129,7 @@ function processQueries(queriesBlock, processedFields, entityNamePascal) {
       const camelFields = selectFields.map((f) => camelCase(f));
       returnType = selectFields.length === 1
         ? `${fieldTypeMap[selectFields[0]] || fieldTypeMap[camelFields[0]] || 'string'}[]`
-        : `Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(' | ')}>[]`;
+        : `globalThis.Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(' | ')}>[]`;
     } else {
       returnType = `${entityNamePascal}[]`;
     }

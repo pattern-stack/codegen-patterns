@@ -156,7 +156,7 @@ describe('emit-fields — entity metadata file', () => {
 		const { deal, c } = dealCtx();
 		const out = buildEntityFieldsFile(deal, c);
 
-		expect(out).toContain('export const dealFields: Record<string, FieldMeta<Deal>>');
+		expect(out).toContain('export const dealFields: globalThis.Record<string, FieldMeta<Deal>>');
 		// id is skipped from the metadata map keys.
 		expect(out).not.toContain('\tid: {');
 		// name → primary

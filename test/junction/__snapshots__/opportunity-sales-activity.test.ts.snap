@@ -193,8 +193,8 @@ import type { SalesActivity } from '../sales-activities/sales-activity.entity';
  * attaching. Subset of \`OpportunitySalesActivity\` minus the two FK columns
  * (those come from the method args).
  */
-export type OpportunitySalesActivityLinkInput = Partial<
-  Pick<OpportunitySalesActivity,
+export type OpportunitySalesActivityLinkInput = globalThis.Partial<
+  globalThis.Pick<OpportunitySalesActivity,
     'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt'
   >
 >;
@@ -270,7 +270,7 @@ export class OpportunitySalesActivityService extends WithAnalytics(
       opportunityId: opportunityId,
       salesActivityId: salesActivityId,
       ...(link ?? {}),
-    } as unknown as Partial<OpportunitySalesActivity>);
+    } as unknown as globalThis.Partial<OpportunitySalesActivity>);
   }
 
   /**
@@ -339,7 +339,7 @@ export class OpportunitySalesActivityService extends WithAnalytics(
     if (match) {
       await this.update(
         (match as any).id ?? \`\${opportunityId}:\${salesActivityId}\`,
-        { isPrimary: true } as unknown as Partial<OpportunitySalesActivity>,
+        { isPrimary: true } as unknown as globalThis.Partial<OpportunitySalesActivity>,
       );
     }
   }

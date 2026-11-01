@@ -282,7 +282,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 		assertContains(
 			accountService,
 			new RegExp(
-				`${method}\\(\\s*\\.\\.\\.args: Parameters<AccountRepository\\['${method}'\\]>\\s*\\): ReturnType<AccountRepository\\['${method}'\\]> \\{`,
+				`${method}\\(\\s*\\.\\.\\.args: globalThis\\.Parameters<AccountRepository\\['${method}'\\]>\\s*\\): globalThis\\.ReturnType<AccountRepository\\['${method}'\\]> \\{`,
 			),
 			`account.service.ts forwarder for '${method}'`,
 		);
@@ -390,7 +390,7 @@ function assertEmission(tmpDir: string, mode: Mode): void {
 		assertContains(
 			meetingService,
 			new RegExp(
-				`${method}\\(\\s*\\.\\.\\.args: Parameters<MeetingRepository\\['${method}'\\]>\\s*\\): ReturnType<MeetingRepository\\['${method}'\\]> \\{`,
+				`${method}\\(\\s*\\.\\.\\.args: globalThis\\.Parameters<MeetingRepository\\['${method}'\\]>\\s*\\): globalThis\\.ReturnType<MeetingRepository\\['${method}'\\]> \\{`,
 			),
 			`meeting.service.ts forwarder for '${method}'`,
 		);

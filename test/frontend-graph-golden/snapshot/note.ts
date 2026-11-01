@@ -18,7 +18,7 @@ import type { Opportunity } from '@repo/db/entities/opportunity';
  * carry the key; this resolves to `undefined` instead, which is what the
  * result type branches on.
  */
-type Sel<I, K extends PropertyKey> = K extends keyof I ? I[K] : undefined;
+type Sel<I, K extends globalThis.PropertyKey> = K extends keyof I ? I[K] : undefined;
 
 
 
@@ -100,7 +100,7 @@ export function useNoteGraph<const I extends NoteInclude>(
 	const rootRow = root.data?.[0];
 	if (!rootRow) return { data: undefined, isLoading, isError };
 
-	const out: Record<string, unknown> = { ...rootRow.row };
+	const out: globalThis.Record<string, unknown> = { ...rootRow.row };
 	if (inc.opportunity) out.opportunity = rootRow.opportunity;
 
 

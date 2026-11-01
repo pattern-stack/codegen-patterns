@@ -221,8 +221,8 @@ describe('emit-store — lookups (store/lookups.ts)', () => {
 	it('keys lookup maps by plural and builds from collection state', () => {
 		const { c } = personTaskCtx();
 		const out = buildLookupsFile(c);
-		expect(out).toContain('people: Map<string, Person>;');
-		expect(out).toContain('tasks: Map<string, Task>;');
+		expect(out).toContain('people: globalThis.Map<string, Person>;');
+		expect(out).toContain('tasks: globalThis.Map<string, Task>;');
 		expect(out).toContain('Array.from(personCollection.state.values())');
 		expect(out).toContain('export function createLookups()');
 	});

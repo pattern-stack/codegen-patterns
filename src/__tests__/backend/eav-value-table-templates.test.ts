@@ -203,7 +203,7 @@ describe('backend eav_value_table — service emission', () => {
 
     // Compound write signature + body markers.
     expect(output).toContain(
-      'async upsertFieldsTransactional(\n    entityType: string,\n    entityId: string,\n    userId: string,\n    fields: Record<string, unknown>,\n    tx?: DrizzleTx,\n  ): Promise<void>',
+      'async upsertFieldsTransactional(\n    entityType: string,\n    entityId: string,\n    userId: string,\n    fields: globalThis.Record<string, unknown>,\n    tx?: DrizzleTx,\n  ): Promise<void>',
     );
     expect(output).toContain('toEavRows(entityId, entityType, userId, fields, defIdByKey)');
     expect(output).toContain('this.repository.upsertCurrentValues(');

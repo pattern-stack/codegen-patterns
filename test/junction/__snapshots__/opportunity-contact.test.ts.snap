@@ -211,8 +211,8 @@ import type { Contact } from '../contacts/contact.entity';
  * attaching. Subset of \`OpportunityContact\` minus the two FK columns
  * (those come from the method args).
  */
-export type OpportunityContactLinkInput = Partial<
-  Pick<OpportunityContact,
+export type OpportunityContactLinkInput = globalThis.Partial<
+  globalThis.Pick<OpportunityContact,
     'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt' | 'role'
   >
 >;
@@ -288,7 +288,7 @@ export class OpportunityContactService extends WithAnalytics(
       opportunityId: opportunityId,
       contactId: contactId,
       ...(link ?? {}),
-    } as unknown as Partial<OpportunityContact>);
+    } as unknown as globalThis.Partial<OpportunityContact>);
   }
 
   /**
@@ -357,7 +357,7 @@ export class OpportunityContactService extends WithAnalytics(
     if (match) {
       await this.update(
         (match as any).id ?? \`\${opportunityId}:\${contactId}\`,
-        { isPrimary: true } as unknown as Partial<OpportunityContact>,
+        { isPrimary: true } as unknown as globalThis.Partial<OpportunityContact>,
       );
     }
   }
