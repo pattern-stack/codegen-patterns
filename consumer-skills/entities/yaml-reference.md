@@ -26,6 +26,7 @@ fields:
     required: true         # NOT NULL + required in Create DTO
     max_length: 255        # string length constraint (DB + Zod)
     index: true            # single-column index
+    unique: true           # unique index; per tenant under tenant_scoped
   status:
     type: enum
     choices: [active, inactive, archived]   # enum members
@@ -52,6 +53,17 @@ Nullability — `required` is the create contract, `nullable` the column:
 
 A `belongs_to`'s FK column follows the same rule from its `fields:` entry; a
 `nullable:` on the relationship itself outranks it.
+
+Uniqueness — a field's `unique: true` emits `uniqueIndex('<table>_<col>_uniq')`
+(#511). Under `tenant_scoped: true` it is per tenant: `(tenant_id, <col>)`, named
+`<table>_tenant_id_<col>_uniq`, and no bare global unique is emitted. A
+`belongs_to` FK column declared in `fields:` with `unique: true` is a one-to-one.
+On a non-tenant entity, `unique: true` + `index: true` on one field emits only the
+unique index (it already leads with the column); under `tenant_scoped` both are
+kept, since `(tenant_id, <col>)` cannot serve a lookup on `<col>` alone. NULLs are
+distinct (Postgres default), so a nullable unique column admits many NULLs. A
+`queries:` entry's `unique: true` is a finder hint (one row or null) and emits no
+DDL; declare the constraint with field `unique: true` or `unique_indexes:`.
 
 Type notes:
 - `uuid` — typically the PK and foreign keys.

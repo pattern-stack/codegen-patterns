@@ -65,6 +65,13 @@
 > for that too. A second `tenantEnforcement` knob was considered and rejected — two knobs over one ambient context
 > is a distinction without a difference, and a missing boundary is a missing boundary whichever filter it owed.
 
+> **Revision note — 2026-10-31 (#511).** Field `unique: true` now emits a single-column `uniqueIndex`, through the same
+> builder as `unique_indexes:`, so §5(c)'s tenant prefix applies to it: under `tenant_scoped` the index is
+> `(tenant_id, <col>)` and no bare unique is emitted. This supersedes revision note 3 and follow-up 3 ("there is
+> nothing to suppress"). `queries: { unique: true }` remains a finder hint with no DDL, unlike §5(c)'s original text
+> (#821 tracks validating that a unique finder is backed by a constraint). On a `tenant_scoped` entity a field's
+> `index: true` is kept beside its tenant unique, because `(tenant_id, <col>)` cannot serve a lookup on `<col>` alone.
+
 > **Sequencing note.** This ADR settles the *mechanism* for automatic data isolation. It is opt-in and additive: nothing changes for an entity until it carries `tenant_scoped: true`, and the new ALS field is ignored by every existing `userTracking`-only repo. A host application that already carries a `tenantId` claim through its access token adopts this as a config change plus a boundary interceptor, not a hand-port across N repositories.
 
 ## Context
@@ -350,6 +357,7 @@ than deleted, because the answers are the decisions.
    scope, so the question is void rather than answered. What the pipeline *does* emit — top-level
    `unique_indexes:` and the `external_id_tracking` constraint — both gained the `tenant_id` prefix, and a unit
    test asserts no bare unique appears.
+   *(Superseded by the 2026-10-31 revision note: since #511 a field-level `unique: true` is emitted, tenant-prefixed.)*
 
 4. **Done, and it is an integration fixture rather than a smoke one.** Isolation is a property of the SQL that
    reaches the database, and a smoke typecheck cannot observe it. `test/scaffold/tests/tenant-scoping.test.ts`

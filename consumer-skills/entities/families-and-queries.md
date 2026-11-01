@@ -50,8 +50,9 @@ queries:
 Shapes:
 - **`by: [col, …]`** — equality finder on one or more columns. Method name is
   derived (`findByUserIdAndAccountId`). Multi-column finders AND the conditions.
-- **`unique: true`** — returns a single row (or null) instead of an array, and
-  marks the underlying index unique.
+- **`unique: true`** — returns a single row (or null) instead of an array. A
+  finder hint only: it emits no DDL. Declare the constraint with field
+  `unique: true` or `unique_indexes:`.
 - **`order: <col> <dir>`** — default ordering for the finder (e.g. `created_at
   desc`).
 

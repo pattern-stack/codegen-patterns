@@ -3,6 +3,9 @@
 # field_config). Confirms the BUG 1 enum-namespacing fix scales past two
 # entities — pre-fix this was the THIRD duplicate `roleEnum` export. Post-fix →
 # `canonicalFieldRoleEnum` / `canonical_field_role`.
+#
+# #511: `name` is `unique: true` (a non-tenant scalar) -> a `uniqueIndex`; the
+# smoke asserts the emitted index, since tsc alone passes with nothing emitted.
 entity:
   name: canonical_field
   plural: canonical_fields
@@ -14,6 +17,7 @@ fields:
     type: string
     required: true
     max_length: 255
+    unique: true
 
   role:
     type: enum

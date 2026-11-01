@@ -729,7 +729,9 @@ function resolveTargetNaming(target, naming, { required }) {
  * ALSO declared as a field (e.g. `conversation_id: { type: uuid, required:
  * true, index: true }`), the belongs_to column must inherit that field's
  * `required`/`nullable` (→ `.notNull()`) and `index: true` (→ a single-column
- * index). The relationship moves the column out of `processedFields`, so
+ * index). The FK field's
+ * `unique: true` is NOT carried on the rel: `fieldUniqueEntries` reads the raw
+ * `fields:` map (#511). The relationship moves the column out of `processedFields`, so
  * those declarations would otherwise be silently dropped. An explicit
  * `nullable:` on the relationship (or role) outranks the field declaration
  * (`foreignKeyColumnNullable`).
@@ -879,8 +881,12 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
  *   `foreign_key` outside this set is host-owned and emits no DB-level FK.
  *   Absent → every target is treated as owned (the pre-#636 behaviour), which
  *   only happens when a caller builds locals without prompt.js.
+ * @param {Set<string>} [uniqueLedIndexNames] names of fields whose `index: true`
+ *   is suppressed because their unique index (#511) already leads with the
+ *   column. Absent or empty → suppress nothing: an extra index is harmless, a
+ *   silently dropped one is not.
  */
-function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
+function processFieldFeatures(renderedFields, fields, naming, ownedTables, uniqueLedIndexNames) {
   const entityNamePlural = naming.ownNaming.plural;
   const owned = ownedTables === undefined
     ? null
@@ -938,7 +944,7 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
     }
 
     // --- index: true (#355) ---
-    if (field.index === true) {
+    if (field.index === true && !(uniqueLedIndexNames && uniqueLedIndexNames.has(pf.name))) {
       indexExpressions.push({
         comment: null,
         expr: `index('${entityNamePlural}_${pf.name}_idx').on(t.${pf.camelName})`,
@@ -950,7 +956,9 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
 }
 
 /**
- * Composite unique index emission (#356).
+ * Unique index emission (#356, #511). The input is every unique an entity
+ * declares: field-level `unique: true` lowered by `fieldUniqueEntries` (#511),
+ * then the top-level `unique_indexes:` entries.
  *
  * Top-level `unique_indexes: [{ fields: [...], name? }]` → a `uniqueIndex(...)`
  * entry in the pgTable extra-config callback. Column names are camelCased to
@@ -977,6 +985,18 @@ function processUniqueIndexes(uniqueIndexes, entityNamePlural, tenantScoped = fa
       expr: `uniqueIndex('${name}').on(${onCols})`,
     };
   });
+}
+
+/**
+ * Lower each raw `fields:` entry with `unique: true` into a single-field entry
+ * for `processUniqueIndexes` (#511), in declaration order. `id` is skipped (the
+ * primary key is unique by definition). Reads the raw map so a `belongs_to` FK
+ * column declared in `fields:` is covered too.
+ */
+function fieldUniqueEntries(fields) {
+  return Object.entries(fields || {})
+    .filter(([name, def]) => name !== 'id' && def && def.unique === true)
+    .map(([name]) => ({ fields: [name] }));
 }
 
 /**
@@ -1838,11 +1858,24 @@ export function buildBackendLocals(definition, baseLocals) {
   // drizzleChain of the rendered (non-belongs_to) columns in place. Skip FK
   // imports for tables belongs_to already imports to avoid duplicate import
   // lines.
+  // #511: on a non-tenant entity a field with both `unique: true` and
+  // `index: true` gets only the unique index (it leads with the column). Under
+  // tenant_scoped the unique index is (tenant_id, col) and cannot serve a
+  // lookup on col alone, so the author's `index: true` is kept.
+  const uniqueLedIndexNames = new Set();
+  if (!tenantScoped) {
+    for (const [name, def] of Object.entries(fields || {})) {
+      if (name !== 'id' && def && def.unique === true && def.index === true) {
+        uniqueLedIndexNames.add(name);
+      }
+    }
+  }
   const fieldFeatures = processFieldFeatures(
     nonFkFields,
     fields,
     targetNaming,
     baseLocals?.ownedTableNames,
+    uniqueLedIndexNames,
   );
   const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
   const fieldFkImports = fieldFeatures.fkImports.filter(
@@ -1859,9 +1892,10 @@ export function buildBackendLocals(definition, baseLocals) {
     belongsToTableImports.push({ relatedTable: rel.relatedTable, importPath: rel.importPath });
   }
 
-  // Composite unique indexes (#356).
+  // Field-level `unique: true` (#511) and composite unique indexes (#356),
+  // through one builder.
   const uniqueIndexExpressions = processUniqueIndexes(
-    definition.unique_indexes,
+    [...fieldUniqueEntries(fields), ...(definition.unique_indexes ?? [])],
     entityNamePlural,
     tenantScoped,
   );
@@ -1871,14 +1905,15 @@ export function buildBackendLocals(definition, baseLocals) {
   // processFieldFeatures never sees it — emit its index here using the same
   // `<table>_<col>_idx` naming a non-FK indexed field gets.
   const belongsToIndexExpressions = belongsTo
-    .filter((rel) => rel.hasIndex)
+    .filter((rel) => rel.hasIndex && !uniqueLedIndexNames.has(rel.field))
     .map((rel) => ({
       comment: null,
       expr: `index('${entityNamePlural}_${rel.field}_idx').on(t.${rel.camelField})`,
     }));
 
   // pgTable extra-config callback entries, in emission order: belongs_to FK
-  // indexes, single-column field indexes, composite unique indexes, then the
+  // indexes, single-column field indexes, field `unique: true` indexes (in
+  // `fields:` order, #511), `unique_indexes:` entries, then the
   // external_id_tracking unique index (the ON CONFLICT target integrationUpsert
   // relies on).
   const tableConstraints = [
@@ -1935,7 +1970,8 @@ export function buildBackendLocals(definition, baseLocals) {
     }));
 
   // Drizzle imports needed. `index` / `uniqueIndex` are pulled in only when a
-  // field declares `index: true` or the entity declares `unique_indexes:`
+  // field declares `index: true`; `uniqueIndex` when a field declares
+  // `unique: true` or the entity declares `unique_indexes:`
   // (external_id_tracking adds `uniqueIndex` on its own flag below).
   const extraDrizzleImports = [];
   if (

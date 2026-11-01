@@ -5,7 +5,7 @@ stack: gaps-batch1
 stack_position: "A1. field-unique-constraint (#511) → unique-indexes-shapes (#784) → datetime-timestamptz (#796)"
 plan: "origin/dugshub/gaps-batch1-plan:.ai-docs/stacks/gaps-batch1/plan.yaml, key field-unique-constraint (Gate 0 approved 2026-10-31 with every open_questions recommendation)"
 gate: auto
-status: strategy-approved
+status: implemented
 base: a8629dfc
 size: S
 related:
@@ -18,6 +18,12 @@ related:
 ---
 
 # Spec: #511, field `unique: true` emits a unique index (per tenant under `tenant_scoped`)
+
+> **Post-implementation (2026-10-31).** Built as specified. Notes: the 9 new unit tests (cases 1-4, 6-8, plus a
+> "keeps an index on a different field" guard) are red on base and green with the fix; case 5 (`id`) is a guard that
+> passes on base. The smoke assertion runs under `--scenario default` only (the CRM scenario swaps the fixture set).
+> The scaffold test imports the generated tables as camelCase exports (`accountProfiles`, `assetTags`), as the
+> other scaffold suites do. The `test-integration` leg (§6.3) needs Docker and is left to CI.
 
 ## 1. The defect, measured at `a8629dfc`
 

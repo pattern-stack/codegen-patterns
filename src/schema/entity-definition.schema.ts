@@ -215,6 +215,7 @@ const BaseFieldSchema = z.object({
 
   // Indexing
   index: z.boolean().optional(),
+  // Single-column unique index (#511): `uniqueIndex('<table>_<col>_uniq')`, tenant-prefixed under `tenant_scoped`.
   unique: z.boolean().optional(),
 
   // Foreign key reference (e.g., "accounts.id")
@@ -1233,6 +1234,7 @@ export const EntityDefinitionSchema = z
     // per-entity constant in the emitted manifest.
     tenant_scoped: z.boolean().optional().default(false),
 
+    // Field-level `unique: true` (#511) goes through the same builder as these entries.
     // Composite (multi-column) unique indexes (#356). Single-column uniqueness
     // is `unique: true` on the field itself; this declares constraints that
     // span 2+ columns, e.g. UNIQUE (conversation_id, sequence). Emitted as a
