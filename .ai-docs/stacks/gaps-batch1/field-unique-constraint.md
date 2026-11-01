@@ -22,8 +22,9 @@ related:
 > **Post-implementation (2026-10-31).** Built as specified. Notes: the 9 new unit tests (cases 1-4, 6-8, plus a
 > "keeps an index on a different field" guard) are red on base and green with the fix; case 5 (`id`) is a guard that
 > passes on base. The smoke assertion runs under `--scenario default` only (the CRM scenario swaps the fixture set).
-> The scaffold test imports the generated tables as camelCase exports (`accountProfiles`, `assetTags`), as the
-> other scaffold suites do. The `test-integration` leg (§6.3) needs Docker and is left to CI.
+> The generated tables are exported under their snake_case table names (`account_profiles`, `asset_tags`), and the
+> scaffold suite destructures them as such (the camelCase names read `undefined`). The `test-integration` leg (§6.3)
+> needs Docker; it ran green in CI run 41257736318 (`field-unique.test.ts` 6/6).
 
 ## 1. The defect, measured at `a8629dfc`
 
@@ -138,6 +139,10 @@ unique. The order is deterministic, so regenerating gives the same bytes.
 **Nullability** is unchanged. A nullable `unique: true` column admits any number of NULLs, which is Postgres' default
 (NULLs are distinct). Under `tenant_scoped`, rows with a NULL `tenant_id` do not conflict with each other until #784
 makes NULLS NOT DISTINCT the tenant default. The docs say so (§5).
+
+**Soft delete** interacts the same way: the index is not partial, so a soft-deleted row keeps its value and still
+occupies the unique index; re-creating a row with that value fails with 23505. For "soft-deleted rows do not count"
+use #784's single-field `unique_indexes:` entry with `where: deleted_at IS NULL` instead of the field flag.
 
 ## 4. Files
 
@@ -265,7 +270,9 @@ run, or a local run where Docker is available.
 - `tenant: false` (a global unique on a tenant-scoped table): #820. Non-unique `indexes:`: #819.
 - **Junction and relationship payload fields** (`junctions/*.yaml` / `relationships/*.yaml` `fields:`). Their
   schemas take `z.record(z.string(), z.any())` and their templates read neither `index:` nor `unique:`. That is the
-  same gap on another pipeline, and it is not in this batch. Flagged for a follow-up under #783.
+  same gap on another pipeline, and it is not in this batch. Tracked as #832.
+- **23505 to 409.** The generated HTTP surface has no unique-violation mapping, so a `POST`/`PATCH` that hits a field
+  unique returns 500 (as existing `unique_indexes:` already do). Tracked as #828.
 - Index names longer than Postgres' 63-character limit. This is a pre-existing property of the shared builder's
   default name, and it is unchanged here.
 

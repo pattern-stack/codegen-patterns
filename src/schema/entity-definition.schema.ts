@@ -1212,7 +1212,7 @@ export const EntityDefinitionSchema = z
     //       `scopeEnforcement: 'strict'` on the generated repository, so a
     //       missing ambient tenant THROWS rather than reading the union of
     //       every tenant (charter I3 — there is no lenient opt-down),
-    //   (c) prefixes `tenant_id` onto every `unique_indexes:` entry and onto
+    //   (c) prefixes `tenant_id` onto every field `unique: true` and `unique_indexes:` entry and onto
     //       the `external_id_tracking` conflict target, so two tenants may hold
     //       the same natural key.
     //

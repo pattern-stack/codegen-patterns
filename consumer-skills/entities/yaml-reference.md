@@ -61,7 +61,7 @@ Uniqueness — a field's `unique: true` emits `uniqueIndex('<table>_<col>_uniq')
 On a non-tenant entity, `unique: true` + `index: true` on one field emits only the
 unique index (it already leads with the column); under `tenant_scoped` both are
 kept, since `(tenant_id, <col>)` cannot serve a lookup on `<col>` alone. NULLs are
-distinct (Postgres default), so a nullable unique column admits many NULLs. A
+distinct (Postgres default), so a nullable unique column admits many NULLs (including rows with a NULL `tenant_id`, until #784). The index is not partial: on a `soft_delete` entity a soft-deleted row still occupies it; for "soft-deleted rows do not count" use a single-field `unique_indexes:` entry with `where: deleted_at IS NULL` (#784) instead of the flag. A
 `queries:` entry's `unique: true` is a finder hint (one row or null) and emits no
 DDL; declare the constraint with field `unique: true` or `unique_indexes:`.
 

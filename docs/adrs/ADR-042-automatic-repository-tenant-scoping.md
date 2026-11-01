@@ -23,7 +23,8 @@
 >    template change", because the finder already calls `baseQuery()`. It called `baseQuery().where(leaf)`, and
 >    Drizzle's `.where()` **replaces** rather than ANDs, so the guards were thrown away at 17 sites. Also fixed in
 >    SCOPE-0, which is why the predicate below is safe to add at all.
-> 3. **§5(c)'s composite-unique rewrite has nothing to rewrite.** `clean-lite-ps` emits no single-column uniqueness
+> 3. **§5(c)'s composite-unique rewrite has nothing to rewrite.** *(Superseded by the 2026-10-31 revision note, #511.)*
+>    `clean-lite-ps` emits no single-column uniqueness
 >    at all — not for a field-level `unique: true`, not for `queries: { unique: true }`. What it does emit is
 >    top-level `unique_indexes:` and the `external_id_tracking` constraint, and TEN-1 prefixes `tenant_id` onto both.
 >    There is no "suppress the bare `.unique()`" step.

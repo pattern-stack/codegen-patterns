@@ -1036,7 +1036,7 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
   }
 
   // Caller-supplied extras: `index` (field-level index: true) and
-  // `uniqueIndex` (composite unique_indexes) — see processFieldFeatures /
+  // `uniqueIndex` (field unique: true, composite unique_indexes) — see processFieldFeatures /
   // processUniqueIndexes.
   for (const extra of extraImports) {
     imports.add(extra);
@@ -1969,10 +1969,10 @@ export function buildBackendLocals(definition, baseLocals) {
       choices: f.choices,
     }));
 
-  // Drizzle imports needed. `index` / `uniqueIndex` are pulled in only when a
-  // field declares `index: true`; `uniqueIndex` when a field declares
-  // `unique: true` or the entity declares `unique_indexes:`
-  // (external_id_tracking adds `uniqueIndex` on its own flag below).
+  // Drizzle imports needed. `index` when an index expression survives
+  // suppression (field/FK `index: true`) or the entity is tenant_scoped;
+  // `uniqueIndex` when any unique is emitted (field `unique: true` or
+  // `unique_indexes:`) (external_id_tracking adds `uniqueIndex` on its own flag below).
   const extraDrizzleImports = [];
   if (
     fieldFeatures.indexExpressions.length > 0 ||
