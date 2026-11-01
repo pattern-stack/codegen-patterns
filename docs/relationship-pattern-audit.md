@@ -121,7 +121,7 @@ templates/entity/new/prompt.js:838-883
 
 templates/entity/new/prompt.js:887-912
     → checkEntityExists() per relationship target
-    → annotates rel.targetExists (why baseline tests two-pass)
+    → annotates rel.targetExists (baseline was two-pass for this until #815)
 
 templates/entity/new/backend/database/schema.ejs.t:224-244
     → emits <plural>Relations = relations(<plural>, ({ one, many }) => ({ ... }))
@@ -303,7 +303,7 @@ The 4-part Drizzle anatomy preserved from r2 as reference for implementers navig
 | Part | Entry point | What it does |
 |---|---|---|
 | **Per-entity bucketing pass** | Clean: `templates/entity/new/prompt.js:838-883` (buckets all three rel types). Clean-Lite-PS: `templates/entity/new/clean-lite-ps/prompt-extension.js:312-362` (`processBelongsTo` only — no parallel `processHasMany`/`processHasOne`). | Reads `entity.relationships`, partitions into `belongsToRelations` / `hasManyRelations` / `hasOneRelations` (clean) or just `belongsTo` (clean-lite-ps), derives Pascal/plural/foreign-key permutations once and reuses across templates. |
-| **Target-existence check** | `templates/entity/new/prompt.js:887-912` (`checkEntityExists` + `targetExists` marking) | Each relationship is annotated with whether the **target** entity's `<name>.entity.ts` already exists on disk. Templates use this to suppress imports/methods that would dangle. This is why baseline tests two-pass: pass 1 seeds entity files, pass 2 emits with `targetExists: true`. |
+| **Target-existence check** | `templates/entity/new/prompt.js:887-912` (`checkEntityExists` + `targetExists` marking) | Each relationship is annotated with whether the **target** entity's `<name>.entity.ts` already exists on disk. Templates use this to suppress imports/methods that would dangle. (Historical: baseline was two-pass for this reason until #815, 2026-10-31; a single pass now works because `--renderSet` counts the run's own entities as existing.) |
 | **Drizzle `relations()` emission** — ~~Clean: `schema.ejs.t:224-244`; Clean-Lite-PS: `entity.ejs.t:59-69`, gated by `hasRelationsBlock`~~ **Deleted in DRZ-1 (#583), 2026-09.** Both sites and the `hasRelationsBlock` gate are gone; the slot is empty until REL-1 (#586). | — | Nothing. The `belongs_to` side still emits the FK column + index + `on_delete` from the same bucketing pass; there is no `<plural>Relations` const and no `with:` path. |
 | **Schema-aware barrel** | `src/cli/shared/barrel-generator.ts:189-244` (`entityFilePaths`) | Computes module + schema file paths per architecture so cross-entity imports resolve at the right depth (the `01bb917` fix). Clean-lite-ps: `${prefix}modules/${plural}/${name}.entity.ts`. Clean: `${backendSrc}/infrastructure/persistence/drizzle/${pluralKebab}.schema.ts`. Junction modules from mechanism (A) merge with regular modules here — the integration seam `junction-association-codegen` extends. |
 

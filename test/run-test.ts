@@ -161,7 +161,10 @@ function runCodegen() {
   // does not depend on the filesystem's readdir order.
   const renderSet = fixtures.map(f => {
     const parsed = parseYaml(readFileSync(join(ENTITY_FIXTURES_DIR, f), 'utf8'));
-    return String(parsed.entity.name);
+    if (typeof parsed?.entity?.name !== 'string') {
+      throw new Error(`fixture ${f} has no entity.name; cannot build the render set`);
+    }
+    return parsed.entity.name;
   });
 
   try {

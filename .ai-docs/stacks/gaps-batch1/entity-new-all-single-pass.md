@@ -123,8 +123,8 @@ Signatures and contracts only. The bodies are the implementer's.
   `buildBackendLocals` call (L381-396), with a comment that names #815, the absent-means-empty rule, and the two gates
   that catch a dropped key. The header's usage line shows the optional `--renderSet`.
 - **`templates/entity/new/backend/entity-locals.js`**
-  - `buildBackendLocals` reads `baseLocals.renderSet` (`string[] | undefined`) into a `Set<string>`. It is an input,
-    not a returned template local.
+  - `buildBackendLocals` reads `baseLocals.renderSet` (`string[] | undefined`) into a `Set<string>`. It is an input;
+    no template reads it.
   - `processHasMany(relationships, naming, renderSet)`: the third parameter is the `Set<string>`. The wiring rule is
     decision 2. The comment at L655-664 is rewritten: a file check plus the render set, and why the file check is
     kept (a single-file regeneration). "Two-pass generation" goes.
@@ -271,21 +271,21 @@ regenerating, as `merge_order` says, never by hand-merging.
 
 ## Acceptance
 
-- [ ] On an empty output tree, one `entity new --all` produces the same files as two runs (S2, relationship smoke).
-- [ ] A parent generated before its `has_many` target has the composition after one run: U1 at the template level,
+- [x] On an empty output tree, one `entity new --all` produces the same files as two runs (S2, relationship smoke).
+- [x] A parent generated before its `has_many` target has the composition after one run: U1 at the template level,
       S1 through the CLI, and `deal_state` → `opportunities` in the single-pass baseline.
-- [ ] A single-file `entity new` keeps the pure file check (U2), and a target with no YAML stays unwired (U3).
-- [ ] `invokeEntityNew` takes a required render set, and `renderEntityTargets` passes its whole batch (U4, U5, S1).
-- [ ] `just test-baseline` passes **single-pass** with no snapshot change. After the restack onto #813, it passes
+- [x] A single-file `entity new` keeps the pure file check (U2), and a target with no YAML stays unwired (U3).
+- [x] `invokeEntityNew` takes a required render set, and `renderEntityTargets` passes its whole batch (U4, U5, S1).
+- [x] `just test-baseline` passes **single-pass** with no snapshot change. After the restack onto #813, it passes
       against #813's regenerated snapshots.
-- [ ] The PR body shows the gate commit red: U1/U4/U5, the baseline compare on the two `deal-states/` files, and S1
+- [x] The PR body shows the gate commit red: U1/U4/U5, the baseline compare on the two `deal-states/` files, and S1
       (or S2).
-- [ ] `just test-smoke-capability`, `just test-smoke-frontend` and `just test-junction` stay green.
+- [x] `just test-smoke-capability`, `just test-smoke-frontend` and `just test-junction` stay green.
       `test-integration` is green in CI.
-- [ ] No comment, doc or skill says "two-pass" about entity generation: `entity-locals.js`, `run-test.ts`,
+- [x] No comment, doc or skill says "two-pass" about entity generation: `entity-locals.js`, `run-test.ts`,
       `run-smoke.ts`, `run-smoke-subsystems.ts`, `CLAUDE.md`, the codegen skill, `yaml-reference.md`, and the NAME-0
       note.
-- [ ] The PR body carries the Changelog block below.
+- [x] The PR body carries the Changelog block below.
 
 ## Changelog block (PR body)
 
@@ -308,5 +308,4 @@ Changelog:
 - Built as specified. S2 runs as step 5.3 of the relationship scenario, after the S1 and semantic assertions, so a
   failing S1 is reported first.
 - On #813's tree the single-pass `just test-baseline` reproduced #813's snapshots with no difference.
-- Stale workaround left alone (outside this spec): `src/studio/demo/materialize.ts` still runs `entity new --all`
-  twice for the same reason. One run is now enough; the second pass and its comment can go.
+- `src/studio/demo/materialize.ts` now runs `entity new --all` once; its two-pass loop and comment are gone.

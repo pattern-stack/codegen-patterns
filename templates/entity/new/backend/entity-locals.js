@@ -1749,7 +1749,7 @@ export function buildBackendLocals(definition, baseLocals) {
   const belongsTo = processBelongsTo(relationships, targetNaming, fields);
 
   // Process has_many relationships (CGP-358b)
-  // `renderSet` (#815) is an input, not a returned local: the entities the same
+  // `renderSet` (#815) is an input; no template reads it. It is the entities the same
   // run renders, so a has_many onto a later one is wired in one pass.
   const hasMany = processHasMany(
     relationships,
