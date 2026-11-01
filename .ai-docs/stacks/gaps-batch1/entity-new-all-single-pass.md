@@ -7,7 +7,7 @@ key: entity-new-all-single-pass
 layer: L0
 size: M
 gate: auto
-status: strategy-approved
+status: implemented
 base: origin/main @ a8629dfc
 branch: dugshub/815-entity-new-all-single-pass
 plan: ".ai-docs/stacks/gaps-batch1/plan.yaml on branch dugshub/gaps-batch1-plan (Gate 0 approved 2026-10-31 with every open_questions recommendation)"
@@ -302,3 +302,11 @@ Changelog:
   file. A tree that was generated once gains the missing composition methods. Remove any second
   `entity new --all` run from scripts and CI.
 ```
+
+## Post-implementation notes (2026-10-31)
+
+- Built as specified. S2 runs as step 5.3 of the relationship scenario, after the S1 and semantic assertions, so a
+  failing S1 is reported first.
+- On #813's tree the single-pass `just test-baseline` reproduced #813's snapshots with no difference.
+- Stale workaround left alone (outside this spec): `src/studio/demo/materialize.ts` still runs `entity new --all`
+  twice for the same reason. One run is now enough; the second pass and its comment can go.

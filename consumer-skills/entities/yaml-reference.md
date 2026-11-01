@@ -93,7 +93,9 @@ relationships:
 - `has_many` / `has_one` are the inverse side (no column here; drives the
   service-layer composition method on the declaring entity's service).
 - Cross-entity targets must resolve at generation time — regenerate the set with
-  `codegen entity new --all`.
+  `codegen entity new --all`. One run is enough: every `has_many` onto an entity
+  in the run is wired. A single-file `entity new <parent>.yaml` wires a
+  `has_many` only when its target has already been generated.
 - The target's table and folder come from the target's own YAML (`plural:`,
   `context:`), never from pluralizing its name. A `belongs_to` (or field
   `foreign_key:`) whose target has no YAML in the entities directory is a
