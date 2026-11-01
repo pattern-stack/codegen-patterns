@@ -17,6 +17,13 @@ related:
 
 # fix(#742): `api.includes` paths accept the YAML relationship name; a miss lists the keys at that hop
 
+## Post-implementation notes
+
+Built as specced, with no deviation in behaviour. Measured on the implementation: 10 new unit tests red on `a8629dfc`
+(24 existing green) and green after; `just test-smoke-relationship` exits 1 at the manifest step on base with the
+`parent_account` fixture and passes after; `just typecheck`, `just test-unit` (4073 pass) and `just test-baseline`
+green. `just test-integration` is left to CI (Docker). Nothing else was discovered that the spec missed.
+
 ## Goal
 
 A host application wrote its include allowlist the way the rest of the YAML is written:

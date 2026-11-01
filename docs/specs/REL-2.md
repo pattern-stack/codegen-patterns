@@ -471,8 +471,14 @@ api:
 ```
 
 - Route keys are the generated read routes (`find_by_id`, `list`, and one per `queries:` entry by its finder name).
-- `paths` are **dot paths** over relation keys. `max_depth` is an explicit cap; a path longer than it is a
+- `paths` are **dot paths** over relations. `max_depth` is an explicit cap; a path longer than it is a
   generation error, not a silent trim.
+- **Spelling (revised 2026-10-31, #742).** A segment may be the YAML relationship name (`fantasy_teams`) or the
+  manifest's relation key (`fantasyTeams`). Each segment goes through REL-1's own `camelCase` before lookup, which is
+  idempotent on keys, so both name the same edge and a collision is impossible (`RelationKeyCollisionError` already
+  forbids two names with one key). The compiled allowlist and the emitted map are in relation keys. A segment that
+  names no relation fails generation listing the relation keys at that hop, plus `Did you mean '<key>'?` when one is
+  close (lower-cased Levenshtein, limit `max(2, floor(maxLen / 3))`). Route keys are not normalised.
 - **Absent ⇒ nothing exposed.** No `api.includes` block, or no entry for a route, means a client-supplied include on
   that route is a `400`. This is the default for every entity that exists today, so REL-2 changes no HTTP behaviour
   until a consumer opts in.
@@ -483,6 +489,10 @@ api:
 
 `GET /accounts/:id?include=contacts,opportunities.account` — a comma-separated list of dot paths. **A client never
 sends a tree.** The emitter compiles the allowlist into a static, literal map in the generated controller:
+
+*(Revised 2026-10-31, #742.)* `?include=` takes relation keys, never the YAML spelling: `?include=fantasyTeams` is
+accepted and `?include=fantasy_teams` is a `400`, because the map is keyed by relation key (also the response
+property name). The generated controller's `include` OpenAPI description says paths are written as relation keys.
 
 As shipped, into `<generated>/api-includes.ts` — a sibling of the manifest, emitted in the same whole-set pass over the
 same graph, so an allowlist can never name an edge the manifest does not carry:
@@ -629,7 +639,9 @@ entity, end-to-end through HTTP* waits for a harness with a boundary (§10 Found
   `withTenantScope` / `withAllTenants`, `hopScope` rendering `true` rather than nothing, and that `hopScope` and
   `scopeFilter` render identically (the "one implementation" property, asserted rather than asserted-in-prose).
 - **`src/__tests__/emitters/relations/build-includes.test.ts`** — 17 tests: what compiles (prefix implication, route
-  independence, depth) and every generation error, including the `api: false` one naming both entities.
+  independence, depth) and every generation error, including the `api: false` one naming both entities. #742 adds
+  10 more: path spelling (YAML name and key name one edge, junction-derived keys, the map stays in keys) and the miss
+  message (keys at the hop, `Did you mean`, a table with no relations).
 - **`src/__tests__/runtime/http/includes.spec.ts`** — 12 tests on the request-time resolver: parsing, the merge rule
   (deeper fragment wins, order-independent), non-mutation of the shared literals, and that an absent allowlist rejects.
 - **`src/__tests__/emitters/relations/route-name-parity.test.ts`** — the finder route key and the allowlist constant

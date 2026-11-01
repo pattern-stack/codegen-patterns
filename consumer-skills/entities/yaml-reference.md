@@ -94,6 +94,31 @@ relationships:
   `foreign_key:`) whose target has no YAML in the entities directory is a
   generation error; a `has_many` onto one is simply not wired.
 
+## `api:` — HTTP surface + include allowlist
+
+```yaml
+api: false            # no HTTP data plane (no controller routes) for this entity
+```
+
+or an object that opens `?include=` on chosen read routes:
+
+```yaml
+api:
+  includes:
+    find_by_id:                 # a generated read route: find_by_id, list, or a queries: finder
+      max_depth: 2              # explicit cap on hops
+      paths: [fantasy_teams, fantasy_teams.home_league]
+```
+
+- **Closed by default.** No `api.includes` entry for a route means any `?include=` on it is a 400.
+- A path is a dot path of relationships. Each segment may be the YAML relationship name
+  (`fantasy_teams`) or the relation key (`fantasyTeams`); both name the same edge. `a.b` implies `a`.
+- **Clients send relation keys**, which are also the response property names: `?include=fantasyTeams.homeLeague`.
+  The YAML spelling is rejected on the wire.
+- Generation errors: a path deeper than `max_depth`; a segment that names no relation (the message lists the relation
+  keys at that hop and suggests the closest one); a path through an entity declaring `api: false`; `api.includes`
+  together with `api: false`; an entity that declares no relationship of its own.
+
 ## `generate:` — output toggles
 
 ```yaml

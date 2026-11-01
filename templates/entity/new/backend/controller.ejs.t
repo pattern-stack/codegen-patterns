@@ -95,7 +95,7 @@ export class <%= classNames.controller %> {
     type: 'string',
     description:
 <%_ if (apiIncludeRoutes.includes('list')) { _%>
-      'Comma-separated allowlisted include paths (see api.includes.list in the entity YAML). Anything else is a 400.',
+      'Comma-separated include paths, written as relation keys (camelCase), allowlisted by api.includes.list in the entity YAML. Anything else is a 400.',
 <%_ } else { _%>
       'No include is exposed on this route (no api.includes.list in the entity YAML), so any value is a 400.',
 <%_ } _%>
@@ -156,7 +156,7 @@ export class <%= classNames.controller %> {
     type: 'string',
     description:
 <%_ if (apiIncludeRoutes.includes('find_by_id')) { _%>
-      'Comma-separated allowlisted include paths (see api.includes.find_by_id in the entity YAML). Anything else is a 400.',
+      'Comma-separated include paths, written as relation keys (camelCase), allowlisted by api.includes.find_by_id in the entity YAML. Anything else is a 400.',
 <%_ } else { _%>
       'No include is exposed on this route (no `api.includes.find_by_id` in the entity YAML), so any value is a 400.',
 <%_ } _%>
