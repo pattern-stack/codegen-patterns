@@ -1545,7 +1545,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // outputPaths below); their specifier is computed from that folder, not by
   // prefixing `../` onto the module-level one.
   const eavFieldValueUseCaseImportDir = eavFieldValueNaming
-    ? relativeModuleDir(`${ownNaming.moduleDir}/use-cases`, eavFieldValueNaming.moduleDir)
+    ? relativeModuleDir(useCasesDir, eavFieldValueNaming.moduleDir)
     : null;
   const eavFieldValuePlural = eavFieldValueNaming ? eavFieldValueNaming.plural : null;
   const eavFieldValueModulePascal = eavFieldValuePlural ? pascalCase(eavFieldValuePlural) : null;
@@ -2004,7 +2004,7 @@ export function buildBackendLocals(definition, baseLocals) {
       ? `${moduleDir}/${emittedStem(entityName, 'search')}.controller.ts`
       : null,
     declarativeQueries: hasDeclarativeQueries
-      ? `${moduleDir}/use-cases/declarative-queries.ts`
+      ? `${useCasesDir}/declarative-queries.ts`
       : null,
     // ADR-041 — the generated `<Entity>ComposedBase` that applies the mixin
     // chain. Emitted only when TWO OR MORE capabilities stack; one capability

@@ -524,7 +524,7 @@ function assertCustomLayout(projectDir: string): void {
  */
 function assertTypedEventBusImports(projectDir: string, runtime: RuntimeMode): void {
   const { entity, plural, context } = CUSTOM_LAYOUT_EMITS_ENTITY;
-  const useCasesRel = `${P.modules}/${context}/${emittedDir(plural)}/use-cases`;
+  const useCasesRel = `${P.modules}/${emittedDir(context)}/${emittedDir(plural)}/use-cases`;
   const wrongClass =
     /import \{[^}]*\bTypedEventBus\b[^}]*\} from '@pattern-stack\/codegen\/subsystems'/;
   for (const op of ['create', 'update', 'delete']) {
@@ -537,7 +537,7 @@ function assertTypedEventBusImports(projectDir: string, runtime: RuntimeMode): v
     assertContains(src, /this\.typedEvents\.publish\(/, `${rel}: renders the emits body`);
     assertContains(src, new RegExp(`'${entity}_${op}d'`), `${rel}: publishes ${entity}_${op}d`);
     if (runtime === 'package') {
-      const rel2 = path.posix.relative(useCasesRel, `${P.generated}/events/bus`);
+      const busSpecifier = path.posix.relative(useCasesRel, `${P.generated}/events/bus`);
       assertContains(
         src,
         /import \{ TYPED_EVENT_BUS \} from '@pattern-stack\/codegen\/subsystems';/,
@@ -545,8 +545,8 @@ function assertTypedEventBusImports(projectDir: string, runtime: RuntimeMode): v
       );
       assertContains(
         src,
-        new RegExp(`import \\{ TypedEventBus \\} from '${rel2.replace(/\./g, '\\.')}';`),
-        `${rel}: class from the generated bus (${rel2})`,
+        new RegExp(`import \\{ TypedEventBus \\} from '${busSpecifier.replace(/\./g, '\\.')}';`),
+        `${rel}: class from the generated bus (${busSpecifier})`,
       );
     } else {
       assertContains(

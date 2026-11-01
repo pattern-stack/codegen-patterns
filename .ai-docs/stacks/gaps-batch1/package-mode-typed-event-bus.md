@@ -350,7 +350,7 @@ custom-layout case also fails, because the value it reads comes from `runtimeImp
   (`created_by` / `updated_by` → `dto.<key>`) and rule 4 (`dto.<key>` fallback) are applied the same way to all
   three ops. `delete.ejs.t` has no `dto` in scope, so either rule gives TS2304 there. In `update.ejs.t`, `dto` is the
   partial update DTO, so `dto.<key>` is `T | undefined` against a `T` payload field. The #814 fixture keeps clear of
-  both. This needs its own issue under the batch's follow-ups; it is not filed by this spec.
+  both. Tracked as #830 (under #783).
 
 ## Found during implementation
 
