@@ -31,7 +31,7 @@ import {
   foreignKeyColumnNullable,
   hasColumnDefault,
 } from '../../../../src/schema/field-nullability.js';
-import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
+import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
   ACTOR_CAPABILITY,
@@ -1510,13 +1510,17 @@ export function buildBackendLocals(definition, baseLocals) {
   // value the emitters write into. A hard-coded `src/generated` here would break
   // every project that moves it (#612 is the equivalent bug in the init scaffold).
   const generatedDirRel = baseLocals.generatedDir || 'src/generated';
-  const relativeFromModule = (target) => {
+  const relativeFrom = (fromDir, target) => {
     const spec = path.posix.relative(
-      path.posix.normalize(moduleDir),
+      path.posix.normalize(fromDir),
       path.posix.normalize(target),
     );
     return spec.startsWith('.') ? spec : `./${spec}`;
   };
+  const relativeFromModule = (target) => relativeFrom(moduleDir, target);
+  // One value for the folder the use cases are written into: the `outputPaths`
+  // entries and the specifier computed from it (`typedEventBusImport`) agree.
+  const useCasesDir = `${moduleDir}/use-cases`;
   const relationsImport = relativeFromModule(`${generatedDirRel}/relations`);
   const apiIncludesImport = relativeFromModule(`${generatedDirRel}/api-includes`);
 
@@ -1592,6 +1596,17 @@ export function buildBackendLocals(definition, baseLocals) {
   // `@pattern-stack/codegen/runtime/base-classes/…`). App-defined pattern
   // aliases (non-`@shared/`) pass through untouched.
   const runtimeMode = baseLocals?.runtimeMode === 'vendored' ? 'vendored' : 'package';
+  // #814: the TypedEventBus CLASS the write use cases inject. The package barrel
+  // exports the token only (its own class is typed to the package's event
+  // union), so in package mode the class is the project's generated bus, by a
+  // path relative to the use-case folder. It depends on the module folder
+  // (`context:`, `paths.modules_dir`) and `paths.generated`, so it cannot live
+  // in the mode-keyed `runtimeImportLocals` table. Vendored: the vendored
+  // barrel exports both, and the templates keep their single combined line.
+  const typedEventBusImport =
+    runtimeMode === 'vendored'
+      ? subsystemsImport('vendored', 'events')
+      : relativeFrom(useCasesDir, `${generatedDirRel}/events/bus`);
   // FAMILY_MAP is gone (PATTERN-5); `patternConfigClasses` is the structural
   // equivalent — repository + service class names + import paths + inherited
   // method comment lists, sourced directly from the pattern registry.
@@ -1959,22 +1974,22 @@ export function buildBackendLocals(definition, baseLocals) {
     controller: `${moduleDir}/${emittedStem(entityName)}.controller.ts`,
     module: ownNaming.moduleFile,
     index: `${moduleDir}/index.ts`,
-    findByIdUseCase: `${moduleDir}/use-cases/${emittedStem('find', entityName, 'by-id')}.use-case.ts`,
-    listUseCase: `${moduleDir}/use-cases/${emittedStem('list', entityNamePlural)}.use-case.ts`,
+    findByIdUseCase: `${useCasesDir}/${emittedStem('find', entityName, 'by-id')}.use-case.ts`,
+    listUseCase: `${useCasesDir}/${emittedStem('list', entityNamePlural)}.use-case.ts`,
     findByIdWithFieldsUseCase: eavEnabled
-      ? `${moduleDir}/use-cases/${emittedStem('find', entityName, 'by-id-with-fields')}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('find', entityName, 'by-id-with-fields')}.use-case.ts`
       : null,
     listWithFieldsUseCase: eavEnabled
-      ? `${moduleDir}/use-cases/${emittedStem('list', entityNamePlural, 'with-fields')}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('list', entityNamePlural, 'with-fields')}.use-case.ts`
       : null,
     createUseCase: generateWrites
-      ? `${moduleDir}/use-cases/${emittedStem('create', entityName)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('create', entityName)}.use-case.ts`
       : null,
     updateUseCase: generateWrites
-      ? `${moduleDir}/use-cases/${emittedStem('update', entityName)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('update', entityName)}.use-case.ts`
       : null,
     deleteUseCase: generateWrites
-      ? `${moduleDir}/use-cases/${emittedStem('delete', entityName)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('delete', entityName)}.use-case.ts`
       : null,
     createDto: `${moduleDir}/dto/${emittedStem('create', entityName)}.dto.ts`,
     updateDto: `${moduleDir}/dto/${emittedStem('update', entityName)}.dto.ts`,
@@ -1983,7 +1998,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // + sort). Always emitted — the list endpoint is unconditional.
     listQueryDto: `${moduleDir}/dto/${emittedStem('list', entityNamePlural)}.query.ts`,
     searchUseCase: searchQueryResolved
-      ? `${moduleDir}/use-cases/${emittedStem('search', entityNamePlural)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('search', entityNamePlural)}.use-case.ts`
       : null,
     searchController: searchQueryResolved
       ? `${moduleDir}/${emittedStem(entityName, 'search')}.controller.ts`
@@ -2303,6 +2318,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // controller import, relative to this entity's module folder.
     relationsImport,
     apiIncludesImport,
+    typedEventBusImport,
     // The read routes with an allowlist, and the name of the emitted map. The
     // name is derived exactly as `emit-includes.ts#includesConstName` derives it;
     // a unit test pins the two together.

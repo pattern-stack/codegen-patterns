@@ -120,6 +120,8 @@ async execute(input: CreateContactInput): Promise<Contact> {
 }
 ```
 
+> **Package mode (`runtime: package`):** the `@pattern-stack/codegen/subsystems` barrel exports the `TYPED_EVENT_BUS` token only, not the `TypedEventBus` class (the package's own class is typed to the package's events, not yours). Import the token from the barrel and the class from your generated bus, `<paths.generated>/events/bus`. Generated `emits:` use cases already do this (#814).
+
 The raw `EVENT_BUS` token (`IEventBus`) is still exported for use cases that
 predate the typed facade or that need to publish types not in the registry
 (e.g. a forwarder that proxies events from an external source). New code

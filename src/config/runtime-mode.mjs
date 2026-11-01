@@ -82,11 +82,13 @@ export function rewriteSharedImport(mode, specifier) {
  */
 export function runtimeImportLocals(mode) {
   return {
-    // TypedEventBus token + DrizzleClient token/type. In `vendored` mode the
-    // consumer wires `@shared/*` to the vendored runtime under `src/shared/…`
-    // (subsystem barrel at `<subsystems_root>/events/index.ts`).
+    // The TYPED_EVENT_BUS *token* specifier (and DrizzleClient token/type
+    // below). In `vendored` mode the consumer wires `@shared/*` to the vendored
+    // runtime under `src/shared/…` (subsystem barrel at
+    // `<subsystems_root>/events/index.ts`). The `TypedEventBus` *class* is the
+    // project's generated bus, whose specifier depends on the module folder, so
+    // `entity-locals.js` computes it (`typedEventBusImport`, #814).
     eventsTokenImport: subsystemsImport(mode, "events"),
-    typedEventBusImport: subsystemsImport(mode, "events"),
     drizzleTokenImport: runtimeImport(mode, "constants/tokens"),
     drizzleTypeImport: runtimeImport(mode, "types/drizzle"),
     // ADR-043 §5: use-cases read the acting principal from the ambient

@@ -7,7 +7,7 @@ base_commit: a8629dfc
 layer: L0
 size: M (code S; the gate is most of the work)
 gate: auto
-status: strategy-approved
+status: implemented
 related:
   - docs/adrs/ADR-037-runtime-mode-and-namespaced-tokens.md   # runtime modes
   - docs/specs/EVT-7.md                                       # typed `emits:` emission (decision 4 gets a revision note)
@@ -351,6 +351,22 @@ custom-layout case also fails, because the value it reads comes from `runtimeImp
   three ops. `delete.ejs.t` has no `dto` in scope, so either rule gives TS2304 there. In `update.ejs.t`, `dto` is the
   partial update DTO, so `dto.<key>` is `T | undefined` against a `T` payload field. The #814 fixture keeps clear of
   both. This needs its own issue under the batch's follow-ups; it is not filed by this spec.
+
+## Found during implementation
+
+Post-implementation truth (2026-10-31):
+
+- **Built as specified.** `typedEventBusImport` is returned by `buildBackendLocals`; `useCasesDir` feeds both the
+  specifier and the `outputPaths` use-case entries; the dead table entry is deleted; the five template sites render
+  the combined line when the specifiers are equal and two lines otherwise.
+- **Red on base, confirmed.** The package custom leg fails `tsc` with TS2724 once each in the create, update and
+  delete use cases of `journal_entry`; six of the twelve cases in `emits-rendering.test.ts` fail (five package sites
+  plus the custom-layout case).
+- **No other diagnostic.** The first compile of the update and delete emits bodies reported nothing beyond the
+  import, and the custom legs booted the AppModule, so neither risk in "Risks" materialised.
+- **No snapshot moved.** `test-baseline` and `test-junction` are byte-identical.
+- **Unit test base.** `emits-rendering.test.ts` now builds its locals with `buildBackendLocals` for a real
+  definition, with `hasEmits` and the three `<op>EventType` descriptors overlaid, instead of a hand-built object.
 
 ## Changelog
 
