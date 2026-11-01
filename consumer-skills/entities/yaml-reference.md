@@ -16,9 +16,10 @@ entity:
 ```
 
 **Reserved names.** `promise`, `array` and `date` are rejected (also as relationship names): the generated type
-would shadow the `Promise`, `Array` or `Date` global, which generated code uses in nearly every signature. Every
-other name works, `record`, `item`, `map` and `error` included, and no plural collides with a generated local
-(`items`, `options`, `conditions`). (#813)
+would shadow the `Promise`, `Array` or `Date` global, which generated code uses in nearly every signature. No other
+name shadows a TS global: `record`, `item`, `map` and `error` work, and no plural collides with a generated local
+(`items`, `options`, `conditions`). A name equal to a symbol the templates import (`page`, `post`, `patch`, `query`,
+`body`, `param`) still gives a duplicate-identifier error (#833). (#813)
 
 ## `fields:` — columns
 

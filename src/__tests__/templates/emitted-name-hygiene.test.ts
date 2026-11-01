@@ -121,14 +121,16 @@ function renderAll(def: Record<string, unknown>, extra: Record<string, unknown> 
 }
 
 const base = {
-	entity: { name: 'record', plural: 'records', table: 'records', pattern: 'Base' },
+	// A neutral name: an entity named after a lib global would bind that type in every rendered file and
+	// exempt it from rule 1, blinding the matrix to a bare use of it.
+	entity: { name: 'widget', plural: 'widgets', table: 'widgets', pattern: 'Base' },
 	fields: { title: { type: 'string', required: true }, status: { type: 'enum', choices: ['open', 'closed'] } },
 	relationships: { account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' } },
 	behaviors: ['timestamps'],
 };
 
 const MATRIX: [string, Record<string, unknown>, Record<string, unknown>][] = [
-	['an entity named record with plural options', { ...base, entity: { ...base.entity, plural: 'options', table: 'options' } }, {}],
+	['an entity with plural options', { ...base, entity: { ...base.entity, plural: 'options', table: 'options' } }, {}],
 	[
 		'an eav entity',
 		{ ...base, entity: { ...base.entity, name: 'opportunity', plural: 'opportunities', table: 'opportunities', pattern: 'Integrated' }, eav: true },
@@ -176,6 +178,41 @@ describe('branch matrix', () => {
 	it.each(MATRIX)('%s', (_name, def, extra) => {
 		const files = renderAll(def, extra);
 		expect(fmt(emittedNameViolations(files))).toEqual([]);
+	});
+});
+
+describe('relationship templates obey the rule', () => {
+	it('every rendered relationship template is clean', async () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rel-hygiene-all-'));
+		try {
+			fs.mkdirSync(path.join(dir, 'entities'));
+			fs.writeFileSync(path.join(dir, 'entities/person.yaml'), 'entity:\n  name: person\n  plural: persons\n');
+			fs.writeFileSync(path.join(dir, 'entities/crew.yaml'), 'entity:\n  name: crew\n  plural: crews\n');
+			const file = path.join(dir, 'relationship.yaml');
+			fs.writeFileSync(
+				file,
+				'relationship:\n  name: person_crew\n  from: person\n  to: crew\n' +
+					'fields:\n  role:\n    type: string\n  rank:\n    type: string\n' +
+					'queries:\n  - by: [person_id]\n    select: [role, rank]\n  - by: [crew_id]\n',
+			);
+			const cwd = process.cwd();
+			process.chdir(dir);
+			let locals: Record<string, unknown>;
+			try {
+				locals = (await promptModule.prompt({ args: { yaml: file } })) as Record<string, unknown>;
+			} finally {
+				process.chdir(cwd);
+			}
+			const relRoot = path.join(ROOT, 'templates/relationship/new');
+			const files = walkTemplates(relRoot).map((t) => ({
+				path: 'person-crews/' + path.relative(relRoot, t).replace(/\.ejs\.t$/, '.ts').replace(/\//g, '__'),
+				text: ejs.render(body(t), locals),
+			}));
+			expect(files.length).toBeGreaterThan(8);
+			expect(fmt(emittedNameViolations(files))).toEqual([]);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
 
