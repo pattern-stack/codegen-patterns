@@ -26,6 +26,7 @@ fields:
     required: true         # NOT NULL + required in Create DTO
     max_length: 255        # string length constraint (DB + Zod)
     index: true            # single-column index
+    unique: true           # unique index; per tenant under tenant_scoped
   status:
     type: enum
     choices: [active, inactive, archived]   # enum members
@@ -52,6 +53,24 @@ Nullability — `required` is the create contract, `nullable` the column:
 
 A `belongs_to`'s FK column follows the same rule from its `fields:` entry; a
 `nullable:` on the relationship itself outranks it.
+
+Uniqueness — a field's `unique: true` emits `uniqueIndex('<table>_<col>_uniq')`
+(#511). Under `tenant_scoped: true` it is per tenant: `(tenant_id, <col>)`, named
+`<table>_tenant_id_<col>_uniq`, and no bare global unique is emitted. A
+`belongs_to` FK column declared in `fields:` with `unique: true` is a one-to-one.
+On a non-tenant entity, `unique: true` + `index: true` on one field emits only the
+unique index (it already leads with the column); under `tenant_scoped` both are
+kept, since `(tenant_id, <col>)` cannot serve a lookup on `<col>` alone. On a non-tenant
+entity NULLs are distinct (Postgres default), so a nullable unique column admits many
+NULLs. On a `tenant_scoped` entity the unique is NULLS NOT DISTINCT (#784, see
+`unique_indexes:` below), so a nullable `unique: true` column admits one NULL per
+tenant; for "unique when present", declare it as
+`unique_indexes: [{ fields: [<col>], nulls_not_distinct: false }]` instead of the flag.
+The index is not partial: on a `soft_delete` entity a soft-deleted row still occupies it;
+for "soft-deleted rows do not count" use a single-field `unique_indexes:` entry with
+`where: "deleted_at IS NULL"` (#784) instead of the flag. A
+`queries:` entry's `unique: true` is a finder hint (one row or null) and emits no
+DDL; declare the constraint with field `unique: true` or `unique_indexes:`.
 
 Type notes:
 - `uuid` — typically the PK and foreign keys.
@@ -93,6 +112,47 @@ relationships:
   `context:`), never from pluralizing its name. A `belongs_to` (or field
   `foreign_key:`) whose target has no YAML in the entities directory is a
   generation error; a `has_many` onto one is simply not wired.
+
+## `unique_indexes:` — unique constraints
+
+```yaml
+unique_indexes:
+  - fields: [customer_id]                   # 1+ fields
+    where: "closed_at IS NULL"              # partial unique index; needs name:
+    name: invoices_one_open_per_customer_uniq
+  - fields: [customer_id, source_event_id]
+    nulls_not_distinct: true                # UNIQUE NULLS NOT DISTINCT constraint
+  - fields: [external_code]
+    nulls_not_distinct: false               # plain unique index (the opt-out on a tenant-scoped entity)
+```
+
+An entry has four shapes (the first column is on a non-tenant entity, the second on `tenant_scoped: true`,
+where `tenant_id` is prefixed onto the columns):
+
+| Entry | not tenant-scoped | tenant-scoped |
+|---|---|---|
+| `{ fields }` | `uniqueIndex(n).on(cols)` | `unique(n).on(tenant_id, cols).nullsNotDistinct()` |
+| `{ fields, nulls_not_distinct: true }` | `unique(n).on(cols).nullsNotDistinct()` | same as above |
+| `{ fields, nulls_not_distinct: false }` | `uniqueIndex(n).on(cols)` | `uniqueIndex(n).on(tenant_id, cols)` |
+| `{ fields, where, name }` | `uniqueIndex(n).on(cols).where(sql...)` | `uniqueIndex(n).on(tenant_id, cols).where(sql...)` |
+
+- `name:` defaults to `<table>_<cols>_uniq` (with `tenant_id` first under tenancy). It is a lowercase snake_case
+  identifier of at most 63 characters, and required with `where:`. Index names are schema-wide in Postgres, so prefix
+  them with the table name.
+- `where:` is raw SQL over snake_case column names of this table. Those names are rewritten to Drizzle column
+  references, so drizzle-kit quotes them. It is one expression: `;`, `--`, `/*`, `$`, backtick, backslash and
+  unterminated quotes are errors outside quoted text. Words after `.` or `::`, before `(`, `.` or `'`, and
+  anything in quotes are never rewritten. A word spelled like a column but used as a type is rewritten, so write
+  `x::date`, not `CAST(x AS date)`, on a table with a `date` column. Other words are not checked, so a stale column
+  name fails at `drizzle-kit push`, not at generation.
+- `where` and `nulls_not_distinct: true` are mutually exclusive: drizzle-orm 1.0.0-rc.4 has no NULLS option on a
+  partial index. So a partial entry on a tenant-scoped entity does not deduplicate rows whose `tenant_id` is NULL.
+- On a tenant-scoped entity the default is NULLS NOT DISTINCT, so the NULL-tenant partition (ADR-042 §3) is one
+  partition. NULLS NOT DISTINCT covers every column of the constraint, so a nullable column in it admits one NULL per
+  key. NULLS NOT DISTINCT needs PostgreSQL 15+.
+- Generation errors: a `fields:` name that is not a column of the table, `tenant_id` listed on a tenant-scoped
+  entity, a field repeated within an entry, two constraints with one name, and two non-partial uniques over the
+  same columns (including a field `unique: true` repeated here).
 
 ## `generate:` — output toggles
 

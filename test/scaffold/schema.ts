@@ -27,6 +27,12 @@ export * from '@gen/modules/regions/region.entity';
 export * from '@gen/modules/sites/site.entity';
 export * from '@gen/modules/sensors/sensor.entity';
 export * from '@gen/modules/site-sensors/site-sensor.entity';
+// #511: field `unique: true` -> a unique index, per tenant under `tenant_scoped`.
+export * from '@gen/modules/account-profiles/account-profile.entity';
+export * from '@gen/modules/asset-tags/asset-tag.entity';
+// #784: partial unique indexes (revision) and the tenant NULLS NOT DISTINCT default (category).
+export * from '@gen/modules/revisions/revision.entity';
+export * from '@gen/modules/categories/category.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One

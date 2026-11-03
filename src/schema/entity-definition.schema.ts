@@ -215,6 +215,7 @@ const BaseFieldSchema = z.object({
 
   // Indexing
   index: z.boolean().optional(),
+  // Single-column unique index (#511): `uniqueIndex('<table>_<col>_uniq')`, tenant-prefixed under `tenant_scoped`.
   unique: z.boolean().optional(),
 
   // Foreign key reference (e.g., "accounts.id")
@@ -1211,7 +1212,7 @@ export const EntityDefinitionSchema = z
     //       `scopeEnforcement: 'strict'` on the generated repository, so a
     //       missing ambient tenant THROWS rather than reading the union of
     //       every tenant (charter I3 — there is no lenient opt-down),
-    //   (c) prefixes `tenant_id` onto every `unique_indexes:` entry and onto
+    //   (c) prefixes `tenant_id` onto every field `unique: true` and `unique_indexes:` entry and onto
     //       the `external_id_tracking` conflict target, so two tenants may hold
     //       the same natural key.
     //
@@ -1233,21 +1234,54 @@ export const EntityDefinitionSchema = z
     // per-entity constant in the emitted manifest.
     tenant_scoped: z.boolean().optional().default(false),
 
-    // Composite (multi-column) unique indexes (#356). Single-column uniqueness
-    // is `unique: true` on the field itself; this declares constraints that
-    // span 2+ columns, e.g. UNIQUE (conversation_id, sequence). Emitted as a
-    // `uniqueIndex(...).on(...)` entry in the generated entity's pgTable
-    // extra-config callback. `name` defaults to <table>_<col1>_<col2>_uniq.
+    // Unique constraints (#356, #784). Field-level `unique: true` (#511) goes through the same builder.
+    // An entry has four shapes:
+    //   { fields }                         1+ columns; `uniqueIndex(...)` (non-tenant), or on a
+    //                                      `tenant_scoped` entity the NULLS NOT DISTINCT constraint
+    //                                      `unique(...).nullsNotDistinct()` (the default; ADR-042)
+    //   { fields, nulls_not_distinct }     explicit: true -> `unique(...).nullsNotDistinct()`,
+    //                                      false -> plain `uniqueIndex(...)` (the tenant opt-out)
+    //   { fields, where, name }            partial unique index: `uniqueIndex(...).where(sql...)`.
+    //                                      `where` is raw SQL; this table's column names in it are
+    //                                      rewritten to Drizzle column references. `name` is required.
+    // `where` and `nulls_not_distinct: true` are exclusive: drizzle-orm 1.0.0-rc.4 has no NULLS
+    // option on a partial index. `name` defaults to <table>_<col1>_<col2>_uniq.
     unique_indexes: z
       .array(
         z
           .object({
             fields: z
               .array(z.string())
-              .min(2, "unique_indexes entries span 2+ columns — use `unique: true` on the field for single-column uniqueness"),
-            name: z.string().optional(),
+              .min(1, 'unique_indexes entries need at least one field'),
+            name: z
+              .string()
+              .regex(
+                /^[a-z_][a-z0-9_]*$/,
+                'unique_indexes name must be a lowercase snake_case identifier',
+              )
+              .max(63, 'unique_indexes name is at most 63 characters (Postgres truncates longer names)')
+              .optional(),
+            where: z.string().trim().min(1, 'unique_indexes where must not be blank').optional(),
+            nulls_not_distinct: z.boolean().optional(),
           })
-          .strict(),
+          .strict()
+          .superRefine((entry, ctx) => {
+            if (entry.where !== undefined && entry.nulls_not_distinct === true) {
+              ctx.addIssue({
+                code: 'custom',
+                path: ['nulls_not_distinct'],
+                message:
+                  '`where` and `nulls_not_distinct: true` cannot be combined: drizzle-orm 1.0.0-rc.4 has no NULLS NOT DISTINCT option on a partial index',
+              });
+            }
+            if (entry.where !== undefined && entry.name === undefined) {
+              ctx.addIssue({
+                code: 'custom',
+                path: ['name'],
+                message: '`name` is required when `where` is set (a partial index needs a stable, explicit name)',
+              });
+            }
+          }),
       )
       .optional(),
   })
