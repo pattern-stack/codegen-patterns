@@ -64,7 +64,7 @@ export const <%= entityNamePlural %> = pgTable(
     deletedAt: <%- timestampColumn('deleted_at') %>,
 <%_ } _%>
   },
-<%_ /* #355/#356/#511/#784: pgTable extra-config — indexes + composite unique indexes + external_id unique index */ _%>
+<%_ /* #355/#356/#511/#784: pgTable extra-config — indexes + unique constraints (uniqueIndex / unique().nullsNotDistinct()) + external_id unique */ _%>
 <%_ if (tableConstraints.length > 0) { _%>
   (t) => [
 <%_ tableConstraints.forEach(c => { _%>

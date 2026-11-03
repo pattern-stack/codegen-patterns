@@ -451,8 +451,10 @@ it is documented in §12 rather than papered over by widening the entity column 
 #### 4.4 Uniqueness (M3, M5)
 
 - **Field-level `unique: true` / `queries: unique: true`** — *(updated 2026-10-31, #511)* field `unique: true` is
-  lowered into `processUniqueIndexes`, so a `tenant_scoped` entity emits only the tenant-prefixed
-  `uniqueIndex('<table>_tenant_id_<col>_uniq')`, never a bare one; a unit test asserts both. `queries: unique: true`
+  lowered into `processUniqueIndexes`, so a `tenant_scoped` entity emits only the tenant-prefixed unique, never a bare
+  one; a unit test asserts both. *(Updated 2026-11-03, #784: that unique is
+  `unique('<table>_tenant_id_<col>_uniq').on(t.tenantId, t.<col>).nullsNotDistinct()`, a table constraint, not a
+  `uniqueIndex`.)* `queries: unique: true`
   stays a finder hint with no DDL (#821).
 - **Top-level `unique_indexes:`** — *(updated 2026-11-03, #784: tenant-prefixed entries are now
   `unique(...).nullsNotDistinct()` by default, with `nulls_not_distinct: false` as the opt-out and `where:` for partial
