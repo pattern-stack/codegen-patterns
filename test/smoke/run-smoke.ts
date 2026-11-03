@@ -357,8 +357,8 @@ function assertFieldUniqueEmission(tmpDir: string): void {
 	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
 	assertContains(
 		tenantNote,
-		/uniqueIndex\('tenant_notes_tenant_id_slug_uniq'\)\.on\(t\.tenantId, t\.slug\)/,
-		'tenant_note.slug unique -> per-tenant uniqueIndex (#511)',
+		/unique\('tenant_notes_tenant_id_slug_uniq'\)\.on\(t\.tenantId, t\.slug\)\.nullsNotDistinct\(\)/,
+		'tenant_note.slug unique -> per-tenant NULLS NOT DISTINCT constraint (#511, #784)',
 	);
 	assertContains(
 		tenantNote,
@@ -369,6 +369,47 @@ function assertFieldUniqueEmission(tmpDir: string): void {
 		tenantNote,
 		/uniqueIndex\('tenant_notes_slug_uniq'\)/,
 		'tenant_note must not emit a bare global unique (#511)',
+	);
+}
+
+function assertUniqueIndexShapes(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const account = reads('modules/accounts/account.entity.ts');
+	assertContains(
+		account,
+		/uniqueIndex\('accounts_live_name_uniq'\)\.on\(t\.name\)\.where\(sql`\$\{t\.status\} <> 'archived'`\)/,
+		'account partial unique -> uniqueIndex().where(sql) (#784)',
+	);
+	assertContains(
+		account,
+		/import { sql, type InferSelectModel } from 'drizzle-orm';/,
+		'account imports sql beside InferSelectModel (#784)',
+	);
+
+	const contact = reads('modules/contacts/contact.entity.ts');
+	assertContains(
+		contact,
+		/unique\('contacts_account_id_email_uniq'\)\.on\(t\.accountId, t\.email\)\.nullsNotDistinct\(\)/,
+		'contact nulls_not_distinct -> unique().nullsNotDistinct() (#784)',
+	);
+
+	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
+	assertContains(
+		tenantNote,
+		/unique\('tenant_notes_tenant_id_title_slug_uniq'\)\.on\(t\.tenantId, t\.title, t\.slug\)\.nullsNotDistinct\(\)/,
+		'tenant_note composite unique defaults to NULLS NOT DISTINCT (#784)',
+	);
+	assertContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_tenant_id_owner_workspace_id_uniq'\)\.on\(t\.tenantId, t\.ownerWorkspaceId\)/,
+		'tenant_note nulls_not_distinct: false opt-out -> plain uniqueIndex (#784)',
+	);
+	assertContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_live_title_uniq'\)\.on\(t\.tenantId, t\.title\)\.where\(sql`\$\{t\.deletedAt\} IS NULL`\)/,
+		'tenant_note tenant partial -> uniqueIndex().where(sql) (#784)',
 	);
 }
 
@@ -715,6 +756,8 @@ async function main(): Promise<number> {
 			log('asserting field unique emission');
 			assertFieldUniqueEmission(tmpDir);
 			log('field unique emission OK');
+			assertUniqueIndexShapes(tmpDir);
+			log('unique_indexes shapes OK');
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the

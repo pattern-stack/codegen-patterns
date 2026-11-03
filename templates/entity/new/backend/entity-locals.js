@@ -13,6 +13,7 @@ import {
   relativeModuleDir,
 } from '../../../_shared/entity-naming.mjs';
 import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
+import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
@@ -948,6 +949,9 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables, uniqu
       indexExpressions.push({
         comment: null,
         expr: `index('${entityNamePlural}_${pf.name}_idx').on(t.${pf.camelName})`,
+        name: `${entityNamePlural}_${pf.name}_idx`,
+        builder: 'index',
+        source: `field '${pf.name}' (index: true)`,
       });
     }
   }
@@ -956,35 +960,147 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables, uniqu
 }
 
 /**
- * Unique index emission (#356, #511). The input is every unique an entity
- * declares: field-level `unique: true` lowered by `fieldUniqueEntries` (#511),
- * then the top-level `unique_indexes:` entries.
- *
- * Top-level `unique_indexes: [{ fields: [...], name? }]` → a `uniqueIndex(...)`
- * entry in the pgTable extra-config callback. Column names are camelCased to
- * match the emitted Drizzle column identifiers; they may reference FK columns
- * (belongs_to) or ordinary fields. Index name defaults to
- * `<table>_<col1>_<col2>_..._uniq`.
+ * Columns of the rendered `pgTable`, as `{ column, prop }` (#784). Built from
+ * exactly the inputs the entity template renders (`id`; belongs_to FK columns;
+ * non-FK fields; the external_id_tracking, tenant and timestamp/soft-delete
+ * columns); a unit test pins it to the rendered column block.
  */
-function processUniqueIndexes(uniqueIndexes, entityNamePlural, tenantScoped = false) {
-  if (!Array.isArray(uniqueIndexes)) return [];
+function entityTableColumns({
+  belongsTo,
+  nonFkFields,
+  hasExternalIdTracking,
+  tenantScoped,
+  hasTimestamps,
+  hasSoftDelete,
+}) {
+  const cols = [{ column: 'id', prop: 'id' }];
+  for (const rel of belongsTo) cols.push({ column: rel.field, prop: rel.camelField });
+  for (const f of nonFkFields) cols.push({ column: f.name, prop: f.camelName });
+  if (hasExternalIdTracking) {
+    cols.push(
+      { column: 'external_id', prop: 'externalId' },
+      { column: 'provider', prop: 'provider' },
+      { column: 'provider_metadata', prop: 'providerMetadata' },
+    );
+  }
+  if (tenantScoped) cols.push({ column: 'tenant_id', prop: 'tenantId' });
+  if (hasTimestamps) {
+    cols.push({ column: 'created_at', prop: 'createdAt' }, { column: 'updated_at', prop: 'updatedAt' });
+  }
+  if (hasSoftDelete) cols.push({ column: 'deleted_at', prop: 'deletedAt' });
+  return cols;
+}
 
-  return uniqueIndexes.map((ui) => {
-    // A tenant-scoped entity's natural keys are unique WITHIN a tenant, not
-    // globally: tenant A and tenant B may each hold a row with the same
-    // `(conversation_id, sequence)`. A bare composite would forbid that, which
-    // is the exact failure ADR-042 §5(c) is about. An author-supplied `name` is
-    // preserved verbatim — they asked for that constraint name.
+/**
+ * Unique constraint emission (#356, #511, #784). The input is every unique an
+ * entity declares: field-level `unique: true` lowered by `fieldUniqueEntries`
+ * (#511), then the top-level `unique_indexes:` entries. Each entry is
+ * `{ fields, name?, where?, nulls_not_distinct?, source }`.
+ *
+ *   partial = where is set
+ *   nnd     = partial ? false : (nulls_not_distinct ?? tenantScoped)
+ *   cols    = tenantScoped ? [tenant_id, ...fields] : fields
+ *   name    = name ?? `<table>_${cols.join('_')}_uniq`
+ *
+ *   partial -> uniqueIndex(name).on(cols).where(sql`...`)
+ *   nnd     -> unique(name).on(cols).nullsNotDistinct()
+ *   else    -> uniqueIndex(name).on(cols)
+ *
+ * Postgres treats NULLs in a unique index as distinct, so a tenant-prefixed
+ * plain index never deduplicates the (first-class) null-tenant partition
+ * (ADR-042 §3); NULLS NOT DISTINCT does. A partial index cannot be NND on
+ * drizzle-orm 1.0.0-rc.4, so a partial entry does not. An author `name` is kept
+ * verbatim. Generation errors: C1 (unknown column), C2 (tenant_id listed or a
+ * repeated field), and the `where:` scanner errors (renderSqlPredicate).
+ */
+function processUniqueIndexes(
+  entries,
+  { entityName, entityNamePlural, tenantScoped = false, tableColumns },
+) {
+  if (!Array.isArray(entries)) return [];
+  const propByColumn = new Map(tableColumns.map((c) => [c.column, c.prop]));
+  const columnList = tableColumns.map((c) => c.column).join(', ');
+  const lowerColumns = new Map(tableColumns.map((c) => [c.column.toLowerCase(), c.prop]));
+
+  return entries.map((ui) => {
+    const label = `[codegen] '${entityName}' ${ui.source}`;
+    const seen = new Set();
+    for (const f of ui.fields) {
+      if (tenantScoped && f === 'tenant_id') {
+        throw new Error(`${label}: 'tenant_id' must not be listed in fields — a tenant_scoped entity prefixes it automatically.`);
+      }
+      if (seen.has(f)) throw new Error(`${label}: field '${f}' is listed twice.`);
+      seen.add(f);
+      if (!propByColumn.has(f)) {
+        throw new Error(`${label}: '${f}' is not a column of '${entityNamePlural}'. Columns: ${columnList}.`);
+      }
+    }
+
+    const partial = ui.where !== undefined;
+    const nnd = partial ? false : (ui.nulls_not_distinct ?? tenantScoped);
     const cols = tenantScoped ? ['tenant_id', ...ui.fields] : ui.fields;
     const name = ui.name || `${entityNamePlural}_${cols.join('_')}_uniq`;
-    const onCols = cols.map((c) => `t.${camelCase(c)}`).join(', ');
-    return {
-      comment: tenantScoped
-        ? 'tenant_scoped — uniqueness is per tenant (ADR-042)'
-        : null,
-      expr: `uniqueIndex('${name}').on(${onCols})`,
-    };
+    const onCols = cols.map((c) => `t.${propByColumn.get(c)}`).join(', ');
+
+    let expr;
+    let builder;
+    let comment = null;
+    if (partial) {
+      let body;
+      try {
+        body = renderSqlPredicate(ui.where, lowerColumns);
+      } catch (err) {
+        throw new Error(`${label} where: ${err.message}`);
+      }
+      builder = 'uniqueIndex';
+      expr = `uniqueIndex('${name}').on(${onCols}).where(sql\`${body}\`)`;
+      if (tenantScoped) {
+        comment =
+          'tenant_scoped — unique per tenant; partial, so NULL-tenant rows never conflict (no NULLS NOT DISTINCT on a partial index in drizzle rc.4)';
+      }
+    } else if (nnd) {
+      builder = 'unique';
+      expr = `unique('${name}').on(${onCols}).nullsNotDistinct()`;
+      if (tenantScoped) {
+        comment = 'tenant_scoped — unique per tenant; NULLS NOT DISTINCT, so the NULL tenant is one partition (ADR-042)';
+      }
+    } else {
+      builder = 'uniqueIndex';
+      expr = `uniqueIndex('${name}').on(${onCols})`;
+      if (tenantScoped) {
+        comment = 'tenant_scoped — unique per tenant; nulls_not_distinct: false, so NULL-tenant rows never conflict';
+      }
+    }
+    return { name, comment, expr, builder, partial, columns: cols, source: ui.source };
   });
+}
+
+/**
+ * C3 and C4 (#784): every name in the extra-config callback is distinct, and no
+ * two non-partial uniques cover the same column set. Partial entries are exempt
+ * from C4 — two partial entries over the same columns with different
+ * predicates are the documented use.
+ */
+function assertDistinctConstraints(tableConstraints, entityName) {
+  const names = new Map();
+  const colSets = new Map();
+  for (const c of tableConstraints) {
+    if (names.has(c.name)) {
+      throw new Error(
+        `[codegen] '${entityName}': constraint name '${c.name}' is used by both ${names.get(c.name)} and ${c.source}.`,
+      );
+    }
+    names.set(c.name, c.source);
+    if ((c.builder === 'unique' || c.builder === 'uniqueIndex') && !c.partial) {
+      const key = [...c.columns].sort().join(',');
+      if (colSets.has(key)) {
+        throw new Error(
+          `[codegen] '${entityName}': ${colSets.get(key)} and ${c.source} declare the same unique over (${c.columns.join(', ')}). Declare it once.`,
+        );
+      }
+      colSets.set(key, c.source);
+    }
+  }
 }
 
 /**
@@ -996,7 +1112,7 @@ function processUniqueIndexes(uniqueIndexes, entityNamePlural, tenantScoped = fa
 function fieldUniqueEntries(fields) {
   return Object.entries(fields || {})
     .filter(([name, def]) => name !== 'id' && def && def.unique === true)
-    .map(([name]) => ({ fields: [name] }));
+    .map(([name]) => ({ fields: [name], source: `field '${name}' (unique: true)` }));
 }
 
 /**
@@ -1032,12 +1148,11 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
   if (hasExternalIdTracking) {
     imports.add('varchar');
     imports.add('jsonb');
-    imports.add('uniqueIndex');
   }
 
-  // Caller-supplied extras: `index` (field-level index: true) and
-  // `uniqueIndex` (field unique: true, composite unique_indexes) — see processFieldFeatures /
-  // processUniqueIndexes.
+  // Caller-supplied extras: the pg-core builders the extra-config callback
+  // actually calls (`index`, `uniqueIndex`, `unique`), derived by use (#784) —
+  // see processFieldFeatures / processUniqueIndexes.
   for (const extra of extraImports) {
     imports.add(extra);
   }
@@ -1894,10 +2009,20 @@ export function buildBackendLocals(definition, baseLocals) {
 
   // Field-level `unique: true` (#511) and composite unique indexes (#356),
   // through one builder.
-  const uniqueIndexExpressions = processUniqueIndexes(
-    [...fieldUniqueEntries(fields), ...(definition.unique_indexes ?? [])],
-    entityNamePlural,
+  const tableColumns = entityTableColumns({
+    belongsTo,
+    nonFkFields,
+    hasExternalIdTracking,
     tenantScoped,
+    hasTimestamps,
+    hasSoftDelete,
+  });
+  const uniqueIndexExpressions = processUniqueIndexes(
+    [
+      ...fieldUniqueEntries(fields),
+      ...(definition.unique_indexes ?? []).map((ui, i) => ({ ...ui, source: `unique_indexes[${i}]` })),
+    ],
+    { entityName, entityNamePlural, tenantScoped, tableColumns },
   );
 
   // belongs_to FK columns that declared `index: true` on their underlying
@@ -1909,13 +2034,17 @@ export function buildBackendLocals(definition, baseLocals) {
     .map((rel) => ({
       comment: null,
       expr: `index('${entityNamePlural}_${rel.field}_idx').on(t.${rel.camelField})`,
+      name: `${entityNamePlural}_${rel.field}_idx`,
+      builder: 'index',
+      source: `belongs_to '${rel.field}' index`,
     }));
 
-  // pgTable extra-config callback entries, in emission order: belongs_to FK
-  // indexes, single-column field indexes, field `unique: true` indexes (in
-  // `fields:` order, #511), `unique_indexes:` entries, then the
-  // external_id_tracking unique index (the ON CONFLICT target integrationUpsert
-  // relies on).
+  // pgTable extra-config callback entries, in emission order: the tenant index
+  // (tenant_scoped, unshifted below), belongs_to FK indexes, single-column field
+  // indexes, field `unique: true` uniques (in `fields:` order, #511), then
+  // `unique_indexes:` entries (each a uniqueIndex or, under NULLS NOT DISTINCT,
+  // a `unique(...)` constraint, #784), then the external_id_tracking unique
+  // (the ON CONFLICT target integrationUpsert relies on).
   const tableConstraints = [
     ...belongsToIndexExpressions,
     ...fieldFeatures.indexExpressions,
@@ -1926,6 +2055,9 @@ export function buildBackendLocals(definition, baseLocals) {
     tableConstraints.unshift({
       comment: 'tenant_scoped behavior (ADR-042) — every scoped read filters on tenant_id',
       expr: `index('${entityNamePlural}_tenant_id_idx').on(t.tenantId)`,
+      name: `${entityNamePlural}_tenant_id_idx`,
+      builder: 'index',
+      source: 'tenant_scoped',
     });
   }
   if (hasExternalIdTracking) {
@@ -1943,13 +2075,32 @@ export function buildBackendLocals(definition, baseLocals) {
             expr:
               `unique('uq_${entityNamePlural}_tenant_provider_external_id')` +
               '.on(t.tenantId, t.provider, t.externalId).nullsNotDistinct()',
+            name: `uq_${entityNamePlural}_tenant_provider_external_id`,
+            builder: 'unique',
+            partial: false,
+            columns: ['tenant_id', 'provider', 'external_id'],
+            source: 'external_id_tracking',
           }
         : {
             comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
             expr: `uniqueIndex('uq_${entityNamePlural}_provider_external_id').on(t.provider, t.externalId)`,
+            name: `uq_${entityNamePlural}_provider_external_id`,
+            builder: 'uniqueIndex',
+            partial: false,
+            columns: ['provider', 'external_id'],
+            source: 'external_id_tracking',
           },
     );
   }
+
+  for (const c of tableConstraints) {
+    if (!c.name || !c.builder) {
+      throw new Error(
+        `[codegen] '${entityName}': internal error — extra-config entry '${c.expr}' lacks a name or builder.`,
+      );
+    }
+  }
+  assertDistinctConstraints(tableConstraints, entityName);
 
   // Enum field declarations — surface a separate collection so the entity
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
@@ -1969,22 +2120,11 @@ export function buildBackendLocals(definition, baseLocals) {
       choices: f.choices,
     }));
 
-  // Drizzle imports needed. `index` when an index expression survives
-  // suppression (field/FK `index: true`) or the entity is tenant_scoped;
-  // `uniqueIndex` when any unique is emitted (field `unique: true` or
-  // `unique_indexes:`) (external_id_tracking adds `uniqueIndex` on its own flag below).
-  const extraDrizzleImports = [];
-  if (
-    fieldFeatures.indexExpressions.length > 0 ||
-    belongsToIndexExpressions.length > 0 ||
-    tenantScoped
-  ) {
-    extraDrizzleImports.push('index');
-  }
-  if (uniqueIndexExpressions.length > 0) extraDrizzleImports.push('uniqueIndex');
-  // The per-tenant external-id constraint is a `unique(...)` table constraint,
-  // not a `uniqueIndex(...)` — see tableConstraints above.
-  if (tenantScoped && hasExternalIdTracking) extraDrizzleImports.push('unique');
+  // Drizzle imports needed, derived by use (#784): the pg-core builders the
+  // extra-config callback actually calls, plus `sql` (drizzle-orm) when a
+  // partial entry renders a predicate.
+  const extraDrizzleImports = [...new Set(tableConstraints.map((c) => c.builder))];
+  const drizzleOrmImports = uniqueIndexExpressions.some((u) => u.partial) ? ['sql'] : [];
   const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // Output paths
@@ -2366,6 +2506,9 @@ export function buildBackendLocals(definition, baseLocals) {
 
     // Drizzle
     drizzleImports: drizzleEntityImports,
+    // drizzle-orm (not pg-core) value imports: `sql` when a partial unique renders a predicate (#784).
+    drizzleOrmImports,
+    tableColumns,
     // Every FK `references()` callback carries a `: AnyPgColumn` return-type
     // annotation (#631). An unannotated callback whose target table is on an
     // FK cycle with this one — a self-FK, or A → B → A across files — makes
@@ -2377,8 +2520,9 @@ export function buildBackendLocals(definition, baseLocals) {
     enumFields,
 
     // Field-level foreign_key imports (#354) and pgTable extra-config
-    // entries: single-column indexes (#355) + composite unique indexes (#356)
-    // + the external_id_tracking unique index.
+    // entries: single-column indexes (#355) + unique constraints (#356, #511,
+    // #784: unique_indexes entries and field unique: true) + the
+    // external_id_tracking unique.
     fieldFkImports,
     belongsToTableImports,
     tableConstraints,

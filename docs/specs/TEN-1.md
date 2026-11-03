@@ -451,10 +451,15 @@ it is documented in §12 rather than papered over by widening the entity column 
 #### 4.4 Uniqueness (M3, M5)
 
 - **Field-level `unique: true` / `queries: unique: true`** — *(updated 2026-10-31, #511)* field `unique: true` is
-  lowered into `processUniqueIndexes`, so a `tenant_scoped` entity emits only the tenant-prefixed
-  `uniqueIndex('<table>_tenant_id_<col>_uniq')`, never a bare one; a unit test asserts both. `queries: unique: true`
+  lowered into `processUniqueIndexes`, so a `tenant_scoped` entity emits only the tenant-prefixed unique, never a bare
+  one; a unit test asserts both. *(Updated 2026-11-03, #784: that unique is
+  `unique('<table>_tenant_id_<col>_uniq').on(t.tenantId, t.<col>).nullsNotDistinct()`, a table constraint, not a
+  `uniqueIndex`.)* `queries: unique: true`
   stays a finder hint with no DDL (#821).
-- **Top-level `unique_indexes:`** — `processUniqueIndexes` (`prompt-extension.js:601-609`) prepends `tenant_id` to each
+- **Top-level `unique_indexes:`** — *(updated 2026-11-03, #784: tenant-prefixed entries are now
+  `unique(...).nullsNotDistinct()` by default, with `nulls_not_distinct: false` as the opt-out and `where:` for partial
+  indexes; see the ADR-042 revision note. M5 is now also behind `unique_indexes:`: the builder limit is why a partial
+  entry cannot be NULLS NOT DISTINCT.)* `processUniqueIndexes` (`prompt-extension.js:601-609`) prepends `tenant_id` to each
   entry's column list when `tenantScoped`, and the default name becomes `<table>_tenant_id_<cols>_uniq`. An
   author-supplied `name` is preserved. Without this, two tenants cannot hold the same natural key, which is the exact
   failure ADR-042 §5(c) is about.

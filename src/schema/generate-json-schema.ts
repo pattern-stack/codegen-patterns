@@ -83,12 +83,14 @@ const EntityDefinitionSchema = z.object({
   unique_indexes: z
     .array(
       z.object({
-        fields: z.array(z.string()).describe("Columns the composite unique constraint spans (2+)"),
-        name: z.string().optional().describe("Index name (default <table>_<col1>_<col2>_uniq)"),
+        fields: z.array(z.string()).describe("Columns the unique constraint spans (1+)"),
+        name: z.string().optional().describe("Constraint name, lowercase snake_case, max 63 (default <table>_<col1>_<col2>_uniq); required with `where`"),
+        where: z.string().optional().describe("Raw SQL predicate making this a partial unique index; needs `name`, exclusive with nulls_not_distinct: true"),
+        nulls_not_distinct: z.boolean().optional().describe("true: UNIQUE NULLS NOT DISTINCT constraint. Default on tenant_scoped entities; false opts out. PostgreSQL 15+"),
       }),
     )
     .optional()
-    .describe("Composite (multi-column) unique indexes"),
+    .describe("Unique constraints: 1+ fields, optional where (partial) and nulls_not_distinct"),
 });
 
 // Generate using Zod v4's native JSON schema support

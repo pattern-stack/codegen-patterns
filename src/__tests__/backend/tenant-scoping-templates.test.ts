@@ -4,7 +4,7 @@
  * One YAML flag drives five emissions, and this file is the contract for each:
  * the nullable column, its index, the `BehaviorConfig` field, the STRICT
  * enforcement override, and the per-tenant rewrite of every uniqueness
- * constraint. It also pins the two negative cases — a `clean` project is
+ * constraint (NULLS NOT DISTINCT by default, #784). It also pins the two negative cases — a `clean` project is
  * refused outright, and an entity with a `unique: true` field emits only the
  * tenant-prefixed unique, never a bare single-column one (#511: field uniques go
  * through the same builder as `unique_indexes:`, which applies ADR-042 §5(c)).
@@ -132,7 +132,7 @@ describe('tenant_scoped — the repository', () => {
 // ============================================================================
 
 describe('tenant_scoped — uniqueness is per tenant', () => {
-  it('prefixes tenant_id onto every unique_indexes entry', () => {
+  it('prefixes tenant_id onto every unique_indexes entry, NULLS NOT DISTINCT by default (#784)', () => {
     const def = noteDefinition({
       fields: {
         title: { type: 'string', required: true },
@@ -142,8 +142,41 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     });
     const out = renderEntity(localsFor(def));
     expect(out).toContain(
+      "unique('notes_tenant_id_title_slug_uniq').on(t.tenantId, t.title, t.slug).nullsNotDistinct()",
+    );
+    expect(out).not.toContain("uniqueIndex('notes_tenant_id_title_slug_uniq')");
+  });
+
+  it('opts out of NULLS NOT DISTINCT with nulls_not_distinct: false (#784)', () => {
+    const def = noteDefinition({
+      fields: {
+        title: { type: 'string', required: true },
+        slug: { type: 'string', required: true },
+      },
+      unique_indexes: [{ fields: ['title', 'slug'], nulls_not_distinct: false }],
+    });
+    const out = renderEntity(localsFor(def));
+    expect(out).toContain(
       "uniqueIndex('notes_tenant_id_title_slug_uniq').on(t.tenantId, t.title, t.slug)",
     );
+    expect(out).not.toContain('nullsNotDistinct');
+  });
+
+  it('a partial entry is a tenant-prefixed uniqueIndex with a where (#784)', () => {
+    const def = noteDefinition({
+      behaviors: ['timestamps', 'soft_delete'],
+      unique_indexes: [{ fields: ['title'], where: 'deleted_at IS NULL', name: 'notes_live_title_uniq' }],
+    });
+    const out = renderEntity(localsFor(def));
+    expect(out).toContain(
+      "uniqueIndex('notes_live_title_uniq').on(t.tenantId, t.title).where(sql`${t.deletedAt} IS NULL`)",
+    );
+    expect(out).toContain("import { sql, type InferSelectModel } from 'drizzle-orm';");
+  });
+
+  it('rejects tenant_id in fields: on a tenant-scoped entity (#784 C2)', () => {
+    const def = noteDefinition({ unique_indexes: [{ fields: ['tenant_id', 'title'] }] });
+    expect(() => localsFor(def)).toThrow(/tenant_id/);
   });
 
   it('preserves an author-supplied index name while still prefixing the column', () => {
@@ -155,7 +188,7 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
       unique_indexes: [{ fields: ['title', 'slug'], name: 'my_constraint' }],
     });
     const out = renderEntity(localsFor(def));
-    expect(out).toContain("uniqueIndex('my_constraint').on(t.tenantId, t.title, t.slug)");
+    expect(out).toContain("unique('my_constraint').on(t.tenantId, t.title, t.slug).nullsNotDistinct()");
   });
 
   it('leaves unique_indexes alone when the entity is not tenant-scoped', () => {
@@ -177,7 +210,9 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
       fields: { title: { type: 'string', required: true, unique: true } },
     });
     const out = renderEntity(localsFor(def));
-    expect(out).toContain("uniqueIndex('notes_tenant_id_title_uniq').on(t.tenantId, t.title)");
+    expect(out).toContain(
+      "unique('notes_tenant_id_title_uniq').on(t.tenantId, t.title).nullsNotDistinct()",
+    );
     // no global unique that would forbid two tenants holding the same title
     expect(out).not.toContain('.unique()');
     expect(out).not.toContain("uniqueIndex('notes_title_uniq')");
@@ -189,7 +224,15 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     });
     const out = renderEntity(localsFor(def));
     expect(out).toContain("index('notes_title_idx').on(t.title)");
-    expect(out).toContain("uniqueIndex('notes_tenant_id_title_uniq').on(t.tenantId, t.title)");
+    expect(out).toContain(
+      "unique('notes_tenant_id_title_uniq').on(t.tenantId, t.title).nullsNotDistinct()",
+    );
+  });
+
+  it('D1: a nullable `unique: true` field on a tenant-scoped entity is NULLS NOT DISTINCT — one NULL per tenant (#784)', () => {
+    const def = noteDefinition({ fields: { code: { type: 'string', unique: true } } });
+    const out = renderEntity(localsFor(def));
+    expect(out).toContain("unique('notes_tenant_id_code_uniq').on(t.tenantId, t.code).nullsNotDistinct()");
   });
 
   it('prefixes the tenant on a unique belongs_to FK (#511)', () => {
@@ -200,7 +243,9 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
       },
     });
     const out = renderEntity(localsFor(def));
-    expect(out).toContain("uniqueIndex('notes_tenant_id_account_id_uniq').on(t.tenantId, t.accountId)");
+    expect(out).toContain(
+      "unique('notes_tenant_id_account_id_uniq').on(t.tenantId, t.accountId).nullsNotDistinct()",
+    );
     expect(out).not.toContain("uniqueIndex('notes_account_id_uniq')");
   });
 });

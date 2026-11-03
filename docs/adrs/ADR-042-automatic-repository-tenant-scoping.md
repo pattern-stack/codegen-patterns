@@ -73,6 +73,17 @@
 > (#821 tracks validating that a unique finder is backed by a constraint). On a `tenant_scoped` entity a field's
 > `index: true` is kept beside its tenant unique, because `(tenant_id, <col>)` cannot serve a lookup on `<col>` alone.
 
+> **Revision note — 2026-11-03 (#784): tenant-prefixed uniques are NULLS NOT DISTINCT by default.** §5(c) prefixes
+> `tenant_id` onto every unique, and TEN-1 emitted the prefixed entries as `uniqueIndex(...)`. Postgres treats NULLs
+> in a unique index as distinct, so rows in the null-tenant partition, which §3 makes first-class, never
+> conflicted: `(NULL, 'a')` could be inserted twice (reproduced on PostgreSQL 17 in #784). From #784, every
+> non-partial unique on a `tenant_scoped` entity is the table constraint
+> `unique(...).on(t.tenantId, …).nullsNotDistinct()`. That covers a `unique_indexes:` entry, and a field
+> `unique: true`, which #511 routes through the same builder. It is the shape the `external_id_tracking` constraint
+> has had since TEN-1. An entry opts out with `nulls_not_distinct: false`. NULLS NOT DISTINCT covers every column of
+> the constraint, so a nullable column in it admits one NULL per key. A partial entry (`where:`) cannot be NULLS NOT
+> DISTINCT on drizzle-orm 1.0.0-rc.4, so it does not deduplicate null-tenant rows. Requires PostgreSQL 15+.
+
 > **Sequencing note.** This ADR settles the *mechanism* for automatic data isolation. It is opt-in and additive: nothing changes for an entity until it carries `tenant_scoped: true`, and the new ALS field is ignored by every existing `userTracking`-only repo. A host application that already carries a `tenantId` claim through its access token adopts this as a config change plus a boundary interceptor, not a hand-port across N repositories.
 
 ## Context
