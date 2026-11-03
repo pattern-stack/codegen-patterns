@@ -1,0 +1,43 @@
+# Category -- scaffold integration fixture (#784).
+#
+# Tenant-scoped. The three non-partial shapes on one table:
+#   - (parent_id, code): explicit `nulls_not_distinct: true`
+#   - (slug): the tenant default (NULLS NOT DISTINCT)
+#   - (external_code): the `nulls_not_distinct: false` opt-out over a nullable column
+entity:
+  name: category
+  plural: categories
+  table: categories
+  pattern: Base
+
+tenant_scoped: true
+
+fields:
+  parent_id:
+    type: uuid
+    required: false
+
+  code:
+    type: string
+    required: true
+    max_length: 64
+
+  slug:
+    type: string
+    required: true
+    max_length: 64
+
+  external_code:
+    type: string
+    required: false
+    max_length: 64
+
+behaviors:
+  - timestamps
+
+unique_indexes:
+  - fields: [parent_id, code]
+    nulls_not_distinct: true
+  - fields: [slug]
+  - fields: [external_code]
+    nulls_not_distinct: false

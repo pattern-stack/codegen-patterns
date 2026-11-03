@@ -5,7 +5,7 @@ stack: gaps-batch1
 stack_position: "A2. field-unique-constraint (#511) → unique-indexes-shapes (#784) → datetime-timestamptz (#796)"
 plan: "origin/dugshub/gaps-batch1-plan:.ai-docs/stacks/gaps-batch1/plan.yaml, key unique-indexes-shapes (Gate 0 approved 2026-10-31 with every open_questions recommendation)"
 gate: human
-status: awaiting-strategy-review
+status: implemented (Gate 1 approved 2026-11-03, all recommendations accepted, D1 included)
 base: "a8629dfc for this spec. The implementation stacks on #511 (spec: origin/dugshub/511-field-unique-index @ 43ef77c5)."
 size: M
 related:
@@ -532,7 +532,21 @@ _(Filled if Gate 1 or 1.5 changes the design.)_
 
 ## Implementation notes
 
-_(The implementer records here what changed against this spec, and closes D1-D7 with what was built.)_
+Built as specified; D1-D7 are closed as written. Post-implementation facts:
+
+- **D1** holds: a field `unique: true` on a tenant-scoped entity is `unique(...).nullsNotDistinct()`. Approved at Gate 1.
+- **D5** holds. Every `tableConstraints` entry (tenant index, FK and field indexes, uniques, the
+  `external_id_tracking` constraint) now carries `name`, `builder` and `source`; the pg-core import list is the set of
+  `builder` values. `drizzleOrmImports` and `tableColumns` are new locals.
+- **Escaping of quoted text** in `renderSqlPredicate` follows §4: backslash, backtick and `${` inside a quoted literal
+  are escaped for the template literal; outside quotes they are errors.
+- **Divergences:** none in behavior. `renderSqlPredicate` takes a lowercase-keyed `Map<column, prop>` (the caller
+  lowercases column names), and the scanner errors are plain `Error`s whose message `entity-locals.js` prefixes with
+  `[codegen] '<entity>' unique_indexes[<i>] where:`.
+- **Snapshots:** `just test-baseline` is byte-identical, so no baseline snapshot needed regenerating (no baseline
+  entity declares `unique_indexes:` or `tenant_scoped`).
+- **Gates run locally:** `just typecheck`, `just test-unit` (4107 pass), `just test-baseline`, `just test-smoke`.
+  `test-integration` (the §8.3 cases, T3) is left to the CI `test-integration` job (Docker).
 
 ## Diff Review — Adherence
 

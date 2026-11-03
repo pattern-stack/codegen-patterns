@@ -213,6 +213,9 @@ codegen skills list
 - **A field's `unique: true` emits a unique index** (`uniqueIndex`), per tenant
   under `tenant_scoped` (#511). A `queries:` entry's `unique: true` is a finder
   hint (single row) and emits no DDL (#484, #821).
+- **Uniques on a `tenant_scoped` entity are NULLS NOT DISTINCT by default** (#784; PostgreSQL 15+), so a nullable
+  `unique: true` field there admits one NULL per tenant. `unique_indexes:` entries take `where:` (partial) and
+  `nulls_not_distinct:` (`false` opts out); see the entity YAML reference.
 
 ## Do not
 
