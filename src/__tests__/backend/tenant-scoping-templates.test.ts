@@ -5,9 +5,9 @@
  * the nullable column, its index, the `BehaviorConfig` field, the STRICT
  * enforcement override, and the per-tenant rewrite of every uniqueness
  * constraint. It also pins the two negative cases — a `clean` project is
- * refused outright, and an entity with a `unique: true` field still emits no
- * bare single-column unique (TEN-1 §M3: the backend pipeline emits none at all, so
- * ADR-042 §5(c)'s "suppress the bare unique" step has nothing to suppress).
+ * refused outright, and an entity with a `unique: true` field emits only the
+ * tenant-prefixed unique, never a bare single-column one (#511: field uniques go
+ * through the same builder as `unique_indexes:`, which applies ADR-042 §5(c)).
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -172,16 +172,36 @@ describe('tenant_scoped — uniqueness is per tenant', () => {
     expect(out).not.toContain('tenantId');
   });
 
-  it('emits NO bare single-column unique for a `unique: true` field (§M3)', () => {
+  it('emits only the tenant-prefixed unique for a `unique: true` field (#511)', () => {
     const def = noteDefinition({
       fields: { title: { type: 'string', required: true, unique: true } },
     });
     const out = renderEntity(localsFor(def));
-    // the backend pipeline emits no single-column uniqueness at all, so there is
-    // nothing for the tenant prefix to rewrite — and, critically, no global
-    // unique that would forbid two tenants holding the same title.
+    expect(out).toContain("uniqueIndex('notes_tenant_id_title_uniq').on(t.tenantId, t.title)");
+    // no global unique that would forbid two tenants holding the same title
     expect(out).not.toContain('.unique()');
     expect(out).not.toContain("uniqueIndex('notes_title_uniq')");
+  });
+
+  it('keeps index: true alongside the tenant unique (#511)', () => {
+    const def = noteDefinition({
+      fields: { title: { type: 'string', required: true, unique: true, index: true } },
+    });
+    const out = renderEntity(localsFor(def));
+    expect(out).toContain("index('notes_title_idx').on(t.title)");
+    expect(out).toContain("uniqueIndex('notes_tenant_id_title_uniq').on(t.tenantId, t.title)");
+  });
+
+  it('prefixes the tenant on a unique belongs_to FK (#511)', () => {
+    const def = noteDefinition({
+      fields: { account_id: { type: 'uuid', required: true, unique: true } },
+      relationships: {
+        account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
+      },
+    });
+    const out = renderEntity(localsFor(def));
+    expect(out).toContain("uniqueIndex('notes_tenant_id_account_id_uniq').on(t.tenantId, t.accountId)");
+    expect(out).not.toContain("uniqueIndex('notes_account_id_uniq')");
   });
 });
 

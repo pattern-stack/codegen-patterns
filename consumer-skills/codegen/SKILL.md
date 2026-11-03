@@ -210,8 +210,9 @@ codegen skills list
   `codegen update`. Without it, the installed subsystems and skills (and in
   vendored mode, `src/shared/**`) are stale against the new package. Crossing
   0.30.0 also needs `codegen project upgrade-auth` (see Authentication).
-- **`unique: true` on a field or query creates an index, not a DB `UNIQUE`
-  constraint** (#484, #511). Add the constraint yourself if you rely on it.
+- **A field's `unique: true` emits a unique index** (`uniqueIndex`), per tenant
+  under `tenant_scoped` (#511). A `queries:` entry's `unique: true` is a finder
+  hint (single row) and emits no DDL (#484, #821).
 
 ## Do not
 

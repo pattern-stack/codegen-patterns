@@ -1,0 +1,33 @@
+# AccountProfile — scaffold integration fixture (#511).
+#
+# Non-tenant. `handle` is a unique scalar; `account_id` is a one-to-one
+# belongs_to FK declared in `fields:` with BOTH `unique: true` and `index: true`,
+# so the suite can prove the unique index is enforced by Postgres and that the
+# redundant plain `account_profiles_account_id_idx` is not emitted.
+entity:
+  name: account_profile
+  plural: account_profiles
+  table: account_profiles
+  pattern: Base
+
+fields:
+  account_id:
+    type: uuid
+    required: true
+    unique: true
+    index: true
+
+  handle:
+    type: string
+    required: true
+    max_length: 255
+    unique: true
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
