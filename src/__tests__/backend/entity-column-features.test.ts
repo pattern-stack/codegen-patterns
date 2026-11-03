@@ -104,7 +104,9 @@ describe('column defaults (#345)', () => {
 
   it("maps the `now` sentinel on a datetime column to .defaultNow()", () => {
     const { output } = render(definition);
-    expect(output).toContain("timestamp('started_at').defaultNow()");
+    expect(output).toContain(
+      "timestamp('started_at', { withTimezone: true, mode: 'date' }).defaultNow()",
+    );
   });
 
   it('emits no default suffix when no default is declared', () => {

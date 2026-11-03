@@ -32,6 +32,7 @@ import {
   foreignKeyColumnNullable,
   hasColumnDefault,
 } from '../../../../src/schema/field-nullability.js';
+import { fieldWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
 import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
@@ -468,7 +469,8 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
   // Drizzle's `date('x')` returns the PgDateString builder by default
   // (data type: string). Force the Date-typed variant so DTO Zod
   // schemas using z.coerce.date() align with the entity type.
-  // `timestamp` already defaults to Date — no mode override needed.
+  // `datetime` is timestamptz unless `timezone: false` (#796, `field-timestamp.ts`);
+  // its `mode: 'date'` is written out so the TS type does not lean on Drizzle's default.
   let chain;
   if (drizzleType === 'enum' && enumName) {
     // Reference the pgEnum declaration emitted at the top of the entity file.
@@ -476,6 +478,8 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
     chain = `${enumName}('${fieldName}')`;
   } else if (drizzleType === 'date') {
     chain = `${drizzleType}('${fieldName}', { mode: 'date' })`;
+  } else if (field.type === 'datetime') {
+    chain = timestampColumn(fieldName, fieldWithTimezone(field));
   } else {
     chain = `${drizzleType}('${fieldName}')`;
   }
@@ -2408,6 +2412,8 @@ export function buildBackendLocals(definition, baseLocals) {
     hasPatternConfig,
     patternConfig: patternConfigBlock,
     renderPatternConfigLiteral,
+    // The one place a timestamp column's options are spelled (#796) — entity.ejs.t's behavior columns.
+    timestampColumn,
     ...patternConfigClasses,
 
     // Capability composition (ADR-041). `capabilityMixins` is empty for every

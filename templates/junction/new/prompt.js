@@ -17,6 +17,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { emittedStem } from '../../../src/config/file-naming.js';
 import yaml from "yaml";
+import {
+  TIMEZONE_ON_NON_DATETIME_MESSAGE,
+  fieldWithTimezone,
+  timestampColumn,
+  timezoneOnNonDatetime,
+} from "../../../src/schema/field-timestamp.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
 import { junctionName as deriveJunctionName, junctionNaming } from "../../_shared/junction-fan-out.mjs";
 import {
@@ -117,6 +123,9 @@ function processCustomFields(fields, junctionName) {
   const processed = [];
   for (const [fieldName, field] of Object.entries(fields ?? {})) {
     const type = field.type || "string";
+    if (timezoneOnNonDatetime({ ...field, type })) {
+      throw new Error(`[codegen] junction field '${fieldName}': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`);
+    }
     const choices = field.choices;
     const hasChoices = Array.isArray(choices) && choices.length > 0;
     const elementType = ARRAY_ELEMENT_TYPE[type] ?? type;
@@ -132,6 +141,10 @@ function processCustomFields(fields, junctionName) {
       hasChoices,
       enumName,
       isArray: Object.prototype.hasOwnProperty.call(ARRAY_ELEMENT_TYPE, type),
+      // A datetime payload field is timestamptz unless `timezone: false` (#796).
+      columnCall: type === "datetime" && !hasChoices
+        ? timestampColumn(fieldName, fieldWithTimezone({ ...field, type }))
+        : null,
     });
   }
   return processed;
@@ -497,6 +510,7 @@ export default {
 
       // Custom fields
       processedCustomFields,
+      timestampColumn,
       hasCustomFields,
 
       // Drizzle

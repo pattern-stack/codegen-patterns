@@ -26,6 +26,7 @@ const UiImportanceSchema = z.enum(["primary", "secondary", "tertiary"]);
 const FieldDefinitionSchema = z.object({
   type: FieldTypeSchema.describe("Field data type"),
   required: z.boolean().optional().describe("Field must be provided on CREATE"),
+  timezone: z.boolean().optional().describe("type: datetime only. Default: timestamp with time zone. false: wall-clock timestamp without time zone (read through the Date UTC fields)"),
   nullable: z.boolean().optional().describe("Database column allows NULL. Undeclared: NULL unless required: true. false (without required: true) needs a default:"),
   max_length: z.number().int().positive().optional().describe("Max string length"),
   min_length: z.number().int().nonnegative().optional().describe("Min string length"),

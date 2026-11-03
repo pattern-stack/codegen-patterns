@@ -20,6 +20,7 @@ import { describe, it, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ejs from 'ejs';
+import { timestampColumn } from '../../schema/field-timestamp';
 
 const JUNCTION_ENTITY_TEMPLATE = readFileSync(
   resolve(import.meta.dir, '../../../templates/junction/new/entity.ejs.t'),
@@ -83,6 +84,7 @@ function localsFor({ hasRole }: { hasRole: boolean }): Record<string, unknown> {
     sourced: true,
     hasCustomFields: false,
     processedCustomFields: [],
+    timestampColumn,
     drizzleImports,
     classNames: { entity: 'OpportunityContact' },
   };

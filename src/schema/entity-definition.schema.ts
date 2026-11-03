@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { roleForeignKey } from "../roles/derive.js";
 import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
+import { TIMEZONE_ON_NON_DATETIME_MESSAGE, timezoneOnNonDatetime } from "./field-timestamp.js";
 import { DetectionConfigSchema } from "../../runtime/subsystems/integration";
 
 /**
@@ -190,6 +191,9 @@ const BaseFieldSchema = z.object({
   type: FieldTypeSchema,
   required: z.boolean().optional().default(false),
   nullable: z.boolean().optional(),
+  // `type: datetime` only (#796): `false` keeps a wall-clock `timestamp without time zone` column;
+  // the default is `timestamp with time zone`. The rule lives in `field-timestamp.ts`.
+  timezone: z.boolean().optional(),
 
   // String constraints
   max_length: z.number().int().positive().optional(),
@@ -240,6 +244,10 @@ const FieldDefinitionSchema = BaseFieldSchema.merge(UiMetadataSchema)
   .refine((data) => !notNullWithoutDefault(data), {
     message: NOT_NULL_WITHOUT_DEFAULT_MESSAGE,
     path: ["nullable"],
+  })
+  .refine((data) => !timezoneOnNonDatetime(data), {
+    message: TIMEZONE_ON_NON_DATETIME_MESSAGE,
+    path: ["timezone"],
   })
   .refine(
     (data) => {
@@ -1444,26 +1452,6 @@ export const fieldTypeToTypeScript: Record<FieldType, string> = {
   entity_ref: "EntityRef", // Placeholder - templates handle specially
   string_array: "string[]",
   enum: "string", // Actual enum type generated from choices
-};
-
-/**
- * Maps YAML field types to Drizzle column types
- *
- * Note: 'entity_ref' generates two columns: pgEnum + uuid
- * Note: 'enum' uses pgEnum with choices
- */
-export const fieldTypeToDrizzle: Record<FieldType, string> = {
-  string: "varchar",
-  integer: "integer",
-  decimal: "decimal",
-  boolean: "boolean",
-  uuid: "uuid",
-  date: "date",
-  datetime: "timestamp",
-  json: "jsonb",
-  entity_ref: "entity_ref", // Placeholder - templates handle specially (enum + uuid)
-  string_array: "text().array()",
-  enum: "enum", // Placeholder - templates generate pgEnum
 };
 
 /**

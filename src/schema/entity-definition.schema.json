@@ -68,6 +68,10 @@
             "description": "Field must be provided on CREATE",
             "type": "boolean"
           },
+          "timezone": {
+            "description": "type: datetime only. Default: timestamp with time zone. false: wall-clock timestamp without time zone (read through the Date UTC fields)",
+            "type": "boolean"
+          },
           "nullable": {
             "description": "Database column allows NULL. Undeclared: NULL unless required: true. false (without required: true) needs a default:",
             "type": "boolean"

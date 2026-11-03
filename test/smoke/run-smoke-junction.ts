@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { emittedDir, emittedStem } from '../../src/config/file-naming.js';
 import { tscGateErrors } from './_consumer-errors';
+import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 
 import {
   bootstrapJunctionProject,
@@ -157,6 +158,11 @@ function assertJunctionEmission(
   generatedSrc: string,
   scenario: Scenario,
 ): void {
+  // #796: every time column in this layout's own modules dir is timestamptz
+  // (the junction fixture declares no opt-out, so the set is empty).
+  const tsScan = assertTimestampColumns(path.join(generatedSrc, P.modules), collectTimezoneOptOuts([]));
+  log(`timestamptz scan OK (${tsScan.calls} calls in ${tsScan.files} entity files)`);
+
   const reads = (p: string): string => {
     const fullPath = path.join(generatedSrc, p);
     if (!fs.existsSync(fullPath)) {

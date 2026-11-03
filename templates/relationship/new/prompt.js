@@ -27,6 +27,12 @@ import {
   hasColumnDefault,
   notNullWithoutDefault,
 } from "../../../src/schema/field-nullability.js";
+import {
+  TIMEZONE_ON_NON_DATETIME_MESSAGE,
+  fieldWithTimezone,
+  timestampColumn,
+  timezoneOnNonDatetime,
+} from "../../../src/schema/field-timestamp.js";
 import { renderColumnDefault } from "../../entity/new/backend/entity-locals.js";
 
 // ============================================================================
@@ -169,7 +175,10 @@ const TS_TYPE_MAP = {
 // ============================================================================
 
 function buildDrizzleChain(fieldName, field, drizzleType) {
-  let chain = `${drizzleType}('${fieldName}')`;
+  // `datetime` is timestamptz unless `timezone: false` (#796).
+  let chain = field.type === "datetime"
+    ? timestampColumn(fieldName, fieldWithTimezone(field))
+    : `${drizzleType}('${fieldName}')`;
   if (isArrayType(field.type)) chain += ".array()";
   // The entity pipeline's rule and default rendering (#736): a NOT NULL column
   // with a DB default must carry that default, or every insert omitting it fails.
@@ -189,6 +198,9 @@ function processFields(fields) {
     // schema's refusal is repeated here, with the same message.
     if (notNullWithoutDefault(field)) {
       throw new Error(`[codegen] relationship field '${fieldName}': ${NOT_NULL_WITHOUT_DEFAULT_MESSAGE}`);
+    }
+    if (timezoneOnNonDatetime({ ...field, type: field.type || "string" })) {
+      throw new Error(`[codegen] relationship field '${fieldName}': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`);
     }
     const type = field.type || "string";
     const nullable = fieldColumnNullable(field);
@@ -751,6 +763,7 @@ export default {
 
       // Drizzle
       drizzleImports,
+      timestampColumn,
 
       // Output paths
       outputPaths,
