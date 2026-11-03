@@ -1,8 +1,8 @@
 # #796: `type: datetime` and the behavior time columns emit `timestamptz`; `timezone: false` opts out
 
 **Issue:** #796 (epic #793, Types and queries) · **Plan item:** `gaps-batch1` / `datetime-timestamptz` (Stack A, third,
-the top of the stack) · **Gate 1:** strict (`gate:human`) · **Status:** awaiting strategy review
-**Base:** `origin/main` @ `a8629dfc` · **Last updated:** 2026-10-31
+the top of the stack) · **Gate 1:** strict (`gate:human`) · **Status:** implemented (Gate 1 approved 2026-11-03)
+**Base:** `origin/main` @ `a8629dfc` · **Last updated:** 2026-11-03
 
 ## Overview
 
@@ -54,6 +54,32 @@ Made here, because the plan left them open:
    and it feeds the collision check only (`src/patterns/registry.ts:86`). Codegen never emits it.
 9. **The smoke assertion runs in three harnesses**: `run-smoke.ts`, `run-smoke-junction.ts` and
    `run-smoke-capability.ts`. The relationship template is compiled only by the capability smoke.
+
+## As built (post-implementation)
+
+Built as specified, with these differences and confirmations:
+
+- **`package.json` `files`** gained `src/schema/field-timestamp.ts`. The spec's file table missed it; the two
+  published-files-manifest gates (`template-src-imports`, `files-manifest-coverage`) fail without it, because the three
+  prompts import the module.
+- **`entity-definition.schema.json` was edited by hand.** `generate-json-schema.ts` calls Zod v4's `z.toJSONSchema`, and the
+  repo is on Zod 3.25, so the generator cannot run (it already could not at #736). The `timezone` entry mirrors what
+  the generator would write. Fixing the generator is out of scope.
+- **The schema test goes through `EntityDefinitionSchema`.** `FieldDefinitionSchema` is not exported.
+- **The migration statement was verified offline** (step 10) with `drizzle-kit generate` over a before/after schema. It
+  writes `ALTER TABLE "<t>" ALTER COLUMN "<c>" SET DATA TYPE timestamp with time zone USING "<c>"::timestamp with time zone;`,
+  exactly as the Changelog block says.
+- **Baseline** changed in exactly the 3 predicted files (7 calls); the two junction snapshots changed in the 10 predicted
+  calls plus the new `last_contacted_at` payload line.
+- **Gate evidence at the base commit.** With the base templates and the scaffold fixture's `opens_at` line removed,
+  `timestamptz.test.ts` fails T1 (every time column is without time zone), T2 (`created_at` read back 5 h 29 m late: the
+  Kolkata wall clock stored from `DEFAULT now()` read as UTC), T3 (a plain `pg` reader off by exactly 5 h, the New York
+  offset) and T4 (the DB-side count is 0). T5 passes on base, as predicted (R1). T6 fails there only because the
+  opt-out field was removed to get the base to accept the fixture.
+- **Local gate scope.** `just test-smoke` (default scenario), `test-smoke-junction` (vendored, default layout) and
+  `test-smoke-capability` (vendored leg) pass with the scan. The capability smoke's package leg reports `tsc` errors in
+  `account.composed-base.ts` and `roles.check.ts` (type-identity errors, none mentioning timestamps); the scan itself passed in that leg.
+  The remaining legs run in CI.
 
 ## Emitted shapes
 
