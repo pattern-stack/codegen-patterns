@@ -56,6 +56,13 @@ describe('renderSqlPredicate', () => {
     expect(r('now() IS NOT TRUE')).toBe('now() IS NOT TRUE');
   });
 
+  it('matches whole words only: a column name inside a longer word is untouched', () => {
+    for (const w of ['status_code', 'old_status', 'name2', 'statuses']) {
+      expect(r(`${w} = 1`)).toBe(`${w} = 1`);
+    }
+    expect(r('status_code = name2')).toBe('status_code = name2');
+  });
+
   it('keeps a number with an exponent whole', () => {
     expect(r('status > 1e5')).toBe('${t.status} > 1e5');
   });

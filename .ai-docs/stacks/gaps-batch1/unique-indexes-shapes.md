@@ -374,8 +374,11 @@ template literal gives back the input. **Red on base:** the module does not exis
     says what that means: one NULL per tenant.
 18. The non-tenant case (`:161`) is unchanged.
 
-**Red on base:** 1-3, 5-9, 11-17 assert emissions or throws that base does not produce. 4, 10 and 18 are guards
-that pass on base and must stay green.
+**Red on base:** 2-3, 5-9, 11-12, 14-17 assert emissions or throws that base does not produce. 1, 4, 10 and 18 are
+guards that pass on base (the render harness bypasses Zod, and base already emits a single field and ignores the
+unknown `nulls_not_distinct` key); they must stay green. 13 (the tenant opt-out) goes red under the "ignore
+`nulls_not_distinct: false`" mutation, not on base. The single-field rule is a schema rule, covered by the schema test,
+which is red on base.
 
 ### 8.2 `just test-smoke` (vendored) and `just test-smoke-subsystems` (vendored + package)
 
@@ -467,12 +470,12 @@ runs.
   over the non-tenant columns). It would close the partial-entry hole without NND, but two indexes break
   single-target `ON CONFLICT` inference, which #780 will need.
 - **Finding, not fixed here: generated CRUD does not map 23505.** A duplicate surfaces as an unhandled error (a 500)
-  rather than a 409. The #784 comment noted it, and no open issue tracks it. Recommend filing it under #783.
+  rather than a 409. The #784 comment noted it; tracked as #828.
 - **Finding, not fixed here, likely and still to verify: the `external_id_tracking` constraint under
   `tenant_scoped`.** `unique(tenant_id, provider, external_id).nullsNotDistinct()` covers two nullable columns. A
   row created locally (through POST, where `external_id` and `provider` are behavior-managed and excluded from the
   create DTO) has both NULL. NND makes a second such row in the same tenant a duplicate. This is D1's consequence,
-  already shipped by TEN-1. Recommend an issue. A fix would likely make that constraint partial
+  already shipped by TEN-1. Tracked as #829. A fix would likely make that constraint partial
   (`WHERE external_id IS NOT NULL`), which turns the `integrationUpsert` conflict target into a `targetWhere`.
 
 ## 10. Invariants (charter §4)
@@ -546,7 +549,18 @@ Built as specified; D1-D7 are closed as written. Post-implementation facts:
 - **Snapshots:** `just test-baseline` is byte-identical, so no baseline snapshot needed regenerating (no baseline
   entity declares `unique_indexes:` or `tenant_scoped`).
 - **Gates run locally:** `just typecheck`, `just test-unit` (4107 pass), `just test-baseline`, `just test-smoke`.
-  `test-integration` (the §8.3 cases, T3) is left to the CI `test-integration` job (Docker).
+  CI `test-all` and `test-integration` are green at `65b8c0c6`.
+- **Red-on-base and mutation record (Gate 2.5 review of #834, PR comment 6618222869).** With `entity-locals.js`,
+  `entity.ejs.t` and the schema reverted to base, 22 of the new or changed unit tests fail. Twelve single-line
+  generator mutations were run; eleven turn tests red (the twelfth, dropping `''` handling, changes no output).
+  Integration, run locally with Docker through `run-integration.ts`: head 176 pass; ignoring
+  `nulls_not_distinct: false` turns O1, O3 and K1 red; dropping `.where(...)` turns P2, P4 and K1 red; turning the
+  tenant default off turns D1, T3 and K1 red. drizzle-kit rc.4 `generate` and `push` both emit `DROP INDEX "x"` then
+  `ADD CONSTRAINT "x" UNIQUE NULLS NOT DISTINCT(...)`; a second push reports no changes.
+- **Review follow-ups (this commit):** stale #511 tenant wording corrected in TEN-1, both consumer docs and the
+  asset_tag fixture; whole-word scanner tests; every extra-config entry is asserted to carry `name` and `builder`;
+  the known-limit docs say "type or keyword", that a quote is escaped as `''`, and that words are ASCII-only (not
+  fixed in code: both fail loudly at push).
 
 ## Diff Review — Adherence
 

@@ -55,8 +55,9 @@ A `belongs_to`'s FK column follows the same rule from its `fields:` entry; a
 `nullable:` on the relationship itself outranks it.
 
 Uniqueness — a field's `unique: true` emits `uniqueIndex('<table>_<col>_uniq')`
-(#511). Under `tenant_scoped: true` it is per tenant: `(tenant_id, <col>)`, named
-`<table>_tenant_id_<col>_uniq`, and no bare global unique is emitted. A
+(#511). Under `tenant_scoped: true` it is per tenant: the constraint
+`unique('<table>_tenant_id_<col>_uniq').on(tenant_id, <col>).nullsNotDistinct()` (#784), and no bare global unique is
+emitted. A
 `belongs_to` FK column declared in `fields:` with `unique: true` is a one-to-one.
 On a non-tenant entity, `unique: true` + `index: true` on one field emits only the
 unique index (it already leads with the column); under `tenant_scoped` both are
@@ -66,7 +67,7 @@ NULLs. On a `tenant_scoped` entity the unique is NULLS NOT DISTINCT (#784, see
 `unique_indexes:` below), so a nullable `unique: true` column admits one NULL per
 tenant; for "unique when present", declare it as
 `unique_indexes: [{ fields: [<col>], nulls_not_distinct: false }]` instead of the flag.
-The index is not partial: on a `soft_delete` entity a soft-deleted row still occupies it;
+The unique is not partial: on a `soft_delete` entity a soft-deleted row still occupies it;
 for "soft-deleted rows do not count" use a single-field `unique_indexes:` entry with
 `where: "deleted_at IS NULL"` (#784) instead of the flag. A
 `queries:` entry's `unique: true` is a finder hint (one row or null) and emits no
@@ -142,8 +143,11 @@ where `tenant_id` is prefixed onto the columns):
 - `where:` is raw SQL over snake_case column names of this table. Those names are rewritten to Drizzle column
   references, so drizzle-kit quotes them. It is one expression: `;`, `--`, `/*`, `$`, backtick, backslash and
   unterminated quotes are errors outside quoted text. Words after `.` or `::`, before `(`, `.` or `'`, and
-  anything in quotes are never rewritten. A word spelled like a column but used as a type is rewritten, so write
-  `x::date`, not `CAST(x AS date)`, on a table with a `date` column. Other words are not checked, so a stale column
+  anything in quotes are never rewritten. A word spelled like a column but used as a type or keyword is rewritten, so write
+  `x::date`, not `CAST(x AS date)`, on a table with a `date` column. On a table with a `time` column,
+  `AT TIME ZONE` renders as `AT ${t.time} ZONE`; likewise `year` in `EXTRACT(YEAR FROM ...)`, and `precision` after
+  `::double`. Escape a quote inside a string as `''`, not `E'\''`. Words are ASCII-only (`[A-Za-z_][A-Za-z0-9_]*`);
+  a non-ASCII letter next to a column name splits the word. Other words are not checked, so a stale column
   name fails at `drizzle-kit push`, not at generation.
 - `where` and `nulls_not_distinct: true` are mutually exclusive: drizzle-orm 1.0.0-rc.4 has no NULLS option on a
   partial index. So a partial entry on a tenant-scoped entity does not deduplicate rows whose `tenant_id` is NULL.

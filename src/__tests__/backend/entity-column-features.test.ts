@@ -677,7 +677,7 @@ describe('unique_indexes shapes (#784)', () => {
       entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
       fields: {
         account_id: { type: 'uuid', required: true },
-        owner_ref: { type: 'uuid' },
+        owner_ref: { type: 'uuid', foreign_key: 'accounts.id' },
         name: { type: 'string', required: true },
       },
       relationships: {

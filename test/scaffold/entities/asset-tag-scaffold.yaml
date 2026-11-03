@@ -1,7 +1,7 @@
 # AssetTag — scaffold integration fixture (#511).
 #
-# Tenant-scoped. `code` is `unique: true` + `index: true`: the unique index is
-# per tenant `(tenant_id, code)`, and the plain `asset_tags_code_idx` is kept
+# Tenant-scoped. `code` is `unique: true` + `index: true`: the unique is a per-tenant
+# NULLS NOT DISTINCT constraint on `(tenant_id, code)` (#784), and the plain `asset_tags_code_idx` is kept
 # because a tenant-prefixed unique cannot serve a lookup on `code` alone.
 entity:
   name: asset_tag

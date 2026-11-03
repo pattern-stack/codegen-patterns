@@ -1150,9 +1150,9 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
     imports.add('jsonb');
   }
 
-  // Caller-supplied extras: `index` (field-level index: true) and
-  // `uniqueIndex` (field unique: true, composite unique_indexes) — see processFieldFeatures /
-  // processUniqueIndexes.
+  // Caller-supplied extras: the pg-core builders the extra-config callback
+  // actually calls (`index`, `uniqueIndex`, `unique`), derived by use (#784) —
+  // see processFieldFeatures / processUniqueIndexes.
   for (const extra of extraImports) {
     imports.add(extra);
   }
@@ -2039,11 +2039,12 @@ export function buildBackendLocals(definition, baseLocals) {
       source: `belongs_to '${rel.field}' index`,
     }));
 
-  // pgTable extra-config callback entries, in emission order: belongs_to FK
-  // indexes, single-column field indexes, field `unique: true` indexes (in
-  // `fields:` order, #511), `unique_indexes:` entries, then the
-  // external_id_tracking unique index (the ON CONFLICT target integrationUpsert
-  // relies on).
+  // pgTable extra-config callback entries, in emission order: the tenant index
+  // (tenant_scoped, unshifted below), belongs_to FK indexes, single-column field
+  // indexes, field `unique: true` uniques (in `fields:` order, #511), then
+  // `unique_indexes:` entries (each a uniqueIndex or, under NULLS NOT DISTINCT,
+  // a `unique(...)` constraint, #784), then the external_id_tracking unique
+  // (the ON CONFLICT target integrationUpsert relies on).
   const tableConstraints = [
     ...belongsToIndexExpressions,
     ...fieldFeatures.indexExpressions,
@@ -2092,6 +2093,13 @@ export function buildBackendLocals(definition, baseLocals) {
     );
   }
 
+  for (const c of tableConstraints) {
+    if (!c.name || !c.builder) {
+      throw new Error(
+        `[codegen] '${entityName}': internal error — extra-config entry '${c.expr}' lacks a name or builder.`,
+      );
+    }
+  }
   assertDistinctConstraints(tableConstraints, entityName);
 
   // Enum field declarations — surface a separate collection so the entity
@@ -2512,8 +2520,9 @@ export function buildBackendLocals(definition, baseLocals) {
     enumFields,
 
     // Field-level foreign_key imports (#354) and pgTable extra-config
-    // entries: single-column indexes (#355) + composite unique indexes (#356)
-    // + the external_id_tracking unique index.
+    // entries: single-column indexes (#355) + unique constraints (#356, #511,
+    // #784: unique_indexes entries and field unique: true) + the
+    // external_id_tracking unique.
     fieldFkImports,
     belongsToTableImports,
     tableConstraints,

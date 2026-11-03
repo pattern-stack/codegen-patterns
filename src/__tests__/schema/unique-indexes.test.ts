@@ -3,7 +3,7 @@
  *
  * Composite (multi-column) unique constraints — e.g. UNIQUE (conversation_id,
  * sequence) — were silently rejected by the `.strict()` EntityDefinitionSchema
- * before this key existed (#356). Field-level
+ * before this key existed (#356). Single-column uniqueness is also the field-level
  * `unique: true` flag. #784: entries take 1+ fields, `where:` (partial) and `nulls_not_distinct:`.
  */
 
