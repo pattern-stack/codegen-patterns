@@ -44,7 +44,9 @@ machine-readable output and `--cwd <path>` to target another project root.
   `codegen.config.yaml` (ADR-037):
   - `package` (the default) — generated code imports the runtime straight from
     `@pattern-stack/codegen/subsystems` and `@pattern-stack/codegen/runtime/*`.
-    Nothing is vendored.
+    Nothing is vendored. Project-specific generated code, such as the typed
+    event bus (`TypedEventBus`), comes from `<paths.generated>` (e.g.
+    `src/generated/events/bus`), never from the package.
   - `vendored` — the package copies its runtime (base classes, types, the
     `DRIZZLE` token, the Zod pipe, the OpenAPI registry) into `src/shared/**`
     and installed subsystems into `<subsystems-root>/<name>/`, imported via

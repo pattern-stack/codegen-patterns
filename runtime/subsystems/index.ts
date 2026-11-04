@@ -22,6 +22,10 @@ export { EventsModule, DrizzleEventBus, MemoryEventBus } from './events';
 // token needs forwarding. The CONSUMER binds their generated `TypedEventBus` to
 // the token via `EventsModule.forRoot()`. Vendored mode reaches it via
 // `@shared/subsystems/events`.
+// The generated create / update / delete use cases of an `emits:` entity are the
+// second consumer of this token-only export (#814): they take the token here and
+// the CLASS from the project's own `<paths.generated>/events/bus`. Do not
+// re-export the `TypedEventBus` class from this barrel.
 export { TYPED_EVENT_BUS } from './events';
 
 // Jobs — orchestration schema only (JOB-1). Protocols / modules land in JOB-2 / JOB-5.
