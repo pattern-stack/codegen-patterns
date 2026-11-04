@@ -26,6 +26,7 @@ const UiImportanceSchema = z.enum(["primary", "secondary", "tertiary"]);
 const FieldDefinitionSchema = z.object({
   type: FieldTypeSchema.describe("Field data type"),
   required: z.boolean().optional().describe("Field must be provided on CREATE"),
+  timezone: z.boolean().optional().describe("type: datetime only. Default: timestamp with time zone. false: wall-clock timestamp without time zone (read through the Date UTC fields)"),
   nullable: z.boolean().optional().describe("Database column allows NULL. Undeclared: NULL unless required: true. false (without required: true) needs a default:"),
   max_length: z.number().int().positive().optional().describe("Max string length"),
   min_length: z.number().int().nonnegative().optional().describe("Min string length"),
@@ -83,12 +84,14 @@ const EntityDefinitionSchema = z.object({
   unique_indexes: z
     .array(
       z.object({
-        fields: z.array(z.string()).describe("Columns the composite unique constraint spans (2+)"),
-        name: z.string().optional().describe("Index name (default <table>_<col1>_<col2>_uniq)"),
+        fields: z.array(z.string()).describe("Columns the unique constraint spans (1+)"),
+        name: z.string().optional().describe("Constraint name, lowercase snake_case, max 63 (default <table>_<col1>_<col2>_uniq); required with `where`"),
+        where: z.string().optional().describe("Raw SQL predicate making this a partial unique index; needs `name`, exclusive with nulls_not_distinct: true"),
+        nulls_not_distinct: z.boolean().optional().describe("true: UNIQUE NULLS NOT DISTINCT constraint. Default on tenant_scoped entities; false opts out. PostgreSQL 15+"),
       }),
     )
     .optional()
-    .describe("Composite (multi-column) unique indexes"),
+    .describe("Unique constraints: 1+ fields, optional where (partial) and nulls_not_distinct"),
 });
 
 // Generate using Zod v4's native JSON schema support

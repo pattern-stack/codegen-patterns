@@ -1,0 +1,37 @@
+# Revision -- scaffold integration fixture (#784).
+#
+# Non-tenant. Two PARTIAL unique indexes over the same document: one published
+# revision per (document_id, version), and one draft per document. Proves
+# `where:` reaches the database as a partial index and that the predicate
+# actually narrows the constraint.
+entity:
+  name: revision
+  plural: revisions
+  table: revisions
+  pattern: Base
+
+fields:
+  document_id:
+    type: uuid
+    required: true
+
+  # NULL while the revision is a draft.
+  version:
+    type: integer
+    required: false
+
+  status:
+    type: string
+    required: true
+    max_length: 32
+
+behaviors:
+  - timestamps
+
+unique_indexes:
+  - fields: [document_id, version]
+    where: "status = 'published'"
+    name: revisions_published_version_uniq
+  - fields: [document_id]
+    where: "status = 'draft'"
+    name: revisions_one_draft_uniq

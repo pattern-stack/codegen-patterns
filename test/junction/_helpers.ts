@@ -179,6 +179,50 @@ const LEDGER_YAML = [
   '',
 ].join('\n');
 
+/**
+ * #814 custom-layout smoke fixture: an `emits:` entity in a `context:` folder,
+ * so the write use cases import `TypedEventBus` from the project's generated
+ * bus by a path that depends on `paths.modules_dir`, `paths.generated` and the
+ * `context:` folder at once.
+ */
+export const CUSTOM_LAYOUT_EMITS_ENTITY = {
+  entity: 'journal_entry',
+  plural: 'journal_entries',
+  context: 'accounting',
+} as const;
+
+const JOURNAL_ENTRY_YAML = [
+  '# #814 custom-layout smoke fixture: an `emits:` entity in a `context:` folder.',
+  'entity:',
+  '  name: journal_entry',
+  '  plural: journal_entries',
+  '  table: journal_entries',
+  '  context: accounting',
+  '',
+  'fields:',
+  '  title:',
+  '    type: string',
+  '    required: true',
+  '',
+  'behaviors:',
+  '  - timestamps',
+  '',
+  'emits:',
+  '  - journal_entry_created',
+  '  - journal_entry_updated',
+  '  - journal_entry_deleted',
+  '',
+  'events:',
+  ...['created', 'updated', 'deleted'].flatMap((op) => [
+    `  - name: journal_entry_${op}`,
+    '    queue: domain-events',
+    '    body:',
+    '      journal_entry_id: uuid',
+    '      title: string',
+  ]),
+  '',
+].join('\n');
+
 export interface ScenarioMeta {
   junctionName: string;
   leftEnt: string;
@@ -333,6 +377,8 @@ export async function bootstrapJunctionProject(opts: BootstrapOptions): Promise<
   if (layout === 'custom') {
     fs.writeFileSync(path.join(entitiesDir, `${CUSTOM_LAYOUT_APP_PATTERN.entity}.yaml`), LEDGER_YAML);
     log(`wrote entity fixture: ${CUSTOM_LAYOUT_APP_PATTERN.entity}.yaml (patterns: [Base, Audited])`);
+    fs.writeFileSync(path.join(entitiesDir, `${CUSTOM_LAYOUT_EMITS_ENTITY.entity}.yaml`), JOURNAL_ENTRY_YAML);
+    log(`wrote entity fixture: ${CUSTOM_LAYOUT_EMITS_ENTITY.entity}.yaml (emits:, context: ${CUSTOM_LAYOUT_EMITS_ENTITY.context})`);
   }
 
   // 5–6. `entity new --all`, and the junction fixtures copied after it — or,

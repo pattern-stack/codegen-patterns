@@ -1,0 +1,30 @@
+# Appointment -- scaffold integration fixture (#796).
+#
+# Time columns against a real database. `starts_at` and the behavior columns are
+# `timestamp with time zone`; `opens_at` opts out with `timezone: false` and is a
+# wall-clock `timestamp without time zone`. The suite
+# (`tests/timestamptz.test.ts`) runs the process at America/New_York and the
+# database session at Asia/Kolkata, so a naive column cannot pass by accident.
+entity:
+  name: appointment
+  plural: appointments
+  table: appointments
+  pattern: Base
+
+fields:
+  title:
+    type: string
+    required: true
+    max_length: 120
+
+  starts_at:
+    type: datetime
+    required: true
+
+  opens_at:
+    type: datetime
+    timezone: false
+
+behaviors:
+  - timestamps
+  - soft_delete
