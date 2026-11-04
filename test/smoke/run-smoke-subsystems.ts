@@ -228,8 +228,8 @@ async function vendoredLeg(): Promise<number> {
 		//     `<subsystemsRoot>/bridge/generated/registry.ts` when the bridge
 		//     dir exists, and bridge.module.ts statically imports from it. The
 		//     events-side `generated/bus.ts` is regenerated the same way.
-		//     One additional pass is cheap and matches the
-		//     two-pass pattern already used by the relationship scenario.
+		//     One additional run is cheap. (It exists for the bridge install,
+		//     not for has_many wiring, which one run settles, #815.)
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
 
 		// 5a-post. Re-install events with --force (NO --force-config — we

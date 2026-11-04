@@ -19,6 +19,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import {
+	entityNewArgs,
 	hygenChildEnv,
 	invokeHygen,
 	invokeEntityNew,
@@ -74,13 +75,21 @@ describe('invokeHygen command composition', () => {
 		expect(command).toBe('bunx --bun hygen subsystem install');
 	});
 
-	test('appends --yaml arg via invokeEntityNew', () => {
+	test('appends --yaml and --renderSet via invokeEntityNew (#815)', () => {
 		const command = captureCommand(() =>
-			invokeEntityNew('/tmp/does-not-exist.yaml'),
+			invokeEntityNew('/tmp/does-not-exist.yaml', ['a', 'b']),
 		);
 		expect(command).toContain('bunx --bun hygen entity new');
-		expect(command).toContain('--yaml');
-		expect(command).toContain('/tmp/does-not-exist.yaml');
+		expect(command.endsWith('--yaml /tmp/does-not-exist.yaml --renderSet a,b')).toBe(true);
+	});
+
+	test('entityNewArgs is the one definition of the wire format (#815)', () => {
+		expect(entityNewArgs('/x/a.yaml', ['account', 'contact'])).toEqual([
+			'--yaml',
+			'/x/a.yaml',
+			'--renderSet',
+			'account,contact',
+		]);
 	});
 
 	test('appends --yaml arg via invokeRelationshipNew', () => {

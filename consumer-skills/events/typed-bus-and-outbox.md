@@ -39,6 +39,8 @@ export class CreateContactUseCase {
 }
 ```
 
+> **Package mode (`runtime: package`):** the `@pattern-stack/codegen/subsystems` barrel exports the `TYPED_EVENT_BUS` token only, not the `TypedEventBus` class (the package's own class is typed to the package's events, not yours). Import the token from the barrel and the class from your generated bus, `<paths.generated>/events/bus`. Generated `emits:` use cases already do this (#814).
+
 `TypedEventBus.publish(type, aggregateId, payload, opts?)`:
 - Validates the payload against the generated Zod schema at the boundary (skippable with `CODEGEN_EVENT_VALIDATE=off`).
 - Stamps `id`, `occurredAt`, and `metadata.pool` / `metadata.direction` / `metadata.version` from the registry.

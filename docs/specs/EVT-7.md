@@ -31,6 +31,13 @@ are drift captured during implementation — they reflect what actually shipped.
    `@shared/constants/tokens` alongside a `DrizzleClient` type from
    `@shared/types/drizzle` — the CLP precedent. `@shared/subsystems/events`
    re-exports `TYPED_EVENT_BUS`, `TypedEventBus`, and `DrizzleTransaction`.
+   *Revision 2026-10-31 (#814):* that holds in vendored mode only. In package
+   mode the barrel `@pattern-stack/codegen/subsystems` exports the token and
+   not the class (the package's own `TypedEventBus` is typed to the package's
+   event union), so the use cases import `TYPED_EVENT_BUS` from the barrel and
+   `TypedEventBus` from the project's generated bus,
+   `<paths.generated>/events/bus`, by a path relative to the use case
+   (`typedEventBusImport` in `entity-locals.js`). Vendored output is unchanged.
 5. **Repository `tx?` is per-op, not blanket.** The clean-arch repository
    interface + inline repo templates append `tx?: DrizzleTransaction` only to
    the specific create/update/delete signatures whose corresponding

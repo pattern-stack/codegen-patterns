@@ -47,17 +47,20 @@ export const opportunityContacts = pgTable(
     isPrimary: boolean('is_primary').notNull().default(false),
 
     // Temporal window (temporal: true, default)
-    startedAt: timestamp('started_at'),
-    endedAt: timestamp('ended_at'),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
 
     // Provenance (sourced: true, default)
     sourcedFrom: text('sourced_from'),
     confidence: numeric('confidence', { precision: 5, scale: 4 }),
-    matchedAt: timestamp('matched_at'),
+    matchedAt: timestamp('matched_at', { withTimezone: true, mode: 'date' }),
+
+    // Custom fields
+    lastContactedAt: timestamp('last_contacted_at', { withTimezone: true, mode: 'date' }),
 
     // Timestamps
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (table) => [
     // Composite primary key on the two FK columns PLUS role (Q4 resolution: no
@@ -211,8 +214,8 @@ import type { Contact } from '../contacts/contact.entity';
  * attaching. Subset of \`OpportunityContact\` minus the two FK columns
  * (those come from the method args).
  */
-export type OpportunityContactLinkInput = Partial<
-  Pick<OpportunityContact,
+export type OpportunityContactLinkInput = globalThis.Partial<
+  globalThis.Pick<OpportunityContact,
     'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt' | 'role'
   >
 >;
@@ -288,7 +291,7 @@ export class OpportunityContactService extends WithAnalytics(
       opportunityId: opportunityId,
       contactId: contactId,
       ...(link ?? {}),
-    } as unknown as Partial<OpportunityContact>);
+    } as unknown as globalThis.Partial<OpportunityContact>);
   }
 
   /**
@@ -357,7 +360,7 @@ export class OpportunityContactService extends WithAnalytics(
     if (match) {
       await this.update(
         (match as any).id ?? \`\${opportunityId}:\${contactId}\`,
-        { isPrimary: true } as unknown as Partial<OpportunityContact>,
+        { isPrimary: true } as unknown as globalThis.Partial<OpportunityContact>,
       );
     }
   }

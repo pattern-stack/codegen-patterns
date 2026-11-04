@@ -27,6 +27,14 @@ import {
   hasColumnDefault,
   notNullWithoutDefault,
 } from "../../../src/schema/field-nullability.js";
+import {
+  TIMEZONE_ON_NON_DATETIME_MESSAGE,
+  fieldWithTimezone,
+  timestampColumn,
+  TIMEZONE_NOT_BOOLEAN_MESSAGE,
+  timezoneNotBoolean,
+  timezoneOnNonDatetime,
+} from "../../../src/schema/field-timestamp.js";
 import { renderColumnDefault } from "../../entity/new/backend/entity-locals.js";
 
 // ============================================================================
@@ -169,7 +177,10 @@ const TS_TYPE_MAP = {
 // ============================================================================
 
 function buildDrizzleChain(fieldName, field, drizzleType) {
-  let chain = `${drizzleType}('${fieldName}')`;
+  // `datetime` is timestamptz unless `timezone: false` (#796).
+  let chain = field.type === "datetime"
+    ? timestampColumn(fieldName, fieldWithTimezone(field))
+    : `${drizzleType}('${fieldName}')`;
   if (isArrayType(field.type)) chain += ".array()";
   // The entity pipeline's rule and default rendering (#736): a NOT NULL column
   // with a DB default must carry that default, or every insert omitting it fails.
@@ -191,6 +202,12 @@ function processFields(fields) {
       throw new Error(`[codegen] relationship field '${fieldName}': ${NOT_NULL_WITHOUT_DEFAULT_MESSAGE}`);
     }
     const type = field.type || "string";
+    if (timezoneNotBoolean(field)) {
+      throw new Error(`[codegen] relationship field '${fieldName}': ${TIMEZONE_NOT_BOOLEAN_MESSAGE}`);
+    }
+    if (timezoneOnNonDatetime({ ...field, type })) {
+      throw new Error(`[codegen] relationship field '${fieldName}': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`);
+    }
     const nullable = fieldColumnNullable(field);
     const required = field.required ?? false;
     const hasDefault = hasColumnDefault(field);
@@ -310,7 +327,7 @@ function processQueries(queriesBlock, allFieldsMap, entityNamePascal) {
       returnType =
         selectFields.length === 1
           ? `${allFieldsMap[selectFields[0]] || allFieldsMap[camelFields[0]] || "string"}[]`
-          : `Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(" | ")}>[]`;
+          : `globalThis.Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(" | ")}>[]`;
     } else {
       returnType = `${entityNamePascal}[]`;
     }
@@ -751,6 +768,7 @@ export default {
 
       // Drizzle
       drizzleImports,
+      timestampColumn,
 
       // Output paths
       outputPaths,

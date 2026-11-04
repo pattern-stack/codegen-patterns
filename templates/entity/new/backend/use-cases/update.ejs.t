@@ -9,7 +9,12 @@ import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 <% if (hasEmits && updateEventType) { -%>
+<% if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+<% } else { -%>
+import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
+import { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } -%>
 import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
 import { FieldValueService } from '<%= eavFieldValueUseCaseImportDir %>/<%= eavFieldValueStem %>.service';
@@ -33,7 +38,7 @@ import type { <%= classNames.entity %> } from '../<%= entityFileStem %>.entity';
 @Injectable()
 export class <%= classNames.updateUseCase %> {
   constructor(
-    private readonly <%= entityNamePlural %>: <%= classNames.service %>,
+    private readonly service: <%= classNames.service %>,
     private readonly fields: FieldValueService,
     @Inject(DRIZZLE) private readonly db: DrizzleClient,
 <% if (hasEmits && updateEventType) { -%>
@@ -43,14 +48,14 @@ export class <%= classNames.updateUseCase %> {
 
   async execute(
     id: string,
-    dto: <%= classNames.updateDto %> & { fields?: Record<string, unknown> },
+    dto: <%= classNames.updateDto %> & { fields?: globalThis.Record<string, unknown> },
   ): Promise<<%= classNames.entity %> | null> {
 <% if (hasEmits && updateEventType) { -%>
     const requester = tryGetRequester();
 <% } -%>
     return this.db.transaction(async (tx) => {
       const { fields, ...core } = dto;
-      const entity = await this.<%= entityNamePlural %>.update(id, core as <%= classNames.updateDto %>, tx);
+      const entity = await this.service.update(id, core as <%= classNames.updateDto %>, tx);
       if (!entity) return null;
       if (fields && Object.keys(fields).length > 0) {
         await this.fields.upsertFieldsTransactional(
@@ -87,7 +92,12 @@ export class <%= classNames.updateUseCase %> {
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+<% if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+<% } else { -%>
+import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
+import { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } -%>
 import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.updateDto %> } from '../dto/update-<%= entityFileStem %>.dto';

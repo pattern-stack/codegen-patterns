@@ -247,6 +247,11 @@ export async function preflightEntityTargets(
 /**
  * Render each validated target through hygen (`entity new`). Stops at the first
  * failure unless `continueOnError`.
+ *
+ * Every invocation receives the names of the whole batch as `--renderSet`
+ * (#815), so a `has_many` onto an entity rendered later in the batch is wired
+ * on a clean tree: composition does not depend on render order. `entity new`
+ * and `junction new` both inherit this.
  */
 export function renderEntityTargets(
 	ctx: Context,
@@ -255,11 +260,12 @@ export function renderEntityTargets(
 ): { succeeded: string[]; failed: RejectionEntry[] } {
 	const succeeded: string[] = [];
 	const failed: RejectionEntry[] = [];
+	const renderSet = validated.map((v) => v.name);
 	for (const v of validated) {
 		if (!isJsonMode()) {
 			printInfo(`generating ${v.name}`);
 		}
-		const res = invokeEntityNew(v.file, ctx.cwd, ctx.configPath);
+		const res = invokeEntityNew(v.file, renderSet, ctx.cwd, ctx.configPath);
 		if (res.ok) {
 			succeeded.push(v.name);
 			if (!isJsonMode()) printSuccess(`${v.name}`);

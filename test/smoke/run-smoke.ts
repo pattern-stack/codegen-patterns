@@ -14,6 +14,9 @@
  * most dogfood incidents traced back to:
  *   - account.yaml has an enum field (PR #28 template escape).
  *   - contact.yaml has a belongs_to + query on the FK column (dogfood #9).
+ *   - audit_entry.yaml (`api: false`) and sync_cursor.yaml
+ *     (`api: { enabled: false }`) have no HTTP surface (#811): their module
+ *     barrels must not export a controller that was never emitted.
  *
  * Fails loudly on the first error. Designed to complete in < 2 minutes on a
  * dev laptop; bun add cost dominates and is unavoidable unless we freeze a
@@ -25,6 +28,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from './_consumer-errors';
+import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -135,6 +139,31 @@ function run(cmd: string, cwd: string, env: NodeJS.ProcessEnv = {}): void {
 		stdio: 'inherit',
 		env: { ...process.env, ...env },
 	});
+}
+
+/** Every file under `dir`, relative path -> contents. */
+function snapshotTree(dir: string): Map<string, string> {
+	const out = new Map<string, string>();
+	const walk = (d: string) => {
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const abs = path.join(d, e.name);
+			if (e.isDirectory()) walk(abs);
+			else out.set(path.relative(dir, abs), fs.readFileSync(abs, 'utf8'));
+		}
+	};
+	walk(dir);
+	return out;
+}
+
+/** Every added, removed or changed path between two snapshots. */
+function diffSnapshots(a: Map<string, string>, b: Map<string, string>): string[] {
+	const diff: string[] = [];
+	for (const [k, v] of a) {
+		if (!b.has(k)) diff.push(`removed ${k}`);
+		else if (b.get(k) !== v) diff.push(`changed ${k}`);
+	}
+	for (const k of b.keys()) if (!a.has(k)) diff.push(`added ${k}`);
+	return diff.sort();
 }
 
 function runSilent(cmd: string, cwd: string): { code: number | null; out: string; err: string } {
@@ -323,6 +352,141 @@ function assertSemanticEmission(tmpDir: string): void {
 		model,
 		/export function buildAggregateModel\(\): AggregateModel/,
 		'buildAggregateModel export',
+	);
+}
+
+/**
+ * #811 — an `api: false` entity emits no controller, so its module barrel must
+ * not export one. `tsc` proves the barrel compiles; this proves it compiles for
+ * the right reason (no controller file, `controllers: []`), and a positive
+ * control proves the guard did not drop the export for every entity. Every
+ * read throws ENOENT on a wrong path, so it cannot pass silently.
+ */
+function assertApiFalseEmission(tmpDir: string): void {
+	const mod = (rel: string): string => path.join(tmpDir, 'src', 'modules', rel);
+	const reads = (rel: string): string => fs.readFileSync(mod(rel), 'utf8');
+
+	for (const [dir, form] of [
+		['audit-entries', 'api: false'],
+		['sync-cursors', 'api: { enabled: false }'],
+	] as const) {
+		assertNotContains(reads(`${dir}/index.ts`), /\.controller'/, `${dir}/index.ts (${form}) controller export`);
+		assertContains(reads(`${dir}/${dir}.module.ts`), /controllers: \[\]/, `${dir}.module.ts (${form}) controllers`);
+	}
+	for (const rel of [
+		'audit-entries/audit-entry.controller.ts',
+		'audit-entries/audit-entry-search.controller.ts',
+		'sync-cursors/sync-cursor.controller.ts',
+	]) {
+		if (fs.existsSync(mod(rel))) {
+			throw new Error(`api:false entity must not emit ${rel} (ADR-043 §6, #811)`);
+		}
+	}
+	// The search-controller absence above only means something if the `search`
+	// query resolved: the use case is emitted for audit_entry, and an entity with
+	// an API still gets its search controller.
+	const auditUseCases = fs.readdirSync(mod('audit-entries/use-cases'));
+	if (!auditUseCases.some((f) => /search/.test(f))) {
+		throw new Error('audit_entry search use case missing: the search-controller absence check would be vacuous (#811)');
+	}
+	if (!fs.existsSync(mod('accounts/account-search.controller.ts'))) {
+		throw new Error('accounts/account-search.controller.ts missing (positive control)');
+	}
+	// Positive control: an entity with an API still exports its controller.
+	assertContains(
+		reads('accounts/index.ts'),
+		/export \{ AccountController \} from '\.\/account\.controller';/,
+		'accounts/index.ts controller export (positive control)',
+	);
+	if (!fs.existsSync(mod('accounts/account.controller.ts'))) {
+		throw new Error('accounts/account.controller.ts missing (positive control)');
+	}
+}
+
+/**
+ * #511 — a field's `unique: true` emits a unique index (per tenant under
+ * `tenant_scoped`). `tsc` passes vacuously when nothing is emitted, so this
+ * content assertion is what makes the smoke able to fail on its subject.
+ */
+function assertFieldUniqueEmission(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const canonical = reads('modules/canonical-fields/canonical-field.entity.ts');
+	assertContains(
+		canonical,
+		/uniqueIndex\('canonical_fields_name_uniq'\)\.on\(t\.name\)/,
+		'canonical_field.name unique: true -> uniqueIndex (#511)',
+	);
+
+	const fieldConfig = reads('modules/field-configs/field-config.entity.ts');
+	assertContains(
+		fieldConfig,
+		/uniqueIndex\('field_configs_field_definition_id_uniq'\)\.on\(t\.fieldDefinitionId\)/,
+		'field_config.field_definition_id unique FK -> uniqueIndex (#511)',
+	);
+	assertNotContains(
+		fieldConfig,
+		/index\('field_configs_field_definition_id_idx'\)/,
+		'field_config unique + index on a non-tenant FK drops the plain index (#511)',
+	);
+
+	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
+	assertContains(
+		tenantNote,
+		/unique\('tenant_notes_tenant_id_slug_uniq'\)\.on\(t\.tenantId, t\.slug\)\.nullsNotDistinct\(\)/,
+		'tenant_note.slug unique -> per-tenant NULLS NOT DISTINCT constraint (#511, #784)',
+	);
+	assertContains(
+		tenantNote,
+		/index\('tenant_notes_slug_idx'\)/,
+		'tenant_note keeps the plain slug index under tenant_scoped (#511)',
+	);
+	assertNotContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_slug_uniq'\)/,
+		'tenant_note must not emit a bare global unique (#511)',
+	);
+}
+
+function assertUniqueIndexShapes(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const account = reads('modules/accounts/account.entity.ts');
+	assertContains(
+		account,
+		/uniqueIndex\('accounts_live_name_uniq'\)\.on\(t\.name\)\.where\(sql`\$\{t\.status\} <> 'archived'`\)/,
+		'account partial unique -> uniqueIndex().where(sql) (#784)',
+	);
+	assertContains(
+		account,
+		/import { sql, type InferSelectModel } from 'drizzle-orm';/,
+		'account imports sql beside InferSelectModel (#784)',
+	);
+
+	const contact = reads('modules/contacts/contact.entity.ts');
+	assertContains(
+		contact,
+		/unique\('contacts_account_id_email_uniq'\)\.on\(t\.accountId, t\.email\)\.nullsNotDistinct\(\)/,
+		'contact nulls_not_distinct -> unique().nullsNotDistinct() (#784)',
+	);
+
+	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
+	assertContains(
+		tenantNote,
+		/unique\('tenant_notes_tenant_id_title_slug_uniq'\)\.on\(t\.tenantId, t\.title, t\.slug\)\.nullsNotDistinct\(\)/,
+		'tenant_note composite unique defaults to NULLS NOT DISTINCT (#784)',
+	);
+	assertContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_tenant_id_owner_workspace_id_uniq'\)\.on\(t\.tenantId, t\.ownerWorkspaceId\)/,
+		'tenant_note nulls_not_distinct: false opt-out -> plain uniqueIndex (#784)',
+	);
+	assertContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_live_title_uniq'\)\.on\(t\.tenantId, t\.title\)\.where\(sql`\$\{t\.deletedAt\} IS NULL`\)/,
+		'tenant_note tenant partial -> uniqueIndex().where(sql) (#784)',
 	);
 }
 
@@ -665,17 +829,28 @@ async function main(): Promise<number> {
 
 		// 5. Run `codegen entity new --all`.
 		//
-		// For the relationship scenario, run TWICE (two-pass) so cross-entity
-		// `has_many` targets are on disk for the second pass — this seeds
-		// `existingHasMany`, which drives the service-layer composition
-		// methods for all targets, not just those generated first. (It no
-		// longer drives any entity-file emission — DRZ-1 deleted the many()
-		// const.)
-		// (Mirrors the baseline test's two-pass strategy in test/run-test.ts.)
+		// ONE run is the whole subject (#815): every `has_many` onto an entity in
+		// the run is wired on a clean tree, whatever the sort order. The
+		// relationship scenario then proves it literally in step 5.3 — a second
+		// run changes no file.
 		run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
-		if (SCENARIO === 'relationship') {
-			log('second pass (relationship scenario — seeds existingHasMany)');
-			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
+
+		// 5.00. #796 — every emitted time column is timestamptz, except the YAML-declared opt-outs.
+		{
+			const scan = assertTimestampColumns(
+				path.join(tmpDir, 'src/modules'),
+				collectTimezoneOptOuts(fixtureFiles.map((f) => path.join(FIXTURES_DIR, f))),
+			);
+			log(`timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);
+		}
+
+		// 5.0. #511 — field `unique: true` emission (default scenario fixtures).
+		if (SCENARIO === 'default') {
+			log('asserting field unique emission');
+			assertFieldUniqueEmission(tmpDir);
+			log('field unique emission OK');
+			assertUniqueIndexShapes(tmpDir);
+			log('unique_indexes shapes OK');
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the
@@ -697,6 +872,20 @@ async function main(): Promise<number> {
 			log('asserting semantic model emission for CRM fixtures');
 			assertSemanticEmission(tmpDir);
 			log('semantic emission OK');
+		}
+
+		// 5.3. #815 — a second `entity new --all --force` leaves `src/` byte-identical.
+		if (SCENARIO === 'relationship') {
+			log('asserting a second entity new --all changes no file (#815)');
+			const before = snapshotTree(path.join(tmpDir, 'src'));
+			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
+			const diff = diffSnapshots(before, snapshotTree(path.join(tmpDir, 'src')));
+			if (diff.length > 0) {
+				throw new Error(
+					`a second 'entity new --all' changed ${diff.length} file(s) — one run is not enough (#815):\n  ${diff.join('\n  ')}`,
+				);
+			}
+			log('second run changed nothing OK');
 		}
 
 		// 5.5. Install the observability subsystem (combiner — ADR-025).
@@ -901,6 +1090,17 @@ async function main(): Promise<number> {
 			exitCode = 1;
 		} else {
 			log('tsc OK (consumer-emitted code is syntax-clean)');
+		}
+
+		// 6.1. #811 — api:false entities: content assertion beside the tsc gate.
+		if (SCENARIO === 'default') {
+			try {
+				assertApiFalseEmission(tmpDir);
+				log('api:false emission OK');
+			} catch (e) {
+				logError(`api:false emission: ${(e as Error).message}`);
+				exitCode = 1;
+			}
 		}
 
 		// 7. OPENAPI-4: verify /docs-json is populated by importing the

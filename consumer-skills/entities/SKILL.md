@@ -33,7 +33,10 @@ module — plus an entry in the `GENERATED_MODULES` and schema barrels.
   generates typed repository methods, interface signatures, injectable query
   use cases, and module registration. See `families-and-queries.md`.
 - **Naming**: YAML is `snake_case` (matches DB columns); generated TS
-  properties are `camelCase`; entity `name` is singular `snake_case`.
+  properties are `camelCase`; entity `name` is singular `snake_case`. The names
+  `promise`, `array` and `date` are reserved (they would shadow the TS globals);
+  validation rejects them. Other names do not shadow a TS global (#813); `page`, `post`, `patch`, `query`, `body`
+  and `param` still collide with a template import (#833).
 
 ## Routing
 

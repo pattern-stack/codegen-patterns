@@ -165,8 +165,8 @@ const DDL = [
 	`create table accounts (
 		id uuid primary key, name text not null, tenant_id uuid not null,
 		annual_revenue numeric, health_score numeric, tier text, website text,
-		external_id text, created_at timestamp not null default now(),
-		updated_at timestamp not null default now())`,
+		external_id text, created_at timestamptz not null default now(),
+		updated_at timestamptz not null default now())`,
 	`create table contacts (
 		id uuid primary key default gen_random_uuid(), first_name text, last_name text,
 		email text, account_id uuid not null references accounts(id),
@@ -175,15 +175,15 @@ const DDL = [
 	`create table opportunities (
 		id uuid primary key default gen_random_uuid(), name text not null,
 		amount numeric, won_amount numeric, win_probability numeric, stage text,
-		closed_at timestamp, account_id uuid not null references accounts(id))`,
+		closed_at timestamptz, account_id uuid not null references accounts(id))`,
 	`create table opportunity_contacts (
 		opportunity_id uuid not null references opportunities(id),
 		contact_id uuid not null references contacts(id), role text not null,
-		is_primary boolean not null default false, started_at timestamp,
-		ended_at timestamp, sourced_from text, confidence numeric(5,4),
-		matched_at timestamp, influence_score numeric,
-		created_at timestamp not null default now(),
-		updated_at timestamp not null default now(),
+		is_primary boolean not null default false, started_at timestamptz,
+		ended_at timestamptz, sourced_from text, confidence numeric(5,4),
+		matched_at timestamptz, influence_score numeric,
+		created_at timestamptz not null default now(),
+		updated_at timestamptz not null default now(),
 		primary key (opportunity_id, contact_id, role))`,
 ];
 

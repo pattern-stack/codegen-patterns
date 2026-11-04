@@ -21,7 +21,7 @@ export const dealStateApi = {
 	 * on another page would otherwise resolve to undefined. Used to hydrate the
 	 * store's resolvers/lookups; NOT for rendering a paged table.
 	 */
-	listAll: async (query?: Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<DealState[]> => {
+	listAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<DealState[]> => {
 		const all: DealState[] = [];
 		let page = 1;
 		let pageCount = 1;
@@ -40,10 +40,10 @@ export const dealStateApi = {
 	get: (id: string): Promise<DealState> =>
 		request<DealState>('GET', `/deal_states/${id}`),
 
-	create: (data: Partial<DealState>): Promise<DealState> =>
+	create: (data: globalThis.Partial<DealState>): Promise<DealState> =>
 		request<DealState>('POST', '/deal_states', data),
 
-	update: (id: string, data: Partial<DealState>): Promise<DealState> =>
+	update: (id: string, data: globalThis.Partial<DealState>): Promise<DealState> =>
 		request<DealState>('PATCH', `/deal_states/${id}`, data),
 
 	delete: (id: string): Promise<void> =>

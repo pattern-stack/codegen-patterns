@@ -21,7 +21,7 @@ export const userApi = {
 	 * on another page would otherwise resolve to undefined. Used to hydrate the
 	 * store's resolvers/lookups; NOT for rendering a paged table.
 	 */
-	listAll: async (query?: Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<User[]> => {
+	listAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<User[]> => {
 		const all: User[] = [];
 		let page = 1;
 		let pageCount = 1;
@@ -40,10 +40,10 @@ export const userApi = {
 	get: (id: string): Promise<User> =>
 		request<User>('GET', `/users/${id}`),
 
-	create: (data: Partial<User>): Promise<User> =>
+	create: (data: globalThis.Partial<User>): Promise<User> =>
 		request<User>('POST', '/users', data),
 
-	update: (id: string, data: Partial<User>): Promise<User> =>
+	update: (id: string, data: globalThis.Partial<User>): Promise<User> =>
 		request<User>('PATCH', `/users/${id}`, data),
 
 	delete: (id: string): Promise<void> =>

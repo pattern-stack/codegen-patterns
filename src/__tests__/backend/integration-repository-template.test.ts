@@ -168,7 +168,7 @@ describe('integrated repository emission — self-FK (account)', () => {
     expect(out).toContain('readonly domain: string | null;');
     expect(out).toContain('readonly employeeCount: number | null;');
     expect(out).toContain('readonly parentAccountExternalId?: string | null;');
-    expect(out).toContain('readonly fields?: Record<string, unknown>;');
+    expect(out).toContain('readonly fields?: globalThis.Record<string, unknown>;');
   });
 
   it('emits TIntegrationProjection omitting provider/providerMetadata', () => {

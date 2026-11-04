@@ -28,7 +28,7 @@ export type TenantResult<TWith extends TenantInclude> =
   ResultOf<'tenants', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type TenantNoInclude = Record<string, never>;
+export type TenantNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -44,7 +44,7 @@ export type TenantNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type TenantApiResult = Tenant &
-  Partial<TenantResult<TenantInclude>>;
+  globalThis.Partial<TenantResult<TenantInclude>>;
 
 @Injectable()
 export class TenantRepository extends BaseRepository<Tenant, typeof tenants, Relations> {

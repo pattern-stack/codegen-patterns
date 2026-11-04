@@ -13,6 +13,7 @@ import {
   relativeModuleDir,
 } from '../../../_shared/entity-naming.mjs';
 import { junctionFanOutFor, junctionNaming } from '../../../_shared/junction-fan-out.mjs';
+import { renderSqlPredicate } from '../../../_shared/sql-predicate.mjs';
 // The patterns barrel has the side effect of pre-registering the five
 // library-shipped patterns (Base / Integrated / Activity / Knowledge /
 // Metadata). App-defined patterns are loaded separately in the parent
@@ -31,7 +32,8 @@ import {
   foreignKeyColumnNullable,
   hasColumnDefault,
 } from '../../../../src/schema/field-nullability.js';
-import { rewriteSharedImport } from '../../../../src/config/runtime-mode.mjs';
+import { fieldWithTimezone, timestampColumn } from '../../../../src/schema/field-timestamp.js';
+import { rewriteSharedImport, subsystemsImport } from '../../../../src/config/runtime-mode.mjs';
 import { DEFAULT_CODEGEN_CONFIG } from '../../../../src/config/project-config.js';
 import {
   ACTOR_CAPABILITY,
@@ -467,7 +469,8 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
   // Drizzle's `date('x')` returns the PgDateString builder by default
   // (data type: string). Force the Date-typed variant so DTO Zod
   // schemas using z.coerce.date() align with the entity type.
-  // `timestamp` already defaults to Date — no mode override needed.
+  // `datetime` is timestamptz unless `timezone: false` (#796, `field-timestamp.ts`);
+  // its `mode: 'date'` is written out so the TS type does not lean on Drizzle's default.
   let chain;
   if (drizzleType === 'enum' && enumName) {
     // Reference the pgEnum declaration emitted at the top of the entity file.
@@ -475,6 +478,8 @@ function buildDrizzleChain(fieldName, field, drizzleType, enumName) {
     chain = `${enumName}('${fieldName}')`;
   } else if (drizzleType === 'date') {
     chain = `${drizzleType}('${fieldName}', { mode: 'date' })`;
+  } else if (field.type === 'datetime') {
+    chain = timestampColumn(fieldName, fieldWithTimezone(field));
   } else {
     chain = `${drizzleType}('${fieldName}')`;
   }
@@ -638,8 +643,11 @@ function mapOnDelete(onDelete) {
  * e.g. `account.relationships.contacts: { foreign_key: account_id }` means
  * contacts.account_id. The method name on AccountRepository would be
  * `findByAccountId`.
+ *
+ * `renderSet` is the set of entity names the same run renders (`--renderSet`,
+ * #815).
  */
-function processHasMany(relationships, naming) {
+function processHasMany(relationships, naming, renderSet = new Set()) {
   if (!relationships) return [];
 
   const result = [];
@@ -654,19 +662,23 @@ function processHasMany(relationships, naming) {
     const resolved = resolveTargetNaming(target, naming, { required: false });
     const isSelfRef = target === naming.entityName;
 
-    // Check whether the target entity has already been generated — at the
-    // target's OWN module folder (`plural:`, `context:`). Only include targets
-    // that exist so the import block doesn't reference files that aren't on
-    // disk yet (two-pass generation). Deliberately a file check, not a YAML
-    // check: a single `entity new x.yaml` must not import a sibling that has a
-    // YAML but has never been generated. The stem is the emitted (kebab) one —
-    // a snake `${target}.entity.ts` never matched a multi-word target, which
-    // silently dropped its composition method (hoops dogfood F7).
+    // Wired when the target will exist once this run finishes (#815): it is in
+    // the run's render set (`--renderSet`), or its entity file is already on
+    // disk at the target's OWN module folder (`plural:`, `context:`). The file
+    // check is kept, deliberately not a YAML check: a single `entity new
+    // x.yaml` regenerating a parent must still wire a target an earlier run
+    // generated, and must not import a sibling that has a YAML but has never
+    // been generated. A target with no YAML (`resolved` null) is never wired.
+    // The stem is the emitted (kebab) one — a snake `${target}.entity.ts` never
+    // matched a multi-word target, which silently dropped its composition
+    // method (hoops dogfood F7).
     let targetExists = isSelfRef;
     if (!isSelfRef && resolved) {
-      targetExists = fs.existsSync(
-        path.resolve(resolved.moduleDir, `${emittedStem(target)}.entity.ts`),
-      );
+      targetExists =
+        renderSet.has(target) ||
+        fs.existsSync(
+          path.resolve(resolved.moduleDir, `${emittedStem(target)}.entity.ts`),
+        );
     }
 
     const targetPlural = resolved ? resolved.plural : null;
@@ -729,7 +741,9 @@ function resolveTargetNaming(target, naming, { required }) {
  * ALSO declared as a field (e.g. `conversation_id: { type: uuid, required:
  * true, index: true }`), the belongs_to column must inherit that field's
  * `required`/`nullable` (→ `.notNull()`) and `index: true` (→ a single-column
- * index). The relationship moves the column out of `processedFields`, so
+ * index). The FK field's
+ * `unique: true` is NOT carried on the rel: `fieldUniqueEntries` reads the raw
+ * `fields:` map (#511). The relationship moves the column out of `processedFields`, so
  * those declarations would otherwise be silently dropped. An explicit
  * `nullable:` on the relationship (or role) outranks the field declaration
  * (`foreignKeyColumnNullable`).
@@ -879,8 +893,12 @@ function collectRepositoryDeps(belongsTo, existingHasMany) {
  *   `foreign_key` outside this set is host-owned and emits no DB-level FK.
  *   Absent → every target is treated as owned (the pre-#636 behaviour), which
  *   only happens when a caller builds locals without prompt.js.
+ * @param {Set<string>} [uniqueLedIndexNames] names of fields whose `index: true`
+ *   is suppressed because their unique index (#511) already leads with the
+ *   column. Absent or empty → suppress nothing: an extra index is harmless, a
+ *   silently dropped one is not.
  */
-function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
+function processFieldFeatures(renderedFields, fields, naming, ownedTables, uniqueLedIndexNames) {
   const entityNamePlural = naming.ownNaming.plural;
   const owned = ownedTables === undefined
     ? null
@@ -938,10 +956,13 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
     }
 
     // --- index: true (#355) ---
-    if (field.index === true) {
+    if (field.index === true && !(uniqueLedIndexNames && uniqueLedIndexNames.has(pf.name))) {
       indexExpressions.push({
         comment: null,
         expr: `index('${entityNamePlural}_${pf.name}_idx').on(t.${pf.camelName})`,
+        name: `${entityNamePlural}_${pf.name}_idx`,
+        builder: 'index',
+        source: `field '${pf.name}' (index: true)`,
       });
     }
   }
@@ -950,33 +971,159 @@ function processFieldFeatures(renderedFields, fields, naming, ownedTables) {
 }
 
 /**
- * Composite unique index emission (#356).
- *
- * Top-level `unique_indexes: [{ fields: [...], name? }]` → a `uniqueIndex(...)`
- * entry in the pgTable extra-config callback. Column names are camelCased to
- * match the emitted Drizzle column identifiers; they may reference FK columns
- * (belongs_to) or ordinary fields. Index name defaults to
- * `<table>_<col1>_<col2>_..._uniq`.
+ * Columns of the rendered `pgTable`, as `{ column, prop }` (#784). Built from
+ * exactly the inputs the entity template renders (`id`; belongs_to FK columns;
+ * non-FK fields; the external_id_tracking, tenant and timestamp/soft-delete
+ * columns); a unit test pins it to the rendered column block.
  */
-function processUniqueIndexes(uniqueIndexes, entityNamePlural, tenantScoped = false) {
-  if (!Array.isArray(uniqueIndexes)) return [];
+function entityTableColumns({
+  belongsTo,
+  nonFkFields,
+  hasExternalIdTracking,
+  tenantScoped,
+  hasTimestamps,
+  hasSoftDelete,
+}) {
+  const cols = [{ column: 'id', prop: 'id' }];
+  for (const rel of belongsTo) cols.push({ column: rel.field, prop: rel.camelField });
+  for (const f of nonFkFields) cols.push({ column: f.name, prop: f.camelName });
+  if (hasExternalIdTracking) {
+    cols.push(
+      { column: 'external_id', prop: 'externalId' },
+      { column: 'provider', prop: 'provider' },
+      { column: 'provider_metadata', prop: 'providerMetadata' },
+    );
+  }
+  if (tenantScoped) cols.push({ column: 'tenant_id', prop: 'tenantId' });
+  if (hasTimestamps) {
+    cols.push({ column: 'created_at', prop: 'createdAt' }, { column: 'updated_at', prop: 'updatedAt' });
+  }
+  if (hasSoftDelete) cols.push({ column: 'deleted_at', prop: 'deletedAt' });
+  return cols;
+}
 
-  return uniqueIndexes.map((ui) => {
-    // A tenant-scoped entity's natural keys are unique WITHIN a tenant, not
-    // globally: tenant A and tenant B may each hold a row with the same
-    // `(conversation_id, sequence)`. A bare composite would forbid that, which
-    // is the exact failure ADR-042 §5(c) is about. An author-supplied `name` is
-    // preserved verbatim — they asked for that constraint name.
+/**
+ * Unique constraint emission (#356, #511, #784). The input is every unique an
+ * entity declares: field-level `unique: true` lowered by `fieldUniqueEntries`
+ * (#511), then the top-level `unique_indexes:` entries. Each entry is
+ * `{ fields, name?, where?, nulls_not_distinct?, source }`.
+ *
+ *   partial = where is set
+ *   nnd     = partial ? false : (nulls_not_distinct ?? tenantScoped)
+ *   cols    = tenantScoped ? [tenant_id, ...fields] : fields
+ *   name    = name ?? `<table>_${cols.join('_')}_uniq`
+ *
+ *   partial -> uniqueIndex(name).on(cols).where(sql`...`)
+ *   nnd     -> unique(name).on(cols).nullsNotDistinct()
+ *   else    -> uniqueIndex(name).on(cols)
+ *
+ * Postgres treats NULLs in a unique index as distinct, so a tenant-prefixed
+ * plain index never deduplicates the (first-class) null-tenant partition
+ * (ADR-042 §3); NULLS NOT DISTINCT does. A partial index cannot be NND on
+ * drizzle-orm 1.0.0-rc.4, so a partial entry does not. An author `name` is kept
+ * verbatim. Generation errors: C1 (unknown column), C2 (tenant_id listed or a
+ * repeated field), and the `where:` scanner errors (renderSqlPredicate).
+ */
+function processUniqueIndexes(
+  entries,
+  { entityName, entityNamePlural, tenantScoped = false, tableColumns },
+) {
+  if (!Array.isArray(entries)) return [];
+  const propByColumn = new Map(tableColumns.map((c) => [c.column, c.prop]));
+  const columnList = tableColumns.map((c) => c.column).join(', ');
+  const lowerColumns = new Map(tableColumns.map((c) => [c.column.toLowerCase(), c.prop]));
+
+  return entries.map((ui) => {
+    const label = `[codegen] '${entityName}' ${ui.source}`;
+    const seen = new Set();
+    for (const f of ui.fields) {
+      if (tenantScoped && f === 'tenant_id') {
+        throw new Error(`${label}: 'tenant_id' must not be listed in fields — a tenant_scoped entity prefixes it automatically.`);
+      }
+      if (seen.has(f)) throw new Error(`${label}: field '${f}' is listed twice.`);
+      seen.add(f);
+      if (!propByColumn.has(f)) {
+        throw new Error(`${label}: '${f}' is not a column of '${entityNamePlural}'. Columns: ${columnList}.`);
+      }
+    }
+
+    const partial = ui.where !== undefined;
+    const nnd = partial ? false : (ui.nulls_not_distinct ?? tenantScoped);
     const cols = tenantScoped ? ['tenant_id', ...ui.fields] : ui.fields;
     const name = ui.name || `${entityNamePlural}_${cols.join('_')}_uniq`;
-    const onCols = cols.map((c) => `t.${camelCase(c)}`).join(', ');
-    return {
-      comment: tenantScoped
-        ? 'tenant_scoped — uniqueness is per tenant (ADR-042)'
-        : null,
-      expr: `uniqueIndex('${name}').on(${onCols})`,
-    };
+    const onCols = cols.map((c) => `t.${propByColumn.get(c)}`).join(', ');
+
+    let expr;
+    let builder;
+    let comment = null;
+    if (partial) {
+      let body;
+      try {
+        body = renderSqlPredicate(ui.where, lowerColumns);
+      } catch (err) {
+        throw new Error(`${label} where: ${err.message}`);
+      }
+      builder = 'uniqueIndex';
+      expr = `uniqueIndex('${name}').on(${onCols}).where(sql\`${body}\`)`;
+      if (tenantScoped) {
+        comment =
+          'tenant_scoped — unique per tenant; partial, so NULL-tenant rows never conflict (no NULLS NOT DISTINCT on a partial index in drizzle rc.4)';
+      }
+    } else if (nnd) {
+      builder = 'unique';
+      expr = `unique('${name}').on(${onCols}).nullsNotDistinct()`;
+      if (tenantScoped) {
+        comment = 'tenant_scoped — unique per tenant; NULLS NOT DISTINCT, so the NULL tenant is one partition (ADR-042)';
+      }
+    } else {
+      builder = 'uniqueIndex';
+      expr = `uniqueIndex('${name}').on(${onCols})`;
+      if (tenantScoped) {
+        comment = 'tenant_scoped — unique per tenant; nulls_not_distinct: false, so NULL-tenant rows never conflict';
+      }
+    }
+    return { name, comment, expr, builder, partial, columns: cols, source: ui.source };
   });
+}
+
+/**
+ * C3 and C4 (#784): every name in the extra-config callback is distinct, and no
+ * two non-partial uniques cover the same column set. Partial entries are exempt
+ * from C4 — two partial entries over the same columns with different
+ * predicates are the documented use.
+ */
+function assertDistinctConstraints(tableConstraints, entityName) {
+  const names = new Map();
+  const colSets = new Map();
+  for (const c of tableConstraints) {
+    if (names.has(c.name)) {
+      throw new Error(
+        `[codegen] '${entityName}': constraint name '${c.name}' is used by both ${names.get(c.name)} and ${c.source}.`,
+      );
+    }
+    names.set(c.name, c.source);
+    if ((c.builder === 'unique' || c.builder === 'uniqueIndex') && !c.partial) {
+      const key = [...c.columns].sort().join(',');
+      if (colSets.has(key)) {
+        throw new Error(
+          `[codegen] '${entityName}': ${colSets.get(key)} and ${c.source} declare the same unique over (${c.columns.join(', ')}). Declare it once.`,
+        );
+      }
+      colSets.set(key, c.source);
+    }
+  }
+}
+
+/**
+ * Lower each raw `fields:` entry with `unique: true` into a single-field entry
+ * for `processUniqueIndexes` (#511), in declaration order. `id` is skipped (the
+ * primary key is unique by definition). Reads the raw map so a `belongs_to` FK
+ * column declared in `fields:` is covered too.
+ */
+function fieldUniqueEntries(fields) {
+  return Object.entries(fields || {})
+    .filter(([name, def]) => name !== 'id' && def && def.unique === true)
+    .map(([name]) => ({ fields: [name], source: `field '${name}' (unique: true)` }));
 }
 
 /**
@@ -1012,12 +1159,11 @@ function collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSof
   if (hasExternalIdTracking) {
     imports.add('varchar');
     imports.add('jsonb');
-    imports.add('uniqueIndex');
   }
 
-  // Caller-supplied extras: `index` (field-level index: true) and
-  // `uniqueIndex` (composite unique_indexes) — see processFieldFeatures /
-  // processUniqueIndexes.
+  // Caller-supplied extras: the pg-core builders the extra-config callback
+  // actually calls (`index`, `uniqueIndex`, `unique`), derived by use (#784) —
+  // see processFieldFeatures / processUniqueIndexes.
   for (const extra of extraImports) {
     imports.add(extra);
   }
@@ -1129,7 +1275,7 @@ function processQueries(queriesBlock, processedFields, entityNamePascal) {
       const camelFields = selectFields.map((f) => camelCase(f));
       returnType = selectFields.length === 1
         ? `${fieldTypeMap[selectFields[0]] || fieldTypeMap[camelFields[0]] || 'string'}[]`
-        : `Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(' | ')}>[]`;
+        : `globalThis.Pick<${entityNamePascal}, ${camelFields.map((f) => `'${f}'`).join(' | ')}>[]`;
     } else {
       returnType = `${entityNamePascal}[]`;
     }
@@ -1510,13 +1656,17 @@ export function buildBackendLocals(definition, baseLocals) {
   // value the emitters write into. A hard-coded `src/generated` here would break
   // every project that moves it (#612 is the equivalent bug in the init scaffold).
   const generatedDirRel = baseLocals.generatedDir || 'src/generated';
-  const relativeFromModule = (target) => {
+  const relativeFrom = (fromDir, target) => {
     const spec = path.posix.relative(
-      path.posix.normalize(moduleDir),
+      path.posix.normalize(fromDir),
       path.posix.normalize(target),
     );
     return spec.startsWith('.') ? spec : `./${spec}`;
   };
+  const relativeFromModule = (target) => relativeFrom(moduleDir, target);
+  // One value for the folder the use cases are written into: the `outputPaths`
+  // entries and the specifier computed from it (`typedEventBusImport`) agree.
+  const useCasesDir = `${moduleDir}/use-cases`;
   const relationsImport = relativeFromModule(`${generatedDirRel}/relations`);
   const apiIncludesImport = relativeFromModule(`${generatedDirRel}/api-includes`);
 
@@ -1541,7 +1691,7 @@ export function buildBackendLocals(definition, baseLocals) {
   // outputPaths below); their specifier is computed from that folder, not by
   // prefixing `../` onto the module-level one.
   const eavFieldValueUseCaseImportDir = eavFieldValueNaming
-    ? relativeModuleDir(`${ownNaming.moduleDir}/use-cases`, eavFieldValueNaming.moduleDir)
+    ? relativeModuleDir(useCasesDir, eavFieldValueNaming.moduleDir)
     : null;
   const eavFieldValuePlural = eavFieldValueNaming ? eavFieldValueNaming.plural : null;
   const eavFieldValueModulePascal = eavFieldValuePlural ? pascalCase(eavFieldValuePlural) : null;
@@ -1592,6 +1742,17 @@ export function buildBackendLocals(definition, baseLocals) {
   // `@pattern-stack/codegen/runtime/base-classes/…`). App-defined pattern
   // aliases (non-`@shared/`) pass through untouched.
   const runtimeMode = baseLocals?.runtimeMode === 'vendored' ? 'vendored' : 'package';
+  // #814: the TypedEventBus CLASS the write use cases inject. The package barrel
+  // exports the token only (its own class is typed to the package's event
+  // union), so in package mode the class is the project's generated bus, by a
+  // path relative to the use-case folder. It depends on the module folder
+  // (`context:`, `paths.modules_dir`) and `paths.generated`, so it cannot live
+  // in the mode-keyed `runtimeImportLocals` table. Vendored: the vendored
+  // barrel exports both, and the templates keep their single combined line.
+  const typedEventBusImport =
+    runtimeMode === 'vendored'
+      ? subsystemsImport('vendored', 'events')
+      : relativeFrom(useCasesDir, `${generatedDirRel}/events/bus`);
   // FAMILY_MAP is gone (PATTERN-5); `patternConfigClasses` is the structural
   // equivalent — repository + service class names + import paths + inherited
   // method comment lists, sourced directly from the pattern registry.
@@ -1742,7 +1903,13 @@ export function buildBackendLocals(definition, baseLocals) {
   const belongsTo = processBelongsTo(relationships, targetNaming, fields);
 
   // Process has_many relationships (CGP-358b)
-  const hasMany = processHasMany(relationships, targetNaming);
+  // `renderSet` (#815) is an input; no template reads it. It is the entities the same
+  // run renders, so a has_many onto a later one is wired in one pass.
+  const hasMany = processHasMany(
+    relationships,
+    targetNaming,
+    new Set(baseLocals.renderSet ?? []),
+  );
 
   // The other entities whose repository this service composes (#632): one
   // entry per target, whichever edges reach it — a belongs_to and a has_many
@@ -1838,11 +2005,24 @@ export function buildBackendLocals(definition, baseLocals) {
   // drizzleChain of the rendered (non-belongs_to) columns in place. Skip FK
   // imports for tables belongs_to already imports to avoid duplicate import
   // lines.
+  // #511: on a non-tenant entity a field with both `unique: true` and
+  // `index: true` gets only the unique index (it leads with the column). Under
+  // tenant_scoped the unique index is (tenant_id, col) and cannot serve a
+  // lookup on col alone, so the author's `index: true` is kept.
+  const uniqueLedIndexNames = new Set();
+  if (!tenantScoped) {
+    for (const [name, def] of Object.entries(fields || {})) {
+      if (name !== 'id' && def && def.unique === true && def.index === true) {
+        uniqueLedIndexNames.add(name);
+      }
+    }
+  }
   const fieldFeatures = processFieldFeatures(
     nonFkFields,
     fields,
     targetNaming,
     baseLocals?.ownedTableNames,
+    uniqueLedIndexNames,
   );
   const belongsToTables = new Set(belongsTo.map((r) => r.relatedTable));
   const fieldFkImports = fieldFeatures.fkImports.filter(
@@ -1859,11 +2039,22 @@ export function buildBackendLocals(definition, baseLocals) {
     belongsToTableImports.push({ relatedTable: rel.relatedTable, importPath: rel.importPath });
   }
 
-  // Composite unique indexes (#356).
-  const uniqueIndexExpressions = processUniqueIndexes(
-    definition.unique_indexes,
-    entityNamePlural,
+  // Field-level `unique: true` (#511) and composite unique indexes (#356),
+  // through one builder.
+  const tableColumns = entityTableColumns({
+    belongsTo,
+    nonFkFields,
+    hasExternalIdTracking,
     tenantScoped,
+    hasTimestamps,
+    hasSoftDelete,
+  });
+  const uniqueIndexExpressions = processUniqueIndexes(
+    [
+      ...fieldUniqueEntries(fields),
+      ...(definition.unique_indexes ?? []).map((ui, i) => ({ ...ui, source: `unique_indexes[${i}]` })),
+    ],
+    { entityName, entityNamePlural, tenantScoped, tableColumns },
   );
 
   // belongs_to FK columns that declared `index: true` on their underlying
@@ -1871,16 +2062,21 @@ export function buildBackendLocals(definition, baseLocals) {
   // processFieldFeatures never sees it — emit its index here using the same
   // `<table>_<col>_idx` naming a non-FK indexed field gets.
   const belongsToIndexExpressions = belongsTo
-    .filter((rel) => rel.hasIndex)
+    .filter((rel) => rel.hasIndex && !uniqueLedIndexNames.has(rel.field))
     .map((rel) => ({
       comment: null,
       expr: `index('${entityNamePlural}_${rel.field}_idx').on(t.${rel.camelField})`,
+      name: `${entityNamePlural}_${rel.field}_idx`,
+      builder: 'index',
+      source: `belongs_to '${rel.field}' index`,
     }));
 
-  // pgTable extra-config callback entries, in emission order: belongs_to FK
-  // indexes, single-column field indexes, composite unique indexes, then the
-  // external_id_tracking unique index (the ON CONFLICT target integrationUpsert
-  // relies on).
+  // pgTable extra-config callback entries, in emission order: the tenant index
+  // (tenant_scoped, unshifted below), belongs_to FK indexes, single-column field
+  // indexes, field `unique: true` uniques (in `fields:` order, #511), then
+  // `unique_indexes:` entries (each a uniqueIndex or, under NULLS NOT DISTINCT,
+  // a `unique(...)` constraint, #784), then the external_id_tracking unique
+  // (the ON CONFLICT target integrationUpsert relies on).
   const tableConstraints = [
     ...belongsToIndexExpressions,
     ...fieldFeatures.indexExpressions,
@@ -1891,6 +2087,9 @@ export function buildBackendLocals(definition, baseLocals) {
     tableConstraints.unshift({
       comment: 'tenant_scoped behavior (ADR-042) — every scoped read filters on tenant_id',
       expr: `index('${entityNamePlural}_tenant_id_idx').on(t.tenantId)`,
+      name: `${entityNamePlural}_tenant_id_idx`,
+      builder: 'index',
+      source: 'tenant_scoped',
     });
   }
   if (hasExternalIdTracking) {
@@ -1908,13 +2107,32 @@ export function buildBackendLocals(definition, baseLocals) {
             expr:
               `unique('uq_${entityNamePlural}_tenant_provider_external_id')` +
               '.on(t.tenantId, t.provider, t.externalId).nullsNotDistinct()',
+            name: `uq_${entityNamePlural}_tenant_provider_external_id`,
+            builder: 'unique',
+            partial: false,
+            columns: ['tenant_id', 'provider', 'external_id'],
+            source: 'external_id_tracking',
           }
         : {
             comment: 'external_id_tracking behavior — ON CONFLICT target for integrationUpsert',
             expr: `uniqueIndex('uq_${entityNamePlural}_provider_external_id').on(t.provider, t.externalId)`,
+            name: `uq_${entityNamePlural}_provider_external_id`,
+            builder: 'uniqueIndex',
+            partial: false,
+            columns: ['provider', 'external_id'],
+            source: 'external_id_tracking',
           },
     );
   }
+
+  for (const c of tableConstraints) {
+    if (!c.name || !c.builder) {
+      throw new Error(
+        `[codegen] '${entityName}': internal error — extra-config entry '${c.expr}' lacks a name or builder.`,
+      );
+    }
+  }
+  assertDistinctConstraints(tableConstraints, entityName);
 
   // Enum field declarations — surface a separate collection so the entity
   // template can emit `export const xEnum = pgEnum('x', [...])` ahead of
@@ -1934,21 +2152,11 @@ export function buildBackendLocals(definition, baseLocals) {
       choices: f.choices,
     }));
 
-  // Drizzle imports needed. `index` / `uniqueIndex` are pulled in only when a
-  // field declares `index: true` or the entity declares `unique_indexes:`
-  // (external_id_tracking adds `uniqueIndex` on its own flag below).
-  const extraDrizzleImports = [];
-  if (
-    fieldFeatures.indexExpressions.length > 0 ||
-    belongsToIndexExpressions.length > 0 ||
-    tenantScoped
-  ) {
-    extraDrizzleImports.push('index');
-  }
-  if (uniqueIndexExpressions.length > 0) extraDrizzleImports.push('uniqueIndex');
-  // The per-tenant external-id constraint is a `unique(...)` table constraint,
-  // not a `uniqueIndex(...)` — see tableConstraints above.
-  if (tenantScoped && hasExternalIdTracking) extraDrizzleImports.push('unique');
+  // Drizzle imports needed, derived by use (#784): the pg-core builders the
+  // extra-config callback actually calls, plus `sql` (drizzle-orm) when a
+  // partial entry renders a predicate.
+  const extraDrizzleImports = [...new Set(tableConstraints.map((c) => c.builder))];
+  const drizzleOrmImports = uniqueIndexExpressions.some((u) => u.partial) ? ['sql'] : [];
   const drizzleEntityImports = collectDrizzleImports(processedFields, belongsTo, hasTimestamps, hasSoftDelete, hasExternalIdTracking, extraDrizzleImports);
 
   // Output paths
@@ -1959,22 +2167,22 @@ export function buildBackendLocals(definition, baseLocals) {
     controller: `${moduleDir}/${emittedStem(entityName)}.controller.ts`,
     module: ownNaming.moduleFile,
     index: `${moduleDir}/index.ts`,
-    findByIdUseCase: `${moduleDir}/use-cases/${emittedStem('find', entityName, 'by-id')}.use-case.ts`,
-    listUseCase: `${moduleDir}/use-cases/${emittedStem('list', entityNamePlural)}.use-case.ts`,
+    findByIdUseCase: `${useCasesDir}/${emittedStem('find', entityName, 'by-id')}.use-case.ts`,
+    listUseCase: `${useCasesDir}/${emittedStem('list', entityNamePlural)}.use-case.ts`,
     findByIdWithFieldsUseCase: eavEnabled
-      ? `${moduleDir}/use-cases/${emittedStem('find', entityName, 'by-id-with-fields')}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('find', entityName, 'by-id-with-fields')}.use-case.ts`
       : null,
     listWithFieldsUseCase: eavEnabled
-      ? `${moduleDir}/use-cases/${emittedStem('list', entityNamePlural, 'with-fields')}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('list', entityNamePlural, 'with-fields')}.use-case.ts`
       : null,
     createUseCase: generateWrites
-      ? `${moduleDir}/use-cases/${emittedStem('create', entityName)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('create', entityName)}.use-case.ts`
       : null,
     updateUseCase: generateWrites
-      ? `${moduleDir}/use-cases/${emittedStem('update', entityName)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('update', entityName)}.use-case.ts`
       : null,
     deleteUseCase: generateWrites
-      ? `${moduleDir}/use-cases/${emittedStem('delete', entityName)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('delete', entityName)}.use-case.ts`
       : null,
     createDto: `${moduleDir}/dto/${emittedStem('create', entityName)}.dto.ts`,
     updateDto: `${moduleDir}/dto/${emittedStem('update', entityName)}.dto.ts`,
@@ -1983,13 +2191,13 @@ export function buildBackendLocals(definition, baseLocals) {
     // + sort). Always emitted — the list endpoint is unconditional.
     listQueryDto: `${moduleDir}/dto/${emittedStem('list', entityNamePlural)}.query.ts`,
     searchUseCase: searchQueryResolved
-      ? `${moduleDir}/use-cases/${emittedStem('search', entityNamePlural)}.use-case.ts`
+      ? `${useCasesDir}/${emittedStem('search', entityNamePlural)}.use-case.ts`
       : null,
     searchController: searchQueryResolved
       ? `${moduleDir}/${emittedStem(entityName, 'search')}.controller.ts`
       : null,
     declarativeQueries: hasDeclarativeQueries
-      ? `${moduleDir}/use-cases/declarative-queries.ts`
+      ? `${useCasesDir}/declarative-queries.ts`
       : null,
     // ADR-041 — the generated `<Entity>ComposedBase` that applies the mixin
     // chain. Emitted only when TWO OR MORE capabilities stack; one capability
@@ -2240,6 +2448,8 @@ export function buildBackendLocals(definition, baseLocals) {
     hasPatternConfig,
     patternConfig: patternConfigBlock,
     renderPatternConfigLiteral,
+    // The one place a timestamp column's options are spelled (#796) — entity.ejs.t's behavior columns.
+    timestampColumn,
     ...patternConfigClasses,
 
     // Capability composition (ADR-041). `capabilityMixins` is empty for every
@@ -2303,6 +2513,7 @@ export function buildBackendLocals(definition, baseLocals) {
     // controller import, relative to this entity's module folder.
     relationsImport,
     apiIncludesImport,
+    typedEventBusImport,
     // The read routes with an allowlist, and the name of the emitted map. The
     // name is derived exactly as `emit-includes.ts#includesConstName` derives it;
     // a unit test pins the two together.
@@ -2330,6 +2541,9 @@ export function buildBackendLocals(definition, baseLocals) {
 
     // Drizzle
     drizzleImports: drizzleEntityImports,
+    // drizzle-orm (not pg-core) value imports: `sql` when a partial unique renders a predicate (#784).
+    drizzleOrmImports,
+    tableColumns,
     // Every FK `references()` callback carries a `: AnyPgColumn` return-type
     // annotation (#631). An unannotated callback whose target table is on an
     // FK cycle with this one — a self-FK, or A → B → A across files — makes
@@ -2341,8 +2555,9 @@ export function buildBackendLocals(definition, baseLocals) {
     enumFields,
 
     // Field-level foreign_key imports (#354) and pgTable extra-config
-    // entries: single-column indexes (#355) + composite unique indexes (#356)
-    // + the external_id_tracking unique index.
+    // entries: single-column indexes (#355) + unique constraints (#356, #511,
+    // #784: unique_indexes entries and field unique: true) + the
+    // external_id_tracking unique.
     fieldFkImports,
     belongsToTableImports,
     tableConstraints,

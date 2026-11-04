@@ -13,9 +13,9 @@ import type { User } from '@repo/db/entities/user';
 
 /** All entity lookup maps, keyed by plural entity name (id → entity). */
 export interface EntityLookups {
-	deal_states: Map<string, DealState>;
-	persons: Map<string, Person>;
-	users: Map<string, User>;
+	deal_states: globalThis.Map<string, DealState>;
+	persons: globalThis.Map<string, Person>;
+	users: globalThis.Map<string, User>;
 }
 
 /** Build fresh lookup maps from current collection state (current page only). */

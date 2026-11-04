@@ -13,6 +13,9 @@
 #   `findByFieldDefinitionId` TWICE (declarative single-row + belongs_to FK array)
 #   → TS2393 "Duplicate function implementation". Post-fix the unique declarative
 #   query wins and the FK-traversal method is skipped → exactly one method.
+#
+#   #511: `field_definition_id` is `unique: true` + `index: true` (a one-to-one
+#   belongs_to FK on a non-tenant entity) -> only the unique index is emitted.
 entity:
   name: field_config
   plural: field_configs
@@ -24,6 +27,7 @@ fields:
     type: uuid
     required: true
     index: true
+    unique: true
 
   value:
     type: string

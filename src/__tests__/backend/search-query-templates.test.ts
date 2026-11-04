@@ -148,7 +148,7 @@ describe('backend search templates — use-case rendering', () => {
     expect(output).toContain(`import type { ListQuery, Page } from '${locals.paginationImport}';`);
     expect(output).not.toContain('@shared/http/pagination');
     expect(output).toContain('private readonly listUseCase: ListOpportunitiesUseCase');
-    expect(output).toContain('return this.listUseCase.execute(input, { where: and(...conditions) });');
+    expect(output).toContain('return this.listUseCase.execute(searchInput, { where: and(...whereTerms) });');
   });
 
   it('emits an ilike guard for the search field when declared', () => {
@@ -156,22 +156,22 @@ describe('backend search templates — use-case rendering', () => {
     const output = render('use-cases/search.ejs.t', locals);
 
     expect(output).toContain('ilike');
-    expect(output).toContain('if (input.search) conditions.push(ilike(opportunities.name,');
+    expect(output).toContain('if (searchInput.search) whereTerms.push(ilike(opportunities.name,');
   });
 
   it('emits boolean-aware filter guard (`!== undefined`) for boolean columns', () => {
     const locals = buildBackendLocals(baseEntity, withEntities());
     const output = render('use-cases/search.ejs.t', locals);
 
-    expect(output).toContain('if (input.isClosed !== undefined) conditions.push(eq(opportunities.isClosed, input.isClosed));');
+    expect(output).toContain('if (searchInput.isClosed !== undefined) whereTerms.push(eq(opportunities.isClosed, searchInput.isClosed));');
   });
 
   it('emits truthy-check filter guard for non-boolean columns', () => {
     const locals = buildBackendLocals(baseEntity, withEntities());
     const output = render('use-cases/search.ejs.t', locals);
 
-    expect(output).toContain('if (input.userId) conditions.push(eq(opportunities.userId, input.userId));');
-    expect(output).toContain('if (input.accountId) conditions.push(eq(opportunities.accountId, input.accountId));');
+    expect(output).toContain('if (searchInput.userId) whereTerms.push(eq(opportunities.userId, searchInput.userId));');
+    expect(output).toContain('if (searchInput.accountId) whereTerms.push(eq(opportunities.accountId, searchInput.accountId));');
   });
 });
 

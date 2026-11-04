@@ -298,4 +298,46 @@ describe('backend api:false HTTP-surface suppression (ADR-043 §6)', () => {
     expect(output).toContain("import { ContactController } from './contact.controller';");
     expect(output).toContain('controllers: [ContactController]');
   });
+
+  it('apiEnabled is false for the block form api: { enabled: false } (hygen half of the pair)', () => {
+    const locals = buildBackendLocals({ ...baseEntity, api: { enabled: false } }, withEntities());
+    expect(locals.apiEnabled).toBe(false);
+  });
+
+  const barrelCases: Array<[string, Record<string, unknown>]> = [
+    ['api: false', { api: false }],
+    ['api: { enabled: false }', { api: { enabled: false } }],
+  ];
+  for (const [form, patch] of barrelCases) {
+    it(`barrel exports no controller when ${form} (#811)`, () => {
+      const locals = buildBackendLocals({ ...baseEntity, ...patch }, withEntities());
+      const output = render('index.ejs.t', locals);
+      expect(output).not.toContain('ContactController');
+      expect(output).not.toContain("'./contact.controller'");
+      expect(output).toContain('// Value exports (module, service)\n');
+      expect(output).toContain("export { ContactsModule } from './contacts.module';");
+      expect(output).toContain("export { ContactService } from './contact.service';");
+      for (const t of [
+        "export type { Contact } from './contact.entity';",
+        "export type { CreateContactDto } from './dto/create-contact.dto';",
+        "export type { UpdateContactDto } from './dto/update-contact.dto';",
+        "export type { ContactOutputDto } from './dto/contact-output.dto';",
+        "export type { ListContactsQueryDto } from './dto/list-contacts.query';",
+      ]) {
+        expect(output).toContain(t);
+      }
+    });
+  }
+
+  for (const [label, patch] of [
+    ['default (no api:)', {}],
+    ['api: { enabled: true }', { api: { enabled: true } }],
+  ] as Array<[string, Record<string, unknown>]>) {
+    it(`barrel exports the controller for ${label} (#811 pin)`, () => {
+      const locals = buildBackendLocals({ ...baseEntity, ...patch }, withEntities());
+      const output = render('index.ejs.t', locals);
+      expect(output).toContain("export { ContactController } from './contact.controller';");
+      expect(output).toContain('// Value exports (module, service, controller)');
+    });
+  }
 });

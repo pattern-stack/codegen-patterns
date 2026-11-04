@@ -58,8 +58,8 @@ export const accounts = pgTable('accounts', {
 	tier: accountTierEnum('tier'),
 	website: text('website'),
 	externalId: text('external_id'),
-	createdAt: timestamp('created_at').notNull().defaultNow(),
-	updatedAt: timestamp('updated_at').notNull().defaultNow(),
+	createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export const contacts = pgTable('contacts', {
@@ -81,7 +81,7 @@ export const opportunities = pgTable('opportunities', {
 	wonAmount: numeric('won_amount'),
 	winProbability: numeric('win_probability'),
 	stage: opportunityStageEnum('stage'),
-	closedAt: timestamp('closed_at'),
+	closedAt: timestamp('closed_at', { withTimezone: true, mode: 'date' }),
 	accountId: uuid('account_id').notNull(),
 });
 
@@ -95,14 +95,14 @@ export const opportunityContacts = pgTable(
 		contactId: uuid('contact_id').notNull(),
 		role: opportunityContactRoleEnum('role').notNull(),
 		isPrimary: boolean('is_primary').notNull().default(false),
-		startedAt: timestamp('started_at'),
-		endedAt: timestamp('ended_at'),
+		startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+		endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
 		sourcedFrom: text('sourced_from'),
 		confidence: numeric('confidence', { precision: 5, scale: 4 }),
-		matchedAt: timestamp('matched_at'),
+		matchedAt: timestamp('matched_at', { withTimezone: true, mode: 'date' }),
 		influenceScore: numeric('influence_score'),
-		createdAt: timestamp('created_at').notNull().defaultNow(),
-		updatedAt: timestamp('updated_at').notNull().defaultNow(),
+		createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 	},
 	(table) => [primaryKey({ columns: [table.opportunityId, table.contactId, table.role] })],
 );

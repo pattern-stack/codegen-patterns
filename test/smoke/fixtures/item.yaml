@@ -1,0 +1,42 @@
+# Smoke fixture: item (#813)
+# Plural `items` is the Drizzle table export. At a8629dfc the list use case
+# declares `const [items, total]` in the same function that reads the `items`
+# table, which fails tsc with TS2448 + TS2454 in list-items.use-case.ts.
+# belongs_to makes the entity includable, so the includes branch renders.
+entity:
+  name: item
+  plural: items
+  table: items
+  pattern: Base
+
+fields:
+  record_id:
+    type: uuid
+    required: true
+    index: true
+    foreign_key: records.id
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  status:
+    type: enum
+    choices: [open, closed]
+    default: open
+
+behaviors:
+  - timestamps
+
+relationships:
+  record:
+    type: belongs_to
+    target: record
+    foreign_key: record_id
+
+queries:
+  - by: [record_id]
+  - name: search
+    filters: [status]
+    search: name

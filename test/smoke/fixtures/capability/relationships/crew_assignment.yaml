@@ -10,3 +10,6 @@ relationship:
   types:
     - member
     - reserve
+fields:
+  assigned_at:
+    type: datetime

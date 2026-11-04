@@ -22,7 +22,7 @@ import type { OpportunityContact } from '@repo/db/entities/opportunity_contact';
  * carry the key; this resolves to `undefined` instead, which is what the
  * result type branches on.
  */
-type Sel<I, K extends PropertyKey> = K extends keyof I ? I[K] : undefined;
+type Sel<I, K extends globalThis.PropertyKey> = K extends keyof I ? I[K] : undefined;
 
 /** To-one hops of Contact that join into the `contacts` branch's own query. */
 export interface OpportunityContactsWith {
@@ -31,7 +31,7 @@ export interface OpportunityContactsWith {
 }
 
 /** `opportunity.opportunityContacts` has no to-one hop to nest — `with` is empty. */
-export type OpportunityOpportunityContactsWith = Record<never, never>;
+export type OpportunityOpportunityContactsWith = globalThis.Record<never, never>;
 
 /**
  * The relations of Opportunity that are navigable on the client.
@@ -78,9 +78,9 @@ export interface OpportunityGraphResult<I extends OpportunityInclude> {
 }
 
 /** The `with` object of a branch's include value, or `{}` for a bare `true`. */
-function withOf(value: unknown): Record<string, unknown> {
+function withOf(value: unknown): globalThis.Record<string, unknown> {
 	return typeof value === 'object' && value !== null && 'with' in value
-		? ((value as { with?: Record<string, unknown> }).with ?? {})
+		? ((value as { with?: globalThis.Record<string, unknown> }).with ?? {})
 		: {};
 }
 
@@ -161,7 +161,7 @@ export function useOpportunityGraph<const I extends OpportunityInclude>(
 	const rootRow = root.data?.[0];
 	if (!rootRow) return { data: undefined, isLoading, isError };
 
-	const out: Record<string, unknown> = { ...rootRow.row };
+	const out: globalThis.Record<string, unknown> = { ...rootRow.row };
 	if (inc.account) out.account = rootRow.account;
 	if (inc.primaryNote) out.primaryNote = rootRow.primaryNote;
 	if (inc.contacts) {

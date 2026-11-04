@@ -20,7 +20,7 @@ import type { Opportunity } from '@repo/db/entities/opportunity';
  * carry the key; this resolves to `undefined` instead, which is what the
  * result type branches on.
  */
-type Sel<I, K extends PropertyKey> = K extends keyof I ? I[K] : undefined;
+type Sel<I, K extends globalThis.PropertyKey> = K extends keyof I ? I[K] : undefined;
 
 /** To-one hops of Contact that join into the `contacts` branch's own query. */
 export interface AccountContactsWith {
@@ -79,9 +79,9 @@ export interface AccountGraphResult<I extends AccountInclude> {
 }
 
 /** The `with` object of a branch's include value, or `{}` for a bare `true`. */
-function withOf(value: unknown): Record<string, unknown> {
+function withOf(value: unknown): globalThis.Record<string, unknown> {
 	return typeof value === 'object' && value !== null && 'with' in value
-		? ((value as { with?: Record<string, unknown> }).with ?? {})
+		? ((value as { with?: globalThis.Record<string, unknown> }).with ?? {})
 		: {};
 }
 
@@ -162,7 +162,7 @@ export function useAccountGraph<const I extends AccountInclude>(
 	const rootRow = root.data?.[0];
 	if (!rootRow) return { data: undefined, isLoading, isError };
 
-	const out: Record<string, unknown> = { ...rootRow.row };
+	const out: globalThis.Record<string, unknown> = { ...rootRow.row };
 	if (inc.parentAccount) out.parentAccount = rootRow.parentAccount;
 	if (inc.contacts) {
 		out.contacts = (contactsBranch.data ?? []).map((r) => ({

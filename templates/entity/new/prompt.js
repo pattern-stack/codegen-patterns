@@ -1,7 +1,10 @@
 /**
  * Hygen prompt.js - Loads entity YAML and prepares template locals
  *
- * Usage: bunx hygen entity new --yaml entities/opportunity.yaml
+ * Usage: bunx hygen entity new --yaml entities/opportunity.yaml [--renderSet a,b,c]
+ *
+ * `--renderSet` lists the entities the same run renders, so a has_many onto one
+ * of them is wired whatever the order (#815). Written by `entityNewArgs`.
  *
  * backend is the only backend pipeline (ARCH-0, #677), and
  * `backend/entity-locals.js` builds almost every local it reads from
@@ -297,6 +300,11 @@ async function ensurePatternsRegistryLoaded() {
 export default {
   prompt: async ({ args }) => {
     const yamlPath = args.yaml;
+    // #815: `--renderSet a,b,c` — the entities the same run renders. Absent is [].
+    const renderSet =
+      typeof args.renderSet === "string"
+        ? args.renderSet.split(",").filter(Boolean)
+        : [];
     if (!yamlPath) {
       throw new Error(
         "Missing --yaml argument. Usage: bunx hygen entity new --yaml entities/opportunity.yaml",
@@ -393,6 +401,12 @@ export default {
       entityLookup: projectEntityLookup(process.cwd()),
       // JUNC-0 (#678): the junction set this entity's fan-out renders from.
       junctions: loadJunctionDefinitions(process.cwd()),
+      // #815: the entities this run renders (`--renderSet`, written only by
+      // `entityNewArgs`). Absent means empty, which leaves only the on-disk
+      // check (never permissive). Dropping this key from the list shows up as
+      // a missing has_many composition: the single-pass baseline goes red if
+      // prompt.js or the runner drops it, the relationship smoke if the CLI does.
+      renderSet,
     });
 
     // ========================================================================
@@ -436,7 +450,7 @@ export default {
       number: 'number',
       boolean: 'boolean',
       date: 'Date',
-      json: 'Record<string, unknown>',
+      json: 'globalThis.Record<string, unknown>',
     };
 
     // Load top-level events/<name>.yaml, tolerant of missing dir / bad files.

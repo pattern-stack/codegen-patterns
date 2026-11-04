@@ -4,7 +4,7 @@
 import type { FieldMeta, FieldType, FieldImportance } from './field-meta';
 import type { DealState } from '@repo/db/entities/deal_state';
 
-export const dealStateFields: Record<string, FieldMeta<DealState>> = {
+export const dealStateFields: globalThis.Record<string, FieldMeta<DealState>> = {
 	tenantId: {
 		field: 'tenantId',
 		label: 'Tenant Id',

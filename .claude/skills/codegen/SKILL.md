@@ -98,8 +98,9 @@ printed the console report). Still text-only warnings: `project inspect --kind m
 `eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +
 folder) and `context:` (folder nesting), read from `paths.entities` / `entities/` (the first that exists — the CLI's rule,
 `src/config/entities-dir.ts`). A target with no YAML there is a **generation error** naming the directory searched;
-for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML — or one not
-generated yet — is not wired (the two-pass `targetExists` check), not an error.
+for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML is not wired, and that is not an error. One onto a target with a YAML is wired
+when the same run generates the target (`--all`, or a junction's two parents; `--renderSet`, #815) or the target is
+already on disk. A single-file `entity new` of the parent leaves it unwired until the target exists.
 
 **Every generated FK callback is `.references((): AnyPgColumn => <table>.id)`** (NAME-1, #631) — backend
 belongs_to + field `foreign_key:`, junction and relationship endpoints. Two tables with FKs to each other (or any
@@ -193,7 +194,7 @@ tarball smoke (`just test-post-publish`) covers package mode from the packed art
 
 ```yaml
 entity:
-  name: contact                 # singular snake_case
+  name: contact                 # singular snake_case; not `promise` | `array` | `date` (#813)
   plural: contacts
   table: contacts
   pattern: Integrated           # Integrated | Activity | Metadata | Knowledge | Base | app-defined (ADR-031)
@@ -207,7 +208,7 @@ entity:
                                 #   { Actor: { kind: individual } } | { Actor: { kind: group, members: <has_many> } }
 
 fields:
-  email: { type: string, required: true, max_length: 255, index: true }
+  email: { type: string, required: true, max_length: 255, unique: true }
   status: { type: enum, choices: [active, inactive] }
 
 relationships:
@@ -226,14 +227,14 @@ generate:
 
 queries:
   - by: [email]
-    unique: true                # NOTE: emits an index, not a DB UNIQUE constraint (#484, #511)
+    unique: true                # finder hint (single row); no DDL. The constraint is field `unique: true` / `unique_indexes:`
   - by: [account_id]
     order: created_at desc
   - name: search                # → SearchXUseCase + GET /<plural>/search — the list's
     filters: [userId, accountId]  #   ListQuery + these filters, returning the list's Page<T>
     search: name
 
-unique_indexes: [...]           # composite unique indexes
+unique_indexes: [...]           # unique constraints: 1+ fields, where: (partial), nulls_not_distinct:
 eav: true                       # paired *WithFields reads + transactional compound writes
 eav_value_table: true           # this entity IS the value table (needs eav_definition_table)
 eav_definition_table: field_definition

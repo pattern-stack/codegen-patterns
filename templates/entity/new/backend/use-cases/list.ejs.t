@@ -60,18 +60,18 @@ export class <%= classNames.listUseCase %> {
    * nested read without widening what the reader can see.
    */
   async execute<TWith extends <%= classNames.entity %>Include = <%= classNames.entity %>NoInclude>(
-    query?: ListQuery,
-    options: { include?: TWith; where?: SQL } = {},
+    listQuery?: ListQuery,
+    listOptions: { include?: TWith; where?: SQL } = {},
   ): Promise<Page<<%= classNames.entity %>Result<TWith>>> {
-    const { include, where } = options;
+    const { include: includeTree, where: whereClause } = listOptions;
 <% } else { -%>
   async execute(
-    query?: ListQuery,
-    options: { where?: SQL } = {},
+    listQuery?: ListQuery,
+    listOptions: { where?: SQL } = {},
   ): Promise<Page<<%= classNames.entity %>>> {
-    const { where } = options;
+    const { where: whereClause } = listOptions;
 <% } -%>
-    const resolved = resolveListQuery(query);
+    const resolvedQuery = resolveListQuery(listQuery);
 
 <% if (hasTimestamps) { -%>
     // Default sort: `created_at desc, id desc` (id is the stable keyset
@@ -93,15 +93,15 @@ export class <%= classNames.listUseCase %> {
     // relational query builder (the `with`-include path) aliases the root table
     // (REL-2 §2.4). A pre-rendered fragment would name `<%= entityNamePlural %>`,
     // which is not in scope there.
-    const sortColumn = resolved.sortBy.replace(
+    const sortColumn = resolvedQuery.sortBy.replace(
       /_([a-z])/g,
       (_m: string, c: string) => c.toUpperCase(),
     );
-    const known =
-      (<%= entityNamePlural %> as unknown as Record<string, unknown>)[sortColumn] !== undefined;
-    const sort: SortTerm[] = known
+    const isKnownColumn =
+      (<%= entityNamePlural %> as unknown as globalThis.Record<string, unknown>)[sortColumn] !== undefined;
+    const sortTerms: SortTerm[] = isKnownColumn
       ? [
-          { column: sortColumn, direction: resolved.sortOrder },
+          { column: sortColumn, direction: resolvedQuery.sortOrder },
           { column: 'id', direction: 'desc' },
         ]
 <% if (hasTimestamps) { -%>
@@ -119,7 +119,7 @@ export class <%= classNames.listUseCase %> {
 
 <% if (hasTimestamps) { -%>
     // KEYSET SEAM (deferred — v1 fetches by offset). When the keyset upgrade
-    // lands, branch here on `resolved.cursor`: decode it and fetch by
+    // lands, branch here on `resolvedQuery.cursor`: decode it and fetch by
     // `WHERE (created_at, id) < (cursorCreatedAt, cursorId)` LIMIT pageSize,
     // dropping the offset. The envelope + nextCursor below are unchanged.
 <% } else { -%>
@@ -128,26 +128,26 @@ export class <%= classNames.listUseCase %> {
     // is nothing to seek from. Offset paging is the whole story until the YAML
     // adds the `timestamps` behavior.
 <% } -%>
-    const [items, total] = await Promise.all([
+    const [pageRows, rowTotal] = await Promise.all([
 <% if (includes) { -%>
       this.service.list<TWith>({
-        where,
-        limit: resolved.pageSize,
-        offset: resolved.offset,
-        sort,
-        ...(include === undefined ? {} : { with: include }),
+        where: whereClause,
+        limit: resolvedQuery.pageSize,
+        offset: resolvedQuery.offset,
+        sort: sortTerms,
+        ...(includeTree === undefined ? {} : { with: includeTree }),
       }),
 <% } else { -%>
       this.service.list({
-        where,
-        limit: resolved.pageSize,
-        offset: resolved.offset,
-        sort,
+        where: whereClause,
+        limit: resolvedQuery.pageSize,
+        offset: resolvedQuery.offset,
+        sort: sortTerms,
       }),
 <% } -%>
-      this.service.count(where),
+      this.service.count(whereClause),
     ]);
 
-    return buildPage(items, total, resolved);
+    return buildPage(pageRows, rowTotal, resolvedQuery);
   }
 }

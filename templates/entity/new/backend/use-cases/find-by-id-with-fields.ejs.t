@@ -14,7 +14,7 @@ export class <%= classNames.findByIdWithFieldsUseCase %> {
 
   async execute(
     id: string,
-  ): Promise<(<%= classNames.entity %> & { fields: Record<string, unknown> }) | null> {
+  ): Promise<(<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }) | null> {
     return this.service.findByIdWithFields(id);
   }
 }

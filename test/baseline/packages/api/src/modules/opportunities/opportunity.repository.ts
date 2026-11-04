@@ -28,7 +28,7 @@ export type OpportunityResult<TWith extends OpportunityInclude> =
   ResultOf<'opportunities', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type OpportunityNoInclude = Record<string, never>;
+export type OpportunityNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -44,7 +44,7 @@ export type OpportunityNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type OpportunityApiResult = Opportunity &
-  Partial<OpportunityResult<OpportunityInclude>>;
+  globalThis.Partial<OpportunityResult<OpportunityInclude>>;
 
 @Injectable()
 export class OpportunityRepository extends BaseRepository<Opportunity, typeof opportunities, Relations> {

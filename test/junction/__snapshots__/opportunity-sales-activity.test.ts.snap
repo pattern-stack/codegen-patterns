@@ -35,17 +35,17 @@ export const opportunitySalesActivities = pgTable(
     isPrimary: boolean('is_primary').notNull().default(false),
 
     // Temporal window (temporal: true, default)
-    startedAt: timestamp('started_at'),
-    endedAt: timestamp('ended_at'),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+    endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
 
     // Provenance (sourced: true, default)
     sourcedFrom: text('sourced_from'),
     confidence: numeric('confidence', { precision: 5, scale: 4 }),
-    matchedAt: timestamp('matched_at'),
+    matchedAt: timestamp('matched_at', { withTimezone: true, mode: 'date' }),
 
     // Timestamps
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (table) => [
     // Composite primary key on the two FK columns (Q4 resolution: no surrogate id)
@@ -193,8 +193,8 @@ import type { SalesActivity } from '../sales-activities/sales-activity.entity';
  * attaching. Subset of \`OpportunitySalesActivity\` minus the two FK columns
  * (those come from the method args).
  */
-export type OpportunitySalesActivityLinkInput = Partial<
-  Pick<OpportunitySalesActivity,
+export type OpportunitySalesActivityLinkInput = globalThis.Partial<
+  globalThis.Pick<OpportunitySalesActivity,
     'isPrimary' | 'startedAt' | 'endedAt' | 'sourcedFrom' | 'confidence' | 'matchedAt'
   >
 >;
@@ -270,7 +270,7 @@ export class OpportunitySalesActivityService extends WithAnalytics(
       opportunityId: opportunityId,
       salesActivityId: salesActivityId,
       ...(link ?? {}),
-    } as unknown as Partial<OpportunitySalesActivity>);
+    } as unknown as globalThis.Partial<OpportunitySalesActivity>);
   }
 
   /**
@@ -339,7 +339,7 @@ export class OpportunitySalesActivityService extends WithAnalytics(
     if (match) {
       await this.update(
         (match as any).id ?? \`\${opportunityId}:\${salesActivityId}\`,
-        { isPrimary: true } as unknown as Partial<OpportunitySalesActivity>,
+        { isPrimary: true } as unknown as globalThis.Partial<OpportunitySalesActivity>,
       );
     }
   }

@@ -47,3 +47,8 @@ queries:
     unique: true
   # Composite query mixing FK + non-FK columns.
   - by: [account_id, email]
+
+# #784: a non-tenant NULLS NOT DISTINCT constraint over a belongs_to FK column.
+unique_indexes:
+  - fields: [account_id, email]
+    nulls_not_distinct: true

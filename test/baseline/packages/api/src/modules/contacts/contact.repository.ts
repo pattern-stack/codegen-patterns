@@ -33,7 +33,7 @@ export interface ContactIntegrationWrite {
   readonly accountExternalId?: string | null;
   readonly userExternalId?: string | null;
   /** Flat custom-field bag (EAV). */
-  readonly fields?: Record<string, unknown>;
+  readonly fields?: globalThis.Record<string, unknown>;
 }
 
 /**
@@ -71,7 +71,7 @@ export type ContactResult<TWith extends ContactInclude> =
   ResultOf<'contacts', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type ContactNoInclude = Record<string, never>;
+export type ContactNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -87,7 +87,7 @@ export type ContactNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type ContactApiResult = Contact &
-  Partial<ContactResult<ContactInclude>>;
+  globalThis.Partial<ContactResult<ContactInclude>>;
 
 @Injectable()
 export class ContactRepository extends IntegratedEntityRepository<

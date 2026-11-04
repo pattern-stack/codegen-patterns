@@ -28,7 +28,7 @@ export type DealStateResult<TWith extends DealStateInclude> =
   ResultOf<'deal_states', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type DealStateNoInclude = Record<string, never>;
+export type DealStateNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -44,7 +44,7 @@ export type DealStateNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type DealStateApiResult = DealState &
-  Partial<DealStateResult<DealStateInclude>>;
+  globalThis.Partial<DealStateResult<DealStateInclude>>;
 
 @Injectable()
 export class DealStateRepository extends BaseRepository<DealState, typeof deal_states, Relations> {
