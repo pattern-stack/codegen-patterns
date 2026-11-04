@@ -207,7 +207,7 @@ entity:
                                 #   { Actor: { kind: individual } } | { Actor: { kind: group, members: <has_many> } }
 
 fields:
-  email: { type: string, required: true, max_length: 255, index: true }
+  email: { type: string, required: true, max_length: 255, unique: true }
   status: { type: enum, choices: [active, inactive] }
 
 relationships:
@@ -226,14 +226,14 @@ generate:
 
 queries:
   - by: [email]
-    unique: true                # NOTE: emits an index, not a DB UNIQUE constraint (#484, #511)
+    unique: true                # finder hint (single row); no DDL. The constraint is field `unique: true` / `unique_indexes:`
   - by: [account_id]
     order: created_at desc
   - name: search                # → SearchXUseCase + GET /<plural>/search — the list's
     filters: [userId, accountId]  #   ListQuery + these filters, returning the list's Page<T>
     search: name
 
-unique_indexes: [...]           # composite unique indexes
+unique_indexes: [...]           # unique constraints: 1+ fields, where: (partial), nulls_not_distinct:
 eav: true                       # paired *WithFields reads + transactional compound writes
 eav_value_table: true           # this entity IS the value table (needs eav_definition_table)
 eav_definition_table: field_definition

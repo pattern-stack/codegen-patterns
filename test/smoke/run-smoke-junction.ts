@@ -33,6 +33,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { emittedDir, emittedStem } from '../../src/config/file-naming.js';
 import { tscGateErrors } from './_consumer-errors';
+import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 
 import {
   bootstrapJunctionProject,
@@ -161,6 +162,15 @@ function assertJunctionEmission(
   generatedSrc: string,
   scenario: Scenario,
 ): void {
+  // #796: every time column in this layout's own modules dir is timestamptz
+  // Opt-outs come from the fixture YAML (none are declared today, so the set is empty).
+  const fixtureYamls = ['fixtures-junction', 'fixtures-junction-cross-domain']
+    .flatMap((d) => ['entities', 'junctions'].map((k) => path.join(import.meta.dirname, d, k)))
+    .filter((d) => fs.existsSync(d))
+    .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
+  const tsScan = assertTimestampColumns(path.join(generatedSrc, P.modules), collectTimezoneOptOuts(fixtureYamls));
+  log(`timestamptz scan OK (${tsScan.calls} calls in ${tsScan.files} entity files)`);
+
   const reads = (p: string): string => {
     const fullPath = path.join(generatedSrc, p);
     if (!fs.existsSync(fullPath)) {

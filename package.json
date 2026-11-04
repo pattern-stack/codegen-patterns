@@ -67,6 +67,7 @@
     "src/config/project-config.ts",
     "src/schema/codegen-config.schema.ts",
     "src/schema/field-nullability.ts",
+    "src/schema/field-timestamp.ts",
     "src/utils/find-yaml-files.ts",
     "src/patterns/library/*.ts",
     "CHANGELOG.md",

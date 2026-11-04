@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from './_consumer-errors';
+import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -323,6 +324,93 @@ function assertSemanticEmission(tmpDir: string): void {
 		model,
 		/export function buildAggregateModel\(\): AggregateModel/,
 		'buildAggregateModel export',
+	);
+}
+
+/**
+ * #511 — a field's `unique: true` emits a unique index (per tenant under
+ * `tenant_scoped`). `tsc` passes vacuously when nothing is emitted, so this
+ * content assertion is what makes the smoke able to fail on its subject.
+ */
+function assertFieldUniqueEmission(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const canonical = reads('modules/canonical-fields/canonical-field.entity.ts');
+	assertContains(
+		canonical,
+		/uniqueIndex\('canonical_fields_name_uniq'\)\.on\(t\.name\)/,
+		'canonical_field.name unique: true -> uniqueIndex (#511)',
+	);
+
+	const fieldConfig = reads('modules/field-configs/field-config.entity.ts');
+	assertContains(
+		fieldConfig,
+		/uniqueIndex\('field_configs_field_definition_id_uniq'\)\.on\(t\.fieldDefinitionId\)/,
+		'field_config.field_definition_id unique FK -> uniqueIndex (#511)',
+	);
+	assertNotContains(
+		fieldConfig,
+		/index\('field_configs_field_definition_id_idx'\)/,
+		'field_config unique + index on a non-tenant FK drops the plain index (#511)',
+	);
+
+	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
+	assertContains(
+		tenantNote,
+		/unique\('tenant_notes_tenant_id_slug_uniq'\)\.on\(t\.tenantId, t\.slug\)\.nullsNotDistinct\(\)/,
+		'tenant_note.slug unique -> per-tenant NULLS NOT DISTINCT constraint (#511, #784)',
+	);
+	assertContains(
+		tenantNote,
+		/index\('tenant_notes_slug_idx'\)/,
+		'tenant_note keeps the plain slug index under tenant_scoped (#511)',
+	);
+	assertNotContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_slug_uniq'\)/,
+		'tenant_note must not emit a bare global unique (#511)',
+	);
+}
+
+function assertUniqueIndexShapes(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const account = reads('modules/accounts/account.entity.ts');
+	assertContains(
+		account,
+		/uniqueIndex\('accounts_live_name_uniq'\)\.on\(t\.name\)\.where\(sql`\$\{t\.status\} <> 'archived'`\)/,
+		'account partial unique -> uniqueIndex().where(sql) (#784)',
+	);
+	assertContains(
+		account,
+		/import { sql, type InferSelectModel } from 'drizzle-orm';/,
+		'account imports sql beside InferSelectModel (#784)',
+	);
+
+	const contact = reads('modules/contacts/contact.entity.ts');
+	assertContains(
+		contact,
+		/unique\('contacts_account_id_email_uniq'\)\.on\(t\.accountId, t\.email\)\.nullsNotDistinct\(\)/,
+		'contact nulls_not_distinct -> unique().nullsNotDistinct() (#784)',
+	);
+
+	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
+	assertContains(
+		tenantNote,
+		/unique\('tenant_notes_tenant_id_title_slug_uniq'\)\.on\(t\.tenantId, t\.title, t\.slug\)\.nullsNotDistinct\(\)/,
+		'tenant_note composite unique defaults to NULLS NOT DISTINCT (#784)',
+	);
+	assertContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_tenant_id_owner_workspace_id_uniq'\)\.on\(t\.tenantId, t\.ownerWorkspaceId\)/,
+		'tenant_note nulls_not_distinct: false opt-out -> plain uniqueIndex (#784)',
+	);
+	assertContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_live_title_uniq'\)\.on\(t\.tenantId, t\.title\)\.where\(sql`\$\{t\.deletedAt\} IS NULL`\)/,
+		'tenant_note tenant partial -> uniqueIndex().where(sql) (#784)',
 	);
 }
 
@@ -662,6 +750,24 @@ async function main(): Promise<number> {
 		if (SCENARIO === 'relationship') {
 			log('second pass (relationship scenario — seeds existingHasMany)');
 			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
+		}
+
+		// 5.00. #796 — every emitted time column is timestamptz, except the YAML-declared opt-outs.
+		{
+			const scan = assertTimestampColumns(
+				path.join(tmpDir, 'src/modules'),
+				collectTimezoneOptOuts(fixtureFiles.map((f) => path.join(FIXTURES_DIR, f))),
+			);
+			log(`timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);
+		}
+
+		// 5.0. #511 — field `unique: true` emission (default scenario fixtures).
+		if (SCENARIO === 'default') {
+			log('asserting field unique emission');
+			assertFieldUniqueEmission(tmpDir);
+			log('field unique emission OK');
+			assertUniqueIndexShapes(tmpDir);
+			log('unique_indexes shapes OK');
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the
