@@ -11,7 +11,7 @@ import {
   type AnyPgColumn,
 <%_ } _%>
 } from 'drizzle-orm/pg-core';
-import { type InferSelectModel } from 'drizzle-orm';
+import { <%- drizzleOrmImports.map(i => i + ', ').join('') %>type InferSelectModel } from 'drizzle-orm';
 <%_ belongsToTableImports.forEach(imp => { _%>
 import { <%= imp.relatedTable %> } from '<%= imp.importPath %>';
 <%_ }) _%>
@@ -57,14 +57,14 @@ export const <%= entityNamePlural %> = pgTable(
     tenantId: uuid('tenant_id'),
 <%_ } _%>
 <%_ if (hasTimestamps) { _%>
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: <%- timestampColumn('created_at') %>.notNull().defaultNow(),
+    updatedAt: <%- timestampColumn('updated_at') %>.notNull().defaultNow(),
 <%_ } _%>
 <%_ if (hasSoftDelete) { _%>
-    deletedAt: timestamp('deleted_at'),
+    deletedAt: <%- timestampColumn('deleted_at') %>,
 <%_ } _%>
   },
-<%_ /* #355/#356: pgTable extra-config — indexes + composite unique indexes + external_id unique index */ _%>
+<%_ /* #355/#356/#511/#784: pgTable extra-config — indexes + unique constraints (uniqueIndex / unique().nullsNotDistinct()) + external_id unique */ _%>
 <%_ if (tableConstraints.length > 0) { _%>
   (t) => [
 <%_ tableConstraints.forEach(c => { _%>

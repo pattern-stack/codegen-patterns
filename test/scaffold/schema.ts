@@ -27,6 +27,14 @@ export * from '@gen/modules/regions/region.entity';
 export * from '@gen/modules/sites/site.entity';
 export * from '@gen/modules/sensors/sensor.entity';
 export * from '@gen/modules/site-sensors/site-sensor.entity';
+// #511: field `unique: true` -> a unique index, per tenant under `tenant_scoped`.
+export * from '@gen/modules/account-profiles/account-profile.entity';
+export * from '@gen/modules/asset-tags/asset-tag.entity';
+// #784: partial unique indexes (revision) and the tenant NULLS NOT DISTINCT default (category).
+export * from '@gen/modules/revisions/revision.entity';
+export * from '@gen/modules/categories/category.entity';
+// #796: timestamptz columns, and the `timezone: false` opt-out (appointment).
+export * from '@gen/modules/appointments/appointment.entity';
 
 // Subsystem schemas come from `@shared/*` — i.e. `runtime/subsystems/*`, the
 // real source — NOT from a vendored copy generated into the repo root. One
@@ -63,9 +71,9 @@ export const crmEntities = pgTable('crm_entities', {
   provider: text('provider'),
   userId: text('user_id'),
   name: text('name').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  deletedAt: timestamp('deleted_at'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
 });
 
 export type CrmEntity = InferSelectModel<typeof crmEntities>;
@@ -75,12 +83,12 @@ export const activityEntities = pgTable('activity_entities', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id'),
   opportunityId: text('opportunity_id'),
-  occurredAt: timestamp('occurred_at').notNull().defaultNow(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   name: text('name').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   // softDelete target for the per-family scope-guard tests (SCOPE-0, #616).
-  deletedAt: timestamp('deleted_at'),
+  deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
 });
 
 export type ActivityEntity = InferSelectModel<typeof activityEntities>;
@@ -92,13 +100,13 @@ export const metadataEntities = pgTable('metadata_entities', {
   entityId: text('entity_id').notNull(),
   fieldName: text('field_name').notNull(),
   fieldValue: text('field_value'),
-  validFrom: timestamp('valid_from').notNull().defaultNow(),
+  validFrom: timestamp('valid_from', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   // userTracking + softDelete targets for the per-family scope-guard tests
   // (SCOPE-0, #616). Nullable, so the family's own tests are unaffected.
   userId: text('user_id'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  deletedAt: timestamp('deleted_at'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
 });
 
 /**
@@ -114,9 +122,9 @@ export const tenantEntities = pgTable('tenant_entities', {
   tenantId: uuid('tenant_id'),
   userId: text('user_id'),
   name: text('name').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  deletedAt: timestamp('deleted_at'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
 });
 
 export type TenantEntity = InferSelectModel<typeof tenantEntities>;
@@ -147,9 +155,9 @@ export const tenantCrmEntities = pgTable(
     provider: text('provider'),
     userId: text('user_id'),
     name: text('name').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     index('tenant_crm_entities_tenant_id_idx').on(t.tenantId),
@@ -172,10 +180,10 @@ export const tenantMetadataEntities = pgTable('tenant_metadata_entities', {
   entityId: text('entity_id').notNull(),
   fieldName: text('field_name').notNull(),
   fieldValue: text('field_value'),
-  validFrom: timestamp('valid_from').notNull().defaultNow(),
+  validFrom: timestamp('valid_from', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   userId: text('user_id'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export type TenantMetadataEntity = InferSelectModel<typeof tenantMetadataEntities>;
@@ -203,11 +211,11 @@ export const capMeetings = pgTable('cap_meetings', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id'),
   title: text('title').notNull(),
-  occurredAt: timestamp('occurred_at').notNull().defaultNow(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   hostContactId: uuid('host_contact_id').references(() => capContacts.id),
   aboutAccountId: uuid('about_account_id').references(() => capAccounts.id),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export const capMeetingContacts = pgTable(

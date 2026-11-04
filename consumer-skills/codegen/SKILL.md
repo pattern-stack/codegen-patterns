@@ -44,7 +44,9 @@ machine-readable output and `--cwd <path>` to target another project root.
   `codegen.config.yaml` (ADR-037):
   - `package` (the default) — generated code imports the runtime straight from
     `@pattern-stack/codegen/subsystems` and `@pattern-stack/codegen/runtime/*`.
-    Nothing is vendored.
+    Nothing is vendored. Project-specific generated code, such as the typed
+    event bus (`TypedEventBus`), comes from `<paths.generated>` (e.g.
+    `src/generated/events/bus`), never from the package.
   - `vendored` — the package copies its runtime (base classes, types, the
     `DRIZZLE` token, the Zod pipe, the OpenAPI registry) into `src/shared/**`
     and installed subsystems into `<subsystems-root>/<name>/`, imported via
@@ -76,8 +78,9 @@ The generated data plane is **closed by default**:
   Use cases get the actor from the request context (`tryGetRequester()`).
   Don't add header-sourced identity back.
 - To keep an entity internal (no REST/Electric/tRPC routes) while still
-  generating its service and use cases, set `api: false` at the top level of
-  its YAML.
+  generating its service and use cases, set `api: false` (or
+  `api: { enabled: false }`) at the top level of its YAML. The entity's module
+  barrel then exports the module, service and types, but no controller.
 
 **Upgrading from before 0.30.0:** after bumping the package, run
 `codegen project update`, then `codegen project upgrade-auth`. The latter is
@@ -210,8 +213,12 @@ codegen skills list
   `codegen update`. Without it, the installed subsystems and skills (and in
   vendored mode, `src/shared/**`) are stale against the new package. Crossing
   0.30.0 also needs `codegen project upgrade-auth` (see Authentication).
-- **`unique: true` on a field or query creates an index, not a DB `UNIQUE`
-  constraint** (#484, #511). Add the constraint yourself if you rely on it.
+- **A field's `unique: true` emits `uniqueIndex`**; under `tenant_scoped` it is per tenant and a
+  `unique(...).nullsNotDistinct()` constraint (#511, #784). A `queries:` entry's `unique: true` is a finder
+  hint (single row) and emits no DDL (#484, #821).
+- **Uniques on a `tenant_scoped` entity are NULLS NOT DISTINCT by default** (#784; PostgreSQL 15+), so a nullable
+  `unique: true` field there admits one NULL per tenant. `unique_indexes:` entries take `where:` (partial) and
+  `nulls_not_distinct:` (`false` opts out); see the entity YAML reference.
 
 ## Do not
 

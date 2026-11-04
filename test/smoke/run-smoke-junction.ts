@@ -19,6 +19,9 @@
  * `paths.entities`) in a config written BEFORE `project init`, runs
  * `subsystem install events` + `jobs`, and asserts nothing lands at the default locations —
  * the #566 / #612 gate. `just test-smoke-junction` runs it in both modes.
+ * The custom legs also compile an `emits:` entity's create / update / delete
+ * use cases in a `context:` folder and assert their `TypedEventBus` import
+ * (#814): the token from the barrel, the class from `<paths.generated>/events/bus`.
  *
  * Bootstrap (tmp project, deps, codegen run) is delegated to
  * `test/junction/_helpers.ts` so snapshot tests can share the same path.
@@ -30,12 +33,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { emittedDir, emittedStem } from '../../src/config/file-naming.js';
 import { tscGateErrors } from './_consumer-errors';
+import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 
 import {
   bootstrapJunctionProject,
   CLI_PATH,
   CUSTOM_LAYOUT_APP_PATTERN,
   CUSTOM_LAYOUT_BOOT_CONFIG,
+  CUSTOM_LAYOUT_EMITS_ENTITY,
   LAYOUT_PATHS,
   SCENARIO_META,
   VALID_LAYOUTS,
@@ -157,6 +162,15 @@ function assertJunctionEmission(
   generatedSrc: string,
   scenario: Scenario,
 ): void {
+  // #796: every time column in this layout's own modules dir is timestamptz
+  // Opt-outs come from the fixture YAML (none are declared today, so the set is empty).
+  const fixtureYamls = ['fixtures-junction', 'fixtures-junction-cross-domain']
+    .flatMap((d) => ['entities', 'junctions'].map((k) => path.join(import.meta.dirname, d, k)))
+    .filter((d) => fs.existsSync(d))
+    .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
+  const tsScan = assertTimestampColumns(path.join(generatedSrc, P.modules), collectTimezoneOptOuts(fixtureYamls));
+  log(`timestamptz scan OK (${tsScan.calls} calls in ${tsScan.files} entity files)`);
+
   const reads = (p: string): string => {
     const fullPath = path.join(generatedSrc, p);
     if (!fs.existsSync(fullPath)) {
@@ -512,6 +526,62 @@ function assertCustomLayout(projectDir: string): void {
   log('layout assertions passed: custom');
 }
 
+/**
+ * #814: the write use cases of an `emits:` entity import the token from the
+ * barrel and the class from the project's own generated bus (package mode), or
+ * both from `@shared/subsystems/events` (vendored). Every path derives from `P`
+ * and the fixture descriptor, never from a default.
+ */
+function assertTypedEventBusImports(projectDir: string, runtime: RuntimeMode): void {
+  const { entity, plural, context } = CUSTOM_LAYOUT_EMITS_ENTITY;
+  const useCasesRel = `${P.modules}/${emittedDir(context)}/${emittedDir(plural)}/use-cases`;
+  const wrongClass =
+    /import \{[^}]*\bTypedEventBus\b[^}]*\} from '@pattern-stack\/codegen\/subsystems'/;
+  for (const op of ['create', 'update', 'delete']) {
+    const rel = `${useCasesRel}/${emittedStem(op, entity)}.use-case.ts`;
+    const abs = path.join(projectDir, rel);
+    if (!fs.existsSync(abs)) throw new Error(`#814: expected ${rel}`);
+    const src = fs.readFileSync(abs, 'utf8');
+    // An absent emits path falls back to the one-line delegate, which compiles:
+    // without this the gate would pass on the wrong subject (rule (c)).
+    assertContains(src, /this\.typedEvents\.publish\(/, `${rel}: renders the emits body`);
+    assertContains(src, new RegExp(`'${entity}_${op}d'`), `${rel}: publishes ${entity}_${op}d`);
+    if (runtime === 'package') {
+      const busSpecifier = path.posix.relative(useCasesRel, `${P.generated}/events/bus`);
+      assertContains(
+        src,
+        /import \{ TYPED_EVENT_BUS \} from '@pattern-stack\/codegen\/subsystems';/,
+        `${rel}: token from the barrel`,
+      );
+      assertContains(
+        src,
+        new RegExp(`import \\{ TypedEventBus \\} from '${busSpecifier.replace(/\./g, '\\.')}';`),
+        `${rel}: class from the generated bus (${busSpecifier})`,
+      );
+    } else {
+      assertContains(
+        src,
+        /import \{ TYPED_EVENT_BUS, TypedEventBus \} from '@shared\/subsystems\/events';/,
+        `${rel}: single combined vendored import`,
+      );
+    }
+    assertAbsent(src, wrongClass, `${rel}: TypedEventBus is not imported from the package barrel`);
+  }
+  if (runtime === 'package') {
+    for (const f of ['bus.ts', 'types.ts']) {
+      if (!fs.existsSync(path.join(projectDir, P.generated, 'events', f))) {
+        throw new Error(`#814: expected ${P.generated}/events/${f}`);
+      }
+    }
+    assertContains(
+      fs.readFileSync(path.join(projectDir, P.generated, 'events', 'types.ts'), 'utf8'),
+      /'journal_entry_created'/,
+      `${P.generated}/events/types.ts declares journal_entry_created`,
+    );
+  }
+  log(`typed event bus import assertions passed: ${runtime}`);
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -593,7 +663,10 @@ async function main(): Promise<number> {
       const { leftEnt, rightEnt } = SCENARIO_META[scenarioArg];
       assertJunctionRelations(result.projectDir, junctionName, leftEnt, rightEnt);
       assertRuntimeSpecifiers(result.projectDir, scenarioArg, runtimeArg);
-      if (layoutArg === 'custom') assertCustomLayout(result.projectDir);
+      if (layoutArg === 'custom') {
+        assertCustomLayout(result.projectDir);
+        assertTypedEventBusImports(result.projectDir, runtimeArg);
+      }
     }
 
     // 10. DI-resolution gate — boot the generated AppModule. `tsc` + grep

@@ -30,3 +30,9 @@ queries:
   - name: search
     filters: [status]
     search: name
+
+# #784: a partial unique index over an enum column (non-tenant).
+unique_indexes:
+  - fields: [name]
+    where: "status <> 'archived'"
+    name: accounts_live_name_uniq

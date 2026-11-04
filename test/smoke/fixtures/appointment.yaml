@@ -1,0 +1,30 @@
+# Smoke fixture: appointment (#796)
+#
+# Time columns. A `type: datetime` field and the `timestamps` / `soft_delete`
+# behavior columns are `timestamp with time zone`; `timezone: false` opts one
+# field back to a wall-clock `timestamp without time zone`. The smoke scan
+# (`test/smoke/_timestamp-columns.ts`) reads the opt-out from this YAML and
+# checks every emitted `timestamp(...)` call against it.
+entity:
+  name: appointment
+  plural: appointments
+  table: appointments
+  pattern: Base
+
+fields:
+  title:
+    type: string
+    required: true
+  starts_at:
+    type: datetime
+    required: true
+  reminded_at:
+    type: datetime
+    default: now
+  opens_at:
+    type: datetime
+    timezone: false
+
+behaviors:
+  - timestamps
+  - soft_delete

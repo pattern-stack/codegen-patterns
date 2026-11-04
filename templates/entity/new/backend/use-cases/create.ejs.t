@@ -9,7 +9,12 @@ import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
 <% if (hasEmits && createEventType) { -%>
+<% if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+<% } else { -%>
+import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
+import { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } -%>
 import { tryGetRequester } from '<%= tenantContextImport %>';
 <% } -%>
 import { FieldValueService } from '<%= eavFieldValueUseCaseImportDir %>/<%= eavFieldValueStem %>.service';
@@ -87,7 +92,12 @@ export class <%= classNames.createUseCase %> {
 import { Injectable, Inject } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+<% if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+<% } else { -%>
+import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
+import { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } -%>
 import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 import type { <%= classNames.createDto %> } from '../dto/create-<%= entityFileStem %>.dto';

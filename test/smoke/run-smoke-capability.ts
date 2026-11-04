@@ -57,6 +57,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from './_consumer-errors';
+import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 import { aliasPackageRuntime } from './_package-runtime';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -654,6 +655,16 @@ async function leg(mode: Mode): Promise<number> {
 		run(`bun ${CLI_PATH} entity new --all --force`, tmpDir);
 		run(`bun ${CLI_PATH} junction new --all --force`, tmpDir);
 		run(`bun ${CLI_PATH} relationship new --all --force`, tmpDir);
+
+		// #796: every emitted time column, the relationship table's included, is timestamptz.
+		{
+			const yamls = ['entities', 'relationships']
+				.map((d) => path.join(tmpDir, d))
+				.filter((d) => fs.existsSync(d))
+				.flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
+			const scan = assertTimestampColumns(path.join(tmpDir, 'src/modules'), collectTimezoneOptOuts(yamls));
+			log(`[${mode}] timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);
+		}
 
 		assertProjectInspectSeesAppCapabilities(tmpDir, mode);
 
