@@ -47,7 +47,8 @@ test-smoke:
 # Junction smoke: intra-domain pairing (opportunity × contact), both runtime
 # modes (ADR-037) — the package leg guards #624. The `--layout
 # custom` legs set every paths.* key non-default before `project init` and run
-# `subsystem install events` + `jobs` — the PATH-0 gate (#566, #612).
+# `subsystem install events` + `jobs` — the PATH-0 gate (#566, #612). They also
+# compile an `emits:` entity's write use cases in both modes (#814).
 test-smoke-junction:
     bun test/smoke/run-smoke-junction.ts --scenario junction --runtime vendored
     bun test/smoke/run-smoke-junction.ts --scenario junction --runtime package

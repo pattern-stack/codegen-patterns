@@ -88,8 +88,8 @@ export const <%= tableVarName %> = pgTable(
 <%_ } _%>
 
     // Timestamps
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: <%- timestampColumn('created_at') %>.notNull().defaultNow(),
+    updatedAt: <%- timestampColumn('updated_at') %>.notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex('<%= tableName %>_unique_idx').on(<%- uniqueOnCamel.map(c => `table.${c}`).join(', ') %>),

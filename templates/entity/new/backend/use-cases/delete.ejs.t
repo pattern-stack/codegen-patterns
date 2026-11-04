@@ -8,7 +8,12 @@ force: true
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '<%= drizzleTokenImport %>';
 import type { DrizzleClient } from '<%= drizzleTypeImport %>';
+<% if (typedEventBusImport === eventsTokenImport) { -%>
 import { TYPED_EVENT_BUS, TypedEventBus } from '<%= eventsTokenImport %>';
+<% } else { -%>
+import { TYPED_EVENT_BUS } from '<%= eventsTokenImport %>';
+import { TypedEventBus } from '<%= typedEventBusImport %>';
+<% } -%>
 import { tryGetRequester } from '<%= tenantContextImport %>';
 import { <%= classNames.service %> } from '../<%= entityFileStem %>.service';
 
