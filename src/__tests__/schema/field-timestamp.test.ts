@@ -4,6 +4,7 @@ import {
 	TIMEZONE_ON_NON_DATETIME_MESSAGE,
 	fieldWithTimezone,
 	timestampColumn,
+	timezoneNotBoolean,
 	timezoneOnNonDatetime,
 } from '../../schema/field-timestamp';
 
@@ -44,5 +45,12 @@ describe('field-timestamp rule (#796)', () => {
 			expect(issue).toBeDefined();
 			expect(issue!.path.slice(-1)).toEqual(['timezone']);
 		}
+	});
+
+	it('timezoneNotBoolean', () => {
+		expect(timezoneNotBoolean({ timezone: 'no' })).toBe(true);
+		expect(timezoneNotBoolean({ timezone: 0 })).toBe(true);
+		expect(timezoneNotBoolean({ timezone: false })).toBe(false);
+		expect(timezoneNotBoolean({})).toBe(false);
 	});
 });

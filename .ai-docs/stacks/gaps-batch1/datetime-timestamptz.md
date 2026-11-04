@@ -79,7 +79,7 @@ Built as specified, with these differences and confirmations:
 - **Local gate scope.** `just test-smoke` (default scenario), `test-smoke-junction` (vendored, default layout) and
   `test-smoke-capability` (vendored leg) pass with the scan. The capability smoke's package leg reports `tsc` errors in
   `account.composed-base.ts` and `roles.check.ts` (type-identity errors, none mentioning timestamps); the scan itself passed in that leg.
-  The remaining legs run in CI.
+  CI is green on this PR (`test-all` and `test-integration`), which covers the remaining legs.
 
 ## Emitted shapes
 
@@ -361,7 +361,7 @@ Changelog:
   used `timestamptz`, so an app now has one convention.
 - New field key `timezone: false` (on `type: datetime` only) keeps a wall-clock column as
   `timestamp without time zone`. Its value reads back as a `Date` whose UTC fields are the wall-clock time.
-  `timezone:` on any other type is a validation error. Use it for values that are genuinely wall-clock times, not to
+  `timezone:` on any other type, or a non-boolean `timezone:`, is a generation error. Use it for values that are genuinely wall-clock times, not to
   skip the migration.
 - TypeScript types, DTOs and OpenAPI are unchanged (`Date`).
 - Frontend with Electric sync: the default `frontend.parsers.timestamptz` now matches every generated time column, so
@@ -377,7 +377,9 @@ Changelog:
    That cast reads each stored value in the migrating session's `TimeZone`. Put `SET TIME ZONE 'UTC';` at the top of
    the migration, or rewrite the clause as `USING "<col>" AT TIME ZONE 'UTC'`. With the session at UTC, Postgres 12+
    also skips the table rewrite for this cast.
-3. Either way, the conversion is lossless only if the stored values are UTC. Values written through the generated
+3. `drizzle-kit push` users: set the database default TimeZone to UTC first (`ALTER DATABASE <db> SET timezone TO 'UTC'`), or generate a migration instead.
+4. Casts such as `::date` and `date_trunc` on a timestamptz follow the session `TimeZone`; pin it to UTC.
+5. Either way, the conversion is lossless only if the stored values are UTC. Values written through the generated
    repositories are UTC, because Drizzle sends UTC whatever the process `TZ`. Values filled by `DEFAULT now()`, or
    written by other SQL, are in the writing session's `TimeZone`. If any session ran outside UTC, correct those rows
    before you migrate.

@@ -21,6 +21,8 @@ import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
   fieldWithTimezone,
   timestampColumn,
+  TIMEZONE_NOT_BOOLEAN_MESSAGE,
+  timezoneNotBoolean,
   timezoneOnNonDatetime,
 } from "../../../src/schema/field-timestamp.js";
 import { renderGeneratedBanner } from "../../_shared/generated-banner.mjs";
@@ -123,6 +125,9 @@ function processCustomFields(fields, junctionName) {
   const processed = [];
   for (const [fieldName, field] of Object.entries(fields ?? {})) {
     const type = field.type || "string";
+    if (timezoneNotBoolean(field)) {
+      throw new Error(`[codegen] junction field '${fieldName}': ${TIMEZONE_NOT_BOOLEAN_MESSAGE}`);
+    }
     if (timezoneOnNonDatetime({ ...field, type })) {
       throw new Error(`[codegen] junction field '${fieldName}': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`);
     }

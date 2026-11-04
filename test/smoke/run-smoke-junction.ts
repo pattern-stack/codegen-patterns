@@ -159,8 +159,12 @@ function assertJunctionEmission(
   scenario: Scenario,
 ): void {
   // #796: every time column in this layout's own modules dir is timestamptz
-  // (the junction fixture declares no opt-out, so the set is empty).
-  const tsScan = assertTimestampColumns(path.join(generatedSrc, P.modules), collectTimezoneOptOuts([]));
+  // Opt-outs come from the fixture YAML (none are declared today, so the set is empty).
+  const fixtureYamls = ['fixtures-junction', 'fixtures-junction-cross-domain']
+    .flatMap((d) => ['entities', 'junctions'].map((k) => path.join(import.meta.dirname, d, k)))
+    .filter((d) => fs.existsSync(d))
+    .flatMap((d) => fs.readdirSync(d).filter((f) => f.endsWith('.yaml')).map((f) => path.join(d, f)));
+  const tsScan = assertTimestampColumns(path.join(generatedSrc, P.modules), collectTimezoneOptOuts(fixtureYamls));
   log(`timestamptz scan OK (${tsScan.calls} calls in ${tsScan.files} entity files)`);
 
   const reads = (p: string): string => {

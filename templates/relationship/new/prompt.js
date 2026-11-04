@@ -31,6 +31,8 @@ import {
   TIMEZONE_ON_NON_DATETIME_MESSAGE,
   fieldWithTimezone,
   timestampColumn,
+  TIMEZONE_NOT_BOOLEAN_MESSAGE,
+  timezoneNotBoolean,
   timezoneOnNonDatetime,
 } from "../../../src/schema/field-timestamp.js";
 import { renderColumnDefault } from "../../entity/new/backend/entity-locals.js";
@@ -199,10 +201,13 @@ function processFields(fields) {
     if (notNullWithoutDefault(field)) {
       throw new Error(`[codegen] relationship field '${fieldName}': ${NOT_NULL_WITHOUT_DEFAULT_MESSAGE}`);
     }
-    if (timezoneOnNonDatetime({ ...field, type: field.type || "string" })) {
+    const type = field.type || "string";
+    if (timezoneNotBoolean(field)) {
+      throw new Error(`[codegen] relationship field '${fieldName}': ${TIMEZONE_NOT_BOOLEAN_MESSAGE}`);
+    }
+    if (timezoneOnNonDatetime({ ...field, type })) {
       throw new Error(`[codegen] relationship field '${fieldName}': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`);
     }
-    const type = field.type || "string";
     const nullable = fieldColumnNullable(field);
     const required = field.required ?? false;
     const hasDefault = hasColumnDefault(field);

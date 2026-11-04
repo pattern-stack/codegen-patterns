@@ -13,7 +13,7 @@ import path from 'node:path';
 import ejs from 'ejs';
 import junctionPrompt from '../../../templates/junction/new/prompt.js';
 import relationshipPrompt from '../../../templates/relationship/new/prompt.js';
-import { TIMEZONE_ON_NON_DATETIME_MESSAGE } from '../../schema/field-timestamp';
+import { TIMEZONE_NOT_BOOLEAN_MESSAGE, TIMEZONE_ON_NON_DATETIME_MESSAGE } from '../../schema/field-timestamp';
 
 const TZ = "{ withTimezone: true, mode: 'date' }";
 
@@ -111,4 +111,20 @@ describe('relationship time columns (#796)', () => {
 			`[codegen] relationship field 'note': ${TIMEZONE_ON_NON_DATETIME_MESSAGE}`,
 		);
 	});
+});
+
+describe('non-boolean timezone: is refused (#796)', () => {
+	for (const bad of ['"no"', '0']) {
+		const yamlField = `  opens_at:\n    type: datetime\n    timezone: ${bad}\n`;
+		it(`junction rejects timezone: ${bad}`, async () => {
+			await expect(junctionLocals(yamlField)).rejects.toThrow(
+				`[codegen] junction field 'opens_at': ${TIMEZONE_NOT_BOOLEAN_MESSAGE}`,
+			);
+		});
+		it(`relationship rejects timezone: ${bad}`, async () => {
+			await expect(relationshipLocals(yamlField)).rejects.toThrow(
+				`[codegen] relationship field 'opens_at': ${TIMEZONE_NOT_BOOLEAN_MESSAGE}`,
+			);
+		});
+	}
 });

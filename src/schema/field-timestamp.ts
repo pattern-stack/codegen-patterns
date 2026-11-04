@@ -35,6 +35,13 @@ export function timezoneOnNonDatetime(field: FieldTimestampDeclaration): boolean
 	return field.timezone !== undefined && field.timezone !== null && field.type !== 'datetime';
 }
 
+/** `timezone:` declared as anything but a boolean (`"no"`, `0`). Junction / relationship fields are not Zod-parsed. */
+export function timezoneNotBoolean(field: { timezone?: unknown }): boolean {
+	return field.timezone !== undefined && field.timezone !== null && typeof field.timezone !== 'boolean';
+}
+
+export const TIMEZONE_NOT_BOOLEAN_MESSAGE = "'timezone' must be true or false.";
+
 /** Shared by the schema refine and the junction / relationship prompt throws. */
 export const TIMEZONE_ON_NON_DATETIME_MESSAGE =
 	"'timezone' can only be used with type 'datetime'. A datetime column is timestamp with time zone; " +
