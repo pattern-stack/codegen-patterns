@@ -48,9 +48,9 @@ export const deals = pgTable(
     externalId: varchar('external_id'),
     provider: varchar('provider'),
     providerMetadata: jsonb('provider_metadata'),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     index('deals_owner_id_idx').on(t.ownerId),

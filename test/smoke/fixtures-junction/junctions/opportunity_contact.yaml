@@ -6,3 +6,5 @@ fields:
   role:
     type: enum
     choices: [champion, decision_maker, influencer]
+  last_contacted_at:
+    type: datetime

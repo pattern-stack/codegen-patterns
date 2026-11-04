@@ -58,15 +58,15 @@ export const <%= tableVarName %> = pgTable(
 <%_ if (temporal) { _%>
 
     // Temporal window (temporal: true, default)
-    startedAt: timestamp('started_at'),
-    endedAt: timestamp('ended_at'),
+    startedAt: <%- timestampColumn('started_at') %>,
+    endedAt: <%- timestampColumn('ended_at') %>,
 <%_ } _%>
 <%_ if (sourced) { _%>
 
     // Provenance (sourced: true, default)
     sourcedFrom: text('sourced_from'),
     confidence: numeric('confidence', { precision: 5, scale: 4 }),
-    matchedAt: timestamp('matched_at'),
+    matchedAt: <%- timestampColumn('matched_at') %>,
 <%_ } _%>
 <%_ if (hasCustomFields) { _%>
 
@@ -74,6 +74,8 @@ export const <%= tableVarName %> = pgTable(
 <%_ processedCustomFields.forEach(field => { _%>
 <%_ if (field.hasChoices) { _%>
     <%= field.camelName %>: <%= field.enumName %>('<%= field.name %>')<%= field.isArray ? '.array()' : '' %>,
+<%_ } else if (field.columnCall) { _%>
+    <%= field.camelName %>: <%- field.columnCall %><%= field.isArray ? '.array()' : '' %>,
 <%_ } else if (field.drizzleType === 'uuid') { _%>
     <%= field.camelName %>: uuid('<%= field.name %>'),
 <%_ } else { _%>
@@ -83,8 +85,8 @@ export const <%= tableVarName %> = pgTable(
 <%_ } _%>
 
     // Timestamps
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: <%- timestampColumn('created_at') %>.notNull().defaultNow(),
+    updatedAt: <%- timestampColumn('updated_at') %>.notNull().defaultNow(),
   },
   (table) => [
 <%_ if (hasRole) { _%>

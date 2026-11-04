@@ -27,7 +27,7 @@ export const opportunities = pgTable(
     amount: numeric('amount'),
     currency: text('currency').default('USD'),
     expectedCloseDate: date('expected_close_date', { mode: 'date' }),
-    closedAt: timestamp('closed_at'),
+    closedAt: timestamp('closed_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     index('opportunities_organization_id_idx').on(t.organizationId),

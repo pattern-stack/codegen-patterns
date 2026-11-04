@@ -78,7 +78,14 @@ Type notes:
 - `enum` — requires `choices:`; generates a TS union + DB check/enum.
 - `json` — `jsonb`; typed as `Record<string, unknown>` unless you narrow it in
   your own code.
-- `datetime` vs `date` — timestamp vs date-only column.
+- `datetime` vs `date` — timestamp vs date-only column. `datetime` is `timestamp with time zone`
+  (#796), as are the `timestamps` / `soft_delete` columns and a junction or relationship's time
+  columns. `timezone: false` (datetime only) keeps a wall-clock `timestamp without time zone`
+  column, read through the `Date`'s UTC fields. With Electric sync, a `timezone: false` column
+  arrives as a string unless `frontend.parsers.timestamp` is set, for example
+  `(s) => new Date(s.replace(' ', 'T') + 'Z')`. Upgrading with `drizzle-kit push`: set the database's default
+  TimeZone to UTC first, or generate a migration instead. Casts such as `::date` and `date_trunc` on a
+  timestamptz follow the session TimeZone; pin it.
 - `string_array` — a Postgres `text[]` column; `string[]` on the entity, `z.array(z.string())` in the DTOs.
   Add `choices:` to constrain the elements: the column becomes an array of a generated enum
   (`('pg' | 'sg')[]`), not a single enum value. `default: [pg]` gives the column an array default.
@@ -87,7 +94,7 @@ Type notes:
 
 ```yaml
 behaviors:
-  - timestamps             # createdAt, updatedAt (auto-managed)
+  - timestamps             # createdAt, updatedAt (auto-managed; timestamptz)
   - soft_delete            # deletedAt; queries auto-filter deleted rows; GET :id 404s on deleted
   - user_tracking          # createdBy, updatedBy
 ```
