@@ -160,6 +160,7 @@ Append-only. A decision that changes an invariant or the target picture also get
 | 2026-09-20 | **`api: false` admits no allowlist override.** A path traversing an entity with `api: false` is a generation error naming both entities. ADR-044 §7's "unless the allowlist names it" is withdrawn; ADR-043 §6 has no exception. | ADR-044 2026-09-20 revision note; ADR-043 §6 note |
 | 2026-09-20 | **`TRelations` is a third REQUIRED type parameter** on every repository base (after REL-0's `TTable`), with no default — a default would let a repository that forgot its manifest compile and silently accept no includes. Second and last breaking arity change in epic #580. | `docs/specs/REL-2.md` §2.2 |
 | 2026-09-20 | The scaffold's shadow `BaseRepository` / `BaseService` stubs are **deleted**; `just test-integration` runs against the real runtime bases. REL-0 flagged the shadow; REL-2 made it wrong (a generated repository now calls `baseQuery` / `rootScopeRawOn`). | `docs/specs/REL-2.md` §Found 4 |
+| 2026-10-31 | Include-path segments accept the YAML relationship name or the relation key, normalised by REL-1's own camelCase; the compiled allowlist and ?include= stay in relation keys (#742). | docs/specs/REL-2.md §5.1 |
 
 ### Open questions
 

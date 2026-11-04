@@ -28,6 +28,7 @@ import {
 	EntityDefinitionSchema,
 	type EntityDefinition,
 } from '../../../schema/entity-definition.schema';
+import { JunctionDefinitionSchema } from '../../../schema/junction-definition.schema';
 
 function parse(raw: unknown): EntityDefinition {
 	return EntityDefinitionSchema.parse(raw);
@@ -72,17 +73,17 @@ function registry(defs: EntityDefinition[]): EntityRegistryEntry[] {
 		.sort((a, b) => a.name.localeCompare(b.name)) as EntityRegistryEntry[];
 }
 
-function ctxOf(raws: unknown[]): RelationsEmitContext {
+function ctxOf(raws: unknown[], junctions: unknown[] = []): RelationsEmitContext {
 	const defs = raws.map(parse);
 	return {
 		entities: registry(defs),
 		definitions: new Map(defs.map((d) => [d.entity.name, d])),
-		junctions: [],
+		junctions: junctions.map((j) => JunctionDefinitionSchema.parse(j)),
 	};
 }
 
-function compile(raws: unknown[]) {
-	const ctx = ctxOf(raws);
+function compile(raws: unknown[], junctions: unknown[] = []) {
+	const ctx = ctxOf(raws, junctions);
 	return buildIncludeAllowlists(ctx, buildRelationGraph(ctx));
 }
 
@@ -443,4 +444,168 @@ describe('declaresOwnRelation matches the template’s includes', () => {
 			expect(locals.includes).toBe(expected);
 		});
 	}
+});
+
+// ---------------------------------------------------------------------------
+// #742 — the YAML relationship name and the relation key name the same edge
+// ---------------------------------------------------------------------------
+
+const LEAGUE = {
+	entity: { name: 'league', plural: 'leagues', table: 'leagues' },
+	fields: { name: { type: 'string', required: true } },
+	relationships: {
+		fantasy_teams: { type: 'has_many', target: 'fantasy_team', foreign_key: 'league_id' },
+	},
+};
+
+const FANTASY_TEAM = {
+	entity: { name: 'fantasy_team', plural: 'fantasy_teams', table: 'fantasy_teams' },
+	fields: { league_id: { type: 'uuid', required: true } },
+	relationships: {
+		home_league: { type: 'belongs_to', target: 'league', foreign_key: 'league_id' },
+	},
+};
+
+const SPONSOR_BRAND = {
+	entity: { name: 'sponsor_brand', plural: 'sponsor_brands', table: 'sponsor_brands' },
+	fields: { name: { type: 'string' } },
+};
+
+const TROPHY = {
+	entity: { name: 'trophy', plural: 'trophies', table: 'trophies' },
+	fields: { league_id: { type: 'uuid' } },
+};
+
+const LEAGUE_WITH_TROPHIES = {
+	...LEAGUE,
+	relationships: {
+		...LEAGUE.relationships,
+		trophies: { type: 'has_many', target: 'trophy', foreign_key: 'league_id' },
+	},
+};
+
+function leagueWith(maxDepth: number, paths: string[], base: object = LEAGUE) {
+	return {
+		...base,
+		api: { includes: { find_by_id: { max_depth: maxDepth, paths } } },
+	};
+}
+
+function pathsOf(out: ReturnType<typeof compile>) {
+	return out[0]?.routes[0]?.paths.map((p) => p.path);
+}
+
+function messageOf(fn: () => unknown): string {
+	try {
+		fn();
+	} catch (e) {
+		expect(e).toBeInstanceOf(IncludeAllowlistError);
+		return (e as Error).message;
+	}
+	throw new Error('expected IncludeAllowlistError');
+}
+
+describe('buildIncludeAllowlists — path spelling (#742)', () => {
+	it('S1: the YAML relationship name compiles to the relation key', () => {
+		const out = compile([leagueWith(1, ['fantasy_teams']), FANTASY_TEAM]);
+		expect(out[0]?.routes[0]?.paths.map((p) => [p.path, p.fragment, p.depth])).toEqual([
+			['fantasyTeams', '{ fantasyTeams: true }', 1],
+		]);
+	});
+
+	it('S2: every hop is normalised and the fragment is written in keys', () => {
+		const out = compile([leagueWith(2, ['fantasy_teams.home_league']), FANTASY_TEAM]);
+		expect(out[0]?.routes[0]?.paths.map((p) => [p.path, p.fragment, p.depth])).toEqual([
+			['fantasyTeams', '{ fantasyTeams: true }', 1],
+			[
+				'fantasyTeams.homeLeague',
+				'{ fantasyTeams: { with: { homeLeague: true } } }',
+				2,
+			],
+		]);
+	});
+
+	it('S3: both spellings name one edge, so there is one entry', () => {
+		const out = compile([leagueWith(1, ['fantasy_teams', 'fantasyTeams']), FANTASY_TEAM]);
+		expect(pathsOf(out)).toEqual(['fantasyTeams']);
+	});
+
+	it('S4: junction-derived keys are spelled from their source names', () => {
+		const out = compile(
+			[leagueWith(1, ['sponsor_brands', 'league_sponsor_brands']), FANTASY_TEAM, SPONSOR_BRAND],
+			[{ pattern: 'Junction', between: ['league', 'sponsor_brand'] }],
+		);
+		expect(pathsOf(out)).toEqual(['leagueSponsorBrands', 'sponsorBrands']);
+	});
+
+	it('S5: the emitted map is keyed by the relation key', () => {
+		const out = buildApiIncludes(compile([leagueWith(1, ['fantasy_teams']), FANTASY_TEAM]));
+		expect(out).toContain('\t\tfantasyTeams: { fantasyTeams: true },');
+		expect(out).not.toContain('fantasy_teams');
+	});
+});
+
+describe('buildIncludeAllowlists — a miss says what exists (#742)', () => {
+	it('M1: a near miss lists the keys and suggests one', () => {
+		const msg = messageOf(() => compile([leagueWith(1, ['fantasy_team']), FANTASY_TEAM]));
+		expect(msg).toContain("names no relation at 'fantasy_team'");
+		expect(msg).toContain("has no relation 'fantasyTeam' (written 'fantasy_team')");
+		expect(msg).toContain('Relation keys at this hop: fantasyTeams.');
+		expect(msg).toContain("Did you mean 'fantasyTeams'?");
+	});
+
+	it('M2: a nested miss reports the hop it missed at', () => {
+		const msg = messageOf(() =>
+			compile([leagueWith(2, ['fantasy_teams.league']), FANTASY_TEAM]),
+		);
+		expect(msg).toContain("names no relation at 'fantasy_teams.league'");
+		expect(msg).toContain("table 'fantasy_teams'");
+		expect(msg).toContain('Relation keys at this hop: homeLeague.');
+		// 'league' -> 'homeLeague' is distance 4, over the limit of 3: no guess.
+		expect(msg).not.toContain('Did you mean');
+	});
+
+	it('M6: a suggestion at exactly the distance limit is still made', () => {
+		const msg = messageOf(() =>
+			compile([
+				{ ...ACCOUNT, api: { includes: { find_by_id: { max_depth: 1, paths: ['opportunity'] } } } },
+				CONTACT,
+				OPPORTUNITY,
+			]),
+		);
+		// 'opportunity' -> 'opportunities' is distance 3; limit is max(2, floor(13/3)) = 4.
+		expect(msg).toContain("Did you mean 'opportunities'?");
+	});
+
+	it('M7: an `api: false` miss quotes the declared (snake) spelling', () => {
+		const msg = messageOf(() =>
+			compile([leagueWith(1, ['fantasy_teams']), { ...FANTASY_TEAM, api: false }]),
+		);
+		expect(msg).toContain("'fantasy_teams'");
+		expect(msg).toContain("declares 'api: false'");
+	});
+
+	it('M3: a case slip is suggested', () => {
+		const msg = messageOf(() => compile([leagueWith(1, ['FantasyTeams']), FANTASY_TEAM]));
+		expect(msg).toContain("Did you mean 'fantasyTeams'?");
+	});
+
+	it('M4: nothing close, so keys are listed and nothing is guessed', () => {
+		const msg = messageOf(() =>
+			compile([
+				{ ...ACCOUNT, api: { includes: { find_by_id: { max_depth: 1, paths: ['nope'] } } } },
+				CONTACT,
+				OPPORTUNITY,
+			]),
+		);
+		expect(msg).toContain('Relation keys at this hop: contacts, opportunities.');
+		expect(msg).not.toContain('Did you mean');
+	});
+
+	it('M5: a hop into a table with no relations says so', () => {
+		const msg = messageOf(() =>
+			compile([leagueWith(2, ['trophies.x'], LEAGUE_WITH_TROPHIES), FANTASY_TEAM, TROPHY]),
+		);
+		expect(msg).toContain("Table 'trophies' has no relations");
+	});
 });
