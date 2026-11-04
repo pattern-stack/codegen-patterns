@@ -40,11 +40,11 @@ export class ListContactsUseCase {
    * nested read without widening what the reader can see.
    */
   async execute<TWith extends ContactInclude = ContactNoInclude>(
-    query?: ListQuery,
-    options: { include?: TWith; where?: SQL } = {},
+    listQuery?: ListQuery,
+    listOptions: { include?: TWith; where?: SQL } = {},
   ): Promise<Page<ContactResult<TWith>>> {
-    const { include, where } = options;
-    const resolved = resolveListQuery(query);
+    const { include: includeTree, where: whereClause } = listOptions;
+    const resolvedQuery = resolveListQuery(listQuery);
 
     // Default sort: `created_at desc, id desc` (id is the stable keyset
     // tie-break). A caller `sort_by` that names a real column is honored in the
@@ -56,15 +56,15 @@ export class ListContactsUseCase {
     // relational query builder (the `with`-include path) aliases the root table
     // (REL-2 §2.4). A pre-rendered fragment would name `contacts`,
     // which is not in scope there.
-    const sortColumn = resolved.sortBy.replace(
+    const sortColumn = resolvedQuery.sortBy.replace(
       /_([a-z])/g,
       (_m: string, c: string) => c.toUpperCase(),
     );
-    const known =
-      (contacts as unknown as Record<string, unknown>)[sortColumn] !== undefined;
-    const sort: SortTerm[] = known
+    const isKnownColumn =
+      (contacts as unknown as globalThis.Record<string, unknown>)[sortColumn] !== undefined;
+    const sortTerms: SortTerm[] = isKnownColumn
       ? [
-          { column: sortColumn, direction: resolved.sortOrder },
+          { column: sortColumn, direction: resolvedQuery.sortOrder },
           { column: 'id', direction: 'desc' },
         ]
       : [
@@ -77,20 +77,20 @@ export class ListContactsUseCase {
     // and `count`, so `total`/`pageCount` describe the filtered set.
 
     // KEYSET SEAM (deferred — v1 fetches by offset). When the keyset upgrade
-    // lands, branch here on `resolved.cursor`: decode it and fetch by
+    // lands, branch here on `resolvedQuery.cursor`: decode it and fetch by
     // `WHERE (created_at, id) < (cursorCreatedAt, cursorId)` LIMIT pageSize,
     // dropping the offset. The envelope + nextCursor below are unchanged.
-    const [items, total] = await Promise.all([
+    const [pageRows, rowTotal] = await Promise.all([
       this.service.list<TWith>({
-        where,
-        limit: resolved.pageSize,
-        offset: resolved.offset,
-        sort,
-        ...(include === undefined ? {} : { with: include }),
+        where: whereClause,
+        limit: resolvedQuery.pageSize,
+        offset: resolvedQuery.offset,
+        sort: sortTerms,
+        ...(includeTree === undefined ? {} : { with: includeTree }),
       }),
-      this.service.count(where),
+      this.service.count(whereClause),
     ]);
 
-    return buildPage(items, total, resolved);
+    return buildPage(pageRows, rowTotal, resolvedQuery);
   }
 }

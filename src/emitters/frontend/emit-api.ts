@@ -163,7 +163,7 @@ export const ${camelName}Api = {
 \t * on another page would otherwise resolve to undefined. Used to hydrate the
 \t * store's resolvers/lookups; NOT for rendering a paged table.
 \t */
-\tlistAll: async (query?: Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<${className}[]> => {
+\tlistAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<${className}[]> => {
 \t\tconst all: ${className}[] = [];
 \t\tlet page = 1;
 \t\tlet pageCount = 1;
@@ -182,10 +182,10 @@ export const ${camelName}Api = {
 \tget: (id: string): Promise<${className}> =>
 \t\trequest<${className}>('GET', \`/${plural}/\${id}\`),
 
-\tcreate: (data: Partial<${className}>): Promise<${className}> =>
+\tcreate: (data: globalThis.Partial<${className}>): Promise<${className}> =>
 \t\trequest<${className}>('POST', '/${plural}', data),
 
-\tupdate: (id: string, data: Partial<${className}>): Promise<${className}> =>
+\tupdate: (id: string, data: globalThis.Partial<${className}>): Promise<${className}> =>
 \t\trequest<${className}>('PATCH', \`/${plural}/\${id}\`, data),
 
 \tdelete: (id: string): Promise<void> =>

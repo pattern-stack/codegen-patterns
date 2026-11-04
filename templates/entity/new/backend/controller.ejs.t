@@ -71,7 +71,7 @@ export class <%= classNames.controller %> {
    */
   private resolveInclude<TFragment>(
     raw: string | undefined,
-    allow: Readonly<Record<string, TFragment>> | undefined,
+    allow: globalThis.Readonly<globalThis.Record<string, TFragment>> | undefined,
   ): TFragment | undefined {
     try {
       return resolveAllowedInclude(raw, allow);
@@ -141,7 +141,7 @@ export class <%= classNames.controller %> {
   @ApiResponse({ status: 200 })
   @ApiResponse({ status: 401, schema: { $ref: '#/components/schemas/ErrorResponseDto' } })
   @Get('with-fields')
-  async getAllWithFields(): Promise<Array<<%= classNames.entity %> & { fields: Record<string, unknown> }>> {
+  async getAllWithFields(): Promise<Array<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }>> {
     return this.listWithFieldsUseCase.execute();
   }
 <% } %>
@@ -189,7 +189,7 @@ export class <%= classNames.controller %> {
   @Get(':id/with-fields')
   async getByIdWithFields(
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<<%= classNames.entity %> & { fields: Record<string, unknown> }> {
+  ): Promise<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }> {
     const entity = await this.findByIdWithFieldsUseCase.execute(id);
     if (!entity) throw new NotFoundException(`<%= classNames.entity %> ${id} not found`);
     return entity;

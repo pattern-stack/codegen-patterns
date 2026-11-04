@@ -8,7 +8,7 @@ import type {
 } from '@shared/subsystems/integration';
 import type { Opportunity } from './opportunity.entity';
 
-const OPPORTUNITY_DETECTION_CONFIGS: Record<string, DetectionConfig> = {
+const OPPORTUNITY_DETECTION_CONFIGS: globalThis.Record<string, DetectionConfig> = {
   "hubspot-crm": {
     "mode": "poll",
     "poll": {
@@ -97,8 +97,8 @@ export const OPPORTUNITY_CHANGE_SOURCES = Symbol('OPPORTUNITY_CHANGE_SOURCES');
       provide: OPPORTUNITY_CHANGE_SOURCES,
       inject: [OPPORTUNITY_POLL_FETCH_REGISTRY],
       useFactory: (
-        fetches: Record<string, PollFetchCallback<Opportunity>>,
-      ): ReadonlyMap<string, IChangeSource<Opportunity>> =>
+        fetches: globalThis.Record<string, PollFetchCallback<Opportunity>>,
+      ): globalThis.ReadonlyMap<string, IChangeSource<Opportunity>> =>
         new Map(
           Object.entries(OPPORTUNITY_DETECTION_CONFIGS).map(([provider, cfg]) => {
             const fetch = fetches[provider];

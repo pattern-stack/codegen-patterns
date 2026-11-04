@@ -1,0 +1,26 @@
+# Smoke fixture: record (#813)
+# An entity named `record` emits `export type Record = InferSelectModel<…>`, which
+# shadows the lib `Record<K, V>` in its own repository, controller and list use
+# case. At a8629dfc this fails tsc with TS2315 in record.repository.ts,
+# record.controller.ts and list-records.use-case.ts. No relationships, so the
+# list use case renders its no-includes branch.
+entity:
+  name: record
+  plural: records
+  table: records
+  pattern: Base
+
+fields:
+  title:
+    type: string
+    required: true
+    max_length: 255
+
+  notes:
+    type: string
+
+behaviors:
+  - timestamps
+
+queries:
+  - by: [title]

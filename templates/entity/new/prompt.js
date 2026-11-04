@@ -436,7 +436,7 @@ export default {
       number: 'number',
       boolean: 'boolean',
       date: 'Date',
-      json: 'Record<string, unknown>',
+      json: 'globalThis.Record<string, unknown>',
     };
 
     // Load top-level events/<name>.yaml, tolerant of missing dir / bad files.

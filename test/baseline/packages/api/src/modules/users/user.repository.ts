@@ -28,7 +28,7 @@ export type UserResult<TWith extends UserInclude> =
   ResultOf<'users', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type UserNoInclude = Record<string, never>;
+export type UserNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -44,7 +44,7 @@ export type UserNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type UserApiResult = User &
-  Partial<UserResult<UserInclude>>;
+  globalThis.Partial<UserResult<UserInclude>>;
 
 @Injectable()
 export class UserRepository extends BaseRepository<User, typeof users, Relations> {

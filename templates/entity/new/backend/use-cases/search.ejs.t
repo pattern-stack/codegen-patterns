@@ -32,20 +32,20 @@ export interface <%= searchQuery.inputTypeName %> extends ListQuery {
 export class <%= searchQuery.useCaseClassName %> {
   constructor(private readonly listUseCase: <%= classNames.listUseCase %>) {}
 
-  async execute(input: <%= searchQuery.inputTypeName %>): Promise<Page<<%= classNames.entity %>>> {
-    const conditions: SQL[] = [];
+  async execute(searchInput: <%= searchQuery.inputTypeName %>): Promise<Page<<%= classNames.entity %>>> {
+    const whereTerms: SQL[] = [];
 <% searchQuery.filters.forEach((f) => { -%>
 <% if (f.isBoolean) { -%>
-    if (input.<%= f.camelName %> !== undefined) conditions.push(eq(<%= entityNamePlural %>.<%= f.camelName %>, input.<%= f.camelName %>));
+    if (searchInput.<%= f.camelName %> !== undefined) whereTerms.push(eq(<%= entityNamePlural %>.<%= f.camelName %>, searchInput.<%= f.camelName %>));
 <% } else { -%>
-    if (input.<%= f.camelName %>) conditions.push(eq(<%= entityNamePlural %>.<%= f.camelName %>, input.<%= f.camelName %>));
+    if (searchInput.<%= f.camelName %>) whereTerms.push(eq(<%= entityNamePlural %>.<%= f.camelName %>, searchInput.<%= f.camelName %>));
 <% } -%>
 <% }) -%>
 <% if (searchQuery.searchField) { -%>
-    if (input.search) conditions.push(ilike(<%= entityNamePlural %>.<%= searchQuery.searchFieldCamel %>, `%${input.search}%`));
+    if (searchInput.search) whereTerms.push(ilike(<%= entityNamePlural %>.<%= searchQuery.searchFieldCamel %>, `%${searchInput.search}%`));
 <% } -%>
 
-    return this.listUseCase.execute(input, { where: and(...conditions) });
+    return this.listUseCase.execute(searchInput, { where: and(...whereTerms) });
   }
 }
 <% } -%>

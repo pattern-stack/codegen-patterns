@@ -13,7 +13,7 @@ import type {
 } from '<%= integrationSubsystemImport %>';
 import type { <%= classNames.entity %> } from '<%= imports.integrationSourceToEntity %>';
 
-const <%= entityName.toUpperCase() %>_DETECTION_CONFIGS: Record<string, DetectionConfig> = <%- detectionConfigsLiteral %>;
+const <%= entityName.toUpperCase() %>_DETECTION_CONFIGS: globalThis.Record<string, DetectionConfig> = <%- detectionConfigsLiteral %>;
 
 export const <%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY = Symbol('<%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY');
 export const <%= entityName.toUpperCase() %>_CHANGE_SOURCES = Symbol('<%= entityName.toUpperCase() %>_CHANGE_SOURCES');
@@ -24,8 +24,8 @@ export const <%= entityName.toUpperCase() %>_CHANGE_SOURCES = Symbol('<%= entity
       provide: <%= entityName.toUpperCase() %>_CHANGE_SOURCES,
       inject: [<%= entityName.toUpperCase() %>_POLL_FETCH_REGISTRY],
       useFactory: (
-        fetches: Record<string, PollFetchCallback<<%= classNames.entity %>>>,
-      ): ReadonlyMap<string, IChangeSource<<%= classNames.entity %>>> =>
+        fetches: globalThis.Record<string, PollFetchCallback<<%= classNames.entity %>>>,
+      ): globalThis.ReadonlyMap<string, IChangeSource<<%= classNames.entity %>>> =>
         new Map(
           Object.entries(<%= entityName.toUpperCase() %>_DETECTION_CONFIGS).map(([provider, cfg]) => {
             const fetch = fetches[provider];

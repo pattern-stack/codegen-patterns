@@ -193,7 +193,7 @@ tarball smoke (`just test-post-publish`) covers package mode from the packed art
 
 ```yaml
 entity:
-  name: contact                 # singular snake_case
+  name: contact                 # singular snake_case; not `promise` | `array` | `date` (#813)
   plural: contacts
   table: contacts
   pattern: Integrated           # Integrated | Activity | Metadata | Knowledge | Base | app-defined (ADR-031)

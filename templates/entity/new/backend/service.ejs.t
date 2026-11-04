@@ -133,8 +133,8 @@ export class <%= classNames.service %> extends WithAnalytics(
 
   /** Contributed by the `<%= fwd.capability %>` capability. */
   <%= fwd.method %>(
-    ...args: Parameters<<%= classNames.repository %>['<%= fwd.method %>']>
-  ): ReturnType<<%= classNames.repository %>['<%= fwd.method %>']> {
+    ...args: globalThis.Parameters<<%= classNames.repository %>['<%= fwd.method %>']>
+  ): globalThis.ReturnType<<%= classNames.repository %>['<%= fwd.method %>']> {
     return this.repository.<%= fwd.method %>(...args);
   }
 <%_ }) _%>
@@ -249,7 +249,7 @@ export class <%= classNames.service %> extends WithAnalytics(
    */
   async findByIdWithFields(
     id: string,
-  ): Promise<(<%= classNames.entity %> & { fields: Record<string, unknown> }) | null> {
+  ): Promise<(<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }) | null> {
     const entity = await this.repository.findById(id);
     if (!entity) return null;
     const fields = await this.fieldValues.findMergedByEntity('<%= entityName %>', id);
@@ -261,7 +261,7 @@ export class <%= classNames.service %> extends WithAnalytics(
    * each one's EAV fields via FieldValueService. Acceptable for modest result
    * sets; page externally for large collections.
    */
-  async listWithFields(): Promise<Array<<%= classNames.entity %> & { fields: Record<string, unknown> }>> {
+  async listWithFields(): Promise<Array<<%= classNames.entity %> & { fields: globalThis.Record<string, unknown> }>> {
     const entities = await this.repository.list();
     if (entities.length === 0) return [];
     return Promise.all(
@@ -285,7 +285,7 @@ export class <%= classNames.service %> extends WithAnalytics(
     entityType: string,
     entityId: string,
     userId: string,
-    fields: Record<string, unknown>,
+    fields: globalThis.Record<string, unknown>,
     tx?: DrizzleTx,
   ): Promise<void> {
     if (!fields || Object.keys(fields).length === 0) return;
@@ -294,7 +294,7 @@ export class <%= classNames.service %> extends WithAnalytics(
     const defIdByKey = new Map(defs.map((d) => [d.key, d.id]));
     const rows = toEavRows(entityId, entityType, userId, fields, defIdByKey);
     if (rows.length === 0) return;
-    await this.repository.upsertCurrentValues(rows as Array<Partial<<%= classNames.entity %>>>, tx);
+    await this.repository.upsertCurrentValues(rows as Array<globalThis.Partial<<%= classNames.entity %>>>, tx);
   }
 
   /**
@@ -304,7 +304,7 @@ export class <%= classNames.service %> extends WithAnalytics(
   async findMergedByEntity(
     entityType: string,
     entityId: string,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<globalThis.Record<string, unknown>> {
     const [rows, allDefs] = await Promise.all([
       this.repository.findByEntityIdAndType(entityId, entityType),
       this.<%= eavDefinitionRepoProperty %>.list(),

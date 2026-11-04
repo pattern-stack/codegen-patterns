@@ -105,7 +105,7 @@ describe('backend list use-case — default sort', () => {
   });
 
   it('keeps the id tie-break on the caller-supplied-sort branch either way', () => {
-    const tieBreak = "{ column: sortColumn, direction: resolved.sortOrder },";
+    const tieBreak = "{ column: sortColumn, direction: resolvedQuery.sortOrder },";
 
     for (const definition of [withoutTimestamps, withTimestamps]) {
       const out = render('use-cases/list.ejs.t', definition);
@@ -143,12 +143,12 @@ describe('backend list use-case — default sort', () => {
   it('renders valid TypeScript in both shapes (balanced ternary, one sort)', () => {
     for (const definition of [withoutTimestamps, withTimestamps]) {
       const out = render('use-cases/list.ejs.t', definition);
-      expect(out.match(/const sort: SortTerm\[\] = known/g)).toHaveLength(1);
+      expect(out.match(/const sortTerms: SortTerm\[\] = isKnownColumn/g)).toHaveLength(1);
       // Exactly one `?` branch and one `:` branch survive the EJS conditionals.
       expect(out.match(/^\s+\? \[/gm)).toHaveLength(1);
       expect(out.match(/^\s+: \[/gm)).toHaveLength(1);
       // …and exactly one call passes it down.
-      expect(out.match(/^\s+sort,$/gm)).toHaveLength(1);
+      expect(out.match(/^\s+sort: sortTerms,$/gm)).toHaveLength(1);
     }
   });
 });

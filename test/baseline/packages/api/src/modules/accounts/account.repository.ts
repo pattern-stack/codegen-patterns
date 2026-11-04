@@ -28,7 +28,7 @@ export type AccountResult<TWith extends AccountInclude> =
   ResultOf<'accounts', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type AccountNoInclude = Record<string, never>;
+export type AccountNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -44,7 +44,7 @@ export type AccountNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type AccountApiResult = Account &
-  Partial<AccountResult<AccountInclude>>;
+  globalThis.Partial<AccountResult<AccountInclude>>;
 
 @Injectable()
 export class AccountRepository extends BaseRepository<Account, typeof accounts, Relations> {

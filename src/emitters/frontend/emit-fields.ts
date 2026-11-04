@@ -325,7 +325,7 @@ export function buildEntityFieldsFile(
 	const body = `import type { FieldMeta, FieldType, FieldImportance } from './field-meta';
 import type { ${className} } from '${ctx.config.dbEntitiesImport}/${name}';
 
-export const ${camelName}Fields: Record<string, FieldMeta<${className}>> = {
+export const ${camelName}Fields: globalThis.Record<string, FieldMeta<${className}>> = {
 ${allEntries}
 };
 

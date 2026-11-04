@@ -18,7 +18,7 @@ import type { Person } from '@repo/db/entities/person';
  * carry the key; this resolves to `undefined` instead, which is what the
  * result type branches on.
  */
-type Sel<I, K extends PropertyKey> = K extends keyof I ? I[K] : undefined;
+type Sel<I, K extends globalThis.PropertyKey> = K extends keyof I ? I[K] : undefined;
 
 
 
@@ -100,7 +100,7 @@ export function usePersonGraph<const I extends PersonInclude>(
 	const rootRow = root.data?.[0];
 	if (!rootRow) return { data: undefined, isLoading, isError };
 
-	const out: Record<string, unknown> = { ...rootRow.row };
+	const out: globalThis.Record<string, unknown> = { ...rootRow.row };
 	if (inc.contact) out.contact = rootRow.contact;
 
 
