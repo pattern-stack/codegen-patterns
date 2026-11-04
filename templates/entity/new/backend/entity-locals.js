@@ -643,8 +643,11 @@ function mapOnDelete(onDelete) {
  * e.g. `account.relationships.contacts: { foreign_key: account_id }` means
  * contacts.account_id. The method name on AccountRepository would be
  * `findByAccountId`.
+ *
+ * `renderSet` is the set of entity names the same run renders (`--renderSet`,
+ * #815).
  */
-function processHasMany(relationships, naming) {
+function processHasMany(relationships, naming, renderSet = new Set()) {
   if (!relationships) return [];
 
   const result = [];
@@ -659,19 +662,23 @@ function processHasMany(relationships, naming) {
     const resolved = resolveTargetNaming(target, naming, { required: false });
     const isSelfRef = target === naming.entityName;
 
-    // Check whether the target entity has already been generated — at the
-    // target's OWN module folder (`plural:`, `context:`). Only include targets
-    // that exist so the import block doesn't reference files that aren't on
-    // disk yet (two-pass generation). Deliberately a file check, not a YAML
-    // check: a single `entity new x.yaml` must not import a sibling that has a
-    // YAML but has never been generated. The stem is the emitted (kebab) one —
-    // a snake `${target}.entity.ts` never matched a multi-word target, which
-    // silently dropped its composition method (hoops dogfood F7).
+    // Wired when the target will exist once this run finishes (#815): it is in
+    // the run's render set (`--renderSet`), or its entity file is already on
+    // disk at the target's OWN module folder (`plural:`, `context:`). The file
+    // check is kept, deliberately not a YAML check: a single `entity new
+    // x.yaml` regenerating a parent must still wire a target an earlier run
+    // generated, and must not import a sibling that has a YAML but has never
+    // been generated. A target with no YAML (`resolved` null) is never wired.
+    // The stem is the emitted (kebab) one — a snake `${target}.entity.ts` never
+    // matched a multi-word target, which silently dropped its composition
+    // method (hoops dogfood F7).
     let targetExists = isSelfRef;
     if (!isSelfRef && resolved) {
-      targetExists = fs.existsSync(
-        path.resolve(resolved.moduleDir, `${emittedStem(target)}.entity.ts`),
-      );
+      targetExists =
+        renderSet.has(target) ||
+        fs.existsSync(
+          path.resolve(resolved.moduleDir, `${emittedStem(target)}.entity.ts`),
+        );
     }
 
     const targetPlural = resolved ? resolved.plural : null;
@@ -1896,7 +1903,13 @@ export function buildBackendLocals(definition, baseLocals) {
   const belongsTo = processBelongsTo(relationships, targetNaming, fields);
 
   // Process has_many relationships (CGP-358b)
-  const hasMany = processHasMany(relationships, targetNaming);
+  // `renderSet` (#815) is an input; no template reads it. It is the entities the same
+  // run renders, so a has_many onto a later one is wired in one pass.
+  const hasMany = processHasMany(
+    relationships,
+    targetNaming,
+    new Set(baseLocals.renderSet ?? []),
+  );
 
   // The other entities whose repository this service composes (#632): one
   // entry per target, whichever edges reach it — a belongs_to and a has_many

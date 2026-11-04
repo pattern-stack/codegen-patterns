@@ -60,9 +60,12 @@ Every one of these also assumed the target's folder is a sibling (`../<plural>/`
      These edges emit an import and a `.references()` of the target's table unconditionally; with no YAML there is
      nothing to read the table name from, and the old guess compiled only when it happened to match. (#611 asks for
      exactly this for the junction.)
-   - `has_many` → **unchanged soft behaviour.** `targetExists` stays a file-on-disk check (two-pass generation: the
+   - `has_many` → **unchanged soft behaviour.** `targetExists` stays a file-on-disk check (the
      target YAML can exist and not be generated yet), now at the target's resolved path. A target with no YAML is
      simply not wired, as before.
+     *Revision 2026-10-31 (#815):* the check is the file on disk **or** membership in the run's render set
+     (`--renderSet`, written by `entityNewArgs`), so one `entity new --all` wires every `has_many` and two-pass
+     generation is gone. The soft skip for a target with no YAML is unchanged.
    - A self-reference needs no lookup; it is the entity's own naming.
 4. **Where YAMLs are read: one rule, `src/config/entities-dir.ts`.** Read by the CLI context and the prompts.
    - Find `codegen.config.yaml` by walking upward from the working directory.

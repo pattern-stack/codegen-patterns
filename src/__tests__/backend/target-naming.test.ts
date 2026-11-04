@@ -166,6 +166,49 @@ describe('has_many', () => {
 		expect(gameLogs.importPath).toBe('../../game-logs/game-log.repository');
 	});
 
+	it('a target the same run renders is wired with nothing on disk (#815)', () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'name0-'));
+		tmpDirs.push(root);
+		const rels = { members: { type: 'has_many', target: 'person', foreign_key: 'crew_id' } };
+		const locals = localsFor(
+			CREW,
+			{ relationships: rels },
+			{ modulesDir: `${root}/modules`, renderSet: ['crew', 'person'] },
+		);
+		expect(locals.hasMany[0].targetExists).toBe(true);
+		expect(locals.existingHasMany.map((h: { name: string }) => h.name)).toEqual(['members']);
+		expect(JSON.stringify(locals.repositoryDeps)).toContain('PersonRepository');
+		const service = render('service.ejs.t', locals);
+		expect(service).toContain(
+			'async members(crewId: string, opts?: { cursor?: string; limit?: number }): Promise<Person[]> {',
+		);
+		expect(service).toContain("import { PersonRepository } from '../../persons/person.repository';");
+		expect(render('module.ejs.t', locals)).toContain(
+			"import { PersonRepository } from '../../persons/person.repository';",
+		);
+	});
+
+	it('a single-entity render keeps the file check (#815)', () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), 'name0-'));
+		tmpDirs.push(root);
+		const rels = { members: { type: 'has_many', target: 'person', foreign_key: 'crew_id' } };
+		const base = { modulesDir: `${root}/modules`, renderSet: ['crew'] };
+		expect(localsFor(CREW, { relationships: rels }, base).hasMany[0].targetExists).toBe(false);
+		fs.mkdirSync(path.join(root, 'modules', 'persons'), { recursive: true });
+		fs.writeFileSync(path.join(root, 'modules', 'persons', 'person.entity.ts'), '');
+		expect(localsFor(CREW, { relationships: rels }, base).hasMany[0].targetExists).toBe(true);
+	});
+
+	it('the render set does not wire a target that has no entity YAML (#815)', () => {
+		const rels = { ghosts: { type: 'has_many', target: 'ghost', foreign_key: 'crew_id' } };
+		const [ghosts] = localsFor(
+			CREW,
+			{ relationships: rels },
+			{ modulesDir: 'src/modules', renderSet: ['crew', 'ghost'] },
+		).hasMany;
+		expect(ghosts).toMatchObject({ targetExists: false, targetPlural: null, importPath: null });
+	});
+
 	it('a target with no entity YAML stays a soft skip (not wired, no error)', () => {
 		const rels = { ghosts: { type: 'has_many', target: 'ghost', foreign_key: 'crew_id' } };
 		const [ghosts] = roster('src', rels).hasMany;

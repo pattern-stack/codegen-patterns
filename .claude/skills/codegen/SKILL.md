@@ -98,8 +98,9 @@ printed the console report). Still text-only warnings: `project inspect --kind m
 `eav_definition_table`, each junction endpoint and each `relationship new` endpoint are addressed by the target entity's own `plural:` (table export +
 folder) and `context:` (folder nesting), read from `paths.entities` / `entities/` (the first that exists — the CLI's rule,
 `src/config/entities-dir.ts`). A target with no YAML there is a **generation error** naming the directory searched;
-for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML — or one not
-generated yet — is not wired (the two-pass `targetExists` check), not an error.
+for a field `foreign_key:` to a host-owned table (e.g. `tenants.id`, no entity YAML) see #636. A `has_many` onto a target with no YAML is not wired, and that is not an error. One onto a target with a YAML is wired
+when the same run generates the target (`--all`, or a junction's two parents; `--renderSet`, #815) or the target is
+already on disk. A single-file `entity new` of the parent leaves it unwired until the target exists.
 
 **Every generated FK callback is `.references((): AnyPgColumn => <table>.id)`** (NAME-1, #631) — backend
 belongs_to + field `foreign_key:`, junction and relationship endpoints. Two tables with FKs to each other (or any
