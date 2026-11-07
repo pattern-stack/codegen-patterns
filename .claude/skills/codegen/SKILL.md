@@ -233,7 +233,7 @@ queries:
     filters: [userId, accountId]  #   ListQuery + these filters, returning the list's Page<T>
     search: name
 
-unique_indexes: [...]           # composite unique indexes
+unique_indexes: [...]           # unique constraints: 1+ fields, where: (partial), nulls_not_distinct:
 eav: true                       # paired *WithFields reads + transactional compound writes
 eav_value_table: true           # this entity IS the value table (needs eav_definition_table)
 eav_definition_table: field_definition

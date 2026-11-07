@@ -1,6 +1,6 @@
 /**
  * #511 — a field's `unique: true` emits a unique index, per tenant under
- * `tenant_scoped`. Proven against the DDL `drizzle-kit push` creates from the
+ * `tenant_scoped` (a NULLS NOT DISTINCT constraint there, #784). Proven against the DDL `drizzle-kit push` creates from the
  * generated entity files (`account_profile` non-tenant, `asset_tag` tenant).
  *
  * SQLSTATE and the violated index name are read from the driver error
@@ -136,6 +136,16 @@ d('field unique: true, tenant_scoped (asset_tag)', () => {
     await db.insert(assetTags).values({ tenantId: TENANT_A, code: 'dup' });
     const err = await violation(() =>
       db.insert(assetTags).values({ tenantId: TENANT_A, code: 'dup' }),
+    );
+    expect(err?.code).toBe('23505');
+    expect(err?.constraint).toBe('asset_tags_tenant_id_code_uniq');
+  });
+
+  test('T3: the same code twice in the NULL tenant is rejected (NULLS NOT DISTINCT, #784)', async () => {
+    const db = getTestDb();
+    await db.insert(assetTags).values({ tenantId: null, code: 'dup' });
+    const err = await violation(() =>
+      db.insert(assetTags).values({ tenantId: null, code: 'dup' }),
     );
     expect(err?.code).toBe('23505');
     expect(err?.constraint).toBe('asset_tags_tenant_id_code_uniq');

@@ -8,6 +8,7 @@
  *          pgTable extra-config callback + `index` import
  *   #356 — top-level `unique_indexes:` → `uniqueIndex(...).on(...)` + import
  *   #511 — field `unique: true` → a single-column `uniqueIndex(...)` through the same builder
+ *   #784 — `unique_indexes:` shapes: single field, `where:` (partial), `nulls_not_distinct:`
  *
  * These mirror the rendering harness in entity-fk-template.test.ts (render the
  * EJS body with locals from buildBackendLocals).
@@ -524,5 +525,172 @@ describe('column nullability (#736, #613)', () => {
       behaviors: [],
     });
     expect(output).toContain("conversationId: uuid('conversation_id').notNull()");
+  });
+});
+
+
+// ============================================================================
+// #784 — unique_indexes shapes
+// ============================================================================
+
+describe('unique_indexes shapes (#784)', () => {
+  const msgDef = (unique_indexes: unknown[], extra: Record<string, unknown> = {}) => ({
+    entity: { name: 'message', plural: 'messages', table: 'messages', pattern: 'Base' },
+    fields: {
+      conversation_id: { type: 'uuid', required: true },
+      sequence: { type: 'integer', required: true },
+      status: { type: 'string', required: true },
+    },
+    relationships: {},
+    behaviors: [],
+    unique_indexes,
+    ...extra,
+  });
+
+  it('single field, non-tenant', () => {
+    const { output } = render(msgDef([{ fields: ['conversation_id'] }]));
+    expect(output).toContain("uniqueIndex('messages_conversation_id_uniq').on(t.conversationId)");
+  });
+
+  it('explicit NULLS NOT DISTINCT, non-tenant; imports by use', () => {
+    const { output, locals } = render(
+      msgDef([{ fields: ['conversation_id', 'sequence'], nulls_not_distinct: true }]),
+    );
+    expect(output).toContain(
+      "unique('messages_conversation_id_sequence_uniq').on(t.conversationId, t.sequence).nullsNotDistinct()",
+    );
+    expect(locals.drizzleImports).toContain('unique');
+    expect(locals.drizzleImports).not.toContain('uniqueIndex');
+  });
+
+  it('partial entry renders sql and imports it', () => {
+    const { output } = render(
+      msgDef([{ fields: ['conversation_id'], where: "status = 'open'", name: 'messages_open_uniq' }]),
+    );
+    expect(output).toContain(
+      "uniqueIndex('messages_open_uniq').on(t.conversationId).where(sql`${t.status} = 'open'`)",
+    );
+    expect(output).toContain("import { sql, type InferSelectModel } from 'drizzle-orm';");
+  });
+
+  it('no partial entry leaves the drizzle-orm import untouched', () => {
+    const { output } = render(msgDef([{ fields: ['conversation_id'] }]));
+    expect(output).toContain("import { type InferSelectModel } from 'drizzle-orm';");
+  });
+
+  it('rewrites through the column map: FK column, soft_delete column, absent behavior column', () => {
+    const fk = render(
+      msgDef([{ fields: ['sequence'], where: 'account_id IS NOT NULL', name: 'm_fk_uniq' }], {
+        fields: {
+          account_id: { type: 'uuid', required: false },
+          sequence: { type: 'integer', required: true },
+        },
+        relationships: {
+          account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
+        },
+      }),
+    );
+    expect(fk.output).toContain('${t.accountId} IS NOT NULL');
+    const sd = render(
+      msgDef([{ fields: ['sequence'], where: 'deleted_at IS NULL', name: 'm_sd_uniq' }], {
+        behaviors: ['soft_delete'],
+      }),
+    );
+    expect(sd.output).toContain('${t.deletedAt} IS NULL');
+    const none = render(
+      msgDef([{ fields: ['sequence'], where: 'deleted_at IS NULL', name: 'm_none_uniq' }]),
+    );
+    expect(none.output).toContain('sql`deleted_at IS NULL`');
+  });
+
+  it('C1: an unknown field throws, naming the entry, the name and the columns', () => {
+    expect(() => render(msgDef([{ fields: ['nope'] }]))).toThrow(
+      /unique_indexes\[0\].*'nope'.*conversation_id/s,
+    );
+  });
+
+  it('C2: a repeated field throws', () => {
+    expect(() => render(msgDef([{ fields: ['sequence', 'sequence'] }]))).toThrow(/listed twice/);
+  });
+
+  it('C3: two entries with one name throw; an author name equal to a field index name throws', () => {
+    expect(() =>
+      render(msgDef([{ fields: ['sequence'], name: 'dup' }, { fields: ['status'], name: 'dup' }])),
+    ).toThrow(/'dup'.*unique_indexes\[0\].*unique_indexes\[1\]/s);
+    expect(() =>
+      render(
+        msgDef([{ fields: ['sequence'], name: 'messages_status_idx' }], {
+          fields: {
+            conversation_id: { type: 'uuid', required: true },
+            sequence: { type: 'integer', required: true },
+            status: { type: 'string', required: true, index: true },
+          },
+        }),
+      ),
+    ).toThrow(/messages_status_idx/);
+  });
+
+  it('C4: field unique + the same unique_indexes entry throws, naming both', () => {
+    expect(() =>
+      render(
+        msgDef([{ fields: ['sequence'] }], {
+          fields: {
+            conversation_id: { type: 'uuid', required: true },
+            sequence: { type: 'integer', required: true, unique: true },
+            status: { type: 'string', required: true },
+          },
+        }),
+      ),
+    ).toThrow(/field 'sequence' \(unique: true\).*unique_indexes\[0\]/s);
+    expect(() =>
+      render(
+        msgDef([{ fields: ['sequence', 'status'] }, { fields: ['status', 'sequence'], name: 'other' }]),
+      ),
+    ).toThrow(/same unique/);
+  });
+
+  it('C4: two partial entries over one field with different names pass', () => {
+    const { output } = render(
+      msgDef([
+        { fields: ['conversation_id'], where: "status = 'draft'", name: 'm_draft_uniq' },
+        { fields: ['conversation_id'], where: "status = 'published'", name: 'm_pub_uniq' },
+      ]),
+    );
+    expect(output).toContain("uniqueIndex('m_draft_uniq')");
+    expect(output).toContain("uniqueIndex('m_pub_uniq')");
+  });
+
+  it('nulls_not_distinct: false on a non-tenant entry renders the plain uniqueIndex', () => {
+    const { output } = render(msgDef([{ fields: ['sequence'], nulls_not_distinct: false }]));
+    expect(output).toContain("uniqueIndex('messages_sequence_uniq').on(t.sequence)");
+    expect(output).not.toContain('nullsNotDistinct');
+  });
+
+  it('a where scanner error names the entity and the entry', () => {
+    expect(() =>
+      render(msgDef([{ fields: ['sequence'], where: 'sequence > 0; drop', name: 'x_uniq' }])),
+    ).toThrow(/'message' unique_indexes\[0\] where: ';' at offset/);
+  });
+
+  it('tableColumns equals the rendered pgTable column block', () => {
+    const def = {
+      entity: { name: 'lead', plural: 'leads', table: 'leads', pattern: 'Integrated' },
+      fields: {
+        account_id: { type: 'uuid', required: true },
+        owner_ref: { type: 'uuid', foreign_key: 'accounts.id' },
+        name: { type: 'string', required: true },
+      },
+      relationships: {
+        account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
+      },
+      behaviors: ['timestamps', 'soft_delete'],
+      tenant_scoped: true,
+    };
+    const { output, locals } = render(def);
+    const rendered = [...output.matchAll(/^ {4}(\w+): \w+\('(\w+)'/gm)].map((m) => `${m[2]}:${m[1]}`);
+    const mapped = (locals.tableColumns as Array<{ column: string; prop: string }>).map(
+      (c) => `${c.column}:${c.prop}`,
+    );
+    expect([...mapped].sort()).toEqual([...rendered].sort());
   });
 });
