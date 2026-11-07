@@ -117,6 +117,34 @@ describe('validateContent — entity', () => {
 	});
 });
 
+describe('validateContent — reserved names (#813)', () => {
+	it('rejects an entity named date with exactly one custom issue at entity.name', () => {
+		const outcome = validateContent(
+			'entity',
+			'entity:\n  name: date\n  plural: dates\n  table: dates\nfields:\n  body:\n    type: string\n',
+		);
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) throw new Error('unreachable');
+		expect(outcome.issues).toHaveLength(1);
+		expect(outcome.issues[0].path).toEqual(['entity', 'name']);
+		expect(outcome.issues[0].code).toBe('custom');
+		expect(outcome.issues[0].message).toContain('date');
+		expect(outcome.issues[0].message).toContain('Date');
+	});
+
+	it('rejects a relationship named promise', () => {
+		const outcome = validateContent(
+			'relationship',
+			'relationship:\n  name: promise\n  from: person\n  to: organization\n',
+		);
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) throw new Error('unreachable');
+		expect(outcome.issues).toHaveLength(1);
+		expect(outcome.issues[0].path).toEqual(['relationship', 'name']);
+		expect(outcome.issues[0].message).toContain('Promise');
+	});
+});
+
 describe('writeFile', () => {
 	it('writes valid content', () => {
 		const next = VALID_ENTITY.replace('contacts\n', 'contacts\n  pattern: Integrated\n');

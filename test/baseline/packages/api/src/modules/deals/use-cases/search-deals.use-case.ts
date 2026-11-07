@@ -23,12 +23,12 @@ export interface SearchDealsInput extends ListQuery {
 export class SearchDealsUseCase {
   constructor(private readonly listUseCase: ListDealsUseCase) {}
 
-  async execute(input: SearchDealsInput): Promise<Page<Deal>> {
-    const conditions: SQL[] = [];
-    if (input.stage) conditions.push(eq(deals.stage, input.stage));
-    if (input.ownerId) conditions.push(eq(deals.ownerId, input.ownerId));
-    if (input.search) conditions.push(ilike(deals.name, `%${input.search}%`));
+  async execute(searchInput: SearchDealsInput): Promise<Page<Deal>> {
+    const whereTerms: SQL[] = [];
+    if (searchInput.stage) whereTerms.push(eq(deals.stage, searchInput.stage));
+    if (searchInput.ownerId) whereTerms.push(eq(deals.ownerId, searchInput.ownerId));
+    if (searchInput.search) whereTerms.push(ilike(deals.name, `%${searchInput.search}%`));
 
-    return this.listUseCase.execute(input, { where: and(...conditions) });
+    return this.listUseCase.execute(searchInput, { where: and(...whereTerms) });
   }
 }

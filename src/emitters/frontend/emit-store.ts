@@ -380,7 +380,7 @@ export function buildLookupsFile(ctx: FrontendEmitContext): string {
 		.join('\n');
 
 	const lookupIface = entities
-		.map((e) => `\t${e.plural}: Map<string, ${e.className}>;`)
+		.map((e) => `\t${e.plural}: globalThis.Map<string, ${e.className}>;`)
 		.join('\n');
 
 	// One id→entity map for an entity, built from current collection state.

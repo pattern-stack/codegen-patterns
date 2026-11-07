@@ -19,8 +19,8 @@ import type { <%= rightEntityPascal %> } from '<%= rightEntityImportFromJunction
  * attaching. Subset of `<%= classNames.entity %>` minus the two FK columns
  * (those come from the method args).
  */
-export type <%= entityNamePascal %>LinkInput = Partial<
-  Pick<<%= classNames.entity %>,
+export type <%= entityNamePascal %>LinkInput = globalThis.Partial<
+  globalThis.Pick<<%= classNames.entity %>,
     'isPrimary'<% if (temporal) { %> | 'startedAt' | 'endedAt'<% } %><% if (sourced) { %> | 'sourcedFrom' | 'confidence' | 'matchedAt'<% } %><% if (hasRole) { %> | 'role'<% } %>
   >
 >;
@@ -96,7 +96,7 @@ export class <%= classNames.service %> extends WithAnalytics(
       <%= leftColumnCamel %>: <%= leftEntityCamel %>Id,
       <%= rightColumnCamel %>: <%= rightEntityCamel %>Id,
       ...(link ?? {}),
-    } as unknown as Partial<<%= classNames.entity %>>);
+    } as unknown as globalThis.Partial<<%= classNames.entity %>>);
   }
 
   /**
@@ -165,7 +165,7 @@ export class <%= classNames.service %> extends WithAnalytics(
     if (match) {
       await this.update(
         (match as any).id ?? `${<%= leftEntityCamel %>Id}:${<%= rightEntityCamel %>Id}`,
-        { isPrimary: true } as unknown as Partial<<%= classNames.entity %>>,
+        { isPrimary: true } as unknown as globalThis.Partial<<%= classNames.entity %>>,
       );
     }
   }

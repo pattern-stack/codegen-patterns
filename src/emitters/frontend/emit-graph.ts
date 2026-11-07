@@ -300,7 +300,7 @@ export function buildEntityGraphFile(
 
 		if (nested.length === 0) {
 			withTypes.push(
-				`/** \`${entity.name}.${rel.key}\` has no to-one hop to nest — \`with\` is empty. */\nexport type ${wName} = Record<never, never>;`,
+				`/** \`${entity.name}.${rel.key}\` has no to-one hop to nest — \`with\` is empty. */\nexport type ${wName} = globalThis.Record<never, never>;`,
 			);
 			branchTypes.push(
 				`/** \`${entity.name}.${rel.key}\` rows — nothing nests into them. */\ntype ${bName} = ${t.className};`,
@@ -441,9 +441,9 @@ ${nestedJoins ? `${nestedJoins}\n` : ''}${select}
 		manys.some((rel) => toOneRelations(graph.nodes.find((n) => n.collection === rel.target)).length > 0)
 			? `
 /** The \`with\` object of a branch's include value, or \`{}\` for a bare \`true\`. */
-function withOf(value: unknown): Record<string, unknown> {
+function withOf(value: unknown): globalThis.Record<string, unknown> {
 	return typeof value === 'object' && value !== null && 'with' in value
-		? ((value as { with?: Record<string, unknown> }).with ?? {})
+		? ((value as { with?: globalThis.Record<string, unknown> }).with ?? {})
 		: {};
 }
 `
@@ -462,7 +462,7 @@ ${typeImports}
  * carry the key; this resolves to \`undefined\` instead, which is what the
  * result type branches on.
  */
-type Sel<I, K extends PropertyKey> = K extends keyof I ? I[K] : undefined;
+type Sel<I, K extends globalThis.PropertyKey> = K extends keyof I ? I[K] : undefined;
 
 ${withTypes.join('\n\n')}
 
@@ -540,7 +540,7 @@ ${branchHooks}
 	const rootRow = root.data?.[0];
 	if (!rootRow) return { data: undefined, isLoading, isError };
 
-	const out: Record<string, unknown> = { ...rootRow.row };
+	const out: globalThis.Record<string, unknown> = { ...rootRow.row };
 ${assembleOnes}
 ${assembleManys}
 

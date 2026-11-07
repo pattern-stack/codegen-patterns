@@ -4,7 +4,7 @@
 import type { FieldMeta, FieldType, FieldImportance } from './field-meta';
 import type { User } from '@repo/db/entities/user';
 
-export const userFields: Record<string, FieldMeta<User>> = {
+export const userFields: globalThis.Record<string, FieldMeta<User>> = {
 	tenantId: {
 		field: 'tenantId',
 		label: 'Tenant Id',

@@ -89,7 +89,7 @@ describe('emit-api — <entity>.ts routes + verbs', () => {
 	it('emits a listAll() full-fetch escape hatch (LANDMINE 1) returning a flat array', () => {
 		const out = buildEntityApiFile(entry('contact', 'contacts'), ctx([]));
 		expect(out).toContain(
-			"listAll: async (query?: Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<Contact[]> =>",
+			"listAll: async (query?: globalThis.Omit<ListQuery, 'page' | 'pageSize' | 'cursor'>): Promise<Contact[]> =>",
 		);
 		// Pages through the envelope until exhausted.
 		expect(out).toContain('pageCount = result.pageCount;');

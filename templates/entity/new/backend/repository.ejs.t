@@ -83,7 +83,7 @@ export interface <%= classNames.entity %>IntegrationWrite {
   readonly <%= f.name %>?: <%- f.tsType %>;
 <%_ }); _%>
   /** Flat custom-field bag (EAV). */
-  readonly fields?: Record<string, unknown>;
+  readonly fields?: globalThis.Record<string, unknown>;
 }
 
 /**
@@ -113,7 +113,7 @@ export type <%= classNames.entity %>Result<TWith extends <%= classNames.entity %
   ResultOf<'<%= entityNamePlural %>', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type <%= classNames.entity %>NoInclude = Record<string, never>;
+export type <%= classNames.entity %>NoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -129,7 +129,7 @@ export type <%= classNames.entity %>NoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type <%= classNames.entity %>ApiResult = <%= classNames.entity %> &
-  Partial<<%= classNames.entity %>Result<<%= classNames.entity %>Include>>;
+  globalThis.Partial<<%= classNames.entity %>Result<<%= classNames.entity %>Include>>;
 
 @Injectable()
 <%_ /* ADR-041: the spine alone, the spine wrapped in one capability mixin, or
@@ -213,7 +213,7 @@ export class <%= classNames.repository %> extends <%- repositoryExtendsClause %>
     db: DrizzleTx,
     entityId: string,
     userId: string,
-    fields: Record<string, unknown>,
+    fields: globalThis.Record<string, unknown>,
   ): Promise<void> {
     await this.fieldValues.upsertFieldsTransactional('<%= entityName %>', entityId, userId, fields, db);
   }
@@ -432,12 +432,12 @@ _%>
    * Drizzle's `onConflictDoUpdate` with an explicit column list.
    */
   async upsertCurrentValues(
-    inputs: Array<Partial<<%= classNames.entity %>>>,
+    inputs: Array<globalThis.Partial<<%= classNames.entity %>>>,
     tx?: DrizzleTx,
   ): Promise<<%= classNames.entity %>[]> {
     if (inputs.length === 0) return [];
     const data = inputs.map((input) =>
-      this.withTimestamps(input as Record<string, unknown>, 'create'),
+      this.withTimestamps(input as globalThis.Record<string, unknown>, 'create'),
     );
     const runner = this.runner(tx);
     const rows = await runner

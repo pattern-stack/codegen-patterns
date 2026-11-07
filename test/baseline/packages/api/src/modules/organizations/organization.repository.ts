@@ -28,7 +28,7 @@ export type OrganizationResult<TWith extends OrganizationInclude> =
   ResultOf<'organizations', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type OrganizationNoInclude = Record<string, never>;
+export type OrganizationNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -44,7 +44,7 @@ export type OrganizationNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type OrganizationApiResult = Organization &
-  Partial<OrganizationResult<OrganizationInclude>>;
+  globalThis.Partial<OrganizationResult<OrganizationInclude>>;
 
 @Injectable()
 export class OrganizationRepository extends BaseRepository<Organization, typeof organizations, Relations> {

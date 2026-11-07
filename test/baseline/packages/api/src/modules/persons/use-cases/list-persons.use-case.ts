@@ -30,11 +30,11 @@ export class ListPersonsUseCase {
   constructor(private readonly service: PersonService) {}
 
   async execute(
-    query?: ListQuery,
-    options: { where?: SQL } = {},
+    listQuery?: ListQuery,
+    listOptions: { where?: SQL } = {},
   ): Promise<Page<Person>> {
-    const { where } = options;
-    const resolved = resolveListQuery(query);
+    const { where: whereClause } = listOptions;
+    const resolvedQuery = resolveListQuery(listQuery);
 
     // Default sort: `id desc`. This entity has no `timestamps` behavior, so
     // there is no `created_at` column to sort by — and none is needed: the uuid
@@ -49,15 +49,15 @@ export class ListPersonsUseCase {
     // relational query builder (the `with`-include path) aliases the root table
     // (REL-2 §2.4). A pre-rendered fragment would name `persons`,
     // which is not in scope there.
-    const sortColumn = resolved.sortBy.replace(
+    const sortColumn = resolvedQuery.sortBy.replace(
       /_([a-z])/g,
       (_m: string, c: string) => c.toUpperCase(),
     );
-    const known =
-      (persons as unknown as Record<string, unknown>)[sortColumn] !== undefined;
-    const sort: SortTerm[] = known
+    const isKnownColumn =
+      (persons as unknown as globalThis.Record<string, unknown>)[sortColumn] !== undefined;
+    const sortTerms: SortTerm[] = isKnownColumn
       ? [
-          { column: sortColumn, direction: resolved.sortOrder },
+          { column: sortColumn, direction: resolvedQuery.sortOrder },
           { column: 'id', direction: 'desc' },
         ]
       : [{ column: 'id', direction: 'desc' }];
@@ -70,16 +70,16 @@ export class ListPersonsUseCase {
     // entity has no `created_at`, so `computeNextCursor` yields null and there
     // is nothing to seek from. Offset paging is the whole story until the YAML
     // adds the `timestamps` behavior.
-    const [items, total] = await Promise.all([
+    const [pageRows, rowTotal] = await Promise.all([
       this.service.list({
-        where,
-        limit: resolved.pageSize,
-        offset: resolved.offset,
-        sort,
+        where: whereClause,
+        limit: resolvedQuery.pageSize,
+        offset: resolvedQuery.offset,
+        sort: sortTerms,
       }),
-      this.service.count(where),
+      this.service.count(whereClause),
     ]);
 
-    return buildPage(items, total, resolved);
+    return buildPage(pageRows, rowTotal, resolvedQuery);
   }
 }

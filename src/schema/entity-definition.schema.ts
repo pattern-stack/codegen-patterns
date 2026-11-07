@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reservedGlobalFor, reservedNameMessage } from "./reserved-entity-names.js";
 import { roleForeignKey } from "../roles/derive.js";
 import { NOT_NULL_WITHOUT_DEFAULT_MESSAGE, notNullWithoutDefault } from "./field-nullability.js";
 import { TIMEZONE_ON_NON_DATETIME_MESSAGE, timezoneOnNonDatetime } from "./field-timestamp.js";
@@ -635,7 +636,16 @@ const EntityConfigSchema = z
       .regex(
         /^[a-z][a-z0-9_]*$/,
         "Entity name must be lowercase with underscores (e.g., 'opportunity')",
-      ),
+      )
+      .superRefine((name, ctx) => {
+        const reserved = reservedGlobalFor(name);
+        if (reserved) {
+          ctx.addIssue({
+            code: "custom",
+            message: reservedNameMessage("Entity", name, reserved),
+          });
+        }
+      }),
     plural: z.string().regex(/^[a-z][a-z0-9_]*$/, "Plural must be lowercase"),
     table: z.string().regex(/^[a-z][a-z0-9_]*$/, "Table must be lowercase"),
 

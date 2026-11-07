@@ -288,6 +288,10 @@ queries:
 - YAML fields: `snake_case` (matches database columns)
 - TypeScript properties: `camelCase` (derived from snake_case in templates)
 - Entity names in YAML: singular snake_case (`opportunity`)
+- **Emitted TypeScript names lib globals as `globalThis.<Name>`** (`globalThis.Record<…>`), except `Promise`,
+  `Array` and `Date`; validation rejects those three as entity/relationship names
+  (`src/schema/reserved-entity-names.ts`). A function that reads a table export by name declares only camelCase
+  locals, which no plural can match. `test/_emitted-name-hygiene.ts` enforces both rules (#813).
 - **Emitted files and folders: `kebab-case`** — one rule, `src/config/file-naming.ts`
   (`kebab` / `emittedDir` / `emittedStem`), applied by `entityModuleNaming`. The
   database keeps `snake_case`: the `pgTable('…')` / `pgEnum('…')` arguments, column

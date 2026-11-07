@@ -33,7 +33,7 @@ export interface DealIntegrationWrite {
   readonly closerExternalId?: string | null;
   readonly accountExternalId?: string | null;
   /** Flat custom-field bag (EAV). */
-  readonly fields?: Record<string, unknown>;
+  readonly fields?: globalThis.Record<string, unknown>;
 }
 
 /**
@@ -71,7 +71,7 @@ export type DealResult<TWith extends DealInclude> =
   ResultOf<'deals', TWith>;
 
 /** The default `TWith` — no include, so the plain row. */
-export type DealNoInclude = Record<string, never>;
+export type DealNoInclude = globalThis.Record<string, never>;
 
 /**
  * The shape an HTTP read returns: the row, plus any allowlisted relation.
@@ -87,7 +87,7 @@ export type DealNoInclude = Record<string, never>;
  * the call site (REL-2 §2.3/§5.2).
  */
 export type DealApiResult = Deal &
-  Partial<DealResult<DealInclude>>;
+  globalThis.Partial<DealResult<DealInclude>>;
 
 @Injectable()
 export class DealRepository extends IntegratedEntityRepository<

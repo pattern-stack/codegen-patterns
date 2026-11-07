@@ -15,6 +15,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { emittedNameViolations } from '../_emitted-name-hygiene';
 import { bootstrapJunctionProject, type BootstrapResult } from './_helpers';
 
 describe('junction emission snapshot — opportunity_sales_activity (backend)', () => {
@@ -53,5 +54,16 @@ describe('junction emission snapshot — opportunity_sales_activity (backend)', 
   test('emits sales-activity.service.ts (right parent — junction accessor)', () => {
     expect(project.emittedFile('src/modules/sales-activities/sales-activity.service.ts'))
       .toMatchSnapshot();
+  });
+
+  test('emitted files pass the name-hygiene rule (#813)', () => {
+    const files = [
+      'src/modules/opportunity-sales-activities/opportunity-sales-activity.entity.ts',
+      'src/modules/opportunity-sales-activities/opportunity-sales-activity.repository.ts',
+      'src/modules/opportunity-sales-activities/opportunity-sales-activity.service.ts',
+      'src/modules/opportunities/opportunity.service.ts',
+      'src/modules/sales-activities/sales-activity.service.ts',
+    ].map((p) => ({ path: p, text: project.emittedFile(p) }));
+    expect(emittedNameViolations(files)).toEqual([]);
   });
 });
