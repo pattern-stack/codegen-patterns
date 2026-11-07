@@ -104,7 +104,9 @@ describe('column defaults (#345)', () => {
 
   it("maps the `now` sentinel on a datetime column to .defaultNow()", () => {
     const { output } = render(definition);
-    expect(output).toContain("timestamp('started_at').defaultNow()");
+    expect(output).toContain(
+      "timestamp('started_at', { withTimezone: true, mode: 'date' }).defaultNow()",
+    );
   });
 
   it('emits no default suffix when no default is declared', () => {
@@ -692,5 +694,47 @@ describe('unique_indexes shapes (#784)', () => {
       (c) => `${c.column}:${c.prop}`,
     );
     expect([...mapped].sort()).toEqual([...rendered].sort());
+  });
+});
+
+// ============================================================================
+// #796 — timestamptz columns
+// ============================================================================
+
+describe('timestamptz columns (#796)', () => {
+  const TZ = "{ withTimezone: true, mode: 'date' }";
+  const definition = {
+    entity: { name: 'appointment', plural: 'appointments', table: 'appointments', pattern: 'Base' },
+    fields: {
+      starts_at: { type: 'datetime', required: true },
+      reminded_at: { type: 'datetime', default: 'now' },
+      closed_at: { type: 'datetime' },
+      opens_at: { type: 'datetime', timezone: false },
+    },
+    behaviors: ['timestamps', 'soft_delete'],
+  };
+
+  it('a datetime field is timestamptz, with notNull and defaultNow suffixes after it', () => {
+    const { output } = render(definition);
+    expect(output).toContain(`startsAt: timestamp('starts_at', ${TZ}).notNull()`);
+    expect(output).toContain(`remindedAt: timestamp('reminded_at', ${TZ}).defaultNow()`);
+    expect(output).toContain(`closedAt: timestamp('closed_at', ${TZ}),`);
+  });
+
+  it('timezone: false is a bare wall-clock timestamp', () => {
+    const { output } = render(definition);
+    expect(output).toContain("opensAt: timestamp('opens_at'),");
+  });
+
+  it('timestamps and soft_delete columns are timestamptz', () => {
+    const { output } = render(definition);
+    expect(output).toContain(`createdAt: timestamp('created_at', ${TZ}).notNull().defaultNow()`);
+    expect(output).toContain(`updatedAt: timestamp('updated_at', ${TZ}).notNull().defaultNow()`);
+    expect(output).toContain(`deletedAt: timestamp('deleted_at', ${TZ}),`);
+  });
+
+  it('no bare timestamp call remains except the declared opt-out', () => {
+    const { output } = render(definition);
+    expect([...output.matchAll(/timestamp\('(\w+)'\)/g)].map((m) => m[1])).toEqual(['opens_at']);
   });
 });

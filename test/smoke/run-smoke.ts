@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { tscGateErrors } from './_consumer-errors';
+import { assertTimestampColumns, collectTimezoneOptOuts } from './_timestamp-columns';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'src', 'cli', 'index.ts');
@@ -749,6 +750,15 @@ async function main(): Promise<number> {
 		if (SCENARIO === 'relationship') {
 			log('second pass (relationship scenario — seeds existingHasMany)');
 			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
+		}
+
+		// 5.00. #796 — every emitted time column is timestamptz, except the YAML-declared opt-outs.
+		{
+			const scan = assertTimestampColumns(
+				path.join(tmpDir, 'src/modules'),
+				collectTimezoneOptOuts(fixtureFiles.map((f) => path.join(FIXTURES_DIR, f))),
+			);
+			log(`timestamptz scan OK (${scan.calls} calls in ${scan.files} entity files)`);
 		}
 
 		// 5.0. #511 — field `unique: true` emission (default scenario fixtures).
