@@ -650,6 +650,15 @@ function assertRelationshipEmission(tmpDir: string): void {
 		/\topportunities: \{ opportunities: true \},/,
 		'generated/api-includes.ts implies the prefix of a declared path',
 	);
+	// The YAML says `parent_account`; the map is keyed by the relation key (#742).
+	assertContains(
+		apiIncludes,
+		/\t\tparentAccount: \{ parentAccount: true \},/,
+		'generated/api-includes.ts keys a YAML-spelled path by its relation key (#742)',
+	);
+	if (apiIncludes.includes('parent_account')) {
+		throw new Error('generated/api-includes.ts carries the YAML spelling parent_account (#742)');
+	}
 	assertContains(
 		apiIncludes,
 		/as const satisfies Readonly<Record<string, RouteIncludes<'accounts'>>>;/,
@@ -675,6 +684,11 @@ function assertRelationshipEmission(tmpDir: string): void {
 		accountController,
 		/throw new BadRequestException\(\{ code: err\.code, path: err\.path, message: err\.message \}\)/,
 		'account.controller.ts turns a disallowed include into a 400',
+	);
+	assertContains(
+		accountController,
+		/written as relation keys \(camelCase\)/,
+		'account.controller.ts tells clients include paths are relation keys (#742)',
 	);
 	// A route with NO allowlist still validates — closed by default (charter I6).
 	const contactController = reads('modules/contacts/contact.controller.ts');

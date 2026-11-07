@@ -1054,7 +1054,9 @@ export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;
 /**
  * One HTTP read route's include allowlist (REL-2 §5, charter I6).
  *
- * `paths` are DOT PATHS over relation keys (`contacts`, `opportunities.account`).
+ * `paths` are DOT PATHS over relations (`contacts`, `opportunities.account`); each segment
+ * may be the YAML relationship name or the relation key, normalised by REL-1's `camelCase`
+ * (REL-2 §5.1, #742).
  * They are not queries: the allowlist exposes SHAPES. A client asks for a path by
  * name and the generated controller looks up a compile-time literal fragment —
  * it never constructs a tree from client input.

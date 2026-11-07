@@ -242,7 +242,8 @@ SELECT activities.*, deals.id AS via_deals_id, deals.name AS via_deals_label
 ### 4.3 The four things the signature has to settle
 
 **1. The path expression.** Dot paths over relation keys — `'deals.activities'` — **the same vocabulary as REL-2's
-allowlist paths** (REL-2 §5.1: *"`paths` are dot paths over relation keys"*). One vocabulary for the allowlist, the
+compiled allowlist** (REL-2 §5.1: *"`paths` are dot paths over relations; each segment may be the YAML relationship name or the relation key"*).
+*(2026-10-31, #742: the YAML allowlist may spell segments as relationship names; the compiled allowlist and `?include=` stay in relation keys, which is the vocabulary meant here.)* One vocabulary for the allowlist, the
 navigator and the UI's chips means the allowlist can be consulted directly (§5.3) and the path shown in the UI is
 literally the string passed to the API. Typed as a template-literal union derived from the relation manifest, so a
 path that does not exist is a compile error, as REL-2 did for includes.

@@ -53,11 +53,13 @@ api:
   includes:
     find_by_id:
       max_depth: 2
-      # `opportunities.account` implies `opportunities`, so three keys are
-      # emitted for two declarations. `contacts` is depth 1.
+      # `opportunities.account` implies `opportunities`, so four keys are
+      # emitted for three declarations. `contacts` is depth 1. `parent_account`
+      # is the YAML relationship name; it compiles to the key `parentAccount` (#742).
       paths:
         - contacts
         - opportunities.account
+        - parent_account
     list:
       max_depth: 1
       paths:

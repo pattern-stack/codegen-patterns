@@ -13,6 +13,12 @@
  * per entity in `prompt-extension.js` would be a second copy of REL-1's
  * `build-graph.ts` (charter I1). The hygen half only ever reads its own entity's
  * YAML to learn WHICH routes have an allowlist.
+ *
+ * Spelling (#742): a path segment may be the YAML relationship name (`fantasy_teams`)
+ * or the manifest's relation key (`fantasyTeams`). Every segment goes through the
+ * manifest's own `camelCase` (`./types`) before lookup — one rule, idempotent on
+ * keys — and the compiled allowlist, the emitted `api-includes.ts` and the
+ * `?include=` wire format all stay in relation keys.
  */
 
 import {
@@ -22,7 +28,8 @@ import {
 } from '../../schema/entity-definition.schema';
 import { deriveQueryMethodName } from '../../schema/query-routes';
 import type { RelationGraph } from './build-graph';
-import type { RelationEdge, RelationsEmitContext } from './types';
+import { levenshtein } from '../../utils/edit-distance';
+import { camelCase, type RelationEdge, type RelationsEmitContext } from './types';
 
 /** An allowlist declaration that cannot be compiled. Fails the command. */
 export class IncludeAllowlistError extends Error {
@@ -34,9 +41,13 @@ export class IncludeAllowlistError extends Error {
 
 /** One allowlisted dot path, with the include fragment it compiles to. */
 export interface CompiledIncludePath {
-  /** The dot path as declared (or implied, for a prefix of a declared path). */
+  /**
+   * The dot path in RELATION-KEY form: each declared segment normalised with REL-1's
+   * `camelCase` (the YAML relationship name and the key name the same edge). This is
+   * the key a client sends in `?include=`. A prefix of a declared path is implied.
+   */
   path: string;
-  /** Rendered include literal — `{ contacts: { with: { account: true } } }`. */
+  /** Rendered include literal, from the key-form segments — `{ contacts: { with: { account: true } } }`. */
   fragment: string;
   /** Hop count. Always `<= route.max_depth`. */
   depth: number;
@@ -91,6 +102,25 @@ function renderFragment(keys: string[]): string {
   if (head === undefined) throw new IncludeAllowlistError('empty include path');
   if (rest.length === 0) return `{ ${head}: true }`;
   return `{ ${head}: { with: ${renderFragment(rest)} } }`;
+}
+
+/**
+ * The key at this hop closest to `key` (a camelCase-normalised segment), or undefined
+ * when none is close. Lower-cased Levenshtein, limit max(2, floor(maxLen / 3)), ties
+ * to the earlier candidate. `candidates` arrive in graph order.
+ */
+function nearestRelationKey(key: string, candidates: readonly string[]): string | undefined {
+  let best: string | undefined;
+  let bestDistance = Infinity;
+  for (const candidate of candidates) {
+    const distance = levenshtein(key.toLowerCase(), candidate.toLowerCase());
+    const limit = Math.max(2, Math.floor(Math.max(key.length, candidate.length) / 3));
+    if (distance <= limit && distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 /**
@@ -173,12 +203,15 @@ export function buildIncludeAllowlists(
 
       // Declaring `a.b` implies `a` — a prefix of an allowed path is allowed, so
       // a client can ask for the shallower shape without a second declaration.
+      // `wanted` is in RELATION-KEY form: each declared segment goes through
+      // REL-1's own `camelCase` before lookup (#742), so `fantasy_teams` and
+      // `fantasyTeams` name the same edge and collapse to one entry.
       const wanted = new Set<string>();
       for (const declared of decl.paths) {
         const segments = declared.split('.').map((s) => s.trim());
         if (segments.some((s) => s.length === 0)) {
           throw new IncludeAllowlistError(
-            `${entity.name}.api.includes.${route}: '${declared}' is not a dot path over relation keys.`,
+            `${entity.name}.api.includes.${route}: '${declared}' is not a dot path over relations.`,
           );
         }
         if (segments.length > decl.max_depth) {
@@ -188,22 +221,26 @@ export function buildIncludeAllowlists(
               `a path longer than the cap is never silently trimmed.`,
           );
         }
-        for (let i = 1; i <= segments.length; i += 1) {
-          wanted.add(segments.slice(0, i).join('.'));
-        }
-      }
-
-      const paths: CompiledIncludePath[] = [];
-      for (const path of [...wanted].sort()) {
-        const segments = path.split('.');
+        const keys = segments.map(camelCase);
         let table = entity.plural;
-        for (const [index, key] of segments.entries()) {
-          const edge = edgesByTable.get(table)?.get(key);
+        for (const [index, key] of keys.entries()) {
+          const edges = edgesByTable.get(table);
+          const edge = edges?.get(key);
           if (!edge) {
             const at = segments.slice(0, index + 1).join('.');
+            const segment = segments[index] as string;
+            const written = segment !== key ? ` (written '${segment}')` : '';
+            const available = [...(edges?.keys() ?? [])];
+            const keysClause =
+              available.length > 0
+                ? `Relation keys at this hop: ${available.join(', ')}.`
+                : `Table '${table}' has no relations, so no path continues through it.`;
+            const nearest = nearestRelationKey(key, available);
+            const suggestion = nearest === undefined ? '' : ` Did you mean '${nearest}'?`;
             throw new IncludeAllowlistError(
-              `${entity.name}.api.includes.${route}: '${path}' names no relation at '${at}' — ` +
-                `table '${table}' has no relation '${key}' in the generated manifest.`,
+              `${entity.name}.api.includes.${route}: '${declared}' names no relation at '${at}' — ` +
+                `table '${table}' has no relation '${key}'${written} in the generated manifest. ` +
+                `${keysClause}${suggestion}`,
             );
           }
           const targetEntity = entityByTable.get(edge.targetTable);
@@ -214,7 +251,7 @@ export function buildIncludeAllowlists(
           // through a neighbour can simply not be `api: false`.
           if (targetDef !== undefined && !apiEnabled(targetDef)) {
             throw new IncludeAllowlistError(
-              `${entity.name}.api.includes.${route}: '${path}' traverses '${targetEntity}', ` +
+              `${entity.name}.api.includes.${route}: '${declared}' traverses '${targetEntity}', ` +
                 `which declares 'api: false'. An entity with no HTTP data plane is not reachable ` +
                 `through an exposed neighbour — drop the path, or drop 'api: false' on ` +
                 `'${targetEntity}' (ADR-043 §6, ADR-044 §7 revision 2026-09-20).`,
@@ -222,12 +259,16 @@ export function buildIncludeAllowlists(
           }
           table = edge.targetTable;
         }
-        paths.push({
-          path,
-          fragment: renderFragment(segments),
-          depth: segments.length,
-        });
+        for (let i = 1; i <= keys.length; i += 1) {
+          wanted.add(keys.slice(0, i).join('.'));
+        }
       }
+
+      // Every prefix of a walked path was walked, so no second lookup here.
+      const paths: CompiledIncludePath[] = [...wanted].sort().map((path) => {
+        const keys = path.split('.');
+        return { path, fragment: renderFragment(keys), depth: keys.length };
+      });
 
       routes.push({ route, maxDepth: decl.max_depth, paths });
     }
