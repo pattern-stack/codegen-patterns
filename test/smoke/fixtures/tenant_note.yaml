@@ -20,6 +20,9 @@
 #     compile gate and does not execute it; the runtime proof of both axes in
 #     one statement is `test/scaffold/tests/tenant-scoping.test.ts`, whose
 #     table does carry `user_id`.
+#   - #511: `slug` is `unique: true` + `index: true` -> the per-tenant unique
+#     `(tenant_id, slug)` AND the plain index (the unique cannot serve a lookup
+#     on slug alone, so the author's `index: true` is kept),
 #   - a declarative finder, whose body must be `baseQuery(<leaf>)` (SCOPE-0),
 #   - #636: `owner_workspace_id` references a table NO entity YAML generates.
 #     It must emit a plain column with no import — an import of
@@ -44,6 +47,7 @@ fields:
     required: true
     max_length: 200
     index: true
+    unique: true
 
   # #636 — host-owned target: `workspaces` is not declared by any entity YAML.
   owner_workspace_id:

@@ -326,6 +326,52 @@ function assertSemanticEmission(tmpDir: string): void {
 	);
 }
 
+/**
+ * #511 — a field's `unique: true` emits a unique index (per tenant under
+ * `tenant_scoped`). `tsc` passes vacuously when nothing is emitted, so this
+ * content assertion is what makes the smoke able to fail on its subject.
+ */
+function assertFieldUniqueEmission(tmpDir: string): void {
+	const reads = (rel: string): string =>
+		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
+
+	const canonical = reads('modules/canonical-fields/canonical-field.entity.ts');
+	assertContains(
+		canonical,
+		/uniqueIndex\('canonical_fields_name_uniq'\)\.on\(t\.name\)/,
+		'canonical_field.name unique: true -> uniqueIndex (#511)',
+	);
+
+	const fieldConfig = reads('modules/field-configs/field-config.entity.ts');
+	assertContains(
+		fieldConfig,
+		/uniqueIndex\('field_configs_field_definition_id_uniq'\)\.on\(t\.fieldDefinitionId\)/,
+		'field_config.field_definition_id unique FK -> uniqueIndex (#511)',
+	);
+	assertNotContains(
+		fieldConfig,
+		/index\('field_configs_field_definition_id_idx'\)/,
+		'field_config unique + index on a non-tenant FK drops the plain index (#511)',
+	);
+
+	const tenantNote = reads('modules/tenant-notes/tenant-note.entity.ts');
+	assertContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_tenant_id_slug_uniq'\)\.on\(t\.tenantId, t\.slug\)/,
+		'tenant_note.slug unique -> per-tenant uniqueIndex (#511)',
+	);
+	assertContains(
+		tenantNote,
+		/index\('tenant_notes_slug_idx'\)/,
+		'tenant_note keeps the plain slug index under tenant_scoped (#511)',
+	);
+	assertNotContains(
+		tenantNote,
+		/uniqueIndex\('tenant_notes_slug_uniq'\)/,
+		'tenant_note must not emit a bare global unique (#511)',
+	);
+}
+
 function assertRelationshipEmission(tmpDir: string): void {
 	const reads = (rel: string): string =>
 		fs.readFileSync(path.join(tmpDir, 'src', rel), 'utf8');
@@ -662,6 +708,13 @@ async function main(): Promise<number> {
 		if (SCENARIO === 'relationship') {
 			log('second pass (relationship scenario — seeds existingHasMany)');
 			run(`${cli(tmpDir)} entity new --all --force`, tmpDir);
+		}
+
+		// 5.0. #511 — field `unique: true` emission (default scenario fixtures).
+		if (SCENARIO === 'default') {
+			log('asserting field unique emission');
+			assertFieldUniqueEmission(tmpDir);
+			log('field unique emission OK');
 		}
 
 		// 5.1. CGP-62 — under the `relationship` scenario, assert the

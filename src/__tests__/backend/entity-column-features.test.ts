@@ -7,6 +7,7 @@
  *   #355 — field `index: true` → `index('<table>_<col>_idx').on(t.<col>)` in the
  *          pgTable extra-config callback + `index` import
  *   #356 — top-level `unique_indexes:` → `uniqueIndex(...).on(...)` + import
+ *   #511 — field `unique: true` → a single-column `uniqueIndex(...)` through the same builder
  *
  * These mirror the rendering harness in entity-fk-template.test.ts (render the
  * EJS body with locals from buildBackendLocals).
@@ -290,6 +291,95 @@ describe('composite unique_indexes (#356)', () => {
   });
 });
 
+
+// ============================================================================
+// #511 — field-level unique: true
+// ============================================================================
+
+describe('field-level unique (#511)', () => {
+  const seasonDef = (fields: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    entity: { name: 'season', plural: 'seasons', table: 'seasons', pattern: 'Base' },
+    fields,
+    relationships: {},
+    behaviors: [],
+    ...extra,
+  });
+  const fkDef = (fieldExtra: Record<string, unknown>) => ({
+    entity: { name: 'season', plural: 'seasons', table: 'seasons', pattern: 'Base' },
+    fields: { account_id: { type: 'uuid', required: true, ...fieldExtra } },
+    relationships: {
+      account: { type: 'belongs_to', target: 'account', foreign_key: 'account_id' },
+    },
+    behaviors: [],
+  });
+
+  it('emits a uniqueIndex for a scalar unique: true field, and no .unique() chain', () => {
+    const { output, locals } = render(seasonDef({ label: { type: 'string', required: true, unique: true } }));
+    expect(output).toContain("uniqueIndex('seasons_label_uniq').on(t.label)");
+    expect(locals.drizzleImports).toContain('uniqueIndex');
+    expect(output).not.toContain('.unique()');
+  });
+
+  it('covers a belongs_to FK column declared in fields: with unique: true', () => {
+    const { output } = render(fkDef({ unique: true }));
+    expect(output).toContain("uniqueIndex('seasons_account_id_uniq').on(t.accountId)");
+  });
+
+  it('drops the plain index when unique + index on a non-tenant scalar', () => {
+    const { output, locals } = render(
+      seasonDef({ label: { type: 'string', required: true, unique: true, index: true } }),
+    );
+    expect(output).toContain("uniqueIndex('seasons_label_uniq').on(t.label)");
+    expect(output).not.toContain('seasons_label_idx');
+    expect(locals.drizzleImports).not.toContain('index');
+  });
+
+  it('drops the plain index when unique + index on a non-tenant FK', () => {
+    const { output, locals } = render(fkDef({ unique: true, index: true }));
+    expect(output).toContain("uniqueIndex('seasons_account_id_uniq').on(t.accountId)");
+    expect(output).not.toContain('seasons_account_id_idx');
+    expect(locals.drizzleImports).not.toContain('index');
+  });
+
+  it('keeps an index: true on a different field', () => {
+    const { output } = render(
+      seasonDef({
+        label: { type: 'string', required: true, unique: true, index: true },
+        code: { type: 'string', required: true, index: true },
+      }),
+    );
+    expect(output).toContain("index('seasons_code_idx').on(t.code)");
+    expect(output).not.toContain('seasons_label_idx');
+  });
+
+  it('orders field uniques (fields: order) before unique_indexes: in one callback', () => {
+    const { output } = render(
+      seasonDef(
+        {
+          a: { type: 'string', required: true, unique: true },
+          b: { type: 'string', required: true },
+          c: { type: 'string', required: true, unique: true },
+        },
+        { unique_indexes: [{ fields: ['b', 'c'] }] },
+      ),
+    );
+    expect((output.match(/\(t\) => \[/g) ?? []).length).toBe(1);
+    const ia = output.indexOf("'seasons_a_uniq'");
+    const ic = output.indexOf("'seasons_c_uniq'");
+    const ibc = output.indexOf("'seasons_b_c_uniq'");
+    expect(ia).toBeGreaterThan(-1);
+    expect(ia).toBeLessThan(ic);
+    expect(ic).toBeLessThan(ibc);
+  });
+
+  it('emits nothing extra for id: { unique: true }', () => {
+    const { output } = render(
+      seasonDef({ id: { type: 'uuid', unique: true }, label: { type: 'string', required: true } }),
+    );
+    expect(output).not.toContain('uniqueIndex');
+    expect(output).not.toContain('seasons_id_uniq');
+  });
+});
 
 // ============================================================================
 // #636 — a field FK to a HOST-OWNED table
