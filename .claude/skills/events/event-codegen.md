@@ -144,7 +144,7 @@ The current per-entity event *class* generation is replaced by the `src/generate
 
 ## Entity `emits:` block (required for typed auto-emission)
 
-Phase C design — not yet shipped:
+Shipped (EVT-7):
 
 ```yaml
 # entities/contact.yaml
@@ -158,7 +158,7 @@ Behavior:
 - If present, each entry must resolve to an `events/<type>.yaml` with `direction: change` and `aggregate: contact`. Missing → codegen hard error.
 - If absent, no typed auto-emission. The legacy `runtime/base-classes/lifecycle-events.ts` untyped fire-and-forget path is used (with a warning at codegen time).
 
-Once shipped, generated use-cases call the facade explicitly inside the transaction:
+Generated use-cases call the facade explicitly inside the transaction. The token and class come from different places by runtime mode (#814): vendored imports both from `@shared/subsystems/events`; package imports `TYPED_EVENT_BUS` from `@pattern-stack/codegen/subsystems` (the barrel exports the token only) and `TypedEventBus` from the project's own generated bus, `<paths.generated>/events/bus`, by a path relative to the use case (the `typedEventBusImport` local in `entity-locals.js`). Never import the class from the package barrel.
 
 ```ts
 async execute(input: CreateContactInput): Promise<Contact> {
@@ -176,7 +176,7 @@ async execute(input: CreateContactInput): Promise<Contact> {
 
 ## Generated artifacts — `runtime/subsystems/events/generated/`
 
-Five files, all generated, none hand-edited. In the codegen repo they sit under `runtime/subsystems/events/generated/`; when `subsystem install events` runs they land under `<backend_src>/shared/subsystems/events/generated/` in the consumer project (default `src/shared/subsystems/events/generated/`).
+Five files, all generated, none hand-edited. In package mode (`runtime: package`, the default) they are written to `<paths.generated>/events/` instead (e.g. `src/generated/events/bus.ts`) and nothing is vendored. In the codegen repo they sit under `runtime/subsystems/events/generated/`; when `subsystem install events` runs they land under `<backend_src>/shared/subsystems/events/generated/` in the consumer project (default `src/shared/subsystems/events/generated/`).
 
 ```
 runtime/subsystems/events/generated/
