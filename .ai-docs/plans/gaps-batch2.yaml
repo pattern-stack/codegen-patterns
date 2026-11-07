@@ -1,0 +1,701 @@
+# Gate-0 plan: generator gaps, batch 2.
+#
+# STATUS: draft for Gate 0. Not synced.
+#
+# EVERY WORK ITEM HERE ALREADY EXISTS ON GITHUB. Each one names its issue in `existing_issues:`.
+# /sync-issues must link these issues, not create them: see `plan.sync`. This plan creates no tracker issue.
+#
+# Base: origin/main @ 2057e6cb (the 0.32.0 release, #838). Every issue was checked against 6f4f430c, the commit
+# before it. #838 changes only CHANGELOG.md and package.json, so every file:line below holds at 2057e6cb.
+# Schema: the gaps-batch1 plan (branch `dugshub/gaps-batch1-plan`, `.ai-docs/plans/gaps-batch1.yaml`). Each item also
+# carries `epic`, `verdict` and `breaking`. `plan:` carries the project-field keys `workstream`, `priority` and `size`
+# (allowed values only: W1-W9, P0-P3, XS-XL); an item's `priority` / `size` overrides them. There is no `gate` key:
+# neither the batch-1 plan nor the epics (#783, #793, #794) name one.
+
+plan:
+  slug: gaps-batch2
+  summary: "Batch 2 of generator gaps: the tenant external-id unique that rejects a second plain POST, 409 on a unique violation, unique finders backed by a constraint, framework-name and behavior-column collisions, temporal_validity, emits payloads, junction and relationship field indexes"
+  type: batch
+  repo: pattern-stack/codegen-patterns
+  milestone: "codegen 0.33.0"   # informational. Create it on sync or drop it; nothing depends on it.
+  workstream: W2
+  priority: P2                  # #829 and #828 override to P1
+  size: L
+  epic_title: "Gaps batch 2: unique constraints at runtime, reserved names, behavior and pipeline gaps"
+  epic_body: |
+    The follow-ups batch 1 filed while it built (`.ai-docs/reports/gaps-batch1.md`), plus #715. Each one is an
+    existing issue, checked against the generator at `6f4f430c` (identical code at `2057e6cb`, 0.32.0). Each item
+    has a gate that fails on the defect before the fix lands.
+
+    **Stack A: unique constraints at runtime**
+    #829 a tenant-scoped `external_id_tracking` entity rejects every plain POST after the first in a tenant
+    (reproduced on PostgreSQL 16; shipped since 0.31.0 with TEN-1, not a #784 regression). #828 a unique violation
+    returns 500, not 409. #821 a `queries:` finder with `unique: true` must be backed by a unique constraint.
+
+    **Stack B: reserved names and behavior columns** (`src/schema/reserved-entity-names.ts`)
+    #833 entity names that equal an imported framework name (`page`, `post`, `module`, ...) fail `tsc` with TS2300.
+    #715 a declared field that names a behavior column (`tenant_id`, `created_at`, ...) fails `tsc` with TS1117
+    and generation exits 0. #831 `behaviors: [temporal_validity]` (or any misspelled behavior) emits nothing, silently.
+
+    **Stack C: pipeline gaps** (junction smoke harness)
+    #830 an `emits:` payload can render `dto.<key>` in the delete and update use cases. #832 junction and
+    relationship `fields:` accept `index:` and `unique:` and emit neither.
+
+    Out of scope: #819 (non-unique `indexes:`, needs:design) and #820 (`unique_indexes: tenant: false`,
+    gate:human) wait for a later batch and Doug's Gate 1. #617 (`user_tracking` emits no column) stays separate.
+
+    References: ADR-042 (tenant scoping, §5), TEN-1 (M5, §4.4), #783's Drizzle rc.4 limits comment, #813
+    (`reserved-entity-names.ts`, `test/_emitted-name-hygiene.ts`), CLAUDE.md "a gate must be able to fail on its
+    own subject".
+  stack:
+    base: main
+    base_commit: 2057e6cb       # 0.32.0. Issues verified at 6f4f430c; the code is identical.
+    depends_on: []
+
+  # Same as batch 1. As written, /sync-issues creates a parent epic and one issue per leaf, and its update path
+  # REPLACES issue bodies. All three would be wrong here. See open_questions.sync.
+  sync:
+    mode: reference-existing
+    create_epic: false            # seven issues already sit under #783 or #794. A GitHub issue has one parent.
+    create_leaves: []
+    rules: |
+      - Never create a leaf that has `existing_issues:`, and never change its title or body. Those bodies hold
+        the evidence and the "Expected" text.
+      - For each existing issue: post this plan's description as one comment headed "Plan (gaps-batch2)"
+        carrying the `[plan-key:gaps-batch2/<key>]` marker. Add `gate:auto` or `gate:human` only if neither is
+        present (all eight carry `gate:auto` today; see open_questions.gate_labels). Do not re-parent an issue.
+      - Express `depends_on` as `Depends on: #N` lines in that comment. Do not edit the issue body.
+      - Add the issues to the project board and set the plan's project fields on them.
+
+stacks:
+  A:
+    name: unique-constraints-at-runtime
+    order: [external-id-tenant-unique, unique-violation-409, unique-finder-backed]
+    note: |
+      #829 is first by priority. #828 has no code dependency on it: if #829 is held at Gate 1, #828 goes onto main
+      directly. #821 depends on #829, because a finder is backed by the table's unique constraints and #829
+      reshapes one of them (the external-id unique). All three share the constraint code in `entity-locals.js`,
+      `test/scaffold/` and the unique section of `consumer-skills/entities/yaml-reference.md`. #821 is gate:human
+      and sits at the top, so a hold on it blocks nothing below.
+  B:
+    name: reserved-names-and-behavior-columns
+    order: [controller-import-names, reserved-behavior-fields, temporal-validity-behavior]
+    note: |
+      #833 and #715 both extend `src/schema/reserved-entity-names.ts` (#813's module): #833 grows the reserved type
+      names and adds lint rule 3; #715 adds a behavior → emitted-column table. That pair is file overlap only.
+      #715 → #831 is a real dependency: #831 keys `BEHAVIOR_MANAGED_FIELDS` (`entity-locals.js`) on #715's table.
+      If Doug chooses "emit" for #831 (open_questions.temporal_validity), its columns join that table too.
+  C:
+    name: pipeline-gaps
+    order: [emits-payload-from-entity, junction-relationship-field-indexes]
+    note: |
+      No code dependency. They share a stack because both add fixtures to the junction smoke (`test/junction/`,
+      `test/smoke/fixtures-junction/`), so the harness changes stay in one review order. Build them in parallel.
+      #830 also edits `templates/entity/new/prompt.js` (payload rules, L519-575), where #831 deletes the dead
+      behavior registry (L41-145, L207-263): different hunks.
+
+merge_order: |
+  Merge bottom-up as one chain, as batch 1 did. Restack in this order: A (#829, #828, #821), then B (#833, #715,
+  #831), then C (#830, #832). Resolve snapshot conflicts by regenerating (`just test-baseline`, `just test-junction`)
+  on the restacked branch, never by hand-merging snapshot files. Known overlaps: #828 and #833 both rewrite every
+  baseline controller; #821 changes the baseline contact entity; #829 and #821 both edit the constraint code in
+  `entity-locals.js`; #833 must reserve `UseFilters` and the filter class #828 adds (its lint rule finds them
+  whichever lands second).
+
+changelog_policy: |
+  As in batch 1. `CHANGELOG.md` starts at `[0.32.0]` and has no Unreleased section. Each item PR carries a
+  "Changelog:" block in its PR body. The 0.33.0 release PR writes the section from those blocks
+  (open_questions.release). #829's block must carry the deploy-together note; #821's must carry the
+  auth-integrations step.
+
+issues:
+  # ───────────────────────────── Stack A ─────────────────────────────
+  - key: external-id-tenant-unique
+    title: "fix(#829)!: a tenant-scoped external_id_tracking entity accepts more than one row without an external id"
+    existing_issues: [829]
+    epic: 783
+    verdict: "real, reproduced on PostgreSQL 16. Not a #784 regression: shipped since 0.31.0 (TEN-1, #707)."
+    stack: A
+    size: M
+    priority: P1
+    layer: L0
+    depends_on: []
+    parallel_with: [unique-violation-409, controller-import-names, reserved-behavior-fields, temporal-validity-behavior, emits-payload-from-entity, junction-relationship-field-indexes]
+    labels: ["domain:codegen", "gate:human"]   # the issue carries gate:auto; see open_questions.gate_labels
+    breaking: "DDL: yes, a relaxation (one constraint becomes two unique indexes; no dedupe). Runtime: the protected `conflictTarget()` changes its return type. Runtime and migration must deploy together for null-tenant upserts."
+    files:
+      - templates/entity/new/backend/entity-locals.js        # external_id_tracking unique (L2095-2125); collectDrizzleImports (`sql` for the partial index)
+      - runtime/base-classes/integrated-entity-repository.ts # conflictTarget() (L258) returns target + targetWhere; onConflictDoUpdate (L119-122)
+      - src/__tests__/backend/tenant-scoping-templates.test.ts
+      - test/scaffold/entities/ + test/scaffold/tests/       # a GENERATED tenant-scoped Integrated entity; two plain creates per partition
+      - test/scaffold/schema.ts                              # tenantCrmEntities hand copy of the constraint (L149-168)
+      - test/scaffold/tests/tenant-scoping.test.ts           # TEN-1 upsert tests (L360-439) run against the new shape
+      - test/smoke/fixtures/                                 # a tenant-scoped Integrated fixture; none exists today
+      - docs/adrs/ADR-042-automatic-repository-tenant-scoping.md + docs/specs/TEN-1.md   # dated revision note (M5, §4.4)
+      - consumer-skills/entities/yaml-reference.md + consumer-skills/codegen/SKILL.md
+    gates: [test-integration, test-unit, test-smoke, test-smoke-subsystems, test-baseline]
+    description: |
+      Verdict: REAL. Under `tenant_scoped: true`, `external_id_tracking` (declared, or implied by
+      `pattern: Integrated`) emits
+      `unique('uq_<plural>_tenant_provider_external_id').on(t.tenantId, t.provider, t.externalId).nullsNotDistinct()`
+      (entity-locals.js:2095-2125). `external_id` and `provider` are nullable (entity.ejs.t:47-48) and are not in
+      the create DTO (entity-locals.js:2258-2261), so every row the generated POST creates is
+      `(tenant, NULL, NULL)`. Under NULLS NOT DISTINCT those rows are equal. Reproduced on PostgreSQL 16 with that
+      exact DDL: the first plain insert in a tenant succeeds, and the second fails with 23505 on
+      `uq_<plural>_tenant_provider_external_id`. #828 makes that a 500 today. The null-tenant partition fails the
+      same way, and so does a row that sets `provider` but no `external_id`. A non-tenant entity is unaffected:
+      its `uniqueIndex` on `(provider, external_id)` treats NULLs as distinct.
+
+      Not a regression from #784. The constraint came with TEN-1 (#707, 81f6c364) and has shipped since 0.31.0.
+      #784 (40f464d9) only added `name` / `builder` metadata to the entry. So #829 does not gate 0.32.0, which is
+      out. It is still P1: on any tenant-scoped Integrated entity, manual creates are broken after the first.
+
+      Fix (open_questions.external_id_unique): replace the one NND constraint with two unique indexes, both
+      NULLS DISTINCT:
+        - `uniqueIndex('uq_<plural>_tenant_provider_external_id').on(t.tenantId, t.provider, t.externalId)`, the
+          per-tenant ON CONFLICT target. Rows without an external id never collide.
+        - `uniqueIndex('uq_<plural>_null_tenant_provider_external_id').on(t.provider, t.externalId)`
+          `.where(sql\`${t.tenantId} IS NULL\`)`, the null partition's target. ADR-042's rule that the null
+          partition is one partition still holds for integration rows.
+      `conflictTarget()` picks the target from the stamped tenant: `(tenantId, provider, externalId)` inside a
+      tenant, and `(provider, externalId)` with `targetWhere: tenant_id IS NULL` in the null partition.
+      Checked on PostgreSQL 16:
+        - two plain inserts succeed, both inside a tenant and in the null partition;
+        - a second upsert updates in place in both;
+        - a raw duplicate is rejected in both.
+      This shape also drops the PostgreSQL 15+ requirement for this constraint.
+
+      Spec-time check: the tenant index reuses the constraint's name. Confirm that `drizzle-kit push` and
+      `generate` drop the constraint before they create the index. If they do not, give the index a new name.
+
+      Related but not in scope: #784 D1 (open_questions.nnd_default).
+
+      Acceptance:
+      - Integration: the test runs on the DDL that `drizzle-kit push` creates from a GENERATED tenant-scoped
+        Integrated scaffold entity, not a hand copy (CLAUDE.md gate rule (b)). Two creates without an external id
+        succeed in one tenant, and two succeed in the null partition. The test fails on the base commit with 23505.
+      - The TEN-1 upsert tests pass against the new DDL: two tenants with the same external id, the idempotent
+        re-run, the null-partition upsert, and an upsert that never rewrites the owning tenant.
+        `tenantCrmEntities` in test/scaffold/schema.ts moves to the new shape, or those tests move to the
+        generated entity.
+      - Unit: the render emits both indexes and imports `sql`. A non-tenant entity's output is unchanged.
+      - Smoke `tsc` passes on a tenant-scoped Integrated fixture. No gate compiles that shape today.
+      - Baseline snapshots are unchanged, because no baseline fixture is both tenant-scoped and Integrated.
+      - ADR-042 and TEN-1 get a dated revision note: the conflict target is two unique indexes, not an NND
+        constraint.
+      - Changelog block: on a tenant-scoped `external_id_tracking` table, the
+        `UNIQUE NULLS NOT DISTINCT (tenant_id, provider, external_id)` constraint becomes two unique indexes. This
+        relaxes the constraint, so no dedupe is needed. Regenerate and migrate before deploying: null-tenant
+        upserts need the new runtime and the new indexes together.
+
+  - key: unique-violation-409
+    title: "fix(#828): a unique violation (23505) on a generated write route returns 409 Conflict, not 500"
+    existing_issues: [828]
+    epic: 794
+    verdict: "real, by code reading (no HTTP run here: no Docker). No path can return anything but 500."
+    stack: A
+    size: M
+    priority: P1
+    layer: L0
+    depends_on: []
+    parallel_with: [external-id-tenant-unique, unique-finder-backed, controller-import-names, reserved-behavior-fields, temporal-validity-behavior, emits-payload-from-entity, junction-relationship-field-indexes]
+    labels: ["domain:codegen", "gate:auto"]
+    breaking: "Wire: status 500 becomes 409 with an optional `constraint` body field; OpenAPI adds a 409 response. No DDL."
+    files:
+      - runtime/pipes/                                       # new unique-violation exception filter + shared isUniqueViolation(), next to zod-validation.pipe.ts
+      - runtime/subsystems/events/event-bus.drizzle-backend.ts   # private isUniqueViolation (L145-153) → the shared helper
+      - runtime/shared/openapi/error-response.dto.ts         # optional `constraint`
+      - src/config/runtime-mode.mjs + src/cli/shared/runtime-import.ts   # twins: a `uniqueViolationFilterImport` local
+      - src/cli/shared/init-scaffold.ts                      # VENDORED_RUNTIME_FILES gains the filter
+      - templates/entity/new/backend/controller.ejs.t        # L7 import; class-level @UseFilters; 409 @ApiResponse on create/update (L199-225)
+      - test/scaffold/tests/http.test.ts                     # full Nest stack, real Postgres
+      - src/__tests__/                                       # filter unit test
+      - test/baseline/**                                     # regenerated controllers
+      - consumer-skills/entities/SKILL.md                    # the generated HTTP contract
+    gates: [test-integration, test-unit, test-smoke, test-smoke-subsystems, test-baseline]
+    description: |
+      Verdict: REAL.
+      - No exception filter exists in runtime/ or templates/: no `@Catch`, `ExceptionFilter`, `APP_FILTER` or
+        `ConflictException`.
+      - The only SQLSTATE check is the event bus's private `isUniqueViolation`
+        (event-bus.drizzle-backend.ts:151).
+      - BaseRepository `create` / `update` (base-repository.ts:344-377) let the driver error through.
+      - drizzle-orm 1.0.0-rc.4 wraps that error in `DrizzleQueryError`, with the pg error (`code`, `constraint`,
+        `table`, `detail`) on `.cause` (pg-core/async/session.js).
+      - Nest answers any error that is not an `HttpException` with 500.
+      #511 and #784 made unique constraints common, so ordinary input now reaches this.
+
+      Fix (open_questions.unique_violation_contract):
+      - One runtime exception filter, beside `runtime/pipes/zod-validation.pipe.ts`.
+      - It is bound with `@UseFilters()` on the generated entity controller class, so `--force` regeneration
+        reaches every app without an edit to the consumer-owned `main.ts` / `app.module.ts`.
+      - It is exported, for hand-written controllers and `app.useGlobalFilters()`.
+      - It matches SQLSTATE `23505` on the error or its `.cause`, not `instanceof`. CLAUDE.md records how a
+        second copy of a package breaks `instanceof` (a duplicate `@nestjs/common` turned every 404 into a 500).
+      - It extends Nest's `BaseExceptionFilter`, so every other error keeps today's handling.
+      - The repository stays free of HTTP code. A shared `isUniqueViolation()` replaces the event bus's private
+        copy.
+      - Only the entity controller changes. The relationship and search controllers are GET-only, and junctions
+        have no controller.
+
+      Body: Nest's default shape, which `ErrorResponseDto` already documents, plus the constraint name:
+      `{ statusCode: 409, error: 'Conflict', message: 'Unique constraint "<name>" violated', constraint: '<name>' }`.
+      It never includes the pg `detail` (which holds the duplicate values) or the SQL text.
+
+      Acceptance:
+      - Integration (test/scaffold/tests/http.test.ts, full Nest stack): POST `/account-profiles` twice with
+        one `handle` (account-profile-scaffold.yaml, non-tenant, `handle: unique: true`). The second returns 409
+        with `constraint` set to that unique's name. PATCH another row onto the same handle: also 409. Both fail on
+        the base commit with 500.
+      - Unit: the filter maps `{ code: '23505' }` and `{ cause: { code: '23505', constraint } }`. Any other error,
+        including 23503, reaches the base filter unchanged. No body carries `detail` or values.
+      - OpenAPI: POST and PATCH declare `@ApiResponse({ status: 409 })`, and `ErrorResponseDto` gains an optional
+        `constraint`. The smoke's `/docs-json` check sees both.
+      - The filter import resolves in vendored and package mode (the subsystems smoke has both legs).
+      - Baseline snapshots are regenerated. The controller diff is only the import, the decorator and the 409
+        response.
+      - Changelog block: generated write routes return 409 Conflict on a unique violation (was 500). The body
+        names the constraint. Hand-written controllers can use the exported filter.
+
+  - key: unique-finder-backed
+    title: "feat(#821)!: a `queries:` finder with `unique: true` must be backed by a unique constraint"
+    existing_issues: [821]
+    epic: 783
+    verdict: "real gap. 8 of the 9 unique finders under test/ and examples/ are unbacked, one of them in a vendored subsystem YAML."
+    stack: A
+    size: M                        # the check is S; the fixture and vendored-YAML fallout makes it M
+    layer: L0
+    depends_on: [external-id-tenant-unique]
+    parallel_with: [unique-violation-409, controller-import-names, reserved-behavior-fields, temporal-validity-behavior, emits-payload-from-entity, junction-relationship-field-indexes]
+    labels: ["domain:codegen", "gate:human"]   # the issue carries gate:auto; see open_questions.gate_labels
+    breaking: "Generation: YAML that generates today can fail. DDL: the vendored auth-integrations connection.yaml gains a unique index on (user_id, provider). Otherwise fixtures only."
+    files:
+      - templates/entity/new/backend/entity-locals.js        # the check, next to assertDistinctConstraints, over tableConstraints
+      - src/__tests__/backend/entity-column-features.test.ts
+      - test/smoke/fixtures/contact.yaml, crm/contact.yaml, capability/contact.yaml, capability/negative/method-collision.yaml
+      - test/fixtures/entities/contact-v2.yaml + test/baseline/**   # the baseline contact entity gains its unique
+      - examples/eav/field_definition.yaml + examples/eav/field_value.yaml
+      - examples/auth-integrations/definitions/entities/connection.yaml   # vendored into apps by `subsystem install auth-integrations`
+      - consumer-skills/entities/yaml-reference.md (L79-80) + consumer-skills/entities/families-and-queries.md
+    gates: [test-unit, test-baseline, test-smoke, test-smoke-capability, test-smoke-subsystems]
+    description: |
+      Verdict: REAL. A unique finder renders `baseQuery(...).limit(1)` with no ORDER BY
+      (repository.ejs.t:323-326) and is typed `T | null`. Nothing checks that a constraint backs it, so once
+      duplicates exist it returns an arbitrary row. An audit of every YAML under test/ and examples/ finds 9 unique
+      finders, and 8 of them are unbacked:
+      - smoke: contact.yaml, crm/contact.yaml, capability/contact.yaml and capability/negative/method-collision.yaml,
+        all `by: [email]`;
+      - baseline: test/fixtures/entities/contact-v2.yaml, `by: [email]`;
+      - examples/eav/field_definition.yaml and field_value.yaml;
+      - examples/auth-integrations/definitions/entities/connection.yaml, `by: [user_id, provider]`. This file
+        ships to apps, because `subsystem install auth-integrations` vendors it. Its header says "one per
+        (user_id, provider)", but only a select-then-insert enforces that
+        (create-or-update-from-oauth-grant.use-case.ts:41), so two concurrent grants insert two rows. The new check
+        finds a real race here (open_questions.connection_unique).
+
+      Rule: a finder is backed when some non-partial unique of the table has columns that are a subset of its
+      `by:` columns. The uniques are:
+      - field `unique: true`;
+      - `unique_indexes:` entries without `where:`;
+      - the `external_id_tracking` unique, as #829 reshapes it;
+      - the primary key.
+      The tenant prefix is implicit, because the finder runs inside the tenant scope. A partial unique backs a
+      finder only when its predicate is `deleted_at IS NULL` on a `soft_delete` entity, because the finder already
+      filters deleted rows. The check reads the built `tableConstraints` list in buildBackendLocals, which carries
+      `columns` and `partial` for every unique. It therefore sees pattern-implied behaviors, which the schema
+      cannot. The error names the entity, the finder and its columns, and shows the YAML line to add. Studio's
+      schema-on-write does not see it. Severity: open_questions.unique_finder_severity.
+
+      Acceptance:
+      - Unit: an unbacked unique finder fails generation with that message. Each of these backs a finder and
+        passes: a field unique, a `unique_indexes:` entry, a tenant-prefixed entry, the external-id unique, and a
+        soft-delete partial. A partial on any other predicate fails. The tests fail on the base commit, where
+        nothing errors.
+      - The eight fixtures declare their backing unique (`email: { unique: true }`,
+        `unique_indexes: [{ fields: [user_id, provider] }]`, and so on). The negative capability fixture still
+        fails with its own method-collision error, not the new one. Smoke `tsc` passes.
+      - Baseline: the contact entity gains `contacts_email_uniq`. The regenerated snapshot diff is that line.
+      - yaml-reference.md says a unique finder needs a unique constraint over its columns.
+      - Changelog block: generation now fails on a `queries:` entry with `unique: true` that no unique constraint
+        backs. Add the constraint (field `unique: true` or `unique_indexes:`) and dedupe first. Apps with
+        auth-integrations installed: add `unique_indexes: [{ fields: [user_id, provider] }]` to the vendored
+        `connection.yaml`, and dedupe `connections` before migrating.
+
+  # ───────────────────────────── Stack B ─────────────────────────────
+  - key: controller-import-names
+    title: "fix(#833): entity names that equal an imported framework name (page, post, patch, query, body, param, module) generate code that compiles"
+    existing_issues: [833]
+    epic: 783
+    verdict: "real, confirmed with the repo's tsc (TS2300 on a minimal controller: Post and Page imported twice)."
+    stack: B
+    size: M
+    layer: L0
+    depends_on: []
+    parallel_with: [external-id-tenant-unique, unique-violation-409, unique-finder-backed, reserved-behavior-fields, temporal-validity-behavior, emits-payload-from-entity, junction-relationship-field-indexes]
+    labels: ["domain:codegen", "gate:auto"]
+    breaking: "No. Every newly reserved name fails `tsc` today. No DDL, no wire change."
+    files:
+      - templates/entity/new/backend/controller.ejs.t        # L7-10 imports, L28 entity type
+      - templates/entity/new/backend/search-controller.ejs.t
+      - templates/entity/new/backend/use-cases/{list,search,find-by-id,find-by-id-with-fields,list-with-fields,create,update,delete,declarative-queries}.ejs.t   # list.ejs.t L8 `type Page`, L11 entity type
+      - templates/entity/new/backend/{service,repository,integration-source,composed-base}.ejs.t   # integration-source.ejs.t L7 `Module`
+      - templates/relationship/new/controller.ejs.t + the other relationship templates   # L6 Controller, Get, Param
+      - src/schema/reserved-entity-names.ts                  # RESERVED_ENTITY_TYPE_NAMES grows
+      - test/_emitted-name-hygiene.ts                        # rule 3
+      - src/__tests__/templates/emitted-name-hygiene.test.ts + src/__tests__/schema/reserved-entity-names.test.ts
+      - test/smoke/fixtures/page.yaml + test/smoke/fixtures/post.yaml
+      - test/baseline/**                                     # regenerated
+      - consumer-skills/entities/yaml-reference.md           # naming rules + the reserved list
+    gates: [test-smoke, test-smoke-relationship, test-unit, test-baseline]
+    description: |
+      Verdict: REAL. An entity's PascalCase type is imported into 13 backend templates. The same files import
+      PascalCase names from `@nestjs/common`, `@nestjs/swagger` and the pagination runtime:
+      - controller.ejs.t:7-10: `Controller`, `Get`, `Post`, `Patch`, `Delete`, `Body`, `Param`, `Query`,
+        `BadRequestException`, `NotFoundException`, `ParseUUIDPipe`, the `Api*` decorators, `ZodValidationPipe`
+        and `type Page`;
+      - list.ejs.t:8: `ListQuery`, `Page`;
+      - search.ejs.t and search-controller.ejs.t: `ListQuery`, `ListQuerySchema`, `Page`, `Controller`, `Get`,
+        `Query`;
+      - integration-source.ejs.t:7: `Module`;
+      - the service, repository and use cases: `Injectable`, `Inject`, `Optional`, `NotFoundException`.
+      The relationship controller imports `Controller`, `Get` and `Param`. Two bindings of one name in a module
+      are TS2300, whether or not one of them is `import type`. The repo's `tsc` confirms this on a minimal
+      controller. Validation accepts every one of these names, because #813 reserved only Promise, Array and Date.
+
+      Fix (open_questions.import_collisions):
+      1. Alias the imports that are ordinary domain words, in every file where an entity type can be in scope:
+         `Post as HttpPost`, and likewise `Patch`, `Get`, `Delete`, `Body`, `Param`, `Query`, `Controller`,
+         `Module`, `type Page as PageEnvelope`, `ListQuery`, `ListQuerySchema`, `SortTerm`.
+      2. Reserve the framework-only names in `RESERVED_ENTITY_TYPE_NAMES`. These are `Injectable`, `Inject`,
+         `Optional`, `NotFoundException`, `BadRequestException`, `ParseUUIDPipe`, `ZodValidationPipe`, the `Api*`
+         decorators, `InferSelectModel`, `OnModuleInit`, #828's `UseFilters` and filter class, and the alias
+         names from step 1. #813's message names what the name would shadow.
+      3. Hygiene lint rule 3 (test/_emitted-name-hygiene.ts): in a file where an entity type can be in scope,
+         every PascalCase import binding must be reserved. A new import that is neither aliased nor reserved then
+         fails the lint. This closes the class, as rule 1 did for lib globals.
+
+      Acceptance:
+      - Smoke fixtures `page` and `post` generate code that passes `tsc`. Without the fix, the smoke fails with
+        TS2300.
+      - The rule-3 unit test fails on the base templates and lists each unaliased import.
+      - Validation rejects each reserved name with #813's message. A unit test covers it.
+      - Baseline snapshots are regenerated. The diff is only the aliased imports and their uses.
+      - Changelog block: entity names such as `page`, `post`, `patch`, `query`, `body`, `param`, `module` and
+        `controller` now generate. Framework-only names (`injectable`, `not_found_exception`, ...) are rejected
+        with a message. They failed `tsc` before.
+
+  - key: reserved-behavior-fields
+    title: "fix(#715): a declared field that names a behavior column (tenant_id, created_at, external_id, ...) is a generation error"
+    existing_issues: [715]
+    epic: none                     # no parent; #783 lists it under "Related". See open_questions.tracker_hygiene
+    verdict: "real, confirmed by rendering at 6f4f430c. Still not exploitable (TS1117 stops it compiling)."
+    stack: B
+    size: S
+    layer: L0
+    depends_on: []
+    parallel_with: [external-id-tenant-unique, unique-violation-409, unique-finder-backed, controller-import-names, emits-payload-from-entity, junction-relationship-field-indexes]
+    labels: ["domain:codegen", "gate:auto"]
+    breaking: "No for behavior columns (each already fails `tsc` with TS1117). A non-uuid `id` declaration, silently dropped today, becomes an error. No DDL."
+    files:
+      - templates/entity/new/backend/entity-locals.js        # guard in buildBackendLocals, beside the TEN-1 refusals; buildIntegrationSurface writeColumns (L1449)
+      - src/schema/reserved-entity-names.ts                  # the behavior → emitted-column table
+      - src/__tests__/backend/tenant-scoping-templates.test.ts
+      - src/__tests__/schema/reserved-entity-names.test.ts
+      - consumer-skills/entities/yaml-reference.md
+    gates: [test-unit, test-smoke, test-baseline]
+    description: |
+      Verdict: REAL. Rendered at 6f4f430c, `tenant_scoped: true` plus a `tenant_id` field emits `tenantId` twice in
+      the `pgTable` literal: once from the field loop (entity.ejs.t:42-44), once from the tenant block (L57). That
+      is TS1117, and generation exits 0. `buildIntegrationSurface` also puts `tenantId` in `writeColumns`
+      (entity-locals.js:1449), and so in the upsert `set`. Other behavior columns have the same shape, each
+      rendered as a duplicate key:
+      - `created_at` / `updated_at` under `timestamps`;
+      - `deleted_at` under `soft_delete`;
+      - `external_id` / `provider` / `provider_metadata` under `external_id_tracking`.
+      A declared `id` is dropped without a word (entity-locals.js:563).
+
+      Fix:
+      - One table in src/schema/reserved-entity-names.ts maps each behavior to the columns it emits:
+        - `tenant_scoped` → tenant_id;
+        - `timestamps` → created_at, updated_at;
+        - `soft_delete` → deleted_at;
+        - `external_id_tracking` → external_id, provider, provider_metadata.
+        `user_tracking` is not in it: it emits no column (#617), so declaring `created_by` is today's workaround.
+      - buildBackendLocals checks the declared fields against the RESOLVED behaviors, pattern-implied ones
+        included. The error names the field and the behavior, and says the column is emitted for you. For
+        `tenant_id` it adds that `tenant_scoped` cannot yet say what the tenant references (#791).
+      - `id` is an error unless it is declared exactly `{ type: uuid }` (open_questions.reserved_fields).
+      - `buildIntegrationSurface` drops `tenantId` from `writeColumns` unconditionally, as the issue's
+        belt-and-braces step asks.
+
+      Acceptance (the issue's gate, plus the generalisation):
+      - Unit (tenant-scoping-templates.test.ts): `tenant_scoped` plus a `tenant_id` field throws, naming the field.
+        `writeColumns` never contains `tenantId`. There is one case per behavior column, including
+        `external_id_tracking` implied by `pattern: Integrated`. The tests fail on the base commit.
+      - A plain `provider` field on an entity without `external_id_tracking` (`field_definition`) still generates.
+      - Baseline and smoke are unchanged. An audit of test/ and examples/ found no fixture that declares a behavior
+        column or an `id`.
+      - Changelog block: declaring a behavior-emitted column in `fields:` is now a generation error (it already
+        failed `tsc` with TS1117). An `id` field other than `{ type: uuid }` is rejected, because it was ignored.
+
+  - key: temporal-validity-behavior
+    title: "fix(#831)!: `behaviors:` rejects `temporal_validity` and unknown names instead of emitting nothing"
+    existing_issues: [831]
+    epic: 783
+    verdict: "real, confirmed by rendering. Wider than filed: any behavior name is accepted, and plain is_active / valid_from / valid_to fields are dropped from the create DTO."
+    stack: B
+    size: S                        # M, and gate:human, if Doug chooses "emit" (open_questions.temporal_validity)
+    layer: L0
+    depends_on: [reserved-behavior-fields]
+    parallel_with: [external-id-tenant-unique, unique-violation-409, unique-finder-backed, controller-import-names, emits-payload-from-entity, junction-relationship-field-indexes]
+    labels: ["domain:codegen", "gate:auto"]
+    breaking: "Generation: YAML that declares temporal_validity or a misspelled behavior now fails (both emitted nothing). Wire: additive, plain is_active / valid_from / valid_to fields join the create and update DTOs. No DDL."
+    files:
+      - src/schema/entity-definition.schema.ts               # behaviors entries validated (L606, L1112); the doc comment (L603-604)
+      - src/behaviors/index.ts                               # validateBehaviors (L81), uncalled today
+      - src/schema/generate-json-schema.ts (L63) + src/schema/entity-definition.schema.json   # drop the temporal_validity literal
+      - templates/entity/new/prompt.js                       # dead registry: behaviorRegistry L41-145 (temporal_validity L110-143), normalizeBehaviorConfig + resolveBehaviors L207-263
+      - templates/entity/new/backend/entity-locals.js        # BEHAVIOR_MANAGED_FIELDS (L439-448) keyed by #715's table
+      - src/__tests__/schema/ + src/__tests__/backend/entity-column-features.test.ts
+      - consumer-skills/entities/yaml-reference.md           # the behaviors list (L99-107)
+    gates: [test-unit, test-baseline, test-smoke, test-studio]
+    description: |
+      Verdict: REAL.
+      - `behaviors:` is `z.array(z.union([z.string(), ...]))` (entity-definition.schema.ts:606, 1112), so any
+        name passes. Rendered at 6f4f430c, `behaviors: [timestamps, temporal_validity]` emits only `created_at` and
+        `updated_at`. A typo (`temporl_validity`) emits nothing and raises no error.
+      - The temporal_validity columns live in a registry in templates/entity/new/prompt.js (L110-143,
+        `resolveBehaviors` L217) that nothing calls.
+      - The real registry, src/behaviors/index.ts, knows four behaviors. Its `validateBehaviors()` (L81) reports
+        "Unknown behavior", and nothing calls that either.
+      - The JSON schema still offers `temporal_validity` (generate-json-schema.ts:63). The schema comment promises
+        a `deactivate()` method and validity-aware reads (L603-604), and neither exists in runtime/.
+
+      Same root, found while checking: `BEHAVIOR_MANAGED_FIELDS` (entity-locals.js:439-448) removes `valid_from`,
+      `valid_to` and `is_active` from the create DTO whether or not any behavior is on. Rendered at 6f4f430c, a
+      plain `is_active: { type: boolean }` field is missing from the create DTO, so POST cannot set it. No fixture
+      has one. `examples/eav/field_value.yaml` declares `valid_from` / `valid_to`.
+
+      Fix (reject; open_questions.temporal_validity):
+      - Each `behaviors:` entry is validated against src/behaviors/index.ts through the existing
+        `validateBehaviors`. An unknown name is a schema error that names it and lists the four known behaviors.
+        `temporal_validity` gets its own message: it is not implemented; declare `valid_from` / `valid_to` as
+        fields; versioned reads are #789.
+      - `temporal_validity` leaves the JSON schema and the schema comment. The dead registry and
+        `resolveBehaviors` in prompt.js are deleted.
+      - `BEHAVIOR_MANAGED_FIELDS` is keyed by active behavior through #715's table, so plain `valid_from`,
+        `valid_to` and `is_active` fields reach the create DTO. `created_by` / `updated_by` keep today's handling
+        until #617.
+
+      Acceptance:
+      - Schema unit: `behaviors: [temporal_validity]` and `behaviors: [temporl_validity]` fail with their messages.
+        The four known behaviors pass, in both string and object form. The tests fail on the base commit.
+      - Render unit: plain `is_active`, `valid_from` and `valid_to` fields appear in the create DTO. This fails on
+        the base commit.
+      - Every YAML under test/ and examples/ still validates. The audit found no `temporal_validity` and no unknown
+        behavior.
+      - Baseline is unchanged. Studio's JSON schema stops offering the behavior (test-studio).
+      - Changelog block: `behaviors:` rejects unknown names. `temporal_validity`, which emitted nothing, is
+        rejected. Plain fields named `is_active`, `valid_from` and `valid_to` are now in the create and update DTOs.
+
+  # ───────────────────────────── Stack C ─────────────────────────────
+  - key: emits-payload-from-entity
+    title: "fix(#830): emits: payload keys map from the entity row in create, update and delete, never from a DTO"
+    existing_issues: [830]
+    epic: 783
+    verdict: "real, narrower than the title: Rule 4 is unreachable; the reachable path is Rule 2 (created_by / updated_by as a belongs_to FK)."
+    stack: C
+    size: S
+    layer: L0
+    depends_on: []
+    parallel_with: [junction-relationship-field-indexes, external-id-tenant-unique, unique-violation-409, unique-finder-backed, controller-import-names, reserved-behavior-fields, temporal-validity-behavior]
+    labels: ["domain:codegen", "gate:auto"]
+    breaking: "No."
+    files:
+      - templates/entity/new/prompt.js                       # payload rules 2 and 4 (L552-569)
+      - test/junction/_helpers.ts + test/smoke/run-smoke-junction.ts   # #814's emits: fixture (CUSTOM_LAYOUT_EMITS_ENTITY)
+      - src/__tests__/templates/emits-rendering.test.ts
+    gates: [test-smoke-junction, test-unit, test-baseline]
+    description: |
+      Verdict: REAL, but narrower than filed.
+      - Rule 4 (`dto.<key>`, prompt.js:566) is unreachable. Every create-DTO key is also an entity key
+        (`dtoKeysCamel` L523 is a subset of `entityKeysCamel` L519), and Rule 3 (`entity.<key>`) runs first.
+      - The reachable path is Rule 2 (L552-561). A payload key `created_by` / `updated_by` maps to `dto.createdBy`
+        when the key is on the DTO, which happens when it is a belongs_to FK column: `belongsToFkFields` are in
+        both sets. Rule 2 runs before Rule 3, so it wins even though `entity.createdBy` exists.
+      - delete.ejs.t has no `dto`, so that line is TS2304 (L47-48).
+      - In update.ejs.t, `dto` is the partial update DTO, so a `string | undefined` lands in a `string` payload
+        key: TS2322.
+      - A plain `created_by` field is in neither DTO (BEHAVIOR_MANAGED_FIELDS), so it gets the null-plus-TODO
+        placeholder although the entity has the value.
+
+      Fix: map every payload key from `entity`. That is the row after the write for create and update, and the row
+      the delete use case already loads for delete (delete.ejs.t:37). Rule 2 keeps its placeholder only when the
+      entity has no such column. Rule 4 is deleted.
+
+      Acceptance (from #830 "Expected"):
+      - Junction smoke: #814's `emits:` fixture gains a `created_by` belongs_to FK, plus `updated` and `deleted`
+        events whose payload names `created_by`. `tsc` passes in the vendored and package legs. Without the fix it
+        fails with TS2304 (delete) and TS2322 (update).
+      - Render unit: no use case renders `dto.` in a payload. Create, update and delete render `entity.createdBy`.
+      - Baseline snapshots are unchanged. contact-v2's `created_by` payload key has no column, so it stays the
+        placeholder (create-contact.use-case.ts).
+      - Changelog block: event payloads read every key from the entity row. This fixes TS2304 / TS2322 when an
+        update or delete payload names a `created_by` / `updated_by` FK.
+
+  - key: junction-relationship-field-indexes
+    title: "fix(#832): junction and relationship `fields:` emit `index: true` and `unique: true`"
+    existing_issues: [832]
+    epic: 783
+    verdict: "real, by code reading. Both keys are accepted and dropped in both pipelines."
+    stack: C
+    size: S
+    layer: L0
+    depends_on: []
+    parallel_with: [emits-payload-from-entity, external-id-tenant-unique, unique-violation-409, unique-finder-backed, controller-import-names, reserved-behavior-fields, temporal-validity-behavior]
+    labels: ["domain:codegen", "gate:auto"]
+    breaking: "DDL, additive: new indexes. A new unique fails the migration on existing duplicates."
+    files:
+      - templates/junction/new/prompt.js                     # processCustomFields (L124-156)
+      - templates/junction/new/entity.ejs.t                  # extra-config (L91-102)
+      - templates/relationship/new/prompt.js                 # processFields (L193)
+      - templates/relationship/new/entity.ejs.t              # extra-config (L94-96)
+      - templates/entity/new/backend/entity-locals.js (or templates/_shared/)   # one shared index / unique naming helper
+      - src/__tests__/                                       # junction + relationship render tests
+      - test/smoke/fixtures-junction/ + the relationship smoke scenario (run-smoke.ts --scenario relationship)
+      - consumer-skills/ junction and relationship field docs
+    gates: [test-unit, test-smoke-junction, test-smoke-relationship, test-junction]
+    description: |
+      Verdict: REAL.
+      - Junction `fields:` is `z.record(z.string(), z.any())` (junction-definition.schema.ts:91).
+        FieldDefinitionSchema does not parse relationship `fields:` either (relationship prompt.js:199 comment).
+      - `processCustomFields` (junction prompt.js:124-156) and `processFields` (relationship prompt.js:193) read
+        neither key.
+      - The extra-config callbacks emit only the composite primary key (junction entity.ejs.t:91-102) and the
+        pair's `_unique_idx` (relationship entity.ejs.t:95).
+      This is the silent drop #511 fixed for entities. Neither pipeline is tenant-scoped, so there is no tenant
+      prefix to carry. Also found: junction custom fields ignore `required` and `default`, so every custom column
+      is nullable with no default. Recorded, not in scope (open_questions.junction_field_modifiers).
+
+      Fix: emit `index('<table>_<col>_idx').on(table.<col>)` and `uniqueIndex('<table>_<col>_uniq').on(table.<col>)`
+      with the entity naming (#355, #511). A field with both `unique` and `index` emits only the unique, as on a
+      non-tenant entity. The drizzle imports follow. The names come from one helper shared with
+      `entity-locals.js`, so the three pipelines cannot drift.
+
+      Acceptance:
+      - Unit: a junction field and a relationship field, each with `index: true` and `unique: true`, render the
+        index and the unique index, with the same names the entity helper produces. The tests fail on the base
+        commit.
+      - The junction smoke and relationship smoke fixtures carry one field of each kind, and `tsc` passes.
+      - Junction snapshots (`just test-junction`) are unchanged, unless a snapshot fixture gains the keys. Then
+        they are regenerated, and the diff is only those lines.
+      - Changelog block: junction and relationship fields with `index: true` or `unique: true` now get the index.
+        Dedupe before migrating a `unique`.
+
+open_questions:
+  external_id_unique: |
+    #829: what replaces the NULLS NOT DISTINCT constraint? RECOMMEND two NULLS DISTINCT unique indexes:
+    `(tenant_id, provider, external_id)`, and `(provider, external_id) WHERE tenant_id IS NULL`. `conflictTarget()`
+    chooses between them by the stamped tenant. This was checked on PostgreSQL 16 (see the item). Rejected:
+    (a) one `CREATE UNIQUE INDEX ... NULLS NOT DISTINCT WHERE external_id IS NOT NULL` (PG 15+). It has the exact
+    semantics, but drizzle rc.4's `uniqueIndex` has no NULLS option (#783 comment), so drizzle-kit could not diff
+    it. (b) An expression index over `coalesce(tenant_id, <sentinel uuid>)`: one index, but it needs a magic tenant
+    value and an expression conflict target. (c) Closing #829 or narrowing it to a docs note: the generated POST
+    route exists, and its second call fails. Cost of the recommendation: every tenant-scoped `external_id_tracking`
+    table changes DDL (a relaxation, with no dedupe), and the runtime and the migration must deploy together for
+    null-tenant upserts.
+  nnd_default: |
+    Is #829 a regression from #784? No (see the item). #784's tenant NND default (D1, shipped in 0.32.0) does give
+    user-declared uniques the same shape: a nullable column in a tenant-scoped unique admits one NULL per tenant.
+    yaml-reference.md documents this ("admits one NULL per tenant"), it has the `nulls_not_distinct: false` opt-out,
+    and batch-1 Gate 0 approved it. RECOMMEND not reopening it. The difference from #829: there the author chose
+    the columns and has an opt-out. The external-id columns are always nullable, and nothing opts them out.
+  gate_labels: |
+    All eight issues carry `gate:auto`. RECOMMEND `gate:human` for #829 and #821. #829 changes DDL on every
+    tenant-scoped Integrated table, changes a protected runtime method, and revises ADR-042 / TEN-1. #821 rejects
+    YAML that generates today and adds a unique index to a vendored subsystem table. Sync never changes an existing
+    gate label, so Doug relabels if he agrees.
+  unique_violation_contract: |
+    #828: which status, which body, and where is it mapped? RECOMMEND:
+    - status 409 Conflict;
+    - Nest's default body (`statusCode`, `message`, `error`) plus `constraint: '<name>'`, never the pg `detail`
+      (which holds the duplicate values) or the SQL;
+    - one runtime filter, bound with `@UseFilters()` on each generated entity controller. Regeneration reaches every
+      app. `main.ts` and `app.module.ts` belong to the app, so a global registration would need a codemod;
+    - matching by SQLSTATE on the error or its `.cause`, not `instanceof`.
+    Alternatives:
+    (a) Map in BaseRepository to a typed error, plus a filter. That is two places, and a write the repository does
+    not run (a use case's own `tx.insert`) would still 500.
+    (b) `APP_FILTER` from a generated module. That registers once per module, and the order is not ours to set.
+    (c) 422. That reads as a validation failure, a status #776 has not settled either.
+  other_sqlstates: |
+    #828: should the same filter map 23503 (FK violation: a POST naming a missing parent) and 23514 (CHECK, after
+    #786)? RECOMMEND not in this item. 23505 is the one batch 1 made common. An FK miss is arguably 422 or 404,
+    which is a separate contract decision. The filter is a SQLSTATE → status table, so each is a one-line
+    follow-up. File one under #794. Still 500 today and outside this item: `CrossTenantWriteError` and
+    `MissingTenantIdError` from the tenant guards.
+  unique_finder_severity: |
+    #821: error or warning? RECOMMEND error. The finder runs `.limit(1)` with no ORDER BY, so once duplicates
+    exist it silently returns an arbitrary row. The fix is one line of YAML, and the error shows it. The cost
+    lands in fixtures (8 of the 9 unique finders under test/ and examples/ are unbacked) and in apps: after the
+    upgrade, every unbacked finder fails generation. Alternative: a warning for one minor, then an error in the
+    next.
+  connection_unique: |
+    #821 finds a real race in the shipped auth-integrations `connection.yaml` (`by: [user_id, provider]`, enforced
+    only by a select-then-insert). RECOMMEND adding `unique_indexes: [{ fields: [user_id, provider] }]` to it in the
+    same PR. Apps that installed the subsystem have their own vendored copy, so the CHANGELOG tells them to add the
+    line and to dedupe `connections` first. This DDL change is the main reason #821 is gate:human.
+  temporal_validity: |
+    #831: emit the columns, or reject the behavior? RECOMMEND reject, together with unknown behavior names (wire up
+    the existing `validateBehaviors`). Reasons:
+    - nothing uses it: no fixture, no doc page;
+    - its documented contract (`deactivate()`, validity-aware reads) does not exist in runtime/;
+    - the date-versus-instant choice for valid_from / valid_to is still open (#771, #776);
+    - as-of reads are #789's design.
+    Emitting columns alone would be another half-behavior. If Doug prefers to emit:
+    - `valid_from timestamptz NOT NULL DEFAULT now()` and `valid_to timestamptz NULL`, a half-open interval, and
+      timestamptz per #796;
+    - no stored `is_active`: derive it, because a stored flag drifts from the interval;
+    - columns only, with no read filtering.
+    The item then becomes M and gate:human, because the DDL changes for every entity that declares the behavior.
+  import_collisions: |
+    #833: alias or reserve? RECOMMEND both, closed by a lint:
+    - alias the imports that are ordinary domain words (Post, Patch, Get, Delete, Body, Param, Query, Controller,
+      Module, Page, ListQuery, ListQuerySchema, SortTerm);
+    - reserve the framework-only names (Injectable, Inject, Optional, NotFoundException, BadRequestException,
+      ParseUUIDPipe, ZodValidationPipe, Api*, InferSelectModel, OnModuleInit, UseFilters) and the alias names
+      themselves;
+    - make lint rule 3 require every PascalCase import in an entity-scope file to be reserved.
+    As #813 decided for `record` and `item`, everyday words are made to work, not reserved. Alternatives:
+    (a) Reserve all of them. But `post`, `page` and `module` are common entity names.
+    (b) Alias only when the entity name collides. No baseline churn, but every import line carries a lookup, and no
+    lint can check the general case.
+    (c) Namespace imports (`import * as nest from '@nestjs/common'`, `@nest.Post()`). No reserved list at all, but
+    every backend template changes, and the output reads unlike Nest code.
+  reserved_fields: |
+    #715: which names, and error or warning? RECOMMEND an error for each column a resolved behavior emits:
+    tenant_id, created_at, updated_at, deleted_at, external_id, provider, provider_metadata. Each already fails
+    `tsc` with TS1117, so no app can depend on it. Not `created_by` / `updated_by`: user_tracking emits no columns
+    (#617), so declaring them is the current workaround. For `id`, an error unless the declaration is exactly
+    `{ type: uuid }`. Today any `id` is dropped without a word, so `id: { type: string }` quietly becomes a uuid
+    (key strategies are #797).
+  junction_field_modifiers: |
+    #832: emit `index:` / `unique:` on junction and relationship fields, or reject them? RECOMMEND emit, with the
+    entity naming, since the entity pipeline already defines both. Junction custom fields also drop `required` and
+    `default`, so every custom column is nullable. RECOMMEND a follow-up issue under #783 rather than widening #832,
+    because making those columns NOT NULL is its own DDL change.
+  release: |
+    RECOMMEND 0.33.0, a minor, after this batch. #829 and #832 change DDL. #821, #831 and #715 add generation
+    errors. #828 changes a status code. Under 0.x a patch would reach every caret-pinned app. The release issue is
+    filed by hand, as in batch 1. It is not an item here.
+  sync: |
+    As in batch 1: `/sync-issues` as written would create a parent epic and a duplicate issue for every leaf, and
+    a re-sync replaces issue bodies. RECOMMEND not running it: go straight to /design on the existing issues. The
+    alternative is the reference-existing mode in `plan.sync`. Either way, nothing here is re-parented.
+  tracker_hygiene: |
+    #715 has no parent epic, and #783 lists it under "Related". RECOMMEND adding it as a sub-issue of #783. It has
+    no parent, so this is not re-parenting. #829's title says "may reject", and it does reject. Its body is not
+    edited (sync rules). The plan comment carries the reproduction. Tracker writes are for Doug.
+  plan_location: |
+    As in batch 1, this plan is at `.ai-docs/plans/gaps-batch2.yaml`, with an identical copy at
+    `.ai-docs/stacks/gaps-batch2/plan.yaml` for the sdlc agents that glob `.ai-docs/stacks/*/plan.yaml`.
