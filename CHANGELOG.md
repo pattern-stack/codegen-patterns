@@ -2,6 +2,190 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.32.0] — 2026-11-07
+
+**Breaking (DDL).** Gaps batch 1: declared uniqueness is now enforced in the database
+(#511, #784), every generated time column is `timestamp with time zone` (#796), and five
+host-app compile failures are fixed (#814, #811, #813, #815, #742). It also ships every fix
+merged since 0.31.0. **Requires PostgreSQL 15 or later** (#784). Upgrading from 0.31.0:
+
+1. Rename any entity or relationship named `promise`, `array` or `date`. They are now
+   rejected (#813).
+2. Mark every column that holds a genuine wall-clock time with `timezone: false` (#796).
+3. Regenerate: `codegen entity new --all --force`, plus `junction new --all --force` and
+   `relationship new --all --force` if you declare them. One run is enough now (#815);
+   remove any second `entity new --all` from scripts and CI.
+4. Dedupe before migrating. Every `unique: true` field gains a unique index (#511), and on
+   tenant-scoped tables each unique on `(tenant_id, ...)` becomes a
+   `UNIQUE NULLS NOT DISTINCT` constraint (#784). The migration fails on existing
+   duplicates: find them with
+   `SELECT tenant_id, <cols>, count(*) FROM <table> GROUP BY tenant_id, <cols> HAVING count(*) > 1`
+   (drop `tenant_id` on a non-tenant table).
+5. Review the schema-diff migration. Run the timestamptz conversion under
+   `SET TIME ZONE 'UTC';`, or write each clause as `USING "<col>" AT TIME ZONE 'UTC'`.
+   `drizzle-kit push` users: `ALTER DATABASE <db> SET timezone TO 'UTC'` first (#796).
+6. A `queries:` search endpoint now returns the list's `Page<T>` envelope; update its
+   callers (#744). A field with `nullable: false` and no `default:` is now a schema error
+   (#736).
+
+### Breaking
+
+- **Every generated time column is `timestamp with time zone` (#796).** `type: datetime`
+  fields, the `timestamps` columns (`created_at`, `updated_at`) and the `soft_delete` column
+  (`deleted_at`) now emit `timestamp('<col>', { withTimezone: true, mode: 'date' })`. The
+  same applies to the junction template's `started_at`, `ended_at`, `matched_at`,
+  `created_at` and `updated_at`, to the relationship template's `created_at` and
+  `updated_at`, and to every `datetime` field on a junction or relationship. Subsystem
+  tables already used `timestamptz`, so an app now has one convention. TypeScript types,
+  DTOs and OpenAPI are unchanged (`Date`).
+  - Migration: drizzle-kit (1.0.0-rc.4) writes
+    `ALTER TABLE "<table>" ALTER COLUMN "<col>" SET DATA TYPE timestamp with time zone USING "<col>"::timestamp with time zone;`.
+    That cast reads each stored value in the migrating session's `TimeZone`, so run it
+    under `SET TIME ZONE 'UTC';` or rewrite the clause as `USING "<col>" AT TIME ZONE 'UTC'`.
+    With the session at UTC, Postgres 12+ skips the table rewrite for this cast.
+  - Casts such as `::date` and `date_trunc` on a timestamptz follow the session
+    `TimeZone`; pin it to UTC.
+  - The conversion is lossless only if the stored values are UTC. Values written through
+    the generated repositories are UTC, whatever the process `TZ`. Values filled by
+    `DEFAULT now()`, or written by other SQL, are in the writing session's `TimeZone`. If any
+    session ran outside UTC, correct those rows before you migrate.
+  - Frontend with Electric sync: the default `frontend.parsers.timestamptz` now matches
+    every generated time column, so synced rows arrive as real `Date`s instead of strings.
+    A `timezone: false` column still arrives as a string unless you add a `timestamp`
+    parser.
+- **On a `tenant_scoped: true` entity, every non-partial unique is NULLS NOT DISTINCT by
+  default (#784).** This covers `unique_indexes:` entries and field `unique: true` (#511).
+  Each was a unique index on `(tenant_id, ...)` that let rows with a NULL `tenant_id`
+  duplicate each other; it is now `UNIQUE NULLS NOT DISTINCT (tenant_id, ...)` with the
+  same name. Opt out per entry with `nulls_not_distinct: false`. A nullable column in the
+  constraint admits one NULL per tenant; for "unique when present", declare it under
+  `unique_indexes:` with `nulls_not_distinct: false`. A partial entry on a tenant-scoped
+  entity does not deduplicate NULL-tenant rows. **Requires PostgreSQL 15 or later.**
+- **A field's `unique: true` now emits a unique index (#511).** It used to emit nothing, so
+  declared uniqueness was enforced nowhere and `ON CONFLICT (<col>)` had no arbiter. It now
+  emits `uniqueIndex('<table>_<col>_uniq').on(t.<col>)`. Under `tenant_scoped: true` the
+  index is per tenant, `(tenant_id, <col>)`, named `<table>_tenant_id_<col>_uniq`
+  (ADR-042 §5(c)), and NULLS NOT DISTINCT (#784). This includes a `belongs_to` FK column
+  declared in `fields:` with `unique: true` (a one-to-one). On a non-tenant entity, a field
+  with both `unique: true` and `index: true` now gets only the unique index; the old
+  `<table>_<col>_idx` is dropped. A `queries:` entry's `unique: true` is unchanged: it
+  shapes the finder's return type and emits no DDL.
+- **Entity and relationship names `promise`, `array` and `date` are rejected (#813).** Their
+  generated type would shadow `Promise`, `Array` or `Date`, which generated code uses in
+  nearly every signature. `entity validate`, `entity new`, `relationship new` and Studio
+  report the entity and the global it shadows.
+- **`queries:` search pages through the list endpoint (#744).** The search controller and
+  use case imported `@shared/http/pagination`, which nothing generated, so every fresh
+  project with a `queries: - name: search` failed `tsc` with TS2307. Search is now the list
+  endpoint, filtered: `GET /<plural>/search` takes `page`, `pageSize`, `cursor`, `sort_by`
+  and `sort_order` plus the filters, and returns the list's `Page<T>` envelope
+  (`{ items, page, pageCount, total, pageSize, nextCursor }`). The search declaration is
+  strict and drops `paginate:` and `order:`, which were never read; either key is now an
+  unknown-key error. The list use case's `execute(query?, options)` takes an optional
+  `where`.
+- **`nullable: false` with a `default:` is NOT NULL, and without one is a schema error
+  (#736, #613).** `{ required: false, nullable: false, default: 0 }` used to emit a nullable
+  column read as `number | null`. One rule (`src/schema/field-nullability.ts`) now decides
+  every column, DTO and read type: `required: true` is NOT NULL; `nullable: false` plus
+  `default:` is NOT NULL with a DB default and an optional create field; `nullable: true`,
+  or neither declared, is nullable. `nullable: false` without a `default:` is refused.
+  Regenerating adds `NOT NULL` to such columns; the migration fails if they hold NULLs.
+
+### Added
+
+- **`unique_indexes:` entries take `where:`, `nulls_not_distinct:` and a single field
+  (#784).** `where: "<SQL>"` declares a partial unique index
+  (`uniqueIndex(...).where(sql...)`). The predicate is raw SQL; this table's snake_case
+  column names in it are rewritten to Drizzle column references, so drizzle-kit quotes
+  them. A partial entry needs `name:`, and cannot also set `nulls_not_distinct: true`
+  (drizzle-orm 1.0.0-rc.4 has no NULLS option on a partial index).
+  `nulls_not_distinct: true` emits a `UNIQUE NULLS NOT DISTINCT` table constraint. An entry
+  may now list one field.
+- **Field key `timezone: false` (#796)**, on `type: datetime` only, keeps a wall-clock
+  column as `timestamp without time zone`. It applies to entity fields and to junction and
+  relationship payload fields. Its value reads back as a `Date` whose UTC fields are the
+  wall-clock time. Use it for values that are genuinely wall-clock times, not to skip the
+  migration.
+
+### Changed
+
+- **The semantic model imports `@pattern-stack/query-surface` (#694, SEM-4).** The emitted
+  semantic model imports its vocabulary from the published package instead of a vendored
+  `types.ts` mirror, which is no longer emitted. `@pattern-stack/query-surface` is an
+  optional peer (`^0.3.1`); install it if you generate a semantic model. npm needs
+  `--legacy-peer-deps`, because the package's optional `@nestjs/*` peers are `^11`
+  (see CONSUMER-SETUP).
+- `unique_indexes:` `name:` must be a lowercase snake_case identifier of at most 63
+  characters (#784).
+- New generation errors (#784): a `fields:` name that is not a column of the table;
+  `tenant_id` listed on a tenant-scoped entity; two non-partial uniques over the same
+  columns (including a field `unique: true` repeated as an entry); two constraints with the
+  same name. `timezone:` on a non-datetime field, or a non-boolean `timezone:`, is an error
+  (#796).
+- **A job with a `read:` block refuses to generate without the integration subsystem
+  (#745).** It used to exit 0 and then fail `tsc` with
+  `TS2307: Cannot find module '@shared/subsystems/integration'`. `entity new` now stops at
+  pre-flight, names the job and arm, and says to run
+  `codegen subsystem install integration`.
+
+### Fixed
+
+- **Package mode: the write use cases of an `emits:` entity compile (#814).** The create,
+  update and delete use cases imported `TypedEventBus` from
+  `@pattern-stack/codegen/subsystems`, which exports only the `TYPED_EVENT_BUS` token, so
+  every `emits:` entity failed `tsc` with TS2724 under `runtime: package`. The class now
+  comes from the project's own generated bus, `<paths.generated>/events/bus`, the class
+  `EventsModule.forRoot({ typedBus })` binds to the token. Vendored output is unchanged.
+  Drop any post-generate rewrite of this import.
+- **`api: false` barrels no longer export a missing controller (#811).** Entities with
+  `api: false` or `api: { enabled: false }` got a module `index.ts` that exported a
+  controller the generator never emits, so every such barrel failed `tsc` with TS2307. The
+  barrel now exports the controller only when the entity has an HTTP surface. Delete any
+  post-generate step that removed the export.
+- **Entity names and plurals no longer collide with TypeScript globals or template locals
+  (#813).** An entity named `record` emitted a `Record` type that shadowed `Record<K, V>` in
+  its own repository, controller and list use case (TS2315). A plural such as `items`
+  collided with the list use case's `const [items, total]` (TS2448/TS2454), and a plural
+  such as `options` compiled but silently ignored the caller's `sort_by`. Generated code
+  now writes every TypeScript lib type it names as `globalThis.<Name>` (except `Promise`,
+  `Array` and `Date`), and a function that reads a Drizzle table export by name declares
+  only camelCase locals, which no plural can match. This covers the backend module tree,
+  the junction service and the frontend emitter. Regenerated files change spelling only.
+- **`entity new --all` wires every `has_many` in one run (#815).** On a clean tree, a
+  parent generated before its `has_many` target used to get no composition method
+  (`<parent>Service.<relation>(…)`), and no import, constructor parameter or module
+  provider for the target's repository, until the command ran a second time. A `has_many`
+  is now wired when its target is generated in the same run or is already on disk. A
+  single-file `entity new <file>` still wires a `has_many` only when the target has already
+  been generated. `junction new` follows the same rule.
+- **`api.includes.<route>.paths` accept the YAML relationship name (#742)** as well as the
+  relation key: `paths: [line_items]` and `paths: [lineItems]` name the same edge. The
+  emitted allowlist and the `?include=` wire format stay in relation keys. A segment that
+  names no relation now fails generation with the relation keys available at that hop and,
+  when one is close, "Did you mean '<key>'?". Existing allowlists emit byte-identical
+  output.
+- **The emitted catalog resolves `{ ref }` measures (#734).** `@pattern-stack/query-surface`
+  resolves a named measure only from `model.catalog`, and the emitted catalog carried
+  composites only, so every `{ ref }` failed (`aggregate: unknown measure ref "amount.sum"`).
+  The catalog now spreads `measuresFromRegistry(analytics)` under the composites.
+- **Studio roots every definition directory at the project's real path (#750).** With the
+  project behind a symlink (macOS `os.tmpdir()`), listed paths came back relative to the
+  wrong root and `kindForPath` classified nothing.
+
+### Removed
+
+- **`pattern: Integrated` carries no user-ownership finders (#746).**
+  `IntegratedEntityRepository.findAllByUserId` / `findVisibleByUserId` and the service's
+  `findAllByUser` / `findVisibleByUser` are gone. The pattern emits no `user_id` column, so
+  on a global integrated table both threw on the first call. Declare user ownership with a
+  `user_id` field and `queries: [{ by: [user_id] }]`.
+
+### Docs
+
+- `docs/consumer/drizzle.md` documents the emitted relations manifest, and that a raw
+  `db.query.*` root is not tenant- or user-scoped by it; only the generated repository
+  filters the root row (#751).
+
 ## [0.31.0] — 2026-10-04
 
 **Breaking.** Relations v2 and the semantic model (#578): Drizzle 1.0, a typed relation
