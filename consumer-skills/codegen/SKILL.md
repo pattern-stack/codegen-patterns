@@ -78,8 +78,9 @@ The generated data plane is **closed by default**:
   Use cases get the actor from the request context (`tryGetRequester()`).
   Don't add header-sourced identity back.
 - To keep an entity internal (no REST/Electric/tRPC routes) while still
-  generating its service and use cases, set `api: false` at the top level of
-  its YAML.
+  generating its service and use cases, set `api: false` (or
+  `api: { enabled: false }`) at the top level of its YAML. The entity's module
+  barrel then exports the module, service and types, but no controller.
 
 **Upgrading from before 0.30.0:** after bumping the package, run
 `codegen project update`, then `codegen project upgrade-auth`. The latter is

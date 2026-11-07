@@ -14,6 +14,9 @@
  * most dogfood incidents traced back to:
  *   - account.yaml has an enum field (PR #28 template escape).
  *   - contact.yaml has a belongs_to + query on the FK column (dogfood #9).
+ *   - audit_entry.yaml (`api: false`) and sync_cursor.yaml
+ *     (`api: { enabled: false }`) have no HTTP surface (#811): their module
+ *     barrels must not export a controller that was never emitted.
  *
  * Fails loudly on the first error. Designed to complete in < 2 minutes on a
  * dev laptop; bun add cost dominates and is unavoidable unless we freeze a
@@ -325,6 +328,54 @@ function assertSemanticEmission(tmpDir: string): void {
 		/export function buildAggregateModel\(\): AggregateModel/,
 		'buildAggregateModel export',
 	);
+}
+
+/**
+ * #811 — an `api: false` entity emits no controller, so its module barrel must
+ * not export one. `tsc` proves the barrel compiles; this proves it compiles for
+ * the right reason (no controller file, `controllers: []`), and a positive
+ * control proves the guard did not drop the export for every entity. Every
+ * read throws ENOENT on a wrong path, so it cannot pass silently.
+ */
+function assertApiFalseEmission(tmpDir: string): void {
+	const mod = (rel: string): string => path.join(tmpDir, 'src', 'modules', rel);
+	const reads = (rel: string): string => fs.readFileSync(mod(rel), 'utf8');
+
+	for (const [dir, form] of [
+		['audit-entries', 'api: false'],
+		['sync-cursors', 'api: { enabled: false }'],
+	] as const) {
+		assertNotContains(reads(`${dir}/index.ts`), /\.controller'/, `${dir}/index.ts (${form}) controller export`);
+		assertContains(reads(`${dir}/${dir}.module.ts`), /controllers: \[\]/, `${dir}.module.ts (${form}) controllers`);
+	}
+	for (const rel of [
+		'audit-entries/audit-entry.controller.ts',
+		'audit-entries/audit-entry-search.controller.ts',
+		'sync-cursors/sync-cursor.controller.ts',
+	]) {
+		if (fs.existsSync(mod(rel))) {
+			throw new Error(`api:false entity must not emit ${rel} (ADR-043 §6, #811)`);
+		}
+	}
+	// The search-controller absence above only means something if the `search`
+	// query resolved: the use case is emitted for audit_entry, and an entity with
+	// an API still gets its search controller.
+	const auditUseCases = fs.readdirSync(mod('audit-entries/use-cases'));
+	if (!auditUseCases.some((f) => /search/.test(f))) {
+		throw new Error('audit_entry search use case missing: the search-controller absence check would be vacuous (#811)');
+	}
+	if (!fs.existsSync(mod('accounts/account-search.controller.ts'))) {
+		throw new Error('accounts/account-search.controller.ts missing (positive control)');
+	}
+	// Positive control: an entity with an API still exports its controller.
+	assertContains(
+		reads('accounts/index.ts'),
+		/export \{ AccountController \} from '\.\/account\.controller';/,
+		'accounts/index.ts controller export (positive control)',
+	);
+	if (!fs.existsSync(mod('accounts/account.controller.ts'))) {
+		throw new Error('accounts/account.controller.ts missing (positive control)');
+	}
 }
 
 /**
@@ -993,6 +1044,17 @@ async function main(): Promise<number> {
 			exitCode = 1;
 		} else {
 			log('tsc OK (consumer-emitted code is syntax-clean)');
+		}
+
+		// 6.1. #811 — api:false entities: content assertion beside the tsc gate.
+		if (SCENARIO === 'default') {
+			try {
+				assertApiFalseEmission(tmpDir);
+				log('api:false emission OK');
+			} catch (e) {
+				logError(`api:false emission: ${(e as Error).message}`);
+				exitCode = 1;
+			}
 		}
 
 		// 7. OPENAPI-4: verify /docs-json is populated by importing the

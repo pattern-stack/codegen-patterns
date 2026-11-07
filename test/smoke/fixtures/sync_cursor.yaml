@@ -1,0 +1,25 @@
+# Smoke fixture: sync_cursor
+# `api: { enabled: false }` (block form) — an internal entity with no HTTP surface
+# (ADR-043 §6). Regression for #811: the module barrel exported a controller that
+# was never emitted, failing tsc with TS2307.
+entity:
+  name: sync_cursor
+  plural: sync_cursors
+  table: sync_cursors
+  pattern: Base
+
+api:
+  enabled: false
+
+fields:
+  source:
+    type: string
+    required: true
+    max_length: 100
+
+  position:
+    type: string
+    required: true
+
+behaviors:
+  - timestamps

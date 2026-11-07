@@ -1,0 +1,36 @@
+# Smoke fixture: audit_entry
+# `api: false` (boolean form) — an internal entity with no HTTP surface (ADR-043 §6).
+# Regression for #811: the module barrel exported a controller that was never
+# emitted, failing tsc with TS2307. The `search` query also emits the search use
+# case without a search controller, covering module.ejs.t's search-controller guard.
+entity:
+  name: audit_entry
+  plural: audit_entries
+  table: audit_entries
+  pattern: Base
+
+api: false
+
+fields:
+  source:
+    type: string
+    required: true
+    max_length: 100
+
+  message:
+    type: string
+    required: true
+
+  level:
+    type: enum
+    choices: [info, warn, error]
+    default: info
+
+behaviors:
+  - timestamps
+
+queries:
+  - by: [source]
+  - name: search
+    filters: [level]
+    search: message
