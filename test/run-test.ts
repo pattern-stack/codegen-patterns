@@ -10,6 +10,8 @@
  */
 
 import { execSync } from 'node:child_process';
+import { parse as parseYaml } from 'yaml';
+import { entityNewArgs } from '../src/cli/shared/hygen';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, cpSync } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
 // Repo root — one level up from this file's directory (test/ → repo).
@@ -128,7 +130,7 @@ function runCodegen() {
   // Set up test config at ROOT
   setupTestConfig();
 
-  // Pristine state — wipe every output path under ROOT so the two-pass
+  // Pristine state — wipe every output path under ROOT so the
   // generation below genuinely starts from "first run" regardless of what
   // a previous invocation (or the dev's enclosing directory contamination
   // when ROOT was miscomputed) left behind. Mirrors the CI environment,
@@ -144,7 +146,8 @@ function runCodegen() {
   // the underlying filesystem's `readdir` semantics. Without this, Linux
   // (ext4 insertion-order) and macOS (APFS effectively stable-but-implementation-defined)
   // can process the same fixture set in different orders, producing different
-  // output when templates check `targetExists` for cross-entity references.
+  // output (the order is kept for deterministic logs and output; the has_many
+  // wiring no longer depends on it).
   const fixtures = readdirSync(ENTITY_FIXTURES_DIR)
     .filter(f => f.endsWith('.yaml'))
     .sort();
@@ -152,24 +155,25 @@ function runCodegen() {
   // Use env var or compute from script location (works when running from any directory)
   const templatesDir = process.env.CODEGEN_TEMPLATES_DIR || join(CODEGEN_DIR, 'templates');
 
-  // Two-pass generation.
-  //
-  // The backend prompt includes a belongs_to / has_many target in the
-  // repository's imports only when the target's `<entity>.entity.ts` is already
-  // on disk (`targetExists` in prompt-extension.js — deliberately a file check,
-  // so a single `entity new x.yaml` never imports a sibling that was never
-  // generated). The first pass seeds every entity file; the second pass emits
-  // the steady state that `entity new --all` reaches, which is what the
-  // snapshot documents. Fixtures run sorted, so the output does not depend on
-  // the filesystem's readdir order.
-  const runPass = (label: string) => {
-    console.log(`   Pass ${label}:`);
+  // One pass, as `entity new --all` runs it (#815). Every hygen call gets the
+  // whole fixture set as `--renderSet`, so a has_many onto an entity later in
+  // the run is wired without a seeding pass. Fixtures run sorted, so the output
+  // does not depend on the filesystem's readdir order.
+  const renderSet = fixtures.map(f => {
+    const parsed = parseYaml(readFileSync(join(ENTITY_FIXTURES_DIR, f), 'utf8'));
+    if (typeof parsed?.entity?.name !== 'string') {
+      throw new Error(`fixture ${f} has no entity.name; cannot build the render set`);
+    }
+    return parsed.entity.name;
+  });
+
+  try {
     for (const fixture of fixtures) {
       const yamlPath = join(ENTITY_FIXTURES_DIR, fixture);
       console.log(`     Generating: ${fixture}`);
 
       try {
-        execSync(`HYGEN_TMPLS="${templatesDir}" bunx --bun hygen entity new --yaml "${yamlPath}"`, {
+        execSync(`HYGEN_TMPLS="${templatesDir}" bunx --bun hygen entity new ${entityNewArgs(yamlPath, renderSet).map(a => `"${a}"`).join(' ')}`, {
           cwd: ROOT,
           stdio: 'pipe',
         });
@@ -178,11 +182,6 @@ function runCodegen() {
         throw error;
       }
     }
-  };
-
-  try {
-    runPass('1 (seeds domain entity files for targetExists checks)');
-    runPass('2 (final output with all cross-entity references resolved)');
   } finally {
     // Always clean up test config
     cleanupTestConfig();

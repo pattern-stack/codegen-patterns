@@ -169,18 +169,34 @@ export function invokeHygen(opts: HygenInvocation): HygenResult {
 }
 
 /**
+ * The hygen arguments of one `entity new` render. The one definition of the
+ * wire format (#815): `--renderSet` carries the names of every entity the same
+ * run renders, comma-joined (entity names match `^[a-z][a-z0-9_]*$`, so a comma
+ * is safe). `templates/entity/new/prompt.js` is the one reader.
+ */
+export function entityNewArgs(
+	absoluteYamlPath: string,
+	renderSet: readonly string[],
+): string[] {
+	return ['--yaml', absoluteYamlPath, '--renderSet', renderSet.join(',')];
+}
+
+/**
  * Convenience wrapper for the most common pattern — generating one entity
- * from a YAML path.
+ * from a YAML path. `renderSet` is the names of every entity the same run
+ * renders (required, so each caller decides): a `has_many` onto one of them is
+ * wired whatever the render order (#815, `--renderSet`).
  */
 export function invokeEntityNew(
 	absoluteYamlPath: string,
+	renderSet: readonly string[],
 	cwd?: string,
 	configPath?: string | null,
 ): HygenResult {
 	return invokeHygen({
 		generator: 'entity',
 		action: 'new',
-		args: ['--yaml', absoluteYamlPath],
+		args: entityNewArgs(absoluteYamlPath, renderSet),
 		cwd,
 		configPath,
 	});
