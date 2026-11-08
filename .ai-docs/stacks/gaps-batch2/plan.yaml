@@ -1,6 +1,8 @@
 # Gate-0 plan: generator gaps, batch 2.
 #
-# STATUS: draft for Gate 0. Not synced.
+# STATUS: Gate 0 APPROVED by Doug 2026-11-07, with every open_questions recommendation. Not synced.
+# #829: drizzle-orm 1.0.0-rc.5 (newest; 1.0 not final) was checked: uniqueIndex() still has no NULLS option
+# (only unique() constraints have nullsNotDistinct(), and those take no WHERE), so the two-index shape stands.
 #
 # EVERY WORK ITEM HERE ALREADY EXISTS ON GITHUB. Each one names its issue in `existing_issues:`.
 # /sync-issues must link these issues, not create them: see `plan.sync`. This plan creates no tracker issue.
