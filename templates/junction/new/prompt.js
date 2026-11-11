@@ -259,8 +259,9 @@ export default {
     const payload = processPayloadFields(
       otherFields,
       junctionName,
-      { entityName: junctionName, ownNaming: junction, modulesDir, entityLookup },
-      Array.from(loadOwnedTableNames(cwd)),
+      // TABLE-0: a payload index / self-FK names the junction's SQL table.
+      { entityName: junctionName, ownNaming: junction, entityTableName: tableName, modulesDir, entityLookup },
+      Array.from(loadOwnedTableNames(cwd, { tablePrefix: config_.tables.prefix })),
     );
     const processedCustomFields = payload.processed;
     const hasCustomFields = processedCustomFields.length > 0;
