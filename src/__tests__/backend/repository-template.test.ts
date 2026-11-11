@@ -66,7 +66,7 @@ describe('backend repository template — behaviors config (issue #33)', () => {
     expect(output).toContain('softDelete: true');
     expect(output).toContain('userTracking: false');
     expect(output).toContain(
-      "import type { BehaviorConfig, ListOptions, ReadOptions } from '@shared/base-classes/base-repository';",
+      "import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';",
     );
   });
 
@@ -116,7 +116,7 @@ describe('backend repository template — behaviors config (issue #33)', () => {
     expect(output).toContain('softDelete: false');
     expect(output).toContain('userTracking: true');
     expect(output).toContain(
-      "import type { BehaviorConfig, ListOptions, ReadOptions } from '@shared/base-classes/base-repository';",
+      "import type { BehaviorConfig, ListOptions, ReadOptions, RowFilter } from '@shared/base-classes/base-repository';",
     );
   });
 
